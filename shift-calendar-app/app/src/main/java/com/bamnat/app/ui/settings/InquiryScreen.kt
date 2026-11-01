@@ -1244,6 +1244,8 @@ private fun HelpHome(
             Text(if (total == 0) "‘$query’에 맞는 답을 찾지 못했어요" else "찾은 답 ${total}개",
                 style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
+            // 1.36 누락 점검 N13
+            if (total == 0) SearchMissRow("help", query, Modifier.padding(start = 4.dp))
             if (features.isNotEmpty()) {
                 SectionLabel("기능에서 찾기")
                 features.forEach { f -> com.bamnat.app.ui.guide.FeatureHelpRow(f) }

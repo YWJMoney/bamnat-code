@@ -81,6 +81,9 @@ test("[GRW-02] a request nobody made for 14 days becomes a studio need too", asy
   const items = (await call("GET", "/api/admin/growth/needs", undefined, await signIn(call))).data.items;
   assert.equal(items.length, 1);
   assert.equal(items[0].samples[0].src, "req");
+  // 1.36 N14: the request board says so to everyone ('개발자에게 알렸어요').
+  const board = (await call("GET", "/api/recipes/requests?style=DAY", undefined, { "x-device": device(2) })).data.items;
+  assert.equal(board[0].told, true);
 });
 
 test("[GRW-04][GRW-06] the admin merges, names, builds and ships a need; askers hear the version; the map and release lines", async (t) => {

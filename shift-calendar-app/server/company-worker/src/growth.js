@@ -1,4 +1,4 @@
-import { all, audit, batch, iso, json, one, randomId, readJson, run, stmt } from "./index.js";
+import { all, audit, batch, iso, json, one, overLimit, randomId, readJson, run, stmt } from "./index.js";
 import { DAY } from "./units.js";
 import { grams, likeness, titleFrom } from "./inbox.js";
 import { fcmTell } from "./fcm.js";
@@ -54,7 +54,26 @@ export const GROWTH_SCHEMA = [
   // [GRW-05] 승격 사다리: 2 모두의 도구, 3 기본 도구 후보, 4 기본 도구로 채택(운영자). later: 운영자가 '다음에'로 미룬 후보.
   `CREATE TABLE IF NOT EXISTS recipe_tiers (code TEXT PRIMARY KEY, tier INTEGER NOT NULL, since INTEGER NOT NULL, later INTEGER NOT NULL DEFAULT 0,
     version TEXT, note TEXT NOT NULL DEFAULT '')`,
+  // 1.36 누락 점검 N13: 찾아도 없던 말, 사용자가 '없다고 알리기'를 눌렀을 때만. 누가 보냈는지는 남기지 않고 주마다 센 수만.
+  `CREATE TABLE IF NOT EXISTS search_misses (word TEXT NOT NULL, place TEXT NOT NULL, week TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (word, place, week))`,
 ];
+
+export const MISS_PLACES = { settings: "설정 검색", studio: "스튜디오", help: "도움말·기능 찾기" };
+
+/** A word worth counting: 2~30 letters, no long numbers (전화·계좌), no mail or link; else null. */
+export function missWord(q) {
+  const w = String(q ?? "").normalize("NFC").replace(/\s+/g, " ").trim().toLowerCase();
+  if ([...w].length < 2 || [...w].length > 30) return null;
+  if (/\d{3,}|@|https?:|www\.|[<>{}]/.test(w)) return null;
+  return w;
+}
+
+const missWeek = (now) => {
+  const d = new Date(now);
+  const day = (d.getUTCDay() + 6) % 7;
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day)).toISOString().slice(0, 10);
+};
 /** [GRW-03] 요청 판 한 줄이 묶음에서 왔으면 부탁한 분 수. */
 export const GROWTH_COLUMNS = ["ALTER TABLE recipe_requests ADD COLUMN askers INTEGER NOT NULL DEFAULT 0"];
 
@@ -232,7 +251,34 @@ export async function toolsList(env, url) {
 
 export async function growthRoute(request, env, path, url) {
   if (path === "/api/recipes/tools" && request.method === "GET") return toolsList(env, url);
+  // 1.36 N13 POST /api/growth/miss {place, q}: no device, no install; a rate limit by the connection only.
+  if (path === "/api/growth/miss" && request.method === "POST") {
+    const now = Date.now();
+    const body = await readJson(request, 512);
+    const ip = request.headers.get("cf-connecting-ip") || "unknown";
+    const hit = await overLimit(env, now, [["ip", `miss|${await sha(ip)}`, 30, 3600_000]]);
+    if (hit) return hit;
+    const place = Object.hasOwn(MISS_PLACES, body?.place) ? body.place : null;
+    const word = missWord(body?.q);
+    if (!place || !word) return json({ ok: true, counted: false });
+    await run(env, `INSERT INTO search_misses (word, place, week, n) VALUES (?, ?, ?, 1)
+      ON CONFLICT (word, place, week) DO UPDATE SET n = n + 1`, word, place, missWeek(now));
+    return json({ ok: true, counted: true });
+  }
   return null;
+}
+
+async function sha(s) {
+  const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`miss:${s}`));
+  return [...new Uint8Array(b)].slice(0, 8).map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+/** 1.36 N13 관리자: 지난 4주 동안 '없다고 알리기'가 많은 말 (2번 이상만, 한 사람이 쓴 말은 보이지 않게). */
+export async function missList(env, now) {
+  const from = missWeek(now - 21 * DAY);
+  const rows = await all(env, `SELECT word, place, SUM(n) AS n FROM search_misses WHERE week >= ? GROUP BY word, place HAVING SUM(n) >= 2
+    ORDER BY n DESC LIMIT 50`, from);
+  return rows.map((r) => ({ word: r.word, place: r.place, placeName: MISS_PLACES[r.place], n: r.n }));
 }
 
 // ---- the admin app's side (/api/admin/growth/…) ----
@@ -359,7 +405,7 @@ export async function growthAdmin(request, env, url, path, now) {
   }
   if (path === "/growth/map" && method === "GET") {
     const version = url.searchParams.get("version");
-    return json({ items: await handleMap(env), lines: version && GRW_VERSION.test(version) ? await releaseLines(env, version) : [] });
+    return json({ items: await handleMap(env), lines: version && GRW_VERSION.test(version) ? await releaseLines(env, version) : [], misses: await missList(env, Date.now()) });
   }
   if (path === "/growth/tools" && method === "GET") {
     const show = ["candidates", "tools", "adopted", "later"].includes(url.searchParams.get("show")) ? url.searchParams.get("show") : "candidates";

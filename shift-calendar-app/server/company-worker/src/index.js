@@ -485,6 +485,8 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/activity" && method === "GET") return activity(request, env);
   // 1.36 [PUSH-01] 문의 답 바로 알리기: the phone's FCM token.
   if (path === "/api/push/phone") { const r = await fcmRoute(request, env, path); if (r) return r; }
+  // 1.36 누락 점검 N13: 찾아도 없던 말 ('없다고 알리기').
+  if (path === "/api/growth/miss") { const r = await growthRoute(request, env, path, url); if (r) return r; }
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   if (path === "/api/config" && method === "GET") return json(await config(env));
   if (path === "/api/events" && method === "POST") return usage(request, env);

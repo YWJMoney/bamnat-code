@@ -156,7 +156,12 @@ export function workViews(A) {
       <div class="table-wrap"><table class="table"><thead><tr><th scope="col">영역</th><th scope="col">도구</th><th scope="col">기다리는 분</th><th scope="col">모두</th><th scope="col">사용자 부품으로 풀림</th><th scope="col">손잡이로 나옴</th></tr></thead>
       <tbody>${d.items.map((r) => `<tr><td>${esc(r.area)}</td><td>${esc(r.tool || "-")}</td><td><b>${r.waiting}</b></td><td>${r.askers}</td><td>${r.solved}</td><td>${r.official}</td></tr>`).join("") || '<tr><td colspan="6">아직 요구가 없어요</td></tr>'}</tbody></table></div>
       <form data-form="growth-lines" class="mini"><label for="gv">출시 노트 줄 만들기 (판)</label><input id="gv" name="version" placeholder="1.36" value="${esc(v)}" maxlength="8"><button class="btn small" type="submit">만들기</button></form>
-      ${d.lines?.length ? `<pre class="copy-box">${esc(d.lines.join("\n"))}</pre><button class="btn small" data-act="growth-copy">복사</button>` : v ? '<p class="hint">이 판에 나온 요구·채택한 도구가 없어요.</p>' : ""}`;
+      ${d.lines?.length ? `<pre class="copy-box">${esc(d.lines.join("\n"))}</pre><button class="btn small" data-act="growth-copy">복사</button>` : v ? '<p class="hint">이 판에 나온 요구·채택한 도구가 없어요.</p>' : ""}
+      <h3>찾아도 없던 말 (지난 4주)</h3>
+      <p class="hint">설정·스튜디오·기능 찾기에서 결과가 없을 때 사용자가 '없다고 알리기'를 누른 말이에요. 누가 보냈는지는 없고, 2번 이상 모인 말만 보여요.</p>
+      ${d.misses?.length ? `<div class="table-wrap"><table class="table"><thead><tr><th scope="col">말</th><th scope="col">어디서</th><th scope="col">횟수</th></tr></thead>
+      <tbody>${d.misses.map((m) => `<tr><td>${esc(m.word)}</td><td>${esc(m.placeName ?? m.place)}</td><td><b>${m.n}</b></td></tr>`).join("")}</tbody></table></div>`
+        : '<p class="hint">아직 모인 말이 없어요.</p>'}`;
   }
 
   function growthView() {

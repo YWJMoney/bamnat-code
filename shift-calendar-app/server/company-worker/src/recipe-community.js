@@ -131,7 +131,31 @@ async function rcLineage(d, env, code) {
   }
   const kids = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner
     WHERE r.parent = ? AND r.state = 'visible' AND r.scope = 'public' ORDER BY r.likes DESC, r.created_at DESC LIMIT 30`, code);
-  return d.json({ code, parents: up, children: await rcWithMaker(d, env, kids, now) });
+  // 1.36 누락 점검 N15: 고친 판마다 '바꾼 곳' 한 줄 (조각 종류마다 새로 넣음·뺌·바꿈), 열어 보지 않아도.
+  const mine = kids.length ? (await d.one(env, "SELECT body FROM recipes WHERE code = ?", code))?.body : null;
+  const children = (await rcWithMaker(d, env, kids, now)).map((k, i) => ({ ...k, changed: pieceChanges(mine, kids[i].body) }));
+  return d.json({ code, parents: up, children });
+}
+
+/** 1.36 N15: which kinds of piece differ between two recipe bodies, as [{kind, how: add|del|edit}] (at most 8). */
+export function pieceChanges(fromBody, toBody) {
+  const group = (body) => {
+    const m = new Map();
+    try {
+      for (const p of JSON.parse(body)?.pieces ?? []) {
+        const k = String(p?.kind ?? "");
+        if (k) m.set(k, [...(m.get(k) ?? []), JSON.stringify(p)]);
+      }
+    } catch { /* an unreadable body has no pieces */ }
+    for (const [k, v] of m) m.set(k, v.sort().join("\n"));
+    return m;
+  };
+  const a = group(fromBody);
+  const b = group(toBody);
+  const out = [];
+  for (const [k, v] of b) if (!a.has(k)) out.push({ kind: k, how: "add" }); else if (a.get(k) !== v) out.push({ kind: k, how: "edit" });
+  for (const k of a.keys()) if (!b.has(k)) out.push({ kind: k, how: "del" });
+  return out.slice(0, 8);
 }
 
 // ---- [RCX-02] 새 판 확인 (구독은 휴대폰에만) ----
@@ -147,12 +171,14 @@ async function rcVersions(d, env, url) {
 
 // ---- [RCX-04] 요청 판 ----
 
-function rcRequestItem(q, dev, liked) {
+function rcRequestItem(q, dev, liked, told = false) {
   return {
     id: q.id, style: q.style, body: q.body, likes: q.likes, state: q.state, code: q.code ?? null, at: new Date(q.created_at).toISOString(),
     mine: Boolean(dev && q.device === dev), taking: Boolean(dev && q.maker === dev), ...(liked ? { liked: true } : {}),
     // 1.36 [GRW-03] 스튜디오 요구가 모여 저절로 올라온 줄: 부탁한 분 수.
     ...(q.device === "operator" && q.askers > 0 ? { askers: q.askers } : {}),
+    // 1.36 누락 점검 N14: 14일 동안 아무도 만들지 않아 스튜디오 요구로 넘어간 요청 (개발자에게 알림).
+    ...(told && q.state === "waiting" ? { told: true } : {}),
   };
 }
 
@@ -164,7 +190,9 @@ async function rcRequestList(d, env, request, url) {
     ORDER BY CASE state WHEN 'done' THEN 1 ELSE 0 END, likes DESC, created_at DESC LIMIT 60`, ...(style ? [style] : []));
   const liked = dev && rows.length ? new Set((await d.all(env, `SELECT id FROM recipe_request_likes WHERE device = ? AND id IN (${rows.map(() => "?").join(",")})`,
     dev, ...rows.map((q) => q.id))).map((x) => x.id)) : new Set();
-  return d.json({ items: rows.map((q) => rcRequestItem(q, dev, liked.has(q.id))) });
+  const told = rows.length ? new Set((await d.all(env, `SELECT ref FROM studio_need_links WHERE src = 'req' AND ref IN (${rows.map(() => "?").join(",")})`,
+    ...rows.map((q) => q.id))).map((x) => x.ref)) : new Set();
+  return d.json({ items: rows.map((q) => rcRequestItem(q, dev, liked.has(q.id), told.has(q.id))) });
 }
 
 async function rcRequestPost(d, env, request) {

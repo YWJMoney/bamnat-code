@@ -186,6 +186,9 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                                 Text(q.body, style = MaterialTheme.typography.bodyLarge)
                                 Text("${stateWord(q.state)}" + (if (q.askers > 0) " · 스튜디오에서 ${q.askers}명이 부탁" else "") + " · 좋아요 ${q.likes}" + (if (q.mine) " · 내 요청" else "") + (if (q.taking) (if (q.state == "done") " · 내가 만든 작품" else " · 내가 만드는 중") else ""),
                                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                // 1.36 누락 점검 N14 (1차 사용성 제안): 14일 동안 아무도 못 만든 요청은 이유와 다음 일을 말해요.
+                                if (q.told && q.state == "waiting") Text("스튜디오로 아직 못 만드는 것일 수 있어요. 개발자에게 알렸어요. 만들 수 있게 되면 이 요청에 알려 드려요",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (!q.mine && vm.canWrite) FilterChip(q.liked, onClick = { vm.act(q.id, "like", !q.liked) }, label = { Text("👍 나도 바라요") })
                                     when {

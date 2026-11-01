@@ -937,6 +937,8 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
             TextButton(onClick = { InquiryLinks.ask(InquiryStart(help = true, text = query)) }) { Text(if (nothing) "기능 찾기" else "도움말") }
         }
     }
+    // 1.36 누락 점검 N13: 아무것도 없으면 그 말을 이름 없이 알릴 수 있어요.
+    if (nothing) SearchMissRow("settings", query, Modifier.padding(start = 4.dp, top = 4.dp))
 }
 
 /** [UX-04] What people open most, one tap from the top: work, pay, sharing, the alarm's sound, a backup. */
