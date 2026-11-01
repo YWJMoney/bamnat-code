@@ -52,10 +52,10 @@ object RewardLedger {
     /** A bundle opened one way only: "급여 7일(처음 무료)". */
     private val ONE_WAY = mapOf("처음" to "처음 무료")
 
-    /** [days] at the yearly price a day, to the 100원; null without a price. */
+    /** [days] at the yearly price a day, to the 10원 (1.36 PC: 553원 said as 600원 read too far off); null without a price. */
     fun wonValue(days: Long, yearlyMicros: Long?): Long? {
         if (yearlyMicros == null || yearlyMicros <= 0 || days <= 0) return null
-        return (days * (yearlyMicros / 1_000_000.0) / 365 / 100).roundToLong() * 100
+        return (days * (yearlyMicros / 1_000_000.0) / 365 / 10).roundToLong() * 10
     }
 
     /** The yearly plan's price a day in 원 ("하루 82원"), or null. */

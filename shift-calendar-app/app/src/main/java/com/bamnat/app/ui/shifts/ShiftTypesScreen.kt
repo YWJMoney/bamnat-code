@@ -162,6 +162,10 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
         },
     ) { padding ->
         val list = types
+        val folded by vm.folded.collectAsStateWithLifecycle()
+        var foldedOpen by rememberSaveable { mutableStateOf(false) }
+        // Never every kind folded away: then all of them show.
+        val shown = list?.filter { it.id !in folded }?.takeIf { it.isNotEmpty() } ?: list.orEmpty()
         if (list == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             return@Scaffold
@@ -197,11 +201,11 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                     }
                 }
             }
-            itemsIndexed(list, key = { _, t -> t.id }) { index, type ->
+            itemsIndexed(shown, key = { _, t -> t.id }) { index, type ->
                 ShiftTypeRow(
                     type = type,
                     canMoveUp = index > 0,
-                    canMoveDown = index < list.lastIndex,
+                    canMoveDown = index < shown.lastIndex,
                     onClick = { editing = type },
                     // [SHFT-09] Any kind can go while another is left; the last one cannot.
                     onDelete = if (list.size > 1) ({ deleting = type }) else null,
@@ -209,6 +213,32 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                     onMoveDown = { vm.move(type.id, 1) },
                     modifier = Modifier.animateItem(),
                 )
+            }
+            // 1.36 PC 재검토: kinds put away after a change of work (알바 → 현장), folded here; past days keep them.
+            val away = list.filter { it.id in folded }
+            if (away.isNotEmpty() && away.size < list.size) {
+                item(key = "folded-head") {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { foldedOpen = !foldedOpen }.padding(top = 12.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("안 쓰는 종류 ${away.size}개", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                "하루 시트에서 빠졌어요. 지난 날짜 기록과 급여는 그대로예요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(if (foldedOpen) "접기" else "펼치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                if (foldedOpen) items(away, key = { "folded-${it.id}" }) { type ->
+                    Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(type.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { vm.unfold(type.id) }) { Text("다시 쓰기") }
+                    }
+                }
             }
         }
     }

@@ -244,7 +244,8 @@ class MainActivity : ComponentActivity() {
         // [MON-02] The server's answer, passes and Play's purchases. [MON-07] Google's consent form and
         // the ads SDK start only when an ad may show: [FLAG-09] with the `ads` row on, without 프로, with ad ids, and
         // [SRV-07] not in the first three days after install.
-        c.syncPro()
+        // 1.36 PC 재검토: the first start of this process is an open afresh (the 정식 출시 switch is asked again sooner).
+        c.syncPro(opened = !openedOnce).also { openedOnce = true }
         if (com.bamnat.core.tier.AdRules.sdkMayStart(c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS), c.featureGate.state.value.allows(com.bamnat.app.tier.Feature.NO_ADS),
                 c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
@@ -264,6 +265,8 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val CATCH_UP_EVERY = 30 * 60 * 1000L
         @Volatile var lastCatchUp = 0L
+        /** 1.36 PC 재검토: this process already had its first start (later starts come back from the background). */
+        @Volatile var openedOnce = false
         const val KEY_AWAITING = "awaiting_result"
         const val KEY_LEFT_AT = "left_at"
         val LIGHT_SCRIM = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)
