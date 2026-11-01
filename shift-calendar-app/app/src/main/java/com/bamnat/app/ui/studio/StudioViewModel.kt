@@ -322,16 +322,21 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         get() = lockedNow
         set(v) { lockedNow = v; lockPrefs.edit().putString("locked", v.joinToString(",")).apply() }
 
+    private fun darkOf(d: AppSettings): Boolean = when (d.themeMode) {
+        com.bamnat.app.data.ThemeMode.DARK -> true
+        com.bamnat.app.data.ThemeMode.LIGHT -> false
+        else -> (c.appContext.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
+
     private fun keepLocked(prev: AppSettings, next: AppSettings): AppSettings {
         if (locked.isEmpty()) return next
-        val dark = when (prev.themeMode) {
-            com.bamnat.app.data.ThemeMode.DARK -> true
-            com.bamnat.app.data.ThemeMode.LIGHT -> false
-            else -> (c.appContext.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-                android.content.res.Configuration.UI_MODE_NIGHT_YES
-        }
+        val dark = darkOf(prev)
         return locked.fold(next) { acc, tab -> StudioColors.hold(tab, acc, prev, dark) }
     }
+
+    /** PC 확인 1.36: a locked [tab] that draws as it started — 바꾼 곳 says 잠가서 그대로, not the colours [StudioColors.hold] wrote out. */
+    fun lockedSame(tab: String): Boolean = tab in locked && _state.value.let { StudioColors.sameLook(tab, it.draft, it.base, darkOf(it.base)) }
 
     /** PC 확인 S7: the 느낌 (변형, 어두운 화면) the last start was made with, so 한 색 opens on it. */
     var seedFeel: Pair<com.bamnat.core.recipe.ThemeSeed.Variant, Boolean>? = null

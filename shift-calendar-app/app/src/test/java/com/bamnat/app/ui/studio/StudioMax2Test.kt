@@ -69,6 +69,9 @@ class StudioMax2Test {
         vm.changeMerged("앱 전체 · 한 색") { StudioColors.withScheme(it, ThemeSeed.scheme(0xFF2F5BEAL), true) }
         idle()
         assertEquals("잠근 달력은 한 색에도 그대로", before, vm.state.value.draft.calTheme)
+        // PC 확인 1.36: the colours hold wrote out draw the same, so 바꾼 곳 says 잠가서 그대로; 메모, not locked, did change.
+        assertTrue("잠근 달력은 그대로로 셈", vm.lockedSame(TabOrder.CALENDAR))
+        assertTrue(!StudioColors.sameLook(TabOrder.MEMOS, vm.state.value.draft, vm.state.value.base))
         assertEquals("다음에 열어도 잠겨 있어요", setOf(TabOrder.CALENDAR), StudioViewModel(c).locked)
         vm.locked = emptySet()
     }

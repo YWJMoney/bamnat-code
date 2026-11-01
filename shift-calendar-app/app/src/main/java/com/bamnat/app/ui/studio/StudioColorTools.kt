@@ -163,6 +163,30 @@ internal object StudioColors {
         }
     }
 
+    /**
+     * PC 확인 1.36 (달력을 잠갔는데 한 색 뒤 바꾼 곳에 '달력 색·배경'이 나옴): [hold] writes a locked screen's colours out, so its look is
+     * stored differently but drawn the same. True when [tab] draws in [a] as in [b] — the same colours once 'follow 앱 전체' and the app's
+     * own are filled in, the same pictures, and the tab's own looks.
+     */
+    fun sameLook(tab: String, a: AppSettings, b: AppSettings, dark: Boolean = false): Boolean {
+        val app = if (dark) com.bamnat.app.ui.theme.DarkColors else com.bamnat.app.ui.theme.LightColors
+        fun argb(c: androidx.compose.ui.graphics.Color) = c.toArgb().toLong() and 0xFFFFFFFFL
+        val la = ScreenLooks.decode(a.screenLooks)
+        val lb = ScreenLooks.decode(b.screenLooks)
+        fun drawn(l: ScreenLooks, k: String) = l.of(k).let { x ->
+            listOf(x.bg ?: argb(app.background), x.card ?: argb(app.surfaceContainerLow), x.ink ?: argb(app.onSurface), x.accent ?: argb(app.primary), x.photo, x.dim)
+        }
+        if (screensOf(tab).any { k -> drawn(la, k) != drawn(lb, k) }) return false
+        return when (tab) {
+            com.bamnat.core.layout.TabOrder.CALENDAR -> a.calTheme == b.calTheme && a.calView == b.calView && a.photoLook == b.photoLook &&
+                a.calendarLayout == b.calendarLayout
+            com.bamnat.core.layout.TabOrder.MONEY -> a.moneyLook == b.moneyLook && a.moneyLayout == b.moneyLayout
+            com.bamnat.core.layout.TabOrder.MEMOS -> a.memoLook == b.memoLook && a.memoLayout == b.memoLayout
+            com.bamnat.core.layout.TabOrder.STATS -> a.payLooks == b.payLooks && a.statsLayout == b.statsLayout
+            else -> true
+        }
+    }
+
     /** Where the seed starts: '앱 전체' 강조, else 오늘 색, else the app's blue. */
     fun seedOf(d: AppSettings): Long = ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]?.accent
         ?: CalendarTheme.decode(d.calTheme).today ?: ThemeSeed.DEFAULT_SEED

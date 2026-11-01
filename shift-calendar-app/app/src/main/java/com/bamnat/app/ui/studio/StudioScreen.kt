@@ -1017,6 +1017,12 @@ private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: 
             // [STU-39] 잠그기, where every screen's changes are listed.
             LockChips(vm)
             parts.groupBy { it.tab }.forEach { (tab, list) ->
+                // PC 제안 1.36: a locked tab that looks as it started is one line, 🔒 잠가서 그대로.
+                if (vm.lockedSame(tab)) {
+                    Text("🔒 ${LookParts.tabLabel(tab)} · 잠가서 그대로", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp))
+                    return@forEach
+                }
                 val area = when (tab) {
                     TabOrder.MONEY -> Area.MONEY; TabOrder.MEMOS -> Area.MEMO; TabOrder.STATS -> if (list.any { it.id == "stats.pay" }) Area.PAY else Area.STATS
                     TabOrder.PLAZA -> Area.PLAZA; TabOrder.SETTINGS -> Area.ALL; LookParts.WIDGET -> Area.WIDGET; else -> Area.CALENDAR
