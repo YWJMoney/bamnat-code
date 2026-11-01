@@ -403,7 +403,7 @@ class LegalPagesTest {
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.9")!!
         assertTrue(v.effective == java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 11, 29))
-        assertTrue(text.contains("처리방침 3.9 · 앱 버전 1.35.0 기준 · 게시일 2026년 10월 31일 · 시행일 2026년 11월 10일"))
+        assertTrue(text.contains("처리방침 3.9 · 앱 버전 1.35.0 기준 · 게시일 2026년 11월 1일 · 시행일 2026년 11월 10일"))
         assertTrue("3.9 is the newest version line", text.indexOf("처리방침 3.9 ·") < text.indexOf("처리방침 3.8 ·"))
         assertTrue(text.contains("정식 출시 뒤의 개정은 위 기간을 그대로 지킵니다"))
         assertTrue(text.contains("꾸미기 그림"))
@@ -420,7 +420,7 @@ class LegalPagesTest {
         // 1.35 테마 기간(사용자 2026-10-30): 1-8 보상형 광고로 남의 테마 입기, 약관 1.2 같은 날.
         assertTrue(text.contains("처음 2개는 광고 없이 입고"))
         val terms = File(site, "terms/index.html").readText()
-        assertTrue(terms.contains("이용약관 1.2 · 앱 버전 1.35.0 기준 · 게시일 2026년 10월 31일 · 시행일 2026년 11월 10일"))
+        assertTrue(terms.contains("이용약관 1.2 · 앱 버전 1.35.0 기준 · 게시일 2026년 11월 1일 · 시행일 2026년 11월 10일"))
         assertTrue(terms.contains("테마 옷장(테마 10벌 저장, 광고·기간 없이)"))
     }
 

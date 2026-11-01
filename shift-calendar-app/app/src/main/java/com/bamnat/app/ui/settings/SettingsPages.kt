@@ -965,7 +965,7 @@ private fun AboutPage() {
     SectionCard(title = "앱 정보") {
         // [MON-05] What paying for 프로 agrees to.
         NavRow("이용약관", "프로 구독·체험·해지·환불") {
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.bamnat.app.ui.pro.TERMS_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            com.bamnat.app.ui.components.PolicyPage.open(context, com.bamnat.app.ui.pro.TERMS_URL, "이용약관")
         }
         HorizontalDivider()
         // [OPS-23] The libraries the app ships with.
@@ -988,7 +988,7 @@ internal const val AD_PRIVACY_WORDS =
 private const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/"
 
 private fun openPrivacy(context: android.content.Context) {
-    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침")
 }
 
 /**

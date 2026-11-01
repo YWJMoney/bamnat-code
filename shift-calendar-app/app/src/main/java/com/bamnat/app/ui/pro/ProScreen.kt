@@ -355,8 +355,8 @@ private fun PlansCard(c: AppContainer, gate: Gate, pro: ProState, plans: List<Pl
                     onMessage(if (c.proStore.current.sub != null) "구독을 다시 찾았어요" else "이 Google 계정에서 찾은 구독이 없어요")
                 }
             }) { Text("구매 복원") }
-            TextButton(onClick = { open(context, TERMS_URL) }) { Text("이용약관") }
-            TextButton(onClick = { open(context, PRIVACY_URL) }) { Text("개인정보처리방침") }
+            TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관") }) { Text("이용약관") }
+            TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침") }) { Text("개인정보처리방침") }
         }
     }
 }

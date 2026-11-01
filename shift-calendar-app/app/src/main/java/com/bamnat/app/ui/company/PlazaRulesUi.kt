@@ -94,7 +94,7 @@ private fun PlazaRulesDialog(gate: PlazaRulesGate) {
                     else Text("${i + 1}. $line", style = MaterialTheme.typography.bodySmall)
                 }
                 TextButton(onClick = {
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PlazaRules.URL))) }
+                    com.bamnat.app.ui.components.PolicyPage.open(context, PlazaRules.URL, "광장 운영 규칙")
                 }) { Text("운영 규칙 전체 보기") }
             }
         },

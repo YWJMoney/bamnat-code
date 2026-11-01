@@ -724,6 +724,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // AG 1.27 [MON-12] A tap on a locked 프로 feature: 프로, the rewarded ad, or 친구 초대 (ProOffer).
     com.bamnat.app.ui.pro.ProOfferHost(container)
+    // 1.36 PC W43: the policy pages inside the app, not Chrome's first-run sign-in.
+    com.bamnat.app.ui.components.PolicyPageHost()
     com.bamnat.app.ui.pro.ProPaywallHost(container)
 
     // [PLAZA-07] 결정 D79: the one-time ask to share the work order and pay way; yes opens the company's 광장.
