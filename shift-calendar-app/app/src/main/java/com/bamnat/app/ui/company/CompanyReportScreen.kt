@@ -522,7 +522,7 @@ private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (Str
         } else {
             Text("어떤 일인가요? (선택)", style = MaterialTheme.typography.titleSmall)
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                com.bamnat.app.company.Plaza.JOBS.forEach { (key, name) ->
+                com.bamnat.app.ui.company.rememberJobs().forEach { (key, name) ->
                     com.bamnat.app.ui.components.FilterChip(selected = job == key, onClick = { onJob(if (job == key) "" else key) }, label = { Text(name) })
                 }
             }

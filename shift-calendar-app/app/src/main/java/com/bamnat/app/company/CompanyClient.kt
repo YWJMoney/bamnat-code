@@ -412,6 +412,22 @@ object Plaza {
     )
 
     fun job(key: String): String = JOBS[key] ?: ""
+
+    /**
+     * PC 확인 V41: [JOBS] with the ones a kind of work most often is first (일근 starts at 공무원·제조, not 교대 근무); the same
+     * keys, only the order changes.
+     */
+    fun jobsFor(style: com.bamnat.core.work.WorkStyle?): List<Pair<String, String>> {
+        val first = when (style) {
+            com.bamnat.core.work.WorkStyle.DAY -> listOf("public", "factory", "care", "security", "transport", "nurse")
+            com.bamnat.core.work.WorkStyle.HOURLY -> listOf("hourly", "shop", "care")
+            com.bamnat.core.work.WorkStyle.FIELD -> listOf("construction", "field", "transport")
+            com.bamnat.core.work.WorkStyle.BUSINESS -> listOf("shop", "hourly")
+            else -> emptyList()
+        }
+        val all = JOBS.entries.map { it.key to it.value }
+        return first.mapNotNull { k -> JOBS[k]?.let { k to it } } + all.filter { it.first !in first }
+    }
     fun region(key: String): String = REGIONS[key] ?: "전국"
     fun unit(key: String): String = RATE_UNITS[key]?.name ?: key
 }

@@ -124,7 +124,7 @@ fun PlazaFilterBar(
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(selected = filter.job.isEmpty(), onClick = { onChange(filter.copy(job = "")) }, label = { Text("모든 광장") })
-            Plaza.JOBS.forEach { (key, name) ->
+            rememberJobs().forEach { (key, name) ->
                 val n = plazas.firstOrNull { it.key == key }?.let { it.adopted + it.voting } ?: 0
                 FilterChip(selected = filter.job == key, onClick = { onChange(filter.copy(job = if (filter.job == key) "" else key)) },
                     label = { Text(if (n > 0) "$name $n" else name) })
@@ -404,7 +404,7 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
             ) {
                 item {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Plaza.JOBS.forEach { (key, name) ->
+                        rememberJobs().forEach { (key, name) ->
                             FilterChip(selected = filter.job == key, onClick = { vm.setFilter(filter.copy(job = key)) }, label = { Text(name) })
                         }
                     }

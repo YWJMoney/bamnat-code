@@ -395,7 +395,8 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
 private fun MockSummary(style: WorkStyle?) {
     // [STU-03] What this kind of work's summary card says (자유도 점검 F-45: a 투자·가게 example showed 근무·급여).
     val items = when (style) {
-        WorkStyle.HOURLY -> listOf("일한 날" to "12일", "시간" to "64h", "급여" to "예상")
+        // PC 확인 V43: the same count as the example month's 일 11.
+        WorkStyle.HOURLY -> listOf("일한 날" to "11일", "시간" to "58h", "급여" to "예상")
         WorkStyle.FIELD -> listOf("일한 날" to "15일", "공수" to "16.5", "받을 돈" to "예상")
         WorkStyle.BUSINESS -> listOf("영업" to "24일", "매출" to "합계", "순이익" to "예상")
         WorkStyle.INVEST -> listOf("기록" to "9일", "수익률" to "이번 달", "원금" to "합계")

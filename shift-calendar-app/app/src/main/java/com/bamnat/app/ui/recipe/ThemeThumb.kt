@@ -68,7 +68,7 @@ fun ThemeThumb(look: ThemeSwatch, modifier: Modifier = Modifier, width: Dp = 120
                     val color = Color(((d.color ?: 0xFF757575L) or 0xFF000000L).toInt())
                     val off = d.role == "off"
                     val shape = cellShape(view, cellLook)
-                    val tint = cellTint(cellLook, color.takeIf { !off }, if (off) null else color.copy(alpha = 0.16f), null)
+                    val tint = cellTint(cellLook, color.takeIf { !off }, if (off) null else color.copy(alpha = 0.34f), null)
                     val number = when {
                         today -> look.today?.let { Color((it or 0xFF000000L).toInt()) } ?: accent
                         dow == 7 -> look.sun?.let { Color((it or 0xFF000000L).toInt()) } ?: Color(0xFFC62828)
