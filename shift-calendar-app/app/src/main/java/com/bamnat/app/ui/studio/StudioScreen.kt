@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.studio
 
+import com.bamnat.app.ui.decor.decor
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -830,7 +831,9 @@ private fun WidgetSample(w: WidgetLook) {
     val scale = w.textScale
     Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),
         contentAlignment = Alignment.Center) {
-        Column(Modifier.clip(RoundedCornerShape((w.corner ?: 20).dp)).background(plate).padding(horizontal = 20.dp, vertical = 14.dp)) {
+        // [LAY-07] 위젯 꾸밈 drawn on the plate as the home screen draws it.
+        Column(Modifier.fillMaxWidth().heightIn(min = 120.dp).clip(RoundedCornerShape((w.corner ?: 20).dp)).background(plate)
+            .decor(com.bamnat.core.recipe.Decor.WIDGET).padding(horizontal = 20.dp, vertical = 14.dp)) {
             // PC 확인 W1 1.36 (예시 근무가 내 근무와 달라요): my own today and tomorrow, the example only before any work is set.
             val (today, tomorrow) = rememberTwoDays() ?: ("오늘 · 주간 07:00" to "내일 · 야간 22:00")
             Text(today, color = ink, style = MaterialTheme.typography.titleMedium, fontSize = (16 * scale).sp)

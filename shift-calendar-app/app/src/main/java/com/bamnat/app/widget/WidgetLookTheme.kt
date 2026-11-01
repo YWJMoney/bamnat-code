@@ -32,6 +32,9 @@ fun wsp(size: Number): androidx.compose.ui.unit.TextUnit = (size.toFloat() * Loc
 /** [RCX-30] 1.35 그림 꾸미기의 위젯 배경, read from files/looks/ (small: 800 px). */
 private val LocalWidgetPicture = compositionLocalOf<android.graphics.Bitmap?> { null }
 
+/** [LAY-07] 1.36 꾸밈 층, read once per widget draw. */
+private val LocalWidgetDecor = compositionLocalOf { com.bamnat.core.recipe.Decor() }
+
 /**
  * [RCX-14] 1.35 위젯 모양 (설정 › 달력 화면, or a recipe's 위젯 모양 piece): the widgets' colours follow the phone, or always light or
  * dark, and their background is as opaque as chosen. With nothing chosen it is the app's own [GlanceTheme].
@@ -41,6 +44,7 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
     val settings = runCatching { (context.applicationContext as BamnatApp).container.settingsRepository.current }.getOrNull()
     val look = settings?.widgetLook?.let(WidgetLook::decode) ?: WidgetLook()
+    val decor = settings?.decor?.let { runCatching { com.bamnat.core.recipe.Decor.decode(it) }.getOrNull() } ?: com.bamnat.core.recipe.Decor()
     val pictureId = settings?.photoLook?.let { com.bamnat.core.recipe.PhotoLook.decode(it).widget }
     val picture = pictureId?.let { id ->
         runCatching { com.bamnat.app.recipe.LookImages.file(context, id).takeIf { it.isFile }?.let { android.graphics.BitmapFactory.decodeFile(it.path) } }.getOrNull()
@@ -60,7 +64,7 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
         // A picture behind the widget is veiled at least 45 % so its words read.
         CompositionLocalProvider(LocalWidgetAlpha provides if (picture != null) minOf(look.alpha / 100f, 0.55f).coerceAtLeast(0.45f) else look.alpha / 100f,
             LocalWidgetPicture provides picture, LocalWidgetBgColor provides ownBg, LocalWidgetCorner provides (look.corner ?: 20),
-            LocalWidgetText provides look.textScale) { content() }
+            LocalWidgetText provides look.textScale, LocalWidgetDecor provides decor) { content() }
     }
 }
 
@@ -85,7 +89,25 @@ fun WidgetSurface(modifier: androidx.glance.GlanceModifier, content: @Composable
     androidx.glance.layout.Box(modifier.fillMaxSize().cornerRadius(r)) {
         if (picture != null) androidx.glance.Image(androidx.glance.ImageProvider(picture), contentDescription = null,
             contentScale = androidx.glance.layout.ContentScale.Crop, modifier = androidx.glance.GlanceModifier.fillMaxSize().cornerRadius(r))
-        androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(r).padding(12.dp)) { content() }
+        val decor = LocalWidgetDecor.current
+        if (!decor.has(com.bamnat.core.recipe.Decor.WIDGET)) {
+            androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(r).padding(12.dp)) { content() }
+            return@Box
+        }
+        // [LAY-07] 꾸밈 층: the ones under the words on the ground, the content, then the ones over it.
+        val context = LocalContext.current
+        val sz = androidx.glance.LocalSize.current
+        val accent = GlanceTheme.colors.primary.getColor(context)
+        val ink = GlanceTheme.colors.onSurface.getColor(context)
+        val under = WidgetDecor.bitmap(context, decor, sz.width.value, sz.height.value, false, accent, ink)
+        val over = WidgetDecor.bitmap(context, decor, sz.width.value, sz.height.value, true, accent, ink)
+        androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(r)) {
+            if (under != null) androidx.glance.Image(androidx.glance.ImageProvider(under), contentDescription = null,
+                contentScale = androidx.glance.layout.ContentScale.FillBounds, modifier = androidx.glance.GlanceModifier.fillMaxSize())
+            androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().padding(12.dp)) { content() }
+            if (over != null) androidx.glance.Image(androidx.glance.ImageProvider(over), contentDescription = null,
+                contentScale = androidx.glance.layout.ContentScale.FillBounds, modifier = androidx.glance.GlanceModifier.fillMaxSize())
+        }
     }
 }
 

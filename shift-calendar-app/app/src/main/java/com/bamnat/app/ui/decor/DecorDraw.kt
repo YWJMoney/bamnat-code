@@ -187,12 +187,6 @@ internal fun familyOf(id: String?): FontFamily = when (id) {
 fun decorDay(date: java.time.LocalDate, role: String?, today: Boolean, dim: Boolean = false): DecorDay =
     DecorDay(date.monthValue, date.dayOfMonth, date.dayOfWeek.value, role, today, com.bamnat.core.holiday.KoreanHolidays.nameOf(date) != null, dim)
 
-/** [LAY-03] For call sites that would rather not import the extension: `Modifier.then(with(DecorMod) { decorOf(anchor) })`. */
-object DecorMod {
-    @Composable
-    fun decorOf(anchor: String, day: DecorDay? = null): Modifier = Modifier.decor(anchor, day)
-}
-
 /**
  * [LAY-03] A screen's background decorations ([Decor.APP] and "bg." + [screenKey]) as a layer the size of its parent: [over] false
  * for the ones under the screen's words, true for the ones its maker put over them.

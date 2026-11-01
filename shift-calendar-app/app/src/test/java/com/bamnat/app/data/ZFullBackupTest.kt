@@ -50,6 +50,8 @@ class ZFullBackupTest {
         memoLook = "layout=grid", moneyLook = "income=FF2F5BEA", screenLooks = "all:bg=FF102030", payLooks = "SHIFT:accent=FF00857A",
         // 1.36 [BLU-05] 부품 꾸미기.
         parts = """[{"fill":4294940928,"id":"cal.cell"}]""",
+        // 1.36 [LAY-01] 꾸밈 층.
+        decor = "[{\"kind\":\"emoji\",\"emoji\":\"💰\",\"at\":\"cal.cell\",\"on\":\"d25\"}]",
         // 1.26 AD.
         tabOrder = listOf("memos", "calendar"),
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].

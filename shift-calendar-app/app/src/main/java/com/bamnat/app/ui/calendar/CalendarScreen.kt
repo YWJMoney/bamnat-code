@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.decor.decor
 import androidx.compose.ui.layout.layout
 import com.bamnat.app.ui.theme.PhotoBackdrop
 import com.bamnat.app.ui.components.labelWidth
@@ -1868,7 +1869,7 @@ private fun CalendarHeader(
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     Row(
         // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
-        Modifier.fillMaxWidth().then(with(com.bamnat.app.ui.decor.DecorMod) { decorOf(com.bamnat.core.recipe.Decor.HEAD) }).padding(start = 4.dp, end = 4.dp, top = 8.dp)
+        Modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.HEAD).padding(start = 4.dp, end = 4.dp, top = 8.dp)
             .then(with(com.bamnat.app.ui.parts.PartMods) { box(headPart, MaterialTheme.shapes.medium) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
