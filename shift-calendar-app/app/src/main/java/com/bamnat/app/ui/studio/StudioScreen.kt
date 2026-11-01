@@ -558,13 +558,26 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         )
     }
     publishing?.let { (body, parent, own) ->
+        val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own") {
+            com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
+        }
+        // PC e20cfe53: 바뀐 것 없이 다시 올리기를 누르면 지난 '올렸어요' 끝 화면 대신, 바뀐 곳이 없다고 말하고 지난번 올린 것을 열어요.
+        val already = remember(publishing) { up.state.value.sent }
+        if (already != null) {
+            AlertDialog(
+                onDismissRequest = { publishing = null },
+                title = { Text("바뀐 곳이 없어요") },
+                text = { Text("지난번에 올린 그대로예요 (코드 ${already.code} · ${already.version}판). 스튜디오에서 고친 뒤 올리면 새로 올라가요",
+                    style = MaterialTheme.typography.bodyMedium) },
+                confirmButton = { TextButton(onClick = { publishing = null; onOpen(already.code) }) { Text("지난번 올린 것 보기") } },
+                dismissButton = { TextButton(onClick = { publishing = null }) { Text("스튜디오로") } },
+            )
+            return@let
+        }
         // [STU-21] 올리기 over the studio (레시피 만들기 steps 2–5): 스튜디오로 or closing comes back with the draft as it was.
         androidx.compose.ui.window.Dialog(onDismissRequest = { publishing = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
             Surface(Modifier.fillMaxSize()) {
-                val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own") {
-                    com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
-                }
                 // 빌드 751b88f6 PC 확인 (올린 뒤 나가도 '바꾼 것을 어떻게 할까요?'): once it is up, what was changed counts as kept,
                 // whether 레시피 보기 or 뒤로 follows.
                 val upState by up.state.collectAsState()

@@ -14,6 +14,14 @@ import java.time.Instant
 class SettingsSearchTest {
     private fun first(query: String) = SettingsIndex.search(query).firstOrNull()?.title
 
+    /** PC e20cfe53: "설정 › 설정 › 도움말과 문의" was shown; every place starts with 설정 once. */
+    @Test fun aPlaceStartsWithSettingsOnce() {
+        assertEquals("설정", settingsPath("설정"))
+        assertEquals("설정 › 도움말과 문의", settingsPath("설정 › 도움말과 문의"))
+        assertEquals("설정 › 알림", settingsPath("알림"))
+        SettingsIndex.search("문의").forEach { assertFalse(it.where, settingsPath(it.where).startsWith("설정 › 설정")) }
+    }
+
     @Test fun everydayWordsFindTheSetting() {
         assertEquals("알람음", first("알람 소리"))
         assertEquals("테마", first("다크 모드"))

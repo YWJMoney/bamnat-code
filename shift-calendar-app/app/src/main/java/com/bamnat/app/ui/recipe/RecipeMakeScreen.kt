@@ -619,7 +619,7 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     val r = s.recipe
     val clash = vm.sameAsParent(s)
     OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-        isError = clash, supportingText = if (clash) { { Text("원본 ‘${s.parentTitle}’과 이름이 같으면 장터에 올릴 수 없어요. 내 판 이름을 붙여 주세요") } } else null)
+        isError = clash, supportingText = if (clash) { { Text("원본 ‘${s.parentTitle}’${withWa(s.parentTitle)} 이름이 같으면 장터에 올릴 수 없어요. 내 판 이름을 붙여 주세요") } } else null)
     Row(verticalAlignment = Alignment.CenterVertically) {
         RecipeCover(r.cover, 72.dp)
         Spacer(Modifier.width(12.dp))
@@ -753,4 +753,11 @@ private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit) {
             }
         }
     }
+}
+
+/** PC e20cfe53: '과' after a final consonant, '와' after a vowel (‘B 꽉찬 교대’와, ‘야간 세트’와). Not Hangul at the end: '과'. */
+internal fun withWa(word: String): String {
+    val last = word.trimEnd().lastOrNull() ?: return "과"
+    if (last !in '가'..'힣') return "과"
+    return if ((last - '가') % 28 == 0) "와" else "과"
 }

@@ -887,7 +887,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
         ) {
             Column(Modifier.weight(1f)) {
                 Text(e.title, style = MaterialTheme.typography.bodyLarge)
-                Text(if (e.where == "설정") "설정" else "설정 › ${whereFor(e.where, screenStyle)}", style = MaterialTheme.typography.bodySmall,
+                Text(settingsPath(whereFor(e.where, screenStyle)), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)

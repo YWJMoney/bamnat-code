@@ -1521,10 +1521,15 @@ test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 
   assert.deepEqual(t.errors, []);
 });
 
-test("[GRW-12] 작품 열기: one recipe opens by its code with its own buttons, and 돌아가기 leads back to where it was opened", async (t) => {
+test("[GRW-12] 작품 열기: from 사진 검토 the recipe opens with the photo and its 보이기·가리기, and 돌아가기 leads back", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
   const s = server({ plaza: true });
+  const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([30, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.from([10, 0, 0, 0]),
+    Buffer.from([0, 0, 0, 0x9d, 0x01, 0x2a, 64, 0, 64, 0]), Buffer.alloc(16, 7)]).toString("base64");
+  const pic = (await s.call("POST", "/api/recipes/images", { device: device(1), webp }, from(1))).data;
+  assert.equal(pic.state, "pending", "a 새싹's first photo waits for a look");
   const body = { format: "bamnat-recipe", v: 1, title: "열어 볼 세트", summary: "야간이 잘 보여요", styles: ["SHIFT"],
+    cover: { a: 4282339765, b: 4288423856, dir: 1, emoji: "🌙", image: pic.id },
     pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
   const made = await s.call("POST", "/api/recipes", { device: device(1), recipe: body, scope: "public" }, from(1));
   assert.equal(made.status, 201);
@@ -1532,16 +1537,17 @@ test("[GRW-12] 작품 열기: one recipe opens by its code with its own buttons,
   const t1 = await signedIn(s.env);
   await t1.go("#/recipes");
   await t1.click('[data-act="recipe-tab"][data-key="images"]');
-  // As a 사진 검토 row's link does (that list needs an uploaded photo, so the same button is put on the page here).
-  const b = t1.document.createElement("button");
-  b.dataset.act = "recipe-open";
-  b.dataset.id = code;
-  t1.$("#main").append(b);
-  await t1.click(b);
+  await t1.settle(20);
+  await t1.click(`[data-act="recipe-open"][data-id="${code}"]`);
   await t1.settle(20);
   assert.match(t1.text("#main"), new RegExp(`작품 ${code} 하나만`));
   assert.match(t1.text("#main"), /열어 볼 세트/);
-  assert.ok(t1.$(`[data-act="recipe-do"][data-id="${code}"][data-key="hide"]`), "가리기 is right there");
+  assert.match(t1.text("#main"), /보러 온 사진/);
+  assert.ok(t1.$(`[data-act="recipe-do"][data-id="${code}"][data-key="hide"]`), "가리기 for the recipe is right there");
+  await t1.click(`[data-act="recipe-image"][data-id="${pic.id}"][data-key="ok"]`);
+  await t1.settle(20);
+  assert.match(t1.text("#main"), /보러 온 사진.*보이게 했어요/);
+  assert.ok(!t1.$(`[data-act="recipe-image"][data-id="${pic.id}"]`), "decided: the buttons go");
   const back = t1.$('[data-act="recipe-tab"][data-key="images"]:not(.chip)');
   assert.match(back.textContent, /돌아가기 · 사진 검토/);
   await t1.click(back);

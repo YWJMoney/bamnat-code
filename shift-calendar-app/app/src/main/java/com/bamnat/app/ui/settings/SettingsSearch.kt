@@ -124,6 +124,10 @@ internal const val ALARM_SOON_ROW = "곧 울릴 알람 미리 알리기"
 /** [PRF-05] 1.36 PC 사용성 P8: the row in 설정 › 개인정보. */
 internal const val SENT_ROW = "내가 보낸 정보·모두 지우기"
 
+/** PC e20cfe53: where a search result lives, starting with 설정 once ("설정 › 도움말과 문의", never "설정 › 설정 › …"). */
+internal fun settingsPath(where: String): String =
+    if (where == "설정" || where.startsWith("설정 ›")) where else "설정 › $where"
+
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
         SettingEntry(title, page.title, SettingPlace.Row(page, row), keywords.toList())

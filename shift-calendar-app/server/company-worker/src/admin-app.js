@@ -2367,7 +2367,7 @@ function adminApp(L, BUILD, M) {
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
         ${r.parent ? `<small>고친 판 · 원본 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(r.parent)}">${esc(r.parent)}</button></small>` : ""}
         <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · 신고 ${r.flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ")}` : ""}</small>
-        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc(r.hidden)}</small>` : ""}
+        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림" }[r.hidden] ?? r.hidden)}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
@@ -2388,7 +2388,14 @@ function adminApp(L, BUILD, M) {
       : `<button class="btn" data-act="recipe-log">처리 기록 보기</button>`;
     // 1.36 [GRW-12] 작품 하나를 연 곳(사진 검토·고친 판)으로 돌아가기.
     const back = tab === "one" ? `<p><button type="button" class="btn small" data-act="recipe-tab" data-key="${esc(S.recipeBack ?? "flagged")}">← 돌아가기 · ${esc(RECIPE_TABS.find(([k]) => k === (S.recipeBack ?? "flagged"))?.[1] ?? "목록")}</button></p>` : "";
-    return `${chips}${month}${back}<p class="hint">${esc(help)}</p>${tab === "one" ? "" : secChips}${rows}${upload}${tab === "one" ? "" : log}`;
+    const ph = tab === "one" ? S.recipePhoto : null;
+    const photo = ph ? `<div class="card"><div class="row"><span class="row-main">
+        <img src="data:image/webp;base64,${esc(ph.data)}" alt="보러 온 사진" width="128" height="128" class="cover-img">
+        <b>보러 온 사진${ph.whyName ? ` <span class="pill ${ph.state === "held" ? "bad" : "warn"}">${esc(ph.whyName)}</span>` : ""}</b>
+        ${ph.done ? `<small>${ph.done === "ok" ? "보이게 했어요" : "가렸어요"}</small>` : ""}</span>
+        ${edit && !ph.done ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="ok">보이기</button>
+          <button class="btn small danger" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="hide">가리기</button></span>` : ""}</div></div>` : "";
+    return `${chips}${month}${back}<p class="hint">${esc(help)}</p>${photo}${tab === "one" ? "" : secChips}${rows}${upload}${tab === "one" ? "" : log}`;
   }
 
   /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
@@ -2414,7 +2421,7 @@ function adminApp(L, BUILD, M) {
     return `${head}<ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
         <img src="data:image/webp;base64,${esc(i.data)}" alt="올린 사진" width="128" height="128" class="cover-img">
         <b>${i.whyName ? `<span class="pill ${i.state === "held" ? "bad" : "warn"}">${esc(i.whyName)}</span>` : ""}${i.state === "held" ? ' <span class="pill">다른 분께 가려짐</span>' : ""}</b>
-        <small>${i.uses?.length ? `${i.uses.map((u, k) => `${k ? "" : "작품 "}${esc(u.title)} (<button type="button" class="linkish" data-act="recipe-open" data-id="${esc(u.code)}" aria-label="작품 ${esc(u.title)} 열기">${esc(u.code)} 열기</button>)`).join(" · ")}${i.uses.length > 1 ? ` · 같은 사진 ${i.uses.length}곳` : ""}` : "아직 작품에 쓰이지 않음"} · 올린 분 ${esc(i.trustName ?? "새싹")}</small>
+        <small>${i.uses?.length ? `${i.uses.map((u, k) => `${k ? "" : "작품 "}${esc(u.title)} (<button type="button" class="linkish" data-act="recipe-open" data-id="${esc(u.code)}" data-key="${esc(i.id)}" aria-label="작품 ${esc(u.title)} 열기">${esc(u.code)} 열기</button>)`).join(" · ")}${i.uses.length > 1 ? ` · 같은 사진 ${i.uses.length}곳` : ""}` : "아직 작품에 쓰이지 않음"} · 올린 분 ${esc(i.trustName ?? "새싹")}</small>
         <small>${i.flags ? `신고 ${i.flags}번 (${Object.entries(i.reasons ?? {}).map(([k, n]) => `${esc(PHOTO_FLAG_NAMES[k] ?? k)} ${n}`).join(", ")}) · ` : ""}자동 검사 ${esc({ pass: "통과", block: "걸림" }[i.checked] ?? (rules.checkOn ? "안 함(늦거나 답이 분명하지 않음)" : "안 함(검사 모델 설정 전)"))} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
@@ -4570,13 +4577,20 @@ function adminApp(L, BUILD, M) {
       ACTIONS["recipe-open"]({ id });
     },
     // 1.36 [GRW-12] PC 20ab0254 제안: 사진 검토에서 그 사진을 쓴 작품을 바로 열기. 돌아가기는 연 곳으로.
-    "recipe-open": ({ id }) => {
+    "recipe-open": ({ id, key }) => {
+      // PC e20cfe53: 사진 검토에서 열면 보러 온 그 사진과 보이기·가리기를 작품 위에 함께.
+      const photo = key && S.data.recipes?.tab === "images" ? S.data.recipes.items.find((i) => i.id === key) : null;
+      S.recipePhoto = photo ? { id: photo.id, data: photo.data, whyName: photo.whyName, state: photo.state } : null;
       if ((S.recipeTab ?? "flagged") !== "one") S.recipeBack = S.recipeTab ?? "flagged";
       S.recipeTab = "one"; S.recipeCode = id; S.recipeSection = "all"; S.data.recipes = null; load();
     },
     "recipe-log": () => { S.recipeLog = true; load(); },
     // [RCX-15][RCX-04][RCX-07] 1.35
-    "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },
+    "recipe-image": async ({ id, key }) => {
+      await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요");
+      if (S.recipePhoto?.id === id) S.recipePhoto = { ...S.recipePhoto, done: key };
+      load();
+    },
     "recipe-maker": async ({ id, key }) => {
       const said = { "bio-hide": "소개를 가렸어요", "bio-show": "소개가 다시 보여요", close: "프로필을 닫았어요", open: "프로필을 다시 열었어요", clear: "신고를 비웠어요" }[key];
       await act(() => api(`/recipes/makers/${id}/${key}`, "POST", {}), said); load();

@@ -1332,7 +1332,7 @@ private fun HelpSettingRow(e: SettingEntry) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(e.title, style = MaterialTheme.typography.bodyLarge)
-            Text(if (e.where == "설정") "설정" else "설정 › ${e.where}", style = MaterialTheme.typography.bodySmall,
+            Text(settingsPath(e.where), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
