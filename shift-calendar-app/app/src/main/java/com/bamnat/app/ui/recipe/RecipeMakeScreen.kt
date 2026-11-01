@@ -811,6 +811,10 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(e, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Assertive })
+                // PC (마을 빌드: '이름이 거의 같아요' 거절 뒤 할 일이 안 보임): the name refused, the name step one tap away.
+                if (s.errorCode == "name_like") {
+                    Button(onClick = { vm.go(3) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이름 바꾸기") }
+                }
                 // A refusal 나만 can get past offers it; one the server cannot take at all (a 꾸밈 it does not know, no network) keeps it here.
                 if (s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network")) {
                     OutlinedButton(onClick = { vm.scope("private"); vm.publish() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("나만 보기로 바꿔 저장") }
