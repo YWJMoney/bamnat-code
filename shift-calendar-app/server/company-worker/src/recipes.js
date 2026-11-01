@@ -1002,7 +1002,9 @@ async function show(d, env, request, code, url) {
     out.reasons = { tally, opinions: reasons.filter((x) => x.opinion).map((x) => ({ reason: x.reason, text: x.opinion, at: new Date(x.at).toISOString() })) };
     if (r.state === "hidden") out.hidden = r.hidden_reason;
     // 1.36 [GRW-08] 새싹 첫 사진·신고로 가린 사진: 만든 분께만 '사진 확인 중'.
-    out.photosWaiting = await waitingPhotos(env, r.body, r.cover);
+    const photos = await waitingPhotos(env, r.body, r.cover);
+    out.photosWaiting = photos.pending;
+    out.photosHeld = photos.held;
   }
   return d.json(out);
 }

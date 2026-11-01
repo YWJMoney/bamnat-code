@@ -42,7 +42,8 @@ class InquiryReplyJob : JobService() {
     }
 
     companion object {
-        private const val ID = 4403
+        // 1.36 PC 확인 a4899e83: 4403은 OutboxJob과 같은 번호라 문의를 보낼 때 대기 작업이 이 작업을 덮어써, 답 알림이 뜨지 않았어요.
+        private const val ID = 4405
         private val EVERY = TimeUnit.HOURS.toMillis(3)
         private const val PREFS = "inquiry_reply"
         private const val K_SAID = "said"

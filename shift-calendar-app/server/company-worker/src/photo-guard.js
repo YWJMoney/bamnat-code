@@ -103,11 +103,17 @@ export async function flagRecipeImages(env, body, cover, dev, reason, now) {
   return held;
 }
 
-/** [GRW-08] PC 8d290ec3: how many of a recipe's pictures wait for the operator, for the maker's '사진 확인 중'. */
+/** [GRW-08] PC 8d290ec3·a4899e83: a recipe's pictures waiting for the operator ('사진 확인 중') and held by reports ('신고로 잠시 가려졌어요'). */
 export async function waitingPhotos(env, body, cover) {
   const ids = await imagesOf(env, `${body ?? ""} ${cover ?? ""}`);
-  if (!ids.length) return 0;
-  return (await one(env, `SELECT COUNT(*) AS n FROM recipe_images WHERE state IN ('pending', 'held') AND id IN (${ids.map(() => "?").join(",")})`, ...ids)).n;
+  if (!ids.length) return { pending: 0, held: 0 };
+  const rows = await all(env, `SELECT state, COUNT(*) AS n FROM recipe_images WHERE state IN ('pending', 'held') AND id IN (${ids.map(() => "?").join(",")}) GROUP BY state`, ...ids);
+  return { pending: rows.find((r) => r.state === "pending")?.n ?? 0, held: rows.find((r) => r.state === "held")?.n ?? 0 };
+}
+
+/** Whether the first layer runs at all (the admin's '자동 검사 안 함' says why). */
+export function autoCheckOn(env) {
+  return Boolean(env.AI && typeof env.AI.run === "function" && typeof env.PHOTO_CHECK_MODEL === "string" && env.PHOTO_CHECK_MODEL);
 }
 
 export const PHOTO_WHY = { first: "새싹 첫 사진", check: "자동 검사에 걸림", flags: "신고로 먼저 가림" };

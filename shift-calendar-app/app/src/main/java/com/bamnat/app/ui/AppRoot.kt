@@ -645,6 +645,18 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             container.inquiryStore.update(it)
             // [J133-24] A question still waiting is looked at every few hours, so its answer is told at once.
             if (it.any { q -> q.waiting } && container.settingsRepository.current.plazaNews) com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext)
+            // 1.36 [GRW-03] PC 확인 a4899e83: 스튜디오 부탁이 풀렸으면 앱을 열 때 한 번 '보러 가기'로 알려요(설정 탭까지 가지 않아도).
+            val prefs = container.appContext.getSharedPreferences("studio_solved", android.content.Context.MODE_PRIVATE)
+            val told = prefs.getStringSet("told", emptySet()).orEmpty()
+            val solved = it.filter { q -> q.kind == com.bamnat.app.company.InquiryKind.STUDIO && q.id !in told }.firstNotNullOfOrNull { q ->
+                q.messages.lastOrNull { m -> m.fromDeveloper }?.text?.let { t -> Regex("""코드 ([2-9A-HJ-NP-Z]{8})""").find(t)?.groupValues?.get(1) }?.let { code -> q.id to code }
+            }
+            if (solved != null) {
+                prefs.edit().putStringSet("told", told + solved.first).apply()
+                val result = snackbar.showSnackbar("부탁하신 꾸미기가 풀렸어요. 다른 분이 만들어 장터에 올렸어요",
+                    actionLabel = "보러 가기", duration = SnackbarDuration.Long)
+                if (result == SnackbarResult.ActionPerformed) nav.navigate(Routes.recipe(solved.second))
+            }
         }
     }
 

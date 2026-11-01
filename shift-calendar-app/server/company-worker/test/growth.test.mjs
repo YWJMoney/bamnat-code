@@ -164,6 +164,7 @@ test("[GRW-08] first, check and report: an automatic check, three looked at then
   assert.equal(list.items[0].trustName, "새싹");
   assert.deepEqual(list.items[0].uses, []);
   assert.equal(list.items[0].owner, undefined);
+  assert.equal(list.rules.checkOn, true);
   for (const x of first) await call("POST", `/api/admin/recipes/images/${x.id}/ok`, {}, admin);
   const fourth = await up(1, 4);
   assert.equal(fourth.state, "ok");

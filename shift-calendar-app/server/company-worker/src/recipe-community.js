@@ -4,7 +4,7 @@
 // What a phone is known by stays the install hash it already has on the plaza; a maker is shown by [makerId], a one-way id of
 // it, never the hash. 구독 is kept on the phone only: it asks for the newest version of the codes it took (no device sent), so
 // the server never learns who uses which recipe. Everything that sends (요청, 팔로우, 그림) waits for 처리방침 3.8 like the rest.
-import { autoCheck, firstState, flagImage, passedPhotos, PHOTO_GUARD, PHOTO_WHY } from "./photo-guard.js";
+import { autoCheck, autoCheckOn, firstState, flagImage, passedPhotos, PHOTO_GUARD, PHOTO_WHY } from "./photo-guard.js";
 import { CODE, cleanText, graphemes, investAdvice, listItem, makerId, oneEmoji, sha256hex, textProblem, trustLevel } from "./recipes.js";
 import { DAY, HOUR } from "./units.js";
 import { addStrike, writeAllowance, writeLimitHit } from "./write-limits.js";
@@ -989,7 +989,7 @@ export async function communityAdmin(d, request, env, path, url, now) {
       ...rows.map((r) => r.id)) : [];
     const counts = Object.fromEntries((await d.all(env, "SELECT state, COUNT(*) AS n FROM recipe_images WHERE state IN ('pending', 'held') GROUP BY state")).map((r) => [r.state, r.n]));
     return d.json({ items: rows.map((r) => ({ ...r, at: new Date(r.at).toISOString(), whyName: PHOTO_WHY[r.why] ?? null,
-      reasons: Object.fromEntries(reasons.filter((x) => x.id === r.id).map((x) => [x.reason, x.n])) })), counts, rules: PHOTO_GUARD });
+      reasons: Object.fromEntries(reasons.filter((x) => x.id === r.id).map((x) => [x.reason, x.n])) })), counts, rules: { ...PHOTO_GUARD, checkOn: autoCheckOn(env) } });
   }
   let m = path.match(/^\/recipes\/images\/([0-9a-f]{16})\/(ok|hide)$/);
   if (m && method === "POST") {

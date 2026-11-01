@@ -90,6 +90,8 @@ data class RecipeDoc(
     val reasons: Reasons? = null,
     /** 1.36 [GRW-08] 만든 분께만: 운영자 확인을 기다리는 사진 수(새싹 첫 사진, 신고로 먼저 가린 사진). */
     val photosWaiting: Int = 0,
+    /** 신고 2번으로 다른 분께 잠시 가려진 사진 수. */
+    val photosHeld: Int = 0,
 ) {
     /** The recipe itself, checked again on this phone: the written form hashes to what the server named it (S10). */
     fun recipe(): Recipe {
@@ -345,6 +347,7 @@ class RecipeClient(
                     r.optJSONArray("opinions").objects().map { it.optString("reason") to it.optString("text") })
             },
             photosWaiting = o.optInt("photosWaiting"),
+            photosHeld = o.optInt("photosHeld"),
         )
     }
 
