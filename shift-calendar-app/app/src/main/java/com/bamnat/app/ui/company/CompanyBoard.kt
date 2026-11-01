@@ -411,6 +411,11 @@ fun TalkSheet(holder: TalkHolder) {
     val talkState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
         v != androidx.compose.material3.SheetValue.Hidden || !typedNow.value || false.also { leaving = true }
     })
+    // PC 확인 13503764 (자유 토의를 닫은 뒤 화면이 잠깐 눌리지 않았어요): the X slides the sheet away first and only then takes it off,
+    // as a swipe does, so its window is not dropped mid-way.
+    val closeSoftly: () -> Unit = {
+        talkScope.launch { runCatching { talkState.hide() } }.invokeOnCompletion { holder.close() }
+    }
     if (leaving) com.bamnat.app.ui.components.ConfirmDialog(
         title = "쓴 글을 버릴까요?",
         message = "보내지 않고 닫으면 지금 쓴 글이 사라져요.",
@@ -421,7 +426,7 @@ fun TalkSheet(holder: TalkHolder) {
     )
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = {
         if (typedNow.value) { leaving = true; talkScope.launch { talkState.show() } } else holder.close()
-    }, sheetState = talkState, onClose = { if (typedNow.value) leaving = true else holder.close() }) {
+    }, sheetState = talkState, onClose = { if (typedNow.value) leaving = true else closeSoftly() }) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding()) {
             // [PLAZA-32] 1.27 AI: a room's talk is free talk under its own name.
             Text(if (o.room) "자유 토의" else "토론", style = MaterialTheme.typography.titleLarge)

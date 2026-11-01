@@ -54,7 +54,11 @@ fun ThemeThumb(look: ThemeSwatch, modifier: Modifier = Modifier, width: Dp = 120
     val accent = look.accent?.let { Color((it or 0xFF000000L).toInt()) } ?: scheme.primary
     // PC 확인 f39bcfbe: an example week's letters sat on the date numbers. A wide picture makes its cells taller for both; a small one
     // (넣기 창, 64dp) shows the letters alone.
-    val numbers = !look.example || width >= 90.dp
+    val numbers = !look.example || width >= 100.dp
+    // PC 확인 13503764: a picture, not text to read: its letters keep their size under 큰 글자 and never wrap (10~14 broke in two at 96dp).
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val tiny = with(density) { 6.dp.toSp() }
+    val small = with(density) { 7.dp.toSp() }
     val cellRatio = if (look.example && numbers) 0.6f else 0.8f
     Column(
         modifier.width(width).clip(RoundedCornerShape(10.dp)).background(page).padding(5.dp)
@@ -81,10 +85,11 @@ fun ThemeThumb(look: ThemeSwatch, modifier: Modifier = Modifier, width: Dp = 120
                     }
                     Box(Modifier.weight(1f).aspectRatio(cellRatio).cellEdge(view, cellLook, shape, ink.copy(alpha = 0.18f)).clip(shape)
                         .background(tint ?: Color.Transparent)) {
-                        if (numbers) Text("$n", fontSize = 6.sp, color = number, fontWeight = if (cellLook?.dateBold == true || today) FontWeight.Bold else null,
-                            modifier = Modifier.align(placeOf(cellLook?.datePlace)).padding(1.dp), lineHeight = 7.sp)
+                        if (numbers) Text("$n", fontSize = tiny, color = number, fontWeight = if (cellLook?.dateBold == true || today) FontWeight.Bold else null,
+                            modifier = Modifier.align(placeOf(cellLook?.datePlace)).padding(horizontal = 0.5.dp, vertical = 1.dp), lineHeight = small,
+                            maxLines = 1, softWrap = false)
                         // PC 확인 V44: an example week says its days, 주·야·휴, as the calendar does.
-                        if (look.example && d.label.isNotEmpty()) Text(d.label.take(1), fontSize = if (numbers) 6.sp else 7.sp, lineHeight = 7.sp,
+                        if (look.example && d.label.isNotEmpty()) Text(d.label.take(1), fontSize = if (numbers) tiny else small, lineHeight = small, maxLines = 1, softWrap = false,
                             color = if (off) ink.copy(alpha = 0.6f) else color, fontWeight = FontWeight.Bold,
                             modifier = Modifier.align(if (numbers) Alignment.BottomCenter else Alignment.Center).padding(bottom = if (numbers) 1.dp else 0.dp))
                         else if (!off && cellLook?.mark != "none") Box(

@@ -81,6 +81,19 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                 // PC 확인 V33: with no theme this month the title already says it; the line only says the theme.
                 Text((if (k.theme == null) "" else (lastMonth?.let { "${it}월" } ?: "지난 달") + " 이달의 테마 · ") + (k.lastTheme?.let { "‘$it’ · " } ?: "") + "눌러서 입어 보기",
                     style = MaterialTheme.typography.labelLarge)
+                // PC 확인 13503764: one pick takes the card's width, its picture bigger and the title beside it.
+                if (k.picks.size == 1) k.picks.first().let { (code, title) ->
+                    Row(Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                        .clickable(onClickLabel = "입어 보기") { com.bamnat.app.recipe.RecipeLinks.tryNext = code; onRecipe(code) }
+                        .padding(4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        com.bamnat.app.ui.recipe.ThemeThumb(k.pickLooks[code]?.withDays(st) ?: com.bamnat.app.recipe.ThemeSwatch.example(st), width = 148.dp)
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("🏆 $title", style = MaterialTheme.typography.titleSmall, maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Text("눌러서 입어 보기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                } else
                 // PC 확인 f39bcfbe: each pick as its small picture with the title under it, the whole a tap to try it on.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     k.picks.forEach { (code, title) ->
