@@ -1373,9 +1373,10 @@ fun CalendarScreen(
                 vm.setBoard(b)
             }
             val countsPart: @Composable (Modifier) -> Unit = { place ->
-                Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // The counts take what is left, so the two buttons always sit at the right edge.
-                    // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
+                // [TAB-04] PC 확인 bf62e966: at 1.3× text the '월 ▾' button pushed '휴 10' off the row, so with big text the counts
+                // take a line of their own under the buttons.
+                val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.2f
+                val teamsChip: @Composable () -> Unit = {
                     openTeams?.let { open ->
                         androidx.compose.material3.AssistChip(
                             // [CAL-45] Unfolded, the teams open beside the month; on the cover screen, their own page.
@@ -1385,12 +1386,27 @@ fun CalendarScreen(
                             modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = "모든 조 보기와 대근 찾기" },
                         )
                     }
-                    Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
+                }
+                val switch: @Composable () -> Unit = {
                     Box {
                         var boardMenu by remember { mutableStateOf(false) }
                         CalendarViewSwitch(listView = showList, onListView = { if (paint == null) boardMenu = true }, onLegend = { legendOpen = true }, boardLabel = board.label)
                         CalendarBoardMenu(boardMenu, board, com.bamnat.core.layout.CalendarBoard.expertFor(settings.workStyle), onPick = pickBoard, onDismiss = { boardMenu = false })
                     }
+                }
+                if (bigText) Column(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        teamsChip()
+                        Spacer(Modifier.weight(1f))
+                        switch()
+                    }
+                    if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
+                } else Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // The counts take what is left, so the two buttons always sit at the right edge.
+                    // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
+                    teamsChip()
+                    Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
+                    switch()
                 }
             }
             if (sideways) {

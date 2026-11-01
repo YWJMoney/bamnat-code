@@ -305,7 +305,7 @@ class CalendarScreenshotTest : ScreenshotBase() {
     }
 
     // [CAL-08] The month as a list, for each kind of work.
-    @Test fun calListShift() = shoot("302_folded_list_view", FOLDED) { tapText("달력 판 고르기, 지금 월", exact = true, scrolls = 0); tapText("날마다 한 줄로", exact = true, scrolls = 0) }
+    @Test fun calListShift() = shoot("302_folded_list_view", FOLDED) { pickListBoard() }
     // [CAL-06] What every mark means, in the calendar's own kind of work.
     @Test fun calLegendShift() = shoot("305_folded_legend_shift", FOLDED) { tapText("달력 표시 안내", exact = true, scrolls = 0) }
     /** [CAL-09] A long press starts a range; the next tap ends it. */

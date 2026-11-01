@@ -407,6 +407,17 @@ abstract class ScreenshotBase {
             touch(reach(text, exact, prefix, 0, across).boundsInWindow.center)
         }
 
+        /**
+         * [TAB-04] The calendar's 목록 판, as '달력 판 고르기 > 목록' picks it. The menu is Compose's DropdownMenu, a popup window [find]
+         * does not read, so the button is checked and the pick written the way the menu writes it.
+         */
+        fun pickListBoard() {
+            check(appears("달력 판 고르기, 지금 월", exact = true)) { "달력 판 단추가 없어요" }
+            app.container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(cal = com.bamnat.core.layout.CalendarBoard.LIST).encode()) }
+            settle()
+            check(appears("달력 판 고르기, 지금 목록", exact = true)) { "목록 판으로 바뀌지 않았어요" }
+        }
+
         /** [SETUP-15] The system back, as the phone's back gesture sends it. */
         fun back() {
             scenario.onActivity { it.onBackPressedDispatcher.onBackPressed() }

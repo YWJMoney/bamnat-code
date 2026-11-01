@@ -291,6 +291,13 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val date = memo.date
+                // [RCP-11] 1.34: a memo not written yet can start from a 틀. [TAB-03] PC 확인 bf62e966: first in the row while the memo
+                // is empty (at the end it took a swipe to find).
+                if (memo.isBlank && templates.isNotEmpty()) AssistChip(
+                    onClick = { pickTemplate = true },
+                    label = { Text("틀에서 시작") },
+                    leadingIcon = { Icon(Icons.Filled.Checklist, null, Modifier.size(18.dp)) },
+                )
                 // [J133-20] 1.33 (실사용 테스트 "알람 맞추기 칩이 옆으로 밀려 안 보여요"): first in the row, in sight on a narrow phone.
                 ScheduleChip(
                     reminder = memo.reminder,
@@ -315,12 +322,6 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 if (date != null) MemoRepeatChip(date, memo.repeat, vm::setRepeat)
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
-                // [RCP-11] 1.34: a memo not written yet can start from a 틀.
-                if (memo.isBlank && templates.isNotEmpty()) AssistChip(
-                    onClick = { pickTemplate = true },
-                    label = { Text("틀에서 시작") },
-                    leadingIcon = { Icon(Icons.Filled.Checklist, null, Modifier.size(18.dp)) },
-                )
             }
             // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
             lastSame?.let { (label, memos) ->

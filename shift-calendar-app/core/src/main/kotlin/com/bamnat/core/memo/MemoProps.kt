@@ -34,9 +34,9 @@ object MemoProps {
     fun labelOfLine(line: String): String? = LINE.matchEntire(line)?.groupValues?.get(1)?.trim()?.takeIf(::isLabel)
 
     /** The properties written in [memo]'s body, first line wins for a name written twice; [year] reads a date with no year. */
-    fun of(memo: Memo, year: Int = memo.date?.year ?: LocalDate.now().year): List<Prop> = parse(memo.body, year)
+    fun of(memo: Memo, year: Int = memo.date?.year ?: com.bamnat.core.time.Today.date().year): List<Prop> = parse(memo.body, year)
 
-    fun parse(text: String, year: Int = LocalDate.now().year): List<Prop> {
+    fun parse(text: String, year: Int = com.bamnat.core.time.Today.date().year): List<Prop> {
         val seen = HashSet<String>()
         val out = ArrayList<Prop>()
         for (line in text.lineSequence()) {
@@ -56,7 +56,7 @@ object MemoProps {
         s.split(' ').size <= 3 && !s.contains("http", ignoreCase = true) && s.none { it == '/' || it == '|' || it == ':' || it == ';' }
 
     /** What [raw] reads as. */
-    fun read(label: String, raw: String, year: Int = LocalDate.now().year): Prop {
+    fun read(label: String, raw: String, year: Int = com.bamnat.core.time.Today.date().year): Prop {
         val v = raw.trim()
         STARS.matchEntire(v)?.let { return Prop(label, v, Type.STAR, v.count { it == '★' }.toDouble()) }
         if (v in YES) return Prop(label, v, Type.CHECK, 1.0)

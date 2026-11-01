@@ -65,6 +65,9 @@ class MemoViewTest {
         val started = t.start(null, LocalDate.of(2026, 11, 2), answers = mapOf("매출" to "50000", "별점" to "5"))
         assertEquals("50,000원", MemoProps.of(started).first { it.label == "매출" }.raw)
         assertEquals("마감", MemoTemplate.fromMemo(m, "t2", "", emptySet()).title)
+        val dated = t.start(LocalDate.of(2026, 11, 11), LocalDate.of(2026, 11, 11), answers = mapOf("날짜" to "11월 12일"))
+        assertEquals("고른 날짜가 메모 날짜", LocalDate.of(2026, 11, 12), dated.date)
+        assertEquals(LocalDate.of(2026, 11, 11), t.start(LocalDate.of(2026, 11, 11), LocalDate.of(2026, 11, 11)).date)
     }
 
     @Test fun setWritesReplacesAndRemovesALine() {

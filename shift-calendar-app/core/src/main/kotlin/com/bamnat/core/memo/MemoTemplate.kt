@@ -28,7 +28,7 @@ data class MemoTemplate(
         val day = when {
             repeat.startsWith("W") -> (date ?: today).with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.of(repeat.drop(1).toInt())))
             repeat.startsWith("M") -> nextDayOfMonth(date ?: today, repeat.drop(1).toInt())
-            else -> date
+            else -> picked(answers, today) ?: date
         }
         return base.copy(
             title = title,
@@ -41,8 +41,19 @@ data class MemoTemplate(
         )
     }
 
+    /**
+     * [TAB-03] PC 확인 bf62e966 ("고른 날짜 11/12와 메모 날짜 11/11이 따로 놀아 가계부엔 11/11로"): a 날짜 칸 named for the memo's own day
+     * (날짜, 일자, 날) is that day, so the memo, the 달력 and '가계부에 넣기' all go by what the user picked.
+     */
+    private fun picked(answers: Map<String, String>, today: LocalDate): LocalDate? = asks.withIndex().firstNotNullOfOrNull { (i, a) ->
+        if (a.type != "date" || a.label.trim() !in DAY_LABELS) return@firstNotNullOfOrNull null
+        val v = (answers["#$i"] ?: answers[a.label])?.trim()?.takeIf { it.isNotEmpty() } ?: return@firstNotNullOfOrNull null
+        MemoProps.read(a.label, v, today.year).date
+    }
+
     companion object {
         const val MAX = 40
+        private val DAY_LABELS = setOf("날짜", "일자", "날", "작업일", "근무일", "영업일", "매매일")
 
         /**
          * [TAB-03] 1.36 이 메모를 틀로 저장 (PC 확인 bad7d860 "눌러도 반응이 없어요", 사용성 제안 "틀 이름을 물어 주세요"): [memo] as a

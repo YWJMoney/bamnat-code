@@ -161,7 +161,7 @@ object BuiltInThemes {
     private class Expert(val family: String, val memo: String, val memoBy: String, val memoSort: String, val money: String, val what: String)
 
     private fun expertOf(s: WorkStyle): Expert = when (s) {
-        WorkStyle.SHIFT -> Expert("숲속 민트", "board", "shift", "", "list", "근무 띠로 한 달 주기를 한 줄에, 메모는 근무별 보드로")
+        WorkStyle.SHIFT -> Expert("숲속 민트", "board", "shift", "", "cal", "근무 띠로 한 달 주기를 한 줄에, 메모는 근무별 보드, 가계부는 달력으로")
         WorkStyle.DAY -> Expert("모노 미니멀", "board", "check", "", "cal", "타임라인으로 출퇴근 시간을, 메모는 할 일 상태 보드로")
         WorkStyle.HOURLY -> Expert("선셋 노을", "table", "tag", "-p:금액", "cal", "타임라인으로 근무 시간을, 메모는 금액 큰 순 표로")
         WorkStyle.FIELD -> Expert("오션 블루", "table", "tag", "-p:금액", "board", "날마다 한 줄 목록에, 메모는 받을 돈 표, 가계부는 분류 보드로")

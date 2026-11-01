@@ -31,7 +31,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -198,7 +198,7 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
     val titleW = 132.dp
     val colW = 104.dp
     // PC 확인 bad7d860: "11월 30일" was cut; the date column takes the room it needs.
-    val dateW = 120.dp
+    val dateW = 80.dp
     val line = MaterialTheme.colorScheme.outlineVariant
     val rowPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table.row")
     @Composable fun headCell(text: String, key: String, width: androidx.compose.ui.unit.Dp) {
@@ -234,7 +234,8 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
                     Row(Modifier.horizontalScroll(sideways)) {
                         for ((c, t) in columns) Text(props[c]?.let { shown(it, t) } ?: "", style = MaterialTheme.typography.bodySmall, maxLines = 2,
                             overflow = TextOverflow.Ellipsis, modifier = Modifier.width(colW).padding(horizontal = 8.dp))
-                        Text(memo.date?.let { Fmt.monthDay(it) } ?: "", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
+                        // PC 확인 bf62e966: still cut at 120dp with big text, so the 표 writes a short "11/12".
+                        Text(memo.date?.let { "${it.monthValue}/${it.dayOfMonth}" } ?: "", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
                             modifier = Modifier.width(dateW).padding(horizontal = 8.dp))
                         Text(memo.tags.joinToString(" ") { "#$it" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(colW).padding(horizontal = 8.dp))
