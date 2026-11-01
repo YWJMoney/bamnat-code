@@ -303,13 +303,34 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
         }, modifier = Modifier.heightIn(min = 48.dp)) { Text("배경 사진에서") }
     }
     problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+    // PC 제안 1.36 (사진에서 뽑은 색이 무엇인지 모름): the colours the picture gave, named, right under the button, each to pick.
+    if (photoColours.isNotEmpty()) {
+        val names = remember(photoColours) { com.bamnat.app.ui.settings.colorNames(photoColours) }
+        Text("사진에서 뽑은 색 ${photoColours.size}개 · 눌러서 골라요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            photoColours.forEachIndexed { i, c ->
+                val on = c == seed
+                Column(Modifier.clickable { put(s = c, m = 0) }.semantics { contentDescription = "사진 색 ${names[i]}"; selected = on },
+                    horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.size(44.dp).clip(CircleShape).background(Color(c.toInt()))
+                        .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape))
+                    Text(names[i], style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                }
+            }
+        }
+    }
     ColorPick("직접 고르기", seed, allowNone = false) { c -> c?.let { put(s = it, m = 0) } }
 
-    if (own.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { put(all = !allScreens) }.padding(vertical = 4.dp),
+    // PC 확인 1.36 (달력을 잠갔는데 '따로 고른 색 1곳(달력)' 스위치가 켜져 있어 잠금과 헷갈림): a locked screen is not one of them; it says so.
+    val heldKeys = vm.locked.flatMap { StudioColors.screensOf(it) }.toSet()
+    val free = own.filter { it !in heldKeys }
+    if (vm.locked.isNotEmpty()) Text("🔒 " + vm.locked.joinToString("·") { lockName(it, vm.style) } + "은(는) 잠가서 그대로예요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (free.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { put(all = !allScreens) }.padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("화면마다 따로 고른 색도 이 색으로", style = MaterialTheme.typography.bodyMedium)
-            Text("${own.size}곳(${own.joinToString("·") { screenName(it) }})의 색이 따로 있어요. 끄면 그 화면들은 그대로예요",
+            Text("${free.size}곳(${free.joinToString("·") { screenName(it) }})의 색이 따로 있어요. 끄면 그 화면들은 그대로예요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(allScreens, { put(all = it) }, modifier = Modifier.semantics { contentDescription = "화면마다 따로 고른 색도 이 색으로" })
@@ -364,7 +385,14 @@ internal fun ScreenCopyRow(vm: StudioViewModel, d: AppSettings, key: String, onS
         TextButton(onClick = { vm.copiedLook = key to looks.of(key); vm.say("‘${screenName(key)}’ 색을 복사했어요. 다른 화면의 색·배경에서 붙여요") },
             modifier = Modifier.heightIn(min = 48.dp)) { Text("복사") }
         if (copied != null && copied.first != key) TextButton(onClick = {
-            vm.changeMerged("‘${screenName(copied.first)}’ 색을 ${screenName(key)}에 붙이기") { StudioColors.paste(it, key, copied.second) }
+            // PC 제안 1.36 (같은 색이면 붙여도 아무 말이 없음): said either way.
+            val c2 = copied.second; val here = looks.of(key)
+            if (c2.bg == here.bg && c2.card == here.card && c2.ink == here.ink && c2.accent == here.accent && c2.photo == here.photo) {
+                vm.say("${screenName(key)}은(는) 이미 ‘${screenName(copied.first)}’ 색과 같아요")
+            } else {
+                vm.changeMerged("‘${screenName(copied.first)}’ 색을 ${screenName(key)}에 붙이기") { StudioColors.paste(it, key, c2) }
+                vm.say("‘${screenName(copied.first)}’ 색을 ${screenName(key)}에 붙였어요 · 위 되돌리기로 돌아가요")
+            }
         }, modifier = Modifier.heightIn(min = 48.dp)) { Text("붙이기 (‘${screenName(copied.first)}’ 색)") }
         if (key != ScreenLooks.ALL && mine != null && (mine.bg != null || mine.card != null || mine.ink != null || mine.accent != null)) TextButton(onClick = {
             vm.changeMerged("${screenName(key)} 앱 전체 색 따르기") { StudioColors.clearOwn(it, key) }

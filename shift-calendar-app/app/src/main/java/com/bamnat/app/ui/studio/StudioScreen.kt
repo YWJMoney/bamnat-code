@@ -539,7 +539,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // Where, then which tool.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Area.entries.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
+                    // PC 제안 1.36 ('앱 전체'가 줄 끝에 숨어 있음): 앱 전체 first, where 한 색 starts.
+                    (listOf(Area.ALL) + Area.entries.filter { it != Area.ALL }).forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)) {
