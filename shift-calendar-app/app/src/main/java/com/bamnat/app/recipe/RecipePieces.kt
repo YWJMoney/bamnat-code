@@ -1005,7 +1005,9 @@ class RecipePieces(private val c: AppContainer) {
             // [STU-37] 1.36 근무에 따라 바뀌는 모양: 입히기 puts it on with the rest; it stays on this phone (not in a recipe).
             "shiftLooks",
             // [BLU-01] 1.36 부품 꾸미기.
-            "parts")
+            "parts",
+            // [MAT-07] 1.36 움직임: 입히기 puts it on with the look (in a recipe it rides 앱 동작).
+            "motion")
 
         private val SETTING_NAMES = mapOf("tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
             "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "shiftLooks" to "근무에 따라 바뀌는 모양", "widgetMemo" to "위젯 메모 한 줄",

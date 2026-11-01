@@ -67,7 +67,8 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val all = LocalScreenLooks.current
     // 사용자 2026-11-01: 결제·처리방침·동의 화면은 어떤 테마에서도 앱 기본 모양 그대로 — 값과 약관이 늘 똑같이 또렷하게 읽혀요.
     val raw = if (key == ScreenLooks.GUARDED) ScreenLook() else all.of(key)
-    val look = if (key == ScreenLooks.PLAZA) ScreenLook(bg = raw.bg, photo = raw.photo, dim = raw.dim, emoji = raw.emoji) else raw
+    // [MAT-01][MAT-03] 1.36 마을 takes a background fill and the picture's adjustment too (still only the background).
+    val look = if (key == ScreenLooks.PLAZA) ScreenLook(bg = raw.bg, photo = raw.photo, dim = raw.dim, emoji = raw.emoji, fill = raw.fill, adjust = raw.adjust) else raw
     // PC 확인 W44 1.36 (어두운 테마에서 프로 화면만 갑자기 밝아 눈부심): the plain 결제·처리방침 look follows how dark the app is made.
     val outer = MaterialTheme.colorScheme
     val base = outer.let { b ->
@@ -90,12 +91,16 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     }
     // [J135-15] One shape of tree for the user's own look and for a theme: putting a theme on or taking it off only changes colours.
     // Two shapes threw away everything under the screen (an open sheet closed, 화면 꾸미기 fell back to 설정, a wear half done).
-    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
-        Box(if (plain && !darkened) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
+    // [MAT-05] 1.36 이 화면 글꼴: every text style of the screen in it (sizes and weights stay, 큰 글자 still grows them).
+    val family = rememberFontFamily(look.font)
+    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography.inFamily(family), shapes = MaterialTheme.shapes) {
+        Box(if (plain && !darkened) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background).fillWith(look.fill)) {
             if (photo != null && !plain) {
-                Image(photo.first, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                // [MAT-03] 1.36 사진 조정·블렌드: drawn through the look's colour matrix, blend and blur.
+                if (look.adjust == null) Image(photo.first, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                else Box(Modifier.matchParentSize().adjustedPhoto(photo.first, look.adjust))
                 val veil = (look.dim ?: 30).coerceIn(0, 80)
-                Box(Modifier.matchParentSize().background((look.bg?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
+                Box(Modifier.matchParentSize().background((look.ground?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
             }
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
             // [BLU-12] PC 15차: on a ground of its own the parts' 어두운 화면 lines follow that ground (a white 화면 색 on a dark phone
@@ -130,7 +135,7 @@ fun BarIcons(light: Boolean) {
 
 /** The colour the screen's text stands on: the page, or what a picture and its veil come to. */
 private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?): Color {
-    val page = look.bg?.let { Color(it) } ?: base.background
+    val page = look.ground?.let { Color(it) } ?: base.background
     if (photoLight == null) return page
     val veil = (look.dim ?: 30).coerceIn(20, 80) / 100f
     return lerp(if (photoLight >= 0.5f) Color(0xFFEDEDED) else Color(0xFF2A2A2A), page, veil)
@@ -141,7 +146,9 @@ private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?): C
  * picture and its veil come to ([photoLight] 0 dark … 1 light).
  */
 fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): ColorScheme {
-    val page = look.bg?.let { Color(it) } ?: base.background
+    val page = look.ground?.let { Color(it) } ?: base.background
+    // [MAT-01] A fill shows through the page like a picture does.
+    val clear = photoLight != null || look.fill != null
     val ground = groundOf(base, look, photoLight)
     val card = look.card?.let { Color(it) }
     val cardLow = card ?: base.surfaceContainerLow
@@ -151,8 +158,8 @@ fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): Col
         if (Palette.contrast(s.argb(), ground.argb()) >= 4.5 && Palette.contrast(s.argb(), cardLow.argb()) >= 4.5) s else ink
     }
     var s = base.copy(
-        background = if (photoLight != null) Color.Transparent else page,
-        surface = if (photoLight != null) Color.Transparent else page,
+        background = if (clear) Color.Transparent else page,
+        surface = if (clear) Color.Transparent else page,
         onBackground = ink, onSurface = ink, onSurfaceVariant = soft,
         outline = ink.copy(alpha = 0.55f), outlineVariant = ink.copy(alpha = 0.18f),
     )
@@ -163,7 +170,7 @@ fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): Col
             surfaceContainer = lerp(card, toward, 0.03f), surfaceContainerHigh = lerp(card, toward, 0.06f),
             surfaceContainerHighest = lerp(card, toward, 0.09f), surfaceVariant = lerp(card, toward, 0.08f),
         )
-    } else if (look.bg != null) {
+    } else if (look.ground != null) {
         // A page colour without a card colour: the cards are washes of the page, so the screen holds together.
         val toward = if (Palette.luminance(page.argb()) > 0.5) Color.White else Color.Black
         s = s.copy(

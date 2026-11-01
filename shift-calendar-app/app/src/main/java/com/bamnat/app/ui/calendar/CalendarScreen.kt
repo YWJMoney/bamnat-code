@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.theme.monthTurn
 import androidx.compose.ui.layout.layout
 import com.bamnat.app.ui.theme.PhotoBackdrop
 import com.bamnat.app.ui.components.labelWidth
@@ -1428,6 +1429,10 @@ fun CalendarScreen(
                             onQuickAction = onQuickAction,
                         )
                     } else MonthGrid(
+                        // [MAT-07] 1.36 달 넘김 (밀기·스르륵·책장·다가오기·겹쳐 오기·움직이지 않기).
+                        modifier = Modifier.monthTurn(com.bamnat.app.ui.theme.LocalMotion.current.turn) {
+                            (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                        },
                         month = pageToMonth(baseMonth, page),
                         snapshot = snap,
                         calculator = calculator,

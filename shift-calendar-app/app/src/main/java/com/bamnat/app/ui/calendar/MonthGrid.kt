@@ -12,6 +12,8 @@ import com.bamnat.app.ui.parts.verticalArrangement
 import com.bamnat.app.ui.parts.placeOf
 import com.bamnat.app.ui.parts.arrangement
 import com.bamnat.app.ui.parts.vertical
+import com.bamnat.app.ui.theme.todayMotion
+import com.bamnat.app.ui.theme.fillWith
 import com.bamnat.core.holiday.KoreanLunar
 import com.bamnat.app.ui.components.LeaveMark
 import com.bamnat.core.model.LeaveKind
@@ -650,6 +652,8 @@ private fun DayCell(
             .then(if (cellPart.out != null || (cellPart.shadow ?: 0) > 0) run { Modifier.partBox(cellPart.copy(fill = null, line = null, lineW = null, lineC = null, alpha = null, pad = null, padX = null, padY = null), partShape, inner = false) } else Modifier)
             .cellEdge(view, cellLook, partShape, scheme.outlineVariant)
             .clip(partShape)
+            // [MAT-01] 1.36 칸 채우기 under the day's wash; a shader moves only in today's cell (a month of moving cells is too much).
+            .fillWith(cellLook?.fill, alpha = cellFillAlpha(cellLook), animate = isToday)
             .background(tint ?: Color.Transparent)
             .then(run { cellPart.fillColor?.let { Modifier.background(it) } ?: Modifier })
             .then(run { Modifier.partLine(cellPart, partShape) })
@@ -742,7 +746,7 @@ private fun DayCell(
         }
         if (custom || cellParts != null) CustomCellBody(
             parts = cellParts,
-            view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null }, date = date, isToday = isToday, numberColor = numberColor, dateSize = dateSize, footerSize = footerSize,
+            view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null } ?: cellFillGround(cellLook), date = date, isToday = isToday, numberColor = numberColor, dateSize = dateSize, footerSize = footerSize,
             todayColor = look.today, holidayName = holidayName, hasMemo = hasMemo, alarmOff = day.alarmSkipped,
             marks = remember(day, jobs) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null) },
             barColor = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)?.colorArgb?.asColor()
@@ -1140,12 +1144,15 @@ internal fun CustomCellBody(
             }
             if (dp.hide != true) Box(
                 spot("cal.cell.date").then(if (dp.w != null) Modifier.width(dp.w!!.dp) else Modifier.size(with(density) { size.toDp() } + 6.dp))
+                    .then(if (isToday) Modifier.todayMotion(com.bamnat.app.ui.theme.LocalMotion.current.today, chip) else Modifier)
                     .clip(if (isToday && l?.dateShape == "none" && dp.fillColor == null) CircleShape else shapeOf).background(chip)
                     .partLine(dp, shapeOf),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     date.dayOfMonth.toString(), style = dp.text(MaterialTheme.typography.labelLarge.merge(NumberStyle)),
+                    // [MAT-05] 1.36 날짜 글꼴.
+                    fontFamily = com.bamnat.app.ui.theme.rememberFontFamily(l?.dateFont),
                     fontWeight = dp.weight?.let { FontWeight(it) } ?: if (isToday) FontWeight.ExtraBold else if (l?.dateBold == false) FontWeight.Normal else if (l?.dateBold == true) FontWeight.Bold else FontWeight.SemiBold,
                     fontSize = size, lineHeight = size, maxLines = 1,
                     color = when {
@@ -1268,21 +1275,30 @@ internal fun cellTint(look: com.bamnat.core.recipe.CellLook?, shiftColor: Color?
 
 /** [FREE-01] A cell's room and edge by its look (가늘게, 굵게, 점선) or 달력 모양's 칸마다 선. */
 internal fun Modifier.cellEdge(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?, shape: androidx.compose.ui.graphics.Shape, outline: Color): Modifier {
-    val edge = look?.borderColor?.let { Color((it or 0xFF000000L).toInt()) } ?: outline
+    // [MAT-02] 1.36 테두리 두께(0.5~4dp)·진하기.
+    val edge = (look?.borderColor?.let { Color((it or 0xFF000000L).toInt()) } ?: outline).let { c -> look?.borderAlpha?.let { c.copy(alpha = c.alpha * it / 100f) } ?: c }
+    val width = look?.borderWidth?.let { (it / 10f).dp }
     return padding(if (view.grid == "line" || look?.border != null) 0.5.dp else 1.5.dp).then(
         when (look?.border) {
-            "thin" -> Modifier.border(0.8.dp, edge, shape)
-            "thick" -> Modifier.border(2.dp, edge, shape)
+            "thin" -> Modifier.border(width ?: 0.8.dp, edge, shape)
+            "thick" -> Modifier.border(width ?: 2.dp, edge, shape)
             "dash" -> Modifier.drawBehind {
                 val r = (look.corner ?: 3).dp.toPx()
                 drawRoundRect(edge, cornerRadius = CornerRadius(r, r), style = androidx.compose.ui.graphics.drawscope.Stroke(
-                    width = 1.2.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))))
+                    width = (width ?: 1.2.dp).toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))))
             }
             "none" -> Modifier
             else -> if (view.grid == "line") Modifier.border(0.6.dp, outline, shape) else Modifier
         },
     )
 }
+
+/** [MAT-01] How strong a cell's fill is: its 진하기 when it has no plain colour of its own. */
+internal fun cellFillAlpha(look: com.bamnat.core.recipe.CellLook?): Float = if (look?.bg == null) (look?.bgAlpha ?: 100) / 100f else 1f
+
+/** [MAT-01] What a cell's fill reads as (for the date's ink), when it is strong enough to matter. */
+internal fun cellFillGround(look: com.bamnat.core.recipe.CellLook?): Color? = look?.fill?.average?.let { Color(it.toInt()) }
+    ?.copy(alpha = cellFillAlpha(look))?.takeIf { it.alpha >= 0.5f }
 
 /** [FREE-01] A cell's corners by its look, else 달력 모양's. */
 internal fun cellShape(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?): androidx.compose.ui.graphics.Shape =

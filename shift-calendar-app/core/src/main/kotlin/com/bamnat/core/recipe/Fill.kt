@@ -10,7 +10,7 @@ import kotlin.math.roundToInt
  * Written in one short word with only `. , @` and letters and digits, so it sits inside every older look line (`|`, `/`, `~`, `;`, `=`,
  * `:` stay theirs) and inside branch A's part blueprint style slot unchanged:
  * - `so.FF112233` 단색 (alpha kept)
- * - `lg.135.FF112233,FF445566@60,FF778899` 선형: angle 0..359 (0 = 위→아래, clockwise), 2..5 stops, each colour with an optional place 0..100
+ * - `lg.135.FF112233,FF445566@60,FF778899` 선형: angle 0..359 (0 위→아래, 45 ↘, 90 왼→오른, 135 ↗, 180 아래→위), 2..5 stops, each colour with an optional place 0..100
  * - `rg.50.40.80.<stops>` 방사형: centre x·y 0..100 %, radius 10..150 % of the shorter side
  * - `sg.50.50.0.<stops>` 원뿔형: centre and the turn 0..359 where it starts
  * - `pt.dots.FF000000.00000000.100.0` 무늬: kind ([PATTERNS]), ink, ground, size 50..300 %, angle 0..359
