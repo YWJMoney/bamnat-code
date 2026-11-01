@@ -49,4 +49,12 @@ class DecorStudioTest {
         assertEquals(listOf("💰", "이번 달도 힘내기"), back.items.map { it.glyph })
         assertEquals("d25", back.items.first().on)
     }
+
+    /** PC 확인 C1: a 💰 pinned to the 25th moves the example to the 25th's week. */
+    @Test fun theNextPinnedDayIsFound() {
+        val d = Decor(listOf(DecorItem(DecorKind.EMOJI, "💰", at = Decor.CELL, on = "d25"), DecorItem(DecorKind.EMOJI, "⭐", at = Decor.CELL, on = "today")))
+        assertEquals(java.time.LocalDate.of(2026, 11, 25), d.nextPinned(java.time.LocalDate.of(2026, 11, 1)))
+        assertEquals(java.time.LocalDate.of(2026, 12, 25), d.nextPinned(java.time.LocalDate.of(2026, 11, 26)))
+        org.junit.Assert.assertNull(Decor(listOf(DecorItem(DecorKind.EMOJI, "⭐", at = Decor.CELL, on = "today"))).nextPinned(java.time.LocalDate.of(2026, 11, 1)))
+    }
 }

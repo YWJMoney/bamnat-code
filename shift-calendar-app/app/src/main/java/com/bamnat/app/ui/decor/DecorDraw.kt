@@ -202,3 +202,16 @@ fun androidx.compose.foundation.layout.BoxScope.ScreenDecor(screenKey: String, o
     if (shown.isDefault || bg.removePrefix("bg.") !in Decor.SCREENS) return
     androidx.compose.foundation.layout.Box(Modifier.matchParentSize().decor(Decor.APP, layer = shown))
 }
+
+/**
+ * [LAY-03] PC 확인 C1 1.36: the first day from [from] that a day cell's decoration pinned to a date (매달 며칠·매년 그날) stands on, within
+ * a year — so an example of two weeks can show it. Null when none is pinned to a date.
+ */
+fun Decor.nextPinned(from: java.time.LocalDate): java.time.LocalDate? {
+    val pinned = on(Decor.CELL).filter { i -> i.on?.let { Regex("d\\d+|m\\d+d\\d+").matches(it) } == true }
+    if (pinned.isEmpty()) return null
+    return (0L..366L).asSequence().map { from.plusDays(it) }.firstOrNull { d ->
+        val day = DecorDay(d.monthValue, d.dayOfMonth, d.dayOfWeek.value, null, false, false)
+        pinned.any { it.standsOn(day) }
+    }
+}

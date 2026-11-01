@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.studio
 
+import com.bamnat.app.ui.decor.nextPinned
 import com.bamnat.app.ui.decor.decor
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
