@@ -89,7 +89,9 @@ internal fun villageFoundOf(o: JSONObject): VillageFound {
 data class Contest(val month: String, val theme: String?, val entries: Int, val mine: List<String>, val lastTheme: String?,
     val picks: List<Pair<String, String>>,
     /** PC 확인 V26: [mine] with their titles, for the card; empty from a server before. */
-    val mineTitles: List<Pair<String, String>> = emptyList())
+    val mineTitles: List<Pair<String, String>> = emptyList(),
+    /** PC 확인 f39bcfbe: each pick's look (code → look), for its small picture on the card. */
+    val pickLooks: Map<String, com.bamnat.app.recipe.ThemeSwatch> = emptyMap())
 
 internal fun contestOf(o: JSONObject): Contest {
     val mine = o.optJSONArray("mine") ?: JSONArray()
@@ -98,5 +100,8 @@ internal fun contestOf(o: JSONObject): Contest {
     return Contest(o.optString("month"), o.optString("theme").takeIf { it.isNotEmpty() && !o.isNull("theme") }, o.optInt("entries"),
         (0 until mine.length()).map { mine.getString(it) }, last?.optString("theme"),
         (0 until picks.length()).map { picks.getJSONObject(it) }.map { it.optString("code") to it.optString("title") },
-        (o.optJSONArray("mineTitles") ?: JSONArray()).let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { it.optString("code") to it.optString("title") } })
+        (o.optJSONArray("mineTitles") ?: JSONArray()).let { a -> (0 until a.length()).map { a.getJSONObject(it) }.map { it.optString("code") to it.optString("title") } },
+        (0 until picks.length()).map { picks.getJSONObject(it) }.mapNotNull { p ->
+            com.bamnat.app.recipe.ThemeSwatch.of(p.optJSONObject("look"))?.let { p.optString("code") to it }
+        }.toMap())
 }

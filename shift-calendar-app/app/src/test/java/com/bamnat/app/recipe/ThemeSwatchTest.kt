@@ -22,3 +22,16 @@ class ThemeSwatchTest {
         assertFalse(own.withDays(WorkStyle.FIELD).example)
     }
 }
+
+/** PC 확인 f39bcfbe: 이달의 테마's picks bring their looks, read into the contest. */
+@org.junit.runner.RunWith(androidx.test.ext.junit.runners.AndroidJUnit4::class)
+class ContestLooksTest {
+    @Test fun picksCarryTheirLooks() {
+        val o = org.json.JSONObject("""{"month":"2026-11","theme":null,"entries":0,"mine":[],
+            "last":{"month":"2026-10","theme":"t","picks":[{"code":"AAAA1111","title":"a","look":{"bg":"FF000000"}},{"code":"BBBB2222","title":"b"}]}}""")
+        val k = com.bamnat.app.company.contestOf(o)
+        assertEquals(listOf("AAAA1111" to "a", "BBBB2222" to "b"), k.picks)
+        assertEquals(setOf("AAAA1111"), k.pickLooks.keys)
+        assertEquals(0xFF000000, k.pickLooks.getValue("AAAA1111").bg)
+    }
+}

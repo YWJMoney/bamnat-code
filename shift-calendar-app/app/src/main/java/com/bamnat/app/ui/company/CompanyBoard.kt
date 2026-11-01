@@ -61,6 +61,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -451,7 +452,9 @@ fun TalkSheet(holder: TalkHolder) {
                         // 1.36 [VIL-12] 마을 V12 야간 이야기: on 교대·현장 plazas, what was written between 22시 and 6시, worked out here from when.
                         val nightRoom = o.company == com.bamnat.core.plaza.StylePlaza.SHIFT || o.company == com.bamnat.core.plaza.StylePlaza.FIELD
                         if (o.room && (allTops.any { it.kind != "talk" } || (nightRoom && allTops.any { nightPost(it) }))) {
-                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                // PC 확인 f39bcfbe: says it picks which posts show, apart from 쓸 글 below.
+                                Text("골라 보기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 (listOf<Pair<String?, String>>(null to "전체") + ROOM_KIND_LABELS.filter { it.first != "talk" } +
                                     listOfNotNull((NIGHT to "🌙 야간").takeIf { nightRoom })).forEach { (k, label) ->
                                     com.bamnat.app.ui.components.FilterChip(selected = only == k, onClick = { only = k }, label = { Text(label) })
@@ -513,11 +516,18 @@ fun TalkSheet(holder: TalkHolder) {
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
                 // [PLZ-09] What kind of post: a word, a question, or a proposal to change the rule.
                 if (replyTo == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
-                        // [PLAZA-32] A room has no rule to change: 의견 and 질문 only.
-                        // 1.36 [VIL-08] 마을 V8: a room's post is 이야기 · 질문 · 팁 · 자랑.
-                        (if (o.room) ROOM_KIND_LABELS else listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안")).forEach { (k, label) ->
-                            com.bamnat.app.ui.components.FilterChip(selected = kind == k, onClick = { kind = k; error = null }, label = { Text(label) })
+                    // PC 확인 f39bcfbe: what kind of post to write, as buttons joined in one bar under "쓸 글", so it does not look like
+                    // the row of 거르기 chips above the posts.
+                    Text("쓸 글", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp))
+                    // [PLAZA-32] A room has no rule to change: 의견 and 질문 only.
+                    // 1.36 [VIL-08] 마을 V8: a room's post is 이야기 · 질문 · 팁 · 자랑.
+                    val kinds = if (o.room) ROOM_KIND_LABELS else listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안")
+                    androidx.compose.material3.SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                        kinds.forEachIndexed { i, (k, label) ->
+                            SegmentedButton(selected = kind == k, onClick = { kind = k; error = null },
+                                shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(i, kinds.size),
+                                icon = {}) { Text(label, maxLines = 1) }
                         }
                     }
                 } else {

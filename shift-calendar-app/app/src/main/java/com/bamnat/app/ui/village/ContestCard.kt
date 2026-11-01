@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -26,6 +27,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -79,8 +81,17 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                 // PC 확인 V33: with no theme this month the title already says it; the line only says the theme.
                 Text((if (k.theme == null) "" else (lastMonth?.let { "${it}월" } ?: "지난 달") + " 이달의 테마 · ") + (k.lastTheme?.let { "‘$it’ · " } ?: "") + "눌러서 입어 보기",
                     style = MaterialTheme.typography.labelLarge)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    k.picks.forEach { (code, title) -> AssistChip(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = code; onRecipe(code) }, label = { Text("🏆 $title", maxLines = 1) }) }
+                // PC 확인 f39bcfbe: each pick as its small picture with the title under it, the whole a tap to try it on.
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    k.picks.forEach { (code, title) ->
+                        Column(Modifier.width(112.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                            .clickable(onClickLabel = "입어 보기") { com.bamnat.app.recipe.RecipeLinks.tryNext = code; onRecipe(code) }
+                            .padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            com.bamnat.app.ui.recipe.ThemeThumb(k.pickLooks[code]?.withDays(st) ?: com.bamnat.app.recipe.ThemeSwatch.example(st), width = 104.dp)
+                            Text("🏆 $title", style = MaterialTheme.typography.labelMedium, maxLines = 2,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                    }
                 }
             }
         }

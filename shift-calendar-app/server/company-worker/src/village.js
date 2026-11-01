@@ -2,6 +2,7 @@
 // apart from the plaza's posts (index.js) and the recipes' community (recipe-community.js).
 // [VIL-11] 이번 주 이야기 주제: one line the operator sets for a kind of work's plaza each week (KST, from Monday); none, none shown.
 import { DAY, HOUR } from "./units.js";
+import { lookOf } from "./recipes.js";
 
 export const VILLAGE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plaza_topics (room TEXT NOT NULL, week TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL,
@@ -31,9 +32,9 @@ export function monthBefore(month) {
 /** The recipes [codes] that are still up and public, code → title, in one read. */
 async function shownTitles(d, env, codes) {
   if (!codes.length) return new Map();
-  const rows = await d.all(env, `SELECT code, title, likes, applied AS users FROM recipes WHERE state = 'visible' AND scope = 'public'
+  const rows = await d.all(env, `SELECT code, title, likes, applied AS users, body FROM recipes WHERE state = 'visible' AND scope = 'public'
     AND code IN (${codes.map(() => "?").join(",")})`, ...codes);
-  return new Map(rows.map((r) => [r.code, r]));
+  return new Map(rows.map(({ body, ...r }) => [r.code, { ...r, look: body ? lookOf(body) : null }]));
 }
 
 /**
@@ -61,7 +62,9 @@ export async function villageRoute(d, request, env, path, url, now) {
       month, theme: here?.theme ?? null, entries: n?.n ?? 0, mine: mine.map((r) => r.code),
       // PC 확인 V26: what I put in, by name, for the card.
       mineTitles: mine.filter((r) => titles.has(r.code)).map((r) => ({ code: r.code, title: titles.get(r.code).title })),
-      ...(before && picks.length ? { last: { month: last, theme: before.theme, picks: picks.filter((c) => titles.has(c)).map((c) => ({ code: c, title: titles.get(c).title })) } } : {}),
+      ...(before && picks.length ? { last: { month: last, theme: before.theme, picks: picks.filter((c) => titles.has(c))
+        // PC 확인 f39bcfbe: each pick with its look, drawn as a small picture on the card.
+        .map((c) => ({ code: c, title: titles.get(c).title, ...(titles.get(c).look ? { look: titles.get(c).look } : {}) })) } } : {}),
     });
   }
   if (path === "/api/village/contest/enter" && request.method === "POST") {

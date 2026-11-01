@@ -583,7 +583,9 @@ test("[VIL-19] 이달의 주제 공모: 운영자가 주제를 정하면 내 공
   assert.equal((await call("POST", "/api/admin/village/contests/pick", { month: list.month, style: "SHIFT", codes: [mine] }, admin)).status, 200);
   t.mock.timers.setTime(AFTER + 3 * 86_400_000); // December (KST): November's picks show
   const next = (await see(3)).data;
-  assert.deepEqual([next.theme, next.last.theme, next.last.picks], [null, "야간 근무용 어두운 테마", [{ code: mine, title: "야간 다크" }]]);
+  assert.deepEqual([next.theme, next.last.theme, next.last.picks.map(({ look, ...p }) => p)], [null, "야간 근무용 어두운 테마", [{ code: mine, title: "야간 다크" }]]);
+  // PC 확인 f39bcfbe: a pick brings its look, for the card's small picture.
+  assert.deepEqual(next.last.picks[0].look.days.map((d) => d.l), ["주", "야"]);
 });
 
 test("[VIL-11] 이번 주 이야기 주제: 운영자가 유형 광장마다 한 줄, 다음 주엔 저절로 사라져요", async (t) => {
