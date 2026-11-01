@@ -1,6 +1,10 @@
 package com.bamnat.app.ui.settings
 
 import com.bamnat.app.data.rules
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -372,7 +376,9 @@ private fun NoticesPage(
     val canPost = remember(refresh) { Notifications.canPost(context) }
     val off = remember(refresh) {
         listOf(Notifications.ALARM_CHANNEL_ID, Notifications.DAY_CHANNEL_ID, Notifications.COMMUTE_CHANNEL_ID,
-            Notifications.MONEY_CHANNEL_ID, Notifications.LEAVE_CHANNEL_ID, Notifications.TODAY_CHANNEL_ID)
+            Notifications.MONEY_CHANNEL_ID, Notifications.LEAVE_CHANNEL_ID, Notifications.TODAY_CHANNEL_ID,
+            // PC 8fe7d8b3: 밤낮 소식·문의 답 채널도 꺼져 있으면 여기서 바로 알려요.
+            Notifications.PLAZA_CHANNEL_ID, Notifications.INQUIRY_CHANNEL_ID)
             .filter { canPost && !Notifications.channelOn(context, it) }.toSet()
     }
     fun warning(on: Boolean, channel: String) = if (on && channel in off) "휴대폰 설정에서 꺼져 있어 오지 않아요" else null
@@ -457,6 +463,20 @@ private fun NoticesPage(
             warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
             set(on) { it.copy(plazaNews = on) }
         }
+        // 1.36 [PUSH-01] PC 8fe7d8b3 사용성 제안: 두 채널이 휴대폰 설정의 '사용하지 않는 카테고리'에 숨어 있어 찾기 어려웠던 것.
+        if (settings.plazaNews) {
+            val inquiryOff = Notifications.INQUIRY_CHANNEL_ID in off
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = fix(Notifications.INQUIRY_CHANNEL_ID))
+                .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("문의 답 알림", style = MaterialTheme.typography.bodyLarge)
+                    Text(if (inquiryOff) "휴대폰 설정에서 꺼져 있어 오지 않아요. 눌러서 켜요" else "답이 오면 소리와 함께 바로 알려 줘요. 눌러서 소리·끄기를 정해요",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (inquiryOff) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+            }
+        } else Note("문의 답도 이제 바로 알리지 않아요. 답은 설정 › 도움말과 문의 › 내 문의에서 볼 수 있어요")
     }
     SectionCard(title = "자는 동안") {
         SwitchRow("자는 동안 미루기", "자는 동안 생긴 돈·연차 알림은 깨고 30분 뒤에 보내요. 밤낮·마을 소식은 근무 중에 생겨도 근무 끝나고 30분 뒤에 와요. 근무 알람과 일감 알림은 그대로 와요",

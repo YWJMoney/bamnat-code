@@ -335,6 +335,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // that already have a pattern were set up before this question existed, so they are shift workers
     // and are not asked; a setup on its way (or being saved) is never taken for one of those.
     val settingsNow by container.settingsRepository.settings.collectAsStateWithLifecycle()
+    // 1.36 [PUSH-01] PC 8fe7d8b3: 밤낮 소식을 끄면 바로 알림 토큰도 그 자리에서 거두고(다음 답 확인을 기다리지 않고), 켜면 다시 줘요.
+    LaunchedEffect(settingsNow.plazaNews) { container.appScope.launch { runCatching { com.bamnat.app.company.PushPhone.sync(container) } } }
     // [CALS-02] The calendar on screen and its kind of work, which names the tabs and opens its own settings.
     val activeCalendarId by container.calendars.active.collectAsStateWithLifecycle()
     val calendarList by container.calendars.calendars.collectAsStateWithLifecycle()
