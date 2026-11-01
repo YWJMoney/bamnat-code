@@ -132,7 +132,7 @@ class MATScreenshotTest : ScreenshotBase() {
     /** N10: the 단추 part's gradient on the app's Button, while a button given its own colours stays as it is. */
     @Test fun aButtonInTheButtonPartsGradient() = shoot("1487_mat_button_fill", PHONE) {
         val bp = Blueprint(Blueprint.clean(listOf(
-            mapOf("id" to "app.button", "paint" to Fill.Linear(90, listOf(Fill.Stop(0xFF26C6DA), Fill.Stop(0xFFAB47BC))).encode()),
+            mapOf("id" to "app.button", "paint" to Fill.Linear(90, listOf(Fill.Stop(0xFF26C6DA), Fill.Stop(0xFFAB47BC))).encode(), "r" to 6L),
         )))
         content {
             androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides bp) {

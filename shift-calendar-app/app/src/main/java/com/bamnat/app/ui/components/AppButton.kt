@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import com.bamnat.app.ui.parts.LocalBlueprint
+import com.bamnat.app.ui.parts.shape
 import com.bamnat.app.ui.theme.fillWith
 import com.bamnat.core.recipe.Fill
 
@@ -34,7 +35,8 @@ fun Button(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = ButtonDefaults.shape,
+    // 갈래 A가 부탁: 단추 부품의 모서리도 앱의 단추가 따라요.
+    shape: Shape = LocalBlueprint.current.let { bp -> if (bp.isEmpty) ButtonDefaults.shape else bp.own("app.button").shape(ButtonDefaults.shape) },
     colors: ButtonColors? = null,
     elevation: ButtonElevation? = ButtonDefaults.buttonElevation(),
     border: BorderStroke? = null,
