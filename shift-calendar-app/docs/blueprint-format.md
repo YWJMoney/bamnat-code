@@ -10,7 +10,7 @@
 
 ## 1. 지킬 원칙
 
-1. **값만 담아요(D106).** 부품·스타일·배치는 모두 앱이 읽는 값이에요. 수식은 갈래 D가 `{"fx":"…"}` 자리로 넣어요(아래 5항). 1판은 이 자리를 아직 거절해요(`ref`).
+1. **값만 담아요(D106).** 부품·스타일·배치는 모두 앱이 읽는 값이에요. 수식은 갈래 D(RUL-02)가 넣었어요: 스타일 칸 값 자리의 `{"fx":"…"}`와 줄의 `when` 조건(아래 5항). 수식 언어는 앱 함수만 쓰는 닫힌 언어예요(`core/formula/Formula.kt`, 서버 `src/formula.js`, 공통 사례 `docs/formula-cases.json`).
 2. **데이터는 꾸밈이 못 바꿔요.** 날짜·근무 같은 데이터 부품은 `hide`를 켜도 TalkBack에는 남아요(`mark:none`과 같아요).
 3. **옛 조각 위에 얹어요.** 화면은 먼저 옛 조각(`calTheme`·`calView`·`screenLook`·`memoLook`·`moneyLook`·`widget`)이 그리고, 설계도는 **적은 칸만** 덮어써요. 그래서 옛 테마 8계열과 장터 작품은 설계도가 없으면 그대로 보여요.
 4. **덧붙이기만 하면 판을 올리지 않아요.** 새 칸·새 부품 id·새 상태는 선택 칸으로 더하면 되고, 옛 앱은 모르는 칸을 버려요(조각 사전 규칙). 뜻이 바뀌는 변경만 갈래 A에 알려 판을 올려요.
@@ -58,7 +58,8 @@
 ## 4. 칸 (모두 선택)
 
 **상태 `on`**: `today`(오늘) · `sat` · `sun` · `holiday`(공휴일) · `dim`(다른 달) · `sel`(고른 것) · `role.day` · `role.eve` · `role.night` · `role.long` · `role.off` · `role.other`(근무 종류, `ShiftRole`) · `in`·`out`(수입·지출)
-- 여러 상태가 맞으면 이 차례로 덮어요: 기본 → `role.*` → `in`·`out` → `sat`·`sun` → `holiday` → `dim` → `today` → `sel`.
+- 여러 상태가 맞으면 이 차례로 덮어요: 기본 → `role.*` → `in`·`out` → `sat`·`sun` → `holiday` → `dim` → `today` → **`when` 줄(조건부 꾸미기)** → `sel`.
+- **`when`(RUL-02)**: 줄에 수식 조건을 달면 그날 값(근무·메모·꼬리표·지출 등, `FormulaName`)으로 맞을 때만 덮어요. 예: `{"id":"cal.cell","when":"근무종류 = \"야간\" 그리고 꼬리표.포함(\"인수인계\")","line":"solid","lineC":"빨강"}`. 같은 줄 열쇠는 (`id`, `on`, `when`). 그날 값이 없는 화면(그날이 아닌 곳)에서는 `when` 줄을 건너뛰어요. 앱은 `blueprint.style(id, states, LocalDayFacts.current?.scope(date))`로 불러요.
 
 **스타일**
 
@@ -108,7 +109,7 @@
 | B 꾸미기 재료 | 채우기 종류, 글꼴 id, 사진 조정, 움직임 | `paint`(Fill 글, `fill`보다 이김)·`linePaint`(선 채우기)·`photo`(PhotoAdjust 글)·`motion` 같은 새 선택 칸을 `BlueprintParts.STYLE_FIELDS`·서버 `PART_STYLE`에 더하고, `PartStyle`과 앱 그리기(`ui/parts/PartPaint.kt`)를 넓혀요. 글꼴 id는 이미 `sans`·카탈로그 id·`u`+16자리를 받아요 |
 | C 꾸밈 층 | 도형·스티커·글상자 | 따로 조각 `decor`. 붙는 곳(`anchor`)은 **이 표의 부품 id**, 날짜·근무 조건은 이 문서의 상태 이름(`today`·`role.night`·`sat`)을 같이 써요. 꾸밈 하나의 스타일 칸 이름도 4항과 같게 해요 |
 | C 고급 편집기·레이어 | 부품 나무 보기 | `BlueprintParts.IDS`·`parentOf`·`CHILDREN`·`LABELS`를 그대로 써요 |
-| D 수식·규칙 | 어떤 칸이든 수식 | 값 자리에 `{"fx":"…"}`를 허용(코덱 `Ref`에 `Formula`를 더함), 실패하면 그 칸만 기본값. 조건부 꾸미기는 `on` 상태의 넓힘으로도 돼요 |
+| D 수식·규칙 (넣음) | 스타일 칸 수식·`when` 줄 | 값 자리에 `{"fx":"…"}`(코덱 `Ref.Formula`), 실패하거나 칸이 못 받는 값이면 그 칸만 아래 줄대로. 조건부 꾸미기는 `when` 줄. 단추·규칙은 따로 `logic` 조각 |
 | E 탭 자유도 | 새 판(주·목록·타임라인·근무 띠·메모 보드·표) | 새 부품 id와 `CHILDREN`을 3항 방식으로 더해요 |
 | F 사용자 부품·리믹스 | 부품 하나 가져오기 | 설계도에서 한 `id`(와 아이들)의 줄만 떼어 옮겨요(`Blueprint.subtree`) |
 

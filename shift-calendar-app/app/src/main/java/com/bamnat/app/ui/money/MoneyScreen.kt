@@ -291,6 +291,8 @@ class MoneyViewModel(
         } ?: entry
         container.appScope.launch {
             money.save(settled)
+            // [RUL-04] 1.36 규칙 '가계부에 적으면'.
+            com.bamnat.app.logic.LogicRunner.onMoneySaved(container, settled.date)
             // [LEDG-18] The other lines from this place can follow in one tap.
             val same = old?.let { money.samePlace(entry, it.category) }.orEmpty()
             if (same.isNotEmpty()) {
@@ -703,6 +705,8 @@ fun MoneyScreen(
             }
             // [MCAL-06] Whose money this is, once there are several calendars.
             com.bamnat.app.ui.calendar.CalendarScopeChips(LocalContext.current.appContainer, Modifier.padding(horizontal = 16.dp))
+            // [RUL-03] 1.36 사용자 2026-11-01 "가계부와 연동": 가계부 화면에 놓은 단추.
+            com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.MONEY, com.bamnat.core.time.Today.date(), Modifier.padding(horizontal = 16.dp))
             PrimaryTabRow(selectedTabIndex = page.ordinal, containerColor = MaterialTheme.colorScheme.surface) {
                 MoneyViewModel.Page.entries.forEach { p ->
                     Tab(

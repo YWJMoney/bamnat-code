@@ -210,6 +210,7 @@ class RecipeClient(
             // [MKX-01] 1.36 두 구간: "theme" or "tab:<tab>" goes as scope (and tab), with the nearest 1.35 kind for a server before 1.36.
             when {
                 kind == SCOPE_THEME -> { add("scope=theme"); add("kind=skin") }
+                kind == SCOPE_LOGIC -> { add("scope=logic"); add("kind=rules") }
                 kind != null && kind.startsWith(SCOPE_TAB) -> {
                     add("scope=tab")
                     val t = kind.removePrefix(SCOPE_TAB)
@@ -389,6 +390,8 @@ class RecipeClient(
         /** [MKX-01] 1.36 장터 구간: [SCOPE_THEME], or [SCOPE_TAB] + one of [MARKET_TABS] ("tab:" alone: every tab's). */
         const val SCOPE_THEME = "theme"
         const val SCOPE_TAB = "tab:"
+        /** [RUL-07] 1.36 장터 '규칙·단추' 구간 (서버 scope `logic`, 갈래 F sectionOf). */
+        const val SCOPE_LOGIC = "logic"
         val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget")
         private fun legacyKind(tab: String): String? = when (tab) {
             "calendar" -> "skin"; "memo" -> "memo"; "money" -> "money"; "pay", "alarm" -> "rules"; "widget" -> "layout"; else -> null
@@ -398,6 +401,7 @@ class RecipeClient(
         fun fits(item: RecipeItem, kind: String?): Boolean = when {
             item.tabs.isEmpty() || kind == null -> true
             kind == SCOPE_THEME -> item.scope == "theme"
+            kind == SCOPE_LOGIC -> item.scope == "logic"
             kind.startsWith(SCOPE_TAB) -> item.scope == "tab" && kind.removePrefix(SCOPE_TAB).let { it.isEmpty() || item.tabs.firstOrNull() == it }
             else -> true
         }

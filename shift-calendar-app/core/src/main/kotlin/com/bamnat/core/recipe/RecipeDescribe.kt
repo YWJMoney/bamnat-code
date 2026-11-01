@@ -129,7 +129,15 @@ object RecipeDescribe {
         ).joinToString(" · ").ifEmpty { "화면 색·배경" }
         // [BLU-01] 1.36 부품 꾸미기: which parts, by the names the studio shows.
         PieceKind.PARTS -> items(p, "parts").map { it["id"] as String }.distinct().let { ids ->
-            "부품 ${ids.size}개 꾸밈: " + ids.take(4).joinToString("·") { BlueprintParts.LABELS[it] ?: it } + if (ids.size > 4) " 외" else ""
+            "부품 ${ids.size}개 꾸밈: " + ids.take(4).joinToString("·") { BlueprintParts.LABELS[it] ?: it } + (if (ids.size > 4) " 외" else "") +
+                items(p, "parts").count { it["when"] != null }.let { n -> if (n > 0) " · 조건부 꾸미기 ${n}줄" else "" }
+        }
+        // [RUL-03][RUL-04] 1.36 수식·규칙·버튼: how many of each, and that it writes data when it does.
+        PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(p.values).let { l ->
+            listOfNotNull(
+                "단추 ${l.buttons.size}개".takeIf { l.buttons.isNotEmpty() }, "규칙 ${l.rules.size}개".takeIf { l.rules.isNotEmpty() },
+                "메모·가계부를 바꾸는 동작 있음".takeIf { l.writes },
+            ).joinToString(" · ").ifEmpty { "수식·규칙" }
         }
         // [CVW-07]
         PieceKind.APP_FEEL -> listOfNotNull(

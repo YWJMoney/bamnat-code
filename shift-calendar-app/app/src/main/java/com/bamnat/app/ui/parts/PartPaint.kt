@@ -211,13 +211,13 @@ class CellParts(val cell: PartStyle, val date: PartStyle, val mark: PartStyle, v
         val LINE_IDS = listOf("memo", "money", "hours", "spend", "lunar", "holiday")
 
         /** The parts for a cell in [states], or null when the blueprint leaves the cell's inside alone. */
-        fun of(bp: Blueprint, states: Set<String>): CellParts? {
+        fun of(bp: Blueprint, states: Set<String>, scope: com.bamnat.core.formula.FormulaScope? = null): CellParts? {
             val inside = listOf("date", "mark") + LINE_IDS
-            val cell = bp.style("cal.cell", states)
+            val cell = bp.style("cal.cell", states, scope)
             if (!cell.hasLayout && inside.none { bp.touches("cal.cell.$it") } && cell.padH == null && cell.padV == null) return null
             return CellParts(
-                cell, bp.style("cal.cell.date", states), bp.style("cal.cell.mark", states),
-                LINE_IDS.associateWith { bp.style("cal.cell.$it", states) }, bp.childOrder("cal.cell", states),
+                cell, bp.style("cal.cell.date", states, scope), bp.style("cal.cell.mark", states, scope),
+                LINE_IDS.associateWith { bp.style("cal.cell.$it", states, scope) }, bp.childOrder("cal.cell", states),
             )
         }
     }

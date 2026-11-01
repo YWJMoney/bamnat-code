@@ -415,6 +415,8 @@ private fun FilterRow(state: MemoListState, vm: MemoListViewModel) = Column {
             FilterChip(selected = state.shift == name, onClick = { vm.toggleShift(name) }, label = { Text("$name 날") })
         }
     }
+    // [RUL-03] 1.36 단추 on the memo screen, for today.
+    com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.MEMO, com.bamnat.core.time.Today.date())
 }
 
 @Composable

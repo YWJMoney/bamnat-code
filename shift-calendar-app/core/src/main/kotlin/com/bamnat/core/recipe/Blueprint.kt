@@ -112,17 +112,21 @@ object BlueprintParts {
     val FIELDS: List<Field> = listOf(
         Field.Items(
             "parts", MAX_LINES, min = 1,
-            fields = listOf(Field.Pick("id", IDS), Field.Pick("on", STATES, optional = true)) + STYLE_FIELDS,
+            fields = listOf(
+                Field.Pick("id", IDS), Field.Pick("on", STATES, optional = true),
+                // [RUL-02] 1.36 조건부 꾸미기: the line is put on only on days its formula is true (after the `on` states, before `sel`).
+                Field.Text("when", com.bamnat.core.formula.Formula.MAX_LEN, optional = true, guard = false, check = com.bamnat.core.formula.Logic::formulaProblem),
+            ) + STYLE_FIELDS,
             check = ::linesProblem,
         ),
     )
 
-    /** Each (id, on) once, and an `order` names only that part's own children. */
+    /** Each (id, on, when) once, and an `order` names only that part's own children. */
     fun linesProblem(lines: List<Map<String, Any?>>): String? {
         val seen = HashSet<String>()
         for (l in lines) {
             val id = l["id"] as String
-            if (!seen.add(id + "|" + (l["on"] ?: ""))) return "dup"
+            if (!seen.add(id + "|" + (l["on"] ?: "") + "|" + (l["when"] ?: ""))) return "dup"
             val order = l["order"] as? String ?: continue
             val kids = CHILDREN[id].orEmpty()
             if (order.split(',').any { it !in kids }) return "order"
@@ -199,8 +203,33 @@ data class PartStyle(
  * states", resolved once per part and set of states and kept, so a month of cells costs a lookup each (drawn on one thread).
  */
 class Blueprint(val lines: List<Map<String, Any?>>) {
-    private val byKey: Map<String, PartStyle> = lines.associate { (it["id"] as String) + "|" + (it["on"] as? String ?: "") to PartStyle.of(it) }
+    /** [RUL-02] Lines that change by the day: a `when` formula, or a style value that is a formula (`{"fx":…}`). */
+    private val dynamic: List<Map<String, Any?>> = lines.filter { l -> l["when"] != null || l.values.any { it is Ref.Formula } }
+    private val byKey: Map<String, PartStyle> = lines.filter { it !in dynamic }
+        .associate { (it["id"] as String) + "|" + (it["on"] as? String ?: "") to PartStyle.of(it) }
     private val cache = HashMap<String, PartStyle>()
+    private val dynamicIds: Set<String> = dynamic.mapTo(HashSet()) { it["id"] as String }
+    private val compiled = HashMap<String, com.bamnat.core.formula.Compiled?>()
+
+    /** Whether some line changes by the day (the app then hands [style] that day's values). */
+    val hasFormulas: Boolean get() = dynamic.isNotEmpty()
+
+    private fun formula(src: String): com.bamnat.core.formula.Compiled? = compiled.getOrPut(src) {
+        (com.bamnat.core.formula.Formula.parse(src) as? com.bamnat.core.formula.Parsed.Ok)?.formula
+    }
+
+    /** Whether a dynamic line fits [states] and its `when` holds for the day [scope] describes. */
+    private fun fits(l: Map<String, Any?>, states: Set<String>, scope: com.bamnat.core.formula.FormulaScope): Boolean {
+        val on = l["on"] as? String
+        if (on != null && on !in states) return false
+        val w = l["when"] as? String ?: return true
+        return formula(w)?.run(scope)?.truthy == true
+    }
+
+    /** A dynamic line's values with each formula worked out for the day, as its field takes it; one that fails is left out. */
+    private fun worked(l: Map<String, Any?>, scope: com.bamnat.core.formula.FormulaScope): Map<String, Any?> = l.mapValues { (k, v) ->
+        if (v !is Ref.Formula) v else formula(v.src)?.run(scope)?.let { FormulaValues.forField(k, it) }
+    }
 
     val isEmpty: Boolean get() = lines.isEmpty()
     val ids: Set<String> = lines.mapTo(LinkedHashSet()) { it["id"] as String }
@@ -208,16 +237,28 @@ class Blueprint(val lines: List<Map<String, Any?>>) {
     /** Whether any line touches [id] or a part under it. */
     fun touches(id: String): Boolean = ids.any { it == id || it.startsWith("$id.") }
 
-    /** The part's own lines for [states] laid in [BlueprintParts.STATES] order, without what it takes from its parent. */
-    fun own(id: String, states: Set<String> = emptySet()): PartStyle {
+    /**
+     * The part's own lines for [states] laid in [BlueprintParts.STATES] order, without what it takes from its parent. With a day's
+     * [scope], the lines whose `when` holds (and formula values) go after the states and before `sel` (조건부 꾸미기, RUL-02).
+     */
+    fun own(id: String, states: Set<String> = emptySet(), scope: com.bamnat.core.formula.FormulaScope? = null): PartStyle {
         var s = byKey["$id|"] ?: PartStyle.NONE
-        for (st in BlueprintParts.STATES) if (st in states) byKey["$id|$st"]?.let { s = s.over(it) }
+        for (st in BlueprintParts.STATES) if (st in states && st != "sel") byKey["$id|$st"]?.let { s = s.over(it) }
+        if (scope != null && id in dynamicIds) {
+            for (l in dynamic) if (l["id"] == id && fits(l, states, scope)) s = s.over(PartStyle.of(worked(l, scope)))
+        }
+        if ("sel" in states) byKey["$id|sel"]?.let { s = s.over(it) }
         return s
     }
 
-    /** How [id] is drawn in [states]: its own lines over the letters its parents give it. */
-    fun style(id: String, states: Set<String> = emptySet()): PartStyle {
+    /** How [id] is drawn in [states] (on the day [scope] describes, when given): its own lines over the letters its parents give it. */
+    fun style(id: String, states: Set<String> = emptySet(), scope: com.bamnat.core.formula.FormulaScope? = null): PartStyle {
         if (lines.isEmpty()) return PartStyle.NONE
+        if (scope != null && dynamic.isNotEmpty() && byDay(id)) {
+            val parent = BlueprintParts.parentOf(id)
+            val inherited = parent?.let { style(it, states, scope).letters() } ?: PartStyle.NONE
+            return inherited.over(own(id, states, scope))
+        }
         val key = id + "|" + states.sorted().joinToString(",")
         cache[key]?.let { return it }
         val parent = BlueprintParts.parentOf(id)
@@ -225,6 +266,16 @@ class Blueprint(val lines: List<Map<String, Any?>>) {
         val s = inherited.over(own(id, states))
         cache[key] = s
         return s
+    }
+
+    /** Whether [id] or a part above it has a line that changes by the day. */
+    private fun byDay(id: String): Boolean {
+        var p: String? = id
+        while (p != null) {
+            if (p in dynamicIds) return true
+            p = BlueprintParts.parentOf(p)
+        }
+        return false
     }
 
     /** [id]'s children by last name in the blueprint's order: those [order] names first, the rest after in the app's order. */
@@ -240,7 +291,7 @@ class Blueprint(val lines: List<Map<String, Any?>>) {
     fun plus(other: List<Map<String, Any?>>): Blueprint {
         val m = LinkedHashMap<String, Map<String, Any?>>()
         for (l in lines + other) {
-            val k = (l["id"] as String) + "|" + (l["on"] as? String ?: "")
+            val k = (l["id"] as String) + "|" + (l["on"] as? String ?: "") + "|" + (l["when"] as? String ?: "")
             m[k] = (m[k] ?: emptyMap()) + l
         }
         return Blueprint(m.values.toList())
@@ -250,7 +301,8 @@ class Blueprint(val lines: List<Map<String, Any?>>) {
     fun encode(): String = if (lines.isEmpty()) "" else RecipeCodec.canonical(sorted())
 
     fun sorted(): List<Map<String, Any?>> = lines.sortedWith(
-        compareBy<Map<String, Any?>>({ BlueprintParts.IDS.indexOf(it["id"] as String) }, { (it["on"] as? String)?.let { s -> BlueprintParts.STATES.indexOf(s) + 1 } ?: 0 }),
+        compareBy<Map<String, Any?>>({ BlueprintParts.IDS.indexOf(it["id"] as String) }, { (it["on"] as? String)?.let { s -> BlueprintParts.STATES.indexOf(s) + 1 } ?: 0 },
+            { if (it["when"] == null) 0 else 1 }),
     )
 
     companion object {
