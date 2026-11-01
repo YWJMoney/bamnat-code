@@ -154,7 +154,7 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("스튜디오", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                 // [STU-21] 1.36 레시피 만들기 합침: one way in for every make.
-                Text("달력 칸·색·배경·카드 배치·위젯에 알람 묶음·메모 틀·규칙까지 한곳에서 만들고, 입히기·저장·올리기도 여기서 해요",
+                Text("칸·색·부품 하나하나부터 수식·규칙으로 서로 엮는 것까지 직접 만들어요. 입히기·저장·올리기도 여기서 해요",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 androidx.compose.material3.Button(onClick = { onStudio("mine") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 모양 고치기") }
             }
