@@ -1164,7 +1164,7 @@ function adminApp(L, BUILD, M) {
       ${edit && !current && x.entries.length ? `<div class="actions"><button class="btn primary" data-act="contest-pick" data-id="${esc(x.month)}|${esc(x.style)}">고른 작품을 이달의 테마로 (3개까지)</button></div>` : ""}
     </article>`;
     return `<h3>이달의 주제 공모</h3><p class="hint">달마다 유형별 주제를 정하면 앱 마을 › 공방 맨 위에 보이고, 만든 분이 내 공개 작품을 넣어요(한 사람 한 달 3개). 다음 달에 지난 달 작품 중 3개까지 고르면
-      앱에 ‘지난 달 이달의 테마’로 보여요. 고른 분께 드릴 프로 보상(조사 V19·832)은 아직 앱에 약속하지 않았고, 보상 길이 생기면 함께 열어요.</p>
+      앱에 ‘지난 달 이달의 테마’로 보여요. 고르면 작품 주인에게 프로 한 달(만든 작품 보상, 작품·달마다 한 번, 1년 12달 상한)이 바로 들어가요.</p>
       <div class="grid">${now.map((x) => card(x, true)).join("")}</div>
       ${last.length ? `<h3>지난 달 고르기</h3><div class="grid">${last.map((x) => card(x, false)).join("")}</div>` : ""}`;
   }
@@ -4134,7 +4134,7 @@ function adminApp(L, BUILD, M) {
       // PC 확인 V30: said plainly, with 되돌리기 to the picks before.
       const before = S.data.contests?.items.find((x) => x.month === month && x.style === style)?.picks ?? [];
       await act(() => api("/village/contests/pick", "POST", { month, style, codes }),
-        codes.length ? `저장했어요 · 고름 ${codes.length}/3, 앱 공방에 보여요` : "고른 것을 비웠어요",
+        (r) => (codes.length ? `저장했어요 · 고름 ${codes.length}/3, 앱 공방에 보여요${r?.rewarded ? ` · 보상 ${r.rewarded}명` : ""}` : "고른 것을 비웠어요"),
         async () => {
           await act(() => api("/village/contests/pick", "POST", { month, style, codes: before }), "되돌렸어요");
           S.data.contests = null;
