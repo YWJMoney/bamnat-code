@@ -632,10 +632,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             }
                         }
                     }
-                    // PC 제안 1.36: past 3 seconds of 준비 중, say why.
-                    var slow by remember { mutableStateOf(false) }
-                    LaunchedEffect(preparing) { slow = false; if (preparing) { kotlinx.coroutines.delay(3_000); slow = true } }
-                    if (preparing && slow) Text("처음엔 조금 걸려요. 잠시만 기다려 주세요", style = MaterialTheme.typography.bodySmall,
+                    // PC 확인 1.36 (3초 뒤 안내가 한 번도 안 보임: 올리기 화면을 그리는 동안은 화면이 멈춰 있음): said at once with 준비 중.
+                    if (preparing) Text("처음엔 몇 초 걸릴 수 있어요. 잠시만 기다려 주세요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },

@@ -273,13 +273,14 @@ internal fun Modifier.mockPick(region: String): Modifier {
 
 /** The kinds of day an example calendar shows when the recipe brings none: what this kind of work usually has. */
 internal fun exampleDays(style: WorkStyle?): List<Map<String, Any?>> = when (style) {
-    WorkStyle.SHIFT, null -> listOf(day("주간", "day", "주", 0xFFEF6C00), day("야간", "night", "야", 0xFF3949AB), day("휴무", "off", "휴", 0xFF757575))
-    WorkStyle.HOURLY -> listOf(day("근무", "day", "근", 0xFF2E7D32), day("휴무", "off", "휴", 0xFF757575))
+    WorkStyle.SHIFT, null -> listOf(day("주간", "day", "주", 0xFFEF6C00), day("야간", "night", "야", 0xFF3949AB), day("쉬는 날", "off", "휴", 0xFF757575))
+    WorkStyle.HOURLY -> listOf(day("근무", "day", "근", 0xFF2E7D32), day("쉬는 날", "off", "휴", 0xFF757575))
+    // PC 확인 W42 1.36: a day off is 쉬는 날 in every kind of work (투자는 휴장).
     // F-54: each kind of work's own words on the example days.
     WorkStyle.FIELD -> listOf(day("현장", "day", "현", 0xFF6D4C41), day("쉬는 날", "off", "휴", 0xFF757575))
-    WorkStyle.BUSINESS -> listOf(day("영업", "day", "영", 0xFF00897B), day("휴무", "off", "휴", 0xFF757575))
+    WorkStyle.BUSINESS -> listOf(day("영업", "day", "영", 0xFF00897B), day("쉬는 날", "off", "휴", 0xFF757575))
     WorkStyle.INVEST -> listOf(day("장 열림", "day", "장", 0xFF1E88E5), day("휴장", "off", "휴", 0xFF757575))
-    else -> listOf(day("근무", "day", "근", 0xFF1E88E5), day("휴무", "off", "휴", 0xFF757575))
+    else -> listOf(day("근무", "day", "근", 0xFF1E88E5), day("쉬는 날", "off", "휴", 0xFF757575))
 }
 
 /** What a calendar card says in the example, in this kind of work's words (F-54). */
