@@ -161,19 +161,27 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     }
 
     val tools: List<Tool> get() = when (this) {
-        CALENDAR -> listOf(Tool.CELL, Tool.PARTS, Tool.BOX, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS)
-        MEMO -> listOf(Tool.MEMO_LOOK, Tool.PARTS, Tool.BOX, Tool.COLORS, Tool.CARDS)
-        MONEY -> listOf(Tool.MONEY_LOOK, Tool.PARTS, Tool.BOX, Tool.COLORS, Tool.CARDS)
-        STATS -> listOf(Tool.COLORS, Tool.BOX, Tool.CARDS)
-        PAY -> listOf(Tool.PAY_LOOK, Tool.COLORS, Tool.BOX)
-        PLAZA -> listOf(Tool.COLORS, Tool.BOX)
-        SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.BOX, Tool.TABS, Tool.CORNERS)
-        WIDGET -> listOf(Tool.WIDGET, Tool.BOX)
+        CALENDAR -> listOf(Tool.CELL, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS)
+        MEMO -> listOf(Tool.MEMO_LOOK, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        MONEY -> listOf(Tool.MONEY_LOOK, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        STATS -> listOf(Tool.COLORS, Tool.DECOR, Tool.BOX, Tool.CARDS)
+        PAY -> listOf(Tool.PAY_LOOK, Tool.COLORS, Tool.DECOR, Tool.BOX)
+        PLAZA -> listOf(Tool.COLORS, Tool.DECOR, Tool.BOX)
+        SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.TABS, Tool.CORNERS)
+        WIDGET -> listOf(Tool.WIDGET, Tool.DECOR, Tool.BOX)
         ALARM, GUARDED -> listOf(Tool.COLORS)
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
-        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.COLORS, Tool.PARTS, Tool.BOX, Tool.CORNERS, Tool.TABS)
+        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.COLORS, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.CORNERS, Tool.TABS)
         FEATURES -> listOf(Tool.FEATURE)
+    }
+
+    /** [LAY-04] Where this area's 꾸밈 층 can stand. */
+    val decorPlaces: List<String> get() = when (this) {
+        CALENDAR -> listOf("bg.calendar", com.bamnat.core.recipe.Decor.HEAD, com.bamnat.core.recipe.Decor.WEEK, com.bamnat.core.recipe.Decor.CELL)
+        MEMO -> listOf("bg.memo"); MONEY -> listOf("bg.money"); STATS -> listOf("bg.stats"); PAY -> listOf("bg.pay")
+        PLAZA -> listOf("bg.plaza"); SETTINGS -> listOf("bg.settings"); WIDGET -> listOf(com.bamnat.core.recipe.Decor.WIDGET)
+        else -> listOf(com.bamnat.core.recipe.Decor.APP)
     }
 
     /** Screens drawn only in 자세히 (the example app has no page of their own). */
@@ -193,6 +201,8 @@ private enum class Tool(val label: String) {
     BOX("보관함"), FEATURE("켜고 고치기"), SEED("한 색"), SHIFT("근무에 따라"),
     /** [BLU-06] 1.36 부품 하나하나 꾸미기. */
     PARTS("부품"),
+    /** [LAY-04] 1.36 꾸밈 층: 도형·스티커·글상자·아이콘을 마음대로 놓아요. */
+    DECOR("꾸밈 층"),
 }
 
 /** [STU-24] 1.36 미리 보기 크기: the handle under it sets any size between these (사용자 2026-10-31 "크게작게 접기가 너무 불편"). */
@@ -570,6 +580,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Tool.WIDGET -> WidgetTool(WidgetLook.decode(d.widgetLook)) { w -> vm.change { it.copy(widgetLook = w.encode()) } }
                         Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer)
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
+                        Tool.DECOR -> com.bamnat.app.ui.decor.DecorTool(decor, area.decorPlaces, { label, nd ->
+                            if (label == null) vm.change { it.copy(decor = nd.encode()) } else vm.changeMerged(label) { it.copy(decor = nd.encode()) }
+                        }, vm::undo)
                     }
                     Spacer(Modifier.height(24.dp))
                 }
