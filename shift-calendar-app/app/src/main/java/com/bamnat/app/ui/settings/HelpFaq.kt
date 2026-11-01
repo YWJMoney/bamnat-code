@@ -947,10 +947,15 @@ internal object HelpFaq {
         return (first + search(text, topics, limit)).distinctBy { it.id }.filter { overlap(text, it) >= 2 }.take(limit)
     }
 
+    /** Words nearly every question says, whatever it is about. */
+    private val COMMON = listOf("화면", "이상", "가끔", "계속", "자꾸", "그냥", "너무", "진짜", "정말", "어떻게", "안돼", "안되", "해요",
+        "있어요", "없어요", "밤낮", "문제", "좀", "제가", "저는", "이거", "그거", "어디", "언제", "왜")
+
     /** How many of [text]'s words (two letters or more) the answer's question or keywords hold. */
     private fun overlap(text: String, t: HelpTopic): Int {
         val hay = (listOf(t.question) + t.keywords).map(SearchText::norm).filter { it.isNotEmpty() }
-        return SearchText.words(text).map(SearchText::norm).filter { it.length >= 2 }.distinct()
+        // 1.36 PC Y22 again ('앱이 이상해요 화면이 가끔 멈춰요' → 뒤로 가기 답): words almost every question has do not count.
+        return SearchText.words(text).map(SearchText::norm).filter { it.length >= 2 && COMMON.none { c -> it.startsWith(c) } }.distinct()
             .count { w -> hay.any { h -> w in h || (h.length >= 2 && h in w) } }
     }
 

@@ -140,7 +140,7 @@ internal fun ledgerOf(c: AppContainer, gate: Gate, yearlyMicros: Long?): RewardL
 internal fun ledgerLine(m: RewardLedger.Month): String {
     if (m.days == 0L) return ""
     val value = m.wonValue?.let { ", 약 ${won(it)}어치" }.orEmpty()
-    return "이번 달 받은 것 ${m.partsLine} (${m.days}일치$value)."
+    return "이번 달 받은 것 ${m.partsLine}" + (if (m.parts.size > 1) " (모두 ${m.days}일치$value)." else if (value.isNotEmpty()) " (${value.removePrefix(", ")})." else ".")
 }
 
 internal fun won(v: Long): String = "%,d원".format(v)

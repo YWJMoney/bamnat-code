@@ -14,6 +14,8 @@ class InquiryTipsTest {
     }
 
     @Test fun anAnswerSharingOneWordOnlyIsNotOffered() {
+        // PC 31b695ed: '뒤로 가기를 누르면 어디로 가나요?' came for this one.
+        assertTrue(HelpFaq.forQuestion("앱이 이상해요 화면이 가끔 멈춰요").none { "뒤로" in it.question })
         val tips = HelpFaq.forQuestion("화면이 이상해요")
         assertTrue(tips.map { it.question }.toString(), tips.isEmpty())
         assertTrue(HelpFaq.forQuestion("알람이 안 울려요").isNotEmpty())

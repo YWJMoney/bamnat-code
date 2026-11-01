@@ -182,6 +182,8 @@ fun ProScreen(onBack: () -> Unit) {
             ) {
                 val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
                 StatusCard(gate, pro, zone, settings.workStyle)
+                // 1.36 [PSH-01] 프로 나눔 1인, right under 지금 (PC: 맨 아래에 있어 못 찾았어요).
+                if (c.tierApi.enabled) ProShareCard(c, gate, zone, onMessage = { message = it })
                 // 1.36 840 보상 장부: what this phone was given this month, for someone without 프로.
                 if (gate.live && !gate.preview && gate.tier < com.bamnat.app.tier.Tier.PRO) RewardLedgerCard(c, gate, plans)
                 ConsentWaiting(c, pro, onMessage = { message = it })
@@ -232,8 +234,6 @@ fun ProScreen(onBack: () -> Unit) {
                 InviteCard(c, onMessage = { message = it })
 
                 if (c.tierApi.enabled) {
-                    // 1.36 [PSH-01] 프로 나눔 1인.
-                    ProShareCard(c, gate, zone, onMessage = { message = it })
                     PassesCard(c, pro, gate, zone, onMessage = { message = it })
                     AdminCard(c, pro, onMessage = { message = it })
                 }
@@ -564,7 +564,8 @@ private fun RewardLedgerCard(c: AppContainer, gate: Gate, plans: List<Plan>) {
     val m = remember(gate.leases, moments.found, yearly) { ledgerOf(c, gate, yearly) }
     if (m.empty) return
     SectionCard(title = "보상 장부") {
-        if (m.days > 0) Text("이번 달 받은 것  ${m.partsLine} (${m.days}일치)", style = MaterialTheme.typography.bodyMedium)
+        // 1.36 PC ('7일 … (7일치)' 말이 겹쳐요): the month's total only when there is more than one to add up.
+        if (m.days > 0) Text("이번 달 받은 것  ${m.partsLine}" + (if (m.parts.size > 1) " (모두 ${m.days}일치)" else ""), style = MaterialTheme.typography.bodyMedium)
         // 1.36 PC Y16 ('받은 날' 뒤에 날짜가 없어요): each bundle open now, from the day it was given to the day it ends.
         val now = java.time.Instant.ofEpochMilli(gate.now)
         for (b in com.bamnat.core.tier.FeatureLease.Bundle.entries) {
