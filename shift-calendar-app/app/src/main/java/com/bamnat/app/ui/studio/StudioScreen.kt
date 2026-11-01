@@ -78,6 +78,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import com.bamnat.app.ui.parts.partPicking
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -167,10 +168,10 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         MEMO -> listOf(Tool.MEMO_LOOK, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.COLORS, Tool.CARDS)
         MONEY -> listOf(Tool.MONEY_LOOK, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.COLORS, Tool.CARDS)
         STATS -> listOf(Tool.COLORS, Tool.DECOR, Tool.BOX, Tool.CARDS)
-        PAY -> listOf(Tool.PAY_LOOK, Tool.COLORS, Tool.DECOR, Tool.BOX)
+        PAY -> listOf(Tool.PAY_LOOK, Tool.PARTS, Tool.COLORS, Tool.DECOR, Tool.BOX)
         PLAZA -> listOf(Tool.COLORS, Tool.DECOR, Tool.BOX)
         SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.TABS, Tool.CORNERS)
-        WIDGET -> listOf(Tool.WIDGET, Tool.DECOR, Tool.BOX)
+        WIDGET -> listOf(Tool.WIDGET, Tool.PARTS, Tool.DECOR, Tool.BOX)
         ALARM, GUARDED -> listOf(Tool.COLORS)
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
@@ -454,12 +455,20 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     val zoom = androidx.compose.foundation.gestures.rememberTransformableState { z, _, _ ->
                         scale = (scale * z).coerceIn(SCALE_MIN, SCALE_MAX)
                     }
+                    // [BLU-09] 1.36 누락 점검 N4: with 부품 open, a tap on the example opens the part tapped (again: the part around it).
+                    val spotsOn = (if (tool in area.tools) tool else area.tools.first()) == Tool.PARTS && !half && !comparing
+                    val spots = remember { com.bamnat.app.ui.parts.PartSpots() }
                     if (scale > 0f) Box(Modifier.fillMaxWidth()
                         // [STU-41] What the example shows is kept as a picture, for 올리기's 표지.
                         .drawWithContent { shotLayer.record { this@drawWithContent.drawContent() }; drawLayer(shotLayer) }
                         .holdToPeek(enabled = s.prevPieces != null) { peeking = it; if (!it) peekMarks = 0 }
-                        .transformable(zoom, canPan = { false }), contentAlignment = Alignment.Center) {
-                        CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalMockPick provides ::picked) {
+                        .transformable(zoom, canPan = { false })
+                        .partPicking(if (spotsOn) spots else null, partNow?.first) { id ->
+                            partPick = id to null
+                            openedLine = "‘${com.bamnat.core.recipe.BlueprintParts.LABELS[id] ?: id}’ 부품을 열었어요. 같은 곳을 한 번 더 누르면 그 바깥 부품이에요"
+                        }, contentAlignment = Alignment.Center) {
+                        CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalMockPick provides ::picked,
+                            com.bamnat.app.ui.parts.LocalPartSpots provides (if (spotsOn) spots else null)) {
                         Conditioned(seeDark, seeBig, seeCvd, c.settingsRepository.current.accentColor) {
                         if (!detail && !area.detailOnly) {
                             // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.
@@ -876,25 +885,45 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
     }
 }
 
-/** The widget's example: today's day on its plate, light or dark and as see-through as chosen. */
+/**
+ * The widget's example: today's day on its plate, light or dark and as see-through as chosen, and [BLU-10] the 위젯 parts as the home
+ * screen draws them (판 전체 `widget`, 머리 `widget.head`, 칸 `widget.cell`; a tap on one opens it in 부품).
+ */
 @Composable
-private fun WidgetSample(w: WidgetLook) {
-    val dark = w.bg?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
+internal fun WidgetSample(w: WidgetLook) {
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val whole = if (bp.touches("widget")) bp.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
+    val bg = whole.fill?.let { it or 0xFF000000L } ?: w.bg
+    val dark = bg?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
         ?: when (w.theme) { "dark" -> true; "light" -> false; else -> androidx.compose.foundation.isSystemInDarkTheme() }
-    val ground = w.bg ?: if (dark) 0xFF1E1F24L else 0xFFFFFFFFL
-    val plate = androidx.compose.ui.graphics.Color(ground.toInt()).copy(alpha = w.alpha / 100f)
+    val ground = bg ?: if (dark) 0xFF1E1F24L else 0xFFFFFFFFL
+    val alpha = whole.fillA?.takeIf { whole.fill != null }?.let { it / 100f } ?: (w.alpha / 100f)
+    val plate = androidx.compose.ui.graphics.Color(ground.toInt()).copy(alpha = alpha)
     // [STU-38] The chosen text colour where it reads on the plate, else black or white, as the widget draws it.
-    val ink = androidx.compose.ui.graphics.Color(com.bamnat.core.recipe.Palette.inkOn(w.ink ?: if (dark) 0xFFFFFFFFL else 0xFF1B1B1BL, ground).toInt())
+    val ink = androidx.compose.ui.graphics.Color(com.bamnat.core.recipe.Palette.inkOn(whole.ink ?: w.ink ?: if (dark) 0xFFFFFFFFL else 0xFF1B1B1BL, ground).toInt())
     val scale = w.textScale
+    val face = com.bamnat.core.recipe.PartStyle(font = whole.font, italic = whole.italic, deco = whole.deco)
     Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),
         contentAlignment = Alignment.Center) {
         // [LAY-07] 위젯 꾸밈 drawn on the plate as the home screen draws it.
-        Column(Modifier.fillMaxWidth().heightIn(min = 120.dp).clip(RoundedCornerShape((w.corner ?: 20).dp)).background(plate)
-            .decor(com.bamnat.core.recipe.Decor.WIDGET).padding(horizontal = 20.dp, vertical = 14.dp)) {
+        Column(Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget")).clip(RoundedCornerShape((whole.r ?: w.corner ?: 20).dp)).background(plate)
+            .decor(com.bamnat.core.recipe.Decor.WIDGET)
+            .padding(horizontal = (whole.padH ?: 20).dp, vertical = (whole.padV ?: 14).dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             // PC 확인 W1 1.36 (예시 근무가 내 근무와 달라요): my own today and tomorrow, the example only before any work is set.
             val (today, tomorrow) = rememberTwoDays() ?: ("오늘 · 주간 07:00" to "내일 · 야간 22:00")
-            Text(today, color = ink, style = MaterialTheme.typography.titleMedium, fontSize = (16 * scale).sp)
-            Text(tomorrow, color = ink.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium, fontSize = (14 * scale).sp)
+            val day0 = com.bamnat.core.time.Today.date()
+            val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { com.bamnat.core.holiday.KoreanHolidays.isHoliday(day0) }))
+            if (head.hide != true) com.bamnat.app.ui.parts.PartText("${day0.monthValue}월 ${day0.dayOfMonth}일", face.over(head),
+                MaterialTheme.typography.labelMedium.copy(color = ink.copy(alpha = 0.8f), fontSize = (12 * scale).sp),
+                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(6.dp))))
+            listOf(today to 16, tomorrow to 14).forEachIndexed { i, (line, size) ->
+                val d = day0.plusDays(i.toLong())
+                val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, com.bamnat.core.holiday.KoreanHolidays.isHoliday(d), true, i == 0, false))
+                com.bamnat.app.ui.parts.PartText(line, face.over(cell.copy(size = cell.size?.let { if (i == 0) it * 1.3 else it })),
+                    (if (i == 0) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
+                        .copy(color = if (i == 0) ink else ink.copy(alpha = 0.75f), fontSize = (size * scale).sp),
+                    Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), RoundedCornerShape(6.dp))))
+            }
         }
     }
 }

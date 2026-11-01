@@ -603,6 +603,7 @@ private fun MemoCard(
             border = edge,
             modifier = Modifier
                 .fillMaxWidth()
+                .then(com.bamnat.app.ui.parts.partSpotModifier("memo.card"))
                 .clip(shape)
                 .then(if (look.layout == "diary") Modifier.drawBehind {
                     val gap = 22.dp.toPx()
@@ -634,7 +635,7 @@ private fun MemoCard(
                             .let { st -> com.bamnat.app.ui.parts.PartMods.text(titlePart, st) },
                         maxLines = if (look.layout == "compact") 1 else 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.title")),
                     )
                     if (memo.pinned) {
                         Icon(Icons.Filled.PushPin, "고정됨", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
@@ -725,7 +726,7 @@ private fun MemoContent(memo: Memo, query: String) {
             style = body.text(memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium),
             maxLines = body.lines ?: cardLook.lines ?: 8,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier.padding(top = 4.dp).then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.body")),
         )
     }
 }
@@ -748,7 +749,7 @@ private fun Footer(memo: Memo, showDate: Boolean) {
         if (date != null && datePart.hide != true) {
             val dateShape = datePart.shape(MaterialTheme.shapes.small)
             Row(
-                Modifier.clip(dateShape).background(datePart.fillColor ?: pillColor, dateShape).then(com.bamnat.app.ui.parts.PartMods.box(datePart.copy(fill = null, pad = null, padX = null, padY = null), dateShape))
+                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.date")).clip(dateShape).background(datePart.fillColor ?: pillColor, dateShape).then(com.bamnat.app.ui.parts.PartMods.box(datePart.copy(fill = null, pad = null, padX = null, padY = null), dateShape))
                     .padding(horizontal = (datePart.padH ?: 6).dp, vertical = (datePart.padV ?: 2).dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

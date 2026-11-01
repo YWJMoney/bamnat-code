@@ -2,6 +2,7 @@ package com.bamnat.app.ui.recipe
 
 import com.bamnat.app.ui.decor.nextPinned
 import com.bamnat.app.ui.decor.decor
+import com.bamnat.app.ui.parts.partSpot
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -250,14 +251,14 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                 CompositionLocalProvider(com.bamnat.app.ui.theme.LocalScreenLooks provides skin) {
                 com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.fillMaxWidth().clip(barShape)) {
                 val barPart = blueprint.style("app.tabs")
-                Row(Modifier.fillMaxWidth().background(barPart.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.surfaceContainer, barShape).padding(vertical = 6.dp),
+                Row(Modifier.fillMaxWidth().partSpot("app.tabs").background(barPart.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.surfaceContainer, barShape).padding(vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly) {
                     tabs.forEach { key ->
                         val t = TopLevel.entries.firstOrNull { it.route == key } ?: return@forEach
                         val on = key == tab
                         val tp = blueprint.style("app.tab", if (on) setOf("sel") else emptySet())
                         val ink = tp.ink?.let { Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
-                        Column(Modifier.clickable(onClickLabel = "${t.labelFor(style)} 화면 보기") { onTab(key) }.semantics { selected = on }.padding(horizontal = 4.dp, vertical = 2.dp),
+                        Column(Modifier.partSpot("app.tab").clickable(onClickLabel = "${t.labelFor(style)} 화면 보기") { onTab(key) }.semantics { selected = on }.padding(horizontal = 4.dp, vertical = 2.dp),
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(Modifier.background(if (on) tp.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, CircleShape).padding(horizontal = 10.dp, vertical = 2.dp)) {
                                 Icon(if (on) t.selectedIcon else t.icon, null, Modifier.size(20.dp), tint = ink)
@@ -417,13 +418,21 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
             memos[i % memos.size], hours = if (d["role"] == "off") null else "8h", off = d["role"] == "off", role = d["role"] as? String)
     }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title.
-        Text(if (real != null) "${today.monthValue}월 · 내 달력" else "예시 달력", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
-            modifier = Modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.HEAD).padding(vertical = 4.dp))
+        // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title, too.
+        // [BLU-09] The example's title is the 달력 머리 and 달 이름, drawn as the parts say and found by a tap in the 부품 도구.
+        val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+        val head = bp.style("cal.head")
+        val title = bp.style("cal.head.title")
+        Box(Modifier.partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp)))) {
+            if (title.hide != true) Box(Modifier.partSpot("cal.head.title").then(com.bamnat.app.ui.parts.PartMods.box(title.copy(ink = null), RoundedCornerShape(0.dp)))) {
+                com.bamnat.app.ui.parts.PartText(if (real != null) "${today.monthValue}월 · 내 달력" else "예시 달력", title,
+                    MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
+            }
+        }
         // F-92: a cell design or pattern is drawn by the month's own cell, as 자세히 and the phone do (the plain sample has neither).
         // U15 1.36 (빌드 확인: 누르고 있으면 전 모양이 다른 예시 날로 바뀜): with no own calendar both ways draw the same example — the
         // same days from the same Sunday the 9th, today the 3rd cell — so a cell design added or taken away changes only the looks.
-        if ((view.looks.isNotEmpty() || com.bamnat.app.ui.parts.LocalBlueprint.current.touches("cal")) && blank == null) com.bamnat.app.ui.settings.CellWeeks(view, rows = 2, onCell = null,
+        if ((view.looks.isNotEmpty() || bp.touches("cal") || com.bamnat.app.ui.parts.LocalPartSpots.current != null) && blank == null) com.bamnat.app.ui.settings.CellWeeks(view, rows = 2, onCell = null,
             start = if (real != null) start0 else exFirst, todayDate = if (real != null) today else exFirst.plusDays(2), days = sample,
             todayColor = (theme["today"] as? Long)?.asColor())
         else if (real != null) com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(),
@@ -467,7 +476,7 @@ private fun MockSummary(style: WorkStyle?) {
 
 @Composable
 private fun MockCard(title: String, what: String, bars: Boolean = false) {
-    Card(Modifier.fillMaxWidth().mockPick("cards"), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    Card(Modifier.fillMaxWidth().partSpot("app.card").mockPick("cards"), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.labelLarge)
             Text(what, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)

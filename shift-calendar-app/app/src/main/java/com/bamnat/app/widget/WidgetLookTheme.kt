@@ -5,6 +5,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.glance.GlanceTheme
 import androidx.glance.LocalContext
 import androidx.glance.appwidget.cornerRadius
@@ -24,6 +25,8 @@ private val LocalWidgetAlpha = compositionLocalOf { 1f }
 private val LocalWidgetBgColor = compositionLocalOf<androidx.compose.ui.graphics.Color?> { null }
 private val LocalWidgetCorner = compositionLocalOf { 20 }
 private val LocalWidgetText = compositionLocalOf { 1f }
+/** [BLU-10] The widget's inner padding (가로 to 세로), 12 dp each unless the `widget` part sets its own. */
+private val LocalWidgetPad = compositionLocalOf { 12 to 12 }
 
 /** [STU-38] A text size in the widget, times the chosen 글자 크기. */
 @Composable
@@ -49,10 +52,16 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
     val picture = pictureId?.let { id ->
         runCatching { com.bamnat.app.recipe.LookImages.file(context, id).takeIf { it.isFile }?.let { android.graphics.BitmapFactory.decodeFile(it.path) } }.getOrNull()
     }
+    // [BLU-10] 1.36 위젯 부품: the blueprint's `widget` part over 위젯 모양 (its fill, corners, padding and 글자 색 win).
+    val parts = remember(settings?.parts) { com.bamnat.core.recipe.Blueprint.decode(settings?.parts) }
+    val whole = if (parts.touches("widget")) parts.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
+    val bgArgb = whole.fill?.let { it or 0xFF000000L } ?: look.bg
+    val inkArgb = whole.ink ?: look.ink
     // [STU-38] A background colour of its own decides light or dark, and the text is the chosen colour only where it reads (4.5:1).
-    val ownBg = look.bg?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
-    val darkGround = look.bg?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
-    val ink = look.ink?.let { i -> look.bg?.let { b -> com.bamnat.core.recipe.Palette.inkOn(i, b) } ?: i }?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
+    val ownBg = bgArgb?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
+    val darkGround = bgArgb?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
+    val ink = inkArgb?.let { i -> bgArgb?.let { b -> com.bamnat.core.recipe.Palette.inkOn(i, b) } ?: i }?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
+    val alpha = whole.fillA?.takeIf { whole.fill != null }?.let { it / 100f } ?: (look.alpha / 100f)
     fun inked(c: androidx.compose.material3.ColorScheme) = if (ink == null) c else c.copy(onSurface = ink, onBackground = ink, onSurfaceVariant = ink.copy(alpha = 0.8f))
     val colors = when {
         darkGround == true || (darkGround == null && look.theme == "dark") -> androidx.glance.material3.ColorProviders(inked(darkColorScheme()))
@@ -62,9 +71,10 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
     }
     GlanceTheme(colors = colors) {
         // A picture behind the widget is veiled at least 45 % so its words read.
-        CompositionLocalProvider(LocalWidgetAlpha provides if (picture != null) minOf(look.alpha / 100f, 0.55f).coerceAtLeast(0.45f) else look.alpha / 100f,
-            LocalWidgetPicture provides picture, LocalWidgetBgColor provides ownBg, LocalWidgetCorner provides (look.corner ?: 20),
-            LocalWidgetText provides look.textScale, LocalWidgetDecor provides decor) { content() }
+        CompositionLocalProvider(LocalWidgetAlpha provides if (picture != null) minOf(alpha, 0.55f).coerceAtLeast(0.45f) else alpha,
+            LocalWidgetPicture provides picture, LocalWidgetBgColor provides ownBg, LocalWidgetCorner provides (whole.r ?: look.corner ?: 20),
+            LocalWidgetText provides look.textScale, LocalWidgetParts provides parts, LocalWidgetDecor provides decor,
+            LocalWidgetPad provides ((whole.padH ?: 12) to (whole.padV ?: 12))) { content() }
     }
 }
 
@@ -89,9 +99,10 @@ fun WidgetSurface(modifier: androidx.glance.GlanceModifier, content: @Composable
     androidx.glance.layout.Box(modifier.fillMaxSize().cornerRadius(r)) {
         if (picture != null) androidx.glance.Image(androidx.glance.ImageProvider(picture), contentDescription = null,
             contentScale = androidx.glance.layout.ContentScale.Crop, modifier = androidx.glance.GlanceModifier.fillMaxSize().cornerRadius(r))
+        val (px, py) = LocalWidgetPad.current
         val decor = LocalWidgetDecor.current
         if (!decor.has(com.bamnat.core.recipe.Decor.WIDGET)) {
-            androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(r).padding(12.dp)) { content() }
+            androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(r).padding(horizontal = px.dp, vertical = py.dp)) { content() }
             return@Box
         }
         // [LAY-07] 꾸밈 층: the ones under the words on the ground, the content, then the ones over it.
@@ -104,7 +115,7 @@ fun WidgetSurface(modifier: androidx.glance.GlanceModifier, content: @Composable
         androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(r)) {
             if (under != null) androidx.glance.Image(androidx.glance.ImageProvider(under), contentDescription = null,
                 contentScale = androidx.glance.layout.ContentScale.FillBounds, modifier = androidx.glance.GlanceModifier.fillMaxSize())
-            androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().padding(12.dp)) { content() }
+            androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().padding(horizontal = px.dp, vertical = py.dp)) { content() }
             if (over != null) androidx.glance.Image(androidx.glance.ImageProvider(over), contentDescription = null,
                 contentScale = androidx.glance.layout.ContentScale.FillBounds, modifier = androidx.glance.GlanceModifier.fillMaxSize())
         }

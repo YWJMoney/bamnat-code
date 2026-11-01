@@ -2,6 +2,7 @@ package com.bamnat.app.screenshots
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.core.recipe.Blueprint
+import androidx.compose.foundation.verticalScroll
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -31,4 +32,36 @@ class BLUScreenshotTest : ScreenshotBase() {
         app.container.settingsRepository.update { it.copy(parts = this@BLUScreenshotTest.parts) }
         settle()
     }
+
+    /** [BLU-11][BLU-10] 누락 점검 N2·N3: 급여 머리·합계·한 줄, 가계부 날짜 머리·한 줄·금액, 위젯 판·머리·칸이 부품대로. */
+    private val more = Blueprint(
+        Blueprint.clean(
+            listOf(
+                mapOf("id" to "pay.head", "font" to "serif", "ink" to 0xFF1E335CL, "deco" to "under"),
+                mapOf("id" to "pay.total", "fill" to 0xFF1E335CL, "r" to 4L, "line" to "dash", "lineC" to 0xFFFFC107L, "lineW" to 2L, "tshadow" to 3L),
+                mapOf("id" to "pay.row", "on" to "out", "fill" to 0xFFFFEBEEL, "ink" to 0xFFC62828L, "r" to 8L, "pad" to 6L),
+                mapOf("id" to "money.day", "fill" to 0xFFE8F5E9L, "r" to 12L),
+                mapOf("id" to "money.amount", "on" to "in", "fill" to 0xFFFFF4CCL, "r" to 6L, "pad" to 2L, "italic" to true),
+                mapOf("id" to "widget", "fill" to 0xFF102A43L, "r" to 6L),
+                mapOf("id" to "widget.head", "ink" to 0xFFFFC107L, "font" to "mono"),
+                mapOf("id" to "widget.cell", "on" to "today", "fill" to 0xFF2E7D32L, "r" to 10L, "pad" to 4L),
+            ),
+        ),
+    )
+
+    @Test fun partsOnPayMoneyAndWidget() = shoot("1901_parts_pay_money_widget", FOLDED) {
+        content {
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides more) {
+                androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScrollFixed()) {
+                    com.bamnat.app.ui.settings.PaySample(com.bamnat.core.recipe.PayLook(), com.bamnat.core.work.WorkStyle.SHIFT) {}
+                    com.bamnat.app.ui.settings.MoneySample(com.bamnat.core.recipe.MoneyLook()) {}
+                    com.bamnat.app.ui.studio.WidgetSample(com.bamnat.core.recipe.WidgetLook())
+                }
+            }
+        }
+        settle()
+    }
 }
+
+@androidx.compose.runtime.Composable
+private fun androidx.compose.ui.Modifier.verticalScrollFixed() = this.then(androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()))

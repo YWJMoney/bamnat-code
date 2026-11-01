@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.settings
 
+import com.bamnat.app.ui.parts.fillColor
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.disabled
@@ -158,10 +159,10 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
     val height = when (shown.size) { "short" -> 52.dp; "tall" -> 86.dp; "huge" -> 118.dp; else -> 64.dp }
     val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().padding(4.dp)) {
-        Row(Modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.WEEK).then(com.bamnat.app.ui.parts.PartMods.box(blueprint.style("cal.week"), RoundedCornerShape(0.dp)))) {
+        Row(Modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.WEEK).then(com.bamnat.app.ui.parts.partSpotModifier("cal.week")).then(com.bamnat.app.ui.parts.PartMods.box(blueprint.style("cal.week"), RoundedCornerShape(0.dp)))) {
             (0 until 7).map { first.plusDays(it.toLong()).dayOfWeek }.forEach { w ->
                 val wd = blueprint.style("cal.week.day", setOfNotNull("sat".takeIf { w == java.time.DayOfWeek.SATURDAY }, "sun".takeIf { w == java.time.DayOfWeek.SUNDAY }))
-                Text(listOf("월", "화", "수", "목", "금", "토", "일")[w.value - 1], Modifier.weight(1f), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                Text(listOf("월", "화", "수", "목", "금", "토", "일")[w.value - 1], Modifier.weight(1f).then(com.bamnat.app.ui.parts.partSpotModifier("cal.week.day")), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     style = com.bamnat.app.ui.parts.PartMods.text(wd.copy(ink = null), androidx.compose.material3.LocalTextStyle.current),
                     color = wd.ink?.let { Color(it.toInt()) } ?: when (w) { java.time.DayOfWeek.SATURDAY -> cal.saturday; java.time.DayOfWeek.SUNDAY -> cal.sunday; else -> scheme.onSurfaceVariant })
             }
@@ -187,6 +188,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                 val pShape = com.bamnat.app.ui.parts.PartMods.shapeOf(cellPart, shape)
                 Box(
                     Modifier.weight(1f).fillMaxSize()
+                        .then(com.bamnat.app.ui.parts.partSpotModifier("cal.cell"))
                         .cellEdge(shown, look, pShape, scheme.outlineVariant)
                         .clip(pShape).background(tint ?: Color.Transparent)
                         .then(com.bamnat.app.ui.parts.PartMods.box(cellPart.copy(pad = null, padX = null, padY = null, out = null, shadow = null), pShape))
@@ -426,21 +428,32 @@ internal fun moneySummary(l: MoneyLook): String = if (l.isDefault) "처음대로
     mapOf("s" to "금액 작게", "l" to "금액 크게")[l.amount], "수입·지출 색".takeIf { l.income != null || l.expense != null },
 ).joinToString(" · ").ifEmpty { "바꿈" }
 
-/** A money list's example: a day's line and three records, by the real colours and sizes. */
+/** A money list's example: a day's line and three records, by the real colours and sizes and the 가계부 parts (BLU-05·BLU-09). */
 @Composable
 internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
     val (income, expense) = com.bamnat.app.ui.money.moneyInks()
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "가계부 모양 고치기", onClick = onTap)) {
         val band = look.dayHead == "band"
-        Row(Modifier.fillMaxWidth().background(if (band) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Text("11월 4일 (수)", style = if (look.dayHead == "big") MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelLarge,
-                color = if (band) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+        val day = bp.style("money.day")
+        val dayShape = com.bamnat.app.ui.parts.PartMods.shapeOf(day, RoundedCornerShape(0.dp))
+        Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("money.day"))
+            .then(com.bamnat.app.ui.parts.PartMods.box(day.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), dayShape))
+            .background(day.fillColor ?: if (band) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, dayShape)
+            .padding(horizontal = (day.padH ?: 16).dp, vertical = (day.padV ?: 8).dp)) {
+            Text("11월 4일 (수)", modifier = Modifier.weight(1f),
+                style = com.bamnat.app.ui.parts.PartMods.text(day, (if (look.dayHead == "big") MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelLarge)
+                    .copy(color = if (band) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary)))
             Text("-13,500원", style = MaterialTheme.typography.labelMedium, color = expense)
         }
         listOf(Triple("🍚", "점심", -9_000L), Triple("☕", "커피", -4_500L), Triple("💼", "월급", 3_120_000L)).forEach { (emoji, title, amount) ->
             val (minH, padV) = when (look.rows) { "compact" -> 48.dp to 4.dp; "roomy" -> 76.dp to 12.dp; else -> 64.dp to 8.dp }
-            Row(Modifier.fillMaxWidth().heightIn(min = minH).background(MaterialTheme.colorScheme.surface).padding(horizontal = 16.dp, vertical = padV),
+            val row = bp.style("money.row")
+            val amountPart = bp.style("money.amount", setOf(if (amount < 0) "out" else "in"))
+            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("money.row")).heightIn(min = row.h?.dp ?: minH)
+                .background(MaterialTheme.colorScheme.surface)
+                .then(com.bamnat.app.ui.parts.PartMods.box(row.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
+                .padding(horizontal = row.padH?.dp ?: 16.dp, vertical = row.padV?.dp ?: padV),
                 verticalAlignment = Alignment.CenterVertically) {
                 val ink = if (amount < 0) expense else income
                 when (look.mark) {
@@ -450,11 +463,15 @@ internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.bodyLarge)
+                    Text(title, style = com.bamnat.app.ui.parts.PartMods.text(row, MaterialTheme.typography.bodyLarge))
                     Text("체크카드", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text((if (amount < 0) "-" else "+") + "%,d원".format(kotlin.math.abs(amount)), color = ink, fontWeight = FontWeight.Bold,
-                    style = when (look.amount) { "s" -> MaterialTheme.typography.bodyMedium; "l" -> MaterialTheme.typography.titleLarge; else -> MaterialTheme.typography.titleSmall })
+                Text((if (amount < 0) "-" else "+") + "%,d원".format(kotlin.math.abs(amount)),
+                    color = amountPart.ink?.let { Color(it.toInt()) } ?: ink, fontWeight = amountPart.weight?.let { FontWeight(it) } ?: FontWeight.Bold,
+                    modifier = Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("money.amount"))
+                        .then(com.bamnat.app.ui.parts.PartMods.box(amountPart.copy(ink = null), RoundedCornerShape(4.dp))),
+                    style = com.bamnat.app.ui.parts.PartMods.text(amountPart.copy(ink = null),
+                        when (look.amount) { "s" -> MaterialTheme.typography.bodyMedium; "l" -> MaterialTheme.typography.titleLarge; else -> MaterialTheme.typography.titleSmall }))
             }
         }
     }
@@ -480,22 +497,38 @@ internal fun paySummary(l: PayLook?): String = if (l == null || l.isDefault) "�
     mapOf("compact" to "촘촘히", "roomy" to "넉넉히")[l.rows], "풀이 펼침".takeIf { l.open == true }, "날짜별 숨김".takeIf { l.days == false },
 ).joinToString(" · ").ifEmpty { "바꿈" }
 
-/** The pay screen's example: its total card and three lines, by the look of [style]. */
+/** The pay screen's example: its head, its total card and three lines, by the look of [style] and the 급여 parts (BLU-11). */
 @Composable
 internal fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "급여 모양 고치기", onClick = onTap).padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val fill = look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
-        val on = if (look.plus != null) contentColorOn(fill) else MaterialTheme.colorScheme.onPrimaryContainer
-        Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(fill).padding(16.dp)) {
+        val head = bp.style("pay.head")
+        if (head.hide != true) Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.head"))
+            .then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp))), verticalAlignment = Alignment.CenterVertically) {
+            com.bamnat.app.ui.parts.PartText("${style.label.substringBefore(' ')} · 월급", head, MaterialTheme.typography.titleMedium, Modifier.weight(1f))
+            Text("‹ 11월 ›", style = MaterialTheme.typography.titleSmall)
+        }
+        val total = bp.style("pay.total")
+        val fill = total.fillColor ?: look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
+        val on = total.ink?.let { Color(it.toInt()) } ?: if (look.plus != null || total.fillColor != null) contentColorOn(fill.copy(alpha = 1f)) else MaterialTheme.colorScheme.onPrimaryContainer
+        val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(total, MaterialTheme.shapes.large)
+        Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.total"))
+            .then(com.bamnat.app.ui.parts.PartMods.box(total.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), shape))
+            .clip(shape).background(fill).padding(horizontal = (total.padH ?: 16).dp, vertical = (total.padV ?: 16).dp)) {
             Text("11월 예상 급여 (세전) · ${style.label.substringBefore(' ')}", style = MaterialTheme.typography.labelLarge, color = on)
             Text("3,120,000원", color = on, fontWeight = FontWeight.Bold,
-                style = when (look.total) { "m" -> MaterialTheme.typography.headlineMedium; "xl" -> MaterialTheme.typography.displayMedium; else -> MaterialTheme.typography.displaySmall })
+                style = com.bamnat.app.ui.parts.PartMods.text(total.copy(ink = null),
+                    when (look.total) { "m" -> MaterialTheme.typography.headlineMedium; "xl" -> MaterialTheme.typography.displayMedium; else -> MaterialTheme.typography.displaySmall }))
         }
         listOf("기본급" to 2_397_500L, "야간근로수당" to 691_778L, "결근 공제" to -96_000L).forEach { (name, v) ->
-            Row(Modifier.fillMaxWidth().padding(vertical = when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp })) {
-                Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                Text("%,d원".format(v), style = MaterialTheme.typography.titleSmall,
-                    color = look.minus?.takeIf { v < 0 }?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.onSurface)
+            val row = bp.style("pay.row", setOf(if (v < 0) "out" else "in"))
+            val rowShape = com.bamnat.app.ui.parts.PartMods.shapeOf(row, MaterialTheme.shapes.small)
+            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.row"))
+                .then(com.bamnat.app.ui.parts.PartMods.box(row.copy(pad = null, padX = null, padY = null), rowShape))
+                .padding(horizontal = (row.padH ?: 0).dp, vertical = row.padV?.dp ?: when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp })) {
+                Text(name, Modifier.weight(1f), style = com.bamnat.app.ui.parts.PartMods.text(row, MaterialTheme.typography.bodyLarge))
+                Text("%,d원".format(v), style = com.bamnat.app.ui.parts.PartMods.text(row.copy(ink = null), MaterialTheme.typography.titleSmall),
+                    color = row.ink?.let { Color(it.toInt()) } ?: look.minus?.takeIf { v < 0 }?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.onSurface)
             }
         }
     }

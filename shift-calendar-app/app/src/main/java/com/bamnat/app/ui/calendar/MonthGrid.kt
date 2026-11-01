@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.parts.partSpot
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.parts.partBox
 import com.bamnat.app.ui.parts.partStyle
@@ -1093,6 +1094,9 @@ internal fun CustomCellBody(
     val cal = LocalCalendarColors.current
     val l = cellLook
     val dp = parts?.date ?: com.bamnat.core.recipe.PartStyle.NONE
+    // [BLU-09] In the studio's example each piece of the cell says where it is, for a tap to open it (nothing on the phone's own month).
+    val spotsOn = com.bamnat.app.ui.parts.LocalPartSpots.current != null
+    val spot: (String) -> Modifier = { id -> if (spotsOn) Modifier.partSpot(id) else Modifier }
     val mp = parts?.mark ?: com.bamnat.core.recipe.PartStyle.NONE
     val place = l?.datePlace ?: if (view.date == "left") "tl" else "tc"
     val mark = l?.mark ?: view.badge ?: "big"
@@ -1122,7 +1126,7 @@ internal fun CustomCellBody(
     // [BLU-05] The mark's line goes round the badge itself, in the shift's colour unless the blueprint gives one (PC 3차: 옅은 회색이 네모를 따라).
     val markBox = if (mp.line == null && mp.lineC == null && mp.lineW == null) mp
         else mp.copy(lineC = mp.lineC ?: barColor?.let { androidx.compose.ui.graphics.lerp(it, Color.Black, 0.45f) }?.toArgb()?.toLong()?.and(0xFFFFFFFFL), lineW = mp.lineW ?: 1.5)
-    val drawMark: @Composable () -> Unit = { if (mp.hide != true) Box(Modifier.partBox(markBox, markShape ?: RoundedCornerShape((mp.h?.dp ?: markSize) / 3))) {
+    val drawMark: @Composable () -> Unit = { if (mp.hide != true) Box(spot("cal.cell.mark").partBox(markBox, markShape ?: RoundedCornerShape((mp.h?.dp ?: markSize) / 3))) {
         androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.components.LocalBadgeShape provides markShape) {
         when (mark) {
             "none", "fill" -> {}
@@ -1143,7 +1147,7 @@ internal fun CustomCellBody(
                 else -> Color.Transparent
             }
             if (dp.hide != true) Box(
-                Modifier.then(if (dp.w != null) Modifier.width(dp.w!!.dp) else Modifier.size(with(density) { size.toDp() } + 6.dp))
+                spot("cal.cell.date").then(if (dp.w != null) Modifier.width(dp.w!!.dp) else Modifier.size(with(density) { size.toDp() } + 6.dp))
                     .clip(if (isToday && l?.dateShape == "none" && dp.fillColor == null) CircleShape else shapeOf).background(chip)
                     .partLine(dp, shapeOf),
                 contentAlignment = Alignment.Center,
@@ -1191,8 +1195,8 @@ internal fun CustomCellBody(
                     line, fontSize = lineSize, lineHeight = lineSize * FOOTER_LINE, maxLines = lp.lines ?: wrap, overflow = TextOverflow.Ellipsis,
                     style = lp.text(NumberStyle.merge(FooterTrim)), color = color, textAlign = textAlign,
                     fontWeight = lp.weight?.let { FontWeight(it) } ?: if (id == "money") FontWeight.Bold else FontWeight.Normal,
-                    modifier = if (!lp.isEmpty) Modifier.fillMaxWidth().partBox(lp.copy(ink = null), RoundedCornerShape(2.dp)) else if (id == "memo" && view.memo != null) Modifier.fillMaxWidth().background((onFill ?: cal.memoDot).copy(alpha = 0.10f), RoundedCornerShape(2.dp))
-                        .padding(horizontal = 1.dp) else Modifier.fillMaxWidth(),
+                    modifier = spot("cal.cell.$id").then(if (!lp.isEmpty) Modifier.fillMaxWidth().partBox(lp.copy(ink = null), RoundedCornerShape(2.dp)) else if (id == "memo" && view.memo != null) Modifier.fillMaxWidth().background((onFill ?: cal.memoDot).copy(alpha = 0.10f), RoundedCornerShape(2.dp))
+                        .padding(horizontal = 1.dp) else Modifier.fillMaxWidth()),
                 )
             }
         }
