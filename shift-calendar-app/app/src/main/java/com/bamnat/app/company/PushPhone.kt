@@ -73,7 +73,10 @@ class PushService : FirebaseMessagingService() {
 
     override fun onMessageReceived(message: RemoteMessage) {
         if (BuildConfig.DEBUG) android.util.Log.i("BamnatPush", "received ${message.data["kind"]}")
-        if (message.data["kind"] != "inquiry") return
+        // Only this project's server (or the operator's Firebase console test) can reach the token, so a message without a
+        // kind is taken as "look now" too: the check itself asks our server and tells only what is really new.
+        val kind = message.data["kind"]
+        if (kind != null && kind != "inquiry") return
         val c = applicationContext.appContainer
         c.appScope.launch { runCatching { InquiryReplyJob.check(c, fromPush = true) } }
     }
