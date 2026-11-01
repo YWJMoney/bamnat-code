@@ -125,6 +125,8 @@ class RecipeMakeViewModel(
         val error: String? = null,
         /** [BLU-07] The refusal's code, so 올리기 can offer what helps (PC 5차: 이유 한 줄과 '나만'). */
         val errorCode: String? = null,
+        /** [BLU-07] PC 7차: what 이 휴대폰에 저장 did, said under 올리기. */
+        val keptNote: String? = null,
         val draftId: Long = 0,
         /** [RCX-11] Recipes to tap into a 묶음 without typing codes: those put on this phone and those I put on the plaza (code to title). */
         val bundleChoices: List<Pair<String, String>> = emptyList(),
@@ -338,11 +340,27 @@ class RecipeMakeViewModel(
 
     fun fix(line: RecipeLint.Line) { line.fix?.let { f -> edit(f) } }
 
+    /**
+     * [BLU-07] PC 7차 (본줄 서버가 새 꾸밈을 몰라 '나만'으로도 못 올림): kept on this phone instead — a 부품 in 보관함 (스튜디오에서 얹어요),
+     * a theme in 내 테마.
+     */
+    fun keepHere() {
+        val r = _state.value.recipe
+        val unit = com.bamnat.core.recipe.LookParts.partUnit(r)
+        val ok = if (unit != null) c.wardrobe.keep(r, "", listOf(unit)) else c.wardrobe.saveLook(r.copy(title = r.title.take(30).ifBlank { "내가 꾸민 테마" }))
+        _state.value = _state.value.copy(error = null, errorCode = null, keptNote = when {
+            !ok && unit != null -> "보관함이 꽉 차서 담지 못했어요. 스튜디오 › 보관함에서 하나를 빼고 다시 눌러 주세요"
+            !ok -> "내 테마 칸이 꽉 차서 저장하지 못했어요. 마을 › 테마 › 내 테마에서 하나를 빼고 다시 눌러 주세요"
+            unit != null -> "이 휴대폰 보관함에 담았어요. 스튜디오 › 보관함에서 얹어 써요"
+            else -> "이 휴대폰 내 테마에 저장했어요. 마을 › 테마 › 내 테마에서 입어요"
+        })
+    }
+
     /** Step 5: 광장 (1.35 [RCX-28] 바로 올라가요), 링크로만, 나만 (만든 사람만 열어요). */
     fun publish() {
         val s = _state.value
         if (!RecipeLint.ready(lint)) return
-        _state.value = s.copy(sending = true, error = null, errorCode = null)
+        _state.value = s.copy(sending = true, error = null, errorCode = null, keptNote = null)
         viewModelScope.launch {
             try {
                 val shown = if (s.bare) com.bamnat.core.recipe.LookParts.withoutPhotos(s.recipe) else s.recipe
@@ -523,11 +541,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     4 -> StepWords(s, vm)
                     else -> StepCheck(s, vm) { scope.launch { scroll.animateScrollTo(0) } }
                 }
-                s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                // [BLU-07] PC 5차 사용성 제안: a refusal that 나만 can get past offers it in one tap (a 꾸밈 the server does not know yet cannot).
-                if (s.error != null && s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network")) {
-                    TextButton(onClick = { vm.scope("private"); vm.publish() }) { Text("나만 보기로 바꿔 올리기") }
-                }
+                // On 4/4 the refusal sits right under 올리기 (PC 7차); the other steps keep it here.
+                if (s.step < 5) s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Text("만들던 내용은 이 휴대폰에 저장돼요. 마을 › 공방 › 내 것에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // Room for the small example (or its pill) at the bottom corner, so nothing stays under it.
@@ -777,6 +792,28 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
         color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
     Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
+    // [BLU-07] PC 7차 (나만 보기로 저장을 눌러도 아무 표시가 없음, 거절 뒤 단추가 없음): the refusal and what gets past it, right here.
+    s.error?.let { e ->
+        Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(e, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Assertive })
+                // A refusal 나만 can get past offers it; one the server cannot take at all (a 꾸밈 it does not know, no network) keeps it here.
+                if (s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network")) {
+                    OutlinedButton(onClick = { vm.scope("private"); vm.publish() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("나만 보기로 바꿔 저장") }
+                }
+                OutlinedButton(onClick = vm::keepHere, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text(if (com.bamnat.core.recipe.LookParts.partUnit(s.recipe) != null) "이 휴대폰 보관함에 담기" else "이 휴대폰 내 테마에 저장")
+                }
+            }
+        }
+    }
+    s.keptNote?.let { n ->
+        Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+            Text("✓ $n", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.padding(12.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+        }
+    }
     // [STU-05] 1.35 올리지 않고 끝내기 (사용자 2026-10-30 "제작만 할수도 있어야해").
     HorizontalDivider()
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)

@@ -438,7 +438,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         FilterChip(selected = detail, onClick = { detail = true }, label = { Text("자세히") })
                         // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.
                         Box(Modifier.size(1.dp, 24.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                        ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it })
+                        // PC 7차 사용성 제안 (큰 글자는 미리 보기가 작아 보기 어려움): 큰 글자 on makes the example as large as it goes.
+                        ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it; if (it) scale = SCALE_MAX }, { seeCvd = it })
                     }
                     if (s.previewMode != com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) Text("미리 보기: ${s.previewMode.label} 모양이에요",
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -491,7 +492,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     LocalMoneyLook provides moneyLook,
                                     com.bamnat.app.ui.theme.LocalPayLooks provides payLooks,
                                     // [BLU-06] the draft's parts in 자세히 too.
-                                    com.bamnat.app.ui.parts.LocalBlueprint provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
+                                    com.bamnat.app.ui.parts.LocalBlueprint provides (MaterialTheme.colorScheme.background.luminance() < 0.5f).let { dark ->
+                                        remember(d.parts, dark) { com.bamnat.core.recipe.Blueprint.decode(d.parts).forDark(dark) } },
                                     com.bamnat.app.ui.decor.LocalDecor provides decor,
                                 ) {
                                     val t = area.target ?: FreeTarget.ALL
@@ -584,10 +586,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             val states = statesFor(pid)
                             if (states.isNotEmpty()) Box {
                                 var open by remember { mutableStateOf(false) }
-                                TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("${STATE_WORDS[pon] ?: "언제나"} ▾") }
+                                TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("${stateWord(pid, pon)} ▾") }
                                 androidx.compose.material3.DropdownMenu(open, { open = false }) {
                                     (listOf<String?>(null) + states).forEach { st ->
-                                        androidx.compose.material3.DropdownMenuItem(text = { Text(STATE_WORDS[st] ?: "언제나") },
+                                        androidx.compose.material3.DropdownMenuItem(text = { Text(stateWord(pid, st)) },
                                             onClick = { open = false; partPick = pid to st })
                                     }
                                 }

@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.recipe
 
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import com.bamnat.app.appContainer
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
@@ -93,12 +95,7 @@ internal fun ExampleCalendars(r: Recipe) {
                     ?: com.bamnat.core.layout.TabOrder.CALENDAR
                 // PC 6차: in the reader's own kind of work (no 매출·투자 cards for 교대), and the part's area drawn larger.
                 val style = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle
-                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(460.dp).clip(RoundedCornerShape(12.dp))) {
-                    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(660.dp)
-                        .graphicsLayer { scaleX = 1.35f; scaleY = 1.35f; transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0.5f, 0f) }) {
-                        MockPhone(r, style, tab, onTab = {})
-                    }
-                }
+                PartCloseUp(unit.removePrefix(com.bamnat.core.recipe.LookParts.UNIT)) { MockPhone(r, style, tab, onTab = {}) }
                 r.pieces.forEach { p -> Text("• ${RecipeDescribe.line(p, amounts = false)}", style = MaterialTheme.typography.bodySmall) }
                 Text("모든 일 유형에 똑같이 들어가요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -399,3 +396,49 @@ private fun PartsPreview(title: String, line: String, labels: Map<String, String
         }
     }
 }
+
+/**
+ * [BLU-07] PC 7차 사용성 제안 (부품 예시가 왼쪽이 잘리고 '오늘의 흐름'이 먼저 보여요): the example screen moved and grown so the 부품 [unit]
+ * sits in the middle of the frame. Where the example has no such part drawn (a 탭 판), it stays as a whole screen a little larger.
+ */
+@Composable
+private fun PartCloseUp(unit: String, content: @Composable () -> Unit) {
+    val spots = androidx.compose.runtime.remember { com.bamnat.app.ui.parts.PartSpots() }
+    var inner by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    var frameW by androidx.compose.runtime.remember { androidx.compose.runtime.mutableFloatStateOf(0f) }
+    var fit by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Triple<Float, Float, Float>?>(null) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.LaunchedEffect(unit) {
+        // A few frames: the example laid out and every part's place known, read once before it is moved.
+        repeat(3) { androidx.compose.runtime.withFrameNanos { } }
+        val origin = inner ?: return@LaunchedEffect
+        val boxes = spots.spots.values.filter { (id, _) -> id == unit || id.startsWith("$unit.") }.map { it.second }
+        if (frameW <= 0f) return@LaunchedEffect
+        // No such part drawn on the example (a 탭 판): the whole screen a little larger, in the middle.
+        if (boxes.isEmpty()) { fit = Triple(1.35f, frameW * (1f - 1.35f) / 2f, 0f); return@LaunchedEffect }
+        val l = boxes.minOf { it.left } - origin.x; val t = boxes.minOf { it.top } - origin.y
+        val rr = boxes.maxOf { it.right } - origin.x
+        val w = (rr - l).coerceAtLeast(1f)
+        val scale = (frameW * 0.92f / w).coerceIn(1f, 2.4f)
+        val pad = with(density) { 24.dp.toPx() }
+        fit = Triple(scale, frameW / 2 - (l + w / 2) * scale, (pad - t * scale).coerceAtMost(0f))
+    }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(460.dp).clip(RoundedCornerShape(12.dp))
+        .onGloballyPositionedFrame { frameW = it }) {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(660.dp)
+            .onRootAt { if (fit == null) inner = it }
+            .graphicsLayer {
+                val f = fit
+                transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0f)
+                if (f == null) { scaleX = 1f; scaleY = 1f } else { scaleX = f.first; scaleY = f.first; translationX = f.second; translationY = f.third }
+            }) {
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.parts.LocalPartSpots provides spots) { content() }
+        }
+    }
+}
+
+private fun Modifier.onGloballyPositionedFrame(onWidth: (Float) -> Unit): Modifier =
+    this.then(Modifier.onGloballyPositioned { onWidth(it.size.width.toFloat()) })
+
+private fun Modifier.onRootAt(onAt: (androidx.compose.ui.geometry.Offset) -> Unit): Modifier =
+    this.then(Modifier.onGloballyPositioned { onAt(it.positionInRoot()) })

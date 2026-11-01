@@ -97,9 +97,12 @@ internal fun PartsTool(
     val states = statesFor(id)
     if (states.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         (listOf<String?>(null) + states).forEach { st ->
-            FilterChip(selected = st == on, onClick = { on = st }, label = { Text(STATE_WORDS[st] ?: "언제나") })
+            FilterChip(selected = st == on, onClick = { on = st }, label = { Text(stateWord(id, st)) })
         }
     }
+    // [BLU-12] 어두운 화면 colours show in the example once it is seen dark.
+    if (on == "dark") Text("휴대폰이 어두운 화면일 때만 쓰는 색이에요. 미리 보기 위 ‘어두운 화면’을 켜면 여기서 바꾼 것이 보여요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on } ?: emptyMap()
     fun setAll(vararg kv: Pair<String, Any?>) {
         // [LAY-08] With 여러 부품 on, the same fields go to every ticked part (each keeps its other fields).
@@ -216,7 +219,7 @@ internal fun PartsTool(
         if (line.keys.any { it != "id" && it != "on" }) OutlinedButton(onClick = {
             val others = bp.lines.filterNot { it["id"] == id && it["on"] == on }
             onChange(if (others.isEmpty()) "" else Blueprint(others).encode())
-        }, modifier = Modifier.fillMaxWidth()) { Text("이 부품 처음대로 (${STATE_WORDS[on] ?: "언제나"})") }
+        }, modifier = Modifier.fillMaxWidth()) { Text("이 부품 처음대로 (${stateWord(id, on)})") }
         // [BLU-07] 1.36 이 부품만 올리기 (사용자 2026-11-01): 장터 '부품'에 이 부품(과 그 속)만, 다른 분이 스튜디오에서 얹어 써요.
         val unit = BlueprintParts.unitOf(id)
         if (onUploadPart != null && bp.lines.any { BlueprintParts.unitOf(it["id"] as? String ?: "") == unit }) {
@@ -240,20 +243,33 @@ private fun cornerNote(id: String): String = "처음대로 · 지금 " + when (i
 }
 
 internal fun partWords(id: String, on: String?): String =
-    (BlueprintParts.LABELS[id] ?: id) + (on?.let { " · " + (STATE_WORDS[it] ?: it) } ?: "")
+    (BlueprintParts.LABELS[id] ?: id) + (on?.let { " · " + stateWord(id, it) } ?: "")
 
-internal fun statesFor(id: String): List<String> = when {
+// [BLU-12] Every part has 어두운 화면 last: its colours when the phone (or the widget) is dark.
+internal fun statesFor(id: String): List<String> = statesOf(id) + "dark"
+
+private fun statesOf(id: String): List<String> = when {
     // The shift a mark shows comes first there (PC 3차: '야간 근무'가 줄 끝에 있어 밀어야 보여요).
     id == "cal.cell.mark" -> listOf("role.day", "role.eve", "role.night", "role.long", "role.off", "today", "sat", "sun", "holiday", "dim", "sel")
     id.startsWith("cal.cell") -> listOf("today", "sat", "sun", "holiday", "dim", "sel", "role.day", "role.eve", "role.night", "role.long", "role.off")
     id == "cal.week.day" -> listOf("sat", "sun")
     id == "app.tab" || id == "app.chip" -> listOf("sel")
-    id == "money.amount" || id == "money.row" -> listOf("in", "out")
+    id == "money.amount" || id == "money.row" || id == "pay.row" -> listOf("in", "out")
+    // [BLU-10] 위젯 칸 is a day like the calendar's cells; 위젯 머리 turns red on a public holiday.
+    id == "widget.cell" -> listOf("today", "sat", "sun", "holiday", "dim", "role.day", "role.eve", "role.night", "role.long", "role.off")
+    id == "widget.head" -> listOf("holiday")
     else -> emptyList()
 }
 
+/** A state's words on [id]: 급여 한 줄's in·out are 더하는·빼는 항목. */
+internal fun stateWord(id: String, st: String?): String = when {
+    id.startsWith("pay.") && st == "in" -> "더하는 항목"
+    id.startsWith("pay.") && st == "out" -> "빼는 항목"
+    else -> STATE_WORDS[st] ?: "언제나"
+}
+
 internal val STATE_WORDS = mapOf<String?, String>(
-    "today" to "오늘", "sat" to "토요일", "sun" to "일요일", "holiday" to "공휴일", "dim" to "다른 달", "sel" to "고른 것",
+    "dark" to "어두운 화면", "today" to "오늘", "sat" to "토요일", "sun" to "일요일", "holiday" to "공휴일", "dim" to "다른 달", "sel" to "고른 것",
     "role.day" to "주간 근무", "role.eve" to "오후·저녁 근무", "role.night" to "야간 근무", "role.long" to "24시간·당직", "role.off" to "쉬는 날",
     "role.other" to "그 밖 근무", "in" to "수입", "out" to "지출",
 )

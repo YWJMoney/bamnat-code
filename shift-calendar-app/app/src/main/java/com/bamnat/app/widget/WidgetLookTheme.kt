@@ -53,7 +53,14 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
         runCatching { com.bamnat.app.recipe.LookImages.file(context, id).takeIf { it.isFile }?.let { android.graphics.BitmapFactory.decodeFile(it.path) } }.getOrNull()
     }
     // [BLU-10] 1.36 위젯 부품: the blueprint's `widget` part over 위젯 모양 (its fill, corners, padding and 글자 색 win).
-    val parts = remember(settings?.parts) { com.bamnat.core.recipe.Blueprint.decode(settings?.parts) }
+    // [BLU-12] Light or dark as the widget is drawn (위젯 모양's own, else the phone's), for the parts' dark lines.
+    val night = when (look.theme) { "dark" -> true; "light" -> false
+        else -> isNight(context) }
+    // 1.36 [SEC-13] 안전 모드: the widget too is drawn without the blueprint.
+    val parts = remember(settings?.parts, night) {
+        if (com.bamnat.app.diag.StartGuard.safe.value) com.bamnat.core.recipe.Blueprint.EMPTY
+        else com.bamnat.core.recipe.Blueprint.decode(settings?.parts).forDark(night)
+    }
     val whole = if (parts.touches("widget")) parts.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
     val bgArgb = whole.fill?.let { it or 0xFF000000L } ?: look.bg
     val inkArgb = whole.ink ?: look.ink
@@ -125,3 +132,7 @@ fun WidgetSurface(modifier: androidx.glance.GlanceModifier, content: @Composable
 /** [STU-38] The widget's corners as chosen (20 dp is the app's own). */
 @Composable
 fun widgetCorner(): androidx.compose.ui.unit.Dp = LocalWidgetCorner.current.dp
+
+/** [BLU-12] Whether the phone is in its dark look now (a widget is drawn once per update, not recomposed on a change of it). */
+private fun isNight(context: android.content.Context): Boolean =
+    (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES

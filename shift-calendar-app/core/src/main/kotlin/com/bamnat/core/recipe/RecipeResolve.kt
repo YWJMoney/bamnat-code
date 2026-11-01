@@ -30,7 +30,24 @@ object RecipeResolve {
         }
     }
 
-    fun piece(r: Recipe, p: Piece, answers: Map<String, Any>): Map<String, Any?> = resolve(r, p.values, answers) as Map<String, Any?>
+    @Suppress("UNCHECKED_CAST")
+    fun piece(r: Recipe, p: Piece, answers: Map<String, Any>): Map<String, Any?> {
+        val out = resolve(r, p.values, answers) as Map<String, Any?>
+        if (p.kind != PieceKind.PARTS) return out
+        // [BLU-12] 1.36 토큰의 어두운 화면 색: a part line (with no state of its own) that takes a token gets an `on: dark` line with the
+        // token's dark colour, so the phone's dark screens keep the maker's dark colours. A dark line the maker wrote wins.
+        val raw = (p.values["parts"] as? List<Map<String, Any?>>).orEmpty()
+        val lines = (out["parts"] as? List<Map<String, Any?>>).orEmpty().toMutableList()
+        for (l in raw) {
+            if (l["on"] != null) continue
+            val dark = l.entries.mapNotNull { (k, v) -> (v as? Ref.Token)?.let { t -> r.token(t.name)?.takeIf { it.dark != it.light }?.let { k to it.dark } } }.toMap()
+            if (dark.isEmpty()) continue
+            val id = l["id"]
+            val at = lines.indexOfFirst { it["id"] == id && it["on"] == "dark" }
+            if (at >= 0) lines[at] = dark + lines[at] else lines += mapOf("id" to id, "on" to "dark") + dark
+        }
+        return if (lines.size == (out["parts"] as? List<*>)?.size && lines == out["parts"]) out else out + ("parts" to lines.take(BlueprintParts.MAX_LINES))
+    }
 
     private fun resolve(r: Recipe, v: Any?, answers: Map<String, Any>): Any? = when (v) {
         is Ref.Input -> answers[v.id]

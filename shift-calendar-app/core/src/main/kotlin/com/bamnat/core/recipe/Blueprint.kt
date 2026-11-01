@@ -67,6 +67,8 @@ object BlueprintParts {
     /** The states a line may be for (`on`), in the order they lay over each other. */
     val STATES: List<String> = listOf(
         "role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel",
+        // [BLU-12] 어두운 화면: not a state a part asks for, it is laid over the part's own line once for the whole app ([Blueprint.forDark]).
+        "dark",
     )
 
     val LINES = listOf("none", "solid", "dash", "dot", "double")
@@ -255,6 +257,31 @@ class Blueprint(val lines: List<Map<String, Any?>>) {
         return Blueprint(m.values.toList())
     }
 
+    /** The 부품 단위 ([BlueprintParts.unitOf]) these lines touch. */
+    val units: Set<String> get() = lines.mapTo(LinkedHashSet()) { BlueprintParts.unitOf(it["id"] as String) }
+
+    /**
+     * [BLU-07] PC 7차 (얹으면 내가 꾸민 다른 부품이 사라져요): [top]'s parts laid on these, unit by unit — the units [top] touches take
+     * [top]'s lines, every other unit keeps its own. Also the units both had (겹친 곳), for saying so.
+     */
+    fun layUnits(top: List<Map<String, Any?>>): Pair<Blueprint, Set<String>> {
+        val over = Blueprint(top).units
+        val kept = lines.filter { BlueprintParts.unitOf(it["id"] as String) !in over }
+        val both = units.intersect(over)
+        return Blueprint((kept + top).take(BlueprintParts.MAX_LINES)) to both
+    }
+
+    /**
+     * [BLU-12] The blueprint as a light or dark screen draws it: each `on: dark` line laid over the part's own line when [dark], and the
+     * dark lines gone either way, so no part ever has to ask for "dark".
+     */
+    fun forDark(dark: Boolean): Blueprint {
+        if (lines.none { it["on"] == DARK }) return this
+        val plain = lines.filter { it["on"] != DARK }
+        if (!dark) return Blueprint(plain)
+        return Blueprint(plain).plus(lines.filter { it["on"] == DARK }.map { it - "on" })
+    }
+
     /** These lines in the order the codec writes them, as the setting and the recipe piece hold them. */
     fun encode(): String = if (lines.isEmpty()) "" else RecipeCodec.canonical(sorted())
 
@@ -264,6 +291,7 @@ class Blueprint(val lines: List<Map<String, Any?>>) {
 
     companion object {
         val EMPTY = Blueprint(emptyList())
+        const val DARK = "dark"
 
         /** A blueprint from its setting (the codec's written list); anything that does not read is no blueprint. */
         @Suppress("UNCHECKED_CAST")

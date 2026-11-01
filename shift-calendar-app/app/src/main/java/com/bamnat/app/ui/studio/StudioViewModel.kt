@@ -441,7 +441,17 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun layer(k: ThemeWardrobe.Kept) = viewModelScope.launch {
         val r = runCatching { RecipeCodec.read(k.body) }.getOrNull() ?: return@launch
         var d = _state.value.draft
-        r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+        var overlap = emptySet<String>()
+        r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p ->
+            // [BLU-07] PC 7차: a 부품 laid on changes only its own units; the parts I made elsewhere stay.
+            d = if (p.kind == com.bamnat.core.recipe.PieceKind.PARTS) {
+                @Suppress("UNCHECKED_CAST")
+                val top = (com.bamnat.core.recipe.RecipeResolve.piece(r, p, com.bamnat.core.recipe.RecipeResolve.answers(r, emptyMap()))["parts"] as? List<Map<String, Any?>>).orEmpty()
+                val (laid, both) = com.bamnat.core.recipe.Blueprint.decode(d.parts).layUnits(top)
+                overlap = overlap + both
+                runCatching { d.copy(parts = com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(laid.lines)).encode()) }.getOrDefault(d)
+            } else c.recipes.pieces.onDraft(d, p.kind, p.values)
+        }
         val was = _state.value.draft
         where = "보관함 · ‘${k.title}’ 얹기"
         // [STU-39] A locked tab keeps its look when a part is laid on.
@@ -451,8 +461,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val stepped = s.draft != was
         // 1.36 U17: a part the look already has changes nothing; it says so and is not counted as laid on.
         if (!stepped) { _state.value = s.copy(said = "‘${k.title}’${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
+        val same = overlap.mapNotNull { com.bamnat.core.recipe.BlueprintParts.LABELS[it] }.joinToString("·")
         _state.value = s.copy(layered = s.layered + k, sources = if (k.own) s.sources else s.sources + (k.from to k.fromTitle),
-            said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요", canUndoLayer = stepped)
+            said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요" +
+                (if (same.isNotEmpty()) ". 내가 꾸민 ‘$same’ 부품은 얹은 것으로 바뀌었어요. 되돌리기로 돌아가요" else ". 내가 꾸민 다른 부품은 그대로예요"),
+            canUndoLayer = stepped)
     }
 
     /**
@@ -468,7 +481,17 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         }
         val was = Recipe("전", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(before.draft))
         var d = s.draft
-        LookParts.pick(was, k.parts.ifEmpty { LookParts.of(was).map { it.id } }).pieces.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+        LookParts.pick(was, k.parts.ifEmpty { LookParts.of(was).map { it.id } }).pieces.forEach { p ->
+            // [BLU-07] PC 7차: only the units the part brought go back; the parts changed since stay.
+            d = if (p.kind == com.bamnat.core.recipe.PieceKind.PARTS) {
+                val laid = runCatching { com.bamnat.core.recipe.RecipeCodec.read(k.body) }.getOrNull()?.pieces?.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.PARTS }
+                @Suppress("UNCHECKED_CAST")
+                val units = com.bamnat.core.recipe.Blueprint((laid?.values?.get("parts") as? List<Map<String, Any?>>).orEmpty()).units
+                val back = com.bamnat.core.recipe.Blueprint.decode(before.draft.parts).lines.filter { com.bamnat.core.recipe.BlueprintParts.unitOf(it["id"] as String) in units }
+                val keep = com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.filter { com.bamnat.core.recipe.BlueprintParts.unitOf(it["id"] as String) !in units }
+                runCatching { d.copy(parts = com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean((keep + back).take(com.bamnat.core.recipe.BlueprintParts.MAX_LINES))).encode()) }.getOrDefault(d)
+            } else c.recipes.pieces.onDraft(d, p.kind, p.values)
+        }
         where = "보관함 · ‘${k.title}’ 빼기"
         change { d }
         val now = _state.value
