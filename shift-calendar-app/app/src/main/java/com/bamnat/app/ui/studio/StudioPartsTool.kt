@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.FilterChip
+import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -18,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -41,18 +42,29 @@ import com.bamnat.core.recipe.BlueprintParts
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun PartsTool(group: String, parts: String, onChange: (String) -> Unit) {
+internal fun PartsTool(
+    group: String,
+    parts: String,
+    focus: String? = null,
+    focusOn: String? = null,
+    onChange: (String) -> Unit,
+) {
     val bp = remember(parts) { Blueprint.decode(parts) }
-    val ids = remember(group) { BlueprintParts.IDS.filter { it == group || it.startsWith("$group.") || (group == "app" && it.startsWith("app")) } }
-    var id by rememberSaveable(group) { mutableStateOf(ids.firstOrNull { it.contains('.') } ?: ids.first()) }
-    var on by rememberSaveable(id) { mutableStateOf<String?>(null) }
+    val inGroup = remember(group) { BlueprintParts.IDS.filter { it == group || it.startsWith("$group.") || (group == "app" && it.startsWith("app")) } }
+    // A part pressed in the example (갈래 C '누른 요소 바로 고치기') opens here even when it sits outside this area's group.
+    val ids = if (focus != null && focus in BlueprintParts.IDS && focus !in inGroup) inGroup + focus else inGroup
+    var id by rememberSaveable(group) { mutableStateOf(focus?.takeIf { it in ids } ?: ids.firstOrNull { it.contains('.') } ?: ids.first()) }
+    var on by rememberSaveable(group) { mutableStateOf(focusOn?.takeIf { it in BlueprintParts.STATES }) }
+    LaunchedEffect(focus, focusOn) {
+        if (focus != null && focus in ids) { id = focus; on = focusOn?.takeIf { it in BlueprintParts.STATES } }
+    }
     Text("화면을 부품으로 나눠 하나씩 꾸며요. 비워 둔 칸은 지금 모습 그대로예요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     // 어느 부품
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         ids.forEach { p ->
             val touched = bp.touches(p) && bp.lines.any { it["id"] == p }
-            FilterChip(selected = p == id, onClick = { id = p },
+            FilterChip(selected = p == id, onClick = { if (id != p) { id = p; on = null } },
                 label = { Text((if (touched) "● " else "") + (BlueprintParts.LABELS[p] ?: p)) },
                 modifier = Modifier.semantics { if (touched) contentDescription = "${BlueprintParts.LABELS[p]}, 꾸밈 있음" })
         }
