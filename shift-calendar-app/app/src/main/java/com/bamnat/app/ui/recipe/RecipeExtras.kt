@@ -201,8 +201,19 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
         if (moves && !d.date.isBefore(today)) theirs(d.date)?.name != d.shiftType?.takeIf { d.isWorkDay }?.name
         else d.isWorkDay && (cellChanged || d.shiftType?.id?.let { id -> swap[id] != null && swap[id] != d.shiftType } == true)
     val changed = if (exampleDays.isNotEmpty()) (if (cellChanged || swap.isNotEmpty()) exampleDays.size else 0) else days.values.count(::changes)
+    // PC 확인 W35 1.36 (오늘 색만 바꾼 테마가 '모양이 바뀌는 날 0일'): said in words, the same line as under the month.
+    val said = when {
+        // [RCX-31] The piece that moves the days says so: before 1.35 this said they stayed.
+        moves -> "근무 주기가 오늘부터 바뀌어요 (${shared!!.order.size.takeIf { it > 0 } ?: 7}일 주기). 이번 달 ${changed}일이 달라져요. 지난 날은 그대로예요"
+        company != null -> "근무 시간과 급여 방식이 바뀌어요. 근무 날짜는 그대로예요"
+        exampleDays.isNotEmpty() -> "이 달력엔 아직 근무가 없어서 이번 주 평일에 ‘${exampleType?.name}’${com.bamnat.app.ui.Fmt.obj(exampleType?.name.orEmpty())} 넣은 예시로 보여 드려요"
+        looks.isEmpty() && cellChanged -> "근무 날은 그대로이고, 칸 모양과 주말·공휴일·오늘 색이 바뀌어요"
+        looks.isEmpty() -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
+        changed == 0 -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
+        else -> "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요"
+    } + if (changed > 0) " (노란 테두리가 바뀌는 날)" else ""
     Column(Modifier.fillMaxWidth().clearAndSetSemantics {
-        contentDescription = "${month.monthValue}월 달력 " + (if (after) "넣은 뒤" else "지금") + ", 모양이 바뀌는 날 ${changed}일"
+        contentDescription = "${month.monthValue}월 달력 " + (if (after) "넣은 뒤" else "지금") + ", " + said
     }) {
         repeat(weeks) { w ->
             Row(Modifier.fillMaxWidth()) {
@@ -251,15 +262,7 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
             }
         }
     }
-    Text(when {
-        // [RCX-31] The piece that moves the days says so: before 1.35 this said they stayed.
-        moves -> "근무 주기가 오늘부터 바뀌어요 (${shared!!.order.size.takeIf { it > 0 } ?: 7}일 주기). 이번 달 ${changed}일이 달라져요. 지난 날은 그대로예요"
-        company != null -> "근무 시간과 급여 방식이 바뀌어요. 근무 날짜는 그대로예요"
-        exampleDays.isNotEmpty() -> "이 달력엔 아직 근무가 없어서 이번 주 평일에 ‘${exampleType?.name}’${com.bamnat.app.ui.Fmt.obj(exampleType?.name.orEmpty())} 넣은 예시로 보여 드려요"
-        looks.isEmpty() && cellChanged -> "근무 날은 그대로이고, 칸 모양과 주말·공휴일·오늘 색이 바뀌어요"
-        looks.isEmpty() -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
-        else -> "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요"
-    } + if (changed > 0) " (노란 테두리가 바뀌는 날)" else "",
+    Text(said,
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

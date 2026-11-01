@@ -115,7 +115,11 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     fun load() {
         viewModelScope.launch {
             try {
-                val doc = c.recipeApi.show(code, device)
+                // PC 확인 W34 1.36 (처음 들어갈 때 한 번 '인터넷에 연결되지 않았어요', 다시 해 보기로 열림): a connection that drops on the
+                // first try is tried once more before it is said.
+                val doc = try { c.recipeApi.show(code, device) } catch (e: java.io.IOException) {
+                    kotlinx.coroutines.delay(800); c.recipeApi.show(code, device)
+                }
                 val r = doc.recipe()
                 val pieces = r.pieces.map { p -> Piece(p.kind, on = style == null || style in p.kind.styles, fits = style == null || style in p.kind.styles) }
                 _state.value = _state.value.copy(doc = doc, recipe = r, pieces = pieces, error = null,

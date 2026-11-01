@@ -727,7 +727,12 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     }
 
     /** 1.36 U3: sent to 장터 from 올리기. */
-    fun markKept() { _state.value = _state.value.copy(kept = true) }
+    fun markKept() {
+        // PC 확인 W30 1.36 (다 올렸는데 다음에 '만들던 ‘꾸미던 모양’' 카드가 다시 뜸): what went up is no longer a 만들던 것.
+        val id = _state.value.draftId
+        _state.value = _state.value.copy(kept = true, draftId = 0)
+        if (id != 0L) viewModelScope.launch { runCatching { c.recipes.deleteDraft(id) } }
+    }
 
     fun said() { _state.value = _state.value.copy(said = null, canUndoLayer = false) }
 

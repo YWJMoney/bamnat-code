@@ -686,9 +686,13 @@ private fun hex(c: Long) = (c and 0xFFFFFFFFL).toString(16).uppercase().padStart
 private fun colorName(c: Long): String {
     val a = FloatArray(3)
     android.graphics.Color.colorToHSV(c.toInt(), a)
-    val tone = when { a[2] < 0.25f -> "어두운"; a[1] < 0.12f && a[2] > 0.9f -> "흰"; a[1] < 0.25f -> "연한"; else -> "" }
+    // PC 확인 W33 1.36 (흰 동그라미 셋이 모두 '흰 색'): greys by how light, near-whites by their hint of colour.
+    if (a[1] < 0.04f) return when { a[2] > 0.97f -> "흰색"; a[2] > 0.85f -> "밝은 회색"; a[2] > 0.6f -> "회색"; a[2] > 0.25f -> "진한 회색"; else -> "검정" }
+    val hue = when { a[0] < 20 || a[0] >= 340 -> "빨강"; a[0] < 45 -> "주황"; a[0] < 70 -> "노랑"; a[0] < 160 -> "초록"; a[0] < 200 -> "청록"
+        a[0] < 260 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍" }
+    if (a[1] < 0.12f) return if (a[2] > 0.85f) "아주 연한 $hue" else "회색빛 $hue"
+    val tone = when { a[2] < 0.25f -> "어두운"; a[1] < 0.25f -> "연한"; else -> "" }
     val kind = when {
-        a[1] < 0.12f -> if (a[2] > 0.9f) "색" else "회색"
         a[0] < 20 || a[0] >= 340 -> "빨강"; a[0] < 45 -> "주황"; a[0] < 70 -> "노랑"; a[0] < 160 -> "초록"; a[0] < 200 -> "청록"
         a[0] < 260 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍"
     }

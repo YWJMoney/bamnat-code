@@ -721,14 +721,21 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         Spacer(Modifier.width(8.dp))
         Text("값만 나누고 개인 정보는 넣지 않았어요. 신고가 쌓이면 가려질 수 있어요 (처리방침 3.8)", style = MaterialTheme.typography.bodySmall)
     }
+    // PC 확인 W31 1.36 (경고나 꺼진 스위치로 막히면 올리기를 눌러도 반응이 없어 보임): what holds it back, in red right above the
+    // button, with the one tap that clears it.
+    val blocking = lines.filter { it.level == RecipeLint.Level.ERROR }
+    val needAgree = s.scope != "private" && !s.agreed
+    if (!RecipeLint.ready(lines) || needAgree) Row(Modifier.fillMaxWidth().semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(if (!RecipeLint.ready(lines)) "${blocking.size.coerceAtLeast(1)}곳 고쳐야 올라가요" + (blocking.firstOrNull()?.let { " · ${it.text}" } ?: "")
+            else "위 확인 스위치를 켜야 올라가요", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+        val first = blocking.firstOrNull()
+        if (!RecipeLint.ready(lines) && first != null) TextButton(onClick = { if (first.fix != null) vm.fix(first) else vm.go(first.step) }) {
+            Text(if (first.fix != null) "고치기" else "가기") }
+    }
     Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
-    // 1.35 실사용 점검: why 올리기 is off, in one line.
-    when {
-        !RecipeLint.ready(lines) -> "위 검사의 ✕를 먼저 고쳐 주세요"
-        s.scope != "private" && !s.agreed -> "위 확인 스위치를 켜면 올릴 수 있어요"
-        else -> " "
-    }.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
     // [STU-05] 1.35 올리지 않고 끝내기 (사용자 2026-10-30 "제작만 할수도 있어야해").
     HorizontalDivider()
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)

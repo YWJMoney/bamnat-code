@@ -84,7 +84,8 @@ object RecipeDescribe {
             (p.values["memo"] as? String)?.let { "메모 카드 ${parts(it)}" },
         ).joinToString(" · ").ifEmpty { "카드 순서" }
         PieceKind.WIDGET -> listOfNotNull(
-            (p.values["alpha"] as? Number)?.let { "불투명 ${it}%" },
+            // PC 확인 W32 1.36 (칩은 '반쯤 비침'인데 요약은 '불투명 65%'): the chip's own words, with the number.
+            (p.values["alpha"] as? Number)?.toInt()?.let { a -> (mapOf(100 to "불투명", 85 to "조금 비침", 65 to "반쯤 비침", 40 to "많이 비침")[a] ?: "비침") + "(${a}%)" },
             (p.values["theme"] as? String)?.let { mapOf("system" to "휴대폰 화면 따라", "light" to "밝게", "dark" to "어둡게")[it] },
             (p.values["memo"] as? Boolean)?.let { if (it) "메모 한 줄 보임" else "메모 숨김" },
         ).joinToString(" · ").ifEmpty { "위젯 모양" }
