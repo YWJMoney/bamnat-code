@@ -449,6 +449,19 @@ class LogicStore(context: Context) {
         p.edit().putStringSet("off", s).apply()
     }
 
+    /**
+     * PC D7 (사용성 제안): a received rule or button kept once because one of mine does the same ([Logic.plus]), its name on my line
+     * ("받은 ‘A 야간 수당’과 같음") so the one that came in is not lost from sight.
+     */
+    fun noteSame(mine: Logic, got: Logic) {
+        val e = p.edit()
+        got.rules.forEach { r -> mine.rules.firstOrNull { it.key == r.key }?.let { e.putString("same.r.${it.key}", r.name) } }
+        got.buttons.forEach { b -> mine.buttons.firstOrNull { it.toMap() == b.toMap() }?.let { e.putString("same.b.${it.id}", b.label) } }
+        e.apply()
+    }
+    fun sameRule(key: String): String? = p.getString("same.r.$key", null)
+    fun sameButton(id: String): String? = p.getString("same.b.$id", null)
+
     /** Runs of [who] in the last 7 days. */
     fun runs(who: String): Int {
         val since = Today.millis() - 7 * 86_400_000L

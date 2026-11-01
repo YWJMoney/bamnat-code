@@ -61,6 +61,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -655,8 +656,19 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     // PC D6 (낮): 미리 채운 이름은 처음에 통째로 골라져 있어 쓰면 바뀌어요(뒤에 덧붙지 않게).
     var name by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(r.title, androidx.compose.ui.text.TextRange(0, r.title.length))) }
     if (name.text != r.title) name = androidx.compose.ui.text.input.TextFieldValue(r.title, androidx.compose.ui.text.TextRange(r.title.length))
-    OutlinedTextField(name, { t -> name = t.copy(text = t.text.take(30)); vm.edit { it.copy(title = t.text.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true,
-        modifier = Modifier.fillMaxWidth())
+    // PC D7 (낮): 손가락으로 눌러 들어와도 통째로 골라져요. 누르는 순간 놓이는 커서는 받지 않고, 한 번 더 누르면 그 자리에 커서가 가요.
+    var focusedAt by remember { mutableStateOf(0L) }
+    OutlinedTextField(name, { t ->
+        val justIn = t.text == name.text && android.os.SystemClock.uptimeMillis() - focusedAt < 500
+        name = if (justIn) t.copy(selection = androidx.compose.ui.text.TextRange(0, t.text.length)) else t.copy(text = t.text.take(30))
+        if (!justIn) vm.edit { it.copy(title = t.text.take(30)) }
+    }, label = { Text("이름 (30자까지)") }, singleLine = true,
+        modifier = Modifier.fillMaxWidth().onFocusChanged { f ->
+            if (f.isFocused && focusedAt == 0L) {
+                focusedAt = android.os.SystemClock.uptimeMillis()
+                name = name.copy(selection = androidx.compose.ui.text.TextRange(0, name.text.length))
+            } else if (!f.isFocused) focusedAt = 0L
+        })
     Row(verticalAlignment = Alignment.CenterVertically) {
         RecipeCover(r.cover, 72.dp)
         Spacer(Modifier.width(12.dp))

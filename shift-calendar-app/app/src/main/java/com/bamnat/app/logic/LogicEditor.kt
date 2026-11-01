@@ -306,7 +306,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 OutlinedTextField(r.name, { r = r.copy(name = it.take(20)) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("이름") })
                 Text("언제", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    RuleTrigger.entries.forEach { t -> FilterChip(selected = r.on == t, onClick = { r = followWords(r, r.copy(on = t)) }, label = { Text(t.label) }) }
+                    RuleTrigger.entries.forEach { t -> FilterChip(selected = r.on == t, onClick = { r = followWords(r, whenFor(r, t)) }, label = { Text(t.label) }) }
                 }
                 when (r.on) {
                     RuleTrigger.START, RuleTrigger.END -> {
@@ -317,9 +317,10 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                             }
                         }
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(-180, -60, -30, 0, 30, 60).forEach { m ->
+                            // PC D7 (사용성 중): 근무 끝은 '끝날 때'부터, 시작은 '시작할 때'를 바로 앞에.
+                            (if (r.on == RuleTrigger.END) listOf(0, 30, 60, -30, -60, -180) else listOf(-180, -60, -30, 0, 30, 60)).forEach { m ->
                                 FilterChip(selected = r.min == m, onClick = { r = r.copy(min = m) },
-                                    label = { Text(minutesWord(m)) })
+                                    label = { Text(if (m != 0) minutesWord(m) else if (r.on == RuleTrigger.END) "끝날 때" else "시작할 때") })
                             }
                         }
                     }
@@ -406,6 +407,17 @@ internal fun followWords(old: LogicRule, new: LogicRule): LogicRule {
     return if (untouched) new.copy(act = new.act.copy(arg = notifyWords(new.on, new.role))) else new
 }
 
+/**
+ * PC D7 (사용성 중): 언제를 바꾸면 그에 맞는 때부터. '근무 끝'은 끝날 때 (시작 규칙의 '1시간 전'이 남지 않게), '근무 시작'으로
+ * 돌아오면 처음처럼 1시간 전.
+ */
+internal fun whenFor(r: LogicRule, t: RuleTrigger): LogicRule = when {
+    t == r.on -> r
+    t == RuleTrigger.END -> r.copy(on = t, min = 0)
+    t == RuleTrigger.START && r.on == RuleTrigger.END && r.min == 0 -> r.copy(on = t, min = -60)
+    else -> r.copy(on = t)
+}
+
 /** [RUL-06] The 알림 글 a new rule starts with, said for its 언제 and 근무: "{근무끝}에 주간 근무가 끝나요". */
 internal fun notifyWords(on: RuleTrigger, role: String?): String {
     val w = role?.let { LogicRule.ROLE_WORDS[it] }?.let { "$it " }.orEmpty()
@@ -458,7 +470,8 @@ fun LogicEditor(
         if (logic.buttons.isEmpty()) Text("하루 화면·메모장·달력에 단추를 놓으면 한 번 눌러 메모 틀을 열거나 가계부에 넣을 수 있어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         logic.buttons.forEachIndexed { i, b ->
-            LineCard(b.say(), if (phone) "지난 7일 ${store.runs(b.label)}번" else null, null, null,
+            val sameB = remember(bump, b.id) { store.sameButton(b.id)?.let { "받은 ‘$it’${com.bamnat.app.ui.Fmt.wa(it)} 같음" } }
+            LineCard(b.say(), listOfNotNull(sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null }, null, null,
                 onEdit = { editButton = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(buttons = logic.buttons.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
         }
         if (!readOnly && logic.buttons.size < Logic.MAX_BUTTONS) TextButton(onClick = { editButton = -1 }) { Text("+ 단추 만들기") }
@@ -472,7 +485,10 @@ fun LogicEditor(
             val on = remember(bump, r.key) { !store.isOff(r.key) }
             // PC 1차 확인 (사용성 제안 높): when it comes next and what happened last time, so a rule that did not run says why.
             val note = remember(bump, r, facts) {
-                if (!phone) null else listOfNotNull(
+                // PC D7: a received rule kept once because this one does the same.
+                val same = store.sameRule(r.key)?.let { "받은 ‘$it’${com.bamnat.app.ui.Fmt.wa(it)} 같음" }
+                if (!phone) same else listOfNotNull(
+                    same,
                     if (!on) "꺼져 있어요" else nextLine(r, facts),
                     store.lastResult(r.key)?.let { "지난번 $it" },
                     "지난 7일 ${store.runs(r.name)}번",

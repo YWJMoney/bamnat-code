@@ -455,6 +455,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 val had = mine.rules.map { it.key }.toSet()
                 val store = com.bamnat.app.logic.LogicStore(c.appContext)
                 got.writingRules.filter { it.key !in had }.forEach { store.setOff(it.key, true) }
+                store.noteSame(mine, got)
             }
             d = d.copy(logic = com.bamnat.core.formula.Logic.encode(mine.plus(got)))
             merged = mine.mergeSay(got)

@@ -450,6 +450,9 @@ class RecipePieces(private val c: AppContainer) {
                 val now = c.settingsRepository.current
                 // 1.36 [SEC-12] 보안 점검 M4: someone else's buttons and rules come in with 가계부 amounts held to 100만 원.
                 val vals = if (kind == PieceKind.LOGIC) com.bamnat.core.formula.Logic.from(values).received().toValues() else values
+                // PC D7: one of theirs kept once because mine does the same shows its name on my line (all of it the same is no change).
+                if (kind == PieceKind.LOGIC) com.bamnat.app.logic.LogicStore(c.appContext)
+                    .noteSame(com.bamnat.core.formula.Logic.decode(now.logic), com.bamnat.core.formula.Logic.from(vals))
                 val changes = settingsAfter(kind, vals, cal).filter { (k, v) -> settingOf(now, k) != v }
                 if (changes.isEmpty()) null else {
                     val out = JSONObject()

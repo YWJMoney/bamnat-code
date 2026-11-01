@@ -58,6 +58,17 @@ class LogicHoldPressTest {
         com.bamnat.app.NoticeLinks.consume(com.bamnat.app.NoticeLinks.Target.MEMOS)
     }
 
+    @Test fun sameReceivedNameShowsOnMine() {
+        // PC D7 (사용성 제안): 받은 규칙이 내 것과 같아 하나로 두면 내 줄에 그 이름이 남아요.
+        val store = LogicStore(app)
+        val mine = Logic.decode(c.settingsRepository.current.logic)
+        val theirs = Logic(listOf(ping.copy(label = ping.label)), listOf(mine.rules[0].copy(name = "A 메모장")))
+        store.noteSame(mine, theirs)
+        assertEquals("A 메모장", store.sameRule(mine.rules[0].key))
+        assertEquals("알려 줘", store.sameButton("deco1"))
+        assertEquals(null, store.sameRule(mine.rules[1].key))
+    }
+
     @Test fun idsKeepAndRoundTrip() {
         val l = Logic.decode(c.settingsRepository.current.logic)
         assertEquals(listOf("deco1", "deco2"), l.buttons.map { it.id })

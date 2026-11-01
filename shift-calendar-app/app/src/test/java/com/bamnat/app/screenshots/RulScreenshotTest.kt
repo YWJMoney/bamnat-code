@@ -14,6 +14,7 @@ import com.bamnat.app.logic.RuleDialog
 import com.bamnat.app.logic.followWords
 import com.bamnat.app.logic.minutesWord
 import com.bamnat.app.logic.notifyWords
+import com.bamnat.app.logic.whenFor
 import com.bamnat.core.formula.ButtonPlace
 import com.bamnat.core.formula.FormulaNames
 import com.bamnat.core.formula.Logic
@@ -60,6 +61,16 @@ class RulScreenshotTest : ScreenshotBase() {
         assertEquals("내가 쓴 글", followWords(mine, mine.copy(on = RuleTrigger.END)).act.arg)
         val old = start.copy(act = start.act.copy(arg = "{근무시작}에 야간 근무예요"))
         assertEquals("{근무시작}에 주간 근무가 시작돼요", followWords(old, old.copy(role = "day")).act.arg)
+    }
+
+    @Test fun endStartsAtTheEnd() {
+        // PC D7 (사용성 중): '근무 끝'을 고르면 시작 규칙의 '1시간 전'이 남았어요.
+        val start = LogicRule("", RuleTrigger.START, min = -60, act = LogicAct(LogicVerb.NOTIFY, "x"))
+        val end = whenFor(start, RuleTrigger.END)
+        assertEquals(0, end.min)
+        assertEquals(-60, whenFor(end, RuleTrigger.START).min)
+        assertEquals(30, whenFor(end.copy(min = 30), RuleTrigger.START).min)
+        assertEquals(-30, whenFor(start.copy(min = -30), RuleTrigger.START).min)
     }
 
     @Test fun editorList() = shoot("886_rul_editor_list", FOLDED) {
