@@ -79,12 +79,15 @@
 | `leading` | 80~300 | 줄 간격(글자 크기의 %) |
 | `stroke` · `strokeC` | 0~4dp · 색 | 글자 외곽선 |
 | `italic` | 참·거짓 | 기울임 |
+| `tshadow` · `tshadowC` | 0~12dp(소수 1자리) · 색 | 글자 그림자 흐림과 색(색을 비우면 반투명 검정). 1.36 BLU-08 |
+| `tshadowX` · `tshadowY` | -12~12dp(소수 1자리) | 글자 그림자 자리. 비우면 흐림의 반만큼 오른쪽·아래. 둘 다 0이면 둘레가 빛나요 |
+| `deco` | `none`·`under`·`strike`·`both` | 밑줄·가운데 줄. 1.36 BLU-08 |
 | `talign` | `start`·`center`·`end` | 글자 정렬 |
 | `lines` | 1~10 | 글자 줄 수 한도 |
 | `alpha` | 0~100 | 부품 전체 투명도 |
 | `hide` | 참·거짓 | 숨기기(데이터 부품은 TalkBack에 남아요) |
 
-글자 칸(`font`·`size`·`weight`·`ink`·`track`·`leading`·`stroke`·`strokeC`·`italic`)은 비어 있으면 **부모에게서 물려받아요**(`cal.cell.date` → `cal.cell` → `cal` → `app`). 나머지 칸은 물려받지 않아요.
+글자 칸(`font`·`size`·`weight`·`ink`·`track`·`leading`·`stroke`·`strokeC`·`italic`·`tshadow`·`tshadowC`·`tshadowX`·`tshadowY`·`deco`)은 비어 있으면 **부모에게서 물려받아요**(`cal.cell.date` → `cal.cell` → `cal` → `app`). 나머지 칸은 물려받지 않아요.
 
 **배치 (부품을 담는 부품)**
 
@@ -115,3 +118,11 @@
 ## 6. 옛 조각 옮겨 읽기
 
 `Blueprint.fromLegacy(calTheme, calView, …)`이 옛 조각을 같은 뜻의 부품 줄로 바꿔요. 스튜디오의 부품 보기가 이 값을 '지금 모습'으로 보여 주고, 옛 레시피를 부품으로 고칠 때 시작점이 돼요. 그리기는 3항대로 옛 조각 그대로 + 설계도 덮어쓰기라, 옮겨 읽기가 화면을 바꾸는 일은 없어요.
+
+## 8. 부품 하나 올리기·담기·얹기 (BLU-07, 사용자 2026-11-01)
+
+- **단위**: 설계도 id를 두 번째 이름까지 자른 것(`cal.head.title` → `cal.head`, `app` → `app`). core `BlueprintParts.unitOf/UNITS`, 서버 `partUnit(id)`.
+- **앱 id**: 담기·얹기·입어 보기에서 부품 하나는 `part:<단위>`(`LookParts.UNIT`). `LookParts.byId`가 그때그때 만들고, `LookParts.of(r)`가 부품을 하나씩 나열해요. 탭 단위 '달력 부품' 등(`cal.parts` …)은 바꾼 곳·탭 처음대로에만 써요.
+- **부품 작품**(장터 '부품' 구간, 서버 scope `part`): 조각이 하나뿐이고 그 조각 전체가 한 단위예요. core `LookParts.partUnit(r)`, 서버 `partUnitOf(body)`가 같은 규칙으로 앱 id를 돌려줘요: 설계도 `part:cal.head`, 갈래 E의 판 `cal.board`·`memo.view`·`money.board`(tabView 조각이 한 탭 몫일 때).
+- **올리기**: 스튜디오 › 부품 › "‘달력 머리’ 부품만 장터에 올리기"(`StudioViewModel.uploadPart`). 장터 구간·목록 필터(`scope=part&unit=`)는 갈래 F.
+- 서버 `tabsOf`는 parts 줄을 첫 이름으로 화면에 넣어요(cal→calendar, memo, money, pay, app, widget).

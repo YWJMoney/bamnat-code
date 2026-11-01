@@ -716,6 +716,21 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         return RecipeCodec.write(r) to parent
     }
 
+    /**
+     * [BLU-07] 1.36 이 부품만 올리기 (사용자 2026-11-01): the draft's lines of one 부품 [unit] as a recipe of its own, for 장터 '부품'.
+     * Null when the draft has nothing in that 부품 yet.
+     */
+    fun uploadPart(unit: String): String? {
+        val s = _state.value
+        val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)
+        val only = com.bamnat.core.recipe.LookParts.pick(draft, listOf(com.bamnat.core.recipe.LookParts.UNIT + unit))
+        if (only.pieces.isEmpty()) return null
+        val label = com.bamnat.core.recipe.BlueprintParts.LABELS[unit] ?: unit
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = null
+        return RecipeCodec.write(recipe("").copy(title = "$label 부품", summary = "$label 하나만 꾸민 부품이에요", styles = WorkStyle.entries.toSet(),
+            pieces = only.pieces, cover = coverOf(s.draft)))
+    }
+
     /** [STU-41] A 표지 in the draft's colours: '앱 전체' 강조 (or 오늘) to its 바탕, the app's own where it has none. */
     private fun coverOf(d: AppSettings): com.bamnat.core.recipe.Cover {
         val all = ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]

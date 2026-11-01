@@ -51,6 +51,16 @@ object BlueprintParts {
     }
 
     /** A part's children by their last name, in the app's own order: what `order` may name. */
+    /**
+     * [BLU-07] 1.36 부품 하나 (사용자 2026-11-01 "부품들 기능을 만든 것이 있으면 해당 카테고리에 맞게 찾아서 스튜디오에서 사용"): the unit a 부품
+     * goes up, is kept and is laid on as — a part with the parts inside it, cut at the second name: `cal.head` (달력 머리와 달 이름·단추),
+     * `cal.cell` (날짜 칸과 속), `memo.card`, `app.tab`; a top part (`app`, `cal`) is its own unit.
+     */
+    fun unitOf(id: String): String = id.split('.').take(2).joinToString(".")
+
+    /** Every unit, in the order of [IDS]. */
+    val UNITS: List<String> by lazy { IDS.map(::unitOf).distinct() }
+
     val CHILDREN: Map<String, List<String>> = IDS.groupBy { parentOf(it) }.filterKeys { it != null }
         .mapKeys { it.key!! }.mapValues { (_, v) -> v.map { it.substringAfterLast('.') } }
 
@@ -64,6 +74,8 @@ object BlueprintParts {
     val ALIGNS = listOf("start", "center", "end", "stretch")
     val JUSTIFIES = listOf("start", "center", "end", "between", "around")
     val TALIGNS = listOf("start", "center", "end")
+    /** [BLU-08] 글자 줄: 없음·밑줄·가운데 줄(취소선)·둘 다. */
+    val DECOS = listOf("none", "under", "strike", "both")
     val PLACES = listOf("tl", "tc", "tr", "ml", "mc", "mr", "bl", "bc", "br")
     /** The fonts the app draws itself; another id (갈래 B's catalogue, `u`+16 hex my own) falls back to [FONTS] first. */
     val FONTS = listOf("sans", "serif", "mono", "hand", "round")
@@ -85,6 +97,10 @@ object BlueprintParts {
         Field.Color("ink", optional = true), Field.Num("track", -5.0, 30.0, decimals = 1, optional = true),
         Field.Num("leading", 80.0, 300.0, optional = true), Field.Num("stroke", 0.0, 4.0, decimals = 1, optional = true),
         Field.Color("strokeC", optional = true), Field.Flag("italic", input = false), Field.Pick("talign", TALIGNS, optional = true),
+        // [BLU-08] 1.36 누락 점검 N11 (2차 5-3 "외곽선·그림자·자간·줄 간격·기울임·밑줄"): 글자 그림자 (흐림·색·자리)와 밑줄·가운데 줄.
+        Field.Num("tshadow", 0.0, 12.0, decimals = 1, optional = true), Field.Color("tshadowC", optional = true),
+        Field.Num("tshadowX", -12.0, 12.0, decimals = 1, optional = true), Field.Num("tshadowY", -12.0, 12.0, decimals = 1, optional = true),
+        Field.Pick("deco", DECOS, optional = true),
         Field.Num("lines", 1.0, 10.0, optional = true), Field.Num("alpha", 0.0, 100.0, optional = true), Field.Flag("hide", input = false),
         // 배치
         Field.Pick("dir", DIRS, optional = true), Field.Num("gap", 0.0, 32.0, optional = true), Field.Pick("align", ALIGNS, optional = true),
@@ -94,7 +110,7 @@ object BlueprintParts {
     )
 
     /** The keys a child takes from its parent when it has none of its own. */
-    val TEXT_KEYS = setOf("font", "size", "weight", "ink", "track", "leading", "stroke", "strokeC", "italic")
+    val TEXT_KEYS = setOf("font", "size", "weight", "ink", "track", "leading", "stroke", "strokeC", "italic", "tshadow", "tshadowC", "tshadowX", "tshadowY", "deco")
 
     private val ORDER = Regex("^[a-z]{1,12}(,[a-z]{1,12}){0,15}$")
     private fun orderWords(s: String): String? = if (ORDER.matches(s) && s.split(',').let { it.toSet().size == it.size }) null else "order"
@@ -134,6 +150,7 @@ data class PartStyle(
     val font: String? = null, val size: Double? = null, val weight: Int? = null, val ink: Long? = null,
     val track: Double? = null, val leading: Int? = null, val stroke: Double? = null, val strokeC: Long? = null,
     val italic: Boolean? = null, val talign: String? = null, val lines: Int? = null, val alpha: Int? = null, val hide: Boolean? = null,
+    val tshadow: Double? = null, val tshadowC: Long? = null, val tshadowX: Double? = null, val tshadowY: Double? = null, val deco: String? = null,
     val dir: String? = null, val gap: Int? = null, val align: String? = null, val justify: String? = null, val order: List<String>? = null,
     val place: String? = null, val grow: Int? = null, val w: Int? = null, val h: Int? = null,
 ) {
@@ -152,12 +169,13 @@ data class PartStyle(
         o.pad ?: pad, o.padX ?: padX, o.padY ?: padY, o.out ?: out,
         o.font ?: font, o.size ?: size, o.weight ?: weight, o.ink ?: ink, o.track ?: track, o.leading ?: leading,
         o.stroke ?: stroke, o.strokeC ?: strokeC, o.italic ?: italic, o.talign ?: talign, o.lines ?: lines, o.alpha ?: alpha, o.hide ?: hide,
+        o.tshadow ?: tshadow, o.tshadowC ?: tshadowC, o.tshadowX ?: tshadowX, o.tshadowY ?: tshadowY, o.deco ?: deco,
         o.dir ?: dir, o.gap ?: gap, o.align ?: align, o.justify ?: justify, o.order ?: order, o.place ?: place, o.grow ?: grow, o.w ?: w, o.h ?: h,
     )
 
     /** Only the letters of these, for a child to take. */
     fun letters(): PartStyle = PartStyle(font = font, size = size, weight = weight, ink = ink, track = track, leading = leading,
-        stroke = stroke, strokeC = strokeC, italic = italic)
+        stroke = stroke, strokeC = strokeC, italic = italic, tshadow = tshadow, tshadowC = tshadowC, tshadowX = tshadowX, tshadowY = tshadowY, deco = deco)
 
     companion object {
         val NONE = PartStyle()
@@ -178,6 +196,7 @@ data class PartStyle(
                 i("pad"), i("padX"), i("padY"), i("out"),
                 s("font"), d("size"), i("weight")?.let { ((it / 100.0).roundToInt() * 100).coerceIn(100, 900) }, c("ink"),
                 d("track"), i("leading"), d("stroke"), c("strokeC"), b("italic"), s("talign"), i("lines"), i("alpha"), b("hide"),
+                d("tshadow"), c("tshadowC"), d("tshadowX"), d("tshadowY"), s("deco"),
                 s("dir"), i("gap"), s("align"), s("justify"), s("order")?.split(',')?.filter { it.isNotEmpty() }, s("place"), i("grow"), i("w"), i("h"),
             )
         }

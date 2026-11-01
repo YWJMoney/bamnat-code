@@ -229,6 +229,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var area by rememberSaveable { mutableStateOf(Area.CALENDAR) }
     var tool by rememberSaveable { mutableStateOf(Tool.CELL) }
+    var partNow by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    var partPick by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var scale by rememberSaveable { mutableStateOf(SCALE_BIG) }
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
@@ -273,6 +275,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // [STU-21] The example draws the 기능 that show (근무 색, 메모 틀, 투자 일지) along with the look.
     val now = remember(s.pieces, s.extras) { vm.shown(s) }
     val before = remember(s.basePieces) { Recipe("처음", styles = WorkStyle.entries.toSet(), pieces = s.basePieces) }
+    // [BLU-06] The bar counts what the 바꾼 곳 sheet lists (PC 3차: 막대는 1개인데 시트는 2줄).
+    val changedCount = remember(before, now) { LookParts.changed(before, now).size }
     val diff = remember(s.draft, s.base) { c.recipes.pieces.lookDiff(s.draft, s.base) }
     fun pick(a: Area) { area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true }
     // [STU-20] The 기록 목록 says where each change was made.
@@ -382,7 +386,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             Text(when {
                                 s.wornNow && diff == 0 -> "✓ 지금 내 앱에 입힌 모양이에요. 더 고치면 다시 입혀요"
                                 diff == 0 -> "바꾼 곳 없음 · 입히기 전까지 내 앱은 그대로예요"
-                                else -> "바꾼 곳 ${diff}개 · 입히기 전까지 내 앱은 그대로예요"
+                                else -> "바꾼 곳 ${maxOf(changedCount, 1)}곳 · 입히기 전까지 내 앱은 그대로예요"
                             } + (if (s.extras.isNotEmpty()) " · 기능 ${s.extras.size}개" else "") + (s.sources.values.distinct().takeIf { it.isNotEmpty() }?.let { v -> " · " + v.joinToString("·") { "‘$it’" } + " 조각 사용" } ?: ""),
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             if (diff > 0 || s.extras.isNotEmpty()) Text("보기 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -544,6 +548,28 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     }
                 }
                 HorizontalDivider()
+                // [BLU-06] Which part the tools below change, kept in sight while they scroll (PC 1차 사용성 제안).
+                if ((if (tool in area.tools) tool else area.tools.first()) == Tool.PARTS) partNow?.let { (pid, pon) ->
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("${partWords(pid, null)} 고치는 중", style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.weight(1f).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+                            // PC 4차 사용성 제안: the state changes from here too, when the chips have scrolled away.
+                            val states = statesFor(pid)
+                            if (states.isNotEmpty()) Box {
+                                var open by remember { mutableStateOf(false) }
+                                TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("${STATE_WORDS[pon] ?: "언제나"} ▾") }
+                                androidx.compose.material3.DropdownMenu(open, { open = false }) {
+                                    (listOf<String?>(null) + states).forEach { st ->
+                                        androidx.compose.material3.DropdownMenuItem(text = { Text(STATE_WORDS[st] ?: "언제나") },
+                                            onClick = { open = false; partPick = pid to st })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     area.target?.takeIf { it.restricted }?.let { Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -564,7 +590,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             ScreenCopyRow(vm, d, key) { pick(Area.ALL); tool = Tool.SEED }
                         }
                         Tool.SEED -> SeedTool(vm, d)
-                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts) { v -> vm.change { it.copy(parts = v) } }
+                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, focus = partPick?.first, focusOn = partPick?.second, onFocus = { pid, pon -> partNow = pid to pon; partPick = null },
+                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishing = Triple(body, "", null) } }) { v -> vm.change { it.copy(parts = v) } }
                         Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }
@@ -1004,8 +1031,6 @@ private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: 
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("바꾼 곳", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-            // [STU-39] 잠그기, where every screen's changes are listed.
-            LockChips(vm)
             parts.groupBy { it.tab }.forEach { (tab, list) ->
                 val area = when (tab) {
                     TabOrder.MONEY -> Area.MONEY; TabOrder.MEMOS -> Area.MEMO; TabOrder.STATS -> if (list.any { it.id == "stats.pay" }) Area.PAY else Area.STATS
@@ -1018,7 +1043,8 @@ private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: 
                             TextButton(onClick = { onGo(area.name) }) { Text("보기") }
                             TextButton(onClick = { vm.resetFields("${LookParts.tabLabel(tab)} 처음대로") { d, b -> resetTab(tab, d, b) } }) { Text("처음대로") }
                         }
-                        Text(list.joinToString(" · ") { it.label }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(list.joinToString(" · ") { p -> p.label + (partsDetail(p, before, now)?.let { " ($it)" } ?: "") },
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -1033,8 +1059,29 @@ private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: 
                 }
             }
             if (parts.isEmpty() && s.extras.isEmpty()) Text("처음 모양과 같아요", style = MaterialTheme.typography.bodyMedium)
+            // [STU-39] 잠그기, where every screen's changes are listed; under the list, so what changed comes first (PC 2차 사용성 제안).
+            LockChips(vm)
         }
     }
+}
+
+/** [BLU-06] Which 부품 a screen's 부품 part changed and how: "달력 머리 · 둥글기, 근무 표시 · 선" (PC 3차 사용성 제안). */
+private fun partsDetail(p: LookParts.Part, before: Recipe, now: Recipe): String? {
+    val roots = p.takes.filterIsInstance<LookParts.Take.Parts>().flatMap { it.roots }.toSet().takeIf { it.isNotEmpty() } ?: return null
+    fun lines(r: Recipe) = (r.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.PARTS }?.values?.get("parts") as? List<*>)
+        ?.filterIsInstance<Map<String, Any?>>()?.filter { LookParts.under(it["id"] as? String, roots) }.orEmpty()
+    fun key(l: Map<String, Any?>) = listOf(l["id"], l["on"], l["when"])
+    val was = lines(before).associateBy(::key)
+    val is_ = lines(now).associateBy(::key)
+    val words = mapOf("fill" to "채우기", "paint" to "채우기", "line" to "선", "lineW" to "선", "lineC" to "선", "r" to "둥글기", "rTL" to "둥글기", "rTR" to "둥글기",
+        "rBR" to "둥글기", "rBL" to "둥글기", "shadow" to "그림자", "pad" to "여백", "out" to "여백", "font" to "글꼴", "size" to "글자 크기", "weight" to "굵기",
+        "ink" to "글자 색", "alpha" to "보이는 정도", "hide" to "숨기기", "order" to "순서", "dir" to "배치", "gap" to "간격",
+        "tshadow" to "글자 그림자", "tshadowC" to "글자 그림자", "tshadowX" to "글자 그림자", "tshadowY" to "글자 그림자", "deco" to "밑줄")
+    return (was.keys + is_.keys).distinct().mapNotNull { k ->
+        val a = was[k].orEmpty(); val b = is_[k].orEmpty()
+        val fields = (a.keys + b.keys).filter { it != "id" && it != "on" && it != "when" && a[it] != b[it] }.map { words[it] ?: "모양" }.distinct()
+        if (fields.isEmpty()) null else (com.bamnat.core.recipe.BlueprintParts.LABELS[k[0] as String] ?: k[0]).toString() + " · " + fields.joinToString("·")
+    }.distinct().take(4).joinToString(", ").takeIf { it.isNotEmpty() }
 }
 
 /** [STU-22] One screen's look back to where it started: its settings and its 화면 색·배경, the rest of the draft as it is. */
@@ -1045,15 +1092,22 @@ private fun resetTab(tab: String, d: com.bamnat.app.data.AppSettings, b: com.bam
         val keep = now.looks.filterKeys { !keys(it) } + was.looks.filterKeys(keys)
         return ScreenLooks(keep).encode()
     }
+    // [BLU-05] That screen's 부품 lines back to where they started, the other screens' parts as they are.
+    fun parts(vararg roots: String): String {
+        val r = roots.toSet()
+        val keep = com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.filterNot { LookParts.under(it["id"] as? String, r) } +
+            com.bamnat.core.recipe.Blueprint.decode(b.parts).lines.filter { LookParts.under(it["id"] as? String, r) }
+        return if (keep.isEmpty()) "" else com.bamnat.core.recipe.Blueprint(keep).encode()
+    }
     return when (tab) {
         TabOrder.CALENDAR -> d.copy(calView = b.calView, calTheme = b.calTheme, calendarLayout = b.calendarLayout, photoLook = b.photoLook,
-            screenLooks = screens { it == "calendar" })
-        TabOrder.MEMOS -> d.copy(memoLook = b.memoLook, memoLayout = b.memoLayout, screenLooks = screens { it == "memo" })
-        TabOrder.MONEY -> d.copy(moneyLook = b.moneyLook, moneyLayout = b.moneyLayout, screenLooks = screens { it == "money" })
-        TabOrder.STATS -> d.copy(statsLayout = b.statsLayout, payLooks = b.payLooks, screenLooks = screens { it == "stats" || it.startsWith("pay.") })
+            screenLooks = screens { it == "calendar" }, parts = parts("cal"))
+        TabOrder.MEMOS -> d.copy(memoLook = b.memoLook, memoLayout = b.memoLayout, screenLooks = screens { it == "memo" }, parts = parts("memo"))
+        TabOrder.MONEY -> d.copy(moneyLook = b.moneyLook, moneyLayout = b.moneyLayout, screenLooks = screens { it == "money" }, parts = parts("money"))
+        TabOrder.STATS -> d.copy(statsLayout = b.statsLayout, payLooks = b.payLooks, screenLooks = screens { it == "stats" || it.startsWith("pay.") }, parts = parts("pay"))
         TabOrder.PLAZA -> d.copy(screenLooks = screens { it == ScreenLooks.PLAZA })
-        LookParts.WIDGET -> d.copy(widgetLook = b.widgetLook)
-        else -> d.copy(tabOrder = b.tabOrder, screenLooks = screens { it in setOf(ScreenLooks.ALL, "settings", ScreenLooks.ALARM, ScreenLooks.GUARDED) })
+        LookParts.WIDGET -> d.copy(widgetLook = b.widgetLook, parts = parts("widget"))
+        else -> d.copy(tabOrder = b.tabOrder, screenLooks = screens { it in setOf(ScreenLooks.ALL, "settings", ScreenLooks.ALARM, ScreenLooks.GUARDED) }, parts = parts("app"))
     }
 }
 

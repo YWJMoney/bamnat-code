@@ -107,6 +107,9 @@ fun memoBackground(index: Int): Color {
     return if (c == Color.Unspecified) MaterialTheme.colorScheme.surfaceContainerLow else c
 }
 
+/** [BLU-05] 1.36 부품 '근무 표시'(cal.cell.mark)의 모서리: the shape a badge takes inside a cell whose blueprint sets one. */
+val LocalBadgeShape = androidx.compose.runtime.compositionLocalOf<androidx.compose.ui.graphics.Shape?> { null }
+
 /** Rounded pill with the shift's color and label, the core visual of the calendar. */
 @Composable
 fun ShiftBadge(
@@ -119,7 +122,7 @@ fun ShiftBadge(
 ) {
     val color = type?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.outline
     val label = text ?: type?.label ?: "휴"
-    val shape = RoundedCornerShape(size / 3)
+    val shape = LocalBadgeShape.current ?: RoundedCornerShape(size / 3)
     // The icon only goes with the type's own label, not with stand-in text like "휴" [FEAT-01].
     val icon = if (showIcon && (text == null || text == type?.label)) ShiftIcon.of(type?.icon) else null
     // [RCP-08] 1.34: an emoji the user (or a recipe) picked goes where the drawn icon would.

@@ -123,6 +123,8 @@ class RecipeMakeViewModel(
         /** F-100: why a public theme of mine could not be marked as in 장터 (내 테마 칸이 꽉 참). */
         val ownNote: String? = null,
         val error: String? = null,
+        /** [BLU-07] The refusal's code, so 올리기 can offer what helps (PC 5차: 이유 한 줄과 '나만'). */
+        val errorCode: String? = null,
         val draftId: Long = 0,
         /** [RCX-11] Recipes to tap into a 묶음 without typing codes: those put on this phone and those I put on the plaza (code to title). */
         val bundleChoices: List<Pair<String, String>> = emptyList(),
@@ -340,7 +342,7 @@ class RecipeMakeViewModel(
     fun publish() {
         val s = _state.value
         if (!RecipeLint.ready(lint)) return
-        _state.value = s.copy(sending = true, error = null)
+        _state.value = s.copy(sending = true, error = null, errorCode = null)
         viewModelScope.launch {
             try {
                 val shown = if (s.bare) com.bamnat.core.recipe.LookParts.withoutPhotos(s.recipe) else s.recipe
@@ -361,7 +363,7 @@ class RecipeMakeViewModel(
                 }
                 _state.value = _state.value.copy(sending = false, sent = sent, ownNote = note)
             } catch (e: RecipeException) {
-                _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code))
+                _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code), errorCode = e.code)
             } catch (e: Exception) {
                 _state.value = _state.value.copy(sending = false, error = RecipeClient.problem(e))
             }
@@ -516,6 +518,10 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     else -> StepCheck(s, vm) { scope.launch { scroll.animateScrollTo(0) } }
                 }
                 s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                // [BLU-07] PC 5차 사용성 제안: a refusal that 나만 can get past offers it in one tap (a 꾸밈 the server does not know yet cannot).
+                if (s.error != null && s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network")) {
+                    TextButton(onClick = { vm.scope("private"); vm.publish() }) { Text("나만 보기로 바꿔 올리기") }
+                }
                 Text("만들던 내용은 이 휴대폰에 저장돼요. 마을 › 공방 › 내 것에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // Room for the small example (or its pill) at the bottom corner, so nothing stays under it.
