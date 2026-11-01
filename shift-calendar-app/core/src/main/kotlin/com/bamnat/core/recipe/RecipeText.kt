@@ -122,6 +122,8 @@ object RecipeText {
         // F-99: say which part, so the ✕ can be fixed (a bare "넣을 수 없는 내용" left no way out).
         "parent" -> "원래 판 표시가 맞지 않아요. 스튜디오에서 올리기를 다시 눌러 주세요"
         "cover" -> "표지를 다시 골라 주세요"
+        // [BLU-07] PC 5차: a 꾸밈 newer than the server (부품 꾸미기 before the server knows it) is dropped there, leaving nothing.
+        "pieces" -> "서버가 아직 모르는 새 꾸밈이라 올라가지 않았어요. 서버가 새 판이 되면 다시 올려 주세요. 그동안은 스튜디오의 ‘저장’으로 내 휴대폰에 둘 수 있어요"
         else -> "넣을 수 없는 내용이 있어요"
     }
 
