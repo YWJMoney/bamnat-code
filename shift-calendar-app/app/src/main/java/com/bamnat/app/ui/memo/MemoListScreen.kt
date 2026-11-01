@@ -153,10 +153,10 @@ fun MemoListScreen(
         onTogglePin = vm::togglePin,
         onDuplicate = vm::duplicate,
         onDelete = vm::delete,
-        // [TAB-02] 누락 점검 N9: a card moved on the 보드 or a 칸 picked in the 표 — saved at once, with 되돌리기 for a few seconds.
+        // [TAB-02] 누락 점검 N9: a card moved on the 보드 or a 칸 picked in the 표 — saved at once, with 되돌리기 for 10 seconds (PC 확인 5ff9ae28: 4–6초 was missed).
         onChange = { before, after, said -> vm.saveEdited(after); undo = said to before },
     )
-    androidx.compose.runtime.LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(6_000); undo = null } }
+    androidx.compose.runtime.LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(10_000); undo = null } }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {

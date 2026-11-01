@@ -120,8 +120,9 @@ class MemoViewTest {
     @Test fun boardGroupsByTagPropertyAndCheck() {
         val ms = listOf(memo(1, "#병원 #야간"), memo(2, "#야간"), memo(3, "없음"))
         val cols = MemoView(view = MemoView.BOARD).board(ms)
-        assertEquals(listOf("#야간", "#병원", "꼬리표 없음"), cols.map { it.label })
-        assertEquals(listOf(1L, 2L), cols[0].memos.map { it.id })
+        // 꼬리표 in word order, so a 칸 stays put when cards move (PC 확인 5ff9ae28).
+        assertEquals(listOf("#병원", "#야간", "꼬리표 없음"), cols.map { it.label })
+        assertEquals(listOf(1L, 2L), cols[1].memos.map { it.id })
 
         val byProp = MemoView(view = MemoView.BOARD, by = "p:상태").board(listOf(memo(1, "상태: 끝"), memo(2, "상태: 진행"), memo(3, "상태: 끝"), memo(4, "")))
         assertEquals(listOf("상태 끝", "상태 진행", "상태 없음"), byProp.map { it.label })
@@ -166,9 +167,14 @@ class MemoViewTest {
         val v = MemoView(view = MemoView.BOARD, by = "p:상태")
         val choices = MemoView.choicesFor("상태", ms)
         assertEquals(listOf("하는 중", "할 일", "끝"), choices)
-        val cols = v.board(ms, extra = choices)
-        assertEquals(listOf("하는 중", "할 일", "끝"), cols.map { it.key })
-        assertTrue(cols[1].memos.isEmpty())
+        val cols = v.board(ms, extra = MemoView.knownChoices("상태"))
+        assertEquals(listOf("할 일", "하는 중", "끝"), cols.map { it.key })
+        assertTrue(cols[0].memos.isEmpty())
+        assertEquals(listOf("높음", "보통", "낮음"), MemoView.knownChoices("우선"))
+        assertEquals(listOf("높음", "보통", "낮음"), MemoView.knownChoices("중요도"))
+        // A 금액 칸 reads as money, and numbers go in number order.
+        val money = MemoView(view = MemoView.BOARD, by = "p:금액").board(listOf(memo(4, "금액: 15000"), memo(5, "금액: 9000")))
+        assertEquals(listOf("금액 9,000원", "금액 15,000원"), money.map { it.label })
         assertEquals(listOf("A", "B", "할 일", "하는 중", "끝"), MemoView.choicesFor("상태", emptyList(), listOf("A", "B")))
         // A 꼬리표 board has no empty 칸.
         assertEquals(1, MemoView(view = MemoView.BOARD).board(listOf(memo(3, "#집")), extra = listOf("가게")).size)

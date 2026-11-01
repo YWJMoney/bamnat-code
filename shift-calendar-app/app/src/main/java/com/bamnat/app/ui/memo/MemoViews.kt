@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.foundation.layout.Arrangement
@@ -167,7 +166,7 @@ internal fun MemoBoardView(
 ) {
     // PC 확인 dc7f51ae: a 칸 묶음 also shows the values it can take with no memo yet (상태 → 할 일 · 하는 중 · 끝), as empty 칸 to drop into.
     val columns = remember(memos, view, shiftOf, templateChoices) {
-        val extra = if (view.by.startsWith("p:")) view.by.drop(2).let { MemoView.choicesFor(it, memos, templateChoices(it)) } else emptyList()
+        val extra = if (view.by.startsWith("p:")) view.by.drop(2).let { MemoView.knownChoices(it, templateChoices(it)) } else emptyList()
         view.board(memos, shiftOf, extra)
     }
     // Where a card can go: the other 칸, and for 색 every colour (the board shows only the colours in use).
@@ -181,34 +180,62 @@ internal fun MemoBoardView(
     val colPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board.col")
     val headPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board.head")
     val movable = MemoView.canMove(view.by) && !state.selecting
-    // Where each 칸 is on screen (window px), for a drop; and the drag under way.
-    val bounds = remember { mutableMapOf<String, androidx.compose.ui.geometry.Rect>() }
+    // The drag under way (window px). PC 확인 5ff9ae28: the 칸 under the finger is read from the row's layout as it is now, so a board
+    // slid along drops into the 칸 that is seen there (it kept old places of 칸 that had left the screen).
     var drag by remember { mutableStateOf<BoardDrag?>(null) }
     var boardOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
     var boardWidth by remember { mutableStateOf(0f) }
     val rowState = androidx.compose.foundation.lazy.rememberLazyListState()
     val edge = with(androidx.compose.ui.platform.LocalDensity.current) { 56.dp.toPx() }
-    val target = drag?.let { d -> bounds.entries.firstOrNull { it.value.contains(d.at) }?.key }
+    val keyAt: (androidx.compose.ui.geometry.Offset) -> String? = { at ->
+        val info = rowState.layoutInfo
+        val x = at.x - boardOrigin.x + info.viewportStartOffset
+        if (at.y < boardOrigin.y) null else info.visibleItemsInfo.firstOrNull { x >= it.offset && x < it.offset + it.size }?.key as? String
+    }
+    val target = drag?.let { keyAt(it.at) }
     val move: (Memo, String, String) -> Unit = { memo, from, to ->
         MemoView.moved(memo, view.by, from, to)?.let { after ->
             val label = targets.firstOrNull { it.first == to }?.second ?: if (to == MemoView.NONE) "없음" else if (view.by == MemoView.BY_TAG) "#$to" else to
             actions.onChange(memo, after, "‘$label’ 칸으로 옮겼어요")
         }
     }
-    // Held near an edge, the board slides on so a far 칸 can be reached.
+    // Held near an edge, the board turns one 칸 on, then another while the finger stays (PC 확인 5ff9ae28 사용성 제안).
     androidx.compose.runtime.LaunchedEffect(drag != null) {
         while (drag != null) {
             val x = (drag?.at?.x ?: break) - boardOrigin.x
-            val by = when {
-                x > boardWidth - edge -> 18f
-                x < edge -> -18f
-                else -> 0f
+            val step = when {
+                x > boardWidth - edge -> 1
+                x < edge -> -1
+                else -> 0
             }
-            if (by != 0f) rowState.scrollBy(by)
-            kotlinx.coroutines.delay(16)
+            if (step != 0) {
+                val to = (rowState.firstVisibleItemIndex + step).coerceIn(0, (columns.size - 1).coerceAtLeast(0))
+                rowState.animateScrollToItem(to)
+                kotlinx.coroutines.delay(550)
+            } else kotlinx.coroutines.delay(32)
         }
     }
-    Box(Modifier.fillMaxSize().onGloballyPositioned { boardOrigin = it.positionInWindow(); boardWidth = it.size.width.toFloat() }) {
+    val dropNow by androidx.compose.runtime.rememberUpdatedState { d: BoardDrag -> keyAt(d.at)?.let { to -> move(d.memo, d.from, to) } }
+    Box(
+        Modifier.fillMaxSize().onGloballyPositioned { boardOrigin = it.positionInWindow(); boardWidth = it.size.width.toFloat() }
+            // Once a 손잡이 starts a drag the board follows the finger itself, so the drag lives on when the card's 칸 slides off screen.
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                        val d = drag ?: continue
+                        val ch = e.changes.firstOrNull() ?: continue
+                        if (ch.pressed) {
+                            drag = d.copy(at = boardOrigin + ch.position)
+                            ch.consume()
+                        } else {
+                            drag = null
+                            dropNow(d)
+                        }
+                    }
+                }
+            },
+    ) {
         LazyRow(
             Modifier.fillMaxSize().then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.board"), RoundedCornerShape(0.dp))),
             state = rowState,
@@ -221,8 +248,7 @@ internal fun MemoBoardView(
                     shape = RoundedCornerShape(14.dp),
                     color = if (lit) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                     border = if (lit) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-                    modifier = Modifier.width(250.dp).fillParentMaxHeight().then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp)))
-                        .onGloballyPositioned { bounds[col.key] = it.boundsInWindow() },
+                    modifier = Modifier.width(250.dp).fillParentMaxHeight().then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp))),
                 ) {
                     Column {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -246,12 +272,9 @@ internal fun MemoBoardView(
                                         newLabel = if (!canAdd) null else if (view.by == MemoView.BY_TAG) "새 꼬리표" else "새 ${view.by.drop(2)} 값",
                                         onPick = { to -> move(memo, col.key, to) },
                                         onDragStart = { at -> drag = BoardDrag(memo, col.key, at) },
-                                        onDrag = { at -> drag = drag?.copy(at = at) },
-                                        onDragEnd = {
-                                            val d = drag
-                                            drag = null
-                                            if (d != null) bounds.entries.firstOrNull { it.value.contains(d.at) }?.key?.let { to -> move(d.memo, d.from, to) }
-                                        },
+                                        // The board takes the drag from here on (above) and drops it where the finger lifts.
+                                        onDrag = {},
+                                        onDragEnd = {},
                                         modifier = Modifier.align(Alignment.TopEnd),
                                     )
                                 }
@@ -395,8 +418,7 @@ internal fun MemoTableView(memos: List<Memo>, view: MemoView, onSort: (String) -
                     Row(Modifier.horizontalScroll(sideways)) {
                         for ((c, t) in columns) {
                             if (t == MemoProps.Type.PICK || t == MemoProps.Type.STAR) PickCell(memo, c, t, props[c], choices[c].orEmpty(), colW, actions)
-                            else Text(props[c]?.let { shown(it, t) } ?: "", style = MaterialTheme.typography.bodySmall, maxLines = 2,
-                                overflow = TextOverflow.Ellipsis, modifier = Modifier.width(colW).padding(horizontal = 8.dp))
+                            else EditCell(memo, c, t, props[c], colW, actions)
                         }
                         // PC 확인 bf62e966: still cut at 120dp with big text, so the 표 writes a short "11/12".
                         Text(memo.date?.let { "${it.monthValue}/${it.dayOfMonth}" } ?: "", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
@@ -477,6 +499,54 @@ private fun PickCell(memo: Memo, label: String, type: MemoProps.Type, prop: Memo
             },
             confirmButton = { androidx.compose.material3.TextButton(onClick = { writing = false; set(text) }, enabled = text.isNotBlank()) { Text("넣기") } },
             dismissButton = { androidx.compose.material3.TextButton(onClick = { writing = false }) { Text("닫기") } },
+        )
+    }
+}
+
+/**
+ * [TAB-01] PC 확인 5ff9ae28 사용성 제안 "표 금액 칸을 누르면 메모가 열려 그 자리에서 못 바꿔요": a 표 칸 of 금액·숫자·글·날짜·시각 opens a
+ * small box to change it in place (a number pad for 금액·숫자), a 체크 칸 flips ✓/☐. Saved through [CardActions.onChange] with 되돌리기.
+ */
+@Composable
+private fun EditCell(memo: Memo, label: String, type: MemoProps.Type, prop: MemoProps.Prop?, width: androidx.compose.ui.unit.Dp, actions: CardActions) {
+    var editing by remember { mutableStateOf(false) }
+    val set: (String) -> Unit = { v ->
+        val after = MemoProps.set(memo, label, v)
+        if (after != memo) actions.onChange(memo, after, if (v.isBlank()) "‘$label’ 칸을 비웠어요" else "‘$label’${Fmt.obj(label)} ‘$v’${Fmt.ro(v)} 바꿨어요")
+    }
+    val check = type == MemoProps.Type.CHECK
+    Text(
+        prop?.let { shown(it, type) } ?: "",
+        style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.width(width).heightIn(min = 44.dp)
+            .clickable(onClickLabel = if (check) "$label 바꾸기" else "$label 고치기") {
+                if (check) set(if ((prop?.num ?: 0.0) > 0) "☐" else "✓") else editing = true
+            }
+            .semantics { contentDescription = "$label ${prop?.let { shown(it, type) } ?: "비어 있음"}, 눌러서 ${if (check) "바꾸기" else "고치기"}" }
+            .padding(horizontal = 8.dp, vertical = 12.dp),
+    )
+    if (editing) {
+        val numeric = type == MemoProps.Type.MONEY || type == MemoProps.Type.NUM
+        var text by remember { mutableStateOf(if (numeric) prop?.num?.let { if (it == Math.floor(it)) it.toLong().toString() else it.toString() } ?: "" else prop?.raw.orEmpty()) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { editing = false },
+            title = { Text(label) },
+            text = {
+                androidx.compose.material3.OutlinedTextField(text, { text = it.take(40).replace("\n", " ") }, singleLine = true,
+                    suffix = if (type == MemoProps.Type.MONEY) ({ Text("원") }) else null,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = if (numeric) androidx.compose.ui.text.input.KeyboardType.Number else androidx.compose.ui.text.input.KeyboardType.Text),
+                    supportingText = { Text("비우면 이 칸 줄을 지워요") })
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    editing = false
+                    val v = text.trim()
+                    // A 금액 written as a bare number stays 금액 under a name that does not say money.
+                    set(if (type == MemoProps.Type.MONEY && v.isNotEmpty() && v.all { it.isDigit() || it == ',' } && !MemoProps.isMoneyLabel(label)) v + "원" else v)
+                }) { Text("저장") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { editing = false }) { Text("닫기") } },
         )
     }
 }

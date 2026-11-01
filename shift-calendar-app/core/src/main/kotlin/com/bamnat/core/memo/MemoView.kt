@@ -39,13 +39,17 @@ data class MemoView(
             by.startsWith("p:") -> put(MemoProps.of(m).firstOrNull { it.label == by.drop(2) }?.raw, m)
             else -> none.add(m)
         }
-        val keys = when (by) {
-            BY_CHECK -> CHECK_ORDER.filter { it in groups }
-            BY_COLOR -> groups.keys.sortedBy { it.toIntOrNull() ?: 0 }
-            else -> groups.keys.sortedByDescending { groups[it]!!.size }
+        // PC 확인 5ff9ae28 "열 순서가 매번 바뀌어요": the 칸 keep their place when a card moves — a 칸 묶음 in [extra]'s order (할 일 · 하는 중 ·
+        // 끝, 높음 · 보통 · 낮음) then the rest in number or word order, 꼬리표 in word order; empty [extra] 칸 sit in their place.
+        val known = if (by.startsWith("p:")) extra.map { it.trim() }.filter { it.isNotEmpty() }.distinct() else emptyList()
+        val keys = when {
+            by == BY_CHECK -> CHECK_ORDER.filter { it in groups }
+            by == BY_COLOR -> groups.keys.sortedBy { it.toIntOrNull() ?: 0 }
+            by == BY_SHIFT -> groups.keys.sortedByDescending { groups[it]!!.size }
+            else -> (groups.keys + known).distinct().sortedWith(compareBy<String> { k -> known.indexOf(k).let { if (it < 0) Int.MAX_VALUE else it } }
+                .thenComparator { a, b -> natural(a, b) })
         }
-        val empty = if (by.startsWith("p:")) extra.map { it.trim() }.filter { it.isNotEmpty() && it !in groups }.distinct() else emptyList()
-        return keys.map { Column(it, labelOf(it), groups[it]!!) } + empty.map { Column(it, labelOf(it), emptyList()) } +
+        return keys.map { Column(it, labelOf(it), groups[it].orEmpty()) } +
             (if (none.isEmpty()) emptyList() else listOf(Column(NONE, noneLabel(), none)))
     }
 
@@ -53,7 +57,17 @@ data class MemoView(
         BY_TAG -> "#$key"
         BY_COLOR -> if (key == "0") "기본 색" else "색 $key"
         // PC 확인 bad7d860 사용성 제안: "5" alone is unclear, so a property column says "별점 5".
-        else -> if (by.startsWith("p:")) "${by.drop(2)} $key" else key
+        // PC 확인 5ff9ae28: a 금액 칸 reads as the card does, "금액 15,000원", not "금액 15000".
+        else -> if (by.startsWith("p:")) "${by.drop(2)} ${money(by.drop(2), key) ?: key}" else key
+    }
+
+    private fun money(label: String, key: String): String? = MemoProps.read(label, key).let { p ->
+        if (p.num != null && (p.type == MemoProps.Type.MONEY || (p.type == MemoProps.Type.NUM && MemoProps.isMoneyLabel(label)))) "%,d원".format(p.num.toLong()) else null
+    }
+
+    private fun natural(a: String, b: String): Int {
+        val x = a.replace(",", "").toDoubleOrNull(); val y = b.replace(",", "").toDoubleOrNull()
+        return if (x != null && y != null) x.compareTo(y) else a.compareTo(b)
     }
 
     private fun noneLabel(): String = when {
@@ -141,9 +155,13 @@ data class MemoView(
         fun choicesFor(label: String, memos: List<Memo>, fromTemplates: List<String> = emptyList()): List<String> =
             (MemoProps.choices(memos, label) + fromTemplates + usual(label)).map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MemoProps.MAX_CHOICES)
 
+        /** The values a 칸 named [label] is known to take whatever the memos say — a 틀's choices, then the usual words — in their own order (a 보드's 칸 order). */
+        fun knownChoices(label: String, fromTemplates: List<String> = emptyList()): List<String> =
+            (fromTemplates + usual(label)).map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MemoProps.MAX_CHOICES)
+
         private fun usual(label: String): List<String> = when {
             listOf("상태", "진행").any { label.contains(it) } -> listOf("할 일", "하는 중", "끝")
-            label.contains("우선순위") -> listOf("높음", "보통", "낮음")
+            listOf("우선", "중요").any { label.contains(it) } -> listOf("높음", "보통", "낮음")
             label.contains("결과") -> listOf("성공", "보류", "실패")
             else -> emptyList()
         }
