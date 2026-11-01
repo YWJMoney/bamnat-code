@@ -60,6 +60,13 @@ class LogicTimedRuleTest {
 
     @After fun tearDown() = Today.reset()
 
+    @Test fun dailyIgnoresLeftOverMinutes() = runBlocking {
+        // PC D9: 근무 시작(1시간 전)에서 '매일 07:00'으로 바꾼 규칙이 '다음: 06:00'으로 보였어요.
+        val daily = com.bamnat.core.formula.LogicRule("체크 비우기", com.bamnat.core.formula.RuleTrigger.DAILY, min = -60, at = "07:00",
+            act = com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.CHECK_RESET, ""))
+        assertEquals(day.plusDays(1).atTime(7, 0), LogicRunner.nextTime(daily, Today.dateTime(), LogicRunner.facts(c))?.first)
+    }
+
     @Test fun nextIsTodayAtSixAndRegisteredThen() = runBlocking {
         val facts = LogicRunner.facts(c)
         assertEquals(day.atTime(18, 0), LogicRunner.nextTime(rule, Today.dateTime(), facts)?.first)

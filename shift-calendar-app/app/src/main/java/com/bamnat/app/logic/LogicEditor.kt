@@ -32,6 +32,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -298,6 +300,9 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
 @Composable
 fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Unit, onDismiss: () -> Unit) {
     var r by remember { mutableStateOf(start ?: LogicRule("", RuleTrigger.START, min = -60, role = "night", act = LogicAct(LogicVerb.NOTIFY, notifyWords(RuleTrigger.START, "night")))) }
+    var tried by remember { mutableStateOf<String?>(null) }
+    // The red line goes once what it asked for is done.
+    LaunchedEffect(r) { if (tried != null) tried = ruleProblem(r) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (start == null) "규칙 만들기" else "규칙 고치기") },
@@ -325,8 +330,10 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                             }
                         }
                     }
-                    RuleTrigger.DAILY -> OutlinedTextField(r.at ?: "21:00", { s -> r = r.copy(at = s.take(5)) }, singleLine = true, label = { Text("시각 (HH:mm)") },
-                        isError = r.at?.matches(Regex("^([01][0-9]|2[0-3]):[0-5][0-9]$")) == false)
+                    RuleTrigger.DAILY -> OutlinedTextField(r.at.orEmpty(), { s -> r = r.copy(at = s.take(5)) }, singleLine = true, label = { Text("시각 (예: 07:00)") },
+                        isError = timeOf(r.at.orEmpty()) == null,
+                        supportingText = { if (timeOf(r.at.orEmpty()) == null) Text("시각을 07:00처럼 넣어 주세요") },
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
                     RuleTrigger.HOLD -> Text("화면이나 메모 틀을 여는 규칙이 맞는 날에는 길게 눌러도 빠른 설정 대신 그것이 열려요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     else -> Unit
@@ -337,9 +344,16 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
             }
         },
         confirmButton = {
-            val ok = (r.cond.isEmpty() || Formula.problem(r.cond) == null) && (r.act.verb !in MONEY_VERBS || r.act.amount != null) && (r.act.verb != LogicVerb.MEMO_LINE || r.act.arg.isNotBlank()) &&
-                (r.on != RuleTrigger.DAILY || r.at?.matches(Regex("^([01][0-9]|2[0-3]):[0-5][0-9]$")) == true)
-            TextButton(onClick = { onDone(r.copy(name = r.name.ifBlank { r.act.say().take(20) })) }, enabled = ok) { Text("저장") }
+            // PC D9 (높): 저장은 늘 눌리고, 아직 안 되면 왜인지 빨갛게 말해요.
+            Column(horizontalAlignment = Alignment.End) {
+                tried?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
+                TextButton(onClick = {
+                    val why = ruleProblem(r)
+                    if (why != null) tried = why
+                    else onDone(r.copy(name = r.name.ifBlank { r.act.say().take(20) }, at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at))
+                }) { Text("저장") }
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
@@ -416,7 +430,27 @@ internal fun whenFor(r: LogicRule, t: RuleTrigger): LogicRule = when {
     t == r.on -> r
     t == RuleTrigger.END -> r.copy(on = t, min = 0)
     t == RuleTrigger.START && r.on == RuleTrigger.END && r.min == 0 -> r.copy(on = t, min = -60)
-    else -> r.copy(on = t)
+    t == RuleTrigger.START -> r.copy(on = t)
+    // PC D9 (높): '매일'은 보이는 시각이 실제 값이에요 (흐린 21:00인데 요약은 09:00, 저장은 말없이 안 되던 것). 몇 분 전·뒤는 근무 시작·끝에만.
+    t == RuleTrigger.DAILY -> r.copy(on = t, at = timeOf(r.at.orEmpty()) ?: "21:00", min = 0)
+    else -> r.copy(on = t, min = 0)
+}
+
+/** "7:00", "700", "0700", "07:00" → "07:00"; null when it is not a time of day. */
+internal fun timeOf(s: String): String? {
+    val m = Regex("^\\s*(\\d{1,2})\\s*[:시.]?\\s*(\\d{2})?\\s*분?\\s*$").find(s) ?: return null
+    val h = m.groupValues[1].toInt()
+    val min = m.groupValues[2].ifEmpty { "0" }.toInt()
+    return if (h in 0..23 && min in 0..59) "%02d:%02d".format(h, min) else null
+}
+
+/** PC D9 (높): why 저장 does nothing yet, said in red when pressed (no silent failure). */
+internal fun ruleProblem(r: LogicRule): String? = when {
+    r.on == RuleTrigger.DAILY && timeOf(r.at.orEmpty()) == null -> "시각을 07:00처럼 넣어 주세요"
+    r.cond.isNotEmpty() && Formula.problem(r.cond) != null -> "조건 수식을 고쳐 주세요"
+    r.act.verb in MONEY_VERBS && r.act.amount == null -> "금액을 넣어 주세요"
+    r.act.verb == LogicVerb.MEMO_LINE && r.act.arg.isBlank() -> "메모에 더할 한 줄을 써 주세요"
+    else -> null
 }
 
 /** [RUL-06] The 알림 글 a new rule starts with, said for its 언제 and 근무: "{근무끝}에 주간 근무가 끝나요". */
@@ -459,6 +493,8 @@ fun LogicEditor(
     var editRule by remember { mutableStateOf<Int?>(null) }
     var editButton by remember { mutableStateOf<Int?>(null) }
     var bump by remember { mutableIntStateOf(0) }
+    // PC D9 (사용성 낮): a received rule that writes is switched on after one look at what it will do.
+    var askOn by remember { mutableStateOf<LogicRule?>(null) }
     // [RUL-06] PC 3차 사용성 제안: the lines read again whenever the screen shows, and each minute while it stays open (울린 뒤 바로 '했어요').
     if (phone) {
         androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { bump++ }
@@ -498,9 +534,9 @@ fun LogicEditor(
                 ).joinToString(" · ")
             }
             LineCard("${r.name}: ${r.say()}", note,
-                if (phone) on else null, { v -> store.setOff(r.key, !v); bump++; LogicRunner.schedule(c) },
+                if (phone) on else null, { v -> if (v && came) askOn = r else { store.setOff(r.key, !v); bump++; LogicRunner.schedule(c) } },
                 onEdit = { editRule = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
-                action = ("켜기" to { store.setOff(r.key, false); bump++; LogicRunner.schedule(c) }).takeIf { phone && !on && came })
+                action = ("켜기" to { askOn = r }).takeIf { phone && !on && came })
             // [RUL-06] 이 조건을 쓰는 곳: the same 조건 also decorates days.
             if (r.cond.isNotEmpty() && usedInParts(r.cond)) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("이 조건은 조건부 꾸미기에도 쓰여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -511,6 +547,13 @@ fun LogicEditor(
         if (!readOnly && logic.rules.size < Logic.MAX_RULES) TextButton(onClick = { editRule = -1 }) { Text("+ 규칙 만들기") }
         }
         if (phone && store.undo != null) OutlinedButton(onClick = { c.appScope.launch { LogicRunner.undo(c); bump++ } }) { Text("마지막 동작 되돌리기") }
+        askOn?.let { r ->
+            AlertDialog(onDismissRequest = { askOn = null },
+                title = { Text("받은 규칙을 켤까요?") },
+                text = { Text("‘${r.name}’${com.bamnat.app.ui.Fmt.eun(r.name)} ${r.sayWhen()} ${r.act.say()}를 해요. 메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요.") },
+                confirmButton = { TextButton(onClick = { store.setOff(r.key, false); askOn = null; bump++; LogicRunner.schedule(c) }) { Text("켜기") } },
+                dismissButton = { TextButton(onClick = { askOn = null }) { Text("그대로 두기") } })
+        }
         // 1.36 [SEC-12] 보안 점검 M4 '규칙이 쓴 것': what rules and buttons wrote in 7 days, in a line each, and all of it taken back at once.
         if (phone) {
             val written = remember(bump) { store.written() }

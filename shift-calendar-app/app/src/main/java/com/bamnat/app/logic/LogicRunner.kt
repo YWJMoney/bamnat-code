@@ -315,7 +315,8 @@ object LogicRunner {
                     }
                 }
                 else -> null
-            }?.plusMinutes(r.min.toLong())
+            // PC D9: 몇 분 전·뒤는 근무 시작·끝에만 (근무 시작에서 '매일'로 바꾼 규칙이 07:00인데 06:00에 오지 않게).
+            }?.plusMinutes(if (r.on == RuleTrigger.START || r.on == RuleTrigger.END) r.min.toLong() else 0L)
             if (at != null && at.isAfter(after)) return at to day
         }
         return null

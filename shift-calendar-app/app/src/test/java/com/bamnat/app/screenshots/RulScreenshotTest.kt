@@ -15,6 +15,8 @@ import com.bamnat.app.logic.followWords
 import com.bamnat.app.logic.minutesWord
 import com.bamnat.app.logic.notifyWords
 import com.bamnat.app.logic.whenFor
+import com.bamnat.app.logic.timeOf
+import com.bamnat.app.logic.ruleProblem
 import com.bamnat.core.formula.ButtonPlace
 import com.bamnat.core.formula.FormulaNames
 import com.bamnat.core.formula.Logic
@@ -71,6 +73,20 @@ class RulScreenshotTest : ScreenshotBase() {
         assertEquals(-60, whenFor(end, RuleTrigger.START).min)
         assertEquals(30, whenFor(end.copy(min = 30), RuleTrigger.START).min)
         assertEquals(-30, whenFor(start.copy(min = -30), RuleTrigger.START).min)
+    }
+
+    @Test fun dailyShowsItsRealTime() {
+        // PC D9 (높): '매일'을 고르면 흐린 21:00인데 요약은 09:00이고, 저장은 말없이 안 됐어요.
+        val start = LogicRule("", RuleTrigger.START, min = -60, act = LogicAct(LogicVerb.NOTIFY, "x"))
+        val daily = whenFor(start, RuleTrigger.DAILY)
+        assertEquals("21:00", daily.at)
+        assertEquals(0, daily.min)
+        assertEquals("매일 21:00", daily.sayWhen())
+        assertEquals(null, ruleProblem(daily))
+        assertEquals("시각을 07:00처럼 넣어 주세요", ruleProblem(daily.copy(at = "")))
+        assertEquals("07:00", timeOf("7:00")); assertEquals("07:00", timeOf("700")); assertEquals("21:30", timeOf("2130"))
+        assertEquals("07:00", timeOf("7시")); assertEquals(null, timeOf("25:00")); assertEquals(null, timeOf("아침"))
+        assertEquals(0, whenFor(start, RuleTrigger.TAP).min)
     }
 
     @Test fun editorList() = shoot("886_rul_editor_list", FOLDED) {
