@@ -470,7 +470,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val same = overlap.mapNotNull { com.bamnat.core.recipe.BlueprintParts.LABELS[it] }.joinToString("·")
         _state.value = s.copy(layered = s.layered + k, sources = if (k.own) s.sources else s.sources + (k.from to k.fromTitle),
             // PC 9차 사용성 제안 (얹기 안내가 두 줄로 길어요): a single part says its own name, and the rest in a few words.
-            said = (k.parts.singleOrNull()?.let { LookParts.byId(it)?.label }?.let { "‘$it’ 부품을 얹었어요" }
+            said = (k.parts.singleOrNull()?.let { LookParts.byId(it)?.label?.removePrefix("부품 · ") }?.let { "‘$it’ 부품을 얹었어요" }
                 ?: "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요") +
                 (if (same.isNotEmpty()) " · 내 ‘$same’ 꾸밈은 바뀜, 되돌리기로 돌아가요" else " · 다른 부품은 그대로"),
             canUndoLayer = stepped)

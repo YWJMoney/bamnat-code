@@ -855,6 +855,9 @@ private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit, sendin
             // [BLU-07] PC 8차 (나만 보기로 저장의 표시를 못 봄): said in its own words, live for TalkBack.
             Text(if (sent.scope == "private") "✓ 나만 보기로 저장했어요" else "✓ 올렸어요", style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+            // PC 10차 사용성 제안 (지금 상태를 놓치기 쉬움): where it is now, first and plain.
+            Text("지금: " + when (sent.scope) { "private" -> "나만 보기"; "link" -> "링크로만"; else -> "장터에 공개" }, style = MaterialTheme.typography.labelLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             Text(stateLabel(sent.state, sent.scope), style = MaterialTheme.typography.bodyMedium)
             Text("코드 ${sent.code} · v${sent.version}", style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
