@@ -888,6 +888,9 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
 /**
  * The widget's example: today's day on its plate, light or dark and as see-through as chosen, and [BLU-10] the 위젯 parts as the home
  * screen draws them (판 전체 `widget`, 머리 `widget.head`, 칸 `widget.cell`; a tap on one opens it in 부품).
+ * [LAY-12] 1.36 위젯 편집 화면 (누락 점검 N2, 제안 26): the three widgets the home screen has — 오늘 (today and tomorrow), 주 (this week's
+ * seven days) and 달 (the month) — each picked above the example, so a part's look is seen where it matters: the 머리 is the date line,
+ * '이번 주 근무' and the month's name; a 칸 is a line, a day and a date cell, with its states (오늘·토·일·공휴일·다른 달).
  */
 @Composable
 internal fun WidgetSample(w: WidgetLook) {
@@ -903,30 +906,79 @@ internal fun WidgetSample(w: WidgetLook) {
     val ink = androidx.compose.ui.graphics.Color(com.bamnat.core.recipe.Palette.inkOn(whole.ink ?: w.ink ?: if (dark) 0xFFFFFFFFL else 0xFF1B1B1BL, ground).toInt())
     val scale = w.textScale
     val face = com.bamnat.core.recipe.PartStyle(font = whole.font, italic = whole.italic, deco = whole.deco)
-    Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),
-        contentAlignment = Alignment.Center) {
-        // [LAY-07] 위젯 꾸밈 drawn on the plate as the home screen draws it.
-        Column(Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget")).clip(RoundedCornerShape((whole.r ?: w.corner ?: 20).dp)).background(plate)
-            .decor(com.bamnat.core.recipe.Decor.WIDGET)
-            .padding(horizontal = (whole.padH ?: 20).dp, vertical = (whole.padV ?: 14).dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            // PC 확인 W1 1.36 (예시 근무가 내 근무와 달라요): my own today and tomorrow, the example only before any work is set.
-            val (today, tomorrow) = rememberTwoDays() ?: ("오늘 · 주간 07:00" to "내일 · 야간 22:00")
-            val day0 = com.bamnat.core.time.Today.date()
-            val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { com.bamnat.core.holiday.KoreanHolidays.isHoliday(day0) }))
-            if (head.hide != true) com.bamnat.app.ui.parts.PartText("${day0.monthValue}월 ${day0.dayOfMonth}일", face.over(head),
-                MaterialTheme.typography.labelMedium.copy(color = ink.copy(alpha = 0.8f), fontSize = (12 * scale).sp),
-                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(6.dp))))
-            listOf(today to 16, tomorrow to 14).forEachIndexed { i, (line, size) ->
-                val d = day0.plusDays(i.toLong())
-                val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, com.bamnat.core.holiday.KoreanHolidays.isHoliday(d), true, i == 0, false))
-                com.bamnat.app.ui.parts.PartText(line, face.over(cell.copy(size = cell.size?.let { if (i == 0) it * 1.3 else it })),
-                    (if (i == 0) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
-                        .copy(color = if (i == 0) ink else ink.copy(alpha = 0.75f), fontSize = (size * scale).sp),
-                    Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), RoundedCornerShape(6.dp))))
+    var kind by rememberSaveable { mutableStateOf(WidgetKind.TODAY) }
+    val day0 = com.bamnat.core.time.Today.date()
+    fun holiday(d: java.time.LocalDate) = com.bamnat.core.holiday.KoreanHolidays.isHoliday(d)
+    @Composable
+    fun Head(text: String) {
+        val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { holiday(day0) }))
+        if (head.hide != true) com.bamnat.app.ui.parts.PartText(text, face.over(head),
+            MaterialTheme.typography.labelMedium.copy(color = ink.copy(alpha = 0.8f), fontSize = (12 * scale).sp),
+            Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(6.dp))))
+    }
+    @Composable
+    fun Cell(text: String, d: java.time.LocalDate, inMonth: Boolean, big: Boolean, size: Int, modifier: Modifier, center: Boolean = false) {
+        val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, holiday(d), inMonth, d == day0, false))
+        if (cell.hide == true) { Box(modifier); return }
+        val base = (if (big) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
+        com.bamnat.app.ui.parts.PartText(text, face.over(cell.copy(size = cell.size?.let { if (big) it * 1.3 else it })),
+            base.copy(color = if (big || d == day0) ink else ink.copy(alpha = if (inMonth) 0.75f else 0.4f), fontSize = (size * scale).sp,
+                textAlign = if (center) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Unspecified),
+            modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), RoundedCornerShape(6.dp))))
+    }
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            WidgetKind.entries.forEach { k -> FilterChip(selected = k == kind, onClick = { kind = k }, label = { Text(k.label) }) }
+        }
+        Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),
+            contentAlignment = Alignment.Center) {
+            // [LAY-07] 위젯 꾸밈 drawn on the plate as the home screen draws it.
+            Column(Modifier.fillMaxWidth()
+                .then(com.bamnat.app.ui.parts.partSpotModifier("widget")).clip(RoundedCornerShape((whole.r ?: w.corner ?: 20).dp)).background(plate)
+                .decor(com.bamnat.core.recipe.Decor.WIDGET)
+                .padding(horizontal = (whole.padH ?: 20).dp, vertical = (whole.padV ?: 14).dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                when (kind) {
+                    WidgetKind.TODAY -> {
+                        // PC 확인 W1 1.36 (예시 근무가 내 근무와 달라요): my own today and tomorrow, the example only before any work is set.
+                        val (today, tomorrow) = rememberTwoDays() ?: ("오늘 · 주간 07:00" to "내일 · 야간 22:00")
+                        Head("${day0.monthValue}월 ${day0.dayOfMonth}일")
+                        Cell(today, day0, true, true, 16, Modifier.fillMaxWidth())
+                        Cell(tomorrow, day0.plusDays(1), true, false, 14, Modifier.fillMaxWidth())
+                    }
+                    WidgetKind.WEEK -> {
+                        Head("이번 주 근무")
+                        val mon = day0.minusDays((day0.dayOfWeek.value - 1).toLong())
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            (0 until 7).forEach { i ->
+                                val d = mon.plusDays(i.toLong())
+                                Cell("${"월화수목금토일"[i]}\n${d.dayOfMonth}\n${WEEK_SAMPLE[i]}", d, true, false, 11, Modifier.weight(1f), center = true)
+                            }
+                        }
+                    }
+                    WidgetKind.MONTH -> {
+                        Head("${day0.monthValue}월")
+                        val first = day0.withDayOfMonth(1)
+                        val start = first.minusDays((first.dayOfWeek.value % 7).toLong())
+                        val rows = (first.dayOfWeek.value % 7 + day0.lengthOfMonth() + 6) / 7
+                        (0 until rows).forEach { r ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                (0 until 7).forEach { c ->
+                                    val d = start.plusDays((r * 7 + c).toLong())
+                                    Cell("${d.dayOfMonth}", d, d.month == day0.month, false, 11, Modifier.weight(1f), center = true)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
+
+/** [LAY-12] The home screen's widgets, as the studio's widget example shows them. */
+private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK("주 위젯"), MONTH("달 위젯") }
+
+private val WEEK_SAMPLE = listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
 
 /** "오늘 · 야간 19:00" and "내일 · 휴무" from my own calendar, or null while nothing is set for either day. */
 @Composable

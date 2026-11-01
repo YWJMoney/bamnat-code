@@ -137,5 +137,24 @@ class LayScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(appears("그림만", exact = true))
     }
+
+    /** [LAY-12] 누락 점검 N2: the studio's widget example as the 달 위젯, its cells painted by the 위젯 칸 part with a widget sticker on. */
+    @Test fun theWidgetExampleHasThreeKinds() = shoot("1486_lay_widget_kinds", PHONE) {
+        content {
+            Surface {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.bamnat.app.ui.parts.LocalBlueprint provides com.bamnat.core.recipe.Blueprint.decode(
+                        """[{"id":"widget.cell","on":"sun","ink":4293284096},{"id":"widget.head","weight":800,"size":16}]"""),
+                    com.bamnat.app.ui.decor.LocalDecor provides Decor(listOf(DecorItem(DecorKind.EMOJI, "🌙", at = Decor.WIDGET, x = 920, y = 80, w = 28, h = 28)))) {
+                    com.bamnat.app.ui.studio.WidgetSample(com.bamnat.core.recipe.WidgetLook())
+                }
+            }
+        }
+        settle()
+        assertTrue(appears("오늘 위젯", exact = true))
+        tapText("달 위젯", exact = true)
+        settle()
+        assertTrue(appears("${today.monthValue}월", exact = true))
+    }
 }
 

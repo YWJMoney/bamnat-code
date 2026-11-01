@@ -1650,3 +1650,4 @@ LAY-08,"1.36 누락 점검 N5 부품 고급 보기: 숫자 칸, 여러 부품 �
 LAY-09,"1.36 누락 점검 N6 곳 줄 자주 쓰는 6곳+더 보기, 스튜디오 고급 보기 하나로(부품·꾸밈 층), 층 나무에서 부품·꾸밈 바로 열기",1.36,진행 중,에뮬레이터 확인,"StudioLayerTree AreaRank·treeRows, StudioLayerTreeTest"
 LAY-10,"1.36 누락 점검 N12 꾸밈 층에 사진: 휴대폰에서 줄이고 위치·기기 정보 지움, 올리면 갈래 F 사진 세 겹 검사, 못 받은 사진은 회색 상자, 사진 빼고 올리기",1.36,진행 중,에뮬레이터 확인,"core DecorKind.PHOTO·Decor.images·LookParts.withoutPhotos, server decor.js decorPhoto, LookImages.importWhole, ui/decor/DecorPhotos, recipe-cases 3건"
 LAY-11,"1.36 누락 점검 N8 꾸밈을 규칙 단추로(tap): 꾸밈을 누르면 그 단추, TalkBack은 동작으로. 규칙 엔진은 갈래 D가 DecorTap에 이어 붙임",1.36,진행 중,에뮬레이터 확인,"core DecorItem.tap, server decorTap, ui/decor DecorTap·LocalDecorTap·tapRect, LayScreenshotTest 1485"
+LAY-12,"1.36 누락 점검 N2 스튜디오 위젯 편집 화면: 오늘·주·달 위젯 예시를 골라 위젯 판·머리·칸 부품과 꾸밈 층을 홈 화면처럼 보기, 누르면 그 부품(그리기는 갈래 A BLU-10)",1.36,진행 중,에뮬레이터 확인,"StudioScreen WidgetSample·WidgetKind, LayScreenshotTest 1486"
