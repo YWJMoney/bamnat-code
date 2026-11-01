@@ -42,7 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bamnat.app.ui.company.CompanyWayText
 import com.bamnat.app.ui.pay.rulesheet.HourlyCard
@@ -108,7 +108,7 @@ internal fun PhotoResultScreen(
     var askClose by remember { mutableStateOf(false) }
     val kept = read.lines.size + (sheet?.sheet?.toChanges()?.size ?: 0)
     val leave = { if (kept > 0) askClose = true else onDismiss() }
-    if (askClose) androidx.compose.material3.AlertDialog(
+    if (askClose) com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { askClose = false },
         title = { Text("읽은 내용을 버릴까요?") },
         text = { Text(if (read.lines.isNotEmpty()) "명세서에서 읽은 ${read.lines.size}줄이 사라져요. 넣으려면 아래 단추를 눌러 주세요." else "채운 칸이 사라져요.") },

@@ -532,7 +532,7 @@ private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (Str
             Box {
                 com.bamnat.app.ui.components.FilterChip(selected = region.isNotEmpty(), onClick = { open = true },
                     label = { Text(if (region.isEmpty()) "지역 고르기 (전국)" else com.bamnat.app.company.Plaza.region(region)) })
-                androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                com.bamnat.app.ui.components.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                     androidx.compose.material3.DropdownMenuItem(text = { Text("전국") }, onClick = { open = false; onRegion("") })
                     com.bamnat.app.company.Plaza.REGIONS.forEach { (k, n) ->
                         androidx.compose.material3.DropdownMenuItem(text = { Text(n) }, onClick = { open = false; onRegion(k) })

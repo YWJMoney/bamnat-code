@@ -747,7 +747,7 @@ private fun CoverOrChangeDialog(day: ResolvedDay, c: ExtraChoice, snapshot: Sche
     val covered = snapshot.shiftTypes.firstOrNull { it.id == c.entry.coveredShiftId }
     val total = (day.scheduledMinutes + c.entry.paidMinutes) / 60.0
     val hours = if (total % 1.0 == 0.0) "${total.toInt()}시간" else "%.1f시간".format(total)
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("이 날은 $now 근무예요") },
         text = {

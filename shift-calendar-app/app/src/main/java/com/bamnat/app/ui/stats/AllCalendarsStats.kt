@@ -122,7 +122,7 @@ private fun YearIncomeCard(month: YearMonth, calendars: List<com.bamnat.app.data
                 }
             }
             picking?.let { id ->
-                androidx.compose.material3.AlertDialog(
+                com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = { picking = null },
                     title = { Text("이 달력의 소득 종류") },
                     text = {
