@@ -594,8 +594,9 @@ private const val LIGHT_SWATCHES = 10
 
 private val SWATCHES: List<Long> = listOf(
     0xFFFFFFFF, 0xFFF7F8FC, 0xFFFFF8E1, 0xFFFFF4CC, 0xFFFFE2CC, 0xFFFFDDE4, 0xFFE6DDFF, 0xFFD9E7FF, 0xFFCFF3EA, 0xFFE8F5D0,
-    0xFFF2994A, 0xFFE5484D, 0xFFE84393, 0xFF9B51E0, 0xFF2F5BEA, 0xFF00A3C4, 0xFF00857A, 0xFF27AE60, 0xFF8E9AAF, 0xFF4A5068,
-    0xFF1B1B1B, 0xFF0F1220, 0xFF1E335C, 0xFF16443B, 0xFF4D2230,
+    // PC 제안 1.36: the deep row by kind of colour, each kind light to dark, 검정 last.
+    0xFFF2994A, 0xFFE5484D, 0xFF4D2230, 0xFFE84393, 0xFF9B51E0, 0xFF2F5BEA, 0xFF8E9AAF, 0xFF4A5068, 0xFF1E335C, 0xFF0F1220,
+    0xFF00A3C4, 0xFF00857A, 0xFF16443B, 0xFF27AE60, 0xFF1B1B1B,
 )
 
 /**
@@ -644,6 +645,9 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             )
         }
         val split = recent.size + LIGHT_SWATCHES
+        // PC 제안 1.36: on a new phone, where the colours used will gather.
+        if (recent.isEmpty() && memory.pin != null) Text("쓴 색과 ★ 내 색은 줄 맨 앞에 모여요", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(

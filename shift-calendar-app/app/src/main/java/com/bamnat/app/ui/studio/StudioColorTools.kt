@@ -120,7 +120,7 @@ internal object StudioColors {
         com.bamnat.core.layout.TabOrder.MEMOS -> listOf("memo")
         com.bamnat.core.layout.TabOrder.STATS -> listOf("stats", "pay") + ScreenLooks.PAY_STYLES
         com.bamnat.core.layout.TabOrder.PLAZA -> listOf(ScreenLooks.PLAZA)
-        com.bamnat.core.layout.TabOrder.SETTINGS -> listOf("settings", ScreenLooks.ALARM, ScreenLooks.GUARDED)
+        com.bamnat.core.layout.TabOrder.SETTINGS -> listOf("settings", ScreenLooks.ALARM)
         else -> emptyList()
     }
 

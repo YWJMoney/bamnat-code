@@ -65,7 +65,8 @@ const val SCREEN_ALARM = ScreenLooks.ALARM
 @Composable
 fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false, content: @Composable () -> Unit) {
     val all = LocalScreenLooks.current
-    val raw = all.of(key)
+    // 사용자 2026-11-01: 결제·처리방침·동의 화면은 어떤 테마에서도 앱 기본 모양 그대로 — 값과 약관이 늘 똑같이 또렷하게 읽혀요.
+    val raw = if (key == ScreenLooks.GUARDED) ScreenLook() else all.of(key)
     val look = if (key == ScreenLooks.PLAZA) ScreenLook(bg = raw.bg, photo = raw.photo, dim = raw.dim, emoji = raw.emoji) else raw
     val base = MaterialTheme.colorScheme
     val photo = rememberLookPicture(look.photo)

@@ -149,7 +149,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     SETTINGS("설정", FreeTarget.SETTINGS, TabOrder.SETTINGS),
     WIDGET("위젯", null, TabOrder.SETTINGS),
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
-    GUARDED("결제·처리방침", FreeTarget.GUARDED, TabOrder.SETTINGS),
+    // 사용자 2026-11-01 ("스튜디오에 결제 처리방침이 왜 있어"): 결제·처리방침·동의 화면은 꾸미지 않아요 — 늘 앱 기본 모양 ([ScreenSkin]).
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
     ;
 
@@ -169,7 +169,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         PLAZA -> listOf(Tool.COLORS, Tool.BOX)
         SETTINGS -> listOf(Tool.COLORS, Tool.BOX, Tool.TABS, Tool.CORNERS)
         WIDGET -> listOf(Tool.WIDGET, Tool.BOX)
-        ALARM, GUARDED -> listOf(Tool.COLORS)
+        ALARM -> listOf(Tool.COLORS)
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
         ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.COLORS, Tool.BOX, Tool.CORNERS, Tool.TABS)
@@ -177,7 +177,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     }
 
     /** Screens drawn only in 자세히 (the example app has no page of their own). */
-    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, GUARDED, WIDGET)
+    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, WIDGET)
 
     companion object {
         fun of(tab: String): Area = when (tab) {
