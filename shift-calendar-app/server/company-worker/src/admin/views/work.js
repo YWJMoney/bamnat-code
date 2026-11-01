@@ -123,7 +123,7 @@ export function workViews(A) {
     const st = { open: "info", market: "warn", building: "warn", solved: "ok", official: "ok", declined: "" }[n.state];
     const live = ["open", "market", "building"].includes(n.state);
     return `<li class="item"><div class="card-head"><h3>${esc(n.title)}</h3><span class="pill ${st}">${esc(n.stateName)}</span></div>
-      <p class="meta"><b>${n.askers}명</b>이 부탁 (${n.asks}건)${n.area ? ` · ${esc(n.area)}${n.tool ? ` › ${esc(n.tool)}` : ""}` : ""}${n.style ? ` · ${esc(n.style)}` : ""} · ${esc(ago(n.at))}에 처음${n.code ? ` · 풀어 준 작품 ${esc(n.code)}` : ""}${n.version ? ` · ${esc(n.version)} 판` : ""}</p>
+      <p class="meta"><b>${n.askers}명</b>이 부탁 (${n.asks}건)${n.area ? ` · ${esc(n.area)}${n.tool ? ` › ${esc(n.tool)}` : ""}` : ""}${n.style ? ` · ${esc(({ SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자", ALL: "모든 유형" })[n.style] ?? n.style)}` : ""} · ${esc(ago(n.at))}에 처음${n.code ? ` · 풀어 준 작품 ${esc(n.code)}` : ""}${n.version ? ` · ${esc(n.version)} 판` : ""}</p>
       ${n.note ? `<p class="hint">${esc(n.note)}</p>` : ""}
       <ul class="samples">${n.samples.map((x) => `<li><span class="meta">${x.src === "req" ? "요청 판" : "스튜디오"}</span> ${esc(x.text)}</li>`).join("")}</ul>
       ${edit ? `<div class="actions start">

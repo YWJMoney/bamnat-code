@@ -2,6 +2,9 @@ package com.bamnat.app.ui.settings
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -41,5 +44,17 @@ internal fun SearchMissRow(place: String, query: String, modifier: Modifier = Mo
             modifier = Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite },
         )
         if (sent != true) TextButton(onClick = { scope.launch { sent = c.recipeApi.searchMiss(place, query) } }) { Text("없다고 알리기") }
+    }
+}
+
+/** The same, as one button beside another (도움말 찾기의 '못 찾았나요?'). Without the server it does nothing visible. */
+@Composable
+internal fun SearchMissButton(place: String, query: String, modifier: Modifier = Modifier) {
+    val c = LocalContext.current.appContainer
+    val scope = rememberCoroutineScope()
+    var sent by remember(query) { mutableStateOf<Boolean?>(null) }
+    OutlinedButton(onClick = { scope.launch { sent = c.recipeApi.searchMiss(place, query) } }, enabled = c.recipeApi.enabled && sent != true,
+        modifier = modifier.heightIn(min = 52.dp).semantics { liveRegion = LiveRegionMode.Polite }) {
+        Text(when (sent) { true -> "알렸어요"; false -> "다시 알리기"; null -> "이름 없이 알리기" })
     }
 }

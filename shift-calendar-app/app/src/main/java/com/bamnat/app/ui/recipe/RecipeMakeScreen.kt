@@ -166,7 +166,16 @@ class RecipeMakeViewModel(
     private suspend fun parentTitleOf(code: String) {
         val t = runCatching { c.recipeApi.show(code, null).item.title }.getOrNull() ?: _state.value.showcases.firstOrNull { it.code == code }?.title
         _state.value = _state.value.copy(parentTitle = t)
+        // PC ce2b7091 (높음): 고친 판이 원본 이름을 그대로 들고 와서 4/4에서 '이름이 거의 같아요'로 막히던 것. 처음부터 '원본 · 내 판'으로.
+        val now = _state.value.recipe.title
+        if (t != null && (now.isBlank() || com.bamnat.core.recipe.NameSkeleton.of(now) == com.bamnat.core.recipe.NameSkeleton.of(t))) {
+            _state.value = _state.value.copy(recipe = _state.value.recipe.copy(title = "${t.take(24)} · 내 판"))
+        }
     }
+
+    /** True when [State.recipe]'s name reads the same as the 원본's, which the 장터 refuses for someone else's recipe (사칭 S4). */
+    fun sameAsParent(s: State): Boolean =
+        s.recipe.parent != null && s.parentTitle != null && com.bamnat.core.recipe.NameSkeleton.of(s.recipe.title) == com.bamnat.core.recipe.NameSkeleton.of(s.parentTitle)
 
     // ---- [STU-01]..[STU-05] 1.35 꾸미기 스튜디오 ----
 
@@ -608,7 +617,9 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
 @Composable
 private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     val r = s.recipe
-    OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    val clash = vm.sameAsParent(s)
+    OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+        isError = clash, supportingText = if (clash) { { Text("원본 ‘${s.parentTitle}’과 이름이 같으면 장터에 올릴 수 없어요. 내 판 이름을 붙여 주세요") } } else null)
     Row(verticalAlignment = Alignment.CenterVertically) {
         RecipeCover(r.cover, 72.dp)
         Spacer(Modifier.width(12.dp))

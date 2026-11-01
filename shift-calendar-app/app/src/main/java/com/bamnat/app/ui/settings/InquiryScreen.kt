@@ -1244,8 +1244,6 @@ private fun HelpHome(
             Text(if (total == 0) "‘$query’에 맞는 답을 찾지 못했어요" else "찾은 답 ${total}개",
                 style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 4.dp, top = 4.dp).semantics { liveRegion = LiveRegionMode.Polite })
-            // 1.36 누락 점검 N13
-            if (total == 0) SearchMissRow("help", query, Modifier.padding(start = 4.dp))
             if (features.isNotEmpty()) {
                 SectionLabel("기능에서 찾기")
                 features.forEach { f -> com.bamnat.app.ui.guide.FeatureHelpRow(f) }
@@ -1355,18 +1353,17 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
     SoftCard(Modifier.padding(top = 12.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // [GUIDE-07] Not found: the words go to the developer as 건의·제안, with the kind of work.
+            // PC ce2b7091: 못 찾았을 때 '없다고 알리기'·'의견 보내기'·'그대로 물어볼까요?'가 겹치던 것 → 두 단추.
             if (query.isNotBlank()) {
-                Text("못 찾았나요?", style = MaterialTheme.typography.titleMedium)
-                Text("찾던 말과 지금 달력의 일하는 방식을 담아 의견으로 보내요. 있는 기능이면 어디 있는지 답해 드리고, 없으면 만들 때 참고해요.",
+                Text("‘$query’ 못 찾았나요?", style = MaterialTheme.typography.titleMedium)
+                Text("이름 없이 이 말만 알리거나, 지금 달력의 일하는 방식을 담아 개발자에게 보내요. 있는 기능이면 어디 있는지 답해 드려요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(onClick = onIdea, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    Icon(Icons.Outlined.QuestionAnswer, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("못 찾았어요 · 의견 보내기")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SearchMissButton("help", query, Modifier.weight(1f))
+                    Button(onClick = onIdea, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("개발자에게 보내기") }
                 }
-                HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            }
-            Text(if (query.isBlank()) "찾는 답이 없나요?" else "‘$query’ 그대로 물어볼까요?", style = MaterialTheme.typography.titleMedium)
+            } else {
+            Text("찾는 답이 없나요?", style = MaterialTheme.typography.titleMedium)
             Text(
                 if (vm.online) "개발자가 직접 읽고 답해요. 답이 오면 설정 탭에 표시돼요."
                 else "메일로 물어보면 개발자가 직접 읽고 메일로 답해요.",
@@ -1376,6 +1373,7 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
                 Icon(if (vm.online) Icons.Outlined.QuestionAnswer else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (vm.online) "새 문의 쓰기" else "메일로 문의하기")
+            }
             }
             if (vm.online && !list.isNullOrEmpty()) {
                 Row(
