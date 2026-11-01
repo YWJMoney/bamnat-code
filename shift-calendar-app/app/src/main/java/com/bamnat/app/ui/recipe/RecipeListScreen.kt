@@ -266,7 +266,7 @@ fun RecipeListScreen(
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
                     // [MKX-01] 1.36 두 구간 (사용자 2026-10-31 "장터가 너무 보기 어렵게 … 테마를 주는건지 기능별로 보여지는건지 구간을 나눠서"):
                     // 테마 (모든 것을 종합해 만든 한 벌) and 기능별 탭 (탭 하나를 전문으로, 고른 테마 위에 얹어요), two big halves on top.
-                    val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
+                    val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true || state.kind == RecipeClient.SCOPE_LOGIC
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MarketHalf("테마", "앱 전체를 한 벌로", "🎨", selected = !featured, Modifier.weight(1f)) { vm.kind(RecipeClient.SCOPE_THEME) }
                         MarketHalf("기능별 탭", "탭 하나를 전문으로", "🧩", selected = featured, Modifier.weight(1f)) {
@@ -278,10 +278,12 @@ fun RecipeListScreen(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (featured) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
-                        FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("모든 탭") })
+                        FilterChip(selected = now.isEmpty() && state.kind != RecipeClient.SCOPE_LOGIC, onClick = { vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("모든 탭") })
                         RecipeClient.MARKET_TABS.forEach { t ->
                             FilterChip(selected = now == t, onClick = { vm.kind(RecipeClient.SCOPE_TAB + t) }, label = { Text(marketTabLabel(t, vm.style)) })
                         }
+                        // [RUL-07] 1.36 규칙·단추만 올린 것 (사용자 2026-11-01 "개별 카테고리로 … 부품들 기능을 만든 것").
+                        FilterChip(selected = state.kind == RecipeClient.SCOPE_LOGIC, onClick = { vm.kind(RecipeClient.SCOPE_LOGIC) }, label = { Text("규칙·단추") })
                     }
                     // How sorted and whose, under the half chosen.
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {

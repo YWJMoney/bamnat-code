@@ -21,6 +21,12 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
         if (rules.isNotEmpty()) put("rules", rules.map { it.toMap() })
     }
 
+    /** [RUL-07] [other]'s buttons and rules after these (one already here is not added again), within the limits. */
+    fun plus(other: Logic): Logic = Logic(
+        (buttons + other.buttons.filter { b -> buttons.none { it.toMap() == b.toMap() } }).take(MAX_BUTTONS),
+        (rules + other.rules.filter { r -> rules.none { it.key == r.key } }).take(MAX_RULES),
+    )
+
     companion object {
         const val MAX_BUTTONS = 8
         const val MAX_RULES = 12

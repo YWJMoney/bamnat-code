@@ -610,11 +610,18 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             OutlinedButton(onClick = { pick(Area.RULES) }, modifier = Modifier.fillMaxWidth()) { Text("＋ 이럴 때 이렇게: 규칙·단추 만들기") }
                             FeaturesTool(vm, s.extras)
                         }
-                        Tool.LOGIC, Tool.RULES, Tool.BUTTONS -> com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(d.logic), { l ->
-                            vm.change { it.copy(logic = com.bamnat.core.formula.Logic.encode(l)) }
-                        }, show = when (t) { Tool.RULES -> com.bamnat.app.logic.LogicShow.RULES; Tool.BUTTONS -> com.bamnat.app.logic.LogicShow.BUTTONS; else -> com.bamnat.app.logic.LogicShow.ALL },
-                            usedInParts = { f -> com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.any { it["when"] == f } },
-                            onOpenParts = { area = Area.RULES; tool = Tool.COND })
+                        Tool.LOGIC, Tool.RULES, Tool.BUTTONS -> {
+                            com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(d.logic), { l ->
+                                vm.change { it.copy(logic = com.bamnat.core.formula.Logic.encode(l)) }
+                            }, show = when (t) { Tool.RULES -> com.bamnat.app.logic.LogicShow.RULES; Tool.BUTTONS -> com.bamnat.app.logic.LogicShow.BUTTONS; else -> com.bamnat.app.logic.LogicShow.ALL },
+                                usedInParts = { f -> com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.any { it["when"] == f } },
+                                onOpenParts = { area = Area.RULES; tool = Tool.COND })
+                            // [RUL-07] 규칙·단추만 따로 장터에 올려요(테마 없이). 받는 사람은 보관함에서 얹어요.
+                            if (!com.bamnat.core.formula.Logic.decode(d.logic).isEmpty) {
+                                OutlinedButton(onClick = { vm.uploadLogic()?.let { body -> publishing = Triple(body, "", null) } },
+                                    modifier = Modifier.fillMaxWidth()) { Text("규칙·단추만 장터에 올리기") }
+                            }
+                        }
                         Tool.COND -> {
                             Text("조건이 맞는 날의 칸만 다르게 꾸며요. 예: 야간이고 메모에 #인수인계가 있으면 테두리 빨강",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

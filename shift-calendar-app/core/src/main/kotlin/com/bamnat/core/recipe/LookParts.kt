@@ -56,6 +56,8 @@ object LookParts {
         Part("app.tabs", TabOrder.SETTINGS, "아래 탭 순서", listOf(Take.Keys(PieceKind.LAYOUT, setOf("tabs")))),
         Part("app.corners", TabOrder.SETTINGS, "모서리", listOf(Take.Keys(PieceKind.PHOTO_LOOK, setOf("corners")))),
         Part("widget", WIDGET, "위젯", listOf(Take.Keys(PieceKind.WIDGET), Take.Keys(PieceKind.PHOTO_LOOK, setOf("widget")))),
+        // [RUL-07] 1.36 규칙·단추 하나의 조각으로 담아 두고 얹기 (장터 '규칙·단추' 구간). 얹으면 내 규칙·단추에 더해져요.
+        Part(LOGIC, TabOrder.SETTINGS, "규칙·단추", listOf(Take.Keys(PieceKind.LOGIC))),
         // [BLU-05] 1.36 부품 꾸미기, one part per screen, so 바꾼 곳·부분만 담기·처음대로 see them like the rest.
         Part("cal.parts", TabOrder.CALENDAR, "달력 부품", listOf(Take.Parts(setOf("cal")))),
         Part("memo.parts", TabOrder.MEMOS, "메모 부품", listOf(Take.Parts(setOf("memo")))),
@@ -69,6 +71,9 @@ object LookParts {
     fun under(id: String?, roots: Set<String>): Boolean = id != null && roots.any { id == it || id.startsWith("$it.") }
 
     fun byId(id: String): Part? = ALL.firstOrNull { it.id == id } ?: id.removePrefix(UNIT).takeIf { id.startsWith(UNIT) && it in BlueprintParts.UNITS }?.let(::unit)
+
+    /** [RUL-07] The 규칙·단추 part's id. Not a look: [of] leaves it out (입어 보기 is for looks), 담아 두기 and 얹기 take it by this id. */
+    const val LOGIC = "logic"
 
     /** [BLU-07] "part:cal.head": one 부품 (a blueprint unit) as a part of its own, to keep, lay on and send alone. */
     const val UNIT = "part:"
@@ -94,6 +99,7 @@ object LookParts {
      */
     fun partUnit(r: Recipe): String? {
         val p = r.pieces.singleOrNull() ?: return null
+        if (p.kind == PieceKind.LOGIC) return LOGIC
         if (p.kind == PieceKind.PARTS) return units(r).singleOrNull()?.let { UNIT + it }
         // 갈래 E's piece, read by its name so this file stands before and after it.
         if (p.kind.name != "TAB_VIEW") return null
@@ -118,7 +124,7 @@ object LookParts {
     }
 
     /** The parts [r] has, in the order of [TABS]. */
-    fun of(r: Recipe): List<Part> = (ALL.filter { p -> p.takes.none { it is Take.Parts } && p.takes.any { t -> r.pieces.firstOrNull { it.kind == t.kind }?.let { take(t, it.values) } != null } } +
+    fun of(r: Recipe): List<Part> = (ALL.filter { p -> p.id != LOGIC && p.takes.none { it is Take.Parts } && p.takes.any { t -> r.pieces.firstOrNull { it.kind == t.kind }?.let { take(t, it.values) } != null } } +
         // [BLU-07] 부품 one by one ('부품 · 달력 머리'), so 담아 두기 and 입어 보기 can take one of them.
         units(r).map(::unit)).sortedBy { TABS.indexOf(it.tab) }
 

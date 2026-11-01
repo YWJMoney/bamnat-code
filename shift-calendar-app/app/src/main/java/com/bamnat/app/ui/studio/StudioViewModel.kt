@@ -445,6 +445,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val r = runCatching { RecipeCodec.read(k.body) }.getOrNull() ?: return@launch
         var d = _state.value.draft
         r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+        // [RUL-07] 규칙·단추 are added to mine (the same one twice is kept once), up to the limits; they never take mine away.
+        r.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }?.let { p ->
+            d = d.copy(logic = com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(d.logic).plus(com.bamnat.core.formula.Logic.from(p.values))))
+        }
         val was = _state.value.draft
         where = "보관함 · ‘${k.title}’ 얹기"
         // [STU-39] A locked tab keeps its look when a part is laid on.
@@ -723,6 +727,16 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      * [BLU-07] 1.36 이 부품만 올리기 (사용자 2026-11-01): the draft's lines of one 부품 [unit] as a recipe of its own, for 장터 '부품'.
      * Null when the draft has nothing in that 부품 yet.
      */
+    /** [RUL-07] 규칙·단추만 장터에 올리기 (장터 '규칙·단추' 구간): the draft's buttons and rules alone, for every kind of work. */
+    fun uploadLogic(): String? {
+        val l = com.bamnat.core.formula.Logic.decode(_state.value.draft.logic)
+        if (l.isEmpty) return null
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = null
+        val title = (l.rules.firstOrNull()?.name ?: l.buttons.first().label).take(20) + " 규칙·단추"
+        return RecipeCodec.write(recipe("").copy(title = title.take(30), summary = "규칙 ${l.rules.size}개 · 단추 ${l.buttons.size}개", styles = WorkStyle.entries.toSet(),
+            pieces = listOf(com.bamnat.core.recipe.Piece(com.bamnat.core.recipe.PieceKind.LOGIC, l.toValues())), cover = coverOf(_state.value.draft)))
+    }
+
     fun uploadPart(unit: String): String? {
         val s = _state.value
         val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)

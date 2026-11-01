@@ -201,6 +201,15 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     Text(if (s.applying) "넣는 중…" else "입어 보고 고르기")
                 } else Button(onClick = { confirming = true }, enabled = chosen > 0 && ready,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.applying) "넣는 중…" else "고른 ${chosen}개 내 달력에 넣기") }
+                // [RUL-07] 1.36 규칙·단추는 보관함에 담아 두고 스튜디오 › 규칙·단추에서 내 것에 더해 얹어요.
+                if (r.pieces.any { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }) {
+                    var keptLogic by remember(r) { mutableStateOf<String?>(null) }
+                    OutlinedButton(onClick = {
+                        keptLogic = if (vm.keep(setOf(com.bamnat.core.recipe.LookParts.LOGIC))) "✓ 보관함에 담았어요. 스튜디오 › 규칙·단추 › 보관함에서 내 규칙에 더해 얹어요"
+                            else "보관함이 꽉 찼어요 (${vm.partsLimit()}개까지)"
+                    }, modifier = Modifier.fillMaxWidth()) { Text("규칙·단추만 보관함에 담기") }
+                    keptLogic?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
                 if (tryOn) {
                     val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
                     TryOnScreen(r, vm.style, onDismiss = { tryOn = false },
