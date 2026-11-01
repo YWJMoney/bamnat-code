@@ -948,6 +948,8 @@ async function rcImageFlag(d, env, request, id) {
   const hit = await d.overLimit(env, now, [["device", `rflag|${dev}`, 20, DAY]]);
   if (hit) return hit;
   // 1.36 [SEC-08] 보안 점검 M3: a 새싹's report and a second one from the same network today count for the operator only.
+  // The first time an install comes to the 나눔 판 starts its time there (a report counts once it is 이웃, 3 days on).
+  await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
   const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
   const net = await d.network(request, env, now);
   const counts = trust.level >= 1 && (await d.allow(env, `rimgflagnet|${net.day}|${id}`, 1, DAY, now));

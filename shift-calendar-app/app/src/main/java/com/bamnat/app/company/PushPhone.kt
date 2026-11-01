@@ -57,6 +57,8 @@ object PushPhone {
                 FirebaseMessaging.getInstance().token.addOnCompleteListener { t -> k.resume(if (t.isSuccessful) t.result else null) }
             }
         }.getOrNull() ?: return
+        // PC 확인용 (디버그 빌드만): Firebase 콘솔 '테스트 메시지'에 넣을 토큰. adb logcat -s BamnatPush
+        if (BuildConfig.DEBUG) android.util.Log.i("BamnatPush", "token $now")
         if (now == sent) return
         runCatching { c.inquiryApi.pushPhone(c.companyStore.device, now) }.onSuccess { prefs.edit().putString(K_SENT, now).apply() }
     }
@@ -70,6 +72,7 @@ class PushService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
+        if (BuildConfig.DEBUG) android.util.Log.i("BamnatPush", "received ${message.data["kind"]}")
         if (message.data["kind"] != "inquiry") return
         val c = applicationContext.appContainer
         c.appScope.launch { runCatching { InquiryReplyJob.check(c, fromPush = true) } }

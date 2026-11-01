@@ -196,7 +196,8 @@ http.createServer(async (req, res) => {
   for await (const c of req) chunks.push(c);
   const headers = new Headers();
   for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers.set(k, v);
-  headers.set("cf-connecting-ip", req.socket.remoteAddress || "unknown");
+  // 1.36 PC 시험: with --test-clock, x-test-ip stands for another network (두 에뮬레이터가 한 회선으로 보이니 회선 규칙을 볼 때).
+  headers.set("cf-connecting-ip", (testClock && typeof req.headers["x-test-ip"] === "string" && req.headers["x-test-ip"]) || req.socket.remoteAddress || "unknown");
   const body = ["GET", "HEAD"].includes(req.method) ? undefined : Buffer.concat(chunks);
   const out = await worker.fetch(new Request(`http://${req.headers.host}${req.url}`, { method: req.method, headers, body, redirect: "manual" }), env);
   const head = {};
