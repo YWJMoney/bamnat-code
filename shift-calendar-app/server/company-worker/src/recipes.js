@@ -1178,13 +1178,18 @@ async function newVersion(d, env, request, code) {
     if (e instanceof RecipeError) return d.json({ error: e.code, field: e.path }, e.code === "too_big" ? 413 : 400);
     throw e;
   }
-  if (clean.hash === r.hash) return d.json({ error: "same", field: "recipe" }, 409);
-  const hit = await d.overLimit(env, now, [["device", `recipev|${dev}`, 10, DAY]]);
-  if (hit) return hit;
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
   const trust = await recipeTrust(d, env, dev, now);
   // [RCX-28] Up at once like a first 판; one the operator or 신고 hid stays hidden.
   const state = r.state === "hidden" ? "hidden" : scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
+  if (clean.hash === r.hash) {
+    if (scope === r.scope) return d.json({ error: "same", field: "recipe" }, 409);
+    // [BLU-07] PC 8차 (올린 판을 나만 보기로 바꿀 길이 없음): the same 판 put somewhere else — no new version, the code and its talk stay.
+    await d.run(env, "UPDATE recipes SET scope = ?, state = ?, updated_at = ? WHERE code = ?", scope, state, now, code);
+    return d.json({ code, version: r.version, hash: r.hash, state, scope });
+  }
+  const hit = await d.overLimit(env, now, [["device", `recipev|${dev}`, 10, DAY]]);
+  if (hit) return hit;
   const v = r.version + 1;
   const rec = clean.recipe;
   await d.batch(env, [

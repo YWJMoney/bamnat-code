@@ -1494,10 +1494,11 @@ private fun AppNavHost(
         composable(Routes.STUDIO, arguments = listOf(navArgument("start") { type = NavType.StringType; defaultValue = "mine" })) { entry ->
             val start = entry.arguments?.getString("start") ?: "mine"
             val vm = appViewModel(key = "studio-$start") { com.bamnat.app.ui.studio.StudioViewModel(it, start) }
+            val marketOn by container.recipes.on.collectAsStateWithLifecycle()
             // [STU-21] 1.36 올리기 happens inside the studio; once up, the recipe opens in place of it.
             com.bamnat.app.ui.studio.StudioScreen(vm, onBack = { nav.popFrom(Routes.STUDIO) }, onOpen = { code ->
                 nav.navigate(Routes.recipe(code)) { popUpTo(Routes.STUDIO) { inclusive = true } }
-            })
+            }, onMarket = if (marketOn && container.recipeApi.enabled) { kind -> nav.navigate(Routes.recipes(kind = kind)) { launchSingleTop = true } } else null)
         }
         composable(Routes.STYLE_PLAZA, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
             val calendar = remember { companyCalendarOf(container, entry.arguments?.getString("calendar")) }

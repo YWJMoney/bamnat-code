@@ -107,7 +107,9 @@ class RecipeMakeViewModel(
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     val canPublish: Boolean get() = c.recipeApi.enabled && c.flags.on(FlagCatalog.RECIPE_PUBLISH)
     /** [RCX-31] Making the next 판 of this code of mine; null for a new recipe. */
-    val ownCode: String? get() = code
+    val ownCode: String? get() = upCode
+    /** [BLU-07] PC 8차: once sent, the next 올리기 from this screen is that code's 새 판 (or the same 판 moved to 나만). */
+    private var upCode: String? = code
 
     data class State(
         val step: Int = 1,
@@ -127,6 +129,8 @@ class RecipeMakeViewModel(
         val errorCode: String? = null,
         /** [BLU-07] PC 7차: what 이 휴대폰에 저장 did, said under 올리기. */
         val keptNote: String? = null,
+        /** [BLU-07] PC 9차: where the 판 was before 나만 보기로 바꾸기, so 다시 올리기 puts it back there. */
+        val sharedScope: String? = null,
         val draftId: Long = 0,
         /** [RCX-11] Recipes to tap into a 묶음 without typing codes: those put on this phone and those I put on the plaza (code to title). */
         val bundleChoices: List<Pair<String, String>> = emptyList(),
@@ -331,7 +335,7 @@ class RecipeMakeViewModel(
         val s = _state.value
         if (s.sent != null || s.recipe.pieces.isEmpty()) return
         scope.launch {
-            val id = c.recipes.saveDraft(s.draftId, RecipeCodec.write(s.recipe), s.step, code, s.scope)
+            val id = c.recipes.saveDraft(s.draftId, RecipeCodec.write(s.recipe), s.step, upCode, s.scope)
             _state.value = _state.value.copy(draftId = id)
         }
     }
@@ -356,6 +360,16 @@ class RecipeMakeViewModel(
         })
     }
 
+    /** [BLU-07] PC 8차 (이미 올린 판을 다시 열면 끝 화면만): back to 마치기 to send a 새 판 of the same code. */
+    fun again() { _state.value = _state.value.copy(sent = null, step = 5, error = null, errorCode = null, keptNote = null) }
+
+    /** [BLU-07] PC 8차: the 판 just sent, moved to 나만 (or another place) without a new version. */
+    fun rescope(scope: String) {
+        val s = _state.value
+        _state.value = s.copy(scope = scope, sharedScope = if (scope == "private") s.sent?.scope?.takeIf { it != "private" } ?: s.sharedScope else null)
+        publish()
+    }
+
     /** Step 5: 광장 (1.35 [RCX-28] 바로 올라가요), 링크로만, 나만 (만든 사람만 열어요). */
     fun publish() {
         val s = _state.value
@@ -365,8 +379,10 @@ class RecipeMakeViewModel(
             try {
                 val shown = if (s.bare) com.bamnat.core.recipe.LookParts.withoutPhotos(s.recipe) else s.recipe
                 val r = RecipeCodec.read(RecipeCodec.write(withServerPictures(shown)))
-                val sent = if (code != null) c.recipeApi.newVersion(c.companyStore.device, code, r, s.scope)
+                val up = upCode
+                val sent = if (up != null) c.recipeApi.newVersion(c.companyStore.device, up, r, s.scope)
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
+                upCode = sent.code
                 if (s.draftId != 0L) c.recipes.deleteDraft(s.draftId)
                 // [THM-01] My own theme in 장터 for everyone: worn without days or ads from now (a new one is kept in 내 테마 first).
                 var note: String? = null
@@ -505,7 +521,10 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LinearProgressIndicator(progress = { (s.step - shift) / (5f - shift) }, modifier = Modifier.fillMaxWidth())
                 s.sent?.let { sent ->
-                    SentCard(s.recipe.title, sent, onOpen)
+                    SentCard(s.recipe.title, sent, onOpen, sending = s.sending, onAgain = vm::again, onPrivate = { vm.rescope("private") },
+                        sharedScope = s.sharedScope, onShare = { vm.rescope(it) })
+                    s.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Assertive }) }
                     s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
                     return@Column
                 }
@@ -835,19 +854,35 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
 }
 
 @Composable
-private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit) {
+private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit, sending: Boolean = false, onAgain: (() -> Unit)? = null,
+                     onPrivate: (() -> Unit)? = null, sharedScope: String? = null, onShare: ((String) -> Unit)? = null) {
     val context = LocalContext.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("올렸어요", style = MaterialTheme.typography.titleMedium)
+            // [BLU-07] PC 8차 (나만 보기로 저장의 표시를 못 봄): said in its own words, live for TalkBack.
+            Text(if (sent.scope == "private") "✓ 나만 보기로 저장했어요" else "✓ 올렸어요", style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
             Text(stateLabel(sent.state, sent.scope), style = MaterialTheme.typography.bodyMedium)
             Text("코드 ${sent.code} · v${sent.version}", style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
+                // 나만 보기 has no one to send a link to.
+                if (sent.scope != "private") OutlinedButton(onClick = {
                     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, RecipeLinks.shareText(title, sent.code))
                     runCatching { context.startActivity(Intent.createChooser(send, "레시피 링크 보내기")) }
                 }) { Text("링크 보내기") }
                 Button(onClick = { onOpen(sent.code) }) { Text("레시피 보기") }
+            }
+            // [BLU-07] PC 8차 사용성 제안 (이미 올린 판의 끝 화면에 새 판으로 올리기 · 나만 보기로 바꾸기): what comes next, here.
+            if (onAgain != null || onPrivate != null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                onAgain?.let { OutlinedButton(onClick = it, enabled = !sending, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("새 판으로 올리기") } }
+                if (sent.scope != "private") onPrivate?.let {
+                    OutlinedButton(onClick = it, enabled = !sending, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text(if (sending) "바꾸는 중…" else "나만 보기로 바꾸기") }
+                }
+                // PC 9차 사용성 제안: 나만 보기로 바꾼 판을 같은 판 그대로 다시 내놓기.
+                else if (sharedScope != null) onShare?.let { share ->
+                    OutlinedButton(onClick = { share(sharedScope) }, enabled = !sending, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                        Text(if (sending) "바꾸는 중…" else if (sharedScope == "link") "다시 링크로 열기" else "다시 장터에 올리기") }
+                }
             }
         }
     }

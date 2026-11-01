@@ -152,7 +152,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     SETTINGS("설정", FreeTarget.SETTINGS, TabOrder.SETTINGS),
     WIDGET("위젯", null, TabOrder.SETTINGS),
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
-    GUARDED("결제·처리방침", FreeTarget.GUARDED, TabOrder.SETTINGS),
+    // 사용자 2026-11-01 ("스튜디오에 결제 처리방침이 왜 있어"): 결제·처리방침·동의 화면은 꾸미지 않아요 — 늘 앱 기본 모양 ([ScreenSkin]).
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
     ;
 
@@ -172,7 +172,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         PLAZA -> listOf(Tool.COLORS, Tool.DECOR, Tool.BOX)
         SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.TABS, Tool.CORNERS)
         WIDGET -> listOf(Tool.WIDGET, Tool.PARTS, Tool.DECOR, Tool.BOX)
-        ALARM, GUARDED -> listOf(Tool.COLORS)
+        ALARM -> listOf(Tool.COLORS)
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
         ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.COLORS, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.CORNERS, Tool.TABS)
@@ -187,8 +187,17 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         else -> listOf(com.bamnat.core.recipe.Decor.APP)
     }
 
+    /** 사용자 2026-11-01: the 장터 구간 that holds this area's looks — a 기능별 탭 where there is one, else 테마. */
+    val marketKind: String get() = com.bamnat.app.recipe.RecipeClient.let { r ->
+        when (this) {
+            CALENDAR -> r.SCOPE_TAB + "calendar"; MONEY -> r.SCOPE_TAB + "money"; MEMO -> r.SCOPE_TAB + "memo"
+            STATS, PAY -> r.SCOPE_TAB + "pay"; WIDGET -> r.SCOPE_TAB + "widget"; ALARM -> r.SCOPE_TAB + "alarm"; FEATURES -> r.SCOPE_TAB
+            else -> r.SCOPE_THEME
+        }
+    }
+
     /** Screens drawn only in 자세히 (the example app has no page of their own). */
-    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, GUARDED, WIDGET)
+    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, WIDGET)
 
     companion object {
         fun of(tab: String): Area = when (tab) {
@@ -222,7 +231,7 @@ private const val SCALE_SMALL = 0.38f
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Unit = {}) {
+fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Unit = {}, onMarket: ((String) -> Unit)? = null) {
     com.bamnat.app.ui.theme.BarIcons(light = MaterialTheme.colorScheme.surface.luminance() > 0.5f)
     val c = LocalContext.current.appContainer
     val s by vm.state.collectAsStateWithLifecycle()
@@ -246,7 +255,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var changes by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
     var preparing by remember { mutableStateOf(false) }
-    var uploadWhat by remember { mutableStateOf<String?>(null) }
+    var uploadWhat by remember { mutableStateOf<List<String>?>(null) }
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
@@ -293,6 +302,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         areaUses = AreaRank.used(areaUses, a.name)
         runCatching { studioPrefs.edit().putString("areaUses", AreaRank.encode(areaUses)).apply() }
     }
+    // PC 확인 1.36 (처음 모양으로 시작하면 달력 › 칸 디자인이 열려 안내가 말한 ‘한 색’이 안 보임): a plain start opens 앱 전체 › 한 색 once.
+    val plainStart = diff == 0 && s.origin is StudioViewModel.Origin.Plain && s.extras.isEmpty()
+    fun openSeed() { pick(Area.ALL); tool = Tool.SEED }
+    var plainOpened by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(plainStart) { if (plainStart && !plainOpened) { plainOpened = true; openSeed() } }
     // [STU-20] The 기록 목록 says where each change was made.
     vm.where = "${area.labelFor(vm.style)} · ${(if (tool in area.tools) tool else area.tools.first()).label}"
     // [STU-23] 눌러서 고치기: a tap on a part of the example opens its tool, and says so.
@@ -328,6 +342,17 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         // 1.36 (사용자 2026-10-31): 얹기 too can be taken back from here, the same step as 되돌리기 above.
         val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear || s.canUndoLayer) "되돌리기" else null, duration = SnackbarDuration.Long)
         if (r == SnackbarResult.ActionPerformed) { if (s.canUndoLayer) vm.undoLayer() else vm.undoWear() } else vm.said()
+    }
+    // PC 제안 1.36 (장터에서 담고 돌아와도 보관함에 들어온 줄 모름): what came into 보관함 while away is said, with 보기 to it.
+    LaunchedEffect(kept) {
+        val ids = kept.map { it.id }.toSet()
+        val before = vm.seenKept
+        vm.seenKept = ids
+        val n = before?.let { (ids - it).size } ?: 0
+        if (n > 0 && snack.showSnackbar("보관함에 새로 들어왔어요 · ${n}개", actionLabel = "보기", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+            if (Tool.BOX !in area.tools) pick(Area.CALENDAR)
+            tool = Tool.BOX
+        }
     }
     // 1.36 U3: saved or sent since the last change, it leaves without asking.
     androidx.activity.compose.BackHandler(enabled = s.changed && !s.kept) { leaving = true }
@@ -401,11 +426,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             verticalAlignment = Alignment.CenterVertically) {
                             Text(when {
                                 s.wornNow && diff == 0 -> "✓ 지금 내 앱에 입힌 모양이에요. 더 고치면 다시 입혀요"
+                                // 마을 PC 제안 1.36 (처음 모양으로 열려도 무엇을 하는 곳인지 말이 없음): a start in this kind of work's words.
+                                diff == 0 && s.origin is StudioViewModel.Origin.Plain && s.extras.isEmpty() ->
+                                    "${vm.style?.let { com.bamnat.core.recipe.RecipeDescribe.short(it) + " " }.orEmpty()}첫 작품을 만들어요 · ‘한 색’에서 색 하나부터 골라 보세요"
                                 diff == 0 -> "바꾼 곳 없음 · 입히기 전까지 내 앱은 그대로예요"
                                 else -> "바꾼 곳 ${maxOf(changedCount, 1)}곳 · 입히기 전까지 내 앱은 그대로예요"
                             } + (if (s.extras.isNotEmpty()) " · 기능 ${s.extras.size}개" else "") + (s.sources.values.distinct().takeIf { it.isNotEmpty() }?.let { v -> " · " + v.joinToString("·") { "‘$it’" } + " 조각 사용" } ?: ""),
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             if (diff > 0 || s.extras.isNotEmpty()) Text("보기 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            if (plainStart && !(area == Area.ALL && tool == Tool.SEED)) TextButton(onClick = { openSeed() }) { Text("한 색 열기") }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                             // PC 재검토 C11 (저장·올리기·입히기가 같은 무게): 내 앱에 입히기 is the one big button; 저장 and 올리기 are lighter.
@@ -415,9 +444,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             TextButton(onClick = { checked {
                                 preparing = true
                                 // [STU-26] Changes on one tab only: ask whether that tab goes up alone (a 기능별 탭) or the whole theme.
-                                val tab = vm.changedTab()
+                                val tabs = vm.changedTabs()
                                 takeShot()
-                                if (tab != null) { uploadWhat = tab; preparing = false }
+                                if (tabs.isNotEmpty()) { uploadWhat = tabs; preparing = false }
                                 else scope.launch {
                                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
                                     publishing = Triple(body, parent, vm.nextOf())
@@ -650,7 +679,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             vm.change { it.copy(photoLook = PhotoLook.decode(it.photoLook).copy(corners = k).encode()) }
                         }
                         Tool.WIDGET -> WidgetTool(WidgetLook.decode(d.widgetLook)) { w -> vm.change { it.copy(widgetLook = w.encode()) } }
-                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer)
+                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer,
+                            onMarket = onMarket?.let { go -> { go(area.marketKind) } }, style = vm.style)
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
                         Tool.DECOR -> com.bamnat.app.ui.decor.DecorTool(decor, area.decorPlaces, { label, nd ->
                             if (label == null) vm.change { it.copy(decor = nd.encode()) } else vm.changeMerged(label) { it.copy(decor = nd.encode()) }
@@ -706,20 +736,21 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     }
     if (history) HistorySheet(s, onBack = { i -> vm.backTo(i) }, onDismiss = { history = false })
     if (changes) ChangesSheet(vm, s, before, now, onGo = { a -> pick(Area.valueOf(a)); changes = false }, onDismiss = { changes = false })
-    uploadWhat?.let { tab ->
-        var alone by remember(tab) { mutableStateOf(true) }
-        val name = com.bamnat.app.ui.recipe.tabName(tab)
+    uploadWhat?.let { tabs ->
+        // 사용자 2026-11-01: 테마 (모든 곳을 한 벌로) or any one tab changed, alone, as a 기능별 탭 — one tab changed starts on that tab.
+        val single = vm.changedTab()
+        var choice by remember(tabs) { mutableStateOf(single) }
         AlertDialog(
             onDismissRequest = { uploadWhat = null },
             title = { Text("무엇을 올릴까요?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(true to "바꾼 탭만 ($name)", false to "테마 전체").forEach { (v, label) ->
-                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { alone = v }, verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = alone == v, onClick = { alone = v })
+                    (tabs + listOf<String?>(null)).forEach { v ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { choice = v }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = choice == v, onClick = { choice = v })
                             Column {
-                                Text(label, style = MaterialTheme.typography.bodyLarge)
-                                Text(if (v) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
+                                Text(if (v == null) "테마 전체" else "${com.bamnat.app.ui.recipe.tabName(v)} 탭만", style = MaterialTheme.typography.bodyLarge)
+                                Text(if (v != null) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
                                     (if (s.extras.isNotEmpty()) ". 기능 ${s.extras.size}개는 빠져요" else "")
                                     else "장터 ‘테마’에 올라가요. 모든 화면의 모양" + (if (s.extras.isNotEmpty()) "과 기능 ${s.extras.size}개가" else "이") + " 함께 가요",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -735,8 +766,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             confirmButton = { TextButton(onClick = {
                 preparing = true
                 scope.launch {
-                    val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload(if (alone) tab else null) }
-                    publishing = Triple(body, parent, if (alone) null else vm.nextOf())
+                    val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload(choice) }
+                    publishing = Triple(body, parent, if (choice != null) null else vm.nextOf())
                 }
             }, enabled = !preparing) {
                 if (preparing) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
@@ -1013,7 +1044,14 @@ private fun rememberTwoDays(): Pair<String, String>? {
 @Composable
 private fun BoxTool(kept0: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: Area, onLay: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit,
                     onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit, laid: Set<Long> = emptySet(),
-                    onTakeOff: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit = {}) {
+                    onTakeOff: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit = {}, onMarket: (() -> Unit)? = null, style: WorkStyle? = null) {
+    // 사용자 2026-11-01 ("다른 분이 만든 것을 해당 카테고리에 맞게 찾아서 스튜디오에서 사용"): 장터 opens on this area's 구간 (기능별 탭 › 가계부 …);
+    // what is 담아 두기'd there comes back here, in 보관함, to lay on.
+    if (onMarket != null) OutlinedButton(onClick = onMarket, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text(if (area.marketKind.startsWith(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB) && area.marketKind != com.bamnat.app.recipe.RecipeClient.SCOPE_TAB)
+            "장터 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.marketTabLabel(area.marketKind.removePrefix(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB), style)}’에서 찾기"
+        else if (area.marketKind == com.bamnat.app.recipe.RecipeClient.SCOPE_THEME) "장터 ‘테마’에서 찾기" else "장터 ‘기능별 탭’에서 찾기")
+    }
     // 1.36 U2 (얹으면 순서와 높이가 바뀌어 다음 얹기가 이미 얹은 걸 다시 눌러요): the newest first, always in the same places.
     val kept = remember(kept0) { kept0.sortedByDescending { it.id } }
     if (kept.isEmpty()) {
