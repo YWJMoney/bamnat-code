@@ -82,7 +82,7 @@ import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { RECIPE_COLUMNS, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
-import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity } from "./recipe-community.js";
+import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, writeLeft, writeLimitHit } from "./write-limits.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -407,6 +407,8 @@ async function routeOnce(request, env, url, ctx) {
   // R131 1.31 [SPD-26] I2: the app opens its connection (and this Worker) when a lookup screen opens, before the first letter.
   if (path === "/api/hello" && (method === "GET" || method === "HEAD")) return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
+  // [PRF-11] 1.36 a maker's 프로필 link: a small public page that opens the app.
+  if (path.startsWith("/m/") && method === "GET") return edgeCached(request, ctx, 60, () => makerWebPage(recipeDeps, env, path.slice(3)));
   // AS 1.29 [SRCH-03][SRCH-04] A short edge copy of a search, and the most used companies for the app to keep.
   if (path === "/api/companies" && method === "GET") return edgeCached(request, ctx, SEARCH_EDGE_SECONDS, () => search(env, url));
   // [J133-88] 공개 자료 (국민연금 가입 사업장): what the public record says of a workplace, beside the 광장's own.
@@ -2582,8 +2584,8 @@ async function state(env, companyId, grp, threshold, adopted) {
         (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
           + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
         (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp),
-    all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
-        WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp).then((l) => l.map((n) => n.nick)),
+    // 1.36 [V3] 마을 이름 하나: the 마을 이름 is the 프로필's name too, so it never stands next to a company (회사 쪽은 참여자 번호로만).
+    [],
     // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
     one(env, `SELECT COUNT(DISTINCT cluster) AS nets, COUNT(DISTINCT strftime('%Y-%m', at / 1000, 'unixepoch')) AS months FROM (
         SELECT cluster, created_at AS at FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1
@@ -2669,7 +2671,8 @@ async function readStates(env, pairs) {
       return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
         ...trust(s, threshold), posts: posts.get(k) ?? 0, uses: n, senders: reports.length,
         checked: sentChecked + backing.filter((v) => v.verified === 1).length,
-        by: reports.filter((r) => r.nick !== null && r.nick !== undefined).slice(0, 5).map((r) => r.nick),
+        // 1.36 [V3] No 마을 이름 next to a company.
+        by: [],
         support: support({ uses: n, ok: s.persons, bad: s.bad, verified: sentChecked }),
         ...(nets >= 2 && months >= 2 ? { checkedLong: true } : {}) };
     },
@@ -3219,8 +3222,13 @@ async function forgetMine(request, env) {
   // 1.34 [RCP-28] its recipes with their votes and talk, its votes on others' (off their counts), its 신뢰 단계.
   const recipes = await forgetRecipes(recipeDeps, env, dev);
   // 1.35 its requests, likes, follows, maker page and pictures.
+  // [PRF-01] 1.36 what of 마을 goes, so the phone can say it (PC 확인: it said "지울 것이 없었어요" over a profile and 3 works).
+  const profile = (await one(env, "SELECT COUNT(*) AS n FROM recipe_makers WHERE device = ? AND closed = 0", dev)).n;
+  const follows = (await one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE device = ?", dev)).n;
+  const sets = (await one(env, "SELECT COUNT(*) AS n FROM recipe_sets WHERE owner = ?", dev)).n;
   await batch(env, forgetCommunity(recipeDeps, env, dev));
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes, ...(recipes ? { recipes } : {}) });
+  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes,
+    ...(recipes ? { recipes } : {}), ...(profile ? { profile } : {}), ...(follows ? { follows } : {}), ...(sets ? { sets } : {}) });
 }
 
 async function vote(request, env) {
@@ -3460,6 +3468,9 @@ async function talkData(request, env, companyId, grp, known = null) {
   const posts = [];
   const myVotes = new Map(myVoteRows.map((v) => [v.post_id, v.ok === 1]));
   const nicks = new Map(nickRows.map((n) => [n.device, n.nick]));
+  // 1.36 [V3] In a kind of work's 광장, a writer with a 프로필 (not hidden or closed) leads to it.
+  const makers = new Map(style ? (await all(env, `SELECT device, maker FROM recipe_makers WHERE hidden = 0 AND closed = 0 AND device IN
+    (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp)).map((m) => [m.device, m.maker]) : []);
   const review = new Set(reviewRows.map((r) => r.post_id));
   const proposals = new Map(proposalRows.map((r) => [r.id, r]));
   // [PLZ-02] Where each proposal's setup stands, every one in one round.
@@ -3489,7 +3500,9 @@ async function talkData(request, env, companyId, grp, known = null) {
     posts.push({
       id: p.id,
       who: numbers.get(p.device),
-      nick: nicks.get(p.device) ?? null,
+      // 1.36 [V3] 마을 이름 하나: shown in a kind of work's 광장 (with the 프로필 it leads to), never in a company's.
+      nick: style ? nicks.get(p.device) ?? null : null,
+      ...(style && makers.has(p.device) ? { maker: makers.get(p.device) } : {}),
       stance: senders.has(p.device) ? "sender" : v ? (v.ok ? "ok" : "bad") : null,
       verified: verified.has(p.device) || v?.verified === 1,
       body: p.body,

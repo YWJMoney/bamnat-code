@@ -882,10 +882,17 @@ export function listItem(r, now) {
 export async function recipeTrust(d, env, dev, now) {
   await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
   const t = await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev);
+  const { level, days } = trustLevel(t, now);
+  return { level, days, approved: t.approved, weight: level <= 0 || days < 3 ? 0.5 : 1 };
+}
+
+/** [RCP-30] The level of a recipe_trust row (none: 0, just come), without writing anything. */
+export function trustLevel(t, now) {
+  if (!t) return { level: 0, days: 0, hidden: 0 };
   const days = (now - t.first_at) / DAY;
   // [RCX-28] With no 승인 any more, time on the 나눔 판 without anything hidden is what earns it.
   const level = (t.approved >= 3 || days >= 14) && t.hidden === 0 ? 2 : t.approved >= 1 || days >= 3 ? 1 : 0;
-  return { level, days, approved: t.approved, weight: level <= 0 || days < 3 ? 0.5 : 1 };
+  return { level, days, hidden: t.hidden };
 }
 
 async function readDevice(d, request, body) {
@@ -1213,6 +1220,9 @@ async function recipeTalk(d, env, request, code) {
   const nick = new Map(nicks.map((n) => [n.device, n.nick]));
   const voted = new Map(myVotes.map((v) => [v.post_id, v.ok === 1 ? 1 : -1]));
   const hidden = await d.hiddenAuthors(env, request);
+  // [PRF-05] 1.36 차단한 분의 이야기도 빼요 (recipe_blocks holds public maker ids; a post's writer is matched by the same one-way id).
+  const blocked = dev ? new Set((await d.all(env, "SELECT maker FROM recipe_blocks WHERE device = ?", dev)).map((b) => b.maker)) : new Set();
+  if (blocked.size) for (const p of rows) if (blocked.has(await makerId(p.device))) hidden.add(p.device);
   const key = await d.authorKey(env);
   const numbers = new Map();
   const mineIds = rows.filter((p) => p.device === dev).map((p) => p.id);

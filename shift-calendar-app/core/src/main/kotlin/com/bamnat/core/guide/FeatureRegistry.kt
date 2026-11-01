@@ -800,6 +800,10 @@ object FeatureRegistry {
         f("look.wardrobe", "FREE-10", "테마 옷장", "내 모양을 테마로 여러 벌 저장하고 골라 입어요. 다른 분 테마도 광고·기간 없이 계속 써요",
             ALL, "설정 › 화면과 글자 › 화면 꾸미기 › 내 테마 › 지금 모양을 내 테마로 저장", at(Place.SETTINGS_CALENDAR, "화면 꾸미기 (모든 화면)"), "테마 옷장", "내 테마", "테마 저장", "여러 벌",
             under = "look.free"),
+        // [PRF-12] 1.36 창작자 꾸미기 (프로).
+        f("recipe.creatorPro", "PRF-12", "창작자 프로필 꾸미기", "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프를 써요",
+            ALL, "마을 › 맨 위 내 얼굴 › 내 프로필 › 프로필 고치기", at(Place.RECIPES), "표지 그림", "대표 작품", "작품 통계", "창작자", "내 프로필",
+            under = "recipe.maker"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

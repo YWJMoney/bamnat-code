@@ -418,10 +418,11 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
                     Column(Modifier.fillMaxWidth().padding(top = 48.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         HeroIcon(Icons.Outlined.Inbox)
-                        Text("아직 보낸 정보가 없어요", style = MaterialTheme.typography.titleMedium)
-                        Text("내 설정을 나누면 같은 회사 분들이 1분 만에 설정해요.", style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-                        Button(onClick = onShare) { Text("내 설정 나누기") }
+                        Text("나눈 회사 설정은 아직 없어요", style = MaterialTheme.typography.titleMedium)
+                        // 1.36 PC 확인: 레시피·프로필만 올린 분(알바 등)도 여기서 모두 지워요; 이 화면은 회사 설정만 줄로 보여요.
+                        Text("마을에 올린 레시피·프로필·팔로우·차단, 광장 글과 앱 문의는 아래 ‘모두 지우기’로 한 번에 지울 수 있어요.",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                        if (vm.companyFits) OutlinedButton(onClick = onShare) { Text("내 설정 나누기") }
                     }
                 }
                 sent.forEach { r ->
@@ -429,10 +430,8 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
                         // Already gone from the server: only the line here is left to drop.
                         onDrop = { vm.takeBack(r.id) {} })
                 }
-                if (sent.isNotEmpty()) {
-                    TextButton(onClick = { forgetting = true }, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp)) {
-                        Text("이 휴대폰이 보낸 정보 모두 지우기", color = MaterialTheme.colorScheme.error)
-                    }
+                TextButton(onClick = { forgetting = true }, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp)) {
+                    Text("이 휴대폰이 보낸 정보 모두 지우기", color = MaterialTheme.colorScheme.error)
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -453,9 +452,11 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
         )
     }
     if (forgetting) {
+        val village by vm.village.collectAsStateWithLifecycle()
+        LaunchedEffect(Unit) { vm.loadVillage() }
         ConfirmDialog(
             title = "보낸 정보를 모두 지울까요?",
-            message = "보낸 설정, 맞았어요·달라요, 토론 글과 신고, 받기로 한 보상, 앱 문의까지 서버에서 모두 지워요. 이 휴대폰에서 쓰는 설정은 그대로예요.",
+            message = (village?.let { "마을에서 $it${com.bamnat.app.ui.Fmt.iga(it)} 지워져요.\n\n" } ?: "") + "보낸 설정, 맞았어요·달라요, 토론 글과 신고, 받기로 한 보상, 앱 문의, 마을에 올린 레시피·프로필·모음·팔로우·차단까지 서버에서 모두 지워요. 이 휴대폰에서 쓰는 설정과 넣은 레시피는 그대로예요.",
             confirmLabel = "모두 지우기",
             destructive = true,
             onDismiss = { forgetting = false },
