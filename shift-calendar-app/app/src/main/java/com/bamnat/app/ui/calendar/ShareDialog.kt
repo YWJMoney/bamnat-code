@@ -275,6 +275,8 @@ fun ShareDialog(
                 }
                 com.bamnat.app.ui.money.ProPill(locked = !pdfOpen) // [TIER-06]
             }
+            // 1.36 PC Y14: how and until when 인쇄 is open stays under the buttons, not only in a toast that goes.
+            com.bamnat.app.ui.pro.TrialNote(com.bamnat.app.tier.Feature.ROSTER_PDF, container.featureGate.state.collectAsState().value)
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Link, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)

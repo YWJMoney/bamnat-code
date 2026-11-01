@@ -118,7 +118,8 @@ internal fun offerWords(c: AppContainer, gate: Gate, due: ProOfferTimes.Due, sty
     val perDay = RewardLedger.perDay(yearlyMicros)?.let { " 프로는 하루 ${it}원에 전부 열려 있어요." } ?: " 프로는 매달 전부 열려 있어요."
     return when (due.time) {
         ProOfferTimes.Time.SECOND_AD -> "${due.bundle?.label} 묶음을 이번 달 ${due.ads}번째 열었어요" to (ledgerLine(ledger) + perDay)
-        ProOfferTimes.Time.TWO_BUNDLES -> "이번 달 광고 ${due.ads}편으로 ${due.days}일치를 받았어요" to (ledgerLine(ledger) + perDay)
+        // 1.36 PC Y18 (제목은 14일치, 본문은 21일치): the title counts what the body counts — the month's days in all, the ads beside.
+        ProOfferTimes.Time.TWO_BUNDLES -> "이번 달 ${maxOf(ledger.days, due.days.toLong())}일치를 받았어요 · 광고 ${due.ads}편" to (ledgerLine(ledger) + perDay)
         ProOfferTimes.Time.HEAVY_USE -> "이번 주 거의 매일 밤낮을 썼어요" to
             ((if (ledger.found > 0) "올해 밤낮이 찾아 준 돈 ${won(ledger.found)}. " else com.bamnat.core.tier.ProPitch.headline(style) + ". ") + perDay.trim())
         ProOfferTimes.Time.BACK -> "다시 오셨네요" to

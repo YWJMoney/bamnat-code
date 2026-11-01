@@ -940,7 +940,9 @@ internal object HelpFaq {
     fun forQuestion(text: String, topics: List<HelpTopic> = topics(), limit: Int = 2): List<HelpTopic> {
         val key = com.bamnat.core.ops.InquiryTopics.of(text)
         val ids = BY_TOPIC[key].orEmpty()
-        val first = search(text, topics.filter { it.id in ids }, limit).ifEmpty { topics.filter { it.id in ids }.take(1) }
+        // 1.36 PC Y20 (쓴 글과 상관없는 '교대 순서를 바꾸고 싶어요'): only answers the words match; the topic's first answer is no
+        // longer put in when none of its answers does.
+        val first = search(text, topics.filter { it.id in ids }, limit)
         return (first + search(text, topics, limit)).distinctBy { it.id }.take(limit)
     }
 

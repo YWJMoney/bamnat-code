@@ -50,6 +50,8 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
             "알람을 끄려면 풀어야 해요. ${chosen.hint}. ${Missions.GIVE_UP_AFTER.toMinutes()}분이 지나면 미션 없이도 끌 수 있어요",
             missions.map { it to it.label }, chosen,
         ) { m -> if (!open) openPro(com.bamnat.app.tier.Feature.SURE_ALARM) else pick(m) { vm.update { s -> s.copy(alarmMission = m.key) } } }
+        // 1.36 PC Y14: how and until when 알람 미션 is open stays here, not only in a toast that goes.
+        com.bamnat.app.ui.pro.TrialNote(com.bamnat.app.tier.Feature.SURE_ALARM, gate)
         val photoChosen = settings.alarmMission == AlarmMission.PHOTO.key || settings.shiftMissions.values.any { it == AlarmMission.PHOTO.key }
         if (open && (photoWanted || photoChosen || references.isNotEmpty())) {
             PhotoMissionRows(references, photoWanted, photoChosen,

@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -57,11 +58,16 @@ internal fun BaseFields(
     companyName: String? = null,
     keepBase: Long? = null,
     onDone: (() -> Unit)? = null,
+    /** 1.36 PC Y17: 다음 was tapped with the base empty: said in red under the field, and the cursor goes there. */
+    missing: Boolean = false,
+    focus: androidx.compose.ui.focus.FocusRequester? = null,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MoneyField(
-            when (wage) { WageType.MONTHLY -> "월 기본급"; WageType.HOURLY -> "시급"; WageType.DAILY -> "일당" },
-            base, onChange = onBase,
+            modifier = focus?.let { Modifier.focusRequester(it) } ?: Modifier,
+            error = if (missing && (base == null || base <= 0)) "${wage.baseName()}을 넣어야 다음으로 가요" else null,
+            label = when (wage) { WageType.MONTHLY -> "월 기본급"; WageType.HOURLY -> "시급"; WageType.DAILY -> "일당" },
+            value = base, onChange = onBase,
             placeholder = when (wage) { WageType.MONTHLY -> "명세서 ‘기본급’ 줄의 금액"; WageType.HOURLY -> "계약서의 시급"; WageType.DAILY -> "하루 받는 금액" },
             onDone = onDone,
         )
