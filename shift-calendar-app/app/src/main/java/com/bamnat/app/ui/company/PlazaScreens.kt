@@ -320,8 +320,9 @@ fun ActivitySheet(holder: ActivityHolder) {
 private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: String? = null, elsewhere: List<Pair<String, Int>> = emptyList()) {
     var nick by rememberSaveable { mutableStateOf(a.nick.orEmpty()) }
     var msg by remember { mutableStateOf<String?>(null) }
-    Text("광장 별명", style = MaterialTheme.typography.titleSmall)
-    Text("고르면 토론과 규칙의 ‘올린 분’에 참여자 번호 대신 보여요. 실명이나 연락처는 쓰지 마세요.",
+    Text("마을 이름", style = MaterialTheme.typography.titleSmall)
+    // 1.36 [V3] 마을 이름 하나.
+    Text("유형별 광장의 글과 장터 작품, 내 프로필에 같은 이름으로 보여요. 회사 방과 회사 규칙에는 이름 없이 참여자 번호로만 보여요. 실명이나 연락처는 쓰지 마세요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(value = nick, onValueChange = { nick = it.take(12); msg = null }, singleLine = true, placeholder = { Text("예: 야간요정") },

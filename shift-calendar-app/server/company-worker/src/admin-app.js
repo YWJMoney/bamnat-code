@@ -692,7 +692,9 @@ function adminApp(L, BUILD, M) {
       if (name === "recipes") {
         // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
         const t = S.recipeTab ?? "flagged";
-        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests" }[t] ?? `/recipes?tab=${t}`;
+        // [PRF-06][PRF-10] 1.36 신고된 프로필, 이달의 제작자.
+        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", makers: "/recipes/makers/flagged",
+          month: "/recipes/makers/month" }[t] ?? `/recipes?tab=${t}`;
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
@@ -1138,12 +1140,17 @@ function adminApp(L, BUILD, M) {
     const rules = `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이 ${r.windowDays}일 안에 ${r.strikes}번이면
       제한이 걸리고, 받을 때마다 더 줄어요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}. 기간이 지나면 저절로 풀리고, ${r.forgetDays}일 동안 조용하면 한 단계 내려가요.
       가려진 글을 다시 보이게 하면 그 건은 빠져요.</p>`;
-    if (!d.items.length) return head + rules + empty("제한 중인 사람이 없어요", "신고로 가려진 글이 쌓인 사람이 생기면 여기에 보여요.");
-    return head + rules + `<div class="grid">${d.items.map((x) => `<article class="card">
+    // 1.36 PC 6차: 풀거나 끝난 제한은 아래 '최근 30일에 끝난 제한'으로 접혀서, 지금 제한 중인 목록이 바로 비어요.
+    const nowItems = d.items.filter((x) => x.now);
+    const ended = d.items.filter((x) => !x.now);
+    const card = (x) => `<article class="card">
       <div class="head"><h3>사용자 ${esc(x.who.slice(0, 8))} <span class="dept">${x.step}단계</span></h3>${x.now ? `<span class="pill ${x.perDay ? "warn" : "bad"}">${x.perDay ? `하루 ${x.perDay}번` : "쓰기 막힘"}</span>` : '<span class="pill ok">끝남</span>'}</div>
       <p class="meta">${esc(day(x.since))}부터 ${esc(day(x.until))}까지 · 제한 ${x.times}번째 · 가려진 글 ${x.strikes}건</p>
       ${edit && x.now ? `<div class="actions"><button class="btn" data-act="limit-lift" data-id="${esc(x.who)}">지금 풀기</button></div>` : ""}
-    </article>`).join("")}</div>`;
+    </article>`;
+    const list = nowItems.length ? `<div class="grid">${nowItems.map(card).join("")}</div>`
+      : empty("제한 중인 사람이 없어요", "신고로 가려진 글이 쌓인 사람이 생기면 여기에 보여요.");
+    return head + rules + list + (ended.length ? `<details><summary>최근 30일에 끝난 제한 ${ended.length}</summary><div class="grid">${ended.map(card).join("")}</div></details>` : "");
   }
 
   /**
@@ -2263,7 +2270,7 @@ function adminApp(L, BUILD, M) {
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
   const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
-    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"]];
+    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"], ["makers", "프로필 신고"], ["month", "이달의 제작자"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
@@ -2292,6 +2299,8 @@ function adminApp(L, BUILD, M) {
     if (tab === "picks") return chips + recipePicksView(d, edit);
     if (tab === "images") return chips + recipeImagesView(d, edit);
     if (tab === "requests") return chips + recipeRequestsView(d, edit);
+    if (tab === "makers") return chips + recipeMakersView(d, edit);
+    if (tab === "month") return chips + recipeMonthView(d, edit);
     const help = {
       queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
       flagged: "신고가 들어온 레시피예요. 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요.",
@@ -2346,6 +2355,30 @@ function adminApp(L, BUILD, M) {
         <small>${esc(i.id)} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+
+  /** [PRF-06] 1.36 프로필 신고: 사칭·나쁜 소개. 3건이면 소개가 먼저 가려져요. Who reported is never shown. */
+  function recipeMakersView(d, edit) {
+    if (!d.items.length) return empty("신고된 프로필이 없어요", "앱의 프로필 › ⋮ › 신고하기로 들어온 것이 여기 와요.");
+    const why = { impersonate: "사칭", bio: "나쁜 소개", spam: "광고·도배", other: "그 밖의 것" };
+    return `<p class="hint">소개만 문제면 소개를 가리고, 사칭이면 프로필을 닫아요. 닫힌 프로필은 다른 분이 볼 수도 팔로우할 수도 없고, 작품은 장터에 남아요(작품은 레시피 탭에서 따로 가려요). 문제없으면 신고를 비워요.</p>
+      <ul class="rows">${d.items.map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.face ?? "🙂")} ${esc(m.nick ?? "이름 없음")}</b>
+        <small>${esc(m.maker)} · 신고 ${m.flags}건 · ${Object.entries(m.reasons ?? {}).map(([k, n]) => `${esc(why[k] ?? k)} ${n}`).join(", ")} · ${esc(ago(m.at))}</small>
+        <small>소개: ${m.bio ? esc(m.bio) : "없음"}${m.bioHidden ? ` <span class="pill warn">${m.bioHiddenBy === "operator" ? "운영자가 소개 가림" : "신고로 소개 가림"}</span>` : ""}${m.closed ? ' <span class="pill warn">프로필 닫힘</span>' : ""}</small></span>
+        ${edit ? `<span class="row-side">
+          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.bioHidden ? "bio-show" : "bio-hide"}">${m.bioHidden ? "소개 다시 보이기" : "소개 가리기"}</button>
+          <button class="btn small ${m.closed ? "" : "danger"}" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.closed ? "open" : "close"}">${m.closed ? "프로필 다시 열기" : "프로필 닫기"}</button>
+          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="clear">신고 비우기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+
+  /** [PRF-10] 1.36 이달의 제작자: up to three maker ids for each kind of work; with none, the most put-on makers of the month show. */
+  function recipeMonthView(d, edit) {
+    const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.maker);
+    return `<p class="hint">${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위(팔로우한 분이 없는 분)에 보여요. 비워 두면 이달에 가장 많이 넣은 작품의 만든 분이 저절로 보여요. 프로필 id(12자)는 레시피 탭의 ‘도우미 배지’ 옆이나 앱의 프로필 링크 끝에 있어요.</p>
+      <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-month" data-key="${k}" class="row">
+        <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음 (저절로)"}</small>
+        ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="프로필 id 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
+        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
   }
 
   /** [RCX-04] 1.35 요청 판: what people asked to be made; hide one that breaks the rules. Who wrote it is never shown. */
@@ -4448,6 +4481,18 @@ function adminApp(L, BUILD, M) {
     "recipe-log": () => { S.recipeLog = true; load(); },
     // [RCX-15][RCX-04][RCX-07] 1.35
     "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },
+    "recipe-maker": async ({ id, key }) => {
+      const said = { "bio-hide": "소개를 가렸어요", "bio-show": "소개가 다시 보여요", close: "프로필을 닫았어요", open: "프로필을 다시 열었어요", clear: "신고를 비웠어요" }[key];
+      // 1.36 PC 사용성 P13: 닫기는 확인을 받고, 닫기·가리기는 8초 되돌리기 (같은 자리 단추를 두 번 눌러 도로 닫히던 것).
+      const back = { close: "open", "bio-hide": "bio-show" }[key];
+      const go = async () => {
+        await act(() => api(`/recipes/makers/${id}/${key}`, "POST", {}), said,
+          back ? async () => { await act(() => api(`/recipes/makers/${id}/${back}`, "POST", {}), "되돌렸어요"); load(); } : undefined);
+        load();
+      };
+      if (key === "close") confirmBox("이 프로필을 닫을까요?", "다른 분은 이 프로필을 볼 수도 팔로우할 수도 없게 돼요. 작품은 장터에 남고, 본인에게는 닫혔다고 보여요. 신고 누적 1번으로 세요.", "닫기", go);
+      else await go();
+    },
     "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
     "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {
       await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
@@ -4679,6 +4724,12 @@ function adminApp(L, BUILD, M) {
     "recipe-picks": async (form) => {
       const codes = String(new FormData(form).get("codes") ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean);
       await act(() => api("/recipes/picks", "POST", { style: form.dataset.key, codes }), codes.length ? `${codes.length}개 골랐어요` : "이번 주 고른 것을 비웠어요");
+      load();
+    },
+    // [PRF-10]
+    "recipe-month": async (form) => {
+      const makers = String(new FormData(form).get("makers") ?? "").toLowerCase().split(/[\s,]+/).filter(Boolean);
+      await act(() => api("/recipes/makers/month", "POST", { style: form.dataset.key, makers }), makers.length ? `${makers.length}명 골랐어요` : "비웠어요. 저절로 보여요");
       load();
     },
     "recipe-upload": async (form) => {

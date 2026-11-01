@@ -264,6 +264,8 @@ data class TalkPost(
     val author: String? = null,
     /** [COMM-11] I2: flagged for 개인 정보 once and being checked; shown dimmed with 확인 중. */
     val review: Boolean = false,
+    /** 1.36 [V3] 마을 이름 하나: in a kind of work's 광장, the writer's 프로필 (null without one, and never in a company's). */
+    val maker: String? = null,
 )
 
 /**
@@ -906,7 +908,8 @@ class CompanyClient(
 
     override suspend fun forgetMineCounts(device: String): ForgetCounts = serverCall {
         val o = request("DELETE", "/api/mine", device = device)
-        ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"))
+        ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"),
+            recipes = o.optInt("recipes"), profile = o.optInt("profile") > 0, follows = o.optInt("follows"), sets = o.optInt("sets"))
     }
 
     /** 맞았어요 ([ok]) or 달라요 with what was wrong: order, time, pay (1.27 AH-D9), or wrong, old or name. */
@@ -1011,12 +1014,16 @@ internal fun onceRequest(
  * page in place of JSON, a missing field) is [CompanyException] "bad_response", never a crash.
  */
 /** [INQ-05] What `DELETE /api/mine` took away, kind by kind. */
-data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int = 0, val inquiries: Int = 0) {
+data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int = 0, val inquiries: Int = 0,
+    /** [PRF-01] 1.36 마을: 올린 작품, 프로필, 팔로우, 모음. */
+    val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0) {
     /** "보낸 규칙 2·토론 글 3·문의 1을 지웠어요", or that there was nothing to delete. */
     fun words(): String {
         val parts = listOfNotNull(
             "보낸 규칙 $reports".takeIf { reports > 0 }, "맞았어요·달라요 $votes".takeIf { votes > 0 },
             "토론 글 $posts".takeIf { posts > 0 }, "문의 $inquiries".takeIf { inquiries > 0 },
+            "작품 ${recipes}개".takeIf { recipes > 0 }, "모음 ${sets}개".takeIf { sets > 0 }, "프로필".takeIf { profile },
+            "팔로우 $follows".takeIf { follows > 0 },
         )
         return if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요"
     }
@@ -1163,6 +1170,7 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             },
             author = p.optStringOrNull("author")?.takeIf { com.bamnat.core.plaza.HideList.MARK.matches(it) },
             review = p.optBoolean("review"),
+            maker = p.optStringOrNull("maker")?.takeIf { Regex("[0-9a-f]{12}").matches(it) },
         )
     },
     mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),

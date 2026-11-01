@@ -106,6 +106,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="bamnat" android:host="r" />
+                <!-- [PRF-11] 1.36 a maker's profile page (/m/<id> on the company server) opens 프로필 with bamnat://m/<id>. -->
+                <data android:scheme="bamnat" android:host="m" />
             </intent-filter>
             <intent-filter android:label="@string/open_file_label">
                 <action android:name="android.intent.action.VIEW" />

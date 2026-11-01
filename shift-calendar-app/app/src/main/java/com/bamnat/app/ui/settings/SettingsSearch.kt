@@ -121,6 +121,8 @@ internal const val WATCH_CALENDAR_ROW = "워치에 보낼 달력"
 internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
 /** [ALRM-21] 1.35: the row in 설정 › 알람 › 울리는 방식. */
 internal const val ALARM_SOON_ROW = "곧 울릴 알람 미리 알리기"
+/** [PRF-05] 1.36 PC 사용성 P8: the row in 설정 › 개인정보. */
+internal const val SENT_ROW = "내가 보낸 정보·모두 지우기"
 
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
@@ -281,6 +283,7 @@ internal object SettingsIndex {
         row(D, GROUP_ROW, "모임 코드", "조 근무표", "동료 근무표 모아", "나란히 보기", "팀 근무표").takeIf { share }, // [SHR-14]
         row(D, CUT_ALL_ROW, "링크 지우기", "공유 끊기", "링크 모두 끊기", "공유 그만", "링크 삭제").takeIf { share }, // [SHR-13]
         row(V, "개인정보 처리방침", "개인정보", "처리방침"),
+        row(V, SENT_ROW, "보낸 정보", "모두 지우기", "정보 삭제", "삭제", "탈퇴", "계정 삭제", "내 정보 지우기", "프로필 지우기", "마을 지우기", "거두기").takeIf { board }, // [PRF-05]
         row(V, SUMMARY_ROW, "동의", "권한 요약", "내가 허용한 것", "보내는 것", "권한 한눈에", "동의 내역"), // [ALRM-02]
         screen(A.title, "서버 연결 점검", SettingsGo.DIAGNOSTICS, "서버 연결", "인터넷", "보내지 못함", "연결 확인", "서버 상태"), // [ALRM-02]
         row(V, "앱 잠금", "잠금", "지문", "얼굴", "비밀번호", "PIN", "생체 인증", "숨기기"),
