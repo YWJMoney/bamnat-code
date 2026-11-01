@@ -22,6 +22,7 @@ import org.json.JSONObject
  * through Google Play services' font provider the first time one is drawn (and are kept by Play services for every app), the text
  * standing in the phone's font until then; the user's own fonts are files under `files/fonts`.
  */
+@android.annotation.SuppressLint("StaticFieldLeak") // only the application context (see init)
 object AppFonts {
     private val provider = GoogleFont.Provider(
         providerAuthority = "com.google.android.gms.fonts",
@@ -29,6 +30,8 @@ object AppFonts {
         certificates = R.array.com_google_android_gms_fonts_certs,
     )
     private val cache = ConcurrentHashMap<String, FontFamily>()
+    // The application context only (init takes applicationContext), so nothing short-lived is kept.
+    @android.annotation.SuppressLint("StaticFieldLeak")
     @Volatile private var app: Context? = null
 
     /** Called once at start so drawing that has no context of its own (부품 글자) can still reach the user's font files. */
@@ -58,6 +61,38 @@ object AppFonts {
     }
 
     fun forget(id: String) { cache.remove(id) }
+
+    /** [MAT-05] PC 확인 1차: whether an open font has come down yet, shown as 받는 중… · 받았어요 · 못 받았어요 · 다시. */
+    enum class Load { LOADING, READY, FAILED }
+
+    /** Each open font's state since the app started; a font not here is not asked for yet. */
+    val loads = androidx.compose.runtime.mutableStateMapOf<String, Load>()
+
+    /** Whether [id] is one of the open fonts that come down (not the phone's own nor the user's). */
+    fun downloads(id: String?): Boolean = id != null && FontCatalog.byId(id)?.family != null
+
+    /**
+     * Brings [id] down now (at most 30 seconds) so the answer can be shown; Compose keeps it in its own shared cache, so every text
+     * in that font draws in it after. A phone without Google Play services, or offline, ends in [Load.FAILED].
+     */
+    suspend fun fetch(context: Context, id: String) {
+        if (!downloads(id) || loads[id] == Load.READY || loads[id] == Load.LOADING) return
+        loads[id] = Load.LOADING
+        val ok = runCatching {
+            val family = family(context, id) ?: return@runCatching false
+            kotlinx.coroutines.withTimeout(30_000) { androidx.compose.ui.text.font.createFontFamilyResolver(context).preload(family) }
+            true
+        }.getOrDefault(false)
+        loads[id] = if (ok) Load.READY else Load.FAILED
+    }
+
+    /**
+     * [MAT-05] PC 확인 1차 (사용성 제안 "견본을 그림으로 미리"): the sample line drawn in [id] ahead of time, so the list shows each
+     * font before it comes down (0 for none). The pictures are made from the fonts' own files (all under the SIL OFL or Apache).
+     */
+    @android.annotation.SuppressLint("DiscouragedApi")
+    fun sampleImage(context: Context, id: String): Int = if (!downloads(id)) 0
+        else context.resources.getIdentifier("font_sample_" + id.replace('-', '_'), "drawable", context.packageName)
 }
 
 /** [id]'s family for this screen, kept across recompositions. */

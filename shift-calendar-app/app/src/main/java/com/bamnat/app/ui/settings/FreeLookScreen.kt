@@ -255,6 +255,13 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
     val l = looks[i]
     fun set(n: CellLook) = onChange(view.copy(looks = looks.toMutableList().also { it[i] = n }))
 
+    // [MAT-01] PC 확인 1차 ("칸 디자인을 끝까지 내려도 칸 채우기를 찾지 못함"): 칸 채우기 is the first line, open, not inside a fold.
+    // 근무 색은 그 위에 옅게 겹쳐요.
+    FillEditor("칸 채우기", l.fill, base = l.bg?.toLongOrNull(16) ?: 0xFFFFF4CC) { f ->
+        set(l.copy(fill = f, bg = if (f != null && l.bg != CellLook.SHIFT) null else l.bg))
+    }
+    if (l.fill != null && l.bg == null) LabeledSlider("채우기 진하기", (l.bgAlpha ?: 100).toFloat(), 10f..100f, "%") { set(l.copy(bgAlpha = it.toInt())) }
+
     Group("칸 배경") {
         Chips(listOf(null to "처음대로", CellLook.SHIFT to "근무 색", "own" to "내 색", CellLook.NONE to "없음"),
             when (l.bg) { null -> null; CellLook.SHIFT, CellLook.NONE -> l.bg; else -> "own" }) { v ->
@@ -266,11 +273,6 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
         if (l.bg != null && l.bg != CellLook.NONE || l.mark == "fill") {
             LabeledSlider("진하기", (l.bgAlpha ?: if (l.bg == CellLook.SHIFT) 35 else if (l.mark == "fill") 85 else 100).toFloat(), 10f..100f, "%") { set(l.copy(bgAlpha = it.toInt())) }
         }
-        // [MAT-01] 1.36 칸 채우기: 그라데이션·무늬·질감·유리·움직이는 색. 근무 색은 그 위에 옅게 겹쳐요.
-        FillEditor("칸 채우기", l.fill, base = l.bg?.toLongOrNull(16) ?: 0xFFFFF4CC) { f ->
-            set(l.copy(fill = f, bg = if (f != null && l.bg != CellLook.SHIFT) null else l.bg))
-        }
-        if (l.fill != null && l.bg == null) LabeledSlider("채우기 진하기", (l.bgAlpha ?: 100).toFloat(), 10f..100f, "%") { set(l.copy(bgAlpha = it.toInt())) }
     }
     Group("테두리·모서리") {
         Chips(listOf(null to "처음대로", "none" to "없음", "thin" to "가늘게", "thick" to "굵게", "dash" to "점선"), l.border) { set(l.copy(border = it)) }

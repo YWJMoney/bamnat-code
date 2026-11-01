@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.theme
 
+import androidx.core.graphics.createBitmap
+import androidx.core.graphics.withRotation
+import androidx.compose.ui.graphics.nativeCanvas
 import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.animation.core.LinearEasing
@@ -106,7 +109,8 @@ internal fun DrawScope.paintFill(fill: Fill, tile: ImageBitmap?, shader: Any?, s
             if (tile != null) drawRect(ShaderBrush(ImageShader(tile, TileMode.Repeated, TileMode.Repeated)), alpha = alpha * (fill.blur / 40f).coerceIn(0.2f, 1f))
         }
         is Fill.Shader -> {
-            if (shader != null && Build.VERSION.SDK_INT >= 33) {
+            // A software canvas (a screenshot, some captures) cannot draw a RuntimeShader: it gets the still gradient.
+            if (shader != null && Build.VERSION.SDK_INT >= 33 && drawContext.canvas.nativeCanvas.isHardwareAccelerated) {
                 FillShaders.update(shader, fill, size.width, size.height, seconds)
                 drawRect(ShaderBrush(shader as android.graphics.Shader), alpha = alpha)
             } else drawRect(linearBrush(fill.still(), size), alpha = alpha)
@@ -167,7 +171,7 @@ internal object FillTiles {
     /** One tile of a pattern in its ink on a clear ground (the ground is drawn under it). */
     fun pattern(p: Fill.Pattern, density: Float): ImageBitmap {
         val side = (22f * density * p.size / 100f).toInt().coerceIn(6, 512)
-        val bmp = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+        val bmp = createBitmap(side, side)
         val cv = android.graphics.Canvas(bmp)
         val ink = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = p.ink.toInt() }
         val line = android.graphics.Paint(ink).apply { style = android.graphics.Paint.Style.STROKE; strokeWidth = side * 0.08f; strokeCap = android.graphics.Paint.Cap.ROUND }
@@ -210,7 +214,7 @@ internal object FillTiles {
                 repeat(6) {
                     val x = r.nextFloat() * s; val y = r.nextFloat() * s
                     if (it % 2 == 0) cv.drawCircle(x, y, s * 0.05f, ink)
-                    else { cv.save(); cv.rotate(r.nextFloat() * 180f, x, y); cv.drawRect(x - s * 0.07f, y - s * 0.025f, x + s * 0.07f, y + s * 0.025f, ink); cv.restore() }
+                    else cv.withRotation(r.nextFloat() * 180f, x, y) { drawRect(x - s * 0.07f, y - s * 0.025f, x + s * 0.07f, y + s * 0.025f, ink) }
                 }
             }
         }

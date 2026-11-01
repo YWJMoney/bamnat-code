@@ -1,5 +1,9 @@
 package com.bamnat.app.ui.settings
 
+import androidx.core.content.edit
+import com.bamnat.app.ui.theme.AppFonts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.toArgb
 import kotlinx.coroutines.launch
 import android.net.Uri
 import android.provider.OpenableColumns
@@ -85,6 +89,7 @@ fun fillSummary(f: Fill?): String = when (f) {
 @Composable
 fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (Fill?) -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    val accent = scheme.primary.toArgb().toLong() and 0xFFFFFFFFL
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.size(56.dp, 40.dp).clip(RoundedCornerShape(8.dp)).border(1.dp, scheme.outlineVariant, RoundedCornerShape(8.dp))
@@ -95,23 +100,24 @@ fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (
             }
             if (value != null) TextButton(onClick = { onChange(null) }) { Text("없애기") }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FillKind.entries.forEach { k ->
-                FilterChip(selected = kindOf(value) == k, onClick = { onChange(start(k, value, base)) }, label = { Text(k.label) })
-            }
-        }
-        if (value == null) {
-            Text("바로 고르기", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Fill.PRESETS.forEach { (name, f) ->
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClickLabel = "$name 채우기") { onChange(f) }) {
-                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).border(1.dp, scheme.outlineVariant, RoundedCornerShape(10.dp)).fillWith(f))
-                        Text(name, fontSize = 11.sp)
-                    }
+        // [MAT-01] PC 확인 1차 (사용성 제안 "바로 고르기를 위로"): ready-made fills first, whichever kind is chosen.
+        Text("바로 고르기", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Fill.PRESETS.forEach { (name, f) ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClickLabel = "$name 채우기") { onChange(f) }
+                    .semantics { selected = value == f }) {
+                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp))
+                        .border(if (value == f) 3.dp else 1.dp, if (value == f) scheme.primary else scheme.outlineVariant, RoundedCornerShape(10.dp)).fillWith(f))
+                    Text(name, fontSize = 11.sp)
                 }
             }
-            return@Column
         }
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FillKind.entries.forEach { k ->
+                FilterChip(selected = kindOf(value) == k, onClick = { onChange(start(k, value, base, accent)) }, label = { Text(k.label) })
+            }
+        }
+        if (value == null) return@Column
         when (value) {
             is Fill.Solid -> {
                 ColorPick("색", value.color or 0xFF000000L, allowNone = false) { c -> c?.let { onChange(Fill.Solid(withAlpha(it, value.color))) } }
@@ -236,12 +242,14 @@ private fun withStops(g: Fill.Gradient, stops: List<Fill.Stop>): Fill = when (g)
 }
 
 /** A fill of kind [k] that keeps what it can of [from] (its colours) and starts from [base]. */
-private fun start(k: FillKind, from: Fill?, base: Long): Fill? {
+private fun start(k: FillKind, from: Fill?, base: Long, accent: Long): Fill? {
     val a = from?.average?.let { it or 0xFF000000L } ?: (base or 0xFF000000L)
+    // PC 확인 1차: a first gradient from a near-white base (흰색→회색) was hard to see; it starts in the app's accent instead.
+    val pale = FloatArray(3).also { android.graphics.Color.colorToHSV(a.toInt(), it) }[1] < 0.15f
     val colors = when (from) {
         is Fill.Gradient -> from.stops.map { it.color }
         is Fill.Shader -> from.colors
-        else -> listOf(a, shade(a))
+        else -> if (pale) listOf(Fill.mix(listOf(accent, 0xFFFFFFFFL, 0xFFFFFFFFL)), Fill.mix(listOf(accent, 0xFFFFFFFFL)), accent) else listOf(a, shade(a))
     }
     return when (k) {
         FillKind.NONE -> null
@@ -343,16 +351,50 @@ fun PhotoFrameEditor(label: String, value: String?, onChange: (String?) -> Unit)
 fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val name = value?.let { id -> FontCatalog.byId(id)?.name ?: UserFonts.list(ctx).firstOrNull { it.id == id }?.name ?: "내 글꼴" } ?: "처음대로"
+    // [MAT-05] PC 확인 1차: the chosen open font comes down now, and the row says how it went.
+    LaunchedEffect(value) { value?.let { AppFonts.fetch(ctx, it) } }
+    val load = value?.let { AppFonts.loads[it] }
     Row(Modifier.fillMaxWidth().clickable(onClickLabel = "$label 고르기") { open = true }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyMedium)
             Text(FontCatalog.SAMPLE, fontFamily = com.bamnat.app.ui.theme.rememberFontFamily(value), style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            FontLoadLine(load) { value?.let { id -> AppFonts.loads.remove(id); scope.launch { AppFonts.fetch(ctx, id) } } }
         }
         Text(name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
     }
-    if (open) FontPickerDialog(value, onDismiss = { open = false }) { open = false; onPick(it) }
+    if (open) FontPickerDialog(value, onDismiss = { open = false }) { open = false; FontRecent.add(ctx, it); onPick(it) }
+}
+
+/** 받는 중… · 받았어요 · 못 받았어요 · 다시 for an open font; nothing for the phone's own or the user's. */
+@Composable
+private fun FontLoadLine(load: AppFonts.Load?, retry: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    when (load) {
+        AppFonts.Load.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp)
+            Text("글꼴 받는 중… 받기 전에는 기본 글꼴로 보여요", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+        }
+        AppFonts.Load.READY -> Text("받았어요", style = MaterialTheme.typography.labelSmall, color = scheme.primary)
+        AppFonts.Load.FAILED -> Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("못 받았어요. 인터넷과 Google Play 서비스를 확인해 주세요", style = MaterialTheme.typography.labelSmall, color = scheme.error, modifier = Modifier.weight(1f, fill = false))
+            TextButton(onClick = retry) { Text("다시") }
+        }
+        null -> {}
+    }
+}
+
+/** [MAT-05] PC 확인 1차 (사용성 제안 "최근 쓴 글꼴 줄"): the last five fonts picked, newest first, on this phone only. */
+internal object FontRecent {
+    private const val FILE = "font_recent"
+    fun list(c: android.content.Context): List<String> = c.getSharedPreferences(FILE, android.content.Context.MODE_PRIVATE)
+        .getString("ids", "").orEmpty().split(',').filter { it.isNotEmpty() && (FontCatalog.byId(it) != null || UserFonts.file(c, it) != null) }
+    fun add(c: android.content.Context, id: String) {
+        val next = (listOf(id) + list(c).filter { it != id }).take(5)
+        c.getSharedPreferences(FILE, android.content.Context.MODE_PRIVATE).edit { putString("ids", next.joinToString(",")) }
+    }
 }
 
 /**
@@ -367,7 +409,10 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
     var problem by remember { mutableStateOf<String?>(null) }
     var stamp by remember { mutableIntStateOf(0) }
     var reportOf by remember { mutableStateOf<UserFonts.Mine?>(null) }
+    var q by remember { mutableStateOf("") }
+    val recent = remember { FontRecent.list(ctx) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    fun hit(name: String) = q.isBlank() || name.contains(q.trim(), ignoreCase = true)
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri == null) return@rememberLauncherForActivityResult
         val name = runCatching {
@@ -387,8 +432,19 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
                     FilterChip(selected = group == null, onClick = { group = null }, label = { Text("모두 ${FontCatalog.ALL.size + mine.size}") })
                     FontCatalog.Group.entries.forEach { g -> FilterChip(selected = group == g, onClick = { group = g }, label = { Text(g.label) }) }
                 }
+                // [MAT-05] PC 확인 1차 (사용성 제안 "검색칸과 최근 쓴 글꼴 줄").
+                androidx.compose.material3.OutlinedTextField(q, { q = it }, Modifier.fillMaxWidth(), singleLine = true,
+                    placeholder = { Text("글꼴 이름 찾기 (예: 명조, 손글씨)") },
+                    trailingIcon = { if (q.isNotEmpty()) TextButton(onClick = { q = "" }) { Text("지우기") } })
                 problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    if (group == null && q.isBlank() && recent.isNotEmpty()) {
+                        item(key = "recent") { Text("최근 쓴 글꼴", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+                        items(recent, key = { "r-$it" }) { id ->
+                            val n = FontCatalog.byId(id)?.name ?: mine.firstOrNull { it.id == id }?.name ?: "내 글꼴"
+                            FontLine(id, n, "최근", id == value, onPick)
+                        }
+                    }
                     if (group == null) {
                         item {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -400,7 +456,7 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
                             Text("TTF·OTF 파일을 이 휴대폰에 넣어요(20MB까지). 만든 곳이 누구나 쓰게 허락한 공개 글꼴(OFL 등)로 밝히면 레시피와 함께 가요(8MB까지). 아니면 받는 분께 비슷한 앱 글꼴로 보여요",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        items(mine, key = { it.id + stamp }) { f ->
+                        items(mine.filter { hit(it.name) }, key = { it.id + stamp }) { f ->
                             FontLine(f.id, f.name, "비슷한 앱 글꼴: " + (FontCatalog.byId(f.fallback)?.name ?: "기본"), f.id == value, onPick)
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (f.received) {
@@ -416,7 +472,8 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
                             }
                         }
                     }
-                    FontCatalog.grouped().filter { group == null || it.first == group }.forEach { (g, fonts) ->
+                    FontCatalog.grouped().filter { group == null || it.first == group }.map { (g, fonts) -> g to fonts.filter { hit(it.name) || hit(g.label) } }
+                        .filter { it.second.isNotEmpty() }.forEach { (g, fonts) ->
                         item(key = "g-${g.name}") { Text(g.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp)) }
                         items(fonts, key = { it.id }) { f ->
                             FontLine(f.id, f.name, if (f.system) "휴대폰 기본" else if (!f.korean) "숫자·영문만 이 글꼴" else "공개 글꼴 · 고르면 받아요", f.id == value, onPick)
@@ -454,10 +511,16 @@ fun FontPickerDialog(value: String?, onDismiss: () -> Unit, onPick: (String) -> 
 private fun FontLine(id: String, name: String, note: String, on: Boolean, onPick: (String) -> Unit) {
     val family = com.bamnat.app.ui.theme.rememberFontFamily(id)
     val sample = if (FontCatalog.byId(id)?.korean == false) FontCatalog.SAMPLE_LATIN else FontCatalog.SAMPLE
+    val ctx = LocalContext.current
+    // [MAT-05] PC 확인 1차: until an open font has come down, its line shows the sample drawn in it ahead of time.
+    val picture = remember(id) { AppFonts.sampleImage(ctx, id) }.takeIf { it != 0 && AppFonts.loads[id] != AppFonts.Load.READY }
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "$name 쓰기") { onPick(id) }
         .border(if (on) 2.dp else 0.dp, if (on) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
         .padding(8.dp).semantics { selected = on }) {
-        Text(sample, fontFamily = family, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        if (picture != null) androidx.compose.foundation.Image(androidx.compose.ui.res.painterResource(picture), contentDescription = "$name 견본: $sample",
+            modifier = Modifier.heightIn(min = 26.dp, max = 26.dp), contentScale = androidx.compose.ui.layout.ContentScale.FillHeight, alignment = Alignment.CenterStart,
+            colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(MaterialTheme.colorScheme.onSurface))
+        else Text(sample, fontFamily = family, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text("$name · $note", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

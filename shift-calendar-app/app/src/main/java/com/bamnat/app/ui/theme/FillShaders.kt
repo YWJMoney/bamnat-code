@@ -1,7 +1,6 @@
 package com.bamnat.app.ui.theme
 
 import android.graphics.RuntimeShader
-import android.os.Build
 import androidx.annotation.RequiresApi
 import com.bamnat.core.recipe.Fill
 
@@ -83,7 +82,7 @@ half4 main(float2 p) {
     fun make(fill: Fill.Shader): RuntimeShader? = SOURCES[fill.kind]?.let { runCatching { RuntimeShader(HEAD + it) }.getOrNull() }
 
     fun update(shader: Any, fill: Fill.Shader, w: Float, h: Float, seconds: Float) {
-        if (Build.VERSION.SDK_INT < 33 || shader !is RuntimeShader) return
+        if (shader !is RuntimeShader) return
         shader.setFloatUniform("size", w.coerceAtLeast(1f), h.coerceAtLeast(1f))
         shader.setFloatUniform("t", seconds)
         val cs = fill.colors
