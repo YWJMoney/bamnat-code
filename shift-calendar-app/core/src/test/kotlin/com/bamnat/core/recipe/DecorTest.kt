@@ -75,4 +75,21 @@ class DecorTest {
         val line = RecipeDescribe.line(Piece(PieceKind.DECOR, Decor(listOf(star, star.copy(kind = DecorKind.EMOJI, glyph = "🌙"))).values()))
         assertTrue(line, line.startsWith("꾸밈 2개"))
     }
+
+    /** PC 확인 C1: a 💰 pinned to the 25th moves the example to the 25th's week. */
+    @Test
+    fun theNextPinnedDayIsFound() {
+        val d = Decor(listOf(DecorItem(DecorKind.EMOJI, "💰", at = Decor.CELL, on = "d25"), DecorItem(DecorKind.EMOJI, "⭐", at = Decor.CELL, on = "today")))
+        assertEquals(java.time.LocalDate.of(2026, 11, 25), d.nextPinned(java.time.LocalDate.of(2026, 11, 1)))
+        assertEquals(java.time.LocalDate.of(2026, 12, 25), d.nextPinned(java.time.LocalDate.of(2026, 11, 26)))
+        assertNull(Decor(listOf(DecorItem(DecorKind.EMOJI, "⭐", at = Decor.CELL, on = "today"))).nextPinned(java.time.LocalDate.of(2026, 11, 1)))
+    }
+
+    /** PC 확인 C4: '돈' finds 💰 first and not 💇 (머리 정돈). */
+    @Test
+    fun emojiFoundByName() {
+        val found = RecipeText.findEmoji("돈").map { it.emoji }
+        assertTrue("💰 among the first: $found", "💰" in found.take(6))
+        assertFalse("💇" in found)
+    }
 }

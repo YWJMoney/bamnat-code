@@ -473,7 +473,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                         when (area) {
                                             Area.CALENDAR -> {
                                                 // [STU-25] 1.36 빌드 7: the phone's own weeks, as the example phone above shows them.
-                                                val my = com.bamnat.app.ui.recipe.rememberMyWeeks(emptyList(), weeks = 3)
+                                                // [LAY-03] PC 확인 C1: from the week of a day the 꾸밈 층 is pinned to, when it is past these weeks.
+                                                val now = remember { com.bamnat.core.time.Today.date() }
+                                                val pinnedDay = remember(decor, now) { decor.nextPinned(now)?.takeIf { it.toEpochDay() - now.minusDays((now.dayOfWeek.value % 7).toLong()).toEpochDay() >= 21 } }
+                                                val my = com.bamnat.app.ui.recipe.rememberMyWeeks(emptyList(), weeks = 3, from = pinnedDay)
                                                 CellWeeks(view, rows = if (scale >= 0.5f) 3 else 1, onCell = { i -> lookIndex = i; tool = Tool.CELL },
                                                     start = my?.first, todayDate = my?.today, days = my?.days,
                                                     todayColor = com.bamnat.core.recipe.CalendarTheme.decode(d.calTheme).today?.let { androidx.compose.ui.graphics.Color(it.toInt()) })

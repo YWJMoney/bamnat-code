@@ -145,6 +145,19 @@ data class Decor(val items: List<DecorItem> = emptyList()) {
 
     fun has(anchor: String): Boolean = items.any { it.at == anchor && !it.hide }
 
+    /**
+     * [LAY-03] The first day from [from] on a day cell's decoration pinned to a date (매달 며칠·매년 그날) stands on, within a year — so
+     * an example of two weeks can show it. Null when none is pinned to a date.
+     */
+    fun nextPinned(from: java.time.LocalDate): java.time.LocalDate? {
+        val pinned = on(CELL).filter { i -> i.on?.let { Regex("d\\d+|m\\d+d\\d+").matches(it) } == true }
+        if (pinned.isEmpty()) return null
+        return (0L..366L).asSequence().map { from.plusDays(it) }.firstOrNull { d ->
+            val day = DecorDay(d.monthValue, d.dayOfMonth, d.dayOfWeek.value, null, false, false)
+            pinned.any { it.standsOn(day) }
+        }
+    }
+
     /** The piece's values. */
     fun values(): Map<String, Any?> = if (items.isEmpty()) emptyMap() else mapOf("items" to items.map { it.values() })
 

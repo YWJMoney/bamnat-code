@@ -97,13 +97,55 @@ import kotlin.math.roundToInt
  * The size a part has on a phone, in dp, for the 꾸미기 판 (stage): a decoration's place is ‰ of it and its size dp, so the stage draws
  * the part this big and scales the whole to fit.
  */
-internal fun partSize(anchor: String): Size = when (anchor) {
-    Decor.CELL -> Size(52f, 64f)
-    Decor.HEAD -> Size(360f, 56f)
-    Decor.WEEK -> Size(360f, 28f)
+internal fun partSize(anchor: String, screenW: Float = 360f): Size = when (anchor) {
+    // PC 확인 C2 1.36 (판이 실제 머리보다 넓어요): the parts as wide as this phone draws them, so a spot on the 판 is the same spot there.
+    Decor.CELL -> Size(screenW / 7f - 4f, 64f)
+    Decor.HEAD -> Size(screenW, 56f)
+    Decor.WEEK -> Size(screenW, 28f)
     Decor.WIDGET -> Size(320f, 160f)
-    else -> Size(360f, 640f)
+    else -> Size(screenW, 640f)
 }
+
+/** This phone's width in dp, as the 판 draws the parts. */
+@Composable
+private fun screenW(): Float = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.toFloat().coerceIn(280f, 600f)
+
+/**
+ * The 달력 머리's own things, in dp from the left of a [w] wide top (‹, the month, ›, 오늘, 도구), as the calendar lays them out on a
+ * phone, and the empty stretch between › and 오늘 where a new decoration goes.
+ */
+internal object HeadLayout {
+    fun navLeft(w: Float) = 4f to 52f
+    fun title(w: Float) = 52f to 158f
+    fun navRight(w: Float) = 158f to 206f
+    fun today(w: Float) = (w - 134f) to (w - 84f)
+    fun tools(w: Float) = (w - 80f) to (w - 8f)
+    fun free(w: Float): Pair<Float, Float> = navRight(w).second to today(w).first
+}
+
+/**
+ * PC 확인 C1·C2 1.36 (칸 가운데 💰가 근무 표시에 가려 안 보여요, 새 글상자가 달 이름 위에 겹쳐요): where a new decoration goes on [anchor],
+ * as ‰ x and y, and its size — in a cell the top right corner beside the date, on the 달력 머리 the empty stretch between › and 오늘.
+ */
+internal fun startPlace(anchor: String, kind: DecorKind, n: Int, screenW: Float): StartPlace {
+    val (w, h) = startSize(anchor, kind)
+    return when (anchor) {
+        Decor.CELL -> if (kind == DecorKind.TEXT) StartPlace(500, 880, w, h) else StartPlace(800 - (n % 3) * 140, 160, w, h)
+        Decor.HEAD -> {
+            val (a, b) = HeadLayout.free(screenW)
+            val room = (b - a).coerceAtLeast(24f)
+            val cx = ((a + b) / 2 / screenW * 1000).toInt().coerceIn(0, 1000)
+            if (kind == DecorKind.TEXT) StartPlace(cx, 500, (room - 6).toInt().coerceIn(36, 140), 22)
+            else StartPlace(cx, 500, minOf(w.toFloat(), room - 4).toInt().coerceAtLeast(14), minOf(h.toFloat(), room - 4).toInt().coerceAtLeast(14))
+        }
+        else -> StartPlace((500 + (n % 4) * 60).coerceAtMost(900), (500 + (n % 3) * 60).coerceAtMost(900), w, h)
+    }
+}
+
+internal data class StartPlace(val x: Int, val y: Int, val w: Int, val h: Int)
+
+/** PC 확인 C3 1.36 (다시 열면 붙는 곳이 처음으로 돌아가요): the last place used for each set of places, while the app is open. */
+private val lastPlaces = HashMap<List<String>, String>()
 
 /** A new decoration's size on [anchor]: small in a cell, bigger on a background. */
 private fun startSize(anchor: String, kind: DecorKind): Pair<Int, Int> = when {
@@ -132,7 +174,11 @@ private enum class Pane(val label: String) { ADD("넣기"), EDIT("고치기"), L
 @Composable
 fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> Unit, onUndo: (() -> Unit)? = null) {
     if (places.isEmpty()) return
-    var place by rememberSaveable(places) { mutableStateOf(places.first()) }
+    var place by rememberSaveable(places) {
+        mutableStateOf(lastPlaces[places]?.takeIf { it in places } ?: decor.items.lastOrNull { it.at in places }?.at ?: places.first())
+    }
+    androidx.compose.runtime.LaunchedEffect(place, places) { lastPlaces[places] = place }
+    val stageW = screenW()
     var picked by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var pane by rememberSaveable { mutableStateOf(Pane.ADD) }
     var advanced by rememberSaveable { mutableStateOf(false) }
@@ -154,13 +200,13 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         if (place == Decor.CELL && items.count { it.at == Decor.CELL } >= Decor.MAX_CELL) {
             said = "달력 칸에는 ${Decor.MAX_CELL}개까지예요(칸마다 그려서 달력 넘김이 느려지지 않게)"; return
         }
-        val (w, h) = startSize(place, kind)
-        // A little off the middle each time, so a second one does not hide the first.
+        // A free spot of the part, a little apart each time, so a second one does not hide the first.
         val n = items.count { it.at == place }
-        val item = DecorItem(kind, glyph, place, x = (500 + (n % 4) * 60).coerceAtMost(900), y = (500 + (n % 3) * 60).coerceAtMost(900), w = w, h = h,
+        val sp = startPlace(place, kind, n, stageW)
+        val item = DecorItem(kind, glyph, place, x = sp.x, y = sp.y, w = sp.w, h = sp.h,
             fill = if (kind == DecorKind.SHAPE) DEFAULT_FILLS[n % DEFAULT_FILLS.size] else null,
             fillA = if (glyph == "tape") 70 else 100,
-            size = if (kind == DecorKind.TEXT) (if (place == Decor.CELL) 8.0 else 14.0) else 14.0)
+            size = if (kind == DecorKind.TEXT) (when (place) { Decor.CELL -> 8.0; Decor.HEAD -> 11.0; else -> 14.0 }) else 14.0)
         onChange(null, Decor(items + item))
         picked = setOf(items.size)
         said = "${quoted(item)}${eul(item.label)} 넣었어요. 판에서 끌어 옮기고, 두 손가락으로 키우고 돌려요"
@@ -224,7 +270,8 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
                     set(null, { it.copy(group = g) }); said = "${picked.size}개를 묶었어요. 하나를 옮기면 같이 움직여요"
                 },
                 onUngroup = { set(null, { it.copy(group = 0) }) },
-                onMove = { from, up -> onChange(null, Decor(reorder(items, setOf(from), up))) })
+                onMove = { from, up -> onChange(null, Decor(reorder(items, setOf(from), up))); picked = setOf(from + if (up) 1 else -1) },
+                onEdit = { pane = Pane.EDIT })
         }
     }
 }
@@ -256,7 +303,7 @@ private fun Stage(items: List<DecorItem>, place: String, picked: Set<Int>, advan
     val ground = MaterialTheme.colorScheme.surface
     val line = MaterialTheme.colorScheme.outlineVariant
     val ringColor = MaterialTheme.colorScheme.tertiary
-    val part = partSize(place)
+    val part = partSize(place, screenW())
     val slop = LocalViewConfiguration.current.touchSlop
     val cur by rememberUpdatedState(items)
     val sel by rememberUpdatedState(picked)
@@ -428,8 +475,22 @@ private fun DrawScope.backdrop(place: String, box: Rect, measurer: androidx.comp
             text("인수인계", Offset(box.width / 2, 46 * d), 7f, soft)
             text("8h", Offset(box.width / 2, 56 * d), 7f, soft)
         }
-        Decor.HEAD -> { text("◀", Offset(24 * d, box.height / 2), 12f, soft); text("2026년 11월 ▾", Offset(box.width / 2.6f, box.height / 2), 18f, bold = true)
-            text("오늘", Offset(box.width - 60 * d, box.height / 2), 12f, soft); text("▶", Offset(box.width - 24 * d, box.height / 2), 12f, soft) }
+        Decor.HEAD -> {
+            // PC 확인 C2 1.36: the top as the calendar lays it out — ‹ 2026년 11월 ▾ › … 오늘 [도구] — and the empty stretch marked.
+            val w = box.width / d
+            val cy = (8f + 24f) * d
+            fun mid(r: Pair<Float, Float>) = (r.first + r.second) / 2 * d
+            text("‹", Offset(mid(HeadLayout.navLeft(w)), cy), 20f, soft)
+            text("2026년 11월 ▾", Offset(mid(HeadLayout.title(w)), cy), 14f, bold = true)
+            text("›", Offset(mid(HeadLayout.navRight(w)), cy), 20f, soft)
+            text("오늘", Offset(mid(HeadLayout.today(w)), cy), 12f, soft)
+            val t = HeadLayout.tools(w)
+            drawRoundRect(Color(0x332E7D32), Offset(t.first * d, cy - 18 * d), Size((t.second - t.first) * d, 36 * d), CornerRadius(18 * d))
+            text("도구", Offset(mid(t), cy), 12f, soft)
+            val f = HeadLayout.free(w)
+            if (f.second - f.first > 8f) drawRoundRect(line, Offset(f.first * d, cy - 20 * d), Size((f.second - f.first) * d, 40 * d), CornerRadius(6 * d),
+                style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(4 * d, 3 * d))))
+        }
         Decor.WEEK -> listOf("일", "월", "화", "수", "목", "금", "토").forEachIndexed { i, s ->
             text(s, Offset(box.width * (i + 0.5f) / 7, box.height / 2), 11f, when (i) { 0 -> Color(0xFFD32F2F); 6 -> Color(0xFF1976D2); else -> soft }) }
         Decor.WIDGET -> { drawRoundRect(line.copy(alpha = 0.4f), box.topLeft, box.size, CornerRadius(20 * d))
@@ -475,7 +536,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit) {
                 }
             }
             DecorKind.EMOJI -> {
-                val list = if (q.isBlank()) RecipeText.emoji.take(160).map { it.emoji } else RecipeText.searchEmoji(q).map { it.emoji }
+                val list = if (q.isBlank()) RecipeText.emoji.take(160).map { it.emoji } else RecipeText.findEmoji(q).map { it.emoji }
                 if (list.isEmpty()) Text("찾는 이모지가 없어요", style = MaterialTheme.typography.bodySmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     list.forEach { e ->
@@ -520,7 +581,7 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
                        set: (String?, (DecorItem) -> DecorItem, Set<Int>) -> Unit, onCopy: () -> Unit, onDelete: () -> Unit, onOrder: (Boolean) -> Unit) {
     val first = items[picked.min()]
     fun all(label: String?, f: (DecorItem) -> DecorItem) = set(label, f, picked)
-    val part = partSize(place)
+    val part = partSize(place, screenW())
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(if (picked.size == 1) "${first.kind.label} ${quoted(first)}" + (if (first.lock) " · 잠금" else "") else "${picked.size}개를 함께 고쳐요",
             style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -698,7 +759,8 @@ private fun SliderRow(label: String, value: Float, range: ClosedFloatingPointRan
  */
 @Composable
 private fun Layers(items: List<DecorItem>, places: List<String>, picked: Set<Int>, onPick: (Int, Boolean) -> Unit,
-                   set: (String?, (DecorItem) -> DecorItem, Set<Int>) -> Unit, onGroup: () -> Unit, onUngroup: () -> Unit, onMove: (Int, Boolean) -> Unit) {
+                   set: (String?, (DecorItem) -> DecorItem, Set<Int>) -> Unit, onGroup: () -> Unit, onUngroup: () -> Unit, onMove: (Int, Boolean) -> Unit,
+                   onEdit: () -> Unit = {}) {
     if (items.isEmpty()) { Text("아직 꾸밈이 없어요. 넣기에서 골라요", style = MaterialTheme.typography.bodyMedium); return }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -714,7 +776,7 @@ private fun Layers(items: List<DecorItem>, places: List<String>, picked: Set<Int
                 if (mine.isEmpty()) return@forEach
                 Text("  " + Decor.anchorLabel(a), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 mine.forEach { i -> LayerRow(items[i], i in picked, onPick = { add -> onPick(i, add) }, set = { f -> set(null, f, setOf(i)) },
-                    canUp = i < items.lastIndex, canDown = i > 0, onMove = { up -> onMove(i, up) }) }
+                    canUp = i < items.lastIndex, canDown = i > 0, onMove = { up -> onMove(i, up) }, onEdit = onEdit) }
             }
         }
     }
@@ -722,9 +784,11 @@ private fun Layers(items: List<DecorItem>, places: List<String>, picked: Set<Int
 
 @Composable
 private fun LayerRow(item: DecorItem, picked: Boolean, onPick: (Boolean) -> Unit, set: ((DecorItem) -> DecorItem) -> Unit,
-                     canUp: Boolean, canDown: Boolean, onMove: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-        .background(if (picked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                     canUp: Boolean, canDown: Boolean, onMove: (Boolean) -> Unit, onEdit: () -> Unit = {}) {
+    // PC 확인 1.36 (레이어 줄 글자가 좁아 숨기기 단추가 눌려요): 숨기기·잠그기 on the row; 앞으로·뒤로·고치기 under the picked one.
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+        .background(if (picked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)) {
+    Row(Modifier.fillMaxWidth()
         .clickable(onClickLabel = "고르기") { onPick(false) }.padding(start = 16.dp),
         verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.material3.Checkbox(picked, { onPick(true) })
@@ -739,8 +803,13 @@ private fun LayerRow(item: DecorItem, picked: Boolean, onPick: (Boolean) -> Unit
             Icon(if (item.lock) androidx.compose.material.icons.Icons.Filled.Lock else androidx.compose.material.icons.Icons.Filled.LockOpen ,
                 if (item.lock) "잠금 풀기" else "잠그기")
         }
-        IconButton(onClick = { onMove(true) }, enabled = canUp) { Icon(androidx.compose.material.icons.Icons.Filled.KeyboardArrowUp , "앞으로") }
-        IconButton(onClick = { onMove(false) }, enabled = canDown) { Icon(androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown , "뒤로") }
+    }
+    if (picked) Row(Modifier.fillMaxWidth().padding(start = 56.dp, bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = { onMove(true) }, enabled = canUp) { Icon(androidx.compose.material.icons.Icons.Filled.KeyboardArrowUp, null); Text("앞으로") }
+        TextButton(onClick = { onMove(false) }, enabled = canDown) { Icon(androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown, null); Text("뒤로") }
+        TextButton(onClick = onEdit) { Text("고치기 ›") }
+    }
     }
 }
 

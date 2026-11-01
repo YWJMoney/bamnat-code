@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
@@ -33,9 +35,9 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35])
 class LayScreenshotTest : ScreenshotBase() {
     private val start = Decor(listOf(
+        DecorItem(DecorKind.EMOJI, "💰", at = Decor.CELL, on = "d25", x = 780, y = 220, w = 22, h = 22),
         DecorItem(DecorKind.TEXT, "이번 달도 힘내기", at = Decor.HEAD, y = 500, w = 180, h = 30, size = 16.0, weight = 700),
         DecorItem(DecorKind.SHAPE, "tape", at = Decor.HEAD, x = 120, y = 300, w = 60, h = 18, rot = -12, fill = 0xFFF6C1CCL),
-        DecorItem(DecorKind.EMOJI, "💰", at = Decor.CELL, on = "d25", x = 780, y = 220, w = 22, h = 22),
     ))
 
     private fun Screen.tool() = content {
@@ -46,6 +48,34 @@ class LayScreenshotTest : ScreenshotBase() {
                 DecorTool(d, listOf("bg.calendar", Decor.HEAD, Decor.WEEK, Decor.CELL), { _, nd -> d = nd })
             }
         }
+    }
+
+    /** [LAY-03] The 💰 pinned to the 25th stands on the 25th's cell only. */
+    @Test fun theCoinStandsOnThe25th() = shoot("1483_lay_cells", PHONE) {
+        content {
+            Surface {
+                androidx.compose.foundation.layout.Row(Modifier.padding(12.dp)) {
+                    listOf(24, 25, 26).forEach { n ->
+                        androidx.compose.foundation.layout.Box(Modifier.padding(2.dp).size(52.dp, 64.dp)
+                            .border(1.dp, androidx.compose.ui.graphics.Color.Gray)
+                            .decor(Decor.CELL, com.bamnat.core.recipe.DecorDay(10, n, 5, null, false, false), start)) { Text("$n") }
+                    }
+                }
+            }
+        }
+        settle()
+        assertTrue(appears("25", exact = true))
+    }
+
+    /** [LAY-03] The real month: a 💰 on today's date and a text on the top. */
+    @Test fun theMonthWearsItsDecor() {
+        val d = today.dayOfMonth
+        app.container.settingsRepository.update { it.copy(decor = Decor(listOf(
+            DecorItem(DecorKind.EMOJI, "💰", at = Decor.CELL, on = "d$d", x = 780, y = 220, w = 14, h = 14),
+            DecorItem(DecorKind.SHAPE, "star5", at = Decor.CELL, on = "d$d", x = 200, y = 800, w = 12, h = 12, over = true),
+            DecorItem(DecorKind.EMOJI, "💰", at = Decor.CELL, on = "d${d + 2}", w = 14, h = 14, over = true),
+        )).encode()) }
+        shoot("1484_lay_month", PHONE) { settle() }
     }
 
     @Test fun theBoardShowsTheHeadlineAndItsTools() = shoot("1480_lay_board", PHONE) {
@@ -72,7 +102,7 @@ class LayScreenshotTest : ScreenshotBase() {
         settle()
         tapText("이번 달도 힘내기", exact = false)
         settle()
-        tapText("고치기 1", exact = true)
+        tapText("고치기 ›", exact = true)
         settle()
         assertTrue(appears("숫자로 맞추기", exact = true))
     }
