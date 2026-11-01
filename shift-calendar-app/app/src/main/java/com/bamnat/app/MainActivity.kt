@@ -1,5 +1,6 @@
 package com.bamnat.app
 
+import com.bamnat.app.ui.theme.safeLooks
 import androidx.compose.ui.graphics.luminance
 import android.content.Intent
 import android.graphics.Color
@@ -95,7 +96,10 @@ class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
     @androidx.compose.runtime.Composable
     private fun Content(container: AppContainer) {
-        val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+        val stored by container.settingsRepository.settings.collectAsStateWithLifecycle()
+        // 1.36 [SEC-06] 안전 모드: drawn with the app's own looks (a look from the 장터 may be what stopped it), the settings untouched.
+        val safe by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
+        val settings = if (safe) stored.safeLooks() else stored
         // [SHFT-05] 야간 근무 중 어둡게 turns into dark or the phone's theme as the night shift starts and ends.
         val themeMode = com.bamnat.app.ui.theme.rememberThemeMode(settings.themeMode, container)
         val dark = when (themeMode) {

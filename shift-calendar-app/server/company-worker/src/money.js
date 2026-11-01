@@ -1,6 +1,7 @@
 import { FLAG_KEYS, configFlags, configPolicy, flagDef, flagStore, legacyFlags, recordLaunch, serverEval } from "./flags.js";
 import { OWNER, Refuse, all, allow, answer, audit, batch, deviceHash, deviceId, given, iso, item, json, network, one, overLimit, randomId, readJson, refuse, run, salt, sha256, stmt, tooMany } from "./index.js";
 import { DAY, HOUR } from "./units.js";
+import { integrityGate } from "./integrity.js";
 import { kstDay, noticeRows, noticeView } from "./usage.js";
 // ---- 정식 출시, 프로 이용권, 관리자 휴대폰, 구매 확인 [MON-02][MON-03][MON-06][MON-08][MON-09][MON-10] ----
 
@@ -15,6 +16,10 @@ export const MONEY = {
   linkMs: 10 * 60 * 1000,
   linkCodesPerHour: 10,
   linkTriesPerHour: 10,
+  // 1.36 [SEC-03] Wrong codes from everywhere together in one code's ten minutes: past this, every live code is spent and
+  // tries rest until the window ends. With a 6-digit code, a guessing run spread over many networks then wins at most
+  // 30 in a million, and the owner sees it in the log (link_guess) and makes a new code.
+  linkWrongPerWindow: 30,
   phonesPerAdmin: 2,
   // [MON-08] A recovery code moves passes to a new phone once.
   codesPerDay: 10,
@@ -550,6 +555,8 @@ export async function invites(request, env, path, url) {
     if (!["referrer", "typed"].includes(body.source)) refuse("source", "source");
     const mark = await phoneMark(env, body.phone);
     if (!mark) refuse("phone", "phone");
+    // 1.36 [SEC-11] A friend counts toward 프로 months only from Play's app on a real phone (off until INTEGRITY_MODE is set).
+    { const gate = await integrityGate({ one, allow, json }, env, dev, now); if (gate) return gate; }
     const set = await inviteSettings(env);
     const before = await one(env, "SELECT status, reason FROM invite_uses WHERE invitee = ?", dev);
     if (before) return json({ status: before.status, reason: before.reason || null, days: set.days, daysLeft: null });
@@ -665,8 +672,19 @@ export async function linkPhone(request, env, dev, now) {
     return tooMany("device", HOUR);
   }
   if (typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) refuse("code", "code");
+  // 1.36 [SEC-03] A guessing run spread over many networks: all wrong tries of the window count together.
+  const window = Math.floor(now / MONEY.linkMs);
+  const wrongKey = `linkwrong|${window}`;
+  const wrong = await one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", wrongKey, now);
+  if ((wrong?.count ?? 0) >= MONEY.linkWrongPerWindow) return tooMany("network", (window + 1) * MONEY.linkMs - now);
   const row = await one(env, "SELECT * FROM link_codes WHERE code = ? AND expires > ?", body.code, now);
-  if (!row) return json({ error: "code", field: "code" }, 404);
+  if (!row) {
+    if (!(await allow(env, wrongKey, MONEY.linkWrongPerWindow - 1, MONEY.linkMs, now))) {
+      await run(env, "DELETE FROM link_codes");
+      await audit(env, now, "link_guess", "", String(MONEY.linkWrongPerWindow));
+    }
+    return json({ error: "code", field: "code" }, 404);
+  }
   const owner = row.admin === OWNER.id;
   if (!owner && !(await one(env, "SELECT 1 FROM admins WHERE id = ? AND status = 'active'", row.admin))) {
     await run(env, "DELETE FROM link_codes WHERE code = ?", body.code);

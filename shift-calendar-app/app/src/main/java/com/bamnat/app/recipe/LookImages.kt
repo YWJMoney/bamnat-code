@@ -135,7 +135,7 @@ object LookImages {
         cache.get(id!!)?.let { return it }
         return withContext(Dispatchers.IO) {
             val f = file(context, id)
-            if (!f.isFile) null else runCatching { BitmapFactory.decodeFile(f.path) }.getOrNull()?.also { cache.put(id, it) }
+            if (!f.isFile) null else SafeBitmaps.decodeFile(f.path) // 1.36 [SEC-04]?.also { cache.put(id, it) }
         }
     }
 
@@ -170,7 +170,8 @@ object LookImages {
                 }
             }.getOrNull()
         } ?: return false
-        if (withContext(Dispatchers.Default) { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) } == null) return false
+        // 1.36 [SEC-04] Its size is read first: a picture larger than the app makes is not kept (it would stop the phone that opens it).
+        if (withContext(Dispatchers.Default) { SafeBitmaps.decode(bytes) } == null) return false
         save(c.appContext, bytes, id)
         return true
     }

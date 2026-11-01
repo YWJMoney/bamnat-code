@@ -33,7 +33,7 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
     val look = settings?.widgetLook?.let(WidgetLook::decode) ?: WidgetLook()
     val pictureId = settings?.photoLook?.let { com.bamnat.core.recipe.PhotoLook.decode(it).widget }
     val picture = pictureId?.let { id ->
-        runCatching { com.bamnat.app.recipe.LookImages.file(context, id).takeIf { it.isFile }?.let { android.graphics.BitmapFactory.decodeFile(it.path) } }.getOrNull()
+        runCatching { com.bamnat.app.recipe.LookImages.file(context, id).takeIf { it.isFile }?.let { com.bamnat.app.recipe.SafeBitmaps.decodeFile(it.path) } }.getOrNull()
     }
     val colors = when (look.theme) {
         "light" -> androidx.glance.material3.ColorProviders(lightColorScheme())

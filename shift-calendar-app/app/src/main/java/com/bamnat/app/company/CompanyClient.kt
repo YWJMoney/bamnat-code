@@ -1296,12 +1296,22 @@ internal fun serverExchange(
     // [QA130-01] 1.30 AY: a Play pre-launch robot (Firebase Test Lab) reads but never writes; to it, as if offline.
     if (!com.bamnat.app.diag.TestLab.allows(method)) throw CompanyException("offline")
     // [SRV-30] 1.36: at api.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
+    val once = {
+        try {
+            ServerAddress.call(baseUrl) { at -> exchangeOnce(at, method, path, body, device, headers, session) }
+        } catch (e: CompanyException) {
+            throw e // the server's own answer (refused, not found …), never 'offline'
+        } catch (e: IOException) {
+            throw CompanyException("offline")
+        }
+    }
     return try {
-        ServerAddress.call(baseUrl) { at -> exchangeOnce(at, method, path, body, device, headers, session) }
+        once()
     } catch (e: CompanyException) {
-        throw e // the server's own answer (refused, not found …), never 'offline'
-    } catch (e: IOException) {
-        throw CompanyException("offline")
+        // 1.36 [SEC-11] The server wants Play's verdict first: asked once, then the same request once more.
+        val dev = device ?: body?.optString("device")?.takeIf { it.isNotEmpty() }
+        if (e.code != "integrity" || dev == null || path == "/api/integrity" || !IntegrityProof.prove(baseUrl, dev)) throw e
+        once()
     }
 }
 

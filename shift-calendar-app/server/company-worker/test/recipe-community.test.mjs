@@ -118,7 +118,9 @@ test("[RCX-08] 이번 주 고른 것: the operator's three for a kind of work; l
 test("[RCX-15] 그림 표지: WebP only, small, shown to others once the operator looks", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call } = server({ plaza: true });
-  const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([20, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.alloc(16)]).toString("base64");
+  // A lossy WebP's header: VP8 frame tag, start code 9d 01 2a, then 512 × 512.
+  const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([30, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.from([10, 0, 0, 0]),
+    Buffer.from([0, 0, 0, 0x9d, 0x01, 0x2a, 0x00, 0x02, 0x00, 0x02]), Buffer.alloc(8)]).toString("base64");
   const png = Buffer.from("\x89PNG\r\n\x1a\n0000000000000000").toString("base64");
   assert.equal((await call("POST", "/api/recipes/images", { device: device(1), webp: png }, from(1))).data.error, "image");
   const big = Buffer.concat([Buffer.from("RIFF0000WEBP"), Buffer.alloc(170_000)]).toString("base64");

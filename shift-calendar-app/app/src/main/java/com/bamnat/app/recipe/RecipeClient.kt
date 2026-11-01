@@ -630,6 +630,9 @@ class RecipeClient(
                 "not_yours" -> "내 작품만 넣을 수 있어요"
                 "same" -> "바뀐 것이 없어요"
                 "paused" -> "잠시 쉬고 있어요"
+                // 1.36 [SEC-11] Play Integrity: the app from Play on a real phone is needed to write where others see.
+                "integrity" -> "Play 스토어에서 받은 밤낮으로만 올리거나 신고할 수 있어요. Play 스토어 앱을 업데이트한 뒤 다시 해 주세요"
+                "image_size" -> "사진이 너무 커요. 다른 사진을 골라 주세요"
                 "too_big", "too_large" -> "레시피가 너무 커요. 조각을 줄여 주세요"
                 else -> com.bamnat.core.recipe.RecipeText.problemText(c)
             }

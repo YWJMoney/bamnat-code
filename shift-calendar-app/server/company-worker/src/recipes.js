@@ -1003,6 +1003,8 @@ async function publish(d, env, request) {
     ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "recipe", RECIPE_LIMITS.perNetworkDay, now)));
   if (hit) return hit;
   const scope = readScope(body.scope);
+  // 1.36 [SEC-11] Play Integrity before a write others see; a 나만 보기 recipe is the maker's own (off until INTEGRITY_MODE is set).
+  if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const r = clean.recipe;
   const skel = nameSkeleton(r.title);
   // 사칭 (S4): someone else's recipe with a name that looks the same is refused; the maker's own may share it.
@@ -1052,6 +1054,8 @@ async function newVersion(d, env, request, code) {
   const hit = await d.overLimit(env, now, [["device", `recipev|${dev}`, 10, DAY]]);
   if (hit) return hit;
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const trust = await recipeTrust(d, env, dev, now);
   // [RCX-28] Up at once like a first 판; one the operator or 신고 hid stays hidden.
   const state = r.state === "hidden" ? "hidden" : scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
@@ -1171,11 +1175,16 @@ async function recipeFlag(d, env, request, code) {
   const now = Date.now();
   const hit = await d.overLimit(env, now, [["device", `rflag|${dev}`, 20, DAY]]);
   if (hit) return hit;
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const r = await d.one(env, "SELECT code, owner, state, flags FROM recipes WHERE code = ?", code);
   if (!r || r.state !== "visible") return d.json({ error: "not_found" }, 404);
   if (r.owner === dev) return d.json({ error: "own" }, 400);
   const res = await d.run(env, "INSERT OR IGNORE INTO recipe_flags (code, device, reason, at) VALUES (?, ?, ?, ?)", code, dev, reason, now);
   if (!res?.meta?.changes) return d.json({ flagged: true, already: true });
+  // 1.36 [SEC-05] 보안 점검 M3: one network counts once a day for one recipe, so ids made on one line cannot hide others' work.
+  const net = await d.network(request, env, now);
+  if (!(await d.allow(env, `rflagnet|${net.day}|${code}`, 1, DAY, now))) return d.json({ flagged: true });
   const flags = r.flags + 1;
   const hide = flags >= RECIPE_LIMITS.flagsToHide;
   await d.batch(env, [

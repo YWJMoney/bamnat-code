@@ -82,6 +82,7 @@ import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { RECIPE_COLUMNS, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
+import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, writeLeft, writeLimitHit } from "./write-limits.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
@@ -472,6 +473,8 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/activity" && method === "GET") return activity(request, env);
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   if (path === "/api/config" && method === "GET") return json(await config(env));
+  // 1.36 [SEC-11] An install shows Play's verdict once a week (integrity.js).
+  if (path === "/api/integrity" && method === "POST") { await ready(env); return integrityRoute(recipeDeps, request, env, playIntegrity); }
   if (path === "/api/events" && method === "POST") return usage(request, env);
   if (path === "/api/photo-wrong" && method === "POST") return photoWrong(request, env); // AQ 1.29 [PHOTO-10]
   if (path === "/api/plaza/news" && method === "GET") return plazaNews(request, env, url);
@@ -694,6 +697,8 @@ const SCHEMA = [
   // 1.34 [RCP-28] 나눔 판 (recipes.js).
   ...RECIPE_SCHEMA,
   ...COMMUNITY_SCHEMA,
+  // 1.36 [SEC-11] Play Integrity: an install's last verdict (integrity.js).
+  ...INTEGRITY_SCHEMA,
   // 1.36 [PSH-01] 프로 나눔 1인: a buyer's install, its one-time code and the one install it gave 프로 to.
   `CREATE TABLE IF NOT EXISTS pro_shares (owner TEXT PRIMARY KEY, code TEXT UNIQUE, code_at INTEGER, guest TEXT UNIQUE, guest_at INTEGER)`,
   // 1.36 [LIM-10] 쓰기 제한: no daily cap; strikes (posts or recipes hidden) restrict an install for a while (write-limits.js).
@@ -964,9 +969,27 @@ export async function salt(env) {
   return kept;
 }
 
+/**
+ * 1.36 [SEC-01] The caller's network as the limits count it: an IPv4 address as it is, an IPv6 address by its /64 (the part a
+ * home or a phone carrier gives one subscriber). Before, every IPv6 address counted alone, and one line holds 2^64 of them,
+ * so a script could change its address on every try and step past every network limit.
+ */
+export function netOf(ip) {
+  const a = String(ip ?? "").trim().toLowerCase();
+  if (!a.includes(":")) return a || "unknown";
+  const [head, tail] = a.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail !== undefined && tail ? tail.split(":") : [];
+  // An IPv4 tail (::ffff:1.2.3.4) is that IPv4 address.
+  const last = (t.length ? t : h)[(t.length ? t : h).length - 1] ?? "";
+  if (last.includes(".")) return last;
+  const full = tail === undefined ? h : [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
+  return full.slice(0, 4).map((x) => (x || "0").replace(/^0+(?=.)/, "")).join(":") + "::/64";
+}
+
 /** Salted hashes of the caller's address: this hour's, last hour's, the day's and one for logins. */
 export async function network(request, env, now) {
-  const ip = request.headers.get("cf-connecting-ip") || "unknown";
+  const ip = netOf(request.headers.get("cf-connecting-ip") || "unknown");
   const s = await salt(env);
   const hash = async (what) => (await sha256(`${s}|${what}|${ip}`)).slice(0, 32);
   const hour = Math.floor(now / HOUR);
@@ -4139,6 +4162,12 @@ function health(env) {
 }
 
 /** [ADMIN-15] The setup screen's full state, for the owner: health plus the optional services. */
+/** 1.36 [SEC-11] The service account as Play Integrity uses it, or null. */
+export function playIntegrity(env) {
+  const account = playReady(env);
+  return account ? { pkg: env.PLAY_PACKAGE || "com.bamnat.app", token: (scope) => playToken(env, account, Date.now(), scope) } : null;
+}
+
 function serverState(env) {
   // [MON-03] PLAY_SERVICE_ACCOUNT is optional: without it purchases are not checked with Play.
   // [SRV-05] SHARE_BASE_URL and SHARE_ADMIN_TOKEN are optional: without them 공유 링크 신고 says how to connect.
@@ -4269,7 +4298,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
-  if (path === "/server" && method === "GET") return json(serverState(env));
+  if (path === "/server" && method === "GET") return json({ ...serverState(env), integrity: await integrityState(recipeDeps, env, now, playIntegrity(env) !== null) });
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
   if (path === "/admins" && method === "GET") return json(await adminList(env));
   if (path === "/invites" && method === "POST") return invite(request, env, url, now);
@@ -6933,6 +6962,8 @@ async function sameSecret(given, secret) {
  */
 const recipeDeps = {
   one, all, run, batch, stmt, json, readJson, deviceId, deviceHash, network, networkCheck, overLimit, allow, tooMany, randomId, paused, edgeCached,
+  // 1.36 [SEC-11] Play Integrity before a write others see (integrity.js); null to go on.
+  integrity: (env, dev, now) => integrityGate(recipeDeps, env, dev, now),
   legalOpen: async (env, key, now) => serverEval(await flagStore(env), key, now).on,
   hiddenAuthors: async (env, request) => hiddenAuthors(await authorKey(env), request.headers.get("x-hide")),
   authorKey,

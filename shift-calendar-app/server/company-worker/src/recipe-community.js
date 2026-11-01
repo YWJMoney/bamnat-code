@@ -453,6 +453,8 @@ async function rcMakerFlag(d, env, request, id) {
   if (!m) return d.json({ error: "not_found" }, 404);
   if (m.device === dev) return d.json({ error: "own" }, 400);
   const now = Date.now();
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const net = await d.network(request, env, now);
   const hit = await d.overLimit(env, now, [["device", `mflag|${dev}`, COMMUNITY_LIMITS.flagsPerDay, DAY],
     ["network", `mflag|${net.day}`, COMMUNITY_LIMITS.flagsPerNetworkDay, DAY]]);
@@ -847,6 +849,33 @@ async function rcPicks(d, env, url) {
 
 const RC_WEBP = (bytes) => bytes.length > 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
 
+/**
+ * 1.36 [SEC-04] A WebP's width and height from its header (VP8, VP8L or VP8X), or null when it cannot be read or is animated.
+ * Before, only the first bytes and the size were looked at: a picture of one colour, 16383 px a side, is a few KB yet takes about
+ * a gigabyte on a phone that opens it, and the operator's browser shows it as an ordinary picture.
+ */
+export function rcWebpSize(b) {
+  if (!RC_WEBP(b) || b.length < 30) return null;
+  const tag = String.fromCharCode(...b.slice(12, 16));
+  if (tag === "VP8 ") {
+    if (b[23] !== 0x9d || b[24] !== 0x01 || b[25] !== 0x2a) return null;
+    return { w: (b[26] | (b[27] << 8)) & 0x3fff, h: (b[28] | (b[29] << 8)) & 0x3fff };
+  }
+  if (tag === "VP8L") {
+    if (b[20] !== 0x2f) return null;
+    const v = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24);
+    return { w: (v & 0x3fff) + 1, h: ((v >>> 14) & 0x3fff) + 1 };
+  }
+  if (tag === "VP8X") {
+    if (b[20] & 0x02) return null; // animation: the app never makes one
+    return { w: (b[24] | (b[25] << 8) | (b[26] << 16)) + 1, h: (b[27] | (b[28] << 8) | (b[29] << 16)) + 1 };
+  }
+  return null;
+}
+
+/** The largest side a recipe picture may have: the app makes 1080 at most (달력 배경), covers 512. */
+export const RC_IMAGE_SIDE = 1280;
+
 function rcB64bytes(s) {
   try {
     const bin = atob(s);
@@ -869,8 +898,12 @@ async function rcImagePost(d, env, request) {
   const bytes = typeof body.webp === "string" ? rcB64bytes(body.webp) : null;
   if (!bytes || !RC_WEBP(bytes)) return d.json({ error: "image", field: "webp" }, 400);
   if (bytes.length > COMMUNITY_LIMITS.imageBytes) return d.json({ error: "too_big", field: "webp" }, 413);
+  { const size = rcWebpSize(bytes); if (!size || size.w < 1 || size.h < 1 || size.w > RC_IMAGE_SIDE || size.h > RC_IMAGE_SIDE) return d.json({ error: "image_size", field: "webp" }, 400); }
   const hit = await d.overLimit(env, now, [["device", `rimg|${dev}`, COMMUNITY_LIMITS.imagesPerDay, DAY]]);
   if (hit) return hit;
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+
   const id = (await sha256hex(`${dev}|${now}|${body.webp.length}|${d.randomId(8)}`)).slice(0, 16);
   await d.run(env, "INSERT INTO recipe_images (id, owner, data, bytes, at) VALUES (?, ?, ?, ?, ?)", id, dev, body.webp, bytes.length, now);
   return d.json({ id, state: "pending" }, 201);
