@@ -231,6 +231,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var tool by rememberSaveable { mutableStateOf(Tool.CELL) }
     var partNow by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var partPick by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    // [LAY-09] 고급 보기 for the whole studio (부품 숫자 칸·여러 부품·색 변수, 꾸밈 층 숫자 칸, 층 나무), and the item the 층 나무 opens.
+    var studioAdvanced by rememberSaveable { mutableStateOf(false) }
+    var decorFocus by remember { mutableStateOf<Int?>(null) }
+    // [LAY-09] 곳 줄: the six most used, kept on the phone, and '더 보기'.
+    val studioCtx = LocalContext.current
+    val studioPrefs = remember { studioCtx.getSharedPreferences("studio_ui", android.content.Context.MODE_PRIVATE) }
+    var areaUses by remember { mutableStateOf(AreaRank.decode(studioPrefs.getString("areaUses", null))) }
+    var allAreas by rememberSaveable { mutableStateOf(false) }
     var scale by rememberSaveable { mutableStateOf(SCALE_BIG) }
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
@@ -278,7 +286,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // [BLU-06] The bar counts what the 바꾼 곳 sheet lists (PC 3차: 막대는 1개인데 시트는 2줄).
     val changedCount = remember(before, now) { LookParts.changed(before, now).size }
     val diff = remember(s.draft, s.base) { c.recipes.pieces.lookDiff(s.draft, s.base) }
-    fun pick(a: Area) { area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true }
+    fun pick(a: Area) {
+        area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true
+        areaUses = AreaRank.used(areaUses, a.name)
+        runCatching { studioPrefs.edit().putString("areaUses", AreaRank.encode(areaUses)).apply() }
+    }
     // [STU-20] The 기록 목록 says where each change was made.
     vm.where = "${area.labelFor(vm.style)} · ${(if (tool in area.tools) tool else area.tools.first()).label}"
     // [STU-23] 눌러서 고치기: a tap on a part of the example opens its tool, and says so.
@@ -536,7 +548,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // Where, then which tool.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Area.entries.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
+                    val shown = if (allAreas) Area.entries.map { it.name } else AreaRank.shown(Area.entries.map { it.name }, areaUses, area.name)
+                    Area.entries.filter { it.name in shown }.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
+                    if (shown.size < Area.entries.size || allAreas) FilterChip(selected = false, onClick = { allAreas = !allAreas },
+                        label = { Text(if (allAreas) "접기" else "더 보기 ${Area.entries.size - shown.size}") })
+                    FilterChip(selected = studioAdvanced, onClick = { studioAdvanced = !studioAdvanced }, label = { Text("고급 보기") })
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -575,6 +591,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     area.target?.takeIf { it.restricted }?.let { Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     val t = if (tool in area.tools) tool else area.tools.first()
                     val key = (area.target ?: FreeTarget.ALL).keyFor(payStyle)
+                    if (studioAdvanced) {
+                        val partIds = if (Tool.PARTS in area.tools) partsGroupOf(area.name).let { g ->
+                            com.bamnat.core.recipe.BlueprintParts.IDS.filter { it == g || it.startsWith("$g.") || (g == "app" && it.startsWith("app")) }
+                        } else emptyList()
+                        val bp = remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) }
+                        LayerTree(treeRows(partIds, bp, decor, if (Tool.DECOR in area.tools) area.decorPlaces else emptyList()),
+                            onPart = { p -> tool = Tool.PARTS; partPick = p to null },
+                            onDecor = { i -> tool = Tool.DECOR; decorFocus = i })
+                    }
                     fun saveView(v: CalendarView) = vm.change { with(CalendarViewSettings) { it.withView(v) } }
                     when (t) {
                         Tool.CELL -> CellDesigner(view, lookIndex, { lookIndex = it }, ::saveView)
@@ -591,7 +616,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         Tool.SEED -> SeedTool(vm, d)
                         Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, focus = partPick?.first, focusOn = partPick?.second, onFocus = { pid, pon -> partNow = pid to pon; partPick = null },
-                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishing = Triple(body, "", null) } }) { v -> vm.change { it.copy(parts = v) } }
+                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishing = Triple(body, "", null) } }, advanced = studioAdvanced) { v -> vm.change { it.copy(parts = v) } }
                         Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }
@@ -614,7 +639,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Tool.FEATURE -> FeaturesTool(vm, s.extras)
                         Tool.DECOR -> com.bamnat.app.ui.decor.DecorTool(decor, area.decorPlaces, { label, nd ->
                             if (label == null) vm.change { it.copy(decor = nd.encode()) } else vm.changeMerged(label) { it.copy(decor = nd.encode()) }
-                        }, vm::undo)
+                        }, vm::undo, advancedIn = studioAdvanced, onAdvanced = { studioAdvanced = it }, focus = decorFocus, onFocused = { decorFocus = null })
                     }
                     Spacer(Modifier.height(24.dp))
                 }

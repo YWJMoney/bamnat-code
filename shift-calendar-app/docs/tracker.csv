@@ -1646,3 +1646,5 @@ LAY-04,"1.36 스튜디오 완전 자유도 877: 스튜디오 꾸미기 도구 �
 LAY-05,"1.36 스튜디오 완전 자유도 878: 레이어 패널 — 순서·잠금·숨김·묶기·복제",1.36,진행 중,에뮬레이터 확인,"app ui/decor DecorEditor·StudioScreen Tool.DECOR, DecorStudioTest"
 LAY-06,"1.36 스튜디오 완전 자유도 879: 고급 보기·숫자 칸·누른 요소 바로 고치기",1.36,진행 중,에뮬레이터 확인,"app ui/decor DecorEditor·StudioScreen Tool.DECOR, DecorStudioTest"
 LAY-07,"1.36 스튜디오 완전 자유도 880: 위젯 꾸밈 층",1.36,진행 중,에뮬레이터 확인,"app widget/WidgetDecor·WidgetLookTheme, 스튜디오 WidgetSample"
+LAY-08,"1.36 누락 점검 N5 부품 고급 보기: 숫자 칸, 여러 부품 한꺼번에, 색 변수(여러 부품이 같이 쓰는 색을 한 번에 바꾸기·묶기)",1.36,진행 중,에뮬레이터 확인,"StudioPartsTool PartsAdvanced"
+LAY-09,"1.36 누락 점검 N6 곳 줄 자주 쓰는 6곳+더 보기, 스튜디오 고급 보기 하나로(부품·꾸밈 층), 층 나무에서 부품·꾸밈 바로 열기",1.36,진행 중,에뮬레이터 확인,"StudioLayerTree AreaRank·treeRows, StudioLayerTreeTest"

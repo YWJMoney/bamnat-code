@@ -176,7 +176,8 @@ private enum class Pane(val label: String) { ADD("넣기"), EDIT("고치기"), L
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> Unit, onUndo: (() -> Unit)? = null) {
+fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> Unit, onUndo: (() -> Unit)? = null,
+              advancedIn: Boolean? = null, onAdvanced: (Boolean) -> Unit = {}, focus: Int? = null, onFocused: () -> Unit = {}) {
     if (places.isEmpty()) return
     var place by rememberSaveable(places) {
         mutableStateOf(lastPlaces[places]?.takeIf { it in places } ?: decor.items.lastOrNull { it.at in places }?.at ?: places.first())
@@ -185,7 +186,10 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
     val stageW = screenW()
     var picked by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var pane by rememberSaveable { mutableStateOf(Pane.ADD) }
-    var advanced by rememberSaveable { mutableStateOf(false) }
+    // [LAY-09] 고급 보기 is the studio's own when it gives one (one switch for 부품·꾸밈 층·층 나무).
+    var ownAdvanced by rememberSaveable { mutableStateOf(false) }
+    val advanced = advancedIn ?: ownAdvanced
+    fun flipAdvanced() { if (advancedIn == null) ownAdvanced = !ownAdvanced else onAdvanced(!advancedIn) }
     var magnet by rememberSaveable { mutableStateOf(true) }
     var loupe by rememberSaveable { mutableStateOf(true) }
     var many by rememberSaveable { mutableStateOf(false) }
@@ -194,6 +198,12 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
     val valid = picked.filter { it in decor.items.indices && decor.items[it].at == place }.toSet()
     if (valid != picked) picked = valid
     val items = decor.items
+    // [LAY-09] 층 나무 opened one item: its place, picked, 고치기.
+    androidx.compose.runtime.LaunchedEffect(focus) {
+        val i = focus ?: return@LaunchedEffect
+        items.getOrNull(i)?.takeIf { it.at in places }?.let { place = it.at; picked = setOf(i); pane = Pane.EDIT }
+        onFocused()
+    }
 
     fun set(label: String?, f: (DecorItem) -> DecorItem, which: Set<Int> = picked) {
         if (which.isEmpty()) return
@@ -240,7 +250,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
             FilterChip(selected = magnet, onClick = { magnet = !magnet }, label = { Text("🧲 자석") })
             FilterChip(selected = loupe, onClick = { loupe = !loupe }, label = { Text("🔍 돋보기") })
             FilterChip(selected = many, onClick = { many = !many; if (!many && picked.size > 1) picked = setOf(picked.first()) }, label = { Text("여러 개 고르기") })
-            FilterChip(selected = advanced, onClick = { advanced = !advanced }, label = { Text("고급 보기") })
+            FilterChip(selected = advanced, onClick = { flipAdvanced() }, label = { Text("고급 보기") })
         }
         said?.let { line ->
             androidx.compose.runtime.LaunchedEffect(line) { kotlinx.coroutines.delay(4000); said = null }
