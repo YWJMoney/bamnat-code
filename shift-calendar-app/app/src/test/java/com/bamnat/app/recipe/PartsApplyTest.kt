@@ -84,4 +84,19 @@ class PartsApplyTest {
         val plain = lightColorScheme()
         assertSame(plain, PartTheme.colors(plain, Blueprint.EMPTY))
     }
+
+    /** [BLU-07] A 부품 kept from a theme in 장터 holds only that part, and lays on in the studio line by line. */
+    @Test fun onePartIsKeptAlone() {
+        val theme = Recipe(title = "남색 테마", styles = setOf(WorkStyle.SHIFT), pieces = listOf(Piece(PieceKind.PARTS, mapOf("parts" to Blueprint.clean(lines)))))
+        val before = c.wardrobe.kept.value.size
+        assertTrue(c.wardrobe.keep(theme, "PART9999", listOf("part:cal.cell")))
+        val k = c.wardrobe.kept.value.first()
+        assertEquals(before + 1, c.wardrobe.kept.value.size)
+        assertEquals("‘남색 테마’의 부품 · 날짜 칸", k.title)
+        @Suppress("UNCHECKED_CAST")
+        val kept = RecipeCodec.read(k.body).pieces.single().values["parts"] as List<Map<String, Any?>>
+        assertTrue(kept.all { (it["id"] as String).startsWith("cal.cell") })
+        assertEquals("part:cal.cell", com.bamnat.core.recipe.LookParts.partUnit(RecipeCodec.read(k.body)))
+        c.wardrobe.forgetKept(k.id)
+    }
 }

@@ -557,7 +557,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             ScreenCopyRow(vm, d, key) { pick(Area.ALL); tool = Tool.SEED }
                         }
                         Tool.SEED -> SeedTool(vm, d)
-                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, onFocus = { pid, pon -> partNow = pid to pon }) { v -> vm.change { it.copy(parts = v) } }
+                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, onFocus = { pid, pon -> partNow = pid to pon },
+                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishing = Triple(body, "", null) } }) { v -> vm.change { it.copy(parts = v) } }
                         Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }

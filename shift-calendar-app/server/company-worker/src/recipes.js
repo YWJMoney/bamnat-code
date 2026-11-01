@@ -893,6 +893,14 @@ export function tabsOf(body) {
         if (p.money) out.add("money");
         if (p.stats) out.add("pay");
         break;
+      // [BLU-07] 부품 꾸미기: each line's screen by its part's first name.
+      case "parts":
+        for (const l of Array.isArray(p.parts) ? p.parts : []) {
+          const root = String(l?.id ?? "").split(".")[0];
+          const tab = { cal: "calendar", memo: "memo", money: "money", pay: "pay", app: "app", widget: "widget" }[root];
+          if (tab) out.add(tab);
+        }
+        break;
       case "photoLook":
         if (p.bg || p.head || p.icons) out.add("calendar");
         if (p.corners) out.add("app");
@@ -911,6 +919,41 @@ export function tabsOf(body) {
   }
   return [...out].sort();
 }
+
+/** [BLU-07] A blueprint part's unit: cut at the second name (`cal.head.title` → `cal.head`), as BlueprintParts.unitOf. */
+export function partUnit(id) {
+  return String(id).split(".").slice(0, 2).join(".");
+}
+
+/**
+ * [BLU-07] 1.36 부품 하나 (LookParts.partUnit): "part:<unit>" when the only piece is 부품 꾸미기 with every line in one unit, or one
+ * tab's 판 ("cal.board", "memo.view", "money.board") when it is one tabView piece of one tab; else null. 장터 '부품' 구간 (scope `part`).
+ */
+export function partUnitOf(body) {
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return null;
+  }
+  const pieces = rec?.pieces ?? [];
+  if (pieces.length !== 1) return null;
+  const p = pieces[0];
+  if (p?.kind === "parts") {
+    if (!Array.isArray(p.parts) || !p.parts.length) return null;
+    const units = new Set(p.parts.map((l) => partUnit(l?.id ?? "")));
+    return units.size === 1 ? "part:" + [...units][0] : null;
+  }
+  // 갈래 E's 판: one tab's TAB_VIEW keys.
+  if (p?.kind === "tabView") {
+    const keys = Object.keys(p).filter((k) => k !== "kind" && p[k] != null);
+    if (!keys.length) return null;
+    for (const [unit, ks] of Object.entries(VIEW_UNITS)) if (keys.every((k) => ks.includes(k))) return unit;
+  }
+  return null;
+}
+
+const VIEW_UNITS = { "cal.board": ["cal"], "memo.view": ["memo", "memoBy", "memoSort"], "money.board": ["money"] };
 
 /** [MKX-01] 테마 (앱 전체를 한 벌로, 탭 둘 이상이나 앱 전체 색) or 기능별 탭 (탭 하나만); null for one that changes no tab (묶음). */
 export function scopeOf(tabs) {

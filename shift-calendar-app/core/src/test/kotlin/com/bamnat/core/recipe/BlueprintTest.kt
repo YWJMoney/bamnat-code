@@ -166,7 +166,9 @@ class BlueprintTest {
         val now = r(listOf(mapOf("id" to "memo.card", "r" to 12L), mapOf("id" to "cal.head.title", "fill" to 0xFFFFC107L), mapOf("id" to "cal.cell.date", "on" to "today", "fill" to 0xFFFFF4CCL)))
         // PC 1차 (328a5123): 부품 꾸밈이 바꾼 곳에 안 잡혔어요.
         assertEquals(listOf("cal.parts"), LookParts.changed(before, now))
-        assertEquals(listOf("cal.parts", "memo.parts"), LookParts.of(now).map { it.id })
+        // 담아 두기 lists the 부품 one by one.
+        assertEquals(listOf("part:cal.head", "part:cal.cell", "part:memo.card"), LookParts.of(now).map { it.id })
+        assertEquals("부품 · 달력 머리", LookParts.byId("part:cal.head")?.label)
         @Suppress("UNCHECKED_CAST")
         val cal = LookParts.pick(now, listOf("cal.parts")).pieces.single().values["parts"] as List<Map<String, Any?>>
         assertEquals(setOf("cal.head.title", "cal.cell.date"), cal.map { it["id"] }.toSet())
@@ -175,5 +177,24 @@ class BlueprintTest {
         @Suppress("UNCHECKED_CAST")
         val lines = laid.pieces.single().values["parts"] as List<Map<String, Any?>>
         assertEquals(setOf("memo.card", "cal.head.title"), lines.map { it["id"] }.toSet())
+    }
+
+    @Test
+    fun onePartGoesUpKeptAndLaidOnAlone() {
+        assertEquals("cal.head", BlueprintParts.unitOf("cal.head.title"))
+        assertEquals("app", BlueprintParts.unitOf("app"))
+        assertTrue("cal.cell" in BlueprintParts.UNITS && "cal.cell.date" !in BlueprintParts.UNITS)
+        fun r(vararg lines: Map<String, Any?>) = Recipe(title = "t", styles = setOf(WorkStyle.SHIFT), pieces = listOf(Piece(PieceKind.PARTS, mapOf("parts" to Blueprint.clean(lines.toList())))))
+        val head = r(mapOf("id" to "cal.head", "r" to 12L), mapOf("id" to "cal.head.title", "font" to "serif"))
+        assertEquals("part:cal.head", LookParts.partUnit(head))
+        assertNull(LookParts.partUnit(r(mapOf("id" to "cal.head", "r" to 12L), mapOf("id" to "memo.card", "r" to 4L))))
+        assertNull(LookParts.partUnit(head.copy(pieces = head.pieces + Piece(PieceKind.CAL_THEME, mapOf("today" to 0xFF000000L)))))
+        // Kept from a theme, only that 부품's lines come.
+        val theme = r(mapOf("id" to "cal.head.title", "fill" to 0xFF1E335CL), mapOf("id" to "cal.cell", "r" to 8L), mapOf("id" to "app.tab", "on" to "sel", "ink" to 0xFFFFFFFFL))
+        @Suppress("UNCHECKED_CAST")
+        val one = LookParts.pick(theme, listOf("part:cal.head")).pieces.single().values["parts"] as List<Map<String, Any?>>
+        assertEquals(listOf("cal.head.title"), one.map { it["id"] })
+        assertNull(LookParts.byId("part:cal.sticker"))
+        assertEquals(com.bamnat.core.layout.TabOrder.SETTINGS, LookParts.byId("part:app.tab")?.tab)
     }
 }

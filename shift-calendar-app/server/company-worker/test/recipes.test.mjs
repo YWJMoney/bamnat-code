@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { server, device, from, signIn } from "./helpers.mjs";
-import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf } from "../src/recipes.js";
+import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf, partUnitOf } from "../src/recipes.js";
 
 const cases = JSON.parse(readFileSync(new URL("../../../docs/recipe-cases.json", import.meta.url), "utf8"));
 /** After 처리방침 3.8 is in force (시행 2026-11-29 KST). */
@@ -338,4 +338,16 @@ test("[STU-38] 1.36 위젯 꾸미기: background and text colour, corners and te
   for (const bad of [{ ...w, corner: 40 }, { ...w, text: "xl" }, { ...w, bg: "red" }]) {
     await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, bad] }))), (e) => e.code !== undefined, JSON.stringify(bad));
   }
+});
+
+test("[BLU-07] 부품 하나: the unit of a recipe that is one blueprint part, and its screen", () => {
+  const head = { pieces: [{ kind: "parts", parts: [{ id: "cal.head", r: 12 }, { id: "cal.head.title", font: "serif" }] }] };
+  assert.equal(partUnitOf(head), "part:cal.head");
+  assert.equal(partUnitOf(JSON.stringify(head)), "part:cal.head");
+  assert.equal(partUnitOf({ pieces: [{ kind: "tabView", memo: "board", memoBy: "tag" }] }), "memo.view");
+  assert.equal(partUnitOf({ pieces: [{ kind: "tabView", cal: "rota", money: "cal" }] }), null);
+  assert.deepEqual(tabsOf(head), ["calendar"]);
+  assert.equal(partUnitOf({ pieces: [{ kind: "parts", parts: [{ id: "cal.head" }, { id: "memo.card" }] }] }), null);
+  assert.equal(partUnitOf({ pieces: [head.pieces[0], { kind: "calTheme", today: 1 }] }), null);
+  assert.deepEqual(tabsOf({ pieces: [{ kind: "parts", parts: [{ id: "app.tab", on: "sel" }, { id: "money.amount", on: "in" }] }] }), ["app", "money"]);
 });

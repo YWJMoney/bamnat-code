@@ -115,3 +115,11 @@
 ## 6. 옛 조각 옮겨 읽기
 
 `Blueprint.fromLegacy(calTheme, calView, …)`이 옛 조각을 같은 뜻의 부품 줄로 바꿔요. 스튜디오의 부품 보기가 이 값을 '지금 모습'으로 보여 주고, 옛 레시피를 부품으로 고칠 때 시작점이 돼요. 그리기는 3항대로 옛 조각 그대로 + 설계도 덮어쓰기라, 옮겨 읽기가 화면을 바꾸는 일은 없어요.
+
+## 8. 부품 하나 올리기·담기·얹기 (BLU-07, 사용자 2026-11-01)
+
+- **단위**: 설계도 id를 두 번째 이름까지 자른 것(`cal.head.title` → `cal.head`, `app` → `app`). core `BlueprintParts.unitOf/UNITS`, 서버 `partUnit(id)`.
+- **앱 id**: 담기·얹기·입어 보기에서 부품 하나는 `part:<단위>`(`LookParts.UNIT`). `LookParts.byId`가 그때그때 만들고, `LookParts.of(r)`가 부품을 하나씩 나열해요. 탭 단위 '달력 부품' 등(`cal.parts` …)은 바꾼 곳·탭 처음대로에만 써요.
+- **부품 작품**(장터 '부품' 구간, 서버 scope `part`): 조각이 하나뿐이고 그 조각 전체가 한 단위예요. core `LookParts.partUnit(r)`, 서버 `partUnitOf(body)`가 같은 규칙으로 앱 id를 돌려줘요: 설계도 `part:cal.head`, 갈래 E의 판 `cal.board`·`memo.view`·`money.board`(tabView 조각이 한 탭 몫일 때).
+- **올리기**: 스튜디오 › 부품 › "‘달력 머리’ 부품만 장터에 올리기"(`StudioViewModel.uploadPart`). 장터 구간·목록 필터(`scope=part&unit=`)는 갈래 F.
+- 서버 `tabsOf`는 parts 줄을 첫 이름으로 화면에 넣어요(cal→calendar, memo, money, pay, app, widget).

@@ -51,6 +51,16 @@ object BlueprintParts {
     }
 
     /** A part's children by their last name, in the app's own order: what `order` may name. */
+    /**
+     * [BLU-07] 1.36 부품 하나 (사용자 2026-11-01 "부품들 기능을 만든 것이 있으면 해당 카테고리에 맞게 찾아서 스튜디오에서 사용"): the unit a 부품
+     * goes up, is kept and is laid on as — a part with the parts inside it, cut at the second name: `cal.head` (달력 머리와 달 이름·단추),
+     * `cal.cell` (날짜 칸과 속), `memo.card`, `app.tab`; a top part (`app`, `cal`) is its own unit.
+     */
+    fun unitOf(id: String): String = id.split('.').take(2).joinToString(".")
+
+    /** Every unit, in the order of [IDS]. */
+    val UNITS: List<String> by lazy { IDS.map(::unitOf).distinct() }
+
     val CHILDREN: Map<String, List<String>> = IDS.groupBy { parentOf(it) }.filterKeys { it != null }
         .mapKeys { it.key!! }.mapValues { (_, v) -> v.map { it.substringAfterLast('.') } }
 

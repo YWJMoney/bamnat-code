@@ -50,6 +50,8 @@ internal fun PartsTool(
     focusOn: String? = null,
     /** The part and state being changed, for the line kept above the tools while they scroll (PC 1차 사용성 제안). */
     onFocus: (id: String, on: String?) -> Unit = { _, _ -> },
+    /** [BLU-07] 이 부품만 올리기: the unit of the part being changed; null hides the button. */
+    onUploadPart: ((unit: String) -> Unit)? = null,
     onChange: (String) -> Unit,
 ) {
     val bp = remember(parts) { Blueprint.decode(parts) }
@@ -182,6 +184,13 @@ internal fun PartsTool(
             val others = bp.lines.filterNot { it["id"] == id && it["on"] == on }
             onChange(if (others.isEmpty()) "" else Blueprint(others).encode())
         }, modifier = Modifier.fillMaxWidth()) { Text("이 부품 처음대로 (${STATE_WORDS[on] ?: "언제나"})") }
+        // [BLU-07] 1.36 이 부품만 올리기 (사용자 2026-11-01): 장터 '부품'에 이 부품(과 그 속)만, 다른 분이 스튜디오에서 얹어 써요.
+        val unit = BlueprintParts.unitOf(id)
+        if (onUploadPart != null && bp.lines.any { BlueprintParts.unitOf(it["id"] as? String ?: "") == unit }) {
+            OutlinedButton(onClick = { onUploadPart(unit) }, modifier = Modifier.fillMaxWidth()) { Text("‘${BlueprintParts.LABELS[unit] ?: unit}’ 부품만 장터에 올리기") }
+            Text("이 부품과 그 안의 부품 꾸밈만 올라가요. 받는 분은 장터에서 담아 두고 스튜디오 보관함에서 얹어 써요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

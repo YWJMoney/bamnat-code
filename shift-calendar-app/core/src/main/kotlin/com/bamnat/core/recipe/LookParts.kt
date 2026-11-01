@@ -68,7 +68,41 @@ object LookParts {
     /** Whether the blueprint part [id] sits under one of [roots]. */
     fun under(id: String?, roots: Set<String>): Boolean = id != null && roots.any { id == it || id.startsWith("$it.") }
 
-    fun byId(id: String): Part? = ALL.firstOrNull { it.id == id }
+    fun byId(id: String): Part? = ALL.firstOrNull { it.id == id } ?: id.removePrefix(UNIT).takeIf { id.startsWith(UNIT) && it in BlueprintParts.UNITS }?.let(::unit)
+
+    /** [BLU-07] "part:cal.head": one 부품 (a blueprint unit) as a part of its own, to keep, lay on and send alone. */
+    const val UNIT = "part:"
+
+    /** The screen a blueprint unit belongs to. */
+    fun tabOfUnit(unit: String): String = when (unit.substringBefore('.')) {
+        "cal" -> TabOrder.CALENDAR; "memo" -> TabOrder.MEMOS; "money" -> TabOrder.MONEY; "pay" -> TabOrder.STATS; "widget" -> WIDGET; else -> TabOrder.SETTINGS
+    }
+
+    fun unit(unit: String): Part = Part(UNIT + unit, tabOfUnit(unit), "부품 · " + (BlueprintParts.LABELS[unit] ?: unit), listOf(Take.Parts(setOf(unit))))
+
+    /** The 부품 units [r]'s blueprint touches, in the order of [BlueprintParts.UNITS]. */
+    fun units(r: Recipe): List<String> {
+        val ids = (r.pieces.firstOrNull { it.kind == PieceKind.PARTS }?.values?.get("parts") as? List<*>)
+            ?.mapNotNull { (it as? Map<*, *>)?.get("id") as? String }.orEmpty().map(BlueprintParts::unitOf).toSet()
+        return BlueprintParts.UNITS.filter { it in ids }
+    }
+
+    /**
+     * [BLU-07] The part [r] is when it is a 부품 work (장터 '부품' 구간, the server's scope `part`, recipes.js partUnitOf): its only piece is
+     * 부품 꾸미기 with every line in one unit ("part:cal.head"), or one tab's 판 (갈래 E TAB_VIEW: "cal.board", "memo.view", "money.board").
+     * Null for a theme or a tab's looks. The answer is a [byId] id.
+     */
+    fun partUnit(r: Recipe): String? {
+        val p = r.pieces.singleOrNull() ?: return null
+        if (p.kind == PieceKind.PARTS) return units(r).singleOrNull()?.let { UNIT + it }
+        // 갈래 E's piece, read by its name so this file stands before and after it.
+        if (p.kind.name != "TAB_VIEW") return null
+        val keys = p.values.filterValues { it != null }.keys
+        return VIEW_UNITS.entries.firstOrNull { (_, ks) -> keys.isNotEmpty() && ks.containsAll(keys) }?.key
+    }
+
+    /** 갈래 E's 판 parts by the TAB_VIEW keys each takes. */
+    private val VIEW_UNITS = mapOf("cal.board" to setOf("cal"), "memo.view" to setOf("memo", "memoBy", "memoSort"), "money.board" to setOf("money"))
 
     /** The values [t] takes from [values], or null when it takes nothing there. */
     fun take(t: Take, values: Map<String, Any?>): Map<String, Any?>? = when (t) {
@@ -84,8 +118,9 @@ object LookParts {
     }
 
     /** The parts [r] has, in the order of [TABS]. */
-    fun of(r: Recipe): List<Part> = ALL.filter { p -> p.takes.any { t -> r.pieces.firstOrNull { it.kind == t.kind }?.let { take(t, it.values) } != null } }
-        .sortedBy { TABS.indexOf(it.tab) }
+    fun of(r: Recipe): List<Part> = (ALL.filter { p -> p.takes.none { it is Take.Parts } && p.takes.any { t -> r.pieces.firstOrNull { it.kind == t.kind }?.let { take(t, it.values) } != null } } +
+        // [BLU-07] 부품 one by one ('부품 · 달력 머리'), so 담아 두기 and 입어 보기 can take one of them.
+        units(r).map(::unit)).sortedBy { TABS.indexOf(it.tab) }
 
     /** [r] with only the parts [ids] (its other pieces — 알람, 규칙 — are not looks and are left out too). */
     fun pick(r: Recipe, ids: Collection<String>): Recipe {
