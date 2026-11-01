@@ -3653,9 +3653,13 @@ function adminApp(L, BUILD, M) {
     "flag-clear": ({ key }) => {
       const r = S.data.flag;
       confirmBox("강제를 풀까요?", `${r?.name ?? key}이(가) 다시 조건대로 켜지고 꺼져요. 지금 조건이면 ${r?.checklist?.every((c) => c.met !== false) ? "켜져요" : "꺼진 채예요"}.`, "풀기", async () => {
-        const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", { force: null }), "강제를 풀었어요");
+        // 1.36 PC 재검토 ('강제 켬 풀기' 뒤에도 '강제로 켰어요'가 남아 다시 누르게 돼요): the answer is drawn at once and the toast
+        // says the state it is in now; the page is read again past any kept copy.
+        const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", { force: null }),
+          (r) => `강제를 풀었어요 · 지금 ${(FLAG_STATE[r?.state] ?? ["", "조건대로"])[1]}`);
         if (d) S.data.flag = d;
         render({ keepScroll: true });
+        etags.clear();
         load({ quiet: true });
       }, "primary");
     },

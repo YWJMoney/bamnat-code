@@ -663,7 +663,7 @@ private fun PayResult(
                 estimated = Unknowns.BASE in profile.estimatedFields,
                 enabled = unlocked,
                 onEdit = { editTarget = ValueTarget.Base },
-                onRaise = { if (bulkOpen) raiseTarget = ValueTarget.Base else openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) },
+                onRaise = { if (bulkOpen || com.bamnat.app.ui.pro.tryFeature(Feature.PAY_BULK_EDIT)) raiseTarget = ValueTarget.Base else openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) },
                 onEstimate = { estimate = Estimates.forValue(profile, month, null) },
             )
             profile.items.forEach { item ->
@@ -683,7 +683,7 @@ private fun PayResult(
                     unknownAmount = Unknowns.item(item.id) in profile.estimatedFields,
                     enabled = unlocked,
                     onEdit = { editTarget = ValueTarget.Item(item.id) },
-                    onRaise = { if (bulkOpen) raiseTarget = ValueTarget.Item(item.id) else openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) },
+                    onRaise = { if (bulkOpen || com.bamnat.app.ui.pro.tryFeature(Feature.PAY_BULK_EDIT)) raiseTarget = ValueTarget.Item(item.id) else openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) },
                     // Only a monthly allowance can raise the 통상시급, so only it has the switch.
                     ordinary = item.ordinary.takeIf { item.cadence == Cadence.MONTHLY && !item.isFixedOvertime },
                     onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
@@ -715,7 +715,7 @@ private fun PayResult(
                 OutlinedButton(onClick = { addingBonus = true }, enabled = unlocked) {
                     Icon(Icons.Filled.Add, null); Text(" 상여금 추가")
                 }
-                OutlinedButton(onClick = { if (gate.allows(Feature.PAY_RULE_IMPORT)) importing = true else openPro(com.bamnat.app.tier.Feature.PAY_RULE_IMPORT) }) {
+                OutlinedButton(onClick = { if (gate.allows(Feature.PAY_RULE_IMPORT) || com.bamnat.app.ui.pro.tryFeature(Feature.PAY_RULE_IMPORT)) importing = true else openPro(com.bamnat.app.tier.Feature.PAY_RULE_IMPORT) }) {
                     Icon(Icons.Filled.ContentPaste, null); Text(" 규칙 글로 채우기")
                     Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAY_RULE_IMPORT)) // [TIER-06]
                 }

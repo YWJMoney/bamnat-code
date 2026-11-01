@@ -102,8 +102,14 @@ internal fun ProOfferContent(c: AppContainer, feature: Feature?, gate: Gate, onP
                 modifier = Modifier.semantics { heading() })
         }
         Text("이렇게 쓸 수 있어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Button(onClick = onPro, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
-        LeaseAdOption(feature, gate, onOpened = ProOffer::close)
+        // 1.36 PC 재검토: while the bundle's free first week is there, it is the one blue button on top and 프로 is a text button.
+        if (feature != null && gate.canTry(feature)) {
+            LeaseAdOption(feature, gate, onOpened = ProOffer::close)
+            androidx.compose.material3.TextButton(onClick = onPro, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
+        } else {
+            Button(onClick = onPro, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
+            LeaseAdOption(feature, gate, onOpened = ProOffer::close)
+        }
         if (c.inviteApi.enabled) {
             HorizontalDivider()
             Text("친구 초대로 프로 이용권 받기", style = MaterialTheme.typography.titleMedium)

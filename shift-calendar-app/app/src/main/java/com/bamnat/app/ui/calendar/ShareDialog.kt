@@ -253,7 +253,7 @@ fun ShareDialog(
             // [PROV-05] 근무표 PDF (프로): the month on screen or its year, on A4 to print or keep.
             val pdfOpen = container.featureGate.state.collectAsState().value.allows(com.bamnat.app.tier.Feature.ROSTER_PDF)
             fun rosterPdf(year: Boolean) {
-                if (!pdfOpen) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return }
+                if (!pdfOpen && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.ROSTER_PDF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return }
                 val name = when {
                     title.isNotBlank() -> "${title.trim()}의 ${com.bamnat.core.work.scheduleWord(style)}"
                     added && calendar != null -> "${calendar.name} ${com.bamnat.core.work.scheduleWord(style)}"
