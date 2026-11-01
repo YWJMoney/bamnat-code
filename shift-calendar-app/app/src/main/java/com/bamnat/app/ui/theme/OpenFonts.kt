@@ -121,7 +121,8 @@ object OpenFonts {
             chain.any { it is UnknownHostException } -> Reason("인터넷에 연결되지 않았어요")
             chain.any { it is SocketTimeoutException } -> Reason("인터넷이 느려 받지 못했어요")
             chain.any { it is IOException } -> Reason("인터넷 연결이 끊겼어요")
-            else -> Reason("글꼴을 받지 못했어요 (${e.javaClass.simpleName})")
+            // PC 확인 4차: no class name for the user.
+            else -> Reason("글꼴을 받다가 중간에 멈췄어요. 다시 눌러 주세요")
         }
     }
 }

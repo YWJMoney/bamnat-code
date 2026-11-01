@@ -25,6 +25,6 @@ class OpenFontsTest {
     @Test fun networkTroubleIsNotADateProblem() {
         assertEquals(OpenFonts.Reason("인터넷에 연결되지 않았어요"), OpenFonts.reasonOf(UnknownHostException("fonts.googleapis.com")))
         assertFalse(OpenFonts.reasonOf(IOException("reset")).time)
-        assertTrue(OpenFonts.reasonOf(IllegalStateException("x")).text.contains("IllegalStateException"))
+        assertTrue(OpenFonts.reasonOf(IllegalStateException("x")).text.let { it.contains("중간에 멈췄어요") && !it.contains("Exception") })
     }
 }

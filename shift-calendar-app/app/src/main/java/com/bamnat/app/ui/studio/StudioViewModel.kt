@@ -111,6 +111,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     private val phone = c.settingsRepository.current
     /** PC 재검토 C10: open on 느낌으로 새로 만들기 (once). */
     var askFeel: Boolean by androidx.compose.runtime.mutableStateOf(false)
+    /** [MAT-05] open on 앱 전체 › 글꼴 (once). */
+    var openFont: Boolean by androidx.compose.runtime.mutableStateOf(false)
 
     private val _state = MutableStateFlow(State(draft = phone, base = phone, origin = Origin.Mine(mineTitle())))
     val state: StateFlow<State> = _state.asStateFlow()
@@ -141,6 +143,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             }
             // PC 재검토 C10: 공방's '느낌으로 새로' opens the studio on the 느낌 picker.
             start == START_FEEL -> { refresh(both = true); askFeel = true }
+            // PC 확인 4차 (B): 설정 검색 '글꼴' opens on 앱 전체 › 글꼴.
+            start == START_FONT -> { refresh(both = true); openFont = true }
             start.startsWith(START_DRAFT) -> {
                 refresh(both = true)
                 start.removePrefix(START_DRAFT).toLongOrNull()?.let { resume(it) }
@@ -834,6 +838,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** "draft:<id>": a 만들던 레시피 kept on the phone. */
         const val START_DRAFT = "draft:"
         const val START_FEEL = "feel"
+        const val START_FONT = "font"
         /** PC 확인 L5: the studio's 잠근 화면, this phone's. */
         const val LOCK_PREFS = "studio_locks"
         /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */

@@ -33,6 +33,8 @@ enum class SettingsGo {
     STUDIO,
     /** [LEAVE-14] 1.36 연차 화면 (설정 › 급여와 연차 › 연차). */
     LEAVE,
+    /** [MAT-05] 1.36 스튜디오 › 앱 전체 › 글꼴 (PC 확인 4차: 설정 검색 '글꼴'). */
+    STUDIO_FONT,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

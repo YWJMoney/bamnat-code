@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.theme
 
+import kotlinx.coroutines.launch
 import android.content.Context
 import android.net.Uri
 import androidx.compose.material3.Typography
@@ -100,6 +101,19 @@ object AppFonts {
      * Brings [id] down now (at most two minutes; 본명조 is 14 MB) and keeps it; every text in that font draws in it after. Offline, a font Google Fonts
      * does not have, or a full phone ends in [Load.FAILED] with the reason in [reasons].
      */
+    /**
+     * PC 확인 4차: 본명조를 고르면 고르기 창이 닫히며 그 창의 받기도 취소돼 '못 받았어요 (LeftCompositionCancellationException)'.
+     * A download now belongs to the app, not to the screen that asked for it: closing the picker or leaving the screen goes on with it.
+     */
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate)
+
+    /** Starts bringing [id] down in the app's own scope (nothing if it is down or coming down). */
+    fun start(context: Context, id: String) {
+        if (!downloads(id) || loads[id] == Load.LOADING || loads[id] == Load.READY) return
+        val app = context.applicationContext
+        scope.launch { fetch(app, id) }
+    }
+
     suspend fun fetch(context: Context, id: String) {
         if (!downloads(id) || loads[id] == Load.LOADING) return
         if (OpenFonts.file(context, id, bold = false) != null) { loads[id] = Load.READY; return }
@@ -114,7 +128,14 @@ object AppFonts {
                     if (read - last >= 256 * 1024 || read == total) { last = read; progress[id] = read to total }
                 }?.let { OpenFonts.Reason(it) }
             }
-        }.fold({ it }, { if (it is kotlinx.coroutines.TimeoutCancellationException) OpenFonts.Reason("시간이 오래 걸려 멈췄어요") else OpenFonts.reasonOf(it) })
+        }.fold({ it }, {
+            when (it) {
+                is kotlinx.coroutines.TimeoutCancellationException -> OpenFonts.Reason("시간이 오래 걸려 멈췄어요")
+                // Cancelled from outside (the app closing): not a failure to show; the next ask starts again.
+                is kotlinx.coroutines.CancellationException -> { loads.remove(id); progress.remove(id); throw it }
+                else -> OpenFonts.reasonOf(it)
+            }
+        })
         forget(id)
         progress.remove(id)
         if (why == null) loads[id] = Load.READY else { reasons[id] = why; loads[id] = Load.FAILED }
@@ -134,7 +155,7 @@ object AppFonts {
 fun rememberFontFamily(id: String?, fetch: Boolean = true): FontFamily? {
     val ctx = LocalContext.current
     val load = id?.let { AppFonts.loads[it] }
-    if (fetch && id != null && AppFonts.downloads(id) && load == null) androidx.compose.runtime.LaunchedEffect(id) { AppFonts.fetch(ctx, id) }
+    if (fetch && id != null && AppFonts.downloads(id) && load == null) androidx.compose.runtime.LaunchedEffect(id) { AppFonts.start(ctx, id) }
     return remember(id, load) { AppFonts.family(ctx, id) }
 }
 

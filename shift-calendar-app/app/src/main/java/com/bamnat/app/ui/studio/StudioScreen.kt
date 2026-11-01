@@ -259,6 +259,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var resumeShut by rememberSaveable { mutableStateOf(false) }
     var feelOpen by remember { mutableStateOf(false) }
     LaunchedEffect(vm.askFeel) { if (vm.askFeel) { vm.askFeel = false; feelOpen = true } }
+    LaunchedEffect(vm.openFont) { if (vm.openFont) { vm.openFont = false; area = Area.ALL; tool = Tool.FONT } }
     val shotLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     // [STU-41] The example as a picture, taken as 올리기 opens.
     fun takeShot() { scope.launch { StudioShot.last = runCatching { shotLayer.toImageBitmap().asAndroidBitmap() }.getOrNull() } }

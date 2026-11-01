@@ -351,7 +351,6 @@ fun PhotoFrameEditor(label: String, value: String?, onChange: (String?) -> Unit)
 fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
     // PC 확인 2차: the font before the last pick, for 전 글꼴로 when the new one could not come down.
     var before by remember { mutableStateOf<String?>(null) }
     var picked by remember { mutableStateOf(false) }
@@ -367,7 +366,7 @@ fun FontRow(label: String, value: String?, onPick: (String?) -> Unit) {
         if (value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
     }
     if (value != null) FontLoadLine(load, AppFonts.reasons[value], AppFonts.progress[value],
-        retry = { scope.launch { AppFonts.fetch(ctx, value) } },
+        retry = { AppFonts.start(ctx, value) },
         standIn = { onPick(AppFonts.standInId(value)) },
         // PC 확인 3차: 전 글꼴로 always, 처음대로 when there was none before.
         back = { onPick(if (picked) before else null) }, backName = if (picked && before != null) FontCatalog.byId(before!!)?.name else null)
