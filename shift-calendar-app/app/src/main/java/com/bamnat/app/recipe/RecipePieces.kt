@@ -462,7 +462,7 @@ class RecipePieces(private val c: AppContainer) {
                     if (kind == PieceKind.LOGIC) {
                         val had = com.bamnat.core.formula.Logic.decode(now.logic).rules.map { it.key }.toSet()
                         val store = com.bamnat.app.logic.LogicStore(c.appContext)
-                        com.bamnat.core.formula.Logic.from(vals).writingRules.filter { it.key !in had }.forEach { store.setOff(it.key, true) }
+                        com.bamnat.core.formula.Logic.from(vals).writingRules.filter { it.key !in had }.forEach { store.gotOff(it.key) }
                         com.bamnat.app.logic.LogicRunner.rulesChanged(c)
                     }
                     JSONObject().put("settings", out)

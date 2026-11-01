@@ -141,6 +141,11 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
      * in the row (it was eleventh, three swipes away).
      */
     FEATURES("기능", null, TabOrder.CALENDAR),
+    /**
+     * [RUL-06] 1.36 규칙·단추 (사용자 2026-11-01 "수식·조건으로 모든 곳을 이어 직접"): 규칙, 단추, 조건부 꾸미기 in one place. PC D8: third in
+     * the row, next to 기능 (맨 끝이라 스튜디오 안에서 못 찾고 설정 › 스튜디오에서 열기로 들어갔어요).
+     */
+    RULES("규칙·단추", null, TabOrder.CALENDAR),
     MONEY("가계부", FreeTarget.MONEY, TabOrder.MONEY),
     MEMO("메모", FreeTarget.MEMO, TabOrder.MEMOS),
     STATS("통계", FreeTarget.STATS, TabOrder.STATS),
@@ -151,11 +156,6 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
     GUARDED("결제·처리방침", FreeTarget.GUARDED, TabOrder.SETTINGS),
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
-    /**
-     * [RUL-06] 1.36 규칙·단추 (사용자 2026-11-01 "수식·조건으로 모든 곳을 이어 직접"): 규칙, 단추, 조건부 꾸미기 in one place, right after 앱
-     * 전체 (PC 1차 확인: 기능 › 글자 탭만으로는 못 찾았어요).
-     */
-    RULES("규칙·단추", null, TabOrder.CALENDAR),
     ;
 
     /** F-97: the area chips say what the bottom tabs say for this kind of work (근무·급여, 장부 …), not a name of their own. */

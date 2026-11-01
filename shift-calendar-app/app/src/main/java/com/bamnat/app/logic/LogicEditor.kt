@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -483,20 +484,23 @@ fun LogicEditor(
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         logic.rules.forEachIndexed { i, r ->
             val on = remember(bump, r.key) { !store.isOff(r.key) }
+            val came = remember(bump, r.key) { store.cameOff(r.key) }
             // PC 1차 확인 (사용성 제안 높): when it comes next and what happened last time, so a rule that did not run says why.
             val note = remember(bump, r, facts) {
                 // PC D7: a received rule kept once because this one does the same.
                 val same = store.sameRule(r.key)?.let { "받은 ‘$it’${com.bamnat.app.ui.Fmt.wa(it)} 같음" }
                 if (!phone) same else listOfNotNull(
                     same,
-                    if (!on) "꺼져 있어요" else nextLine(r, facts),
+                    // PC D8 (사용성 낮): 받은 쓰기 규칙이 왜 꺼져 있는지.
+                    if (!on) (if (store.cameOff(r.key)) "받은 규칙이라 꺼진 채로 들어왔어요" else "꺼져 있어요") else nextLine(r, facts),
                     store.lastResult(r.key)?.let { "지난번 $it" },
                     "지난 7일 ${store.runs(r.name)}번",
                 ).joinToString(" · ")
             }
             LineCard("${r.name}: ${r.say()}", note,
                 if (phone) on else null, { v -> store.setOff(r.key, !v); bump++; LogicRunner.schedule(c) },
-                onEdit = { editRule = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
+                onEdit = { editRule = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
+                action = ("켜기" to { store.setOff(r.key, false); bump++; LogicRunner.schedule(c) }).takeIf { phone && !on && came })
             // [RUL-06] 이 조건을 쓰는 곳: the same 조건 also decorates days.
             if (r.cond.isNotEmpty() && usedInParts(r.cond)) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("이 조건은 조건부 꾸미기에도 쓰여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -549,12 +553,15 @@ fun LogicEditor(
 }
 
 @Composable
-private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Boolean) -> Unit)?, onEdit: (() -> Unit)?, onRemove: (() -> Unit)?) {
+private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Boolean) -> Unit)?, onEdit: (() -> Unit)?, onRemove: (() -> Unit)?,
+    /** PC D8: one more thing to do on the line (받은 규칙 '켜기'). */
+    action: Pair<String, () -> Unit>? = null) {
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(text, style = MaterialTheme.typography.bodyMedium)
                 note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                action?.let { (w, go) -> TextButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text(w) } }
             }
             if (on != null && onSwitch != null) Switch(on, onSwitch, Modifier.semantics { contentDescription = if (on) "규칙 켜짐" else "규칙 꺼짐" })
             onEdit?.let { TextButton(onClick = it) { Text("고치기") } }

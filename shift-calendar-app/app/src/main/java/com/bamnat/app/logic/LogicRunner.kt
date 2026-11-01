@@ -446,8 +446,17 @@ class LogicStore(context: Context) {
     fun setOff(key: String, off: Boolean) {
         val s = p.getStringSet("off", emptySet()).orEmpty().toMutableSet()
         if (off) s += key else s -= key
-        p.edit().putStringSet("off", s).apply()
+        val got = p.getStringSet("gotOff", emptySet()).orEmpty().toMutableSet()
+        if (!off) got -= key
+        p.edit().putStringSet("off", s).putStringSet("gotOff", got).apply()
     }
+
+    /** [SEC-12] Someone else's rule that writes, come in switched off; PC D8: its line says so, with 켜기, until it is switched on. */
+    fun gotOff(key: String) {
+        setOff(key, true)
+        p.edit().putStringSet("gotOff", p.getStringSet("gotOff", emptySet()).orEmpty() + key).apply()
+    }
+    fun cameOff(key: String): Boolean = key in p.getStringSet("gotOff", emptySet()).orEmpty() && isOff(key)
 
     /**
      * PC D7 (사용성 제안): a received rule or button kept once because one of mine does the same ([Logic.plus]), its name on my line

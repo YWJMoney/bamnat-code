@@ -122,7 +122,8 @@ data class LogicAct(val verb: LogicVerb, val arg: String = "", val amount: Long?
         LogicVerb.NOTIFY -> "‘${arg.ifEmpty { "알림" }}’ 알림"
         LogicVerb.MEMO_TEMPLATE -> "‘${arg.ifEmpty { "메모" }}’ 메모 틀 열기"
         LogicVerb.NEW_MEMO -> "‘${arg.ifEmpty { "메모" }}’ 메모 만들기"
-        LogicVerb.CHECK_RESET -> "‘${arg.ifEmpty { "체크 목록" }}’ 체크 다시 비우기"
+        // PC D8 (사용성 중): 제목이 비면 그날의 모든 목록이에요 (이름 있는 목록처럼 읽히지 않게).
+        LogicVerb.CHECK_RESET -> if (arg.isEmpty()) "그날 모든 체크 목록 다시 비우기" else "‘$arg’ 체크 다시 비우기"
         LogicVerb.ADD_MONEY -> "가계부에 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’ 넣기"
         LogicVerb.ADD_INCOME -> "가계부 수입에 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’ 넣기"
         LogicVerb.MEMO_LINE -> "그날 메모에 ‘${arg.ifEmpty { "한 줄" }}’ 더하기"

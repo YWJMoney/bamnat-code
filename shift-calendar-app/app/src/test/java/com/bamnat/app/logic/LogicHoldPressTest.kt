@@ -69,6 +69,19 @@ class LogicHoldPressTest {
         assertEquals(null, store.sameRule(mine.rules[1].key))
     }
 
+    @Test fun receivedOffSaysSoUntilOn() {
+        // PC D8 (사용성 낮): 받은 쓰기 규칙은 '받은 규칙이라 꺼진 채로 들어왔어요 · 켜기', 켜면 그 말이 사라져요.
+        val store = LogicStore(app)
+        store.gotOff("k1")
+        assertTrue(store.isOff("k1") && store.cameOff("k1"))
+        store.setOff("k1", false)
+        assertFalse(store.cameOff("k1"))
+        store.setOff("k1", true)
+        assertFalse(store.cameOff("k1"))
+        assertEquals("그날 모든 체크 목록 다시 비우기", LogicAct(LogicVerb.CHECK_RESET, "").say())
+        assertEquals("‘아침’ 체크 다시 비우기", LogicAct(LogicVerb.CHECK_RESET, "아침").say())
+    }
+
     @Test fun idsKeepAndRoundTrip() {
         val l = Logic.decode(c.settingsRepository.current.logic)
         assertEquals(listOf("deco1", "deco2"), l.buttons.map { it.id })
