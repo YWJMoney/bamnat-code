@@ -1,7 +1,7 @@
 // SP1 1.30 [SPD-07] 1.30 묶음 SP1 (사용자 2026-10-27: "여전히 조회하는 로딩이 너무 느리다 … 아주 중요한 문제"): how many times each read
 // of the app waits for D1, held to a budget so a later change cannot quietly go back to one version after another. Every
-// statement waits [MS] here, as a D1 a region away does; statements sent together wait once, so the time over [MS] is the
-// number of rounds. Each path is asked twice and the shorter counts (a busy test machine only adds time). D1 binds at most 100
+// statement waits [MS] here, as a D1 a region away does; statements sent together wait once, and each wait that starts with
+// none in flight is a round (counted, not timed, so a busy machine cannot add one). Each path is asked twice and the shorter counts (a busy test machine only adds time). D1 binds at most 100
 // values a statement; a statement with more fails the test. Companies are made up. `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -12,8 +12,13 @@ const MS = 25;
 
 /** The worker's DB with every statement counted, its binds checked and [MS] of wait each; sessions go through it too. */
 function timed(DB) {
-  const counter = { n: 0 };
-  const wait = () => new Promise((r) => setTimeout(r, MS));
+  // A round starts when a statement goes out while none is waiting; statements sent while one waits share its round. Counted so,
+  // not from the clock: a busy CI machine added a round's time to a 6-round join once (CI 8e9bc911, "7 rounds (19 statements)").
+  const counter = { n: 0, rounds: 0, waiting: 0 };
+  const wait = async () => {
+    if (counter.waiting++ === 0) counter.rounds++;
+    try { await new Promise((r) => setTimeout(r, MS)); } finally { counter.waiting--; }
+  };
   const wrap = (s) => ({
     ...s,
     plain: s,
@@ -76,12 +81,11 @@ async function cost(path, { headers = {}, method = "GET", body } = {}) {
   let best = null;
   for (let i = 0; i < 2; i++) {
     t.counter.n = 0;
-    const started = Date.now();
+    t.counter.rounds = 0;
     const res = await worker.fetch(new Request("https://company.example" + path, { method, body: body && JSON.stringify(body),
       headers: { "cf-connecting-ip": "203.0.113.77", "cache-control": "no-cache", ...(body ? { "content-type": "application/json" } : {}), ...headers } }), e);
-    const ms = Date.now() - started;
     assert.ok(res.status < 300, `${path} ${res.status} ${await res.text()}`);
-    const r = { stmts: t.counter.n, rounds: Math.round(ms / MS) };
+    const r = { stmts: t.counter.n, rounds: t.counter.rounds };
     if (!best || r.rounds < best.rounds) best = r;
   }
   return best;
