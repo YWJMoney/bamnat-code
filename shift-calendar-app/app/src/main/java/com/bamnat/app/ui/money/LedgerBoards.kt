@@ -54,7 +54,7 @@ internal fun LedgerBoardChips(board: LedgerBoard, onPick: (LedgerBoard) -> Unit)
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (b in LedgerBoard.entries) {
             FilterChip(selected = board == b, onClick = { onPick(b) }, label = { Text(b.label) },
-                modifier = Modifier.semantics { contentDescription = "가계부 ${b.label}로 보기" })
+                modifier = Modifier.semantics { contentDescription = "가계부 ${b.label}${com.bamnat.app.ui.Fmt.ro(b.label)} 보기" })
         }
     }
 }

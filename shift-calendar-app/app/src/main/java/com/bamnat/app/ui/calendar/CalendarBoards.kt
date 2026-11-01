@@ -269,7 +269,8 @@ internal fun WeekCardsMonth(
     Column(modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.weekly"), RoundedCornerShape(0.dp))).padding(horizontal = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)) {
         for (week in weeks) {
-            val minutes = week.sumOf { (_, d) -> Timeline.minutes(d) }
+            // PC 확인 1ceb13ae: the span (12h) disagreed with the month cell's 11h; the week counts the same 근무 시간 (휴게 빼고).
+            val minutes = week.sumOf { (_, d) -> d.scheduledMinutes }
             val works = week.count { (_, d) -> d.shiftType?.isOff == false }
             Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp)).padding(6.dp)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
@@ -347,7 +348,8 @@ internal fun YearBoard(
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.year"), RoundedCornerShape(0.dp))).padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        // PC 확인 1ceb13ae 사용성 제안: the year arrows sat close to the months; they get room around them.
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)) {
             androidx.compose.material3.IconButton(onClick = { onYear(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 해") }
             Text("${year}년", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             androidx.compose.material3.IconButton(onClick = { onYear(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 해") }

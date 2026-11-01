@@ -85,7 +85,7 @@ internal fun MemoViewChips(view: MemoView, columns: List<Pair<String, MemoProps.
                 selected = view.view == v,
                 onClick = { onChange(view.copy(view = v)) },
                 label = { Text(MemoView.LABELS[v]!!) },
-                modifier = Modifier.semantics { contentDescription = "${MemoView.LABELS[v]}로 보기" },
+                modifier = Modifier.semantics { contentDescription = "${MemoView.LABELS[v]}${Fmt.ro(MemoView.LABELS[v]!!)} 보기" },
             )
         }
         if (view.view == MemoView.BOARD) {

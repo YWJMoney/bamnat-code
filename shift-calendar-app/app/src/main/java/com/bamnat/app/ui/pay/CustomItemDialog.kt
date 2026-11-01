@@ -911,7 +911,7 @@ private fun EffectBar(
                     val each = if (per && effect.times > 0 && !closed && draft.amount != null) (abs(gap).toDouble() / effect.times / 10).roundToLong() * 10 else null
                     if (each != null && each > 0 && draft.kind != ItemKind.PREMIUM) {
                         TextButton(onClick = { draft.amount = each }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("차이에 맞춰 1번에 ${won(each)}로 넣기")
+                            Text("차이에 맞춰 1번에 ${won(each)}으로 넣기")
                         }
                     }
                 }
