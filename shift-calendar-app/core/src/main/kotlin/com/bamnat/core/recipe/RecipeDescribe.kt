@@ -139,6 +139,11 @@ object RecipeDescribe {
             (p.values["tap"] as? String)?.let { "누르면 " + RecipeWords.PICKS[it] }, (p.values["hold"] as? String)?.let { "길게 누르면 " + RecipeWords.PICKS[it] },
             (p.values["dayOrder"] as? String)?.takeIf { it.isNotEmpty() }?.let { "하루 화면 순서" },
         ).joinToString(" · ").ifEmpty { "앱 동작" }
+        // [LAY-01]
+        PieceKind.DECOR -> Decor.of(p.values).items.let { l ->
+            if (l.isEmpty()) "꾸밈 층" else "꾸밈 ${l.size}개: " + l.groupBy { it.kind }.entries.joinToString(" · ") { (k, v) -> "${k.label} ${v.size}" } +
+                (l.map { Decor.anchorLabel(it.at) }.distinct().takeIf { it.size <= 3 }?.let { " (" + it.joinToString("·") + ")" } ?: "")
+        }
     }
 
     /** [CVW-01] Words for 달력 모양's choices, as the settings and the studio say them. */

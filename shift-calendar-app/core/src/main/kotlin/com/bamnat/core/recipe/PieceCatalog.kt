@@ -362,7 +362,16 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
     ),
 
     /** [BLU-01] 1.36 부품 꾸미기: every part of a screen with the same style and layout fields (docs/blueprint-format.md). */
-    PARTS("parts", "부품 꾸미기", WorkStyle.entries.toSet(), BlueprintParts.FIELDS);
+    PARTS("parts", "부품 꾸미기", WorkStyle.entries.toSet(), BlueprintParts.FIELDS),
+
+    /**
+     * [LAY-01] 1.36 꾸밈 층: shapes, icons, emoji and text boxes placed freely over the screens' backgrounds, the calendar's top, its
+     * weekday line, its day cells (pinned to days or kinds of work too) and the widgets ([Decor]). Only values, drawn by the app.
+     */
+    DECOR(
+        "decor", "꾸밈 층", WorkStyle.entries.toSet(),
+        listOf(Field.Items("items", Decor.MAX, fields = Decor.FIELDS, min = 1)),
+    );
 
     companion object {
         fun of(key: String): PieceKind? = entries.firstOrNull { it.key == key }

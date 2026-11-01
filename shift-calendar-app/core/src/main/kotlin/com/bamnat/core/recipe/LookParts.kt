@@ -25,6 +25,8 @@ object LookParts {
         data class Keys(override val kind: PieceKind, val keys: Set<String>? = null) : Take
         /** Some screens of 화면 색·배경 ([ScreenLooks] keys); [pay] also takes 급여 모양. */
         data class Screens(val screens: (String) -> Boolean, val pay: Boolean = false) : Take { override val kind = PieceKind.SCREEN_LOOK }
+        /** [LAY-01] The 꾸밈 층's items pinned to the places [at] says yes to. */
+        data class Decor(val at: (String) -> Boolean) : Take { override val kind = PieceKind.DECOR }
     }
 
     data class Part(val id: String, val tab: String, val label: String, val takes: List<Take>)
@@ -54,6 +56,13 @@ object LookParts {
         Part("app.tabs", TabOrder.SETTINGS, "아래 탭 순서", listOf(Take.Keys(PieceKind.LAYOUT, setOf("tabs")))),
         Part("app.corners", TabOrder.SETTINGS, "모서리", listOf(Take.Keys(PieceKind.PHOTO_LOOK, setOf("corners")))),
         Part("widget", WIDGET, "위젯", listOf(Take.Keys(PieceKind.WIDGET), Take.Keys(PieceKind.PHOTO_LOOK, setOf("widget")))),
+        // [LAY-01] 1.36 꾸밈 층, a part on each tab it is pinned to.
+        Part("cal.decor", TabOrder.CALENDAR, "달력 꾸밈", listOf(Take.Decor { it.startsWith("cal.") || it == "bg.calendar" })),
+        Part("memo.decor", TabOrder.MEMOS, "메모 꾸밈", listOf(Take.Decor { it == "bg.memo" })),
+        Part("money.decor", TabOrder.MONEY, "가계부 꾸밈", listOf(Take.Decor { it == "bg.money" })),
+        Part("stats.decor", TabOrder.STATS, "통계·급여 꾸밈", listOf(Take.Decor { it == "bg.stats" || it == "bg.pay" })),
+        Part("app.decor", TabOrder.SETTINGS, "앱 전체 꾸밈", listOf(Take.Decor { it == com.bamnat.core.recipe.Decor.APP || it == "bg.settings" || it == "bg.plaza" })),
+        Part("widget.decor", WIDGET, "위젯 꾸밈", listOf(Take.Decor { it == com.bamnat.core.recipe.Decor.WIDGET })),
     )
 
     fun byId(id: String): Part? = ALL.firstOrNull { it.id == id }
@@ -67,6 +76,8 @@ object LookParts {
             val pay = (values["pay"] as? String)?.takeIf { t.pay && it.isNotEmpty() }
             listOfNotNull(screens?.let { "screens" to it }, pay?.let { "pay" to it }).toMap().takeIf { it.isNotEmpty() }
         }
+        is Take.Decor -> (values["items"] as? List<*>)?.filter { t.at(((it as? Map<*, *>)?.get("at") as? String).orEmpty()) }
+            ?.takeIf { it.isNotEmpty() }?.let { mapOf("items" to it) }
     }
 
     /** The parts [r] has, in the order of [TABS]. */
@@ -88,6 +99,12 @@ object LookParts {
     /** Two parts of one piece together ([ScreenLooks] screens joined, the rest key by key). */
     private fun merge(kind: PieceKind, a: Map<String, Any?>?, b: Map<String, Any?>): Map<String, Any?> {
         if (a == null) return b
+        // [LAY-01] Two parts' decorations together; laid on a base, [b]'s places take the place of [a]'s there.
+        if (kind == PieceKind.DECOR) {
+            val bi = (b["items"] as? List<*>).orEmpty()
+            val places = bi.map { (it as? Map<*, *>)?.get("at") }.toSet()
+            return mapOf("items" to ((a["items"] as? List<*>).orEmpty().filter { (it as? Map<*, *>)?.get("at") !in places } + bi).take(com.bamnat.core.recipe.Decor.MAX))
+        }
         if (kind != PieceKind.SCREEN_LOOK) return a + b
         val screens = listOfNotNull(a["screens"] as? String, b["screens"] as? String).map { ScreenLooks.decode(it) }
             .fold(ScreenLooks()) { acc, s -> s.looks.entries.fold(acc) { x, (k, l) -> x.with(k, l) } }.encode().takeIf { it.isNotEmpty() }
