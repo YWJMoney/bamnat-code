@@ -566,25 +566,32 @@ private fun MemoCard(
     var menu by remember { mutableStateOf(false) }
     // [FREE-04] 메모장 모양: the card's colour, edge, corners and paper; a 포스트잇 leans a little, one way or the other by the memo.
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
-    val shape = look.corner?.let { RoundedCornerShape(it.dp) } ?: MaterialTheme.shapes.large
+    // [BLU-05] 1.36 부품 꾸미기: 메모 카드와 카드 속 제목, over the 메모장 모양.
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val cardPart = bp.style("memo.card")
+    val titlePart = bp.style("memo.card.title")
+    val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(cardPart, look.corner?.let { RoundedCornerShape(it.dp) } ?: MaterialTheme.shapes.large)
     val own = memoBackground(memo.colorIndex)
-    val cardColor = when (look.card) {
+    val cardColor = cardPart.fill?.let { Color(it.toInt()).copy(alpha = (cardPart.fillA ?: 100) / 100f) } ?: when (look.card) {
         "one" -> look.cardColor?.let { Color((it or 0xFF000000L).toInt()) } ?: own
         "none" -> Color.Transparent
         else -> if (look.layout == "sticky" && memo.colorIndex == 0) memoBackground(1 + (memo.id % 7).toInt().let { if (it < 0) -it else it }) else own
     }
     val edge = when {
         selected -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        cardPart.line == "none" -> null
+        cardPart.line != null || cardPart.lineC != null || cardPart.lineW != null ->
+            BorderStroke((cardPart.lineW ?: 1.0).toFloat().dp, cardPart.lineC?.let { Color(it.toInt()).copy(alpha = (cardPart.lineA ?: 100) / 100f) } ?: MaterialTheme.colorScheme.outlineVariant)
         look.border == "none" || look.card == "none" -> null
         else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (look.border == "thin") 1f else 0.5f))
     }
-    val ink = if (cardColor.alpha > 0.5f && cardColor != Color.Unspecified && look.card == "one") com.bamnat.app.ui.components.contentColorOn(cardColor) else androidx.compose.ui.graphics.Color.Unspecified
+    val ink = if (cardPart.ink != null) Color(cardPart.ink!!.toInt()) else if (cardColor.alpha > 0.5f && cardColor != Color.Unspecified && look.card == "one") com.bamnat.app.ui.components.contentColorOn(cardColor) else androidx.compose.ui.graphics.Color.Unspecified
     Box(Modifier.then(if (look.layout == "sticky") Modifier.graphicsLayer { rotationZ = if (memo.id % 2 == 0L) -1.2f else 1.2f } else Modifier)) {
         Surface(
             shape = shape,
             color = cardColor,
             contentColor = if (ink != Color.Unspecified) ink else androidx.compose.material3.contentColorFor(cardColor).takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.onSurface,
-            shadowElevation = if (look.layout == "sticky") 3.dp else 0.dp,
+            shadowElevation = cardPart.shadow?.dp ?: if (look.layout == "sticky") 3.dp else 0.dp,
             border = edge,
             modifier = Modifier
                 .fillMaxWidth()
@@ -615,7 +622,8 @@ private fun MemoCard(
                             "l" -> MaterialTheme.typography.titleMedium
                             else -> MaterialTheme.typography.titleSmall
                         }.let { st -> memoFont(look.font)?.let { st.copy(fontFamily = it) } ?: st }
-                            .let { st -> when (look.bold) { true -> st.copy(fontWeight = FontWeight.Bold); false -> st.copy(fontWeight = FontWeight.Normal); else -> st } },
+                            .let { st -> when (look.bold) { true -> st.copy(fontWeight = FontWeight.Bold); false -> st.copy(fontWeight = FontWeight.Normal); else -> st } }
+                            .let { st -> com.bamnat.app.ui.parts.PartMods.text(titlePart, st) },
                         maxLines = if (look.layout == "compact") 1 else 2,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),

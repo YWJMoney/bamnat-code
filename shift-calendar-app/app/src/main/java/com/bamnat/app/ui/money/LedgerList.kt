@@ -549,7 +549,12 @@ private fun LedgerRow(
             // [FREE-06] 가계부 모양: how close the lines sit, how a record's kind is marked and how big its amount is.
             val look = com.bamnat.app.ui.theme.LocalMoneyLook.current
             val (minH, padV) = when (look.rows) { "compact" -> 48.dp to 4.dp; "roomy" -> 76.dp to 12.dp; else -> 64.dp to 8.dp }
-            Row(Modifier.heightIn(min = minH).padding(horizontal = 16.dp, vertical = padV), verticalAlignment = Alignment.CenterVertically) {
+            // [BLU-05] 1.36 부품 꾸미기: 가계부 한 줄과 금액 (수입 in·지출 out).
+            val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+            val rowPart = bp.style("money.row")
+            val amountPart = bp.style("money.amount", setOfNotNull(when (e.kind) { MoneyKind.INCOME -> "in"; MoneyKind.EXPENSE -> "out"; else -> null }))
+            Row(Modifier.heightIn(min = rowPart.h?.dp ?: minH).then(com.bamnat.app.ui.parts.PartMods.box(rowPart.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
+                .padding(horizontal = rowPart.padH?.dp ?: 16.dp, vertical = rowPart.padV?.dp ?: padV), verticalAlignment = Alignment.CenterVertically) {
                 if (selecting) {
                     Checkbox(checked = selected, onCheckedChange = { onToggle() }, modifier = Modifier.size(40.dp))
                 } else if (look.mark == "dot") {
@@ -578,7 +583,9 @@ private fun LedgerRow(
                         "s" -> MaterialTheme.typography.bodyMedium
                         "l" -> MaterialTheme.typography.titleLarge
                         else -> MaterialTheme.typography.titleSmall
-                    }.merge(NumberStyle), fontWeight = FontWeight.Bold, color = amountColor(e), maxLines = 1)
+                    }.merge(NumberStyle).let { com.bamnat.app.ui.parts.PartMods.text(amountPart.copy(ink = null), it) },
+                        fontWeight = amountPart.weight?.let { FontWeight(it) } ?: FontWeight.Bold,
+                        color = amountPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: amountColor(e), maxLines = 1)
                     when {
                         // E 1.32 [LEDX-04] Which 회차 this month is, and what is still to pay.
                         e.installments > 1 -> Text(com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date()) ?: "${e.installments}개월 할부",

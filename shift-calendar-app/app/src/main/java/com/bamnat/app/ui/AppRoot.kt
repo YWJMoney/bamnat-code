@@ -852,7 +852,24 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         Column {
                             // [NAV-06] While the tabs are moved, the line about it shows over the tabs.
                             if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs)
-                            NavigationBar {
+                            // [BLU-05] 1.36 부품 꾸미기: 아래 탭 막대와 탭 (고른 탭은 sel).
+                            val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+                            val barPart = bp.style("app.tabs")
+                            val tabPart = bp.style("app.tab")
+                            val tabOn = bp.style("app.tab", setOf("sel"))
+                            val itemColors = com.bamnat.app.ui.components.Selection.navBarItemColors().let { c ->
+                                if (tabPart.isEmpty && tabOn.isEmpty) c else androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                    indicatorColor = tabOn.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedIndicatorColor,
+                                    selectedIconColor = tabOn.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedIconColor,
+                                    selectedTextColor = tabOn.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedTextColor,
+                                    unselectedIconColor = tabPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.unselectedIconColor,
+                                    unselectedTextColor = tabPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.unselectedTextColor,
+                                )
+                            }
+                            NavigationBar(
+                                modifier = com.bamnat.app.ui.parts.PartMods.box(barPart.copy(fill = null), androidx.compose.ui.graphics.RectangleShape),
+                                containerColor = barPart.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()).copy(alpha = (barPart.fillA ?: 100) / 100f) } ?: androidx.compose.material3.NavigationBarDefaults.containerColor,
+                            ) {
                                 tabs.forEachIndexed { index, dest ->
                                     androidx.compose.runtime.key(dest.route) {
                                         val selected = dest == topLevel
@@ -861,9 +878,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                             selected = selected,
                                             onClick = { onTab(dest) },
                                             icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
-                                            label = { TabLabel(label) },
+                                            label = { TabLabel(label, if (selected) tabOn else tabPart) },
                                             modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = true, tabsShown, tabNames, saveTabs),
-                                            colors = com.bamnat.app.ui.components.Selection.navBarItemColors(),
+                                            colors = itemColors,
                                         )
                                     }
                                 }
@@ -1768,14 +1785,15 @@ private fun AppNavHost(
 
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
-private fun TabLabel(text: String) {
+private fun TabLabel(text: String, part: com.bamnat.core.recipe.PartStyle = com.bamnat.core.recipe.PartStyle.NONE) {
+    val style = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null), MaterialTheme.typography.labelMedium)
     // [VIS-04] 중-3: from 150% a two-word name ("근무·급여") used to take two lines and push its icon above the others'
     // (A11Y-04); now it keeps one line with its last word ("급여"), as big as the other tabs, and TalkBack reads it whole.
     val parts = text.split('·')
     if (parts.size == 2 && androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
-        FitText(parts[1], MaterialTheme.typography.labelMedium, Modifier.clearAndSetSemantics { contentDescription = text })
+        FitText(parts[1], style, Modifier.clearAndSetSemantics { contentDescription = text })
     } else {
-        FitText(text, MaterialTheme.typography.labelMedium)
+        FitText(text, style)
     }
 }
 

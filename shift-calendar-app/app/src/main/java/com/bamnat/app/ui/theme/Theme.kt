@@ -275,6 +275,8 @@ fun BamnatTheme(
     corners: String? = null,
     /** [CVW-08] 1.35 앱 강조색 (ARGB, 0 = the app's own): buttons, the picked tab and the selected things. */
     accent: Long = 0L,
+    /** [BLU-05] 1.36 부품 꾸미기: the app-wide parts (앱 전체·단추·카드·칩·아래 창) over the colours, shapes and letters. */
+    parts: com.bamnat.core.recipe.Blueprint = com.bamnat.core.recipe.Blueprint.EMPTY,
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
@@ -300,7 +302,13 @@ fun BamnatTheme(
             androidx.compose.ui.platform.LocalDensity provides scaled,
             LocalSpacing provides if (compact) Spacing.COMPACT else Spacing.ROOMY,
         ) {
-            MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = shapesFor(corners), content = content)
+            MaterialTheme(
+                colorScheme = com.bamnat.app.ui.parts.PartTheme.colors(colors, parts),
+                typography = com.bamnat.app.ui.parts.PartTheme.typography(AppTypography, parts),
+                shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), parts),
+            ) {
+                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides parts, content = content)
+            }
         }
     }
 }

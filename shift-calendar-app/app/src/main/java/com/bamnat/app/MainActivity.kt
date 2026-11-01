@@ -126,7 +126,8 @@ class MainActivity : ComponentActivity() {
             shiftLooks.apply(shiftMode, settings.screenLooks, settings.calTheme)
         }
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
-            corners = photoLook.corners, accent = settings.accentColor) {
+            corners = photoLook.corners, accent = settings.accentColor,
+            parts = androidx.compose.runtime.remember(settings.parts) { com.bamnat.core.recipe.Blueprint.decode(settings.parts) }) {
             // [RCP-09] 1.34 달력 테마, lifted for the dark calendar.
             val darkSurface = androidx.compose.material3.MaterialTheme.colorScheme.surface.luminance() < 0.5f
             val look = androidx.compose.runtime.remember(calNow, darkSurface) {

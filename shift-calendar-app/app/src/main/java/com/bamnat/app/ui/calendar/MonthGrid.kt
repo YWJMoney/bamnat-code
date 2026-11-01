@@ -1,5 +1,15 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.parts.fillColor
+import com.bamnat.app.ui.parts.partBox
+import com.bamnat.app.ui.parts.partLine
+import com.bamnat.app.ui.parts.shape
+import com.bamnat.app.ui.parts.text
+import com.bamnat.app.ui.parts.horizontal
+import com.bamnat.app.ui.parts.verticalArrangement
+import com.bamnat.app.ui.parts.placeOf
+import com.bamnat.app.ui.parts.arrangement
+import com.bamnat.app.ui.parts.vertical
 import com.bamnat.core.holiday.KoreanLunar
 import com.bamnat.app.ui.components.LeaveMark
 import com.bamnat.core.model.LeaveKind
@@ -130,15 +140,20 @@ internal val FooterTrim = androidx.compose.ui.text.TextStyle(
 fun WeekdayHeader(weekStart: DayOfWeek, modifier: Modifier = Modifier) {
     val cal = LocalCalendarColors.current
     val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
-    Row(modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+    // [BLU-05] 1.36 부품 꾸미기: 요일 줄 and each 요일 글자 (토·일 states).
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val row = bp.style("cal.week")
+    Row(modifier.fillMaxWidth().partBox(row, RoundedCornerShape(0.dp), inner = false).padding(horizontal = row.padH?.dp ?: 0.dp, vertical = row.padV?.dp ?: 6.dp)) {
         for (i in 0 until 7) {
             val dow = weekStart.plus(i.toLong())
+            val d = bp.style("cal.week.day", buildSet { if (dow == DayOfWeek.SATURDAY) add("sat"); if (dow == DayOfWeek.SUNDAY) add("sun") })
+            if (d.hide == true) { Spacer(Modifier.weight(1f)); continue }
             Text(
                 Fmt.dayOfWeekShort(dow),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier.weight(1f).partBox(d.copy(ink = null), RoundedCornerShape(4.dp)),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                style = MaterialTheme.typography.labelMedium,
-                color = when (dow) {
+                style = d.text(MaterialTheme.typography.labelMedium),
+                color = d.ink?.let { Color(it.toInt()) } ?: when (dow) {
                     DayOfWeek.SUNDAY -> look.sunday(cal)
                     DayOfWeek.SATURDAY -> look.saturday(cal)
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -543,6 +558,18 @@ private fun DayCell(
     val date = day.date
     val type = day.shiftType
     val holidayName = KoreanHolidays.nameOf(date)
+    // [BLU-05] 1.36 부품 꾸미기: the cell's states (근무 종류·토·일·공휴일·다른 달·오늘·고름) and its parts, over the looks above.
+    val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val partStates = remember(blueprint, day.shiftType, day.coveredShift, date, holidayName, inMonth, isToday, isSelected) {
+        val kind = day.shiftType ?: day.coveredShift
+        com.bamnat.app.ui.parts.dayStates(
+            kind?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key },
+            date.dayOfWeek, holidayName != null, inMonth, isToday, isSelected,
+        )
+    }
+    val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else blueprint.style("cal.cell", partStates)
+    val cellParts = if (blueprint.isEmpty) null else remember(blueprint, partStates) { com.bamnat.app.ui.parts.CellParts.of(blueprint, partStates) }
+    val partShape = cellPart.shape(shape)
     // [RCP-09] 1.34 달력 테마: the user's colours for 토·일·공휴일 and today, and how strong the wash is.
     val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
     val numberColor = when {
@@ -609,9 +636,13 @@ private fun DayCell(
 
     Box(
         modifier
-            .cellEdge(view, cellLook, shape, scheme.outlineVariant)
-            .clip(shape)
+            .then(if (cellPart.out != null || (cellPart.shadow ?: 0) > 0) run { Modifier.partBox(cellPart.copy(fill = null, line = null, lineW = null, lineC = null, alpha = null, pad = null, padX = null, padY = null), partShape, inner = false) } else Modifier)
+            .cellEdge(view, cellLook, partShape, scheme.outlineVariant)
+            .clip(partShape)
             .background(tint ?: Color.Transparent)
+            .then(run { cellPart.fillColor?.let { Modifier.background(it) } ?: Modifier })
+            .then(run { Modifier.partLine(cellPart, partShape) })
+            .then(cellPart.alpha?.let { Modifier.alpha(it / 100f) } ?: Modifier)
             .then(
                 when {
                     // [CAL-09] The first day of a range stands out until its end is tapped.
@@ -698,7 +729,8 @@ private fun DayCell(
                 Spacer(Modifier.height(size))
             }
         }
-        if (custom) CustomCellBody(
+        if (custom || cellParts != null) CustomCellBody(
+            parts = cellParts,
             view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null }, date = date, isToday = isToday, numberColor = numberColor, dateSize = dateSize, footerSize = footerSize,
             todayColor = look.today, holidayName = holidayName, hasMemo = hasMemo, alarmOff = day.alarmSkipped,
             marks = remember(day, jobs) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null) },
@@ -1032,6 +1064,8 @@ private fun cellTexts(
  */
 @Composable
 internal fun CustomCellBody(
+    /** [BLU-05] 1.36 부품 꾸미기: the cell's inside parts over the look, or null. */
+    parts: com.bamnat.app.ui.parts.CellParts? = null,
     view: com.bamnat.core.recipe.CalendarView, cellLook: com.bamnat.core.recipe.CellLook?, filled: Color?, date: LocalDate, isToday: Boolean,
     numberColor: Color, dateSize: androidx.compose.ui.unit.TextUnit,
     footerSize: androidx.compose.ui.unit.TextUnit, todayColor: Color?, holidayName: String?, hasMemo: Boolean, alarmOff: Boolean, marks: List<Corner>,
@@ -1040,6 +1074,8 @@ internal fun CustomCellBody(
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
     val l = cellLook
+    val dp = parts?.date ?: com.bamnat.core.recipe.PartStyle.NONE
+    val mp = parts?.mark ?: com.bamnat.core.recipe.PartStyle.NONE
     val place = l?.datePlace ?: if (view.date == "left") "tl" else "tc"
     val mark = l?.mark ?: view.badge ?: "big"
     val markPlace = l?.markPlace ?: if (place.endsWith("l") && mark != "line") "side" else "below"
@@ -1047,7 +1083,7 @@ internal fun CustomCellBody(
     val rowArrangement = when (place[1]) { 'l' -> Arrangement.Start; 'r' -> Arrangement.End; else -> Arrangement.Center }
     val textAlign = when (place[1]) { 'l' -> TextAlign.Start; 'r' -> TextAlign.End; else -> TextAlign.Center }
     val density = LocalDensity.current
-    val size = when (l?.dateSize) {
+    val size = dp.size?.sp ?: when (l?.dateSize) {
         "s" -> with(density) { (dateSize.toDp() * 0.8f).toSp() }
         "l" -> with(density) { (dateSize.toDp() * 1.3f).toSp() }
         "xl" -> with(density) { (dateSize.toDp() * 1.7f).toSp() }
@@ -1064,32 +1100,36 @@ internal fun CustomCellBody(
     }
     val memoShown = texts.containsKey("memo")
     val markSize: Dp = when (mark) { "small" -> 15.dp; "big" -> if (markPlace == "side") 20.dp else 22.dp; else -> 14.dp }
-    val drawMark: @Composable () -> Unit = {
+    val drawMark: @Composable () -> Unit = { if (mp.hide != true) Box(Modifier.partBox(mp, RoundedCornerShape(4.dp))) {
         when (mark) {
             "none", "fill" -> {}
             "line" -> if (barColor != null) Box(Modifier.fillMaxWidth().height(4.dp).background(barColor, RoundedCornerShape(2.dp))) else dayMark(14.dp)
             "dot" -> if (barColor != null) ColorDot(barColor, size = 7.dp) else dayMark(12.dp)
-            else -> dayMark(markSize)
+            else -> dayMark(mp.h?.dp ?: markSize)
         }
-    }
+    } }
     val dateBlock: @Composable () -> Unit = {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = rowArrangement) {
             if (markPlace == "side" && place[1] == 'r' && mark != "line") { drawMark(); Spacer(Modifier.width(2.dp)) }
-            val shapeOf = if (l?.dateShape == "square") RoundedCornerShape(4.dp) else CircleShape
+            val shapeOf = dp.shape(if (l?.dateShape == "square") RoundedCornerShape(4.dp) else CircleShape)
             val chip = when {
+                dp.fillColor != null -> dp.fillColor!!
                 isToday -> todayColor ?: scheme.primary
                 l?.dateShape != null && l.dateShape != "none" -> l.dateFill?.asColor() ?: Color.Transparent
                 else -> Color.Transparent
             }
-            Box(
-                Modifier.size(with(density) { size.toDp() } + 6.dp).clip(if (isToday && l?.dateShape == "none") CircleShape else shapeOf).background(chip),
+            if (dp.hide != true) Box(
+                Modifier.then(if (dp.w != null) Modifier.width(dp.w!!.dp) else Modifier.size(with(density) { size.toDp() } + 6.dp))
+                    .clip(if (isToday && l?.dateShape == "none" && dp.fillColor == null) CircleShape else shapeOf).background(chip)
+                    .partLine(dp, shapeOf),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    date.dayOfMonth.toString(), style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
-                    fontWeight = if (isToday) FontWeight.ExtraBold else if (l?.dateBold == false) FontWeight.Normal else if (l?.dateBold == true) FontWeight.Bold else FontWeight.SemiBold,
+                    date.dayOfMonth.toString(), style = dp.text(MaterialTheme.typography.labelLarge.merge(NumberStyle)),
+                    fontWeight = dp.weight?.let { FontWeight(it) } ?: if (isToday) FontWeight.ExtraBold else if (l?.dateBold == false) FontWeight.Normal else if (l?.dateBold == true) FontWeight.Bold else FontWeight.SemiBold,
                     fontSize = size, lineHeight = size, maxLines = 1,
                     color = when {
+                        dp.ink != null -> Color(dp.ink!!.toInt())
                         isToday -> todayColor?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: scheme.onPrimary
                         chip != Color.Transparent -> com.bamnat.app.ui.components.contentColorOn(chip)
                         else -> dateInk
@@ -1104,9 +1144,11 @@ internal fun CustomCellBody(
         }
     }
     val linesBlock: @Composable () -> Unit = {
-        for (id in view.lines) {
+        for (id in parts?.order?.filter { it in view.lines } ?: view.lines) {
             val t = texts[id] ?: continue
-            val color = onFill ?: when (id) {
+            val lp = parts?.lines?.get(id) ?: com.bamnat.core.recipe.PartStyle.NONE
+            if (lp.hide == true) continue
+            val color = lp.ink?.let { Color(it.toInt()) } ?: onFill ?: when (id) {
                 "memo" -> cal.memoDot
                 "holiday" -> cal.sunday
                 "money" -> moneyColor
@@ -1118,19 +1160,50 @@ internal fun CustomCellBody(
             // A tall cell gives each memo two lines and a huge one three, so a memo is read, not just its first letters (자유도 점검).
             val wrap = if (id == "memo" && view.memo != null) when (view.size) { "huge" -> 3; "tall" -> 2; else -> 1 } else 1
             lines.forEach { line ->
+                val lineSize = lp.size?.sp ?: footerSize
                 Text(
-                    line, fontSize = footerSize, lineHeight = footerSize * FOOTER_LINE, maxLines = wrap, overflow = TextOverflow.Ellipsis,
-                    style = NumberStyle.merge(FooterTrim), color = color, textAlign = textAlign,
-                    fontWeight = if (id == "money") FontWeight.Bold else FontWeight.Normal,
-                    modifier = if (id == "memo" && view.memo != null) Modifier.fillMaxWidth().background((onFill ?: cal.memoDot).copy(alpha = 0.10f), RoundedCornerShape(2.dp))
+                    line, fontSize = lineSize, lineHeight = lineSize * FOOTER_LINE, maxLines = lp.lines ?: wrap, overflow = TextOverflow.Ellipsis,
+                    style = lp.text(NumberStyle.merge(FooterTrim)), color = color, textAlign = textAlign,
+                    fontWeight = lp.weight?.let { FontWeight(it) } ?: if (id == "money") FontWeight.Bold else FontWeight.Normal,
+                    modifier = if (!lp.isEmpty) Modifier.fillMaxWidth().partBox(lp.copy(ink = null), RoundedCornerShape(2.dp)) else if (id == "memo" && view.memo != null) Modifier.fillMaxWidth().background((onFill ?: cal.memoDot).copy(alpha = 0.10f), RoundedCornerShape(2.dp))
                         .padding(horizontal = 1.dp) else Modifier.fillMaxWidth(),
                 )
             }
         }
     }
     val pad = l?.pad?.dp
+    val cp = parts?.cell
+    // [BLU-04] 1.36 자동 배치: the cell's own order, direction, gap and alignment of what is in it.
+    if (cp != null && cp.hasLayout) {
+        val blocks: Map<String, @Composable () -> Unit> = buildMap {
+            put("date", dateBlock)
+            if (markPlace != "side") put("mark", drawMark)
+        }
+        val order = buildList {
+            for (k in parts.order) if (k in blocks) add(k) else if (k in com.bamnat.app.ui.parts.CellParts.LINE_IDS && "lines" !in this) add("lines")
+            if ("lines" !in this) add("lines")
+        }
+        val inner = Modifier.fillMaxSize().padding(horizontal = cp.padH?.dp ?: pad ?: 3.dp, vertical = cp.padV?.dp ?: pad ?: 2.dp)
+        when (cp.dir) {
+            "row" -> Row(inner, horizontalArrangement = cp.arrangement(), verticalAlignment = cp.vertical(Alignment.Top)) {
+                order.forEach { k -> Box(Modifier.weight(1f, fill = false)) { if (k == "lines") Column { linesBlock() } else blocks.getValue(k)() } }
+            }
+            "stack" -> Box(inner) {
+                order.forEach { k ->
+                    val at = placeOf(parts.lines[k]?.place ?: when (k) { "date" -> dp.place; "mark" -> mp.place; else -> null },
+                        when (k) { "date" -> Alignment.TopCenter; "mark" -> Alignment.Center; else -> Alignment.BottomCenter })
+                    Box(Modifier.align(at)) { if (k == "lines") Column { linesBlock() } else blocks.getValue(k)() }
+                }
+            }
+            else -> Column(inner, horizontalAlignment = cp.horizontal(horizontal), verticalArrangement = cp.verticalArrangement()) {
+                order.forEach { k -> if (k == "lines") linesBlock() else blocks.getValue(k)() }
+            }
+        }
+        if (markPlace == "bottom") Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { drawMark() }
+        return
+    }
     Column(
-        Modifier.fillMaxSize().padding(horizontal = pad ?: 3.dp, vertical = pad ?: 2.dp),
+        Modifier.fillMaxSize().padding(horizontal = cp?.padH?.dp ?: pad ?: 3.dp, vertical = cp?.padV?.dp ?: pad ?: 2.dp),
         horizontalAlignment = horizontal,
         verticalArrangement = Arrangement.spacedBy(1.dp),
     ) {

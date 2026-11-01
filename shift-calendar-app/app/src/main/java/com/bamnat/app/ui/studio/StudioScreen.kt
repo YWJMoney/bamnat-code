@@ -161,18 +161,18 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     }
 
     val tools: List<Tool> get() = when (this) {
-        CALENDAR -> listOf(Tool.CELL, Tool.BOX, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS)
-        MEMO -> listOf(Tool.MEMO_LOOK, Tool.BOX, Tool.COLORS, Tool.CARDS)
-        MONEY -> listOf(Tool.MONEY_LOOK, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        CALENDAR -> listOf(Tool.CELL, Tool.PARTS, Tool.BOX, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS)
+        MEMO -> listOf(Tool.MEMO_LOOK, Tool.PARTS, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        MONEY -> listOf(Tool.MONEY_LOOK, Tool.PARTS, Tool.BOX, Tool.COLORS, Tool.CARDS)
         STATS -> listOf(Tool.COLORS, Tool.BOX, Tool.CARDS)
         PAY -> listOf(Tool.PAY_LOOK, Tool.COLORS, Tool.BOX)
         PLAZA -> listOf(Tool.COLORS, Tool.BOX)
-        SETTINGS -> listOf(Tool.COLORS, Tool.BOX, Tool.TABS, Tool.CORNERS)
+        SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.BOX, Tool.TABS, Tool.CORNERS)
         WIDGET -> listOf(Tool.WIDGET, Tool.BOX)
         ALARM, GUARDED -> listOf(Tool.COLORS)
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
-        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.COLORS, Tool.BOX, Tool.CORNERS, Tool.TABS)
+        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.COLORS, Tool.PARTS, Tool.BOX, Tool.CORNERS, Tool.TABS)
         FEATURES -> listOf(Tool.FEATURE)
     }
 
@@ -191,6 +191,8 @@ private enum class Tool(val label: String) {
     CELL("칸 디자인"), PATTERN("패턴"), VIEW("칸 높이·줄"), DAYS("오늘·주말 색"), PHOTO("그림"), COLORS("색·배경"), CARDS("카드 배치"),
     MEMO_LOOK("메모장 모양"), MONEY_LOOK("가계부 모양"), PAY_LOOK("급여 모양"), TABS("아래 탭"), CORNERS("모서리"), WIDGET("위젯 모양"),
     BOX("보관함"), FEATURE("켜고 고치기"), SEED("한 색"), SHIFT("근무에 따라"),
+    /** [BLU-06] 1.36 부품 하나하나 꾸미기. */
+    PARTS("부품"),
 }
 
 /** [STU-24] 1.36 미리 보기 크기: the handle under it sets any size between these (사용자 2026-10-31 "크게작게 접기가 너무 불편"). */
@@ -449,6 +451,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     LocalMemoLook provides memoLook,
                                     LocalMoneyLook provides moneyLook,
                                     com.bamnat.app.ui.theme.LocalPayLooks provides payLooks,
+                                    // [BLU-06] the draft's parts in 자세히 too.
+                                    com.bamnat.app.ui.parts.LocalBlueprint provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
                                 ) {
                                     val t = area.target ?: FreeTarget.ALL
                                     ScreenSkin(t.keyFor(payStyle), Modifier.fillMaxWidth()) {
@@ -542,6 +546,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             ScreenCopyRow(vm, d, key) { pick(Area.ALL); tool = Tool.SEED }
                         }
                         Tool.SEED -> SeedTool(vm, d)
+                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts) { v -> vm.change { it.copy(parts = v) } }
                         Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }

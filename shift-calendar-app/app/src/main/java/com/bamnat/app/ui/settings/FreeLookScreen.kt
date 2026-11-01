@@ -151,11 +151,14 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
     val today = todayDate ?: first.plusDays(2)
     val shown = if (view.isDefault) view.copy(size = "normal") else view
     val height = when (shown.size) { "short" -> 52.dp; "tall" -> 86.dp; "huge" -> 118.dp; else -> 64.dp }
+    val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().padding(4.dp)) {
-        Row(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(blueprint.style("cal.week"), RoundedCornerShape(0.dp)))) {
             (0 until 7).map { first.plusDays(it.toLong()).dayOfWeek }.forEach { w ->
+                val wd = blueprint.style("cal.week.day", setOfNotNull("sat".takeIf { w == java.time.DayOfWeek.SATURDAY }, "sun".takeIf { w == java.time.DayOfWeek.SUNDAY }))
                 Text(listOf("월", "화", "수", "목", "금", "토", "일")[w.value - 1], Modifier.weight(1f), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    color = when (w) { java.time.DayOfWeek.SATURDAY -> cal.saturday; java.time.DayOfWeek.SUNDAY -> cal.sunday; else -> scheme.onSurfaceVariant })
+                    style = com.bamnat.app.ui.parts.PartMods.text(wd.copy(ink = null), androidx.compose.material3.LocalTextStyle.current),
+                    color = wd.ink?.let { Color(it.toInt()) } ?: when (w) { java.time.DayOfWeek.SATURDAY -> cal.saturday; java.time.DayOfWeek.SUNDAY -> cal.sunday; else -> scheme.onSurfaceVariant })
             }
         }
         for (r in 0 until rows) Row(Modifier.fillMaxWidth().height(height)) {
@@ -172,13 +175,20 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                 val tint = com.bamnat.app.ui.calendar.cellTint(look, color.takeIf { !s.off }, own, null)
                 val shape = com.bamnat.app.ui.calendar.cellShape(shown, look)
                 val number = when (date.dayOfWeek) { java.time.DayOfWeek.SUNDAY -> cal.sunday; java.time.DayOfWeek.SATURDAY -> cal.saturday; else -> scheme.onSurface }
+                // [BLU-05] 1.36 부품 꾸미기 in the example too, by the same states as the phone's cells.
+                val states = com.bamnat.app.ui.parts.dayStates(s.role, date.dayOfWeek, com.bamnat.core.holiday.KoreanHolidays.nameOf(date) != null, true, isToday, false)
+                val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else blueprint.style("cal.cell", states)
+                val parts = if (blueprint.isEmpty) null else com.bamnat.app.ui.parts.CellParts.of(blueprint, states)
+                val pShape = com.bamnat.app.ui.parts.PartMods.shapeOf(cellPart, shape)
                 Box(
                     Modifier.weight(1f).fillMaxSize()
-                        .cellEdge(shown, look, shape, scheme.outlineVariant)
-                        .clip(shape).background(tint ?: Color.Transparent)
+                        .cellEdge(shown, look, pShape, scheme.outlineVariant)
+                        .clip(pShape).background(tint ?: Color.Transparent)
+                        .then(com.bamnat.app.ui.parts.PartMods.box(cellPart.copy(pad = null, padX = null, padY = null, out = null, shadow = null), pShape))
                         .then(if (onCell == null) Modifier else Modifier.clickable(onClickLabel = "이 칸의 모양 고치기") { onCell(index) }),
                 ) {
                     com.bamnat.app.ui.calendar.CustomCellBody(
+                        parts = parts,
                         view = shown, cellLook = look, filled = tint?.takeIf { look?.mark == "fill" || look?.bg != null }, date = date, isToday = isToday,
                         numberColor = number, dateSize = 13.sp, footerSize = 9.sp, todayColor = todayColor, holidayName = null, hasMemo = s.memo != null,
                         alarmOff = false, marks = emptyList(), barColor = color.takeIf { !s.off },
@@ -565,7 +575,7 @@ internal fun AlarmSample(onTap: () -> Unit) {
 // ---- 작은 조각 ----
 
 @Composable
-private fun Group(title: String, content: @Composable () -> Unit) {
+internal fun Group(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         content()
@@ -574,14 +584,14 @@ private fun Group(title: String, content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun <T> Chips(options: List<Pair<T, String>>, value: T, onPick: (T) -> Unit) {
+internal fun <T> Chips(options: List<Pair<T, String>>, value: T, onPick: (T) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         options.forEach { (v, label) -> FilterChip(selected = v == value, onClick = { onPick(v) }, label = { Text(label) }) }
     }
 }
 
 @Composable
-private fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String, onDone: (Float) -> Unit) {
+internal fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String, onDone: (Float) -> Unit) {
     var v by remember(value) { mutableFloatStateOf(value) }
     Column {
         Text("$label ${v.toInt()}$unit", style = MaterialTheme.typography.bodyMedium)

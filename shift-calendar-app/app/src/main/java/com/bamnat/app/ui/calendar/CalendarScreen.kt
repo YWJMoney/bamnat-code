@@ -1860,11 +1860,18 @@ private fun CalendarHeader(
     val roomy = maxWidth >= HEADER_ICONS_WIDTH
     val wideTitle = maxWidth >= 600.dp
     var menu by remember { mutableStateOf(false) }
+    // [BLU-05] 1.36 부품 꾸미기: 달력 머리, 달 이름, 이동 단추, 오늘 단추.
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val headPart = bp.style("cal.head")
+    val navPart = bp.style("cal.head.nav")
+    val todayPart = bp.style("cal.head.today")
+    val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     Row(
-        Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
+        Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp)
+            .then(with(com.bamnat.app.ui.parts.PartMods) { box(headPart, MaterialTheme.shapes.medium) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onPrev) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달") }
+        if (navPart.hide != true) IconButton(onClick = onPrev, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달", tint = navTint) }
         // [UX-06] The month and › take only what is left, the month's text shrinking at the largest text
         // sizes, so 오늘 and ⋮ (with 공유) stay on screen instead of being pushed off it.
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
@@ -1886,13 +1893,19 @@ private fun CalendarHeader(
                 }
                 // [J133-22] 1.33 (실사용 테스트 "작은 폰 달력 머리에 '2026년 10월' 글자가 없음"): a small phone shows this year's month
                 // without the year, and the title is never squeezed out by the buttons around it.
-                com.bamnat.app.ui.FitText(monthTitle(month, short = small), titleStyle, if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false))
+                val titlePart = bp.style("cal.head.title")
+                com.bamnat.app.ui.FitText(monthTitle(month, short = small), with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) },
+                    (if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false)).then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달") }
+            if (navPart.hide != true) IconButton(onClick = onNext, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달", tint = navTint) }
         }
-        if (small) IconButton(onClick = onToday, enabled = !atToday) { Icon(Icons.Filled.Today, "오늘") }
-        else TextButton(onClick = onToday, enabled = !atToday) { Text("오늘", maxLines = 1, softWrap = false) }
+        val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
+        if (todayPart.hide == true) Unit
+        else if (small) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
+        else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod) {
+            Text("오늘", maxLines = 1, softWrap = false, style = with(com.bamnat.app.ui.parts.PartMods) { text(todayPart, androidx.compose.material3.LocalTextStyle.current) })
+        }
         if (roomy) {
             IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
             IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }
