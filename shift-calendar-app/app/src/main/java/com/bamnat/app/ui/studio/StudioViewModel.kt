@@ -207,7 +207,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         ?: when (val o = s.origin) {
             is Origin.Fresh -> o.title
             is Origin.Plain -> "처음 모양에서 새로"
-            else -> "지금 모양 고치기"
+            else -> "지금 모양에서 꾸미던 것"
         } + " · " + com.bamnat.core.time.Today.date().let { "${it.monthValue}/${it.dayOfMonth}" }).take(30)
 
     private fun mineTitle(): String = c.wardrobe.lease.value.worn?.let { "지금 모양 · ${it.title}" } ?: "지금 내 모양"
