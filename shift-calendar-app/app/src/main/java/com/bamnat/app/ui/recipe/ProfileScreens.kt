@@ -115,7 +115,7 @@ import kotlinx.coroutines.launch
 internal fun profileProblem(e: Throwable): String = when ((e as? com.bamnat.app.company.CompanyException)?.code) {
     "not_found" -> "볼 수 없는 프로필이에요"
     "nick_length" -> "이름은 2~12자로 정해 주세요"
-    "taken" -> "다른 분이 쓰는 이름이에요"
+    "taken" -> "이미 다른 분이 쓰는 이름이에요"
     "nick" -> "쓸 수 없는 이름이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
     "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as com.bamnat.app.company.CompanyException).retryAfter ?: 86_400).let { w ->
         "오늘은 여기까지 할 수 있어요. ${w.removeSuffix(" 뒤")}${if (w.endsWith("뒤")) " 뒤에" else "에"} 다시 해 주세요"
@@ -250,14 +250,25 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
     }
 
     /** [PRF-01] 이름: the same 별명 as 광장 (2~12자), saved with the rest of 프로필 고치기. */
-    fun save(e: ProfileEdit, nick: String?) = act("프로필을 고쳤어요") {
-        c.recipes.profileCleared(false)
-        if (nick != null) {
-            val t = nick.trim()
-            if (t.isNotEmpty() && t.length !in 2..12) throw com.bamnat.app.company.CompanyException("nick_length")
-            c.companyApi.nick(device, t)
+    fun save(e: ProfileEdit, nick: String?, done: (String?) -> Unit = {}) {
+        // 1.36 PC 재검토 (이미 쓰인 이름이면 창만 닫히고 이름도 소개도 저장되지 않았어요): 소개·대표 작품 first, on their own; then
+        // the name, whose problem comes back to the open sheet ([done]) instead of a snackbar behind it.
+        viewModelScope.launch {
+            _state.value = _state.value.copy(busy = true)
+            c.recipes.profileCleared(false)
+            val rest = runCatching { c.recipeApi.profile(device, e) }
+            val name = if (nick == null) null else runCatching {
+                val t = nick.trim()
+                if (t.isNotEmpty() && t.length !in 2..12) throw com.bamnat.app.company.CompanyException("nick_length")
+                c.companyApi.nick(device, t)
+            }
+            _state.value = _state.value.copy(busy = false)
+            load()
+            val nameProblem = name?.exceptionOrNull()?.let(::profileProblem)
+            rest.exceptionOrNull()?.let { say(profileProblem(it)) }
+            if (nameProblem == null && rest.isSuccess) say("프로필을 고쳤어요")
+            done(nameProblem?.let { if (rest.isSuccess) "$it · 이름 말고 고친 것은 저장했어요. 다른 이름을 적어 주세요" else it })
         }
-        c.recipeApi.profile(device, e)
     }
 
     fun face(emoji: String?, color: Long?) = act(null) { c.recipes.profileCleared(false); c.recipeApi.makerMe(device, emoji, color, set = true) }
@@ -329,9 +340,9 @@ fun MakerScreen(
 ) {
     val s by vm.state.collectAsStateWithLifecycle()
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.resumed() }
-    // 1.36 PC 재검토 (열어 둔 채 가려지면 HOME → 돌아와도 안 보였어요): while my own page is on screen it looks again each minute too.
+    // 1.36 PC 재검토 (열어 둔 채 가려지면 HOME → 돌아와도 안 보였어요): while a page is on screen it looks again each minute too (mine: 가림 카드, others: a 소개 just hidden goes).
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-    if (s.page?.mine == true) LaunchedEffect(lifecycle) {
+    if (s.page != null) LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
             while (true) { kotlinx.coroutines.delay(60_000); vm.load() }
         }
@@ -838,6 +849,11 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
     var leaving by remember { mutableStateOf(false) }
     val close = { if (dirty) leaving = true else onDismiss() }
     val nickProblem = nick.trim().let { t -> if (t.isNotEmpty() && t.length !in 2..12) "이름은 2~12자로 정해 주세요" else null }
+    var saving by remember { mutableStateOf(false) }
+    // What the server said about the name just tried (이미 쓰는 이름이에요), until the name is changed.
+    var takenFor by remember { mutableStateOf<String?>(null) }
+    var nickTakenRaw by remember { mutableStateOf<String?>(null) }
+    val nickTaken = nickTakenRaw?.takeIf { takenFor == nick.trim() }
     val count = RecipeText.graphemes(bio.trim())
     val problem = when {
         count > 40 -> "40자까지 쓸 수 있어요"
@@ -886,8 +902,9 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
                     }
                 }
                 OutlinedTextField(nick, { nick = it.replace("\n", "").take(12) }, label = { Text("마을 이름 (광장·장터에 같이 보여요)") }, singleLine = true,
-                    modifier = Modifier.fillMaxWidth(), isError = nickProblem != null,
-                    supportingText = { Text(nickProblem ?: "2~12자 · 비우면 ‘이름 없는 분’으로 보여요") })
+                    modifier = Modifier.fillMaxWidth(), isError = nickProblem != null || nickTaken != null,
+                    supportingText = { Text(nickProblem ?: nickTaken
+                        ?: "2~12자 · 비우면 ‘이름 없는 분’으로 보여요") })
                 OutlinedTextField(bio, { bio = it.replace("\n", " ").take(60) }, label = { Text("한 줄 소개") }, modifier = Modifier.fillMaxWidth(),
                     supportingText = { Text(problem ?: "$count/40 · 전화번호·주소·링크는 쓸 수 없어요") }, isError = problem != null)
                 Text("보여 줄 근무 유형", style = MaterialTheme.typography.titleSmall)
@@ -920,10 +937,13 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
             }
         },
         confirmButton = {
-            TextButton(enabled = problem == null && nickProblem == null && vm.canWrite, onClick = {
-                onDismiss()
-                vm.save(ProfileEdit(bio = bio.trim(), pins = pins, setStyle = true, styleTag = style), nick.takeIf { it.trim() != (p.nick ?: "") })
-            }) { Text("저장") }
+            TextButton(enabled = problem == null && nickProblem == null && nickTaken == null && vm.canWrite && !saving, onClick = {
+                saving = true
+                vm.save(ProfileEdit(bio = bio.trim(), pins = pins, setStyle = true, styleTag = style), nick.takeIf { it.trim() != (p.nick ?: "") }) { err ->
+                    saving = false
+                    if (err == null) onDismiss() else { nickTakenRaw = err; takenFor = nick.trim() }
+                }
+            }) { Text(if (saving) "저장하는 중" else "저장") }
         },
         dismissButton = { TextButton(onClick = close) { Text("닫기") } },
     )
