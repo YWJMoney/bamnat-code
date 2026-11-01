@@ -724,6 +724,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // AG 1.27 [MON-12] A tap on a locked 프로 feature: 프로, the rewarded ad, or 친구 초대 (ProOffer).
     com.bamnat.app.ui.pro.ProOfferHost(container)
+    com.bamnat.app.ui.shifts.TypeFoldHost(container)
     // 1.36 PC W43: the policy pages inside the app, not Chrome's first-run sign-in.
     com.bamnat.app.ui.components.PolicyPageHost()
     com.bamnat.app.ui.pro.ProPaywallHost(container)
@@ -1143,6 +1144,8 @@ private fun AppNavHost(
                     )
                     val schedule = container.calendars.repository(calendar)
                     val added = addStyleTypes(container, calendar, style)
+                    // 1.36 PC 재검토: the old kind of work's 근무 종류 are offered once to be put away (never deleted).
+                    com.bamnat.app.ui.shifts.TypeFoldAsk.after(container, calendar, before, style)
                     val patterns = schedule.patterns.first()
                     val pay = container.calendars.pay(calendar).profile.value != null
                     var opened: String? = null

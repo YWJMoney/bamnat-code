@@ -30,7 +30,8 @@ class RewardLedgerTest {
         assertEquals("급여 7일(처음 무료) · 돈 통계 7일(광고) · 테마 30일", m.partsLine)
         assertEquals(44L, m.days)
         assertEquals(1, m.ads)
-        assertEquals(3_600L, m.wonValue) // 44 × 29,990 ÷ 365 ≈ 3,615 → 3,600
+        assertEquals(3_620L, m.wonValue) // 44 × 29,990 ÷ 365 ≈ 3,615.2 → 3,620 (to the 10원)
+        assertEquals(580L, RewardLedger.wonValue(7, yearly)) // 7 × 29,990 ÷ 365 ≈ 575.1 → 580
         assertEquals(68_400L, m.found)
         assertNull("no price, no 원 said", RewardLedger.month(s, monthStart, nextMonth, emptyList(), null, 0).wonValue)
         // 1.36 PC P22: a bundle opened two ways says both.

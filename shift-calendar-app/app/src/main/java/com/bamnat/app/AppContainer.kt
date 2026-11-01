@@ -245,6 +245,8 @@ class AppContainer(context: Context) {
         proof = { slipProof() })
     /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
     val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
+    /** 1.36 PC 재검토: kinds of day put away per calendar ('안 쓰는 종류'). */
+    val foldedTypes by lazy { com.bamnat.app.data.FoldedTypes(appContext) }
 
     /** [FREE-10] 1.35 테마 옷장: the theme worn, 입었던 테마 and its days. */
     val wardrobe by lazy { com.bamnat.app.recipe.ThemeWardrobe(this, appContext) }
@@ -570,8 +572,11 @@ class AppContainer(context: Context) {
      * [MON-02][MON-08][MON-09] On coming to the front: the 정식 출시 switch (once a day), this phone's
      * passes and admin link when it has any reason to, and Play's purchases; then the gate again.
      */
-    fun syncPro(force: Boolean = false) = appScope.launch {
-        runCatching { remoteConfig.refresh(tierApi, force = force) }
+    fun syncPro(force: Boolean = false, opened: Boolean = false) = appScope.launch {
+        // 1.36 PC 재검토: an open afresh asks again sooner ([RemoteConfigStore.ON_OPEN]; debug builds every open, for the PC checks).
+        val every = if (!opened) com.bamnat.app.tier.RemoteConfigStore.EVERY
+            else if (BuildConfig.DEBUG) java.time.Duration.ZERO else com.bamnat.app.tier.RemoteConfigStore.ON_OPEN
+        runCatching { remoteConfig.refresh(tierApi, force = force, every = every) }
         runCatching { remoteFiles.refresh() }.getOrNull()?.let(::noteRemote)
         // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
         runCatching {

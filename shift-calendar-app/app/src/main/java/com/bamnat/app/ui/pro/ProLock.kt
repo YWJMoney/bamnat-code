@@ -46,7 +46,20 @@ import com.bamnat.app.ui.settings.SettingsLinks
 @Composable
 fun ProLock(feature: Feature, gate: Gate, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     if (gate.allows(feature)) {
-        Box(modifier) { content() }
+        // 1.36 PC 재검토 (7일 열림 알림은 짧아 끝 날짜를 읽기 빠듯): opened for 7 days, the card itself says until when.
+        val until = gate.trialUntil(feature)?.takeIf { gate.tier < feature.minTier }
+        if (until == null) {
+            Box(modifier) { content() }
+            return
+        }
+        Column(modifier) {
+            content()
+            Text(
+                "${gate.bundle(feature)?.label?.let { "$it 묶음 · " }.orEmpty()}${untilWords(java.time.Instant.ofEpochMilli(until))}까지 열려 있어요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+            )
+        }
         return
     }
     Box(modifier.heightIn(min = MIN_HEIGHT)) {

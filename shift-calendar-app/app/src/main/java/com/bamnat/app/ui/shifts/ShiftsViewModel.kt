@@ -45,6 +45,14 @@ class ShiftsViewModel(
         active.flatMapLatest { it.shiftTypes }.map<List<ShiftType>, List<ShiftType>?> { it }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** 1.36 PC 재검토: the kinds put away here ('안 쓰는 종류'), not offered on a day sheet. */
+    val folded: StateFlow<Set<Long>> = container.foldedTypes.state.map { it[calendarId].orEmpty() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, container.foldedTypes.of(calendarId))
+
+    fun unfold(id: Long) = container.foldedTypes.unfold(calendarId, id)
+
+    fun fold(id: Long) = container.foldedTypes.fold(calendarId, listOf(id))
+
     /** Null until loaded; [PatternState.pattern] is null when there is no pattern. */
     val pattern: StateFlow<PatternState?> =
         active.flatMapLatest { it.pattern }.map { PatternState(it) }

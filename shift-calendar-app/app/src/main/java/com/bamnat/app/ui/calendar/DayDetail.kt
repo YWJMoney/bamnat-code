@@ -71,6 +71,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import com.bamnat.app.appContainer
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.foundation.combinedClickable
@@ -569,7 +570,10 @@ private fun alarmSummary(day: ResolvedDay, alarms: List<PlannedAlarm>, settings:
 @Composable
 private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, onRestShift: (ShiftType) -> Unit) {
     val style = vm.settings.collectAsStateWithLifecycle().value.workStyle
-    val types = remember(snapshot, style, day.shiftType?.id) { dayTypes(snapshot, style, day.shiftType?.id) }
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val calendar by c.calendars.active.collectAsStateWithLifecycle()
+    val folded = c.foldedTypes.state.collectAsStateWithLifecycle().value[calendar].orEmpty()
+    val types = remember(snapshot, style, day.shiftType?.id, folded) { dayTypes(snapshot, style, day.shiftType?.id, folded) }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (type in types) {
             FilterChip(
@@ -1379,7 +1383,16 @@ internal fun quickMemoExample(style: com.bamnat.core.work.WorkStyle?): String = 
  * day its 영업일 use (in its order or put on a day) and its days off, not the 교대 names every new calendar starts with; with
  * nothing used yet, all of them.
  */
-internal fun dayTypes(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?): List<ShiftType> {
+internal fun dayTypes(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?, folded: Set<Long> = emptySet()): List<ShiftType> =
+    // 1.36 PC 재검토: a kind put away ('안 쓰는 종류') is not offered, unless it is this day's or one this kind of work starts with
+    // (after 되돌리기 back to 알바, its own 오전 알바 shows again); never all of them gone.
+    dayTypesAll(snapshot, style, current).let { all ->
+        if (folded.isEmpty()) return all
+        val own = com.bamnat.app.data.FoldedTypes.startNames(style)
+        all.filter { it.id !in folded || it.id == current || it.name in own }.takeIf { l -> l.any { !it.isOff } } ?: all
+    }
+
+private fun dayTypesAll(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?): List<ShiftType> {
     if (style != com.bamnat.core.work.WorkStyle.BUSINESS) return snapshot.shiftTypes
     val used = buildSet {
         snapshot.patterns.forEach { p ->
