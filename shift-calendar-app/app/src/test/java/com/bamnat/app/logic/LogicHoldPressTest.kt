@@ -51,7 +51,12 @@ class LogicHoldPressTest {
         c.settingsRepository.update { it.copy(logic = Logic.encode(Logic(listOf(ping, weekday), listOf(hold, holdNotify)))) }
     }
 
-    @After fun tearDown() = Today.reset()
+    @After fun tearDown() {
+        Today.reset()
+        // The 길게 누르면 rule opened 메모장 through NoticeLinks, an app-wide object: not carried into the next test's first screen.
+        settle()
+        com.bamnat.app.NoticeLinks.consume(com.bamnat.app.NoticeLinks.Target.MEMOS)
+    }
 
     @Test fun idsKeepAndRoundTrip() {
         val l = Logic.decode(c.settingsRepository.current.logic)
