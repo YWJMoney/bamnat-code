@@ -79,6 +79,22 @@ internal fun ThemeTokens(r: Recipe, edit: ((Recipe) -> Recipe) -> Unit) {
  */
 @Composable
 internal fun ExampleCalendars(r: Recipe) {
+    // [BLU-07] PC 5차: a 부품 alone is the same for every kind of work, so it is shown once, drawn on the example screen it sits on.
+    com.bamnat.core.recipe.LookParts.partUnit(r)?.let { unit ->
+        val part = com.bamnat.core.recipe.LookParts.byId(unit)
+        Text("이 부품을 넣어 보면", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(part?.label ?: unit, style = MaterialTheme.typography.labelLarge)
+                val tab = part?.tab?.takeIf { it in setOf(com.bamnat.core.layout.TabOrder.CALENDAR, com.bamnat.core.layout.TabOrder.MEMOS, com.bamnat.core.layout.TabOrder.MONEY) }
+                    ?: com.bamnat.core.layout.TabOrder.CALENDAR
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(420.dp)) { MockPhone(r, null, tab, onTab = {}) }
+                r.pieces.forEach { p -> Text("• ${RecipeDescribe.line(p, amounts = false)}", style = MaterialTheme.typography.bodySmall) }
+                Text("모든 일 유형에 똑같이 들어가요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        return
+    }
     // 빌드 9 (가계부 탭만 올리는데 마치기에 '예시 달력: 교대 달력'): a recipe that changes nothing on the calendar is shown per kind
     // of work without calling it a calendar.
     val onCalendar = r.pieces.any { it.kind == PieceKind.SHIFT_LOOK || it.kind == PieceKind.CAL_THEME }
