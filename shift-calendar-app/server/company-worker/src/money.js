@@ -340,7 +340,8 @@ export function playIntent(code, store = storeLink(code)) {
 }
 
 /** Why a reward was given, as the app names it. */
-export const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId ? "rule" : "idea");
+// 1.36 [GRW-09] "maker": 만든 분 보상(이달의 주제·모두의 도구·기본 도구).
+export const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId === "maker" ? "maker" : ruleId ? "rule" : "idea");
 
 /** Whole days from one Korean date ("2026-10-25") to another. */
 export const dayGap = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);

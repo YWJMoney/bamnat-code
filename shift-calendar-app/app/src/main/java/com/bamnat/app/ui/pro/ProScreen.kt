@@ -488,6 +488,8 @@ fun passWhy(why: String): String = when (why) {
     "rule" -> "회사 방식 채택"
     "rate" -> "임금표 채택"
     "invite" -> "친구 초대"
+    // 1.36 [GRW-09] 만든 분 보상: 이달의 주제·모두의 도구·기본 도구.
+    "maker" -> "만든 작품 보상"
     else -> "제안 반영"
 }
 

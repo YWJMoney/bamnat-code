@@ -1,6 +1,7 @@
 import { all, audit, batch, iso, json, one, randomId, readJson, run, stmt } from "./index.js";
 import { DAY } from "./units.js";
 import { grams, likeness, titleFrom } from "./inbox.js";
+import { grantMakerReward } from "./maker-reward.js";
 
 // ---- 1.36 자가 발전 바퀴 [GRW-01]~[GRW-06] (사용자 2026-11-01 "자가 발전을 자동으로", 2차 조사 4장) ----
 //
@@ -185,7 +186,7 @@ async function toMarket(env, n, now) {
 
 /** [GRW-05] 사다리: 숫자로 오르고(2·3), 숫자가 떨어지면 내려와요. 운영자가 채택한 4는 그대로예요. */
 export async function ladderTick(env, now) {
-  const rows = await all(env, `SELECT code, state, scope, applied, kept7, flags FROM recipes WHERE state = 'visible' AND scope = 'public' AND applied >= ?`,
+  const rows = await all(env, `SELECT code, owner, state, scope, applied, kept7, flags FROM recipes WHERE state = 'visible' AND scope = 'public' AND applied >= ?`,
     GROWTH.toolUsers);
   const tiers = new Map((await all(env, "SELECT code, tier FROM recipe_tiers")).map((t) => [t.code, t.tier]));
   const stmts = [];
@@ -195,6 +196,8 @@ export async function ladderTick(env, now) {
     seen.add(r.code);
     const had = tiers.get(r.code);
     if (had === 4) continue;
+    // [GRW-09] 처음 모두의 도구가 되면 만든 분께 프로 30일 (작품마다 한 번, grantMakerReward가 두 번을 막아요).
+    if (t && !had) await grantMakerReward(env, r.owner, "tool", r.code, now);
     if (t && had !== t) stmts.push(stmt(env, "INSERT INTO recipe_tiers (code, tier, since) VALUES (?, ?, ?) ON CONFLICT(code) DO UPDATE SET tier = excluded.tier, since = excluded.since", r.code, t, now));
     if (!t && had) stmts.push(stmt(env, "DELETE FROM recipe_tiers WHERE code = ?", r.code));
   }
@@ -362,6 +365,9 @@ export async function growthAdmin(request, env, url, path, now) {
       const version = typeof body.version === "string" && GRW_VERSION.test(body.version) ? body.version : null;
       if (!version) return json({ error: "version", field: "version" }, 400);
       await run(env, "UPDATE recipe_tiers SET tier = 4, later = 0, version = ?, note = ? WHERE code = ?", version, note, t.code);
+      // [GRW-09] 기본 도구로 채택: 만든 분께 프로 90일 (이름은 출시 노트 줄과 프로필 배지).
+      const owner = await one(env, "SELECT owner FROM recipes WHERE code = ?", t.code);
+      if (owner) await grantMakerReward(env, owner.owner, "adopted", t.code, now);
     } else if (body.action === "later") {
       await run(env, "UPDATE recipe_tiers SET later = 1, note = ? WHERE code = ?", note, t.code);
     } else if (body.action === "undo") {

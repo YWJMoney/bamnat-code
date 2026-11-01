@@ -24,6 +24,9 @@ export const RECIPE_BADGES = {
   remix10: "고쳐 만든 것 10개",
   requests5: "요청 완성 5번",
   helper: "공개 자료 정리 도움",
+  // 1.36 [GRW-05][GRW-09] 승격 사다리.
+  tool: "모두의 도구 만든 분",
+  adopted: "기본 도구 만든 분",
 };
 
 export const COMMUNITY_SCHEMA = [
@@ -249,6 +252,9 @@ async function rcBadgesOf(d, env, dev, m, sums) {
   const done = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_requests WHERE maker = ? AND state = 'done'", dev);
   if (done.n >= 5) out.push("requests5");
   if (m?.helper) out.push("helper");
+  const tier = await d.one(env, "SELECT MAX(t.tier) AS t FROM recipe_tiers t JOIN recipes r ON r.code = t.code WHERE r.owner = ? AND r.state = 'visible'", dev);
+  if (tier?.t >= 4) out.push("adopted");
+  else if (tier?.t >= 2) out.push("tool");
   return out.map((k) => ({ key: k, name: RECIPE_BADGES[k] }));
 }
 
