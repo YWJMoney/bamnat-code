@@ -943,7 +943,15 @@ internal object HelpFaq {
         // 1.36 PC Y20 (쓴 글과 상관없는 '교대 순서를 바꾸고 싶어요'): only answers the words match; the topic's first answer is no
         // longer put in when none of its answers does.
         val first = search(text, topics.filter { it.id in ids }, limit)
-        return (first + search(text, topics, limit)).distinctBy { it.id }.take(limit)
+        // 1.36 PC Y22 ('달력 말고 다른 화면…'이 아직 떠요): under a question being written only an answer two of its words meet.
+        return (first + search(text, topics, limit)).distinctBy { it.id }.filter { overlap(text, it) >= 2 }.take(limit)
+    }
+
+    /** How many of [text]'s words (two letters or more) the answer's question or keywords hold. */
+    private fun overlap(text: String, t: HelpTopic): Int {
+        val hay = (listOf(t.question) + t.keywords).map(SearchText::norm).filter { it.isNotEmpty() }
+        return SearchText.words(text).map(SearchText::norm).filter { it.length >= 2 }.distinct()
+            .count { w -> hay.any { h -> w in h || (h.length >= 2 && h in w) } }
     }
 
     /** The answers that fit [query], best first. */

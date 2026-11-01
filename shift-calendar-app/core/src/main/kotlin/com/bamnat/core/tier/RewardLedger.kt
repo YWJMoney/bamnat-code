@@ -34,7 +34,12 @@ object RewardLedger {
             val ways = mine.groupBy { it.why }.map { (why, gs) -> WAYS.getValue(why) to gs.sumOf { Duration.between(it.at, it.until).toDays() } }
                 .groupBy({ it.first }, { it.second }).map { (w, ds) -> w to ds.sum() }
             Part(b.label, mine.sumOf { Duration.between(it.at, it.until).toDays() },
-                ways.takeIf { it.size > 1 }?.joinToString(" + ") { (w, d) -> "$w ${d}일" })
+                // 1.36 PC Y23 (제안 카드의 '급여 7일'이 처음 무료분인지 광고분인지 안 보여요): one way is named too.
+                when {
+                    ways.size > 1 -> ways.joinToString(" + ") { (w, d) -> "$w ${d}일" }
+                    ways.size == 1 -> ONE_WAY[ways[0].first] ?: ways[0].first
+                    else -> null
+                })
         }
         val parts = (byBundle + extra).filter { it.days > 0 }
         val days = parts.sumOf { it.days }
@@ -43,6 +48,9 @@ object RewardLedger {
 
     private val WAYS = mapOf(FeatureLease.Why.FIRST to "처음", FeatureLease.Why.AD to "광고", FeatureLease.Why.NO_AD to "광고",
         FeatureLease.Why.BACK to "다시 와서")
+
+    /** A bundle opened one way only: "급여 7일(처음 무료)". */
+    private val ONE_WAY = mapOf("처음" to "처음 무료")
 
     /** [days] at the yearly price a day, to the 100원; null without a price. */
     fun wonValue(days: Long, yearlyMicros: Long?): Long? {

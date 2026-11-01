@@ -87,12 +87,7 @@ internal fun ProShareCard(c: AppContainer, gate: Gate, zone: ZoneId, onMessage: 
                 Text(com.bamnat.core.tier.ProReason.SHARED.words, style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = { ending = true }) { Text("나눠 받은 프로 돌려주기") }
             }
-            // 1.36 사용자 결정 (2026-11-01): a free trial is not bought 프로, so it shares nothing yet; it says when it will. Once the
-            // trial turns paid the reason is SUBSCRIPTION and [bought] opens the card by itself.
-            gate.live && gate.access.pro && gate.access.reason == com.bamnat.core.tier.ProReason.TRIAL ->
-                Text("체험이 끝나고 결제되면 1명에게 나눌 수 있어요.", style = MaterialTheme.typography.bodyMedium)
-            else -> Text("프로를 구독한 분이 한 사람에게 프로를 나눠 줄 수 있어요. 받은 코드가 있으면 넣어 주세요.",
-                style = MaterialTheme.typography.bodyMedium)
+            else -> Text(shareLead(gate), style = MaterialTheme.typography.bodyMedium)
         }
         if (!bought && !given) {
             TextButton(onClick = { entering = !entering }) { Text("코드 넣기") }
@@ -124,3 +119,14 @@ internal fun ProShareCard(c: AppContainer, gate: Gate, zone: ZoneId, onMessage: 
     )
 }
 
+
+/**
+ * 1.36 사용자 결정 (2026-11-01): the card's words for someone who cannot share yet. A free trial is not bought 프로: it says it
+ * shares once paid (the reason then turns SUBSCRIPTION and the card opens by itself). Free (PC Y: '무료 상태에서도 미리'): that
+ * paying lets them share with one person.
+ */
+internal fun shareLead(gate: Gate): String = when {
+    gate.live && gate.access.pro && gate.access.reason == com.bamnat.core.tier.ProReason.TRIAL ->
+        "체험이 끝나고 결제되면 1명에게 나눌 수 있어요. 받은 코드가 있으면 넣어 주세요."
+    else -> "프로를 결제하면 1명에게 프로를 나눠 줄 수 있어요. 받은 코드가 있으면 넣어 주세요."
+}

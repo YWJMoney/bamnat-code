@@ -180,7 +180,8 @@ internal object SettingsIndex {
         screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
         screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx").takeIf { company }, // [J133-77]
         screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),
-        row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체"),
+        // 1.36 PC Y21: '근무 알람 끄기'·'잠시 끄기' found nothing.
+        row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체", "근무 알람 끄기", "근무 알람", "잠시 끄기", "알람 잠시 끄기", "알람 멈추기", "휴가 중 알람", "알람 안 울리게"),
         row(A, "알람음", "알람 소리", "벨소리", "무음", row = "알람음"),
         row(A, "근무마다 다른 소리", "근무별 알람음", "야간 소리"),
         // [SET-05]

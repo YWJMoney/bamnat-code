@@ -13,6 +13,12 @@ class InquiryTipsTest {
         }
     }
 
+    @Test fun anAnswerSharingOneWordOnlyIsNotOffered() {
+        val tips = HelpFaq.forQuestion("화면이 이상해요")
+        assertTrue(tips.map { it.question }.toString(), tips.isEmpty())
+        assertTrue(HelpFaq.forQuestion("알람이 안 울려요").isNotEmpty())
+    }
+
     @Test fun aQuestionAboutTheRotationStillGetsIt() {
         assertTrue(HelpFaq.forQuestion("교대 순서를 바꾸고 싶어요").any { it.id == "pattern" })
     }
