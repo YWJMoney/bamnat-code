@@ -213,4 +213,36 @@ class BlueprintTest {
         assertEquals("pick", refused(listOf(mapOf("id" to "cal.head.title", "deco" to "wavy"))))
         assertEquals("range", refused(listOf(mapOf("id" to "cal.head.title", "tshadow" to 13L))))
     }
+
+    @Test
+    fun aTokensDarkColourComesAsADarkLineTheDarkScreenLaysOver() {
+        val r = RecipeCodec.read(recipe(
+            listOf(mapOf("id" to "cal.head.title", "ink" to mapOf("token" to "포인트"), "size" to 20L), mapOf("id" to "cal.cell", "on" to "today", "fill" to mapOf("token" to "포인트"))),
+            listOf(mapOf("name" to "포인트", "light" to 0xFF112233L, "dark" to 0xFFAABBCCL)),
+        ))
+        @Suppress("UNCHECKED_CAST")
+        val lines = RecipeResolve.piece(r, r.pieces.single(), emptyMap())["parts"] as List<Map<String, Any?>>
+        val bp = Blueprint(Blueprint.clean(lines))
+        assertEquals(0xFF112233L, bp.forDark(false).style("cal.head.title").ink)
+        assertEquals(0xFFAABBCCL, bp.forDark(true).style("cal.head.title").ink)
+        assertEquals(20.0, bp.forDark(true).style("cal.head.title").size)
+        // A line with a state of its own keeps the light colour (a state and dark together are not one line).
+        assertEquals(0xFF112233L, bp.forDark(true).style("cal.cell", setOf("today")).fill)
+        assertTrue(bp.forDark(true).lines.none { it["on"] == "dark" })
+    }
+
+    @Test
+    fun aPartLaidOnChangesOnlyItsOwnUnits() {
+        val mine = Blueprint(listOf(
+            mapOf("id" to "cal.week.day", "fill" to 0xFF00FF00L, "r" to 6L, "shadow" to 2L),
+            mapOf("id" to "cal.head.title", "ink" to 0xFF000000L),
+        ))
+        val (laid, both) = mine.layUnits(listOf(mapOf("id" to "cal.head", "fill" to 0xFF1E335CL), mapOf("id" to "cal.head.title", "fill" to 0xFFFFFFFFL)))
+        // PC 7차: 요일 글자 꾸밈 stays; my own 달 이름 line gives way to the part's (겹친 곳: 달력 머리).
+        assertEquals(0xFF00FF00L, laid.style("cal.week.day").fill)
+        assertEquals(6, laid.style("cal.week.day").r)
+        assertEquals(0xFF1E335CL, laid.style("cal.head").fill)
+        assertNull(laid.own("cal.head.title").ink)
+        assertEquals(setOf("cal.head"), both)
+    }
 }

@@ -131,7 +131,7 @@ export const PART_IDS = [
   "pay.head", "pay.total", "pay.row",
   "widget", "widget.head", "widget.cell",
 ];
-const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel"];
+const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel", "dark"];
 const partParent = (id) => (id === "app" || id === "widget" ? null : !id.includes(".") ? "app"
   : PART_IDS.includes(id.slice(0, id.lastIndexOf("."))) ? id.slice(0, id.lastIndexOf(".")) : "app");
 const PART_CHILDREN = {};
