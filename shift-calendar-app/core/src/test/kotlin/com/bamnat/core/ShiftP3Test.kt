@@ -40,13 +40,25 @@ class ShiftP3Test {
         val pushed = (1..26).associateWith { if (it < 10) month.getValue(it) else month.getValue(it - 1) }
         val rows = listOf(
             com.bamnat.core.imports.RosterRow("김간호", pushed, line = 4),
-            com.bamnat.core.imports.RosterRow("", month, line = 5),
+            com.bamnat.core.imports.RosterRow("", month, line = 4),
+            // A neighbour's nameless line (its name lost) stays its own.
+            com.bamnat.core.imports.RosterRow("", month.mapValues { (d, c) -> if (d % 7 == 0) night else c }, line = 5),
             com.bamnat.core.imports.RosterRow("박간호", (1..30).associateWith { off }, line = 7),
             com.bamnat.core.imports.RosterRow("", mapOf(1 to day, 2 to night, 3 to off), line = 9),
         )
         val tidy = DutyRoster.tidy(rows)
-        assertEquals(listOf("김간호", "박간호"), tidy.map { it.label })
+        assertEquals(listOf("김간호", "", "박간호"), tidy.map { it.label })
         assertEquals(month, tidy.first().cells)
+        // roster1.jpg (PC): "N|OFF" stuck every six days pushes the named line further each time; the nameless right line comes
+        // before or after it; a neighbour with almost the same rota two lines away is not taken.
+        val stuckEvery6 = (1..31).filter { it % 6 != 5 }.withIndex().associate { (i, d) -> (i + 1) to month.getValue(d) }
+        val twoWays = DutyRoster.tidy(listOf(
+            com.bamnat.core.imports.RosterRow("", month, line = 3),
+            com.bamnat.core.imports.RosterRow("김간호", stuckEvery6, line = 3),
+            com.bamnat.core.imports.RosterRow("박민수", month.mapValues { (d, c) -> if (d > 27) off else c }, line = 9),
+        ))
+        assertEquals(listOf("김간호", "박민수"), twoWays.map { it.label })
+        assertEquals(month, twoWays.first().cells)
         // Without a full row nothing is dropped (a week's roster).
         assertEquals(1, DutyRoster.tidy(listOf(com.bamnat.core.imports.RosterRow("", mapOf(1 to day, 2 to night, 3 to off)))).size)
     }

@@ -697,15 +697,17 @@ object DutyRoster {
 
     /** Lines of the same person under the 1–15 and 16–31 rows of days become one. */
     /**
-     * 1.36 PC Y9 (듀티표 9줄: 같은 사람 줄이 이름 줄과 이름 없는 줄로 겹치고 '3일' 쓰레기 줄): a row with no name right next to a named
-     * one that agrees with it is that person's, taken whole (the one with more days first, the other filling gaps); and once some
+     * 1.36 PC Y9 (듀티표 9줄: 같은 사람 줄이 이름 줄과 이름 없는 줄로 겹치고 '3일' 쓰레기 줄): a full nameless reading of a named row's own line
+     * that agrees with it is that person's, taken whole (the one with more days first, the other filling gaps); and once some
      * row holds most of a month, nameless rows of fewer than [SHORT_ROW] days are dropped as bits of the page.
      */
     internal fun tidy(rows: List<RosterRow>): List<RosterRow> {
         val out = rows.toMutableList()
         for (u in rows.filter { it.label.isBlank() && it.cells.size >= FULL_ROW }) {
-            val n = out.filter { it.label.isNotBlank() && abs(it.line - u.line) <= 1 && it !== u }.maxByOrNull { agreement(it, u) } ?: continue
-            if (agreement(n, u) < 0.6) continue
+            // The same line of the photo read a second time (against another row of days), with its name on one reading only:
+            // it reads like the named one (a day pushed by each stuck cell still reads in the same order). A neighbour's line,
+            // even with almost the same rota, is never taken.
+            val n = out.firstOrNull { it.label.isNotBlank() && it.line == u.line && same(it, u) } ?: continue
             val (first, second) = if (u.cells.size >= n.cells.size) u to n else n to u
             val cells = (second.cells + first.cells).toSortedMap()
             val merged = RosterRow(n.label, cells,
@@ -731,6 +733,20 @@ object DutyRoster {
     }
 
     /** Fewer days than this, nameless, beside a full row: a bit of the page ('3일 · ‖z'), never a handwritten line (7+). */
+    /** Two lines are one person's: their cells agree day by day, or their codes in order do (LCS ≥ 85% of the shorter). */
+    private fun same(a: RosterRow, b: RosterRow): Boolean = agreement(a, b) >= 0.6 || inOrder(a, b) >= 0.85
+
+    private fun inOrder(a: RosterRow, b: RosterRow): Double {
+        val x = a.cells.toSortedMap().values.toList()
+        val y = b.cells.toSortedMap().values.toList()
+        if (minOf(x.size, y.size) < SHORT_ROW) return 0.0
+        val dp = Array(x.size + 1) { IntArray(y.size + 1) }
+        for (i in 1..x.size) for (j in 1..y.size) {
+            dp[i][j] = if (x[i - 1] == y[j - 1]) dp[i - 1][j - 1] + 1 else maxOf(dp[i - 1][j], dp[i][j - 1])
+        }
+        return dp[x.size][y.size].toDouble() / minOf(x.size, y.size)
+    }
+
     private const val SHORT_ROW = 6
     private const val FULL_ROW = 20
 
