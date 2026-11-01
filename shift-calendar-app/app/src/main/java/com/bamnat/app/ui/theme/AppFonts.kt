@@ -38,6 +38,11 @@ object AppFonts {
     /** [id]'s family, or null for the app's own (no font chosen). */
     fun family(context: Context?, id: String?): FontFamily? {
         if (id == null) return null
+        // 1.36 [SEC-10] 보안 점검 M2: 안전 모드 draws a downloaded or received font as the phone's closest one (not kept, so
+        // 평소대로 brings the font back).
+        if (com.bamnat.app.diag.StartGuard.safe.value && (FontCatalog.isUser(id) || FontCatalog.byId(id)?.family != null)) {
+            return FontCatalog.byId(id)?.let { standIn(it) } ?: FontFamily.SansSerif
+        }
         cache[id]?.let { return it }
         val made = when (id) {
             "sans", "round" -> FontFamily.SansSerif

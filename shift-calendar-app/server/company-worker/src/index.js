@@ -5092,7 +5092,8 @@ const BADGE_SQL = {
   owed: ["rewards", "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"],
   flaggedPosts: ["community", "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')"],
   // [RCP-39] 1.34 나눔 판: recipes waiting for 첫 3개 검토, and those with reports still shown.
-  recipeQueue: ["community", "SELECT COUNT(*) AS n FROM recipes WHERE state = 'pending'"],
+  // 1.36 [SEC-10] and fonts waiting for their first look.
+  recipeQueue: ["community", "SELECT (SELECT COUNT(*) FROM recipes WHERE state = 'pending') + (SELECT COUNT(*) FROM recipe_fonts WHERE state = 'pending') AS n"],
   recipeFlagged: ["community", "SELECT COUNT(*) AS n FROM recipes WHERE flags > 0 AND state = 'visible'"],
   // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
   // [FIN130-11] A version held for its shape (BD) is counted once, under 모양이 다른 판 (ax_shape), not here as well.

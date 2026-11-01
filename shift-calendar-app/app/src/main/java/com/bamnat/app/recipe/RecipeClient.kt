@@ -188,12 +188,15 @@ interface RecipeApi {
     /** The address of a cover picture, for the image loader (the maker sees a waiting one with its device header). */
     fun imageUrl(id: String): String? = null
     /** [MAT-06] 1.36 내 글꼴 나누기: an open font (its maker lets others use it, as the user said); the server's id (the phone's). */
-    suspend fun fontSend(device: String, id: String, name: String, license: String, ttf: ByteArray): String = throw CompanyException("offline")
+    suspend fun fontSend(device: String, id: String, name: String, license: String, ttf: ByteArray): FontSent = throw CompanyException("offline")
     /** [MAT-06] A shared font's name and its file, or null when the server does not have it (or took it down). */
     suspend fun fontGet(device: String, id: String): Pair<String, ByteArray>? = null
     /** [MAT-06] 이 글꼴 신고 (라이선스·깨짐·불쾌). */
     suspend fun fontReport(device: String, id: String, why: String) {}
 }
+
+/** [MAT-06] A font the server took: its id, and 1.36 [SEC-10] whether it waits for the operator before others get it. */
+data class FontSent(val id: String, val waiting: Boolean = false)
 
 class RecipeClient(
     private val baseUrl: String = BuildConfig.COMPANY_BASE_URL,
@@ -371,9 +374,10 @@ class RecipeClient(
             .put("webp", android.util.Base64.encodeToString(webp, android.util.Base64.NO_WRAP))).getString("id")
     }
 
-    override suspend fun fontSend(device: String, id: String, name: String, license: String, ttf: ByteArray): String = serverCall {
-        call("POST", "/api/recipes/fonts", JSONObject().put("device", device).put("id", id).put("name", name).put("license", license)
-            .put("ttf", android.util.Base64.encodeToString(ttf, android.util.Base64.NO_WRAP))).getString("id")
+    override suspend fun fontSend(device: String, id: String, name: String, license: String, ttf: ByteArray): FontSent = serverCall {
+        val o = call("POST", "/api/recipes/fonts", JSONObject().put("device", device).put("id", id).put("name", name).put("license", license)
+            .put("ttf", android.util.Base64.encodeToString(ttf, android.util.Base64.NO_WRAP)))
+        FontSent(o.getString("id"), o.optString("state") == "pending")
     }
 
     override suspend fun fontGet(device: String, id: String): Pair<String, ByteArray>? = readCall {
@@ -439,6 +443,8 @@ class RecipeClient(
             val c = (e as? CompanyException)?.code ?: return "잠시 뒤 다시 해 주세요"
             return when (c) {
                 "offline" -> "인터넷에 연결되지 않았어요"
+                // 1.36 [SEC-10] The font's own words say a foundry that sells fonts made it.
+                "sold" -> "이 글꼴은 글꼴 안에 유료 글꼴 회사가 적혀 있어 나눌 수 없어요. OFL 같은 공개 글꼴만 함께 보낼 수 있어요"
                 "not_yet" -> "정식 출시일(11월 10일 예정)부터 쓸 수 있어요"
                 "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
                 "name_like" -> "다른 분 레시피와 이름이 거의 같아요. 이름을 바꾸거나 그 레시피를 고쳐 만들어 주세요"

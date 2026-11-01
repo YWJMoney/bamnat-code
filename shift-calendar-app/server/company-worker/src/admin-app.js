@@ -658,7 +658,7 @@ function adminApp(L, BUILD, M) {
       if (name === "recipes") {
         // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
         const t = S.recipeTab ?? "flagged";
-        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", fonts: `/recipes/fonts?state=${S.fontState ?? "reported"}` }[t] ?? `/recipes?tab=${t}`;
+        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", fonts: `/recipes/fonts?state=${S.fontState ?? "pending"}` }[t] ?? `/recipes?tab=${t}`;
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
@@ -2315,19 +2315,31 @@ function adminApp(L, BUILD, M) {
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
-  /** [MAT-06] 1.36 나눈 글꼴: 신고 셋이면 저절로 내려가요. 라이선스가 맞으면 다시 올리고, 아니면 내린 채로 둬요. */
+  /**
+   * [MAT-06] 1.36 나눈 글꼴: 신고 셋이면 저절로 내려가요. 라이선스가 맞으면 다시 올리고, 아니면 내린 채로 둬요.
+   * 1.36 [SEC-10] 보안 점검 H3·M7: 처음 나누는 글꼴은 여기서 본 뒤에 다른 분께 가요. 글꼴이 스스로 밝힌 이름·만든 곳·라이선스 글을 함께 보여요.
+   */
   function recipeFontsView(d, edit) {
-    const state = d.state ?? "reported";
-    const names = { reported: "신고로 내려감", hidden: "내린 것", ok: "나누는 중" };
+    const state = d.state ?? "pending";
+    const names = { pending: "확인 기다림", reported: "신고로 내려감", hidden: "내린 것", ok: "나누는 중" };
     const whys = { license: "라이선스가 의심돼요", broken: "글자가 깨져요", bad: "불쾌한 모양" };
     const sub = `<div class="chips" role="group" aria-label="글꼴 상태">${Object.entries(names).map(([k, label]) =>
       `<button type="button" class="chip pick" data-act="font-state" data-key="${k}" aria-pressed="${state === k}">${esc(label)} ${d.counts?.[k] ?? 0}</button>`).join("")}</div>`;
-    if (!d.items.length) return sub + empty(state === "reported" ? "신고로 내려간 글꼴이 없어요" : "글꼴이 없어요", "앱에서 공개 글꼴(OFL 등)이라고 밝히고 레시피와 함께 나눈 글꼴이 여기 보여요.");
-    return `${sub}<p class="hint">글꼴 이름으로 찾아 라이선스(OFL·Apache·무료 공개)가 맞는지 봐요. 맞으면 다시 올리기, 상용 글꼴이면 내리기를 눌러요.</p>
+    if (!d.items.length) return sub + empty({ pending: "확인을 기다리는 글꼴이 없어요", reported: "신고로 내려간 글꼴이 없어요" }[state] ?? "글꼴이 없어요", "앱에서 공개 글꼴(OFL 등)이라고 밝히고 레시피와 함께 나눈 글꼴이 여기 보여요.");
+    const says = { ofl: "글꼴 안에 OFL이라고 적혀 있어요", apache: "글꼴 안에 Apache라고 적혀 있어요" };
+    const own = (f) => {
+      const i = f.info ?? {};
+      const bits = [i.family && `이름 ${i.family}`, i.maker && `만든 곳 ${i.maker}`, i.designer && `디자이너 ${i.designer}`, i.vendor && `회사 코드 ${i.vendor}`].filter(Boolean);
+      return `<small>${bits.length ? esc(bits.join(" · ")) : "글꼴 안에 이름 정보가 없어요"}</small>
+        <small>${f.says ? `<span class="pill ok">${esc(says[f.says])}</span>` : '<span class="pill warn">글꼴 안에 OFL·Apache 글이 없어요</span>'}${i.license ? ` ${esc(i.license.slice(0, 160))}` : ""}${i.licenseUrl ? ` · ${esc(i.licenseUrl)}` : ""}</small>
+        ${i.copyright ? `<small>${esc(i.copyright.slice(0, 160))}</small>` : ""}`;
+    };
+    return `${sub}<p class="hint">${state === "pending" ? "처음 나누는 글꼴이에요. 글꼴 안의 이름·만든 곳·라이선스 글이 보낸 분이 고른 라이선스와 맞는지 봐요. 맞으면 나누기, 유료 글꼴이거나 알 수 없으면 내리기를 눌러요." : "글꼴 이름으로 찾아 라이선스(OFL·Apache·무료 공개)가 맞는지 봐요. 맞으면 다시 올리기, 상용 글꼴이면 내리기를 눌러요."}</p>
       <ul class="rows">${d.items.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(f.name)}</b>
-        <small>${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · 신고 ${f.reports}${Object.entries(f.whys ?? {}).map(([k, n]) => ` · ${esc(whys[k] ?? k)} ${n}`).join("")} · ${esc(ago(f.at))}</small>
+        <small>보낸 분이 고른 것: ${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · 신고 ${f.reports}${Object.entries(f.whys ?? {}).map(([k, n]) => ` · ${esc(whys[k] ?? k)} ${n}`).join("")} · ${esc(ago(f.at))}</small>
+        ${own(f)}
         <small class="mono">${esc(f.id)}</small></span>
-        ${edit ? `<span class="row-side">${f.state !== "ok" ? `<button class="btn small primary" data-act="recipe-font" data-id="${f.id}" data-key="ok">다시 올리기</button>` : ""}
+        ${edit ? `<span class="row-side">${f.state !== "ok" ? `<button class="btn small primary" data-act="recipe-font" data-id="${f.id}" data-key="ok">${f.state === "pending" ? "나누기" : "다시 올리기"}</button>` : ""}
           ${f.state !== "hidden" ? `<button class="btn small danger" data-act="recipe-font" data-id="${f.id}" data-key="hide">내리기</button>` : ""}</span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
@@ -4414,7 +4426,7 @@ function adminApp(L, BUILD, M) {
     "recipe-tab": ({ key }) => { S.recipeTab = key; S.data.recipes = null; load(); },
     "recipe-log": () => { S.recipeLog = true; load(); },
     // [RCX-15][RCX-04][RCX-07] 1.35
-    "recipe-font": async ({ id, key }) => { await act(() => api(`/recipes/fonts/${id}/${key}`, "POST", {}), key === "ok" ? "다시 올렸어요" : "내렸어요"); load(); },
+    "recipe-font": async ({ id, key }) => { await act(() => api(`/recipes/fonts/${id}/${key}`, "POST", {}), key === "ok" ? (S.fontState ?? "pending") === "pending" ? "나눴어요" : "다시 올렸어요" : "내렸어요"); load(); },
     "font-state": ({ key }) => { S.fontState = key; S.data.recipes = null; load(); },
     "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },
     "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
