@@ -181,7 +181,7 @@ object BuiltInThemes {
             "· ${e.family} 색과 칸 모양, 메모장·가계부·급여 화면 모양\n" +
             "· 판은 달력·메모장·가계부의 보기 단추에서 언제든 바꿀 수 있어요\n" +
             "주의할 점: 보이는 방식만 바뀌어요. 근무·메모·돈 기록과 알람은 그대로예요"
-        return base.copy(title = "${word(s)} 전문 달력", summary = "${word(s)}에 맞춘 ${board.label} 판과 탭 보기 묶음", desc = desc,
+        return base.copy(title = "${word(s)} 전문 달력", summary = e.what.take(60), desc = desc,
             pieces = base.pieces + view)
     }
 

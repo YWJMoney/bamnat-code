@@ -89,6 +89,15 @@ internal fun AgendaList(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp),
                 textAlign = TextAlign.Center,
             )
+            // [TAB-04] PC 확인 38d2d8e7 사용성 제안: an empty month repeated "7일 비어 있어요" five times; it says once how to add instead.
+            focus.addLabel?.let { add ->
+                val day = if (YearMonth.from(today) == m) today else m.atDay(1)
+                androidx.compose.material3.FilledTonalButton(onClick = { onQuickAction(day, QuickAction.Open) },
+                    modifier = Modifier.align(Alignment.CenterHorizontally).heightIn(min = 48.dp)) { Text("${Fmt.monthDay(day)} $add") }
+                Text("다른 날은 그 날짜를 눌러 적어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp))
+            }
+            return@Column
         }
         for (row in rows) {
             when (row) {
