@@ -71,7 +71,8 @@ fun fontOf(id: String?): FontFamily? = when (id) {
 fun PartStyle.text(base: TextStyle = TextStyle.Default): TextStyle {
     // [BLU-05] A part with its own strong fill and no 글자 색 reads in black or white, whichever stands out on it (PC 1차 사용성 제안).
     val auto = if (ink == null) fillColor?.takeIf { it.alpha >= 0.5f }?.let { com.bamnat.app.ui.components.contentColorOn(it.copy(alpha = 1f)) } else null
-    if (font == null && size == null && weight == null && ink == null && auto == null && track == null && leading == null && italic == null && talign == null) return base
+    if (font == null && size == null && weight == null && ink == null && auto == null && track == null && leading == null && italic == null && talign == null &&
+        tshadow == null && deco == null) return base
     val s = size?.sp ?: base.fontSize
     return base.merge(
         TextStyle(
@@ -83,8 +84,27 @@ fun PartStyle.text(base: TextStyle = TextStyle.Default): TextStyle {
             lineHeight = leading?.let { if (s.isSp) (s.value * it / 100f).sp else (it / 100f).em } ?: androidx.compose.ui.unit.TextUnit.Unspecified,
             fontStyle = italic?.let { if (it) FontStyle.Italic else FontStyle.Normal },
             textAlign = when (talign) { "start" -> TextAlign.Start; "center" -> TextAlign.Center; "end" -> TextAlign.End; else -> TextAlign.Unspecified },
+            // [BLU-08] 글자 그림자 (흐림·색·자리; 자리를 비우면 흐림의 반만큼 오른쪽 아래)와 밑줄·가운데 줄.
+            shadow = textShadow(),
+            textDecoration = when (deco) {
+                "under" -> androidx.compose.ui.text.style.TextDecoration.Underline
+                "strike" -> androidx.compose.ui.text.style.TextDecoration.LineThrough
+                "both" -> androidx.compose.ui.text.style.TextDecoration.combine(listOf(
+                    androidx.compose.ui.text.style.TextDecoration.Underline, androidx.compose.ui.text.style.TextDecoration.LineThrough))
+                "none" -> androidx.compose.ui.text.style.TextDecoration.None
+                else -> null
+            },
         ),
     )
+}
+
+/** [BLU-08] The letters' shadow. Compose takes px and [text] has no density, so dp go by a phone's usual 2.6 px each. */
+fun PartStyle.textShadow(density: Float = 2.6f): androidx.compose.ui.graphics.Shadow? {
+    val blur = tshadow?.takeIf { it > 0 } ?: return null
+    val c = tshadowC?.partColor() ?: Color.Black.copy(alpha = 0.5f)
+    val x = (tshadowX ?: blur / 2) * density
+    val y = (tshadowY ?: blur / 2) * density
+    return androidx.compose.ui.graphics.Shadow(c, Offset(x.toFloat(), y.toFloat()), (blur * density).toFloat())
 }
 
 /** The outline under the letters, as a second text drawn with a stroke ([com.bamnat.app.ui.parts.PartText]). */

@@ -87,13 +87,14 @@ internal fun PartsTool(
         }
     }
     val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on } ?: emptyMap()
-    fun set(k: String, v: Any?) {
-        val next = (line + ("id" to id) + (on?.let { mapOf("on" to it) } ?: emptyMap()) + (k to v)).filterValues { it != null }
+    fun setAll(vararg kv: Pair<String, Any?>) {
+        val next = (line + ("id" to id) + (on?.let { mapOf("on" to it) } ?: emptyMap()) + kv).filterValues { it != null }
         val others = bp.lines.filterNot { it["id"] == id && it["on"] == on }
         val all = if (next.keys.all { it == "id" || it == "on" }) others else others + next
         val text = runCatching { Blueprint(Blueprint.clean(all)).encode() }.getOrNull() ?: return
         onChange(if (all.isEmpty()) "" else text)
     }
+    fun set(k: String, v: Any?) = setAll(k to v)
     fun num(k: String): Float? = (line[k] as? Number)?.toFloat()
     fun col(k: String): Long? = line[k] as? Long
 
@@ -154,6 +155,16 @@ internal fun PartsTool(
             Chips(listOf(null to "처음대로", false to "바로", true to "기울임"), line["italic"] as? Boolean) { set("italic", it) }
             LabeledSlider("글자 테두리", num("stroke") ?: 0f, 0f..4f, "dp", unset = if (line["stroke"] == null) "처음대로" else null) { set("stroke", (Math.round(it * 2) / 2.0).takeIf { v -> v > 0 }?.let { d -> if (d % 1 == 0.0) d.toLong() else d }) }
             if ((num("stroke") ?: 0f) > 0f) ColorPick("테두리 색", col("strokeC")) { set("strokeC", it) }
+            // [BLU-08] 누락 점검 N11: 글자 그림자와 밑줄·가운데 줄.
+            LabeledSlider("글자 그림자", num("tshadow") ?: 0f, 0f..12f, "dp", unset = if (line["tshadow"] == null) "처음대로" else null) { set("tshadow", it.toLong().takeIf { v -> v > 0 }) }
+            if ((num("tshadow") ?: 0f) > 0f) {
+                ColorPick("그림자 색", col("tshadowC")) { set("tshadowC", it) }
+                val where = when { line["tshadowX"] == 0L && line["tshadowY"] == 0L -> "glow"; line["tshadowX"] == 0L -> "down"; line["tshadowX"] == null -> null; else -> "side" }
+                Chips(listOf(null to "오른쪽 아래", "down" to "아래로", "glow" to "빛나게(둘레)"), where) { w ->
+                    when (w) { "down" -> setAll("tshadowX" to 0L, "tshadowY" to null); "glow" -> setAll("tshadowX" to 0L, "tshadowY" to 0L); else -> setAll("tshadowX" to null, "tshadowY" to null) }
+                }
+            }
+            Chips(listOf(null to "처음대로", "none" to "줄 없음", "under" to "밑줄", "strike" to "가운데 줄", "both" to "둘 다"), line["deco"] as? String) { set("deco", it) }
         }
         Group("투명도·숨기기") {
             LabeledSlider("보이는 정도", num("alpha") ?: 100f, 0f..100f, "%", step = 5, unset = if (line["alpha"] == null) "처음대로" else null) { set("alpha", it.toLong().takeIf { v -> v < 100 }) }

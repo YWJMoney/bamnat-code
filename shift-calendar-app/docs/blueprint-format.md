@@ -79,12 +79,15 @@
 | `leading` | 80~300 | 줄 간격(글자 크기의 %) |
 | `stroke` · `strokeC` | 0~4dp · 색 | 글자 외곽선 |
 | `italic` | 참·거짓 | 기울임 |
+| `tshadow` · `tshadowC` | 0~12dp(소수 1자리) · 색 | 글자 그림자 흐림과 색(색을 비우면 반투명 검정). 1.36 BLU-08 |
+| `tshadowX` · `tshadowY` | -12~12dp(소수 1자리) | 글자 그림자 자리. 비우면 흐림의 반만큼 오른쪽·아래. 둘 다 0이면 둘레가 빛나요 |
+| `deco` | `none`·`under`·`strike`·`both` | 밑줄·가운데 줄. 1.36 BLU-08 |
 | `talign` | `start`·`center`·`end` | 글자 정렬 |
 | `lines` | 1~10 | 글자 줄 수 한도 |
 | `alpha` | 0~100 | 부품 전체 투명도 |
 | `hide` | 참·거짓 | 숨기기(데이터 부품은 TalkBack에 남아요) |
 
-글자 칸(`font`·`size`·`weight`·`ink`·`track`·`leading`·`stroke`·`strokeC`·`italic`)은 비어 있으면 **부모에게서 물려받아요**(`cal.cell.date` → `cal.cell` → `cal` → `app`). 나머지 칸은 물려받지 않아요.
+글자 칸(`font`·`size`·`weight`·`ink`·`track`·`leading`·`stroke`·`strokeC`·`italic`·`tshadow`·`tshadowC`·`tshadowX`·`tshadowY`·`deco`)은 비어 있으면 **부모에게서 물려받아요**(`cal.cell.date` → `cal.cell` → `cal` → `app`). 나머지 칸은 물려받지 않아요.
 
 **배치 (부품을 담는 부품)**
 

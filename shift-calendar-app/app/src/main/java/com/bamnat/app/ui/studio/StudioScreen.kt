@@ -1052,7 +1052,8 @@ private fun partsDetail(p: LookParts.Part, before: Recipe, now: Recipe): String?
     val is_ = lines(now).associateBy(::key)
     val words = mapOf("fill" to "채우기", "paint" to "채우기", "line" to "선", "lineW" to "선", "lineC" to "선", "r" to "둥글기", "rTL" to "둥글기", "rTR" to "둥글기",
         "rBR" to "둥글기", "rBL" to "둥글기", "shadow" to "그림자", "pad" to "여백", "out" to "여백", "font" to "글꼴", "size" to "글자 크기", "weight" to "굵기",
-        "ink" to "글자 색", "alpha" to "보이는 정도", "hide" to "숨기기", "order" to "순서", "dir" to "배치", "gap" to "간격")
+        "ink" to "글자 색", "alpha" to "보이는 정도", "hide" to "숨기기", "order" to "순서", "dir" to "배치", "gap" to "간격",
+        "tshadow" to "글자 그림자", "tshadowC" to "글자 그림자", "tshadowX" to "글자 그림자", "tshadowY" to "글자 그림자", "deco" to "밑줄")
     return (was.keys + is_.keys).distinct().mapNotNull { k ->
         val a = was[k].orEmpty(); val b = is_[k].orEmpty()
         val fields = (a.keys + b.keys).filter { it != "id" && it != "on" && it != "when" && a[it] != b[it] }.map { words[it] ?: "모양" }.distinct()

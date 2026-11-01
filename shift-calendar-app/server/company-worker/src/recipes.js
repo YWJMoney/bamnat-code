@@ -156,6 +156,10 @@ export const PART_STYLE = [
   C("ink", { optional: true }), N("track", -5, 30, { decimals: 1, optional: true }),
   N("leading", 80, 300, { optional: true }), N("stroke", 0, 4, { decimals: 1, optional: true }),
   C("strokeC", { optional: true }), F("italic", { input: false }), P("talign", ["start", "center", "end"], { optional: true }),
+  // [BLU-08] 글자 그림자·밑줄 (누락 점검 N11).
+  N("tshadow", 0, 12, { decimals: 1, optional: true }), C("tshadowC", { optional: true }),
+  N("tshadowX", -12, 12, { decimals: 1, optional: true }), N("tshadowY", -12, 12, { decimals: 1, optional: true }),
+  P("deco", ["none", "under", "strike", "both"], { optional: true }),
   N("lines", 1, 10, { optional: true }), N("alpha", 0, 100, { optional: true }), F("hide", { input: false }),
   P("dir", ["row", "col", "stack"], { optional: true }), N("gap", 0, 32, { optional: true }),
   P("align", ["start", "center", "end", "stretch"], { optional: true }),

@@ -197,4 +197,20 @@ class BlueprintTest {
         assertNull(LookParts.byId("part:cal.sticker"))
         assertEquals(com.bamnat.core.layout.TabOrder.SETTINGS, LookParts.byId("part:app.tab")?.tab)
     }
+
+    @Test
+    fun letterShadowAndLineAreLettersAChildTakes() {
+        val r = RecipeCodec.read(recipe(listOf(
+            mapOf("id" to "cal.head", "tshadow" to 2L, "tshadowC" to 0xFF000000L, "deco" to "under"),
+            mapOf("id" to "cal.head.title", "tshadowY" to 0L),
+        )))
+        @Suppress("UNCHECKED_CAST")
+        val bp = Blueprint(r.pieces.single().values["parts"] as List<Map<String, Any?>>)
+        val title = bp.style("cal.head.title")
+        assertEquals(2.0, title.tshadow)
+        assertEquals(0.0, title.tshadowY)
+        assertEquals("under", title.deco)
+        assertEquals("pick", refused(listOf(mapOf("id" to "cal.head.title", "deco" to "wavy"))))
+        assertEquals("range", refused(listOf(mapOf("id" to "cal.head.title", "tshadow" to 13L))))
+    }
 }
