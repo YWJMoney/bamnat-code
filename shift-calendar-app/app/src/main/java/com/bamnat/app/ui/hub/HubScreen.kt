@@ -36,6 +36,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -127,7 +128,24 @@ fun HubScreen(
         }
         // [PRF-02] 1.36 (사용자 2026-10-31 "팔로워 한 사람의 프로필에 들어가"): 팔로잉 줄 above 광장 and 장터, where people meet and pick.
         val recipesOn by c.recipes.on.collectAsStateWithLifecycle()
-        if (recipesOn && c.recipeApi.enabled && (section == HubSection.TALK || section == HubSection.SHARE)) {
+        // PC 확인 0efe9dbc: the 팔로잉 줄·오늘의 하나·넘겨 보기 fold away while the list is scrolled down and come back on scrolling up,
+        // so 광장·장터's list has the whole screen; 찾기 stays in the top bar.
+        var headerShown by remember { mutableStateOf(true) }
+        androidx.compose.runtime.LaunchedEffect(section) { headerShown = true }
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val fold = remember(density) {
+            val step = with(density) { 24.dp.toPx() }
+            object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
+                var run = 0f
+                override fun onPreScroll(available: androidx.compose.ui.geometry.Offset, source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
+                    run = if ((run < 0) == (available.y < 0)) run + available.y else available.y
+                    if (run < -step) headerShown = false else if (run > step) headerShown = true
+                    return androidx.compose.ui.geometry.Offset.Zero
+                }
+            }
+        }
+        androidx.compose.animation.AnimatedVisibility(headerShown && recipesOn && c.recipeApi.enabled && (section == HubSection.TALK || section == HubSection.SHARE)) {
+          Column {
             val strip = com.bamnat.app.ui.appViewModel(key = "following-strip-${style?.name}") { com.bamnat.app.ui.recipe.FollowingStripViewModel(it, style) }
             com.bamnat.app.ui.recipe.FollowingStrip(strip, onMaker = onMaker, onAll = onPeople)
             TodayOne(c, style, prefs, onRecipe, onMake = { onStudio("plain") })
@@ -135,8 +153,10 @@ fun HubScreen(
             if (section == HubSection.SHARE && onSwipe != null) {
                 TextButton(onClick = onSwipe, modifier = Modifier.padding(horizontal = 8.dp)) { Text("🃏 테마 넘겨 보며 고르기") }
             }
+          }
         }
-        Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
+        Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)
+            .nestedScroll(fold)) {
             when (section) {
                 HubSection.TALK -> talk()
                 HubSection.SHARE -> share(shareKind)

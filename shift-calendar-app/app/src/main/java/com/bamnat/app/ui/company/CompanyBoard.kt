@@ -764,7 +764,7 @@ private fun PostRow(
                     // PC 확인 V27: a small picture of the recipe when the server sent its look.
                     val look = remember(p.attachLook) { p.attachLook?.let { runCatching { com.bamnat.app.recipe.ThemeSwatch.of(org.json.JSONObject(it)) }.getOrNull() } }
                     // PC 확인 V27: without a look of its own, the example week in plain colours.
-                    com.bamnat.app.ui.recipe.ThemeThumb(look ?: com.bamnat.app.recipe.ThemeSwatch.example(com.bamnat.core.plaza.StylePlaza.styleOf(company)), width = 96.dp)
+                    com.bamnat.app.ui.recipe.ThemeThumb(com.bamnat.core.plaza.StylePlaza.styleOf(company).let { st -> look?.withDays(st) ?: com.bamnat.app.recipe.ThemeSwatch.example(st) }, width = 96.dp)
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1)

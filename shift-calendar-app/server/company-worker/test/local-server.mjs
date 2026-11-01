@@ -121,7 +121,37 @@ async function seed() {
   }
   // [ADMUX-16] A few requests the server could not answer.
   for (const i of [3, 11, 12]) await run("INSERT INTO counters (key, count, expires) VALUES (?, ?, ?)", `errors|${kst(Date.now() - i * 864e5)}`, i % 4 + 1, Date.now() + 400 * 864e5);
-  console.log("seeded: 예시정밀 v1·v2 and a third version waiting, 2 waiting elsewhere, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 26 questions, 56 days of usage");
+  await seedRecipes(run);
+  console.log("seeded: 3 market themes without days (알바·현장·가게), 예시정밀 v1·v2 and a third version waiting, 2 waiting elsewhere, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 26 questions, 56 days of usage");
+}
+
+/**
+ * PC 확인 0efe9dbc: 장터 themes for 알바·현장·가게 that bring colours but no kinds of day and no cover, so 오늘의 하나, the list and
+ * 넘겨 보기 show each kind of work's example week. Sent a month on (처리방침 3.8 is in force then), then dated back and shown.
+ */
+async function seedRecipes(run) {
+  const realNow = Date.now;
+  const later = realNow() + 31 * 864e5;
+  Date.now = () => later;
+  const made = [];
+  try {
+    const one = (n, title, summary, style, pieces) => send("/api/recipes", {
+      device: `seed-device-0000004${n}`, scope: "public", recipe: { format: "bamnat-recipe", v: 1, title, summary, styles: [style], pieces },
+    }, `10.0.3.${n}`);
+    made.push(await one(1, "알바 하루 정리 테마", "일한 날이 또렷한 따뜻한 색", "HOURLY", [
+      { kind: "screenLook", screens: "all~bg:FFFFF8EE|cd:FFFFFFFF|ik:FF2B2B2B|ac:FF2E7D32" }, { kind: "calTheme", today: 4281236786 }]));
+    made.push(await one(2, "현장 흙빛 달력", "현장 근무 날이 잘 보여요", "FIELD", [{ kind: "calTheme", today: 4285353025, sun: 4291176488 }]));
+    made.push(await one(3, "가게 영업일 테마", "영업일과 쉬는 날을 한눈에", "BUSINESS", [
+      { kind: "screenLook", screens: "all~bg:FFEFF7F6|cd:FFFFFFFF|ik:FF1F2D2B|ac:FF00897B" }, { kind: "calTheme", today: 4278225275 }]));
+  } finally {
+    Date.now = realNow;
+  }
+  for (const [i, r] of made.entries()) {
+    const code = r.code ?? r.recipe?.code;
+    if (!code) { console.log("seed recipe not made:", JSON.stringify(r)); continue; }
+    const at = realNow() - (i + 2) * 864e5;
+    await run("UPDATE recipes SET state = 'visible', created_at = ?, updated_at = ?, decided_at = ? WHERE code = ?", at, at, at, code);
+  }
 }
 
 /**

@@ -61,6 +61,9 @@ data class ThemeSwatch(
 ) {
     data class Day(val color: Long?, val label: String, val emoji: String?, val role: String?)
 
+    /** PC 확인 0efe9dbc: a look that brought its colours but no kinds of day keeps them and shows the kind of work's usual days, with their letters. */
+    fun withDays(style: com.bamnat.core.work.WorkStyle?): ThemeSwatch = if (days.isEmpty()) copy(days = example(style).days, example = true) else this
+
     companion object {
         /** PC 확인 V44: a kind of work's usual days (주·야·휴, 일·쉼 …) in their own colours, for a recipe without a look. */
         fun example(style: com.bamnat.core.work.WorkStyle?): ThemeSwatch = ThemeSwatch(example = true, days = when (style) {
