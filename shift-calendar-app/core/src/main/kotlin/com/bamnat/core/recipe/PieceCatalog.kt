@@ -362,7 +362,45 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
     ),
 
     /** [BLU-01] 1.36 부품 꾸미기: every part of a screen with the same style and layout fields (docs/blueprint-format.md). */
-    PARTS("parts", "부품 꾸미기", WorkStyle.entries.toSet(), BlueprintParts.FIELDS);
+    PARTS("parts", "부품 꾸미기", WorkStyle.entries.toSet(), BlueprintParts.FIELDS),
+
+
+    /**
+     * [RUL-03][RUL-04] 1.36 883·884 수식·규칙·버튼 (사용자 2026-11-01 "수식을 넣어서 보다 뛰어난 상호작용, 조건부도(다중 조건식도)"): buttons
+     * that do one safe thing, and rules 언제 → 조건(수식) → 무엇을. Formulas are values the app runs ([com.bamnat.core.formula.Formula]);
+     * only the safe verbs ([com.bamnat.core.formula.LogicVerb]) exist.
+     */
+    LOGIC(
+        "logic", "수식·규칙·버튼", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Items(
+                "buttons", com.bamnat.core.formula.Logic.MAX_BUTTONS, optional = true,
+                fields = listOf(
+                    Field.Text("label", 16, min = 1),
+                    Field.Emoji("emoji", input = false),
+                    Field.Pick("where", com.bamnat.core.formula.ButtonPlace.KEYS),
+                    Field.Pick("do", com.bamnat.core.formula.LogicVerb.KEYS),
+                    Field.Text("arg", 120, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
+                    Field.Money("amount", optional = true),
+                    Field.Text("show", com.bamnat.core.formula.Formula.MAX_LEN, optional = true, guard = false, check = com.bamnat.core.formula.Logic::formulaProblem),
+                ),
+            ),
+            Field.Items(
+                "rules", com.bamnat.core.formula.Logic.MAX_RULES, optional = true,
+                fields = listOf(
+                    Field.Text("name", 20, min = 1),
+                    Field.Pick("on", com.bamnat.core.formula.RuleTrigger.KEYS),
+                    Field.Num("min", -720.0, 720.0, optional = true),
+                    Field.Clock("at", optional = true, input = false),
+                    Field.Pick("role", ShiftRole.KEYS, optional = true),
+                    Field.Text("when", com.bamnat.core.formula.Formula.MAX_LEN, optional = true, guard = false, check = com.bamnat.core.formula.Logic::formulaProblem),
+                    Field.Pick("do", com.bamnat.core.formula.LogicVerb.KEYS),
+                    Field.Text("arg", 120, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
+                    Field.Money("amount", optional = true),
+                ),
+            ),
+        ),
+    );
 
     companion object {
         fun of(key: String): PieceKind? = entries.firstOrNull { it.key == key }
