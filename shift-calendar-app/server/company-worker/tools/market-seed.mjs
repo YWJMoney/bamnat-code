@@ -19,7 +19,7 @@ const OUT = join(ROOT, "market-136.json");
 export const BATCH = "1.36 출시 작품";
 /** 1.36's versionCode (gradle.properties bamnat.versionCode): older apps never see these. */
 export const MIN_APP = 49;
-export const GOALS = { theme: 48, "tab:calendar": 20, "tab:pay": 20, "tab:money": 20, "tab:memo": 20, "tab:alarm": 20, "tab:widget": 20, part: 20, logic: 20 };
+export const GOALS = { theme: 48, "tab:calendar": 20, "tab:pay": 20, "tab:money": 20, "tab:memo": 20, "tab:alarm": 20, "tab:widget": 20, "tab:app": 20, part: 20, logic: 20 };
 
 /** The 장터 구간 a written recipe falls in: the server's own sectionOf when it has one (갈래 F), else 테마 / 기능별 탭. */
 export function sectionKey(text) {
