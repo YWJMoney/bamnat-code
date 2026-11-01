@@ -59,4 +59,16 @@ class ThemeSeedTest {
         assertNotEquals(0L, dull[0])
         assertTrue(ThemeSeed.fromPixels(IntArray(0)).size == 1)
     }
+
+    /** PC 확인 1.36: a big pale-yellow sun over a smaller vivid orange — the sun's colour is in, first. */
+    @Test fun pictureColoursKeepTheWidest() {
+        val sun = 0xFFFFE680.toInt()
+        val orange = 0xFFFF6D00.toInt()
+        val sky = 0xFF2E7DD7.toInt()
+        val px = IntArray(1000) { i -> when { i < 550 -> sun; i < 800 -> sky; else -> orange } }
+        val got = ThemeSeed.fromPixels(px)
+        assertEquals(sun.toLong() and 0xFFFFFFFFL, got[0])
+        assertTrue(orange.toLong() and 0xFFFFFFFFL in got)
+        assertTrue(sky.toLong() and 0xFFFFFFFFL in got)
+    }
 }

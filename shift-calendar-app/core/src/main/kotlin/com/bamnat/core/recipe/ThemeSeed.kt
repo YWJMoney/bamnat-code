@@ -67,8 +67,9 @@ object ThemeSeed {
     }
 
     /**
-     * [STU-31] S2: up to [count] standout colours of a picture's pixels (ARGB ints, a small copy is enough), the most present and colourful
-     * first, each a different hue. A picture with almost no colour gives its middle grey.
+     * [STU-31] S2: up to [count] standout colours of a picture's pixels (ARGB ints, a small copy is enough), each a different hue: the
+     * colour that covers the most of the picture first (PC 확인 1.36: 가운데 큰 노란 해가 빠짐), then the most colourful. A picture with
+     * almost no colour gives its middle grey.
      */
     fun fromPixels(pixels: IntArray, count: Int = 5): List<Long> {
         val bins = 24
@@ -81,19 +82,22 @@ object ThemeSeed {
             if ((p ushr 24) < 128) continue
             val c = p.toLong() and 0xFFFFFFFFL
             val (h, s, l) = hsl(c)
-            if (s < 0.18 || l < 0.12 || l > 0.92) { grey += l; greyN++; continue }
+            if (s < 0.18 || l < 0.12 || l > 0.95) { grey += l; greyN++; continue }
             val b = ((h / 360.0) * bins).toInt().coerceIn(0, bins - 1)
             // Colourful and mid-light pixels count more, so a small bright flower beats a large dull wall.
             weight[b] += s * (1.0 - abs(l - 0.5))
             sums[b][0] += ((p shr 16) and 0xFF).toDouble(); sums[b][1] += ((p shr 8) and 0xFF).toDouble(); sums[b][2] += (p and 0xFF).toDouble()
             n[b]++
         }
-        val order = (0 until bins).filter { n[it] > 0 }.sortedByDescending { weight[it] }
+        val byWeight = (0 until bins).filter { n[it] > 0 }.sortedByDescending { weight[it] }
+        // The widest colour leads when it is a real part of the picture (an eighth of the coloured pixels or more).
+        val widest = (0 until bins).maxByOrNull { n[it] }?.takeIf { n[it] > 0 && n[it] * 8 >= n.sum() }
+        val order = listOfNotNull(widest) + byWeight.filter { it != widest }
         val picked = mutableListOf<Int>()
         for (b in order) {
             if (picked.size >= count) break
             if (picked.any { minOf(abs(it - b), bins - abs(it - b)) < 2 }) continue
-            if (weight[b] < weight[order.first()] * 0.04) break
+            if (b != widest && weight[b] < weight[byWeight.first()] * 0.04) break
             picked += b
         }
         if (picked.isEmpty()) {

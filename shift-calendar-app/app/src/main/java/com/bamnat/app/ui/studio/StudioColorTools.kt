@@ -324,7 +324,7 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     // PC 확인 1.36 (달력을 잠갔는데 '따로 고른 색 1곳(달력)' 스위치가 켜져 있어 잠금과 헷갈림): a locked screen is not one of them; it says so.
     val heldKeys = vm.locked.flatMap { StudioColors.screensOf(it) }.toSet()
     val free = own.filter { it !in heldKeys }
-    if (vm.locked.isNotEmpty()) Text("🔒 " + vm.locked.joinToString("·") { lockName(it, vm.style) } + "은(는) 잠가서 그대로예요",
+    if (vm.locked.isNotEmpty()) Text(vm.locked.joinToString("·") { lockName(it, vm.style) }.let { "🔒 $it" + com.bamnat.app.ui.Fmt.eun(it) } + " 잠가서 그대로예요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (free.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { put(all = !allScreens) }.padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
@@ -375,6 +375,9 @@ internal fun ScreenCopyRow(vm: StudioViewModel, d: AppSettings, key: String, onS
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (key != ScreenLooks.ALL && key != ScreenLooks.PLAZA) TextButton(onClick = {
             vm.changeMerged("${screenName(key)} 색을 모든 화면에") { StudioColors.toAllScreens(it, key) }
+            // PC 제안 1.36 (눌러도 안내가 없음): said, with what a lock kept as it was.
+            vm.say("‘${screenName(key)}’ 색을 모든 화면에 넣었어요" + vm.locked.takeIf { it.isNotEmpty() }
+                ?.joinToString("·") { lockName(it, vm.style) }?.let { " · 🔒 $it" + com.bamnat.app.ui.Fmt.eun(it) + " 그대로" }.orEmpty())
         }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이 색을 모든 화면에") }
         if (key == ScreenLooks.ALL) {
             val own = StudioColors.ownColours(looks)
@@ -388,7 +391,7 @@ internal fun ScreenCopyRow(vm: StudioViewModel, d: AppSettings, key: String, onS
             // PC 제안 1.36 (같은 색이면 붙여도 아무 말이 없음): said either way.
             val c2 = copied.second; val here = looks.of(key)
             if (c2.bg == here.bg && c2.card == here.card && c2.ink == here.ink && c2.accent == here.accent && c2.photo == here.photo) {
-                vm.say("${screenName(key)}은(는) 이미 ‘${screenName(copied.first)}’ 색과 같아요")
+                vm.say(screenName(key).let { it + com.bamnat.app.ui.Fmt.eun(it) } + " 이미 ‘${screenName(copied.first)}’ 색과 같아요")
             } else {
                 vm.changeMerged("‘${screenName(copied.first)}’ 색을 ${screenName(key)}에 붙이기") { StudioColors.paste(it, key, c2) }
                 vm.say("‘${screenName(copied.first)}’ 색을 ${screenName(key)}에 붙였어요 · 위 되돌리기로 돌아가요")

@@ -800,6 +800,9 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
             FilterChip(selected = w.corner == r, onClick = { onChange(w.copy(corner = r)) }, label = { Text(label) })
         }
     }
+    // PC 확인 1.36 (각지게가 홈 화면에서는 둥근 그대로): from Android 12 many home screens round every widget to their own corners.
+    if (android.os.Build.VERSION.SDK_INT >= 31) Text("안드로이드 12부터는 홈 화면이 위젯 모서리를 직접 둥글게 하기도 해요. 그런 휴대폰에서는 ‘각지게’가 덜 각져 보여요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("글자 크기", style = MaterialTheme.typography.labelLarge)
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(null to "보통", "s" to "작게", "l" to "크게").forEach { (t, label) ->
