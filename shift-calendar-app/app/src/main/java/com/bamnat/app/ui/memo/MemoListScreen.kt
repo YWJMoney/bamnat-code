@@ -207,8 +207,27 @@ fun MemoListScreen(
             }
             // With the search box hidden there is no icon to unfold them, so they stay open.
             if (!fold || filtersOpen || filterOn || parts.none { it.part == MemoPart.SEARCH && it.shown }) FilterRow(state, vm)
+            // [TAB-02] 1.36 메모장 보기: the memos on screen (after the tab, notebook, search and filters) as a list, board, table or gallery.
+            val tabViews = remember(appSettings.tabViews) { com.bamnat.core.layout.TabViews.decode(appSettings.tabViews) }
+            val memoView = tabViews.memo
+            val shown = remember(state.tab, state.upcoming, state.past, state.general) {
+                if (state.tab == MemoTab.CALENDAR) (state.upcoming + state.past).flatMap { it.memos }.distinctBy { it.id } else state.general
+            }
+            val shiftOf = remember(state.upcoming, state.past) {
+                val m = (state.upcoming + state.past).associate { it.date to it.day?.shiftType?.name };
+                { d: LocalDate -> m[d] }
+            }
+            val propColumns = remember(shown) { com.bamnat.core.memo.MemoProps.columns(shown) }
+            val setView: (com.bamnat.core.memo.MemoView) -> Unit = { v ->
+                container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(memo = v).encode()) }
+            }
+            if (state.shownCount > 0 || !memoView.isDefault) MemoViewChips(memoView, propColumns, setView)
             when {
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
+                memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions)
+                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { setView(memoView.copy(sort = it)) }, actions)
+                memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
+                !memoView.sort.isEmpty() && state.tab != MemoTab.CALENDAR -> GeneralMemoGrid(state.copy(general = memoView.sorted(state.general)), actions)
                 state.tab == MemoTab.CALENDAR -> CalendarMemoList(state, today, actions)
                 else -> GeneralMemoGrid(state, actions)
             }
@@ -286,7 +305,7 @@ internal fun MemoEditSheet(layout: String, update: ((com.bamnat.app.data.AppSett
     )
 }
 
-private class CardActions(
+internal class CardActions(
     val onOpen: (Memo) -> Unit,
     val onSelect: (Memo) -> Unit,
     val onTogglePin: (Memo) -> Unit,
@@ -555,7 +574,7 @@ fun ShiftLabel(day: ResolvedDay?, modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemoCard(
+internal fun MemoCard(
     memo: Memo,
     query: String,
     selected: Boolean,
@@ -641,6 +660,8 @@ private fun MemoCard(
                 }
                 Column(Modifier.padding(end = 10.dp)) {
                     if (look.layout != "compact") MemoContent(memo, query)
+                    // [TAB-01] 1.36 메모 속성: the memo's "칸: 값" lines as pills.
+                    if (look.layout != "compact") PropPills(memo, modifier = Modifier.padding(top = 6.dp))
                     Footer(memo, showDate && look.date != false)
                 }
             }

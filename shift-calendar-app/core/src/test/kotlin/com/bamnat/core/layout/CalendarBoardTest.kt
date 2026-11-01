@@ -46,3 +46,14 @@ class CalendarBoardTest {
         assertEquals(CalendarBoard.MONTH, CalendarBoard.of("nope"))
     }
 }
+
+/** [TAB-07] The three tabs' views in one setting. */
+class TabViewsTest {
+    @Test fun roundTripsAndDefaultsAreEmpty() {
+        val v = TabViews(CalendarBoard.BAND, com.bamnat.core.memo.MemoView("board", "p:상태", "-p:매출"), com.bamnat.core.money.LedgerBoard.BOARD)
+        assertEquals(v, TabViews.decode(v.encode()))
+        assertEquals("", TabViews().encode())
+        assertEquals(TabViews(), TabViews.decode("cal=zzz;memo=bad;money=?"))
+        assertEquals(CalendarBoard.LINE, TabViews.decode("money=cal;cal=line").cal)
+    }
+}

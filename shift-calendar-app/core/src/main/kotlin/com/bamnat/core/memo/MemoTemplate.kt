@@ -60,7 +60,8 @@ data class MemoTemplate(
  */
 data class TemplateAsk(val label: String, val type: String = "text", val choices: List<String> = emptyList()) {
     companion object {
-        val TYPES = listOf("text", "num", "star", "pick")
+        /** [TAB-03] 1.36 금액·날짜·시각·체크 added to 글·숫자·별점·고르기, each read back as that property type ([MemoProps]). */
+        val TYPES = listOf("text", "num", "star", "pick", "money", "date", "time", "check")
 
         /**
          * The answered ones, in the template's order, one "label: 값" a line; 별점 as ★★★☆☆. An answer is found by its place ("#0", "#1"…)
@@ -72,6 +73,11 @@ data class TemplateAsk(val label: String, val type: String = "text", val choices
                 "star" -> v.toIntOrNull()?.coerceIn(1, 5)?.let { n -> "★".repeat(n) + "☆".repeat(5 - n) } ?: return@mapNotNull null
                 // [J135-06] F-62: a 숫자 칸 writes a number or nothing.
                 "num" -> v.replace(",", "").takeIf { it.toDoubleOrNull() != null } ?: return@mapNotNull null
+                // [TAB-03] 금액: whole won with commas and 원, so the 표 adds it up and '가계부에 넣기' reads it.
+                "money" -> v.replace(",", "").replace("원", "").trim().toDoubleOrNull()?.let { "%,d원".format(it.toLong()) } ?: return@mapNotNull null
+                "date" -> MemoProps.read(a.label, v).takeIf { it.type == MemoProps.Type.DATE }?.raw ?: return@mapNotNull null
+                "time" -> MemoProps.read(a.label, v).takeIf { it.type == MemoProps.Type.TIME }?.raw ?: return@mapNotNull null
+                "check" -> when (v) { "1", "예", "true" -> "예"; "0", "아니오", "false" -> "아니오"; else -> return@mapNotNull null }
                 else -> v
             }
             "${a.label}: $shown"

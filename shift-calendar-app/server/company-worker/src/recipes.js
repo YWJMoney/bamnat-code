@@ -187,7 +187,7 @@ export const RECIPE_PIECES = {
   memoTpl: { styles: STYLES, fields: [I("items", 8, [T("title", 30, { min: 1 }), E("emoji"), TS("check", 20, 60),
     T("body", 300, { lines: true, optional: true }), T("repeat", 4, { optional: true, check: (s) => (s === "" || REPEAT.test(s) ? null : "repeat") }),
     // 1.35 [CVW-10] 입력 칸
-    I("asks", 8, [T("label", 20, { min: 1 }), P("type", ["text", "num", "star", "pick"]), TS("choices", 8, 16)], { optional: true })], { min: 1 })] },
+    I("asks", 8, [T("label", 20, { min: 1 }), P("type", ["text", "num", "star", "pick", "money", "date", "time", "check"]), TS("choices", 8, 16)], { optional: true })], { min: 1 })] },
   hourly: { styles: ["HOURLY"], fields: [M("wage", 0, 1_000_000, { optional: true }), F("five"), F("weeklyPay"), P("weekStart", WEEK_DAYS, { optional: true }),
     P("breakPay", ["UNPAID", "PAID", "AS_WORK"], { optional: true }), F("legalBreaks"), N("night", 0, 200, { optional: true }), F("partTime"),
     P("rounding", ["HOURLY_FIRST", "AT_END", "AT_END_UP", "AT_END_DOWN"], { optional: true }),
