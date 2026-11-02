@@ -42,6 +42,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material3.DropdownMenu
@@ -254,7 +255,9 @@ internal fun MemoBoardView(
                     color = if (lit) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                     border = if (lit) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                     // PC 확인 9aaf3eef 사용성 제안: an empty 칸 stays narrow and opens wide only while a card is dragged.
-                    modifier = Modifier.width(if (col.memos.isEmpty() && drag == null) 132.dp else 250.dp).animateItem().fillParentMaxHeight()
+                    // PC 확인 d5678f31: one 칸 alone fills the width instead of leaving half the board empty.
+                    modifier = Modifier.then(if (columns.size == 1) Modifier.fillParentMaxWidth() else Modifier.width(if (col.memos.isEmpty() && drag == null) 132.dp else 250.dp))
+                        .animateItem().fillParentMaxHeight()
                         .then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp))),
                 ) {
                     Column {
@@ -503,15 +506,18 @@ internal fun MemoTableView(
                     }
                 }
             }
+            // PC 확인 d5678f31: the notes under the 표 sit in its list, above the room kept for the 새 메모 button, so it never covers them.
+            item(key = "notes") {
+                Column {
+                    if (!selecting && rows.isNotEmpty()) TableSelectTip()
+                    if (columns.isEmpty()) Text(
+                        "메모에 ‘매출: 32000’처럼 ‘칸: 값’ 줄을 쓰면 여기 열이 생겨요. 메모 틀의 입력 칸도 이렇게 적혀요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(12.dp),
+                    )
+                }
+            }
         }
         // PC 확인 82196a74 사용성 제안: how to pick rows, said where the rows are.
-        // PC 확인 d0e5457e: said until 닫기, then never again (a one-line tip, like the others).
-        if (!selecting && rows.isNotEmpty()) com.bamnat.app.ui.guide.OnceTip("memo_table_select",
-            "줄을 길게 누르면 여러 개를 골라 한꺼번에 고정하거나 색을 바꾸거나 지울 수 있어요", Modifier.padding(horizontal = 4.dp, vertical = 6.dp))
-        if (columns.isEmpty()) Text(
-            "메모에 ‘매출: 32000’처럼 ‘칸: 값’ 줄을 쓰면 여기 열이 생겨요. 메모 틀의 입력 칸도 이렇게 적혀요.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(12.dp),
-        )
     }
 }
 
@@ -736,6 +742,24 @@ internal fun MemoCalendarView(memos: List<Memo>, weekStart: java.time.DayOfWeek,
                     "메모에 날짜를 정하거나 ‘마감일: 11월 5일’처럼 날짜 칸을 쓰면 달력에 놓여요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 10.dp),
             )
+        }
+    }
+}
+
+/** [TAB-02] PC 확인 d5678f31: the 표's own tip, shown the first times the 표 opens until × (not one of the once-a-run tips, which 오늘의 팁 took). */
+@Composable
+private fun TableSelectTip() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val hints = remember { com.bamnat.app.ui.calendar.HintStore(context) }
+    var shown by remember { mutableStateOf(!hints.done("memo_table_select")) }
+    if (!shown) return
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        Row(Modifier.padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("줄을 길게 누르면 여러 개를 골라 한꺼번에 고정하거나 색을 바꾸거나 지울 수 있어요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            androidx.compose.material3.IconButton(onClick = { hints.markDone("memo_table_select"); shown = false }) {
+                Icon(androidx.compose.material.icons.Icons.Filled.Close, "안내 닫기")
+            }
         }
     }
 }

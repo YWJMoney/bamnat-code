@@ -786,10 +786,16 @@ private fun MemoContent(memo: Memo, query: String) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
     } else if (memo.title.isNotBlank() && memo.body.isNotBlank()) {
+        // PC 확인 d5678f31: a "칸: 값" line shown as a pill under the card (PropPills, the first 3) is not written again in the text.
+        val body = remember(memo.body) {
+            val pills = com.bamnat.core.memo.MemoProps.of(memo).take(3).map { it.label }.toSet()
+            memo.body.lines().filterNot { com.bamnat.core.memo.MemoProps.labelOfLine(it) in pills }.joinToString("\n").trim()
+        }
+        if (body.isEmpty()) return
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.
         val cardLook = LocalMemoCardLook.current
         Text(
-            highlighted(com.bamnat.core.memo.MemoSearch.excerpt(memo.body, query), query),
+            highlighted(com.bamnat.core.memo.MemoSearch.excerpt(body, query), query),
             style = memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium,
             maxLines = cardLook.lines ?: 8,
             overflow = TextOverflow.Ellipsis,
