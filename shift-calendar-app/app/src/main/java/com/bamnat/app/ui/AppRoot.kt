@@ -775,6 +775,17 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // 1.36 PC 재검토 (접어 두기를 눌러도 바뀐 게 안 보여요): what was folded is said at once, with 되돌리기, over the kind-of-work snackbar.
+    LaunchedEffect(Unit) {
+        com.bamnat.app.ui.shifts.TypeFoldAsk.done.collect { d ->
+            if (d == null) return@collect
+            com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
+            snackbar.currentSnackbarData?.dismiss()
+            val r = snackbar.showSnackbar("${d.message} · 설정 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) container.foldedTypes.unfold(d.calendar, d.ids)
+        }
+    }
+
     val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
     // [NAV-05] The tab the app opens on: home when the app starts, kept through a turn of the screen with the back stack.
     val startTab = rememberSaveable { home.route }

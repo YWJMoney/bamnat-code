@@ -25,6 +25,10 @@ class FoldedTypes(context: Context?) {
     fun unfold(calendar: String, ids: Collection<Long>) { if (of(calendar).any { it in ids }) put(calendar, of(calendar) - ids.toSet()) }
 
     private fun put(calendar: String, ids: Set<Long>) {
+        // 1.36 PC 재검토 (접어 두기를 눌러도 그대로였어요): who folded or unfolded what, in a debug build's log (tag BamnatFold).
+        if (com.bamnat.app.BuildConfig.DEBUG) runCatching {
+            android.util.Log.d("BamnatFold", "$calendar ${of(calendar)} -> $ids", Throwable("by"))
+        }
         _state.value = _state.value.toMutableMap().apply { if (ids.isEmpty()) remove(calendar) else put(calendar, ids) }
         prefs?.edit()?.apply {
             if (ids.isEmpty()) remove(calendar) else putString(calendar, ids.joinToString(","))
