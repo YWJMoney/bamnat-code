@@ -72,6 +72,23 @@ object RecipeFonts {
         )
     }
 
+    /**
+     * PC 확인 13차 (넣기 창의 글꼴 줄이 '1개'뿐): a line for each shared font [r] names, for the receiver before 넣기 — on this phone
+     * already, shared (by its name), or still waiting for the operator (its name is not shown till then).
+     */
+    suspend fun comingLines(c: AppContainer, r: Recipe): List<String> {
+        val ids = idsIn(r)
+        if (ids.isEmpty()) return emptyList()
+        val mine = withContext(Dispatchers.IO) { UserFonts.list(c.appContext) }.associateBy { it.id }
+        var waiting = 0
+        val lines = ids.mapNotNull { id ->
+            mine[id]?.let { return@mapNotNull "‘${it.name}’ 글꼴 · 이 휴대폰에 있어요" }
+            val name = runCatching { c.recipeApi.fontName(id) }.getOrNull()
+            if (name != null) "‘$name’ 글꼴 · 넣을 때 함께 받아요" else { waiting++; null }
+        }
+        return lines + listOfNotNull(waiting.takeIf { it > 0 }?.let { "운영자가 확인 중인 글꼴 ${it}개 · 확인 뒤(보통 하루 안) 앱을 열 때 들어와요. 그 전에는 비슷한 앱 글꼴로 보여요" })
+    }
+
     /** A line for 올리기's end when some fonts stay on this phone; null when every font goes along. */
     fun keptNote(s: Sent): String? = listOfNotNull(
         s.kept.takeIf { it.isNotEmpty() }?.let { names ->

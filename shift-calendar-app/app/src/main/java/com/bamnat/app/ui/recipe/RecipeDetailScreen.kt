@@ -285,11 +285,15 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     }
                 }
                 // [MAT-06] PC 확인 12차 (넣기 창에 함께 오는 글꼴 안내가 없음).
-                val fontsWith = remember(s.recipe) { s.recipe?.let { com.bamnat.app.recipe.RecipeFonts.idsIn(com.bamnat.core.recipe.RecipeCodec.write(it)).size } ?: 0 }
-                if (fontsWith > 0) {
+                // PC 확인 13차: each font by its name (a waiting one's name stays hidden till the operator looks).
+                val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.bamnat.app.BamnatApp
+                val fontLines by androidx.compose.runtime.produceState(emptyList<String>(), s.recipe) {
+                    val r = s.recipe; val c = app?.container
+                    value = if (r == null || c == null) emptyList() else runCatching { com.bamnat.app.recipe.RecipeFonts.comingLines(c, r) }.getOrDefault(emptyList())
+                }
+                if (fontLines.isNotEmpty()) {
                     Text("글꼴", style = MaterialTheme.typography.labelLarge)
-                    Text("• 만든 분이 나눈 글꼴 ${fontsWith}개가 함께 와요. 운영자가 확인한 글꼴은 바로, 확인 전인 글꼴은 확인 뒤 앱을 열 때 들어와요(그 전에는 비슷한 앱 글꼴)",
-                        style = MaterialTheme.typography.bodySmall)
+                    fontLines.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
                 }
                 // [MKX-02] 1.36 빌드 8: a tab laid on is taken off in 마을 › 테마; the rest is undone in 내 것 › 받은 레시피.
                 val laysOn = s.recipe?.let { r ->

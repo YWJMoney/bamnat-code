@@ -193,6 +193,8 @@ interface RecipeApi {
     suspend fun fontGet(device: String, id: String): Pair<String, ByteArray>? = null
     /** PC 확인 9차: the app font that stands in for a shared font this phone cannot get yet (its sender's guess), or null. */
     suspend fun fontStandIn(id: String): String? = null
+    /** PC 확인 13차: a shared font's name once others may get it, else null (a waiting one's name stays hidden). */
+    suspend fun fontName(id: String): String? = null
     /** [MAT-06] 이 글꼴 신고 (라이선스·깨짐·불쾌). */
     suspend fun fontReport(device: String, id: String, why: String) {}
 }
@@ -401,6 +403,11 @@ class RecipeClient(
     override suspend fun fontStandIn(id: String): String? = readCall {
         if (!enabled || !com.bamnat.core.recipe.FontCatalog.isUser(id)) return@readCall null
         runCatching { call("GET", "/api/recipes/fonts/$id/look").optString("fallback").takeIf { it.isNotEmpty() && it != "null" } }.getOrNull()
+    }
+
+    override suspend fun fontName(id: String): String? = readCall {
+        if (!enabled || !com.bamnat.core.recipe.FontCatalog.isUser(id)) return@readCall null
+        runCatching { call("GET", "/api/recipes/fonts/$id").optString("name").takeIf { it.isNotEmpty() } }.getOrNull()
     }
 
     override suspend fun fontReport(device: String, id: String, why: String) = serverCall {
