@@ -39,6 +39,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
 
     companion object {
         /** The market's three halves (테마 · 기능별 탭 · 규칙·단추). */
+        const val TYPING_PAUSE_MS = 500L
         val HALVES = listOf(RecipeClient.SCOPE_THEME, RecipeClient.SCOPE_TAB, RecipeClient.SCOPE_LOGIC)
         fun halfName(h: String) = when (h) { RecipeClient.SCOPE_LOGIC -> "규칙·단추"; RecipeClient.SCOPE_TAB -> "기능별 탭"; else -> "테마" }
     }
@@ -60,7 +61,15 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     init { load() }
 
     fun tab(t: Tab) { _state.value = _state.value.copy(tab = t); load() }
-    fun query(q: String) { _state.value = _state.value.copy(query = q) }
+    // PC D11 (사용성 낮): 치다가 잠깐 멈추면 찾아요 (엔터를 눌러야만 다른 구간 칩이 나오던 것).
+    private var typing: kotlinx.coroutines.Job? = null
+    fun query(q: String) {
+        val was = _state.value.query
+        _state.value = _state.value.copy(query = q)
+        if (q.trim() == was.trim()) return
+        typing?.cancel()
+        typing = viewModelScope.launch { kotlinx.coroutines.delay(TYPING_PAUSE_MS); load() }
+    }
     fun allStyles(on: Boolean) { _state.value = _state.value.copy(allStyles = on); load() }
     // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간.
     fun kind(k: String?) { _state.value = _state.value.copy(kind = if (k == "skin") RecipeClient.SCOPE_THEME else k); load() }

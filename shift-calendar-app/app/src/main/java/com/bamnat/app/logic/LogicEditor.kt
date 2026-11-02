@@ -299,12 +299,19 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
 
 @Composable
 fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Unit, onDismiss: () -> Unit,
-    /** PC D10: the other rules' names, so a new one with the same name gets '(2)'. */
-    taken: Set<String> = emptySet()) {
+    /** PC D10: the other rules, so a new one with the same name gets '(2)'; PC D11: one that does the same is asked about once. */
+    others: List<LogicRule> = emptyList()) {
+    val taken = others.map { it.name }.toSet()
     var r by remember { mutableStateOf(start ?: LogicRule("", RuleTrigger.START, min = -60, role = "night", act = LogicAct(LogicVerb.NOTIFY, notifyWords(RuleTrigger.START, "night")))) }
     var tried by remember { mutableStateOf<String?>(null) }
+    // PC D11 (사용성 낮): the key of a rule already asked about ("같은 일을 하는 규칙이 이미 있어요"), so the second 저장 saves.
+    var askedSame by remember { mutableStateOf<String?>(null) }
     // The red line goes once what it asked for is done.
-    LaunchedEffect(r) { if (tried != null) tried = ruleProblem(r) }
+    LaunchedEffect(r) {
+        // Changed after the 같은 규칙 question: asked again only if it is still the same.
+        if (askedSame != null && askedSame != r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at).key) askedSame = null
+        if (tried != null && askedSame == null) tried = ruleProblem(r)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (start == null) "규칙 만들기" else "규칙 고치기") },
@@ -355,7 +362,11 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 TextButton(onClick = {
                     val why = ruleProblem(r)
                     if (why != null) tried = why
-                    else r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at).let { done -> onDone(done.copy(name = ruleName(done, taken))) }
+                    else r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at).let { done ->
+                        val same = others.firstOrNull { it.key == done.key }
+                        if (same != null && askedSame != done.key) { askedSame = done.key; tried = sameSay(same) }
+                        else onDone(done.copy(name = ruleName(done, taken)))
+                    }
                 }) { Text("저장") }
             }
         },
@@ -454,6 +465,9 @@ private val VERB_SHORT = mapOf(
     LogicVerb.NOTIFY to "알림", LogicVerb.MEMO_TEMPLATE to "메모 틀", LogicVerb.SCREEN to "화면 열기", LogicVerb.NEW_MEMO to "메모",
     LogicVerb.CHECK_RESET to "체크 비우기", LogicVerb.ADD_MONEY to "지출 넣기", LogicVerb.MEMO_LINE to "메모 한 줄", LogicVerb.ADD_INCOME to "수입 넣기",
 )
+
+/** PC D11: said once when a rule being saved does what [same] already does; 저장 again keeps both. */
+internal fun sameSay(same: LogicRule) = "같은 일을 하는 ‘${same.name}’ 규칙이 이미 있어요. 그래도 만들려면 한 번 더 저장을 눌러요"
 
 /** "7:00", "700", "0700", "07:00" → "07:00"; null when it is not a time of day. */
 internal fun timeOf(s: String): String? {
@@ -602,7 +616,7 @@ fun LogicEditor(
         }
     }
     editRule?.let { i ->
-        RuleDialog(logic.rules.getOrNull(i), scope, taken = logic.rules.filterIndexed { j, _ -> j != i }.map { it.name }.toSet(), onDone = { r ->
+        RuleDialog(logic.rules.getOrNull(i), scope, others = logic.rules.filterIndexed { j, _ -> j != i }, onDone = { r ->
             onChange(logic.copy(rules = if (i < 0) logic.rules + r else logic.rules.toMutableList().also { it[i] = r })); editRule = null
         }, onDismiss = { editRule = null })
     }

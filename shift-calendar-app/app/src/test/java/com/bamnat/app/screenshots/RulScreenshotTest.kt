@@ -18,6 +18,7 @@ import com.bamnat.app.logic.whenFor
 import com.bamnat.app.logic.timeOf
 import com.bamnat.app.logic.ruleProblem
 import com.bamnat.app.logic.ruleName
+import com.bamnat.app.logic.sameSay
 import com.bamnat.core.formula.ButtonPlace
 import com.bamnat.core.formula.FormulaNames
 import com.bamnat.core.formula.Logic
@@ -97,6 +98,9 @@ class RulScreenshotTest : ScreenshotBase() {
         assertEquals("매일 07:00 알림 (2)", ruleName(daily, setOf("매일 07:00 알림")))
         assertEquals("매일 07:00 알림 (3)", ruleName(daily, setOf("매일 07:00 알림", "매일 07:00 알림 (2)")))
         assertEquals("내 규칙", ruleName(daily.copy(name = " 내 규칙 "), emptySet()))
+        // PC D11: 같은 일을 하는 규칙은 한 번 물어요 (이름과 상관없이 언제·조건·무엇을이 같으면).
+        assertEquals(daily.key, daily.copy(name = "다른 이름").key)
+        assertTrue(sameSay(daily.copy(name = "매일 07:00 알림")).startsWith("같은 일을 하는 ‘매일 07:00 알림’ 규칙이 이미 있어요"))
         assertTrue(ruleName(daily.copy(name = "열두글자를넘는아주긴규칙이름이에요"), setOf("열두글자를넘는아주긴규칙이름이에요")).length <= 20)
     }
 
