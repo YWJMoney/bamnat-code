@@ -2273,6 +2273,16 @@ function adminApp(L, BUILD, M) {
     ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"], ["makers", "프로필 신고"], ["month", "이달의 제작자"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
+  /**
+   * PC 확인 보안 6차 (신고 광고·도배 2가 세지 않은 것까지 합한 수): what counted toward hiding a recipe and all that came, with
+   * reasons. "신고 2 (광고·도배 2)" when all counted, "센 신고 1 · 전체 2 (광고·도배 2)" when some went to the operator only.
+   */
+  function recipeFlagCount(flags) {
+    const all = flags.reduce((a, f) => a + f.n, 0);
+    const counted = flags.reduce((a, f) => a + (f.counted ?? f.n), 0);
+    const why = flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ");
+    return `${counted === all ? `신고 ${all}` : `센 신고 ${counted} · 전체 ${all}`} (${why})`;
+  }
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
     field: "현장 단가표 틀", shop: "가게 영업 틀", invest: "투자 원칙·일지 틀", company: "근무 주기·급여 방식",
     bundle: "묶음", layout: "화면 배치", cards: "카드 순서", widget: "위젯 모양", photoLook: "그림 꾸미기", calView: "달력 모양", appFeel: "앱 동작",
@@ -2313,7 +2323,7 @@ function adminApp(L, BUILD, M) {
     const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main">
         <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b> <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
-        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · 신고 ${r.flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ")}` : ""}</small>
+        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
         ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
         ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc(r.hidden)}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>

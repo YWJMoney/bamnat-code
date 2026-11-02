@@ -446,9 +446,9 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
     SectionCard(title = "관리자 연결") {
         when {
             // PC 확인 8773e3ae: approved at once said why (the 최고 관리자's own code needs no 승인), not left to guess.
-            admin?.approved == true -> Text("${admin.name} 관리자 휴대폰이에요. 프로를 무료로 써요." +
+            admin?.approved == true -> Text("${adminWhose(admin.name)} 휴대폰이에요. 프로를 무료로 써요." +
                 if (admin.owner) " 최고 관리자 코드로 연결해서 따로 승인 없이 바로 열렸어요." else "", style = MaterialTheme.typography.bodyMedium)
-            admin != null -> Text("${admin.name} 관리자 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
+            admin != null -> Text("${adminWhose(admin.name)} 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
             else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -618,3 +618,8 @@ private fun RewardLedgerCard(c: AppContainer, gate: Gate, plans: List<Plan>) {
 
 /** "1월 11일", in the phone's zone. */
 private fun dayWords(at: java.time.Instant): String = at.atZone(com.bamnat.core.time.Today.zone()).toLocalDate().let { "${it.monthValue}월 ${it.dayOfMonth}일" }
+
+/**
+ * PC 확인 보안 6차 d00db8a4 ("최고 관리자 관리자 휴대폰이에요"): the owner's name is already "최고 관리자", so "관리자" is not said twice.
+ */
+internal fun adminWhose(name: String): String = name.trim().let { if (it.isEmpty()) "관리자" else if (it.endsWith("관리자")) it else "$it 관리자" }

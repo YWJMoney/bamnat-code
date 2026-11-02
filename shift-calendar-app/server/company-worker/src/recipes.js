@@ -13,7 +13,7 @@
 // This file does not import index.js (tools/bundle.mjs puts it in one file); what it needs comes in as [d].
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
-import { addStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
+import { addStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -1396,7 +1396,8 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       ?? "state = 'pending'";
     const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT 200`);
     const marks = rows.map(() => "?").join(",");
-    const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n FROM recipe_flags WHERE code IN (${marks})
+    // PC 확인 보안 6차: how many of each reason counted toward hiding it too (the operator's own were shown as if they did).
+    const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n, SUM(counted) AS counted FROM recipe_flags WHERE code IN (${marks})
       GROUP BY code, reason`, ...rows.map((r) => r.code)) : [];
     const quiet = rows.length ? await d.all(env, `SELECT code, why, COUNT(*) AS n FROM recipe_flags WHERE counted = 0 AND code IN (${marks})
       GROUP BY code, why`, ...rows.map((r) => r.code)) : [];
@@ -1406,7 +1407,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       return q.length ? { fresh: n("new"), net: n("net") } : null;
     };
     return d.json({ tab, items: rows.map((r) => ({ ...listItem(r, now), state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
-      late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n })),
+      late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n, counted: f.counted ?? f.n })),
       quiet: quietOf(r.code), hidden: r.hidden_reason ?? null })) });
   }
   if (path === "/recipes/actions" && method === "GET") {
@@ -1486,7 +1487,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     // 1.36 [SEC-16] (PC 확인 F 13차): a recipe the reports hid, shown again, says why in 임시 조치 기록 when the operator wrote nothing.
     stmts.push(act(code, what, note || (what === "show" && r.hidden_reason === "flags" ? "신고가 맞지 않았어요" : "")));
     await d.batch(env, stmts);
-    if (strike) await addStrike(d, env, strike, "recipe", code, now);
+    if (strike) await operatorStrike(d, env, strike, "recipe", code, now);
     if (unstrike) await strikeTakenBack(d, env, unstrike, now);
     return d.json({ code, done: what });
   }

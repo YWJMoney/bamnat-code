@@ -264,6 +264,44 @@ class RCScreenshotTest : ScreenshotBase() {
         assertEquals(null, again.state.value.appliedAt)
     }
 
+    /**
+     * PC 확인 보안 6차 d00db8a4 (조각을 바꿔 두세 번 넣어도 되돌리기 창에 넣은 것별 줄이 없어요): 파스텔 근무색's 달력 테마 is laid on
+     * the theme worn ([MKX-02] 얹기) and leaves no record, so the question listed nothing and 되돌리기 left it on. Now it is a line of
+     * the question and comes off with the rest.
+     */
+    @Test fun takingItBackTakesTheTabLaidOnToo() = shoot("1342f_rcp_detail_undo_laid", PHONE) {
+        val api = starters()
+        style(WorkStyle.SHIFT)
+        val i = api.recipes.indexOfFirst { it.first.title == "파스텔 근무색" }
+        val code = api.code(i)
+        val vm = RecipeDetailViewModel(c, code, PersonalCalendar.MAIN)
+        content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+        settle()
+        vm.apply { }
+        settle()
+        settle()
+        assertTrue("달력 탭이 테마 위에 얹혔어요", c.wardrobe.overlays.value.any { it.code == code })
+        assertEquals(2, vm.state.value.undoable.size)
+        // Its line (with 되돌리기 now, as the tab comes off here too) goes after ten seconds; then the card's.
+        compose.mainClock.advanceTimeBy(12_000)
+        settle()
+        repeat(6) { scrollDown(400) }
+        settle()
+        assertTrue(appears("내 달력에 넣어 둔 레시피예요", exact = true))
+        tapText("되돌리기", exact = true, scrolls = 0)
+        settle()
+        assertTrue(appears("이 레시피를 2번 넣었어요. 모두 넣기 전으로 돌아가요", exact = true))
+        assertTrue(appears("테마 위에 얹음 · ‘달력’ 탭", exact = false))
+        assertTrue(appears("넣음 · 근무 꾸미기", exact = false))
+        tapText("되돌리기", exact = true, scrolls = 0)
+        settle()
+        settle()
+        assertTrue("얹은 탭도 빠졌어요", c.wardrobe.overlays.value.none { it.code == code })
+        assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == code })
+        assertEquals(null, vm.state.value.laidAt)
+        assertTrue(gone("내 달력에 넣어 둔 레시피예요", exact = true))
+    }
+
     @Test fun theConfirmShowsWhatChanges() = shoot("1343_rcp_detail_confirm", "w360dp-h780dp-port-night-450dpi") {
         val api = starters()
         style(WorkStyle.SHIFT)

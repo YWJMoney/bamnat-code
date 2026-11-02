@@ -441,8 +441,10 @@ fun MakerScreen(
                             p.limitPerDay?.let { n ->
                                 // 1.36 PC 6차: the same words (and date) as 광장's 쓰기 제한 line.
                                 val until = p.limitUntil
-                                add(("⏳ " + (if (until != null && n > 0) com.bamnat.app.company.WriteLimit(until, n).line(null)
-                                    else "신고가 쌓여 " + (until?.let { com.bamnat.app.ui.Fmt.monthDay(it.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()) + "까지 " }.orEmpty()) + "글을 쓸 수 없어요") +
+                                // PC 확인 보안 6차: who hid what ("운영자가 프로필을 가려"), not always 신고.
+                                val lim = p.limit ?: until?.let { com.bamnat.app.company.WriteLimit(it, n) }
+                                add(("⏳ " + (if (lim != null && n > 0) lim.line(null)
+                                    else (lim?.cause() ?: "신고가 쌓여") + " " + (until?.let { com.bamnat.app.ui.Fmt.monthDay(it.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()) + "까지 " }.orEmpty()) + "글을 쓸 수 없어요") +
                                     ". 기간이 지나면 저절로 풀려요") to null)
                             }
                         }

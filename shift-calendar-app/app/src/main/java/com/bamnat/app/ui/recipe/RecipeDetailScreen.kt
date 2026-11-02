@@ -98,7 +98,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     var undoing by remember { mutableStateOf(false) }
     LaunchedEffect(s.message) {
         val m = s.message ?: return@LaunchedEffect
-        val undo = s.appliedId != null && m.startsWith("적용했어요")
+        // PC 확인 보안 6차: a tab laid on the theme is taken back here too (with 마을 › 테마's 빼기 as before).
+        val undo = (s.appliedId != null && m.startsWith("적용했어요")) || (s.laidAt != null && m.contains("테마 위에 얹었어요"))
         // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
         // PC 확인 7525ccff (신고 띠가 아래 스위치를 가려요): a line with nothing to do has its own ✕, so it goes at once when asked.
         val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else null, withDismissAction = !undo,
@@ -167,7 +168,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 VoteRow(s, vm, onDislike = { disliking = true })
                 if (doc.mine) MakerCard(doc, onNewVersion = vm.body()?.let { b -> { onNewVersion(b) } })
-                s.appliedAt?.let { at -> AppliedCard(at) { undoing = true } }
+                (s.appliedAt ?: s.laidAt)?.let { at -> AppliedCard(at, laidOnly = s.appliedAt == null) { undoing = true } }
                 if (r.desc.isNotEmpty()) Text(r.desc, style = MaterialTheme.typography.bodyMedium)
                 // [LIN-02][LIN-03] 1.35 a 수정판 of my recipe: what it changed, and 내 판에 가져오기.
                 s.parentDoc?.takeIf { it.mine }?.let { pd -> DiffSection(pd, s.diff, onOpen) { picked -> vm.takeInto(picked)?.let { body -> onTakeInto(pd.item.code, body) } } }
@@ -314,12 +315,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // PC 확인 7525ccff (두 번 넣은 것 중 무엇이 돌아가는지 몰라요): each put-on it takes back, when and what.
-                if (s.undoable.size >= 2) {
-                    Text("이 레시피를 ${s.undoable.size}번 넣었어요. 모두 넣기 전으로 돌아가요", style = MaterialTheme.typography.bodyMedium)
-                    s.undoable.forEach { (at, what) ->
-                        Text("· " + java.text.SimpleDateFormat("M월 d일 HH:mm", java.util.Locale.KOREA).format(java.util.Date(at)) + " 넣음" +
-                            (if (what.isNotEmpty()) " · " + what.joinToString("·") else ""), style = MaterialTheme.typography.bodySmall)
-                    }
+                // PC 확인 보안 6차 (목록이 없어요): always, one line a put-on, a tab laid on the theme as well.
+                if (s.undoable.size >= 2) Text("이 레시피를 ${s.undoable.size}번 넣었어요. 모두 넣기 전으로 돌아가요", style = MaterialTheme.typography.bodyMedium)
+                s.undoable.forEach { (at, what) ->
+                    Text("· " + java.text.SimpleDateFormat("M월 d일 HH:mm", java.util.Locale.KOREA).format(java.util.Date(at)) + " " + what,
+                        style = MaterialTheme.typography.bodySmall)
                 }
                 Text("이 레시피가 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요")
             }
@@ -610,13 +610,14 @@ private fun LineageSection(l: com.bamnat.app.recipe.Lineage, onOpen: (String) ->
 
 /** [RCX-24] This recipe is on this phone: when, how long 되돌리기 lasts, and the button (설계서 4-3 5: 소식과 레시피 화면에). */
 @Composable
-private fun AppliedCard(at: Long, onUndo: () -> Unit) {
+private fun AppliedCard(at: Long, laidOnly: Boolean = false, onUndo: () -> Unit) {
     val left = (com.bamnat.app.recipe.RecipeRepository.UNDO_DAYS - (com.bamnat.core.time.Today.millis() - at) / 86_400_000L).coerceAtLeast(1)
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("내 달력에 넣어 둔 레시피예요", style = MaterialTheme.typography.titleSmall)
-                Text(java.text.SimpleDateFormat("M월 d일", java.util.Locale.KOREA).format(java.util.Date(at)) + " 넣음 · ${left}일 안에 되돌릴 수 있어요",
+                Text(java.text.SimpleDateFormat("M월 d일", java.util.Locale.KOREA).format(java.util.Date(at)) +
+                    (if (laidOnly) " 테마 위에 얹음 · 언제든 되돌릴 수 있어요" else " 넣음 · ${left}일 안에 되돌릴 수 있어요"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }

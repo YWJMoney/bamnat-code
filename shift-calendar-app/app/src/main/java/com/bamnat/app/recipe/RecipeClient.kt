@@ -178,6 +178,8 @@ data class MakerPage(
     /** The maker's own: 1.36 [LIM-10] writes a day while reports restrict this install, and until when. */
     val limitPerDay: Int? = null,
     val limitUntil: java.time.Instant? = null,
+    /** PC 확인 보안 6차: the same restriction with who hid what, for its line ([com.bamnat.app.company.WriteLimit.cause]). */
+    val limit: com.bamnat.app.company.WriteLimit? = null,
 ) {
     val themes: List<RecipeItem> get() = recipes.filter { it.scope != "tab" }
     val tabRecipes: List<RecipeItem> get() = recipes.filter { it.scope == "tab" }
@@ -448,7 +450,8 @@ class RecipeClient(
             trustDays = o.optJSONObject("trustNext")?.takeIf { it.has("days") }?.optInt("days"),
             trustHeld = o.optJSONObject("trustNext")?.optBoolean("held") == true,
             limitPerDay = o.optJSONObject("limit")?.optInt("perDay"),
-            limitUntil = o.optJSONObject("limit")?.optStringOrNull("until")?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() })
+            limitUntil = o.optJSONObject("limit")?.optStringOrNull("until")?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() },
+            limit = com.bamnat.app.company.WriteLimit.of(o))
     }
 
     override suspend fun followQuiet(device: String, id: String, quiet: Boolean) = serverCall {
@@ -618,7 +621,8 @@ class RecipeClient(
                 "reason" -> "안좋아요 이유를 골라 주세요"
                 "opinion" -> "의견을 5자 이상 120자 이하로 적어 주세요"
                 "own" -> "내 레시피에는 누를 수 없어요"
-                "muted" -> "신고가 쌓여 30일 동안 쓸 수 없어요"
+                // PC 확인 보안 6차: not always 신고, nor 30 days (운영자 가림, 30·90일 단계); the same words as 광장's.
+                "muted" -> "운영 원칙을 지키지 않은 글·작품이 있어 지금은 쓸 수 없어요"
                 "not_found" -> "지워졌거나 가려진 레시피예요"
                 "too_long" -> "40자까지 쓸 수 있어요"
                 "two_themes" -> "모음에는 테마를 하나만 넣을 수 있어요. 나머지는 기능별 탭으로 골라 주세요"

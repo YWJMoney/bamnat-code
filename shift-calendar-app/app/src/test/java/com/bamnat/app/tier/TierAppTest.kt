@@ -251,6 +251,9 @@ class TierAppTest {
         c.syncPasses(force = true, linked = true)
         assertEquals(listOf("passes"), api.calls)
         assertEquals(true, c.proStore.current.passes?.admin?.owner)
+        // PC 확인 보안 6차: "최고 관리자 휴대폰이에요", not "최고 관리자 관리자 휴대폰이에요".
+        assertEquals("최고 관리자", com.bamnat.app.ui.pro.adminWhose("최고 관리자"))
+        assertEquals("민지 관리자", com.bamnat.app.ui.pro.adminWhose("민지"))
     }
 
     // ---- The trial's answer waits until it reaches the server [SRV-07] ----

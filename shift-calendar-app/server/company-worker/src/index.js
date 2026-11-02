@@ -84,7 +84,7 @@ import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen
 import { RECIPE_COLUMNS, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
-import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
+import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
 export const LIMITS = {
@@ -776,6 +776,7 @@ const COLUMNS = [
   // 1.34 [RCP-35] 나눔 판의 이야기.
   ...RECIPE_COLUMNS,
   ...COMMUNITY_COLUMNS,
+  ...WRITE_LIMITS_COLUMNS,
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -5943,7 +5944,7 @@ async function moderatePost(env, id, body, now) {
     }
     await batch(env, stmts);
     // 1.36 [LIM-10] A post the developer hid counts like one reports hid (once: one already hidden was counted then).
-    if (p.status !== "hidden") await addStrike(recipeDeps, env, p.device, "post", id, now);
+    if (p.status !== "hidden") await operatorStrike(recipeDeps, env, p.device, "post", id, now);
     await audit(env, now, body.action === "mute" ? "post_mute" : "post_hide", target, reason);
   } else if (body.action === "show") {
     await batch(env, [

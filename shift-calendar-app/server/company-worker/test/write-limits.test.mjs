@@ -35,6 +35,8 @@ test("[LIM-10] no cap without strikes; two hidden posts restrict to 5 a day for 
   assert.equal(shown.limit.perDay, 5);
   assert.equal(shown.left.posts, 5);
   assert.equal(shown.limit.until, new Date(NOW + 3 * DAY).toISOString());
+  // PC 확인 보안 6차: why, so the line says 신고 (not 운영자) here.
+  assert.deepEqual([shown.limit.by, shown.limit.n, shown.limit.kinds], ["reports", 2, ["post"]]);
   for (let i = 0; i < 5; i++) assert.equal((await say(2, `조심해서 쓰는 글 ${i}`)).status, 201);
   const refused = await say(2, "여섯 번째 글이에요");
   assert.equal(refused.status, 429);
@@ -66,6 +68,8 @@ test("[LIM-10] each restriction is stricter: 5 a day, 2 a day, then 쓰기 막�
   };
   await strikeTwice();
   assert.equal((await read(2)).data.limit.perDay, 5);
+  // PC 확인 보안 6차 ("운영자가 가렸는데 '신고가 쌓여'"): the developer hid both.
+  assert.deepEqual([(await read(2)).data.limit.by, (await read(2)).data.limit.n], ["operator", 2]);
   t.mock.timers.tick(4 * DAY);
   await strikeTwice();
   assert.equal((await read(2)).data.limit.perDay, 2);

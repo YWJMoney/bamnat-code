@@ -197,6 +197,8 @@ test("[SEC-16] 보안 점검 M10: new ids and one line cannot hide a recipe; sho
   assert.deepEqual({ ...(await flags()) }, { flags: 2, state: "visible" });
   const list = (await call("GET", "/api/admin/recipes?tab=flagged", undefined, admin)).data.items.find((x) => x.code === code);
   assert.deepEqual(list.quiet, { fresh: 3, net: 1 });
+  // PC 확인 보안 6차: the reasons with how many of them counted ("센 신고 2 · 전체 6").
+  assert.deepEqual(list.flags, [{ reason: "fake", n: 6, counted: 2 }]);
   await call("POST", `/api/recipes/${code}/flag`, { device: device(8), reason: "fake" }, from(8));
   assert.equal((await flags()).state, "hidden");
   // The operator hides another of the same maker's: two strikes start a restriction.
@@ -205,6 +207,11 @@ test("[SEC-16] 보안 점검 M10: new ids and one line cannot hide a recipe; sho
   const limit = () => DB.prepare("SELECT until FROM write_limits WHERE device = ?").bind(owner).first();
   assert.ok((await limit()).until > Date.now());
   assert.equal((await DB.prepare("SELECT hidden FROM recipe_trust WHERE device = ?").bind(owner).first()).hidden, 2);
+  // One hidden by reports and one by the operator: the maker's line says both.
+  const mine = (await call("GET", "/api/recipes/mine", undefined, { "x-device": device(1) })).data;
+  const by = (await DB.prepare("SELECT hidden_by FROM write_strikes WHERE device = ? ORDER BY id").bind(owner).all()).results.map((r) => r.hidden_by);
+  assert.deepEqual(by, [null, "operator"]);
+  assert.deepEqual([mine.limit.by, mine.limit.n, mine.limit.kinds], ["both", 2, ["recipe"]]);
   // Shown again: the reports were wrong, so its mark goes and the restriction it started ends.
   await call("POST", `/api/admin/recipes/${code}/show`, {}, admin);
   assert.equal((await DB.prepare("SELECT hidden FROM recipe_trust WHERE device = ?").bind(owner).first()).hidden, 1);

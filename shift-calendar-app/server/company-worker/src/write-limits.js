@@ -22,6 +22,12 @@ export const WRITE_LIMITS_SCHEMA = [
     per_day INTEGER NOT NULL, times INTEGER NOT NULL DEFAULT 1)`,
 ];
 
+/**
+ * 1.36 PC 확인 보안 6차 (운영자가 가렸는데 '신고가 쌓여'라고 나와요): who hid what a strike is for, "operator" or null (reports, and
+ * strikes from before this column).
+ */
+export const WRITE_LIMITS_COLUMNS = ["ALTER TABLE write_strikes ADD COLUMN hidden_by TEXT"];
+
 /** The step a restriction would start from now, after the quiet time since the last one ended. */
 export function stepAfter(last, now, rules = WRITE_LIMITS) {
   if (!last) return 0;
@@ -29,23 +35,37 @@ export function stepAfter(last, now, rules = WRITE_LIMITS) {
   return Math.max(0, last.step - Math.floor(quiet / (rules.forgetDays * DAY)));
 }
 
-/** This install's restriction now, as { perDay, until, step }, or null when it may write freely. */
-export async function writeAllowance(d, env, dev, now) {
+/**
+ * This install's restriction now, as { perDay, until, step, by, n, kinds }, or null when it may write freely. [by] is who hid the things
+ * the restriction is for ("operator", "reports" or "both"), [n] how many and [kinds] what they were (post, talk, recipe, bio, set,
+ * profile), so the app says why (PC 확인 보안 6차).
+ */
+export async function writeAllowance(d, env, dev, now, rules = WRITE_LIMITS) {
   if (!dev) return null;
-  const row = await d.one(env, "SELECT step, until, per_day FROM write_limits WHERE device = ? AND until > ?", dev, now);
-  return row ? { perDay: row.per_day, until: row.until, step: row.step } : null;
+  const row = await d.one(env, "SELECT step, since, until, per_day FROM write_limits WHERE device = ? AND until > ?", dev, now);
+  if (!row) return null;
+  const strikes = await d.all(env, "SELECT kind, hidden_by FROM write_strikes WHERE device = ? AND at > ? AND at <= ?",
+    dev, row.since - rules.windowDays * DAY, row.since);
+  const op = strikes.filter((x) => x.hidden_by === "operator").length;
+  const by = !strikes.length ? null : op === strikes.length ? "operator" : op === 0 ? "reports" : "both";
+  return { perDay: row.per_day, until: row.until, step: row.step, by, n: strikes.length, kinds: [...new Set(strikes.map((x) => x.kind))] };
+}
+
+/** The restriction as the app reads it (the 쓰기 제한 line). */
+export function limitJson(a, extra = {}) {
+  return { until: new Date(a.until).toISOString(), perDay: a.perDay, ...extra, ...(a.by ? { by: a.by, n: a.n, kinds: a.kinds } : {}) };
 }
 
 /**
  * One strike for [dev]: [kind] ("post", "talk", "recipe") and what was hidden. Returns the restriction it started, or null. A
  * restriction starting at 0 a day also goes into `muted`, which every write already refuses.
  */
-export async function addStrike(d, env, dev, kind, ref, now, rules = WRITE_LIMITS) {
+export async function addStrike(d, env, dev, kind, ref, now, rules = WRITE_LIMITS, by = null) {
   if (!dev) return null;
   const last = await d.one(env, "SELECT step, since, until, times FROM write_limits WHERE device = ?", dev);
   // A strike already counted toward a restriction does not count again.
   const from = Math.max(now - rules.windowDays * DAY, last ? last.since : 0);
-  await d.run(env, "INSERT INTO write_strikes (device, kind, ref, at) VALUES (?, ?, ?, ?)", dev, kind, String(ref).slice(0, 80), now);
+  await d.run(env, "INSERT INTO write_strikes (device, kind, ref, at, hidden_by) VALUES (?, ?, ?, ?, ?)", dev, kind, String(ref).slice(0, 80), now, by);
   if (last && last.until > now) return null;
   const n = (await d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND at > ?", dev, from))?.n ?? 0;
   if (n < rules.strikes) return null;
@@ -60,6 +80,11 @@ export async function addStrike(d, env, dev, kind, ref, now, rules = WRITE_LIMIT
       ON CONFLICT (device) DO UPDATE SET until = MAX(muted.until, excluded.until), reason = excluded.reason`, dev, until)] : []),
   ]);
   return { step, until, perDay: s.perDay };
+}
+
+/** A strike for something the operator hid (not reports): the same, said as the operator's. */
+export function operatorStrike(d, env, dev, kind, ref, now) {
+  return addStrike(d, env, dev, kind, ref, now, WRITE_LIMITS, "operator");
 }
 
 /**
@@ -78,7 +103,7 @@ export async function writeLeft(d, env, dev, key, now) {
   const a = await writeAllowance(d, env, dev, now);
   if (!a || a.perDay <= 0) return {};
   const used = await d.one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `${key}|${dev}`, now);
-  return { limit: { until: new Date(a.until).toISOString(), perDay: a.perDay, left: Math.max(0, a.perDay - (used?.count ?? 0)) } };
+  return { limit: limitJson(a, { left: Math.max(0, a.perDay - (used?.count ?? 0)) }) };
 }
 
 /** For the admin app: installs restricted now or in the last 30 days, newest first, with their strikes. */

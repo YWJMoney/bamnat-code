@@ -283,10 +283,10 @@ data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val 
  * 1.36 [LIM-10] 신고 누적 쓰기 제한: nobody has a daily cap; posts hidden by reports restrict an install until [until] to [perDay]
  * writes a day of each kind. The line under a write box, said only then.
  */
-data class WriteLimit(val until: Instant, val perDay: Int) {
+data class WriteLimit(val until: Instant, val perDay: Int, val by: String? = null, val n: Int = 0, val kinds: List<String> = emptyList()) {
     fun line(left: Int?): String {
         val day = until.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()
-        val head = "신고가 쌓여 ${day.monthValue}월 ${day.dayOfMonth}일까지 하루 ${perDay}번만 쓸 수 있어요"
+        val head = "${cause()} ${day.monthValue}월 ${day.dayOfMonth}일까지 하루 ${perDay}번만 쓸 수 있어요"
         return when {
             left == null -> head
             left > 0 -> "$head · 오늘 ${left}번 더"
@@ -294,9 +294,31 @@ data class WriteLimit(val until: Instant, val perDay: Int) {
         }
     }
 
+    /**
+     * PC 확인 보안 6차 (운영자가 가렸는데 '신고가 쌓여'): why, as the server says who hid what ([by] "operator", "reports" or "both";
+     * [n] how many; [kinds] post, talk, recipe, set, bio, profile). Before it said, reports.
+     */
+    fun cause(): String {
+        val what = when {
+            kinds.isNotEmpty() && kinds.all { it == "recipe" || it == "set" } -> "작품"
+            kinds.isNotEmpty() && kinds.all { it == "post" || it == "talk" } -> "글"
+            kinds.isNotEmpty() && kinds.all { it == "bio" || it == "profile" } -> "프로필"
+            else -> "글·작품"
+        }
+        val count = if (n > 0 && what != "프로필") " ${n}개" else ""
+        return when (by) {
+            "operator" -> if (what == "프로필") "운영자가 프로필을 가려" else "운영자가 $what$count${com.bamnat.app.ui.Fmt.obj(what + count)} 가려"
+            "both" -> "신고와 운영자 확인으로 $what$count${com.bamnat.app.ui.Fmt.iga(what + count)} 가려져"
+            else -> "신고가 쌓여"
+        }
+    }
+
     companion object {
         fun of(o: JSONObject?): WriteLimit? = o?.optJSONObject("limit")?.let { l ->
-            runCatching { WriteLimit(Instant.parse(l.getString("until")), l.getInt("perDay")) }.getOrNull()
+            runCatching {
+                WriteLimit(Instant.parse(l.getString("until")), l.getInt("perDay"), l.optString("by").takeIf { it.isNotEmpty() }, l.optInt("n"),
+                    l.optJSONArray("kinds")?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty())
+            }.getOrNull()
         }
     }
 }

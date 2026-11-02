@@ -437,4 +437,5 @@ test("[V20] 보이는 믿음 단계: 새싹 → 3일 뒤 이웃 → 가려진 �
   assert.deepEqual(p.trustNext, { held: true });
   assert.equal(p.limit.perDay, 5);
   assert.match(p.limit.until, /^\d{4}-/);
+  assert.deepEqual([p.limit.by, p.limit.n, p.limit.kinds], ["operator", 2, ["bio", "profile"]]);
 });

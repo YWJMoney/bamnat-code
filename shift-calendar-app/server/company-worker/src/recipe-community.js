@@ -6,7 +6,7 @@
 // the server never learns who uses which recipe. Everything that sends (요청, 팔로우, 그림) waits for 처리방침 3.8 like the rest.
 import { CODE, cleanText, graphemes, investAdvice, listItem, makerId, oneEmoji, sha256hex, textProblem, trustLevel } from "./recipes.js";
 import { DAY, HOUR } from "./units.js";
-import { addStrike, writeAllowance, writeLimitHit } from "./write-limits.js";
+import { addStrike, limitJson, operatorStrike, writeAllowance, writeLimitHit } from "./write-limits.js";
 
 const RC_STYLE_KEYS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
 // 1.35 [RCX-30] 그림 꾸미기 backgrounds (1080 px) fit in 160 KB; a whole look is up to 9 pictures.
@@ -249,9 +249,9 @@ async function rcBadgesOf(d, env, dev, m, sums) {
 }
 
 /** 1.36 [LIM-10][V20] Something of the maker's that reports or the operator hid: one strike, and 단골 waits (as for a hidden recipe). */
-async function rcStrike(d, env, dev, kind, ref, now) {
+async function rcStrike(d, env, dev, kind, ref, now, operator = false) {
   await d.run(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", dev);
-  return addStrike(d, env, dev, kind, ref, now);
+  return operator ? operatorStrike(d, env, dev, kind, ref, now) : addStrike(d, env, dev, kind, ref, now);
 }
 
 /** [PRF-05] Whether [dev] blocked the maker [id], or the maker blocked [dev] (then the page is not there for them). */
@@ -299,7 +299,7 @@ async function rcMakerPage(d, env, request, id) {
     ...(trust ? { trust: trust.level } : {}),
     ...(mine && trust && trust.level < 2 ? { trustNext: trust.level === 0 ? { days: Math.max(1, Math.ceil(3 - trust.days)) }
       : trust.hidden > 0 ? { held: true } : { days: Math.max(1, Math.ceil(14 - trust.days)) } } : {}),
-    ...(limit ? { limit: { perDay: limit.perDay, until: new Date(limit.until).toISOString() } } : {}),
+    ...(limit ? { limit: limitJson(limit) } : {}),
     sets, ...(cover ? { cover: cover.id } : {}), ...(mine && m?.cover && !cover ? { coverPending: m.cover } : {}),
     maker: id, nick, face: m?.face ?? null, color: m?.color ?? null, mine,
     ...(m?.bio && !m.bio_hidden ? { bio: m.bio } : {}),
@@ -1036,7 +1036,7 @@ export async function communityAdmin(d, request, env, path, url, now) {
     const set = await d.one(env, "SELECT owner, hidden FROM recipe_sets WHERE id = ?", m[1]);
     await d.run(env, "UPDATE recipe_sets SET hidden = ? WHERE id = ?", m[2] === "hide" ? 1 : 0, m[1]);
     // 1.36 [LIM-10] The operator hiding a 모음 is one strike.
-    if (set && m[2] === "hide" && !set.hidden) await rcStrike(d, env, set.owner, "set", m[1], Date.now());
+    if (set && m[2] === "hide" && !set.hidden) await rcStrike(d, env, set.owner, "set", m[1], Date.now(), true);
     return d.json({ id: m[1], hidden: m[2] === "hide" });
   }
   m = path.match(/^\/recipes\/makers\/([0-9a-f]{12})\/(bio-hide|bio-show|close|open|clear)$/);
@@ -1046,7 +1046,7 @@ export async function communityAdmin(d, request, env, path, url, now) {
     else {
       // 1.36 [LIM-10] The operator hiding a 소개 (not one the reports already hid) or closing a profile is one strike.
       const was = await d.one(env, "SELECT device, bio_hidden, closed FROM recipe_makers WHERE maker = ?", id);
-      if (was && ((what === "bio-hide" && !was.bio_hidden) || (what === "close" && !was.closed))) await rcStrike(d, env, was.device, what === "close" ? "profile" : "bio", id, Date.now());
+      if (was && ((what === "bio-hide" && !was.bio_hidden) || (what === "close" && !was.closed))) await rcStrike(d, env, was.device, what === "close" ? "profile" : "bio", id, Date.now(), true);
     }
     // bio_hidden: 1 = 신고 셋으로 저절로, 2 = 운영자가 가림.
     if (what !== "clear") await d.run(env, `UPDATE recipe_makers SET ${what.startsWith("bio") ? "bio_hidden" : "closed"} = ? WHERE maker = ?`,
