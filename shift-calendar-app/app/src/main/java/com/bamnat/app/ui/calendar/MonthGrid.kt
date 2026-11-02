@@ -157,11 +157,12 @@ fun WeekdayHeader(weekStart: DayOfWeek, modifier: Modifier = Modifier) {
                 modifier = Modifier.weight(1f).partBox(d.copy(ink = null), RoundedCornerShape(4.dp)),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 style = d.text(MaterialTheme.typography.labelMedium),
-                color = d.ink?.let { Color(it.toInt()) } ?: when (dow) {
+                // PC 확인 C14 1.36 (요일 머리 '일'·'토'가 덮개 위에서 1.1:1): on a 꾸밈 사진 the head's colours read as the dates do.
+                color = com.bamnat.app.ui.decor.readableOnPhoto(d.ink?.let { Color(it.toInt()) } ?: when (dow) {
                     DayOfWeek.SUNDAY -> look.sunday(cal)
                     DayOfWeek.SATURDAY -> look.saturday(cal)
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
-                },
+                }),
             )
         }
     }
@@ -612,6 +613,9 @@ private fun DayCell(
     // PC 확인 C12 1.36 (사진 위 토·일 숫자 2:1, 야간 칸 위 토요일 1:1): the date's colour reads on what is really under it — the photo, and
     // the cell's own colour on it.
     val numberColor = com.bamnat.app.ui.decor.readableOnPhoto(numberRaw, tint)
+    // PC 확인 C14 1.36 (밝게 바뀐 토·일 숫자가 평일과 잘 구별되지 않아요): a short line of the day's own colour under it.
+    val weekendLine = if (isToday || numberRaw == scheme.onSurface || numberColor == numberRaw) null
+        else com.bamnat.app.ui.decor.readableOnPhoto(numberRaw, tint, target = 2.0)
     val jobs = money?.jobs ?: 0
     // [VIS-01] What the cell shows, read out in the same order.
     val description = buildString {
@@ -755,7 +759,7 @@ private fun DayCell(
         }
         if (custom || cellParts != null) CustomCellBody(
             parts = cellParts,
-            view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null }, date = date, isToday = isToday, numberColor = numberColor, dateSize = dateSize, footerSize = footerSize,
+            view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null }, date = date, isToday = isToday, numberColor = numberColor, weekendLine = weekendLine, dateSize = dateSize, footerSize = footerSize,
             todayColor = look.today, holidayName = holidayName, hasMemo = hasMemo, alarmOff = day.alarmSkipped,
             marks = remember(day, jobs) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null) },
             barColor = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)?.colorArgb?.asColor()
@@ -787,6 +791,7 @@ private fun DayCell(
                         color = if (isToday) look.today?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: scheme.onPrimary else numberColor,
                         fontSize = dateSize,
                         lineHeight = dateSize,
+                        modifier = Modifier.dayLine(weekendLine),
                     )
                 }
                 // [CAL-01] Two corners, filled in order: 알람 꺼짐 (always top left, so it is never pushed out),
@@ -1091,7 +1096,7 @@ internal fun CustomCellBody(
     /** [BLU-05] 1.36 부품 꾸미기: the cell's inside parts over the look, or null. */
     parts: com.bamnat.app.ui.parts.CellParts? = null,
     view: com.bamnat.core.recipe.CalendarView, cellLook: com.bamnat.core.recipe.CellLook?, filled: Color?, date: LocalDate, isToday: Boolean,
-    numberColor: Color, dateSize: androidx.compose.ui.unit.TextUnit,
+    numberColor: Color, weekendLine: Color? = null, dateSize: androidx.compose.ui.unit.TextUnit,
     footerSize: androidx.compose.ui.unit.TextUnit, todayColor: Color?, holidayName: String?, hasMemo: Boolean, alarmOff: Boolean, marks: List<Corner>,
     barColor: Color?, dayMark: @Composable (Dp) -> Unit, texts: Map<String, String>, moneyColor: Color,
 ) {
@@ -1170,6 +1175,7 @@ internal fun CustomCellBody(
                         chip != Color.Transparent -> com.bamnat.app.ui.components.contentColorOn(chip)
                         else -> dateInk
                     },
+                    modifier = Modifier.dayLine(weekendLine.takeIf { dp.ink == null && dp.fillColor == null && chip == Color.Transparent }),
                 )
             }
             if (place[1] == 'l') Spacer(Modifier.weight(1f))
@@ -1278,6 +1284,14 @@ internal fun cellTint(look: com.bamnat.core.recipe.CellLook?, shiftColor: Color?
     look?.bg != null -> look.bg!!.toLongOrNull(16)?.let { Color((it or 0xFF000000L).toInt()).copy(alpha = (look.bgAlpha ?: 100) / 100f) }
         ?.let { own -> ownTint?.let { androidx.compose.ui.graphics.lerp(own, it.copy(alpha = 1f), it.alpha * 0.6f) } ?: own }
     else -> ownTint
+}
+
+/** PC 확인 C14 1.36: a short line of [c] under a date (토·일·공휴일 on a 꾸밈 사진); nothing for null. */
+internal fun Modifier.dayLine(c: Color?): Modifier = if (c == null) this else drawBehind {
+    val w = size.width * 0.7f
+    val y = size.height - 0.5.dp.toPx()
+    drawLine(c, Offset((size.width - w) / 2, y), Offset((size.width + w) / 2, y), strokeWidth = 2.dp.toPx(),
+        cap = androidx.compose.ui.graphics.StrokeCap.Round)
 }
 
 /** [FREE-01] A cell's room and edge by its look (가늘게, 굵게, 점선) or 달력 모양's 칸마다 선. */

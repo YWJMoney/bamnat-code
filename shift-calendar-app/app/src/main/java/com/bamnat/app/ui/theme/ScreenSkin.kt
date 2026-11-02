@@ -106,7 +106,9 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val photoCard = if (dark) lerp(pageColor, Color.Black, 0.8f) else lerp(pageColor, Color.White, 0.5f)
     val worn = if (photoUnder && decorLight != null && veiled.card == null) veiled.copy(card = photoCard.argb()) else veiled
     val skin = if (!inked) base else skinned(base, worn, light, decorAvg)
-    val scheme = if (decorUnder) skin.copy(background = Color.Transparent, surface = Color.Transparent) else skin
+    // PC 확인 C14 1.36 ('오늘' 옅은 글자 2.1:1): on a 꾸밈 사진 the softer words are the full ink, as a photo is lighter and darker in places.
+    val scheme = (if (decorUnder) skin.copy(background = Color.Transparent, surface = Color.Transparent) else skin)
+        .let { if (photoUnder && inked) it.copy(onSurfaceVariant = it.onSurface) else it }
     // 1.35 [J135-11] The status bar's clock and icons stand on the screen's own ground (dark icons on a dark theme were unreadable).
     if (bars) BarIcons(light = !dark)
     // 1.35 [J135-12] The warning cards and the money colours that do not follow the scheme take the light or dark set of the ground,

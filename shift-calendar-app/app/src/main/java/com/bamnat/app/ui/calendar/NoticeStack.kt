@@ -110,7 +110,7 @@ internal val LocalNoticeFolded = compositionLocalOf { false }
 private fun FoldLine(count: Int, first: String?, expanded: Boolean, onToggle: () -> Unit) {
     val text = if (expanded) "알림 접기" else "알림 ${count}개 더 보기"
     // PC 확인 C11 1.36 (사진 바탕에서 파란 글자가 흐려요): on a 꾸밈 사진 the line takes a colour that shows there.
-    val accent = com.bamnat.app.ui.decor.readableOnPhoto(MaterialTheme.colorScheme.primary)
+    val accent = com.bamnat.app.ui.decor.readableOnPhoto(MaterialTheme.colorScheme.primary, target = 6.0)
     Row(
         Modifier
             .fillMaxWidth()
