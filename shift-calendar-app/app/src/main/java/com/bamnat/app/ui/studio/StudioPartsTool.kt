@@ -81,7 +81,8 @@ internal fun PartsTool(group: String, parts: String, onChange: (String) -> Unit)
     fun num(k: String): Float? = (line[k] as? Number)?.toFloat()
     fun col(k: String): Long? = line[k] as? Long
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
+    // PC 확인 c9a89b20: a swipe along the chips caught the 둥글기 slider just under them; the groups keep more room between them.
+    Column(verticalArrangement = Arrangement.spacedBy(22.dp), modifier = Modifier.padding(top = 4.dp)) {
         Group("채우기") {
             ColorPick("색", col("fill")) { set("fill", it) }
             if (col("fill") != null) LabeledSlider("진하기", num("fillA") ?: 100f, 0f..100f, "%") { set("fillA", it.toLong()) }
@@ -99,6 +100,7 @@ internal fun PartsTool(group: String, parts: String, onChange: (String) -> Unit)
                 Text("네 귀퉁이 따로", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Switch(each, { each = it })
             }
+            androidx.compose.foundation.layout.Spacer(Modifier.padding(top = 6.dp))
             if (!each) LabeledSlider("둥글기", num("r") ?: 0f, 0f..48f, "dp") { set("r", it.toLong()) }
             else listOf("rTL" to "왼쪽 위", "rTR" to "오른쪽 위", "rBL" to "왼쪽 아래", "rBR" to "오른쪽 아래").forEach { (k, w) ->
                 LabeledSlider(w, num(k) ?: num("r") ?: 0f, 0f..48f, "dp") { set(k, it.toLong()) }

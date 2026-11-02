@@ -106,7 +106,7 @@ internal fun MemoViewChips(
         }
         val sortLabel = when {
             view.sort.isEmpty() -> baseLabel
-            view.sort == MemoView.SORT_TITLE -> "제목 순"
+            view.sort == MemoView.SORT_TITLE -> "제목순"
             view.sort.startsWith("-") -> view.sort.drop(3) + " 큰 순"
             else -> view.sort.drop(2) + " 작은 순"
         }

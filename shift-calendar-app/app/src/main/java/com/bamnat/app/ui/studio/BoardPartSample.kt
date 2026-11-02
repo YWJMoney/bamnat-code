@@ -59,7 +59,8 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
                 .semantics { contentDescription = "판 예시" },
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text("예시 · 지어낸 내용이에요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // PC 확인 c9a89b20: the box names its 판, so a 연간 판 example is not taken for the month.
+            Text("${BOARD_NAMES[kind]} 예시 · 지어낸 내용이에요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             when (kind) {
                 "band" -> BandSample()
                 "line" -> LineSample()
@@ -75,6 +76,9 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
         }
     }
 }
+
+private val BOARD_NAMES = mapOf("band" to "근무 띠 판", "line" to "타임라인 판", "weekly" to "주 판", "year" to "연간 판", "memoCal" to "메모 달력",
+    "memoBoard" to "메모 보드", "memoTable" to "메모 표", "moneyCal" to "가계부 달력", "moneyBoard" to "가계부 분류 보드", "moneyTable" to "가계부 표")
 
 private val SHIFTS = listOf("주" to Color(0xFF42A5F5), "주" to Color(0xFF42A5F5), "야" to Color(0xFF5E35B1), "야" to Color(0xFF5E35B1),
     "비" to Color(0xFF90A4AE), "휴" to Color(0xFFEF9A9A), "휴" to Color(0xFFEF9A9A))
@@ -225,15 +229,16 @@ private fun WeeklySample() {
 private fun YearSample() {
     val bp = LocalBlueprint.current
     Column(Modifier.fillMaxWidth().then(PartMods.box(bp.style("cal.year"), RoundedCornerShape(0.dp))), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("2026년 · 주 120 · 야 96 · 휴 110", style = MaterialTheme.typography.labelMedium)
-        for (row in 0..1) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("‹  2026년  ›", style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        Text("주 120 · 야 96 · 휴 110", style = MaterialTheme.typography.labelMedium)
+        for (row in 0..3) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (c in 1..3) {
                 val m = row * 3 + c
                 Column(Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(10.dp))
-                    .then(PartMods.box(bp.style("cal.year.month", setOfNotNull("today".takeIf { m == 5 })), RoundedCornerShape(10.dp))).padding(5.dp)) {
+                    .then(PartMods.box(bp.style("cal.year.month", setOfNotNull("today".takeIf { m == 11 })), RoundedCornerShape(10.dp))).padding(5.dp)) {
                     Text("${m}월", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                     for (w in 0..2) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
-                        for (d in 0..6) Box(Modifier.weight(1f).height(5.dp).background(SHIFTS[(d + w + m) % SHIFTS.size].second.copy(alpha = 0.8f), RoundedCornerShape(1.dp)))
+                        for (d in 0..6) Box(Modifier.weight(1f).height(4.dp).background(SHIFTS[(d + w + m) % SHIFTS.size].second.copy(alpha = 0.8f), RoundedCornerShape(1.dp)))
                     }
                 }
             }

@@ -1394,7 +1394,8 @@ fun CalendarScreen(
                         CalendarBoardMenu(boardMenu, board, com.bamnat.core.layout.CalendarBoard.expertFor(settings.workStyle), onPick = pickBoard, onDismiss = { boardMenu = false })
                     }
                 }
-                if (bigText) Column(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp)) {
+                // PC 확인 c9a89b20: '타임라인 ▾'·'근무 띠 ▾' are longer than '월 ▾' and cut '휴 10', so other 판 take the line below too.
+                if (bigText || board != com.bamnat.core.layout.CalendarBoard.MONTH) Column(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         teamsChip()
                         Spacer(Modifier.weight(1f))

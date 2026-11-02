@@ -238,10 +238,10 @@ fun MemoListScreen(
             // A 정렬 picked from the chip or a 표 head says what it did, with 되돌리기 (PC 확인 82196a74, fe5eb3cd).
             fun said(v: String, base: String) = when {
                 v.isEmpty() -> base
-                v == com.bamnat.core.memo.MemoView.SORT_TITLE -> "제목 순"
+                v == com.bamnat.core.memo.MemoView.SORT_TITLE -> "제목순"
                 else -> "‘${v.removePrefix("-").removePrefix("p:")}’ ${if (v.startsWith("-")) "큰 순" else "작은 순"}"
             }
-            val baseLabel = if (state.tab == MemoTab.CALENDAR) "날짜 순" else state.sort.label
+            val baseLabel = if (state.tab == MemoTab.CALENDAR) "날짜순" else state.sort.label
             val sortTo: (String) -> Unit = { key ->
                 val before = memoView
                 val beforeBase = baseLabel
@@ -264,7 +264,7 @@ fun MemoListScreen(
                 }
             }
             if (state.loaded) MemoViewChips(memoView, propColumns, setView,
-                baseOptions = if (state.tab == MemoTab.CALENDAR) listOf("" to "날짜 순", com.bamnat.core.memo.MemoView.SORT_TITLE to "제목 순")
+                baseOptions = if (state.tab == MemoTab.CALENDAR) listOf("" to "날짜순", com.bamnat.core.memo.MemoView.SORT_TITLE to "제목순")
                     else MemoSort.entries.map { "ms:${it.name}" to it.label },
                 baseLabel = baseLabel, onSort = sortTo)
             when {
@@ -809,7 +809,8 @@ private fun MemoContent(memo: Memo, query: String) {
         // PC 확인 d5678f31: a "칸: 값" line shown as a pill under the card (PropPills, the first 3) is not written again in the text.
         val body = remember(memo.body) {
             val pills = com.bamnat.core.memo.MemoProps.of(memo).take(3).map { it.label }.toSet()
-            memo.body.lines().filterNot { com.bamnat.core.memo.MemoProps.labelOfLine(it) in pills }.joinToString("\n").trim()
+            // PC 확인 c9a89b20: a line of 꼬리표 alone is shown by the tag chips, not again in the text.
+            memo.body.lines().filterNot { com.bamnat.core.memo.MemoProps.labelOfLine(it) in pills || TAG_LINE.matches(it.trim()) }.joinToString("\n").trim()
         }
         if (body.isEmpty()) return
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.
@@ -974,3 +975,6 @@ fun MemoLookSample(look: com.bamnat.core.recipe.MemoLook, onTap: () -> Unit) {
 
 /** [TAB-02] What a 보드·표 change did, how to undo it, and what the bar says once undone (null [back]: a short note alone). */
 private data class UndoBar(val said: String, val back: (() -> Unit)?, val backSaid: String = "되돌렸어요")
+
+/** A body line that is only 꼬리표 ("#집안일 #급함"). */
+private val TAG_LINE = Regex("^(#[\\p{L}\\p{N}_]+\\s*)+$")
