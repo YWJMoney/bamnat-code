@@ -42,7 +42,7 @@ object RecipeFonts {
             if (UserFonts.sent(c.appContext, m.id)) { shared += m.name; continue }
             val sent = runCatching {
                 val bytes = withContext(Dispatchers.IO) { UserFonts.file(c.appContext, m.id)!!.readBytes() }
-                c.recipeApi.fontSend(c.companyStore.device, m.id, m.name, license, bytes).takeIf { it.id == m.id }
+                c.recipeApi.fontSend(c.companyStore.device, m.id, m.name, license, bytes, m.fallback).takeIf { it.id == m.id }
             }
             val e = sent.exceptionOrNull() as? com.bamnat.app.company.CompanyException
             when {
@@ -118,7 +118,18 @@ object RecipeFonts {
         for (id in idsIn(text) - have) {
             if (FontProbe.failed(id)) continue
             val (name, bytes) = runCatching { c.recipeApi.fontGet(c.companyStore.device, id) }.getOrNull()
-                ?: run { if (!prefs(c).contains(id)) prefs(c).edit().putLong(id, com.bamnat.core.time.Today.millis()).apply(); null } ?: continue
+                ?: run {
+                    if (!prefs(c).contains(id)) prefs(c).edit().putLong(id, com.bamnat.core.time.Today.millis()).apply()
+                    // PC 확인 9차 (기다리는 글꼴이 '내 글꼴'인데 화면은 기본 고딕): the app font its sender's phone found most like it, till it comes.
+                    if (UserFonts.standIn(c.appContext, id) == null) runCatching { c.recipeApi.fontStandIn(id) }.getOrNull()?.let { fb ->
+                        UserFonts.setStandIn(c.appContext, id, fb)
+                        withContext(Dispatchers.Main) {
+                            com.bamnat.app.ui.theme.AppFonts.forget(id)
+                            com.bamnat.app.ui.theme.AppFonts.loads[id] = com.bamnat.app.ui.theme.AppFonts.Load.WAITING
+                        }
+                    }
+                    null
+                } ?: continue
             if (UserFonts.idOf(bytes) != id) continue
             // 1.36 [SEC-10] 보안 점검 H3: opened first in a process with no rights; only then in the app's own.
             val look = java.io.File(c.appContext.cacheDir, "font-look-$id.ttf")

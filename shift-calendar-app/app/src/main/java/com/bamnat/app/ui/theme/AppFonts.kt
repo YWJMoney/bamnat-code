@@ -89,7 +89,8 @@ object AppFonts {
     val progress = androidx.compose.runtime.mutableStateMapOf<String, Pair<Long, Long>>()
 
     /** [MAT-05] PC 확인 1차: whether an open font has come down yet, shown as 받는 중… · 받았어요 · 못 받았어요 · 다시. */
-    enum class Load { LOADING, READY, FAILED }
+    /** [WAITING]: PC 확인 9차, a shared font a recipe named that the server does not give yet (its stand-in is drawn). */
+    enum class Load { LOADING, READY, FAILED, WAITING }
 
     /** Each open font's state since the app started; a font not here is not asked for yet. */
     val loads = androidx.compose.runtime.mutableStateMapOf<String, Load>()
@@ -187,6 +188,8 @@ object UserFonts {
 
     sealed interface Result {
         data class Added(val font: Mine) : Result
+        /** PC 확인 9차: the very same file is already in (its id is its bytes'). */
+        data class Same(val font: Mine) : Result
         data class Problem(val text: String) : Result
     }
 
@@ -220,8 +223,18 @@ object UserFonts {
 
     fun ids(c: Context): Set<String> = list(c).map { it.id }.toSet()
 
-    fun fallbackOf(c: Context, id: String): String? = runCatching { JSONObject(File(dir(c), "$id.json").readText()).optString("fallback") }.getOrNull()
-        ?.takeIf { FontCatalog.byId(it) != null }
+    fun fallbackOf(c: Context, id: String): String? = (runCatching { JSONObject(File(dir(c), "$id.json").readText()).optString("fallback") }.getOrNull()
+        ?: standIn(c, id))?.takeIf { FontCatalog.byId(it) != null }
+
+    /**
+     * PC 확인 9차: the app font that stands in for a shared font this phone is still waiting for, as its sender's phone judged it (the
+     * server keeps the word); kept apart from 내 글꼴 till the font comes.
+     */
+    private const val STAND_IN = "font_standin"
+    fun standIn(c: Context, id: String): String? = c.getSharedPreferences(STAND_IN, Context.MODE_PRIVATE).getString(id, null)
+    fun setStandIn(c: Context, id: String, fallback: String) {
+        if (FontCatalog.byId(fallback) != null) c.getSharedPreferences(STAND_IN, Context.MODE_PRIVATE).edit().putString(id, fallback).apply()
+    }
 
     /**
      * Copies the font at [uri] in: at most [FontCatalog.USER_MAX_BYTES] and [FontCatalog.USER_MAX_COUNT] fonts, and only a file the
@@ -257,7 +270,7 @@ object UserFonts {
         // came with a recipe is kept as it came, since the recipe names it by its bytes.
         val bytes = if (received) whole else FontNames.trimmed(whole)
         val id = idOf(bytes)
-        file(c, id)?.let { list(c).firstOrNull { m -> m.id == id }?.let { m -> return Result.Added(m) } }
+        file(c, id)?.let { list(c).firstOrNull { m -> m.id == id }?.let { m -> return if (received) Result.Added(m) else Result.Same(m) } }
         if (list(c).size >= FontCatalog.USER_MAX_COUNT) return Result.Problem("내 글꼴은 ${FontCatalog.USER_MAX_COUNT}개까지 넣을 수 있어요. 안 쓰는 글꼴을 빼 주세요")
         val ttf = File(dir(c), "$id.ttf")
         ttf.writeBytes(bytes)

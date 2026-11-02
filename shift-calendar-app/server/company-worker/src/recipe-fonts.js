@@ -24,6 +24,8 @@ export const FONT_LIMITS = { bytes: 8 * 1024 * 1024, perDay: 6, part: 1_500_000,
   perNetworkDay: 3, allDay: 40 };
 /** What the user says its maker allows; only these may be shared. */
 export const FONT_LICENSES = ["ofl", "apache", "free"];
+/** 1.36 PC 9차: the app fonts that may stand in for a shared one (core FontCatalog's phone fonts). */
+export const FONT_FALLBACKS = ["sans", "serif", "mono", "hand", "round"];
 export const FONT_LICENSE_NAMES = { ofl: "SIL 오픈 폰트 라이선스(OFL)", apache: "Apache 라이선스", free: "누구나 무료로 쓰게 공개" };
 
 export const FONT_SCHEMA = [
@@ -36,6 +38,9 @@ export const FONT_SCHEMA = [
   // 1.36 [SEC-10] M8: the SHA-256 of its outlines and cmap (fontGlyphs), so the operator sees a font that draws the same as one
   // already shared whatever its names say.
   "ALTER TABLE recipe_fonts ADD COLUMN glyphs TEXT",
+  // 1.36 PC 9차: the app font most like it, as its sender's phone judged (sans·serif·mono·hand·round), so a phone still waiting for it
+  // draws that instead of the plain sans.
+  "ALTER TABLE recipe_fonts ADD COLUMN fallback TEXT",
   `CREATE TABLE IF NOT EXISTS recipe_font_parts (id TEXT NOT NULL, part INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (id, part))`,
   `CREATE TABLE IF NOT EXISTS recipe_font_reports (id TEXT NOT NULL, device TEXT NOT NULL, why TEXT, at INTEGER NOT NULL, PRIMARY KEY (id, device))`,
 ];
@@ -262,8 +267,9 @@ async function rfPost(d, env, request) {
   const parts = [];
   for (let i = 0; i < body.ttf.length; i += FONT_LIMITS.part) parts.push(body.ttf.slice(i, i + FONT_LIMITS.part));
   await d.batch(env, [
-    d.stmt(env, "INSERT INTO recipe_fonts (id, owner, name, license, bytes, parts, state, info, glyphs, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      id, dev, rfName(body.name), body.license, bytes.length, parts.length, state, JSON.stringify(info), glyphs, now),
+    d.stmt(env, "INSERT INTO recipe_fonts (id, owner, name, license, bytes, parts, state, info, glyphs, fallback, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      id, dev, rfName(body.name), body.license, bytes.length, parts.length, state, JSON.stringify(info), glyphs,
+      FONT_FALLBACKS.includes(body.fallback) ? body.fallback : null, now),
     ...parts.map((p, i) => d.stmt(env, "INSERT INTO recipe_font_parts (id, part, data) VALUES (?, ?, ?)", id, i, p)),
   ]);
   return d.json({ id, state }, 201);
@@ -275,6 +281,16 @@ async function rfMeta(d, env, request, id) {
   if (!f) return d.json({ error: "not_found" }, 404);
   if (f.state !== "ok" && (await rfDev(d, request, null)) !== f.owner) return d.json({ error: "not_found", state: "hidden" }, 404);
   return d.json({ id: f.id, name: f.name, license: f.license, licenseName: FONT_LICENSE_NAMES[f.license], bytes: f.bytes, state: f.state });
+}
+
+/**
+ * GET /api/recipes/fonts/:id/look — 1.36 PC 9차: whether others get it yet and the app font that stands in for it till then. Nothing
+ * the sender wrote (not even its name) while it waits; a word from a fixed list.
+ */
+async function rfLook(d, env, id) {
+  const f = await d.one(env, "SELECT id, state, fallback FROM recipe_fonts WHERE id = ?", id);
+  if (!f) return d.json({ error: "not_found" }, 404);
+  return d.json({ id: f.id, state: ["ok", "pending"].includes(f.state) ? f.state : "hidden", fallback: FONT_FALLBACKS.includes(f.fallback) ? f.fallback : null });
 }
 
 /** GET /api/recipes/fonts/:id/file — the font itself. */
@@ -322,10 +338,11 @@ async function rfReport(d, env, request, id) {
 export async function fontRoute(d, request, env, path) {
   const method = request.method;
   if (path === "/api/recipes/fonts" && method === "POST") return rfPost(d, env, request);
-  const m = path.match(/^\/api\/recipes\/fonts\/(u[0-9a-f]{16})(\/file|\/report)?$/);
+  const m = path.match(/^\/api\/recipes\/fonts\/(u[0-9a-f]{16})(\/file|\/report|\/look)?$/);
   if (!m || !RF_ID.test(m[1])) return null;
   if (!m[2] && method === "GET") return rfMeta(d, env, request, m[1]);
   if (m[2] === "/file" && method === "GET") return rfFile(d, env, request, m[1]);
+  if (m[2] === "/look" && method === "GET") return rfLook(d, env, m[1]);
   if (m[2] === "/report" && method === "POST") return rfReport(d, env, request, m[1]);
   return null;
 }

@@ -365,12 +365,14 @@ fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, onPick:
     val load = value?.let { AppFonts.loads[it] }
     // PC 확인 6차 (StrictMode: 화면 스레드에서 파일 읽기): a user font's name is read off the main thread.
     val picked0 = value
-    val userName by androidx.compose.runtime.produceState<String?>(null, picked0) {
+    // PC 확인 9차: a shared font a recipe named that has not come yet is 받을 글꼴 (기다리는 중), not 내 글꼴.
+    val userName by androidx.compose.runtime.produceState<String?>(null, picked0, load) {
         this.value = if (picked0 == null || FontCatalog.byId(picked0) != null) null
-            else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { UserFonts.list(ctx).firstOrNull { it.id == picked0 }?.name }
+            else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { UserFonts.list(ctx).firstOrNull { it.id == picked0 }?.name ?: WAITING_NAME }
     }
-    val base = value?.let { id -> FontCatalog.byId(id)?.name ?: userName ?: "내 글꼴" } ?: "처음대로"
-    val name = when (load) { AppFonts.Load.LOADING -> "$base (받는 중)"; AppFonts.Load.FAILED -> "$base (못 받음)"; else -> base }
+    val waiting = value != null && FontCatalog.isUser(value) && userName == WAITING_NAME
+    val base = value?.let { id -> FontCatalog.byId(id)?.name ?: userName?.takeIf { it != WAITING_NAME } ?: if (waiting) "받을 글꼴" else "내 글꼴" } ?: "처음대로"
+    val name = when { load == AppFonts.Load.LOADING -> "$base (받는 중)"; load == AppFonts.Load.FAILED -> "$base (못 받음)"; waiting -> "$base (기다리는 중)"; else -> base }
     // PC 확인 6차 (사용성 제안 "설정 검색에서 오면 글꼴 칸으로 바로"): the studio asks for this row by its label.
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     // PC 확인 7차 (사용성 제안 "검색에서 온 칸을 화면 가운데로, 잠깐 반짝"): the row is asked into view with half a screen round it, so it
@@ -378,7 +380,7 @@ fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, onPick:
     var rowSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     val flash = remember { androidx.compose.animation.core.Animatable(0f) }
     val screenPx = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp.toPx() }
-    val roomMax = with(androidx.compose.ui.platform.LocalDensity.current) { 120.dp.toPx() }
+    val roomMax = with(androidx.compose.ui.platform.LocalDensity.current) { 200.dp.toPx() }
     androidx.compose.runtime.LaunchedEffect(label) {
         if (FontRowFocus.label == label) {
             FontRowFocus.label = null
@@ -405,7 +407,13 @@ fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, onPick:
         Text(name, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
     }
-    if (value != null) FontLoadLine(load, AppFonts.reasons[value], AppFonts.progress[value],
+    val standInName by androidx.compose.runtime.produceState<String?>(null, picked0, waiting) {
+        this.value = if (!waiting || picked0 == null) null
+            else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { FontCatalog.byId(UserFonts.fallbackOf(ctx, picked0) ?: "sans")?.name }
+    }
+    if (waiting) Text("보낸 분이 나눈 글꼴이에요. 운영자가 확인하면 저절로 들어와요. 그 전에는 비슷한 앱 글꼴(${standInName ?: "기본"})로 보여요",
+        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    else if (value != null) FontLoadLine(load, AppFonts.reasons[value], AppFonts.progress[value],
         retry = { AppFonts.start(ctx, value) },
         standIn = { onPick(AppFonts.standInId(value)) },
         // PC 확인 3차: 전 글꼴로 always, 처음대로 when there was none before.
@@ -445,9 +453,12 @@ private fun FontLoadLine(load: AppFonts.Load?, reason: com.bamnat.app.ui.theme.O
                 TextButton(onClick = back) { Text(if (backName != null) "전 글꼴로 ($backName)" else "전 글꼴로") }
             }
         }
-        null -> {}
+        AppFonts.Load.WAITING, null -> {}
     }
 }
+
+/** [FontRow]'s mark for a user font id this phone has not got (a shared font still waiting). */
+private const val WAITING_NAME = "\u0000waiting"
 
 /** [MAT-05] PC 확인 1차 (사용성 제안 "최근 쓴 글꼴 줄"): the last five fonts picked, newest first, on this phone only. */
 internal object FontRecent {
@@ -496,6 +507,8 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
                     "‘${r.font.name}’ 글꼴에는 한글이 없어요. 숫자·영문만 이 글꼴로, 한글은 $like${com.bamnat.app.ui.Fmt.ro(like)} 보여요" } else null
             }
             is UserFonts.Result.Problem -> { problem = r.text; note = null }
+            // PC 확인 9차 (같은 글꼴을 넣으면 아무 말 없음).
+            is UserFonts.Result.Same -> { problem = null; note = "이미 넣은 글꼴과 같은 파일이에요: ‘${r.font.name}’" }
         }
     }
     AlertDialog(

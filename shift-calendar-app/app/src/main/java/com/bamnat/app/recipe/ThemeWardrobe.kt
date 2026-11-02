@@ -269,6 +269,10 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     suspend fun overlay(r: Recipe, code: String): Boolean {
         val tab = com.bamnat.core.recipe.LookParts.onlyTab(r) ?: return false
         val before = c.recipes.pieces.lookSnapshot()
+        // [MAT-06] PC 확인 9차 (얹은 탭의 글꼴은 받지도 기다리지도 않음): its pictures and shared fonts come first, as when a theme goes on.
+        r.pieces.forEach { p -> if (p.kind == com.bamnat.core.recipe.PieceKind.PHOTO_LOOK || p.kind == com.bamnat.core.recipe.PieceKind.SCREEN_LOOK)
+            runCatching { c.recipes.pieces.photoIds(p.values).forEach { LookImages.fetch(c, it) } } }
+        runCatching { RecipeFonts.fetchIn(c, RecipeCodec.write(r)) }
         layOn(r)
         val only = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
         writeOverlays(_overlays.value.filter { it.tab != tab } + Overlay(tab, code, r.title.take(30), RecipeCodec.write(only), before, Today.millis()))

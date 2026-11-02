@@ -163,6 +163,10 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 Text("내 달력에 넣을 것 고르기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text("켜 둔 조각만 들어가요. 근무 기록·가계부·메모는 그대로예요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [MAT-06] PC 확인 9차 (받는 쪽은 글꼴이 함께 오는지 모름): the shared fonts it names come along.
+                val fontCount = remember(r) { com.bamnat.app.recipe.RecipeFonts.idsIn(com.bamnat.core.recipe.RecipeCodec.write(r)).size }
+                if (fontCount > 0) Text("만든 분이 나눈 글꼴 ${fontCount}개가 함께 와요. 운영자가 확인한 글꼴은 넣을 때 바로, 확인 전인 글꼴은 확인 뒤 저절로 들어와요(그 전에는 비슷한 앱 글꼴로 보여요)",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 s.pieces.filter { it.fits }.forEach { p -> PieceCard(r, p, s.answers, vm) }
                 val other = s.pieces.filter { !it.fits }
                 if (other.isNotEmpty()) {

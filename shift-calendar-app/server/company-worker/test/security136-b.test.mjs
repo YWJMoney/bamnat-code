@@ -132,3 +132,17 @@ test("[SEC-10] M3: new installs and a second report from one network do not take
   const list = (await call("GET", "/api/admin/recipes/fonts?state=reported", undefined, admin)).data;
   assert.equal(list.items[0].whys.license, 11, "the operator sees every report");
 });
+
+test("[MAT-06] PC 9차: a waiting font says which app font stands in for it, and nothing its sender wrote", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const r = await call("POST", "/api/recipes/fonts", { device: device(1), name: "내 손글씨", license: "ofl", fallback: "hand", ttf: fakeFont({ fill: 6 }).toString("base64") }, ip("203.0.113.1"));
+  assert.equal(r.data.state, "pending");
+  const look = await call("GET", `/api/recipes/fonts/${r.data.id}/look`);
+  assert.equal(look.status, 200);
+  assert.deepEqual(look.data, { id: r.data.id, state: "pending", fallback: "hand" });
+  assert.equal((await call("GET", `/api/recipes/fonts/${r.data.id}`)).status, 404, "its name still waits");
+  const odd = await call("POST", "/api/recipes/fonts", { device: device(1), name: "x", license: "ofl", fallback: "<b>", ttf: fakeFont({ fill: 8 }).toString("base64") }, ip("203.0.113.1"));
+  assert.equal((await call("GET", `/api/recipes/fonts/${odd.data.id}/look`)).data.fallback, null);
+  assert.equal((await call("GET", "/api/recipes/fonts/u0000000000000000/look")).status, 404);
+});
