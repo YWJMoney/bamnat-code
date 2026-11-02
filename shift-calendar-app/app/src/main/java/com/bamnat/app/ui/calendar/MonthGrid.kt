@@ -828,10 +828,12 @@ private fun DayCell(
             // or shop work only once a pattern or a painted day says it does.
             val usesShifts = focus == CalendarFocus.SHIFTS || snapshot.hasPattern || day.source == DaySource.OVERRIDE
             if (usesShifts && focus.addLabel != null) HorizontalDivider()
+            // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not offered here either, but the day's own.
+            val folded = com.bamnat.app.ui.shifts.foldedHere()
             // [DAILY-10] The types changed to most in the last 60 days come first.
-            val ordered = remember(snapshot) {
+            val ordered = remember(snapshot, folded, type?.id) {
                 val today = Today.date()
-                com.bamnat.core.schedule.QuickOrder.byUse(snapshot.shiftTypes, { it.id },
+                com.bamnat.core.schedule.QuickOrder.byUse(snapshot.shiftTypes.filter { it.id !in folded || it.id == type?.id }, { it.id },
                     (0 until com.bamnat.core.schedule.QuickOrder.DAYS).mapNotNull { back ->
                         snapshot.resolver.resolve(today.minusDays(back.toLong())).takeIf { it.source == DaySource.OVERRIDE }?.shiftType?.id
                     })
@@ -859,7 +861,6 @@ private fun DayCell(
                     onClick = { menu = false; onQuickAction(QuickAction.Realign) },
                 )
             }
-            val folded = com.bamnat.app.ui.shifts.foldedHere()
             val choices = remember(snapshot, day, usesShifts, folded) {
                 if (usesShifts) ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day) else emptyList()
             }

@@ -762,7 +762,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val styleExtras = remember { mutableStateOf<StyleExtras?>(null) }
     LaunchedEffect(Unit) {
         container.recordsTrash.offers.collect { offer ->
-            val result = snackbar.showSnackbar(offer.message, actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            // 1.36 PC 재검토 (방식을 바꾼 띠가 접기 창 뒤에 깔렸다가 접기 띠로 바로 바뀌어 되돌릴 틈이 없어요): a kind-of-work change waits
+            // for its 접어 두기 question, and one line says both; 되돌리기 takes both back.
+            kotlinx.coroutines.delay(800)
+            com.bamnat.app.ui.shifts.TypeFoldAsk.asking.first { it == null }
+            val fold = com.bamnat.app.ui.shifts.TypeFoldAsk.done.value
+            if (fold != null) com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
+            val result = snackbar.showSnackbar(offer.message + (fold?.let { " · ${it.message}" } ?: ""), actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            if (result == SnackbarResult.ActionPerformed && fold != null) container.foldedTypes.unfold(fold.calendar, fold.ids)
             // Read once the snackbar is answered: the change sets it right after it is offered.
             val extras = styleExtras.value?.takeIf { it.entryId == offer.entry.id }
             if (extras != null) styleExtras.value = null
@@ -779,6 +786,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(Unit) {
         com.bamnat.app.ui.shifts.TypeFoldAsk.done.collect { d ->
             if (d == null) return@collect
+            // Said with the kind-of-work change when that one comes (above); alone only when it does not.
+            kotlinx.coroutines.delay(1_500)
+            if (com.bamnat.app.ui.shifts.TypeFoldAsk.done.value != d) return@collect
             com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
             snackbar.currentSnackbarData?.dismiss()
             val r = snackbar.showSnackbar("${d.message} · 설정 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)

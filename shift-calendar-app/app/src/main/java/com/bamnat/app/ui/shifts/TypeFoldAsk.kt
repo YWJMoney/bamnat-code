@@ -86,8 +86,9 @@ fun TypeFoldHost(c: AppContainer) {
                     val next = (have.maxOfOrNull { it.sortOrder } ?: -1) + 1
                     a.adds.filter { t -> have.none { it.name == t.name } }.forEachIndexed { i, t -> repo.saveShiftType(t.copy(id = 0, sortOrder = next + i)) }
                 }
-                TypeFoldAsk.asking.value = null
+                // Said before the question closes, so the kind-of-work line waiting for it says both (AppRoot).
                 TypeFoldAsk.done.value = TypeFoldAsk.Done(a.calendar, ids, "${a.from.label} 근무 종류 ${ids.size}개를 접었어요")
+                TypeFoldAsk.asking.value = null
             }) { Text("접어 두기") }
         },
         dismissButton = { TextButton(onClick = { TypeFoldAsk.asking.value = null }) { Text("그대로 두기") } },

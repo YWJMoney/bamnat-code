@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.shifts
 
+import com.bamnat.core.work.words
+
 import com.bamnat.app.ui.components.TimeRangeDialog
 import com.bamnat.app.ui.components.TimeRange
 import androidx.compose.runtime.saveable.listSaver
@@ -143,7 +145,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { CalendarTitle("근무 종류와 시간", vm) },
+                // 1.36 PC 재검토 (현장은 설정 줄이 '일정 종류'인데 제목은 '근무 종류와 시간'): the same words as the row that opened it.
+                title = { CalendarTitle(vm.workStyle.words().types, vm) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
@@ -239,9 +242,20 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                     }
                 }
                 if (foldedOpen) items(away, key = { "folded-${it.id}" }) { type ->
-                    Row(Modifier.fillMaxWidth().padding(start = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // 1.36 PC 재검토 ('다시 쓰기'가 첫 누름에 반응이 없어요): the whole row takes the tap, and a short line says it moved.
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val revive = {
+                        vm.unfold(type.id)
+                        android.widget.Toast.makeText(context, "‘${type.name}’${com.bamnat.app.ui.Fmt.obj(type.name)} 다시 써요", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "다시 쓰기", onClick = revive).padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ShiftBadge(type, size = 20.dp, outlined = true)
+                        Spacer(Modifier.width(8.dp))
                         Text(type.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { vm.unfold(type.id) }) { Text("다시 쓰기") }
+                        TextButton(onClick = revive) { Text("다시 쓰기") }
                     }
                 }
             }
