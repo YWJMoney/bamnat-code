@@ -40,6 +40,12 @@ import com.bamnat.core.recipe.PartStyle
  */
 val LocalBlueprint = staticCompositionLocalOf { Blueprint.EMPTY }
 
+/**
+ * [BLU-12] PC 15차 (어두운 화면에서 바탕은 흰색 그대로인데 금액 글자만 옅은 회색): the blueprint with its `on: dark` lines still apart, so a
+ * screen drawn on its own ground ([com.bamnat.app.ui.theme.ScreenSkin]: 화면 색·배경) folds them by that ground, not by the app's theme.
+ */
+val LocalBlueprintRaw = staticCompositionLocalOf { Blueprint.EMPTY }
+
 @Composable
 @ReadOnlyComposable
 fun partStyle(id: String, states: Set<String> = emptySet()): PartStyle = LocalBlueprint.current.style(id, states)

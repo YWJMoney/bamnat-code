@@ -294,7 +294,8 @@ fun BamnatTheme(
         else -> LightColors
     }.let { if (accent == 0L) it else accented(it, accent, dark) }
     // [BLU-12] 1.36 어두운 화면: the parts' `on: dark` lines (a token's dark colour) laid over theirs when the screen is dark.
-    val parts = androidx.compose.runtime.remember(parts, dark) { parts.forDark(dark) }
+    val raw = parts
+    val parts = androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
     CompositionLocalProvider(LocalCalendarColors provides if (dark) DarkCalendarColors else LightCalendarColors) {
         // U 1.32 [UX132-05] The app's own size times the phone's, never past 2배 so no screen breaks; layouts that measure in
         // sp grow with it and the ones that count columns ([LocalSpacing], the calendar's cells) read the scale.
@@ -309,7 +310,8 @@ fun BamnatTheme(
                 typography = com.bamnat.app.ui.parts.PartTheme.typography(AppTypography, parts),
                 shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), parts),
             ) {
-                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides parts, content = content)
+                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides parts,
+                    com.bamnat.app.ui.parts.LocalBlueprintRaw provides raw, content = content)
             }
         }
     }

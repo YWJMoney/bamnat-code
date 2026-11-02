@@ -87,6 +87,8 @@ import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /**
@@ -106,6 +108,23 @@ class RecipeMakeViewModel(
 ) : ViewModel() {
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     val canPublish: Boolean get() = c.recipeApi.enabled && c.flags.on(FlagCatalog.RECIPE_PUBLISH)
+    /** PC 15차: 올리기's row as it is now, so 마치기 redraws when it opens and can say what still holds it. */
+    val publishRow: kotlinx.coroutines.flow.StateFlow<com.bamnat.core.flags.FlagState?> = c.flags.byKey
+        .map { it[FlagCatalog.RECIPE_PUBLISH] }
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, c.flags.state(FlagCatalog.RECIPE_PUBLISH))
+
+    /**
+     * PC 15차 (출시일 뒤인데도 막힘, 왜 막히는지 모름): what still holds 올리기 — the first condition left, with what is known of it
+     * (e.g. 처리방침 3.9 시행일(11-10)부터 · 서버 시각 기준 · 3일 남음).
+     */
+    fun publishHeld(row: com.bamnat.core.flags.FlagState?): String? = row?.takeIf { !it.on }?.checks
+        ?.firstOrNull { it.status != com.bamnat.core.flags.Check.Status.MET }?.let { k -> k.label + (k.detail?.let { " · $it" } ?: "") }
+
+    /** PC 15차: the server's clock and dates asked again now (they are otherwise asked once a day), and the rows worked out again. */
+    fun recheckPublish() = viewModelScope.launch {
+        runCatching { c.remoteConfig.refresh(c.tierApi, force = true) }
+        c.flags.refresh()
+    }
     /** [RCX-31] Making the next 판 of this code of mine; null for a new recipe. */
     val ownCode: String? get() = upCode
     /** [BLU-07] PC 8차: once sent, the next 올리기 from this screen is that code's 새 판 (or the same 판 moved to 나만). */
@@ -812,8 +831,14 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     // [LIN-01] 1.35 수정판: what this is made from, said before it goes up.
     s.recipe.parent?.let { Text("‘${s.parentTitle ?: it}’의 수정판으로 그 판 밑에 올라가요. 원래 만든 분 표시는 늘 남고, 그분이 달라진 점을 보고 자기 판에 가져갈 수 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-    if (!vm.canPublish) Text("올리기는 정식 출시일(11월 10일 예정)부터 열려요. 그동안 만들던 것으로 이 휴대폰에 저장돼요",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // PC 15차 사용성 제안 (출시일 막힘: 왜 막히는지 모름): what holds it and when it opens, and 다시 확인 (the server's clock asked again).
+    val publishRow by vm.publishRow.collectAsStateWithLifecycle()
+    if (!vm.canPublish) Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("올리기가 아직 닫혀 있어요 · " + (vm.publishHeld(publishRow) ?: "정식 출시일(11월 10일 예정)부터 열려요") +
+            ". 그동안 만들던 것은 이 휴대폰에 저장돼요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f))
+        TextButton(onClick = { vm.recheckPublish() }) { Text("다시 확인") }
+    }
     // 1.36 U4: the check sits right above the button, so turning it on moves nothing.
     if (s.scope != "private") Row(verticalAlignment = Alignment.CenterVertically) {
         Switch(s.agreed, vm::agree)

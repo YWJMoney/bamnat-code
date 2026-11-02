@@ -126,10 +126,15 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             val page = look.bg?.let { Color(it) } ?: base.background
             if (photoUnder) Box(Modifier.matchParentSize().background(page.copy(alpha = (worn.dim ?: PHOTO_VEIL).coerceIn(20, 80) / 100f)))
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
+            // [BLU-12] PC 15차: on a ground of its own the parts' 어두운 화면 lines follow that ground (a white 화면 색 on a dark phone
+            // keeps the light lines, so a light-grey 금액 meant for dark does not land on white).
+            val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
+            val grounded = if (!inked && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
                 // PC 확인 C10: the ground goes with the words' ink (dark under light words on a dark photo), so a pale cell never turns grey.
                 com.bamnat.app.ui.decor.LocalOnPhoto provides if (!photoUnder) null else if (dark) lerp(page, Color.Black, 0.8f) else lerp(page, Color.White, 0.5f),
                 com.bamnat.app.ui.decor.LocalPhotoGround provides if (photoUnder) photoGround else null,
+                com.bamnat.app.ui.parts.LocalBlueprint provides (if (raw.isEmpty) com.bamnat.app.ui.parts.LocalBlueprint.current else grounded),
                 androidx.compose.material3.LocalContentColor provides if (!inked && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
             }
