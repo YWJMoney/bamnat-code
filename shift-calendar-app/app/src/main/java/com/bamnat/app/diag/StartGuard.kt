@@ -33,6 +33,11 @@ object StartGuard {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(K_UNSETTLED, 0).apply()
     }
 
+    /** PC 17차 (adb force-stop으로는 안전 모드에 들어갈 길이 없음): a debug build's 진단 makes the next start a safe one. */
+    fun armNext(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(K_UNSETTLED, LIMIT).commit()
+    }
+
     /** "평소대로": back to a normal start now. */
     fun leave(context: Context) {
         settled(context)
