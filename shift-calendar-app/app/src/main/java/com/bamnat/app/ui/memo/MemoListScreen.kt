@@ -235,23 +235,42 @@ fun MemoListScreen(
                 container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(memo = v).encode()) }
             }
             // PC 확인 bad7d860 사용성 제안: the chips show from the first visit, so the views are found before there are memos.
-            if (state.loaded) MemoViewChips(memoView, propColumns, setView)
+            // A 정렬 picked from the chip or a 표 head says what it did, with 되돌리기 (PC 확인 82196a74, fe5eb3cd).
+            fun said(v: String, base: String) = when {
+                v.isEmpty() -> base
+                v == com.bamnat.core.memo.MemoView.SORT_TITLE -> "제목 순"
+                else -> "‘${v.removePrefix("-").removePrefix("p:")}’ ${if (v.startsWith("-")) "큰 순" else "작은 순"}"
+            }
+            val baseLabel = if (state.tab == MemoTab.CALENDAR) "날짜 순" else state.sort.label
+            val sortTo: (String) -> Unit = { key ->
+                val before = memoView
+                val beforeBase = baseLabel
+                val beforeSort = state.sort
+                val ms = key.removePrefix("ms:").takeIf { key.startsWith("ms:") }?.let { n -> MemoSort.entries.firstOrNull { it.name == n } }
+                if (ms != null) vm.setSort(ms)
+                val next = if (ms != null) "" else key
+                setView(memoView.copy(sort = next))
+                val now = ms?.label ?: said(next, baseLabel)
+                undo = UndoBar("${now}${com.bamnat.app.ui.Fmt.ro(now)} 정렬했어요", { vm.setSort(beforeSort); setView(before) },
+                    said(before.sort, beforeBase).let { "$it${com.bamnat.app.ui.Fmt.ro(it)} 돌아왔어요" })
+            }
+            // PC 확인 fe5eb3cd: a 칸 order whose 칸 is gone from the memos on screen goes back to the 기본 순서, and says so.
+            androidx.compose.runtime.LaunchedEffect(memoView.sort, propColumns, state.loaded) {
+                val label = memoView.sort.removePrefix("-").removePrefix("p:")
+                if (state.loaded && shown.isNotEmpty() && memoView.sort.removePrefix("-").startsWith("p:") && propColumns.none { it.first == label }) {
+                    val before = memoView
+                    setView(memoView.copy(sort = ""))
+                    undo = UndoBar("‘$label’ 칸이 없어져 기본 순서로 바꿨어요", { setView(before) }, "‘$label’ 순으로 돌아왔어요")
+                }
+            }
+            if (state.loaded) MemoViewChips(memoView, propColumns, setView,
+                baseOptions = if (state.tab == MemoTab.CALENDAR) listOf("" to "날짜 순", com.bamnat.core.memo.MemoView.SORT_TITLE to "제목 순")
+                    else MemoSort.entries.map { "ms:${it.name}" to it.label },
+                baseLabel = baseLabel, onSort = sortTo)
             when {
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
                 memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions, templateChoices)
-                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { sort ->
-                    // PC 확인 82196a74 사용성 제안: a head tap says what it did, with 되돌리기.
-                    val before = memoView
-                    setView(memoView.copy(sort = sort))
-                    val name = sort.removePrefix("-").removePrefix("p:").let { if (sort == com.bamnat.core.memo.MemoView.SORT_TITLE) "제목" else it }
-                    fun said(v: String) = when {
-                        v.isEmpty() -> "기본 순서"
-                        v == com.bamnat.core.memo.MemoView.SORT_TITLE -> "제목 순"
-                        else -> "‘${v.removePrefix("-").removePrefix("p:")}’ ${if (v.startsWith("-")) "큰 순" else "작은 순"}"
-                    }
-                    undo = UndoBar("${said(sort)}으로 정렬했어요".replace("기본 순서으로", "기본 순서로"), { setView(before) },
-                        "${said(before.sort)}으로 돌아왔어요".replace("기본 순서으로", "기본 순서로"))
-                }, actions, templateChoices, state.selection, state.selecting)
+                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { sort -> sortTo(sort)}, actions, templateChoices, state.selection, state.selecting)
                 memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
                 memoView.view == com.bamnat.core.memo.MemoView.CALENDAR -> MemoCalendarView(shown, appSettings.weekStart, today, actions)
                 !memoView.sort.isEmpty() && state.tab != MemoTab.CALENDAR -> GeneralMemoGrid(state.copy(general = memoView.sorted(state.general)), actions)
@@ -370,7 +389,8 @@ private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("메모", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-        if (state.tab == MemoTab.GENERAL) {
+        // PC 확인 fe5eb3cd: the 정렬 lives in the 보기 chips' 정렬 alone; this icon shows only before the chips do.
+        if (state.tab == MemoTab.GENERAL && !state.loaded) {
             Box {
                 IconButton(onClick = { sortMenu = true }) {
                     Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = "정렬: ${state.sort.label}")

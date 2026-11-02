@@ -95,6 +95,9 @@ class MemoViewTest {
         assertEquals(listOf("가게", "급함"), MemoView.moved(tagged, MemoView.BY_TAG, "집", "가게")!!.tags)
         assertEquals(listOf("급함"), MemoView.moved(tagged, MemoView.BY_TAG, "집", MemoView.NONE)!!.tags)
         assertEquals(listOf("가게"), MemoView.moved(memo(3, "그냥"), MemoView.BY_TAG, MemoView.NONE, "가게")!!.tags)
+        val due = MemoView.moved(memo(7, "마감: 2026-11-20"), MemoView.BY_TAG, MemoView.NONE, "집안일")!!
+        assertEquals("마감: 2026-11-20\n#집안일", due.body)
+        assertEquals(LocalDate.of(2026, 11, 20), MemoProps.of(due).single().date)
         assertEquals(3, MemoView.moved(memo(4, ""), MemoView.BY_COLOR, "0", "3")!!.colorIndex)
         assertNull(MemoView.moved(m, MemoView.BY_SHIFT, "주간", "야간"))
         assertNull(MemoView.moved(m, byProp.by, "끝", "끝"))

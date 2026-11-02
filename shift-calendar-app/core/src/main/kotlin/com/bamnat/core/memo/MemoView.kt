@@ -131,7 +131,14 @@ data class MemoView(
                         .replace(Regex(" {2,}"), " ").trimEnd()
                     val inText = from != NONE && (m.title.contains("#$from") || m.body.contains("#$from") || m.checklist.any { it.text.contains("#$from") })
                     when {
-                        from == NONE || !inText -> if (to == NONE) null else m.copy(body = (m.body.trimEnd() + if (m.body.isBlank()) "#$to" else " #$to"))
+                        // PC 확인 fe5eb3cd: after a "칸: 값" line the 꼬리표 takes a line of its own ("마감: 2026-11-20 #집안일" broke the date).
+                        from == NONE || !inText -> if (to == NONE) null else m.copy(body = m.body.trimEnd().let { b ->
+                            when {
+                                b.isBlank() -> "#$to"
+                                MemoProps.labelOfLine(b.lines().last()) != null -> "$b\n#$to"
+                                else -> "$b #$to"
+                            }
+                        })
                         else -> m.copy(title = swap(m.title), body = swap(m.body), checklist = m.checklist.map { it.copy(text = swap(it.text)) })
                     }
                 }

@@ -79,7 +79,12 @@ import java.time.LocalDate
  * memos on screen carry ([MemoProps.columns]) are offered as 묶음 and 정렬, so a 틀 with 매출·상태 칸 can be seen by them at once.
  */
 @Composable
-internal fun MemoViewChips(view: MemoView, columns: List<Pair<String, MemoProps.Type>>, onChange: (MemoView) -> Unit) {
+internal fun MemoViewChips(
+    view: MemoView, columns: List<Pair<String, MemoProps.Type>>, onChange: (MemoView) -> Unit,
+    // PC 확인 fe5eb3cd 사용성 제안 "정렬이 위 아이콘과 칩 두 곳": the 메모장's own orders (최근 수정순…) are offered here too, and the icon is gone.
+    baseOptions: List<Pair<String, String>> = listOf("" to "기본 순서"), baseLabel: String = "기본 순서",
+    onSort: (String) -> Unit = { onChange(view.copy(sort = it)) },
+) {
     Row(
         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -100,13 +105,13 @@ internal fun MemoViewChips(view: MemoView, columns: List<Pair<String, MemoProps.
             }
         }
         val sortLabel = when {
-            view.sort.isEmpty() -> "기본 순서"
+            view.sort.isEmpty() -> baseLabel
             view.sort == MemoView.SORT_TITLE -> "제목 순"
             view.sort.startsWith("-") -> view.sort.drop(3) + " 큰 순"
             else -> view.sort.drop(2) + " 작은 순"
         }
-        PickChip("정렬: $sortLabel", listOf("" to "기본 순서", MemoView.SORT_TITLE to "제목 순") +
-            columns.flatMap { (c, _) -> listOf("p:$c" to "$c 작은 순", "-p:$c" to "$c 큰 순") }) { onChange(view.copy(sort = it)) }
+        PickChip("정렬: $sortLabel", baseOptions +
+            columns.flatMap { (c, _) -> listOf("p:$c" to "$c 작은 순", "-p:$c" to "$c 큰 순") }) { onSort(it) }
     }
 }
 
@@ -199,8 +204,16 @@ internal fun MemoBoardView(
         if (at.y < boardOrigin.y) null else info.visibleItemsInfo.firstOrNull { x >= it.offset && x < it.offset + it.size }?.key as? String
     }
     val target = drag?.let { keyAt(it.at) }
+    // PC 확인 fe5eb3cd: after a move the board slides to the 칸 the card went to.
+    var landed by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(columns, landed) {
+        val key = landed ?: return@LaunchedEffect
+        val i = columns.indexOfFirst { it.key == key }
+        if (i >= 0) { rowState.animateScrollToItem(i); landed = null }
+    }
     val move: (Memo, String, String) -> Unit = { memo, from, to ->
         MemoView.moved(memo, view.by, from, to)?.let { after ->
+            landed = to
             val label = targets.firstOrNull { it.first == to }?.second ?: if (to == MemoView.NONE) "없음" else if (view.by == MemoView.BY_TAG) "#$to" else to
             actions.onChange(memo, after, "‘$label’ 칸으로 옮겼어요")
         }
