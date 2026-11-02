@@ -43,6 +43,8 @@ data class RecipeItem(
     val tabs: List<String> = emptyList(),
     /** [MKX-01] "theme" (앱 전체를 한 벌로) or "tab" (탭 하나만); null when the server did not say. */
     val scope: String? = null,
+    /** 1.36 [VIL-18] The first work of a new maker, given a place in 요즘 뜨는·좋은 순. */
+    val newMaker: Boolean = false,
 )
 
 /**
@@ -54,10 +56,25 @@ data class ThemeSwatch(
     val today: Long? = null, val sat: Long? = null, val sun: Long? = null,
     val days: List<Day> = emptyList(), val cells: String? = null, val pattern: String? = null, val badge: String? = null,
     val memo: String? = null, val photo: Boolean = false,
+    /** PC 확인 V44: drawn for a recipe that brought no colours, with the kind of work's usual days and their letters. */
+    val example: Boolean = false,
 ) {
     data class Day(val color: Long?, val label: String, val emoji: String?, val role: String?)
 
+    /** PC 확인 0efe9dbc: a look that brought its colours but no kinds of day keeps them and shows the kind of work's usual days, with their letters. */
+    fun withDays(style: com.bamnat.core.work.WorkStyle?): ThemeSwatch = if (days.isEmpty()) copy(days = example(style).days, example = true) else this
+
     companion object {
+        /** PC 확인 V44: a kind of work's usual days (주·야·휴, 일·쉼 …) in their own colours, for a recipe without a look. */
+        fun example(style: com.bamnat.core.work.WorkStyle?): ThemeSwatch = ThemeSwatch(example = true, days = when (style) {
+            com.bamnat.core.work.WorkStyle.SHIFT, null -> listOf(Day(0xFFEF6C00, "주", null, "day"), Day(0xFF3949AB, "야", null, "night"), Day(0xFF757575, "휴", null, "off"))
+            com.bamnat.core.work.WorkStyle.HOURLY -> listOf(Day(0xFF2E7D32, "일", null, "day"), Day(0xFF757575, "쉼", null, "off"))
+            com.bamnat.core.work.WorkStyle.FIELD -> listOf(Day(0xFF6D4C41, "현", null, "day"), Day(0xFF757575, "휴", null, "off"))
+            com.bamnat.core.work.WorkStyle.BUSINESS -> listOf(Day(0xFF00897B, "영", null, "day"), Day(0xFF757575, "휴", null, "off"))
+            com.bamnat.core.work.WorkStyle.INVEST -> listOf(Day(0xFF1E88E5, "장", null, "day"), Day(0xFF757575, "휴", null, "off"))
+            else -> listOf(Day(0xFF1E88E5, "근", null, "day"), Day(0xFF757575, "휴", null, "off"))
+        })
+
         private fun hex(s: String?): Long? = s?.takeIf { Regex("^[0-9A-F]{8}$").matches(it) }?.toLong(16)
 
         fun of(o: JSONObject?): ThemeSwatch? = o?.let {
@@ -235,7 +252,9 @@ data class ProfileEdit(
 /** [RCX-07][RCX-10] For 소식: new recipes of followed makers, and makers' answers to my questions (code, title, the answer). */
 data class RecipeNews(val recipes: List<RecipeItem>, val replies: List<Triple<String, String, String>>,
     /** [LIN-04] 1.35 수정판 of my recipes by others: the new one and the title of mine it came from. */
-    val remixes: List<Pair<RecipeItem, String>> = emptyList())
+    val remixes: List<Pair<RecipeItem, String>> = emptyList(),
+    /** 1.36 [VIL-15] My requests someone finished: the recipe's code and title, and what I asked. */
+    val requests: List<Triple<String, String, String>> = emptyList())
 
 /** [RCP-21]..[RCP-35] What the app asks of the 나눔 판 server; screenshots and tests answer with a fake. */
 interface RecipeApi {
@@ -551,7 +570,8 @@ class RecipeClient(
         val o = call("GET", "/api/recipes/news" + (since?.let { "?since=" + URLEncoder.encode(it.toString(), "UTF-8") } ?: ""), device = device)
         RecipeNews(o.optJSONArray("recipes").objects().map(::item),
             o.optJSONArray("replies").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("body")) },
-            o.optJSONArray("remixes")?.objects()?.map { item(it) to it.optString("parentTitle") }.orEmpty())
+            o.optJSONArray("remixes")?.objects()?.map { item(it) to it.optString("parentTitle") }.orEmpty(),
+            o.optJSONArray("requests")?.objects()?.map { Triple(it.optString("code"), it.optString("title"), it.optString("body")) }.orEmpty())
     }
 
     override suspend fun image(device: String, webp: ByteArray): String = serverCall {
@@ -582,6 +602,7 @@ class RecipeClient(
                 o.optStringOrNull("parent"), Instant.parse(o.getString("at")), o.optBoolean("fresh"), o.optStringOrNull("maker"),
                 o.optBoolean("showcase"), ThemeSwatch.of(o.optJSONObject("look")),
                 o.optJSONArray("tabs")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(), o.optStringOrNull("scope"),
+                o.optBoolean("newMaker"),
             )
         }
 

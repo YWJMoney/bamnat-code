@@ -18,6 +18,8 @@ test("[SRV-03] every table in the company server's SCHEMA has a line in docs/ser
   for (const m of src.matchAll(/CREATE VIRTUAL TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
   // 1.36 [LIM-10] The 쓰기 제한 tables are kept next to their rules (write-limits.js, spread into SCHEMA).
   for (const m of read("../src/write-limits.js").matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
+  // 1.36 [VIL-11] 마을 운영 tables live in village.js, spread into SCHEMA the same way.
+  for (const m of read("../src/village.js").matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
   assert.ok(tables.length > 30, "found the tables");
   const missing = tables.filter((t) => !listed.has(t));
   assert.deepEqual(missing, [], "docs/server-data.md needs a line for these tables");

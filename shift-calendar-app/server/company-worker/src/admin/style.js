@@ -155,6 +155,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .fieldset{margin:0 0 1rem}
 .field{display:flex;gap:.5rem}
 .field input{flex:1;min-width:0}
+.plain{list-style:none;margin:.25rem 0;padding:0;display:grid;gap:.4rem}.plain label{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
 .searchbar{display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap}
 .searchbar input{flex:1 1 12rem;min-width:0}
 

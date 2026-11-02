@@ -744,9 +744,13 @@ class AppContainer(context: Context) {
             // [MCAL-01] So does one in an added calendar whose alarms ring.
             // [ALRM-21] And a change to 곧 울릴 알람 미리 알리기, which looks ahead from the same alarm.
             val enabled = settingsRepository.settings.map { it.alarmsEnabled to it.alarmSoonMinutes }.distinctUntilChanged()
+            var lastOn: Boolean? = null
             combine(calendars.ringing, enabled) { ringing, on -> ringing to on.first }
                 .debounce(300)
                 .collect { (ringing, on) ->
+                    // PC 확인 f6b585f8: the switch as the alarms see it, so a turn from anywhere (a backup, a recipe) is in 알람 점검.
+                    if (lastOn != null && lastOn != on) telemetry.event("alarms_switch", if (on) "on seen" else "off seen")
+                    lastOn = on
                     alarmScheduler.reschedule(ringing, on)
                     // [OBS-01] 기록 지점 1: a line only when the next alarm moved.
                     alarmScheduler.upcoming.value?.let { journal.noteIfChanged(com.bamnat.core.journal.JournalKind.ALARMS_PLANNED, it.plan.triggerAt.format(JOURNAL_ALARM)) }

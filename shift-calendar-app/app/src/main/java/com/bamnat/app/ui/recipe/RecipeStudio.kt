@@ -268,7 +268,8 @@ internal fun Modifier.mockPick(region: String): Modifier {
 /** The kinds of day an example calendar shows when the recipe brings none: what this kind of work usually has. */
 private fun exampleDays(style: WorkStyle?): List<Map<String, Any?>> = when (style) {
     WorkStyle.SHIFT, null -> listOf(day("주간", "day", "주", 0xFFEF6C00), day("야간", "night", "야", 0xFF3949AB), day("휴무", "off", "휴", 0xFF757575))
-    WorkStyle.HOURLY -> listOf(day("근무", "day", "근", 0xFF2E7D32), day("휴무", "off", "휴", 0xFF757575))
+    // PC 확인 V42: 알바's own words, 일한 날 · 쉬는 날.
+    WorkStyle.HOURLY -> listOf(day("일한 날", "day", "일", 0xFF2E7D32), day("쉬는 날", "off", "쉼", 0xFF757575))
     // F-54: each kind of work's own words on the example days.
     WorkStyle.FIELD -> listOf(day("현장", "day", "현", 0xFF6D4C41), day("쉬는 날", "off", "휴", 0xFF757575))
     WorkStyle.BUSINESS -> listOf(day("영업", "day", "영", 0xFF00897B), day("휴무", "off", "휴", 0xFF757575))
@@ -394,7 +395,8 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
 private fun MockSummary(style: WorkStyle?) {
     // [STU-03] What this kind of work's summary card says (자유도 점검 F-45: a 투자·가게 example showed 근무·급여).
     val items = when (style) {
-        WorkStyle.HOURLY -> listOf("일한 날" to "12일", "시간" to "64h", "급여" to "예상")
+        // PC 확인 V43: the same count as the example month's 일 11.
+        WorkStyle.HOURLY -> listOf("일한 날" to "11일", "시간" to "58h", "급여" to "예상")
         WorkStyle.FIELD -> listOf("일한 날" to "15일", "공수" to "16.5", "받을 돈" to "예상")
         WorkStyle.BUSINESS -> listOf("영업" to "24일", "매출" to "합계", "순이익" to "예상")
         WorkStyle.INVEST -> listOf("기록" to "9일", "수익률" to "이번 달", "원금" to "합계")

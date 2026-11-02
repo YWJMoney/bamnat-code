@@ -238,7 +238,11 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun turnOnAlarms() = container.settingsRepository.update { it.copy(alarmsEnabled = true) }
+    fun turnOnAlarms() {
+        container.settingsRepository.update { it.copy(alarmsEnabled = true) }
+        // PC 확인 f6b585f8: where the master switch was turned, for 알람 점검.
+        container.telemetry.event("alarms_switch", "on diagnostics")
+    }
 
     /** [ALRM-01] I24: the test alarm three minutes on, to wait with the screen off as at night. */
     fun scheduleScreenOffTest() = container.alarmScheduler.scheduleTest(minutes = SCREEN_OFF_MINUTES)

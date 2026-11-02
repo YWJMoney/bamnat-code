@@ -168,6 +168,8 @@ class SettingsFilesBackup(
             Part("pay_way"),
             // 1.32 [WTYP-11] 희망 오프: 고른 날과 신청 마감일.
             Part("wish_off"),
+            // 1.36 [VIL-13] 마을 › 간직한 글: posts kept to read again, only on the phone (the server keeps no list).
+            Part("village_saved"),
             // [FREE-10] 1.35 테마 옷장: 입었던 테마, 내 테마, the look kept aside while a theme is on. The 3일 전 notice said and
             // the 프로 mark are this phone's.
             // [R136-03] 1.36: the day each calendar started on this phone (깐 날 표시), so a restored phone says the same day.
@@ -203,6 +205,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 1.36 [VIL-04][VIL-07] 마을 화면 기억: the part last seen and 오늘의 하나 '오늘은 그만', this phone's own.
+            "village_ui" to "마을에서 마지막에 본 칸과 '오늘의 하나'를 그날 접었는지, 이 휴대폰에서 본 만큼",
             "company:device" to "이 휴대폰의 설치 번호(문의 기록의 열쇠)",
             // [PLAZA-04] 1.25 X (결정 X-D5): the plaza invitation's waits are this phone's, like share_way.
             "company:invite_due" to "광장 올리기 권유를 다시 보일 날, 이 휴대폰에서 본 만큼",

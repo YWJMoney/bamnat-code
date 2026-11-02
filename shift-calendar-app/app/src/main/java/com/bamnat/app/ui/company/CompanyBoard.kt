@@ -2,6 +2,8 @@ package com.bamnat.app.ui.company
 
 import com.bamnat.app.appContainer
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.background
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -58,6 +61,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -70,6 +74,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
@@ -374,12 +380,26 @@ fun TalkSheet(holder: TalkHolder) {
     var flagging by remember { mutableStateOf<TalkPost?>(null) }
     var replyTo by remember(o.setup) { mutableStateOf<TalkPost?>(null) }
     var kind by rememberSaveable(o.setup) { mutableStateOf(o.startKind ?: "talk") }
+    // 1.36 [VIL-08] The kind the list shows (null for all).
+    var only by rememberSaveable(o.setup) { mutableStateOf<String?>(null) }
     var change by remember(o.setup) { mutableStateOf(listOf(blankChange())) }
+    // 1.36 [VIL-10] 마을 V10: a room's question may carry 2~4 choices to vote on; empty when it carries none.
+    var pollDraft by remember(o.setup) { mutableStateOf(emptyList<String>()) }
+    // 1.36 [VIL-16] 마을 V16: a 자랑 on a kind of work's plaza may carry one of my public recipes.
+    var attach by remember(o.setup) { mutableStateOf<Pair<String, String>?>(null) }
+    val styleRoom = o.room && o.company.startsWith("style-")
+    val showable by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>(), styleRoom, kind) {
+        if (styleRoom && kind == "show") value = holder.showable()
+    }
     var withSetup by rememberSaveable(o.setup) { mutableStateOf(false) }
     var hiding by remember { mutableStateOf<TalkPost?>(null) }
     var redoing by remember(o.setup) { mutableStateOf<TalkPost?>(null) }
     redoing?.let { post -> ProposalRedoSheet(holder, o.company, o.setup, o.title, post) { redoing = null } }
     val rules = rememberPlazaRules()
+    // PC 확인 V21: the rules are asked as a room's talk opens, before anything is typed (asked at 보내기 it came late, and the
+    // words written could be lost); 나중에 still lets one read, and 보내기 asks again.
+    LaunchedEffect(o.company, o.setup) { if (o.room) rules.ensure {} }
+    var askedOnFocus by remember(o.company, o.setup) { mutableStateOf(false) }
     HideWriterDialog(hiding, onDismiss = { hiding = null }, onHide = holder::hide)
     // [J133-99] 1.33 빌드 8 확인 ("고치자는 제안에 글을 쓰고 뒤로 키 두 번이면 묻지 않고 사라져요"): words or a change not sent yet
     // are asked about before the talk closes, by back, a swipe, the X or a tap outside, as the proposal sheet does (J133-90).
@@ -391,6 +411,11 @@ fun TalkSheet(holder: TalkHolder) {
     val talkState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
         v != androidx.compose.material3.SheetValue.Hidden || !typedNow.value || false.also { leaving = true }
     })
+    // PC 확인 13503764 (자유 토의를 닫은 뒤 화면이 잠깐 눌리지 않았어요): the X slides the sheet away first and only then takes it off,
+    // as a swipe does, so its window is not dropped mid-way.
+    val closeSoftly: () -> Unit = {
+        talkScope.launch { runCatching { talkState.hide() } }.invokeOnCompletion { holder.close() }
+    }
     if (leaving) com.bamnat.app.ui.components.ConfirmDialog(
         title = "쓴 글을 버릴까요?",
         message = "보내지 않고 닫으면 지금 쓴 글이 사라져요.",
@@ -401,12 +426,15 @@ fun TalkSheet(holder: TalkHolder) {
     )
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = {
         if (typedNow.value) { leaving = true; talkScope.launch { talkState.show() } } else holder.close()
-    }, sheetState = talkState, onClose = { if (typedNow.value) leaving = true else holder.close() }) {
+    }, sheetState = talkState, onClose = { if (typedNow.value) leaving = true else closeSoftly() }) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 16.dp).imePadding()) {
             // [PLAZA-32] 1.27 AI: a room's talk is free talk under its own name.
             Text(if (o.room) "자유 토의" else "토론", style = MaterialTheme.typography.titleLarge)
             Text(o.title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             o.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp)) }
+            // 1.36 [VIL-11] 이번 주 이야기 주제.
+            o.talk?.topic?.let { Text("이번 주 주제 · $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp)) }
             Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(vertical = 8.dp)) {
                 Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(6.dp))
@@ -424,27 +452,57 @@ fun TalkSheet(holder: TalkHolder) {
                         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 16.dp))
                     else -> {
                         // [PLZ-05] Answers sit under the post they answer.
-                        val tops = talk.posts.filter { it.parent == null || talk.posts.none { t -> t.id == it.parent } }
-                        tops.forEach { p ->
+                        val allTops = talk.posts.filter { it.parent == null || talk.posts.none { t -> t.id == it.parent } }
+                        // 1.36 [VIL-08] 마을 V8: a room's posts picked by kind (전체 · 질문 · 팁 · 자랑), once there are some to pick from.
+                        // 1.36 [VIL-12] 마을 V12 야간 이야기: on 교대·현장 plazas, what was written between 22시 and 6시, worked out here from when.
+                        val nightRoom = o.company == com.bamnat.core.plaza.StylePlaza.SHIFT || o.company == com.bamnat.core.plaza.StylePlaza.FIELD
+                        if (o.room && (allTops.any { it.kind != "talk" } || (nightRoom && allTops.any { nightPost(it) }))) {
+                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                // PC 확인 f39bcfbe: says it picks which posts show, apart from 쓸 글 below.
+                                Text("골라 보기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                (listOf<Pair<String?, String>>(null to "전체") + ROOM_KIND_LABELS.filter { it.first != "talk" } +
+                                    listOfNotNull((NIGHT to "🌙 야간").takeIf { nightRoom })).forEach { (k, label) ->
+                                    com.bamnat.app.ui.components.FilterChip(selected = only == k, onClick = { only = k }, label = { Text(label) })
+                                }
+                            }
+                        }
+                        if (only == NIGHT) awakeNow(talk.posts).takeIf { it > 0 }?.let { n ->
+                            Text("지난 3시간 동안 이야기한 분 ${n}명이 깨어 있어요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                        val tops = allTops.filter { only == null || it.kind == only || (only == NIGHT && nightPost(it)) }
+                        if (tops.isEmpty()) Text("이 꼬리표의 글이 아직 없어요", style = MaterialTheme.typography.bodyMedium)
+                        tops.forEach { p -> androidx.compose.runtime.key(p.id) {
+                            // 1.36 [VIL-06] PC 확인: opened for one post (찾기·내 글), it is scrolled to and marked.
+                            val focused = p.id == o.focus || talk.posts.any { it.parent == p.id && it.id == o.focus }
+                            val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                            if (focused) LaunchedEffect(talk.posts.size) { kotlinx.coroutines.delay(200); runCatching { bring.bringIntoView() } }
+                            Column(if (focused) Modifier.bringIntoViewRequester(bring)
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f), MaterialTheme.shapes.medium) else Modifier) {
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
                                 onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
-                                company = o.company, setup = o.setup,
-                                onRedo = if (talk.past || o.room) null else ({ redoing = p }))
-                            talk.posts.filter { it.parent == p.id }.forEach { r ->
+                                company = o.company, setup = o.setup, roomName = if (o.room) o.title else null,
+                                onRedo = if (talk.past || o.room) null else ({ redoing = p }),
+                                onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i) { e -> error = e } }))
+                            // 1.36 [VIL-09] The reply that helped comes first, marked; the question's writer can pick one.
+                            talk.posts.filter { it.parent == p.id }.sortedByDescending { it.id == p.answer }.forEach { r ->
                                 Row {
                                     Spacer(Modifier.width(20.dp))
                                     Column(Modifier.weight(1f)) {
                                         PostRow(r, onDelete = { holder.delete(r.id) }, onFlag = { flagging = r }, onHide = { hiding = r },
-                                            onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }))
+                                            onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
+                                            helpful = r.id == p.answer,
+                                            onHelpful = if (p.kind == "question" && p.mine && !r.mine && r.hidden == null && !talk.past)
+                                                ({ holder.answer(p.id, r.id) { e -> error = e } }) else null)
                                     }
                                 }
                             }
+                            } }
                         }
                     }
                 }
                 // [COMM-09] Said plainly, so a quiet talk is not mistaken for an empty one.
                 o.talk?.hiddenByYou?.takeIf { it > 0 }?.let { n ->
-                    Text("가린 분의 글 ${n}개는 보이지 않아요. 내 활동 > 가린 사람에서 다시 볼 수 있어요.",
+                    Text("가리거나 차단한 분의 글 ${n}개는 보이지 않아요. 마을 › 팔로잉 › 차단에서 다시 볼 수 있어요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -463,16 +521,36 @@ fun TalkSheet(holder: TalkHolder) {
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
                 // [PLZ-09] What kind of post: a word, a question, or a proposal to change the rule.
                 if (replyTo == null) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
-                        // [PLAZA-32] A room has no rule to change: 의견 and 질문 only.
-                        (if (o.room) listOf("talk" to "의견", "question" to "질문") else listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안")).forEach { (k, label) ->
-                            com.bamnat.app.ui.components.FilterChip(selected = kind == k, onClick = { kind = k; error = null }, label = { Text(label) })
+                    // PC 확인 f39bcfbe: what kind of post to write, as buttons joined in one bar under "쓸 글", so it does not look like
+                    // the row of 거르기 chips above the posts.
+                    Text("쓸 글", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp))
+                    // [PLAZA-32] A room has no rule to change: 의견 and 질문 only.
+                    // 1.36 [VIL-08] 마을 V8: a room's post is 이야기 · 질문 · 팁 · 자랑.
+                    val kinds = if (o.room) ROOM_KIND_LABELS else listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안")
+                    androidx.compose.material3.SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                        kinds.forEachIndexed { i, (k, label) ->
+                            SegmentedButton(selected = kind == k, onClick = { kind = k; error = null },
+                                shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(i, kinds.size),
+                                icon = {}) { Text(label, maxLines = 1) }
                         }
                     }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                         Text("${replyTo?.let { it.nick ?: "참여자 ${it.who}" }}에게 답글", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                         TextButton(onClick = { replyTo = null }) { Text("답글 취소") }
+                    }
+                }
+                if (o.room && kind == "question" && replyTo == null) {
+                    PollEditor(pollDraft, onChange = { pollDraft = it; error = null })
+                }
+                if (styleRoom && kind == "show" && replyTo == null && showable.isNotEmpty()) {
+                    Text("내 작품 붙이기 (보는 분이 바로 입어 봐요)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        showable.forEach { r ->
+                            com.bamnat.app.ui.components.FilterChip(selected = attach?.first == r.first,
+                                onClick = { attach = if (attach?.first == r.first) null else r }, label = { Text(r.second, maxLines = 1) })
+                        }
                     }
                 }
                 if (kind == "proposal" && replyTo == null) {
@@ -492,25 +570,34 @@ fun TalkSheet(holder: TalkHolder) {
                         placeholder = { Text(when {
                             replyTo != null -> "답글을 적어 주세요"
                             kind == "question" -> "궁금한 점을 적어 주세요"
+                            kind == "tip" -> "해 보니 좋았던 방법을 나눠 주세요"
+                            kind == "show" -> "꾸민 달력이나 해낸 일을 자랑해 주세요"
                             kind == "proposal" -> "왜 바꿔야 하는지 한두 줄로 적어 주세요"
-                            else -> o.hint ?: "이 규칙에 대해 적어 주세요"
+                            // PC 확인 V16: a room opened from 찾기·내 글 has no hint of its own; it is never about a rule.
+                            else -> o.hint?.takeIf { it.isNotBlank() } ?: if (o.room) "이 광장 분들과 나누고 싶은 이야기를 적어 주세요" else "이 규칙에 대해 적어 주세요"
                         }) },
                         maxLines = 4,
                         shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.weight(1f),
+                        // PC 확인 V38: also asked the first time the box is touched (after 나중에, or a talk opened before agreeing).
+                        modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !askedOnFocus) { askedOnFocus = true; rules.ensure {} } },
                     )
                     IconButton(
                         onClick = {
                             val proposing = kind == "proposal" && replyTo == null
                             val lines = change.filter { it.want.isNotBlank() }
+                            val poll = if (o.room && kind == "question" && replyTo == null) pollDraft.map { it.trim() }.filter { it.isNotEmpty() } else emptyList()
                             if (proposing && lines.isEmpty()) {
                                 error = "무엇을 어떻게 바꾸자는지 한 줄 이상 적어 주세요"
+                            } else if (pollDraft.isNotEmpty() && kind == "question" && (poll.size < 2 || poll.toSet().size != poll.size)) {
+                                error = "투표 보기를 서로 다르게 두 개 이상 적어 주세요"
                             } else rules.ensure {
                                 busy = true
                                 holder.send(text.trim(), parent = replyTo?.id, kind = if (replyTo != null) "talk" else kind, change = if (proposing) lines else emptyList(),
-                                    withSetup = proposing && withSetup) { e ->
+                                    withSetup = proposing && withSetup, poll = poll,
+                                    attach = attach.takeIf { styleRoom && kind == "show" && replyTo == null }) { e ->
                                     busy = false; error = e
-                                    if (e == null) { text = ""; replyTo = null; if (proposing) { change = listOf(blankChange()); kind = "talk" } }
+                                    // PC 확인 V35: sent, the box starts over: 이야기, no recipe, no choices.
+                                    if (e == null) { text = ""; replyTo = null; pollDraft = emptyList(); attach = null; change = listOf(blankChange()); if (o.room || proposing) kind = "talk" }
                                 }
                             }
                         },
@@ -589,8 +676,23 @@ private fun PostRow(
     company: String = "", setup: String = "",
     /** [J133-83] The user's own proposal, fixed and sent again in its place. */
     onRedo: (() -> Unit)? = null,
+    /** 1.36 [VIL-09] This reply is the one that helped the question's writer. */
+    helpful: Boolean = false,
+    /** 1.36 [VIL-09] On a reply under my question: pick it (or take it back) as 도움 됐어요. */
+    onHelpful: (() -> Unit)? = null,
+    /** 1.36 [VIL-10] Picks choice i of the post's poll (the picked one again takes it back). */
+    onPoll: ((Int?) -> Unit)? = null,
+    /** 1.36 [VIL-13] The room's name when this post can be kept (간직하기); null elsewhere. */
+    roomName: String? = null,
 ) {
     var menu by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val saved = remember(roomName) { roomName?.let { com.bamnat.app.company.SavedPosts.of(context) } }
+    val keptFlow = remember(saved) { saved?.items ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList()) }
+    val keptList by keptFlow.collectAsStateWithLifecycle()
+    // PC 확인 V14: one line says where a kept post went, for a few seconds.
+    var keptSaid by remember { mutableStateOf<String?>(null) }
+    keptSaid?.let { LaunchedEffect(it) { kotlinx.coroutines.delay(4000); keptSaid = null } }
     // [J133-55] A post goes for good: asked once before it does.
     var deleting by remember { mutableStateOf(false) }
     if (deleting) AlertDialog(
@@ -604,6 +706,8 @@ private fun PostRow(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
             .padding(start = 0.dp),
     ) {
+        keptSaid?.let { Text("📌 $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
         Row(verticalAlignment = Alignment.CenterVertically) {
             val name = p.nick ?: "참여자 ${p.who}"
             // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
@@ -613,6 +717,8 @@ private fun PostRow(
             else Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
             when (p.kind) {
                 "question" -> { Spacer(Modifier.width(4.dp)); StatusChip("질문", Tone.QUIET) }
+                "tip" -> { Spacer(Modifier.width(4.dp)); StatusChip("팁", Tone.GOOD) }
+                "show" -> { Spacer(Modifier.width(4.dp)); StatusChip("자랑", Tone.WAIT) }
                 "proposal" -> { Spacer(Modifier.width(4.dp)); StatusChip("고치자는 제안", Tone.WAIT) }
             }
             Spacer(Modifier.width(6.dp))
@@ -635,6 +741,20 @@ private fun PostRow(
                     if (p.mine && p.kind == "proposal" && p.proposal?.adopted != true && p.hidden == null && onRedo != null) {
                         DropdownMenuItem(text = { Text("고쳐 다시 올리기") }, onClick = { menu = false; onRedo() })
                     }
+                    // 1.36 [VIL-13] 간직하기: kept on this phone, read again in 마을 › 공방 › 간직한 글 · 내 글.
+                    if (saved != null && p.hidden == null && !p.id.startsWith("local-")) {
+                        val kept = keptList.orEmpty().any { it.id == p.id }
+                        DropdownMenuItem(text = { Text(if (kept) "간직 빼기" else "간직하기") }, onClick = {
+                            menu = false
+                            if (kept) saved.remove(p.id) else saved.save(p, company, roomName!!)
+                            keptSaid = if (kept) "간직한 글에서 뺐어요" else "간직했어요 · 마을 › 공방 › 간직한 글 · 내 글에서 다시 봐요"
+                        })
+                    }
+                    // 1.36 [VIL-15] 마을 V15: my question on a kind of work's plaza can go to 장터 as a request for a recipe.
+                    val openRequest = LocalOpenRequest.current
+                    if (p.mine && p.kind == "question" && roomName != null && openRequest != null && p.hidden == null) {
+                        DropdownMenuItem(text = { Text("장터에 요청으로 올리기") }, onClick = { menu = false; openRequest(p.body) })
+                    }
                     if (p.mine) DropdownMenuItem(text = { Text("지우기") }, onClick = { menu = false; deleting = true })
                     else DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; onFlag() })
                     // [COMM-09] Play's UGC rule: users can block one another.
@@ -648,8 +768,27 @@ private fun PostRow(
             Text("확인 중 · 개인 정보가 있다는 신고가 있어 운영자가 보고 있어요", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 2.dp))
         }
+        if (helpful) Text("✓ 질문한 분에게 도움이 됐어요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
         Text(p.body, style = MaterialTheme.typography.bodyMedium,
             color = if (p.hidden != null || p.review) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+        // 1.36 [VIL-16] 자랑 카드: the writer's recipe, opened to try on.
+        p.attach?.let { (code, title) ->
+            val openRecipe = LocalOpenRecipe.current
+            SoftCard(Modifier.padding(top = 6.dp).fillMaxWidth().clickable(enabled = openRecipe != null, onClickLabel = "작품 보기") { openRecipe?.invoke(code) }) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // PC 확인 V27: a small picture of the recipe when the server sent its look.
+                    val look = remember(p.attachLook) { p.attachLook?.let { runCatching { com.bamnat.app.recipe.ThemeSwatch.of(org.json.JSONObject(it)) }.getOrNull() } }
+                    // PC 확인 V27: without a look of its own, the example week in plain colours.
+                    com.bamnat.app.ui.recipe.ThemeThumb(com.bamnat.core.plaza.StylePlaza.styleOf(company).let { st -> look?.withDays(st) ?: com.bamnat.app.recipe.ThemeSwatch.example(st) }, width = 96.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                        Text("장터에서 보고 입어 보기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+        p.poll?.let { v -> PollView(v, enabled = onPoll != null && p.hidden == null, onPick = { i -> onPoll?.invoke(if (v.mine == i) null else i) }) }
         p.hidden?.let {
             Text("다른 분께는 가려졌어요: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 2.dp))
@@ -687,6 +826,7 @@ private fun PostRow(
                     PostReactions(p.agree, p.disagree, p.myVote, onVote)
                 }
                 Spacer(Modifier.weight(1f))
+                onHelpful?.let { SmallTextButton(if (helpful) "도움 됐어요 ✓" else "도움 됐어요", picked = helpful, onClick = it) }
                 onReply?.let { SmallTextButton("답글", onClick = it) }
             }
         }
@@ -720,6 +860,80 @@ private fun SmallTextButton(text: String, picked: Boolean = false, label: String
 }
 
 private fun blankChange() = com.bamnat.app.company.ChangeLine("shift", "", "", "")
+
+/** 1.36 [VIL-12] The 야간 이야기 filter's key (not a kind). */
+private const val NIGHT = "night"
+
+/** 1.36 [VIL-12] Written at night (22시~6시 on this phone's clock): the 야간 이야기. */
+internal fun nightPost(p: TalkPost): Boolean = p.at.atZone(Today.zone()).hour.let { it >= 22 || it < 6 }
+
+/** 1.36 [VIL-12] How many writers wrote in the last 3 hours while it is night now; 0 by day. */
+internal fun awakeNow(posts: List<TalkPost>): Int {
+    val now = java.time.Instant.ofEpochMilli(Today.millis())
+    if (now.atZone(Today.zone()).hour.let { it in 6..21 }) return 0
+    return posts.filter { it.at.isAfter(now.minusSeconds(3 * 3600)) }.map { it.who }.distinct().size
+}
+
+/**
+ * 1.36 [VIL-10] 마을 V10 투표 글: the choices of a question. Before this phone picks, plain buttons (no counts, so the first votes
+ * do not lead the rest); after, each choice with its share as a bar, the picked one marked, and the same one again takes it back.
+ */
+@Composable
+private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, onPick: (Int) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        v.options.forEachIndexed { i, label ->
+            val picked = v.mine == i
+            val shown = v.mine != null
+            Box(
+                Modifier.fillMaxWidth().heightIn(min = 44.dp).clip(MaterialTheme.shapes.small)
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .clickable(enabled = enabled, onClickLabel = if (picked) "투표 거두기" else "이것으로 투표") { onPick(i) }
+                    .semantics(mergeDescendants = true) {},
+            ) {
+                if (shown) Box(Modifier.matchParentSize().fillMaxWidth(v.percent(i) / 100f).background(
+                    if (picked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text((if (picked) "✓ " else "") + label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    if (shown) Text("${v.percent(i)}%", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+        }
+        Text(if (v.mine == null) "골라야 결과가 보여요 · ${v.total}명 참여" else "${v.total}명 참여 · 다시 누르면 거둬요",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** 1.36 [VIL-10] The choices of a question being written: off until 투표 붙이기, then 2~4 lines of up to 30 letters. */
+@Composable
+private fun PollEditor(options: List<String>, onChange: (List<String>) -> Unit) {
+    if (options.isEmpty()) {
+        TextButton(onClick = { onChange(listOf("", "")) }, contentPadding = PaddingValues(horizontal = 0.dp)) { Text("+ 투표 붙이기 (보기 2~4개)") }
+        return
+    }
+    // PC 확인 V3: 다음 key walks to the next choice instead of the keyboard covering it; the last one closes the keyboard.
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        options.forEachIndexed { i, o ->
+            val last = i == options.lastIndex
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(value = o, onValueChange = { t -> onChange(options.toMutableList().also { it[i] = t.replace("\n", " ").take(30) }) },
+                    placeholder = { Text("보기 ${i + 1}") }, singleLine = true, modifier = Modifier.weight(1f),
+                    keyboardOptions = KeyboardOptions(imeAction = if (last) ImeAction.Done else ImeAction.Next),
+                    keyboardActions = KeyboardActions(onNext = { focus.moveFocus(androidx.compose.ui.focus.FocusDirection.Down) },
+                        onDone = { focus.clearFocus() }))
+                if (options.size > 2) IconButton(onClick = { onChange(options.filterIndexed { j, _ -> j != i }) }) { Icon(Icons.Filled.Close, "보기 ${i + 1} 빼기") }
+            }
+        }
+        Row {
+            if (options.size < 4) TextButton(onClick = { onChange(options + "") }) { Text("+ 보기 더하기") }
+            Spacer(Modifier.weight(1f))
+            TextButton(onClick = { onChange(emptyList()) }) { Text("투표 빼기") }
+        }
+    }
+}
+
+/** 1.36 [VIL-08] 마을 V8: the kinds of a room's post, as the server takes them (ROOM_KINDS). */
+internal val ROOM_KIND_LABELS = listOf("talk" to "이야기", "question" to "질문", "tip" to "팁", "show" to "자랑")
 
 /** [COMM-11] G2 이의 제기: 문의하기 started with the post's id at the front, so the admins find it at once. */
 internal fun appealStart(postId: String) = com.bamnat.app.ui.settings.InquiryStart(

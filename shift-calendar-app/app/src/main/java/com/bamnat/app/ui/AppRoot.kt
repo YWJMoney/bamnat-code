@@ -245,6 +245,12 @@ private object Routes {
     fun recipeMake(calendar: String = PersonalCalendar.MAIN, draft: Long = 0, kind: String = "", code: String = "") =
         "recipe_make?calendar=$calendar&draft=$draft&kind=$kind&code=$code"
     const val RECIPE_MINE = "recipe_mine"
+    /** 1.36 [VIL-13] 간직한 글 · 내 글. */
+    const val VILLAGE_POSTS = "village_posts"
+    /** 1.36 [VIL-06] 마을에서 찾기. */
+    const val VILLAGE_SEARCH = "village_search"
+    /** 1.36 [VIL-17] 장터 넘겨 보기. */
+    const val VILLAGE_SWIPE = "village_swipe"
     /** [STU-10] 1.35 스튜디오; [start] "mine", "plain" or "theme:<key>". */
     const val STUDIO = "studio?start={start}"
     fun studio(start: String = "mine") = "studio?start=${android.net.Uri.encode(start)}"
@@ -999,6 +1005,14 @@ private fun AppNavHost(
 ) {
     // Outlives the screen that starts it, e.g. a message shown after 회사 찾기 closes.
     val scope = rememberCoroutineScope()
+    // [VIL-02] 1.36 마을 V2 차단 하나로: 광장 '가린 분' and 장터·프로필 '차단' are on one list (마을 › 팔로잉 › 차단).
+    CompositionLocalProvider(com.bamnat.app.ui.company.LocalOpenBlocked provides { nav.navigate(Routes.recipePeople("blocked")) { launchSingleTop = true } },
+        // 1.36 [VIL-15] 광장 질문 › 장터에 요청으로 올리기: the request is written from the question's words.
+        com.bamnat.app.ui.company.LocalOpenRecipe provides { code -> nav.navigate(Routes.recipe(code)) { launchSingleTop = true } },
+        com.bamnat.app.ui.company.LocalOpenRequest provides { body ->
+            com.bamnat.app.ui.recipe.RequestDraft.text = body
+            nav.navigate(Routes.recipeRequests()) { launchSingleTop = true }
+        }) {
     // [VIS-02] Short, quiet motion: tabs fade through each other, a screen opened from one slides in a
     // little and fades. The system's "remove animations" setting turns both off.
     NavHost(
@@ -1464,12 +1478,15 @@ private fun AppNavHost(
         composable(TopLevel.PLAZA.route) {
             // 1.35 [HUB-01] 마을: 광장, 테마, 장터 (나눔 판) and 공방 (스튜디오) of the calendar's kind of work, one tab.
             val calendar = remember { companyCalendarOf(container, null) }
-            val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
+            // PC 확인 38d63451: follows a change of 근무 유형, and 장터's list uses the same kind of work as 오늘의 하나.
+            val hubSettings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+            val style = remember(calendar, hubSettings.workStyle) { container.calendars.styleOf(calendar, hubSettings.workStyle) }
             val recipeCal = PersonalCalendar.MAIN
             com.bamnat.app.ui.hub.HubScreen(container, style,
                 talk = { PlazaHost(nav, container, null, onBack = null, inHub = true) },
                 share = { kind ->
                     val vm = appViewModel(key = "recipes-$recipeCal") { com.bamnat.app.ui.recipe.RecipeListViewModel(it, recipeCal) }
+                    LaunchedEffect(style) { vm.useStyle(style) }
                     // 테마's 장터에서 새 테마 찾기 opens 장터 on 테마·스킨; the 장터 tab itself opens as it was left.
                     LaunchedEffect(kind) { if (kind != null && vm.state.value.kind != kind) vm.kind(kind) }
                     com.bamnat.app.ui.recipe.RecipeListScreen(vm, onBack = null,
@@ -1480,12 +1497,16 @@ private fun AppNavHost(
                 },
                 onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
                 onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
+                onPosts = { nav.navigate(Routes.VILLAGE_POSTS) { launchSingleTop = true } },
+                onSearch = { nav.navigate(Routes.VILLAGE_SEARCH) { launchSingleTop = true } },
+                onSwipe = { nav.navigate(Routes.VILLAGE_SWIPE) { launchSingleTop = true } },
                 onRequests = { nav.navigate(Routes.recipeRequests(recipeCal)) { launchSingleTop = true } },
                 onCode = { nav.navigate(Routes.recipes(recipeCal, code = true)) { launchSingleTop = true } },
                 onStudio = { start -> nav.navigate(Routes.studio(start)) { launchSingleTop = true } },
                 // [PRF-02] 1.36 팔로잉 줄: 내 프로필, the makers followed, 모두 보기.
                 onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) { launchSingleTop = true } },
                 onPeople = { nav.navigate(Routes.recipePeople()) { launchSingleTop = true } },
+                onRecipe = { code -> nav.navigate(Routes.recipe(code)) { launchSingleTop = true } },
             )
         }
         composable(Routes.STUDIO, arguments = listOf(navArgument("start") { type = NavType.StringType; defaultValue = "mine" })) { entry ->
@@ -1609,6 +1630,21 @@ private fun AppNavHost(
             }
             com.bamnat.app.ui.recipe.RecipeMakeScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MAKE) },
                 onOpen = { code -> nav.navigate(Routes.recipe(code, calendar)) { popUpTo(Routes.RECIPE_MAKE) { inclusive = true } } })
+        }
+        composable(Routes.VILLAGE_SWIPE) {
+            val style = remember { container.calendars.styleOf(PersonalCalendar.MAIN, container.settingsRepository.current.workStyle) }
+            com.bamnat.app.ui.village.SwipeThemesScreen(container, style, onBack = { nav.popFrom(Routes.VILLAGE_SWIPE) },
+                onRecipe = { code -> nav.navigate(Routes.recipe(code)) })
+        }
+        composable(Routes.VILLAGE_SEARCH) {
+            com.bamnat.app.ui.village.VillageSearchScreen(container, onBack = { nav.popFrom(Routes.VILLAGE_SEARCH) },
+                onRecipe = { code -> nav.navigate(Routes.recipe(code)) },
+                onPlaza = { nav.navigate(Routes.stylePlaza()) { launchSingleTop = true } },
+                onRequests = { nav.navigate(Routes.recipeRequests()) { launchSingleTop = true } })
+        }
+        composable(Routes.VILLAGE_POSTS) {
+            com.bamnat.app.ui.village.MyVillagePostsScreen(container, onBack = { nav.popFrom(Routes.VILLAGE_POSTS) },
+                onPlaza = { nav.navigate(Routes.stylePlaza()) { launchSingleTop = true } })
         }
         composable(Routes.RECIPE_MINE) {
             val vm = appViewModel { com.bamnat.app.ui.recipe.RecipeMineViewModel(it) }
@@ -1797,6 +1833,7 @@ private fun AppNavHost(
             val vm = appViewModel(key = "memo-$id") { MemoEditorViewModel(it, id, date, checklist, notebook) }
             MemoEditorScreen(vm = vm, onBack = { nav.popFrom(Routes.MEMO) })
         }
+    }
     }
 }
 

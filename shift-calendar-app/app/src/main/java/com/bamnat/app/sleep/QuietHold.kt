@@ -26,7 +26,8 @@ import com.bamnat.core.time.Today
  * what it says is worked out again when it comes: a bill recorded in the meantime is not announced.
  */
 object QuietHold {
-    enum class Source { MONEY, LEAVE }
+    /** 1.36 [VIL-05] VILLAGE: 마을·밤낮 소식, which also waits through work (근무 끝나고 30분 뒤). */
+    enum class Source { MONEY, LEAVE, VILLAGE }
 
     private const val PREFS = "quiet_hold"
     private const val K_HELD = "held"
@@ -38,7 +39,7 @@ object QuietHold {
         val c = context.appContainer
         val settings = c.settingsRepository.current
         if (!settings.quietWhileAsleep) return@withLock false
-        holdUntil(c, settings, at, Today.dateTime()) ?: return@withLock false
+        holdUntil(c, settings, at, Today.dateTime(), source) ?: return@withLock false
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().putStringSet(K_HELD, prefs.getStringSet(K_HELD, emptySet()).orEmpty() + "${source.name}|$at").apply()
         schedule(context, c, settings)
@@ -57,13 +58,14 @@ object QuietHold {
         val due = mutableListOf<Pair<Source, LocalDateTime>>()
         for (entry in held) {
             val (source, at) = parse(entry) ?: continue
-            val wait = settings.quietWhileAsleep && holdUntil(c, settings, at, now) != null
+            val wait = settings.quietWhileAsleep && holdUntil(c, settings, at, now, source) != null
             if (wait) keep += entry else due += source to at
         }
         prefs.edit().putStringSet(K_HELD, keep).apply()
         for ((source, at) in due.sortedBy { it.second }) when (source) {
             Source.MONEY -> JobReminderScheduler.postMoneyDue(context, at)
             Source.LEAVE -> LeaveReminder.postIfLapsing(context)
+            Source.VILLAGE -> com.bamnat.app.company.PlazaNewsJob.postHeld(context)
         }
         schedule(context, c, settings)
     }
@@ -72,7 +74,7 @@ object QuietHold {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val now = Today.dateTime()
         val held = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(K_HELD, emptySet()).orEmpty()
-        val next = held.mapNotNull(::parse).mapNotNull { (_, at) -> holdUntil(c, settings, at, now) }.minOrNull()
+        val next = held.mapNotNull(::parse).mapNotNull { (source, at) -> holdUntil(c, settings, at, now, source) }.minOrNull()
         val op = PendingIntent.getBroadcast(context, REQUEST, Intent(context, QuietHoldReceiver::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         if (next == null) {
@@ -84,7 +86,7 @@ object QuietHold {
         am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, next.atZone(Today.zone()).toInstant().toEpochMilli(), op)
     }
 
-    private suspend fun holdUntil(c: AppContainer, settings: AppSettings, at: LocalDateTime, now: LocalDateTime): LocalDateTime? {
+    private suspend fun holdUntil(c: AppContainer, settings: AppSettings, at: LocalDateTime, now: LocalDateTime, source: Source): LocalDateTime? {
         val log = c.sleepRepository.recent(days = 2).first()
         // The plan's sleep counts only for those who use the sleep times; a logged sleep counts for everyone.
         val plan = if (!settings.sleepTips || settings.workStyle?.usesPayEngine == false) null else {
@@ -92,7 +94,16 @@ object QuietHold {
             SleepSchedule.of(snapshot.resolver, at.toLocalDate().minusDays(1), at.toLocalDate(), settings.alarmsEnabled,
                 settings.sleepTargetMinutes, settings.commuteMinutes)
         }
-        return QuietHours.holdUntil(at, now, plan, log, settings.sleepTargetMinutes)
+        val asleep = QuietHours.holdUntil(at, now, plan, log, settings.sleepTargetMinutes)
+        if (source != Source.VILLAGE) return asleep
+        // 1.36 [VIL-05] 마을 소식 waits through work too, from the calendar itself (not only for those who use the sleep times).
+        val work = runCatching {
+            val snapshot = c.scheduleRepository.snapshot.first()
+            SleepSchedule.of(snapshot.resolver, at.toLocalDate().minusDays(1), at.toLocalDate(), settings.alarmsEnabled,
+                settings.sleepTargetMinutes, settings.commuteMinutes).work
+        }.getOrDefault(emptyList())
+        val atWork = QuietHours.workHoldUntil(at, now, work.map { it.from to it.to })
+        return listOfNotNull(asleep, atWork).maxOrNull()
     }
 
     private fun parse(entry: String): Pair<Source, LocalDateTime>? {

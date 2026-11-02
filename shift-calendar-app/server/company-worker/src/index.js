@@ -81,8 +81,9 @@ import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCo
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
-import { RECIPE_COLUMNS, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
+import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
+import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
 import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, writeLeft, writeLimitHit } from "./write-limits.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -456,6 +457,16 @@ async function routeOnce(request, env, url, ctx) {
   if (m && method === "POST" && m[2]) return flag(request, env, m[1]);
   m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})\/vote$/);
   if (m && method === "POST") return postVote(request, env, m[1]);
+  m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})\/answer$/);
+  if (m && method === "POST") return postAnswer(request, env, m[1]);
+  if (path === "/api/posts/mine" && method === "GET") return myPosts(request, env);
+  if (path === "/api/village/search" && method === "GET") return villageSearch(request, env, url);
+  if (path.startsWith("/api/village/contest")) {
+    const v = await villageRoute(recipeDeps, request, env, path, url, Date.now());
+    if (v) return v;
+  }
+  m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})\/poll$/);
+  if (m && method === "POST") return pollVote(request, env, m[1]);
   if (path === "/api/uses" && (method === "POST" || method === "DELETE")) return useRule(request, env, method === "POST");
   if (path === "/api/nick" && method === "POST") return setNick(request, env);
   if (path === "/api/plazas" && method === "GET") {
@@ -610,6 +621,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS post_votes (post_id TEXT NOT NULL, device TEXT NOT NULL, ok INTEGER NOT NULL, at INTEGER NOT NULL,
     PRIMARY KEY (post_id, device))`,
   "CREATE INDEX IF NOT EXISTS post_votes_device ON post_votes (device)",
+  `CREATE TABLE IF NOT EXISTS poll_votes (post_id TEXT NOT NULL, device TEXT NOT NULL, choice INTEGER NOT NULL, at INTEGER NOT NULL,
+    PRIMARY KEY (post_id, device))`,
+  "CREATE INDEX IF NOT EXISTS poll_votes_device ON poll_votes (device)",
   // [PLZ-08] Phones that use a rule set (applied it in the app), once each: 쓰는 사람.
   `CREATE TABLE IF NOT EXISTS uses (company_id TEXT NOT NULL, grp TEXT NOT NULL, device TEXT NOT NULL, at INTEGER NOT NULL,
     PRIMARY KEY (company_id, grp, device))`,
@@ -698,6 +712,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS pro_shares (owner TEXT PRIMARY KEY, code TEXT UNIQUE, code_at INTEGER, guest TEXT UNIQUE, guest_at INTEGER)`,
   // 1.36 [LIM-10] 쓰기 제한: no daily cap; strikes (posts or recipes hidden) restrict an install for a while (write-limits.js).
   ...WRITE_LIMITS_SCHEMA,
+  // 1.36 [VIL-11] 마을 (village.js): 이번 주 이야기 주제.
+  ...VILLAGE_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -771,6 +787,12 @@ const COLUMNS = [
   // 1.34 [RCP-35] 나눔 판의 이야기.
   ...RECIPE_COLUMNS,
   ...COMMUNITY_COLUMNS,
+  // 1.36 [VIL-09] 마을 V9: the reply a question's writer chose as 도움 됐어요.
+  "ALTER TABLE posts ADD COLUMN answer TEXT",
+  // 1.36 [VIL-10] 마을 V10 투표 글: a question's 2~4 choices (JSON), and one choice per install.
+  "ALTER TABLE posts ADD COLUMN poll TEXT",
+  // 1.36 [VIL-16] 마을 V16 자랑 카드: a 자랑 post's own public recipe (its code).
+  "ALTER TABLE posts ADD COLUMN attach TEXT",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -2170,6 +2192,8 @@ const proofText = (proof) => (proof ? `${proof.month}|${proof.match ? "match" : 
 
 export const ROOM = "room";
 export const STYLE_ROOMS = { "style-shift": "교대 광장", "style-day": "일근 광장", "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
+/** 1.36 [VIL-08] The kinds of a room's first posts (이야기 · 질문 · 팁 · 자랑). */
+export const ROOM_KINDS = ["talk", "question", "tip", "show"];
 const ROOM_LIMITS = { perNetworkDay: 300, shown: 100 };
 /** [PLAZA-33] What the 투자 이야기 does not take: 리딩방, promised returns, moves to a chat room (결정 AI-D8). */
 const INVEST_ADVICE = /리딩\s*방|리딩해|수익\s*(보장|확정)|원금\s*보장|무조건\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\s*채팅|단톡)\s*방?\s*(으로|에|들어|입장|초대)|급등\s*주\s*(추천|알려)|종목\s*(추천|찍어|알려)\s*(드|줄|해)/;
@@ -2222,12 +2246,76 @@ async function roomPost(request, env, body) {
     if (!top) refuse("parent", "parent");
     parent = top.parent ?? top.id;
   }
-  const kind = given(body.kind) ? oneOf(body.kind, ["talk", "question"], "kind") : "talk";
+  // 1.36 [VIL-08] 마을 V8: a room's post is 이야기, 질문, 팁 or 자랑; a reply is a plain one.
+  const kind = given(body.kind) && !parent ? oneOf(body.kind, ROOM_KINDS, "kind") : "talk";
+  // 1.36 [VIL-10] 마을 V10: a question may carry 2~4 choices to vote on.
+  const poll = given(body.poll) && kind === "question" ? pollOf(body.poll) : null;
+  // 1.36 [VIL-16] 마을 V16: a 자랑 on a kind of work's plaza may carry one of the writer's own public recipes, shown as a card to try on.
+  let attach = null;
+  if (given(body.attach) && kind === "show" && place.style) {
+    const r = typeof body.attach === "string" && RECIPE_CODE.test(body.attach)
+      ? await one(env, "SELECT owner, state, scope FROM recipes WHERE code = ?", body.attach) : null;
+    if (!r || r.owner !== dev || r.state !== "visible" || r.scope !== "public") refuse("attach", "attach");
+    attach = body.attach;
+  }
   const id = `p${randomId(15)}`;
   await run(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at,
-      parent, kind, change, report_id, agree, disagree)
-    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0)`, id, place.id, ROOM, dev, text, now, parent, kind);
+      parent, kind, change, report_id, agree, disagree, poll, attach)
+    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
+  poll ? JSON.stringify(poll) : null, attach);
   return json({ id, at: iso(now) }, 201);
+}
+
+/**
+ * GET /api/posts/mine — header X-Device: 1.36 [VIL-13] 마을 V13 내 글: this install's newest 60 posts and replies in the plazas (a kind
+ * of work's and its companies' rooms), with where, how many replies, and whether others still see it. Only the writer asks for these.
+ */
+async function myPosts(request, env) {
+  const device = deviceId(request.headers.get("x-device"));
+  if (!device) return json({ error: "device", field: "device" }, 400);
+  const dev = await deviceHash(device);
+  const rows = await all(env, `SELECT p.id, p.company_id, c.name, p.body, p.kind, p.parent, p.status, p.created_at,
+      (SELECT COUNT(*) FROM posts r WHERE r.parent = p.id AND r.status = 'shown') AS replies
+    FROM posts p LEFT JOIN companies c ON c.id = p.company_id
+    WHERE p.device = ? AND p.grp = ? ORDER BY p.created_at DESC LIMIT 60`, dev, ROOM);
+  return json({ items: rows.map((p) => ({ id: p.id, room: p.company_id, name: STYLE_ROOMS[p.company_id] ?? p.name ?? "", body: p.body,
+    kind: p.kind ?? "talk", ...(p.parent ? { parent: p.parent } : {}), replies: p.replies, at: iso(p.created_at),
+    ...(p.status === "shown" ? {} : { hidden: true }) })) });
+}
+
+/**
+ * GET /api/village/search?q= — 1.36 [VIL-06] 마을 V6 검색 하나: the kinds of work's plazas' posts (not a company's room, whose talk stays
+ * with its members) and 요청 판's requests with these words. 장터 is searched as before (/api/recipes?q=). Writers this phone hid
+ * (X-Hide) are left out; no writer is named.
+ */
+async function villageSearch(request, env, url) {
+  const q = String(url.searchParams.get("q") ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
+  if (q.length < 2) return json({ posts: [], requests: [] });
+  const like = `%${q.replace(/[%_]/g, "")}%`;
+  const rooms = Object.keys(STYLE_ROOMS);
+  const hidden = await hiddenAuthors(await authorKey(env), request.headers.get("x-hide"));
+  const [posts, requests] = await Promise.all([
+    all(env, `SELECT p.id, p.company_id, p.device, p.body, p.kind, p.created_at,
+        (SELECT COUNT(*) FROM posts r WHERE r.parent = p.id AND r.status = 'shown') AS replies
+      FROM posts p WHERE p.grp = ? AND p.company_id IN (${rooms.map(() => "?").join(",")}) AND p.parent IS NULL AND p.status = 'shown' AND p.body LIKE ?
+      ORDER BY p.created_at DESC LIMIT 30`, ROOM, ...rooms, like),
+    all(env, `SELECT id, style, body, likes, state, code FROM recipe_requests WHERE hidden = 0 AND body LIKE ? ORDER BY likes DESC, created_at DESC LIMIT 10`, like)
+      .catch(() => []),
+  ]);
+  return json({
+    posts: posts.filter((p) => !hidden.has(p.device)).slice(0, 15).map((p) => ({ id: p.id, room: p.company_id, name: STYLE_ROOMS[p.company_id],
+      body: p.body.slice(0, 200), kind: p.kind ?? "talk", replies: p.replies, at: iso(p.created_at) })),
+    requests: requests.map((r) => ({ id: r.id, style: r.style, body: r.body, likes: r.likes, state: r.state, ...(r.code ? { code: r.code } : {}) })),
+  });
+}
+
+/** 1.36 [VIL-10] A poll's choices: 2 to 4 different lines of 1~30 letters, nothing personal in them. */
+export const POLL = { min: 2, max: 4, length: 30 };
+function pollOf(given) {
+  if (!Array.isArray(given) || given.length < POLL.min || given.length > POLL.max) refuse("poll", "poll");
+  const options = given.map((o) => (typeof o === "string" ? o.replace(/\s+/g, " ").trim() : ""));
+  if (options.some((o) => !o || o.length > POLL.length || personal(o)) || new Set(options).size !== options.length) refuse("poll", "poll");
+  return options;
 }
 
 /** [PLAZA-35] 광장 소식: new posts in the rooms of the companies this phone joined, not its own, once a day in the digest. */
@@ -3176,6 +3264,8 @@ async function forgetMine(request, env) {
     stmt(env, "UPDATE posts SET agree = agree - 1 WHERE id IN (SELECT post_id FROM post_votes WHERE device = ? AND ok = 1)", dev),
     stmt(env, "UPDATE posts SET disagree = disagree - 1 WHERE id IN (SELECT post_id FROM post_votes WHERE device = ? AND ok = 0)", dev),
     stmt(env, "DELETE FROM post_votes WHERE device = ?", dev),
+    stmt(env, "DELETE FROM poll_votes WHERE device = ?", dev),
+    stmt(env, "DELETE FROM village_entries WHERE device = ?", dev),
     stmt(env, "DELETE FROM uses WHERE device = ?", dev),
     // [PLAZA-07] The companies it joined go at once, the 30 days with them.
     stmt(env, "DELETE FROM members WHERE device = ?", dev),
@@ -3459,6 +3549,28 @@ async function talkData(request, env, companyId, grp, known = null) {
     me ? writeLeft(recipeDeps, env, me, room ? "room" : "post", now) : null,
     sealed,
   ]);
+  // [VIL-02] 1.36 마을 V2 차단 하나로: on a kind of work's own plaza (not a company's room, where writers stay numbers), the makers
+  // this phone blocked in 장터·프로필 are left out too, as the writers it hid here.
+  if (style && me) await addBlockedWriters(env, me, rows, hidden);
+  // 1.36 [VIL-11] 이번 주 이야기 주제, on a kind of work's plaza.
+  const topic = style ? await topicOf(recipeDeps, env, c.id, now) : null;
+  // 1.36 [VIL-10] The polls' counts and this phone's choice, in one read each.
+  const polled = room ? rows.filter((p) => p.poll).map((p) => p.id) : [];
+  const [pollCounts, myPolls] = polled.length ? await Promise.all([
+    all(env, `SELECT post_id, choice, COUNT(*) AS n FROM poll_votes WHERE post_id IN (${polled.map(() => "?").join(",")}) GROUP BY post_id, choice`, ...polled),
+    me ? all(env, `SELECT post_id, choice FROM poll_votes WHERE device = ? AND post_id IN (${polled.map(() => "?").join(",")})`, me, ...polled) : [],
+  ]) : [[], []];
+  // 1.36 [VIL-16] The recipes 자랑 posts carry, while they are still up and public.
+  const attached = room ? [...new Set(rows.filter((p) => p.attach).map((p) => p.attach))] : [];
+  // PC 확인 V27: the card carries the recipe's look, so the 자랑 shows a small picture of it.
+  const cards = new Map(attached.length ? (await all(env, `SELECT code, title, body FROM recipes WHERE state = 'visible' AND scope = 'public'
+    AND code IN (${attached.map(() => "?").join(",")})`, ...attached)).map((r) => [r.code, { title: r.title, look: r.body ? recipeLookOf(r.body) : null }]) : []);
+  const pollOfRow = (p) => {
+    const options = JSON.parse(p.poll);
+    const counts = options.map((_, i) => pollCounts.find((r) => r.post_id === p.id && r.choice === i)?.n ?? 0);
+    const mine = myPolls.find((r) => r.post_id === p.id)?.choice;
+    return { options, counts, ...(mine === undefined ? {} : { mine }) };
+  };
   const dropped = new Set();
   let hiddenByYou = 0;
   const senders = new Set(sentRows.map((r) => r.device));
@@ -3513,6 +3625,10 @@ async function talkData(request, env, companyId, grp, known = null) {
       ...(mine ? {} : { author: await authorToken(key, p.device) }),
       parent: p.parent ?? null,
       kind: p.kind ?? "talk",
+      ...(p.kind === "question" && p.answer ? { answer: p.answer } : {}),
+      ...(p.poll ? { poll: pollOfRow(p) } : {}),
+      ...(p.attach && cards.has(p.attach) ? { attach: { code: p.attach, title: cards.get(p.attach).title,
+        ...(cards.get(p.attach).look ? { look: cards.get(p.attach).look } : {}) } } : {}),
       change: p.change ? lines(JSON.parse(p.change)) : null,
       agree: p.agree ?? 0,
       disagree: p.disagree ?? 0,
@@ -3538,7 +3654,7 @@ async function talkData(request, env, companyId, grp, known = null) {
   const past = !room && !(live.current || live.pending);
   return { status: 200, body: { company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
     ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
-    ...(hiddenByYou ? { hiddenByYou } : {}), ...(used?.limit ? { left: { posts: used.limit.left }, limit: used.limit } : {}) } };
+    ...(hiddenByYou ? { hiddenByYou } : {}), ...(topic ? { topic } : {}), ...(used?.limit ? { left: { posts: used.limit.left }, limit: used.limit } : {}) } };
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
@@ -3657,6 +3773,58 @@ export function postTrust(p) {
  * [PLZ-01] 맞아요 (ok true), 달라요 (false) or taking the vote back (null) on someone's post. On a
  * proposal it is also a vote on the proposed setup, so a proposal people agree with is adopted like any rule.
  */
+/**
+ * POST /api/posts/:id/answer — {device, reply|null}: 1.36 [VIL-09] 마을 V9 도움 됐어요. The writer of a question picks one reply under it
+ * (not their own) as the one that helped; null takes it back. Shown to everyone on the question; the answer's writer is not told who.
+ */
+async function postAnswer(request, env, id) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const dev = await deviceHash(device);
+  const q = await one(env, "SELECT * FROM posts WHERE id = ?", id);
+  if (!q || q.status !== "shown" || q.kind !== "question") return json({ error: "not_found" }, 404);
+  if (q.device !== dev) return json({ error: "not_yours" }, 403);
+  let reply = null;
+  if (body.reply !== null && body.reply !== undefined) {
+    const r = typeof body.reply === "string" ? await one(env, "SELECT id, device, status FROM posts WHERE id = ? AND parent = ?", body.reply, id) : null;
+    if (!r || r.status !== "shown") refuse("reply", "reply");
+    if (r.device === dev) return json({ error: "own" }, 400);
+    reply = r.id;
+  }
+  await run(env, "UPDATE posts SET answer = ? WHERE id = ?", reply, id);
+  return json({ id, answer: reply });
+}
+
+/**
+ * POST /api/posts/:id/poll — {device, choice|null}: 1.36 [VIL-10] 마을 V10 one choice on a poll per install (the writer too), or taking
+ * it back. Answers the counts, so the app shows the shares at once.
+ */
+async function pollVote(request, env, id) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const now = Date.now();
+  const net = await network(request, env, now);
+  const dev = await deviceHash(device);
+  const limitHit = await overLimit(env, now, [["device", `vote|${dev}|${Math.floor(now / HOUR)}`, LIMITS.votesPerHour, HOUR],
+    ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
+  if (limitHit) return limitHit;
+  const p = await one(env, "SELECT id, status, poll FROM posts WHERE id = ?", id);
+  if (!p || p.status !== "shown" || !p.poll) return json({ error: "not_found" }, 404);
+  const options = JSON.parse(p.poll);
+  if (body.choice === null) {
+    await run(env, "DELETE FROM poll_votes WHERE post_id = ? AND device = ?", id, dev);
+  } else {
+    if (!Number.isInteger(body.choice) || body.choice < 0 || body.choice >= options.length) refuse("choice", "choice");
+    await run(env, `INSERT INTO poll_votes (post_id, device, choice, at) VALUES (?, ?, ?, ?)
+      ON CONFLICT (post_id, device) DO UPDATE SET choice = excluded.choice, at = excluded.at`, id, dev, body.choice, now);
+  }
+  const rows = await all(env, "SELECT choice, COUNT(*) AS n FROM poll_votes WHERE post_id = ? GROUP BY choice", id);
+  const counts = options.map((_, i) => rows.find((r) => r.choice === i)?.n ?? 0);
+  return json({ id, poll: { options, counts, ...(body.choice === null ? {} : { mine: body.choice }) } });
+}
+
 async function postVote(request, env, id) {
   const body = await readJson(request, 1024);
   const device = deviceId(body.device);
@@ -4178,6 +4346,7 @@ function areaFor(path) {
   if (path.startsWith("/posts") || path.startsWith("/rates")) return "community";
   // 1.34 [RCP-36] 나눔 판 검토·신고·임시 조치: the same people who look after the plaza's posts.
   if (path === "/recipes" || path.startsWith("/recipes/")) return "community";
+  if (path.startsWith("/village/")) return "community";
   // AM 1.28 [FLAG-27] the switches are flags now: 기능 관리 (forcing off checks flagOff as well).
   if (path === "/switches" || path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) return "flags";
   if (path.startsWith("/notices") || path === "/ops") return "ops";
@@ -4336,6 +4505,14 @@ async function signedRoute(request, env, url, path, method, now, session) {
     const out = await liftLimit(recipeDeps, env, m[1], now);
     if (out) await audit(env, now, "write_limit_lift", m[1]);
     return json(out ?? { error: "not_found" }, out ? 200 : 404);
+  }
+  // 1.36 [VIL-11] 이번 주 이야기 주제 of each kind of work's plaza.
+  if (path.startsWith("/village/")) {
+    const v = await villageAdmin(recipeDeps, request, env, path, now, STYLE_ROOMS);
+    if (v) {
+      if (request.method === "POST") await audit(env, now, path.startsWith("/village/contests") ? "village_contest" : "village_topic", path);
+      return v;
+    }
   }
   if (path === "/recipes" || path.startsWith("/recipes/")) {
     const more = await communityAdmin(recipeDeps, request, env, path, url, now);
@@ -6512,6 +6689,16 @@ export async function authorToken(key, device) {
 }
 
 /** The writers behind the marks in [header]; a mark this server did not make is skipped. */
+/** [VIL-02] Adds to [hidden] the writers of [rows] whose maker id [me] blocked (recipe_blocks). */
+export async function addBlockedWriters(env, me, rows, hidden) {
+  const blocks = await all(env, "SELECT maker FROM recipe_blocks WHERE device = ?", me).catch(() => []);
+  if (!blocks.length) return;
+  const ids = new Set(blocks.map((b) => b.maker));
+  for (const dev of new Set(rows.map((r) => r.device))) {
+    if (dev && dev !== me && ids.has(await makerId(dev))) hidden.add(dev);
+  }
+}
+
 export async function hiddenAuthors(key, header) {
   const out = new Set();
   const marks = String(header ?? "").split(",").map((m) => m.trim()).filter((m) => HIDE.token.test(m)).slice(0, HIDE.max);
@@ -6571,7 +6758,7 @@ async function digest(request, env, url) {
 }
 
 async function newsItems(env, dev, since, now) {
-  const [changed, adopted, rates, results, rooms, roomPosts] = (await batch(env, [
+  const [changed, adopted, rates, results, rooms, roomPosts, replies] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -6588,6 +6775,11 @@ async function newsItems(env, dev, since, now) {
       WHERE x.device = ? AND x.at > ? AND x.at <= ? ORDER BY x.at DESC LIMIT 20`, dev, since, now),
     roomNews(env, dev, since),
     roomPostNews(env, dev, since),
+    // 1.36 [VIL-09] PC 확인 V1: answers to what this phone wrote in a room, by room, so a question's writer hears of them.
+    stmt(env, `SELECT q.company_id, c.name, COUNT(*) AS n, MAX(a.created_at) AS at FROM posts q
+        JOIN posts a ON a.parent = q.id AND a.status = 'shown' AND a.device != q.device AND a.created_at > ?2
+        LEFT JOIN companies c ON c.id = q.company_id
+      WHERE q.device = ?1 AND q.grp = 'room' AND q.parent IS NULL GROUP BY q.company_id ORDER BY at DESC LIMIT 10`, dev, since),
   ])).map((r) => r.results);
   const items = [
     ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
@@ -6600,6 +6792,7 @@ async function newsItems(env, dev, since, now) {
     ...rooms.map((r) => ({ kind: "room", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
     // AI 1.27 [PLAZA-35] New posts in 회사 정보 광장, n of them in one line.
     ...roomPosts.map((r) => ({ kind: "room_posts", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
+    ...replies.map((r) => ({ kind: "replies", company: { id: r.company_id, name: STYLE_ROOMS[r.company_id] ?? r.name ?? "" }, count: r.n, at: iso(r.at) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   return items;
 }

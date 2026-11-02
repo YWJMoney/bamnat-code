@@ -226,6 +226,11 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                         prefs.edit().putString(K_TOLD_LIST, keyListJson(keyList(K_TOLD_LIST), listOf(m.key))).apply()
                     }
                 }
+                // 1.36 [VIL-15] A request of mine someone finished is news whether or not I follow anyone.
+                n.requests.firstOrNull()?.let { (_, title, _) ->
+                    lines += "부탁한 레시피가 ‘$title’${com.bamnat.app.ui.Fmt.ro("‘$title’")} 완성됐어요 (마을 › 공방 › 요청)" +
+                        if (n.requests.size > 1) " 외 ${n.requests.size - 1}개" else ""
+                }
                 n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’${com.bamnat.app.ui.Fmt.obj("‘$mine’")} 고친 수정판 ‘${r.title}’${com.bamnat.app.ui.Fmt.iga("‘${r.title}’")} 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +
                     if (n.remixes.size > 1) " (외 ${n.remixes.size - 1}개)" else "" }
             }

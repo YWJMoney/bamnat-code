@@ -209,6 +209,8 @@ class AIScreenshotTest : ScreenshotBase() {
             reveal("‘GS칼텍스’ 정보 광장", exact = true)
             vm.openTalk()
             settle()
+            // PC 확인 V21: a room's talk asks for the plaza rules as it opens, once.
+            if (shows("동의하고 쓰기", exact = true)) tapText("동의하고 쓰기", exact = true)
             typeInto("같은 회사 분들께 하고 싶은 말을 적어 주세요", "야간 끝나고 통근버스 몇 시에 와요?")
             tapText("보내기", exact = true)
             // The plaza's rules, once before the first post.
@@ -245,6 +247,8 @@ class AIScreenshotTest : ScreenshotBase() {
         val vm = home()
         vm.openTalk()
         settle()
+        // PC 확인 V21: a room's talk asks for the plaza rules as it opens, once.
+        if (shows("동의하고 쓰기", exact = true)) tapText("동의하고 쓰기", exact = true)
         assertTrue(appears("자유 토의", exact = true))
         // A room has no rule to change: no 고치자는 제안.
         assertTrue(gone("고치자는 제안", exact = true))

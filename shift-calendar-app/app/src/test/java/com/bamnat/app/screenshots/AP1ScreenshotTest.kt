@@ -220,6 +220,8 @@ class AP1ScreenshotTest : ScreenshotBase() {
         val vm = home()
         vm.openTalk()
         settle()
+        // PC 확인 V21: a room's talk asks for the plaza rules as it opens, once.
+        if (shows("동의하고 쓰기", exact = true)) tapText("동의하고 쓰기", exact = true)
         f.gate = CompletableDeferred()
         vm.talk.send("다음 주부터 야간이 9시예요") { }
         settle()

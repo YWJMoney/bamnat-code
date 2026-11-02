@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -83,9 +85,27 @@ internal fun TextSizeRow(step: Int, onPick: (Int) -> Unit) {
         Text("${TextSize.LABELS[step.coerceIn(0, TextSize.LABELS.lastIndex)]} · 휴대폰 글꼴 크기와 함께 적용돼요. 화면 배치는 글자에 맞춰 바뀌어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextSizePicker(step, { pending = it }, selected = pending)
+        // PC 확인 b4735c07 (칩만 누르면 미리 보기만 바뀌어 적용된 줄 알았어요): the whole app still changes only on the button
+        // (J133-23: changing at every tap made the screen jump), but the button sits right under the chips, wide, with the size it
+        // puts on, and a line says the chips only preview.
+        // PC 확인 2b9f19ab: the button came under the tab bar at the bottom; it is scrolled into sight as it appears.
+        val bring = androidx.compose.runtime.remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+        androidx.compose.runtime.LaunchedEffect(pending) {
+            if (pending != step) { kotlinx.coroutines.delay(150); runCatching { bring.bringIntoView() } }
+        }
+        if (pending != step) {
+            Button(onClick = { onPick(pending) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .bringIntoViewRequester(bring)) {
+                // PC 확인 c085c16a: '보통'으로, '크게'로 (the particle after the word's last letter).
+                val label = TextSize.LABELS[pending.coerceIn(0, TextSize.LABELS.lastIndex)]
+                val last = label.last().code - 0xAC00
+                val ro = if (last in 0..11171 && last % 28 != 0 && last % 28 != 8) "으로" else "로"
+                Text("‘$label’$ro 앱 전체 바꾸기")
+            }
+        } else Text("칩을 누르면 아래 미리 보기만 바뀌어요. 마음에 들면 나오는 단추로 앱 전체에 적용해요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val scale = scaleOf(step, pending)
         CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, scale)) { TextSizePreview(pending) }
-        if (pending != step) Button(onClick = { onPick(pending) }) { Text("이 크기로") }
     }
 }
 

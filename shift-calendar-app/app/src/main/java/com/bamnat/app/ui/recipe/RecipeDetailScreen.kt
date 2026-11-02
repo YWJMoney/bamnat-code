@@ -40,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.company.SoftCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -118,7 +119,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
                     DropdownMenu(menu, { menu = false }) {
                         if (s.doc?.mine == true) DropdownMenuItem(text = { Text("새 판 만들기") }, onClick = { menu = false; vm.body()?.let(onNewVersion) }, enabled = s.recipe != null)
-                        DropdownMenuItem(text = { Text("고쳐 만들기") }, onClick = { menu = false; vm.body()?.let(onRemake) }, enabled = s.recipe != null)
+                        DropdownMenuItem(text = { Text("스튜디오에서 고치기") }, onClick = { menu = false; vm.body()?.let(onRemake) }, enabled = s.recipe != null)
                         if (s.doc?.mine != true) DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; flagging = true })
                     }
                 },
@@ -201,6 +202,13 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // [TRY-01] 1.35 (사용자 2026-10-30 21:45 "입어보기랑 넣기가 버튼 두개가 있을 필요가 없고"): a recipe with looks has one way in,
                 // 입어 보기 — 지금 ↔ 입으면 and the parts to tick — whose button puts in what was ticked. One without looks is put in at once.
                 val hasLooks = remember(r) { com.bamnat.core.recipe.LookParts.of(r).isNotEmpty() }
+                // PC 확인 V34: opened from a 입어 보기 elsewhere, it goes on to 입어 보기 at once.
+                LaunchedEffect(r) {
+                    if (hasLooks && com.bamnat.app.recipe.RecipeLinks.tryNext != null && com.bamnat.app.recipe.RecipeLinks.tryNext == vm.code) {
+                        com.bamnat.app.recipe.RecipeLinks.tryNext = null
+                        tryOn = true
+                    }
+                }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
                 if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Text(if (s.applying) "넣는 중…" else "입어 보고 고르기")
@@ -250,6 +258,15 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         OutlinedButton(onClick = { onOpen(c) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                             Text(((i["note"] as? String)?.let { "$it ($c)" } ?: c) + " 열기")
                         }
+                    }
+                }
+                // 1.36 [VIL-14] 마을 V14: 고쳐 만들기 out of the ⋮ menu, where someone almost happy with it looks next.
+                if (doc.mine != true) SoftCard {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("거의 마음에 들면 내 것으로 고쳐요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                        Text("스튜디오에서 이 레시피부터 시작해요. 만든 분 표시는 늘 남고, 세 곳 이상 직접 바꾸면 내 창작으로 올릴 수 있어요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = { vm.body()?.let(onRemake) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("스튜디오에서 고치기") }
                     }
                 }
                 // [RCX-01] 계보: what it was made from, and what others made from it.

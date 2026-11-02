@@ -35,7 +35,12 @@ internal fun tabName(tab: String?): String = com.bamnat.core.recipe.LookParts.ta
 
 /** [RCP-21] 나눔 판 목록: the recipes for one kind of work, by tab, with search and 코드로 받기. */
 class RecipeListViewModel(private val c: AppContainer, val calendar: String = PersonalCalendar.MAIN) : ViewModel() {
-    val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    /**
+     * PC 확인 38d63451: the kind of work the list is for. It follows the 마을's own ([useStyle]) and a change of 근무 유형 in 설정, so the
+     * list and 오늘의 하나 show the same kind of work's things (the list once stayed on the kind of work it was first opened with).
+     */
+    var style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+        private set
     val enabled: Boolean get() = c.recipeApi.enabled && c.flags.on(FlagCatalog.RECIPE_BROWSE)
 
     enum class Tab(val key: String, val label: String) { SHOWCASE("showcase", "이런 것도"), HOT("hot", "요즘 뜨는"), GOOD("good", "좋은 순"), NEW("new", "새로"), OFFICIAL("official", "시작 레시피"), DATA("data", "공개 자료") }
@@ -46,7 +51,9 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
          * [FREE-08] 종류로 보기 (RecipeClient.KINDS); null for all. [MKX-01] 1.36: the 장터 구간 — [RecipeClient.SCOPE_THEME] (테마) or
          * [RecipeClient.SCOPE_TAB] + a tab (기능별 탭).
          */
-        val kind: String? = RecipeClient.SCOPE_THEME)
+        val kind: String? = RecipeClient.SCOPE_THEME,
+        /** PC 확인 38d63451: while this half is empty, how many the other half (테마 ↔ 기능별 탭) has for the same kind of work. */
+        val other: Int = 0)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -54,7 +61,12 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         load()
         // [PRF-05] 차단·풀기 on a profile shows here at once, not after the app starts again (빌드 221dd083 확인).
         viewModelScope.launch { c.recipes.blocked.drop(1).collect { load() } }
+        viewModelScope.launch {
+            c.settingsRepository.settings.drop(1).collect { useStyle(c.calendars.styleOf(calendar, it.workStyle)) }
+        }
     }
+
+    fun useStyle(s: WorkStyle?) { if (s != style) { style = s; load() } }
 
     fun tab(t: Tab) { _state.value = _state.value.copy(tab = t); load() }
     fun query(q: String) { _state.value = _state.value.copy(query = q) }
@@ -72,7 +84,18 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
                 val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
                 // [PRF-05] 1.36 차단한 분의 작품은 이 폰에서 빼요 (목록은 모든 폰이 같은 캐시).
                 val got = page.items.filter { RecipeClient.fits(it, s.kind) && !c.recipes.hides(it) }
-                _state.value.copy(items = if (more) _state.value.items + got else got, next = page.next, loading = false)
+                val items = if (more) _state.value.items + got else got
+                // PC 확인 38d63451: an empty 테마 says the 기능별 탭 has some (and the other way round), not only "아직 없어요".
+                val otherKind = when {
+                    s.kind == RecipeClient.SCOPE_THEME -> RecipeClient.SCOPE_TAB
+                    s.kind?.startsWith(RecipeClient.SCOPE_TAB) == true -> RecipeClient.SCOPE_THEME
+                    else -> null
+                }
+                val other = if (items.isNotEmpty() || otherKind == null || s.query.isNotBlank()) 0 else runCatching {
+                    c.recipeApi.list(if (s.allStyles) null else style, "hot", "", 0, otherKind).items
+                        .count { RecipeClient.fits(it, otherKind) && !c.recipes.hides(it) }
+                }.getOrDefault(0)
+                _state.value.copy(items = items, next = page.next, loading = false, other = other)
             } catch (e: Exception) {
                 _state.value.copy(loading = false, error = RecipeClient.problem(e))
             }

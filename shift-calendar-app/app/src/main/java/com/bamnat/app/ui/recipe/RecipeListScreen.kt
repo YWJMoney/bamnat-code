@@ -46,6 +46,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -57,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -172,7 +174,7 @@ internal fun ShowcaseStrip(items: List<RecipeItem>, onItem: (String) -> Unit) {
             OutlinedCard(Modifier.width(168.dp).clickable(onClickLabel = "레시피 보기") { onItem(item.code) }) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // [FREE-08] A theme shows as itself; the rest by their cover.
-                    item.look?.let { ThemeThumb(it, width = 148.dp) } ?: RecipeCover(item.cover, size = 56.dp)
+                    item.thumb()?.let { ThemeThumb(it, width = 148.dp) } ?: RecipeCover(item.cover, size = 56.dp)
                     Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.heightIn(min = 40.dp))
                     Text(item.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -235,6 +237,7 @@ fun RecipeListScreen(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     var codeAsk by remember { mutableStateOf(askCode) }
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     Scaffold(
         topBar = {
             TopAppBar(
@@ -250,11 +253,15 @@ fun RecipeListScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = onMake, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("스튜디오에서 만들기") })
+            // PC 확인: scrolled down, the button folds to its + so it does not sit on a card's buttons.
+            val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 40 } }
+            ExtendedFloatingActionButton(onClick = onMake, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("스튜디오에서 만들기") },
+                expanded = atTop, modifier = Modifier.semantics { contentDescription = "스튜디오에서 만들기" })
         },
     ) { padding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(padding),
+            state = listState,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -307,7 +314,18 @@ fun RecipeListScreen(
                     Text(if (state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA)
                         "아직 준비된 레시피가 없어요" else "아직 레시피가 없어요. 내 설정을 처음으로 나눠 보세요",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { vm.load() }) { Text("다시 불러오기") }
+                    // PC 확인 38d63451: the other half's, and a way to make the first one.
+                    val inTheme = state.kind == RecipeClient.SCOPE_THEME
+                    if (state.other > 0) Text(if (inTheme) "기능별 탭에는 ${state.other}개 있어요. 달력 같은 탭 하나만 바꾸는 작품이에요"
+                        else "테마에는 ${state.other}개 있어요. 앱 전체를 한 벌로 바꾸는 작품이에요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                        if (state.other > 0) androidx.compose.material3.FilledTonalButton(onClick = {
+                            vm.kind(if (inTheme) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME)
+                        }) { Text(if (inTheme) "기능별 탭 보기" else "테마 보기") }
+                        TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }
+                        TextButton(onClick = { vm.load() }) { Text("다시 불러오기") }
+                    }
                 }
             }
             // [HUB-04] Themes are picked by eye: two big pictures a row; the rest as rows.
@@ -353,7 +371,7 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
                 }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // [FREE-08] The theme itself, to pick by eye.
-            item.look?.let { Spacer(Modifier.width(8.dp)); ThemeThumb(it, width = 84.dp) }
+            item.thumb()?.let { Spacer(Modifier.width(8.dp)); ThemeThumb(it, width = 84.dp) }
         }
     }
 }
@@ -364,10 +382,13 @@ private fun ThemeTile(item: RecipeItem, modifier: Modifier = Modifier, onClick: 
     Card(modifier.clickable(onClickLabel = "테마 보기", onClick = onClick)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
-                item.look?.let { ThemeThumb(it, width = maxWidth) } ?: RecipeCover(item.cover, size = maxWidth)
+                item.thumb()?.let { ThemeThumb(it, width = maxWidth) } ?: RecipeCover(item.cover, size = maxWidth)
             }
             Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text("♥ ${item.likes} · 입은 분 ${item.users}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 1.36 [VIL-18] 오래 쓰는 분이 많은 것과 새 창작자의 첫 작품이 눈에 띄게.
+            Text("♥ ${item.likes} · 입은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: ""),
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (item.newMaker) Text("새 창작자", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -432,3 +453,10 @@ fun CodeDialog(onCode: (String) -> Unit, onDismiss: () -> Unit) {
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
+
+/**
+ * PC 확인 V44: the small picture of a list card — the recipe's own look, or for a theme or one that changes the calendar but brought
+ * no colours, the example week in plain colours (the same as 자랑 카드 and 넣기 창), so the same work looks the same everywhere.
+ */
+internal fun com.bamnat.app.recipe.RecipeItem.thumb(): com.bamnat.app.recipe.ThemeSwatch? =
+    look?.withDays(styles.firstOrNull()) ?: com.bamnat.app.recipe.ThemeSwatch.example(styles.firstOrNull()).takeIf { scope == "theme" || "calendar" in tabs || "app" in tabs }
