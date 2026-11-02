@@ -1214,9 +1214,10 @@ function adminApp(L, BUILD, M) {
     const reasons = Object.entries(S.overview?.hideReasons ?? {}).filter(([key]) => key !== "flags");
     openDialog(`<form data-form="hide-post" data-id="${id}" data-mute="${mute ? 1 : 0}"><h2>${mute ? "30일 동안 쓰기를 막을까요?" : "이 글을 가릴까요?"}</h2>
       <p>${mute ? "이 글은 가려지고, 글쓴이는 30일 동안 어느 토론에도 글을 쓸 수 없어요. " : ""}글쓴이 앱에 이 이유가 보여요.</p>
-      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${i === 0 ? " checked" : ""}>
+      <div class="radios" role="radiogroup" aria-label="가리는 이유">${reasons.map(([key, text]) => `<label class="radio"><input type="radio" name="reason" value="${key}" required>
         <span>${esc(text)}</span></label>`).join("")}</div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">${mute ? "막기" : "가리기"}</button></div></form>`);
+      <p class="hint" data-reason-hint>이유를 고르면 ${mute ? "막기" : "가리기"}를 누를 수 있어요.</p>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit" disabled>${mute ? "막기" : "가리기"}</button></div></form>`);
   }
 
   async function moderate(id, body, done, undo) {
@@ -5183,6 +5184,12 @@ function adminApp(L, BUILD, M) {
 
   document.addEventListener("change", (e) => {
     const t = e.target;
+    // PC 확인 보안 11차 (가리기 이유가 첫 칸으로 미리 골라져 있었어요): nothing is picked for the admin; 가리기 waits for a reason.
+    if (t.name === "reason" && t.form?.dataset.form === "hide-post") {
+      t.form.querySelector('button[type="submit"]').disabled = false;
+      t.form.querySelector("[data-reason-hint]")?.remove();
+      return;
+    }
     // [ADMIN-10] Picking 개발사항 for 일괄 복사·처리.
     if (t.dataset?.pick && S.devPick) {
       if (t.checked) S.devPick.add(t.dataset.pick);

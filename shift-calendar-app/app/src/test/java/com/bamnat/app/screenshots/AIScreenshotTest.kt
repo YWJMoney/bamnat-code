@@ -254,6 +254,28 @@ class AIScreenshotTest : ScreenshotBase() {
         reveal("주차장 자리 요즘 넉넉해요?", exact = true)
         assertEquals(4, r.posts.getValue("c1").size)
     }
+    /**
+     * PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked when the box is
+     * first tapped, so the first 보내기 sends at once, the words as they were.
+     */
+    @Test fun theRulesComeAtTheFirstTap() = shoot("1128b_ai_room_rules_first", PHONE) {
+        val r = rooms()
+        member()
+        r.seed("c1", 2 to "이번 달 특근 공지 보셨어요? 토요일 두 번이래요")
+        val vm = home()
+        vm.openTalk()
+        settle()
+        tapText("같은 회사 분들께 하고 싶은 말을 적어 주세요", exact = true)
+        settle()
+        assertTrue("글 칸을 처음 누르면 규칙부터", appears("동의하고 쓰기", exact = true))
+        tapText("동의하고 쓰기", exact = true, scrolls = 0)
+        settle()
+        typeInto("같은 회사 분들께 하고 싶은 말을 적어 주세요", "첫 글이에요")
+        tapText("보내기", exact = true)
+        settle()
+        assertTrue("보낼 때는 다시 묻지 않아요", gone("동의하고 쓰기", exact = true))
+        assertEquals(listOf("첫 글이에요"), r.posts.getValue("c1").drop(1).map { it.body })
+    }
     @Test fun applyingOpensTheRoomWithALine() = shoot("1129_ai_room_after_apply", PHONE_393_NIGHT) {
         rooms()
         member()
