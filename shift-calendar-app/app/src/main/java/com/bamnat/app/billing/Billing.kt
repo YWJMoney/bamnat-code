@@ -84,6 +84,47 @@ class NoBilling(plans: List<Plan> = emptyList()) : Billing {
 }
 
 /**
+ * 1.36 첫 실행 멈춤 (PC 확인 C12: AppContainer.playBilling 4.8초가 화면 스레드에서): a screen that only shows the plans
+ * ([rememberPlans], 프로 잠금 카드) reads [plans] and [state] here without building Play's client. The real billing is
+ * made by [make] on [scope]'s thread the first time something asks Play ([refresh], or [buy] before that), never on the
+ * main thread, and a screen asking while it is being made waits for it on that thread. If it cannot be made (no Play),
+ * it is [BillingState.UNAVAILABLE] like [NoBilling].
+ */
+class DeferredBilling(private val scope: CoroutineScope, private val make: () -> Billing) : Billing {
+    private val _plans = MutableStateFlow<List<Plan>>(emptyList())
+    override val plans: StateFlow<List<Plan>> = _plans.asStateFlow()
+    private val _state = MutableStateFlow(BillingState.UNKNOWN)
+    override val state: StateFlow<BillingState> = _state.asStateFlow()
+    private val made = kotlinx.coroutines.CompletableDeferred<Billing>()
+    private val started = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** True once the real billing has been made (for the startup budget test). */
+    val built: Boolean get() = made.isCompleted
+
+    private fun start() {
+        if (!started.compareAndSet(false, true)) return
+        scope.launch {
+            val real = runCatching(make).getOrElse { NoBilling() }
+            launch { real.plans.collect { _plans.value = it } }
+            launch { real.state.collect { _state.value = it } }
+            made.complete(real)
+        }
+    }
+
+    override suspend fun refresh() {
+        start()
+        made.await().refresh()
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    override fun buy(activity: Activity, plan: Plan): Boolean {
+        start()
+        // Plans to pick come only from a refresh, so the real billing is there by then.
+        return if (made.isCompleted) made.getCompleted().buy(activity, plan) else false
+    }
+}
+
+/**
  * [MON-03] Google Play Billing Library 9.1.0. Play on the phone says whether this account holds the
  * subscription; the company server, with the owner's Play key, adds its end date, trial and consent
  * (POST /api/purchases). A purchase is acknowledged here within Play's three days, or Play refunds it.

@@ -168,7 +168,9 @@ internal fun TodayFlowCard(
     Surface(
         shape = MaterialTheme.shapes.large,
         color = if (warning) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier.fillMaxWidth().animateContentSize(),
+        // 1.36 첫 실행 멈춤 (PC 확인 C12, TodayFlowCard animateContentSize): no size animation while the first month fills the
+        // screen; folding and unfolding afterwards still move smoothly.
+        modifier = modifier.fillMaxWidth().then(if (FirstMonth.settled.value) Modifier.animateContentSize() else Modifier),
     ) {
         if (folded || card.compact && !opened) {
             Row(
