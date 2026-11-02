@@ -281,6 +281,14 @@ fun RecipeListScreen(
                         featured -> "지금 입은 테마는 그대로 두고, 고른 탭 하나만 바꿔요. 입어 보기에서 내 테마 위에 얹어 봐요"
                         else -> "달력·가계부·메모 등 여러 화면을 한 번에 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 기능별 탭으로 바꿀 수 있어요"
                     }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // PC D10 (사용성 중): 찾은 말이 다른 구간에 있으면 칩으로 (테마 안에서만 찾아 '체크'가 안 나오던 것).
+                    if (state.query.isNotBlank() && state.elsewhere.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("다른 구간에도 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        state.elsewhere.forEach { (h, n) ->
+                            androidx.compose.material3.AssistChip(onClick = { vm.kind(h) }, label = { Text("${RecipeListViewModel.halfName(h)}에 $n") })
+                        }
+                    }
                     if (featured) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
                         FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("모든 탭") })

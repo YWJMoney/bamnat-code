@@ -621,12 +621,39 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         if (done) refresh(both = true)
     }
 
+    /**
+     * PC D10 (사용성 중): 규칙·단추는 휴대폰 것이라 스튜디오에서 고치면 바로 저장돼요. 설정 › 수식·규칙·버튼과 같은 목록이고, 규칙만 바꾸고
+     * 나갈 때 입힐지 묻지 않아요. 지난 단계에도 같은 규칙을 넣어 되돌리기가 규칙을 되돌리지 않게 해요(규칙은 줄마다 빼기·끄기로).
+     */
+    fun changeLogic(l: com.bamnat.core.formula.Logic) {
+        val enc = com.bamnat.core.formula.Logic.encode(l)
+        c.settingsRepository.update { it.copy(logic = enc) }
+        com.bamnat.app.logic.LogicRunner.rulesChanged(c)
+        withLogic(enc)
+    }
+
+    /** PC D10: 장터에서 넣는 등 스튜디오 밖에서 바뀐 규칙을 화면에 돌아올 때 받아요 (스튜디오에서 얹고 아직 안 입힌 것이 없을 때). */
+    fun syncLogic() {
+        val now = c.settingsRepository.current.logic
+        val s = _state.value
+        if (s.draft.logic == s.base.logic && now != s.draft.logic) withLogic(now)
+    }
+
+    private fun withLogic(enc: String) {
+        val s = _state.value
+        fun AppSettings.l() = copy(logic = enc)
+        _state.value = s.copy(draft = s.draft.l(), base = s.base.l(), past = s.past.map { it.copy(draft = it.draft.l()) },
+            future = s.future.map { it.copy(draft = it.draft.l()) })
+    }
+
     /** The rules and buttons before the last 입히기, for 되돌리기. */
     private var beforeLogic: String? = null
 
     /** Puts the draft's 규칙·단추 on (they stay with the phone, not a theme) and says what is on now: " · 규칙 2개·단추 1개가 켜졌어요". */
-    private fun wearLogic(logic: String): String? {
+    private fun wearLogic(draft: String): String? {
         val now = c.settingsRepository.current.logic
+        // PC D10: 입히기는 규칙을 더하기만 해요 (스튜디오를 연 뒤 장터에서 넣은 규칙이 지워지지 않게). 빼기는 줄마다 바로 저장돼요.
+        val logic = com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(now).plus(com.bamnat.core.formula.Logic.decode(draft)))
         if (now == logic) return null
         beforeLogic = now
         c.settingsRepository.update { it.copy(logic = logic) }

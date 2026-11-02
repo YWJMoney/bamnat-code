@@ -17,6 +17,7 @@ import com.bamnat.app.logic.notifyWords
 import com.bamnat.app.logic.whenFor
 import com.bamnat.app.logic.timeOf
 import com.bamnat.app.logic.ruleProblem
+import com.bamnat.app.logic.ruleName
 import com.bamnat.core.formula.ButtonPlace
 import com.bamnat.core.formula.FormulaNames
 import com.bamnat.core.formula.Logic
@@ -87,6 +88,16 @@ class RulScreenshotTest : ScreenshotBase() {
         assertEquals("07:00", timeOf("7:00")); assertEquals("07:00", timeOf("700")); assertEquals("21:30", timeOf("2130"))
         assertEquals("07:00", timeOf("7시")); assertEquals(null, timeOf("25:00")); assertEquals(null, timeOf("아침"))
         assertEquals(0, whenFor(start, RuleTrigger.TAP).min)
+    }
+
+    @Test fun namesSaidFromWhenAndWhatAndKeptApart() {
+        // PC D10 (낮): 이름을 비우면 '‘오늘 {근무} · 확인할 시간이에요'처럼 따옴표 한쪽이 남은 글이 이름이 됐고, 같은 이름도 막지 않았어요.
+        val daily = LogicRule("", RuleTrigger.DAILY, at = "07:00", act = LogicAct(LogicVerb.NOTIFY, "오늘 {근무} · 확인할 시간이에요"))
+        assertEquals("매일 07:00 알림", ruleName(daily, emptySet()))
+        assertEquals("매일 07:00 알림 (2)", ruleName(daily, setOf("매일 07:00 알림")))
+        assertEquals("매일 07:00 알림 (3)", ruleName(daily, setOf("매일 07:00 알림", "매일 07:00 알림 (2)")))
+        assertEquals("내 규칙", ruleName(daily.copy(name = " 내 규칙 "), emptySet()))
+        assertTrue(ruleName(daily.copy(name = "열두글자를넘는아주긴규칙이름이에요"), setOf("열두글자를넘는아주긴규칙이름이에요")).length <= 20)
     }
 
     @Test fun editorList() = shoot("886_rul_editor_list", FOLDED) {

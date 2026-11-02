@@ -37,6 +37,12 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     val enabled: Boolean get() = c.recipeApi.enabled && c.flags.on(FlagCatalog.RECIPE_BROWSE)
 
+    companion object {
+        /** The market's three halves (테마 · 기능별 탭 · 규칙·단추). */
+        val HALVES = listOf(RecipeClient.SCOPE_THEME, RecipeClient.SCOPE_TAB, RecipeClient.SCOPE_LOGIC)
+        fun halfName(h: String) = when (h) { RecipeClient.SCOPE_LOGIC -> "규칙·단추"; RecipeClient.SCOPE_TAB -> "기능별 탭"; else -> "테마" }
+    }
+
     enum class Tab(val key: String, val label: String) { SHOWCASE("showcase", "이런 것도"), HOT("hot", "요즘 뜨는"), GOOD("good", "좋은 순"), NEW("new", "새로"), OFFICIAL("official", "시작 레시피"), DATA("data", "공개 자료") }
 
     data class State(val tab: Tab = Tab.HOT, val query: String = "", val items: List<RecipeItem> = emptyList(), val next: Int? = null,
@@ -45,7 +51,9 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
          * [FREE-08] 종류로 보기 (RecipeClient.KINDS); null for all. [MKX-01] 1.36: the 장터 구간 — [RecipeClient.SCOPE_THEME] (테마) or
          * [RecipeClient.SCOPE_TAB] + a tab (기능별 탭).
          */
-        val kind: String? = RecipeClient.SCOPE_THEME)
+        val kind: String? = RecipeClient.SCOPE_THEME,
+        /** PC D10 (사용성 중): with a word to find, how many the other halves have ("규칙·단추에 1개"), so a search is not lost in the half open. */
+        val elsewhere: Map<String, String> = emptyMap())
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -66,11 +74,23 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
             _state.value = try {
                 val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
                 val got = page.items.filter { RecipeClient.fits(it, s.kind) }
-                _state.value.copy(items = if (more) _state.value.items + got else got, next = page.next, loading = false)
+                val other = if (more) _state.value.elsewhere else if (s.query.isBlank()) emptyMap() else HALVES.filter { h -> h != halfOf(s.kind) }.mapNotNull { h ->
+                    runCatching { c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, 0, h) }.getOrNull()?.let { p ->
+                        val n = p.items.count { RecipeClient.fits(it, h) }
+                        if (n == 0) null else h to (if (p.next != null) "${n}개 넘게" else "${n}개")
+                    }
+                }.toMap()
+                _state.value.copy(items = if (more) _state.value.items + got else got, next = page.next, loading = false, elsewhere = other)
             } catch (e: Exception) {
                 _state.value.copy(loading = false, error = RecipeClient.problem(e))
             }
         }
+    }
+
+    private fun halfOf(kind: String?): String = when {
+        kind == RecipeClient.SCOPE_LOGIC -> RecipeClient.SCOPE_LOGIC
+        kind?.startsWith(RecipeClient.SCOPE_TAB) == true -> RecipeClient.SCOPE_TAB
+        else -> RecipeClient.SCOPE_THEME
     }
 
     /** 코드·링크로 받기: the code in what was typed or pasted, or null with why. */

@@ -298,7 +298,9 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
 // ---- 규칙·단추 창 ----
 
 @Composable
-fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Unit, onDismiss: () -> Unit) {
+fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Unit, onDismiss: () -> Unit,
+    /** PC D10: the other rules' names, so a new one with the same name gets '(2)'. */
+    taken: Set<String> = emptySet()) {
     var r by remember { mutableStateOf(start ?: LogicRule("", RuleTrigger.START, min = -60, role = "night", act = LogicAct(LogicVerb.NOTIFY, notifyWords(RuleTrigger.START, "night")))) }
     var tried by remember { mutableStateOf<String?>(null) }
     // The red line goes once what it asked for is done.
@@ -308,7 +310,9 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
         title = { Text(if (start == null) "규칙 만들기" else "규칙 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(r.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                // PC D10 (낮): '7시'를 넣는 즉시 요약은 07:00으로.
+                Text(r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) ?: r.at else r.at).say(), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary)
                 OutlinedTextField(r.name, { r = r.copy(name = it.take(20)) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("이름") })
                 Text("언제", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -351,7 +355,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 TextButton(onClick = {
                     val why = ruleProblem(r)
                     if (why != null) tried = why
-                    else onDone(r.copy(name = r.name.ifBlank { r.act.say().take(20) }, at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at))
+                    else r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at).let { done -> onDone(done.copy(name = ruleName(done, taken))) }
                 }) { Text("저장") }
             }
         },
@@ -435,6 +439,21 @@ internal fun whenFor(r: LogicRule, t: RuleTrigger): LogicRule = when {
     t == RuleTrigger.DAILY -> r.copy(on = t, at = timeOf(r.at.orEmpty()) ?: "21:00", min = 0)
     else -> r.copy(on = t, min = 0)
 }
+
+/**
+ * PC D10: the name a rule is saved with. Left empty it is said from 언제 and 무엇을 ("매일 07:00 알림", not the 알림 글 with one quote
+ * left); one the same as another rule's gets "(2)", "(3)".
+ */
+internal fun ruleName(r: LogicRule, taken: Set<String>): String {
+    val base = r.name.trim().ifEmpty { "${r.sayWhen()} ${VERB_SHORT[r.act.verb] ?: r.act.verb.label}".take(20) }
+    if (base !in taken) return base
+    return (2..99).asSequence().map { n -> "${base.take(20 - " ($n)".length)} ($n)" }.first { it !in taken }
+}
+
+private val VERB_SHORT = mapOf(
+    LogicVerb.NOTIFY to "알림", LogicVerb.MEMO_TEMPLATE to "메모 틀", LogicVerb.SCREEN to "화면 열기", LogicVerb.NEW_MEMO to "메모",
+    LogicVerb.CHECK_RESET to "체크 비우기", LogicVerb.ADD_MONEY to "지출 넣기", LogicVerb.MEMO_LINE to "메모 한 줄", LogicVerb.ADD_INCOME to "수입 넣기",
+)
 
 /** "7:00", "700", "0700", "07:00" → "07:00"; null when it is not a time of day. */
 internal fun timeOf(s: String): String? {
@@ -533,7 +552,9 @@ fun LogicEditor(
                     "지난 7일 ${store.runs(r.name)}번",
                 ).joinToString(" · ")
             }
-            LineCard("${r.name}: ${r.say()}", note,
+            // PC D10: rules made before names were kept apart show which is which.
+            val nth = logic.rules.take(i).count { it.name == r.name }
+            LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}: ${r.say()}", note,
                 if (phone) on else null, { v -> if (v && came) askOn = r else { store.setOff(r.key, !v); bump++; LogicRunner.schedule(c) } },
                 onEdit = { editRule = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
                 action = ("켜기" to { askOn = r }).takeIf { phone && !on && came })
@@ -581,9 +602,9 @@ fun LogicEditor(
         }
     }
     editRule?.let { i ->
-        RuleDialog(logic.rules.getOrNull(i), scope, { r ->
+        RuleDialog(logic.rules.getOrNull(i), scope, taken = logic.rules.filterIndexed { j, _ -> j != i }.map { it.name }.toSet(), onDone = { r ->
             onChange(logic.copy(rules = if (i < 0) logic.rules + r else logic.rules.toMutableList().also { it[i] = r })); editRule = null
-        }, { editRule = null })
+        }, onDismiss = { editRule = null })
     }
     editButton?.let { i ->
         ButtonDialog(logic.buttons.getOrNull(i), scope, { b ->

@@ -225,6 +225,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val s by vm.state.collectAsStateWithLifecycle()
     val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
     val studioFacts = com.bamnat.app.logic.rememberAppDayFacts()
+    // PC D10: rules put in from the market (or switched in 설정) while the studio was behind show here too.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.syncLogic() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var area by rememberSaveable { mutableStateOf(vm.startArea?.let { a -> Area.entries.firstOrNull { it.name == a } } ?: Area.CALENDAR) }
     var tool by rememberSaveable { mutableStateOf(Tool.CELL) }
@@ -612,9 +614,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             FeaturesTool(vm, s.extras)
                         }
                         Tool.LOGIC, Tool.RULES, Tool.BUTTONS -> {
-                            com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(d.logic), { l ->
-                                vm.change { it.copy(logic = com.bamnat.core.formula.Logic.encode(l)) }
-                            }, show = when (t) { Tool.RULES -> com.bamnat.app.logic.LogicShow.RULES; Tool.BUTTONS -> com.bamnat.app.logic.LogicShow.BUTTONS; else -> com.bamnat.app.logic.LogicShow.ALL },
+                            // PC D10: 규칙·단추는 고치면 바로 휴대폰에 저장돼요 (설정과 같은 목록).
+                            Text("규칙·단추는 고치면 바로 저장돼요. 입히지 않아도 돼요", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(d.logic), { l -> vm.changeLogic(l) }, show = when (t) { Tool.RULES -> com.bamnat.app.logic.LogicShow.RULES; Tool.BUTTONS -> com.bamnat.app.logic.LogicShow.BUTTONS; else -> com.bamnat.app.logic.LogicShow.ALL },
                                 usedInParts = { f -> com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.any { it["when"] == f } },
                                 onOpenParts = { area = Area.RULES; tool = Tool.COND })
                             // [RUL-07] 규칙·단추만 따로 장터에 올려요(테마 없이). 받는 사람은 보관함에서 얹어요.
