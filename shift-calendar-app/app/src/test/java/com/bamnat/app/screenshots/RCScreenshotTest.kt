@@ -63,10 +63,12 @@ class RCScreenshotTest : ScreenshotBase() {
         private val alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
         fun code(i: Int) = "STRT" + (0 until 4).map { alphabet[(i shr (it * 5)) and 31] }.joinToString("")
         fun item(i: Int): RecipeItem = recipes[i].let { (r, data) ->
-            RecipeItem(code(i), r.title, r.summary, r.styles, r.cover, null, 1, likes = 40 - i % 30, dislikes = i % 3, users = 120 - i,
+            RecipeItem(code(i), r.title, r.summary, r.styles, r.cover, null, 1, likes = 40 - i % 30, dislikes = i % 3, users = 120 - i + (usedBy[code(i)] ?: 0),
                 kept = if (i % 2 == 0) 82 else null, official = !data, publicData = data, parent = null, at = Instant.parse("2026-10-29T00:00:00Z"))
         }
         var applied = 0
+        /** What the server counts in 쓰는 분 for each work, read again after 넣기. */
+        val usedBy = mutableMapOf<String, Int>()
         override val enabled = true
         override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) = RecipePage(
             recipes.indices.filter { i -> (style == null || style in recipes[i].first.styles) && (sort == "data") == recipes[i].second }
@@ -80,7 +82,7 @@ class RCScreenshotTest : ScreenshotBase() {
         override suspend fun newVersion(device: String, code: String, recipe: Recipe, scope: String?) = Sent(code, 2, RecipeCodec.hash(recipe), "public", scope ?: "public")
         override suspend fun delete(device: String, code: String) {}
         override suspend fun vote(device: String, code: String, value: Int?, reason: String?, opinion: String?) = Votes(41, 1, value)
-        override suspend fun applied(code: String, kept: Boolean) { applied++ }
+        override suspend fun applied(code: String, kept: Boolean) { applied++; usedBy[code] = (usedBy[code] ?: 0) + 1 }
         override suspend fun flag(device: String, code: String, reason: String) {}
         override suspend fun mine(device: String) = MyRecipes(0, 3, emptyList())
         override suspend fun talk(device: String?, code: String) = RecipeTalk(emptyList(), null)
@@ -217,8 +219,8 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("넣기", exact = true)
         settle()
         assertTrue(vm.state.value.appliedAt != null)
-        // PC 확인 보안 7차 (넣었는데 쓰는 분 0명): this phone is one of them now.
-        assertEquals(1, vm.state.value.usersPlus)
+        // PC 확인 보안 7차 (넣었는데 쓰는 분 0명): this phone is one of them now (the count read again, or this phone's share added).
+        assertEquals(120 + 1, vm.state.value.doc!!.item.users + vm.state.value.usersPlus)
         // The 적용했어요 line with its own 되돌리기 goes after its ten seconds; then back to the top, where the line sits.
         compose.mainClock.advanceTimeBy(12_000)
         settle()
@@ -350,7 +352,7 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(c.wardrobe.overlays.value.any { it.code == code })
         assertEquals(1, api.applied)
-        assertEquals(1, vm.state.value.usersPlus)
+        assertEquals(120 - i + 1, vm.state.value.doc!!.item.users + vm.state.value.usersPlus)
         // Once a phone: laid on again, not counted again.
         vm.apply { }
         settle()
