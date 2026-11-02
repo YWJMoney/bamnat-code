@@ -1915,7 +1915,11 @@ private fun CalendarHeader(
         val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
         if (todayPart.hide == true) Unit
         else if (small) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
-        else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod) {
+        // PC 확인 C15 1.36 (사진 위 '오늘' 2.1:1): on this month already the button is off, and its 38% grey vanished on a 꾸밈 사진; there it
+        // keeps most of the ink (still lighter than when it can be pressed).
+        else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod,
+            colors = if (com.bamnat.app.ui.decor.LocalPhotoGround.current == null) androidx.compose.material3.ButtonDefaults.textButtonColors()
+                else androidx.compose.material3.ButtonDefaults.textButtonColors(disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))) {
             Text("오늘", maxLines = 1, softWrap = false, style = with(com.bamnat.app.ui.parts.PartMods) { text(todayPart, androidx.compose.material3.LocalTextStyle.current) })
         }
         if (roomy) {
