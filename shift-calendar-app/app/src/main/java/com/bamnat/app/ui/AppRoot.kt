@@ -1747,13 +1747,28 @@ private fun AppNavHost(
 private fun TabLabel(text: String) {
     // [VIS-04] 중-3: from 150% a two-word name ("근무·급여") used to take two lines and push its icon above the others'
     // (A11Y-04); now it keeps one line with its last word ("급여"), as big as the other tabs, and TalkBack reads it whole.
+    // 1.36 (PC 확인: '근무·급여'가 '급여'로만 보여 다른 탭인 줄 알았어요): both words, one above the other, each a little
+    // smaller, so the two lines take the room of one and the icon stays in line with the other tabs'.
     val parts = text.split('·')
     if (parts.size == 2 && androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
-        FitText(parts[1], MaterialTheme.typography.labelMedium, Modifier.clearAndSetSemantics { contentDescription = text })
+        val one = MaterialTheme.typography.labelMedium
+        val half = one.copy(
+            fontSize = one.fontSize * TWO_LINE_SIZE,
+            lineHeight = one.fontSize * TWO_LINE_HEIGHT,
+            lineHeightStyle = androidx.compose.ui.text.style.LineHeightStyle(
+                androidx.compose.ui.text.style.LineHeightStyle.Alignment.Center, androidx.compose.ui.text.style.LineHeightStyle.Trim.Both),
+        )
+        Column(Modifier.clearAndSetSemantics { contentDescription = text }, horizontalAlignment = Alignment.CenterHorizontally) {
+            parts.forEach { FitText(it, half) }
+        }
     } else {
         FitText(text, MaterialTheme.typography.labelMedium)
     }
 }
+
+/** A two-word tab name's lines at large text: 0.62 of the other names' size, 0.65 line height each (one line is 1.33). */
+private const val TWO_LINE_SIZE = 0.62f
+private const val TWO_LINE_HEIGHT = 0.65f
 
 /** [UX-05] A tab's icon; 설정 carries how many answers to the user's questions are new. */
 @Composable
