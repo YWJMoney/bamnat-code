@@ -860,24 +860,33 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
                 Text(e, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Assertive })
                 // PC (마을 빌드: '이름이 거의 같아요' 거절 뒤 할 일이 안 보임): the name refused, the name step one tap away.
-                if (s.errorCode == "name_like" || s.errorCode == "own_same") {
-                    Button(onClick = { vm.go(3) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이름 바꾸기") }
+                // PC 16차 사용성 제안 (같은 이름 공개 올리기에 고를 것이 4개): my own recipe with the name — its 새 판 first as the one
+                // advised, the other ways folded under 다른 방법.
+                val own = s.ownSame
+                var others by remember(s.errorCode, own) { mutableStateOf(own == null) }
+                if (own != null) {
+                    Button(onClick = { vm.sendAs(own) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("그 작품의 새 판으로 올리기 (추천)") }
+                    TextButton(onClick = { others = !others }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (others) "다른 방법 접기" else "다른 방법 보기") }
                 }
-                s.ownSame?.let { code ->
-                    OutlinedButton(onClick = { vm.sendAs(code) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("그 작품의 새 판으로 올리기") }
-                    OutlinedButton(onClick = { vm.sendAs(null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("같은 이름으로 따로 올리기") }
+                if (others) {
+                    if (s.errorCode == "name_like" || s.errorCode == "own_same") {
+                        val rename: @Composable () -> Unit = { Text("이름 바꾸기") }
+                        if (own == null) Button(onClick = { vm.go(3) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), content = { rename() })
+                        else OutlinedButton(onClick = { vm.go(3) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp), content = { rename() })
+                    }
+                    if (own != null) OutlinedButton(onClick = { vm.sendAs(null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("같은 이름으로 따로 올리기") }
+                    // A refusal 나만 can get past offers it; one the server cannot take at all (a 꾸밈 it does not know, no network) keeps it here.
+                    val privateHelps = s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network", "offline", "own_same")
+                    if (privateHelps) {
+                        OutlinedButton(onClick = { vm.scope("private"); vm.publish() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("나만 보기로 바꿔 저장") }
+                    }
+                    OutlinedButton(onClick = vm::keepHere, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Text(if (com.bamnat.core.recipe.LookParts.partUnit(s.recipe) != null) "이 휴대폰 보관함에 담기" else "이 휴대폰 내 테마에 저장")
+                    }
+                    // PC 14차 사용성 제안 (셋째 단추가 나만 보기와 어떻게 다른지 모름): the difference in one line.
+                    Text(if (privateHelps) "나만 보기는 서버에 두어 내 휴대폰들에서 열고, 이 휴대폰에 담기는 인터넷 없이 이 휴대폰에만 둬요"
+                        else "서버에 올리지 않고 이 휴대폰에만 둬요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
                 }
-                // A refusal 나만 can get past offers it; one the server cannot take at all (a 꾸밈 it does not know, no network) keeps it here.
-                if (s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network", "offline", "own_same")) {
-                    OutlinedButton(onClick = { vm.scope("private"); vm.publish() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("나만 보기로 바꿔 저장") }
-                }
-                OutlinedButton(onClick = vm::keepHere, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text(if (com.bamnat.core.recipe.LookParts.partUnit(s.recipe) != null) "이 휴대폰 보관함에 담기" else "이 휴대폰 내 테마에 저장")
-                }
-                // PC 14차 사용성 제안 (셋째 단추가 나만 보기와 어떻게 다른지 모름): the difference in one line.
-                Text(if (s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network", "offline", "own_same"))
-                    "나만 보기는 서버에 두어 내 휴대폰들에서 열고, 이 휴대폰에 담기는 인터넷 없이 이 휴대폰에만 둬요"
-                    else "서버에 올리지 않고 이 휴대폰에만 둬요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
             }
         }
     }

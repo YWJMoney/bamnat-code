@@ -599,7 +599,13 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                     }
                 }
-                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
+                // B 11차 PC 제안 (미리 보기가 화면 2/3라 편집 목록이 3~4줄만 보임): scrolling the controls down makes the example small
+                // once, as picking a tool does; a double tap or 크게 on the example brings it back.
+                val toolScroll = rememberScrollState()
+                LaunchedEffect(toolScroll) {
+                    androidx.compose.runtime.snapshotFlow { toolScroll.value > 48 }.collect { down -> if (down && scale > SCALE_SMALL) scale = SCALE_SMALL }
+                }
+                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(toolScroll).padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     area.target?.takeIf { it.restricted }?.let { Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     val t = if (tool in area.tools) tool else area.tools.first()
