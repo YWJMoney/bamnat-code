@@ -714,6 +714,8 @@ export async function inquiryList(env, params, actorId = "") {
   const kind = INQUIRY.kinds.includes(params.get("kind")) ? params.get("kind") : null;
   const copied = ["no", "yes"].includes(params.get("copied")) ? params.get("copied") : "";
   const sender = /^[0-9a-f]{6}$/.test(params.get("sender") ?? "") ? params.get("sender") : "";
+  // 1.36 [INQ-07] 결제·환불 기록만.
+  const billing = params.get("billing") === "1" ? 1 : 0;
   const now = Date.now();
   const [rows, statusRows, slaRows, typing, fresh] = (await batch(env, [stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
@@ -730,7 +732,8 @@ export async function inquiryList(env, params, actorId = "") {
       AND (?7 IS NULL OR i.kind = ?7)
       AND (?8 = '' OR (?8 = 'no' AND i.copied_at IS NULL) OR (?8 = 'yes' AND i.copied_at IS NOT NULL))
       AND (?9 = '' OR substr(i.device, 1, 6) = ?9)
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender),
+      AND (?10 = 0 OR i.billing_at IS NOT NULL)
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender, billing),
   stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status"),
   slaQuery(env),
   stmt(env, "SELECT key FROM counters WHERE key LIKE 'typing|%' AND expires > ?", now),

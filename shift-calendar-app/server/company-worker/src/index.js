@@ -3173,7 +3173,9 @@ async function forgetMine(request, env) {
   const recipes = await forgetRecipes(recipeDeps, env, dev);
   // 1.35 its requests, likes, follows, maker page and pictures.
   await batch(env, forgetCommunity(recipeDeps, env, dev));
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes + kept.meta.changes, ...(recipes ? { recipes } : {}) });
+  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes + kept.meta.changes,
+    // 1.36 [INQ-07] how many of those the law keeps with the developer, said on the phone.
+    ...(kept.meta.changes ? { inquiriesKept: kept.meta.changes } : {}), ...(recipes ? { recipes } : {}) });
 }
 
 async function vote(request, env) {

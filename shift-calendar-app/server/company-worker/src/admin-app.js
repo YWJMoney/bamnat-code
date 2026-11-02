@@ -374,7 +374,7 @@ function adminApp(L, BUILD, M) {
     // AM 1.28 [ADMUX-21][ADMUX-24][ADMUX-25] 기능 관리: 상태 거르기, 찾기, 목록·일정, 미리 보기의 휴대폰.
     flagShow: "all", flagQuery: "", flagView: "", flagSim: null,
     // AT 1.29 [ADMCP-02][ADMCP-06] 문의 종류·복사 전만·같은 기기 거르기, the copy box open now, the row a Shift range starts at.
-    inquiryKind: "", inquiryCopied: "", inquirySender: "", copy: null, pickAnchor: null, bulkMore: false,
+    inquiryKind: "", inquiryCopied: "", inquirySender: "", inquiryBilling: "", copy: null, pickAnchor: null, bulkMore: false,
     // AX 1.30 [ADMX-06][ADMX-09][ADMX-03][ADMX-08] 회사 순서·여러 개, 검토 여러 개, 여러 판 같은 항목도 보기, 찾기·이동의 서버 찾기, 주의 필요 수.
     companySort: "", companyPick: null, reviewPick: null, cmpAll: null, alertsN: 0,
   };
@@ -410,7 +410,7 @@ function adminApp(L, BUILD, M) {
   /** Which state each screen's address filters stand for. */
   const BIND = {
     inquiries: { status: "inquiryStatus", who: "inquiryWho", topic: "inquiryTopic", q: "inquiryQuery", sort: "inquirySort",
-      kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */ },
+      kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */, billing: "inquiryBilling" /* 1.36 [INQ-07] */ },
     dev: { status: "devStatus", who: "devWho", q: "devQuery" },
     review: { show: "reviewFilter" },
     community: { show: "postFilter", q: "postQuery" },
@@ -702,7 +702,7 @@ function adminApp(L, BUILD, M) {
       const q = S.inquiryQuery ? `&q=${encodeURIComponent(S.inquiryQuery)}` : "";
       const after = more && S.data.inquiries?.next ? `&after=${S.data.inquiries.next}` : "";
       // AT 1.29 [ADMCP-02][ADMCP-06] 문제 신고만, 복사 전만, one phone's questions.
-      const more2 = `${S.inquiryKind ? `&kind=${S.inquiryKind}` : ""}${S.inquiryCopied ? `&copied=${S.inquiryCopied}` : ""}${S.inquirySender ? `&sender=${S.inquirySender}` : ""}`;
+      const more2 = `${S.inquiryKind ? `&kind=${S.inquiryKind}` : ""}${S.inquiryCopied ? `&copied=${S.inquiryCopied}` : ""}${S.inquirySender ? `&sender=${S.inquirySender}` : ""}${S.inquiryBilling ? "&billing=1" : ""}`;
       const d = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}${who}${q}${more2}&sort=${S.inquirySort}${after}`);
       if (n !== undefined && !seq.current("load", n)) return;
       S.data.inquiries = more ? { ...d, inquiries: [...S.data.inquiries.inquiries, ...d.inquiries] } : d;
@@ -1230,7 +1230,7 @@ function adminApp(L, BUILD, M) {
       <div class="filterbar"><div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"], ["late", "놓친 것(하루 넘음)"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${kindChips()}${topicChips(d)}</div>`;
     if (!d) return head + skeleton();
-    const filtered = S.inquiryQuery || S.inquiryWho || S.inquiryTopic || S.inquiryKind || S.inquiryCopied || S.inquirySender;
+    const filtered = S.inquiryQuery || S.inquiryWho || S.inquiryTopic || S.inquiryKind || S.inquiryCopied || S.inquirySender || S.inquiryBilling;
     if (!d.inquiries.length) {
       return head + freshStrip(d) + empty(S.inquiryQuery ? "찾는 문의가 없어요" : S.inquiryCopied === "no" ? "복사 전인 문의가 없어요. 모두 개발에 넘겼어요" : S.inquiryWho === "late" ? "하루 넘게 기다리는 문의가 없어요. 잘하고 있어요" : S.inquiryWho === "mine" ? "내가 맡은 문의가 없어요" : S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요",
         S.inquiryQuery ? "다른 말로 찾아보세요. 보낸 분과 관리자가 쓴 글, 앱 판·기기 이름, 문의 번호를 모두 찾아요." : S.inquiryWho === "mine" ? "문의를 열어 내가 맡기를 누르거나 답하면 여기에 모여요." : "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.",
@@ -1260,8 +1260,9 @@ function adminApp(L, BUILD, M) {
     return `<div class="chips" role="group" aria-label="종류와 복사">${kinds.map(([key, label]) =>
       `<button type="button" class="chip pick" data-act="inquiry-kind" data-key="${key}" aria-pressed="${S.inquiryKind === key}">${label}</button>`).join("")}
       <button type="button" class="chip pick" data-act="inquiry-copied" data-key="no" aria-pressed="${S.inquiryCopied === "no"}">복사 전만</button>
+      <button type="button" class="chip pick" data-act="inquiry-billing-only" aria-pressed="${S.inquiryBilling === "1"}" title="전자상거래법에 따라 3년 보관하는 문의(보낸 분이 지운 것 포함)">결제·환불 기록</button>
       ${S.inquirySender ? `<button type="button" class="chip pick" data-act="inquiry-sender" data-key="" aria-pressed="true">같은 기기 #${esc(S.inquirySender)} ✕</button>` : ""}
-      ${S.inquiryKind || S.inquiryCopied || S.inquirySender ? '<button type="button" class="chip pick" data-act="inquiry-clear">조건 지우기</button>' : ""}</div>`;
+      ${S.inquiryKind || S.inquiryCopied || S.inquirySender || S.inquiryBilling ? '<button type="button" class="chip pick" data-act="inquiry-clear">조건 지우기</button>' : ""}</div>`;
   }
 
   /**
@@ -3799,6 +3800,12 @@ function adminApp(L, BUILD, M) {
       S.inquiryPick = null;
       refilter("inquiries");
     },
+    // 1.36 [INQ-07] Only the 결제·환불 records, open or closed, the ones their askers deleted too.
+    "inquiry-billing-only": () => {
+      S.inquiryBilling = S.inquiryBilling ? "" : "1";
+      if (S.inquiryBilling) S.inquiryStatus = "all";
+      refilter("inquiries");
+    },
     "inquiry-copied": ({ key }) => {
       S.inquiryCopied = S.inquiryCopied === key ? "" : key;
       refilter("inquiries");
@@ -4048,6 +4055,7 @@ function adminApp(L, BUILD, M) {
       S.inquiryKind = "";
       S.inquiryCopied = "";
       S.inquirySender = "";
+      S.inquiryBilling = "";
       refilter("inquiries");
     },
     "inquiry-who": ({ key }) => {

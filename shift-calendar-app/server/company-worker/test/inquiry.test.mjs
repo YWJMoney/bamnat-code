@@ -350,10 +350,14 @@ test("1.36 [INQ-07] a 결제·환불 question is kept three years, also when its
   assert.ok(kept.billing.keepUntil > new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000).toISOString());
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ?", pay.id), 1);
   // This phone's 지우기 counts it among its questions and leaves no question on the phone.
-  assert.deepEqual((await call("DELETE", "/api/mine", undefined, mine(2))).data.inquiries, 1);
+  const forgot = (await call("DELETE", "/api/mine", undefined, mine(2))).data;
+  assert.deepEqual([forgot.inquiries, forgot.inquiriesKept], [1, 1]);
   assert.equal((await call("GET", "/api/inquiries", undefined, mine(2))).data.inquiries.length, 0);
   assert.equal(marked(later.id), 1);
 
+  // 결제·환불 기록만 lists both, the deleted one too.
+  assert.deepEqual((await call("GET", "/api/admin/inquiries?status=all&billing=1", undefined, admin)).data.inquiries.map((i) => i.id).sort(),
+    [pay.id, later.id].sort());
   // An admin sets or clears it by hand, and the record says who.
   const set = await call("POST", `/api/admin/inquiries/${ad.id}/billing`, { on: true }, admin);
   assert.equal(set.status, 200);

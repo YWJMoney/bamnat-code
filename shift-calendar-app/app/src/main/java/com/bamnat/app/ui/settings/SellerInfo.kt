@@ -76,7 +76,13 @@ fun SellerInfoDialog(onDismiss: () -> Unit) {
                         }
                         when (label) {
                             "전화" -> TextButton(onClick = { open("tel:${SellerInfo.PHONE}") }) { Text("전화") }
-                            "전자우편" -> TextButton(onClick = { open("mailto:${SellerInfo.MAIL}") }) { Text("메일") }
+                            // No mail app: the address is copied instead of nothing happening.
+                            "전자우편" -> TextButton(onClick = {
+                                if (open("mailto:${SellerInfo.MAIL}").isFailure) {
+                                    clipboard.setText(AnnotatedString(SellerInfo.MAIL))
+                                    Toast.makeText(context, "메일 앱이 없어 주소를 복사했어요", Toast.LENGTH_SHORT).show()
+                                }
+                            }) { Text("메일") }
                             else -> {}
                         }
                         TextButton(onClick = {
