@@ -103,11 +103,12 @@ export async function imagesOf(env, body) {
 }
 
 /** [GRW-08] A report on a recipe with pictures is a report on each of its pictures too (사진은 2번이면 먼저 가려요). */
-export async function flagRecipeImages(env, body, cover, dev, reason, now) {
+export async function flagRecipeImages(env, body, cover, dev, reason, now, counts = true) {
   const map = { personal: "personal", harm: "violence", copy: "copy" };
   const ids = await imagesOf(env, `${body ?? ""} ${cover ?? ""}`);
   let held = 0;
-  for (const id of ids) if ((await flagImage(env, id, dev, map[reason] ?? "other", now)).held) held++;
+  // 1.36 [GRW-08] PC 569f0fd7: a recipe report that stays with the operator (보안 #155 recipeFlag의 counts) does not count on its pictures either.
+  for (const id of ids) if ((await flagImage(env, id, dev, map[reason] ?? "other", now, counts)).held) held++;
   return held;
 }
 
