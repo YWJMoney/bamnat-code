@@ -116,6 +116,9 @@ export default {
   },
 };
 
+/** AdMob authorized seller line for this app (the publisher id is public). */
+export const APP_ADS_TXT = "google.com, pub-4920911396563628, DIRECT, f08c47fec0942fa0";
+
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
@@ -133,8 +136,14 @@ async function route(request, env) {
   if (page && (request.method === "GET" || request.method === "HEAD")) return view(request, env, page[1]);
   const feed = path.match(/^\/s\/([A-Za-z0-9]{16,32})\.ics$/);
   if (feed && (request.method === "GET" || request.method === "HEAD")) return calendar(request, env, feed[1]);
+  if (path === "/app-ads.txt" && (request.method === "GET" || request.method === "HEAD")) {
+    // AdMob reads this from the developer website on Play (https://bamnat.app). Public values only; APP_ADS_TXT may replace it.
+    const body = (env.APP_ADS_TXT || APP_ADS_TXT).trim() + "\n";
+    return new Response(body, { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" } });
+  }
   if (path === "/" || path === "/robots.txt") {
-    return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
+    // Shared schedules stay out of search; only app-ads.txt is open to crawlers (AdMob honours robots.txt).
+    return new Response("User-agent: *\nAllow: /app-ads.txt\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   }
   return new Response("Not found", { status: 404 });
 }

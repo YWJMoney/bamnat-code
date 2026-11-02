@@ -27,6 +27,15 @@ Cloudflare Worker 하나와 KV 저장소 하나로 돌아가고, 무료 요금�
 이 지문은 공개 정보라 비밀은 아니에요. 그래도 Claude에게 따로 보낼 필요는 없어요.
 `RATE_SALT`는 비밀값이니 채팅이나 메신저로 보내지 마세요.
 
+## AdMob app-ads.txt (bamnat.app)
+
+AdMob은 Play 등록정보의 웹사이트(`https://bamnat.app`) 맨 위에서 `/app-ads.txt`를 읽어요. 이 Worker가 그 파일을 내줘요(값은 코드의 `APP_ADS_TXT`, 바꿔야 하면 변수 `APP_ADS_TXT`). `robots.txt`는 `/app-ads.txt`만 열고 나머지는 계속 막아요.
+
+1. 이 Worker를 새 코드로 배포해요.
+2. Cloudflare → Workers 및 Pages → `bamnat-share` → 설정(Settings) → 도메인 및 경로(Domains & Routes) → 추가(Add) → **경로(Route)** `bamnat.app/app-ads.txt`, 영역 `bamnat.app`. (`bamnat.app`에 DNS 기록이 하나도 없으면 경로가 닿지 않으니, 그때는 사용자 지정 도메인(Custom domain) `bamnat.app`으로 넣어요.)
+3. 브라우저에서 `https://bamnat.app/app-ads.txt`를 열어 `google.com, pub-…, DIRECT, f08c47fec0942fa0` 한 줄이 보이면 끝.
+4. Play Console → 스토어 등록정보 → 스토어 설정 → 연락처 세부정보 → 웹사이트에 `https://bamnat.app`.
+
 ## 앱이 쓰는 API
 
 | 요청 | 하는 일 |
