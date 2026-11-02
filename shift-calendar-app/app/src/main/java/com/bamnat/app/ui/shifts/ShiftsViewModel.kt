@@ -64,6 +64,10 @@ class ShiftsViewModel(
     val entries: StateFlow<List<com.bamnat.core.model.DayEntry>> =
         active.flatMapLatest { it.entries }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** The kind of work of the calendar being edited, for the screens' words. */
+    val workStyle: com.bamnat.core.work.WorkStyle?
+        get() = container.scopeOf(calendarId).currentSettings().workStyle
+
     /** [SHFT-01] A shift calendar (or the main one from before work styles), where each kind can carry its own premium. */
     val isShiftCalendar: Boolean
         get() = container.scopeOf(calendarId).currentSettings().workStyle.let { it == null || it == com.bamnat.core.work.WorkStyle.SHIFT }
