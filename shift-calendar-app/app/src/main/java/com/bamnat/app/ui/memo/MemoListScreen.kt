@@ -145,7 +145,7 @@ fun MemoListScreen(
         (if (state.tab == MemoTab.CALENDAR) state.calendarFilter != CalendarFilter.ALL else state.generalFilter != GeneralFilter.ALL)
     val fold = parts.any { it.part == MemoPart.FOLD && it.shown }
     val today = Today.date()
-    var undo by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    var undo by remember { mutableStateOf<UndoBar?>(null) }
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
     val actions = CardActions(
         onOpen = open,
@@ -154,9 +154,9 @@ fun MemoListScreen(
         onDuplicate = vm::duplicate,
         onDelete = vm::delete,
         // [TAB-02] 누락 점검 N9: a card moved on the 보드 or a 칸 picked in the 표 — saved at once, with 되돌리기 for 10 seconds (PC 확인 5ff9ae28: 4–6초 was missed).
-        onChange = { before, after, said -> vm.saveEdited(after); undo = said to { vm.saveEdited(before) } },
+        onChange = { before, after, said -> vm.saveEdited(after); undo = UndoBar(said, { vm.saveEdited(before) }, "바꾸기 전으로 돌아왔어요") },
     )
-    androidx.compose.runtime.LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(10_000); undo = null } }
+    androidx.compose.runtime.LaunchedEffect(undo) { undo?.let { u -> kotlinx.coroutines.delay(if (u.back == null) 3_000 else 10_000); undo = null } }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -244,7 +244,13 @@ fun MemoListScreen(
                     val before = memoView
                     setView(memoView.copy(sort = sort))
                     val name = sort.removePrefix("-").removePrefix("p:").let { if (sort == com.bamnat.core.memo.MemoView.SORT_TITLE) "제목" else it }
-                    undo = "‘$name’ ${if (sort.startsWith("-")) "큰 순" else "작은 순"}으로 정렬했어요".let { if (sort == com.bamnat.core.memo.MemoView.SORT_TITLE) "제목 순으로 정렬했어요" else it } to { setView(before) }
+                    fun said(v: String) = when {
+                        v.isEmpty() -> "기본 순서"
+                        v == com.bamnat.core.memo.MemoView.SORT_TITLE -> "제목 순"
+                        else -> "‘${v.removePrefix("-").removePrefix("p:")}’ ${if (v.startsWith("-")) "큰 순" else "작은 순"}"
+                    }
+                    undo = UndoBar("${said(sort)}으로 정렬했어요".replace("기본 순서으로", "기본 순서로"), { setView(before) },
+                        "${said(before.sort)}으로 돌아왔어요".replace("기본 순서으로", "기본 순서로"))
                 }, actions, templateChoices, state.selection, state.selecting)
                 memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
                 memoView.view == com.bamnat.core.memo.MemoView.CALENDAR -> MemoCalendarView(shown, appSettings.weekStart, today, actions)
@@ -255,7 +261,7 @@ fun MemoListScreen(
         }
 
         // [TAB-02] 누락 점검 N9: what a 보드·표 change did, and 되돌리기, above the 새 메모 button.
-        undo?.let { (said, back) ->
+        undo?.let { (said, back, backSaid) ->
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.inverseSurface,
@@ -265,9 +271,10 @@ fun MemoListScreen(
             ) {
                 Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(said, color = MaterialTheme.colorScheme.inverseOnSurface, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    androidx.compose.material3.TextButton(onClick = { back(); undo = null }) {
+                    // PC 확인 d0e5457e 사용성 제안: after 되돌리기 the bar says where it came back to, for a moment.
+                    if (back != null) androidx.compose.material3.TextButton(onClick = { back(); undo = UndoBar(backSaid, null) }) {
                         Text("되돌리기", color = MaterialTheme.colorScheme.inversePrimary)
-                    }
+                    } else Spacer(Modifier.height(48.dp))
                 }
             }
         }
@@ -938,3 +945,6 @@ fun MemoLookSample(look: com.bamnat.core.recipe.MemoLook, onTap: () -> Unit) {
         }
     }
 }
+
+/** [TAB-02] What a 보드·표 change did, how to undo it, and what the bar says once undone (null [back]: a short note alone). */
+private data class UndoBar(val said: String, val back: (() -> Unit)?, val backSaid: String = "되돌렸어요")

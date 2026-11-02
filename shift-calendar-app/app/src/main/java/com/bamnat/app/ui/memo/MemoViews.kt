@@ -505,8 +505,9 @@ internal fun MemoTableView(
             }
         }
         // PC 확인 82196a74 사용성 제안: how to pick rows, said where the rows are.
-        if (!selecting && rows.isNotEmpty()) Text("줄을 길게 누르면 여러 개를 골라 한꺼번에 고정하거나 색을 바꾸거나 지울 수 있어요",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
+        // PC 확인 d0e5457e: said until 닫기, then never again (a one-line tip, like the others).
+        if (!selecting && rows.isNotEmpty()) com.bamnat.app.ui.guide.OnceTip("memo_table_select",
+            "줄을 길게 누르면 여러 개를 골라 한꺼번에 고정하거나 색을 바꾸거나 지울 수 있어요", Modifier.padding(horizontal = 4.dp, vertical = 6.dp))
         if (columns.isEmpty()) Text(
             "메모에 ‘매출: 32000’처럼 ‘칸: 값’ 줄을 쓰면 여기 열이 생겨요. 메모 틀의 입력 칸도 이렇게 적혀요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(12.dp),
