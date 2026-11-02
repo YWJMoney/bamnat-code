@@ -195,7 +195,7 @@ fun PayScreen(
     // [PAYX-22] A change that moves a month matched with a payslip.
     val verified by vm.verifiedPrompt.collectAsStateWithLifecycle()
     verified?.let { v ->
-        androidx.compose.material3.AlertDialog(
+        com.bamnat.app.ui.components.AlertDialog(
             onDismissRequest = vm::keepVerifiedChange,
             title = { Text("명세서와 맞춘 달이 바뀌어요") },
             text = {
@@ -241,7 +241,7 @@ fun PayScreen(
                         var menu by remember { mutableStateOf(false) }
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Tune, "급여 설정 고치기") }
-                            androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            com.bamnat.app.ui.components.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 androidx.compose.material3.DropdownMenuItem(text = { Text("자세히 고치기 (하나씩 묻기)") },
                                     onClick = { menu = false; detailedFrom = DetailedStart(profile); editingSetup = true })
                                 androidx.compose.material3.DropdownMenuItem(text = { Text(if (workStyle?.usesCompany == false) "처음부터 설정" else "처음부터 설정 (회사 급여 방식 찾기)") },
@@ -1014,7 +1014,7 @@ private fun effectText(e: com.bamnat.core.pay.UnknownEffect): String = when {
 @Composable
 private fun AmountDialog(title: String, label: String, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
     var amount by remember { mutableStateOf<Long?>(null) }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { MoneyField(label, amount, { amount = it }) },

@@ -345,7 +345,7 @@ fun ShareDialog(
                     PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { on ->
                         if (on) askMoney = true else options = options.copy(pay = false)
                     }
-                    if (askMoney) androidx.compose.material3.AlertDialog(
+                    if (askMoney) com.bamnat.app.ui.components.AlertDialog(
                         onDismissRequest = { askMoney = false },
                         title = { Text("${kind.label} 금액도 보낼까요?") },
                         text = { Text("받는 사람에게 ${kind.label} 금액이 그대로 보여요. 링크를 가진 사람은 누구나 볼 수 있어요.") },
@@ -470,7 +470,7 @@ fun ShareDialog(
                 }
                 // [J133-30] Cutting it takes the schedule away from everyone who has the link: asked once.
                 var cutting by remember { mutableStateOf(false) }
-                if (cutting) androidx.compose.material3.AlertDialog(
+                if (cutting) com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = { cutting = false },
                     title = { Text("링크를 끊을까요?") },
                     text = { Text("받은 사람 앱과 브라우저에서도 이 ${com.bamnat.core.work.scheduleWord(style)}${if (style == com.bamnat.core.work.WorkStyle.FIELD || style == com.bamnat.core.work.WorkStyle.BUSINESS || style == com.bamnat.core.work.WorkStyle.INVEST) "이" else "가"} 바로 사라지고, 같은 링크는 다시 쓸 수 없어요.") },

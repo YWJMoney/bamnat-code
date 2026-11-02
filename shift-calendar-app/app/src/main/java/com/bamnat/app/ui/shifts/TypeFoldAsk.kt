@@ -1,6 +1,6 @@
 package com.bamnat.app.ui.shifts
 
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -20,6 +20,11 @@ object TypeFoldAsk {
     data class Ask(val calendar: String, val types: List<ShiftType>, val from: WorkStyle, val to: WorkStyle)
 
     val asking = MutableStateFlow<Ask?>(null)
+
+    /** Said after 접어 두기, with 되돌리기 (the AppRoot snackbar shows it). */
+    data class Done(val calendar: String, val ids: List<Long>, val message: String)
+
+    val done = MutableStateFlow<Done?>(null)
 
     /** Asks when the change from [from] to [to] left kinds of day the old one started with. */
     suspend fun after(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle) {
@@ -50,7 +55,12 @@ fun TypeFoldHost(c: AppContainer) {
                 "설정 › 근무 종류와 시간 › 안 쓰는 종류에서 언제든 다시 꺼낼 수 있어요.")
         },
         confirmButton = {
-            TextButton(onClick = { c.foldedTypes.fold(a.calendar, a.types.map { it.id }); TypeFoldAsk.asking.value = null }) { Text("접어 두기") }
+            TextButton(onClick = {
+                val ids = a.types.map { it.id }
+                c.foldedTypes.fold(a.calendar, ids)
+                TypeFoldAsk.asking.value = null
+                TypeFoldAsk.done.value = TypeFoldAsk.Done(a.calendar, ids, "${a.from.label} 근무 종류 ${ids.size}개를 접었어요")
+            }) { Text("접어 두기") }
         },
         dismissButton = { TextButton(onClick = { TypeFoldAsk.asking.value = null }) { Text("그대로 두기") } },
     )

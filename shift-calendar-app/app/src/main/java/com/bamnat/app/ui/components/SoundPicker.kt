@@ -25,7 +25,7 @@ import androidx.compose.runtime.produceState
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.heightIn

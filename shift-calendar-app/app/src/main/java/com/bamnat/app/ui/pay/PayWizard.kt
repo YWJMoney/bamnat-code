@@ -463,7 +463,7 @@ fun PayWizard(
     val leave: () -> Unit = { if (draft != opened) askingLeave = true else onCancel?.invoke() }
     val leaveAskAtOpen = remember { leaveAsk }
     androidx.compose.runtime.LaunchedEffect(leaveAsk) { if (leaveAsk != leaveAskAtOpen) leave() }
-    if (askingLeave) androidx.compose.material3.AlertDialog(
+    if (askingLeave) com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { askingLeave = false },
         title = { Text("바꾼 내용을 저장할까요?") },
         text = { Text("저장하지 않으면 이번에 고친 값은 사라지고 전 설정 그대로 남아요.") },

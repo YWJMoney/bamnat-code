@@ -20,7 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.appContainer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Button
@@ -772,6 +772,17 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 if (ok) extras?.opened?.let { nav.popFrom(it) }
                 snackbar.showSnackbar(if (ok) "되돌렸어요" else "되돌리지 못했어요. 설정 › 데이터 › 최근 지운 기록에서 다시 해 주세요")
             }
+        }
+    }
+
+    // 1.36 PC 재검토 (접어 두기를 눌러도 바뀐 게 안 보여요): what was folded is said at once, with 되돌리기, over the kind-of-work snackbar.
+    LaunchedEffect(Unit) {
+        com.bamnat.app.ui.shifts.TypeFoldAsk.done.collect { d ->
+            if (d == null) return@collect
+            com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
+            snackbar.currentSnackbarData?.dismiss()
+            val r = snackbar.showSnackbar("${d.message} · 설정 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) container.foldedTypes.unfold(d.calendar, d.ids)
         }
     }
 

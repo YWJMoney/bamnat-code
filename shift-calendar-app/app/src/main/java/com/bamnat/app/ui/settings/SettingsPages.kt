@@ -17,7 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -119,7 +119,10 @@ private fun WorkPage(
         HorizontalDivider()
         NavRow(words.pattern, words.patternHint, onOpenPattern)
         HorizontalDivider()
-        NavRow(words.types, shiftsLine(snapshot?.shiftTypes.orEmpty()), onOpenShiftTypes)
+        // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not in the line, and the line says how many are put away.
+        val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
+        val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
+        NavRow(words.types, shiftsLine(snapshot?.shiftTypes.orEmpty(), folded), onOpenShiftTypes)
         if (work.workStyle?.usesPayEngine != false) {
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
@@ -179,11 +182,13 @@ private fun CalendarPick() {
 }
 
 /** "주간 07:00–19:00 · 야간 19:00–07:00 외 2개". */
-private fun shiftsLine(types: List<ShiftType>): String {
-    val work = types.filter { !it.isOff && it.start != null && it.end != null }
+internal fun shiftsLine(types: List<ShiftType>, folded: Set<Long> = emptySet()): String {
+    val all = types.filter { !it.isOff && it.start != null && it.end != null }
+    val work = all.filter { it.id !in folded }.ifEmpty { all }
+    val away = if (work === all) "" else " · 안 쓰는 종류 ${all.size - work.size}개"
     if (work.isEmpty()) return "이름, 시간, 색, 근무 전 알람"
     val shown = work.take(2).joinToString(" · ") { "${it.name} ${Fmt.time(it.start)}–${Fmt.time(it.end)}" }
-    return if (work.size > 2) "$shown 외 ${work.size - 2}개" else shown
+    return (if (work.size > 2) "$shown 외 ${work.size - 2}개" else shown) + away
 }
 
 @Composable
@@ -1105,7 +1110,7 @@ private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, 
     val sample = ringing.first()
     fun times(t: com.bamnat.core.model.ShiftType) = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
         .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }.ifEmpty { "켜진 알람 없음" }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("모든 근무 알람 옮기기") },
         text = {

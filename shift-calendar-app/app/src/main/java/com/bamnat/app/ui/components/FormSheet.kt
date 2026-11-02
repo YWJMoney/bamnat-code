@@ -44,7 +44,7 @@ fun FormSheet(
 ) {
     var asking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val keep by androidx.compose.runtime.rememberUpdatedState(unsaved)
-    if (asking) androidx.compose.material3.AlertDialog(
+    if (asking) com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { asking = false },
         title = { androidx.compose.material3.Text("적은 내용을 버릴까요?") },
         text = { androidx.compose.material3.Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },

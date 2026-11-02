@@ -341,7 +341,7 @@ internal fun CoworkerSetupCard(sender: String, setup: String, onBefore: () -> Bo
         }
     }
     confirm?.let { same ->
-        androidx.compose.material3.AlertDialog(
+        com.bamnat.app.ui.components.AlertDialog(
             onDismissRequest = { confirm = null },
             title = { Text("내 근무를 이 설정으로 바꿀까요?") },
             text = { Text("내 달력의 근무 종류와 순서가 ${company.ifEmpty { "받은" }} 설정으로 바뀌어요. 지금 것은 남겨 두어 ${com.bamnat.app.data.ImportUndo.KEEP_DAYS}일 안에 되돌릴 수 있어요.") },
@@ -648,7 +648,7 @@ private fun ReportLink(vm: ReceivedViewModel, id: String) {
     TextButton(onClick = { open = true }) { Text("이 근무표 신고하기") }
     if (!open) return
     var reason by remember { mutableStateOf(com.bamnat.app.share.ShareReport.PERSONAL) }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { open = false },
         title = { Text("이 근무표를 신고할까요?") },
         text = {

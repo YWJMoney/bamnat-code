@@ -17,7 +17,7 @@ import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.core.model.AlarmSpec
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AlarmAdd
@@ -96,7 +96,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -186,7 +186,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                 // [RCP-19] 1.34: these looks (이름·글자·색·이모지) as a 나눔 판 recipe.
                 com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.SHIFT_LOOK)
             }
-            item {
+            // 1.36 PC 재검토 (현장 근무 종류에 병원·공장 3교대 묶음이 보여요): the ready-made sets are 교대 sets, for a 교대 calendar only.
+            if (vm.isShiftCalendar) item {
                 // Ready-made sets for common workplaces [MKT-03].
                 Text("한 번에 추가", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {

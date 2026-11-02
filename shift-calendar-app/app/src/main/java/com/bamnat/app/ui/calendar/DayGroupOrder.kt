@@ -22,7 +22,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreTime
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Work
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
