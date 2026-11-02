@@ -30,7 +30,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.settings.Chips
 import com.bamnat.app.ui.settings.ColorPick
-import com.bamnat.app.ui.settings.Group
 import com.bamnat.app.ui.settings.LabeledSlider
 import com.bamnat.core.recipe.Blueprint
 import com.bamnat.core.recipe.BlueprintParts
@@ -101,6 +100,24 @@ internal fun PartsTool(
     fun set(k: String, v: Any?) = setAll(k to v)
     fun num(k: String): Float? = (line[k] as? Number)?.toFloat()
     fun col(k: String): Long? = line[k] as? Long
+
+    // [MAT-01] PC 14차 사용성 제안: 칸이 많아 원하는 묶음까지 길게 내려야 해서, 위에 묶음 바로 가기.
+    // 하나를 고르면 그 묶음만 보여요(스크롤로 데려가는 방식은 이 편집 칸에서 믿을 만하지 않았어요). 다른 부품으로 가도 고른 묶음 그대로.
+    val kids = BlueprintParts.CHILDREN[id].orEmpty()
+    val groups = listOf("채우기", "선", "모서리", "그림자·여백", "글자", "투명도·숨기기") + (if (kids.size > 1) listOf("배치 (안에 든 것)") else emptyList())
+    var only by rememberSaveable(group) { mutableStateOf<String?>(null) }
+    if (only != null && only !in groups) only = null
+    Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 4.dp).semantics { contentDescription = "묶음 바로 가기" },
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("바로 가기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        (listOf<String?>(null) + groups).forEach { g ->
+            FilterChip(selected = only == g, onClick = { only = g }, label = { Text(g?.substringBefore(" (") ?: "전체") })
+        }
+    }
+    @Composable
+    fun Group(title: String, content: @Composable () -> Unit) {
+        if (only == null || only == title) com.bamnat.app.ui.settings.Group(title, content)
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
         Group("채우기") {
@@ -179,7 +196,6 @@ internal fun PartsTool(
             if (id in BlueprintParts.DATA) Text("날짜·근무 같은 정보는 숨겨도 화면 읽기(TalkBack)에는 그대로 읽혀요",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        val kids = BlueprintParts.CHILDREN[id].orEmpty()
         if (kids.size > 1) Group("배치 (안에 든 것)") {
             Chips(listOf(null to "처음대로", "col" to "세로로", "row" to "가로로", "stack" to "겹쳐서"), line["dir"] as? String) { set("dir", it) }
             LabeledSlider("사이 간격", num("gap") ?: 1f, 0f..32f, "dp", unset = if (line["gap"] == null) "처음대로" else null) { set("gap", it.toLong()) }
@@ -195,6 +211,7 @@ internal fun PartsTool(
                 }
             }
         }
+        if (only != null) TextButton(onClick = { only = null }) { Text("다른 묶음도 보기 (전체)") }
         if (line.keys.any { it != "id" && it != "on" }) OutlinedButton(onClick = {
             val others = bp.lines.filterNot { it["id"] == id && it["on"] == on }
             onChange(if (others.isEmpty()) "" else Blueprint(others).encode())
