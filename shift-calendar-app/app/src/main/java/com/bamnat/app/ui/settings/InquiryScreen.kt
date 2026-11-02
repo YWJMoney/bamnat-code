@@ -124,23 +124,31 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
 
+/**
+ * [ADMIN-02] How long a question stays, the same in every notice. 1.36 [INQ-07] A question about paying or a
+ * refund is the 소비자 불만·분쟁 처리 기록 the 전자상거래법 keeps three years (처리방침 3.10, server INQUIRY.billingKeepMs).
+ */
+internal const val INQUIRY_KEEP_WORDS =
+    "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        "결제·환불 문의는 전자상거래법에 따라 마지막 글부터 3년 동안 운영자가 보관해요(지우면 앱에서는 바로 사라져요). "
+
 /** [ADMIN-02] What the form and the privacy policy say about a question before it goes. */
 /** [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same. */
 internal const val INQUIRY_PRIVATE_NOTICE =
     "회사 방식은 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 기본급·수당 금액은 적지 말아 주세요. " +
-        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        INQUIRY_KEEP_WORDS +
         "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
 internal const val INQUIRY_SEND_NOTICE =
     "모두의 문의에 올라가요. 앱을 쓰는 다른 분도 적은 글과 개발자 답을 볼 수 있고, 보낸 분이 누구인지는 보이지 않아요. " +
         "3번의 ‘함께 보내는 정보’는 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
-        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        INQUIRY_KEEP_WORDS +
         "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
 /** [INQ-06] 모두의 문의에 올리기 off: the developer only, with the same keeping rules. */
 internal const val INQUIRY_ONLY_DEVELOPER_NOTICE =
     "모두의 문의에 올리지 않고 개발자만 봐요. 3번의 ‘함께 보내는 정보’도 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
-        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        INQUIRY_KEEP_WORDS +
         "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
 private const val LIST = "list"

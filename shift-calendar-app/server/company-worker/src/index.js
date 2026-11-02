@@ -75,7 +75,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
 import { inboxRoute } from "./inbox.js";
-import { DEV, INQUIRY, INQUIRY_TOPICS, SLA, SLA_SQL, actorName, adminInquiries, ask, devRoute, inquiries, page, plainActor, plainText, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
+import { DEV, INQUIRY, INQUIRY_TOPICS, SLA, SLA_SQL, actorName, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
@@ -248,7 +248,8 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
     stmt(env, "DELETE FROM invites WHERE used_at IS NULL AND expires < ?", now),
     stmt(env, "DELETE FROM codes WHERE expires < ?", now),
-    ...dropInquiries(env, "updated_at < ?", now - INQUIRY.keepMs),
+    // 1.36 [INQ-07] half a year, three years for a 결제·환불 record.
+    ...dropInquiries(env, ...expiredInquiries(now)),
     // [COMM-06] A hidden post nobody restored is gone after 90 days, and a 30-day 쓰기 막기 when it ends.
     stmt(env, "DELETE FROM post_flags WHERE post_id IN (SELECT id FROM posts WHERE status = 'hidden' AND hidden_at < ?)", now - LIMITS.hiddenPostDays * DAY),
     stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
@@ -276,7 +277,8 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM usage_flags WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)),
     stmt(env, "DELETE FROM usage_startup WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AO 1.28 [PERF-17]
     stmt(env, "DELETE FROM photo_wrong WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AQ 1.29 [PHOTO-10]
-    stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND updated_at < ?)",
+    // 1.36 [INQ-07] A 결제·환불 record keeps its photos (a receipt, a charge) with its words.
+    stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND billing_at IS NULL AND updated_at < ?)",
       now - PHOTO.keepAfterCloseMs),
   ]);
 }
@@ -693,6 +695,8 @@ const COLUMNS = [
   "ALTER TABLE inquiries ADD COLUMN assignee_name TEXT",
   // [INQ-03] The user's word on the answers: 1 도움이 됐어요, -1 아쉬워요.
   "ALTER TABLE inquiries ADD COLUMN rating INTEGER",
+  // 1.36 [INQ-07] When a question became a 결제·환불 record (kept three years), or null.
+  "ALTER TABLE inquiries ADD COLUMN billing_at INTEGER",
   // [INQ-02] The app version a finished 개발사항 went out in, for the asker's 반영됨 step.
   "ALTER TABLE dev_items ADD COLUMN released_in TEXT",
   // [MON-08] A reward Play gave as a later renewal of a running subscription, not as a pass.
@@ -3137,7 +3141,7 @@ async function forgetMine(request, env) {
     stmt(env, "UPDATE rates SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     stmt(env, "DELETE FROM rates WHERE device = ?", dev),
   ]);
-  const [, reports, votes, , posts, , , , , , , , asked] = await batch(env, [
+  const [, reports, votes, , posts, , , kept, , , , , , asked] = await batch(env, [
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
@@ -3147,8 +3151,9 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM posts WHERE device = ?", dev),
     stmt(env, "UPDATE posts SET flags = flags - 1 WHERE id IN (SELECT post_id FROM post_flags WHERE device = ?)", dev),
     stmt(env, "DELETE FROM post_flags WHERE device = ? OR post_id NOT IN (SELECT id FROM posts)", dev),
-    // [ADMIN-11][ADMIN-12] Their questions, with what admins attached to them.
-    ...dropInquiries(env, "device = ?", dev),
+    // [ADMIN-11][ADMIN-12] Their questions, with what admins attached to them. 1.36 [INQ-07] A 결제·환불
+    // record is cut from this phone instead and stays with the developer for its three years.
+    ...forgetInquiries(env, "device = ?", dev),
     // [ADMIN-02] Their 나도 그래요 and 신고 on others' questions go too, and those count one fewer.
     stmt(env, `UPDATE inquiries SET same = same - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same')`, dev),
     stmt(env, `UPDATE inquiries SET flags = flags - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'flag')`, dev),
@@ -3168,7 +3173,7 @@ async function forgetMine(request, env) {
   const recipes = await forgetRecipes(recipeDeps, env, dev);
   // 1.35 its requests, likes, follows, maker page and pictures.
   await batch(env, forgetCommunity(recipeDeps, env, dev));
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes, ...(recipes ? { recipes } : {}) });
+  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes + kept.meta.changes, ...(recipes ? { recipes } : {}) });
 }
 
 async function vote(request, env) {

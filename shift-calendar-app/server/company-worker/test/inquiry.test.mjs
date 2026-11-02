@@ -327,3 +327,55 @@ test("[INQ-02][INQ-03][INQ-04] the asker sees where a question stands, rates the
   await call("POST", "/api/inquiries", question(9));
   assert.deepEqual((await call("GET", "/api/admin/inquiries?late=1", undefined, admin)).data.inquiries, []);
 });
+
+test("1.36 [INQ-07] a 결제·환불 question is kept three years, also when its phone deletes it", async (t) => {
+  const { call, env, DB } = server();
+  const n = (sql, ...p) => DB.db.prepare(sql).get(...p).n;
+  const pay = (await call("POST", "/api/inquiries", question(1, { kind: "question", text: "구독을 해지했는데 환불은 어떻게 받나요" }), from(1))).data;
+  const plain = (await call("POST", "/api/inquiries", question(1, { text: "알람이 늦게 울려요" }), from(1))).data;
+  // A thread that turns to paying later becomes a record from then on.
+  const later = (await call("POST", "/api/inquiries", question(2, { text: "글꼴이 이상해요" }), from(2))).data;
+  await call("POST", `/api/inquiries/${later.id}/messages`, { text: "그리고 이용권 결제가 두 번 됐어요" }, mine(2));
+  const ad = (await call("POST", "/api/inquiries", question(3, { kind: "idea", text: "무료로 쓸 때 광고가 너무 길어요" }), from(3))).data;
+  const marked = (id) => n("SELECT COUNT(*) AS n FROM inquiries WHERE id = ? AND billing_at IS NOT NULL", id);
+  assert.deepEqual([pay.id, plain.id, later.id, ad.id].map(marked), [1, 0, 1, 0]);
+
+  // Deleting it takes it off the phone at once; the developer keeps it with its photos and words.
+  assert.equal((await call("DELETE", `/api/inquiries/${pay.id}`, undefined, mine(1))).status, 204);
+  assert.equal((await call("GET", `/api/inquiries/${pay.id}`, undefined, mine(1))).status, 404);
+  assert.equal((await call("GET", "/api/inquiries", undefined, mine(1))).data.inquiries.length, 1);
+  const admin = await signIn(call);
+  const kept = (await call("GET", `/api/admin/inquiries/${pay.id}`, undefined, admin)).data;
+  assert.equal(kept.leftByAsker, true);
+  assert.ok(kept.billing.keepUntil > new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000).toISOString());
+  assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ?", pay.id), 1);
+  // This phone's 지우기 counts it among its questions and leaves no question on the phone.
+  assert.deepEqual((await call("DELETE", "/api/mine", undefined, mine(2))).data.inquiries, 1);
+  assert.equal((await call("GET", "/api/inquiries", undefined, mine(2))).data.inquiries.length, 0);
+  assert.equal(marked(later.id), 1);
+
+  // An admin sets or clears it by hand, and the record says who.
+  const set = await call("POST", `/api/admin/inquiries/${ad.id}/billing`, { on: true }, admin);
+  assert.equal(set.status, 200);
+  assert.ok(set.data.billing);
+  assert.equal((await call("POST", `/api/admin/inquiries/${ad.id}/billing`, { on: "yes" }, admin)).status, 400);
+  assert.equal(set.data.events.at(-1).action, "inquiry_billing");
+  const cleared = (await call("POST", `/api/admin/inquiries/${ad.id}/billing`, { on: false }, admin)).data;
+  assert.equal(cleared.billing, null);
+
+  // Half a year on, only the records are left; three years on, they go too.
+  const day = 24 * 60 * 60 * 1000;
+  const sweep = async (at) => {
+    t.mock.timers.enable({ apis: ["Date"], now: at });
+    const waits = [];
+    await worker.scheduled({ cron: "17 * * * *", scheduledTime: at }, env, { waitUntil: (p) => waits.push(p) });
+    await Promise.all(waits);
+    t.mock.timers.reset();
+  };
+  const start = Date.now();
+  await sweep(start + 181 * day);
+  assert.deepEqual(DB.db.prepare("SELECT id FROM inquiries ORDER BY id").all().map((r) => r.id), [pay.id, later.id].sort());
+  await sweep(start + 3 * 366 * day + 2 * day);
+  assert.equal(n("SELECT COUNT(*) AS n FROM inquiries"), 0);
+  assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages"), 0);
+});

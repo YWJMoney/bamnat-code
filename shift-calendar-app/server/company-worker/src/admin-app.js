@@ -1299,6 +1299,7 @@ function adminApp(L, BUILD, M) {
     if (e.action === "inquiry_status") return `${by}님이 ${e.detail === "closed" ? "닫았어요" : e.detail === "open" ? "다시 열었어요" : `상태를 ${STATUS_NAMES[e.detail] ?? e.detail}(으)로 바꿨어요`}`;
     if (e.action === "inquiry_hide") return `${by}님이 모두의 문의에서 숨겼어요`;
     if (e.action === "inquiry_show") return `${by}님이 다시 보이게 했어요`;
+    if (e.action === "inquiry_billing") return `${by}님이 결제·환불 기록${e.detail === "on" ? "으로 정했어요(3년 보관)" : "에서 뺐어요"}`;
     if (e.action === "dev_link") return `${by}님이 개발사항 "${e.detail}"에 연결했어요`;
     return `${by} · ${ACTION_NAMES[e.action] ?? e.action}`;
   }
@@ -1338,7 +1339,7 @@ function adminApp(L, BUILD, M) {
           <div class="thread">${thread}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
-            <p class="meta">사진은 위치 정보를 지운 채로 받았어요. 문의를 닫고 90일 뒤에 지워져요.</p>` : ""}</div>
+            <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
@@ -1359,6 +1360,7 @@ function adminApp(L, BUILD, M) {
             ${q.status === "closed" ? '<button class="btn" data-act="inquiry-state" data-status="open">다시 열기</button>'
             : '<button class="btn" data-act="inquiry-state" data-status="closed">닫기</button>'}</div></section>` : ""}
         ${copiedCard(q) /* AT 1.29 */}
+        ${billingCard(q, editable) /* 1.36 [INQ-07] */}
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
           ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
         ${q.public ? `<section class="card"><h2>모두의 문의</h2>
@@ -1375,6 +1377,18 @@ function adminApp(L, BUILD, M) {
             <div class="actions"><button class="btn small" type="submit">메모 남기기</button></div></form>` : ""}</section>
         <details class="card"><summary>기록</summary>${timeline(q)}</details>
       </aside></div>`;
+  }
+
+  /**
+   * 1.36 [INQ-07] 결제·환불 기록: the 전자상거래법 keeps a 소비자 불만·분쟁 처리 기록 three years from its last word,
+   * even when the asker deletes it. Set from the words when it came; the admin sets or clears it by hand.
+   */
+  function billingCard(q, editable) {
+    const day = (iso) => (iso ? new Date(iso).toLocaleDateString("ko-KR") : "");
+    return `<section class="card"><h2>결제·환불 기록</h2>
+      <p class="meta">${q.billing ? `법에 따라 ${esc(day(q.billing.keepUntil))}까지 보관해요(마지막 글부터 3년).` : "아니에요. 마지막 글부터 180일 뒤에 지워져요."}
+        ${q.leftByAsker ? " 보낸 분이 앱에서 지웠어요. 앱에는 보이지 않고 답도 닿지 않아요." : ""}</p>
+      ${editable ? `<div class="actions start"><button class="btn" data-act="inquiry-billing" data-on="${q.billing ? "" : "1"}">${q.billing ? "기록에서 빼기" : "결제·환불 기록으로 정하기"}</button></div>` : ""}</section>`;
   }
 
   /**
@@ -4140,6 +4154,12 @@ function adminApp(L, BUILD, M) {
       const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "hide", reason }), "숨겼어요. 보낸 분 앱에 이유가 보여요");
       if (q) S.data.inquiry = q;
       load();
+    },
+    "inquiry-billing": async ({ on }) => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/billing`, "POST", { on: on === "1" }),
+        on === "1" ? "결제·환불 기록으로 정했어요. 3년 동안 보관해요" : "결제·환불 기록에서 뺐어요");
+      if (q) S.data.inquiry = q;
+      render({ keepScroll: true });
     },
     "inquiry-show": async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "show" }), "다시 보이게 했어요. 신고로는 더 가려지지 않아요");
