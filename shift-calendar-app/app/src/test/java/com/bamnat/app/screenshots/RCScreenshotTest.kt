@@ -378,6 +378,19 @@ class RCScreenshotTest : ScreenshotBase() {
         parts.forEach { p -> assertTrue(p.label, appears(p.label, exact = false)) }
         assertTrue("탭 이름만 같은 부분은 한 번", appears("• 위젯", exact = true) || parts.none { it.tab == com.bamnat.core.recipe.LookParts.WIDGET })
         assertTrue(api.applied == 0)
+        // PC 확인 보안 10차: 닫기 closes the question only, back to 입어 보기 with what was ticked.
+        tapText("닫기", exact = true, scrolls = 0)
+        settle()
+        assertTrue(gone("이렇게 바뀌어요", exact = true))
+        assertTrue("입어 보기가 남아요", appears("고른 모양 ${parts.size}개 넣기", exact = true))
+        // 넣기 closes both.
+        tapText("고른 모양 ${parts.size}개 넣기", exact = true)
+        settle()
+        tapText("넣기", exact = true, scrolls = 0)
+        settle()
+        settle()
+        assertTrue(gone("이렇게 바뀌어요", exact = true))
+        assertTrue("넣은 뒤엔 입어 보기도 닫혀요", gone("고른 모양 ${parts.size}개 넣기", exact = true))
     }
 
     @Test fun makingStartsWithWhatToShare() = shoot("1344_rcp_make_step1", PHONE) {

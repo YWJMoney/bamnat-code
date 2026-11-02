@@ -237,7 +237,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         val fn = others.count { it.on }
                         if (!ready && missing.isNotEmpty()) Text("‘${missing.first().label}’${com.bamnat.app.ui.Fmt.obj(missing.first().label)} 위에서 채우면 넣을 수 있어요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error)
-                        Button(onClick = { vm.lookParts(picked); tryOn = false; confirming = true }, enabled = n > 0 && ready,
+                        // PC 확인 보안 10차 (넣기 창을 닫으면 입어 보기까지 닫혀요): the question opens over 입어 보기, so 닫기 goes back to it.
+                        Button(onClick = { vm.lookParts(picked); confirming = true }, enabled = n > 0 && ready,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                             // PC 확인 보안 8차 ('모양 1개·기능 1개'에서 근무 꾸미기를 기능으로 세요): what goes with the look is said by
                             // its own names (근무 꾸미기·알람 묶음), as the list above shows them, and counted only when there are many.
@@ -317,11 +318,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
             // [FREE-10] 적용할 때만 광고 (사용자 2026-10-30 15:53): the looks of someone else's theme, past the first free ones.
             if (adGate) com.bamnat.app.ads.ThemeAdButton(
                 "광고 보고 넣기", "모양(테마)은 광고를 끝까지 보면 30일 동안 써요. 알람·규칙 같은 기능은 기간 없이 계속 써요",
-                onReward = { confirming = false; vm.apply { } },
+                onReward = { confirming = false; tryOn = false; vm.apply { } },
                 onQuit = { adNote = "광고를 끝까지 봐야 넣을 수 있어요" },
                 onOffline = { adNote = "인터넷에 연결되면 다시 해 주세요" },
-                onNoAd = { reason -> confirming = false; vm.noAdCounted(reason); vm.apply { } },
-            ) else TextButton(onClick = { confirming = false; vm.apply { } }) { Text("넣기") }
+                onNoAd = { reason -> confirming = false; tryOn = false; vm.noAdCounted(reason); vm.apply { } },
+            ) else TextButton(onClick = { confirming = false; tryOn = false; vm.apply { } }) { Text("넣기") }
         },
         dismissButton = { TextButton(onClick = { confirming = false }) { Text("닫기") } },
     )
