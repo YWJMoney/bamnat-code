@@ -91,7 +91,9 @@ internal fun PartsTool(group: String, parts: String, onChange: (String) -> Unit)
     // PC 확인 c9a89b20: a swipe along the chips caught the 둥글기 slider just under them; the groups keep more room between them.
     Column(verticalArrangement = Arrangement.spacedBy(22.dp), modifier = Modifier.padding(top = 4.dp)) {
         Group("채우기") {
-            ColorPick("색", col("fill")) { set("fill", it) }
+            // PC 확인 e262702a 사용성 제안: a 막대 given one colour can go back to each shift's own at one tap.
+            if (id == "cal.line.bar") FilterChip(selected = col("fill") == null, onClick = { set("fill", null) }, label = { Text("근무 색 그대로") })
+            ColorPick(if (id == "cal.line.bar") "한 가지 색으로" else "색", col("fill")) { set("fill", it) }
             if (col("fill") != null) LabeledSlider("진하기", num("fillA") ?: 100f, 0f..100f, "%") { set("fillA", it.toLong()) }
             // PC 확인 fc2db3b0 사용성 제안: one colour for every 막대 hid which shift is which; with no 색 the 막대 keep their shift's colour and
             // this sets how strong.
