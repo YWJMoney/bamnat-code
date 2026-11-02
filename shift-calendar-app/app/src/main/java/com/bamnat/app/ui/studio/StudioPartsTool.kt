@@ -16,6 +16,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,7 +68,13 @@ internal fun PartsTool(group: String, parts: String, onChange: (String) -> Unit)
     }
     // [TAB-07] PC 확인 b81b643f: the 판 부품 (근무 띠·타임라인·보드·표) drew nowhere in the month example, so they show their own small
     // example here, and the box says which part it is.
-    BoardPartSample(id, bp)
+    // PC 확인 9e234d9e 사용성 제안: picking a 판 부품 brings its example up into view (it sat far under the chips).
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    var firstId by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(id) {
+        if (firstId == null) firstId = id else if (firstId != id) { kotlinx.coroutines.delay(120); bring.bringIntoView(); firstId = "" }
+    }
+    androidx.compose.foundation.layout.Box(Modifier.bringIntoViewRequester(bring)) { BoardPartSample(id, bp) }
     Text("${BlueprintParts.LABELS[id] ?: id} 꾸미기" + (on?.let { " · ${STATE_WORDS[it]}" } ?: ""), style = MaterialTheme.typography.titleSmall,
         modifier = Modifier.semantics { heading() })
     val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on } ?: emptyMap()

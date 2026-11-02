@@ -234,7 +234,9 @@ private fun YearSample() {
         for (row in 0..3) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             for (c in 1..3) {
                 val m = row * 3 + c
+                // PC 확인 9e234d9e: this month has a thin border before any 꾸밈, so '오늘' is seen to be a state of its own.
                 Column(Modifier.weight(1f).background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(10.dp))
+                    .then(if (m == 11) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)) else Modifier)
                     .then(PartMods.box(bp.style("cal.year.month", setOfNotNull("today".takeIf { m == 11 })), RoundedCornerShape(10.dp))).padding(5.dp)) {
                     Text("${m}월", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
                     for (w in 0..2) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(1.dp)) {
