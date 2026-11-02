@@ -96,7 +96,11 @@ internal fun TextSizeRow(step: Int, onPick: (Int) -> Unit) {
         if (pending != step) {
             Button(onClick = { onPick(pending) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 .bringIntoViewRequester(bring)) {
-                Text("‘${TextSize.LABELS[pending.coerceIn(0, TextSize.LABELS.lastIndex)]}’로 앱 전체 바꾸기")
+                // PC 확인 c085c16a: '보통'으로, '크게'로 (the particle after the word's last letter).
+                val label = TextSize.LABELS[pending.coerceIn(0, TextSize.LABELS.lastIndex)]
+                val last = label.last().code - 0xAC00
+                val ro = if (last in 0..11171 && last % 28 != 0 && last % 28 != 8) "으로" else "로"
+                Text("‘$label’$ro 앱 전체 바꾸기")
             }
         } else Text("칩을 누르면 아래 미리 보기만 바뀌어요. 마음에 들면 나오는 단추로 앱 전체에 적용해요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
