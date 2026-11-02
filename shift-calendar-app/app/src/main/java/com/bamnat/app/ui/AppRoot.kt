@@ -2175,6 +2175,9 @@ private fun LookUndoBand() {
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     var tick by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // PC 20차: in safe mode the looks rest, so '입힌 모양이에요' would say the opposite of what shows.
+    val safe by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
+    if (safe) return
     val kept = androidx.compose.runtime.remember(settings, tick) { com.bamnat.app.data.LookUndo.read(c.appContext) } ?: return
     // Shown only while the look on is the one put on (the settings were not changed back another way).
     if (c.recipes.pieces.lookSnapshot() == kept.first) return
