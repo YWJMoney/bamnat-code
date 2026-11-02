@@ -411,7 +411,7 @@ fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, onPick:
         this.value = if (!waiting || picked0 == null) null
             else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { FontCatalog.byId(UserFonts.fallbackOf(ctx, picked0) ?: "sans")?.name }
     }
-    if (waiting) Text("보낸 분이 나눈 글꼴이에요. 운영자가 확인하면 저절로 들어와요. 그 전에는 비슷한 앱 글꼴(${standInName ?: "기본"})로 보여요",
+    if (waiting) Text("보낸 분이 나눈 글꼴이에요. 운영자가 확인하면(보통 하루 안) 앱을 열 때 저절로 들어와요. 그 전에는 비슷한 앱 글꼴(${standInName ?: "기본"})로 보여요",
         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     else if (value != null) FontLoadLine(load, AppFonts.reasons[value], AppFonts.progress[value],
         retry = { AppFonts.start(ctx, value) },

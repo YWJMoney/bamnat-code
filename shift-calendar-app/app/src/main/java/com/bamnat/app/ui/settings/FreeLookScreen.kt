@@ -238,6 +238,25 @@ private val CELL_PRESETS: List<Pair<String, CalendarView.() -> CalendarView>> = 
 @Composable
 internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit, onChange: (CalendarView) -> Unit) {
     var removing by remember { mutableStateOf(false) }
+    // [MAT-05] PC 확인 8~10차 (설정 검색 › 날짜 숫자 글꼴로 오면 줄이 칸 디자인 아래쪽, 단추 띠에 붙음): scrolling the editor to a row
+    // far down was not reliable here, so the row asked for comes first, until closed.
+    var searched by remember { mutableStateOf(FontRowFocus.label == "날짜 글꼴") }
+    if (searched) {
+        val looks0 = view.looks.ifEmpty { listOf(CellLook()) }
+        val i0 = index.coerceIn(0, looks0.lastIndex)
+        Surface(color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f), shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("찾은 칸 · 날짜 글꼴", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { searched = false }) { Text("닫기") }
+                }
+                FontRow("날짜 글꼴", looks0[i0].dateFont, numbersOnly = true) { f ->
+                    onChange(view.copy(looks = looks0.toMutableList().also { it[i0] = looks0[i0].copy(dateFont = f) }))
+                }
+                Text("아래 ‘날짜’ 묶음에도 같은 줄이 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
     Text("칸 하나를 꾸미면 달력 전체에 들어가요. 모양을 여러 개 만들어 패턴으로 번갈아 쓸 수도 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("바로 시작하기", style = MaterialTheme.typography.labelLarge)
