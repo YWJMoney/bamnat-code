@@ -311,6 +311,7 @@ class TierAppTest {
         assertTrue("해지 방법", all.contains("Play 스토어 › 결제 및 정기 결제"))
         assertTrue("청약철회와 그 제한", all.contains("7일 안에는 청약철회") && all.contains("전자상거래법 제17조 제2항"))
         assertTrue("약관 동의", all.contains("이용약관과 개인정보처리방침"))
+        assertTrue("판매자", all.contains("통신판매업 신고 제2026-전남여수-0424호") && all.contains("사업자등록번호 327-25-02565"))
         val noTrial = proDisclosures(listOf(monthly.copy(trial = false)), LocalDate.of(2027, 3, 10)).joinToString("\n")
         assertFalse("체험이 없으면 체험 문장도 없어요", noTrial.contains("무료 체험"))
         assertTrue(NoBilling().plans.value.isEmpty())

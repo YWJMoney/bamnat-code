@@ -959,6 +959,11 @@ private fun AboutPage() {
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.bamnat.app.ui.pro.TERMS_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
         HorizontalDivider()
+        // 1.36 [MON-12] 상호·대표·사업자등록번호·통신판매업 신고번호, as 이용약관 제2조.
+        var seller by remember { mutableStateOf(false) }
+        NavRow("사업자 정보", "${SellerInfo.NAME} · 대표 ${SellerInfo.OWNER} · 통신판매업 신고") { seller = true }
+        if (seller) SellerInfoDialog { seller = false }
+        HorizontalDivider()
         // [OPS-23] The libraries the app ships with.
         var licenses by remember { mutableStateOf(false) }
         NavRow("오픈소스 라이선스", null) { licenses = true }
