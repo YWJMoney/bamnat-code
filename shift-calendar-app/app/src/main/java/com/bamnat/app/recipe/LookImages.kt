@@ -61,6 +61,28 @@ object LookImages {
         save(context, webp)
     }
 
+    /**
+     * [LAY-10] 1.36 꾸밈 사진: [uri] kept at its own shape, its long side at most [side] px, turned upright and written again as WebP (no
+     * EXIF, place or camera). Returns the id and the photo's width over height, or null when it cannot be read or is too small.
+     */
+    suspend fun importWhole(context: Context, uri: Uri, side: Int = 720): Pair<String, Float>? = withContext(Dispatchers.IO) {
+        runCatching {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds); true } ?: return@runCatching null
+            if (bounds.outWidth < 64 || bounds.outHeight < 64) return@runCatching null
+            var sample = 1
+            while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= side) sample *= 2
+            val raw = context.contentResolver.openInputStream(uri)?.use {
+                BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample })
+            } ?: return@runCatching null
+            val up = upright(context, uri, raw)
+            val k = minOf(1f, side.toFloat() / maxOf(up.width, up.height))
+            val small = if (k < 1f) Bitmap.createScaledBitmap(up, (up.width * k).toInt().coerceAtLeast(1), (up.height * k).toInt().coerceAtLeast(1), true) else up
+            val webp = encode(small, Slot.BG) ?: return@runCatching null
+            save(context, webp) to small.width.toFloat() / small.height
+        }.getOrNull()
+    }
+
     /** [uri] for the frame on screen: about 1600 px, turned upright like [import] turns it, so the frame's fractions match. */
     suspend fun preview(context: Context, uri: Uri): Bitmap? = withContext(Dispatchers.IO) {
         runCatching {
@@ -192,7 +214,8 @@ object LookImages {
         // [FREE-05] 화면 색·배경's pictures are in use too, whichever look asked for the tidy.
         val inUse = used + runCatching {
             (context.applicationContext as? com.bamnat.app.BamnatApp)?.container?.settingsRepository?.current?.let { s ->
-                PhotoLook.decode(s.photoLook).images + com.bamnat.core.recipe.ScreenLooks.decode(s.screenLooks).images
+                PhotoLook.decode(s.photoLook).images + com.bamnat.core.recipe.ScreenLooks.decode(s.screenLooks).images +
+                    com.bamnat.core.recipe.Decor.decode(s.decor).images
             }.orEmpty()
         }.getOrDefault(emptySet())
         dir(context).listFiles()?.forEach { f ->

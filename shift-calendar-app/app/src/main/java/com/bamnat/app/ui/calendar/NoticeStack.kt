@@ -109,6 +109,8 @@ internal val LocalNoticeFolded = compositionLocalOf { false }
 @Composable
 private fun FoldLine(count: Int, first: String?, expanded: Boolean, onToggle: () -> Unit) {
     val text = if (expanded) "알림 접기" else "알림 ${count}개 더 보기"
+    // PC 확인 C11 1.36 (사진 바탕에서 파란 글자가 흐려요): on a 꾸밈 사진 the line takes a colour that shows there.
+    val accent = com.bamnat.app.ui.decor.readableOnPhoto(MaterialTheme.colorScheme.primary, target = 6.0)
     Row(
         Modifier
             .fillMaxWidth()
@@ -122,7 +124,7 @@ private fun FoldLine(count: Int, first: String?, expanded: Boolean, onToggle: ()
             },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.NotificationsNone, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+        Icon(Icons.Outlined.NotificationsNone, null, Modifier.size(18.dp), tint = accent)
         Spacer(Modifier.width(8.dp))
         // [VIS-04] At large text the first folded notice's name goes under the count instead of being squeezed beside it.
         val stack = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
@@ -138,11 +140,11 @@ private fun FoldLine(count: Int, first: String?, expanded: Boolean, onToggle: ()
         }
         if (stack) {
             Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
-                Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text(text, style = MaterialTheme.typography.labelLarge, color = accent)
                 name(Modifier)
             }
         } else {
-            Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, maxLines = 1)
+            Text(text, style = MaterialTheme.typography.labelLarge, color = accent, maxLines = 1)
             if (!expanded && first != null) name(Modifier.weight(1f)) else Spacer(Modifier.weight(1f))
         }
         Icon(if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null,

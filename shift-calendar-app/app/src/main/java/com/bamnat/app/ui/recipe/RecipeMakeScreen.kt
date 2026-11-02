@@ -462,7 +462,7 @@ class RecipeMakeViewModel(
 
 /** [RCX-30] 그림 꾸미기's pictures in [r] sent (small, no EXIF) and named by the server's id; one already sent keeps its id. */
 internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamnat.core.recipe.Recipe): com.bamnat.core.recipe.Recipe {
-    if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK || it.kind == PieceKind.SCREEN_LOOK }) return r
+    if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK || it.kind == PieceKind.SCREEN_LOOK || it.kind == PieceKind.DECOR }) return r
     val sent = mutableMapOf<String, String>()
     suspend fun server(id: Any?): Any? {
         val local = id as? String ?: return id
@@ -475,6 +475,12 @@ internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamna
             val looks = com.bamnat.core.recipe.ScreenLooks.decode(line)
             val sentLooks = com.bamnat.core.recipe.ScreenLooks(looks.looks.mapValues { (_, l) -> l.photo?.let { l.copy(photo = server(it) as? String) } ?: l })
             p.copy(values = p.values + ("screens" to sentLooks.encode()))
+        } ?: p
+        // [LAY-10] 꾸밈 사진: each photo item names the server's picture (갈래 F's three photo checks see it like any other).
+        else if (p.kind == PieceKind.DECOR) (p.values["items"] as? List<*>)?.let { l ->
+            p.copy(values = p.values + ("items" to l.map { i ->
+                (i as? Map<*, *>)?.takeIf { it.containsKey("photo") }?.let { m -> m.mapKeys { it.key.toString() }.toMutableMap().also { it["photo"] = server(it["photo"]) } } ?: i
+            }))
         } ?: p
         else if (p.kind != PieceKind.PHOTO_LOOK) p else {
             val v = p.values.toMutableMap()
@@ -567,6 +573,10 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     s.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Assertive }) }
                     s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+                    // PC 확인 C8 1.36 사용성 제안 (새 판 끝 화면에 사진이 운영자 확인을 기다린다는 말이 없어요).
+                    if (sent.scope != "private" && !s.bare && com.bamnat.core.recipe.LookParts.hasPhotos(s.recipe))
+                        Text("사진은 운영자가 본 뒤 다른 분께 보여요. 그 전에는 받는 분 화면에 기본 바탕(자리를 정한 사진은 회색 상자)으로 보여요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     return@Column
                 }
                 if (!s.ready) {
@@ -821,7 +831,8 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     }
     var all by remember { mutableStateOf(false) }
     TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "올라갈 내용 전부 보기") }
-    if (all) Text(RecipeDescribe.changes(s.recipe, vm.style) + "\n\n" + RecipeCodec.write(s.recipe), style = MaterialTheme.typography.bodySmall)
+    // PC 확인 C6 1.36 (전부 보기에 레시피 원문이 그대로 보여요): what a person reads, line by line.
+    if (all) Text(RecipeDescribe.changes(s.recipe, vm.style), style = MaterialTheme.typography.bodySmall)
     // [LIN-01] 1.35 수정판: what this is made from, said before it goes up.
     s.recipe.parent?.let { Text("‘${s.parentTitle ?: it}’의 수정판으로 그 판 밑에 올라가요. 원래 만든 분 표시는 늘 남고, 그분이 달라진 점을 보고 자기 판에 가져갈 수 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }

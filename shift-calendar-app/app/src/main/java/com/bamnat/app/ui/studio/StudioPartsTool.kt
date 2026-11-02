@@ -8,6 +8,12 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -52,6 +58,10 @@ internal fun PartsTool(
     onFocus: (id: String, on: String?) -> Unit = { _, _ -> },
     /** [BLU-07] 이 부품만 올리기: the unit of the part being changed; null hides the button. */
     onUploadPart: ((unit: String) -> Unit)? = null,
+    /** [LAY-08] 1.36 고급 보기 (누락 점검 N5): 숫자 칸·여러 부품 한꺼번에·색 변수. */
+    advanced: Boolean = false,
+    /** [LAY-08] PC 확인 C4: how many parts the next change goes to, for the line kept above ('3곳 함께 고치는 중'). */
+    onTogether: (Int) -> Unit = {},
     onChange: (String) -> Unit,
 ) {
     val bp = remember(parts) { Blueprint.decode(parts) }
@@ -64,9 +74,23 @@ internal fun PartsTool(
         if (focus != null && focus in ids) { id = focus; on = focusOn?.takeIf { it in BlueprintParts.STATES } }
     }
     LaunchedEffect(id, on) { onFocus(id, on) }
+    // [LAY-08] 여러 부품 한꺼번에 (고급 보기): the parts ticked here all take the next change, in the same state.
+    var many by rememberSaveable(group) { mutableStateOf(false) }
+    var multi by rememberSaveable(group) { mutableStateOf(listOf<String>()) }
+    LaunchedEffect(many, multi) { onTogether(if (many) multi.size + 1 else 1) }
     // [BLU-09] 누락 점검 N4: 미리 보기에서 누른 곳이 바로 열려요.
     Text("화면을 부품으로 나눠 하나씩 꾸며요. 비워 둔 칸은 지금 모습 그대로예요. 위 미리 보기에서 고칠 곳을 누르면 그 부품이 열리고, 같은 곳을 한 번 더 누르면 그 바깥 부품이 열려요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // PC 확인 C6 1.36 사용성 제안 (여러 부품 스위치를 못 찾았어요): '여럿 고르기' beside the parts, without 고급 보기.
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = many, onClick = { many = !many; if (!many) multi = emptyList() },
+            label = { Text(if (many) "여럿 고르기 · ${multi.size + 1}곳" else "여럿 고르기") })
+        // PC 확인 C7 1.36 사용성 제안 (처음 부품이 같이 세어지는 줄 몰랐어요): the part already open is the first of them, said by name.
+        val first = BlueprintParts.LABELS[id] ?: id
+        if (many) Text(if (multi.isEmpty()) "지금 연 ‘$first’${com.bamnat.app.ui.Fmt.iga(first)} 첫 곳이에요. 칩을 눌러 더해요"
+            else "‘$first’${com.bamnat.app.ui.Fmt.wa(first)} 칩 ${multi.size}개. 고친 값이 고른 곳 모두에 들어가요", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+    }
     // 어느 부품, 묶음마다 제목을 달아서 (PC 1차 사용성 제안): 달력 머리 · 요일 줄 · 날짜 칸 …
     ids.groupBy { it.split('.').take(2).joinToString(".") }.forEach { (head, list) ->
         if (list.size > 1) Text(BlueprintParts.LABELS[head] ?: head, style = MaterialTheme.typography.labelMedium,
@@ -74,7 +98,10 @@ internal fun PartsTool(
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             list.forEach { p ->
                 val touched = bp.lines.any { it["id"] == p }
-                FilterChip(selected = p == id, onClick = { if (id != p) { id = p; on = null } },
+                FilterChip(selected = if (many) p in multi || p == id else p == id, onClick = {
+                    if (many) { if (p != id) multi = if (p in multi) multi - p else multi + p }
+                    else if (id != p) { id = p; on = null }
+                },
                     label = { Text((if (touched) "● " else "") + (BlueprintParts.LABELS[p] ?: p)) },
                     modifier = Modifier.semantics { if (touched) contentDescription = "${BlueprintParts.LABELS[p]}, 꾸밈 있음" })
             }
@@ -92,9 +119,15 @@ internal fun PartsTool(
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on } ?: emptyMap()
     fun setAll(vararg kv: Pair<String, Any?>) {
-        val next = (line + ("id" to id) + (on?.let { mapOf("on" to it) } ?: emptyMap()) + kv).filterValues { it != null }
-        val others = bp.lines.filterNot { it["id"] == id && it["on"] == on }
-        val all = if (next.keys.all { it == "id" || it == "on" }) others else others + next
+        // [LAY-08] With 여러 부품 on, the same fields go to every ticked part (each keeps its other fields).
+        val targets = if (many) (listOf(id) + multi).distinct() else listOf(id)
+        var all = bp.lines
+        for (t in targets) {
+            val cur = all.firstOrNull { it["id"] == t && it["on"] == on } ?: emptyMap()
+            val next = (cur + ("id" to t) + (on?.let { mapOf("on" to it) } ?: emptyMap()) + kv).filterValues { it != null }
+            val others = all.filterNot { it["id"] == t && it["on"] == on }
+            all = if (next.keys.all { it == "id" || it == "on" }) others else others + next
+        }
         val text = runCatching { Blueprint(Blueprint.clean(all)).encode() }.getOrNull() ?: return
         onChange(if (all.isEmpty()) "" else text)
     }
@@ -103,6 +136,8 @@ internal fun PartsTool(
     fun col(k: String): Long? = line[k] as? Long
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
+        if (advanced) PartsAdvanced(bp, id, on, line, many, multi, onMany = { many = it; if (!it) multi = emptyList() },
+            set = ::set, onAll = { text -> onChange(text) })
         Group("채우기") {
             ColorPick("색", col("fill")) { set("fill", it) }
             if (col("fill") != null) LabeledSlider("진하기", num("fillA") ?: 100f, 0f..100f, "%") { set("fillA", it.toLong()) }
@@ -263,4 +298,101 @@ internal fun partsGroupOf(area: String): String = when (area) {
     "WIDGET" -> "widget"
     "ALL", "SETTINGS" -> "app"
     else -> "cal"
+}
+
+/** [LAY-08] The number fields of 고급 보기: field, words, range and whether it takes halves. */
+private val NUMBER_FIELDS = listOf(
+    Triple("fillA", "채우기 진하기 %", 0f..100f), Triple("lineW", "선 두께 dp", 0f..8f), Triple("r", "둥글기 dp", 0f..48f),
+    Triple("rTL", "왼쪽 위 dp", 0f..48f), Triple("rTR", "오른쪽 위 dp", 0f..48f), Triple("rBL", "왼쪽 아래 dp", 0f..48f), Triple("rBR", "오른쪽 아래 dp", 0f..48f),
+    Triple("shadow", "그림자 dp", 0f..24f), Triple("pad", "안 여백 dp", 0f..32f), Triple("out", "바깥 간격 dp", 0f..32f),
+    Triple("size", "글자 크기 sp", 6f..48f), Triple("weight", "굵기", 100f..900f), Triple("track", "자간 %", -5f..30f), Triple("leading", "줄 간격 %", 80f..300f),
+    Triple("stroke", "글자 테두리 dp", 0f..4f), Triple("alpha", "보이는 정도 %", 0f..100f), Triple("gap", "사이 간격 dp", 0f..32f),
+)
+private val HALF_FIELDS = setOf("lineW", "stroke")
+
+/** The colour fields a part line can hold, for 색 변수. */
+internal val PART_COLOR_FIELDS = listOf("fill" to "채우기", "lineC" to "선", "ink" to "글자", "shadowC" to "그림자", "strokeC" to "글자 테두리")
+
+/**
+ * [LAY-08] 1.36 부품 고급 보기 (누락 점검 N5, 제안 30, 2차 5-8): 여러 부품을 한꺼번에, every value as a number, and 색 변수 — a colour
+ * the draft's parts share, shown once with the parts that use it: changing it changes them all, and this part's 채우기·글자·선 can be
+ * tied to it in one tap. (A recipe sent up turns such a shared colour into its token.)
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PartsAdvanced(bp: Blueprint, id: String, on: String?, line: Map<String, Any?>, many: Boolean, multi: List<String>,
+                          onMany: (Boolean) -> Unit, set: (String, Any?) -> Unit, onAll: (String) -> Unit) {
+    Group("고급 보기") {
+        // PC 확인 C4 (글자 줄을 눌러도 안 켜져요): the whole row turns it on and off.
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(value = many, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onMany)) {
+            Column(Modifier.weight(1f)) {
+                Text("여러 부품 한꺼번에", style = MaterialTheme.typography.bodyMedium)
+                Text(if (many) "위 부품 칩을 눌러 더해요. 고친 값이 ${multi.size + 1}곳에 같이 들어가요" else "켜면 부품 칩을 여러 개 골라 같은 값을 넣어요",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(many, null)
+        }
+        Text("숫자로 맞추기", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            NUMBER_FIELDS.forEach { (k, words, range) ->
+                PartNumber(words, (line[k] as? Number)?.toDouble(), range, half = k in HALF_FIELDS) { v ->
+                    set(k, v?.let { d -> if (k in HALF_FIELDS && d % 1 != 0.0) d else d.toLong() })
+                }
+            }
+        }
+        // 색 변수: every colour the parts use, with where.
+        val used = remember(bp) {
+            bp.lines.flatMap { l -> PART_COLOR_FIELDS.mapNotNull { (k, w) -> (l[k] as? Long)?.let { c -> c to "${partWords(l["id"] as? String ?: "", l["on"] as? String)} $w" } } }
+                .groupBy({ it.first }, { it.second })
+        }
+        Text("색 변수", style = MaterialTheme.typography.labelLarge)
+        if (used.isEmpty()) Text("부품에 색을 넣으면 여기 모여요. 같은 색을 쓰는 곳을 한 번에 바꿔요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        var open by remember(bp) { mutableStateOf<Long?>(null) }
+        used.entries.sortedByDescending { it.value.size }.forEach { (c, where) ->
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                androidx.compose.foundation.layout.Box(Modifier.padding(end = 8.dp).size(24.dp)
+                    .background(androidx.compose.ui.graphics.Color(c.toInt()), androidx.compose.foundation.shape.CircleShape)
+                    .border(1.dp, MaterialTheme.colorScheme.outline, androidx.compose.foundation.shape.CircleShape))
+                Column(Modifier.weight(1f)) {
+                    // PC 확인 C4 (16진 값만 보여요): the colour said in words, the number small after it.
+                    Text(com.bamnat.app.ui.settings.colorName(c), style = MaterialTheme.typography.bodyMedium)
+                    Text("#" + "%06X".format(c and 0xFFFFFF), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${where.size}곳 · " + where.take(3).joinToString(", ") + if (where.size > 3) " …" else "",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                }
+                TextButton(onClick = { open = if (open == c) null else c }) { Text(if (open == c) "닫기" else "모두 바꾸기") }
+            }
+            if (open == c) ColorPick("${where.size}곳을 함께", c, allowNone = false) { n ->
+                if (n == null) return@ColorPick
+                val next = bp.lines.map { l -> l.mapValues { (k, v) -> if (PART_COLOR_FIELDS.any { it.first == k } && v == c) n else v } }
+                onAll(Blueprint(Blueprint.clean(next)).encode()); open = n
+            }
+            // This part's colours tied to it in one tap.
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("fill" to "채우기에", "ink" to "글자에", "lineC" to "선에").forEach { (k, w) ->
+                    val tied = line[k] == c
+                    FilterChip(selected = tied, onClick = { set(k, if (tied) null else c) }, label = { Text("${partWords(id, on)} $w") })
+                }
+            }
+        }
+    }
+}
+
+/** A number box for one field: empty is 처음대로; out of [range] is kept to it. */
+@Composable
+private fun PartNumber(label: String, value: Double?, range: ClosedFloatingPointRange<Float>, half: Boolean, onSet: (Double?) -> Unit) {
+    fun show(v: Double?) = v?.let { if (it % 1 == 0.0) it.toLong().toString() else it.toString() }.orEmpty()
+    var text by remember(value) { mutableStateOf(show(value)) }
+    androidx.compose.material3.OutlinedTextField(text, { t ->
+        text = t.filter { it.isDigit() || it == '.' || it == '-' }.take(6)
+        if (text.isEmpty()) onSet(null)
+        else text.toDoubleOrNull()?.let { v ->
+            val k = v.coerceIn(range.start.toDouble(), range.endInclusive.toDouble())
+            onSet(if (half) Math.round(k * 2) / 2.0 else Math.round(k).toDouble())
+        }
+    }, label = { Text(label) }, placeholder = { Text("처음대로") }, singleLine = true,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+        modifier = Modifier.width(150.dp))
 }

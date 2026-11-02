@@ -24,6 +24,9 @@ object MainStall {
     private const val PREFIX = "stall-"
     const val KEEP = 5
     const val STALL_MS = 2_000L
+    /** A stall shorter than this whose main thread waits in [DRAW_SYNC] is not kept as a note. */
+    const val DRAW_SYNC_MS = 5_000L
+    const val DRAW_SYNC = "HardwareRenderer.nSyncAndDrawFrame"
     private const val TICK_MS = 1_000L
     private const val FRAMES = 12
 
@@ -67,7 +70,15 @@ object MainStall {
                     } else if (late < STALL_MS && noted != null) {
                         // [STAB-11] How long it really lasted, on the note and the trail.
                         val ms = answeredAt - since
-                        runCatching { if (noted.exists()) noted.writeText(noted.readLines().drop(1).joinToString("\n", "${ms}ms\n", "\n")) }
+                        runCatching {
+                            if (noted.exists()) {
+                                val lines = noted.readLines()
+                                // PC 확인 C11 1.36 (그리기 지연도 멈춤으로 셈): a short wait in the GPU's frame sync is the screen being slow to
+                                // draw (an emulator), not the app stopping; it stays on the trail but is no note for the 멈춤 card.
+                                if (ms < DRAW_SYNC_MS && lines.getOrNull(1)?.contains(DRAW_SYNC) == true) noted.delete()
+                                else noted.writeText(lines.drop(1).joinToString("\n", "${ms}ms\n", "\n"))
+                            }
+                        }
                         Trail.add(com.bamnat.core.diag.StopTrail.Kind.STALL_END, "ms=$ms")
                         noted = null
                     }

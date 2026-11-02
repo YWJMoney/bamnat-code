@@ -14,6 +14,7 @@
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
 import { addStrike, writeLeft, writeLimitHit } from "./write-limits.js";
+import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -245,6 +246,20 @@ export const RECIPE_PIECES = {
     T("pay", 400, { optional: true, guard: false, check: payLooks })] },
   // [BLU-01] 1.36 부품 꾸미기.
   parts: { styles: STYLES, fields: [I("parts", 96, [P("id", PART_IDS), P("on", PART_STATES, { optional: true }), ...PART_STYLE], { min: 1, check: partLines })] },
+  // [LAY-01] 1.36 꾸밈 층 (core Decor.FIELDS, same order and ranges).
+  decor: { styles: STYLES, fields: [I("items", DECOR_MAX, [
+    P("shape", DECOR_SHAPES, { optional: true }), P("icon", DECOR_ICONS, { optional: true }), E("emoji", { input: false }),
+    T("text", 40, { optional: true, input: true }), P("at", DECOR_ANCHORS), T("on", 12, { optional: true, guard: false, check: decorOn }),
+    N("x", 0, 1000), N("y", 0, 1000), N("w", 2, 400), N("h", 2, 400), N("rot", 0, 359, { optional: true }),
+    C("fill", { optional: true }), N("fillA", 0, 100, { optional: true }),
+    P("line", DECOR_LINES, { optional: true }), N("lineW", 0, 8, { decimals: 1, optional: true }), C("lineC", { optional: true }),
+    N("r", 0, 48, { optional: true }), N("shadow", 0, 24, { optional: true }), T("font", 40, { optional: true, guard: false, check: decorFont }),
+    N("size", 6, 96, { decimals: 1, optional: true }), N("weight", 100, 900, { optional: true }), C("ink", { optional: true }), F("italic", { input: false }),
+    N("alpha", 0, 100, { optional: true }), F("hide", { input: false }), F("over", { input: false }), F("flip", { input: false }),
+    F("lock", { input: false }), N("group", 0, 9, { optional: true }),
+    T("photo", 16, { optional: true, guard: false, check: decorPhoto }), T("tap", 12, { optional: true, guard: false, check: decorTap }),
+    F("full", { input: false }),
+  ], { min: 1 })] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);
 
@@ -855,7 +870,7 @@ export function lookOf(body) {
 
 /** [FREE-08] 종류로 보기: what kind of piece a recipe must carry to show under each chip. */
 export const RECIPE_KINDS = {
-  skin: ["screenLook", "calTheme", "calView", "photoLook", "shiftLook"],
+  skin: ["screenLook", "calTheme", "calView", "photoLook", "shiftLook", "decor"],
   layout: ["layout", "cards", "appFeel"],
   memo: ["memoLook", "memoTpl"],
   money: ["moneyLook", "shop", "field"],
@@ -917,6 +932,18 @@ export function tabsOf(body) {
           out.add(key.startsWith("pay.") ? "pay" : SCREEN_TAB[key] ?? "app");
         }
         if (p.pay) out.add("pay");
+        break;
+      // [LAY-01] 꾸밈 층: the tabs its items are pinned to.
+      case "decor":
+        for (const it of Array.isArray(p.items) ? p.items : []) {
+          const at = String(it?.at ?? "");
+          if (at.startsWith("cal.") || at === "bg.calendar") out.add("calendar");
+          else if (at === "widget") out.add("widget");
+          else if (at === "bg.memo") out.add("memo");
+          else if (at === "bg.money") out.add("money");
+          else if (at === "bg.stats" || at === "bg.pay") out.add("pay");
+          else out.add("app");
+        }
         break;
       default: break;
     }

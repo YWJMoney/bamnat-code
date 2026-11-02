@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.theme
 
+import com.bamnat.app.ui.decor.ScreenDecor
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.layout.ContentScale
 import com.bamnat.core.recipe.Palette
 import com.bamnat.core.recipe.ScreenLook
@@ -76,40 +78,89 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     }
     val photo = rememberLookPicture(look.photo)
     val plain = look.isDefault
-    val scheme = if (plain) base else skinned(base, look, photo?.second)
-    val dark = Palette.luminance((if (plain) base.background else groundOf(base, look, photo?.second)).argb()) < if (plain) 0.5 else 0.3
+    // PC 확인 C4 1.36 (꾸밈 사진을 달력 화면 배경에 넣었는데 실제 화면에는 안 보여요): the screen's page and bars are opaque and covered
+    // what the 꾸밈 층 drew under them. With a decoration under the words, the ground is drawn here once and the page above it is clear.
+    val under = com.bamnat.app.ui.decor.LocalDecor.current.let { d ->
+        val bg = "bg." + key.substringBefore('.')
+        if (d.isDefault || bg.removePrefix("bg.") !in com.bamnat.core.recipe.Decor.SCREENS) emptyList()
+        else d.items.filter { (it.at == com.bamnat.core.recipe.Decor.APP || it.at == bg) && !it.over && !it.hide }
+    }
+    val decorUnder = under.isNotEmpty()
+    // PC 확인 C7 1.36 (진한 사진 위에서 '2026년'·요일 줄·'모든 조'가 거의 안 읽혀요): a photo filling the screen under the words gets a
+    // veil of the page's colour, as a 화면 배경 사진 does, so the screen's own ink reads on it.
+    // PC 확인 C8 1.36 (55%면 진한 사진이 파스텔처럼 옅어져요): a lighter veil, and the words take their ink from how light the photo is,
+    // as with a 화면 배경 사진 (light words on a dark photo), so the photo keeps its colour and the words still read.
+    // PC 확인 C9: only once the photo is in; until then the screen keeps its own ground.
+    val fullPhoto = under.firstOrNull { it.kind == com.bamnat.core.recipe.DecorKind.PHOTO && it.full && com.bamnat.app.ui.decor.DecorPhotos.of(it.glyph) != null }
+    val photoUnder = fullPhoto != null
+    val decorLight = if (photo == null) fullPhoto?.let { com.bamnat.app.ui.decor.DecorPhotos.lightOf(it.glyph) } else null
+    // PC 확인 C12 1.36 (사진 위 파랑 글자 1.03:1): the photo's own average colour, not a stand-in grey, is what the inks are read against.
+    // PC 확인 C16 1.36 (스튜디오 색·배경 '사진 고르기'로 깐 어두운 사진 위 '오늘'·요일·알림 1.3~2.3:1): the 화면 배경 사진 goes by the
+    // same rule as a 꾸밈 사진 — its real average colour, cards on the ground's side, the softer words full ink, dates and buttons checked.
+    val screenPhoto = photo != null && !plain
+    val screenAvg = androidx.compose.runtime.remember(photo?.first) { photo?.first?.let { averageColour(it) } }
+    val decorAvg = if (photo == null) fullPhoto?.let { com.bamnat.app.ui.decor.DecorPhotos.averageOf(it.glyph) } else screenAvg
+    val veiled = if (photoUnder) look.copy(dim = look.dim ?: PHOTO_VEIL) else look
+    val light = photo?.second ?: decorLight
+    val inked = !plain || decorLight != null
+    val onPhoto = (photoUnder && decorLight != null) || screenPhoto
+    val photoGround = groundOf(base, veiled, light, decorAvg)
+    val dark = Palette.luminance((if (!inked) base.background else photoGround).argb()) < if (!inked) 0.5 else 0.3
+    // PC 확인 C13 1.36 ('오늘' 회색 글자 1.6:1): the words had to read on the app's light cards too, so a dark photo got dark words. On a
+    // 꾸밈 사진 the cards take the ground's side (dark cards on a dark photo), unless the screen gives its own card colour.
+    val pageColor = look.bg?.let { Color(it) } ?: base.background
+    val photoCard = if (dark) lerp(pageColor, Color.Black, 0.8f) else lerp(pageColor, Color.White, 0.5f)
+    val worn = if (onPhoto && veiled.card == null) veiled.copy(card = photoCard.argb()) else veiled
+    val skin = if (!inked) base else skinned(base, worn, light, decorAvg)
+    // PC 확인 C14 1.36 ('오늘' 옅은 글자 2.1:1): on a 꾸밈 사진 the softer words are the full ink, as a photo is lighter and darker in places.
+    val scheme = (if (decorUnder) skin.copy(background = Color.Transparent, surface = Color.Transparent) else skin)
+        .let { if (onPhoto && inked) it.copy(onSurfaceVariant = it.onSurface) else it }
     // 1.35 [J135-11] The status bar's clock and icons stand on the screen's own ground (dark icons on a dark theme were unreadable).
     if (bars) BarIcons(light = !dark)
     // 1.35 [J135-12] The warning cards and the money colours that do not follow the scheme take the light or dark set of the ground,
     // so a 허용 on an alarm warning card reads on a dark theme too.
     val cal = LocalCalendarColors.current
     val darkened = base !== outer
-    val fitted = if (plain && !darkened) cal else (if (dark) DarkCalendarColors else LightCalendarColors).let { tone ->
+    val fitted = if (!inked && !darkened) cal else (if (dark) DarkCalendarColors else LightCalendarColors).let { tone ->
         cal.copy(warning = tone.warning, warningContainer = tone.warningContainer, income = tone.income, expense = tone.expense,
             alarmOff = tone.alarmOff, changed = tone.changed, holidayWork = tone.holidayWork)
     }
     // [J135-15] One shape of tree for the user's own look and for a theme: putting a theme on or taking it off only changes colours.
     // Two shapes threw away everything under the screen (an open sheet closed, 화면 꾸미기 fell back to 설정, a wear half done).
     MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
-        Box(if (plain && !darkened) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
+        Box(if (plain && !darkened && !decorUnder) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
             if (photo != null && !plain) {
                 Image(photo.first, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
                 val veil = (look.dim ?: 30).coerceIn(0, 80)
                 Box(Modifier.matchParentSize().background((look.bg?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
             }
+            // [LAY-03] 1.36 꾸밈 층 on the screen's background: under its words, then (the maker's choice) over them.
+            ScreenDecor(key, over = false)
+            val page = look.bg?.let { Color(it) } ?: base.background
+            if (photoUnder) Box(Modifier.matchParentSize().background(page.copy(alpha = (worn.dim ?: PHOTO_VEIL).coerceIn(20, 80) / 100f)))
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
             // [BLU-12] PC 15차: on a ground of its own the parts' 어두운 화면 lines follow that ground (a white 화면 색 on a dark phone
             // keeps the light lines, so a light-grey 금액 meant for dark does not land on white).
             val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
-            val grounded = if (plain && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
+            val grounded = if (!inked && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
+                // PC 확인 C10: the ground goes with the words' ink (dark under light words on a dark photo), so a pale cell never turns grey.
+                com.bamnat.app.ui.decor.LocalOnPhoto provides if (!onPhoto) null else photoCard,
+                com.bamnat.app.ui.decor.LocalPhotoGround provides if (onPhoto) photoGround else null,
                 com.bamnat.app.ui.parts.LocalBlueprint provides (if (raw.isEmpty) com.bamnat.app.ui.parts.LocalBlueprint.current else grounded),
-                androidx.compose.material3.LocalContentColor provides if (plain && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
+                androidx.compose.material3.LocalContentColor provides if (!inked && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
             }
+            ScreenDecor(key, over = true)
         }
     }
 }
+
+/**
+ * PC 확인 C7·C8 1.36: how much of the page (in %) lies over a 꾸밈 사진 that fills the screen under the words, unless the screen has its own
+ * 흐리게; the words take their ink from the photo and this veil.
+ */
+const val PHOTO_VEIL = 40
 
 /** [J135-11] The status and navigation bar icons dark ([light] ground) or light, on the window that draws this (a full-screen dialog's own). */
 @Composable
@@ -129,20 +180,20 @@ fun BarIcons(light: Boolean) {
 }
 
 /** The colour the screen's text stands on: the page, or what a picture and its veil come to. */
-private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?): Color {
+private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?, photoAvg: Color? = null): Color {
     val page = look.bg?.let { Color(it) } ?: base.background
     if (photoLight == null) return page
     val veil = (look.dim ?: 30).coerceIn(20, 80) / 100f
-    return lerp(if (photoLight >= 0.5f) Color(0xFFEDEDED) else Color(0xFF2A2A2A), page, veil)
+    return lerp(photoAvg ?: if (photoLight >= 0.5f) Color(0xFFEDEDED) else Color(0xFF2A2A2A), page, veil)
 }
 
 /**
  * [FREE-05] [base] in [look]'s colours. With a picture the page is clear so the picture shows, and the ink is read against what the
  * picture and its veil come to ([photoLight] 0 dark … 1 light).
  */
-fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): ColorScheme {
+fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null, photoAvg: Color? = null): ColorScheme {
     val page = look.bg?.let { Color(it) } ?: base.background
-    val ground = groundOf(base, look, photoLight)
+    val ground = groundOf(base, look, photoLight, photoAvg)
     val card = look.card?.let { Color(it) }
     val cardLow = card ?: base.surfaceContainerLow
     val inkArgb = Palette.inkOn(look.ink, ground.argb(), cardLow.argb(), (card ?: base.surfaceContainerHigh).argb())
@@ -175,5 +226,11 @@ fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): Col
     val dark = Palette.luminance(ground.argb()) < 0.3
     return look.accent?.let { accented(s.copy(surface = page), it, dark).copy(surface = s.surface) } ?: s
 }
+
+/** PC 확인 C16 1.36: a picture's average colour (one pixel of it scaled down), what the words over it are read against. */
+private fun averageColour(b: androidx.compose.ui.graphics.ImageBitmap): Color? = runCatching {
+    val px = android.graphics.Bitmap.createScaledBitmap(b.asAndroidBitmap(), 1, 1, true).getPixel(0, 0)
+    Color(px).copy(alpha = 1f)
+}.getOrNull()
 
 private fun Color.argb(): Long = toArgb().toLong() and 0xFFFFFFFFL

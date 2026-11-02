@@ -246,6 +246,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     id == null -> "바뀐 것이 없어요"
                     else -> "적용했어요. 7일 안에 되돌릴 수 있어요"
                 })
+            // PC 확인 C10 1.36 (넣은 직후 상세는 다시 열어야 문구가 바뀌어요): what each piece does now, said again at once.
+            preview()
             onDone(id ?: if (laid) 0L else null)
         }
     }
