@@ -822,6 +822,10 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(e, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Assertive })
+                // PC (마을 빌드: '이름이 거의 같아요' 거절 뒤 할 일이 안 보임): the name refused, the name step one tap away.
+                if (s.errorCode == "name_like") {
+                    Button(onClick = { vm.go(3) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이름 바꾸기") }
+                }
                 // A refusal 나만 can get past offers it; one the server cannot take at all (a 꾸밈 it does not know, no network) keeps it here.
                 if (s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network")) {
                     OutlinedButton(onClick = { vm.scope("private"); vm.publish() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("나만 보기로 바꿔 저장") }
@@ -866,6 +870,9 @@ private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit, sendin
             // [BLU-07] PC 8차 (나만 보기로 저장의 표시를 못 봄): said in its own words, live for TalkBack.
             Text(if (sent.scope == "private") "✓ 나만 보기로 저장했어요" else "✓ 올렸어요", style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+            // PC 10차 사용성 제안 (지금 상태를 놓치기 쉬움): where it is now, first and plain.
+            Text("지금: " + when (sent.scope) { "private" -> "나만 보기"; "link" -> "링크로만"; else -> "장터에 공개" }, style = MaterialTheme.typography.labelLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
             Text(stateLabel(sent.state, sent.scope), style = MaterialTheme.typography.bodyMedium)
             Text("코드 ${sent.code} · v${sent.version}", style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

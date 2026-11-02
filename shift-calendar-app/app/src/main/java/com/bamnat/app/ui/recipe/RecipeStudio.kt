@@ -428,7 +428,8 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
         val head = bp.style("cal.head")
         val title = bp.style("cal.head.title")
-        Box(Modifier.partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp)))) {
+        // PC 10차 사용성 제안 (점선이 글자만 감싸 범위가 헷갈림): the head is the whole row, as on the calendar.
+        Box(Modifier.fillMaxWidth().partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp)))) {
             if (title.hide != true) Box(Modifier.partSpot("cal.head.title").then(com.bamnat.app.ui.parts.PartMods.box(title.copy(ink = null), RoundedCornerShape(0.dp)))) {
                 com.bamnat.app.ui.parts.PartText(if (real != null) "${today.monthValue}월 · 내 달력" else "예시 달력", title,
                     MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
