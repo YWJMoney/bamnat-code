@@ -122,25 +122,31 @@ const val ON_PHOTO_ALPHA = 0.6f
  * it has one).
  */
 @Composable
-fun readableOnPhoto(c: androidx.compose.ui.graphics.Color, cell: androidx.compose.ui.graphics.Color? = null): androidx.compose.ui.graphics.Color {
+fun readableOnPhoto(c: androidx.compose.ui.graphics.Color, cell: androidx.compose.ui.graphics.Color? = null, target: Double = PHOTO_TARGET): androidx.compose.ui.graphics.Color {
     val ground = LocalPhotoGround.current ?: return c
     val pale = LocalOnPhoto.current
     val grounds = listOfNotNull(ground, pale?.let { androidx.compose.ui.graphics.lerp(ground, it.copy(alpha = 1f), ON_PHOTO_ALPHA) },
         cell?.let { androidx.compose.ui.graphics.lerp(ground, it.copy(alpha = 1f), it.alpha) })
-    return readableOn(c.copy(alpha = 1f), grounds)
+    return readableOn(c.copy(alpha = 1f), grounds, target)
 }
 
+/**
+ * PC 확인 C13 1.36 (3:1을 목표로 잡았더니 실제로는 2.5~2.9:1): the ground is the photo's average, and a photo is lighter and darker
+ * than that in places, so the aim is higher than the 3:1 that must hold.
+ */
+const val PHOTO_TARGET = 4.5
+
 /** [c], or the nearest lighter or darker step of it that stands 3:1 on every one of [grounds]; black or white at the end. */
-fun readableOn(c: androidx.compose.ui.graphics.Color, grounds: List<androidx.compose.ui.graphics.Color>): androidx.compose.ui.graphics.Color {
+fun readableOn(c: androidx.compose.ui.graphics.Color, grounds: List<androidx.compose.ui.graphics.Color>, target: Double = 3.0): androidx.compose.ui.graphics.Color {
     fun argb(x: androidx.compose.ui.graphics.Color) = x.toArgb().toLong() and 0xFFFFFFFFL
     fun worst(x: androidx.compose.ui.graphics.Color) = grounds.minOfOrNull { com.bamnat.core.layout.Contrast.ratio(argb(x), argb(it)) } ?: 21.0
-    if (worst(c) >= 3.0) return c
+    if (worst(c) >= target) return c
     val steps = (1..10).map { it / 10f }
     val lighter = steps.map { androidx.compose.ui.graphics.lerp(c, androidx.compose.ui.graphics.Color.White, it) }
     val darker = steps.map { androidx.compose.ui.graphics.lerp(c, androidx.compose.ui.graphics.Color.Black, it) }
     // The side that gets there first keeps most of the colour; neither, the better of the two ends.
-    val l = lighter.indexOfFirst { worst(it) >= 3.0 }
-    val d = darker.indexOfFirst { worst(it) >= 3.0 }
+    val l = lighter.indexOfFirst { worst(it) >= target }
+    val d = darker.indexOfFirst { worst(it) >= target }
     return when {
         l >= 0 && (d < 0 || l <= d) -> lighter[l]
         d >= 0 -> darker[d]

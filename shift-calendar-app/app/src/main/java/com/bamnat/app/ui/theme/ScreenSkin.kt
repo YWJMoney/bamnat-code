@@ -95,13 +95,18 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val decorLight = if (photo == null) fullPhoto?.let { com.bamnat.app.ui.decor.DecorPhotos.lightOf(it.glyph) } else null
     // PC 확인 C12 1.36 (사진 위 파랑 글자 1.03:1): the photo's own average colour, not a stand-in grey, is what the inks are read against.
     val decorAvg = if (photo == null) fullPhoto?.let { com.bamnat.app.ui.decor.DecorPhotos.averageOf(it.glyph) } else null
-    val worn = if (photoUnder) look.copy(dim = look.dim ?: PHOTO_VEIL) else look
+    val veiled = if (photoUnder) look.copy(dim = look.dim ?: PHOTO_VEIL) else look
     val light = photo?.second ?: decorLight
     val inked = !plain || decorLight != null
+    val photoGround = groundOf(base, veiled, light, decorAvg)
+    val dark = Palette.luminance((if (!inked) base.background else photoGround).argb()) < if (!inked) 0.5 else 0.3
+    // PC 확인 C13 1.36 ('오늘' 회색 글자 1.6:1): the words had to read on the app's light cards too, so a dark photo got dark words. On a
+    // 꾸밈 사진 the cards take the ground's side (dark cards on a dark photo), unless the screen gives its own card colour.
+    val pageColor = look.bg?.let { Color(it) } ?: base.background
+    val photoCard = if (dark) lerp(pageColor, Color.Black, 0.8f) else lerp(pageColor, Color.White, 0.5f)
+    val worn = if (photoUnder && decorLight != null && veiled.card == null) veiled.copy(card = photoCard.argb()) else veiled
     val skin = if (!inked) base else skinned(base, worn, light, decorAvg)
     val scheme = if (decorUnder) skin.copy(background = Color.Transparent, surface = Color.Transparent) else skin
-    val photoGround = groundOf(base, worn, light, decorAvg)
-    val dark = Palette.luminance((if (!inked) base.background else photoGround).argb()) < if (!inked) 0.5 else 0.3
     // 1.35 [J135-11] The status bar's clock and icons stand on the screen's own ground (dark icons on a dark theme were unreadable).
     if (bars) BarIcons(light = !dark)
     // 1.35 [J135-12] The warning cards and the money colours that do not follow the scheme take the light or dark set of the ground,
@@ -132,7 +137,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             val grounded = if (!inked && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
                 // PC 확인 C10: the ground goes with the words' ink (dark under light words on a dark photo), so a pale cell never turns grey.
-                com.bamnat.app.ui.decor.LocalOnPhoto provides if (!photoUnder) null else if (dark) lerp(page, Color.Black, 0.8f) else lerp(page, Color.White, 0.5f),
+                com.bamnat.app.ui.decor.LocalOnPhoto provides if (!photoUnder) null else photoCard,
                 com.bamnat.app.ui.decor.LocalPhotoGround provides if (photoUnder) photoGround else null,
                 com.bamnat.app.ui.parts.LocalBlueprint provides (if (raw.isEmpty) com.bamnat.app.ui.parts.LocalBlueprint.current else grounded),
                 androidx.compose.material3.LocalContentColor provides if (!inked && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
