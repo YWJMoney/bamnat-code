@@ -2327,6 +2327,13 @@ function adminApp(L, BUILD, M) {
       `<button type="button" class="chip pick" data-act="font-state" data-key="${k}" aria-pressed="${state === k}">${esc(label)} ${d.counts?.[k] ?? 0}</button>`).join("")}</div>`;
     if (!d.items.length) return sub + empty({ pending: "확인을 기다리는 글꼴이 없어요", reported: "신고로 내려간 글꼴이 없어요" }[state] ?? "글꼴이 없어요", "앱에서 공개 글꼴(OFL 등)이라고 밝히고 레시피와 함께 나눈 글꼴이 여기 보여요.");
     const says = { ofl: "글꼴 안에 OFL이라고 적혀 있어요", apache: "글꼴 안에 Apache라고 적혀 있어요" };
+    // 1.36 PC 12차 ('신고 0 · 글자가 깨져요 1'로 숫자가 맞지 않음): every report, its reasons in brackets, and how many count toward taking
+    // it down when that differs (새로 깐 휴대폰·같은 회선의 둘째 신고는 내림에 세지 않아요, 보안 점검 M3).
+    const reportLine = (f) => {
+      const all = Object.values(f.whys ?? {}).reduce((a, n) => a + n, 0);
+      const reasons = Object.entries(f.whys ?? {}).map(([k, n]) => `${esc(whys[k] ?? k)} ${n}`).join(" · ");
+      return `신고 ${Math.max(all, f.reports)}${reasons ? `(${reasons})` : ""}${all > f.reports ? ` · 내림에 세는 것 ${f.reports}` : ""}`;
+    };
     const own = (f) => {
       const i = f.info ?? {};
       const bits = [i.family && `이름 ${i.family}`, i.maker && `만든 곳 ${i.maker}`, i.designer && `디자이너 ${i.designer}`, i.vendor && `회사 코드 ${i.vendor}`].filter(Boolean);
@@ -2342,7 +2349,7 @@ function adminApp(L, BUILD, M) {
       `<span class="pill ${l.why === "glyphs" ? "ok" : "warn"}">${esc(likeWhy[l.why] ?? "비슷한")} 글꼴을 나누는 중: ${esc(l.name)} · ${esc(bytesDiff(l.diff))}</span>`).join(" ")}</small>` : "";
     return `${sub}<p class="hint">${state === "pending" ? "다른 분께 가기 전에 보는 글꼴이에요. 글꼴 안의 이름·만든 곳·라이선스 글이 보낸 분이 고른 라이선스와 맞는지 봐요. 맞으면 나누기, 유료 글꼴이거나 알 수 없으면 내리기를 눌러요." : "글꼴 이름으로 찾아 라이선스(OFL·Apache·무료 공개)가 맞는지 봐요. 맞으면 다시 올리기, 상용 글꼴이면 내리기를 눌러요."}</p>
       <ul class="rows">${d.items.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(f.name)}</b>
-        <small>보낸 분이 고른 것: ${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · 신고 ${f.reports}${Object.entries(f.whys ?? {}).map(([k, n]) => ` · ${esc(whys[k] ?? k)} ${n}`).join("")} · ${esc(ago(f.at))}</small>
+        <small>보낸 분이 고른 것: ${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · ${reportLine(f)} · ${esc(ago(f.at))}</small>
         ${own(f)}
         <small class="mono">${esc(f.id)}</small></span>
         ${edit ? `<span class="row-side">${f.state !== "ok" ? `<button class="btn small primary" data-act="recipe-font" data-id="${f.id}" data-key="ok">${f.state === "pending" ? "나누기" : "다시 올리기"}</button>` : ""}

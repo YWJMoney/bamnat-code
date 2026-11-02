@@ -516,7 +516,9 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
             is UserFonts.Result.Same -> { problem = null; note = "이미 넣은 글꼴과 같은 파일이에요: ‘${r.font.name}’" }
         }
     }
-    AlertDialog(
+    // PC 확인 12차 (한글 없는 글꼴 창이 화면 읽기에 잡히지 않음): the question is the one window while it is up, not a window over the
+    // picker's (TalkBack stayed on the picker); 다른 글꼴 고르기 brings the picker back.
+    if (askHangul == null) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("글꼴 고르기") },
         text = {
