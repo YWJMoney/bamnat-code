@@ -291,7 +291,8 @@ private fun DayGroups(
                     G.WORK -> {
                         val changed = day.source == DaySource.OVERRIDE || day.hasCustomTimes || day.entry?.customBreakMinutes != null
                         DayGroup(
-                            title = "근무", icon = Icons.Outlined.Work,
+                            // 1.36 PC 재검토: a 현장 calendar's day says 일정 (its kinds of day are 일정 종류).
+                            title = com.bamnat.app.ui.shifts.dayKindNoun(style), icon = Icons.Outlined.Work,
                             summary = workSummary(day, snapshot),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
@@ -301,7 +302,7 @@ private fun DayGroups(
                         val names = day.extras.map(ExtraText::name)
                         val review = day.extras.any { it.entry.needsReview }
                         DayGroup(
-                            title = "추가 근무", icon = Icons.Outlined.MoreTime,
+                            title = if (style == com.bamnat.core.work.WorkStyle.FIELD) "일정 더하기" else "추가 근무", icon = Icons.Outlined.MoreTime,
                             summary = when {
                                 review -> "확인이 필요해요 · " + names.joinToString(" · ")
                                 names.isEmpty() -> "없음"
