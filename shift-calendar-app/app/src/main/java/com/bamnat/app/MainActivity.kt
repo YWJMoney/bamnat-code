@@ -119,12 +119,18 @@ class MainActivity : ComponentActivity() {
         // G 1.32 [WTYP-07] 오전/오후로 보기: every time on screen is written by Fmt, so the root is drawn again on a change.
         com.bamnat.app.ui.Fmt.clock12 = settings.clock12
         val photoLook = androidx.compose.runtime.remember(settings.photoLook) { com.bamnat.core.recipe.PhotoLook.decode(settings.photoLook) }
+        // [STU-37] 1.36 근무에 따라 바뀌는 모양: 야간 근무 중·쉬는 날의 화면 색과 달력 색 over the usual ones.
+        val shiftLooks = androidx.compose.runtime.remember(settings.shiftLooks) { com.bamnat.core.recipe.ShiftLooks.decode(settings.shiftLooks) }
+        val shiftMode = com.bamnat.app.ui.theme.rememberShiftLookMode(shiftLooks, container)
+        val (screensNow, calNow) = androidx.compose.runtime.remember(shiftLooks, shiftMode, settings.screenLooks, settings.calTheme) {
+            shiftLooks.apply(shiftMode, settings.screenLooks, settings.calTheme)
+        }
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
             corners = photoLook.corners, accent = settings.accentColor) {
             // [RCP-09] 1.34 달력 테마, lifted for the dark calendar.
             val darkSurface = androidx.compose.material3.MaterialTheme.colorScheme.surface.luminance() < 0.5f
-            val look = androidx.compose.runtime.remember(settings.calTheme, darkSurface) {
-                com.bamnat.app.ui.theme.CalendarLook.of(com.bamnat.core.recipe.CalendarTheme.decode(settings.calTheme), darkSurface)
+            val look = androidx.compose.runtime.remember(calNow, darkSurface) {
+                com.bamnat.app.ui.theme.CalendarLook.of(com.bamnat.core.recipe.CalendarTheme.decode(calNow), darkSurface)
             }
             androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds,
                 com.bamnat.app.ui.theme.LocalCalendarLook provides look, com.bamnat.app.ui.theme.LocalPhotoLook provides photoLook,
@@ -132,7 +138,7 @@ class MainActivity : ComponentActivity() {
                 com.bamnat.app.ui.calendar.LocalCalendarView provides androidx.compose.runtime.remember(settings.calView) { com.bamnat.core.recipe.CalendarView.decode(settings.calView) },
                 com.bamnat.app.ui.calendar.LocalDayHold provides settings.longPress,
                 // [FREE-04][FREE-05][FREE-06][FREE-07] 1.35 완전 자유 꾸미기.
-                com.bamnat.app.ui.theme.LocalScreenLooks provides androidx.compose.runtime.remember(settings.screenLooks) { com.bamnat.core.recipe.ScreenLooks.decode(settings.screenLooks) },
+                com.bamnat.app.ui.theme.LocalScreenLooks provides androidx.compose.runtime.remember(screensNow) { com.bamnat.core.recipe.ScreenLooks.decode(screensNow) },
                 com.bamnat.app.ui.theme.LocalMemoLook provides androidx.compose.runtime.remember(settings.memoLook) { com.bamnat.core.recipe.MemoLook.decode(settings.memoLook) },
                 com.bamnat.app.ui.theme.LocalMoneyLook provides androidx.compose.runtime.remember(settings.moneyLook) { com.bamnat.core.recipe.MoneyLook.decode(settings.moneyLook) },
                 com.bamnat.app.ui.theme.LocalPayLooks provides androidx.compose.runtime.remember(settings.payLooks) { com.bamnat.core.recipe.PayLook.decodeAll(settings.payLooks) }) {

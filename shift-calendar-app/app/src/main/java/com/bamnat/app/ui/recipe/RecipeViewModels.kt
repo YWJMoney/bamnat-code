@@ -121,7 +121,11 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     fun load() {
         viewModelScope.launch {
             try {
-                val doc = c.recipeApi.show(code, device)
+                // PC 확인 W34 1.36 (처음 들어갈 때 한 번 '인터넷에 연결되지 않았어요', 다시 해 보기로 열림): a connection that drops on the
+                // first try is tried once more before it is said.
+                val doc = try { c.recipeApi.show(code, device) } catch (e: java.io.IOException) {
+                    kotlinx.coroutines.delay(800); c.recipeApi.show(code, device)
+                }
                 val r = doc.recipe()
                 val pieces = r.pieces.map { p -> Piece(p.kind, on = style == null || style in p.kind.styles, fits = style == null || style in p.kind.styles) }
                 _state.value = _state.value.copy(doc = doc, recipe = r, pieces = pieces, error = null,
@@ -239,6 +243,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
             val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
             val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code) }.getOrDefault(false)
+            // PC 확인 1.36 (기능별 탭으로 얹은 작품은 쓰는 분 0): a tab laid on counts as used, as a theme put on does.
+            if (laid && id == null && code.isNotEmpty() && c.recipeApi.enabled) runCatching { c.recipeApi.applied(code, kept = false) }
             if (id != null && looks.isNotEmpty() && tab == null) runCatching {
                 c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
             }
@@ -249,6 +255,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     else -> "적용했어요. 7일 안에 되돌릴 수 있어요"
                 })
             onDone(id ?: if (laid) 0L else null)
+            // PC 제안 1.36 (넣은 직후 상세의 쓰는 분은 0명 그대로): the count read again once it is in.
+            if (id != null || laid) runCatching { c.recipeApi.show(code, device) }.onSuccess { d -> _state.value = _state.value.copy(doc = d) }
         }
     }
 

@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -57,6 +58,9 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -89,12 +93,17 @@ internal fun ScaledPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (Stri
  */
 @Composable
 internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, scale: Float, split: Float,
-                           onPick: () -> Unit = {}, diff: Boolean = false, onChanged: (Int) -> Unit = {}) {
+                           onPick: () -> Unit = {}, diff: Boolean = false, onChanged: (Int) -> Unit = {},
+                           /** U15 1.36 누르고 있으면 전 모양: [before] whole (in [after]'s places), [after] read but hidden, what changed ringed, nothing dimmed. */
+                           peek: Boolean = false,
+                           /** PC 확인 Z7: the line can be moved with a finger; called with the new place (0..1). */
+                           onSplit: ((Float) -> Unit)? = null) {
+    val reading = diff || peek
     val framed = remember(before, after) { LookParts.frame(before, after) }
     val scroll = rememberScrollState()
     val w = (340 * scale).dp
     val h = (560 * scale).dp
-    val shownSplit = if (diff) 1f else split
+    val shownSplit = if (reading) 1f else split
     val beforeLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     val afterLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     // [TRY-04] 1.36 빌드 8 (카드 자리를 옮기면 테두리가 없음): the two sides share the new places, so a moved card shows no change
@@ -103,7 +112,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
     val realLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     var marks by remember { mutableStateOf<List<androidx.compose.ui.geometry.Rect>>(emptyList()) }
     // The two sides drawn into layers when 바뀌는 곳만 is on, read back once they settle, and compared block by block.
-    if (diff) androidx.compose.runtime.LaunchedEffect(framed, after, tab, scroll.value, scale) {
+    if (reading) androidx.compose.runtime.LaunchedEffect(framed, after, tab, scroll.value, scale, peek) {
         kotlinx.coroutines.delay(180)
         val a = runCatching { afterLayer.toImageBitmap() }.getOrNull() ?: return@LaunchedEffect
         val b = runCatching { beforeLayer.toImageBitmap() }.getOrNull() ?: return@LaunchedEffect
@@ -114,12 +123,12 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
         }
         onChanged(marks.size)
     } else androidx.compose.runtime.LaunchedEffect(Unit) { marks = emptyList() }
-    fun Modifier.into(layer: androidx.compose.ui.graphics.layer.GraphicsLayer) = if (!diff) this else drawWithContent {
+    fun Modifier.into(layer: androidx.compose.ui.graphics.layer.GraphicsLayer) = if (!reading) this else drawWithContent {
         layer.record { this@drawWithContent.drawContent() }
         drawLayer(layer)
     }
     Box(Modifier.size(w, h)) {
-        if (diff && moved) Box(Modifier.matchParentSize().graphicsLayer { alpha = 0f }) {
+        if (reading && moved) Box(Modifier.matchParentSize().graphicsLayer { alpha = 0f }) {
             ScaledPhone(before, style, tab, onTab, scale, onPick, Modifier.into(realLayer), scroll)
         }
         // 지금, the right side (and under 바뀌는 곳만, drawn but hidden: only read).
@@ -127,12 +136,12 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
             ScaledPhone(framed, style, tab, onTab, scale, onPick, Modifier.into(beforeLayer), scroll)
         }
         // 입으면, the left side, cut at the line by its own box.
-        if (shownSplit > 0.001f) Box(Modifier.width(w * shownSplit).height(h).clipToBounds()) {
+        if (shownSplit > 0.001f) Box(Modifier.width(w * shownSplit).height(h).clipToBounds().graphicsLayer { alpha = if (peek) 0f else 1f }) {
             Box(Modifier.wrapContentSize(Alignment.TopStart, unbounded = true)) {
                 ScaledPhone(after, style, tab, onTab, scale, onPick, Modifier.into(afterLayer), scroll)
             }
         }
-        if (diff && marks.isNotEmpty()) androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+        if (reading && marks.isNotEmpty()) androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
             val sx = size.width
             val sy = size.height
             val dim = androidx.compose.ui.graphics.Path().apply {
@@ -140,7 +149,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
                 addRect(androidx.compose.ui.geometry.Rect(0f, 0f, sx, sy))
                 marks.forEach { r -> addRect(androidx.compose.ui.geometry.Rect(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy)) }
             }
-            drawPath(dim, androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))
+            if (!peek) drawPath(dim, androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f))
             // The ring inside the place, so it never covers the dates next to it.
             val sw = 2.dp.toPx()
             marks.forEach { r ->
@@ -149,8 +158,28 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
                     style = androidx.compose.ui.graphics.drawscope.Stroke(sw))
             }
         }
-        if (!diff && shownSplit in 0.02f..0.98f) Box(Modifier.fillMaxHeight().width(2.dp).offset(x = w * shownSplit - 1.dp)
+        if (!reading && shownSplit in 0.02f..0.98f) Box(Modifier.fillMaxHeight().width(2.dp).offset(x = w * shownSplit - 1.dp)
             .background(MaterialTheme.colorScheme.primary))
+        if (!reading && onSplit != null) {
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val wPx = with(density) { w.toPx() }
+            val latest by androidx.compose.runtime.rememberUpdatedState(shownSplit)
+            Box(Modifier.fillMaxHeight().width(32.dp).offset(x = w * shownSplit - 16.dp)
+                .pointerInput(wPx) {
+                    detectHorizontalDragGestures { change, dx ->
+                        change.consume(); onSplit((latest + dx / wPx).coerceIn(0.05f, 0.95f))
+                    }
+                }
+                .semantics {
+                    contentDescription = "비교 선, 좌우로 끌어 옮기기"
+                    customActions = listOf(
+                        androidx.compose.ui.semantics.CustomAccessibilityAction("선을 왼쪽으로") { onSplit((latest - 0.1f).coerceIn(0.05f, 0.95f)); true },
+                        androidx.compose.ui.semantics.CustomAccessibilityAction("선을 오른쪽으로") { onSplit((latest + 0.1f).coerceIn(0.05f, 0.95f)); true },
+                    )
+                }, contentAlignment = Alignment.Center) {
+                Box(Modifier.size(20.dp, 36.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)))
+            }
+        }
     }
 }
 
@@ -251,6 +280,8 @@ fun TryOnScreen(
     onDismiss: () -> Unit,
     onKeep: ((Set<String>) -> Boolean)?,
     extra: (@Composable ColumnScope.() -> Unit)? = null,
+    /** PC 제안 1.36: come from the studio, 담기 says 스튜디오 보관함 and offers the way back to it. */
+    onToStudio: (() -> Unit)? = null,
     actions: @Composable ColumnScope.(Set<String>) -> Unit,
 ) {
     val c = LocalContext.current.appContainer
@@ -263,7 +294,8 @@ fun TryOnScreen(
     var keptLine by remember(r) { mutableStateOf<String?>(null) }
     val boxSize = c.wardrobe.kept.collectAsStateWithLifecycle().value.size
     fun keep(ids: Set<String>) {
-        keptLine = if (onKeep?.invoke(ids) == true) "✓ 보관함에 담았어요 (${boxSize + 1}개). 마을 › 테마와 스튜디오의 보관함에서 꺼내 써요"
+        keptLine = if (onKeep?.invoke(ids) == true) (if (onToStudio != null) "✓ 스튜디오 보관함에 넣었어요 (${boxSize + 1}개)"
+            else "✓ 보관함에 담았어요 (${boxSize + 1}개). 마을 › 테마와 스튜디오의 보관함에서 꺼내 써요")
             else "보관함이 꽉 찼거나 담을 부분이 없어요 (${c.wardrobe.partsLimit()}개까지)"
     }
     val mine by produceState(Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = emptyList()), c) {
@@ -354,6 +386,8 @@ fun TryOnScreen(
                         }
                         keptLine?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
+                        if (keptLine?.startsWith("✓") == true && onToStudio != null) FilledTonalButton(onClick = onToStudio,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("스튜디오로 돌아가기") }
                     }
                 }
             }

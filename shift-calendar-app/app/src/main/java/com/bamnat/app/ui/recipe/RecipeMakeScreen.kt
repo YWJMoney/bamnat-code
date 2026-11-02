@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.recipe
 
+import androidx.compose.foundation.layout.isImeVisible
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -132,6 +134,8 @@ class RecipeMakeViewModel(
         val parentTitle: String? = null,
         /** [THM-03] 사진 빼고 올리기: the pictures stay on this phone only. */
         val bare: Boolean = false,
+        /** PC 확인 W37 1.36: the recipe is in (until then the screen says 준비 중). */
+        val ready: Boolean = false,
     )
 
     /** [THM-01] One of my themes (or a new one, [com.bamnat.app.recipe.RecipeLinks.NEW_OWN]) sent from 스튜디오: in 장터 once it is up. */
@@ -142,8 +146,15 @@ class RecipeMakeViewModel(
 
     init {
         viewModelScope.launch {
-            val mine = PieceKind.entries.associateWith { k -> runCatching { c.recipes.pieces.export(k, calendar) }.getOrNull() }
+            // PC 확인 W37 1.36 (올리기를 누르고 6초쯤 아무 표시 없음): a recipe handed in (스튜디오의 올리기) shows at once; what this phone
+            // has for every piece (only 고르기 needs it) is read after, off the main thread.
+            val early = from?.let { lenient(it)?.copy(parent = parent?.takeIf { p -> p.isNotBlank() }) }
+            if (early != null) _state.value = _state.value.copy(recipe = early, chosen = early.pieces.map { it.kind }.toSet(), ready = true)
+            val mine = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                PieceKind.entries.associateWith { k -> runCatching { c.recipes.pieces.export(k, calendar) }.getOrNull() }
+            }
             val start = when {
+                early != null -> early
                 from != null -> lenient(from)?.copy(parent = parent?.takeIf { it.isNotBlank() }) // F-99: my own look has no parent ("" is no code)
                 draftId != 0L -> c.database.recipeDao().drafts().firstOrNull { it.id == draftId }?.let { d ->
                     _state.value = _state.value.copy(step = d.step, scope = d.scope); lenient(d.body)
@@ -153,7 +164,9 @@ class RecipeMakeViewModel(
             // [RCX-31] A draft from before kept 최저임금 with its amount in the hint, which the amount check then refused.
             val r = (start ?: blank()).let { d -> d.copy(inputs = d.inputs.map { i -> if (i.hint.contains("최저임금") && i.hint.any(Char::isDigit)) i.copy(hint = WAGE_HINT) else i }) }
             val chosen = if (start != null) r.pieces.map { it.kind }.toSet() else setOfNotNull(kind)
-            _state.value = _state.value.copy(recipe = if (start != null) r else withPieces(r, chosen, mine), chosen = chosen, mine = mine)
+            // A recipe already shown keeps what was changed in it meanwhile (받는 분 값, 이름).
+            _state.value = if (early != null) _state.value.copy(mine = mine)
+                else _state.value.copy(recipe = if (start != null) r else withPieces(r, chosen, mine), chosen = chosen, mine = mine, ready = true)
             val put = runCatching { c.recipes.inUse().map { it.code to it.title } }.getOrDefault(emptyList())
             val mineUp = runCatching { c.recipeApi.mine(c.companyStore.device).items.map { it.first.code to it.first.title } }.getOrDefault(emptyList())
             _state.value = _state.value.copy(bundleChoices = (mineUp + put).filter { it.first != code }.distinctBy { it.first }.take(20))
@@ -307,10 +320,13 @@ class RecipeMakeViewModel(
         saveDraft()
     }
 
-    private fun saveDraft() {
+    /** PC 확인 1.36 (올리기 3/4에서 뒤로 나가면 쓰던 설명이 사라짐): what is on the screen kept as it is when the screen goes. */
+    fun keepNow() { val s = _state.value; if (s.step >= 3 || s.recipe.title.isNotBlank() || s.recipe.desc.isNotBlank()) saveDraft(c.appScope) }
+
+    private fun saveDraft(scope: kotlinx.coroutines.CoroutineScope = viewModelScope) {
         val s = _state.value
         if (s.sent != null || s.recipe.pieces.isEmpty()) return
-        viewModelScope.launch {
+        scope.launch {
             val id = c.recipes.saveDraft(s.draftId, RecipeCodec.write(s.recipe), s.step, code, s.scope)
             _state.value = _state.value.copy(draftId = id)
         }
@@ -402,13 +418,28 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
     val s by vm.state.collectAsStateWithLifecycle()
     var begun by remember { mutableStateOf(false) }
     if (finishOnly) LaunchedEffect(s.step) { if (s.step == 1) { if (begun) onBack() else vm.go(2) } else begun = true }
+    // PC 확인 1.36 (키보드를 닫으려고 뒤로를 누르니 올리기 화면을 나가 버림): 뒤로 closes the keyboard first, then goes one step back
+    // like ← above, and whatever way the screen goes, what was written stays in 만들던 것.
+    val ime = androidx.compose.foundation.layout.WindowInsets.Companion.isImeVisible
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    androidx.activity.compose.BackHandler(enabled = s.sent == null) {
+        when {
+            ime -> { keyboard?.hide(); focus.clearFocus() }
+            s.step > 1 -> vm.go(s.step - 1)
+            else -> onBack()
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(vm) { onDispose { vm.keepNow() } }
     // [STU-01] 1.35: 꾸미기 스튜디오 first; what was 고르기 lives under it.
     val titles = listOf("꾸미기", "받는 분이 넣을 값", "이름·표지", "설명", "마치기")
     val shift = if (finishOnly) 1 else 0
     Scaffold(topBar = {
         TopAppBar(title = { Text((if (finishOnly) "올리기" else if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") +
             " ${(s.step - shift).coerceAtLeast(1)}/${5 - shift} · ${titles[s.step - 1]}") },
-            navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
+            navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+            // PC 확인 Z8 (올리기 위 ←는 한 단계 뒤로라 나가는 길이 1/4의 '스튜디오로'뿐): a way out on every step.
+            actions = { if (finishOnly) androidx.compose.material3.TextButton(onClick = onBack) { Text("스튜디오로") } })
     }, bottomBar = {
         // 1.35 [J135-22] (실사용 F-87 '다음'까지 큰 스크롤 10번): 이전·다음 stay at the bottom of every step, with why 다음 waits.
         if (s.sent == null) Surface(tonalElevation = 3.dp) {
@@ -416,10 +447,15 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // 1.35 실사용 점검: say why 다음 does not go on.
                 when {
+                    !s.ready -> null
                     s.step < 5 && s.recipe.pieces.isEmpty() -> "예시 앱에서 하나 이상 바꾸거나 켜면 다음으로 가요"
                     s.step == 3 && s.recipe.title.isBlank() -> "이름을 넣으면 다음으로 가요"
+                    // PC 확인 V36 1.36 (4/4의 빨간 줄이 아래 단추 줄에 가려짐): what holds 올리기 back also sits here, always in sight.
+                    s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
+                    s.step == 5 && s.scope != "private" && !s.agreed -> "위 확인 스위치를 켜야 올라가요"
                     else -> null
-                }?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+                }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
+                    color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (s.step > 1) OutlinedButton(onClick = { vm.go(s.step - 1) }, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(if (finishOnly && s.step == 2) "스튜디오로" else "이전")
@@ -447,6 +483,14 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
                     return@Column
                 }
+                if (!s.ready) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 32.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.CircularProgressIndicator(androidx.compose.ui.Modifier.width(24.dp).height(24.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Text("준비 중…", style = MaterialTheme.typography.bodyLarge)
+                    }
+                    return@Column
+                }
                 when (s.step) {
                     1 -> {
                         RecipeStudio(s, vm, tab, { tab = it }, onMockShown = { mockShown = it },
@@ -469,7 +513,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     2 -> StepInputs(s, vm)
                     3 -> StepLook(s, vm)
                     4 -> StepWords(s, vm)
-                    else -> StepCheck(s, vm)
+                    else -> StepCheck(s, vm) { scope.launch { scroll.animateScrollTo(0) } }
                 }
                 s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Text("만들던 내용은 이 휴대폰에 저장돼요. 마을 › 공방 › 내 것에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
@@ -630,6 +674,10 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         }, enabled = vm.canPublish) { Text(if (r.cover.image == null) "사진으로 표지" else "사진 바꾸기") }
         if (r.cover.image != null) TextButton(onClick = { vm.coverPhoto(null) }) { Text("사진 빼기") }
     }
+    // [STU-41] 1.36 장터 표지 자동: the studio's example, as it looked when 올리기 opened.
+    com.bamnat.app.ui.studio.StudioShot.last?.let { shot ->
+        OutlinedButton(onClick = { vm.coverPhoto(shot) }, enabled = vm.canPublish) { Text("스튜디오 미리 보기를 표지로") }
+    }
     Text(if (vm.canPublish) "사진은 작게 줄이고 위치·기기 정보를 지운 뒤 보내요. 운영자가 본 뒤 다른 분께 보여요"
         else "사진 표지는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -656,7 +704,7 @@ private fun StepWords(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
 }
 
 @Composable
-private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
+private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onTop: () -> Unit = {}) {
     val lines = vm.lint
     lines.forEach { l ->
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -698,14 +746,25 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         Spacer(Modifier.width(8.dp))
         Text("값만 나누고 개인 정보는 넣지 않았어요. 신고가 쌓이면 가려질 수 있어요 (처리방침 3.8)", style = MaterialTheme.typography.bodySmall)
     }
+    // PC 확인 W31 1.36 (경고나 꺼진 스위치로 막히면 올리기를 눌러도 반응이 없어 보임): what holds it back, in red right above the
+    // button, with the one tap that clears it.
+    val blocking = lines.filter { it.level == RecipeLint.Level.ERROR }
+    val needAgree = s.scope != "private" && !s.agreed
+    if (!RecipeLint.ready(lines) || needAgree) Row(Modifier.fillMaxWidth().semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(if (!RecipeLint.ready(lines)) "${blocking.size.coerceAtLeast(1)}곳 고쳐야 올라가요" + (blocking.firstOrNull()?.let { " · ${it.text}" } ?: "")
+            else "위 확인 스위치를 켜야 올라가요", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+        val first = blocking.firstOrNull()
+        if (!RecipeLint.ready(lines) && first != null) TextButton(onClick = { if (first.fix != null) vm.fix(first) else vm.go(first.step) }) {
+            Text(if (first.fix != null) "고치기" else "가기") }
+    }
+    // PC 확인 W31 1.36: a '!' is advice — said so, and it never holds 올리기 back.
+    val advice = lines.count { it.level == RecipeLint.Level.WARN }
+    if (RecipeLint.ready(lines) && !needAgree && advice > 0) Text("! 권고 ${advice}개 · 이대로도 올라가요 · 보기", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
     Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
-    // 1.35 실사용 점검: why 올리기 is off, in one line.
-    when {
-        !RecipeLint.ready(lines) -> "위 검사의 ✕를 먼저 고쳐 주세요"
-        s.scope != "private" && !s.agreed -> "위 확인 스위치를 켜면 올릴 수 있어요"
-        else -> " "
-    }.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
     // [STU-05] 1.35 올리지 않고 끝내기 (사용자 2026-10-30 "제작만 할수도 있어야해").
     HorizontalDivider()
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)
