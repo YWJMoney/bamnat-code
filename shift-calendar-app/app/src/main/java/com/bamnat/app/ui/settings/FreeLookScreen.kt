@@ -167,6 +167,8 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                     color = wd.ink?.let { Color(it.toInt()) } ?: when (w) { java.time.DayOfWeek.SATURDAY -> cal.saturday; java.time.DayOfWeek.SUNDAY -> cal.sunday; else -> scheme.onSurfaceVariant })
             }
         }
+        // PC 11차 (예시 눌러 열기가 숫자와 칸만 오감): the weeks as 칸 판, so a tap again goes on 숫자 → 칸 → 칸 판 → 달력.
+        Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("cal.grid"))) {
         for (r in 0 until rows) Row(Modifier.fillMaxWidth().height(height)) {
             for (c in 0 until 7) {
                 val date = first.plusDays((r * 7 + c).toLong())
@@ -213,6 +215,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                     )
                 }
             }
+        }
         }
         if (onCell != null && shown.looks.size > 1) Text("칸을 누르면 그 칸의 모양을 고쳐요", fontSize = 11.sp, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }

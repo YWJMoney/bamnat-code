@@ -5,7 +5,10 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -77,6 +80,8 @@ fun partSpotModifier(id: String): Modifier = if (LocalPartSpots.current == null)
  */
 fun Modifier.partPicking(spots: PartSpots?, picked: String?, onPick: (String) -> Unit): Modifier = if (spots == null) this else composed {
     val origin = remember { mutableListOf(Offset.Zero) }
+    // PC 11차 사용성 제안 (모든 숫자에 점선이 붙어 숫자가 가려짐): the one tapped is ringed strongly, the others of that part faintly.
+    var tapped by remember { mutableStateOf<Offset?>(null) }
     this
         .onGloballyPositioned { origin[0] = it.positionInRoot() }
         .pointerInput(spots, picked) {
@@ -90,7 +95,7 @@ fun Modifier.partPicking(spots: PartSpots?, picked: String?, onPick: (String) ->
                     if ((c.position - down.position).getDistance() > slop || c.uptimeMillis > longAt) break
                     if (!c.pressed) {
                         val id = spots.pick(down.position + origin[0], picked)
-                        if (id != null) { c.consume(); onPick(id) }
+                        if (id != null) { c.consume(); tapped = down.position + origin[0]; onPick(id) }
                         break
                     }
                 }
@@ -100,9 +105,14 @@ fun Modifier.partPicking(spots: PartSpots?, picked: String?, onPick: (String) ->
             drawContent()
             val o = origin[0]
             val w = 2.dp.toPx()
-            spots.boxes(picked).forEach { r ->
-                drawRoundRect(Color(0xFFE91E63), Offset(r.left - o.x - w / 2, r.top - o.y - w / 2), androidx.compose.ui.geometry.Size(r.width + w, r.height + w),
-                    CornerRadius(3.dp.toPx()), style = Stroke(w, pathEffect = PathEffect.dashPathEffect(floatArrayOf(w * 3, w * 2))))
+            val boxes = spots.boxes(picked)
+            val hit = tapped?.let { t -> boxes.filter { it.contains(t) }.minByOrNull { it.width * it.height } }
+            boxes.forEach { r ->
+                val strong = hit == null || r == hit
+                val sw = if (strong) w else w / 2
+                drawRoundRect(Color(0xFFE91E63).copy(alpha = if (strong) 1f else 0.3f), Offset(r.left - o.x - sw / 2, r.top - o.y - sw / 2),
+                    androidx.compose.ui.geometry.Size(r.width + sw, r.height + sw), CornerRadius(3.dp.toPx()),
+                    style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(w * 3, w * 2))))
             }
         }
 }
