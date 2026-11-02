@@ -410,21 +410,32 @@ fun EntryDialog(
             }
             // The buttons stay in reach above the keyboard.
             HorizontalDivider()
-            Row(
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val ready = amount > 0 && splitOk
-                if (isNew && onSaveAndNext != null) {
-                    OutlinedButton(enabled = ready, onClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onSaveAndNext(build())
-                    }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("저장하고 하나 더") }
-                }
+            val ready = amount > 0 && splitOk
+            val next: (@Composable (Modifier) -> Unit)? = if (isNew && onSaveAndNext != null) { m ->
+                OutlinedButton(enabled = ready, onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onSaveAndNext(build())
+                }, modifier = m.heightIn(min = 48.dp)) { Text("저장하고 하나 더", maxLines = 1) }
+            } else null
+            val save: @Composable (Modifier) -> Unit = { m ->
                 com.bamnat.app.ui.components.SaveButton(enabled = ready, onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                     onSave(build())
-                }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("저장") }
+                }, modifier = m.heightIn(min = 48.dp)) { Text("저장") }
+            }
+            // PC 확인 b4735c07 ("아주 크게"에서 '저장하고 하나 더'가 두 줄로 꺾여요): with big letters the two buttons stack, 저장 first.
+            if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f && next != null) Column(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                save(Modifier.fillMaxWidth())
+                next(Modifier.fillMaxWidth())
+            } else Row(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                next?.invoke(Modifier.weight(1f))
+                save(Modifier.weight(1f))
             }
         }
     }
