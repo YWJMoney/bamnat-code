@@ -1009,6 +1009,8 @@ fun CalendarScreen(
         }
         // [CAL-50] 상-4: one card at a time above the month, the rest in one line ("알림 2개 더 보기"), in this order.
         val linePlace = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+        // [LAY-10] PC 확인 C9 1.36: a 꾸밈 사진 waiting for the operator is said here, in one line, not over the month.
+        com.bamnat.app.ui.decor.DecorWaitingLine("bg.calendar", Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
         val guideHere = waiting == null && paint == null && viewingReceived == null && visibleMonth == YearMonth.from(today)
         val askOn = partShown(CalendarPart.ASK)
         // [CAL-01] What keeps an alarm from working, the most serious one, only while one is due within a week.

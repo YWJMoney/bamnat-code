@@ -204,7 +204,9 @@ fun DrawScope.drawDecor(item: DecorItem, box: Rect, measurer: TextMeasurer, acce
                         val path = DecorShapes.path("rect", at.width, at.height, item.r * density)
                         if (shadow > 0f) translate(shadow / 2, shadow / 2) { drawPath(path, Color.Black.times(0.22f * a)) }
                         val img = photo(item.glyph)
-                        if (img == null) {
+                        // PC 확인 C9 1.36: a 화면 가득 photo still waiting leaves the screen's own ground (the line at the top says why).
+                        if (img == null && item.full) Unit
+                        else if (img == null) {
                             drawPath(path, Color(0xFF9E9E9E).times(0.45f * a))
                             // PC 확인 C8 1.36 (승인 전 회색 상자가 고장처럼 보여요): says why, where there is room for it.
                             if (at.width >= 96f * density && at.height >= 24f * density) {

@@ -89,7 +89,8 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     // veil of the page's colour, as a 화면 배경 사진 does, so the screen's own ink reads on it.
     // PC 확인 C8 1.36 (55%면 진한 사진이 파스텔처럼 옅어져요): a lighter veil, and the words take their ink from how light the photo is,
     // as with a 화면 배경 사진 (light words on a dark photo), so the photo keeps its colour and the words still read.
-    val fullPhoto = under.firstOrNull { it.kind == com.bamnat.core.recipe.DecorKind.PHOTO && it.full }
+    // PC 확인 C9: only once the photo is in; until then the screen keeps its own ground.
+    val fullPhoto = under.firstOrNull { it.kind == com.bamnat.core.recipe.DecorKind.PHOTO && it.full && com.bamnat.app.ui.decor.DecorPhotos.of(it.glyph) != null }
     val photoUnder = fullPhoto != null
     val decorLight = if (photo == null) fullPhoto?.let { com.bamnat.app.ui.decor.DecorPhotos.lightOf(it.glyph) } else null
     val worn = if (photoUnder) look.copy(dim = look.dim ?: PHOTO_VEIL) else look

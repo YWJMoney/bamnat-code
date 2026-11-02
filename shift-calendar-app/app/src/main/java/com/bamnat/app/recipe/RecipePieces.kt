@@ -262,9 +262,16 @@ class RecipePieces(private val c: AppContainer) {
             ).ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
         PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
-        PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.DECOR ->
-            settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(c.settingsRepository.current, k) != v }.map { (k, _) -> Change(SETTING_NAMES[k] ?: k) }
-                .ifEmpty { listOf(Change("지금과 같아서 바뀌는 것이 없어요", skipped = true)) }
+        PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.DECOR -> {
+            val changes = settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(c.settingsRepository.current, k) != v }.map { (k, _) -> Change(SETTING_NAMES[k] ?: k) }
+            // PC 확인 C9 1.36 (확인 전 사진이라는 말이 없어 넣은 뒤 회색 화면에 놀람 / 넣은 뒤 '바뀌는 것이 없어요'라 헷갈림): the photos this
+            // phone does not have yet, said before and after it is put in.
+            val away = if (kind != PieceKind.DECOR) 0 else com.bamnat.core.recipe.Decor.of(values).images.count { !LookImages.has(c.appContext, it) }
+            val photos = if (away == 0) null
+                else if (changes.isEmpty()) Change("넣었어요 · 꾸밈 사진 ${away}장은 운영자가 확인하면 보여요")
+                else Change("꾸밈 사진 ${away}장 · 넣을 때 받아 와요. 운영자 확인 전이면 그동안 기본 바탕이에요")
+            (changes + listOfNotNull(photos)).ifEmpty { listOf(Change("지금과 같아서 바뀌는 것이 없어요", skipped = true)) }
+        }
     }
 
     // ---- apply ----
