@@ -2,6 +2,7 @@ package com.bamnat.app.ui.memo
 
 import java.time.YearMonth
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -106,7 +107,10 @@ private data class MemoQuery(
 
 class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     private val repo = container.memoRepository
-    private val q = MutableStateFlow(MemoQuery())
+    // PC 확인 11825213 사용성 제안: the 메모 tab opens on the 칸 last looked at (it always opened on 달력 메모, empty or not).
+    private val tabPrefs = container.appContext.getSharedPreferences("memo_list", android.content.Context.MODE_PRIVATE)
+    private val savedTab = tabPrefs.getString("tab", null)?.let { n -> MemoTab.entries.firstOrNull { it.name == n } }
+    private val q = MutableStateFlow(MemoQuery(tab = savedTab ?: MemoTab.CALENDAR))
     private val selection = MutableStateFlow<Set<Long>>(emptySet())
     private var visibleIds: Set<Long> = emptySet()
     /** [MEMO-03][MEMO-04] 1.27 AK: each memo's search text, made once per saved version. */
@@ -255,6 +259,15 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     fun setTab(tab: MemoTab) {
         q.update { it.copy(tab = tab, tag = null, shift = null) }
         clearSelection()
+        tabPrefs.edit().putString("tab", tab.name).apply()
+    }
+
+    init {
+        // Never chosen yet: the first time, a 칸 with memos rather than an empty 달력 메모.
+        if (savedTab == null) viewModelScope.launch {
+            val first = state.first { it.loaded }
+            if (q.value.tab == MemoTab.CALENDAR && first.calendarCount == 0 && first.generalCount > 0) q.update { it.copy(tab = MemoTab.GENERAL) }
+        }
     }
     fun setQuery(text: String) = q.update { it.copy(query = text) }
     /** [STAB-01] What the search box shows, apart from the list that is built off the main thread. */
