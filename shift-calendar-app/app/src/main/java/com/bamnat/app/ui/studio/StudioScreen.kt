@@ -437,7 +437,13 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         vm.locked.forEach { tab ->
                             androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)); detail = true
                                 // PC 제안 1.36 (잠금 표시인지 보기 칩인지 헷갈림): it says it is locked, and where to unlock it.
-                                vm.say(lockName(tab, vm.style).let { it + com.bamnat.app.ui.Fmt.eun(it) } + " 잠겨 있어요 · 한 색의 ‘잠그기’에서 풀어요")
+                                // PC 제안 1.36: 풀기 right on it.
+                                scope.launch {
+                                    val name = lockName(tab, vm.style)
+                                    if (snack.showSnackbar(name + com.bamnat.app.ui.Fmt.eun(name) + " 잠겨 있어요", actionLabel = "풀기") == SnackbarResult.ActionPerformed) {
+                                        vm.locked = vm.locked - tab
+                                    }
+                                }
                             }, label = { Text("🔒 " + lockName(tab, vm.style)) })
                         }
                         // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.

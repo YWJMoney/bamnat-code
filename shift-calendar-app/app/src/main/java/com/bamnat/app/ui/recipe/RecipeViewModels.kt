@@ -249,6 +249,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     else -> "적용했어요. 7일 안에 되돌릴 수 있어요"
                 })
             onDone(id ?: if (laid) 0L else null)
+            // PC 제안 1.36 (넣은 직후 상세의 쓰는 분은 0명 그대로): the count read again once it is in.
+            if (id != null || laid) runCatching { c.recipeApi.show(code, device) }.onSuccess { d -> _state.value = _state.value.copy(doc = d) }
         }
     }
 

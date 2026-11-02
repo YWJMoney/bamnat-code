@@ -317,6 +317,8 @@ fun RecipeListScreen(
                         return@Column
                     }
                     // PC 제안 1.36 (찾기 결과가 없는데 '처음으로 나눠 보세요'): what was looked for, and the other 구간 to look in.
+                    // PC 제안 1.36: a code typed has its own 작품 열기 above; no 없어요 under it.
+                    if (com.bamnat.app.recipe.RecipeLinks.find(state.query.takeIf { it.trim().length in 8..80 }) != null) return@Column
                     if (state.query.isNotBlank()) {
                         Text("‘${state.query.trim()}’에 맞는 작품이 ${if (state.kind == RecipeClient.SCOPE_THEME) "테마에" else "이 구간에"} 없어요",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
