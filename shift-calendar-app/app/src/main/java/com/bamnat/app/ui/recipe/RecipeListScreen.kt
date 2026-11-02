@@ -321,7 +321,7 @@ fun RecipeListScreen(
                 // app; 다시 불러오기 asks again (a list the server just filled shows within its minute of cache).
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     // PC D12: 찾는 말이 있으면 '준비된 레시피가 없어요' 대신 찾은 것이 없다고 (다른 칸은 위 칩으로).
-                    Text(if (state.query.isNotBlank()) "‘${state.query.trim()}’로 찾은 것이 이 칸에는 없어요" + if (state.elsewhere.isNotEmpty()) ". 위 칩으로 다른 칸을 봐요" else ""
+                    Text(if (state.query.isNotBlank()) "‘${state.query.trim()}’${com.bamnat.app.ui.Fmt.ro(state.query.trim())} 찾은 것이 이 칸에는 없어요" + if (state.elsewhere.isNotEmpty()) ". 위 칩으로 다른 칸을 봐요" else ""
                         else if (state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA)
                         "아직 준비된 레시피가 없어요" else "아직 레시피가 없어요. 내 설정을 처음으로 나눠 보세요",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

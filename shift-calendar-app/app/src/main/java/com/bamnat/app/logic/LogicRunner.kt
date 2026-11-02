@@ -544,7 +544,7 @@ class LogicStore(context: Context) {
     }
 
     /** PC D12: the last line said the time was missed (phone off, clock moved), so the line offers 지금 한 번 하기. */
-    fun missed(key: String): Boolean = lastResult(key)?.endsWith(MISSED) == true
+    fun missed(key: String): Boolean = lastResult(key)?.let { it.endsWith(MISSED) || it.endsWith(MISSED_OLD) } == true
 
     /** PC D12 (사용성 낮): rules that came from someone else (장터·보관함), marked small on their line. */
     fun markGot(keys: Collection<String>) {
@@ -605,7 +605,9 @@ class LogicStore(context: Context) {
     }.getOrDefault(emptyList())
 
     companion object {
-        const val MISSED = "휴대폰이 꺼져 있었거나 시계가 바뀌어 놓쳤어요"
+        /** PC D15 (사용성 낮): short, so the line is not cut ("휴대폰이 꺼져 있었거나 시계가 바뀌어 놓쳤어요" was). */
+        const val MISSED = "놓쳤어요 (꺼짐·시계 바뀜)"
+        private const val MISSED_OLD = "휴대폰이 꺼져 있었거나 시계가 바뀌어 놓쳤어요"
         const val WRITTEN_MAX = 60
     }
 
