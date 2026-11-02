@@ -140,6 +140,32 @@ class RulScreenshotTest : ScreenshotBase() {
         assertTrue("easy view right away", appears("쉬운 보기"))
         assertTrue("one row to pick", appears("야간", exact = true))
         assertTrue("more rows", appears("+ 조건 더하기"))
+        // PC D19 (낮): 칩을 고르기 전에는 '다음에 보이는 날' 대신 고르라고 해요.
+        assertTrue("asks to pick first", appears("값을 골라 주세요", exact = false))
+        tapText("야간", exact = true, scrolls = 0)
+        assertTrue("picked", gone("값을 골라 주세요"))
+    }
+
+    @Test fun unpickedConditionWaits() {
+        assertTrue(com.bamnat.app.logic.unpicked("근무종류 = \"\""))
+        assertEquals(false, com.bamnat.app.logic.unpicked("근무종류 = \"야간\""))
+        assertEquals(false, com.bamnat.app.logic.unpicked(""))
+    }
+
+    @Test fun settingsLineOpensTheStudio() = shoot("887_rul_settings_line", FOLDED) {
+        // PC D19 (중): 설정 › 수식·규칙·버튼의 줄을 눌러도 아무 일이 없었어요.
+        var opened = 0
+        content {
+            Surface { Column(Modifier.padding(16.dp)) {
+                LogicEditor(Logic(listOf(MEMO), listOf(NIGHT)), {}, phone = true, readOnly = true, onOpen = { opened++ })
+            } }
+        }
+        tapText("오늘 기록", scrolls = 0)
+        settle()
+        assertEquals(1, opened)
+        tapText("야간 인수인계", scrolls = 0)
+        settle()
+        assertEquals(2, opened)
     }
 
     @Test fun hiddenButtonSaysWhenItShows() {

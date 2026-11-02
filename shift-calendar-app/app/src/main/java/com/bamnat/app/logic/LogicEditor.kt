@@ -42,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -402,7 +403,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                 // 켜면 근무 조건 한 줄을 바로 넣어 고를 칸이 곧장 보이게 해요.
                 Row(Modifier.fillMaxWidth().toggleable(conditional, role = Role.Switch) {
                     conditional = it
-                    b = b.copy(show = if (it) EasyWhen(listOf(EasyCond(FormulaName.ROLE.ko, EasyCond.Op.IS, "야간"))).toFormula() else "")
+                    b = b.copy(show = if (it) EasyWhen(listOf(EasyCond(FormulaName.ROLE.ko, EasyCond.Op.IS, ""))).toFormula() else "")
                 }, verticalAlignment = Alignment.CenterVertically) {
                     Text("조건이 맞는 날에만 보이기", Modifier.weight(1f))
                     Switch(conditional, null)
@@ -411,7 +412,10 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                     ConditionEditor(b.show, { b = b.copy(show = it) }, scope, empty = "조건이 없으면 언제나 보여요")
                     val facts = LocalDayFacts.current ?: rememberAppDayFacts()
                     val today = remember { com.bamnat.core.time.Today.date() }
-                    remember(b.show, facts) { facts?.takeIf { b.show.isNotBlank() }?.let { f -> nextShow(b, f, today).replace("다음 ", "다음에 보이는 날 ") } }?.let {
+                    remember(b.show, facts) {
+                        if (unpicked(b.show)) "값을 골라 주세요(예: 근무종류 칩에서 야간)"
+                        else facts?.takeIf { b.show.isNotBlank() }?.let { f -> nextShow(b, f, today).replace("다음 ", "다음에 보이는 날 ") }
+                    }?.let {
                         Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -419,7 +423,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
             }
         },
         confirmButton = {
-            val ok = b.label.isNotBlank() && (b.show.isEmpty() || Formula.problem(b.show) == null) && (b.act.verb !in MONEY_VERBS || b.act.amount != null) && (b.act.verb != LogicVerb.MEMO_LINE || b.act.arg.isNotBlank())
+            val ok = b.label.isNotBlank() && (b.show.isEmpty() || Formula.problem(b.show) == null && !unpicked(b.show)) && (b.act.verb !in MONEY_VERBS || b.act.amount != null) && (b.act.verb != LogicVerb.MEMO_LINE || b.act.arg.isNotBlank())
             TextButton(onClick = { onDone(b) }, enabled = ok) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
@@ -441,6 +445,9 @@ internal fun showLine(b: LogicButton, facts: com.bamnat.core.formula.DayFactsBoo
     facts ?: return null
     return if (holds(b, facts, day)) "오늘 보여요" else "오늘은 숨김(조건) · ${nextShow(b, facts, day)}"
 }
+
+/** [RUL-24] PC D19: a 쉬운 보기 row still waiting for its value (막 켠 조건) — said instead of a 다음 날, and not saved yet. */
+internal fun unpicked(show: String): Boolean = EasyWhen.read(show)?.conds?.any { it.op.needsValue && it.value.isBlank() } == true
 
 private fun holds(b: LogicButton, facts: com.bamnat.core.formula.DayFactsBook, d: LocalDate) =
     runCatching { Formula.eval(b.show, facts.scope(d))?.truthy == true }.getOrDefault(false)
@@ -558,6 +565,8 @@ fun LogicEditor(
     /** Whether a 조건 is also a 조건부 꾸미기 line, and the way there. */
     usedInParts: (String) -> Boolean = { false },
     onOpenParts: (() -> Unit)? = null,
+    /** [RUL-24] PC D19: 설정's read-only lines open the studio's 규칙·단추 when tapped (줄을 눌러도 아무 일이 없었어요). */
+    onOpen: (() -> Unit)? = null,
 ) {
     val c = LocalContext.current.appContainer
     val facts = LocalDayFacts.current ?: rememberAppDayFacts()
@@ -582,7 +591,7 @@ fun LogicEditor(
             val sameB = remember(bump, b.id) { store.sameButton(b.id)?.let { "받은 ‘$it’${com.bamnat.app.ui.Fmt.wa(it)} 같음" } }
             val shows = remember(bump, b.show, facts, day) { showLine(b, facts, day) }
             LineCard(b.say(), listOfNotNull(shows, sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null }, null, null,
-                onEdit = { editButton = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(buttons = logic.buttons.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
+                onEdit = if (readOnly) onOpen else ({ editButton = i }), onRemove = { onChange(logic.copy(buttons = logic.buttons.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
         }
         if (!readOnly && logic.buttons.size < Logic.MAX_BUTTONS) TextButton(onClick = { editButton = -1 }) { Text("+ 단추 만들기") }
         }
@@ -615,7 +624,7 @@ fun LogicEditor(
             val nth = logic.rules.take(i).count { it.name == r.name }
             LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}: ${r.say()}", note,
                 if (phone) on else null, { v -> if (v && came) askOn = r else { store.setOff(r.key, !v); bump++; LogicRunner.schedule(c) } },
-                onEdit = { editRule = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
+                onEdit = if (readOnly) onOpen else ({ editRule = i }), onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
                 action = when {
                     phone && !on && came -> "켜기" to { askOn = r }
                     // PC D12 (사용성 중): 놓친 규칙은 그 자리에서 한 번 해요.
@@ -684,7 +693,7 @@ fun LogicEditor(
 private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Boolean) -> Unit)?, onEdit: (() -> Unit)?, onRemove: (() -> Unit)?,
     /** PC D8: one more thing to do on the line (받은 규칙 '켜기'). */
     action: Pair<String, () -> Unit>? = null) {
-    Card(Modifier.fillMaxWidth()) {
+    Card(Modifier.fillMaxWidth().then(if (onEdit != null) Modifier.clickable(onClickLabel = "고치기", onClick = onEdit) else Modifier)) {
         Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(text, style = MaterialTheme.typography.bodyMedium)

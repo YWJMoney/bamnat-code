@@ -293,7 +293,7 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         NavRow("스튜디오에서 열기", "규칙·단추·조건부 꾸미기를 만들고 고쳐요") { SettingsLinks.go(SettingsGo.STUDIO_RULES) }
         com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(settings.logic), { l ->
             vm.update { it.copy(logic = com.bamnat.core.formula.Logic.encode(l)) }
-        }, phone = true, readOnly = true)
+        }, phone = true, readOnly = true, onOpen = { SettingsLinks.go(SettingsGo.STUDIO_RULES) })
         com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.LOGIC)
     }
     SectionCard(title = null) {
