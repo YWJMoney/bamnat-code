@@ -164,7 +164,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         }
                     }
                 }
-                Text("쓰는 분 ${doc.item.users}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
+                Text("쓰는 분 ${doc.item.users + s.usersPlus}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 VoteRow(s, vm, onDislike = { disliking = true })
                 if (doc.mine) MakerCard(doc, onNewVersion = vm.body()?.let { b -> { onNewVersion(b) } })

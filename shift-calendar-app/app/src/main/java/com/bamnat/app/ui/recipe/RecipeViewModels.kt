@@ -113,18 +113,20 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         /** [TRY-01] The look parts ticked in 입어 보기; null: the look pieces whole, as switched on. */
         val lookParts: Set<String>? = null,
         /**
-         * PC 확인 7525ccff: each put-on 되돌리기 takes back (when, what), newest first, for its question. PC 확인 보안 6차 (조각을 바꿔
+         * PC 확인 7525ccff: each put-on 되돌리기 takes back (when, what), in the order put on, for its question. PC 확인 보안 6차 (조각을 바꿔
          * 넣어도 목록이 없어요): a tab laid on the theme ([MKX-02] 얹기) is one too, as it leaves no record of its own.
          */
         val undoable: List<Pair<Long, String>> = emptyList(),
         /** PC 확인 보안 6차: when a tab of this recipe was last laid on the theme (with no other put-on, the card says that). */
         val laidAt: Long? = null,
+        /** PC 확인 보안 7차 (넣었는데 쓰는 분 0명): this phone, counted just now, until the page is read again. */
+        val usersPlus: Int = 0,
         /** PC 확인 7525ccff: reported from this page, so its menu says so (the line below goes in a few seconds). */
         val flagged: Boolean = false,
     )
     private suspend fun undoableNow(): List<Pair<Long, String>> = (c.recipes.undoable(code).map { e ->
         e.appliedAt to ("넣음" + e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.takeIf { it.isNotEmpty() }?.joinToString("·", prefix = " · ").orEmpty())
-    } + laidHere().map { o -> o.at to "테마 위에 얹음 · ‘${tabName(o.tab)}’ 탭" }).sortedByDescending { it.first }
+    } + laidHere().map { o -> o.at to "테마 위에 얹음 · ‘${tabName(o.tab)}’ 탭" }).sortedBy { it.first } // PC 확인 보안 7차: in the order put on
     private fun laidHere() = c.wardrobe.overlays.value.filter { it.code == code }
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -251,13 +253,15 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val tab = if (looks.isEmpty()) null else com.bamnat.core.recipe.LookParts.onlyTab(lookRecipe)
             if (looks.isNotEmpty() && tab == null) c.wardrobe.beforeWear()
             val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
+            val counted = c.recipes.countedHere(code)
             val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
+            val plus = if (!counted && c.recipes.countedHere(code)) 1 else 0
             val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code) }.getOrDefault(false)
             if (id != null && looks.isNotEmpty() && tab == null) runCatching {
                 c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
-                undoable = undoableNow(), laidAt = laidHere().maxOfOrNull { it.at },
+                undoable = undoableNow(), laidAt = laidHere().maxOfOrNull { it.at }, usersPlus = _state.value.usersPlus + plus,
                 message = when {
                     laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
                     id == null -> "바뀐 것이 없어요"

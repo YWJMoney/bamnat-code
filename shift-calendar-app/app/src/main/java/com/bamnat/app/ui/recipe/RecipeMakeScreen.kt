@@ -451,7 +451,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 // one tap; a step ahead does once the steps before it are filled, as 다음 would.
                 if (s.sent == null) StepChips(s.step, shift, reachable = { t -> t <= s.step || (s.step until t).all { canLeave(s, it) } }, onGo = vm::go)
                 s.sent?.let { sent ->
-                    SentCard(s.recipe.title, sent, onOpen)
+                    SentCard(s.recipe.title, sent, onOpen, onStudio = if (finishOnly) onBack else null)
                     s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
                     return@Column
                 }
@@ -776,7 +776,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
 }
 
 @Composable
-private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit) {
+private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit, onStudio: (() -> Unit)? = null) {
     val context = LocalContext.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -790,6 +790,8 @@ private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit) {
                 }) { Text("링크 보내기") }
                 Button(onClick = { onOpen(sent.code) }) { Text("레시피 보기") }
             }
+            // PC 확인 보안 7차 (끝 화면에 '스튜디오로'가 없어요): from the studio, back to it to go on making.
+            onStudio?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("스튜디오로") } }
         }
     }
 }

@@ -82,6 +82,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     private fun keyListJson(was: List<String>, add: Collection<String>): String =
         org.json.JSONArray((was.filterNot { it in add } + add.distinct()).takeLast(KEYS_KEPT)).toString()
     private fun counted(key: String, code: String) = prefs.edit().putString(key, keyListJson(keyList(key), listOf(code))).apply()
+    /** Whether this phone was counted among a recipe's 쓰는 분 (once a recipe, M9). */
+    fun countedHere(code: String): Boolean = code in keyList(K_COUNTED)
     /** Set once this phone has a public recipe, so 소식 asks about my profile only then. */
     fun hasProfile(v: Boolean) = prefs.edit().putBoolean(K_HAS_PROFILE, v).apply()
     fun hasProfile(): Boolean = prefs.getBoolean(K_HAS_PROFILE, false)

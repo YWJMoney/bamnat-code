@@ -487,16 +487,28 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
             said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
         } else {
-            TextButton(onClick = {
-                scope.launch {
-                    runServer(onMessage) {
-                        c.tierApi.unlink(c.companyStore.device)
-                        c.syncPasses(force = true)
-                        c.featureGate.refresh()
-                        onMessage("관리자 연결을 끊었어요.")
-                    }
-                }
-            }) { Text("연결 끊기") }
+            // PC 확인 보안 7차 (한 번에 끊겨요): asked once, as linking again needs a new code from the admin app.
+            var asking by rememberSaveable { mutableStateOf(false) }
+            TextButton(onClick = { asking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("연결 끊기") }
+            if (asking) com.bamnat.app.ui.components.AlertDialog(
+                onDismissRequest = { asking = false },
+                title = { Text("관리자 연결을 끊을까요?") },
+                text = { Text("관리자 휴대폰이라 무료로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 연결하려면 관리자 앱 › 내 정보에서 새 6자리 코드를 받아야 해요.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        asking = false
+                        scope.launch {
+                            runServer(onMessage) {
+                                c.tierApi.unlink(c.companyStore.device)
+                                c.syncPasses(force = true)
+                                c.featureGate.refresh()
+                                onMessage("관리자 연결을 끊었어요.")
+                            }
+                        }
+                    }) { Text("끊기") }
+                },
+                dismissButton = { TextButton(onClick = { asking = false }) { Text("닫기") } },
+            )
         }
     }
 }

@@ -185,6 +185,8 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("넣기", exact = true)
         settle()
         assertTrue(vm.state.value.appliedAt != null)
+        // PC 확인 보안 7차 (넣었는데 쓰는 분 0명): this phone is one of them now.
+        assertEquals(1, vm.state.value.usersPlus)
         // The 적용했어요 line with its own 되돌리기 goes after its ten seconds; then back to the top, where the line sits.
         compose.mainClock.advanceTimeBy(12_000)
         settle()
@@ -312,6 +314,22 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         // [MKX-02] Where it is undone: 내 것 › 받은 레시피, or 마을 › 테마 for a tab laid on the theme.
         assertTrue(appears("마을 › 공방 › 내 것 › 받은 레시피에서 되돌", exact = false) || appears("마을 › 테마에서", exact = false))
+    }
+
+    /** PC 확인 보안 7차 ("글자 주→주, 색 바뀜"): the put-on question says only what changes. */
+    @Test fun theConfirmSaysOnlyWhatChanges() = shoot("1343b_rcp_detail_confirm_color", PHONE) {
+        val api = starters()
+        style(WorkStyle.SHIFT)
+        val i = api.recipes.indexOfFirst { it.first.title == "파스텔 근무색" }
+        val model = RecipeDetailViewModel(c, api.code(i))
+        content { RecipeDetailScreen(model, onBack = {}, onRemake = {}) }
+        settle()
+        repeat(3) { scrollDown(400) }
+        settle()
+        // The lines of what it changes, on the page (the same ones the question repeats).
+        assertTrue(appears("휴무: 색만 바뀜", exact = false))
+        assertTrue(gone("글자 휴→휴", exact = false))
+        assertTrue(gone("글자 주→주", exact = false))
     }
 
     @Test fun makingStartsWithWhatToShare() = shoot("1344_rcp_make_step1", PHONE) {
