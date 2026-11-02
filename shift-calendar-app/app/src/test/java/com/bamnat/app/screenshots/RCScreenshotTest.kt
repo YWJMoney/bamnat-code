@@ -95,6 +95,8 @@ class RCScreenshotTest : ScreenshotBase() {
         tab(4, wide = false)
         tapText("공방", exact = true)
         tapText("지금 모양 고치기", exact = true)
+        // PC 확인 1.36: the studio opens on 앱 전체 › 한 색 now; 달력 first for its 기능별 탭.
+        tapText("달력", exact = true)
         tapText("보관함", prefix = true)
         tapText("장터 ‘기능별 탭 › 달력’에서 찾기", exact = true)
         assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))

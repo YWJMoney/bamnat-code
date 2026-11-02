@@ -211,9 +211,11 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
 private fun SampleMark(d: SampleDay, size: Int, cell: String?) {
     if (d.blank) return
     val color = d.color.asColor()
-    Box(Modifier.size(size.dp).background(if (d.off) Color.Transparent else color, RoundedCornerShape(4.dp))
-        .then(if (d.off) Modifier.border(1.dp, color, RoundedCornerShape(4.dp)) else Modifier), contentAlignment = Alignment.Center) {
-        Text(d.label, fontSize = (size * 0.6f).sp, lineHeight = (size * 0.6f).sp, fontWeight = FontWeight.Bold, maxLines = 1,
+    // PC 확인 1.36 (스튜디오 '큰 글자' 미리 보기에서 근무 칩 '야'가 잘려 '0:'처럼 보임): the chip grows with the text instead of
+    // cutting it at a fixed size, and the line is a little taller than the letters so 한글 is not cut top and bottom.
+    Box(Modifier.defaultMinSize(size.dp, size.dp).background(if (d.off) Color.Transparent else color, RoundedCornerShape(4.dp))
+        .then(if (d.off) Modifier.border(1.dp, color, RoundedCornerShape(4.dp)) else Modifier).padding(horizontal = 1.dp), contentAlignment = Alignment.Center) {
+        Text(d.label, fontSize = (size * 0.6f).sp, lineHeight = (size * 0.72f).sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
             color = if (d.off) color else contentColorOn(color))
     }
     if (cell == "dot") Spacer(Modifier.width(0.dp))

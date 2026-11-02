@@ -222,8 +222,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val s by vm.state.collectAsStateWithLifecycle()
     val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var area by rememberSaveable { mutableStateOf(Area.CALENDAR) }
-    var tool by rememberSaveable { mutableStateOf(Tool.CELL) }
+    var area by rememberSaveable { mutableStateOf(Area.ALL) }
+    var tool by rememberSaveable { mutableStateOf(Tool.SEED) }
     var scale by rememberSaveable { mutableStateOf(SCALE_BIG) }
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
@@ -516,6 +516,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     }
                     if (peeking && !comparing) Text("바로 전 모양이에요" + (if (peekMarks > 0) " · 바뀐 곳 ${peekMarks}곳 테두리" else "") + ". 손을 떼면 지금 모양이에요", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary, modifier = Modifier.align(Alignment.CenterHorizontally))
+                    // PC 확인 1.36 (한 색 '밝은 화면'인데 어두운 화면 미리 보기가 밝은 채): a look with its own light colours stays light on a
+                    // dark phone too (ScreenSkin), so the example is right; it says why, and where the dark one is.
+                    if (seeDark && looks.of(com.bamnat.core.recipe.ScreenLooks.ALL).bg?.let { com.bamnat.core.recipe.Palette.luminance(it) >= 0.5 } == true)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("색을 정해 둔 테마라 휴대폰이 어두워도 이렇게 밝게 보여요. 어둡게 하려면 한 색에서 ‘어두운 화면’을 골라요",
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            if (!(area == Area.ALL && tool == Tool.SEED)) TextButton(onClick = { openSeed() }) { Text("한 색 열기") }
+                        }
                     // [STU-36] With a condition on, what does not read is said under the example.
                     if (seeDark || seeBig || seeCvd) vm.hardToRead().takeIf { it.isNotEmpty() }?.let { bad ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
