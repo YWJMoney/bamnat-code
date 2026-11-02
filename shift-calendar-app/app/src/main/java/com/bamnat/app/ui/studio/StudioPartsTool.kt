@@ -93,6 +93,9 @@ internal fun PartsTool(group: String, parts: String, onChange: (String) -> Unit)
         Group("채우기") {
             ColorPick("색", col("fill")) { set("fill", it) }
             if (col("fill") != null) LabeledSlider("진하기", num("fillA") ?: 100f, 0f..100f, "%") { set("fillA", it.toLong()) }
+            // PC 확인 fc2db3b0 사용성 제안: one colour for every 막대 hid which shift is which; with no 색 the 막대 keep their shift's colour and
+            // this sets how strong.
+            else if (id == "cal.line.bar") LabeledSlider("근무 색 그대로 · 진하기", num("fillA") ?: 90f, 20f..100f, "%") { set("fillA", it.toLong()) }
         }
         Group("선") {
             Chips(listOf(null to "처음대로", "none" to "없음", "solid" to "실선", "dash" to "끊은 선", "dot" to "점선", "double" to "두 줄"), line["line"] as? String) { set("line", it) }

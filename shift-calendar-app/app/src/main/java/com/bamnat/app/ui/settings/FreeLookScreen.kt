@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -637,7 +638,13 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             }
             if (allowNone && value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
+        // PC 확인 fc2db3b0 사용성 제안: the last dot cut in half at the edge read as broken; while there is more, the edge fades into a ›
+        // that slides the row on.
+        val swatchScroll = rememberScrollState()
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        Box {
+        Row(Modifier.fillMaxWidth().horizontalScroll(swatchScroll).padding(end = if (swatchScroll.canScrollForward) 36.dp else 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
@@ -656,6 +663,16 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                         .clickable { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
                 )
             }
+        }
+        if (swatchScroll.canScrollForward) {
+            val bg = MaterialTheme.colorScheme.surface
+            Box(
+                Modifier.align(Alignment.CenterEnd).size(44.dp, 36.dp)
+                    .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(bg.copy(alpha = 0f), bg, bg)))
+                    .clickable(onClickLabel = "색 더 보기") { scope.launch { swatchScroll.animateScrollBy(240f) } },
+                contentAlignment = Alignment.CenterEnd,
+            ) { Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp)) }
+        }
         }
     }
     if (custom) CustomColorDialog(value ?: 0xFF2F5BEA, onDismiss = { custom = false }) { custom = false; pick(it) }

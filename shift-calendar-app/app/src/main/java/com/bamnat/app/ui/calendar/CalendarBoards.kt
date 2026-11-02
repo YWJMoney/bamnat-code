@@ -175,7 +175,10 @@ internal fun TimelineMonth(
     }
     val grid = MaterialTheme.colorScheme.outlineVariant
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-    val barColor = bp.style("cal.line.bar").fillColor
+    val barStyle = bp.style("cal.line.bar")
+    val barColor = barStyle.fillColor
+    // PC 확인 fc2db3b0 사용성 제안: '진하기' alone keeps each shift's own colour, only stronger or fainter.
+    val barAlpha = barStyle.fillA?.let { it / 100f }
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
     val rowShape = RoundedCornerShape(8.dp)
     Column(modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.line"), RoundedCornerShape(0.dp))).padding(horizontal = 12.dp)) {
@@ -227,10 +230,12 @@ internal fun TimelineMonth(
                     drawRoundRect(grid.copy(alpha = 0.25f), size = size, cornerRadius = CornerRadius(6f, 6f))
                     for (h in 1..3) drawLine(grid, Offset(w * h / 4f, 0f), Offset(w * h / 4f, size.height), 1f)
                     for (s in spans) {
-                        val color = (if (s.carried) beforeColor else barColor ?: c) ?: Color.Gray
+                        // PC 확인 fc2db3b0: the night carried into the morning takes the 막대 꾸밈 too.
+                        val color = barColor ?: (if (s.carried) beforeColor else c) ?: Color.Gray
                         val at = Offset(w * s.from / Timeline.DAY, 0f)
                         val box = Size(w * s.minutes / Timeline.DAY, size.height)
-                        drawRoundRect(color.copy(alpha = if (s.carried) 0.5f else 0.9f), topLeft = at, size = box, cornerRadius = CornerRadius(6f, 6f))
+                        val alpha = barAlpha?.let { if (s.carried) it * 0.6f else it } ?: if (s.carried) 0.5f else 0.9f
+                        drawRoundRect((if (barColor != null) color else color.copy(alpha = alpha)), topLeft = at, size = box, cornerRadius = CornerRadius(6f, 6f))
                         // PC 확인 bad7d860: the night carried into the morning was too faint; it gets its colour's outline too.
                         if (s.carried) drawRoundRect(color, topLeft = at, size = box, cornerRadius = CornerRadius(6f, 6f),
                             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx()))
