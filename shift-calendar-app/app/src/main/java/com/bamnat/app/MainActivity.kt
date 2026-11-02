@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
             leftAt = savedInstanceState?.getLong(KEY_LEFT_AT) ?: 0L,
         )
         enableEdgeToEdge()
+        com.bamnat.app.ui.theme.AppFonts.init(this)
         setContent { shown.value?.let { Content(it) } }
         // 1.32.1 [STAB-10][STAB-11] 멈춤 관찰: the screen made again (a Fold, a theme) and every draw of the window.
         com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.MADE,
@@ -127,6 +128,9 @@ class MainActivity : ComponentActivity() {
         }
         // 1.36 [SEC-13] 보안 점검 M2: 안전 모드 draws without the blueprint (a received one may be what stopped the app); 평소대로 brings it back.
         val partsResting by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
+        val motion = androidx.compose.runtime.remember(settings.motion) {
+            com.bamnat.core.recipe.Motion.decode(settings.motion).effective(com.bamnat.app.ui.theme.systemAnimationsOff(this))
+        }
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
             corners = photoLook.corners, accent = settings.accentColor,
             parts = androidx.compose.runtime.remember(settings.parts, partsResting) {
@@ -146,8 +150,14 @@ class MainActivity : ComponentActivity() {
                 com.bamnat.app.ui.theme.LocalScreenLooks provides androidx.compose.runtime.remember(screensNow) { com.bamnat.core.recipe.ScreenLooks.decode(screensNow) },
                 com.bamnat.app.ui.theme.LocalMemoLook provides androidx.compose.runtime.remember(settings.memoLook) { com.bamnat.core.recipe.MemoLook.decode(settings.memoLook) },
                 com.bamnat.app.ui.theme.LocalMoneyLook provides androidx.compose.runtime.remember(settings.moneyLook) { com.bamnat.core.recipe.MoneyLook.decode(settings.moneyLook) },
-                com.bamnat.app.ui.theme.LocalPayLooks provides androidx.compose.runtime.remember(settings.payLooks) { com.bamnat.core.recipe.PayLook.decodeAll(settings.payLooks) }) {
-                androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
+                com.bamnat.app.ui.theme.LocalPayLooks provides androidx.compose.runtime.remember(settings.payLooks) { com.bamnat.core.recipe.PayLook.decodeAll(settings.payLooks) },
+                // [MAT-07] 1.36 움직임, stopped by 움직임 끄기 or the phone's own 'remove animations'.
+                com.bamnat.app.ui.theme.LocalMotion provides motion, com.bamnat.app.ui.theme.LocalMotionOff provides motion.off) {
+                val ground = androidx.compose.runtime.remember(screensNow) { com.bamnat.core.recipe.ScreenLooks.decode(screensNow).of(com.bamnat.core.recipe.ScreenLooks.ALL).ground }
+                    ?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.MaterialTheme.colorScheme.background
+                com.bamnat.app.ui.theme.WearTransition(screensNow, ground, motion) {
+                    androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
+                }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.
                 // [J133-53] Not while the first setup (which offers the chip) is still open.
@@ -247,6 +257,12 @@ class MainActivity : ComponentActivity() {
         if (lastCatchUp == 0L || now - lastCatchUp >= CATCH_UP_EVERY) {
             lastCatchUp = now
             c.appScope.launch { runCatching { com.bamnat.app.ui.work.ShopKeeper.catchUp(c) } }
+            // [MAT-06] PC 확인 6차: shared fonts a theme was waiting for (the operator had not looked yet) come down by themselves.
+            c.appScope.launch {
+                val got = runCatching { com.bamnat.app.recipe.RecipeFonts.retryWaiting(c) }.getOrDefault(emptyList())
+                // PC 확인 7차: a line over the calendar with 되돌리기, not a toast.
+                if (got.isNotEmpty()) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { com.bamnat.app.ui.calendar.FontArrivals.add(got) }
+            }
         }
         // [MON-02] The server's answer, passes and Play's purchases. [MON-07] Google's consent form and
         // the ads SDK start only when an ad may show: [FLAG-09] with the `ads` row on, without 프로, with ad ids, and

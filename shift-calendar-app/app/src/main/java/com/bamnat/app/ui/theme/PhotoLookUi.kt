@@ -47,7 +47,15 @@ fun BoxScope.PhotoBackdrop() {
     val pageLight = surface.luminance() >= 0.5f
     val opposite = (light < 0.5f) == pageLight
     val veil = (if (opposite) maxOf(look.dim, 55) else look.dim) / 100f
-    Image(picture, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+    // [N10] 1.36 the glass parts over the calendar see this picture (its veil too) behind them.
+    val backdrop = Modifier.pageBackdrop(Triple(picture, look.adjust, surface.copy(alpha = veil))) {
+        drawRect(surface)
+        drawCropped(picture, look.adjust)
+        drawRect(surface.copy(alpha = veil))
+    }
+    // [MAT-03] 1.36 그림 조정.
+    if (look.adjust.isDefault) Image(picture, contentDescription = null, modifier = Modifier.matchParentSize().then(backdrop), contentScale = ContentScale.Crop)
+    else Box(Modifier.matchParentSize().adjustedPhoto(picture, look.adjust).then(backdrop))
     Box(Modifier.matchParentSize().background(surface.copy(alpha = veil)))
 }
 
@@ -56,10 +64,11 @@ fun BoxScope.PhotoBackdrop() {
 fun PhotoHead(modifier: Modifier = Modifier) {
     val look = LocalPhotoLook.current
     val (picture, _) = rememberLookPicture(look.head) ?: return
+    // [MAT-03][MAT-04] 1.36 그림 조정과 틀 모양.
     Image(
-        picture, contentDescription = null, contentScale = ContentScale.Crop,
+        picture, contentDescription = null, contentScale = ContentScale.Crop, colorFilter = look.adjust.colorFilter(),
         modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).heightIn(max = 160.dp).aspectRatio(3f)
-            .clip(MaterialTheme.shapes.large),
+            .clip(frameShape(look.frame, MaterialTheme.shapes.large)),
     )
 }
 
@@ -68,6 +77,7 @@ fun PhotoHead(modifier: Modifier = Modifier) {
 fun ShiftPicture(typeId: Long?, size: Dp): Boolean {
     val id = typeId?.let { LocalPhotoLook.current.icons[it] } ?: return false
     val (picture, _) = rememberLookPicture(id) ?: return false
-    Image(picture, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(CircleShape))
+    // [MAT-04] 1.36 틀 모양 (처음대로는 동그라미).
+    Image(picture, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(frameShape(LocalPhotoLook.current.frame, CircleShape)))
     return true
 }

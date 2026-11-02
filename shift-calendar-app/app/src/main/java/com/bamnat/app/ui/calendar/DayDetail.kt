@@ -1281,8 +1281,8 @@ private fun SleepSection(
                 )
                 when {
                     open == null -> OutlinedButton(onClick = onAsleep) { Text("잠들었어요") }
-                    stale -> androidx.compose.material3.Button(onClick = { askWake = true }) { Text("깬 시각 적기") }
-                    else -> androidx.compose.material3.Button(onClick = onAwake) { Text("깼어요") }
+                    stale -> com.bamnat.app.ui.components.Button(onClick = { askWake = true }) { Text("깬 시각 적기") }
+                    else -> com.bamnat.app.ui.components.Button(onClick = onAwake) { Text("깼어요") }
                 }
             }
             if (askWake && open != null) {

@@ -23,7 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import com.bamnat.app.appContainer
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -1892,6 +1892,11 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.JOURNAL -> Routes.JOURNAL
     SettingsGo.RECIPES -> Routes.RECIPE_MINE
     SettingsGo.STUDIO -> Routes.studio()
+    SettingsGo.STUDIO_FONT -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_FONT)
+    SettingsGo.STUDIO_SCREEN_FONT -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_SCREEN_FONT)
+    SettingsGo.STUDIO_DATE_FONT -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_DATE_FONT)
+    SettingsGo.STUDIO_MOTION -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_MOTION)
+    SettingsGo.STUDIO_PARTS -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_PARTS)
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null

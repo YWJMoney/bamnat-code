@@ -252,6 +252,7 @@ dependencies {
     testImplementation("androidx.window:window-testing:1.3.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    // [MAT-05] 1.36 공개 글꼴: Google Play 서비스 글꼴 제공자로 고를 때 받아요(앱 안에 글꼴 파일 없음, 크기 예산 그대로).
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material3:material3-window-size-class")

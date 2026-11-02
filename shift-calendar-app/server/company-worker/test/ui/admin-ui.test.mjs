@@ -1520,3 +1520,32 @@ test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 
   assert.ok(t.$('[data-act="sort-handoff"]').disabled, "nothing left to hand over");
   assert.deepEqual(t.errors, []);
 });
+
+test("[SEC-10] 마을 장터 › 글꼴: a first font waits with what it says of itself, its words drawn as words, 나누기 lets it go", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { fakeFont } = await import("../font-fixture.mjs");
+  const s = server({ plaza: true });
+  const { call, env } = s;
+  const font = fakeFont({ family: "<b>굵게</b> 손글씨", maker: '"><img src=x onerror=globalThis.__xss=1>' });
+  const id = (await call("POST", "/api/recipes/fonts", { device: device(1), name: "손글씨", license: "ofl", ttf: font.toString("base64") }, from(1))).data.id;
+  const u = await asOwner(env, t);
+  await u.go("#/recipes");
+  await u.click('#main [data-act="recipe-tab"][data-key="fonts"]');
+  await u.idle();
+  assert.match(u.text("#main"), /확인 기다림 1/);
+  assert.match(u.text("#main"), /이름 <b>굵게<\/b> 손글씨/, "the font's own name, as words");
+  assert.match(u.text("#main"), /글꼴 안에 OFL이라고 적혀 있어요/);
+  assert.equal(u.$$("#main b").filter((b) => b.textContent === "굵게").length, 0);
+  assert.equal(u.$$('#main img[src="x"]').length, 0);
+  assert.equal(globalThis.__xss, undefined);
+  await u.click(`#main [data-act="recipe-font"][data-id="${id}"][data-key="ok"]`);
+  await u.settle(20);
+  assert.equal((await call("GET", `/api/recipes/fonts/${id}`)).status, 200, "others get it now");
+  // 1.36 [SEC-10] M8: the same letters sent again under another name wait beside the one already shared.
+  await call("POST", "/api/recipes/fonts", { device: device(2), name: "복사본", license: "ofl", ttf: fakeFont({ family: "새 이름", maker: "x" }).toString("base64") }, from(2));
+  await u.click('#main [data-act="font-state"][data-key="pending"]');
+  await u.settle(20);
+  assert.match(u.text("#main"), /글자 모양이 같은 글꼴을 나누는 중: 손글씨 · [+−]\d+B/);
+  assert.deepEqual(u.errors, []);
+});

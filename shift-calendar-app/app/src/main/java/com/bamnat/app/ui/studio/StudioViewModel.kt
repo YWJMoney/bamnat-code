@@ -111,6 +111,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     private val phone = c.settingsRepository.current
     /** PC 재검토 C10: open on 느낌으로 새로 만들기 (once). */
     var askFeel: Boolean by androidx.compose.runtime.mutableStateOf(false)
+    /** [MAT-05] open on a font: 앱 전체 › 글꼴, 달력 › 색·배경 (이 화면 글꼴) or 달력 › 칸 디자인 (날짜 글꼴); once. */
+    var openFont: String? by androidx.compose.runtime.mutableStateOf(null)
 
     private val _state = MutableStateFlow(State(draft = phone, base = phone, origin = Origin.Mine(mineTitle())))
     val state: StateFlow<State> = _state.asStateFlow()
@@ -141,6 +143,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             }
             // PC 재검토 C10: 공방's '느낌으로 새로' opens the studio on the 느낌 picker.
             start == START_FEEL -> { refresh(both = true); askFeel = true }
+            // PC 확인 4차 (B): 설정 검색 '글꼴' opens on 앱 전체 › 글꼴.
+            start == START_FONT || start == START_SCREEN_FONT || start == START_DATE_FONT || start == START_MOTION || start == START_PARTS -> { refresh(both = true); openFont = start }
             start.startsWith(START_DRAFT) -> {
                 refresh(both = true)
                 start.removePrefix(START_DRAFT).toLongOrNull()?.let { resume(it) }
@@ -690,6 +694,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         }
         val sent = runCatching {
             val out = com.bamnat.app.ui.recipe.serverPictures(c, RecipeCodec.read(RecipeCodec.write(r)))
+            com.bamnat.app.recipe.RecipeFonts.send(c, out)
             c.recipeApi.newVersion(c.companyStore.device, w.shared, out, null)
         }.getOrNull()
         if (sent != null) c.wardrobe.markShared(ThemeLease.Wear(name, "", "", 0, 0, own = true).key, w.shared, sent.version, w.bare)
@@ -833,6 +838,12 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** "draft:<id>": a 만들던 레시피 kept on the phone. */
         const val START_DRAFT = "draft:"
         const val START_FEEL = "feel"
+        const val START_FONT = "font"
+        const val START_SCREEN_FONT = "font:screen"
+        const val START_DATE_FONT = "font:date"
+        /** [MAT-07] 설정 검색 '움직임'·'효과'·'파티클': 앱 전체 › 움직임, and › 부품 (a part's own 움직임). */
+        const val START_MOTION = "motion"
+        const val START_PARTS = "parts"
         /** PC 확인 L5: the studio's 잠근 화면, this phone's. */
         const val LOCK_PREFS = "studio_locks"
         /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */

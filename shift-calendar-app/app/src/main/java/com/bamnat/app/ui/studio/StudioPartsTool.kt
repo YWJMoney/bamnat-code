@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.studio
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,7 +31,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.settings.Chips
 import com.bamnat.app.ui.settings.ColorPick
-import com.bamnat.app.ui.settings.Group
 import com.bamnat.app.ui.settings.LabeledSlider
 import com.bamnat.core.recipe.Blueprint
 import com.bamnat.core.recipe.BlueprintParts
@@ -102,6 +102,26 @@ internal fun PartsTool(
     fun num(k: String): Float? = (line[k] as? Number)?.toFloat()
     fun col(k: String): Long? = line[k] as? Long
 
+    // [MAT-01] PC 14차 사용성 제안: 칸이 많아 원하는 묶음까지 길게 내려야 해서, 위에 묶음 바로 가기.
+    // 하나를 고르면 그 묶음만 보여요(스크롤로 데려가는 방식은 이 편집 칸에서 믿을 만하지 않았어요). 다른 부품으로 가도 고른 묶음 그대로.
+    val kids = BlueprintParts.CHILDREN[id].orEmpty()
+    val groups = listOf("채우기", "선", "모서리", "그림자·여백", "글자", "투명도·숨기기") + (if (kids.size > 1) listOf("배치 (안에 든 것)") else emptyList())
+    var only by rememberSaveable(group) { mutableStateOf<String?>(null) }
+    if (only != null && only !in groups) only = null
+    // PC 15차: 옆으로 밀지 않아도 다 보이게 감싸서.
+    Text("바로 가기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(top = 4.dp))
+    FlowRow(Modifier.semantics { contentDescription = "묶음 바로 가기" },
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        (listOf<String?>(null) + groups).forEach { g ->
+            FilterChip(selected = only == g, onClick = { only = g }, label = { Text(g?.substringBefore(" (") ?: "전체") })
+        }
+    }
+    @Composable
+    fun Group(title: String, content: @Composable () -> Unit) {
+        if (only == null || only == title) com.bamnat.app.ui.settings.Group(title, content)
+    }
+
     Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
         Group("채우기") {
             ColorPick("색", col("fill")) { set("fill", it) }
@@ -137,6 +157,14 @@ internal fun PartsTool(
             LabeledSlider("바깥 간격", num("out") ?: 0f, 0f..32f, "dp", unset = if (line["out"] == null) "처음대로" else null) { set("out", it.toLong().takeIf { v -> v > 0 }) }
         }
         Group("글자") {
+            // PC 15차: 작은 미리 보기에선 밑줄·그림자가 잘 안 보여서, 이 부품 글자를 크게.
+            val big = remember(bp, id, on) { bp.style(id, on?.let { setOf(it) } ?: emptySet()).copy(size = null, lines = null) }
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.medium).padding(12.dp)
+                .semantics { contentDescription = "글자 크게 보기" }, contentAlignment = Alignment.Center) {
+                com.bamnat.app.ui.parts.PartText(if (id.contains("date")) "15  28" else "가나다 Aa 15", big,
+                    MaterialTheme.typography.displaySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+            }
             Chips(listOf(null to "처음대로") + FONT_WORDS, line["font"] as? String) { set("font", it) }
             LabeledSlider("크기", num("size") ?: 14f, 6f..48f, "sp", unset = if (line["size"] == null) "처음대로" else null) { set("size", it.toLong()) }
             Chips(listOf(null to "처음대로", 300L to "가늘게", 400L to "보통", 700L to "굵게", 900L to "아주 굵게"), (line["weight"] as? Number)?.toLong()) { set("weight", it) }
@@ -156,7 +184,9 @@ internal fun PartsTool(
             }
             LabeledSlider("자간", num("track") ?: 0f, -5f..30f, "%", unset = if (line["track"] == null) "처음대로" else null) { set("track", it.toLong()) }
             LabeledSlider("줄 간격", num("leading") ?: 120f, 80f..300f, "%", unset = if (line["leading"] == null) "처음대로" else null) { set("leading", it.toLong()) }
-            Chips(listOf(null to "처음대로", false to "바로", true to "기울임"), line["italic"] as? Boolean) { set("italic", it) }
+            // PC 15차: '처음대로'가 무엇인지 함께. 어떤 때(상태) 줄에서는 평소 모습을 따르니 '바로'·'줄 없음'으로 되돌릴 수 있게 남겨요.
+            Chips(listOf(null to (if (on == null) "처음대로(바로)" else "평소대로")) + (if (on != null || line["italic"] == false) listOf(false to "바로") else emptyList()) +
+                listOf(true to "기울임"), line["italic"] as? Boolean) { set("italic", it) }
             LabeledSlider("글자 테두리", num("stroke") ?: 0f, 0f..4f, "dp", unset = if (line["stroke"] == null) "처음대로" else null) { set("stroke", (Math.round(it * 2) / 2.0).takeIf { v -> v > 0 }?.let { d -> if (d % 1 == 0.0) d.toLong() else d }) }
             if ((num("stroke") ?: 0f) > 0f) ColorPick("테두리 색", col("strokeC")) { set("strokeC", it) }
             // [BLU-08] 누락 점검 N11: 글자 그림자와 밑줄·가운데 줄.
@@ -168,7 +198,8 @@ internal fun PartsTool(
                     when (w) { "down" -> setAll("tshadowX" to 0L, "tshadowY" to null); "glow" -> setAll("tshadowX" to 0L, "tshadowY" to 0L); else -> setAll("tshadowX" to null, "tshadowY" to null) }
                 }
             }
-            Chips(listOf(null to "처음대로", "none" to "줄 없음", "under" to "밑줄", "strike" to "가운데 줄", "both" to "둘 다"), line["deco"] as? String) { set("deco", it) }
+            Chips(listOf(null to (if (on == null) "처음대로(줄 없음)" else "평소대로")) + (if (on != null || line["deco"] == "none") listOf("none" to "줄 없음") else emptyList()) +
+                listOf("under" to "밑줄", "strike" to "가운데 줄", "both" to "둘 다"), line["deco"] as? String) { set("deco", it) }
         }
         Group("투명도·숨기기") {
             LabeledSlider("보이는 정도", num("alpha") ?: 100f, 0f..100f, "%", step = 5, unset = if (line["alpha"] == null) "처음대로" else null) { set("alpha", it.toLong().takeIf { v -> v < 100 }) }
@@ -179,7 +210,6 @@ internal fun PartsTool(
             if (id in BlueprintParts.DATA) Text("날짜·근무 같은 정보는 숨겨도 화면 읽기(TalkBack)에는 그대로 읽혀요",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        val kids = BlueprintParts.CHILDREN[id].orEmpty()
         if (kids.size > 1) Group("배치 (안에 든 것)") {
             Chips(listOf(null to "처음대로", "col" to "세로로", "row" to "가로로", "stack" to "겹쳐서"), line["dir"] as? String) { set("dir", it) }
             LabeledSlider("사이 간격", num("gap") ?: 1f, 0f..32f, "dp", unset = if (line["gap"] == null) "처음대로" else null) { set("gap", it.toLong()) }
@@ -195,6 +225,7 @@ internal fun PartsTool(
                 }
             }
         }
+        if (only != null) TextButton(onClick = { only = null }) { Text("다른 묶음도 보기 (전체)") }
         if (line.keys.any { it != "id" && it != "on" }) OutlinedButton(onClick = {
             val others = bp.lines.filterNot { it["id"] == id && it["on"] == on }
             onChange(if (others.isEmpty()) "" else Blueprint(others).encode())

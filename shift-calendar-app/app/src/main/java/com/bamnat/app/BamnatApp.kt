@@ -48,6 +48,8 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
     override fun onCreate() {
         StartupTrace.begin()
         super.onCreate()
+        // 1.36 [SEC-10] The font look's isolated process starts nothing of the app's (it may not read the app's files).
+        if (com.bamnat.app.recipe.FontProbe.inProbe()) return
         CrashLog.install(this)
         // 1.32.1 [STAB-10] 멈춤 관찰 기록: the screen, the memory and how the app ended last time.
         com.bamnat.app.diag.Trail.install(this)

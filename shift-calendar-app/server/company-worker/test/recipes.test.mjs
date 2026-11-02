@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { server, device, from, signIn } from "./helpers.mjs";
+import { MATERIAL_CHECKS } from "../src/materials.js";
 import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf, partUnitOf } from "../src/recipes.js";
 
 const cases = JSON.parse(readFileSync(new URL("../../../docs/recipe-cases.json", import.meta.url), "utf8"));
@@ -23,6 +24,8 @@ test("[RCP-03] the server reads every shared case as core does: the same written
   }
   for (const c of cases.skeleton) assert.deepEqual({ skeleton: nameSkeleton(c.name), reserved: reservedName(c.name) }, c.want, c.name);
   for (const c of cases.mixed) assert.equal(mixedScript(c.text), c.want, c.text);
+  // [MAT-01..07] 1.36 꾸미기 재료: the same pass or refusal as core.
+  for (const c of cases.materials) assert.equal(MATERIAL_CHECKS[c.kind](c.text) ?? "ok", c.want, `${c.kind} ${c.text}`);
   const r6 = (x) => (x === null ? undefined : Math.round(x * 1_000_000));
   for (const c of cases.rank) {
     const want = { good: r6(rankGood(c.likes, c.dislikes, c.applied, c.kept7)), hot: r6(rankHot(c.likes, c.applied, c.hours)),

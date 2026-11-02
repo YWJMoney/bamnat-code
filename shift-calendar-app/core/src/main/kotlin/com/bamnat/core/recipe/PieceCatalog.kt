@@ -267,6 +267,9 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
                 "icons", 6, optional = true,
                 fields = listOf(Field.Pick("role", ShiftRole.KEYS), Field.Text("image", 16, min = 16, guard = false, check = PhotoLook::idProblem)),
             ),
+            // [MAT-03][MAT-04] 1.36 그림 조정 (배경·머리 그림) and 틀 모양 (근무 그림·머리 그림).
+            Field.Text("adjust", 60, optional = true, guard = false, check = PhotoAdjust::problem),
+            Field.Text("frame", 30, optional = true, guard = false, check = PhotoFrame::problem),
         ),
     ),
 
@@ -289,7 +292,7 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Flag("spend"),
             Field.Text("order", 80, optional = true, guard = false, check = CalendarView::orderProblem),
             // [FREE-01][FREE-02] 1.35 칸 디자이너: the cells' own looks, how they take turns, today's own.
-            Field.Text("looks", 760, optional = true, guard = false, check = CellLook::looksProblem),
+            Field.Text("looks", 2400, optional = true, guard = false, check = CellLook::looksProblem),
             Field.Text("pattern", 80, optional = true, guard = false, check = CellPattern::problem),
             Field.Num("today", 0.0, 5.0, optional = true),
         ),
@@ -315,6 +318,8 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Flag("flow"),
             Field.Flag("rest"),
             Field.Flag("payPeriod"),
+            // [MAT-07] 1.36 움직임.
+            Field.Text("motion", 60, optional = true, guard = false, check = Motion::problem),
         ),
     ),
 
@@ -330,7 +335,8 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Num("lines", 1.0, MemoLook.MAX_LINES.toDouble(), optional = true),
             Field.Pick("title", MemoLook.TITLES, optional = true),
             Field.Flag("bold"),
-            Field.Pick("font", MemoLook.FONTS, optional = true),
+            // [MAT-05] 1.36 any font of [FontCatalog] (the four of 1.35 among them) or the user's own.
+            Field.Text("font", 40, optional = true, guard = false, check = FontCatalog::idProblem),
             Field.Flag("date"),
             Field.Color("bg", optional = true),
         ),
@@ -356,7 +362,7 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
     SCREEN_LOOK(
         "screenLook", "화면 색·배경", WorkStyle.entries.toSet(),
         listOf(
-            Field.Text("screens", 1600, optional = true, guard = false, check = ScreenLooks::problem),
+            Field.Text("screens", 4000, optional = true, guard = false, check = ScreenLooks::problem),
             Field.Text("pay", 400, optional = true, guard = false, check = PayLook::problem),
         ),
     ),
@@ -602,6 +608,10 @@ data class PhotoLook(
     val widget: String? = null,
     val corners: String? = null,
     val icons: Map<Long, String> = emptyMap(),
+    /** [MAT-03] 1.36 배경·머리 그림 조정. */
+    val adjust: PhotoAdjust = PhotoAdjust(),
+    /** [MAT-04] 1.36 근무 그림·머리 그림의 틀 모양 ([PhotoFrame]); null is the app's own (둥근 네모). */
+    val frame: String? = null,
 ) {
     val isDefault: Boolean get() = this == PhotoLook()
 
@@ -610,7 +620,7 @@ data class PhotoLook(
 
     fun encode(): String = if (isDefault) "" else listOfNotNull(
         bg?.let { "bg=$it" }, "dim=$dim".takeIf { dim != DIM }, head?.let { "head=$it" }, widget?.let { "widget=$it" },
-        corners?.let { "corners=$it" },
+        corners?.let { "corners=$it" }, adjust.takeIf { !it.isDefault }?.let { "adjust=" + it.encode() }, frame?.let { "frame=$it" },
     ).plus(icons.entries.sortedBy { it.key }.map { (t, id) -> "icon.$t=$id" }).joinToString(";")
 
     companion object {
@@ -631,6 +641,7 @@ data class PhotoLook(
                 head = one["head"]?.takeIf(::isId), widget = one["widget"]?.takeIf(::isId),
                 corners = one["corners"]?.takeIf { it in CORNERS },
                 icons = m.mapNotNull { (k, v) -> k.removePrefix("icon.").takeIf { k.startsWith("icon.") }?.toLongOrNull()?.takeIf { isId(v) }?.let { it to v } }.toMap(),
+                adjust = PhotoAdjust.decode(one["adjust"]), frame = one["frame"]?.takeIf { it.isNotEmpty() && PhotoFrame.problem(it) == null },
             )
         }
     }

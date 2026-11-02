@@ -102,7 +102,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                             // [RCX-02][RCX-03] 새 판: offered with what it changes; mine stays where I changed it.
                             if (e.undoneAt == null && e.replacedAt == null && e.code.isNotEmpty()) {
                                 newer[e.code]?.let { v ->
-                                    androidx.compose.material3.Button(onClick = { vm.openUpdate(e) }) { Text("새 판 v$v 있어요 · 바뀐 점 보고 반영") }
+                                    com.bamnat.app.ui.components.Button(onClick = { vm.openUpdate(e) }) { Text("새 판 v$v 있어요 · 바뀐 점 보고 반영") }
                                 }
                                 var sub by androidx.compose.runtime.remember(e.code) { androidx.compose.runtime.mutableStateOf(vm.subscribed(e.code)) }
                                 Row(verticalAlignment = Alignment.CenterVertically) {

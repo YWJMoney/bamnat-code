@@ -487,14 +487,9 @@ private fun GeneralMemoGrid(state: MemoListState, actions: CardActions) {
 internal fun Modifier.memoPaper(look: com.bamnat.core.recipe.MemoLook): Modifier = this
     .then(look.bg?.let { Modifier.background(Color((it or 0xFF000000L).toInt())) } ?: Modifier)
 
-/** [FREE-04] 메모장 모양's 글꼴. */
-internal fun memoFont(font: String?): androidx.compose.ui.text.font.FontFamily? = when (font) {
-    "serif" -> androidx.compose.ui.text.font.FontFamily.Serif
-    "mono" -> androidx.compose.ui.text.font.FontFamily.Monospace
-    "hand" -> androidx.compose.ui.text.font.FontFamily.Cursive
-    "sans" -> androidx.compose.ui.text.font.FontFamily.SansSerif
-    else -> null
-}
+/** [FREE-04] 메모장 모양's 글꼴; [MAT-05] 1.36 any font of the 글꼴 모음 or the user's own. */
+@Composable
+internal fun memoFont(font: String?): androidx.compose.ui.text.font.FontFamily? = com.bamnat.app.ui.theme.rememberFontFamily(font)
 
 @Composable
 private fun SectionLabel(text: String) {

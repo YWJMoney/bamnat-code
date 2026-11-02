@@ -28,7 +28,7 @@ import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -163,6 +163,10 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 Text("내 달력에 넣을 것 고르기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text("켜 둔 조각만 들어가요. 근무 기록·가계부·메모는 그대로예요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // [MAT-06] PC 확인 9차 (받는 쪽은 글꼴이 함께 오는지 모름): the shared fonts it names come along.
+                val fontCount = remember(r) { com.bamnat.app.recipe.RecipeFonts.idsIn(com.bamnat.core.recipe.RecipeCodec.write(r)).size }
+                if (fontCount > 0) Text("만든 분이 나눈 글꼴 ${fontCount}개가 함께 와요. 운영자가 확인한 글꼴은 넣을 때 바로, 확인 전인 글꼴은 확인 뒤 저절로 들어와요(그 전에는 비슷한 앱 글꼴로 보여요)",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 s.pieces.filter { it.fits }.forEach { p -> PieceCard(r, p, s.answers, vm) }
                 val other = s.pieces.filter { !it.fits }
                 if (other.isNotEmpty()) {
@@ -280,6 +284,17 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                             color = if (l.skipped) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
                     }
                 }
+                // [MAT-06] PC 확인 12차 (넣기 창에 함께 오는 글꼴 안내가 없음).
+                // PC 확인 13차: each font by its name (a waiting one's name stays hidden till the operator looks).
+                val app = androidx.compose.ui.platform.LocalContext.current.applicationContext as? com.bamnat.app.BamnatApp
+                val fontLines by androidx.compose.runtime.produceState(emptyList<String>(), s.recipe) {
+                    val r = s.recipe; val c = app?.container
+                    value = if (r == null || c == null) emptyList() else runCatching { com.bamnat.app.recipe.RecipeFonts.comingLines(c, r) }.getOrDefault(emptyList())
+                }
+                if (fontLines.isNotEmpty()) {
+                    Text("글꼴", style = MaterialTheme.typography.labelLarge)
+                    fontLines.forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
+                }
                 // [MKX-02] 1.36 빌드 8: a tab laid on is taken off in 마을 › 테마; the rest is undone in 내 것 › 받은 레시피.
                 val laysOn = s.recipe?.let { r ->
                     val looks = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }.map { it.kind }.toSet()
@@ -351,7 +366,7 @@ private fun MakerCard(doc: com.bamnat.app.recipe.RecipeDoc, onNewVersion: (() ->
                     color = MaterialTheme.colorScheme.primary)
             }
             // [RCX-31] The way to the next 판: what this phone has now, or the recipe as it is, changed and sent again.
-            if (onNewVersion != null) androidx.compose.material3.Button(onClick = onNewVersion, modifier = Modifier.padding(top = 6.dp)) {
+            if (onNewVersion != null) com.bamnat.app.ui.components.Button(onClick = onNewVersion, modifier = Modifier.padding(top = 6.dp)) {
                 Text("새 판 만들기 (v${doc.item.version + 1})")
             }
         }
@@ -646,7 +661,7 @@ private fun DiffSection(parent: com.bamnat.app.recipe.RecipeDoc, diff: List<com.
             if (mine && diff.isNotEmpty()) {
                 Text("고른 것만 내 판의 새 판으로 가져와요. 올리기 전에 한 번 더 보고 고칠 수 있고, 이 수정판 이름이 '도움 준 수정판'으로 설명에 남아요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                androidx.compose.material3.Button(onClick = { onTake(picked) }, enabled = picked.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                com.bamnat.app.ui.components.Button(onClick = { onTake(picked) }, enabled = picked.isNotEmpty(), modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text("고른 ${picked.size}개 내 판에 가져오기")
                 }
             }

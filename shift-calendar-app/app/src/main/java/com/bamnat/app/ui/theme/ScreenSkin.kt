@@ -8,8 +8,17 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.toArgb
@@ -67,7 +76,8 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val all = LocalScreenLooks.current
     // 사용자 2026-11-01: 결제·처리방침·동의 화면은 어떤 테마에서도 앱 기본 모양 그대로 — 값과 약관이 늘 똑같이 또렷하게 읽혀요.
     val raw = if (key == ScreenLooks.GUARDED) ScreenLook() else all.of(key)
-    val look = if (key == ScreenLooks.PLAZA) ScreenLook(bg = raw.bg, photo = raw.photo, dim = raw.dim, emoji = raw.emoji) else raw
+    // [MAT-01][MAT-03] 1.36 마을 takes a background fill and the picture's adjustment too (still only the background).
+    val look = if (key == ScreenLooks.PLAZA) ScreenLook(bg = raw.bg, photo = raw.photo, dim = raw.dim, emoji = raw.emoji, fill = raw.fill, adjust = raw.adjust) else raw
     // PC 확인 W44 1.36 (어두운 테마에서 프로 화면만 갑자기 밝아 눈부심): the plain 결제·처리방침 look follows how dark the app is made.
     val outer = MaterialTheme.colorScheme
     val base = outer.let { b ->
@@ -90,19 +100,42 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     }
     // [J135-15] One shape of tree for the user's own look and for a theme: putting a theme on or taking it off only changes colours.
     // Two shapes threw away everything under the screen (an open sheet closed, 화면 꾸미기 fell back to 설정, a wear half done).
-    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography, shapes = MaterialTheme.shapes) {
-        Box(if (plain && !darkened) modifier else modifier.background(look.bg?.let { Color(it) } ?: base.background)) {
+    // [MAT-05] 1.36 이 화면 글꼴: every text style of the screen in it (sizes and weights stay, 큰 글자 still grows them).
+    val family = rememberFontFamily(look.font)
+    // [N10] 1.36 진짜 유리: the background (colour, fill, picture and its veil) kept small for the glass parts of this screen to see.
+    val holder = remember { BackdropHolder() }
+    val density = androidx.compose.ui.platform.LocalDensity.current.density
+    var placed by remember { mutableStateOf<Pair<IntSize, Offset>?>(null) }
+    val pageColor = look.bg?.let { Color(it) } ?: base.background
+    val veilColor = (look.ground?.let { Color(it) } ?: base.background).copy(alpha = maxOf((look.dim ?: 30).coerceIn(0, 80), 20) / 100f)
+    val made = remember(plain, look, photo?.first, placed, pageColor, veilColor, density) {
+        val p = placed
+        if (plain || p == null) null else Backdrop.make(p.first, p.second, density) {
+            drawRect(pageColor)
+            look.fill?.let { paintFill(it, FillTiles.tile(it, this.density), null, 0f, 1f) }
+            photo?.first?.let { img ->
+                drawCropped(img, look.adjust)
+                drawRect(veilColor)
+            }
+        }
+    }
+    SideEffect { holder.screen = made }
+    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography.inFamily(family), shapes = MaterialTheme.shapes) {
+        Box((if (plain && !darkened) modifier else modifier.background(pageColor).fillWith(look.fill))
+            .onGloballyPositioned { c -> if (!plain) (c.size to c.positionInWindow()).let { if (it != placed) placed = it } }) {
             if (photo != null && !plain) {
-                Image(photo.first, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                // [MAT-03] 1.36 사진 조정·블렌드: drawn through the look's colour matrix, blend and blur.
+                if (look.adjust == null) Image(photo.first, contentDescription = null, modifier = Modifier.matchParentSize(), contentScale = ContentScale.Crop)
+                else Box(Modifier.matchParentSize().adjustedPhoto(photo.first, look.adjust))
                 val veil = (look.dim ?: 30).coerceIn(0, 80)
-                Box(Modifier.matchParentSize().background((look.bg?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
+                Box(Modifier.matchParentSize().background((look.ground?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
             }
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
             // [BLU-12] PC 15차: on a ground of its own the parts' 어두운 화면 lines follow that ground (a white 화면 색 on a dark phone
             // keeps the light lines, so a light-grey 금액 meant for dark does not land on white).
             val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
             val grounded = if (plain && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
-            CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
+            CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted, LocalBackdrop provides holder,
                 com.bamnat.app.ui.parts.LocalBlueprint provides (if (raw.isEmpty) com.bamnat.app.ui.parts.LocalBlueprint.current else grounded),
                 androidx.compose.material3.LocalContentColor provides if (plain && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
@@ -130,7 +163,7 @@ fun BarIcons(light: Boolean) {
 
 /** The colour the screen's text stands on: the page, or what a picture and its veil come to. */
 private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?): Color {
-    val page = look.bg?.let { Color(it) } ?: base.background
+    val page = look.ground?.let { Color(it) } ?: base.background
     if (photoLight == null) return page
     val veil = (look.dim ?: 30).coerceIn(20, 80) / 100f
     return lerp(if (photoLight >= 0.5f) Color(0xFFEDEDED) else Color(0xFF2A2A2A), page, veil)
@@ -141,7 +174,9 @@ private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?): C
  * picture and its veil come to ([photoLight] 0 dark … 1 light).
  */
 fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): ColorScheme {
-    val page = look.bg?.let { Color(it) } ?: base.background
+    val page = look.ground?.let { Color(it) } ?: base.background
+    // [MAT-01] A fill shows through the page like a picture does.
+    val clear = photoLight != null || look.fill != null
     val ground = groundOf(base, look, photoLight)
     val card = look.card?.let { Color(it) }
     val cardLow = card ?: base.surfaceContainerLow
@@ -151,8 +186,8 @@ fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): Col
         if (Palette.contrast(s.argb(), ground.argb()) >= 4.5 && Palette.contrast(s.argb(), cardLow.argb()) >= 4.5) s else ink
     }
     var s = base.copy(
-        background = if (photoLight != null) Color.Transparent else page,
-        surface = if (photoLight != null) Color.Transparent else page,
+        background = if (clear) Color.Transparent else page,
+        surface = if (clear) Color.Transparent else page,
         onBackground = ink, onSurface = ink, onSurfaceVariant = soft,
         outline = ink.copy(alpha = 0.55f), outlineVariant = ink.copy(alpha = 0.18f),
     )
@@ -163,7 +198,7 @@ fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): Col
             surfaceContainer = lerp(card, toward, 0.03f), surfaceContainerHigh = lerp(card, toward, 0.06f),
             surfaceContainerHighest = lerp(card, toward, 0.09f), surfaceVariant = lerp(card, toward, 0.08f),
         )
-    } else if (look.bg != null) {
+    } else if (look.ground != null) {
         // A page colour without a card colour: the cards are washes of the page, so the screen holds together.
         val toward = if (Palette.luminance(page.argb()) > 0.5) Color.White else Color.Black
         s = s.copy(

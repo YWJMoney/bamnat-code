@@ -474,7 +474,7 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(failed, style = MaterialTheme.typography.bodyMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                androidx.compose.material3.Button(onClick = vm::clearRoster) { Text("직접 칠하기") }
+                com.bamnat.app.ui.components.Button(onClick = vm::clearRoster) { Text("직접 칠하기") }
                 androidx.compose.material3.TextButton(onClick = {
                     picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
                 }) { Text("다른 사진") }

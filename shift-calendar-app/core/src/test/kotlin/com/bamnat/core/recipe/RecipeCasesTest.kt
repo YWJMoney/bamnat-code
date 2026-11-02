@@ -43,7 +43,19 @@ class RecipeCasesTest {
             val h = (it["hours"] as Long).toDouble()
             it + ("want" to mapOf("good" to r6(Rank.good(l, d, a, k)), "hot" to r6(Rank.hot(l, a, h)), "kept" to Rank.keptPercent(a, k)?.toLong()).filterValues { v -> v != null })
         }
+        // [MAT-01..07] 1.36 꾸미기 재료: each word passes ("ok") or the refusal's code, as the server's materials.js says.
+        out["materials"] = (all["materials"] as List<Map<String, Any?>>).map { it + ("want" to (material(it["kind"] as String, it["text"] as String) ?: "ok")) }
         return out
+    }
+
+    private fun material(kind: String, text: String): String? = when (kind) {
+        "fill" -> Fill.problem(text)
+        "stroke" -> Stroke.problem(text)
+        "font" -> FontCatalog.idProblem(text)
+        "adjust" -> PhotoAdjust.problem(text)
+        "frame" -> PhotoFrame.problem(text)
+        "motion" -> Motion.problem(text)
+        else -> "kind"
     }
 
     @Test
@@ -64,12 +76,13 @@ class RecipeCasesTest {
             file.writeText(b.append("}\n").toString())
             return
         }
-        for (section in listOf("read", "skeleton", "mixed", "rank")) {
+        for (section in listOf("read", "skeleton", "mixed", "rank", "materials")) {
             @Suppress("UNCHECKED_CAST")
             val want = all[section] as List<Map<String, Any?>>
             @Suppress("UNCHECKED_CAST")
             val have = got[section] as List<Map<String, Any?>>
-            want.zip(have).forEach { (w, h) -> assertEquals("${section}: ${w["name"] ?: w["text"] ?: w}", w["want"], h["want"]) }
+            want.zip(have).forEach { (w, h) -> assertEquals("${section}: ${w["name"] ?: w["text"] ?: w}", w["want"], h["want"])
+            if (section == "materials") assertEquals("every material case has its answer", want.size, want.count { it.containsKey("want") }) }
         }
     }
 }

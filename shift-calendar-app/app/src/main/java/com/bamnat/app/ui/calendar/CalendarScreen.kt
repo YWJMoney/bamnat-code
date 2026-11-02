@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.theme.monthTurn
 import androidx.compose.ui.layout.layout
 import com.bamnat.app.ui.theme.PhotoBackdrop
 import com.bamnat.app.ui.components.labelWidth
@@ -66,7 +67,7 @@ import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import com.bamnat.app.appContainer
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
@@ -1114,6 +1115,9 @@ fun CalendarScreen(
             }
         }
         if (!holding) NoticeStack(modifier = Modifier.onSizeChanged { aboveHeights[0] = it.height }, state = notices, open = if (sideways) 0 else 1, notices = buildList {
+            // [MAT-06] 1.36 PC 확인 7차: shared fonts a theme was waiting for, come down by themselves (was a toast). PC 8차: first, so it
+            // is the one open (it was folded as '글꼴' under the others); it goes once closed or taken back.
+            if (FontArrivals.fonts.isNotEmpty()) add(Notice("fontArrived", "기다리던 글꼴") { FontArrivedLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
             // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
             // screen too, for a phone whose notices are off.
@@ -1430,6 +1434,10 @@ fun CalendarScreen(
                             onQuickAction = onQuickAction,
                         )
                     } else MonthGrid(
+                        // [MAT-07] 1.36 달 넘김 (밀기·스르륵·책장·다가오기·겹쳐 오기·움직이지 않기).
+                        modifier = Modifier.monthTurn(com.bamnat.app.ui.theme.LocalMotion.current.turn) {
+                            (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                        },
                         month = pageToMonth(baseMonth, page),
                         snapshot = snap,
                         calculator = calculator,

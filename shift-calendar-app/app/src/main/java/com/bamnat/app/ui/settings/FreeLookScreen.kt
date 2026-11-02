@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.input.pointer.pointerInput
+import com.bamnat.app.ui.theme.fillWith
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -33,7 +34,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -191,13 +192,14 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                     Modifier.weight(1f).fillMaxSize()
                         .then(com.bamnat.app.ui.parts.partSpotModifier("cal.cell"))
                         .cellEdge(shown, look, pShape, scheme.outlineVariant)
-                        .clip(pShape).background(tint ?: Color.Transparent)
+                        .clip(pShape).fillWith(look?.fill, alpha = com.bamnat.app.ui.calendar.cellFillAlpha(look), animate = isToday)
+                        .background(tint ?: Color.Transparent)
                         .then(com.bamnat.app.ui.parts.PartMods.box(cellPart.copy(pad = null, padX = null, padY = null, out = null, shadow = null), pShape))
                         .then(if (onCell == null) Modifier else Modifier.clickable(onClickLabel = "이 칸의 모양 고치기") { onCell(index) }),
                 ) {
                     com.bamnat.app.ui.calendar.CustomCellBody(
                         parts = parts,
-                        view = shown, cellLook = look, filled = tint?.takeIf { look?.mark == "fill" || look?.bg != null }, date = date, isToday = isToday,
+                        view = shown, cellLook = look, filled = tint?.takeIf { look?.mark == "fill" || look?.bg != null } ?: com.bamnat.app.ui.calendar.cellFillGround(look), date = date, isToday = isToday,
                         numberColor = number, dateSize = 13.sp, footerSize = 9.sp, todayColor = todayColor, holidayName = null, hasMemo = s.memo != null,
                         alarmOff = false, marks = emptyList(), barColor = color.takeIf { !s.off },
                         dayMark = { size ->
@@ -236,6 +238,27 @@ private val CELL_PRESETS: List<Pair<String, CalendarView.() -> CalendarView>> = 
 @Composable
 internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit, onChange: (CalendarView) -> Unit) {
     var removing by remember { mutableStateOf(false) }
+    // [MAT-05] PC 확인 8~10차 (설정 검색 › 날짜 숫자 글꼴로 오면 줄이 칸 디자인 아래쪽, 단추 띠에 붙음): scrolling the editor to a row
+    // far down was not reliable here, so the row asked for comes first, until closed.
+    // PC 확인 11차: read as state (the editor can be on screen before the search's ask arrives), let go when the editor leaves.
+    val searched = FontRowFocus.pinned == "날짜 글꼴"
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (FontRowFocus.pinned == "날짜 글꼴") FontRowFocus.pinned = null } }
+    if (searched) {
+        val looks0 = view.looks.ifEmpty { listOf(CellLook()) }
+        val i0 = index.coerceIn(0, looks0.lastIndex)
+        Surface(color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f), shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("찾은 칸 · 날짜 글꼴", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { FontRowFocus.pinned = null }) { Text("닫기") }
+                }
+                FontRow("날짜 글꼴", looks0[i0].dateFont, numbersOnly = true, focusNow = true) { f ->
+                    onChange(view.copy(looks = looks0.toMutableList().also { it[i0] = looks0[i0].copy(dateFont = f) }))
+                }
+                Text("아래 ‘날짜’ 묶음에도 같은 줄이 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
     Text("칸 하나를 꾸미면 달력 전체에 들어가요. 모양을 여러 개 만들어 패턴으로 번갈아 쓸 수도 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("바로 시작하기", style = MaterialTheme.typography.labelLarge)
@@ -253,6 +276,13 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
     val l = looks[i]
     fun set(n: CellLook) = onChange(view.copy(looks = looks.toMutableList().also { it[i] = n }))
 
+    // [MAT-01] PC 확인 1차 ("칸 디자인을 끝까지 내려도 칸 채우기를 찾지 못함"): 칸 채우기 is the first line, open, not inside a fold.
+    // 근무 색은 그 위에 옅게 겹쳐요.
+    FillEditor("칸 채우기", l.fill, base = l.bg?.toLongOrNull(16) ?: 0xFFFFF4CC) { f ->
+        set(l.copy(fill = f, bg = if (f != null && l.bg != CellLook.SHIFT) null else l.bg))
+    }
+    if (l.fill != null && l.bg == null) LabeledSlider("채우기 진하기", (l.bgAlpha ?: 100).toFloat(), 10f..100f, "%") { set(l.copy(bgAlpha = it.toInt())) }
+
     Group("칸 배경") {
         Chips(listOf(null to "처음대로", CellLook.SHIFT to "근무 색", "own" to "내 색", CellLook.NONE to "없음"),
             when (l.bg) { null -> null; CellLook.SHIFT, CellLook.NONE -> l.bg; else -> "own" }) { v ->
@@ -268,6 +298,12 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
     Group("테두리·모서리") {
         Chips(listOf(null to "처음대로", "none" to "없음", "thin" to "가늘게", "thick" to "굵게", "dash" to "점선"), l.border) { set(l.copy(border = it)) }
         if (l.border != null && l.border != "none") ColorPick("테두리 색", l.borderColor) { set(l.copy(borderColor = it)) }
+        // [MAT-02] 1.36 테두리 두께 0.5~4dp와 진하기.
+        if (l.border != null && l.border != "none") {
+            MatSlider("테두리 두께", (l.borderWidth ?: if (l.border == "thick") 20 else 8) / 10f, 0.5f..4f, "", steps = 34,
+                shown = { "%.1fdp".format(it) }) { set(l.copy(borderWidth = (it * 10).toInt().coerceIn(5, 40))) }
+            MatSlider("테두리 진하기", (l.borderAlpha ?: 100).toFloat(), 0f..100f, "%") { set(l.copy(borderAlpha = it.toInt())) }
+        }
         LabeledSlider("모서리", (l.corner ?: 10).toFloat(), 0f..16f, "dp") { set(l.copy(corner = it.toInt())) }
     }
     Group("날짜") {
@@ -278,6 +314,8 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
         Chips(listOf(null to "모양 없음", "circle" to "동그라미", "square" to "네모"), l.dateShape?.takeIf { it != "none" }) { set(l.copy(dateShape = it)) }
         if (l.dateShape != null && l.dateShape != "none") ColorPick("날짜 바탕", l.dateFill) { set(l.copy(dateFill = it)) }
         ColorPick("평일 날짜 색", l.dateColor) { set(l.copy(dateColor = it)) }
+        // [MAT-05] 1.36 날짜 글꼴 (숫자·영문 전용 글꼴도 날짜에 잘 어울려요).
+        FontRow("날짜 글꼴", l.dateFont, numbersOnly = true) { set(l.copy(dateFont = it)) }
         Text("토·일·공휴일 색은 ‘오늘·주말 색’에서 바꿔요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Group("근무 표시") {
@@ -395,7 +433,8 @@ internal fun MemoLookEditor(l: MemoLook, onChange: (MemoLook) -> Unit) {
         LabeledSlider("미리 보이는 줄", (l.lines ?: 8).toFloat(), 1f..MemoLook.MAX_LINES.toFloat(), "줄") { onChange(l.copy(lines = it.toInt())) }
         Chips(listOf(null to "제목 보통", "s" to "작게", "l" to "크게"), l.title?.takeIf { it != "m" }) { onChange(l.copy(title = it)) }
         Chips(listOf(null to "굵기 처음대로", true to "제목 굵게", false to "제목 얇게"), l.bold) { onChange(l.copy(bold = it)) }
-        Chips(listOf(null to "기본 글꼴", "serif" to "명조", "mono" to "고정폭", "hand" to "손글씨 느낌"), l.font?.takeIf { it != "sans" }) { onChange(l.copy(font = it)) }
+        // [MAT-05] 1.36 글꼴 모음 전체와 내 글꼴.
+        FontRow("메모 글꼴", l.font) { onChange(l.copy(font = it)) }
         Chips(listOf(null to "날짜 보이기", false to "날짜 숨기기"), l.date?.takeIf { !it }) { onChange(l.copy(date = it)) }
     }
     Group("메모장 바탕") {
@@ -545,6 +584,8 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
     if (target != FreeTarget.ALL) Text("비워 둔 것은 ‘앱 전체’를 따라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     // PC 확인 W45 1.36 (색·배경에 바탕색 칸이 없음 — '배경색'으로 따로 불려 못 찾음): one word, 바탕색, as 한 색 and 위젯 say it.
     ColorPick("바탕색", l.bg) { onChange(l.copy(bg = it)) }
+    // [MAT-01] 1.36 배경 채우기 (사진이 있으면 사진 밑에 깔려요).
+    FillEditor("배경 채우기", l.fill, base = shown.bg ?: 0xFFF7F8FCL) { onChange(l.copy(fill = it)) }
     Group("배경 사진") {
         problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -555,6 +596,10 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
             if (l.photo != null) TextButton(onClick = { onChange(l.copy(photo = null)) }) { Text("없애기") }
         }
         if (l.photo != null || shown.photo != null) LabeledSlider("사진 위 흐리게", (l.dim ?: 30).toFloat(), 20f..80f, "%") { onChange(l.copy(dim = it.toInt())) }
+        // [MAT-03] 1.36 사진 조정·블렌드.
+        if (l.photo != null || shown.photo != null) PhotoAdjustEditor(l.adjust ?: shown.adjust ?: com.bamnat.core.recipe.PhotoAdjust()) {
+            onChange(l.copy(adjust = it.takeIf { a -> !a.isDefault }))
+        }
     }
     if (target == FreeTarget.PLAZA) {
         Group("이모티콘") {
@@ -565,6 +610,8 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
     }
     ColorPick("카드 색", l.card) { onChange(l.copy(card = it)) }
     ColorPick("글자색", l.ink) { onChange(l.copy(ink = it)) }
+    // [MAT-05] 1.36 이 화면 글꼴 (비워 두면 ‘앱 전체’ 글꼴).
+    FontRow(if (target == FreeTarget.ALL) "앱 전체 글꼴" else "이 화면 글꼴", l.font) { onChange(l.copy(font = it)) }
     val ground = (shown.bg ?: 0xFFF7F8FCL)
     if (shown.ink != null && Palette.inkOn(shown.ink, ground, shown.card ?: ground) != shown.ink) {
         Text("고른 글자색은 바탕에서 잘 안 보여서 검정이나 흰색으로 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
@@ -575,7 +622,7 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
 }
 
 internal fun colorSummary(l: ScreenLook?): String = if (l == null || l.isDefault) "처음대로" else listOfNotNull(
-    "바탕색".takeIf { l.bg != null }, "배경 사진".takeIf { l.photo != null }, "카드 색".takeIf { l.card != null }, "글자색".takeIf { l.ink != null },
+    "바탕색".takeIf { l.bg != null }, "배경 채우기".takeIf { l.fill != null }, "글꼴".takeIf { l.font != null }, "배경 사진".takeIf { l.photo != null }, "카드 색".takeIf { l.card != null }, "글자색".takeIf { l.ink != null },
     "강조색".takeIf { l.accent != null }, l.emoji,
 ).joinToString(" · ")
 
