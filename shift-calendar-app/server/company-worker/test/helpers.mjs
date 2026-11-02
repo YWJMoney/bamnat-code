@@ -52,6 +52,15 @@ export const device = (n) => `test-device-${String(n).padStart(8, "0")}`;
 export const from = (n) => ({ "cf-connecting-ip": `198.51.100.${n}` });
 
 /** Signs in to the developer app; returns the headers its requests carry. */
+/**
+ * 1.36 [SEC-16] 보안 점검 M10: a report on the 나눔 판 counts toward hiding only from an install past 새싹 (3 days known). These phones
+ * become known, and the mocked clock moves 3 days on.
+ */
+export async function seasoned(call, t, ns) {
+  for (const n of ns) await call("GET", "/api/recipes/mine", undefined, { "x-device": device(n) });
+  t.mock.timers.tick(3 * 24 * 60 * 60 * 1000 + 1000);
+}
+
 export async function signIn(call) {
   const res = await call("POST", "/api/admin/login", { password: PASSWORD }, { "x-admin": "1", origin: ORIGIN });
   if (res.status !== 200) throw new Error(`login ${res.status} ${res.text}`);

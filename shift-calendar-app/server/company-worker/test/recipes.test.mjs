@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { server, device, from, signIn } from "./helpers.mjs";
+import { server, device, from, signIn, seasoned } from "./helpers.mjs";
 import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf } from "../src/recipes.js";
 
 const cases = JSON.parse(readFileSync(new URL("../../../docs/recipe-cases.json", import.meta.url), "utf8"));
@@ -162,6 +162,7 @@ test("[RCP-35] a recipe's talk: 만든 사람 and 쓰는 중 marks, a 안좋아�
 test("[RCP-32][RCP-33] applied counts are a day's total; three 신고 hide a recipe and it is in the 임시 조치 기록", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call, DB } = server({ plaza: true });
+  await seasoned(call, t, [5, 6, 7]);
   const a = await up(call, 1, {}, "link");
   const code = a.data.code;
   await call("POST", `/api/recipes/${code}/applied`, { kind: "applied" }, from(2));
@@ -176,6 +177,44 @@ test("[RCP-32][RCP-33] applied counts are a day's total; three 신고 hide a rec
   assert.equal(log.data.items[0].action, "hide");
   await call("POST", `/api/admin/recipes/${code}/show`, {}, admin);
   assert.equal((await call("GET", `/api/recipes/${code}`, undefined, { "x-device": device(9) })).status, 200);
+});
+
+test("[SEC-16] 보안 점검 M10: new ids and one line cannot hide a recipe; shown again, its maker's mark and the restriction it started go", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, DB } = server({ plaza: true });
+  await seasoned(call, t, [5, 6, 7, 8]);
+  const admin = await signIn(call);
+  const code = (await up(call, 1, { title: "남의 작품" }, "link")).data.code;
+  const other = (await up(call, 1, { title: "같은 분의 다른 작품" }, "link")).data.code;
+  const flags = async () => (await DB.prepare("SELECT flags, state FROM recipes WHERE code = ?").bind(code).first());
+  // Three ids just made, each on its own line: kept for the operator, none counted.
+  for (const n of [2, 3, 4]) assert.equal((await call("POST", `/api/recipes/${code}/flag`, { device: device(n), reason: "fake" }, from(n))).data.flagged, true);
+  assert.deepEqual({ ...(await flags()) }, { flags: 0, state: "visible" });
+  // Known phones: two on one line count once.
+  await call("POST", `/api/recipes/${code}/flag`, { device: device(5), reason: "fake" }, from(5));
+  await call("POST", `/api/recipes/${code}/flag`, { device: device(6), reason: "fake" }, from(5));
+  await call("POST", `/api/recipes/${code}/flag`, { device: device(7), reason: "fake" }, from(7));
+  assert.deepEqual({ ...(await flags()) }, { flags: 2, state: "visible" });
+  const list = (await call("GET", "/api/admin/recipes?tab=flagged", undefined, admin)).data.items.find((x) => x.code === code);
+  assert.deepEqual(list.quiet, { fresh: 3, net: 1 });
+  await call("POST", `/api/recipes/${code}/flag`, { device: device(8), reason: "fake" }, from(8));
+  assert.equal((await flags()).state, "hidden");
+  // The operator hides another of the same maker's: two strikes start a restriction.
+  await call("POST", `/api/admin/recipes/${other}/hide`, { note: "광고" }, admin);
+  const owner = (await DB.prepare("SELECT owner FROM recipes WHERE code = ?").bind(code).first()).owner;
+  const limit = () => DB.prepare("SELECT until FROM write_limits WHERE device = ?").bind(owner).first();
+  assert.ok((await limit()).until > Date.now());
+  assert.equal((await DB.prepare("SELECT hidden FROM recipe_trust WHERE device = ?").bind(owner).first()).hidden, 2);
+  // Shown again: the reports were wrong, so its mark goes and the restriction it started ends.
+  await call("POST", `/api/admin/recipes/${code}/show`, {}, admin);
+  assert.equal((await DB.prepare("SELECT hidden FROM recipe_trust WHERE device = ?").bind(owner).first()).hidden, 1);
+  assert.ok((await limit()).until <= Date.now());
+  const log = (await call("GET", "/api/admin/recipes/actions", undefined, admin)).data.items.find((a) => a.code === code && a.action === "show");
+  assert.equal(log.reason, "신고가 맞지 않았어요");
+  // A 소개 the same way: new ids do not hide it.
+  const m = (await call("POST", "/api/recipes/makers/me", { device: device(9), bio: "제 소개예요" }, from(9))).data.maker;
+  for (const n of [2, 3, 4]) await call("POST", `/api/recipes/makers/${m}/flag`, { device: device(n), reason: "bio" }, from(n));
+  assert.equal((await call("GET", `/api/recipes/makers/${m}`, undefined, { "x-device": device(10) })).data.bio, "제 소개예요");
 });
 
 test("[SEC-15] 보안 점검 M9: one line counts a few 넣기 and 7일 유지 a recipe a day, the rest answered but not counted", async (t) => {

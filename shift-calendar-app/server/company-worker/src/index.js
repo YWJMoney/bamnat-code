@@ -84,7 +84,7 @@ import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen
 import { RECIPE_COLUMNS, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
-import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, writeLeft, writeLimitHit } from "./write-limits.js";
+import { WRITE_LIMITS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, restrictions, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
 export const LIMITS = {
@@ -4129,7 +4129,9 @@ async function flag(request, env, id) {
   if (!p || p.status !== "shown") return json({ error: "not_found" }, 404);
   if (p.device === dev) return json({ error: "own" }, 400);
   const added = await run(env, "INSERT OR IGNORE INTO post_flags (post_id, device, reason, at) VALUES (?, ?, ?, ?)", id, dev, reason, now);
-  if (added.meta.changes) {
+  // 1.36 보안 점검 [SEC-16] M10: one network counts once a day for one post, so ids made on one line cannot hide it (the report is
+  // kept for the operator). A new install's report still counts here: a new colleague must be able to report a 광장 글 at once.
+  if (added.meta.changes && (await allow(env, `pflagnet|${net.day}|${id}`, 1, DAY, now))) {
     await run(env, `UPDATE posts SET flags = flags + 1,
         status = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'hidden' ELSE status END,
         hide_reason = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'flags' ELSE hide_reason END,
@@ -5952,6 +5954,8 @@ async function moderatePost(env, id, body, now) {
       // 1.36 [LIM-10] Shown again: its strike no longer counts.
       stmt(env, "DELETE FROM write_strikes WHERE ref = ?", id),
     ]);
+    // 1.36 [SEC-16] M10: and a restriction that strike started ends.
+    if (p.status === "hidden") await strikeTakenBack(recipeDeps, env, p.device, now);
     await audit(env, now, "post_show", target);
   } else if (body.action === "delete") {
     await batch(env, [...plazaResults(env, p, "deleted", "deleted", now),

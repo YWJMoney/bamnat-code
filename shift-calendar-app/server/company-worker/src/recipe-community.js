@@ -56,6 +56,8 @@ export const COMMUNITY_SCHEMA = [
 ];
 /** [RCX-05] Each recipe knows its maker's public id, so a list row links the maker's page without the install hash. */
 export const COMMUNITY_COLUMNS = ["ALTER TABLE recipes ADD COLUMN maker TEXT",
+  // 1.36 보안 점검 [SEC-16] M10: whether a 프로필 report counts toward hiding the 소개 (not a 새싹's, nor a second from one network a day).
+  "ALTER TABLE recipe_maker_flags ADD COLUMN counted INTEGER NOT NULL DEFAULT 1",
   // [RCX-32] 1.35 보여주기: the operator's showcases of what 나눔 판 can do, at the top of each kind of work's 나눔 판.
   "ALTER TABLE recipes ADD COLUMN showcase INTEGER NOT NULL DEFAULT 0",
   // [PRF-01] 1.36 창작자 프로필: 한 줄 소개, 대표 작품(코드들), 보여 줄 근무 유형, 프로필 숨기기, 운영자가 가린 소개·프로필.
@@ -459,8 +461,15 @@ async function rcMakerFlag(d, env, request, id) {
   const hit = await d.overLimit(env, now, [["device", `mflag|${dev}`, COMMUNITY_LIMITS.flagsPerDay, DAY],
     ["network", `mflag|${net.day}`, COMMUNITY_LIMITS.flagsPerNetworkDay, DAY]]);
   if (hit) return hit;
-  await d.run(env, "INSERT OR IGNORE INTO recipe_maker_flags (maker, device, reason, at) VALUES (?, ?, ?, ?)", id, dev, body.reason, now);
-  const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ?", id);
+  // 1.36 보안 점검 [SEC-16] M10: a 새싹 install's report, or a second one from the same network today, is kept for the operator but
+  // does not count toward hiding the 소개 (as for recipes, pictures and fonts).
+  await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
+  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+  const had = await d.one(env, "SELECT 1 AS x FROM recipe_maker_flags WHERE maker = ? AND device = ?", id, dev);
+  const counts = !had && trust.level >= 1 && (await d.allow(env, `mflagnet|${net.day}|${id}`, 1, DAY, now));
+  await d.run(env, "INSERT OR IGNORE INTO recipe_maker_flags (maker, device, reason, at, counted) VALUES (?, ?, ?, ?, ?)", id, dev, body.reason, now,
+    counts ? 1 : 0);
+  const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ? AND counted = 1", id);
   if (n.n >= COMMUNITY_LIMITS.flagsToHideBio) {
     const r = await d.run(env, "UPDATE recipe_makers SET bio_hidden = 1 WHERE maker = ? AND bio IS NOT NULL AND bio_hidden = 0", id);
     // 1.36 [LIM-10] A 소개 the reports hid is one strike for its maker.

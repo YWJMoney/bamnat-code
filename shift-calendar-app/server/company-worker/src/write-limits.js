@@ -91,6 +91,25 @@ export async function restrictions(d, env, now) {
 }
 
 /**
+ * 1.36 보안 점검 M10: a strike taken back (what it hid is shown again; the caller deleted its row). A restriction on now that the
+ * strikes left before it began would not have started ends now, a step back (it should not have stepped up), with the 쓰기 막기 it
+ * started, so a false report does not keep its maker restricted.
+ */
+export async function strikeTakenBack(d, env, dev, now, rules = WRITE_LIMITS) {
+  if (!dev) return null;
+  const l = await d.one(env, "SELECT since FROM write_limits WHERE device = ? AND until > ?", dev, now);
+  if (!l) return null;
+  const n = (await d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND at > ? AND at <= ?",
+    dev, l.since - rules.windowDays * DAY, l.since))?.n ?? 0;
+  if (n >= rules.strikes) return null;
+  await d.batch(env, [
+    d.stmt(env, "UPDATE write_limits SET until = ?, step = MAX(0, step - 1), times = MAX(0, times - 1) WHERE device = ?", now, dev),
+    d.stmt(env, "DELETE FROM muted WHERE device = ? AND reason = 'strikes'", dev),
+  ]);
+  return { lifted: true };
+}
+
+/**
  * The admin app's 풀기: ends [who]'s restriction now (and the 쓰기 막기 it started), keeping its step so the next one is still
  * stricter. [who] is the 12 letters `restrictions` shows; null when none or more than one install matches.
  */
