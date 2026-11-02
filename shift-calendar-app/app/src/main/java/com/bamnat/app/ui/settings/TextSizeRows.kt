@@ -95,7 +95,7 @@ internal fun TextSizeRow(step: Int, onPick: (Int) -> Unit) {
             }
         } else before?.takeIf { it != step }?.let { b ->
             androidx.compose.material3.OutlinedButton(onClick = { before = null; onPick(b) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                Text("되돌리기 · 전 크기 ‘${label(b)}’로")
+                Text("되돌리기 · 전 크기 ‘${label(b)}’${com.bamnat.app.ui.Fmt.ro(label(b))}")
             }
         }
         val scale = scaleOf(step, pending)

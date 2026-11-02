@@ -130,7 +130,7 @@ fun PatternScreen(
     val typesById = remember(types) { types.associateBy { it.id } }
     // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not offered to put in the order (one already in it still shows there).
     val folded by vm.folded.collectAsStateWithLifecycle()
-    val choices = remember(types, folded) { types.filter { it.id !in folded }.takeIf { l -> l.any { !it.isOff } } ?: types }
+    val choices = remember(types, folded) { types.filter { it.id !in folded } }
     // Steps pointing at a shift type deleted meanwhile become plain days off.
     val clean: (List<Long?>) -> List<Long?> = { steps -> steps.map { id -> id?.takeIf { it in typesById } } }
     val draft: WorkPattern? = when (kind) {

@@ -184,9 +184,9 @@ private fun CalendarPick() {
 /** "주간 07:00–19:00 · 야간 19:00–07:00 외 2개". */
 internal fun shiftsLine(types: List<ShiftType>, folded: Set<Long> = emptySet()): String {
     val all = types.filter { !it.isOff && it.start != null && it.end != null }
-    val work = all.filter { it.id !in folded }.ifEmpty { all }
-    val away = if (work === all) "" else " · 안 쓰는 종류 ${all.size - work.size}개"
-    if (work.isEmpty()) return "이름, 시간, 색, 근무 전 알람"
+    val work = all.filter { it.id !in folded }
+    val away = if (work.size == all.size) "" else " · 안 쓰는 종류 ${all.size - work.size}개"
+    if (work.isEmpty()) return (if (all.isEmpty()) "이름, 시간, 색, 근무 전 알람" else "쓰는 근무 없음") + away
     val shown = work.take(2).joinToString(" · ") { "${it.name} ${Fmt.time(it.start)}–${Fmt.time(it.end)}" }
     return (if (work.size > 2) "$shown 외 ${work.size - 2}개" else shown) + away
 }

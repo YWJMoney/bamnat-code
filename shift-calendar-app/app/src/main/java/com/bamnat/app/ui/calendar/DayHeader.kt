@@ -454,9 +454,11 @@ private fun QuickChips(
     val now = rememberMinute()
     val yesterday = { snapshot.resolver.resolve(today.minusDays(1)) }
     val leaveDay = leaveNowDay(settings.workStyle, day, today, now, yesterday)
-    val choices = remember(snapshot, day) {
+    // 1.36 PC 재검토: no 대근 of a kind put away ('오전 알바 대근' after 알바 → 현장).
+    val folded = com.bamnat.app.ui.shifts.foldedHere()
+    val choices = remember(snapshot, day, folded) {
         if (moneyFirst) emptyList() else {
-            val (on, off0) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).partition { ExtraText.indexOf(day, it) >= 0 }
+            val (on, off0) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day).partition { ExtraText.indexOf(day, it) >= 0 }
             // [CAL-37] The kinds used in the last 60 days first; a new user gets their kind of work's usual order.
             val used = snapshot.entries.filter { !it.date.isBefore(today.minusDays(QuickOrder.DAYS.toLong())) }.flatMap { e -> e.extras.map { it.kindId } }
             val off = QuickOrder.extras(off0, { it.kind.id }, used, settings.workStyle.takeIf { !day.isWorkDay })

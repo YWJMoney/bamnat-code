@@ -185,11 +185,13 @@ internal fun clockOutDay(day: ResolvedDay, today: LocalDate, now: LocalDateTime,
 private fun CoverChip(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel) {
     var menu by remember { mutableStateOf(false) }
     val i = day.extras.indexOfFirst { it.kind.timing is ExtraTiming.AsShift }
-    val choices = remember(snapshot, day) {
-        ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).filter { it.kind.timing is ExtraTiming.AsShift }.ifEmpty {
+    val folded = com.bamnat.app.ui.shifts.foldedHere()
+    val types = remember(snapshot, folded) { snapshot.shiftTypes.filter { it.id !in folded } }
+    val choices = remember(snapshot, day, types) {
+        ExtraText.choices(snapshot.kinds, types, day).filter { it.kind.timing is ExtraTiming.AsShift }.ifEmpty {
             // [J133B-01] No cover kind left visible (a calendar's kinds changed): each shift with hours as the plain 대근, so
             // 대타 is never the one chip that cannot be used.
-            snapshot.shiftTypes.filter { !it.isOff && it.hasTimes && it.id != day.shiftType?.id }.map { s ->
+            types.filter { !it.isOff && it.hasTimes && it.id != day.shiftType?.id }.map { s ->
                 val k = ExtraText.coverKind(snapshot.kinds, snapshot.shiftTypes, s)
                 ExtraChoice(k, "${ExtraText.coverName(k, s)} ${ExtraText.span(s.start!!, s.end!!)}", ExtraText.coverName(k, s), ExtraText.cover(k, s))
             }
