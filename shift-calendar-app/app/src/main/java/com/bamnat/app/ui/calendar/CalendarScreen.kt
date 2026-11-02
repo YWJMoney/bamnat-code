@@ -1014,8 +1014,9 @@ fun CalendarScreen(
         val alarmLine: Pair<String, @Composable () -> Unit>? = when {
             // C 1.32 [STAB-04] Opened safely after stopping in a row: said first, with the way back.
             safeStart -> "안전 모드로 열었어요" to {
-                AlarmWarningLine((if (com.bamnat.app.diag.StartGuard.byHand) "점검용 안전 모드예요" else "연달아 멈춰서 안전 모드로 열었어요") +
-                    ". 달력·알람은 그대로, 부품 꾸밈·위젯·워치·연동은 잠시 쉬어요",
+                // PC 19차 사용성 제안 (세 줄이라 달력이 밀림): one short line; 알람 점검 says the rest.
+                AlarmWarningLine((if (com.bamnat.app.diag.StartGuard.byHand) "점검용 안전 모드" else "연달아 멈춰 안전 모드") +
+                    " · 알람은 그대로, 꾸밈·위젯·연동은 쉬어요",
                     "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace)
             }
             // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
