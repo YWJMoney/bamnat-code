@@ -31,6 +31,7 @@ import com.bamnat.core.formula.RuleTrigger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import androidx.compose.runtime.snapshots.Snapshot
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
@@ -108,6 +109,27 @@ class RulScreenshotTest : ScreenshotBase() {
         assertEquals(null, bigSay(money.copy(act = money.act.copy(amount = 1_000_000))))
         assertEquals(null, bigSay(daily))
         assertTrue(ruleName(daily.copy(name = "열두글자를넘는아주긴규칙이름이에요"), setOf("열두글자를넘는아주긴규칙이름이에요")).length <= 20)
+    }
+
+    @Test fun messageShowsEvenWhenSaidTwice() = shoot("887_rul_message", FOLDED) {
+        // PC D16 (낮): 안전 모드에서 단추를 세 번 눌러도 '안전 모드라 … 쉬어요'가 안 나왔어요 (받자마자 비우면 스낵바가 취소됐어요).
+        val sb = androidx.compose.material3.SnackbarHostState()
+        content {
+            Surface { Column(Modifier.padding(16.dp)) {
+                com.bamnat.app.logic.LogicMessageHost(app.container, sb)
+                androidx.compose.material3.SnackbarHost(sb)
+            } }
+        }
+        // The app's own screen (also a host) is gone before the line is said.
+        settle()
+        repeat(2) { n ->
+            com.bamnat.app.logic.LogicRunner.say("단추가 쉬어요")
+            repeat(5) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); Snapshot.sendApplyNotifications(); compose.mainClock.advanceTimeBy(16) }
+            assertEquals("${n + 1}번째에도 줄이 떠요", "단추가 쉬어요", sb.currentSnackbarData?.visuals?.message)
+            assertEquals("받으면 비워요", null, com.bamnat.app.logic.LogicRunner.message.value)
+            sb.currentSnackbarData?.dismiss()
+            repeat(5) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); compose.mainClock.advanceTimeBy(16) }
+        }
     }
 
     @Test fun editorList() = shoot("886_rul_editor_list", FOLDED) {

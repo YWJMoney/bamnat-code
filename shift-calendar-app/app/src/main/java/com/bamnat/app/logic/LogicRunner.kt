@@ -69,7 +69,7 @@ object LogicRunner {
 
     /** Does [act] for [date]; [who] names the rule or the button (for its count and its line). */
     suspend fun run(c: AppContainer, act: LogicAct, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false) {
-        if (resting) { if (!quiet) _message.value = "안전 모드라 규칙과 단추는 쉬어요. 달력 위 ‘평소대로’를 누르면 다시 돌아요"; return }
+        if (resting) { if (!quiet) _message.value = "안전 모드라 규칙과 단추는 쉬어요. ‘평소대로’를 누르면 다시 돌아요"; return }
         val ctx = c.appContext
         val store = LogicStore(ctx)
         val words = FormulaText.render(act.arg, scope)
