@@ -432,21 +432,17 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(selected = !detail, onClick = { detail = false }, label = { Text("앱 화면") }, enabled = !area.detailOnly)
                         FilterChip(selected = detail, onClick = { detail = true }, label = { Text("자세히") })
+                        // PC 확인 L2·L4: the locked screens, named over the example; a tap shows that screen up close.
+                        // PC 확인 1.36 (첫 잠금·마지막 풀기 때 아래 칩 줄이 아래위로 뜀): in this row, not a line of their own.
+                        vm.locked.forEach { tab ->
+                            androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)); detail = true }, label = { Text("🔒 " + lockName(tab, vm.style)) })
+                        }
                         // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.
                         Box(Modifier.size(1.dp, 24.dp).background(MaterialTheme.colorScheme.outlineVariant))
                         ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it })
                     }
                     if (s.previewMode != com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) Text("미리 보기: ${s.previewMode.label} 모양이에요",
                         style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                    // PC 확인 L2 (잠근 뒤 미리 보기만으로는 달력이 그대로인지 모름): the locked screens, named over the example; a tap on one shows it.
-                    if (vm.locked.isNotEmpty()) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("잠근 화면", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        vm.locked.forEach { tab ->
-                            // PC 확인 L4: the example shows that screen up close, so it can be seen to stay.
-                            androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)); detail = true }, label = { Text("🔒 " + lockName(tab, vm.style)) })
-                        }
-                    }
                     // [STU-24] Two fingers on the example make it bigger or smaller too.
                     val zoom = androidx.compose.foundation.gestures.rememberTransformableState { z, _, _ ->
                         scale = (scale * z).coerceIn(SCALE_MIN, SCALE_MAX)
