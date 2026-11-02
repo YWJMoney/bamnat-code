@@ -503,6 +503,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     // [BLU-06] the draft's parts in 자세히 too.
                                     com.bamnat.app.ui.parts.LocalBlueprint provides (MaterialTheme.colorScheme.background.luminance() < 0.5f).let { dark ->
                                         remember(d.parts, dark) { com.bamnat.core.recipe.Blueprint.decode(d.parts).forDark(dark) } },
+                                    com.bamnat.app.ui.parts.LocalBlueprintRaw provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
                                 ) {
                                     val t = area.target ?: FreeTarget.ALL
                                     ScreenSkin(t.keyFor(payStyle), Modifier.fillMaxWidth()) {

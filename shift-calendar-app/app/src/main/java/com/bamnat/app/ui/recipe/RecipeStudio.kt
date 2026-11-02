@@ -197,14 +197,15 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
     val tabs = TabOrder.of((resolved[PieceKind.LAYOUT]?.get("tabs") as? List<String>).orEmpty())
     // [BLU-05] 1.36 부품 꾸미기 on the example app: the parts as the phone draws them (앱 전체·단추·카드 through the theme).
     @Suppress("UNCHECKED_CAST")
-    val blueprint = remember(resolved) {
+    val rawParts = remember(resolved) {
         (resolved[PieceKind.PARTS]?.get("parts") as? List<Map<String, Any?>>)?.let { l -> runCatching { com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(l)) }.getOrNull() }
             ?: com.bamnat.core.recipe.Blueprint.EMPTY
-    }.let { b -> val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f; remember(b, dark) { b.forDark(dark) } }
+    }
+    val blueprint = rawParts.let { b -> val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f; remember(b, dark) { b.forDark(dark) } }
     MaterialTheme(colorScheme = com.bamnat.app.ui.parts.PartTheme.colors(MaterialTheme.colorScheme, blueprint),
         typography = com.bamnat.app.ui.parts.PartTheme.typography(MaterialTheme.typography, blueprint),
         shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), blueprint)) {
-      CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides blueprint) {
+      CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides blueprint, com.bamnat.app.ui.parts.LocalBlueprintRaw provides rawParts) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(
                 Modifier.widthIn(max = 340.dp).fillMaxWidth().height(560.dp)

@@ -88,7 +88,7 @@ internal fun PartsTool(
         }
     }
     // [BLU-12] 어두운 화면 colours show in the example once it is seen dark.
-    if (on == "dark") Text("휴대폰이 어두운 화면일 때만 쓰는 색이에요. 미리 보기 위 ‘어두운 화면’을 켜면 여기서 바꾼 것이 보여요",
+    if (on == "dark") Text("화면 바탕이 어두울 때만 쓰는 색이에요. 미리 보기 위 ‘어두운 화면’을 켜면 보여요. 화면 색·배경을 밝게 정한 화면은 어두운 휴대폰에서도 밝은 쪽 색 그대로예요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on } ?: emptyMap()
     fun setAll(vararg kv: Pair<String, Any?>) {
