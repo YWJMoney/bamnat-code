@@ -55,7 +55,7 @@ fun PolicyConsentNotice(modifier: Modifier = Modifier) {
                 if (!open && PolicyConsent.lines.size > 1) TextButton(onClick = { open = true }) { Text("바뀌는 것 보기") }
                 else TextButton(onClick = {
                     runCatching {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침")
                     }
                 }) { Text("자세히 보기") }
             }

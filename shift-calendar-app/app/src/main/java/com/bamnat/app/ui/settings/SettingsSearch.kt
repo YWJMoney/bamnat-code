@@ -121,6 +121,8 @@ internal const val WATCH_CALENDAR_ROW = "워치에 보낼 달력"
 internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
 /** [ALRM-21] 1.35: the row in 설정 › 알람 › 울리는 방식. */
 internal const val ALARM_SOON_ROW = "곧 울릴 알람 미리 알리기"
+/** [PRF-05] 1.36 PC 사용성 P8: the row in 설정 › 개인정보. */
+internal const val SENT_ROW = "내가 보낸 정보·모두 지우기"
 
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
@@ -180,7 +182,8 @@ internal object SettingsIndex {
         screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
         screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx").takeIf { company }, // [J133-77]
         screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),
-        row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체"),
+        // 1.36 PC Y21: '근무 알람 끄기'·'잠시 끄기' found nothing.
+        row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체", "근무 알람 끄기", "근무 알람", "잠시 끄기", "알람 잠시 끄기", "알람 멈추기", "휴가 중 알람", "알람 안 울리게"),
         row(A, "알람음", "알람 소리", "벨소리", "무음", row = "알람음"),
         row(A, "근무마다 다른 소리", "근무별 알람음", "야간 소리"),
         // [SET-05]
@@ -280,6 +283,7 @@ internal object SettingsIndex {
         row(D, GROUP_ROW, "모임 코드", "조 근무표", "동료 근무표 모아", "나란히 보기", "팀 근무표").takeIf { share }, // [SHR-14]
         row(D, CUT_ALL_ROW, "링크 지우기", "공유 끊기", "링크 모두 끊기", "공유 그만", "링크 삭제").takeIf { share }, // [SHR-13]
         row(V, "개인정보 처리방침", "개인정보", "처리방침"),
+        row(V, SENT_ROW, "보낸 정보", "모두 지우기", "정보 삭제", "삭제", "탈퇴", "계정 삭제", "내 정보 지우기", "프로필 지우기", "마을 지우기", "거두기").takeIf { board }, // [PRF-05]
         row(V, SUMMARY_ROW, "동의", "권한 요약", "내가 허용한 것", "보내는 것", "권한 한눈에", "동의 내역"), // [ALRM-02]
         screen(A.title, "서버 연결 점검", SettingsGo.DIAGNOSTICS, "서버 연결", "인터넷", "보내지 못함", "연결 확인", "서버 상태"), // [ALRM-02]
         row(V, "앱 잠금", "잠금", "지문", "얼굴", "비밀번호", "PIN", "생체 인증", "숨기기"),
@@ -313,6 +317,8 @@ internal object SettingsIndex {
         row(A, ALARM_SOON_ROW, "곧 알람", "알람 미리", "이번 알람만 끄기", "다음 알람 끄기", "알람 건너뛰기"), // [ALRM-21]
         row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
         // ---- 1.25 묶음 Y [TIER-07] ----
+        // 1.36 PC Y11: '보상' found nothing; the 보상 이용권 and earned days live on the 프로 page.
+        screen("설정 › 프로", "보상 이용권", SettingsGo.PRO, "보상", "이용권", "받은 이용권", "쌓인 날", "쓰면 쌓이는 날", "기다리는 날", "광고 보상", "보상 장부"),
         screen("설정 › 프로", "프로 기능 모아보기", SettingsGo.PRO, "프로 기능", "모아보기", "유료 기능", "프로 표시", "잠긴 기능"),
         // 1.25 Z
         row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]

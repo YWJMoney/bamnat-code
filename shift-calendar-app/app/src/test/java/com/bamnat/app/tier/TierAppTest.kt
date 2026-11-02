@@ -93,6 +93,9 @@ class TierAppTest {
         assertTrue(store.refresh(api, now))
         assertTrue(store.current.billingLive)
         assertFalse("하루 안에는 다시 묻지 않아요", store.refresh(api, now.plusSeconds(3_600)))
+        // 1.36 PC 재검토: an open afresh asks again after 10 minutes, so a switch turned meanwhile comes on the next open.
+        assertFalse(store.due(now.plusSeconds(300), RemoteConfigStore.ON_OPEN))
+        assertTrue(store.due(now.plusSeconds(3_600), RemoteConfigStore.ON_OPEN))
         api.configAnswer = null
         assertFalse(store.refresh(api, now.plusSeconds(90_000)))
         assertTrue("연결이 없으면 마지막 답이 그대로예요", store.current.billingLive)
@@ -117,6 +120,8 @@ class TierAppTest {
                 // [TAX-02] 1.25.0 W (결정 W-D4).
                 "TAX_FORECAST" to Tier.PRO,
                 "THEME_WARDROBE" to Tier.PRO,
+                // [PRF-12] 1.36.
+                "CREATOR_PRO" to Tier.PRO,
                 "TEAM_ROSTER" to Tier.LEADER,
             ),
             Feature.entries.associate { it.name to it.minTier },

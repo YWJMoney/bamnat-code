@@ -76,6 +76,8 @@ enum class Feature(val minTier: Tier, private val ownLabel: String? = null) {
     TAX_FORECAST(Tier.PRO),
     /** [FREE-10] 1.35 꾸미기 혜택: themes saved as many outfits and worn with no ad and no 30 days. */
     THEME_WARDROBE(Tier.PRO),
+    /** [PRF-12] 1.36 창작자 꾸미기: 프로필 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프. 팔로우·보기는 늘 무료. */
+    CREATOR_PRO(Tier.PRO),
     /** Phase 3 (M24), not sold yet. */
     TEAM_ROSTER(Tier.LEADER, "팀 근무표 만들기"),
     ;
@@ -127,7 +129,8 @@ data class Gate(
 
     /** 1.36 사용자 결정(프로 나눔 1인): only 프로 bought on Play counts, not a trial, pass, thank-you or admin phone. */
     val boughtPro: Boolean get() = live && !preview && access.pro &&
-        (access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION || access.reason == com.bamnat.core.tier.ProReason.GRACE)
+        (access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION || access.reason == com.bamnat.core.tier.ProReason.GRACE ||
+            access.reason == com.bamnat.core.tier.ProReason.PASS_1Y)
 
     /** 프로 badges and 'pro' notes show only where the feature is actually locked. */
     fun locked(feature: Feature): Boolean = !allows(feature)
@@ -172,11 +175,13 @@ class FeatureGate(
         // [MON-13] 839: a bundle's days ending while the app is open (or the alarm about to ring) closes it at that moment.
         scope.launch {
             trials.all.collectLatest { s ->
+                // 1.36 PC Y15 (처음 7일이 지나도 세후 예상이 안 잠겨요): one long wait missed the end when the clock moved on without
+                // it — the phone's time changed, or days asleep, which the wait does not count. It looks at the clock every minute.
                 while (true) {
                     val now = clock()
                     val next = s.until.values.filter { it > now }.minOrNull() ?: break
-                    kotlinx.coroutines.delay(java.time.Duration.between(now, next).toMillis() + 1_000)
-                    tick.value++
+                    kotlinx.coroutines.delay(minOf(java.time.Duration.between(now, next).toMillis() + 1_000, END_CHECK_MS))
+                    if (!clock().isBefore(next)) tick.value++
                 }
             }
         }
@@ -204,6 +209,9 @@ class FeatureGate(
     fun grant(bundle: com.bamnat.core.tier.FeatureLease.Bundle, why: com.bamnat.core.tier.FeatureLease.Why, reason: String? = null) {
         trials.grant(bundle, clock(), clock().atZone(zone()).toLocalDate(), why, reason)
     }
+
+    /** 840: back after a month away, [bundle] for 7 days ([com.bamnat.core.tier.ProOfferTimes.Time.BACK]). */
+    fun back(bundle: com.bamnat.core.tier.FeatureLease.Bundle) = trials.back(bundle, clock())
 
     /** [MON-13] 839: the offer closed without an ad. */
     fun decline(bundle: com.bamnat.core.tier.FeatureLease.Bundle) = trials.decline(bundle, clock())
@@ -234,3 +242,6 @@ class FeatureGate(
         return Gate(live = live, tier = if (access.pro) Tier.PRO else Tier.FREE, access = access, free = free)
     }
 }
+
+/** [MON-13] How often an open bundle's end is looked for: a changed clock or a long sleep ends it within this. */
+private const val END_CHECK_MS = 60_000L

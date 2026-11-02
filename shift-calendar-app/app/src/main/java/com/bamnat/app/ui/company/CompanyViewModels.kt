@@ -1033,7 +1033,9 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
     data class State(val board: com.bamnat.app.company.RateBoard? = null, val loading: Boolean = true, val error: String? = null)
 
     val enabled: Boolean = c.companyApi.enabled
-    private val _filter = MutableStateFlow(Filter())
+    // 1.36 PC 재검토 (교대 사용자에게도 '건설 일용직·기능공'이 먼저): the board opens on the user's own kind of work.
+    private val _filter = MutableStateFlow(Filter(job = jobOfStyle(
+        c.calendars.styleOf(com.bamnat.app.data.PersonalCalendar.MAIN, c.settingsRepository.current.workStyle)) ?: "construction"))
     val filter: StateFlow<Filter> = _filter.asStateFlow()
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -1234,6 +1236,27 @@ class CompanyReportViewModel(
 
     /** [J133-93] The calendar's kind of work, for the 광장 job when the pay setup names none. */
     fun styleOf(): com.bamnat.core.work.WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    /**
+     * [PRF-01] 1.36 PC 사용성 P1: what of 마을 this phone has up (작품·모음·프로필·팔로잉), said in the 모두 지우기 question
+     * with its numbers. Null while asking or with nothing up.
+     */
+    private val _village = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val village: kotlinx.coroutines.flow.StateFlow<String?> = _village
+    fun loadVillage() {
+        if (!c.recipeApi.enabled) return
+        viewModelScope.launch {
+            val dev = c.companyStore.device
+            val id = runCatching { c.recipeApi.makerMe(dev) }.getOrNull() ?: return@launch
+            val p = runCatching { c.recipeApi.maker(dev, id) }.getOrNull() ?: return@launch
+            _village.value = listOfNotNull(
+                "올린 작품 ${p.recipes.size}개".takeIf { p.recipes.isNotEmpty() }, "모음 ${p.sets.size}개".takeIf { p.sets.isNotEmpty() },
+                "프로필".takeIf { p.recipes.isNotEmpty() || p.face != null || p.bio != null }, "팔로잉 ${p.followingCount}명".takeIf { p.followingCount > 0 },
+            ).joinToString(", ").ifEmpty { null }
+        }
+    }
+
+    /** [J133-71] Work with a company: 내 설정 나누기 is offered only then. */
+    val companyFits: Boolean get() = c.companyFits(calendar)
 
     sealed interface Sending {
         data object Idle : Sending
@@ -1444,6 +1467,10 @@ class CompanyReportViewModel(
                 // [ADMIN-02] The server deleted this phone's questions with the rest.
                 c.inquiryStore.update(emptyList())
                 c.inquiryStore.asked = false
+                // [PRF-05] 1.36 마을 프로필·차단도 서버에서 지워졌어요: 이 폰의 차단 사본과 '내 프로필' 표시도 함께.
+                c.recipes.setBlocked(emptySet())
+                c.recipes.hasProfile(false)
+                c.recipes.peopleChanged()
             }
             done(ok, counts?.words())
         }

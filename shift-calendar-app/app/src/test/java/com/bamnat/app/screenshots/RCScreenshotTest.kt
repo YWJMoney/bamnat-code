@@ -250,8 +250,11 @@ class RCScreenshotTest : ScreenshotBase() {
         content { MakerScreen(model, onBack = {}, onOpen = {}) }
         settle()
         assertTrue(appears("밤샘간호사", exact = false))
+        // [PRF-01] 1.36: 테마 | 기능별 탭 | 모음, then the badges at the foot.
+        assertTrue(appears("모음 0", exact = true))
+        scrollUp(900)
+        settle()
         assertTrue(appears("🏅 쓰는 분 100명", exact = true))
-        assertTrue(appears("만든 레시피", exact = true))
     }
 
     /** [RCX-04] 요청 판: wishes with their likes and where they stand. */

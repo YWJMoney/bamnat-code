@@ -27,11 +27,11 @@ import androidx.compose.material.icons.filled.ThumbDown
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
@@ -150,7 +150,12 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                             RecipeDescribe.styles(r)).joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         // [RCX-05] The maker's page: their recipes, badges and 팔로우.
-                        doc.item.maker?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("만든 분 페이지") } }
+                        // [PRF-01] 1.36: the maker's 프로필 (테마·기능별 탭·모음, 팔로우) by name, a button big enough to see.
+                        doc.item.maker?.let { m ->
+                            androidx.compose.material3.OutlinedButton(onClick = { onMaker(m) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text((doc.item.nick ?: "만든 분") + " 프로필 · 다른 작품 보기", maxLines = 1)
+                            }
+                        }
                     }
                 }
                 Text("쓰는 분 ${doc.item.users}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
@@ -513,6 +518,7 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     val problem = RecipeText.problem(body)
     OutlinedTextField(body, { body = it.take(500) }, label = { Text("글 쓰기 (연락처·금액·링크는 적지 않아요)") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
     if (problem != null) Text(RecipeText.problemText(problem), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+    com.bamnat.app.ui.company.RulesLink()
     // 1.36 [LIM-10] No daily cap; said only while reports restrict this install.
     talk.limit?.let { Text(it.line(talk.left), style = MaterialTheme.typography.labelSmall,
         color = if (talk.left == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }

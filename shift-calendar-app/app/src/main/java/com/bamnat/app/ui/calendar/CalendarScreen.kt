@@ -65,7 +65,7 @@ import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import com.bamnat.app.appContainer
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -90,7 +90,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.CalendarViewMonth
 import androidx.compose.material.icons.outlined.Groups
@@ -1238,11 +1238,12 @@ fun CalendarScreen(
             // AG 1.27 [INVITE-11] Inviting friends, three days after the install, two weeks apart (결정 AG-D6).
             if (paint == null && viewingReceived == null) add(Notice("inviteNudge", "친구 초대") { com.bamnat.app.ui.pro.InviteNudgeNotice() })
             // 1.32 [PROX-02] A money day's one 하루 무료 권유 (급여일 사흘, 근무표 넣은 날, 신고 달).
-            if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("proMoment", "하루 무료로 열어 보기") {
+            if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("proMoment", "프로 제안") {
                 val payday = payProfile?.period?.let { p ->
                     p.payWeekday == today.dayOfWeek || listOf(YearMonth.from(today), YearMonth.from(today).minusMonths(1)).mapNotNull(p::payDate)
                         .any { !it.isAfter(today) && !it.isBefore(today.minusDays(2)) }
                 } == true
+                com.bamnat.app.ui.pro.ProWelcomeCard()
                 com.bamnat.app.ui.pro.ProMomentNotice(settings.workStyle, payday)
             })
             // 1.32 [STAB-08] 백업한 지 30일, without 매일 자동 백업.
@@ -2438,7 +2439,7 @@ internal fun MonthPickerDialog(
         val state = androidx.compose.material3.rememberDatePickerState(
             initialSelectedDateMillis = selected.atStartOfDay(utc).toInstant().toEpochMilli(),
         )
-        androidx.compose.material3.DatePickerDialog(
+        com.bamnat.app.ui.components.DatePickerDialog(
             onDismissRequest = { pickingDate = false },
             confirmButton = {
                 TextButton(onClick = {

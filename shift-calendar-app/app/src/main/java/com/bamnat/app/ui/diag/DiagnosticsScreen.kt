@@ -49,7 +49,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
@@ -420,7 +420,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     var more by remember { mutableStateOf(false) }
                     Box {
                         IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
-                        androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                        com.bamnat.app.ui.components.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                             androidx.compose.material3.DropdownMenuItem(
                                 text = { Text("보고서 복사") },
                                 leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },

@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.shifts
 
+import com.bamnat.core.work.words
+
 import com.bamnat.app.ui.components.TimeRangeDialog
 import com.bamnat.app.ui.components.TimeRange
 import androidx.compose.runtime.saveable.listSaver
@@ -17,7 +19,7 @@ import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.core.model.AlarmSpec
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AlarmAdd
@@ -96,7 +98,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -143,7 +145,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { CalendarTitle("근무 종류와 시간", vm) },
+                // 1.36 PC 재검토 (현장은 설정 줄이 '일정 종류'인데 제목은 '근무 종류와 시간'): the same words as the row that opened it.
+                title = { CalendarTitle(vm.workStyle.words().types, vm) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
@@ -162,6 +165,9 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
         },
     ) { padding ->
         val list = types
+        val folded by vm.folded.collectAsStateWithLifecycle()
+        var foldedOpen by rememberSaveable { mutableStateOf(false) }
+        val shown = list.orEmpty().filter { it.id !in folded }
         if (list == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             return@Scaffold
@@ -182,7 +188,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                 // [RCP-19] 1.34: these looks (이름·글자·색·이모지) as a 나눔 판 recipe.
                 com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.SHIFT_LOOK)
             }
-            item {
+            // 1.36 PC 재검토 (현장 근무 종류에 병원·공장 3교대 묶음이 보여요): the ready-made sets are 교대 sets, for a 교대 calendar only.
+            if (vm.isShiftCalendar) item {
                 // Ready-made sets for common workplaces [MKT-03].
                 Text("한 번에 추가", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
@@ -197,11 +204,11 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                     }
                 }
             }
-            itemsIndexed(list, key = { _, t -> t.id }) { index, type ->
+            itemsIndexed(shown, key = { _, t -> t.id }) { index, type ->
                 ShiftTypeRow(
                     type = type,
                     canMoveUp = index > 0,
-                    canMoveDown = index < list.lastIndex,
+                    canMoveDown = index < shown.lastIndex,
                     onClick = { editing = type },
                     // [SHFT-09] Any kind can go while another is left; the last one cannot.
                     onDelete = if (list.size > 1) ({ deleting = type }) else null,
@@ -209,6 +216,48 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                     onMoveDown = { vm.move(type.id, 1) },
                     modifier = Modifier.animateItem(),
                 )
+            }
+            // 1.36 PC 재검토: kinds put away after a change of work (알바 → 현장), folded here; past days keep them.
+            val away = list.filter { it.id in folded }
+            if (away.isNotEmpty() && shown.none { !it.isOff }) item(key = "folded-none") {
+                Text("쓰는 근무가 없어요. 아래 ‘근무 추가’로 새 근무를 넣거나, 안 쓰는 종류에서 ‘다시 쓰기’를 눌러요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp))
+            }
+            if (away.isNotEmpty()) {
+                item(key = "folded-head") {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { foldedOpen = !foldedOpen }.padding(top = 12.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("안 쓰는 종류 ${away.size}개", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                "하루 시트에서 빠졌어요. 지난 날짜 기록과 급여는 그대로예요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(if (foldedOpen) "접기" else "펼치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                if (foldedOpen) items(away, key = { "folded-${it.id}" }) { type ->
+                    // 1.36 PC 재검토 ('다시 쓰기'가 첫 누름에 반응이 없어요): the whole row takes the tap, and a short line says it moved.
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val revive = {
+                        vm.unfold(type.id)
+                        android.widget.Toast.makeText(context, "‘${type.name}’${com.bamnat.app.ui.Fmt.obj(type.name)} 다시 써요", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "다시 쓰기", onClick = revive).padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ShiftBadge(type, size = 20.dp, outlined = true)
+                        Spacer(Modifier.width(8.dp))
+                        Text(type.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        TextButton(onClick = revive) { Text("다시 쓰기") }
+                    }
+                }
             }
         }
     }

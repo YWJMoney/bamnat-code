@@ -616,7 +616,7 @@ internal fun FeeRatesDialog(settings: com.bamnat.core.invest.InvestSettings, onD
     var sell by rememberSaveable { mutableStateOf(InvestFees.rateText(settings.sellFeeRate)) }
     val b = buy.toDecimal()?.takeIf { it in 0.0..5.0 }
     val s = sell.toDecimal()?.takeIf { it in 0.0..5.0 }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("기본 수수료") },
         text = {

@@ -245,7 +245,7 @@ fun ShareDialog(
             // [PROV-05] 근무표 PDF (프로): the month on screen or its year, on A4 to print or keep.
             val pdfOpen = container.featureGate.state.collectAsState().value.allows(com.bamnat.app.tier.Feature.ROSTER_PDF)
             fun rosterPdf(year: Boolean) {
-                if (!pdfOpen) { com.bamnat.app.ui.pro.openPro(); return }
+                if (!pdfOpen && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.ROSTER_PDF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return }
                 val name = when {
                     title.isNotBlank() -> "${title.trim()}의 ${com.bamnat.core.work.scheduleWord(style)}"
                     added && calendar != null -> "${calendar.name} ${com.bamnat.core.work.scheduleWord(style)}"
@@ -275,6 +275,8 @@ fun ShareDialog(
                 }
                 com.bamnat.app.ui.money.ProPill(locked = !pdfOpen) // [TIER-06]
             }
+            // 1.36 PC Y14: how and until when 인쇄 is open stays under the buttons, not only in a toast that goes.
+            com.bamnat.app.ui.pro.TrialNote(com.bamnat.app.tier.Feature.ROSTER_PDF, container.featureGate.state.collectAsState().value)
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Link, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
@@ -293,7 +295,7 @@ fun ShareDialog(
             if (preview == null && links.any { it != null }) {
                 LinkChips(links, slot, moreLinks, onPick = { slot = it }, onNew = {
                     if (moreLinks) links.indexOfFirst { it == null }.takeIf { it >= 0 }?.let { slot = it + 1 }
-                    else com.bamnat.app.ui.pro.openPro()
+                    else com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS)
                 })
             }
             // A link already made comes first: sending it again is what most people open this for.
@@ -335,7 +337,7 @@ fun ShareDialog(
                     PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { on ->
                         if (on) askMoney = true else options = options.copy(pay = false)
                     }
-                    if (askMoney) androidx.compose.material3.AlertDialog(
+                    if (askMoney) com.bamnat.app.ui.components.AlertDialog(
                         onDismissRequest = { askMoney = false },
                         title = { Text("${kind.label} 금액도 보낼까요?") },
                         text = { Text("받는 사람에게 ${kind.label} 금액이 그대로 보여요. 링크를 가진 사람은 누구나 볼 수 있어요.") },
@@ -367,7 +369,7 @@ fun ShareDialog(
                 ShareLinkPayload.TTL_DAYS.forEach { d ->
                     // [PROV-04] 180일 and 1년 are 프로's.
                     val locked = d in ShareLinkPayload.PRO_TTL_DAYS && !moreLinks
-                    FilterChip(selected = ttl == d, onClick = { if (locked) com.bamnat.app.ui.pro.openPro() else ttl = d },
+                    FilterChip(selected = ttl == d, onClick = { if (locked) com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS) else ttl = d },
                         label = { Text(ShareLinkPayload.ttlLabel(d)) })
                 }
                 com.bamnat.app.ui.money.ProPill(Modifier.align(Alignment.CenterVertically), locked = !moreLinks) // [TIER-06]
@@ -381,7 +383,7 @@ fun ShareDialog(
             FeedRow(
                 on = feed && feedOpen, open = feedOpen, busy = busy, url = link?.takeIf { feed && feedOpen }?.feedUrl(),
                 onChange = { on ->
-                    if (!feedOpen) { com.bamnat.app.ui.pro.openPro(); return@FeedRow }
+                    if (!feedOpen) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ICS_FEED); return@FeedRow }
                     feed = on; store.feed = on
                     // A link already made takes it at once; a new one goes out with it.
                     if (link != null && preview == null) run {
@@ -416,7 +418,7 @@ fun ShareDialog(
             }
             if (current == null) {
                 Button(enabled = !busy && !empty && !createPaused, onClick = {
-                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(); return@Button }
+                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@Button }
                     run {
                         val sent = payload()
                         val made = client.create(sent)
@@ -447,7 +449,7 @@ fun ShareDialog(
                 }
                 // 1.36: with 프로 and 고치면 바로 바꾸기 on the link is kept open by itself.
                 if (!keeps || !auto) OutlinedButton(enabled = !busy && !empty, onClick = {
-                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(); return@OutlinedButton }
+                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@OutlinedButton }
                     run {
                         val sent = payload(ttl)
                         keep(client.update(current, sent), sent)
@@ -460,7 +462,7 @@ fun ShareDialog(
                 }
                 // [J133-30] Cutting it takes the schedule away from everyone who has the link: asked once.
                 var cutting by remember { mutableStateOf(false) }
-                if (cutting) androidx.compose.material3.AlertDialog(
+                if (cutting) com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = { cutting = false },
                     title = { Text("링크를 끊을까요?") },
                     text = { Text("받은 사람 앱과 브라우저에서도 이 ${com.bamnat.core.work.scheduleWord(style)}${if (style == com.bamnat.core.work.WorkStyle.FIELD || style == com.bamnat.core.work.WorkStyle.BUSINESS || style == com.bamnat.core.work.WorkStyle.INVEST) "이" else "가"} 바로 사라지고, 같은 링크는 다시 쓸 수 없어요.") },

@@ -250,7 +250,7 @@ internal fun YearReportCard(book: MoneyBook, year: Int, snapshot: ScheduleSnapsh
         Muted("달마다·분류별·결제수단별·근무별 합계와 연말정산에 쓰는 합계를 한 장으로 정리해요. 가게 이름은 표에 넣지 않아요.")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
             OutlinedButton(onClick = {
-                if (gate.locked(Feature.MONEY_STATS)) { openPro(Feature.MONEY_STATS); return@OutlinedButton }
+                if (gate.locked(Feature.MONEY_STATS) && !com.bamnat.app.ui.pro.tryFeature(Feature.MONEY_STATS)) { openPro(Feature.MONEY_STATS); return@OutlinedButton }
                 scope.launch {
                     val doc = withContext(Dispatchers.Default) {
                         val from = LocalDate.of(year, 1, 1); val to = minOf(LocalDate.of(year, 12, 31), com.bamnat.core.time.Today.date())
@@ -291,7 +291,7 @@ internal fun FreelanceCard(calendarId: String, book: MoneyBook, today: LocalDate
         f.payers.take(4).forEach { TaxLine("  ${it.name} ${it.count}건", Fmt.won(it.amount), muted = true) }
         f.refund?.let { r -> if (gate.allows(Feature.TAX_FORECAST)) Muted(if (r >= 0) "5월 신고 뒤 약 ${Fmt.won(r)} 돌려받을 것 같아요" else "5월에 약 ${Fmt.won(-r)} 더 낼 것 같아요") }
         TextButton(onClick = {
-            if (gate.locked(Feature.TAX_FORECAST)) { openPro(Feature.TAX_FORECAST); return@TextButton }
+            if (gate.locked(Feature.TAX_FORECAST) && !com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) { openPro(Feature.TAX_FORECAST); return@TextButton }
             scope.launch { runCatching { com.bamnat.app.report.ReportShare.pdf(context, TaxPlus.mayPack(f), "bamnat-may-$year.pdf") } }
         }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (gate.locked(Feature.TAX_FORECAST)) "5월 신고 준비 묶음 (프로)" else "5월 신고 준비 묶음 PDF") }
     }

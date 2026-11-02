@@ -27,12 +27,16 @@ class RewardLedgerTest {
         var s = FeatureLease.firstUse(FeatureLease.State(), "PAYSLIP_MATCH", monthStart.plus(Duration.ofDays(1)))!!
         s = FeatureLease.granted(s, Bundle.MONEY, now, today)
         val m = RewardLedger.month(s, monthStart, nextMonth, listOf(RewardLedger.Part("테마", 30)), yearly, 68_400)
-        assertEquals("급여 7일 · 돈 통계 7일 · 테마 30일", m.partsLine)
+        assertEquals("급여 7일(처음 무료) · 돈 통계 7일(광고) · 테마 30일", m.partsLine)
         assertEquals(44L, m.days)
         assertEquals(1, m.ads)
-        assertEquals(3_600L, m.wonValue) // 44 × 29,990 ÷ 365 ≈ 3,615 → 3,600
+        assertEquals(3_620L, m.wonValue) // 44 × 29,990 ÷ 365 ≈ 3,615.2 → 3,620 (to the 10원)
+        assertEquals(580L, RewardLedger.wonValue(7, yearly)) // 7 × 29,990 ÷ 365 ≈ 575.1 → 580
         assertEquals(68_400L, m.found)
         assertNull("no price, no 원 said", RewardLedger.month(s, monthStart, nextMonth, emptyList(), null, 0).wonValue)
+        // 1.36 PC P22: a bundle opened two ways says both.
+        val both = FeatureLease.granted(s, Bundle.PAY, monthStart.plus(Duration.ofDays(9)), today.withDayOfMonth(10))
+        assertEquals("급여 14일(처음 7일 + 광고 7일) · 돈 통계 7일(광고)", RewardLedger.month(both, monthStart, nextMonth, emptyList(), yearly, 0).partsLine)
         assertEquals(82L, RewardLedger.perDay(yearly))
         assertEquals(2_499L, RewardLedger.perMonth(yearly))
     }

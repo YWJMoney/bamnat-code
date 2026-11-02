@@ -306,7 +306,7 @@ fun TryOnScreen(
     var changedBlocks by remember { mutableStateOf(0) }
     // [TRY-04] The parts that change on the screen shown, by name.
     val changedHere = remember(mine, after, tab) { LookParts.changed(mine, after).mapNotNull { LookParts.byId(it) }.filter { it.tab == tab }.map { it.label } }
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
+    com.bamnat.app.ui.components.Dialog(onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize()) {
             // F-95: this window's own bar icons follow its ground (they stayed white on a light sheet).
@@ -396,7 +396,7 @@ fun TryOnScreen(
     // 눌러서 담기: the screen tapped, its parts to keep one by one.
     if (tapped) {
         val here = parts.filter { it.tab == tab }
-        androidx.compose.material3.AlertDialog(
+        com.bamnat.app.ui.components.AlertDialog(
             onDismissRequest = { tapped = false },
             title = { Text("${LookParts.tabLabel(tab)}에서 마음에 드는 부분") },
             text = {

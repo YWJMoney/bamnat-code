@@ -17,7 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.dp
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -119,7 +119,10 @@ private fun WorkPage(
         HorizontalDivider()
         NavRow(words.pattern, words.patternHint, onOpenPattern)
         HorizontalDivider()
-        NavRow(words.types, shiftsLine(snapshot?.shiftTypes.orEmpty()), onOpenShiftTypes)
+        // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not in the line, and the line says how many are put away.
+        val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
+        val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
+        NavRow(words.types, shiftsLine(snapshot?.shiftTypes.orEmpty(), folded), onOpenShiftTypes)
         if (work.workStyle?.usesPayEngine != false) {
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
@@ -179,11 +182,13 @@ private fun CalendarPick() {
 }
 
 /** "주간 07:00–19:00 · 야간 19:00–07:00 외 2개". */
-private fun shiftsLine(types: List<ShiftType>): String {
-    val work = types.filter { !it.isOff && it.start != null && it.end != null }
-    if (work.isEmpty()) return "이름, 시간, 색, 근무 전 알람"
+internal fun shiftsLine(types: List<ShiftType>, folded: Set<Long> = emptySet()): String {
+    val all = types.filter { !it.isOff && it.start != null && it.end != null }
+    val work = all.filter { it.id !in folded }
+    val away = if (work.size == all.size) "" else " · 안 쓰는 종류 ${all.size - work.size}개"
+    if (work.isEmpty()) return (if (all.isEmpty()) "이름, 시간, 색, 근무 전 알람" else "쓰는 근무 없음") + away
     val shown = work.take(2).joinToString(" · ") { "${it.name} ${Fmt.time(it.start)}–${Fmt.time(it.end)}" }
-    return if (work.size > 2) "$shown 외 ${work.size - 2}개" else shown
+    return (if (work.size > 2) "$shown 외 ${work.size - 2}개" else shown) + away
 }
 
 @Composable
@@ -875,6 +880,11 @@ private fun PrivacyPage(
         HorizontalDivider()
         // [ALRM-02] I27: every yes and no, and every permission, on one sheet.
         NavRow(SUMMARY_ROW, "사용 통계·소식·권한을 한 장에서 보고 바꿔요") { summary = true }
+        // [PRF-05] 1.36 PC 사용성 P8: 탈퇴·삭제를 찾는 분이 개인정보에서 바로 찾아요. 회원 가입이 없으니 이것이 '탈퇴'예요.
+        if (context.appContainer.companyApi.enabled) {
+            HorizontalDivider()
+            NavRow(SENT_ROW, "광장·마을·문의로 보낸 것을 보고, 서버에서 한 번에 지워요") { SettingsLinks.go(SettingsGo.SENT) }
+        }
         if (summary) com.bamnat.app.ui.diag.ConsentSummarySheet { summary = false }
         HorizontalDivider()
         // [STAT-01] Back with a real place to send to (UsageStats, 처리방침 2.8). Its own yes, so it starts off;
@@ -960,7 +970,7 @@ private fun AboutPage() {
     SectionCard(title = "앱 정보") {
         // [MON-05] What paying for 프로 agrees to.
         NavRow("이용약관", "프로 구독·체험·해지·환불") {
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(com.bamnat.app.ui.pro.TERMS_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            com.bamnat.app.ui.components.PolicyPage.open(context, com.bamnat.app.ui.pro.TERMS_URL, "이용약관")
         }
         HorizontalDivider()
         // [OPS-23] The libraries the app ships with.
@@ -983,7 +993,7 @@ internal const val AD_PRIVACY_WORDS =
 private const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/"
 
 private fun openPrivacy(context: android.content.Context) {
-    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PRIVACY_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침")
 }
 
 /**
@@ -1100,7 +1110,7 @@ private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, 
     val sample = ringing.first()
     fun times(t: com.bamnat.core.model.ShiftType) = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
         .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }.ifEmpty { "켜진 알람 없음" }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("모든 근무 알람 옮기기") },
         text = {

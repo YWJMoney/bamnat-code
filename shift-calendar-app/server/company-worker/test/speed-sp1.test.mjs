@@ -68,7 +68,8 @@ test("[SPD-01] states, opinions, 대표 reports and settled marks for many versi
     for (const at of [now, now + 40 * 86400000]) assert.deepEqual(stable(dept, p.grp, facts.uses(p.company, p.grp), at), await stableOne(env, p.company, dept, p.grp, at));
   }
   assert.ok(checkedLong > 0, "the set has a version checked over two months");
-  assert.ok([...many.values()].some((s) => s.by.length > 0), "and names");
+  // 1.36 [V3] No 마을 이름 next to a company.
+  assert.ok([...many.values()].every((s) => s.by.length === 0), "and no names");
 });
 
 test("[SPD-01] many pairs go in statements of at most 90 values each, and still read every one", async () => {

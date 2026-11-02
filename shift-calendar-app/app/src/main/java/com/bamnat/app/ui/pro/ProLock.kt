@@ -46,7 +46,20 @@ import com.bamnat.app.ui.settings.SettingsLinks
 @Composable
 fun ProLock(feature: Feature, gate: Gate, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     if (gate.allows(feature)) {
-        Box(modifier) { content() }
+        // 1.36 PC 재검토 (7일 열림 알림은 짧아 끝 날짜를 읽기 빠듯): opened for 7 days, the card itself says until when.
+        val until = gate.trialUntil(feature)?.takeIf { gate.tier < feature.minTier }
+        if (until == null) {
+            Box(modifier) { content() }
+            return
+        }
+        Column(modifier) {
+            content()
+            Text(
+                "${gate.bundle(feature)?.label?.let { "$it 묶음 · " }.orEmpty()}${untilWords(java.time.Instant.ofEpochMilli(until))}까지 열려 있어요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 4.dp, top = 4.dp),
+            )
+        }
         return
     }
     Box(modifier.heightIn(min = MIN_HEIGHT)) {
@@ -71,8 +84,13 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
             }
             Text("프로에서 쓸 수 있어요. 흐리게 보이는 건 내 기록으로 만든 화면이에요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-            Button(onClick = { goPro() }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
-            LeaseAdOption(feature, gate)
+            if (gate.canTry(feature)) {
+                LeaseAdOption(feature, gate)
+                androidx.compose.material3.TextButton(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
+            } else {
+                Button(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
+                LeaseAdOption(feature, gate)
+            }
             // AG 1.27 [MON-12][INVITE-11] The third way, as in the sheet.
             if (LocalContext.current.appContainer.inviteApi.enabled) {
                 OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth()) { Text("친구 초대로 프로 이용권 받기") }
@@ -85,7 +103,7 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
 @Composable
 internal fun proButtonText(): String {
     val plans = com.bamnat.app.billing.rememberPlans()
-    return if (plans.any { it.trial }) "1개월 무료로 써 보기" else "프로 알아보기"
+    return if (plans.any { it.trial && it.yearly }) "1개월 무료로 써 보기" else "프로 알아보기"
 }
 
 /**
@@ -115,10 +133,27 @@ fun tryFeature(feature: Feature): Boolean = ProOffer.gate?.tryOrAsk(feature) ?: 
 fun TrialNote(feature: Feature, gate: com.bamnat.app.tier.Gate, modifier: Modifier = Modifier) {
     val until = gate.trialUntil(feature)
     val text = when {
-        until != null && gate.tier < feature.minTier -> java.time.Instant.ofEpochMilli(until).atZone(com.bamnat.core.time.Today.zone()).toLocalDate()
-            .let { "${it.monthValue}월 ${it.dayOfMonth}일까지 무료로 써요. 그 뒤에는 광고 한 편으로 7일 더 열거나 프로로 계속 써요" }
+        until != null && gate.tier < feature.minTier -> {
+            // 1.36 PC B2·B6: how it was opened, and the end with its hour (a week from 3 p.m. ends at 3 p.m., not at the day's end).
+            val how = gate.bundle(feature)?.let { b -> gate.leases.grants.lastOrNull { it.bundle == b }?.why }
+            val opened = when (how) {
+                com.bamnat.core.tier.FeatureLease.Why.AD -> "광고로 열었어요"
+                com.bamnat.core.tier.FeatureLease.Why.NO_AD -> "광고가 안 와서 그냥 열었어요"
+                com.bamnat.core.tier.FeatureLease.Why.BACK -> "다시 오셔서 7일 열었어요"
+                else -> "처음 7일은 무료예요"
+            }
+            "$opened · ${untilWords(java.time.Instant.ofEpochMilli(until))}까지. 그 뒤에는 광고 한 편으로 7일 더 열거나 프로로 계속 써요"
+        }
         gate.canTry(feature) -> "처음 쓰는 날부터 일주일은 무료예요"
         else -> return
     }
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
+}
+
+/** 1.36 PC B6: "12월 16일 오후 3시" (and the minutes when not on the hour), in the phone's zone. */
+fun untilWords(at: java.time.Instant): String {
+    val t = at.atZone(com.bamnat.core.time.Today.zone())
+    val h = t.hour % 12
+    val half = if (t.hour < 12) "오전" else "오후"
+    return "${t.monthValue}월 ${t.dayOfMonth}일 $half ${if (h == 0) 12 else h}시" + (if (t.minute > 0) " ${t.minute}분" else "")
 }

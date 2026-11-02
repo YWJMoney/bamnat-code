@@ -87,7 +87,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                 if (on) NewsSwitches()
                 if (on) Row {
                     TextButton(onClick = onList) { Text("레시피 보러 가기") }
-                    me?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("내 만든 분 페이지") } }
+                    me?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("내 프로필") } }
                 }
 
                 Header("받은 레시피")
@@ -166,13 +166,13 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     }
     update?.let { UpdateDialog(it, vm) }
     undoing?.let { (title, go) ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { undoing = null }, title = { Text("되돌릴까요?") },
+        com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { undoing = null }, title = { Text("되돌릴까요?") },
             text = { Text("‘$title’이 바꾼 것만 넣기 전으로 돌아가요. 넣은 뒤 내가 직접 바꾼 것과 근무 기록·가계부·메모는 그대로예요") },
             confirmButton = { TextButton(onClick = { undoing = null; go() }) { Text("되돌리기") } },
             dismissButton = { TextButton(onClick = { undoing = null }) { Text("닫기") } })
     }
     asking?.let { (q, go) ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { asking = null }, title = { Text("지울까요?") }, text = { Text(q) },
+        com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { asking = null }, title = { Text("지울까요?") }, text = { Text(q) },
             confirmButton = { TextButton(onClick = { asking = null; go() }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { asking = null }) { Text("닫기") } })
     }
@@ -181,7 +181,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
 /** [RCX-03] 새 판 반영: each piece's changed fields; 부딪힘 (I changed it too) is off unless chosen. */
 @Composable
 private fun UpdateDialog(u: RecipeMineViewModel.Update, vm: RecipeMineViewModel) {
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = vm::closeUpdate,
         title = { Text("‘${u.recipe.title}’ v${u.version}에서 바뀐 점") },
         text = {

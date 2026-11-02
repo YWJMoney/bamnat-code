@@ -20,7 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.appContainer
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Button
@@ -252,6 +252,12 @@ private object Routes {
     /** [RCX-05] 1.35 a maker's page; [RCX-04] the 요청 판 of a calendar's kind of work. */
     const val RECIPE_MAKER = "recipe_maker/{id}"
     fun recipeMaker(id: String) = "recipe_maker/$id"
+    /** [PRF-02][PRF-07][PRF-09] 1.36 팔로잉·팔로워·차단·새 작품, a 모음, and 작품 통계. */
+    const val RECIPE_PEOPLE = "recipe_people?part={part}"
+    fun recipePeople(part: String = "new") = "recipe_people?part=$part"
+    const val RECIPE_SET = "recipe_set/{id}"
+    fun recipeSet(id: String) = "recipe_set/$id"
+    const val RECIPE_STATS = "recipe_stats"
     const val RECIPE_REQUESTS = "recipe_requests?calendar={calendar}"
     fun recipeRequests(calendar: String = PersonalCalendar.MAIN) = "recipe_requests?calendar=$calendar"
     /** [PLAZA-32] 1.27 AI: the rule plaza of every company, past a company's 정보 광장. */
@@ -702,6 +708,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
     }
 
+    // [PRF-11] 1.36: a profile link (bamnat://m/<id>) tapped outside the app: the profile opens on top.
+    val openingMaker by com.bamnat.app.recipe.RecipeLinks.openingMaker.collectAsStateWithLifecycle()
+    LaunchedEffect(openingMaker) {
+        val id = openingMaker ?: return@LaunchedEffect
+        com.bamnat.app.recipe.RecipeLinks.openedMaker()
+        nav.navigate(Routes.recipeMaker(id)) { launchSingleTop = true }
+    }
+
     val sharing by com.bamnat.app.recipe.RecipeLinks.make.collectAsStateWithLifecycle()
     LaunchedEffect(sharing) {
         val kind = sharing ?: return@LaunchedEffect
@@ -711,6 +725,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // AG 1.27 [MON-12] A tap on a locked 프로 feature: 프로, the rewarded ad, or 친구 초대 (ProOffer).
     com.bamnat.app.ui.pro.ProOfferHost(container)
+    com.bamnat.app.ui.shifts.TypeFoldHost(container)
+    // 1.36 PC W43: the policy pages inside the app, not Chrome's first-run sign-in.
+    com.bamnat.app.ui.components.PolicyPageHost()
+    com.bamnat.app.ui.pro.ProPaywallHost(container)
 
     // [PLAZA-07] 결정 D79: the one-time ask to share the work order and pay way; yes opens the company's 광장.
     // [PLAZA-34] 1.27 AI: each change asks with what changed; 저절로 나누기 says it in one line with 되돌리기.
@@ -745,7 +763,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val styleExtras = remember { mutableStateOf<StyleExtras?>(null) }
     LaunchedEffect(Unit) {
         container.recordsTrash.offers.collect { offer ->
-            val result = snackbar.showSnackbar(offer.message, actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            // 1.36 PC 재검토 (방식을 바꾼 띠가 접기 창 뒤에 깔렸다가 접기 띠로 바로 바뀌어 되돌릴 틈이 없어요): a kind-of-work change waits
+            // for its 접어 두기 question, and one line says both; 되돌리기 takes both back.
+            kotlinx.coroutines.delay(800)
+            com.bamnat.app.ui.shifts.TypeFoldAsk.asking.first { it == null }
+            val fold = com.bamnat.app.ui.shifts.TypeFoldAsk.done.value
+            if (fold != null) com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
+            val result = snackbar.showSnackbar(offer.message + (fold?.let { " · ${it.message}" } ?: ""), actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            if (result == SnackbarResult.ActionPerformed && fold != null) container.foldedTypes.unfold(fold.calendar, fold.ids)
             // Read once the snackbar is answered: the change sets it right after it is offered.
             val extras = styleExtras.value?.takeIf { it.entryId == offer.entry.id }
             if (extras != null) styleExtras.value = null
@@ -755,6 +780,20 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 if (ok) extras?.opened?.let { nav.popFrom(it) }
                 snackbar.showSnackbar(if (ok) "되돌렸어요" else "되돌리지 못했어요. 설정 › 데이터 › 최근 지운 기록에서 다시 해 주세요")
             }
+        }
+    }
+
+    // 1.36 PC 재검토 (접어 두기를 눌러도 바뀐 게 안 보여요): what was folded is said at once, with 되돌리기, over the kind-of-work snackbar.
+    LaunchedEffect(Unit) {
+        com.bamnat.app.ui.shifts.TypeFoldAsk.done.collect { d ->
+            if (d == null) return@collect
+            // Said with the kind-of-work change when that one comes (above); alone only when it does not.
+            kotlinx.coroutines.delay(1_500)
+            if (com.bamnat.app.ui.shifts.TypeFoldAsk.done.value != d) return@collect
+            com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
+            snackbar.currentSnackbarData?.dismiss()
+            val r = snackbar.showSnackbar("${d.message} · 설정 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            if (r == SnackbarResult.ActionPerformed) container.foldedTypes.unfold(d.calendar, d.ids)
         }
     }
 
@@ -1130,6 +1169,8 @@ private fun AppNavHost(
                     )
                     val schedule = container.calendars.repository(calendar)
                     val added = addStyleTypes(container, calendar, style)
+                    // 1.36 PC 재검토: the old kind of work's 근무 종류 are offered once to be put away (never deleted).
+                    com.bamnat.app.ui.shifts.TypeFoldAsk.after(container, calendar, before, style)
                     val patterns = schedule.patterns.first()
                     val pay = container.calendars.pay(calendar).profile.value != null
                     var opened: String? = null
@@ -1472,6 +1513,9 @@ private fun AppNavHost(
                 onRequests = { nav.navigate(Routes.recipeRequests(recipeCal)) { launchSingleTop = true } },
                 onCode = { nav.navigate(Routes.recipes(recipeCal, code = true)) { launchSingleTop = true } },
                 onStudio = { start -> nav.navigate(Routes.studio(start)) { launchSingleTop = true } },
+                // [PRF-02] 1.36 팔로잉 줄: 내 프로필, the makers followed, 모두 보기.
+                onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) { launchSingleTop = true } },
+                onPeople = { nav.navigate(Routes.recipePeople()) { launchSingleTop = true } },
             )
         }
         composable(Routes.STUDIO, arguments = listOf(navArgument("start") { type = NavType.StringType; defaultValue = "mine" })) { entry ->
@@ -1553,7 +1597,28 @@ private fun AppNavHost(
         composable(Routes.RECIPE_MAKER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
             val vm = appViewModel(key = "recipe-maker-$id") { com.bamnat.app.ui.recipe.MakerViewModel(it, id) }
-            com.bamnat.app.ui.recipe.MakerScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MAKER) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) })
+            com.bamnat.app.ui.recipe.MakerScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_MAKER) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) },
+                onSet = { set -> nav.navigate(Routes.recipeSet(set)) }, onPeople = { part -> nav.navigate(Routes.recipePeople(part)) { launchSingleTop = true } },
+                onStats = { nav.navigate(Routes.RECIPE_STATS) { launchSingleTop = true } }, onPro = { nav.navigate(Routes.PRO) { launchSingleTop = true } },
+                onSent = if (container.companyApi.enabled) ({ nav.navigate(Routes.companySent()) { launchSingleTop = true } }) else null,
+                onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } })
+        }
+        composable(Routes.RECIPE_PEOPLE, arguments = listOf(navArgument("part") { type = NavType.StringType; defaultValue = "new" })) { entry ->
+            val vm = appViewModel(key = "recipe-people") { com.bamnat.app.ui.recipe.PeopleViewModel(it) }
+            com.bamnat.app.ui.recipe.PeopleScreen(vm, entry.arguments?.getString("part") ?: "new", onBack = { nav.popFrom(Routes.RECIPE_PEOPLE) },
+                onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) })
+        }
+        composable(Routes.RECIPE_SET, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("id").orEmpty()
+            val style = remember { container.settingsRepository.current.workStyle }
+            val vm = appViewModel(key = "recipe-set-$id") { com.bamnat.app.ui.recipe.SetViewModel(it, id, style) }
+            com.bamnat.app.ui.recipe.SetScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_SET) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) },
+                onMaker = { m -> nav.navigate(Routes.recipeMaker(m)) })
+        }
+        composable(Routes.RECIPE_STATS) {
+            val vm = appViewModel(key = "recipe-stats") { com.bamnat.app.ui.recipe.StatsViewModel(it) }
+            com.bamnat.app.ui.recipe.StatsScreen(vm, onBack = { nav.popFrom(Routes.RECIPE_STATS) }, onOpen = { code -> nav.navigate(Routes.recipe(code)) },
+                onPro = { nav.navigate(Routes.PRO) { launchSingleTop = true } })
         }
         composable(Routes.RECIPE_REQUESTS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
@@ -1877,6 +1942,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.RECIPES -> Routes.RECIPE_MINE
     SettingsGo.STUDIO -> Routes.studio()
     SettingsGo.LEAVE -> Routes.leave()
+    SettingsGo.SENT -> Routes.companySent()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
 }

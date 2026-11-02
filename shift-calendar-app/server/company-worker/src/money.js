@@ -98,6 +98,50 @@ export function stack(rows, launchedAt) {
   return { until: given.length ? until : null, waiting: 0, items: given };
 }
 
+// ---- 1.36 841 쓰면 쌓이는 날 (수익설계 2판 B안: 광고 없는 보상, 월 14일까지, 나눔 대상 아님) ----
+
+export const EARNED = {
+  /** A bug report whose 개발사항 is marked 완료 in the admin app. */
+  bugDays: 3,
+  /** At most this many earned days a month (KST) per phone. */
+  monthCap: 14,
+  words: { bug: "문제 신고가 고쳐져서" },
+};
+
+/** The first moment of [now]'s month in Korea. */
+export function kstMonthStart(now) {
+  const [y, m] = kstDay(now).split("-").map(Number);
+  return Date.UTC(y, m - 1, 1) - 9 * HOUR;
+}
+
+/** Earned days stacked after [until] (the months' end), each from when it was given or the launch, whichever is last. */
+export function stackDays(until, rows, launchedAt) {
+  const days = rows.reduce((n, r) => n + r.days, 0);
+  if (!launchedAt) return { until, waiting: days };
+  let end = until ?? 0;
+  for (const r of rows) end = Math.max(end, r.given_at, launchedAt) + r.days * DAY;
+  return { until: rows.length ? end : until, waiting: 0 };
+}
+
+/** Gives [days] once for [source], within the month's cap; the days actually given (0 when none). */
+export async function giveDays(env, kind, source, dev, days, now) {
+  const got = await one(env, "SELECT COALESCE(SUM(days), 0) AS n FROM day_rewards WHERE device = ? AND given_at >= ?", dev, kstMonthStart(now));
+  const give = Math.min(days, EARNED.monthCap - (got?.n ?? 0));
+  if (give <= 0) return 0;
+  const r = await run(env, "INSERT OR IGNORE INTO day_rewards (source, device, kind, days, given_at) VALUES (?, ?, ?, ?, ?)", source, dev, kind, give, now);
+  return r.meta.changes ? give : 0;
+}
+
+/** A 개발사항 just marked 완료: every phone that reported it as a problem gets [EARNED.bugDays], once per item. */
+export async function bugFixed(env, itemId, now) {
+  const rows = await all(env, `SELECT DISTINCT i.device AS device FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id
+    WHERE l.item_id = ? AND i.kind IN ('bug', 'problem')`, itemId);
+  let phones = 0;
+  for (const r of rows) if (await giveDays(env, "bug", `bug:${itemId}:${r.device}`, r.device, EARNED.bugDays, now)) phones++;
+  if (phones) await audit(env, now, "earned_days", `${phones}대`, `bug ${itemId}`);
+  return phones;
+}
+
 export async function installOf(request) {
   const id = deviceId(request.headers.get("x-device"));
   if (!id) throw new Refuse("device", "device");
@@ -114,9 +158,14 @@ export async function passes(env, dev, now) {
   ]);
   if (link) await run(env, "UPDATE admin_devices SET seen_at = ? WHERE device = ?", now, dev);
   const p = stack(rows, s.launchedAt);
+  // 1.36 841 쓰면 쌓이는 날: days earned (a bug report fixed, …) go after the months, from the launch.
+  const earned = await all(env, "SELECT kind, days, given_at FROM day_rewards WHERE device = ? ORDER BY given_at", dev);
+  const d = stackDays(p.until, earned, s.launchedAt);
   return {
-    until: p.until ? iso(p.until) : null,
+    until: d.until ? iso(d.until) : null,
     waitingMonths: p.waiting,
+    waitingDays: d.waiting,
+    earned: earned.map((r) => ({ days: r.days, at: iso(r.given_at), why: EARNED.words[r.kind] ?? "쓰면 쌓이는 날" })),
     items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
@@ -142,7 +191,12 @@ export const PRO_SHARE = { codeMs: 7 * DAY, codesPerDay: 10, claimsPerHour: 10 }
 export async function boughtUntil(env, dev, now) {
   const row = await one(env, `SELECT MAX(expiry) AS until FROM subs WHERE device = ? AND trial = 0
     AND state IN ('ACTIVE', 'GRACE', 'CANCELED') AND expiry > ?`, dev, now);
-  return row?.until ?? null;
+  // 1.36 841: a 1년 이용권 is bought 프로 too (프로 나눔 1인). Passes stack: each adds a year from its purchase or the end before.
+  const passes = await all(env, "SELECT purchased_at FROM year_passes WHERE device = ? AND state = 'ACTIVE' ORDER BY purchased_at", dev);
+  let passEnd = null;
+  for (const p of passes) passEnd = Math.max(passEnd ?? p.purchased_at, p.purchased_at) + 365 * DAY;
+  const best = Math.max(row?.until ?? 0, passEnd && passEnd > now ? passEnd : 0);
+  return best || null;
 }
 
 /** The 프로 given to this install, as { until }, or null. */
@@ -237,6 +291,7 @@ export async function money(request, env, path) {
       // The passes move; the old phone keeps nothing and the code is spent.
       await batch(env, [
         stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
+        stmt(env, "UPDATE day_rewards SET device = ? WHERE device = ?", dev, row.device),
         stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
         // [INVITE-02] The invite code moves with them, so links already sent count here.
         stmt(env, "UPDATE OR IGNORE invite_codes SET device = ? WHERE device = ?", dev, row.device),
@@ -786,6 +841,7 @@ export async function purchase(request, env, dev, now) {
   if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
   if (typeof body.token !== "string" || body.token.length < 10 || body.token.length > 1000) refuse("token", "token");
   if (!playReady(env)) return json({ verified: false });
+  if (body.product === PASS_PRODUCT) return yearPass(env, dev, body.token, now);
   const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(body.token)}`), body.product);
   const hash = (await sha256(`sub|${body.token}`)).slice(0, 40);
   // [SRV-07] A token already tied to another install stays with it while that install still checks in: a
@@ -809,6 +865,44 @@ export async function purchase(request, env, dev, now) {
     verified: true, state: s.state, expiry: s.expiry ? iso(s.expiry) : null, trial: s.trial, autoRenew: s.autoRenew,
     acknowledged: s.acknowledged, consentAt: row.consent_at ? iso(row.consent_at) : null, stoppedAt: row.stopped_at ? iso(row.stopped_at) : null,
   });
+}
+
+/** 1.36 841 1년 이용권: a one-time product, no automatic payment. */
+export const PASS_PRODUCT = "bamnat_pro_pass_1y";
+const PASS_DAYS = 365;
+
+/** products.get read the way the app needs it: purchaseState 0 bought, 1 cancelled (refunded), 2 pending. */
+export function readPass(p) {
+  const at = Number(p.purchaseTimeMillis);
+  return {
+    state: p.purchaseState === 0 ? "ACTIVE" : p.purchaseState === 2 ? "PENDING" : "EXPIRED",
+    purchasedAt: Number.isFinite(at) ? at : null,
+    orderId: typeof p.orderId === "string" ? p.orderId.slice(0, 80) : "",
+    acknowledged: p.acknowledgementState === 1,
+  };
+}
+
+/**
+ * 1.36 841: the 1년 이용권 as Play says, kept by its token's hash with the phone that showed it (the same rule as a subscription:
+ * a token tied to another phone that still checks in stays there). The app stacks the year itself; a refund says EXPIRED.
+ */
+async function yearPass(env, dev, token, now) {
+  const p = readPass(await playCall(env, "GET", `/purchases/products/${PASS_PRODUCT}/tokens/${encodeURIComponent(token)}`));
+  const hash = (await sha256(`pass|${token}`)).slice(0, 40);
+  const bound = await one(env, "SELECT device, checked_at FROM year_passes WHERE hash = ?", hash);
+  if (bound && bound.device !== dev) {
+    if (now - bound.checked_at < REBIND_AFTER) {
+      await audit(env, now, "purchase_rebind_refused", PASS_PRODUCT, hash.slice(0, 8));
+      return json({ verified: false });
+    }
+    await audit(env, now, "purchase_rebind", PASS_PRODUCT, hash.slice(0, 8));
+  }
+  if (!p.purchasedAt) return json({ verified: false });
+  await run(env, `INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, checked_at = excluded.checked_at`,
+  hash, dev, p.orderId, p.state, p.purchasedAt, now, now);
+  return json({ verified: true, state: p.state, purchasedAt: iso(p.purchasedAt), expiry: iso(p.purchasedAt + PASS_DAYS * DAY),
+    trial: false, autoRenew: false, acknowledged: p.acknowledged });
 }
 
 /**

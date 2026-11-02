@@ -36,9 +36,9 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -411,7 +411,8 @@ fun TalkSheet(holder: TalkHolder) {
                 Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(6.dp))
                 Text("다른 분께는 ‘참여자 번호’로만 보여요. 이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                RulesLink()
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val talk = o.talk
@@ -606,7 +607,11 @@ private fun PostRow(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val name = p.nick ?: "참여자 ${p.who}"
-            Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
+            // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
+            val maker = p.maker
+            if (maker != null && !p.mine) Text("$name ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(onClickLabel = "프로필 보기") { com.bamnat.app.recipe.RecipeLinks.openMaker(maker) }.heightIn(min = 32.dp))
+            else Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
             when (p.kind) {
                 "question" -> { Spacer(Modifier.width(4.dp)); StatusChip("질문", Tone.QUIET) }
                 "proposal" -> { Spacer(Modifier.width(4.dp)); StatusChip("고치자는 제안", Tone.WAIT) }

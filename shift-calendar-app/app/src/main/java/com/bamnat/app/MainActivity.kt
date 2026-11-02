@@ -185,6 +185,10 @@ class MainActivity : ComponentActivity() {
         // Reopened from Recents, Android hands back the link the app was first opened with: it was offered then.
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         // [RCP-22] 1.34: a recipe link (bamnat://r/CODE from the recipe's public page).
+        // [PRF-11] 1.36: a maker's profile link (bamnat://m/<id> from the profile's public page).
+        if (intent.data?.scheme == "bamnat" && intent.data?.host == "m") {
+            com.bamnat.app.recipe.RecipeLinks.openMaker(com.bamnat.app.recipe.RecipeLinks.findMaker(intent.dataString)); return
+        }
         if (intent.data?.scheme == "bamnat" && intent.data?.host == "r") {
             com.bamnat.app.recipe.RecipeLinks.open(com.bamnat.app.recipe.RecipeLinks.find(intent.dataString)); return
         }
@@ -246,7 +250,8 @@ class MainActivity : ComponentActivity() {
         // [MON-02] The server's answer, passes and Play's purchases. [MON-07] Google's consent form and
         // the ads SDK start only when an ad may show: [FLAG-09] with the `ads` row on, without 프로, with ad ids, and
         // [SRV-07] not in the first three days after install.
-        c.syncPro()
+        // 1.36 PC 재검토: the first start of this process is an open afresh (the 정식 출시 switch is asked again sooner).
+        c.syncPro(opened = !openedOnce).also { openedOnce = true }
         if (com.bamnat.core.tier.AdRules.sdkMayStart(c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS), c.featureGate.state.value.allows(com.bamnat.app.tier.Feature.NO_ADS),
                 c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
@@ -266,6 +271,8 @@ class MainActivity : ComponentActivity() {
     private companion object {
         const val CATCH_UP_EVERY = 30 * 60 * 1000L
         @Volatile var lastCatchUp = 0L
+        /** 1.36 PC 재검토: this process already had its first start (later starts come back from the background). */
+        @Volatile var openedOnce = false
         const val KEY_AWAITING = "awaiting_result"
         const val KEY_LEFT_AT = "left_at"
         val LIGHT_SCRIM = Color.argb(0xe6, 0xFF, 0xFF, 0xFF)

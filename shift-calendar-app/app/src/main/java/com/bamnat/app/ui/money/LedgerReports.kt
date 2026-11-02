@@ -106,15 +106,27 @@ fun LedgerReportsPane(
             if (r.byTag.isNotEmpty()) TagsCard(r)
             if (r.spent > 0) WeekdayCard(r)
             if (r.biggest.isNotEmpty()) BiggestCard(r, onOpen)
-        } else {
-            com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) { YearCard(analysis.year, r.month) }
         }
+        // 1.36 PC B5: locked, the one lock above stands for these too (two lock cards stacked before).
         // F 1.32 [TAXP-09] The year as a PDF (프로) or CSV (무료).
         YearReportCard(book, month.year, snapshot, gate, onMessage)
         if (!gate.live) ProNote()
     }
     if (!r.hasData && analysis.year.activeMonths == 0) {
-        LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+        // 1.36 PC 재검토: with no records, what the analysis will need, and (locked) that its first week is free, under the empty words.
+        val lead = when {
+            gate.allows(Feature.MONEY_STATS) || !gate.live -> null
+            // 1.36 PC 재검토 (빈 화면엔 열기 단추가 없어요): on purpose. Opened now, the free week would run out on an empty screen; it opens
+            // on the first look once there are records.
+            gate.canTry(Feature.MONEY_STATS) -> "자세한 분석(분류별·지난달 비교·올해 흐름)은 프로 기능이에요. 돈을 적은 뒤 처음 열면 그날부터 7일 무료라, 기록이 없는 지금은 아껴 둬요."
+            else -> "자세한 분석(분류별·지난달 비교·올해 흐름)은 프로 기능이에요. 광고 한 편으로 7일 열 수도 있어요."
+        }
+        if (lead == null) LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+        else Column {
+            LedgerEmpty(Icons.Outlined.Insights, "분석할 기록이 아직 없어요", "돈을 적으면 어디에 얼마 썼는지, 지난달보다 어떤지 그림으로 보여 드려요.")
+            Text(lead, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp))
+        }
         return
     }
     if (wide) {

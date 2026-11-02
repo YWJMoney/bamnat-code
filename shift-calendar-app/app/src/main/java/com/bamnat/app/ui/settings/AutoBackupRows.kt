@@ -56,7 +56,7 @@ internal fun AutoBackupRows(vm: SettingsViewModel) {
         checked = state.on && open,
     ) { want ->
         when {
-            !open -> openPro()
+            !open -> openPro(com.bamnat.app.tier.Feature.AUTO_BACKUP)
             want -> asking = true
             else -> confirmOff = true
         }

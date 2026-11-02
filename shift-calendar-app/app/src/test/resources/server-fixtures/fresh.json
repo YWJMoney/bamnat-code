@@ -103,6 +103,8 @@
   "passes": {
     "until": null,
     "waitingMonths": 0,
+    "waitingDays": 0,
+    "earned": [],
     "items": [],
     "deferred": 0,
     "admin": null,

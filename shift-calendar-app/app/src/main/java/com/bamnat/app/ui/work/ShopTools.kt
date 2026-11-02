@@ -308,7 +308,7 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     roster.staff.forEach { s ->
                         TextButton(onClick = {
-                            if (gatePdf.locked(com.bamnat.app.tier.Feature.ROSTER_PDF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return@TextButton }
+                            if (gatePdf.locked(com.bamnat.app.tier.Feature.ROSTER_PDF) && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.ROSTER_PDF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return@TextButton }
                             scope.launch {
                                 runCatching { com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.StaffReport.doc(s, month, roster, "", com.bamnat.core.time.Today.date()),
                                     "bamnat-직원-${s.name.ifBlank { "직원" }}-$month.pdf") }

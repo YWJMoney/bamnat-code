@@ -7,8 +7,9 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -78,14 +79,27 @@ private fun scaleOf(chosen: Int, step: Int): Float {
 @Composable
 internal fun TextSizeRow(step: Int, onPick: (Int) -> Unit) {
     var pending by androidx.compose.runtime.saveable.rememberSaveable(step) { androidx.compose.runtime.mutableIntStateOf(step) }
+    // 1.36 PC 재검토: the size before the last 이 크기로, for 되돌리기 right there (until this screen is left).
+    var before by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<Int?>(null) }
+    fun label(i: Int) = TextSize.LABELS[i.coerceIn(0, TextSize.LABELS.lastIndex)]
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("글자 크기", style = MaterialTheme.typography.titleSmall)
-        Text("${TextSize.LABELS[step.coerceIn(0, TextSize.LABELS.lastIndex)]} · 휴대폰 글꼴 크기와 함께 적용돼요. 화면 배치는 글자에 맞춰 바뀌어요",
+        Text("${label(step)} · 휴대폰 글꼴 크기와 함께 적용돼요. 화면 배치는 글자에 맞춰 바뀌어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextSizePicker(step, { pending = it }, selected = pending)
+        // 1.36 PC 재검토 (고르면 미리 보기만 바뀌고 '이 크기로'가 미리 보기 아래에 있어 놓쳐요): the button right under the chips, full
+        // width, saying which size; the whole app still changes only on it ([J133-23]: a tap on a chip does not make the screen jump).
+        if (pending != step) {
+            Button(onClick = { before = step; onPick(pending) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("‘${label(pending)}’ 크기로 바꾸기")
+            }
+        } else before?.takeIf { it != step }?.let { b ->
+            androidx.compose.material3.OutlinedButton(onClick = { before = null; onPick(b) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("되돌리기 · 전 크기 ‘${label(b)}’${com.bamnat.app.ui.Fmt.ro(label(b))}")
+            }
+        }
         val scale = scaleOf(step, pending)
         CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, scale)) { TextSizePreview(pending) }
-        if (pending != step) Button(onClick = { onPick(pending) }) { Text("이 크기로") }
     }
 }
 

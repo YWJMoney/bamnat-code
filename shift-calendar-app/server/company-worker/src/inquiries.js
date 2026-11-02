@@ -1,7 +1,8 @@
-import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
+import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
 import { kstDay } from "./usage.js";
+import { bugFixed } from "./money.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -61,7 +62,7 @@ export const INQUIRY_TOPICS = [
   ["share", "공유", /공유|링크|상대방|가족|동기화|받은\s*사람|보낸\s*사람/g],
   ["company", "회사 설정", /회사|부서|규칙|투표|토론|채택/g],
   ["backup", "백업·기기 이동", /백업|복원|새\s*(폰|휴대폰|기기)|기기\s*변경|옮기|가져오기|내보내기/g],
-  ["billing", "결제", /결제|구독|프리미엄|환불|구매|광고|유료|무료/g],
+  ["billing", "결제", /결제|구독|프리미엄|환불|구매|광고|유료|무료|보상|이용권/g],
   ["app", "앱 동작", /멈춰|멈춤|멈추|멈췄|꺼져|꺼짐|닫혀|닫힘|닫혔|튕|먹통|굳어|렉|응답\s*없|강제\s*종료|오류|에러|버그|안\s*열|안\s*켜|느려|느림|로딩|하얀\s*화면|검은\s*화면|위젯|워치|잠금\s*화면|배터리|업데이트/g],
 ];
 export const TOPIC_NAMES = Object.fromEntries([...INQUIRY_TOPICS.map(([key, label]) => [key, label]), ["etc", "기타"]]);
@@ -82,9 +83,10 @@ export function triage(kind, text, info) {
   if (kind === "company" || info?.setup) topic = "company";
   else if (info?.pay) topic = "pay";
   // 1.32.1 [STAB-14] (사용자 2026-10-29 "멈출 때마다 알람이라고 뜨는데 실제로는 다른 원인 같아"): a 점검 기록 that starts
-  // with 앱 멈춤 (the app puts it first for a stop's inquiry) is 앱 동작; any other 점검 기록 with no word is still 알람.
+  // with 앱 멈춤 (the app puts it first for a stop's inquiry) is 앱 동작. 1.36 Y12 (PC 재검토): any other 점검 기록 says
+  // nothing of the topic (every form can send it, and it always starts with 알람 상태), so a question with no word stays 기타
+  // instead of 알람 — a settings-search question about 보상 came in as 문제 신고 · 알람.
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
-  else if (best === 0 && info?.diag) topic = "alarm";
   const urgency = ["idea", "company", "other"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
   return { topic, topicName: TOPIC_NAMES[topic], urgency };
 }
@@ -167,7 +169,7 @@ export async function ask(request, env) {
   const net = await network(request, env, now);
   const dev = await deviceHash(device);
   const limitHit = await overLimit(env, now, [["device", `inquiry|${dev}`, INQUIRY.perDay, DAY],
-    ["network", `inquiry|${net.day}`, INQUIRY.perNetworkDay, DAY]]);
+    ...(await networkCheck(env, dev, net, "inquiry", INQUIRY.perNetworkDay, now))]);
   if (limitHit) return limitHit;
   const photos = await readPhotos(env, body.photos);
   const id = randomId(22);
@@ -1074,6 +1076,8 @@ export async function devUpdate(env, row, body, now) {
   await batch(env, stmts);
   // The activity screen shows the title; the id goes with what changed.
   for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
+  // 1.36 841 쓰면 쌓이는 날: 완료 gives the phones that reported it 3 days.
+  if (set.status === "done") await bugFixed(env, row.id, now);
   return true;
 }
 
@@ -1101,6 +1105,7 @@ export async function devBulk(request, env, now) {
       devEvent(env, r.id, now, "status", { status: [r.status, next.status], ...(next.reason ? { reason: next.reason } : {}), bulk: change.length }),
     ]));
     await audit(env, now, "dev_bulk", `${change.length}개`, `${next.status}: ${change.map((r) => r.id).join(" ")}`);
+    if (next.status === "done") for (const r of change) await bugFixed(env, r.id, now);
   }
   return json({ changed: change.length, ids: change.map((r) => r.id) });
 }

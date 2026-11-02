@@ -877,7 +877,7 @@ private fun StatsRangePicker(range: com.bamnat.core.hours.StatsRange.Range, onPi
         initialSelectedStartDateMillis = range.from.atStartOfDay(utc).toInstant().toEpochMilli(),
         initialSelectedEndDateMillis = range.to.atStartOfDay(utc).toInstant().toEpochMilli(),
     )
-    androidx.compose.material3.DatePickerDialog(
+    com.bamnat.app.ui.components.DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             androidx.compose.material3.TextButton(enabled = state.selectedStartDateMillis != null && state.selectedEndDateMillis != null, onClick = {

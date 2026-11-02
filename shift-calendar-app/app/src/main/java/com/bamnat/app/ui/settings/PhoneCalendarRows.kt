@@ -63,7 +63,7 @@ internal fun PhoneCalendarRows(vm: SettingsViewModel) {
             checked = on && open,
         ) { want ->
             when {
-                !open -> openPro()
+                !open -> openPro(com.bamnat.app.tier.Feature.DEVICE_CALENDAR)
                 want && !PhoneCalendar(context).allowed() -> {
                     pending = cal.id
                     ask.launch(arrayOf(Manifest.permission.READ_CALENDAR, Manifest.permission.WRITE_CALENDAR))

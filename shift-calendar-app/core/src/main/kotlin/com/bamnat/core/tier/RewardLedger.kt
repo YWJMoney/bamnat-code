@@ -12,14 +12,15 @@ import kotlin.math.roundToLong
  * - 밤낮이 찾아 준 돈: the payslip checks where the app's month came to more than the payslip, this year, only when there are any.
  */
 object RewardLedger {
-    data class Part(val label: String, val days: Long)
+    /** [how] 1.36 PC P22: the ways those days came, "처음 7일 + 광고 7일", when more than one. */
+    data class Part(val label: String, val days: Long, val how: String? = null)
 
     data class Month(val parts: List<Part>, val ads: Int, val wonValue: Long?, val found: Long) {
         val days: Long get() = parts.sumOf { it.days }
         val empty: Boolean get() = days == 0L && found == 0L
 
         /** "급여 7일 · 테마 30일 · 친구 초대 7일". */
-        val partsLine: String get() = parts.filter { it.days > 0 }.joinToString(" · ") { "${it.label} ${it.days}일" }
+        val partsLine: String get() = parts.filter { it.days > 0 }.joinToString(" · ") { "${it.label} ${it.days}일" + (it.how?.let { h -> "($h)" } ?: "") }
     }
 
     /**
@@ -28,16 +29,33 @@ object RewardLedger {
      */
     fun month(leases: FeatureLease.State, from: Instant, to: Instant, extra: List<Part>, yearlyMicros: Long?, found: Long): Month {
         val given = leases.grants.filter { it.at >= from && it.at < to }
-        val byBundle = FeatureLease.Bundle.entries.map { b -> Part(b.label, given.filter { it.bundle == b }.sumOf { Duration.between(it.at, it.until).toDays() }) }
+        val byBundle = FeatureLease.Bundle.entries.map { b ->
+            val mine = given.filter { it.bundle == b }
+            val ways = mine.groupBy { it.why }.map { (why, gs) -> WAYS.getValue(why) to gs.sumOf { Duration.between(it.at, it.until).toDays() } }
+                .groupBy({ it.first }, { it.second }).map { (w, ds) -> w to ds.sum() }
+            Part(b.label, mine.sumOf { Duration.between(it.at, it.until).toDays() },
+                // 1.36 PC Y23 (제안 카드의 '급여 7일'이 처음 무료분인지 광고분인지 안 보여요): one way is named too.
+                when {
+                    ways.size > 1 -> ways.joinToString(" + ") { (w, d) -> "$w ${d}일" }
+                    ways.size == 1 -> ONE_WAY[ways[0].first] ?: ways[0].first
+                    else -> null
+                })
+        }
         val parts = (byBundle + extra).filter { it.days > 0 }
         val days = parts.sumOf { it.days }
         return Month(parts, given.count { it.why == FeatureLease.Why.AD || it.why == FeatureLease.Why.NO_AD }, wonValue(days, yearlyMicros), found)
     }
 
-    /** [days] at the yearly price a day, to the 100원; null without a price. */
+    private val WAYS = mapOf(FeatureLease.Why.FIRST to "처음", FeatureLease.Why.AD to "광고", FeatureLease.Why.NO_AD to "광고",
+        FeatureLease.Why.BACK to "다시 와서")
+
+    /** A bundle opened one way only: "급여 7일(처음 무료)". */
+    private val ONE_WAY = mapOf("처음" to "처음 무료")
+
+    /** [days] at the yearly price a day, to the 10원 (1.36 PC: 553원 said as 600원 read too far off); null without a price. */
     fun wonValue(days: Long, yearlyMicros: Long?): Long? {
         if (yearlyMicros == null || yearlyMicros <= 0 || days <= 0) return null
-        return (days * (yearlyMicros / 1_000_000.0) / 365 / 100).roundToLong() * 100
+        return (days * (yearlyMicros / 1_000_000.0) / 365 / 10).roundToLong() * 10
     }
 
     /** The yearly plan's price a day in 원 ("하루 82원"), or null. */

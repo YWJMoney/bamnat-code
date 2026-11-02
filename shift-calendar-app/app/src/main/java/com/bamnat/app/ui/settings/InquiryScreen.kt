@@ -54,7 +54,7 @@ import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.QuestionAnswer
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
@@ -573,13 +573,22 @@ private fun InquiryForm(
         val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
     val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
+        var notIt by remember { mutableStateOf(emptySet<String>()) }
+        var helped by remember { mutableStateOf<String?>(null) }
         val tips = remember(body, kind) {
             if (kind == InquiryKind.COMPANY || body.length < 4) emptyList() else HelpFaq.forQuestion(body, topics, limit = 2)
         }
-        if (tips.isNotEmpty()) {
+        if (tips.any { it.id !in notIt }) {
             Text("혹시 이런 내용인가요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            tips.forEach { t -> FaqCard(t, expanded = openTip == t.id, onToggle = { openTip = if (openTip == t.id) null else t.id }) }
+            // 1.36 PC 제안 ('도움 됐어요/아니에요'): an answer that is not it goes away for this question; one that helped says so.
+            tips.filter { it.id !in notIt }.forEach { t ->
+                FaqCard(t, expanded = openTip == t.id, onToggle = { openTip = if (openTip == t.id) null else t.id })
+                if (openTip == t.id) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { helped = t.id }) { Text(if (helped == t.id) "다행이에요. 그래도 궁금하면 그대로 보내 주세요" else "도움 됐어요") }
+                    if (helped != t.id) TextButton(onClick = { notIt = notIt + t.id; openTip = null }) { Text("이 답은 아니에요") }
+                }
+            }
         }
 
         StepTitle(if (mail) "3. 메일에 함께 적는 정보" else "3. 함께 보내는 정보")

@@ -59,7 +59,11 @@ class RecipePieces(private val c: AppContainer) {
             })
         }
         PieceKind.CAL_THEME -> CalendarTheme.decode(from.calTheme).let { t ->
-            mapOf("today" to t.today, "sat" to t.sat, "sun" to t.sun, "holiday" to t.holiday, "cell" to (t.cell ?: "tint"))
+            // 1.36 PC 재검토 ('근무 색 꽉 채우기'로 꾸몄는데 '옅게 칠하기'로 보여요): with 칸 디자인 the cells are drawn by 달력 모양's
+            // looks, so the old 칸 칠하기 is not shared (it would read wrong and do nothing).
+            val looks = com.bamnat.core.recipe.CalendarView.decode(from.calView).looks.isNotEmpty()
+            mapOf("today" to t.today, "sat" to t.sat, "sun" to t.sun, "holiday" to t.holiday, "cell" to (t.cell ?: "tint").takeUnless { looks })
+                .takeIf { m -> m.values.any { it != null } }
         }
         PieceKind.ALARMS -> {
             val s = from

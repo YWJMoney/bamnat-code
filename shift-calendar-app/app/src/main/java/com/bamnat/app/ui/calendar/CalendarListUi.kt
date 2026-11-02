@@ -33,7 +33,7 @@ import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Link
 import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.SwapVert
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -765,7 +765,7 @@ fun rememberAddCalendar(c: AppContainer, onSetup: (String) -> Unit): () -> Unit 
             onDismissRequest = { naming = false },
             title = { Text("달력을 더 만들려면 ${Tier.PRO.label}가 필요해요") },
             text = { Text("내 달력과 추가 달력 ${PersonalCalendar.FREE_ADDED}개는 무료예요. ${Tier.PRO.label}에서 달력을 더 만들 수 있어요.") },
-            confirmButton = { TextButton(onClick = { naming = false; com.bamnat.app.ui.pro.openPro() }) { Text("프로 알아보기") } },
+            confirmButton = { TextButton(onClick = { naming = false; com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_CALENDARS) }) { Text("프로 알아보기") } },
             dismissButton = { TextButton(onClick = { naming = false }) { Text("닫기") } },
         )
     } else if (naming) {

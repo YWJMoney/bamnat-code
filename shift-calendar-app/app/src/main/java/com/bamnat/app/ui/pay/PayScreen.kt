@@ -195,7 +195,7 @@ fun PayScreen(
     // [PAYX-22] A change that moves a month matched with a payslip.
     val verified by vm.verifiedPrompt.collectAsStateWithLifecycle()
     verified?.let { v ->
-        androidx.compose.material3.AlertDialog(
+        com.bamnat.app.ui.components.AlertDialog(
             onDismissRequest = vm::keepVerifiedChange,
             title = { Text("명세서와 맞춘 달이 바뀌어요") },
             text = {
@@ -241,7 +241,7 @@ fun PayScreen(
                         var menu by remember { mutableStateOf(false) }
                         Box {
                             IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Tune, "급여 설정 고치기") }
-                            androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            com.bamnat.app.ui.components.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 androidx.compose.material3.DropdownMenuItem(text = { Text("자세히 고치기 (하나씩 묻기)") },
                                     onClick = { menu = false; detailedFrom = DetailedStart(profile); editingSetup = true })
                                 androidx.compose.material3.DropdownMenuItem(text = { Text(if (workStyle?.usesCompany == false) "처음부터 설정" else "처음부터 설정 (회사 급여 방식 찾기)") },
@@ -380,7 +380,7 @@ private fun PayResult(
     var importing by remember { mutableStateOf(false) }
     var matching by remember { mutableStateOf(false) }
     // [PLAZA-30] 1.27 AI: 명세서로 맞춰 보기 from the plaza form opens the match once, as its button here would.
-    androidx.compose.runtime.LaunchedEffect(startMatching) { if (startMatching) { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro() } }
+    androidx.compose.runtime.LaunchedEffect(startMatching) { if (startMatching) { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro(com.bamnat.app.tier.Feature.PAYSLIP_MATCH) } }
     var slipRules by remember { mutableStateOf(false) }
     var plazaAsk by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
@@ -510,6 +510,15 @@ private fun PayResult(
                 com.bamnat.app.ui.money.ProPill()
             }
             com.bamnat.app.ui.pro.TrialNote(Feature.TAX_FORECAST, gate)
+        }
+        if (takeHome == null && gate.locked(Feature.TAX_FORECAST) && shown.total > 0) {
+            // 1.36 PC B3: locked, the 세후 line stays in its place, dimmed with a lock, and opens the offer.
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()
+                .clickable { if (!com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) openPro(Feature.TAX_FORECAST) }.padding(vertical = 4.dp)) {
+                Text("🔒 통장에 들어올 돈(세후 예상) · 눌러서 열기", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
+                com.bamnat.app.ui.money.ProPill(locked = true)
+            }
         }
         // [PAYX-37] 풀이 모두 보기: every line's formula and the law it rests on, like a 명세서 with its working.
         var explainAll by rememberSaveable { mutableStateOf(payLook.open == true) }
@@ -654,7 +663,7 @@ private fun PayResult(
                 estimated = Unknowns.BASE in profile.estimatedFields,
                 enabled = unlocked,
                 onEdit = { editTarget = ValueTarget.Base },
-                onRaise = { if (bulkOpen) raiseTarget = ValueTarget.Base else openPro() },
+                onRaise = { if (bulkOpen || com.bamnat.app.ui.pro.tryFeature(Feature.PAY_BULK_EDIT)) raiseTarget = ValueTarget.Base else openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) },
                 onEstimate = { estimate = Estimates.forValue(profile, month, null) },
             )
             profile.items.forEach { item ->
@@ -674,7 +683,7 @@ private fun PayResult(
                     unknownAmount = Unknowns.item(item.id) in profile.estimatedFields,
                     enabled = unlocked,
                     onEdit = { editTarget = ValueTarget.Item(item.id) },
-                    onRaise = { if (bulkOpen) raiseTarget = ValueTarget.Item(item.id) else openPro() },
+                    onRaise = { if (bulkOpen || com.bamnat.app.ui.pro.tryFeature(Feature.PAY_BULK_EDIT)) raiseTarget = ValueTarget.Item(item.id) else openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) },
                     // Only a monthly allowance can raise the 통상시급, so only it has the switch.
                     ordinary = item.ordinary.takeIf { item.cadence == Cadence.MONTHLY && !item.isFixedOvertime },
                     onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
@@ -706,7 +715,7 @@ private fun PayResult(
                 OutlinedButton(onClick = { addingBonus = true }, enabled = unlocked) {
                     Icon(Icons.Filled.Add, null); Text(" 상여금 추가")
                 }
-                OutlinedButton(onClick = { if (gate.allows(Feature.PAY_RULE_IMPORT)) importing = true else openPro() }) {
+                OutlinedButton(onClick = { if (gate.allows(Feature.PAY_RULE_IMPORT) || com.bamnat.app.ui.pro.tryFeature(Feature.PAY_RULE_IMPORT)) importing = true else openPro(com.bamnat.app.tier.Feature.PAY_RULE_IMPORT) }) {
                     Icon(Icons.Filled.ContentPaste, null); Text(" 규칙 글로 채우기")
                     Spacer(Modifier.width(6.dp)); ProPill(locked = gate.locked(Feature.PAY_RULE_IMPORT)) // [TIER-06]
                 }
@@ -909,6 +918,11 @@ private fun TotalCard(
         }
         if (monthly) Text("통상시급 ${if (unlocked) won(result.ordinaryHourly) else "●●,●●●원"}",
             style = MaterialTheme.typography.bodySmall, color = onFill)
+        // 1.36 PC Y8: no work in the period yet: said, so the figure is not read as the month's pay.
+        if (result.minutes.none { it.total.worked > 0 }) Text(
+            if (monthly) "이 기간에 넣은 근무가 아직 없어요. 기본급만 보여요. 근무를 칠하면 수당이 더해져요."
+            else "이 기간에 넣은 근무가 아직 없어요. 근무를 칠하면 예상 급여가 채워져요.",
+            style = MaterialTheme.typography.bodySmall, color = onFill)
     }
 }
 
@@ -1000,7 +1014,7 @@ private fun effectText(e: com.bamnat.core.pay.UnknownEffect): String = when {
 @Composable
 private fun AmountDialog(title: String, label: String, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
     var amount by remember { mutableStateOf<Long?>(null) }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { MoneyField(label, amount, { amount = it }) },

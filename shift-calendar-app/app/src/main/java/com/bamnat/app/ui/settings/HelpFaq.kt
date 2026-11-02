@@ -393,11 +393,28 @@ internal object HelpFaq {
         HelpTopic(
             "recipeCommunity", "마을", "원하는 레시피가 없어요. 만든 분을 따라갈 수도 있나요?",
             "마을 › 공방의 ‘이런 거 있었으면’에 바라는 걸 적으면 다른 분이 ‘만들게요’를 누르고 완성해 드려요. 금액·연락처·링크는 적을 수 없어요. " +
-                "레시피 아래 ‘만든 분 페이지’에서 그분의 다른 레시피와 배지를 보고, 팔로우하면 새 레시피와 내 질문의 답을 알려 드려요. " +
+                "레시피 아래 ‘○○ 프로필’을 누르면 그분이 공개한 테마·기능별 탭·모음을 보고 팔로우할 수 있어요. " +
                 "요청 판과 팔로우·답 알림은 설정 › 장터·내 레시피에서 따로 끌 수 있어요.",
             listOf("요청", "부탁", "만든 사람", "제작자", "팔로우", "배지", "답 알림", "요청 판"),
             listOf("장터"),
             "장터·내 레시피 열기" to HelpAction.Go(SettingsGo.RECIPES),
+        ),
+        // [PRF-01][PRF-05] 1.36 창작자 프로필.
+        HelpTopic(
+            "creatorProfile", "마을", "내 프로필과 팔로잉은 어디서 보나요? 차단·지우기는요?",
+            "팔로우한 분은 마을 › 광장·장터 맨 위 얼굴 줄에 모이고, 새 작품이 오면 얼굴에 테두리가 생겨요. 맨 앞 내 얼굴은 내 프로필(최근 알림, 소개, 대표 작품, 작품 통계)이에요. " +
+                "분마다 알림만 끄거나 차단할 수 있고(프로필 ⋮), 차단은 사람들 › 차단에서 풀어요. 모두 지우려면 설정 › 개인정보 › 내가 보낸 정보·모두 지우기예요.",
+            listOf("프로필", "팔로워", "팔로잉", "차단", "모음", "소개", "탈퇴", "삭제", "모두 지우기"),
+            listOf("장터"),
+            "내가 보낸 정보 열기" to HelpAction.Go(SettingsGo.SENT),
+        ),
+        // 1.36 [V20] 보이는 믿음 단계.
+        HelpTopic(
+            "trustSteps", "마을", "새싹·이웃·단골은 뭐예요?",
+            "처음 3일은 새싹이라 내가 누른 좋아요가 반만 세져요. 3일이 지나면 이웃, 가려진 글 없이 14일을 쓰면 단골이에요. " +
+                "신고로 가려진 글이 쌓이면 잠시 하루에 쓸 수 있는 수가 줄고, 기간이 지나면 저절로 풀려요. 내 단계와 남은 날은 내 프로필에서 봐요.",
+            listOf("새싹", "이웃", "단골", "단계", "등급", "믿음", "쓰기 제한", "제한"),
+            listOf("장터"),
         ),
         HelpTopic(
             "recipeLook", "마을", "화면 배치·여러 설정을 한 번에 나누고 싶어요",
@@ -656,7 +673,7 @@ internal object HelpFaq {
         // AI 1.27 시작 (계획/1.27-AI-개발계획.md 441·443·444)
         HelpTopic(
             "plazaInfo", "광장", "회사 정보 광장은 누가 보나요? 무엇을 적을 수 있나요?",
-            "그 회사 설정을 쓰거나 보낸 분만 읽고 써요. ‘참여자 번호’나 별명으로 보이고 하루 10개까지 써요. 금액·연락처는 적을 수 없고, 욕설·광고는 신고로 가려져요. " +
+            "그 회사 설정을 쓰거나 보낸 분만 읽고 써요. ‘참여자 번호’로만 보이고(마을 이름은 회사 쪽에 보이지 않아요) 하루 10개까지 써요. 금액·연락처는 적을 수 없고, 욕설·광고는 신고로 가려져요. " +
                 "현장·가게·알바·투자는 각자 광장이 있고, 투자 이야기에는 종목 추천·리딩 글을 올릴 수 없어요.",
             listOf("정보 광장", "자유 토의", "익명", "참여자", "글쓰기", "현장 광장", "가게 광장", "알바 광장", "투자 이야기", "종목 추천"),
             listOf("광장", "회사 규칙 광장"),
@@ -856,6 +873,15 @@ internal object HelpFaq {
             listOf("현금영수증", "현금 매출", "카드 수수료", "수수료율", "영세 가맹점", "입금 대조", "하루 마감"),
             listOf("매출·영업", "장부"),
         ),
+        // 1.36 PC 재검토 (주휴수당을 물으면 '급여가 명세서와 달라요'만 나와요).
+        HelpTopic(
+            "holidayPay", "급여", "주휴수당이 안 들어가거나 적게 나와요",
+            "주휴수당은 한 주에 15시간 이상 일하고 정한 날을 다 나오면 붙고, 주 근무시간 ÷ 40 × 8시간(최대 8시간)이에요. 급여 계산의 규칙에서 ‘주휴수당’이 켜져 있는지 보세요. " +
+                "시급으로 받으면 출근·시급의 ‘이번 달 주마다 주휴’에서 주마다 들어갔는지, 결근으로 빠졌는지 보여요. 대타 시간은 정해진 근무가 아니라 넣지 않아요.",
+            listOf("주휴수당", "주휴", "15시간", "개근", "결근", "안 들어", "빠졌", "적게"),
+            listOf("급여", "출근·시급"),
+            "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY),
+        ),
         HelpTopic(
             "hourlyCover", "알바", "대타 시간이 주휴에 안 들어가요",
             "대타는 정해진 근무(소정근로)가 아니라서 주휴 15시간에 넣지 않아요. 출근·시급 › 주휴수당 아래에 이번 달 대타가 몇 번이었는지 보여요. 휴게 포함 시급과 ‘알바 두 곳까지 무료’도 그 아래에 있어요.",
@@ -932,7 +958,7 @@ internal object HelpFaq {
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
     private val BY_TOPIC = mapOf(
         "alarm" to listOf("alarm", "sound", "wake", "alarmButtons", "alarmLock"),
-        "pay" to listOf("pay", "takeHome", "extra", "leave", "publicPay"),
+        "pay" to listOf("pay", "holidayPay", "takeHome", "extra", "leave", "publicPay"),
         "look" to listOf("freeLook", "recipe", "look"),
         "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import", "publicCycles"),
         "share" to listOf("share", "receive"),
@@ -948,8 +974,28 @@ internal object HelpFaq {
     fun forQuestion(text: String, topics: List<HelpTopic> = topics(), limit: Int = 2): List<HelpTopic> {
         val key = com.bamnat.core.ops.InquiryTopics.of(text)
         val ids = BY_TOPIC[key].orEmpty()
-        val first = search(text, topics.filter { it.id in ids }, limit).ifEmpty { topics.filter { it.id in ids }.take(1) }
-        return (first + search(text, topics, limit)).distinctBy { it.id }.take(limit)
+        // 1.36 PC Y20 (쓴 글과 상관없는 '교대 순서를 바꾸고 싶어요'): only answers the words match; the topic's first answer is no
+        // longer put in when none of its answers does.
+        val first = search(text, topics.filter { it.id in ids }, limit)
+        // 1.36 PC Y22 ('달력 말고 다른 화면…'이 아직 떠요): under a question being written only an answer two of its words meet.
+        // 1.36 PC 재검토: the one most of its words meet first (the topic's own answers win a tie).
+        return (first + search(text, topics, limit + 2)).distinctBy { it.id }.map { it to overlap(text, it) }.filter { it.second >= 2 }
+            .sortedByDescending { it.second }.map { it.first }.take(limit)
+    }
+
+    /** Words nearly every question says, whatever it is about. */
+    private val COMMON = listOf("화면", "이상", "가끔", "계속", "자꾸", "그냥", "너무", "진짜", "정말", "어떻게", "안돼", "안되", "해요",
+        "있어요", "없어요", "밤낮", "문제", "좀", "제가", "저는", "이거", "그거", "어디", "언제", "왜")
+
+    /**
+     * How many of [text]'s words (two letters or more) the answer's question or keywords hold. 1.36 PC 재검토 ('알람이 안 울려서
+     * 늦었어요'에 알람 답이 없어요): a word of three letters or more also meets by its first two ('울려서' → '안 울려').
+     */
+    private fun overlap(text: String, t: HelpTopic): Int {
+        val hay = (listOf(t.question) + t.keywords).map(SearchText::norm).filter { it.isNotEmpty() }
+        // 1.36 PC Y22 again ('앱이 이상해요 화면이 가끔 멈춰요' → 뒤로 가기 답): words almost every question has do not count.
+        return SearchText.words(text).map(SearchText::norm).filter { it.length >= 2 && COMMON.none { c -> it.startsWith(c) } }.distinct()
+            .count { w -> hay.any { h -> w in h || (h.length >= 2 && h in w) || (w.length >= 3 && w.take(2) in h) } }
     }
 
     /** The answers that fit [query], best first. */

@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,7 +22,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -226,6 +227,10 @@ fun PayQuickSetup(
 
     fun go(to: String) { step = to }
     fun next() { steps.getOrNull(index + 1)?.let(::go) }
+    // 1.36 PC Y17 (기본급 칸이 빈 채로 '다음'을 누르면 아무 반응이 없어요): 다음 always answers; when the step is not done it says what
+    // is missing in red, under the field, and puts the cursor there.
+    var tried by remember(step) { mutableStateOf(false) }
+    val baseFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     fun pick(change: () -> Unit) {
         fromSlip = null
         change()
@@ -298,7 +303,8 @@ fun PayQuickSetup(
                     BaseFields(wage, amount, onBase = { fromSlip = null; amount = it }, hours = hours, onHours = { fromSlip = null; hours = it },
                         profile = draft ?: initial, month = thisMonth,
                         // [J133-80] 빌드 5: the keypad covered 다음, so its first tap only closed the keypad. 완료 goes on.
-                        onDone = { if ((amount ?: 0) > 0) next() })
+                        onDone = { if ((amount ?: 0) > 0) next() else tried = true },
+                        missing = tried, focus = baseFocus)
                     if (wage == WageType.HOURLY) FiveOrMoreRow(fiveOrMore ?: false, fiveFrom) { fromSlip = null; fiveFrom = null; fiveOrMore = it }
                     SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사") { slipOpen = true }
                 }
@@ -334,6 +340,8 @@ fun PayQuickSetup(
             }
         }
         // [J133-80] Above the keypad, so 다음 takes the first tap.
+        if (tried && step == FORM && form == null) Text("급여 받는 방식을 하나 골라 주세요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         Surface(tonalElevation = 3.dp, modifier = Modifier.imePadding()) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 val finding = step == COMPANY && payFind.step != com.bamnat.app.ui.company.PayFindStep.NAME
@@ -368,7 +376,15 @@ fun PayQuickSetup(
                     enabled = ready && draft != null,
                     busyText = "계산하는 중…",
                 ) { Text("이대로 계산") }
-                else Button(onClick = { next() }, enabled = ready) { Text("다음") }
+                else Button(onClick = {
+                    if (ready) next()
+                    else {
+                        tried = true
+                        if (step == AMOUNT) runCatching { baseFocus.requestFocus() }
+                    }
+                }, colors = if (ready) ButtonDefaults.buttonColors() else ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                    contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))) { Text("다음") }
             }
         }
     }

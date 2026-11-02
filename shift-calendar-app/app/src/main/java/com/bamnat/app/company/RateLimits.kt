@@ -16,7 +16,8 @@ object RateLimits {
     fun text(what: String? = null, retryAfter: Int? = null, why: String? = null, instead: String? = null): String {
         val head = what?.let { "지금은 $it${Fmt.obj(it)} 잠시 할 수 없어요." } ?: "요청이 많아 잠시 쉬고 있어요."
         val reason = when (why) {
-            "network" -> " 같은 와이파이(회사·병원 망)에서 많이 써서 그래요. 모바일 데이터로 바꾸면 바로 될 수 있어요."
+            // 1.36 (사용자 결정 2026-11-01 "새 휴대폰만 시간 단위로"): only a phone new to the app (under 3 days) or restricted is held to its network.
+            "network" -> " 새로 쓰기 시작한 휴대폰은 같은 와이파이·통신망에서 한 시간에 할 수 있는 양이 정해져 있어요. 모바일 데이터로 바꾸면 바로 될 수 있어요."
             "device" -> " 이 휴대폰에서 짧은 사이에 여러 번 했어요."
             "reads" -> " 오늘 많이 열어 보셔서 잠깐 쉬어요."
             else -> ""
@@ -25,12 +26,22 @@ object RateLimits {
         return head + reason + tail
     }
 
-    /** [seconds] as the user reads a wait: about a minute, some minutes, some hours, or tomorrow. */
-    fun wait(seconds: Int): String = when {
+    /**
+     * [seconds] as the user reads a wait: about a minute, some minutes, some hours, or past that the hour it opens
+     * ("내일 오후 11시쯤"). 1.36 시험: a day's limit counts 24 hours from the first use, not the calendar day, so a bare
+     * "내일" sent someone who posted late at night back too early the next morning.
+     */
+    fun wait(seconds: Int, now: java.time.ZonedDateTime = java.time.Instant.ofEpochMilli(com.bamnat.core.time.Today.millis())
+        .atZone(com.bamnat.core.time.Today.zone())): String = when {
         seconds < 90 -> "1분쯤 뒤"
         seconds < 3_600 -> "${(seconds + 59) / 60}분쯤 뒤"
         seconds < 6 * 3_600 -> "${(seconds + 3_599) / 3_600}시간쯤 뒤"
-        else -> "내일"
+        else -> {
+            val at = now.plusSeconds(seconds.toLong() + 3_599).withMinute(0)
+            val day = when (java.time.temporal.ChronoUnit.DAYS.between(now.toLocalDate(), at.toLocalDate())) { 0L -> "오늘"; 1L -> "내일"; else -> "모레" }
+            val h = at.hour
+            "$day ${if (h < 12) "오전" else "오후"} ${if (h % 12 == 0) 12 else h % 12}시쯤"
+        }
     }
 
     /** [text] for a refusal from the company server. */

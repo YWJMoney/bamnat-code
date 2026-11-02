@@ -2,6 +2,8 @@ package com.bamnat.app.ads
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -40,12 +42,17 @@ import com.bamnat.core.time.Today
  */
 @Composable
 fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: Modifier = Modifier, onOpened: () -> Unit = {}) {
-    val bundle = feature?.let { gate.bundle(it) } ?: return
-    if (gate.tier >= Tier.PRO) return
-    val label = "광고 보고 ${bundle.label} 7일 열기"
-    val note = "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요."
+    if (feature == null || gate.tier >= Tier.PRO) return
     val small = MaterialTheme.typography.labelSmall
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
+    val bundle = gate.bundle(feature) ?: run {
+        // 1.36 PC B1: say why there is no ad, rather than leave a way out of the sheet missing.
+        Text("‘${feature.label}’은 광고로 열 수 없어요. 프로에서 늘 써요.", style = small, color = dim, textAlign = TextAlign.Center,
+            modifier = modifier.fillMaxWidth())
+        return
+    }
+    val label = "광고 보고 ${bundle.label} 7일 열기"
+    val note = "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요."
     if (gate.preview) {
         Column(modifier) {
             OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(label) }
@@ -58,18 +65,52 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
     val today = Today.date()
     val leases = gate.leases
     val left = leases.daysLeft(bundle, now)
+    // 1.36 PC 재검토 (근무표 PDF를 처음 열었는데 '처음 7일 무료' 대신 결제 창): the bundle's free first week, first and on its own,
+    // before any ad. One tap starts it; the toast says until when, and the feature is open on the next tap.
+    if (gate.canTry(feature)) {
+        val context = LocalContext.current
+        Column(modifier, verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
+            androidx.compose.material3.Button(onClick = {
+                if (com.bamnat.app.ui.pro.tryFeature(feature)) {
+                    val end = Today.instant().plus(java.time.Duration.ofDays(FeatureLease.FIRST_DAYS))
+                    // Short: it sat over the card it had just opened (PC).
+                    android.widget.Toast.makeText(context, "${bundle.label} 처음 7일 무료로 열었어요 · ${com.bamnat.app.ui.pro.untilWords(end)}까지",
+                        android.widget.Toast.LENGTH_SHORT).show()
+                    onOpened()
+                }
+            }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("처음 7일 무료로 열기") }
+            Text("${bundle.label} 묶음(${bundle.gives})을 처음 쓰는 날부터 7일 광고 없이 써요. 그 뒤에는 광고 한 편으로 7일씩 열려요.",
+                style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        }
+        return
+    }
     when {
         left != null -> Text("${bundle.label} 묶음이 열려 있어요 · ${left}일 남았어요", style = small, color = dim, textAlign = TextAlign.Center,
             modifier = modifier.fillMaxWidth())
         FeatureLease.capped(leases, today) -> Text("오늘 광고 두 편을 다 봤어요. 내일 다시 열 수 있어요.", style = small, color = dim,
             textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth())
-        !FeatureLease.canWatch(leases, bundle, now, today) -> Unit
-        else -> ThemeAdButton(label, note,
-            onReward = { c.featureGate.grant(bundle, FeatureLease.Why.AD); onOpened() },
-            onQuit = {},
-            onOffline = { c.featureGate.grant(bundle, FeatureLease.Why.NO_AD, "offline"); onOpened() },
-            onNoAd = { why -> c.featureGate.grant(bundle, FeatureLease.Why.NO_AD, why); onOpened() },
-            modifier = modifier)
+        !FeatureLease.canWatch(leases, bundle, now, today) -> Text(
+            "세 번 닫으셔서 ${bundle.label} 광고는 쉬고 있어요" + (leases.quietUntil[bundle]?.let { " · ${com.bamnat.app.ui.pro.untilWords(it)}부터 다시 보여요" } ?: ""),
+            style = small, color = dim, textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth())
+        else -> {
+            val context = LocalContext.current
+            // 1.36 PC Y14 (광고가 안 와서 그냥 열렸을 때 아무 말이 없어요): every way it opens says so in one line, with the day it ends.
+            fun opened(why: FeatureLease.Why, reason: String?, lead: String) {
+                val from = leases.until[bundle]?.takeIf { Today.instant() < it } ?: Today.instant()
+                c.featureGate.grant(bundle, why, reason)
+                val end = from.plus(java.time.Duration.ofDays(FeatureLease.AD_DAYS))
+                val until = com.bamnat.app.ui.pro.untilWords(end)
+                android.widget.Toast.makeText(context, if (lead.isEmpty()) "${bundle.label} 7일 열렸어요 · ${until}까지" else "$lead · ${bundle.label} ${until}까지",
+                    android.widget.Toast.LENGTH_LONG).show()
+                onOpened()
+            }
+            ThemeAdButton(label, note,
+                onReward = { opened(FeatureLease.Why.AD, null, "") },
+                onQuit = {},
+                onOffline = { opened(FeatureLease.Why.NO_AD, "offline", "인터넷이 없어 광고 없이 열었어요") },
+                onNoAd = { why -> opened(FeatureLease.Why.NO_AD, why, "광고가 오지 않아 그냥 열었어요") },
+                modifier = modifier)
+        }
     }
 }
 

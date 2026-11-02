@@ -231,7 +231,28 @@ class DutyCodes(
         // Letters only: "N/" is a code with a mark and "N-O" two codes joined, never N and a day off.
         if (n.length < 2 || match(token) != null || n in RANKS || !n.all { it.isLetter() }) return null
         val chars = n.map { it.toString() }
-        return chars.takeIf { cs -> cs.all { match(it) != null } }
+        if (chars.all { match(it) != null }) return chars
+        // Latin letters only, so a Korean name in a row is never cut into 주·야·휴.
+        return if (n.all { it in 'A'..'Z' }) segments(n) else null
+    }
+
+    /**
+     * 1.36 PC Y1: two cells read as one word ("NOFF" → N + OFF, "DOFFN" → D OFF N): [n] cut into known codes of up to
+     * [MAX_PART] letters, the fewest pieces; null when it cannot be cut whole.
+     */
+    private fun segments(n: String): List<String>? {
+        val best = arrayOfNulls<List<String>>(n.length + 1)
+        best[0] = emptyList()
+        for (end in 1..n.length) {
+            for (len in 1..minOf(MAX_PART, end)) {
+                val before = best[end - len] ?: continue
+                val part = n.substring(end - len, end)
+                if (match(part) == null) continue
+                val next = before + part
+                if (best[end] == null || next.size < best[end]!!.size) best[end] = next
+            }
+        }
+        return best[n.length]?.takeIf { it.size >= 2 }
     }
 
     /**
@@ -249,6 +270,8 @@ class DutyCodes(
     }
 
     companion object {
+        /** The longest code [segments] cuts out of a stuck-together word. */
+        private const val MAX_PART = 4
         private val STRIP = Regex("""[\s.,·:;|()\[\]{}'"`‘’“”]""")
         /** [ROST-04] Full-width letters and digits from a 한글 document (Ｄ, １) read as plain ones (중-7). */
         fun fold(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFKC)
@@ -329,6 +352,7 @@ object DutyRoster {
         var rows = (merge(read) + columns + listOfNotNull(list)).filter { it.cells.size >= MIN_CELLS }
             .sortedWith(compareByDescending<RosterRow> { it.cells.size - it.unknown }.thenBy { it.unknown })
             .distinctBy { it.label to it.cells }
+        rows = tidy(rows)
         hint?.myRow?.let(nearest)?.let { mine ->
             // [READ-04] The user's own line: that one only, read even when short, in order from the 1st when no row of days is known.
             rows = rows.filter { it.line == mine }.ifEmpty {
@@ -672,6 +696,60 @@ object DutyRoster {
     }
 
     /** Lines of the same person under the 1–15 and 16–31 rows of days become one. */
+    /**
+     * 1.36 PC Y9 (듀티표 9줄: 같은 사람 줄이 이름 줄과 이름 없는 줄로 겹치고 '3일' 쓰레기 줄): a full nameless reading of a named row's own line
+     * that agrees with it is that person's, taken whole (the one with more days first, the other filling gaps); and once some
+     * row holds most of a month, nameless rows of fewer than [SHORT_ROW] days are dropped as bits of the page.
+     */
+    internal fun tidy(rows: List<RosterRow>): List<RosterRow> {
+        val out = rows.toMutableList()
+        for (u in rows.filter { it.label.isBlank() && it.cells.size >= FULL_ROW }) {
+            // The same line of the photo read a second time (against another row of days), with its name on one reading only:
+            // it reads like the named one (a day pushed by each stuck cell still reads in the same order). A neighbour's line,
+            // even with almost the same rota, is never taken.
+            val n = out.firstOrNull { it.label.isNotBlank() && it.line == u.line && same(it, u) } ?: continue
+            val (first, second) = if (u.cells.size >= n.cells.size) u to n else n to u
+            val cells = (second.cells + first.cells).toSortedMap()
+            val merged = RosterRow(n.label, cells,
+                guessed = first.guessed + second.guessed.filter { it !in first.cells },
+                notes = second.notes + first.notes,
+                unsure = first.unsure + second.unsure.filter { it !in first.cells },
+                line = n.line, raw = second.raw + first.raw)
+            out[out.indexOf(n)] = merged
+            out.remove(u)
+        }
+        val most = out.maxOfOrNull { it.cells.size } ?: 0
+        // A short row with a name stays (handwriting reads few cells); one with no name is a bit of the page.
+        return if (most >= FULL_ROW) out.filter { it.cells.size >= SHORT_ROW || it.label.isNotBlank() } else out
+    }
+
+    /**
+     * The share of the days both rows read where they read the same code, the best of the two lined up as they are or one day
+     * apart (a row pushed by a stuck cell, "NOFF"); 0 with fewer than 3 such days.
+     */
+    private fun agreement(a: RosterRow, b: RosterRow): Double = (-1..1).maxOf { shift ->
+        val both = a.cells.keys.filter { (it + shift) in b.cells }
+        if (both.size < 3) 0.0 else both.count { a.cells[it] == b.cells[it + shift] }.toDouble() / both.size
+    }
+
+    /** Fewer days than this, nameless, beside a full row: a bit of the page ('3일 · ‖z'), never a handwritten line (7+). */
+    /** Two lines are one person's: their cells agree day by day, or their codes in order do (LCS ≥ 85% of the shorter). */
+    private fun same(a: RosterRow, b: RosterRow): Boolean = agreement(a, b) >= 0.6 || inOrder(a, b) >= 0.85
+
+    private fun inOrder(a: RosterRow, b: RosterRow): Double {
+        val x = a.cells.toSortedMap().values.toList()
+        val y = b.cells.toSortedMap().values.toList()
+        if (minOf(x.size, y.size) < SHORT_ROW) return 0.0
+        val dp = Array(x.size + 1) { IntArray(y.size + 1) }
+        for (i in 1..x.size) for (j in 1..y.size) {
+            dp[i][j] = if (x[i - 1] == y[j - 1]) dp[i - 1][j - 1] + 1 else maxOf(dp[i - 1][j], dp[i][j - 1])
+        }
+        return dp[x.size][y.size].toDouble() / minOf(x.size, y.size)
+    }
+
+    private const val SHORT_ROW = 6
+    private const val FULL_ROW = 20
+
     private fun merge(rows: List<RosterRow>): List<RosterRow> {
         val named = rows.filter { it.label.isNotBlank() }.groupBy { it.label }.map { (label, parts) ->
             RosterRow(label, parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } },

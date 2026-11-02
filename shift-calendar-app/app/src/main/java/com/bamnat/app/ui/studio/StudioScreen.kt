@@ -36,11 +36,11 @@ import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Compare
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -692,7 +692,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     }
     publishing?.let { (body, parent, own) ->
         // [STU-21] 올리기 over the studio (레시피 만들기 steps 2–5): 스튜디오로 or closing comes back with the draft as it was.
-        androidx.compose.ui.window.Dialog(onDismissRequest = { publishing = null },
+        com.bamnat.app.ui.components.Dialog(onDismissRequest = { publishing = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
             Surface(Modifier.fillMaxSize()) {
                 // W37: once 올리기 is drawn, the 무엇을 올릴까요 window and 준비 중 go.
@@ -991,7 +991,7 @@ private fun FeaturesTool(vm: StudioViewModel, extras: Map<com.bamnat.core.recipe
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun HistorySheet(s: StudioViewModel.State, onBack: (Int) -> Unit, onDismiss: () -> Unit) {
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text("바꾼 기록", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
@@ -1021,7 +1021,7 @@ private fun HistorySheet(s: StudioViewModel.State, onBack: (Int) -> Unit, onDism
 @Composable
 private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: Recipe, now: Recipe, onGo: (String) -> Unit, onDismiss: () -> Unit) {
     val parts = remember(before, now) { LookParts.changed(before, now).mapNotNull { LookParts.byId(it) } }
-    androidx.compose.material3.ModalBottomSheet(onDismissRequest = onDismiss) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("바꾼 곳", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })

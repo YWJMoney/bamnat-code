@@ -34,8 +34,12 @@ object FeatureLease {
     const val ADS_PER_DAY = 2
     /** "3일 남음" is said quietly from this many days before the end. */
     const val HEADS_UP_DAYS = 3L
-    /** Turning the ad down this many times in a row hides that bundle's ad for [QUIET_DAYS]. */
+    /**
+     * Turning the ad down this many times in a row hides that bundle's ad: for [FIRST_QUIET_DAYS] the first time, [QUIET_DAYS] after
+     * (1.36 PC P23: "하루에 세 번 닫았다고 30일은 길어요").
+     */
     const val DECLINES = 3
+    const val FIRST_QUIET_DAYS = 7L
     const val QUIET_DAYS = 30L
 
     enum class Why(val key: String, val words: String) {
@@ -62,6 +66,8 @@ object FeatureLease {
         val declines: Map<Bundle, Int> = emptyMap(),
         val quietUntil: Map<Bundle, Instant> = emptyMap(),
         val grants: List<Grant> = emptyList(),
+        /** How many times each bundle's ad was hidden (the first rest is short). */
+        val quiets: Map<Bundle, Int> = emptyMap(),
     ) {
         fun open(bundle: Bundle, now: Instant): Boolean = until[bundle]?.let { now < it } == true
         fun openFeature(feature: String, now: Instant): Boolean = Bundle.of(feature)?.let { open(it, now) } == true
@@ -103,11 +109,14 @@ object FeatureLease {
             grants = s.grants + Grant(bundle, now, end, why, reason))
     }
 
-    /** The offer closed without watching: after [DECLINES] in a row the bundle's ad hides for [QUIET_DAYS]. */
+    /** The offer closed without watching: after [DECLINES] in a row the bundle's ad hides, [FIRST_QUIET_DAYS] then [QUIET_DAYS]. */
     fun declined(s: State, bundle: Bundle, now: Instant): State {
         val n = (s.declines[bundle] ?: 0) + 1
-        return if (n >= DECLINES) s.copy(declines = s.declines - bundle, quietUntil = s.quietUntil + (bundle to now.plus(Duration.ofDays(QUIET_DAYS))))
-        else s.copy(declines = s.declines + (bundle to n))
+        if (n < DECLINES) return s.copy(declines = s.declines + (bundle to n))
+        val times = (s.quiets[bundle] ?: 0) + 1
+        val days = if (times == 1) FIRST_QUIET_DAYS else QUIET_DAYS
+        return s.copy(declines = s.declines - bundle, quietUntil = s.quietUntil + (bundle to now.plus(Duration.ofDays(days))),
+            quiets = s.quiets + (bundle to times))
     }
 
     /** 840: back after [ProOfferTimes.AWAY_DAYS] away: [bundle] for 7 days, not counted as an ad. */
