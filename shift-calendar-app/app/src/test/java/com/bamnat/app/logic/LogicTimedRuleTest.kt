@@ -81,6 +81,13 @@ class LogicTimedRuleTest {
         at(d.atTime(7, 0, 30)); LogicRunner.fire(c)
         assertEquals(d.atTime(7, 0).toString(), store.firedAt(daily.key))
         assertTrue(store.lastResult(daily.key)!!.startsWith("${d.monthValue}/${d.dayOfMonth} 07:00 · 했어요"))
+        // PC D13 (낮): 하루를 건너뛰어 다음 날 09:00으로 가면 그날 07:00은 '놓쳤어요'로 (아무 표시 없이 사라지지 않게).
+        val d2 = d.plusDays(1)
+        at(d2.atTime(9, 0)); LogicRunner.fire(c)
+        assertEquals(d2.atTime(7, 0).toString(), store.firedAt(daily.key))
+        assertTrue(store.missed(daily.key))
+        // 되돌린 시계 앞의 한 번만 세요 (10:00에 놓친 것은 돈 것이 아니에요).
+        assertEquals(1, store.runs(daily.name))
     }
 
     @Test fun nextIsTodayAtSixAndRegisteredThen() = runBlocking {

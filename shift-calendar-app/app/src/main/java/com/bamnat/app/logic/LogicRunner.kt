@@ -374,9 +374,17 @@ object LogicRunner {
         val since = last?.takeIf { !it.isAfter(now) && it.isAfter(now.minusDays(2)) } ?: now.minusMinutes(2)
         for (r in logic(c).rules) {
             if (store.isOff(r.key) || r.on !in TIMED) continue
-            val (at, day) = nextTime(r, since.minusSeconds(1), f) ?: continue
-            if (at.isAfter(now.plusMinutes(1))) continue
-            if (store.firedAt(r.key) == at.toString()) continue
+            // PC D13 (낮): every time between the last look and now, not only the first (하루 넘게 건너뛰면 그날 07:00이 아무 표시 없이
+            // 사라졌어요: 첫 시각 11/13 07:00은 이미 했으니 건너뛰고 끝났어요). The latest one not yet done is the one run or said missed.
+            var probe = since.minusSeconds(1)
+            var hit: Pair<LocalDateTime, LocalDate>? = null
+            for (n in 0 until 40) {
+                val next = nextTime(r, probe, f) ?: break
+                if (next.first.isAfter(now.plusMinutes(1))) break
+                if (store.firedAt(r.key) != next.first.toString()) hit = next
+                probe = next.first
+            }
+            val (at, day) = hit ?: continue
             store.fired(r.key, at.toString())
             if (at.isBefore(now.minusMinutes(LATE_MINUTES))) { store.result(r.key, at, LogicStore.MISSED); continue }
             val scope = f.scope(day)
@@ -485,8 +493,10 @@ class LogicStore(context: Context) {
 
     /** Runs of [who] in the last 7 days. */
     fun runs(who: String): Int {
-        val since = Today.millis() - 7 * 86_400_000L
-        return times(who).count { it >= since }
+        val now = Today.millis()
+        val since = now - 7 * 86_400_000L
+        // PC D13 (낮): runs stamped in a later time the clock has since come back from are not counted (한 번 돌았는데 2번).
+        return times(who).count { it in since..now }
     }
 
     fun ran(who: String) {
@@ -518,6 +528,11 @@ class LogicStore(context: Context) {
         keys.forEach { k ->
             val at = firedAt(k)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
             if (at != null && at.isAfter(now)) e.remove("fired.$k").remove("result.$k")
+        }
+        val cut = now.atZone(Today.zone()).toInstant().toEpochMilli()
+        p.all.keys.filter { it.startsWith("runs.") }.forEach { k ->
+            val kept = p.getString(k, "").orEmpty().split(',').mapNotNull { it.toLongOrNull() }.filter { it <= cut }
+            e.putString(k, kept.joinToString(","))
         }
         e.apply()
     }
