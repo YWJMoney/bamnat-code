@@ -132,6 +132,16 @@ class RulScreenshotTest : ScreenshotBase() {
         }
     }
 
+    @Test fun buttonConditionShowsRightBelow() = shoot("887_rul_button_condition", FOLDED) {
+        // PC D17 (중): '조건이 맞는 날에만 보이기'를 켜도 조건 고르는 칸이 안 보여 조건 있는 단추를 못 만들었어요.
+        content { com.bamnat.app.logic.ButtonDialog(MEMO, FormulaNames.SAMPLE, {}, {}) }
+        assertTrue(appears("조건이 맞는 날에만 보이기"))
+        tapText("조건이 맞는 날에만 보이기", scrolls = 0)
+        assertTrue("easy view right away", appears("쉬운 보기"))
+        assertTrue("one row to pick", appears("야간", exact = true))
+        assertTrue("more rows", appears("+ 조건 더하기"))
+    }
+
     @Test fun editorList() = shoot("886_rul_editor_list", FOLDED) {
         content {
             Surface { Column(Modifier.padding(16.dp)) { LogicEditor(Logic(listOf(MEMO), listOf(NIGHT, RESET)), {}, phone = true) } }

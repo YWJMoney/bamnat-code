@@ -42,6 +42,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -396,12 +398,17 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                 }
                 if (b.place == ButtonPlace.DECOR) Text("칩 줄에는 안 나와요. 스튜디오 › 꾸밈 층 › 고치기 › 누르면에서 그림·글상자에 이 단추를 이어요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                ActEditor(b.act, { b = b.copy(act = it) }, scope)
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // [RUL-22] PC D17: 스위치를 켜도 조건 칸이 대화 상자 아래로 밀려 안 보였어요. 스위치를 '어디에' 바로 아래로 올리고,
+                // 켜면 근무 조건 한 줄을 바로 넣어 고를 칸이 곧장 보이게 해요.
+                Row(Modifier.fillMaxWidth().toggleable(conditional, role = Role.Switch) {
+                    conditional = it
+                    b = b.copy(show = if (it) EasyWhen(listOf(EasyCond(FormulaName.ROLE.ko, EasyCond.Op.IS, "야간"))).toFormula() else "")
+                }, verticalAlignment = Alignment.CenterVertically) {
                     Text("조건이 맞는 날에만 보이기", Modifier.weight(1f))
-                    Switch(conditional, { conditional = it; if (!it) b = b.copy(show = "") })
+                    Switch(conditional, null)
                 }
-                if (conditional) ConditionEditor(b.show, { b = b.copy(show = it) }, scope)
+                if (conditional) ConditionEditor(b.show, { b = b.copy(show = it) }, scope, empty = "조건이 없으면 언제나 보여요")
+                ActEditor(b.act, { b = b.copy(act = it) }, scope)
             }
         },
         confirmButton = {
