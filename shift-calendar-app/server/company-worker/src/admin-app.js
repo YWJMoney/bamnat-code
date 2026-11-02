@@ -4156,10 +4156,17 @@ function adminApp(L, BUILD, M) {
       load();
     },
     "inquiry-billing": async ({ on }) => {
-      const q = await act(() => api(`/inquiries/${S.route.id}/billing`, "POST", { on: on === "1" }),
-        on === "1" ? "결제·환불 기록으로 정했어요. 3년 동안 보관해요" : "결제·환불 기록에서 뺐어요");
-      if (q) S.data.inquiry = q;
-      render({ keepScroll: true });
+      const save = async () => {
+        const left = S.data.inquiry?.leftByAsker;
+        const q = await act(() => api(`/inquiries/${S.route.id}/billing`, "POST", { on: on === "1" }),
+          on === "1" ? "결제·환불 기록으로 정했어요. 3년 동안 보관해요" : left ? "기록에서 빼고, 보낸 분이 지운 대로 지웠어요" : "결제·환불 기록에서 뺐어요");
+        if (q?.deleted) return go("inquiries");
+        if (q) S.data.inquiry = q;
+        render({ keepScroll: true });
+      };
+      // 1.36 [INQ-07] Taking one out of the law's three years asks first; putting one in does not.
+      if (on === "1") return save();
+      confirmBox("결제·환불 기록에서 뺄까요?", `결제·구독·환불과 관계없는 문의일 때만 빼 주세요. ${S.data.inquiry?.leftByAsker ? "보낸 분이 앱에서 지운 문의라 빼면 바로 지워져요." : "빼면 마지막 글부터 180일 뒤에 지워져요."} 누가 뺐는지는 활동 기록에 남아요.`, "빼기", save);
     },
     "inquiry-show": async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "show" }), "다시 보이게 했어요. 신고로는 더 가려지지 않아요");

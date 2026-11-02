@@ -195,6 +195,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val adPrivacy: StateFlow<Boolean> = container.ads.privacyOptions
     fun showAdPrivacy(activity: android.app.Activity) = container.ads.showPrivacyOptions(activity)
 
+    /** 1.36 [INQ-07] 이 휴대폰이 보낸 정보 모두 지우기, where the privacy policy says it is. */
+    fun forgetEverythingSent(done: (String) -> Unit) {
+        viewModelScope.launch {
+            val counts = com.bamnat.app.ui.company.forgetEverythingSent(container)
+            done(counts?.words() ?: "인터넷에 연결한 뒤 다시 해 주세요")
+        }
+    }
+
     /** [MEMO-02] 메모 공유: 달력마다 따로, or calendars grouped to see each other's memos. */
     val memoSharing: StateFlow<com.bamnat.core.memo.MemoSharing> = container.memoSharing.state
     fun setMemoSharing(sharing: com.bamnat.core.memo.MemoSharing) = container.memoSharing.set(sharing)

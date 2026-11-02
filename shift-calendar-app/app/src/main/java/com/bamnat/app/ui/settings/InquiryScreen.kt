@@ -306,7 +306,8 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
     deleting?.let { i ->
         ConfirmDialog(
             title = "이 문의를 지울까요?",
-            message = "보낸 글과 개발자 답이 서버에서 모두 지워져요.",
+            // 1.36 [INQ-07] A 결제·환불 question leaves the app but the law keeps it with the developer.
+            message = "보낸 글과 개발자 답이 앱과 서버에서 지워져요. 결제·환불 문의는 전자상거래법에 따라 앱에서만 사라지고 운영자가 3년 보관해요.",
             confirmLabel = "지우기",
             destructive = true,
             onDismiss = { deleting = null },

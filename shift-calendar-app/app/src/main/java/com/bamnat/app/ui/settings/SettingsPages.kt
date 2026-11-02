@@ -869,6 +869,23 @@ private fun PrivacyPage(
     SectionCard(title = "개인정보") {
         NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
         HorizontalDivider()
+        // 1.36 [INQ-07] Where 처리방침 6항 says it is, not only under 보낸 설정 once something was sent.
+        var forgetting by remember { mutableStateOf(false) }
+        var forgot by remember { mutableStateOf<String?>(null) }
+        NavRow(FORGET_ALL_ROW, forgot ?: "보낸 설정·글·신고·문의를 서버에서 지워요") { forgetting = true }
+        if (forgetting) ConfirmDialog(
+            title = "보낸 정보를 모두 지울까요?",
+            message = com.bamnat.app.ui.company.FORGET_ALL_WORDS,
+            confirmLabel = "모두 지우기",
+            destructive = true,
+            onDismiss = { forgetting = false },
+            onConfirm = {
+                forgetting = false
+                forgot = "지우는 중…"
+                vm.forgetEverythingSent { forgot = it }
+            },
+        )
+        HorizontalDivider()
         // [ALRM-02] I27: every yes and no, and every permission, on one sheet.
         NavRow(SUMMARY_ROW, "사용 통계·소식·권한을 한 장에서 보고 바꿔요") { summary = true }
         if (summary) com.bamnat.app.ui.diag.ConsentSummarySheet { summary = false }
@@ -979,6 +996,9 @@ internal const val AD_PRIVACY_WORDS =
         "광고는 Google AdMob이 보여 주고, 휴대폰의 광고 ID와 기기 정보를 써요. 근무표·급여·메모·돈 기록은 광고에 쓰지 않아요.\n\n" +
         "맞춤 광고를 끄려면 휴대폰 설정 › 개인정보 보호(또는 Google) › 광고에서 광고 ID를 지우면 돼요. " +
         "유럽처럼 법이 따로 묻는 지역에서는 여기서 Google의 동의 화면이 다시 열려요."
+
+/** 1.36 [INQ-07] The row's name, also what 설정 검색 finds. */
+internal const val FORGET_ALL_ROW = "이 휴대폰이 보낸 정보 모두 지우기"
 
 // [ADMIN-02] The 밤낮 policy; privacy.html at the site root is another app's.
 private const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/"

@@ -494,8 +494,13 @@ export async function adminInquiries(request, env, url, path, now) {
     // 1.36 [INQ-07] 결제·환불 기록: kept three years from its last word. Set by hand when the words missed it, or
     // cleared when they matched by chance; the activity log keeps who did which.
     if (typeof body.on !== "boolean") refuse("on", "on");
-    await run(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", body.on ? row.billing_at ?? now : null, row.id);
     await audit(env, now, "inquiry_billing", row.id, body.on ? "on" : "off");
+    // Its asker already deleted it, and it is no record the law keeps: it goes now, as they asked.
+    if (!body.on && String(row.device).startsWith("gone")) {
+      await batch(env, dropInquiries(env, "id = ?", row.id));
+      return json({ deleted: true });
+    }
+    await run(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", body.on ? row.billing_at ?? now : null, row.id);
   } else if (m[2] === "/visibility") {
     // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
     if (!row.public) refuse("public", "action");

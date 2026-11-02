@@ -292,6 +292,7 @@ internal object SettingsIndex {
         // [MON-04][MON-05] 프로 and what paying for it agrees to.
         screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "복구 코드", "관리자 연결", "환불", "해지", "유료"),
         row(V, "이용약관", "약관", "환불 규정", "청약철회", "구독 약관"),
+        row(V, FORGET_ALL_ROW, "모두 지우기", "보낸 정보 지우기", "삭제", "탈퇴", "데이터 지우기", "서버에서 지우기", "문의 지우기"), // 1.36 [INQ-07]
         row(V, "사업자 정보", "사업자", "통신판매업", "사업자등록번호", "판매자", "대표자", "회사 정보", "주소", "전화번호"), // 1.36 [MON-12]
         // [GUIDE-05] Every switch of a feature that can be off, in one place.
         // [ONBOARD-04][SIMPLE-02] The recommended features on one screen, and where each is turned off.

@@ -2,15 +2,21 @@ package com.bamnat.app.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 
@@ -46,31 +52,42 @@ object SellerInfo {
     )
 }
 
-/** 1.36 [MON-12] The 사업자 정보 card, from 설정 › 개인정보·앱 정보 › 앱 정보 and from 설정 › 프로. */
+/**
+ * 1.36 [MON-12] The 사업자 정보 card, from 설정 › 개인정보·앱 정보 › 앱 정보 and from 설정 › 프로. Each line copies
+ * whole with one tap (a long press picks only a piece between hyphens); 전화 and 전자우편 also call or write.
+ */
 @Composable
 fun SellerInfoDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
+    fun open(uri: String) = runCatching {
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("사업자 정보") },
         text = {
-            SelectionContainer {
-                Column {
-                    SellerInfo.lines.forEach { (label, value) ->
-                        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 8.dp))
-                        Text(value, style = MaterialTheme.typography.bodyMedium)
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SellerInfo.lines.forEach { (label, value) ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(value, style = MaterialTheme.typography.bodyMedium)
+                        }
+                        when (label) {
+                            "전화" -> TextButton(onClick = { open("tel:${SellerInfo.PHONE}") }) { Text("전화") }
+                            "전자우편" -> TextButton(onClick = { open("mailto:${SellerInfo.MAIL}") }) { Text("메일") }
+                            else -> {}
+                        }
+                        TextButton(onClick = {
+                            clipboard.setText(AnnotatedString(value))
+                            Toast.makeText(context, "$label 복사했어요", Toast.LENGTH_SHORT).show()
+                        }) { Text("복사") }
                     }
                 }
             }
         },
-        dismissButton = {
-            TextButton(onClick = {
-                runCatching {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(SellerInfo.CHECK_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                }
-            }) { Text("공정위에서 확인") }
-        },
+        dismissButton = { TextButton(onClick = { open(SellerInfo.CHECK_URL) }) { Text("공정위에서 확인") } },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }

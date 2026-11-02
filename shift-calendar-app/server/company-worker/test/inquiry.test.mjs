@@ -379,3 +379,14 @@ test("1.36 [INQ-07] a 결제·환불 question is kept three years, also when its
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiries"), 0);
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages"), 0);
 });
+
+test("1.36 [INQ-07] a deleted question taken out of the 결제·환불 record goes at once", async () => {
+  const { call, DB } = server();
+  const id = (await call("POST", "/api/inquiries", question(1, { kind: "question", text: "결제는 됐는데 프로가 안 켜져요" }), from(1))).data.id;
+  await call("DELETE", `/api/inquiries/${id}`, undefined, mine(1));
+  const admin = await signIn(call);
+  const off = await call("POST", `/api/admin/inquiries/${id}/billing`, { on: false }, admin);
+  assert.deepEqual([off.status, off.data], [200, { deleted: true }]);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiries").get().n, 0);
+  assert.equal((await call("GET", `/api/admin/inquiries/${id}`, undefined, admin)).status, 404);
+});
