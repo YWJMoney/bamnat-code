@@ -32,6 +32,14 @@ class SettingsSearchTest {
         assertTrue(titles.toString(), titles.containsAll(listOf("화면마다 글꼴", "날짜 숫자 글꼴")))
     }
 
+    @Test fun motionFindsTheStudiosMotion() {
+        for (q in listOf("움직임", "파티클", "애니메이션", "효과")) {
+            val titles = SettingsIndex.search(q).map { it.title }
+            assertTrue("$q: $titles", "움직임 효과" in titles)
+        }
+        assertTrue(SettingsIndex.search("애니메이션").map { it.title }.contains("부품 움직임"))
+    }
+
     @Test fun endingsAreDropped() {
         assertEquals("알람 점검", first("알람이 안 울려요"))
         assertEquals("알람", SearchText.stem("알람이"))

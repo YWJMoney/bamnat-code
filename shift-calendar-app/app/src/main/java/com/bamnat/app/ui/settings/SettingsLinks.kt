@@ -37,6 +37,8 @@ enum class SettingsGo {
     STUDIO_FONT,
     /** PC 확인 5차: 화면마다 글꼴 (달력 › 색·배경) and 날짜 숫자 글꼴 (달력 › 칸 디자인). */
     STUDIO_SCREEN_FONT, STUDIO_DATE_FONT,
+    /** [MAT-07] PC 확인 (마을 확인 중 사용성 제안): 스튜디오 › 앱 전체 › 움직임 and › 부품 (each part's own 움직임). */
+    STUDIO_MOTION, STUDIO_PARTS,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

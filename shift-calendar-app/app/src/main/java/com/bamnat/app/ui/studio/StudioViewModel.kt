@@ -144,7 +144,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             // PC 재검토 C10: 공방's '느낌으로 새로' opens the studio on the 느낌 picker.
             start == START_FEEL -> { refresh(both = true); askFeel = true }
             // PC 확인 4차 (B): 설정 검색 '글꼴' opens on 앱 전체 › 글꼴.
-            start == START_FONT || start == START_SCREEN_FONT || start == START_DATE_FONT -> { refresh(both = true); openFont = start }
+            start == START_FONT || start == START_SCREEN_FONT || start == START_DATE_FONT || start == START_MOTION || start == START_PARTS -> { refresh(both = true); openFont = start }
             start.startsWith(START_DRAFT) -> {
                 refresh(both = true)
                 start.removePrefix(START_DRAFT).toLongOrNull()?.let { resume(it) }
@@ -841,6 +841,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         const val START_FONT = "font"
         const val START_SCREEN_FONT = "font:screen"
         const val START_DATE_FONT = "font:date"
+        /** [MAT-07] 설정 검색 '움직임'·'효과'·'파티클': 앱 전체 › 움직임, and › 부품 (a part's own 움직임). */
+        const val START_MOTION = "motion"
+        const val START_PARTS = "parts"
         /** PC 확인 L5: the studio's 잠근 화면, this phone's. */
         const val LOCK_PREFS = "studio_locks"
         /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */
