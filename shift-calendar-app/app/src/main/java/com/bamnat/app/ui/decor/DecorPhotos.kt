@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import com.bamnat.app.AppContainer
 import com.bamnat.app.appContainer
@@ -45,11 +46,10 @@ object DecorPhotos {
         for (id in ids) {
             if (shown.containsKey(id)) continue
             var bmp = LookImages.bitmap(c.appContext, id)
-            if (bmp == null && ask(id)) {
-                if (LookImages.fetch(c, id)) bmp = LookImages.bitmap(c.appContext, id)
-                if (bmp == null) waiting[id] = Unit
-            }
-            if (bmp != null) waiting.remove(id)
+            if (bmp == null && ask(id) && LookImages.fetch(c, id)) bmp = LookImages.bitmap(c.appContext, id)
+            // PC 확인 C11 1.36 (얹은 탭은 승인 전 맨 위 줄이 안 나와요): a photo still not on the phone is waiting, also when it was
+            // asked for a moment ago elsewhere (얹기 asks first, so the calendar's own ask was held back and marked nothing).
+            if (bmp == null) waiting[id] = Unit else waiting.remove(id)
             bmp?.let { if (shown.size >= 32) { shown.clear(); light.clear() }; light[id] = LookImages.lightness(it); shown[id] = it.asImageBitmap() }
         }
     }
@@ -99,6 +99,15 @@ object DecorTap {
  * no colour of its own gets a pale ground of it; null on a screen without one.
  */
 val LocalOnPhoto = androidx.compose.runtime.compositionLocalOf<androidx.compose.ui.graphics.Color?> { null }
+
+/** [c] as it is, or, on a 꾸밈 사진 ([LocalOnPhoto]) where it would not show (under 3:1), the ink of that ground. */
+@Composable
+fun readableOnPhoto(c: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color {
+    val ground = LocalOnPhoto.current ?: return c
+    fun argb(x: androidx.compose.ui.graphics.Color) = x.toArgb().toLong() and 0xFFFFFFFFL
+    return if (com.bamnat.core.layout.Contrast.ratio(argb(c.copy(alpha = 1f)), argb(ground.copy(alpha = 1f))) >= 3.0) c
+        else com.bamnat.app.ui.components.contentColorOn(ground.copy(alpha = 1f))
+}
 
 val LocalDecorTap = staticCompositionLocalOf<((String, java.time.LocalDate?) -> Unit)?> { null }
 

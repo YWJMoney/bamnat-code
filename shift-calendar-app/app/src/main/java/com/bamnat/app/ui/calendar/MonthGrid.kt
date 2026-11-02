@@ -590,7 +590,7 @@ private fun DayCell(
     val partShape = cellPart.shape(shape)
     // [RCP-09] 1.34 달력 테마: the user's colours for 토·일·공휴일 and today, and how strong the wash is.
     val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
-    val numberColor = when {
+    val numberColor = com.bamnat.app.ui.decor.readableOnPhoto(when {
         // Public holidays are red like Sundays [FEAT-05].
         holidayName != null -> look.holiday(cal)
         else -> when (date.dayOfWeek) {
@@ -598,7 +598,7 @@ private fun DayCell(
         DayOfWeek.SATURDAY -> look.saturday(cal)
         else -> scheme.onSurface
         }
-    }
+    })
     // Working days are tinted with their shift's color so the month reads at a glance.
     // A 대근 on a day off tints the cell with the covered shift [EXTRA-01].
     val dark = isDarkSurface()
@@ -1116,12 +1116,13 @@ internal fun CustomCellBody(
     // Text over a strong background reads in black or white.
     val onFill = filled?.takeIf { it.alpha >= 0.5f }?.let { com.bamnat.app.ui.components.contentColorOn(it.copy(alpha = 1f)) }
     val weekdayInk = l?.dateColor?.asColor()
-    val dateInk = when {
+    // PC 확인 C11 1.36 (어두운 사진 위 쉬는 날 칸의 날짜가 어두워요): a colour that would not show on a 꾸밈 사진 takes the ground's ink.
+    val dateInk = com.bamnat.app.ui.decor.readableOnPhoto(when {
         numberColor != scheme.onSurface -> numberColor
         weekdayInk != null -> weekdayInk
         onFill != null -> onFill
         else -> numberColor
-    }
+    })
     val memoShown = texts.containsKey("memo")
     val markSize: Dp = when (mark) { "small" -> 15.dp; "big" -> if (markPlace == "side") 20.dp else 22.dp; else -> 14.dp }
     val markShape = mp.takeIf { it.corners.any { c -> c != null } }?.shape(RoundedCornerShape(4.dp))
