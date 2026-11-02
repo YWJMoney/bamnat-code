@@ -263,7 +263,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         when (vm.openFont) {
             StudioViewModel.START_FONT -> { area = Area.ALL; tool = Tool.FONT }
             StudioViewModel.START_SCREEN_FONT -> { com.bamnat.app.ui.settings.FontRowFocus.label = "이 화면 글꼴"; area = Area.CALENDAR; tool = Tool.COLORS }
-            StudioViewModel.START_DATE_FONT -> { com.bamnat.app.ui.settings.FontRowFocus.label = "날짜 글꼴"; area = Area.CALENDAR; tool = Tool.CELL }
+            StudioViewModel.START_DATE_FONT -> { com.bamnat.app.ui.settings.FontRowFocus.pinned = "날짜 글꼴"; area = Area.CALENDAR; tool = Tool.CELL }
         }
         vm.openFont = null
     }

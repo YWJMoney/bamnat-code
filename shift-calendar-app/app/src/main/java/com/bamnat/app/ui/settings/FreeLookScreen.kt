@@ -240,7 +240,9 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
     var removing by remember { mutableStateOf(false) }
     // [MAT-05] PC 확인 8~10차 (설정 검색 › 날짜 숫자 글꼴로 오면 줄이 칸 디자인 아래쪽, 단추 띠에 붙음): scrolling the editor to a row
     // far down was not reliable here, so the row asked for comes first, until closed.
-    var searched by remember { mutableStateOf(FontRowFocus.label == "날짜 글꼴") }
+    // PC 확인 11차: read as state (the editor can be on screen before the search's ask arrives), let go when the editor leaves.
+    val searched = FontRowFocus.pinned == "날짜 글꼴"
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (FontRowFocus.pinned == "날짜 글꼴") FontRowFocus.pinned = null } }
     if (searched) {
         val looks0 = view.looks.ifEmpty { listOf(CellLook()) }
         val i0 = index.coerceIn(0, looks0.lastIndex)
@@ -248,9 +250,9 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
             Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("찾은 칸 · 날짜 글꼴", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { searched = false }) { Text("닫기") }
+                    TextButton(onClick = { FontRowFocus.pinned = null }) { Text("닫기") }
                 }
-                FontRow("날짜 글꼴", looks0[i0].dateFont, numbersOnly = true) { f ->
+                FontRow("날짜 글꼴", looks0[i0].dateFont, numbersOnly = true, focusNow = true) { f ->
                     onChange(view.copy(looks = looks0.toMutableList().also { it[i0] = looks0[i0].copy(dateFont = f) }))
                 }
                 Text("아래 ‘날짜’ 묶음에도 같은 줄이 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -352,11 +352,16 @@ fun PhotoFrameEditor(label: String, value: String?, onChange: (String?) -> Unit)
 /** The [FontRow] to bring into view when it appears (설정 검색 › 화면마다 글꼴·날짜 숫자 글꼴), by its label; once. */
 object FontRowFocus {
     @Volatile var label: String? = null
+    /**
+     * PC 확인 11차: the row a search asked for that its editor shows first (칸 디자인's 날짜 글꼴), as state so the editor already on
+     * screen sees it; till closed or the editor leaves.
+     */
+    var pinned by mutableStateOf<String?>(null)
 }
 
 /** A line that shows the font now (in itself) and opens [FontPickerDialog]. */
 @Composable
-fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, onPick: (String?) -> Unit) {
+fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, focusNow: Boolean = false, onPick: (String?) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val ctx = LocalContext.current
     // PC 확인 2차: the font before the last pick, for 전 글꼴로 when the new one could not come down.
@@ -382,8 +387,8 @@ fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, onPick:
     val screenPx = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp.toPx() }
     val roomMax = with(androidx.compose.ui.platform.LocalDensity.current) { 200.dp.toPx() }
     androidx.compose.runtime.LaunchedEffect(label) {
-        if (FontRowFocus.label == label) {
-            FontRowFocus.label = null
+        if (focusNow || FontRowFocus.label == label) {
+            if (FontRowFocus.label == label) FontRowFocus.label = null
             // PC 8차 (검색에서 오면 칸 디자인 맨 위에서 열림): a rect taller than the editor's own window (half a screen each side was) counts
             // as already in view, so nothing scrolled. First the row itself, then a little room round it — at most what fits.
             kotlinx.coroutines.delay(350)
