@@ -122,7 +122,7 @@ private fun WorkPage(
         // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not in the line, and the line says how many are put away.
         val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
         val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
-        NavRow(words.types, shiftsLine(snapshot?.shiftTypes.orEmpty(), folded), onOpenShiftTypes)
+        NavRow(words.types, shiftsLine(snapshot?.shiftTypes.orEmpty(), folded, com.bamnat.app.ui.shifts.dayKindNoun(work.workStyle)), onOpenShiftTypes)
         if (work.workStyle?.usesPayEngine != false) {
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
@@ -182,11 +182,11 @@ private fun CalendarPick() {
 }
 
 /** "주간 07:00–19:00 · 야간 19:00–07:00 외 2개". */
-internal fun shiftsLine(types: List<ShiftType>, folded: Set<Long> = emptySet()): String {
+internal fun shiftsLine(types: List<ShiftType>, folded: Set<Long> = emptySet(), noun: String = "근무"): String {
     val all = types.filter { !it.isOff && it.start != null && it.end != null }
     val work = all.filter { it.id !in folded }
     val away = if (work.size == all.size) "" else " · 안 쓰는 종류 ${all.size - work.size}개"
-    if (work.isEmpty()) return (if (all.isEmpty()) "이름, 시간, 색, 근무 전 알람" else "쓰는 근무 없음") + away
+    if (work.isEmpty()) return (if (all.isEmpty()) "이름, 시간, 색, $noun 전 알람" else "쓰는 $noun 없음") + away
     val shown = work.take(2).joinToString(" · ") { "${it.name} ${Fmt.time(it.start)}–${Fmt.time(it.end)}" }
     return (if (work.size > 2) "$shown 외 ${work.size - 2}개" else shown) + away
 }

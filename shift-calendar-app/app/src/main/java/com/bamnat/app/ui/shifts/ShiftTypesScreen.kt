@@ -159,8 +159,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                         alarmEnabled = true, alarms = listOf(AlarmSpec(60)),
                     )
                 },
-                icon = { Icon(Icons.Filled.Add, "근무 추가") },
-                text = { Text("근무 추가") },
+                icon = { Icon(Icons.Filled.Add, "${dayKindNoun(vm.workStyle)} 추가") },
+                text = { Text("${dayKindNoun(vm.workStyle)} 추가") },
             )
         },
     ) { padding ->
@@ -180,7 +180,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
             item {
                 // [SETUP-07] What can be done here, said once: tap to change, arrows to reorder.
                 Text(
-                    "달력에 보이는 근무예요. 근무를 누르면 시간과 알람을 고치고, 오른쪽 손잡이를 끌거나 화살표로 달력에 보이는 순서를 바꿔요.",
+                    "달력에 보이는 ${dayKindNoun(vm.workStyle)}${com.bamnat.app.ui.Fmt.ieyo(dayKindNoun(vm.workStyle))}. ${dayKindNoun(vm.workStyle)}${com.bamnat.app.ui.Fmt.obj(dayKindNoun(vm.workStyle))} 누르면 시간과 알람을 고치고, 오른쪽 손잡이를 끌거나 화살표로 달력에 보이는 순서를 바꿔요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
@@ -220,7 +220,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
             // 1.36 PC 재검토: kinds put away after a change of work (알바 → 현장), folded here; past days keep them.
             val away = list.filter { it.id in folded }
             if (away.isNotEmpty() && shown.none { !it.isOff }) item(key = "folded-none") {
-                Text("쓰는 근무가 없어요. 아래 ‘근무 추가’로 새 근무를 넣거나, 안 쓰는 종류에서 ‘다시 쓰기’를 눌러요.",
+                val n = dayKindNoun(vm.workStyle)
+                Text("쓰는 ${dayKindSubject(vm.workStyle)} 없어요. 아래 ‘$n 추가’로 새 $n${com.bamnat.app.ui.Fmt.obj(n)} 넣거나, 안 쓰는 종류에서 ‘다시 쓰기’를 눌러요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(vertical = 8.dp))
             }
@@ -266,6 +267,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
         ShiftTypeEditorDialog(
             initial = type,
             showPremium = vm.isShiftCalendar,
+            noun = dayKindNoun(vm.workStyle),
             onDismiss = { editing = null },
             onSave = {
                 vm.save(it)
@@ -564,6 +566,8 @@ fun ShiftTypeEditorDialog(
     showAlarms: Boolean = true,
     /** [SHFT-01] A shift calendar sets each kind's own premium here. */
     showPremium: Boolean = false,
+    /** 1.36 PC 재검토: "일정" on a 현장 calendar. */
+    noun: String = "근무",
 ) {
     // [CAL-30] I 리뷰 P14: what is being typed survives a fold or a turn of the phone.
     var draft by rememberSaveable(initial, stateSaver = ShiftTypeSaver) { mutableStateOf(initial) }
@@ -596,7 +600,7 @@ fun ShiftTypeEditorDialog(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(if (initial.id == 0L || initial.name.isBlank()) "근무 추가" else "근무 수정") },
+                        title = { Text(if (initial.id == 0L || initial.name.isBlank()) "$noun 추가" else "$noun 수정") },
                         navigationIcon = { IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
                         actions = {
                             TextButton(onClick = { onSave(draft) }, enabled = draft.name.isNotBlank()) { Text("저장") }

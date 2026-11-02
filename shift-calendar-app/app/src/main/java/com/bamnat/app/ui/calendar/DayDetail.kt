@@ -600,7 +600,8 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
     }
     // 1.36 PC 재검토: every kind of work folded away, said instead of showing them again.
     if (folded.isNotEmpty() && types.none { !it.isOff }) {
-        Text("쓰는 근무가 없어요. 설정 › 근무 종류와 시간에서 ‘근무 추가’로 넣거나 안 쓰는 종류를 다시 써요.",
+        val n = com.bamnat.app.ui.shifts.dayKindNoun(style)
+        Text("쓰는 ${com.bamnat.app.ui.shifts.dayKindSubject(style)} 없어요. ${com.bamnat.app.ui.shifts.dayKindsPlace(style)}에서 ‘$n 추가’로 넣거나 안 쓰는 종류를 다시 써요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     // [J133B-03] 1.33 빌드 8 확인 ("11시간 휴식 경고가 월 카드에만, 근무를 넣는 순간에는 없어요"): the rest rules the day and the
