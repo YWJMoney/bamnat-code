@@ -385,7 +385,18 @@ internal fun MemoTableView(
     selection: Set<Long> = emptySet(), selecting: Boolean = false,
 ) {
     val columns = remember(memos) { MemoProps.columns(memos) }
-    val rows = remember(memos, view) { view.sorted(memos).map { it to MemoProps.of(it).associateBy { p -> p.label } } }
+    // PC 확인 82196a74 사용성 제안: with the 메모장's own order (newest change first) a changed row jumped to the top; while the 표 is open
+    // rows keep their places, new memos coming in on top. An order the user picked (a head tap) is followed as it is.
+    val kept = remember { ArrayList<Long>() }
+    val rows = remember(memos, view) {
+        val sorted = view.sorted(memos)
+        val ordered = if (view.sort.isNotEmpty() || kept.isEmpty()) sorted else {
+            val byId = sorted.associateBy { it.id }
+            sorted.filter { it.id !in kept } + kept.mapNotNull { byId[it] }
+        }
+        kept.clear(); kept.addAll(ordered.map { it.id })
+        ordered.map { it to MemoProps.of(it).associateBy { p -> p.label } }
+    }
     // 누락 점검 N9: a 고르기 칸's words, offered when its 칸 is tapped.
     val choices = remember(memos, columns) { columns.filter { it.second == MemoProps.Type.PICK }.associate { (c, _) -> c to MemoView.choicesFor(c, memos, templateChoices(c)) } }
     val titleW = 132.dp
@@ -493,6 +504,9 @@ internal fun MemoTableView(
                 }
             }
         }
+        // PC 확인 82196a74 사용성 제안: how to pick rows, said where the rows are.
+        if (!selecting && rows.isNotEmpty()) Text("줄을 길게 누르면 여러 개를 골라 한꺼번에 고정하거나 색을 바꾸거나 지울 수 있어요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
         if (columns.isEmpty()) Text(
             "메모에 ‘매출: 32000’처럼 ‘칸: 값’ 줄을 쓰면 여기 열이 생겨요. 메모 틀의 입력 칸도 이렇게 적혀요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(12.dp),

@@ -145,7 +145,7 @@ fun MemoListScreen(
         (if (state.tab == MemoTab.CALENDAR) state.calendarFilter != CalendarFilter.ALL else state.generalFilter != GeneralFilter.ALL)
     val fold = parts.any { it.part == MemoPart.FOLD && it.shown }
     val today = Today.date()
-    var undo by remember { mutableStateOf<Pair<String, Memo>?>(null) }
+    var undo by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
     val actions = CardActions(
         onOpen = open,
@@ -154,7 +154,7 @@ fun MemoListScreen(
         onDuplicate = vm::duplicate,
         onDelete = vm::delete,
         // [TAB-02] 누락 점검 N9: a card moved on the 보드 or a 칸 picked in the 표 — saved at once, with 되돌리기 for 10 seconds (PC 확인 5ff9ae28: 4–6초 was missed).
-        onChange = { before, after, said -> vm.saveEdited(after); undo = said to before },
+        onChange = { before, after, said -> vm.saveEdited(after); undo = said to { vm.saveEdited(before) } },
     )
     androidx.compose.runtime.LaunchedEffect(undo) { if (undo != null) { kotlinx.coroutines.delay(10_000); undo = null } }
 
@@ -239,7 +239,13 @@ fun MemoListScreen(
             when {
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
                 memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions, templateChoices)
-                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { setView(memoView.copy(sort = it)) }, actions, templateChoices, state.selection, state.selecting)
+                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { sort ->
+                    // PC 확인 82196a74 사용성 제안: a head tap says what it did, with 되돌리기.
+                    val before = memoView
+                    setView(memoView.copy(sort = sort))
+                    val name = sort.removePrefix("-").removePrefix("p:").let { if (sort == com.bamnat.core.memo.MemoView.SORT_TITLE) "제목" else it }
+                    undo = "‘$name’ ${if (sort.startsWith("-")) "큰 순" else "작은 순"}으로 정렬했어요".let { if (sort == com.bamnat.core.memo.MemoView.SORT_TITLE) "제목 순으로 정렬했어요" else it } to { setView(before) }
+                }, actions, templateChoices, state.selection, state.selecting)
                 memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
                 memoView.view == com.bamnat.core.memo.MemoView.CALENDAR -> MemoCalendarView(shown, appSettings.weekStart, today, actions)
                 !memoView.sort.isEmpty() && state.tab != MemoTab.CALENDAR -> GeneralMemoGrid(state.copy(general = memoView.sorted(state.general)), actions)
@@ -249,7 +255,7 @@ fun MemoListScreen(
         }
 
         // [TAB-02] 누락 점검 N9: what a 보드·표 change did, and 되돌리기, above the 새 메모 button.
-        undo?.let { (said, before) ->
+        undo?.let { (said, back) ->
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.inverseSurface,
@@ -259,7 +265,7 @@ fun MemoListScreen(
             ) {
                 Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(said, color = MaterialTheme.colorScheme.inverseOnSurface, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    androidx.compose.material3.TextButton(onClick = { vm.saveEdited(before); undo = null }) {
+                    androidx.compose.material3.TextButton(onClick = { back(); undo = null }) {
                         Text("되돌리기", color = MaterialTheme.colorScheme.inversePrimary)
                     }
                 }
