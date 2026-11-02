@@ -233,6 +233,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
+    // PC 14차 (한 번 올린 뒤 다시 올리기를 누르면 지난 끝 화면으로 감): each 올리기 starts its own; the same name as mine already up then
+    // asks 새 판으로 or 따로 (올리기 4/4).
+    var upRound by rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
     var preparing by remember { mutableStateOf(false) }
     var uploadWhat by remember { mutableStateOf<List<String>?>(null) }
     var openedLine by remember { mutableStateOf<String?>(null) }
@@ -311,8 +314,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     LaunchedEffect(s.said) {
         val said = s.said ?: return@LaunchedEffect
         // 1.36 (사용자 2026-10-31): 얹기 too can be taken back from here, the same step as 되돌리기 above.
-        val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear || s.canUndoLayer) "되돌리기" else null, duration = SnackbarDuration.Long)
-        if (r == SnackbarResult.ActionPerformed) { if (s.canUndoLayer) vm.undoLayer() else vm.undoWear() } else vm.said()
+        val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear || s.canUndoLayer || s.unlaid != null) "되돌리기" else null, duration = SnackbarDuration.Long)
+        // PC 14차: 빼기 too is taken back from the line (laid on again).
+        if (r == SnackbarResult.ActionPerformed) { val back = s.unlaid; if (back != null) { vm.said(); vm.layer(back) } else if (s.canUndoLayer) vm.undoLayer() else vm.undoWear() } else vm.said()
     }
     // PC 제안 1.36 (장터에서 담고 돌아와도 보관함에 들어온 줄 모름): what came into 보관함 while away is said, with 보기 to it.
     LaunchedEffect(kept) {
@@ -422,7 +426,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 if (tabs.isNotEmpty()) { uploadWhat = tabs; preparing = false }
                                 else scope.launch {
                                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
-                                    publishing = Triple(body, parent, vm.nextOf())
+                                    upRound++; publishing = Triple(body, parent, vm.nextOf())
                                 }
                             } }, enabled = !preparing && publishing == null,
                                 modifier = Modifier.heightIn(min = 48.dp)) { Text(if (preparing) "준비 중…" else "올리기") }
@@ -615,7 +619,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         Tool.SEED -> SeedTool(vm, d)
                         Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, focus = partPick?.first, focusOn = partPick?.second, onFocus = { pid, pon -> partNow = pid to pon; partPick = null },
-                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishing = Triple(body, "", null) } }) { v -> vm.change { it.copy(parts = v) } }
+                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> upRound++; publishing = Triple(body, "", null) } }) { v -> vm.change { it.copy(parts = v) } }
                         Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }
@@ -718,6 +722,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 preparing = true
                 scope.launch {
                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload(choice) }
+                    upRound++
                     publishing = Triple(body, parent, if (choice != null) null else vm.nextOf())
                 }
             }, enabled = !preparing) {
@@ -734,7 +739,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             Surface(Modifier.fillMaxSize()) {
                 // W37: once 올리기 is drawn, the 무엇을 올릴까요 window and 준비 중 go.
                 LaunchedEffect(Unit) { uploadWhat = null; preparing = false }
-                val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own") {
+                val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own-$upRound") {
                     com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
                 }
                 // 빌드 751b88f6 PC 확인 (올린 뒤 나가도 '바꾼 것을 어떻게 할까요?'): once it is up, what was changed counts as kept,
