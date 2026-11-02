@@ -399,3 +399,14 @@ test("[FREE-10] 오늘 says when themes opened with no ad jump (yesterday twice 
   assert.equal(at([10, 12, 11, 9, 10, 15, 0]), undefined, "steady is quiet");
   assert.match(at([0, 0, 0, 0, 0, 10, 40]).title, /어제 10번/);
 });
+
+test("[STU-38] 1.36 위젯 꾸미기: background and text colour, corners and text size read; out of range is refused", async () => {
+  const w = { kind: "widget", alpha: 90, theme: "dark", bg: 4280427042, ink: 4294967295, corner: 12, text: "l" };
+  const good = await cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, w] })));
+  for (const k of ['"corner":12', '"text":"l"', '"bg":4280427042', '"ink":4294967295']) assert.ok(good.text.includes(k), k);
+  const old = await cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { kind: "widget", alpha: 80 }] })));
+  assert.ok(old.text.includes('"alpha":80'), "예전 위젯 조각도 그대로");
+  for (const bad of [{ ...w, corner: 40 }, { ...w, text: "xl" }, { ...w, bg: "red" }]) {
+    await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, bad] }))), (e) => e.code !== undefined, JSON.stringify(bad));
+  }
+});

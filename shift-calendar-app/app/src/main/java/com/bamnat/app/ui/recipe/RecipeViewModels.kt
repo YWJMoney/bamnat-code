@@ -136,7 +136,11 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     fun load() {
         viewModelScope.launch {
             try {
-                val doc = c.recipeApi.show(code, device)
+                // PC 확인 W34 1.36 (처음 들어갈 때 한 번 '인터넷에 연결되지 않았어요', 다시 해 보기로 열림): a connection that drops on the
+                // first try is tried once more before it is said.
+                val doc = try { c.recipeApi.show(code, device) } catch (e: java.io.IOException) {
+                    kotlinx.coroutines.delay(800); c.recipeApi.show(code, device)
+                }
                 val r = doc.recipe()
                 val pieces = r.pieces.map { p -> Piece(p.kind, on = style == null || style in p.kind.styles, fits = style == null || style in p.kind.styles) }
                 _state.value = _state.value.copy(doc = doc, recipe = r, pieces = pieces, error = null,
@@ -257,6 +261,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
             val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code) }.getOrDefault(false)
             // PC 확인 보안 8차 (넣어도 쓰는 분 0명): a tab laid on is a use too (it leaves no record, so apply did not count it).
+            // Once a phone [SEC-15], as a theme put on is (the studio thread's own fix sent it at every 얹기).
             if (laid) c.recipes.countUse(code)
             val plus = if (!counted && c.recipes.countedHere(code)) 1 else 0
             if (id != null && looks.isNotEmpty() && tab == null) runCatching {
@@ -270,6 +275,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     else -> "적용했어요. 7일 안에 되돌릴 수 있어요"
                 })
             onDone(id ?: if (laid) 0L else null)
+            // PC 제안 1.36 (넣은 직후 상세의 쓰는 분은 0명 그대로): the count read again once it is in.
+            // The count read again already holds this phone's, so the share added above is let go.
+            if (id != null || laid) runCatching { c.recipeApi.show(code, device) }.onSuccess { d -> _state.value = _state.value.copy(doc = d, usersPlus = 0) }
         }
     }
 

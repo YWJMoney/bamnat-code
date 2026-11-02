@@ -79,25 +79,25 @@ internal fun TeamsContent(data: WidgetData) {
     val teams = data.teams
     Column(GlanceModifier.fillMaxSize()) {
         Text("오늘 모든 조 · ${data.today.monthValue}/${data.today.dayOfMonth}(${Fmt.dayOfWeekShort(data.today.dayOfWeek)})",
-            style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp), maxLines = 1)
+            style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
         Spacer(GlanceModifier.height(6.dp))
         if (teams.isNullOrEmpty()) {
             Text("주주야야비휴처럼 돌아가는 근무 주기를 정하면 조마다 오늘 근무가 보여요",
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp))
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)))
             return@Column
         }
         for (t in teams) {
             Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     t.name + if (t.mine) " (내 조)" else "",
-                    style = TextStyle(color = if (t.mine) GlanceTheme.colors.primary else GlanceTheme.colors.onSurface, fontSize = 14.sp,
+                    style = TextStyle(color = if (t.mine) GlanceTheme.colors.primary else GlanceTheme.colors.onSurface, fontSize = wsp(14),
                         fontWeight = if (t.mine) FontWeight.Bold else FontWeight.Normal),
                     maxLines = 1,
                     modifier = GlanceModifier.defaultWeight(),
                 )
                 ShiftSquare(t.today, 24)
                 Spacer(GlanceModifier.width(6.dp))
-                Text("내일", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 10.sp), maxLines = 1)
+                Text("내일", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(10)), maxLines = 1)
                 Spacer(GlanceModifier.width(3.dp))
                 ShiftSquare(t.tomorrow, 18)
             }
@@ -107,7 +107,7 @@ internal fun TeamsContent(data: WidgetData) {
             Spacer(GlanceModifier.height(4.dp))
             Text(
                 if (names.isEmpty()) "오늘 내 근무에 들어올 수 있는 조가 없어요" else "들어올 수 있는 조: ${names.joinToString(", ")}",
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)),
                 maxLines = 1,
             )
         }
@@ -121,7 +121,7 @@ internal fun openDay(context: Context, date: LocalDate) =
 /** [DAILY-01] The day's memo line under its shift. */
 @Composable
 internal fun MemoLine(text: String) {
-    Text("📝 $text", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp), maxLines = 1)
+    Text("📝 $text", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
 }
 
 /**
@@ -185,7 +185,7 @@ internal fun HourlyClockButton(out: Boolean, yesterday: Boolean) {
     ) {
         Text(
             if (out) (if (yesterday) "어제 퇴근" else "퇴근") else "출근",
-            style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = 14.sp, fontWeight = FontWeight.Medium),
+            style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = wsp(14), fontWeight = FontWeight.Medium),
             maxLines = 1,
         )
     }
@@ -208,7 +208,7 @@ class CountdownWidget : GlanceAppWidget() {
         provideContent {
             WidgetLookTheme {
                 Box(
-                    GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(20.dp).padding(12.dp)
+                    GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(widgetCorner()).padding(12.dp)
                         .clickable(openDay(context, data.today)),
                     contentAlignment = Alignment.CenterStart,
                 ) { CountdownContent(data) }
@@ -226,13 +226,13 @@ internal fun CountdownContent(data: WidgetData) {
     // [J133-32] 순번 712 (1.32 실사용 테스트: 2×1에서 두 줄 다 말줄임이 됐어요): one cell high, no label and smaller lines.
     val short = androidx.glance.LocalSize.current.height < 90.dp
     Column(GlanceModifier.fillMaxWidth()) {
-        if (!short) Text("다음 근무", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp), maxLines = 1)
+        if (!short) Text("다음 근무", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
         Text(
             data.countdown ?: "7일 안에 근무가 없어요",
-            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = if (short) 14.sp else 16.sp, fontWeight = FontWeight.Bold),
+            style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = if (short) wsp(14) else wsp(16), fontWeight = FontWeight.Bold),
             maxLines = if (short) 1 else 2,
         )
         // G 1.32 [WTYP-05] 607 다음 오프까지, one line under.
-        data.nextOff?.let { Text(it, style = TextStyle(color = GlanceTheme.colors.primary, fontSize = if (short) 11.sp else 12.sp), maxLines = 1) }
+        data.nextOff?.let { Text(it, style = TextStyle(color = GlanceTheme.colors.primary, fontSize = if (short) wsp(11) else wsp(12)), maxLines = 1) }
     }
 }

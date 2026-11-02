@@ -31,6 +31,10 @@ object Fmt {
     fun timeRange(start: LocalTime, end: LocalTime): String =
         "${time(start)} – ${time(end)}" + if (WorkTime.isOvernight(start, end)) " (다음날)" else ""
 
+    /** PC 확인 Z11 1.36 (위젯 2×1에서 '19:00 – 07:00 (다음…' 잘림): the short form for small places, "19:00–07:00(+1)". */
+    fun timeRangeShort(start: LocalTime, end: LocalTime): String =
+        "${time(start)}–${time(end)}" + if (WorkTime.isOvernight(start, end)) "(+1)" else ""
+
     fun month(m: YearMonth): String = "${m.year}년 ${m.monthValue}월"
 
     fun monthShort(m: YearMonth): String = "${m.monthValue}월"

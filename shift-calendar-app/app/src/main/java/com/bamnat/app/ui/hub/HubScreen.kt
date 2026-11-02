@@ -145,23 +145,51 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
     val mine by androidx.compose.runtime.produceState<com.bamnat.core.recipe.Recipe?>(null, lease) {
         value = com.bamnat.core.recipe.Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
     }
-    SoftCard {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    // PC 확인 S4 (이어서 하기는 스튜디오를 열어야만 보임): what was left in the studio, on 공방's front too.
+    val drafts by c.recipes.drafts.collectAsStateWithLifecycle(emptyList())
+    // PC 확인 1.36: a draft left in 올리기 (step 2 and on) comes back here too, its 이름·설명 kept.
+    val left = drafts.filter { com.bamnat.core.time.Today.millis() - it.updatedAt < 14L * 86_400_000L }.maxByOrNull { it.updatedAt }
+    SoftCard { Column {
+        // PC 확인 W39 1.36 (카드 제목·그림을 눌러도 아무 일 없음): the whole card opens the studio.
+        Row(Modifier.fillMaxWidth().clickable(onClickLabel = "스튜디오 열기") { onStudio("mine") }.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             mine?.let { r ->
                 Box(Modifier.clickable(onClickLabel = "스튜디오 열기") { onStudio("mine") }) {
-                    com.bamnat.app.ui.recipe.ScaledPhone(r, style, com.bamnat.core.layout.TabOrder.CALENDAR, {}, 0.3f)
+                    androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalOwnMonth provides true) {
+                        com.bamnat.app.ui.recipe.ScaledPhone(r, style, com.bamnat.core.layout.TabOrder.CALENDAR, {}, 0.3f)
+                    }
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("스튜디오", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                 // [STU-21] 1.36 레시피 만들기 합침: one way in for every make.
-                Text("달력 칸·색·배경·카드 배치·위젯에 알람 묶음·메모 틀·규칙까지 한곳에서 만들고, 입히기·저장·올리기도 여기서 해요",
+                Text("칸·색·부품 하나하나부터 수식·규칙으로 서로 엮는 것까지 직접 만들어요. 입히기·저장·올리기도 여기서 해요",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                androidx.compose.material3.Button(onClick = { onStudio("mine") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 모양에서 꾸미기") }
-                TextButton(onClick = { onStudio("plain") }) { Text("처음 모양에서 새로") }
+                androidx.compose.material3.Button(onClick = { onStudio("mine") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 모양 고치기") }
             }
         }
-    }
+        // PC 재검토 C10 (꾸미기 시작점이 네 갈래로 흩어짐): every way to start, here — 지금 모양 고치기 above, 새로 만들기 (느낌·처음) and
+        // 이어서 하기 under it.
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.OutlinedButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_FEEL) },
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("느낌으로 새로", maxLines = 1) }
+            androidx.compose.material3.OutlinedButton(onClick = { onStudio("plain") }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                Text("처음 모양에서 새로", maxLines = 1)
+            }
+        }
+        left?.let { d ->
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("만들던 ‘${com.bamnat.app.ui.studio.draftName(d.body)}’", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                    Text((if (d.step >= 2) "올리던 중" else "스튜디오에서 꾸미던 중") + " · ${com.bamnat.app.ui.studio.ago(d.updatedAt)}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.FilledTonalButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + d.id) },
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("이어서 하기") }
+            }
+        }
+    } }
     val themes = lease.history.sortedByDescending { it.own }.take(10)
     if (themes.isNotEmpty() || kept.isNotEmpty()) {
         Text("이어서 꾸미기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })

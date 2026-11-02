@@ -122,7 +122,9 @@ private fun Pick(label: String, field: String, values: List<String>, value: Stri
 /** One example day: its mark's letter and colour, a memo or two, hours and a holiday. */
 data class SampleDay(val label: String, val color: Long, val memos: List<String> = emptyList(), val hours: String? = null, val holiday: String? = null, val off: Boolean = false,
     /** [TRY-04] The kind of day (day·night·eve·off…), for a cell pattern by kind; null when not known. */
-    val role: String? = null)
+    val role: String? = null,
+    /** PC 확인 V19 1.36: a day with nothing on it yet (공방 카드, 근무 없을 때): an outline only, never a filled cell. */
+    val blank: Boolean = false)
 
 private val SAMPLE = listOf(
     SampleDay("주", 0xFFEF6C00, listOf("병원 예약", "택배"), "8h"),
@@ -153,11 +155,12 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
                 val n = numbers?.getOrNull(r * 7 + c) ?: (start + r * 7 + c)
                 val d = days[(r * 7 + c) % days.size]
                 val color = d.color.asColor()
-                val wash = when (cell) { "fill" -> color.copy(alpha = 0.85f); "dot" -> Color.Transparent; else -> if (d.off) Color.Transparent else color.copy(alpha = 0.16f) }
+                val wash = when { d.blank -> Color.Transparent; cell == "fill" -> color.copy(alpha = 0.85f); cell == "dot" -> Color.Transparent
+                    else -> if (d.off) Color.Transparent else color.copy(alpha = 0.16f) }
                 val shape = if (view.grid == "line") RoundedCornerShape(2.dp) else RoundedCornerShape(8.dp)
                 Box(
                     Modifier.weight(1f).fillMaxSize().padding(if (view.grid == "line") 0.5.dp else 1.dp)
-                        .then(if (view.grid == "line") Modifier.border(0.6.dp, scheme.outlineVariant, shape) else Modifier)
+                        .then(if (view.grid == "line" || d.blank) Modifier.border(0.6.dp, scheme.outlineVariant, shape) else Modifier)
                         .background(wash, shape),
                 ) {
                     Column(Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 2.dp),
@@ -206,6 +209,7 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
 
 @Composable
 private fun SampleMark(d: SampleDay, size: Int, cell: String?) {
+    if (d.blank) return
     val color = d.color.asColor()
     Box(Modifier.size(size.dp).background(if (d.off) Color.Transparent else color, RoundedCornerShape(4.dp))
         .then(if (d.off) Modifier.border(1.dp, color, RoundedCornerShape(4.dp)) else Modifier), contentAlignment = Alignment.Center) {

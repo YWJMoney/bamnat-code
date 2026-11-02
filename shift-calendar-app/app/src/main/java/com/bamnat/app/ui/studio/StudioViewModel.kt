@@ -20,6 +20,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 
 /**
  * [STU-10] 1.35 스튜디오 (사용자 2026-10-30 21:39 "스튜디오 기능이 좋은데 왜 화면 꾸미기랑 분리를 해놓은거야? 둘이 합쳐서 엔터프라이즈급
@@ -49,6 +55,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         data object Plain : Origin { override val title = "처음 모양" }
         /** A theme kept in 테마 (내 테마 or 입었던 테마). */
         data class Theme(val wear: ThemeLease.Wear) : Origin { override val title = wear.title }
+        /** [STU-35] 1.36 느낌으로 새로: a start made from three picks (분위기·색·칸 모양) on the app's own look. */
+        data class Fresh(override val title: String) : Origin
     }
 
     data class State(
@@ -91,14 +99,23 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val prevPieces: List<Piece>? = null,
         /** F-94: the draft is what the phone wears now (just put on, nothing changed since). */
         val wornNow: Boolean = false,
+        /** [STU-37] The example drawn as 야간 근무 중 or 쉬는 날 ([ShiftLooks]); null draws it as usual. */
+        val modePieces: List<Piece>? = null,
+        val previewMode: com.bamnat.core.recipe.ShiftLooks.Mode = com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL,
     ) {
         val changed: Boolean get() = past.isNotEmpty() && (draft != base || extras.isNotEmpty())
     }
 
     private val phone = c.settingsRepository.current
+    /** PC 재검토 C10: open on 느낌으로 새로 만들기 (once). */
+    var askFeel: Boolean by androidx.compose.runtime.mutableStateOf(false)
+
     private val _state = MutableStateFlow(State(draft = phone, base = phone, origin = Origin.Mine(mineTitle())))
     val state: StateFlow<State> = _state.asStateFlow()
     private var beforeWear: Map<String, String>? = null
+
+    /** The 보관함 ids last seen on the studio screen, so what came in while 장터 was open is said on the way back. */
+    var seenKept: Set<Long>? = null
 
     init {
         when {
@@ -120,18 +137,81 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 refresh(both = true)
                 PieceKind.of(start.removePrefix(START_FEATURE))?.takeIf { it in FEATURES && (style == null || style in it.styles) }?.let { starter(it) }
             }
+            // PC 재검토 C10: 공방's '느낌으로 새로' opens the studio on the 느낌 picker.
+            start == START_FEEL -> { refresh(both = true); askFeel = true }
             start.startsWith(START_DRAFT) -> {
                 refresh(both = true)
-                viewModelScope.launch {
-                    val id = start.removePrefix(START_DRAFT).toLongOrNull() ?: return@launch
-                    val d = runCatching { c.database.recipeDao().drafts().firstOrNull { it.id == id } }.getOrNull() ?: return@launch
-                    startRecipe(d.body, null, d.code)
-                    _state.value = _state.value.copy(draftId = id)
-                }
+                start.removePrefix(START_DRAFT).toLongOrNull()?.let { resume(it) }
             }
             else -> refresh(both = true)
         }
+        autosave()
     }
+
+    /** [STU-34] 1.36 만들던 것 이어서 하기: a 만들던 레시피 (or the studio's own 자동 저장) back in the studio, its row kept up to date. */
+    fun resume(id: Long) = viewModelScope.launch {
+        val d = runCatching { c.database.recipeDao().drafts().firstOrNull { it.id == id } }.getOrNull() ?: return@launch
+        startRecipe(d.body, null, d.code).join()
+        // PC 확인 S1 (이어서 하기로 오면 '바꾼 곳 없음'에 되돌리기가 꺼짐): the phone's own look stays 처음 모양, one step back, so 바꾼 곳
+        // and 되돌리기 go on from where they were.
+        val s = _state.value
+        val phone = c.settingsRepository.current
+        _state.value = if (s.draft == phone && s.extras.isEmpty()) s.copy(draftId = id)
+            else s.copy(draftId = id, base = phone, past = listOf(Snap(phone, emptyMap(), "이어서 하기 전 (지금 휴대폰 모양)")))
+        refresh(both = true)
+    }
+
+    /**
+     * [STU-34] The newest draft left in the studio (step 1: 스튜디오에서 꾸미던 중) other than the one open, from the last 14 days, to offer
+     * 이어서 하기 on.
+     */
+    val resumable: StateFlow<com.bamnat.app.data.db.RecipeDraftEntity?> =
+        kotlinx.coroutines.flow.combine(c.recipes.drafts, _state) { list, s ->
+            list.filter { it.step <= 1 && it.id != s.draftId && com.bamnat.core.time.Today.millis() - it.updatedAt < 14L * 86_400_000L }
+                .maxByOrNull { it.updatedAt }
+        }.kotlinx_stateIn()
+
+    private fun <T> kotlinx.coroutines.flow.Flow<T?>.kotlinx_stateIn(): StateFlow<T?> =
+        stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * [STU-34] 1.36 자동 저장 (스튜디오 극상 조사 S5, Figma처럼 만들던 것이 사라지지 않게): a moment after each change the draft (모양과
+     * 기능) is kept as a 만들던 레시피 at step 1, so leaving, the app closing or the phone restarting loses nothing; 이어서 하기 brings it
+     * back. Once it is on the phone or saved as 내 테마 with nothing else in it, the row goes.
+     */
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    private fun autosave() = viewModelScope.launch {
+        _state.map { s -> AutoKey(s.pieces, s.extras, s.changed, s.kept || s.wornNow) }
+            .distinctUntilChanged()
+            .debounce(AUTOSAVE_MS)
+            .collect { k ->
+                val s = _state.value
+                when {
+                    k.done && s.draftId != 0L && s.extras.isEmpty() && s.meta == null && s.ownCode == null -> {
+                        runCatching { c.recipes.deleteDraft(s.draftId) }
+                        _state.value = _state.value.copy(draftId = 0)
+                    }
+                    k.changed && !k.done && s.pieces.isNotEmpty() -> {
+                        val r = (s.meta ?: recipe("")).copy(title = draftTitle(s), parent = null,
+                            pieces = (s.pieces + s.extras.map { (kind, v) -> Piece(kind, v) }).sortedBy { it.kind.ordinal })
+                        val id = runCatching { c.recipes.saveDraft(s.draftId, RecipeCodec.write(r), 1, s.ownCode, "public") }.getOrNull() ?: return@collect
+                        if (_state.value.draftId != id) _state.value = _state.value.copy(draftId = id)
+                    }
+                }
+            }
+    }
+
+    private data class AutoKey(val pieces: List<Piece>, val extras: Map<PieceKind, Map<String, Any?>>, val changed: Boolean, val done: Boolean)
+
+    /** The name a kept draft shows in 만들던 레시피 and 이어서 하기. */
+    private fun draftTitle(s: State): String = (s.savedTitle ?: s.meta?.title?.takeIf { it.isNotBlank() }
+        ?: (s.origin as? Origin.Theme)?.wear?.title?.let { "$it 고치는 중" }
+        // PC 확인 Z6 (만들던 것 이름이 늘 '꾸미던 모양'): named by how it started, with the day.
+        ?: when (val o = s.origin) {
+            is Origin.Fresh -> o.title
+            is Origin.Plain -> "처음 모양에서 새로"
+            else -> "지금 모양에서 꾸미던 것"
+        } + " · " + com.bamnat.core.time.Today.date().let { "${it.monthValue}/${it.dayOfMonth}" }).take(30)
 
     private fun mineTitle(): String = c.wardrobe.lease.value.worn?.let { "지금 모양 · ${it.title}" } ?: "지금 내 모양"
 
@@ -141,8 +221,16 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val pieces = c.recipes.pieces.lookPieces(s.draft)
         val base = if (both) c.recipes.pieces.lookPieces(s.base) else s.basePieces
         val prev = s.past.lastOrNull()?.draft?.let { c.recipes.pieces.lookPieces(it) }
-        _state.value = _state.value.copy(pieces = pieces, basePieces = base, prevPieces = prev)
+        val mode = s.previewMode.takeIf { it != com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL }?.let { m ->
+            val (screens, cal) = com.bamnat.core.recipe.ShiftLooks.decode(s.draft.shiftLooks).apply(m, s.draft.screenLooks, s.draft.calTheme)
+            c.recipes.pieces.lookPieces(s.draft.copy(screenLooks = screens, calTheme = cal))
+        }
+        plainPieces = c.recipes.pieces.lookPieces(c.recipes.pieces.plainLook(s.draft))
+        _state.value = _state.value.copy(pieces = pieces, basePieces = base, prevPieces = prev, modePieces = mode)
     }
+
+    /** PC 확인 V22 1.36: the app's own look as pieces, so 올리기 leaves out what is just the app's (위젯 처음대로 and the like). */
+    private var plainPieces: List<Piece> = emptyList()
 
     /** [STU-20] Where the next change is made (영역 · 도구), for the 기록 목록. */
     var where: String = "고침"
@@ -156,12 +244,40 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
 
     /** One change to the draft; 되돌리기 goes back over it (up to [HISTORY] steps). */
     fun change(f: (AppSettings) -> AppSettings) {
+        merging = null
         val s = _state.value
         val next = f(s.draft)
         if (next == s.draft) return
         _state.value = s.copy(draft = next, past = (s.past + snap(s)).takeLast(HISTORY), future = emptyList(), said = null, wornNow = false, kept = false)
         refresh()
     }
+
+    /** [STU-30] The label of the run of picks [changeMerged] is adding to, or null after any other step. */
+    private var merging: String? = null
+
+    /**
+     * [STU-30][STU-32] 한 색·섞기·스타일 복사: picks in a row under the same [label] are one step of 되돌리기 (from before the first), so
+     * trying colours does not fill the 기록 and one 되돌리기 goes back to before them all.
+     */
+    fun changeMerged(label: String, f: (AppSettings) -> AppSettings) {
+        val s = _state.value
+        if (merging == label && s.past.lastOrNull()?.label == label) {
+            val next = keepLocked(s.draft, f(s.draft))
+            if (next == s.draft) return
+            _state.value = s.copy(draft = next, future = emptyList(), said = null, wornNow = false, kept = false)
+            refresh()
+            return
+        }
+        where = label
+        change { keepLocked(it, f(it)) }
+        if (_state.value.past.lastOrNull()?.label == label) merging = label
+    }
+
+    /** [STU-33] 스타일 복사: a screen's key and its colours as drawn, to paste on another screen. */
+    var copiedLook: Pair<String, com.bamnat.core.recipe.ScreenLook>? by androidx.compose.runtime.mutableStateOf(null)
+
+    /** One line said under the studio (no 되돌리기). */
+    fun say(line: String) { _state.value = _state.value.copy(said = line, canUndoWear = false, canUndoLayer = false) }
 
     // ---- [STU-21] 기능 (레시피 만들기에서 합침) ----
 
@@ -189,10 +305,58 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
 
     /** The example's recipe: the look and the 기능 that draw (근무 색, 메모 틀, 투자 일지). */
     fun shown(s: State = _state.value): Recipe = Recipe("초안", styles = WorkStyle.entries.toSet(),
-        pieces = s.pieces + s.extras.map { (k, v) -> Piece(k, v) })
+        pieces = (s.modePieces ?: s.pieces) + s.extras.map { (k, v) -> Piece(k, v) })
+
+    /** [STU-37] Draws the example as [m] (야간 근무 중, 쉬는 날) or as usual. */
+    fun previewAs(m: com.bamnat.core.recipe.ShiftLooks.Mode) {
+        _state.value = _state.value.copy(previewMode = m)
+        refresh()
+    }
+
+    /** [STU-39] 1.36 영역 잠그기: the tabs ([com.bamnat.core.layout.TabOrder]) that 한 색·섞기·모든 화면에·조각 얹기 leave as they are. */
+    // PC 확인 L5 (덮어 설치 뒤 잠금이 풀려 있음): kept on the phone as soon as it is set, so it holds next time too.
+    private val lockPrefs = c.appContext.getSharedPreferences(LOCK_PREFS, android.content.Context.MODE_PRIVATE)
+    private var lockedNow: Set<String> by androidx.compose.runtime.mutableStateOf(
+        lockPrefs.getString("locked", null).orEmpty().split(',').filter { it in StudioColors.LOCKABLE }.toSet())
+    var locked: Set<String>
+        get() = lockedNow
+        set(v) { lockedNow = v; lockPrefs.edit().putString("locked", v.joinToString(",")).apply() }
+
+    private fun darkOf(d: AppSettings): Boolean = when (d.themeMode) {
+        com.bamnat.app.data.ThemeMode.DARK -> true
+        com.bamnat.app.data.ThemeMode.LIGHT -> false
+        else -> (c.appContext.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+    }
+
+    private fun keepLocked(prev: AppSettings, next: AppSettings): AppSettings {
+        if (locked.isEmpty()) return next
+        val dark = darkOf(prev)
+        return locked.fold(next) { acc, tab -> StudioColors.hold(tab, acc, prev, dark) }
+    }
+
+    /** PC 확인 1.36: a locked [tab] that draws as it started — 바꾼 곳 says 잠가서 그대로, not the colours [StudioColors.hold] wrote out. */
+    fun lockedSame(tab: String): Boolean = tab in locked && _state.value.let { StudioColors.sameLook(tab, it.draft, it.base, darkOf(it.base)) }
+
+    /** PC 확인 S7: the 느낌 (변형, 어두운 화면) the last start was made with, so 한 색 opens on it. */
+    var seedFeel: Pair<com.bamnat.core.recipe.ThemeSeed.Variant, Boolean>? = null
+
+    /** PC 확인 W6 1.36 (느낌을 바꿔도 제목은 처음 느낌): the 느낌 picked since, with the start's title it belongs to. */
+    var feelNow: Pair<String, String>? by androidx.compose.runtime.mutableStateOf(null)
+
+    /** PC 확인 W8 1.36 (시작 느낌과 칩 이름이 달라 어느 게 처음인지 모름): the 한 색 느낌 the start was made with, by the start's title. */
+    var feelStart: Pair<String, com.bamnat.core.recipe.ThemeSeed.Variant>? by androidx.compose.runtime.mutableStateOf(null)
+
+    /** [STU-35] 느낌으로 새로: the app's own look, then [d] as its first step (so 되돌리기 shows the plain look and leaving asks). */
+    fun startFeel(title: String = "느낌으로 새로 만든 모양", d: (AppSettings) -> AppSettings) {
+        restart(c.recipes.pieces.plainLook(c.settingsRepository.current), Origin.Fresh(title))
+        where = "느낌으로 시작"
+        change(d)
+    }
 
     /** [STU-20] 기록 목록: back to just before step [i] of [State.past] (the newest last); the steps after it can be done again. */
     fun backTo(i: Int) {
+        merging = null
         val s = _state.value
         if (i !in s.past.indices) return
         val target = s.past[i]
@@ -217,6 +381,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     }
 
     fun undo() {
+        merging = null
         val s = _state.value
         val last = s.past.lastOrNull() ?: return
         _state.value = s.copy(draft = last.draft, extras = last.extras, layered = last.layered, sources = last.sources,
@@ -225,11 +390,26 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     }
 
     fun redo() {
+        merging = null
         val s = _state.value
         val next = s.future.firstOrNull() ?: return
         _state.value = s.copy(draft = next.draft, extras = next.extras, layered = next.layered, sources = next.sources,
             past = s.past + snap(s, next.label), future = s.future.drop(1), said = null)
         refresh()
+    }
+
+    /** [STU-40] 1.36 내 색 모음: the colours pinned in the settings, newest first (at most [MY_COLORS]). */
+    val myColors: StateFlow<List<Long>> = c.settingsRepository.settings.map { myColorsOf(it.myColors) }.distinctUntilChanged()
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.Eagerly, myColorsOf(c.settingsRepository.current.myColors))
+
+    /** [STU-40] Pins [color] to 내 색, or takes it away when it is there already. Not a step of 되돌리기: it is not part of the look. */
+    fun pinColor(color: Long) {
+        val col = color or 0xFF000000L
+        c.settingsRepository.update { s ->
+            val now = myColorsOf(s.myColors)
+            val next = if (col in now) now - col else (listOf(col) + now).take(MY_COLORS)
+            s.copy(myColors = next.joinToString(",") { (it and 0xFFFFFFFFL).toString(16).uppercase().padStart(8, '0') })
+        }
     }
 
     fun usedColor(c: Long) {
@@ -254,8 +434,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun kept(): List<ThemeLease.Wear> = c.wardrobe.lease.value.history.sortedByDescending { it.own }
 
     private fun restart(d: AppSettings, o: Origin) {
+        merging = null
         _state.value = _state.value.copy(draft = d, base = d, origin = o, past = emptyList(), future = emptyList(), said = null, canUndoWear = false,
-            sources = emptyMap(), layered = emptyList(), extras = emptyMap(), parentCode = null, ownCode = null, meta = null)
+            sources = emptyMap(), layered = emptyList(), extras = emptyMap(), parentCode = null, ownCode = null, meta = null,
+            // [STU-34] A new start is a new 자동 저장, never written over the one left before.
+            draftId = 0, savedTitle = null, kept = false, previewMode = com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL, modePieces = null)
         refresh(both = true)
     }
 
@@ -269,7 +452,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
         val was = _state.value.draft
         where = "보관함 · ‘${k.title}’ 얹기"
-        change { d }
+        // [STU-39] A locked tab keeps its look when a part is laid on.
+        change { keepLocked(it, d) }
         val s = _state.value
         // Nothing changed (the same part again): no step to take back.
         val stepped = s.draft != was
@@ -401,6 +585,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 mine != null && !s.changed -> c.wardrobe.wear(recipe(mine.title), "", own = true, ver = mine.ver)
                 else -> {
                     beforeWear = c.recipes.pieces.lookSnapshot()
+                    beforeWear?.let { com.bamnat.app.data.LookUndo.keep(c.appContext, it) }
                     c.recipes.pieces.restoreLook(c.recipes.pieces.lookOf(s.draft))
                     runCatching { com.bamnat.app.widget.WidgetRefresher.refresh(c.appContext) }
                     true
@@ -420,6 +605,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val before = beforeWear ?: return
         c.recipes.pieces.restoreLook(before)
         beforeWear = null
+        com.bamnat.app.data.LookUndo.clear(c.appContext)
         val now = c.settingsRepository.current
         _state.value = _state.value.copy(draft = now, base = now, said = "입히기 전 모양으로 돌렸어요", canUndoWear = false, wornNow = false)
         refresh(both = true)
@@ -496,12 +682,19 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      * [STU-26] 1.36 빌드 8 (S29: 가계부만 바꿔 올렸는데 테마 전체가 올라감): the one tab every change of the look is on, so 올리기 can send
      * that tab alone as a 기능별 탭; null when nothing changed or the changes are on more than one tab.
      */
-    fun changedTab(): String? {
+    fun changedTab(): String? = changedTabs().singleOrNull()?.takeIf { changedTabsAll().size == 1 }
+
+    /**
+     * 사용자 2026-11-01 ("개별 가계부·달력·메모·근무 급여는 해당 탭만 만들어서 올릴 수도"): every tab the changes are on (설정 aside), so
+     * 올리기 can send any one of them alone as a 기능별 탭, also when more than one tab was changed.
+     */
+    fun changedTabs(): List<String> = changedTabsAll().filter { it != com.bamnat.core.layout.TabOrder.SETTINGS }
+
+    private fun changedTabsAll(): List<String> {
         val s = _state.value
         val all = WorkStyle.entries.toSet()
         val ids = com.bamnat.core.recipe.LookParts.changed(Recipe("b", styles = all, pieces = s.basePieces), Recipe("d", styles = all, pieces = s.pieces))
-        val tabs = com.bamnat.core.recipe.LookParts.ALL.filter { it.id in ids }.map { it.tab }.distinct()
-        return tabs.singleOrNull()?.takeIf { it != com.bamnat.core.layout.TabOrder.SETTINGS }
+        return com.bamnat.core.recipe.LookParts.ALL.filter { it.id in ids }.map { it.tab }.distinct()
     }
 
     /** [onlyTab] sends that tab's looks alone (a 기능별 탭, no 기능); null sends the whole theme with its 기능. */
@@ -514,10 +707,14 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val pieces = if (onlyTab != null) {
             val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)
             com.bamnat.core.recipe.LookParts.pick(draft, com.bamnat.core.recipe.LookParts.of(draft).filter { it.tab == onlyTab }.map { it.id }).pieces
-        } else (s.pieces + s.extras.map { (k, v) -> Piece(k, v) }).sortedBy { it.kind.ordinal }
+        // PC 확인 V22 1.36 (안 바꾼 위젯 조각까지 작품에 실림): a look piece just as the app has it is not part of the theme.
+        } else (s.pieces.filter { p -> plainPieces.none { it.kind == p.kind && it.values == p.values } } + s.extras.map { (k, v) -> Piece(k, v) })
+            .sortedBy { it.kind.ordinal }
         val withExtras = s.meta?.copy(pieces = pieces, parent = null)
             // 빌드 e382585e (올리기 2/4의 이름 칸이 비어 있어요): one of my themes goes up under its name.
-            ?: recipe("").copy(title = s.savedTitle ?: (ownStart ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces)
+            ?: recipe("").copy(title = s.savedTitle ?: (ownStart ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces,
+                // [STU-41] The 표지 starts in the look's own colours (바탕 → 강조), not the app's blue and purple.
+                cover = coverOf(s.draft))
         // [THM-08] 302576c8 PC 확인 (섞은 테마가 수정판 표시 없이 올라감): a mixed theme names every theme it took from in its 설명,
         // also when they are built-in looks with no 장터 code to be a 수정판 of.
         val mixed = mixedSources()
@@ -534,8 +731,23 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         return RecipeCodec.write(r) to parent
     }
 
+    /** [STU-41] A 표지 in the draft's colours: '앱 전체' 강조 (or 오늘) to its 바탕, the app's own where it has none. */
+    private fun coverOf(d: AppSettings): com.bamnat.core.recipe.Cover {
+        val all = ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]
+        val accent = all?.accent ?: com.bamnat.core.recipe.CalendarTheme.decode(d.calTheme).today
+        val plain = com.bamnat.core.recipe.Cover()
+        if (accent == null && all?.bg == null) return plain
+        val emoji = when (style) { WorkStyle.HOURLY -> "☕"; WorkStyle.FIELD -> "🛠️"; WorkStyle.BUSINESS -> "🏪"; WorkStyle.INVEST -> "📈"; WorkStyle.DAY -> "🗓️"; else -> "🌙" }
+        return plain.copy(a = accent ?: plain.a, b = all?.bg ?: plain.b, dir = 2, emoji = emoji)
+    }
+
     /** 1.36 U3: sent to 장터 from 올리기. */
-    fun markKept() { _state.value = _state.value.copy(kept = true) }
+    fun markKept() {
+        // PC 확인 W30 1.36 (다 올렸는데 다음에 '만들던 ‘꾸미던 모양’' 카드가 다시 뜸): what went up is no longer a 만들던 것.
+        val id = _state.value.draftId
+        _state.value = _state.value.copy(kept = true, draftId = 0)
+        if (id != 0L) viewModelScope.launch { runCatching { c.recipes.deleteDraft(id) } }
+    }
 
     fun said() { _state.value = _state.value.copy(said = null, canUndoLayer = false) }
 
@@ -568,10 +780,17 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         const val START_THEME = "theme:"
         const val START_KEPT = "kept:"
         const val HISTORY = 50
+        /** [STU-34] How long after the last change the draft is kept. */
+        const val AUTOSAVE_MS = 1_200L
+        const val MY_COLORS = 12
+        fun myColorsOf(s: String): List<Long> = s.split(',').mapNotNull { h -> h.trim().takeIf { it.length == 8 }?.toLongOrNull(16)?.let { it or 0xFF000000L } }.distinct()
         /** "recipe": open on the recipe left in [com.bamnat.app.recipe.RecipeLinks.remake] (고쳐 만들기, 새 판), "recipe:<code>" as mine. */
         const val START_RECIPE = "recipe"
         /** "draft:<id>": a 만들던 레시피 kept on the phone. */
         const val START_DRAFT = "draft:"
+        const val START_FEEL = "feel"
+        /** PC 확인 L5: the studio's 잠근 화면, this phone's. */
+        const val LOCK_PREFS = "studio_locks"
         /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */
         const val START_FEATURE = "feature:"
         /** A start for [START_RECIPE], one of a kind each time (the studio's ViewModel is kept per start). */

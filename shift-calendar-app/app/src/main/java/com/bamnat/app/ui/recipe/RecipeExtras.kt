@@ -106,8 +106,21 @@ private fun ExampleWeek(r: Recipe, style: WorkStyle) {
     val pieces = r.piecesFor(style)
     val look = pieces.firstOrNull { it.kind == PieceKind.SHIFT_LOOK }?.let { RecipeResolve.piece(r, it, emptyMap()) }
     val theme = pieces.firstOrNull { it.kind == PieceKind.CAL_THEME }?.let { RecipeResolve.piece(r, it, emptyMap()) }
-    val items = (look?.get("items") as? List<Map<String, Any?>>).orEmpty()
-    if (items.isEmpty() && theme == null) return
+    val items0 = (look?.get("items") as? List<Map<String, Any?>>).orEmpty()
+    if (items0.isEmpty() && theme == null) return
+    // PC 확인 W40 1.36 (일근·알바 예시 한 주가 월~일 모두 쉬는 날): a week like that kind of work's — 교대 in turn, 일근 월~금,
+    // 알바 주 4일, 현장 월~토, 가게 화~일, 투자 장 열린 날 — in the recipe's own day looks, else the kind of work's example ones.
+    val pool = items0.ifEmpty { exampleDays(style) }
+    val workItem = pool.firstOrNull { it["role"] != "off" } ?: pool.first()
+    val offItem = pool.firstOrNull { it["role"] == "off" }
+    val works = when (style) {
+        WorkStyle.HOURLY -> listOf(true, false, true, false, true, true, false)
+        WorkStyle.FIELD -> listOf(true, true, true, true, true, true, false)
+        WorkStyle.BUSINESS -> listOf(false, true, true, true, true, true, true)
+        WorkStyle.SHIFT -> emptyList()
+        else -> listOf(true, true, true, true, true, false, false)
+    }
+    val items = if (works.isEmpty()) pool else works.map { if (it) workItem else offItem ?: emptyMap() }
     // [STU-27] 1.36 빌드 8 (마치기 예시 한 주가 모두 쉬는 날): this week of the phone's own calendar, each day in the recipe's look for its
     // kind; the made-up week only when the phone has no days yet.
     val mine = rememberMyWeeks(items, weeks = 1)?.takeIf { style == r.styles.firstOrNull() || r.styles.size == 1 }
@@ -197,12 +210,23 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
         (0L..4L).map { mon.plusDays(it) }.filter { java.time.YearMonth.from(it) == month }.toSet()
     }
     val cellChanged = theme != null && (theme["cell"] as? String ?: "tint") != mineLook.cell
-    val changed = if (exampleDays.isNotEmpty()) (if (cellChanged || swap.isNotEmpty()) exampleDays.size else 0) else days.values.count { d ->
+    fun changes(d: com.bamnat.core.schedule.ResolvedDay): Boolean =
         if (moves && !d.date.isBefore(today)) theirs(d.date)?.name != d.shiftType?.takeIf { d.isWorkDay }?.name
         else d.isWorkDay && (cellChanged || d.shiftType?.id?.let { id -> swap[id] != null && swap[id] != d.shiftType } == true)
-    }
+    val changed = if (exampleDays.isNotEmpty()) (if (cellChanged || swap.isNotEmpty()) exampleDays.size else 0) else days.values.count(::changes)
+    // PC 확인 W35 1.36 (오늘 색만 바꾼 테마가 '모양이 바뀌는 날 0일'): said in words, the same line as under the month.
+    val said = when {
+        // [RCX-31] The piece that moves the days says so: before 1.35 this said they stayed.
+        moves -> "근무 주기가 오늘부터 바뀌어요 (${shared!!.order.size.takeIf { it > 0 } ?: 7}일 주기). 이번 달 ${changed}일이 달라져요. 지난 날은 그대로예요"
+        company != null -> "근무 시간과 급여 방식이 바뀌어요. 근무 날짜는 그대로예요"
+        exampleDays.isNotEmpty() -> "이 달력엔 아직 근무가 없어서 이번 주 평일에 ‘${exampleType?.name}’${com.bamnat.app.ui.Fmt.obj(exampleType?.name.orEmpty())} 넣은 예시로 보여 드려요"
+        looks.isEmpty() && cellChanged -> "근무 날은 그대로이고, 칸 모양과 주말·공휴일·오늘 색이 바뀌어요"
+        looks.isEmpty() -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
+        changed == 0 -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
+        else -> "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요"
+    } + if (changed > 0) " (노란 테두리가 바뀌는 날)" else ""
     Column(Modifier.fillMaxWidth().clearAndSetSemantics {
-        contentDescription = "${month.monthValue}월 달력 " + (if (after) "넣은 뒤" else "지금") + ", 모양이 바뀌는 날 ${changed}일"
+        contentDescription = "${month.monthValue}월 달력 " + (if (after) "넣은 뒤" else "지금") + ", " + said
     }) {
         repeat(weeks) { w ->
             Row(Modifier.fillMaxWidth()) {
@@ -227,11 +251,23 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
                         date.dayOfWeek == java.time.DayOfWeek.SATURDAY -> look.saturday(cal)
                         else -> MaterialTheme.colorScheme.onSurface
                     }
+                    // U10 1.36 (빌드 확인: 지금 ↔ 넣은 뒤를 오가도 어디가 바뀌는지 찾기 어려움): the days that change are ringed, on both sides.
+                    val ringed = inMonth && (if (example) cellChanged || swap.isNotEmpty() else day?.let(::changes) == true)
                     Box(Modifier.weight(1f).aspectRatio(1f).padding(1.dp).background(fill, RoundedCornerShape(4.dp))
-                        .then(if (date == today && inMonth) Modifier.border(2.dp, look.today ?: MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp)) else Modifier),
+                        .then(if (date == today && inMonth) Modifier.border(2.dp, look.today ?: MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
+                            else if (ringed) Modifier.border(1.5.dp, androidx.compose.ui.graphics.Color(0xFFFFB300), RoundedCornerShape(4.dp)) else Modifier),
                         contentAlignment = Alignment.Center) {
-                        if (inMonth) Text(type?.label?.takeIf { it.isNotEmpty() && works } ?: date.dayOfMonth.toString(),
-                            style = MaterialTheme.typography.labelSmall, color = digit, maxLines = 1)
+                        // PC 확인 Z3 (넣은 뒤 근무 칸의 날짜가 사라지고 첫 줄 29·30일이 비어 있음): every cell keeps its date — the kind of
+                        // day is the colour (and its letter, small, under the date) — and the days of the months around are shown faint.
+                        if (inMonth) Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelSmall, color = digit, maxLines = 1)
+                            // PC 확인 Z12: a day off says so too (its letter, faint), so 넣은 뒤 shows every kind of day.
+                            type?.label?.takeIf { it.isNotEmpty() }?.let {
+                                Text(it, style = MaterialTheme.typography.labelSmall, fontSize = androidx.compose.ui.unit.TextUnit(8f, androidx.compose.ui.unit.TextUnitType.Sp),
+                                    color = if (works) digit else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                            }
+                        } else Text(date.dayOfMonth.toString(), style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f), maxLines = 1)
                         if (inMonth && type != null && works && look.cell == "dot") Box(Modifier.align(Alignment.BottomCenter).padding(bottom = 2.dp)
                             .size(5.dp).background(type.colorArgb.asColor(), androidx.compose.foundation.shape.CircleShape))
                     }
@@ -239,15 +275,7 @@ internal fun MyMonthPreview(calendar: String, looks: List<Pair<com.bamnat.core.m
             }
         }
     }
-    Text(when {
-        // [RCX-31] The piece that moves the days says so: before 1.35 this said they stayed.
-        moves -> "근무 주기가 오늘부터 바뀌어요 (${shared!!.order.size.takeIf { it > 0 } ?: 7}일 주기). 이번 달 ${changed}일이 달라져요. 지난 날은 그대로예요"
-        company != null -> "근무 시간과 급여 방식이 바뀌어요. 근무 날짜는 그대로예요"
-        exampleDays.isNotEmpty() -> "이 달력엔 아직 근무가 없어서 이번 주 평일에 ‘${exampleType?.name}’${com.bamnat.app.ui.Fmt.obj(exampleType?.name.orEmpty())} 넣은 예시로 보여 드려요"
-        looks.isEmpty() && cellChanged -> "근무 날은 그대로이고, 칸 모양과 주말·공휴일·오늘 색이 바뀌어요"
-        looks.isEmpty() -> "근무 날은 그대로이고, 주말·공휴일·오늘 색만 바뀌어요"
-        else -> "이번 달 ${changed}일의 모양이 바뀌어요. 근무 날짜는 그대로예요"
-    },
+    Text(said,
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

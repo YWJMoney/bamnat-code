@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.StickyNote2
 import androidx.compose.material.icons.automirrored.outlined.StickyNote2
@@ -918,6 +919,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         if (activeCalendarId == com.bamnat.app.data.PersonalCalendar.EXAMPLE) {
                             com.bamnat.app.ui.guide.ExampleBand(onStart = { startMine(false) })
                         }
+                        // PC 확인 Z1 (띠가 스튜디오 같은 안쪽 화면에서 시계·배터리 줄과 겹침): only on the tabs, below the status bar.
+                        if (showNav && topLevel != null) ShiftLookBand()
+                        if (showNav && topLevel == TopLevel.CALENDAR) LookUndoBand()
                         RingingBanner()
                         AlarmNoticeAsk()
                         AppNavHost(
@@ -1532,10 +1536,11 @@ private fun AppNavHost(
         composable(Routes.STUDIO, arguments = listOf(navArgument("start") { type = NavType.StringType; defaultValue = "mine" })) { entry ->
             val start = entry.arguments?.getString("start") ?: "mine"
             val vm = appViewModel(key = "studio-$start") { com.bamnat.app.ui.studio.StudioViewModel(it, start) }
+            val marketOn by container.recipes.on.collectAsStateWithLifecycle()
             // [STU-21] 1.36 올리기 happens inside the studio; once up, the recipe opens in place of it.
             com.bamnat.app.ui.studio.StudioScreen(vm, onBack = { nav.popFrom(Routes.STUDIO) }, onOpen = { code ->
                 nav.navigate(Routes.recipe(code)) { popUpTo(Routes.STUDIO) { inclusive = true } }
-            })
+            }, onMarket = if (marketOn && container.recipeApi.enabled) { kind -> nav.navigate(Routes.recipes(kind = kind)) { launchSingleTop = true } } else null)
         }
         composable(Routes.STYLE_PLAZA, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = "" })) { entry ->
             val calendar = remember { companyCalendarOf(container, entry.arguments?.getString("calendar")) }
@@ -1600,7 +1605,10 @@ private fun AppNavHost(
                     // [LIN-03] My recipe's next 판, with what the 수정판 changed in it.
                     com.bamnat.app.recipe.RecipeLinks.remake = body to mine
                     nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.recipeStart(mine)))
-                })
+                },
+                // PC 제안 1.36 (담은 뒤 스튜디오까지 뒤로 세 번): come from the studio's 보관함 › 장터에서 찾기, straight back to it.
+                onToStudio = remember(entry) { runCatching { nav.getBackStackEntry(Routes.STUDIO) }.isSuccess }
+                    .takeIf { it }?.let { { nav.popBackStack(Routes.STUDIO, inclusive = false); Unit } })
         }
         composable(Routes.RECIPE_MAKER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
             val id = entry.arguments?.getString("id").orEmpty()
@@ -2200,3 +2208,52 @@ private fun AnimatedContentTransitionScope<NavBackStackEntry>.betweenTabs(): Boo
 
 /** [REL-16] The narrowest window that shows the day beside the month: the Fold's inner screen (707dp) does, 600dp does not. */
 private const val CALENDAR_BESIDE_DP = 700
+
+
+/**
+ * [STU-37] PC 확인 S6 (야간 모양이 입혀졌는지 알 수 없음): while a 근무에 따라 look is on, a thin line says so — 🌙 야간 모양 or 🌿 쉬는 날
+ * 모양 — and 닫기 hides it until the mode changes.
+ */
+@androidx.compose.runtime.Composable
+private fun ShiftLookBand() {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    val looks = androidx.compose.runtime.remember(settings.shiftLooks) { com.bamnat.core.recipe.ShiftLooks.decode(settings.shiftLooks) }
+    val mode = com.bamnat.app.ui.theme.rememberShiftLookMode(looks, c)
+    var shut by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    if (mode == com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL || shut == mode.name) return
+    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer)
+        .padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text((if (mode == com.bamnat.core.recipe.ShiftLooks.Mode.NIGHT) "🌙 야간 근무 중이라 야간 모양이에요" else "🌿 쉬는 날이라 쉬는 날 모양이에요"),
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, modifier = Modifier.weight(1f))
+        androidx.compose.material3.TextButton(onClick = { shut = mode.name }) { Text("닫기") }
+    }
+}
+
+
+/**
+ * PC 재검토 N3 1.36: for a day after the studio put a look on, a line over the calendar offers the look from before ('어제 모양으로'),
+ * even after the app was closed. 닫기 lets it go.
+ */
+@androidx.compose.runtime.Composable
+private fun LookUndoBand() {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    var tick by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val kept = androidx.compose.runtime.remember(settings, tick) { com.bamnat.app.data.LookUndo.read(c.appContext) } ?: return
+    // Shown only while the look on is the one put on (the settings were not changed back another way).
+    if (c.recipes.pieces.lookSnapshot() == kept.first) return
+    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        .padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("스튜디오에서 입힌 모양이에요 · ${com.bamnat.app.ui.studio.ago(kept.second)}", style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
+        androidx.compose.material3.TextButton(onClick = {
+            c.recipes.pieces.restoreLook(kept.first)
+            com.bamnat.app.data.LookUndo.clear(c.appContext)
+            scope.launch { runCatching { com.bamnat.app.widget.WidgetRefresher.refresh(c.appContext) } }
+            tick++
+        }) { Text("입히기 전 모양으로") }
+        androidx.compose.material3.TextButton(onClick = { com.bamnat.app.data.LookUndo.clear(c.appContext); tick++ }) { Text("닫기") }
+    }
+}
