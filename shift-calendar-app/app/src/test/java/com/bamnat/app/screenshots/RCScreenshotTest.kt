@@ -304,6 +304,27 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(gone("내 달력에 넣어 둔 레시피예요", exact = true))
     }
 
+    /** PC 확인 보안 8차 (넣어도 쓰는 분 0명): a recipe of one tab is laid on the theme with no record, and is a use all the same. */
+    @Test fun aTabLaidOnCountsItsUser() = shoot("1342g_rcp_detail_laid_counted", PHONE) {
+        val api = starters()
+        style(WorkStyle.SHIFT)
+        val i = api.recipes.indexOfFirst { it.first.title == "토·일 강조 달력" }
+        val code = api.code(i)
+        val vm = RecipeDetailViewModel(c, code, PersonalCalendar.MAIN)
+        content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+        settle()
+        vm.apply { }
+        settle()
+        settle()
+        assertTrue(c.wardrobe.overlays.value.any { it.code == code })
+        assertEquals(1, api.applied)
+        assertEquals(1, vm.state.value.usersPlus)
+        // Once a phone: laid on again, not counted again.
+        vm.apply { }
+        settle()
+        assertEquals(1, api.applied)
+    }
+
     @Test fun theConfirmShowsWhatChanges() = shoot("1343_rcp_detail_confirm", "w360dp-h780dp-port-night-450dpi") {
         val api = starters()
         style(WorkStyle.SHIFT)

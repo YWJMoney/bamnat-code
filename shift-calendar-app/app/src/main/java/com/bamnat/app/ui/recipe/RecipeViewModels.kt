@@ -255,8 +255,10 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
             val counted = c.recipes.countedHere(code)
             val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
-            val plus = if (!counted && c.recipes.countedHere(code)) 1 else 0
             val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code) }.getOrDefault(false)
+            // PC 확인 보안 8차 (넣어도 쓰는 분 0명): a tab laid on is a use too (it leaves no record, so apply did not count it).
+            if (laid) c.recipes.countUse(code)
+            val plus = if (!counted && c.recipes.countedHere(code)) 1 else 0
             if (id != null && looks.isNotEmpty() && tab == null) runCatching {
                 c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
             }

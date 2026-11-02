@@ -247,7 +247,7 @@ fun ProScreen(onBack: () -> Unit) {
 
                 if (c.tierApi.enabled) {
                     PassesCard(c, pro, gate, zone, onMessage = { message = it })
-                    AdminCard(c, pro, onMessage = { message = it })
+                    AdminCard(c, pro)
                 }
                 // 1.36 PC 재검토 (결제 단추가 아래 탭 자리와 겹쳐 잘못 눌려요): the last buttons scroll clear of the bar at the bottom.
                 Spacer(Modifier.navigationBarsPadding().height(72.dp))
@@ -439,10 +439,13 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
 
 /** [MON-09] An invited admin's phone, tied with the 6-digit code from the developer app. */
 @Composable
-private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Unit) {
+private fun AdminCard(c: AppContainer, pro: ProState) {
     val scope = rememberCoroutineScope()
     var code by rememberSaveable { mutableStateOf("") }
     val admin = pro.passes?.admin
+    // PC 확인 20ab0254: the answer stays in this card (the page's line is at the top, out of sight from here). PC 확인 보안 8차 (끊은 뒤
+    // 아무 안내가 없어요): 연결 끊기's too, so it is the card's, not the code field's.
+    var said by rememberSaveable { mutableStateOf<String?>(null) }
     SectionCard(title = "관리자 연결") {
         when {
             // PC 확인 8773e3ae: approved at once said why (the 최고 관리자's own code needs no 승인), not left to guess.
@@ -453,9 +456,7 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (admin == null) {
-            // PC 확인 20ab0254: the answer stays in this card (the page's line is at the top, out of sight from here), and the
-            // keyboard goes away once it is sent.
-            var said by rememberSaveable { mutableStateOf<String?>(null) }
+            // PC 확인 20ab0254: the keyboard goes away once it is sent.
             val focus = androidx.compose.ui.platform.LocalFocusManager.current
             val linking = {
                 focus.clearFocus()
@@ -490,6 +491,7 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
             // PC 확인 보안 7차 (한 번에 끊겨요): asked once, as linking again needs a new code from the admin app.
             var asking by rememberSaveable { mutableStateOf(false) }
             TextButton(onClick = { asking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("연결 끊기") }
+            said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
             if (asking) com.bamnat.app.ui.components.AlertDialog(
                 onDismissRequest = { asking = false },
                 title = { Text("관리자 연결을 끊을까요?") },
@@ -498,11 +500,11 @@ private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Uni
                     TextButton(onClick = {
                         asking = false
                         scope.launch {
-                            runServer(onMessage) {
+                            runServer({ said = it }) {
                                 c.tierApi.unlink(c.companyStore.device)
                                 c.syncPasses(force = true)
                                 c.featureGate.refresh()
-                                onMessage("관리자 연결을 끊었어요.")
+                                said = "관리자 연결을 끊었어요. 다시 연결하려면 관리자 앱에서 새 6자리 코드를 받아 넣어 주세요."
                             }
                         }
                     }) { Text("끊기") }

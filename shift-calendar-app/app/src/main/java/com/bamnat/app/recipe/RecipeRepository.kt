@@ -125,12 +125,22 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             inputs = JSONObject(filled.mapValues { (_, v) -> v }).toString(), pieces = done.joinToString(","), before = before.toString(),
             appliedAt = now, undoneAt = null, replacedAt = null, keptSent = false,
         ))
-        // 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): a phone counts once a recipe, however often it is
-        // put on again; the server also counts only a few a recipe from one line a day.
-        if (code.isNotEmpty() && c.recipeApi.enabled && code !in keyList(K_COUNTED)) {
-            if (runCatching { c.recipeApi.applied(code, kept = false) }.isSuccess) counted(K_COUNTED, code)
-        }
+        countUse(code)
         return id
+    }
+
+    /**
+     * 쓰는 분: this phone counted once for [code]. 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): once a recipe,
+     * however often it is put on again; the server also counts only a few a recipe from one line a day. PC 확인 보안 8차 (넣어도 0명):
+     * called for every way a recipe goes on from its page, a tab laid on the theme too, not only a put-on that leaves a record; a
+     * refusal is tried again at the next put-on. True when counted just now.
+     */
+    suspend fun countUse(code: String): Boolean {
+        if (code.isEmpty() || code.startsWith("builtin:") || !c.recipeApi.enabled || code in keyList(K_COUNTED)) return false
+        val sent = runCatching { c.recipeApi.applied(code, kept = false) }
+        if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.d("BamnatRecipe", "쓰는 분 $code: " + (sent.exceptionOrNull()?.let { "실패 $it" } ?: "보냄"))
+        if (sent.isSuccess) counted(K_COUNTED, code)
+        return sent.isSuccess
     }
 
     // ---- [RCX-02][RCX-03] 1.35 구독과 새 판 ----

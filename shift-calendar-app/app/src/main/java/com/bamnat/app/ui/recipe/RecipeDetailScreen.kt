@@ -239,11 +239,15 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                             color = MaterialTheme.colorScheme.error)
                         Button(onClick = { vm.lookParts(picked); tryOn = false; confirming = true }, enabled = n > 0 && ready,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                            // PC 확인 보안 8차 ('모양 1개·기능 1개'에서 근무 꾸미기를 기능으로 세요): what goes with the look is said by
+                            // its own names (근무 꾸미기·알람 묶음), as the list above shows them, and counted only when there are many.
+                            val names = others.filter { it.on }.map { it.kind.label }
+                            val rest = if (names.size <= 2) names.joinToString("·") else "함께 넣을 것 ${names.size}개"
                             Text(when {
                                 n == 0 -> "넣을 것을 골라 주세요"
                                 fn == 0 -> "고른 모양 ${picked.size}개 넣기"
-                                picked.isEmpty() -> "기능 ${fn}개 넣기"
-                                else -> "모양 ${picked.size}개·기능 ${fn}개 넣기"
+                                picked.isEmpty() -> "$rest 넣기"
+                                else -> "모양 ${picked.size}개 · $rest 넣기"
                             })
                         }
                     }
