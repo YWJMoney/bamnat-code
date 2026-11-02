@@ -590,7 +590,7 @@ private fun DayCell(
     val partShape = cellPart.shape(shape)
     // [RCP-09] 1.34 달력 테마: the user's colours for 토·일·공휴일 and today, and how strong the wash is.
     val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
-    val numberColor = com.bamnat.app.ui.decor.readableOnPhoto(when {
+    val numberRaw = when {
         // Public holidays are red like Sundays [FEAT-05].
         holidayName != null -> look.holiday(cal)
         else -> when (date.dayOfWeek) {
@@ -598,7 +598,7 @@ private fun DayCell(
         DayOfWeek.SATURDAY -> look.saturday(cal)
         else -> scheme.onSurface
         }
-    })
+    }
     // Working days are tinted with their shift's color so the month reads at a glance.
     // A 대근 on a day off tints the cell with the covered shift [EXTRA-01].
     val dark = isDarkSurface()
@@ -608,7 +608,10 @@ private fun DayCell(
         ?: cal.income.takeIf { heat > 0f }?.copy(alpha = heat * if (dark) 0.30f else 0.20f)
     // PC 확인 C8 1.36: on a 꾸밈 사진, a cell with no colour of its own (쉬는 날) gets a pale ground so it reads as a cell.
     val tint = cellTint(cellLook, shiftColor, ownTint, invest?.tint(date, cal.sunday, cal.saturday, dark))
-        ?: com.bamnat.app.ui.decor.LocalOnPhoto.current?.copy(alpha = 0.6f)
+        ?: com.bamnat.app.ui.decor.LocalOnPhoto.current?.copy(alpha = com.bamnat.app.ui.decor.ON_PHOTO_ALPHA)
+    // PC 확인 C12 1.36 (사진 위 토·일 숫자 2:1, 야간 칸 위 토요일 1:1): the date's colour reads on what is really under it — the photo, and
+    // the cell's own colour on it.
+    val numberColor = com.bamnat.app.ui.decor.readableOnPhoto(numberRaw, tint)
     val jobs = money?.jobs ?: 0
     // [VIS-01] What the cell shows, read out in the same order.
     val description = buildString {
@@ -1117,12 +1120,12 @@ internal fun CustomCellBody(
     val onFill = filled?.takeIf { it.alpha >= 0.5f }?.let { com.bamnat.app.ui.components.contentColorOn(it.copy(alpha = 1f)) }
     val weekdayInk = l?.dateColor?.asColor()
     // PC 확인 C11 1.36 (어두운 사진 위 쉬는 날 칸의 날짜가 어두워요): a colour that would not show on a 꾸밈 사진 takes the ground's ink.
-    val dateInk = com.bamnat.app.ui.decor.readableOnPhoto(when {
+    val dateInk = when {
         numberColor != scheme.onSurface -> numberColor
-        weekdayInk != null -> weekdayInk
+        weekdayInk != null -> com.bamnat.app.ui.decor.readableOnPhoto(weekdayInk, filled)
         onFill != null -> onFill
         else -> numberColor
-    })
+    }
     val memoShown = texts.containsKey("memo")
     val markSize: Dp = when (mark) { "small" -> 15.dp; "big" -> if (markPlace == "side") 20.dp else 22.dp; else -> 14.dp }
     val markShape = mp.takeIf { it.corners.any { c -> c != null } }?.shape(RoundedCornerShape(4.dp))

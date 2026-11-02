@@ -93,12 +93,15 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val fullPhoto = under.firstOrNull { it.kind == com.bamnat.core.recipe.DecorKind.PHOTO && it.full && com.bamnat.app.ui.decor.DecorPhotos.of(it.glyph) != null }
     val photoUnder = fullPhoto != null
     val decorLight = if (photo == null) fullPhoto?.let { com.bamnat.app.ui.decor.DecorPhotos.lightOf(it.glyph) } else null
+    // PC 확인 C12 1.36 (사진 위 파랑 글자 1.03:1): the photo's own average colour, not a stand-in grey, is what the inks are read against.
+    val decorAvg = if (photo == null) fullPhoto?.let { com.bamnat.app.ui.decor.DecorPhotos.averageOf(it.glyph) } else null
     val worn = if (photoUnder) look.copy(dim = look.dim ?: PHOTO_VEIL) else look
     val light = photo?.second ?: decorLight
     val inked = !plain || decorLight != null
-    val skin = if (!inked) base else skinned(base, worn, light)
+    val skin = if (!inked) base else skinned(base, worn, light, decorAvg)
     val scheme = if (decorUnder) skin.copy(background = Color.Transparent, surface = Color.Transparent) else skin
-    val dark = Palette.luminance((if (!inked) base.background else groundOf(base, worn, light)).argb()) < if (!inked) 0.5 else 0.3
+    val photoGround = groundOf(base, worn, light, decorAvg)
+    val dark = Palette.luminance((if (!inked) base.background else photoGround).argb()) < if (!inked) 0.5 else 0.3
     // 1.35 [J135-11] The status bar's clock and icons stand on the screen's own ground (dark icons on a dark theme were unreadable).
     if (bars) BarIcons(light = !dark)
     // 1.35 [J135-12] The warning cards and the money colours that do not follow the scheme take the light or dark set of the ground,
@@ -126,6 +129,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
                 // PC 확인 C10: the ground goes with the words' ink (dark under light words on a dark photo), so a pale cell never turns grey.
                 com.bamnat.app.ui.decor.LocalOnPhoto provides if (!photoUnder) null else if (dark) lerp(page, Color.Black, 0.8f) else lerp(page, Color.White, 0.5f),
+                com.bamnat.app.ui.decor.LocalPhotoGround provides if (photoUnder) photoGround else null,
                 androidx.compose.material3.LocalContentColor provides if (!inked && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
             }
@@ -158,20 +162,20 @@ fun BarIcons(light: Boolean) {
 }
 
 /** The colour the screen's text stands on: the page, or what a picture and its veil come to. */
-private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?): Color {
+private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?, photoAvg: Color? = null): Color {
     val page = look.bg?.let { Color(it) } ?: base.background
     if (photoLight == null) return page
     val veil = (look.dim ?: 30).coerceIn(20, 80) / 100f
-    return lerp(if (photoLight >= 0.5f) Color(0xFFEDEDED) else Color(0xFF2A2A2A), page, veil)
+    return lerp(photoAvg ?: if (photoLight >= 0.5f) Color(0xFFEDEDED) else Color(0xFF2A2A2A), page, veil)
 }
 
 /**
  * [FREE-05] [base] in [look]'s colours. With a picture the page is clear so the picture shows, and the ink is read against what the
  * picture and its veil come to ([photoLight] 0 dark … 1 light).
  */
-fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null): ColorScheme {
+fun skinned(base: ColorScheme, look: ScreenLook, photoLight: Float? = null, photoAvg: Color? = null): ColorScheme {
     val page = look.bg?.let { Color(it) } ?: base.background
-    val ground = groundOf(base, look, photoLight)
+    val ground = groundOf(base, look, photoLight, photoAvg)
     val card = look.card?.let { Color(it) }
     val cardLow = card ?: base.surfaceContainerLow
     val inkArgb = Palette.inkOn(look.ink, ground.argb(), cardLow.argb(), (card ?: base.surfaceContainerHigh).argb())

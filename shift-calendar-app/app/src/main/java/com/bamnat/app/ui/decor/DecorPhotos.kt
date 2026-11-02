@@ -42,6 +42,10 @@ object DecorPhotos {
     private val light = mutableStateMapOf<String, Float>()
     fun lightOf(id: String): Float? = light[id]
 
+    /** PC 확인 C12 1.36: photo [id]'s average colour, so the screen reads its words against what is really under them. */
+    private val avg = mutableStateMapOf<String, androidx.compose.ui.graphics.Color>()
+    fun averageOf(id: String): androidx.compose.ui.graphics.Color? = avg[id]
+
     suspend fun load(c: AppContainer, ids: Collection<String>) {
         for (id in ids) {
             if (shown.containsKey(id)) continue
@@ -50,7 +54,13 @@ object DecorPhotos {
             // PC 확인 C11 1.36 (얹은 탭은 승인 전 맨 위 줄이 안 나와요): a photo still not on the phone is waiting, also when it was
             // asked for a moment ago elsewhere (얹기 asks first, so the calendar's own ask was held back and marked nothing).
             if (bmp == null) waiting[id] = Unit else waiting.remove(id)
-            bmp?.let { if (shown.size >= 32) { shown.clear(); light.clear() }; light[id] = LookImages.lightness(it); shown[id] = it.asImageBitmap() }
+            bmp?.let {
+                if (shown.size >= 32) { shown.clear(); light.clear(); avg.clear() }
+                light[id] = LookImages.lightness(it)
+                runCatching { android.graphics.Bitmap.createScaledBitmap(it, 1, 1, true).getPixel(0, 0) }.getOrNull()
+                    ?.let { px -> avg[id] = androidx.compose.ui.graphics.Color(px).copy(alpha = 1f) }
+                shown[id] = it.asImageBitmap()
+            }
         }
     }
 
@@ -100,13 +110,42 @@ object DecorTap {
  */
 val LocalOnPhoto = androidx.compose.runtime.compositionLocalOf<androidx.compose.ui.graphics.Color?> { null }
 
-/** [c] as it is, or, on a 꾸밈 사진 ([LocalOnPhoto]) where it would not show (under 3:1), the ink of that ground. */
+/** PC 확인 C12 1.36: what the words on a 꾸밈 사진 stand on: the photo's average under the screen's veil; null without one. */
+val LocalPhotoGround = androidx.compose.runtime.compositionLocalOf<androidx.compose.ui.graphics.Color?> { null }
+
+/** How strongly a cell with no colour of its own lays [LocalOnPhoto] on the photo. */
+const val ON_PHOTO_ALPHA = 0.6f
+
+/**
+ * [c] as it is, or, on a 꾸밈 사진 where it would not show (under 3:1), the same colour made lighter or darker until it does
+ * (PC 확인 C12: 밝은 파랑·빨강). It must read on the photo's ground, on an empty cell's ground and on [cell] (a cell's own colour, when
+ * it has one).
+ */
 @Composable
-fun readableOnPhoto(c: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color {
-    val ground = LocalOnPhoto.current ?: return c
+fun readableOnPhoto(c: androidx.compose.ui.graphics.Color, cell: androidx.compose.ui.graphics.Color? = null): androidx.compose.ui.graphics.Color {
+    val ground = LocalPhotoGround.current ?: return c
+    val pale = LocalOnPhoto.current
+    val grounds = listOfNotNull(ground, pale?.let { androidx.compose.ui.graphics.lerp(ground, it.copy(alpha = 1f), ON_PHOTO_ALPHA) },
+        cell?.let { androidx.compose.ui.graphics.lerp(ground, it.copy(alpha = 1f), it.alpha) })
+    return readableOn(c.copy(alpha = 1f), grounds)
+}
+
+/** [c], or the nearest lighter or darker step of it that stands 3:1 on every one of [grounds]; black or white at the end. */
+fun readableOn(c: androidx.compose.ui.graphics.Color, grounds: List<androidx.compose.ui.graphics.Color>): androidx.compose.ui.graphics.Color {
     fun argb(x: androidx.compose.ui.graphics.Color) = x.toArgb().toLong() and 0xFFFFFFFFL
-    return if (com.bamnat.core.layout.Contrast.ratio(argb(c.copy(alpha = 1f)), argb(ground.copy(alpha = 1f))) >= 3.0) c
-        else com.bamnat.app.ui.components.contentColorOn(ground.copy(alpha = 1f))
+    fun worst(x: androidx.compose.ui.graphics.Color) = grounds.minOfOrNull { com.bamnat.core.layout.Contrast.ratio(argb(x), argb(it)) } ?: 21.0
+    if (worst(c) >= 3.0) return c
+    val steps = (1..10).map { it / 10f }
+    val lighter = steps.map { androidx.compose.ui.graphics.lerp(c, androidx.compose.ui.graphics.Color.White, it) }
+    val darker = steps.map { androidx.compose.ui.graphics.lerp(c, androidx.compose.ui.graphics.Color.Black, it) }
+    // The side that gets there first keeps most of the colour; neither, the better of the two ends.
+    val l = lighter.indexOfFirst { worst(it) >= 3.0 }
+    val d = darker.indexOfFirst { worst(it) >= 3.0 }
+    return when {
+        l >= 0 && (d < 0 || l <= d) -> lighter[l]
+        d >= 0 -> darker[d]
+        else -> if (worst(lighter.last()) >= worst(darker.last())) lighter.last() else darker.last()
+    }
 }
 
 val LocalDecorTap = staticCompositionLocalOf<((String, java.time.LocalDate?) -> Unit)?> { null }
