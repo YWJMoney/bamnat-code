@@ -255,6 +255,11 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     /** The looks of [r] laid over what the phone wears, the rest of it as it is ([LookParts.layer]). */
     private suspend fun layOn(r: Recipe) {
         val now = Recipe("지금", styles = com.bamnat.core.work.WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
+        // [LAY-10] PC 확인 C10 1.36 (기능별 탭으로 얹은 사진 작품은 사진이 안 와요): its 꾸밈 사진 asked for now, and one the operator has not
+        // let show yet is marked as waiting, so the calendar says so.
+        r.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.DECOR }?.let { p ->
+            runCatching { com.bamnat.app.ui.decor.DecorPhotos.load(c, com.bamnat.core.recipe.Decor.of(p.values).images) }
+        }
         val merged = com.bamnat.core.recipe.LookParts.layer(now, r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }))
         var d = c.settingsRepository.current
         merged.pieces.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }

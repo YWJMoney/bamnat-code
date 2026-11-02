@@ -698,7 +698,7 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
                 // PC 확인 C7 1.36: why a 화면 가득 photo looks paler on the real screen.
                 else if (!first.over) Text("글자가 묻히지 않게 사진 위에 화면 바탕색을 옅게 덮어요",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("올리면 운영자가 사진을 본 뒤 다른 분께 보여요. 그 전에는 회색 상자로 보여요", style = MaterialTheme.typography.labelSmall,
+                Text("올리면 운영자가 사진을 본 뒤 다른 분께 보여요. 그 전에는 화면 가득 사진은 기본 바탕, 자리를 정한 사진은 회색 상자로 보여요", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

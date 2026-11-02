@@ -124,7 +124,8 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             if (photoUnder) Box(Modifier.matchParentSize().background(page.copy(alpha = (worn.dim ?: PHOTO_VEIL).coerceIn(20, 80) / 100f)))
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
-                com.bamnat.app.ui.decor.LocalOnPhoto provides if (photoUnder) lerp(page, if (dark) Color.Black else Color.White, 0.2f) else null,
+                // PC 확인 C10: the ground goes with the words' ink (dark under light words on a dark photo), so a pale cell never turns grey.
+                com.bamnat.app.ui.decor.LocalOnPhoto provides if (!photoUnder) null else if (dark) lerp(page, Color.Black, 0.8f) else lerp(page, Color.White, 0.5f),
                 androidx.compose.material3.LocalContentColor provides if (!inked && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
             }

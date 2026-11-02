@@ -34,4 +34,17 @@ class DecorUploadTest {
         assertTrue(r.pieces.any { it.kind == PieceKind.DECOR })
         assertTrue("사진 빼고 올리기", LookParts.hasPhotos(r))
     }
+
+    /** PC 확인 C10 1.36 (기능별 탭으로 얹은 사진 작품은 사진이 안 와요): 얹기 puts the 꾸밈 사진 on the phone's 꾸밈 층 too. */
+    @Test fun overlaidTabKeepsItsPhoto() {
+        val photo = DecorItem(DecorKind.PHOTO, "0123456789abcdef", "bg.calendar", w = 1000, h = 1000, full = true)
+        val r = com.bamnat.core.recipe.Recipe("탭", styles = com.bamnat.core.work.WorkStyle.entries.toSet(),
+            pieces = listOf(com.bamnat.core.recipe.Piece(PieceKind.DECOR, Decor(listOf(photo)).values())))
+        assertTrue(com.bamnat.core.recipe.LookParts.onlyTab(r) != null)
+        val laid = kotlinx.coroutines.runBlocking { c.wardrobe.overlay(r, "X4CX2M2Z") }
+        idle()
+        assertTrue(laid)
+        val on = Decor.decode(c.settingsRepository.current.decor)
+        assertTrue(on.items.toString(), on.items.any { it.kind == DecorKind.PHOTO && it.glyph == "0123456789abcdef" })
+    }
 }

@@ -19,6 +19,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.ui.semantics.heading
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextOverflow
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.schedule.ResolvedDay
@@ -2272,16 +2273,22 @@ private fun AlarmWarningLine(text: String, action: String, onAction: () -> Unit,
         onClick = onAction,
         shape = MaterialTheme.shapes.medium,
         color = cal.warningContainer,
+        // PC 확인 C10 1.36 (어두운 테마에서 짙은 빨강 띠에 짙은 빨강 글자): the words and 켜기 take the ink of the band itself.
+        contentColor = com.bamnat.app.ui.components.contentColorOn(cal.warningContainer),
         modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
     ) {
+        val ink = com.bamnat.app.ui.components.contentColorOn(cal.warningContainer)
+        fun argb(c: androidx.compose.ui.graphics.Color) = c.toArgb().toLong() and 0xFFFFFFFFL
+        val mark = cal.warning.takeIf { com.bamnat.core.layout.Contrast.ratio(argb(it), argb(cal.warningContainer)) >= 3.0 } ?: ink
+        val act = MaterialTheme.colorScheme.primary.takeIf { com.bamnat.core.layout.Contrast.ratio(argb(it), argb(cal.warningContainer)) >= 4.5 } ?: ink
         Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(20.dp))
+            Icon(Icons.Filled.WarningAmber, null, tint = mark, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             // [VIS-04] What stops the alarm is said whole, at any text size.
-            Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            Text(action, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = ink, modifier = Modifier.weight(1f))
+            Text(action, style = MaterialTheme.typography.labelLarge, color = act, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                 modifier = Modifier.padding(start = 8.dp))
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = act, modifier = Modifier.size(18.dp))
         }
     }
 }
