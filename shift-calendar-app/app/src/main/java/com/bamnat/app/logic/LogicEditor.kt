@@ -407,7 +407,14 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                     Text("조건이 맞는 날에만 보이기", Modifier.weight(1f))
                     Switch(conditional, null)
                 }
-                if (conditional) ConditionEditor(b.show, { b = b.copy(show = it) }, scope, empty = "조건이 없으면 언제나 보여요")
+                if (conditional) {
+                    ConditionEditor(b.show, { b = b.copy(show = it) }, scope, empty = "조건이 없으면 언제나 보여요")
+                    val facts = LocalDayFacts.current ?: rememberAppDayFacts()
+                    val today = remember { com.bamnat.core.time.Today.date() }
+                    remember(b.show, facts) { facts?.takeIf { b.show.isNotBlank() }?.let { f -> nextShow(b, f, today).replace("다음 ", "다음에 보이는 날 ") } }?.let {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 ActEditor(b.act, { b = b.copy(act = it) }, scope)
             }
         },
@@ -424,6 +431,24 @@ enum class LogicShow { ALL, RULES, BUTTONS }
 
 /** The 설정 section title, also in 설정 검색. */
 const val LOGIC_ROW = "수식·규칙·버튼"
+
+/**
+ * [RUL-23] PC D18 사용성 제안: a button with a 보이기 조건, said for [day] — "오늘은 숨김(조건) · 다음 11/5(수)" or "오늘 보여요 · …",
+ * looking up to 31 days ahead for the next day it shows; null when it has no 조건 or the facts are not read yet.
+ */
+internal fun showLine(b: LogicButton, facts: com.bamnat.core.formula.DayFactsBook?, day: LocalDate): String? {
+    if (b.show.isBlank()) return null
+    facts ?: return null
+    return if (holds(b, facts, day)) "오늘 보여요" else "오늘은 숨김(조건) · ${nextShow(b, facts, day)}"
+}
+
+private fun holds(b: LogicButton, facts: com.bamnat.core.formula.DayFactsBook, d: LocalDate) =
+    runCatching { Formula.eval(b.show, facts.scope(d))?.truthy == true }.getOrDefault(false)
+
+/** "다음 11/5(수)": the next day after [day] (31 days at most) that [b] shows. */
+internal fun nextShow(b: LogicButton, facts: com.bamnat.core.formula.DayFactsBook, day: LocalDate): String =
+    (1L..31L).map { day.plusDays(it) }.firstOrNull { holds(b, facts, it) }
+        ?.let { "다음 ${it.monthValue}/${it.dayOfMonth}(${"월화수목금토일"[it.dayOfWeek.value - 1]})" } ?: "한 달 안에 보이는 날이 없어요"
 
 /** "다음: 11/13(목) 18:00", or why there is none, for a rule that runs at a time; null for the others. */
 internal fun nextLine(r: LogicRule, facts: com.bamnat.core.formula.DayFactsBook?): String? {
@@ -555,7 +580,8 @@ fun LogicEditor(
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         logic.buttons.forEachIndexed { i, b ->
             val sameB = remember(bump, b.id) { store.sameButton(b.id)?.let { "받은 ‘$it’${com.bamnat.app.ui.Fmt.wa(it)} 같음" } }
-            LineCard(b.say(), listOfNotNull(sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null }, null, null,
+            val shows = remember(bump, b.show, facts, day) { showLine(b, facts, day) }
+            LineCard(b.say(), listOfNotNull(shows, sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null }, null, null,
                 onEdit = { editButton = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(buttons = logic.buttons.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
         }
         if (!readOnly && logic.buttons.size < Logic.MAX_BUTTONS) TextButton(onClick = { editButton = -1 }) { Text("+ 단추 만들기") }

@@ -142,6 +142,20 @@ class RulScreenshotTest : ScreenshotBase() {
         assertTrue("more rows", appears("+ 조건 더하기"))
     }
 
+    @Test fun hiddenButtonSaysWhenItShows() {
+        // PC D18 (낮): 조건 때문에 숨은 단추는 왜 안 보이는지, 다음에 언제 보이는지 몰랐어요.
+        val mon = java.time.LocalDate.of(2026, 11, 2)
+        val facts = com.bamnat.core.formula.DayFactsBook(mon, "교대", { d ->
+            if (d == mon.plusDays(3)) com.bamnat.core.formula.DayFactsBook.DayShift("야간", "night", "22:00", "07:00") else
+                com.bamnat.core.formula.DayFactsBook.DayShift("주간", "day", "07:00", "15:00")
+        })
+        val night = MEMO.copy(show = "근무종류 = \"야간\"")
+        assertEquals("오늘은 숨김(조건) · 다음 11/5(목)", com.bamnat.app.logic.showLine(night, facts, mon))
+        assertEquals("오늘 보여요", com.bamnat.app.logic.showLine(night, facts, mon.plusDays(3)))
+        assertEquals(null, com.bamnat.app.logic.showLine(MEMO, facts, mon))
+        assertEquals("오늘은 숨김(조건) · 한 달 안에 보이는 날이 없어요", com.bamnat.app.logic.showLine(MEMO.copy(show = "근무종류 = \"당직\""), facts, mon))
+    }
+
     @Test fun editorList() = shoot("886_rul_editor_list", FOLDED) {
         content {
             Surface { Column(Modifier.padding(16.dp)) { LogicEditor(Logic(listOf(MEMO), listOf(NIGHT, RESET)), {}, phone = true) } }
