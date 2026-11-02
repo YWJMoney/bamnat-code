@@ -598,6 +598,11 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             )
         }
     }
+    // 1.36 PC 재검토: every kind of work folded away, said instead of showing them again.
+    if (folded.isNotEmpty() && types.none { !it.isOff }) {
+        Text("쓰는 근무가 없어요. 설정 › 근무 종류와 시간에서 ‘근무 추가’로 넣거나 안 쓰는 종류를 다시 써요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     // [J133B-03] 1.33 빌드 8 확인 ("11시간 휴식 경고가 월 카드에만, 근무를 넣는 순간에는 없어요"): the rest rules the day and the
     // next day break, said right under the shift just put in, as the month card and the alarm line count them.
     val settings = vm.settings.collectAsStateWithLifecycle().value
@@ -1385,11 +1390,11 @@ internal fun quickMemoExample(style: com.bamnat.core.work.WorkStyle?): String = 
  */
 internal fun dayTypes(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?, folded: Set<Long> = emptySet()): List<ShiftType> =
     // 1.36 PC 재검토: a kind put away ('안 쓰는 종류') is not offered, unless it is this day's or one this kind of work starts with
-    // (after 되돌리기 back to 알바, its own 오전 알바 shows again); never all of them gone.
+    // (after 되돌리기 back to 알바, its own 오전 알바 shows again). All of them folded leaves the days off ([WorkContent] says how to add).
     dayTypesAll(snapshot, style, current).let { all ->
         if (folded.isEmpty()) return all
         val own = com.bamnat.app.data.FoldedTypes.startNames(style)
-        all.filter { it.id !in folded || it.id == current || it.name in own }.takeIf { l -> l.any { !it.isOff } } ?: all
+        all.filter { it.id !in folded || it.id == current || it.name in own }
     }
 
 private fun dayTypesAll(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?): List<ShiftType> {

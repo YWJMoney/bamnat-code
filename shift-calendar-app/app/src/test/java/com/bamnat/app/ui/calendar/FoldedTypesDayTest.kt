@@ -33,9 +33,16 @@ class FoldedTypesDayTest {
         assertEquals(snap.shiftTypes, dayTypes(snap, WorkStyle.HOURLY, null, folded))
     }
 
-    @Test fun neverEveryKindGone() {
-        val only = ScheduleSnapshot(listOf(morning, base.first { it.isOff }), null, emptyList())
-        assertEquals(only.shiftTypes, dayTypes(only, WorkStyle.FIELD, null, setOf(20L)))
+    @Test fun everyKindFoldedLeavesTheDaysOff() {
+        // PC: with nothing else left, showing them all again hid the fold; the day sheet says how to add one instead.
+        val off = base.first { it.isOff }
+        val only = ScheduleSnapshot(listOf(morning, off), null, emptyList())
+        assertEquals(listOf(off), dayTypes(only, WorkStyle.FIELD, null, setOf(20L)))
+    }
+
+    @Test fun summaryLineLeavesFoldedOut() {
+        assertEquals("쓰는 근무 없음 · 안 쓰는 종류 2개", com.bamnat.app.ui.settings.shiftsLine(listOf(morning, afternoon), folded))
+        assertTrue(com.bamnat.app.ui.settings.shiftsLine(snap.shiftTypes, folded).endsWith("· 안 쓰는 종류 2개"))
     }
 
     @Test fun whatEachKindOfWorkStartsWith() {

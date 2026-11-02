@@ -115,8 +115,9 @@ internal fun ExtrasContent(
             }
         }
 
-        val choices = remember(snapshot, day) {
-            ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day).filter { ExtraText.indexOf(day, it) < 0 }
+        val folded = com.bamnat.app.ui.shifts.foldedHere()
+        val choices = remember(snapshot, day, folded) {
+            ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day).filter { ExtraText.indexOf(day, it) < 0 }
         }
         if (day.extras.size < ScheduleRepository.MAX_EXTRAS && choices.isNotEmpty()) {
             if (day.extras.isNotEmpty()) {

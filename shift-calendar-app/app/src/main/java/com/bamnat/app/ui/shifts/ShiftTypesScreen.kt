@@ -164,8 +164,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
         val list = types
         val folded by vm.folded.collectAsStateWithLifecycle()
         var foldedOpen by rememberSaveable { mutableStateOf(false) }
-        // Never every kind folded away: then all of them show.
-        val shown = list?.filter { it.id !in folded }?.takeIf { it.isNotEmpty() } ?: list.orEmpty()
+        val shown = list.orEmpty().filter { it.id !in folded }
         if (list == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             return@Scaffold
@@ -217,7 +216,12 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
             }
             // 1.36 PC 재검토: kinds put away after a change of work (알바 → 현장), folded here; past days keep them.
             val away = list.filter { it.id in folded }
-            if (away.isNotEmpty() && away.size < list.size) {
+            if (away.isNotEmpty() && shown.none { !it.isOff }) item(key = "folded-none") {
+                Text("쓰는 근무가 없어요. 아래 ‘근무 추가’로 새 근무를 넣거나, 안 쓰는 종류에서 ‘다시 쓰기’를 눌러요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp))
+            }
+            if (away.isNotEmpty()) {
                 item(key = "folded-head") {
                     Row(
                         Modifier.fillMaxWidth().clickable { foldedOpen = !foldedOpen }.padding(top = 12.dp, bottom = 4.dp),

@@ -859,7 +859,10 @@ private fun DayCell(
                     onClick = { menu = false; onQuickAction(QuickAction.Realign) },
                 )
             }
-            val choices = remember(snapshot, day, usesShifts) { if (usesShifts) ExtraText.choices(snapshot.kinds, snapshot.shiftTypes, day) else emptyList() }
+            val folded = com.bamnat.app.ui.shifts.foldedHere()
+            val choices = remember(snapshot, day, usesShifts, folded) {
+                if (usesShifts) ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day) else emptyList()
+            }
             if (choices.isNotEmpty()) HorizontalDivider()
             for (c in choices) {
                 val i = ExtraText.indexOf(day, c)
