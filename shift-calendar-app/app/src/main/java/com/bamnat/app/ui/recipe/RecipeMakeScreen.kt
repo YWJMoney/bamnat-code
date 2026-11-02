@@ -562,6 +562,11 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LinearProgressIndicator(progress = { (s.step - shift) / (5f - shift) }, modifier = Modifier.fillMaxWidth())
+                // PC 17차 사용성 제안 (닫혀 있는 걸 4/4 맨 아래에서야 앎): said from the first step, before the work.
+                val heldRow by vm.publishRow.collectAsStateWithLifecycle()
+                if (s.sent == null && s.step < 5 && !vm.canPublish) Text("올리기는 아직 닫혀 있어요 · " +
+                    (vm.publishHeld(heldRow) ?: "정식 출시일(11월 10일 예정)부터 열려요") + " · 만들고 저장하는 건 지금 돼요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 s.sent?.let { sent ->
                     SentCard(s.recipe.title, sent, onOpen, sending = s.sending, onAgain = vm::again, onPrivate = { vm.rescope("private") },
                         sharedScope = s.sharedScope, onShare = { vm.rescope(it) })
