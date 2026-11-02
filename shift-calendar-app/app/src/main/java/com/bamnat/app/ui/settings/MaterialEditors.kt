@@ -378,12 +378,16 @@ fun FontRow(label: String, value: String?, numbersOnly: Boolean = false, onPick:
     var rowSize by remember { mutableStateOf(androidx.compose.ui.unit.IntSize.Zero) }
     val flash = remember { androidx.compose.animation.core.Animatable(0f) }
     val screenPx = with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp.toPx() }
+    val roomMax = with(androidx.compose.ui.platform.LocalDensity.current) { 120.dp.toPx() }
     androidx.compose.runtime.LaunchedEffect(label) {
         if (FontRowFocus.label == label) {
             FontRowFocus.label = null
-            kotlinx.coroutines.delay(150)
+            // PC 8차 (검색에서 오면 칸 디자인 맨 위에서 열림): a rect taller than the editor's own window (half a screen each side was) counts
+            // as already in view, so nothing scrolled. First the row itself, then a little room round it — at most what fits.
+            kotlinx.coroutines.delay(350)
+            bring.bringIntoView()
             val h = rowSize.height.toFloat()
-            val room = ((screenPx - h) / 2f).coerceAtLeast(0f)
+            val room = ((screenPx / 4f) - h / 2f).coerceIn(0f, roomMax)
             bring.bringIntoView(androidx.compose.ui.geometry.Rect(0f, -room, rowSize.width.toFloat(), h + room))
             repeat(2) {
                 flash.animateTo(1f, androidx.compose.animation.core.tween(220))
@@ -488,7 +492,8 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
             is UserFonts.Result.Added -> {
                 mine = UserFonts.list(ctx); stamp++
                 problem = if (r.font.sold) "‘${r.font.name}’ 글꼴은 안에 유료 글꼴 회사가 적혀 있어 이 휴대폰에서만 쓸 수 있어요(레시피와 함께 나눌 수 없어요)" else null
-                note = if (!r.font.hangul) "‘${r.font.name}’ 글꼴에는 한글이 없어요. 숫자·영문만 이 글꼴로, 한글은 ${FontCatalog.byId(r.font.fallback)?.name ?: "기본 글꼴"}로 보여요" else null
+                note = if (!r.font.hangul) (FontCatalog.byId(r.font.fallback)?.name ?: "기본 글꼴").let { like ->
+                    "‘${r.font.name}’ 글꼴에는 한글이 없어요. 숫자·영문만 이 글꼴로, 한글은 $like${com.bamnat.app.ui.Fmt.ro(like)} 보여요" } else null
             }
             is UserFonts.Result.Problem -> { problem = r.text; note = null }
         }
@@ -561,7 +566,7 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
     askHangul?.let { f ->
-        val like = FontCatalog.byId(f.fallback)?.name ?: "기본 글꼴"
+        val like = FontCatalog.byId(f.fallback)?.name ?: "기본"
         AlertDialog(
             onDismissRequest = { askHangul = null },
             title = { Text("한글이 없는 글꼴이에요") },

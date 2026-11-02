@@ -1113,6 +1113,9 @@ fun CalendarScreen(
             }
         }
         if (!holding) NoticeStack(modifier = Modifier.onSizeChanged { aboveHeights[0] = it.height }, state = notices, open = if (sideways) 0 else 1, notices = buildList {
+            // [MAT-06] 1.36 PC 확인 7차: shared fonts a theme was waiting for, come down by themselves (was a toast). PC 8차: first, so it
+            // is the one open (it was folded as '글꼴' under the others); it goes once closed or taken back.
+            if (FontArrivals.fonts.isNotEmpty()) add(Notice("fontArrived", "기다리던 글꼴") { FontArrivedLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
             // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
             // screen too, for a phone whose notices are off.
@@ -1250,8 +1253,6 @@ fun CalendarScreen(
             if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("backupNudge", "백업 알림") {
                 com.bamnat.app.ui.settings.BackupNudgeNotice(hasRecords = settings.workStyle != null)
             })
-            // [MAT-06] 1.36 PC 확인 7차: shared fonts a theme was waiting for, come down by themselves (was a toast).
-            if (FontArrivals.fonts.isNotEmpty()) add(Notice("fontArrived", "글꼴") { FontArrivedLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             // [J133-68] 1.33 (중간 빌드 확인: 첫 화면이 시작 단계와 '할 수 있는 것' 카드로 다 덮였어요): while the 시작 단계 card is up it is

@@ -263,9 +263,11 @@ object UserFonts {
         ttf.writeBytes(bytes)
         val ok = runCatching { android.graphics.Typeface.Builder(ttf).build() != null }.getOrDefault(false)
         if (!ok) { ttf.delete(); return Result.Problem("이 글꼴은 휴대폰이 읽지 못해요") }
-        val shown = name?.take(30)?.ifBlank { null } ?: "내 글꼴"
         // PC 확인 6차: its own words say who made it and what it looks like (a handwriting font stood in as 기본 고딕).
         val info = FontNames.read(bytes)
+        // PC 확인 8차 (파일 이름 'Gaegu-junk'가 글꼴 이름이 되어 받는 분 알림에도 나옴): a font put in here is named by its own name table
+        // (Gaegu), its file name only when it has none; one that came with a recipe keeps the name its sender gave.
+        val shown = (if (received) null else info.family?.take(30)?.ifBlank { null }) ?: name?.take(30)?.ifBlank { null } ?: "내 글꼴"
         val sold = !received && FontNames.sold(info)
         val guess = lookOf(info, shown) ?: "sans"
         val hangul = FontNames.hangul(bytes) ?: true
