@@ -264,6 +264,10 @@ fun RecipeListScreen(
                     OutlinedTextField(state.query, vm::query, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         label = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
+                    // PC 확인 1.36 (코드로 찾으면 어느 구간에도 안 나옴): a code typed in the box opens that work, whatever its 구간.
+                    com.bamnat.app.recipe.RecipeLinks.find(state.query.takeIf { it.trim().length in 8..80 })?.let { code ->
+                        FilledTonalButton(onClick = { onOpen(code) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("코드 $code 작품 열기") }
+                    }
                     // [MKX-01] 1.36 두 구간 (사용자 2026-10-31 "장터가 너무 보기 어렵게 … 테마를 주는건지 기능별로 보여지는건지 구간을 나눠서"):
                     // 테마 (모든 것을 종합해 만든 한 벌) and 기능별 탭 (탭 하나를 전문으로, 고른 테마 위에 얹어요), two big halves on top.
                     val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
@@ -310,6 +314,15 @@ fun RecipeListScreen(
                         Text("${marketTabLabel(tabNow, vm.style)} 탭 작품이 아직 없어요", style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Row { TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }; TextButton(onClick = { vm.load() }) { Text("다시 불러오기") } }
+                        return@Column
+                    }
+                    // PC 제안 1.36 (찾기 결과가 없는데 '처음으로 나눠 보세요'): what was looked for, and the other 구간 to look in.
+                    if (state.query.isNotBlank()) {
+                        Text("‘${state.query.trim()}’에 맞는 작품이 ${if (state.kind == RecipeClient.SCOPE_THEME) "테마에" else "이 구간에"} 없어요",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = { vm.kind(if (state.kind == RecipeClient.SCOPE_THEME) RecipeClient.SCOPE_TAB else RecipeClient.SCOPE_THEME) }) {
+                            Text(if (state.kind == RecipeClient.SCOPE_THEME) "기능별 탭에서 찾기" else "테마에서 찾기")
+                        }
                         return@Column
                     }
                     Text(if (state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA)

@@ -435,7 +435,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         // PC 확인 L2·L4: the locked screens, named over the example; a tap shows that screen up close.
                         // PC 확인 1.36 (첫 잠금·마지막 풀기 때 아래 칩 줄이 아래위로 뜀): in this row, not a line of their own.
                         vm.locked.forEach { tab ->
-                            androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)); detail = true }, label = { Text("🔒 " + lockName(tab, vm.style)) })
+                            androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)); detail = true
+                                // PC 제안 1.36 (잠금 표시인지 보기 칩인지 헷갈림): it says it is locked, and where to unlock it.
+                                vm.say(lockName(tab, vm.style).let { it + com.bamnat.app.ui.Fmt.eun(it) } + " 잠겨 있어요 · 한 색의 ‘잠그기’에서 풀어요")
+                            }, label = { Text("🔒 " + lockName(tab, vm.style)) })
                         }
                         // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.
                         Box(Modifier.size(1.dp, 24.dp).background(MaterialTheme.colorScheme.outlineVariant))
@@ -655,6 +658,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 Text(if (v == null) "테마 전체" else "${com.bamnat.app.ui.recipe.tabName(v)} 탭만", style = MaterialTheme.typography.bodyLarge)
                                 Text(if (v != null) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
                                     (if (s.extras.isNotEmpty()) ". 기능 ${s.extras.size}개는 빠져요" else "")
+                                    // PC 확인 1.36 (한 화면만 바꾸고 테마 전체로 올리면 장터 어디에도 안 보임): one screen changed is one tab in 장터, said.
+                                    else if (single != null && s.extras.isEmpty()) "한 화면(${com.bamnat.app.ui.recipe.tabName(single)})만 바꿔서 장터에서는 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.tabName(single)}’에 올라가요"
                                     else "장터 ‘테마’에 올라가요. 모든 화면의 모양" + (if (s.extras.isNotEmpty()) "과 기능 ${s.extras.size}개가" else "이") + " 함께 가요",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }

@@ -103,6 +103,24 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue("뒤로 → the studio", appears("앱 화면", exact = true))
     } }
 
+    /** PC 확인 1.36: a code typed in 찾기 opens that work whatever its 구간; nothing found says what was looked for and offers the other 구간. */
+    @Test fun aCodeInTheSearchOpensItAndNothingFoundSaysSo() = shoot("1348_rcp_search_code", PHONE) {
+        val api = starters()
+        style(WorkStyle.SHIFT)
+        val model = RecipeListViewModel(c)
+        var opened: String? = null
+        content { RecipeListScreen(model, onBack = {}, onOpen = { opened = it }, onMake = {}, onMine = {}) }
+        settle()
+        model.query(api.code(3)); model.load()
+        settle()
+        tapText("코드 ${api.code(3)} 작품 열기", exact = true)
+        assertEquals(api.code(3), opened)
+        model.query("없는이름가나"); model.load()
+        settle()
+        assertTrue(appears("‘없는이름가나’에 맞는 작품이", exact = false))
+        assertTrue(appears("기능별 탭에서 찾기", exact = true))
+    }
+
     @Test fun theListOfAKindOfWork() = shoot("1340_rcp_list_shift", PHONE) {
         starters()
         style(WorkStyle.SHIFT)

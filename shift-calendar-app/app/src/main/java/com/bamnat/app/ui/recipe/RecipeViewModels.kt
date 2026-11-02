@@ -237,6 +237,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
             val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
             val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code) }.getOrDefault(false)
+            // PC 확인 1.36 (기능별 탭으로 얹은 작품은 쓰는 분 0): a tab laid on counts as used, as a theme put on does.
+            if (laid && id == null && code.isNotEmpty() && c.recipeApi.enabled) runCatching { c.recipeApi.applied(code, kept = false) }
             if (id != null && looks.isNotEmpty() && tab == null) runCatching {
                 c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
             }
