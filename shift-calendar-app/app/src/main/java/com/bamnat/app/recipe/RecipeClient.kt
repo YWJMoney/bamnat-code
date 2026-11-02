@@ -308,6 +308,8 @@ class RecipeClient(
             add("sort=$sort")
             if (q.isNotBlank()) add("q=" + URLEncoder.encode(q.trim().take(30), "UTF-8"))
             if (cursor > 0) add("cursor=$cursor")
+            // 1.36 [MKS-01] This app's versionCode: the server shows a 출시 작품 made for a newer app only to apps that can read it.
+            add("app=${com.bamnat.app.BuildConfig.VERSION_CODE}")
             // [MKX-01] 1.36 두 구간: "theme" or "tab:<tab>" goes as scope (and tab), with the nearest 1.35 kind for a server before 1.36.
             when {
                 kind == SCOPE_THEME -> { add("scope=theme"); add("kind=skin") }
