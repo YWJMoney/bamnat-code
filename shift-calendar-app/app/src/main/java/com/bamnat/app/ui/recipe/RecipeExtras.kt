@@ -415,7 +415,9 @@ private fun PartCloseUp(unit: String, content: @Composable () -> Unit) {
         // A few frames: the example laid out and every part's place known, read once before it is moved.
         repeat(3) { androidx.compose.runtime.withFrameNanos { } }
         val origin = inner ?: return@LaunchedEffect
-        val boxes = spots.spots.values.filter { (id, _) -> id == unit || id.startsWith("$unit.") }.map { it.second.translate(-origin) }
+        // PC 11차 (줄 점선 안에 글자 점선이 겹침): the part's own box ringed; its inner parts only when it has no box of its own.
+        val own = spots.spots.values.filter { (id, _) -> id == unit }
+        val boxes = own.ifEmpty { spots.spots.values.filter { (id, _) -> id.startsWith("$unit.") } }.map { it.second.translate(-origin) }
         rings = boxes
         lift = if (boxes.isEmpty()) 0f else (with(density) { 24.dp.toPx() } - boxes.minOf { it.top }).coerceAtMost(0f)
     }

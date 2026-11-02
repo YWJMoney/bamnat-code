@@ -408,7 +408,7 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         com.bamnat.app.ui.calendar.SampleDay(((d["emoji"] as? String) ?: d["label"]?.toString()).orEmpty(), (d["color"] as? Long) ?: 0xFF757575L,
             memos[i % memos.size], hours = if (d["role"] == "off") null else "8h", off = d["role"] == "off", role = d["role"] as? String)
     }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(Modifier.partSpot("cal"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         // [BLU-09] The example's title is the 달력 머리 and 달 이름, drawn as the parts say and found by a tap in the 부품 도구.
         val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
         val head = bp.style("cal.head")

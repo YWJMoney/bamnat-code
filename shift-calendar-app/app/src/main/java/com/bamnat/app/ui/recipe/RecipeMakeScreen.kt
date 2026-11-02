@@ -862,7 +862,11 @@ private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit, sendin
             // PC 10차 사용성 제안 (지금 상태를 놓치기 쉬움): where it is now, first and plain.
             Text("지금: " + when (sent.scope) { "private" -> "나만 보기"; "link" -> "링크로만"; else -> "장터에 공개" }, style = MaterialTheme.typography.labelLarge,
                 fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-            Text(stateLabel(sent.state, sent.scope), style = MaterialTheme.typography.bodyMedium)
+            // PC 11차 사용성 제안 ('지금: 링크로만' 아래 '링크로만 열려요'가 되풀이): the second line says who can open it, or the state.
+            val label = stateLabel(sent.state, sent.scope)
+            Text(if (label != stateLabel(null, sent.scope)) label else when (sent.scope) {
+                "private" -> "내 휴대폰들에서만 열어요"; "link" -> "링크를 받은 분만 열어요"; else -> "장터에서 누구나 보고 받아 가요" },
+                style = MaterialTheme.typography.bodyMedium)
             Text("코드 ${sent.code} · v${sent.version}", style = MaterialTheme.typography.titleSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // 나만 보기 has no one to send a link to.
