@@ -19,6 +19,7 @@ import com.bamnat.app.logic.timeOf
 import com.bamnat.app.logic.ruleProblem
 import com.bamnat.app.logic.ruleName
 import com.bamnat.app.logic.sameSay
+import com.bamnat.app.logic.bigSay
 import com.bamnat.core.formula.ButtonPlace
 import com.bamnat.core.formula.FormulaNames
 import com.bamnat.core.formula.Logic
@@ -101,6 +102,11 @@ class RulScreenshotTest : ScreenshotBase() {
         // PC D11: 같은 일을 하는 규칙은 한 번 물어요 (이름과 상관없이 언제·조건·무엇을이 같으면).
         assertEquals(daily.key, daily.copy(name = "다른 이름").key)
         assertTrue(sameSay(daily.copy(name = "매일 07:00 알림")).startsWith("같은 일을 하는 ‘매일 07:00 알림’ 규칙이 이미 있어요"))
+        // PC D14: 내 규칙도 한 번에 100만 원이 넘으면 한 번 물어요.
+        val money = daily.copy(act = LogicAct(LogicVerb.ADD_MONEY, "저축", 2_000_000))
+        assertEquals("돌 때마다 가계부에 2,000,000원을 넣는 규칙이에요. 맞으면 한 번 더 저장을 눌러요", bigSay(money))
+        assertEquals(null, bigSay(money.copy(act = money.act.copy(amount = 1_000_000))))
+        assertEquals(null, bigSay(daily))
         assertTrue(ruleName(daily.copy(name = "열두글자를넘는아주긴규칙이름이에요"), setOf("열두글자를넘는아주긴규칙이름이에요")).length <= 20)
     }
 

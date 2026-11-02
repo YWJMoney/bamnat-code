@@ -364,7 +364,9 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                     if (why != null) tried = why
                     else r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at).let { done ->
                         val same = others.firstOrNull { it.key == done.key }
-                        if (same != null && askedSame != done.key) { askedSame = done.key; tried = sameSay(same) }
+                        // PC D14 (사용성 낮): 한 번에 100만 원이 넘게 가계부에 넣는 내 규칙도 한 번 물어요 (매일 쌓이지 않게).
+                        val warn = listOfNotNull(same?.let(::sameSay), bigSay(done))
+                        if (warn.isNotEmpty() && askedSame != done.key) { askedSame = done.key; tried = warn.joinToString(" ") }
                         else onDone(done.copy(name = ruleName(done, taken)))
                     }
                 }) { Text("저장") }
@@ -466,8 +468,13 @@ private val VERB_SHORT = mapOf(
     LogicVerb.CHECK_RESET to "체크 비우기", LogicVerb.ADD_MONEY to "지출 넣기", LogicVerb.MEMO_LINE to "메모 한 줄", LogicVerb.ADD_INCOME to "수입 넣기",
 )
 
+/** PC D14: said once when a rule puts more than 100만 원 in the 가계부 each time it runs. */
+internal fun bigSay(r: LogicRule): String? = r.act.amount?.takeIf { r.act.verb in MONEY_VERBS && it > com.bamnat.core.formula.Logic.RECEIVED_MAX_WON }?.let { a ->
+    "돌 때마다 가계부에 ${"%,d".format(a)}원을 넣는 규칙이에요. 맞으면 한 번 더 저장을 눌러요"
+}
+
 /** PC D11: said once when a rule being saved does what [same] already does; 저장 again keeps both. */
-internal fun sameSay(same: LogicRule) = "같은 일을 하는 ‘${same.name}’ 규칙이 이미 있어요. 그래도 만들려면 한 번 더 저장을 눌러요"
+internal fun sameSay(same: LogicRule) = "같은 일을 하는 ‘${same.name}’ 규칙이 이미 있어요. 그래도 만들려면 한 번 더 저장을 눌러요."
 
 /** "7:00", "700", "0700", "07:00" → "07:00"; null when it is not a time of day. */
 internal fun timeOf(s: String): String? {

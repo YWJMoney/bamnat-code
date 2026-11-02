@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.LocalDate
@@ -361,7 +362,12 @@ object LogicRunner {
      * now runs once; one that came more than [LATE_MINUTES] ago is said as missed instead (the phone was off, the clock jumped). Then the
      * next is registered.
      */
-    internal suspend fun fire(c: AppContainer) {
+    /** PC D14: the alarm and the 시계 바뀜 broadcast can come together; one look at a time, so a time is never run twice. */
+    private val firing = kotlinx.coroutines.sync.Mutex()
+
+    internal suspend fun fire(c: AppContainer): Unit = firing.withLock { fireNow(c) }
+
+    private suspend fun fireNow(c: AppContainer) {
         // 안전 모드: the times that come are let pass (not run late after 평소대로), and the next is registered.
         if (resting) { LogicStore(c.appContext).checked = Today.dateTime().toString(); schedule(c); return }
         val f = facts(c)

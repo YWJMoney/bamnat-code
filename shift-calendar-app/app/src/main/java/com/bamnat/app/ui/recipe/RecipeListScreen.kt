@@ -54,10 +54,10 @@ import androidx.compose.ui.platform.LocalContext
 import com.bamnat.app.appContainer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.selected
@@ -262,9 +262,7 @@ fun RecipeListScreen(
         ) {
             item {
                 Column(Modifier.widthIn(max = 640.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    var searching by remember { mutableStateOf(false) }
-                    OutlinedTextField(state.query, vm::query, singleLine = true,
-                        modifier = Modifier.fillMaxWidth().onFocusChanged { searching = it.isFocused },
+                    OutlinedTextField(state.query, vm::query, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         label = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
                     // [MKX-01] 1.36 두 구간 (사용자 2026-10-31 "장터가 너무 보기 어렵게 … 테마를 주는건지 기능별로 보여지는건지 구간을 나눠서"):
@@ -285,17 +283,6 @@ fun RecipeListScreen(
                         else -> "달력·가계부·메모 등 여러 화면을 한 번에 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 기능별 탭으로 바꿀 수 있어요"
                     }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // PC D10 (사용성 중): 찾은 말이 다른 구간에 있으면 칩으로 (테마 안에서만 찾아 '체크'가 안 나오던 것).
-                    // PC D12 (사용성 낮): 찾는 동안 칩 자리를 비워 두어 아래 줄이 내려가지 않게.
-                    // PC D13: from the moment the box is touched (첫 글자를 칠 때 아래 줄이 내려가던 것).
-                    if (searching || state.query.isNotBlank()) Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (state.elsewhere.isNotEmpty()) Text("다른 칸에도 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        state.elsewhere.forEach { (h, n) ->
-                            val here = h == vm.halfNow()
-                            androidx.compose.material3.AssistChip(onClick = { vm.jump(h) },
-                                label = { Text(if (here) "‘새로’에 $n" else "${RecipeListViewModel.halfName(h)}에 $n") })
-                        }
-                    }
                     if (featured) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
                         FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("모든 탭") })
@@ -305,6 +292,15 @@ fun RecipeListScreen(
                     }
                     // How sorted and whose, under the half chosen.
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        // PC D14 (사용성 낮): 다른 칸 칩은 이 줄 맨 앞에 (따로 줄을 두면 칸을 누를 때·첫 글자에 아래가 두 번 내려갔어요).
+                        if (state.query.isNotBlank()) state.elsewhere.forEach { (h, n) ->
+                            val here = h == vm.halfNow()
+                            androidx.compose.material3.AssistChip(onClick = { vm.jump(h) },
+                                label = { Text(if (here) "‘새로’에 $n" else "${RecipeListViewModel.halfName(h)}에 $n") },
+                                modifier = Modifier.semantics { contentDescription = "다른 칸에도 있어요: ${if (here) "새로" else RecipeListViewModel.halfName(h)}에 $n" })
+                        }
+                        if (state.query.isNotBlank() && state.elsewhere.isNotEmpty())
+                            androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
                         RecipeListViewModel.Tab.entries.forEach { t -> FilterChip(selected = state.tab == t, onClick = { vm.tab(t) }, label = { Text(t.label) }) }
                         if (vm.style != null) {
                             androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 4.dp))
