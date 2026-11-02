@@ -1345,6 +1345,7 @@ fun CalendarScreen(
             }
             // [CAL-06][CAL-08] The month's shifts at a glance, what the marks mean, and grid or list.
             val showList = listView && paint == null
+            val bigCounts = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f && !sideways
             val countsPart: @Composable (Modifier) -> Unit = { place ->
                 Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     // The counts take what is left, so the two buttons always sit at the right edge.
@@ -1358,9 +1359,12 @@ fun CalendarScreen(
                             modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = "모든 조 보기와 대근 찾기" },
                         )
                     }
-                    Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
+                    // PC 확인 2b9f19ab ("아주 크게"에서 '휴 10'의 숫자가 ⓘ 옆에서 흐려져요): with big letters the counts get a line of their own.
+                    if (!bigCounts) Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
+                    else Spacer(Modifier.weight(1f))
                     CalendarViewSwitch(listView = showList, onListView = { if (paint == null) vm.setListView(it) }, onLegend = { legendOpen = true })
                 }
+                if (bigCounts && partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp))
             }
             if (sideways) {
                 // [CAL-51] On its side the summary's one line and the counts share a row.

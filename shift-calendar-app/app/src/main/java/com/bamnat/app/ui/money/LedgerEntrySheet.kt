@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -411,11 +413,16 @@ fun EntryDialog(
             // The buttons stay in reach above the keyboard.
             HorizontalDivider()
             val ready = amount > 0 && splitOk
+            // PC 확인 2b9f19ab: with big letters and the keyboard up, the two stacked buttons covered the 분류 chips; then they sit
+            // side by side again, '저장하고 하나 더' said shorter.
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+            val imeUp = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
+            val short = big && imeUp
             val next: (@Composable (Modifier) -> Unit)? = if (isNew && onSaveAndNext != null) { m ->
                 OutlinedButton(enabled = ready, onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                     onSaveAndNext(build())
-                }, modifier = m.heightIn(min = 48.dp)) { Text("저장하고 하나 더", maxLines = 1) }
+                }, modifier = m.heightIn(min = 48.dp)) { Text(if (short) "하나 더" else "저장하고 하나 더", maxLines = 1) }
             } else null
             val save: @Composable (Modifier) -> Unit = { m ->
                 com.bamnat.app.ui.components.SaveButton(enabled = ready, onClick = {
@@ -424,7 +431,7 @@ fun EntryDialog(
                 }, modifier = m.heightIn(min = 48.dp)) { Text("저장") }
             }
             // PC 확인 b4735c07 ("아주 크게"에서 '저장하고 하나 더'가 두 줄로 꺾여요): with big letters the two buttons stack, 저장 first.
-            if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f && next != null) Column(
+            if (big && !imeUp && next != null) Column(
                 Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
