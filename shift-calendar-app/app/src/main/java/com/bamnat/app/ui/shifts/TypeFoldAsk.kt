@@ -10,6 +10,7 @@ import com.bamnat.app.AppContainer
 import com.bamnat.app.appContainer
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.work.words
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -73,8 +74,8 @@ fun TypeFoldHost(c: AppContainer) {
             val adds = a.adds.joinToString("·") { it.name }
             Text("$names${com.bamnat.app.ui.Fmt.eun(names)} ${a.to.label}에서 잘 쓰지 않아요. 접어 두면 하루 시트에서 빠지고, 지난 날짜 기록과 급여는 그대로예요. " +
                 (if (adds.isNotEmpty()) "대신 ${a.to.label} 기본 근무 $adds${com.bamnat.app.ui.Fmt.obj(adds)} 넣어 둘게요(시간은 근무 종류와 시간에서 고쳐요). " else "") +
-                (if (a.empty) "접으면 쓰는 근무가 없어 하루 시트엔 쉬는 날만 남아요. 필요하면 근무 종류와 시간 › 근무 추가로 넣어요. " else "") +
-                "설정 › 근무 종류와 시간 › 안 쓰는 종류에서 언제든 다시 꺼낼 수 있어요.")
+                (if (a.empty) "접으면 쓰는 ${dayKindSubject(a.to)} 없어 하루 시트엔 쉬는 날만 남아요. 필요하면 ${dayKindsPlace(a.to)} › ${dayKindNoun(a.to)} 추가로 넣어요. " else "") +
+                "${dayKindsPlace(a.to)} › 안 쓰는 종류에서 언제든 다시 꺼낼 수 있어요.")
         },
         confirmButton = {
             TextButton(onClick = {
@@ -102,3 +103,12 @@ fun foldedHere(): Set<Long> {
     val calendar by c.calendars.active.collectAsStateWithLifecycle()
     return c.foldedTypes.state.collectAsStateWithLifecycle().value[calendar].orEmpty()
 }
+
+/** 1.36 PC 재검토 (현장은 제목만 '일정'이고 안은 '근무'): what a kind of day is called in [style]'s own words. */
+fun dayKindNoun(style: WorkStyle?): String = if (style == WorkStyle.FIELD) "일정" else "근무"
+
+/** "일정이" / "근무가". */
+fun dayKindSubject(style: WorkStyle?): String = if (style == WorkStyle.FIELD) "일정이" else "근무가"
+
+/** Where the kinds of day are set, as the settings row says it ("설정 › 일정 종류"). */
+fun dayKindsPlace(style: WorkStyle?): String = "설정 › " + style.words().types

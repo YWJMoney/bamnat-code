@@ -768,7 +768,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             com.bamnat.app.ui.shifts.TypeFoldAsk.asking.first { it == null }
             val fold = com.bamnat.app.ui.shifts.TypeFoldAsk.done.value
             if (fold != null) com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
-            val result = snackbar.showSnackbar(offer.message + (fold?.let { " · ${it.message}" } ?: ""), actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            // 1.36 PC 재검토 (되돌리기가 있는 두 줄 띠가 3초쯤이라 읽기 빠듯해요): 8 seconds, by its own clock.
+            val result = kotlinx.coroutines.withTimeoutOrNull(8_000) {
+                snackbar.showSnackbar(offer.message + (fold?.let { " · ${it.message}" } ?: ""), actionLabel = "되돌리기", duration = SnackbarDuration.Indefinite)
+            } ?: SnackbarResult.Dismissed
             if (result == SnackbarResult.ActionPerformed && fold != null) container.foldedTypes.unfold(fold.calendar, fold.ids)
             // Read once the snackbar is answered: the change sets it right after it is offered.
             val extras = styleExtras.value?.takeIf { it.entryId == offer.entry.id }
@@ -1158,17 +1161,29 @@ private fun AppNavHost(
                         // [CALS-02] Each calendar keeps its own kind of work: the main one in settings, an added one in its entry.
                         if (isMain) container.settingsRepository.update { it.copy(workStyle = style) } else container.calendars.setStyle(calendar, style)
                     }
+                    val schedule = container.calendars.repository(calendar)
+                    val patterns = schedule.patterns.first()
+                    val pay = container.calendars.pay(calendar).profile.value != null
+                    // 1.36 PC 재검토 (근무 주기를 정하는 화면 위에 '근무 순서는 그대로예요'): when the next step opens, only what changed.
+                    val opens = style != before && when (style) {
+                        WorkStyle.SHIFT -> patterns.none { it is WorkPattern.Rotation }
+                        WorkStyle.DAY -> patterns.none { it is WorkPattern.Weekly }
+                        WorkStyle.HOURLY -> !pay
+                        WorkStyle.BUSINESS -> true
+                        else -> false
+                    }
                     // [UNDO-01] Kept or cleared, the change is offered back (되돌리기) and listed for 7 days.
                     val entry = if (clear == null) null else container.recordsTrash.changeStyle(
                         calendar, style, clear,
-                        if (clear) "기록을 지우고 ${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 새로 시작해요" else style.changedMessage(),
+                        when {
+                            clear -> "기록을 지우고 ${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 새로 시작해요"
+                            opens -> "${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 바꿨어요"
+                            else -> style.changedMessage()
+                        },
                     )
-                    val schedule = container.calendars.repository(calendar)
                     val added = addStyleTypes(container, calendar, style)
                     // 1.36 PC 재검토: the old kind of work's 근무 종류 are offered once to be put away (never deleted).
                     com.bamnat.app.ui.shifts.TypeFoldAsk.after(container, calendar, before, style)
-                    val patterns = schedule.patterns.first()
-                    val pay = container.calendars.pay(calendar).profile.value != null
                     var opened: String? = null
                     fun go(route: String, pattern: String) {
                         opened = pattern
