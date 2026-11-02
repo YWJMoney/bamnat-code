@@ -1,5 +1,11 @@
 package com.bamnat.app.ui.recipe
 
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import com.bamnat.app.appContainer
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.runtime.getValue
@@ -79,6 +85,24 @@ internal fun ThemeTokens(r: Recipe, edit: ((Recipe) -> Recipe) -> Unit) {
  */
 @Composable
 internal fun ExampleCalendars(r: Recipe) {
+    // [BLU-07] PC 5차: a 부품 alone is the same for every kind of work, so it is shown once, drawn on the example screen it sits on.
+    com.bamnat.core.recipe.LookParts.partUnit(r)?.let { unit ->
+        val part = com.bamnat.core.recipe.LookParts.byId(unit)
+        Text("이 부품을 넣어 보면", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(part?.label ?: unit, style = MaterialTheme.typography.labelLarge)
+                val tab = part?.tab?.takeIf { it in setOf(com.bamnat.core.layout.TabOrder.CALENDAR, com.bamnat.core.layout.TabOrder.MEMOS, com.bamnat.core.layout.TabOrder.MONEY) }
+                    ?: com.bamnat.core.layout.TabOrder.CALENDAR
+                // PC 6차: in the reader's own kind of work (no 매출·투자 cards for 교대), and the part's area drawn larger.
+                val style = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle
+                PartCloseUp(unit.removePrefix(com.bamnat.core.recipe.LookParts.UNIT)) { MockPhone(r, style, tab, onTab = {}) }
+                r.pieces.forEach { p -> Text("• ${RecipeDescribe.line(p, amounts = false)}", style = MaterialTheme.typography.bodySmall) }
+                Text("모든 일 유형에 똑같이 들어가요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        return
+    }
     // 빌드 9 (가계부 탭만 올리는데 마치기에 '예시 달력: 교대 달력'): a recipe that changes nothing on the calendar is shown per kind
     // of work without calling it a calendar.
     val onCalendar = r.pieces.any { it.kind == PieceKind.SHIFT_LOOK || it.kind == PieceKind.CAL_THEME }
@@ -373,3 +397,47 @@ private fun PartsPreview(title: String, line: String, labels: Map<String, String
         }
     }
 }
+
+/**
+ * [BLU-07] PC 7차 사용성 제안 (부품 예시가 왼쪽이 잘리고 '오늘의 흐름'이 먼저 보여요): the example screen moved and grown so the 부품 [unit]
+ * sits in the middle of the frame. Where the example has no such part drawn (a 탭 판), it stays as a whole screen a little larger.
+ */
+@Composable
+private fun PartCloseUp(unit: String, content: @Composable () -> Unit) {
+    val spots = androidx.compose.runtime.remember { com.bamnat.app.ui.parts.PartSpots() }
+    var inner by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<androidx.compose.ui.geometry.Offset?>(null) }
+    // PC 9차 (넓은 부품인데도 확대돼 일·월·화만 보이고 왼쪽에 회색 띠) and its 사용성 제안 (폭은 그대로, 바꾼 곳에 테두리): the example
+    // keeps its own width; it moves up so the part is near the top, and the part's boxes are ringed.
+    var lift by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<Float?>(null) }
+    var rings by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<List<androidx.compose.ui.geometry.Rect>>(emptyList()) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.LaunchedEffect(unit) {
+        // A few frames: the example laid out and every part's place known, read once before it is moved.
+        repeat(3) { androidx.compose.runtime.withFrameNanos { } }
+        val origin = inner ?: return@LaunchedEffect
+        // PC 11차 (줄 점선 안에 글자 점선이 겹침): the part's own box ringed; its inner parts only when it has no box of its own.
+        val own = spots.spots.values.filter { (id, _) -> id == unit }
+        val boxes = own.ifEmpty { spots.spots.values.filter { (id, _) -> id.startsWith("$unit.") } }.map { it.second.translate(-origin) }
+        rings = boxes
+        lift = if (boxes.isEmpty()) 0f else (with(density) { 24.dp.toPx() } - boxes.minOf { it.top }).coerceAtMost(0f)
+    }
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(460.dp).clip(RoundedCornerShape(12.dp))) {
+        androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(660.dp)
+            .onRootAt { if (lift == null) inner = it }
+            .graphicsLayer { translationY = lift ?: 0f }
+            .drawWithContent {
+                drawContent()
+                val w = 2.dp.toPx()
+                rings.forEach { r ->
+                    drawRoundRect(androidx.compose.ui.graphics.Color(0xFFE91E63), androidx.compose.ui.geometry.Offset(r.left - w / 2, r.top - w / 2),
+                        androidx.compose.ui.geometry.Size(r.width + w, r.height + w), androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(w, pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(w * 3, w * 2))))
+                }
+            }) {
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.parts.LocalPartSpots provides spots) { content() }
+        }
+    }
+}
+
+private fun Modifier.onRootAt(onAt: (androidx.compose.ui.geometry.Offset) -> Unit): Modifier =
+    this.then(Modifier.onGloballyPositioned { onAt(it.positionInRoot()) })

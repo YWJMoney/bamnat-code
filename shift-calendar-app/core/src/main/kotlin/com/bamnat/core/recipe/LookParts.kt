@@ -25,6 +25,8 @@ object LookParts {
         data class Keys(override val kind: PieceKind, val keys: Set<String>? = null) : Take
         /** Some screens of 화면 색·배경 ([ScreenLooks] keys); [pay] also takes 급여 모양. */
         data class Screens(val screens: (String) -> Boolean, val pay: Boolean = false) : Take { override val kind = PieceKind.SCREEN_LOOK }
+        /** [BLU-05] 1.36 부품 꾸미기: the blueprint lines of the parts under [roots] (`cal` takes `cal`, `cal.head.title` …). */
+        data class Parts(val roots: Set<String>) : Take { override val kind = PieceKind.PARTS }
     }
 
     data class Part(val id: String, val tab: String, val label: String, val takes: List<Take>)
@@ -54,9 +56,53 @@ object LookParts {
         Part("app.tabs", TabOrder.SETTINGS, "아래 탭 순서", listOf(Take.Keys(PieceKind.LAYOUT, setOf("tabs")))),
         Part("app.corners", TabOrder.SETTINGS, "모서리", listOf(Take.Keys(PieceKind.PHOTO_LOOK, setOf("corners")))),
         Part("widget", WIDGET, "위젯", listOf(Take.Keys(PieceKind.WIDGET), Take.Keys(PieceKind.PHOTO_LOOK, setOf("widget")))),
+        // [BLU-05] 1.36 부품 꾸미기, one part per screen, so 바꾼 곳·부분만 담기·처음대로 see them like the rest.
+        Part("cal.parts", TabOrder.CALENDAR, "달력 부품", listOf(Take.Parts(setOf("cal")))),
+        Part("memo.parts", TabOrder.MEMOS, "메모 부품", listOf(Take.Parts(setOf("memo")))),
+        Part("money.parts", TabOrder.MONEY, "가계부 부품", listOf(Take.Parts(setOf("money")))),
+        Part("stats.parts", TabOrder.STATS, "급여 부품", listOf(Take.Parts(setOf("pay")))),
+        Part("app.parts", TabOrder.SETTINGS, "앱 전체 부품", listOf(Take.Parts(setOf("app")))),
+        Part("widget.parts", WIDGET, "위젯 부품", listOf(Take.Parts(setOf("widget")))),
     )
 
-    fun byId(id: String): Part? = ALL.firstOrNull { it.id == id }
+    /** Whether the blueprint part [id] sits under one of [roots]. */
+    fun under(id: String?, roots: Set<String>): Boolean = id != null && roots.any { id == it || id.startsWith("$it.") }
+
+    fun byId(id: String): Part? = ALL.firstOrNull { it.id == id } ?: id.removePrefix(UNIT).takeIf { id.startsWith(UNIT) && it in BlueprintParts.UNITS }?.let(::unit)
+
+    /** [BLU-07] "part:cal.head": one 부품 (a blueprint unit) as a part of its own, to keep, lay on and send alone. */
+    const val UNIT = "part:"
+
+    /** The screen a blueprint unit belongs to. */
+    fun tabOfUnit(unit: String): String = when (unit.substringBefore('.')) {
+        "cal" -> TabOrder.CALENDAR; "memo" -> TabOrder.MEMOS; "money" -> TabOrder.MONEY; "pay" -> TabOrder.STATS; "widget" -> WIDGET; else -> TabOrder.SETTINGS
+    }
+
+    fun unit(unit: String): Part = Part(UNIT + unit, tabOfUnit(unit), "부품 · " + (BlueprintParts.LABELS[unit] ?: unit), listOf(Take.Parts(setOf(unit))))
+
+    /** The 부품 units [r]'s blueprint touches, in the order of [BlueprintParts.UNITS]. */
+    fun units(r: Recipe): List<String> {
+        val ids = (r.pieces.firstOrNull { it.kind == PieceKind.PARTS }?.values?.get("parts") as? List<*>)
+            ?.mapNotNull { (it as? Map<*, *>)?.get("id") as? String }.orEmpty().map(BlueprintParts::unitOf).toSet()
+        return BlueprintParts.UNITS.filter { it in ids }
+    }
+
+    /**
+     * [BLU-07] The part [r] is when it is a 부품 work (장터 '부품' 구간, the server's scope `part`, recipes.js partUnitOf): its only piece is
+     * 부품 꾸미기 with every line in one unit ("part:cal.head"), or one tab's 판 (갈래 E TAB_VIEW: "cal.board", "memo.view", "money.board").
+     * Null for a theme or a tab's looks. The answer is a [byId] id.
+     */
+    fun partUnit(r: Recipe): String? {
+        val p = r.pieces.singleOrNull() ?: return null
+        if (p.kind == PieceKind.PARTS) return units(r).singleOrNull()?.let { UNIT + it }
+        // 갈래 E's piece, read by its name so this file stands before and after it.
+        if (p.kind.name != "TAB_VIEW") return null
+        val keys = p.values.filterValues { it != null }.keys
+        return VIEW_UNITS.entries.firstOrNull { (_, ks) -> keys.isNotEmpty() && ks.containsAll(keys) }?.key
+    }
+
+    /** 갈래 E's 판 parts by the TAB_VIEW keys each takes. */
+    private val VIEW_UNITS = mapOf("cal.board" to setOf("cal"), "memo.view" to setOf("memo", "memoBy", "memoSort"), "money.board" to setOf("money"))
 
     /** The values [t] takes from [values], or null when it takes nothing there. */
     fun take(t: Take, values: Map<String, Any?>): Map<String, Any?>? = when (t) {
@@ -67,11 +113,14 @@ object LookParts {
             val pay = (values["pay"] as? String)?.takeIf { t.pay && it.isNotEmpty() }
             listOfNotNull(screens?.let { "screens" to it }, pay?.let { "pay" to it }).toMap().takeIf { it.isNotEmpty() }
         }
+        is Take.Parts -> (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()?.filter { under(it["id"] as? String, t.roots) }
+            ?.takeIf { it.isNotEmpty() }?.let { mapOf("parts" to it) }
     }
 
     /** The parts [r] has, in the order of [TABS]. */
-    fun of(r: Recipe): List<Part> = ALL.filter { p -> p.takes.any { t -> r.pieces.firstOrNull { it.kind == t.kind }?.let { take(t, it.values) } != null } }
-        .sortedBy { TABS.indexOf(it.tab) }
+    fun of(r: Recipe): List<Part> = (ALL.filter { p -> p.takes.none { it is Take.Parts } && p.takes.any { t -> r.pieces.firstOrNull { it.kind == t.kind }?.let { take(t, it.values) } != null } } +
+        // [BLU-07] 부품 one by one ('부품 · 달력 머리'), so 담아 두기 and 입어 보기 can take one of them.
+        units(r).map(::unit)).sortedBy { TABS.indexOf(it.tab) }
 
     /** [r] with only the parts [ids] (its other pieces — 알람, 규칙 — are not looks and are left out too). */
     fun pick(r: Recipe, ids: Collection<String>): Recipe {
@@ -88,6 +137,14 @@ object LookParts {
     /** Two parts of one piece together ([ScreenLooks] screens joined, the rest key by key). */
     private fun merge(kind: PieceKind, a: Map<String, Any?>?, b: Map<String, Any?>): Map<String, Any?> {
         if (a == null) return b
+        if (kind == PieceKind.PARTS) {
+            // Line by line: [b]'s line for a part and state takes the place of [a]'s, the others stay.
+            fun lines(m: Map<String, Any?>) = (m["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>().orEmpty()
+            fun key(l: Map<String, Any?>) = listOf(l["id"], l["on"], l["when"])
+            val over = lines(b)
+            val keys = over.map(::key).toSet()
+            return mapOf("parts" to (lines(a).filterNot { key(it) in keys } + over).sortedWith(compareBy({ it["id"] as? String }, { it["on"] as? String ?: "" })))
+        }
         if (kind != PieceKind.SCREEN_LOOK) return a + b
         val screens = listOfNotNull(a["screens"] as? String, b["screens"] as? String).map { ScreenLooks.decode(it) }
             .fold(ScreenLooks()) { acc, s -> s.looks.entries.fold(acc) { x, (k, l) -> x.with(k, l) } }.encode().takeIf { it.isNotEmpty() }

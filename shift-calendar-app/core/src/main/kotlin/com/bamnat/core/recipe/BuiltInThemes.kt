@@ -14,6 +14,8 @@ object BuiltInThemes {
     val LOOK_KINDS: Set<PieceKind> = setOf(
         PieceKind.SCREEN_LOOK, PieceKind.CAL_VIEW, PieceKind.CAL_THEME, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK, PieceKind.WIDGET,
         PieceKind.PHOTO_LOOK, PieceKind.LAYOUT, PieceKind.CARDS,
+        // [BLU-01] 1.36 부품 꾸미기.
+        PieceKind.PARTS,
     )
 
     private class Family(

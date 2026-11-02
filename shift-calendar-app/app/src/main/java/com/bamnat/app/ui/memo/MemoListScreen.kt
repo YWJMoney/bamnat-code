@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.memo
 
+import com.bamnat.app.ui.parts.fillColor
+import com.bamnat.app.ui.parts.shape
+import com.bamnat.app.ui.parts.text
 import kotlinx.coroutines.Dispatchers
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
@@ -297,11 +300,13 @@ private class CardActions(
 @Composable
 private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash: () -> Unit, onArrange: () -> Unit = {}) {
     var sortMenu by remember { mutableStateOf(false) }
+    // [BLU-05] 1.36 부품 '메모장 머리'(memo.head).
+    val head = com.bamnat.app.ui.parts.partStyle("memo.head")
     Row(
-        Modifier.fillMaxWidth().padding(start = 20.dp, top = 8.dp, end = 4.dp),
+        Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(head.copy(pad = null, padX = null, padY = null), RoundedCornerShape(0.dp))).padding(start = 20.dp, top = 8.dp, end = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("메모", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+        com.bamnat.app.ui.parts.PartText("메모", head, MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
         if (state.tab == MemoTab.GENERAL) {
             Box {
                 IconButton(onClick = { sortMenu = true }) {
@@ -379,9 +384,12 @@ private fun SelectionBar(
 
 @Composable
 private fun FilterRow(state: MemoListState, vm: MemoListViewModel) = Column {
+    // [BLU-05] 1.36 부품 '꼬리표 줄'(memo.tags): the row's board and the gap between its chips.
+    val tags = com.bamnat.app.ui.parts.partStyle("memo.tags")
     Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(tags.copy(pad = null, padX = null, padY = null), RoundedCornerShape(0.dp)))
+            .horizontalScroll(rememberScrollState()).padding(horizontal = (tags.padH ?: 16).dp, vertical = (tags.padV ?: 6).dp),
+        horizontalArrangement = Arrangement.spacedBy((tags.gap ?: 8).dp),
     ) {
         if (state.tab == MemoTab.CALENDAR) {
             for (f in CalendarFilter.entries) {
@@ -566,28 +574,36 @@ private fun MemoCard(
     var menu by remember { mutableStateOf(false) }
     // [FREE-04] 메모장 모양: the card's colour, edge, corners and paper; a 포스트잇 leans a little, one way or the other by the memo.
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
-    val shape = look.corner?.let { RoundedCornerShape(it.dp) } ?: MaterialTheme.shapes.large
+    // [BLU-05] 1.36 부품 꾸미기: 메모 카드와 카드 속 제목, over the 메모장 모양.
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val cardPart = bp.style("memo.card")
+    val titlePart = bp.style("memo.card.title")
+    val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(cardPart, look.corner?.let { RoundedCornerShape(it.dp) } ?: MaterialTheme.shapes.large)
     val own = memoBackground(memo.colorIndex)
-    val cardColor = when (look.card) {
+    val cardColor = cardPart.fill?.let { Color(it.toInt()).copy(alpha = (cardPart.fillA ?: 100) / 100f) } ?: when (look.card) {
         "one" -> look.cardColor?.let { Color((it or 0xFF000000L).toInt()) } ?: own
         "none" -> Color.Transparent
         else -> if (look.layout == "sticky" && memo.colorIndex == 0) memoBackground(1 + (memo.id % 7).toInt().let { if (it < 0) -it else it }) else own
     }
     val edge = when {
         selected -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+        cardPart.line == "none" -> null
+        cardPart.line != null || cardPart.lineC != null || cardPart.lineW != null ->
+            BorderStroke((cardPart.lineW ?: 1.0).toFloat().dp, cardPart.lineC?.let { Color(it.toInt()).copy(alpha = (cardPart.lineA ?: 100) / 100f) } ?: MaterialTheme.colorScheme.outlineVariant)
         look.border == "none" || look.card == "none" -> null
         else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (look.border == "thin") 1f else 0.5f))
     }
-    val ink = if (cardColor.alpha > 0.5f && cardColor != Color.Unspecified && look.card == "one") com.bamnat.app.ui.components.contentColorOn(cardColor) else androidx.compose.ui.graphics.Color.Unspecified
+    val ink = if (cardPart.ink != null) Color(cardPart.ink!!.toInt()) else if (cardColor.alpha > 0.5f && cardColor != Color.Unspecified && look.card == "one") com.bamnat.app.ui.components.contentColorOn(cardColor) else androidx.compose.ui.graphics.Color.Unspecified
     Box(Modifier.then(if (look.layout == "sticky") Modifier.graphicsLayer { rotationZ = if (memo.id % 2 == 0L) -1.2f else 1.2f } else Modifier)) {
         Surface(
             shape = shape,
             color = cardColor,
             contentColor = if (ink != Color.Unspecified) ink else androidx.compose.material3.contentColorFor(cardColor).takeIf { it != Color.Unspecified } ?: MaterialTheme.colorScheme.onSurface,
-            shadowElevation = if (look.layout == "sticky") 3.dp else 0.dp,
+            shadowElevation = cardPart.shadow?.dp ?: if (look.layout == "sticky") 3.dp else 0.dp,
             border = edge,
             modifier = Modifier
                 .fillMaxWidth()
+                .then(com.bamnat.app.ui.parts.partSpotModifier("memo.card"))
                 .clip(shape)
                 .then(if (look.layout == "diary") Modifier.drawBehind {
                     val gap = 22.dp.toPx()
@@ -615,10 +631,11 @@ private fun MemoCard(
                             "l" -> MaterialTheme.typography.titleMedium
                             else -> MaterialTheme.typography.titleSmall
                         }.let { st -> memoFont(look.font)?.let { st.copy(fontFamily = it) } ?: st }
-                            .let { st -> when (look.bold) { true -> st.copy(fontWeight = FontWeight.Bold); false -> st.copy(fontWeight = FontWeight.Normal); else -> st } },
+                            .let { st -> when (look.bold) { true -> st.copy(fontWeight = FontWeight.Bold); false -> st.copy(fontWeight = FontWeight.Normal); else -> st } }
+                            .let { st -> com.bamnat.app.ui.parts.PartMods.text(titlePart, st) },
                         maxLines = if (look.layout == "compact") 1 else 2,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.title")),
                     )
                     if (memo.pinned) {
                         Icon(Icons.Filled.PushPin, "고정됨", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
@@ -702,12 +719,14 @@ private fun MemoContent(memo: Memo, query: String) {
     } else if (memo.title.isNotBlank() && memo.body.isNotBlank()) {
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.
         val cardLook = LocalMemoCardLook.current
-        Text(
+        // [BLU-05] 1.36 부품 '메모 내용'(memo.card.body) over the 메모장 모양.
+        val body = com.bamnat.app.ui.parts.partStyle("memo.card.body")
+        if (body.hide != true) Text(
             highlighted(com.bamnat.core.memo.MemoSearch.excerpt(memo.body, query), query),
-            style = memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium,
-            maxLines = cardLook.lines ?: 8,
+            style = body.text(memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium),
+            maxLines = body.lines ?: cardLook.lines ?: 8,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.padding(top = 4.dp),
+            modifier = Modifier.padding(top = 4.dp).then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.body")),
         )
     }
 }
@@ -725,14 +744,18 @@ private fun Footer(memo: Memo, showDate: Boolean) {
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         val pillColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
-        if (date != null) {
+        // [BLU-05] 1.36 부품 '메모 날짜'(memo.card.date).
+        val datePart = com.bamnat.app.ui.parts.partStyle("memo.card.date")
+        if (date != null && datePart.hide != true) {
+            val dateShape = datePart.shape(MaterialTheme.shapes.small)
             Row(
-                Modifier.clip(MaterialTheme.shapes.small).background(pillColor).padding(horizontal = 6.dp, vertical = 2.dp),
+                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.date")).clip(dateShape).background(datePart.fillColor ?: pillColor, dateShape).then(com.bamnat.app.ui.parts.PartMods.box(datePart.copy(fill = null, pad = null, padX = null, padY = null), dateShape))
+                    .padding(horizontal = (datePart.padH ?: 6).dp, vertical = (datePart.padV ?: 2).dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(Icons.Filled.Event, null, Modifier.size(12.dp))
+                Icon(Icons.Filled.Event, null, Modifier.size(12.dp), tint = datePart.ink?.let { Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current)
                 Spacer(Modifier.width(3.dp))
-                Text(Fmt.dayTitle(date), style = MaterialTheme.typography.labelSmall)
+                Text(Fmt.dayTitle(date), style = datePart.text(MaterialTheme.typography.labelSmall))
             }
         }
         // [SCHED-01] A memo that is a schedule says when it rings or notifies.

@@ -166,7 +166,11 @@ internal fun Conditioned(dark: Boolean, big: Boolean, cvd: Boolean, accent: Long
     val inner: @Composable () -> Unit = {
         CompositionLocalProvider(LocalDensity provides if (big) Density(base.density, base.fontScale * 1.5f) else base) { Box(m) { content() } }
     }
-    if (dark) com.bamnat.app.ui.theme.BamnatTheme(themeMode = ThemeMode.DARK, accent = accent, content = inner) else inner()
+    // B 11차 PC (어두운 화면 미리 보기에서 달력 제목·탭 막대 글자가 거의 안 보임): text that takes the colour around it (no card of its
+    // own) reads light on the dark ground, as under the app's own Surface.
+    if (dark) com.bamnat.app.ui.theme.BamnatTheme(themeMode = ThemeMode.DARK, accent = accent) {
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides androidx.compose.material3.MaterialTheme.colorScheme.onBackground, content = inner)
+    } else inner()
 }
 
 /** [STU-36] The chips that turn the conditions on, in a row under the example's own chips. */

@@ -35,7 +35,11 @@ class GestureAlternativesTest {
         "StudioScreen.kt" to "비교 단추를 누르고 있기 → 한 번 누르기(접근성 동작 ‘반반 비교 켜기·끄기’)로 고치기 전과 지금을 나란히",
         // PC 확인 Z7 1.36 비교 선 끌기.
         "TryOn.kt" to "반반 비교 선 끌기 → 선 손잡이의 접근성 동작 ‘선을 왼쪽으로·오른쪽으로’, 처음엔 가운데",
+        // [BLU-06] 1.36 부품 도구 −/+ 길게 누르기.
+        "FreeLookScreen.kt" to "−/+를 누르고 있어 빠르게 바꾸기 → 한 번 누르기(접근성 onClick 한 칸씩), 옆의 밀대",
         "TabBar.kt" to "메뉴를 길게 눌러 끌어 순서 바꾸기·다른 곳 눌러 저장 → 탭의 접근성 동작 ‘메뉴 순서 바꾸기·앞으로 옮기기·뒤로 옮기기·순서 저장’, 안내 줄 누르기·뒤로 가기로 저장, 설정 › 화면과 글자 › 첫 화면·메뉴 순서의 위·아래 버튼",
+        // [BLU-09] 1.36 미리 보기에서 누른 부품 열기.
+        "PartSpot.kt" to "미리 보기 위 부품 누르기 → 부품 도구의 부품 칩(묶음 제목 아래 모든 부품)과 상태 칩, 고정 줄의 상태 고르기",
     )
 
     private val gesture = Regex("""\.pointerInput\(|detect(Tap|Drag|HorizontalDrag|VerticalDrag|Transform)Gestures""")
