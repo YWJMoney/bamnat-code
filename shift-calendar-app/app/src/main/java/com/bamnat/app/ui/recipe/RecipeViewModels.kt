@@ -74,6 +74,12 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간.
     fun kind(k: String?) { _state.value = _state.value.copy(kind = if (k == "skin") RecipeClient.SCOPE_THEME else k); load() }
 
+    /** PC D12: a '다른 구간에 N개' chip: that half, in 새로 (where it was counted). */
+    fun jump(half: String) { _state.value = _state.value.copy(kind = half, tab = Tab.NEW); load() }
+
+    /** The half [kind] is in. */
+    fun halfNow(): String = halfOf(_state.value.kind)
+
     fun load(more: Boolean = false) {
         if (!enabled) { _state.value = _state.value.copy(error = "장터는 아직 열리지 않았어요"); return }
         val s = _state.value
@@ -83,8 +89,10 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
             _state.value = try {
                 val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
                 val got = page.items.filter { RecipeClient.fits(it, s.kind) }
-                val other = if (more) _state.value.elsewhere else if (s.query.isBlank()) emptyMap() else HALVES.filter { h -> h != halfOf(s.kind) }.mapNotNull { h ->
-                    runCatching { c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, 0, h) }.getOrNull()?.let { p ->
+                // PC D12 (사용성 낮): 다른 구간은 '새로'(모든 글)에서 세어요. 시작 레시피 칸처럼 좁은 칸에서 찾아도 길이 보이게, 지금 구간도
+                // 이 칸에 없으면 '새로'에 몇 개인지.
+                val other = if (more) _state.value.elsewhere else if (s.query.isBlank()) emptyMap() else HALVES.filter { h -> h != halfOf(s.kind) || (s.tab != Tab.NEW && got.isEmpty()) }.mapNotNull { h ->
+                    runCatching { c.recipeApi.list(if (s.allStyles) null else style, Tab.NEW.key, s.query, 0, h) }.getOrNull()?.let { p ->
                         val n = p.items.count { RecipeClient.fits(it, h) }
                         if (n == 0) null else h to (if (p.next != null) "${n}개 넘게" else "${n}개")
                     }

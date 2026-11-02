@@ -282,11 +282,14 @@ fun RecipeListScreen(
                         else -> "달력·가계부·메모 등 여러 화면을 한 번에 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 기능별 탭으로 바꿀 수 있어요"
                     }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // PC D10 (사용성 중): 찾은 말이 다른 구간에 있으면 칩으로 (테마 안에서만 찾아 '체크'가 안 나오던 것).
-                    if (state.query.isNotBlank() && state.elsewhere.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()),
+                    // PC D12 (사용성 낮): 찾는 동안 칩 자리를 비워 두어 아래 줄이 내려가지 않게.
+                    if (state.query.isNotBlank()) Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("다른 구간에도 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (state.elsewhere.isNotEmpty()) Text("다른 칸에도 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         state.elsewhere.forEach { (h, n) ->
-                            androidx.compose.material3.AssistChip(onClick = { vm.kind(h) }, label = { Text("${RecipeListViewModel.halfName(h)}에 $n") })
+                            val here = h == vm.halfNow()
+                            androidx.compose.material3.AssistChip(onClick = { vm.jump(h) },
+                                label = { Text(if (here) "‘새로’에 $n" else "${RecipeListViewModel.halfName(h)}에 $n") })
                         }
                     }
                     if (featured) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -317,7 +320,9 @@ fun RecipeListScreen(
                 // [R136-05] 1.36 (리뷰 R-11, 관리자 개발사항 d8quAdDH7r3QKNMp): an empty list could only be read again by closing the
                 // app; 다시 불러오기 asks again (a list the server just filled shows within its minute of cache).
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(if (state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA)
+                    // PC D12: 찾는 말이 있으면 '준비된 레시피가 없어요' 대신 찾은 것이 없다고 (다른 칸은 위 칩으로).
+                    Text(if (state.query.isNotBlank()) "‘${state.query.trim()}’로 찾은 것이 이 칸에는 없어요" + if (state.elsewhere.isNotEmpty()) ". 위 칩으로 다른 칸을 봐요" else ""
+                        else if (state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.OFFICIAL || state.tab == RecipeListViewModel.Tab.DATA)
                         "아직 준비된 레시피가 없어요" else "아직 레시피가 없어요. 내 설정을 처음으로 나눠 보세요",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     TextButton(onClick = { vm.load() }) { Text("다시 불러오기") }

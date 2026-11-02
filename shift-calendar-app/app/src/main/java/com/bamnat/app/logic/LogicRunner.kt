@@ -367,15 +367,18 @@ object LogicRunner {
         val f = facts(c)
         val now = Today.dateTime()
         val store = LogicStore(c.appContext)
-        val since = store.checked?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
-            ?.takeIf { !it.isAfter(now) && it.isAfter(now.minusDays(2)) } ?: now.minusMinutes(2)
+        val last = store.checked?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
+        // PC D12 (중): the clock went back (시계를 앞으로 옮겼다가 되돌림). What was marked done or missed in that later time has not
+        // happened yet: it is forgotten, so 07:00 runs when 07:00 comes again (전에는 '놓쳤어요'만 남고 돌지 않았어요).
+        if (last != null && last.isAfter(now)) store.forgetAfter(logic(c).rules.map { it.key }, now)
+        val since = last?.takeIf { !it.isAfter(now) && it.isAfter(now.minusDays(2)) } ?: now.minusMinutes(2)
         for (r in logic(c).rules) {
             if (store.isOff(r.key) || r.on !in TIMED) continue
             val (at, day) = nextTime(r, since.minusSeconds(1), f) ?: continue
             if (at.isAfter(now.plusMinutes(1))) continue
             if (store.firedAt(r.key) == at.toString()) continue
             store.fired(r.key, at.toString())
-            if (at.isBefore(now.minusMinutes(LATE_MINUTES))) { store.result(r.key, at, "휴대폰이 꺼져 있었거나 시계가 바뀌어 놓쳤어요"); continue }
+            if (at.isBefore(now.minusMinutes(LATE_MINUTES))) { store.result(r.key, at, LogicStore.MISSED); continue }
             val scope = f.scope(day)
             if (r.cond.isNotEmpty() && com.bamnat.core.formula.Formula.eval(r.cond, scope)?.truthy != true) {
                 store.result(r.key, at, "조건이 맞지 않아 건너뛰었어요"); continue
@@ -389,6 +392,14 @@ object LogicRunner {
         }
         store.checked = now.toString()
         schedule(c)
+    }
+
+    /** PC D12 (사용성 중): a missed rule's '지금 한 번 하기': what it does, now, for today (its 조건 asked by the person, not checked). */
+    suspend fun runNow(c: AppContainer, r: LogicRule) {
+        val f = facts(c)
+        val day = Today.date()
+        val ok = runCatching { run(c, r.act, day, f.scope(day), r.name) }
+        LogicStore(c.appContext).result(r.key, Today.dateTime(), if (ok.isSuccess) "놓친 것을 지금 했어요" else "하다가 멈췄어요")
     }
 
     private val TIMED = setOf(RuleTrigger.DAILY, RuleTrigger.START, RuleTrigger.END)
@@ -500,6 +511,26 @@ class LogicStore(context: Context) {
         set(v) { p.edit().putString("scheduled", v).apply() }
 
     fun firedAt(key: String): String? = p.getString("fired.$key", null)
+
+    /** PC D12: the clock went back: marks (and their 지난번 lines) from after [now] are dropped, as not happened yet. */
+    fun forgetAfter(keys: List<String>, now: LocalDateTime) {
+        val e = p.edit()
+        keys.forEach { k ->
+            val at = firedAt(k)?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() }
+            if (at != null && at.isAfter(now)) e.remove("fired.$k").remove("result.$k")
+        }
+        e.apply()
+    }
+
+    /** PC D12: the last line said the time was missed (phone off, clock moved), so the line offers 지금 한 번 하기. */
+    fun missed(key: String): Boolean = lastResult(key)?.endsWith(MISSED) == true
+
+    /** PC D12 (사용성 낮): rules that came from someone else (장터·보관함), marked small on their line. */
+    fun markGot(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        p.edit().putStringSet("got", p.getStringSet("got", emptySet()).orEmpty() + keys).apply()
+    }
+    fun got(key: String): Boolean = key in p.getStringSet("got", emptySet()).orEmpty()
     fun fired(key: String, at: String) = p.edit().putString("fired.$key", at).apply()
 
     var undo: String?
@@ -553,6 +584,7 @@ class LogicStore(context: Context) {
     }.getOrDefault(emptyList())
 
     companion object {
+        const val MISSED = "휴대폰이 꺼져 있었거나 시계가 바뀌어 놓쳤어요"
         const val WRITTEN_MAX = 60
     }
 

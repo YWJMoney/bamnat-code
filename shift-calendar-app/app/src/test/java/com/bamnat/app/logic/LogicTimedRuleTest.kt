@@ -67,6 +67,22 @@ class LogicTimedRuleTest {
         assertEquals(day.plusDays(1).atTime(7, 0), LogicRunner.nextTime(daily, Today.dateTime(), LogicRunner.facts(c))?.first)
     }
 
+    @Test fun clockMovedBackRunsWhenTheTimeComesAgain() = runBlocking {
+        // PC D12 (중): 시계를 앞으로 옮겨 '놓쳤어요'가 된 07:00 규칙이, 시계를 06:59로 되돌린 뒤 07:00이 와도 돌지 않았어요.
+        val daily = LogicRule("아침", RuleTrigger.DAILY, at = "07:00", act = LogicAct(LogicVerb.NOTIFY, "아침"))
+        c.settingsRepository.update { it.copy(logic = Logic.encode(Logic(rules = listOf(daily)))) }
+        val d = day.plusDays(1)
+        at(d.atTime(6, 0)); LogicRunner.rulesChanged(c); settle()
+        val store = LogicStore(app)
+        at(d.atTime(10, 0)); LogicRunner.fire(c)
+        assertTrue(store.missed(daily.key))
+        at(d.atTime(6, 50)); LogicRunner.fire(c)
+        assertEquals("되돌린 시계 뒤의 '놓쳤어요'는 지워요", null, store.lastResult(daily.key))
+        at(d.atTime(7, 0, 30)); LogicRunner.fire(c)
+        assertEquals(d.atTime(7, 0).toString(), store.firedAt(daily.key))
+        assertTrue(store.lastResult(daily.key)!!.startsWith("${d.monthValue}/${d.dayOfMonth} 07:00 · 했어요"))
+    }
+
     @Test fun nextIsTodayAtSixAndRegisteredThen() = runBlocking {
         val facts = LogicRunner.facts(c)
         assertEquals(day.atTime(18, 0), LogicRunner.nextTime(rule, Today.dateTime(), facts)?.first)

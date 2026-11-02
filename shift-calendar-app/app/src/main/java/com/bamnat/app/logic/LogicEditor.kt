@@ -554,11 +554,16 @@ fun LogicEditor(
         logic.rules.forEachIndexed { i, r ->
             val on = remember(bump, r.key) { !store.isOff(r.key) }
             val came = remember(bump, r.key) { store.cameOff(r.key) }
+            val missed = remember(bump, r.key) { phone && store.missed(r.key) }
+            val got = remember(bump, r.key) { store.got(r.key) }
             // PC 1차 확인 (사용성 제안 높): when it comes next and what happened last time, so a rule that did not run says why.
             val note = remember(bump, r, facts) {
                 // PC D7: a received rule kept once because this one does the same.
                 val same = store.sameRule(r.key)?.let { "받은 ‘$it’${com.bamnat.app.ui.Fmt.wa(it)} 같음" }
-                if (!phone) same else listOfNotNull(
+                // PC D12 (사용성 낮): 받은 규칙은 작게 표시해요.
+                val from = "받은 규칙".takeIf { got }
+                if (!phone) listOfNotNull(from, same).joinToString(" · ").ifEmpty { null } else listOfNotNull(
+                    from,
                     same,
                     // PC D8 (사용성 낮): 받은 쓰기 규칙이 왜 꺼져 있는지.
                     if (!on) (if (store.cameOff(r.key)) "받은 규칙이라 꺼진 채로 들어왔어요" else "꺼져 있어요") else nextLine(r, facts),
@@ -571,7 +576,12 @@ fun LogicEditor(
             LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}: ${r.say()}", note,
                 if (phone) on else null, { v -> if (v && came) askOn = r else { store.setOff(r.key, !v); bump++; LogicRunner.schedule(c) } },
                 onEdit = { editRule = i }.takeIf { !readOnly }, onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
-                action = ("켜기" to { askOn = r }).takeIf { phone && !on && came })
+                action = when {
+                    phone && !on && came -> "켜기" to { askOn = r }
+                    // PC D12 (사용성 중): 놓친 규칙은 그 자리에서 한 번 해요.
+                    phone && on && missed -> "지금 한 번 하기" to { c.appScope.launch { LogicRunner.runNow(c, r); bump++ } }
+                    else -> null
+                })
             // [RUL-06] 이 조건을 쓰는 곳: the same 조건 also decorates days.
             if (r.cond.isNotEmpty() && usedInParts(r.cond)) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("이 조건은 조건부 꾸미기에도 쓰여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

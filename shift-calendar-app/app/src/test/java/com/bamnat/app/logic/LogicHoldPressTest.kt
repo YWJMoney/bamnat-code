@@ -82,6 +82,14 @@ class LogicHoldPressTest {
         assertEquals("‘아침’ 체크 다시 비우기", LogicAct(LogicVerb.CHECK_RESET, "아침").say())
     }
 
+    @Test fun receivedRulesAreMarked() {
+        // PC D12 (사용성 낮): 받은 규칙은 작게 표시.
+        val store = LogicStore(app)
+        store.markGot(listOf("r1"))
+        assertTrue(store.got("r1"))
+        assertFalse(store.got("r2"))
+    }
+
     @Test fun idsKeepAndRoundTrip() {
         val l = Logic.decode(c.settingsRepository.current.logic)
         assertEquals(listOf("deco1", "deco2"), l.buttons.map { it.id })
