@@ -110,6 +110,8 @@ class RecipeMakeViewModel(
     val ownCode: String? get() = upCode
     /** [BLU-07] PC 8차: once sent, the next 올리기 from this screen is that code's 새 판 (or the same 판 moved to 나만). */
     private var upCode: String? = code
+    /** PC 13차: 따로 올리기 chosen over a 새 판 of my recipe with the same name. */
+    private var apartFromOwn = false
 
     data class State(
         val step: Int = 1,
@@ -131,6 +133,8 @@ class RecipeMakeViewModel(
         val keptNote: String? = null,
         /** [BLU-07] PC 9차: where the 판 was before 나만 보기로 바꾸기, so 다시 올리기 puts it back there. */
         val sharedScope: String? = null,
+        /** [BLU-07] PC 13차: my own recipe on the plaza with the same name (its code), offered as the one to send a 새 판 of. */
+        val ownSame: String? = null,
         val draftId: Long = 0,
         /** [RCX-11] Recipes to tap into a 묶음 without typing codes: those put on this phone and those I put on the plaza (code to title). */
         val bundleChoices: List<Pair<String, String>> = emptyList(),
@@ -360,6 +364,12 @@ class RecipeMakeViewModel(
         })
     }
 
+    /** PC 13차: this goes up as the 새 판 of my recipe [ownCode] with the same name, or ([ownCode] null) as a recipe of its own. */
+    fun sendAs(ownCode: String?) {
+        if (ownCode != null) upCode = ownCode else apartFromOwn = true
+        publish()
+    }
+
     /** [BLU-07] PC 8차 (이미 올린 판을 다시 열면 끝 화면만): back to 마치기 to send a 새 판 of the same code. */
     fun again() { _state.value = _state.value.copy(sent = null, step = 5, error = null, errorCode = null, keptNote = null) }
 
@@ -374,9 +384,20 @@ class RecipeMakeViewModel(
     fun publish() {
         val s = _state.value
         if (!RecipeLint.ready(lint)) return
-        _state.value = s.copy(sending = true, error = null, errorCode = null, keptNote = null)
+        _state.value = s.copy(sending = true, error = null, errorCode = null, keptNote = null, ownSame = null)
         viewModelScope.launch {
             try {
+                // PC 13차 사용성 제안 (같은 폰이 올린 작품과 같은 이름이면 장터에 둘이 생김): asked first, a 새 판 of it or apart.
+                if (upCode == null && s.scope == "public" && !apartFromOwn) {
+                    val name = s.recipe.title.trim().lowercase().replace(Regex("\\s+"), " ")
+                    val same = runCatching { c.recipeApi.mine(c.companyStore.device).items.filter { it.second.second == "public" }.map { it.first }
+                        .firstOrNull { it.title.trim().lowercase().replace(Regex("\\s+"), " ") == name } }.getOrNull()
+                    if (same != null) {
+                        _state.value = _state.value.copy(sending = false, error = "이미 같은 이름으로 올린 작품이 있어요 (코드 ${same.code})",
+                            errorCode = "own_same", ownSame = same.code)
+                        return@launch
+                    }
+                }
                 val shown = if (s.bare) com.bamnat.core.recipe.LookParts.withoutPhotos(s.recipe) else s.recipe
                 val r = RecipeCodec.read(RecipeCodec.write(withServerPictures(shown)))
                 val up = upCode
@@ -399,7 +420,9 @@ class RecipeMakeViewModel(
             } catch (e: RecipeException) {
                 _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code), errorCode = e.code)
             } catch (e: Exception) {
-                _state.value = _state.value.copy(sending = false, error = RecipeClient.problem(e))
+                // PC 13차 (이름 겹침 거절 칸에 이름 바꾸기·나만 단추가 없음): the server's refusal code too, so the box offers what helps.
+                _state.value = _state.value.copy(sending = false, error = RecipeClient.problem(e),
+                    errorCode = (e as? com.bamnat.app.company.CompanyException)?.code ?: "network")
             }
         }
     }
@@ -812,11 +835,15 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
                 Text(e, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onErrorContainer,
                     modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Assertive })
                 // PC (마을 빌드: '이름이 거의 같아요' 거절 뒤 할 일이 안 보임): the name refused, the name step one tap away.
-                if (s.errorCode == "name_like") {
+                if (s.errorCode == "name_like" || s.errorCode == "own_same") {
                     Button(onClick = { vm.go(3) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이름 바꾸기") }
                 }
+                s.ownSame?.let { code ->
+                    OutlinedButton(onClick = { vm.sendAs(code) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("그 작품의 새 판으로 올리기") }
+                    OutlinedButton(onClick = { vm.sendAs(null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("같은 이름으로 따로 올리기") }
+                }
                 // A refusal 나만 can get past offers it; one the server cannot take at all (a 꾸밈 it does not know, no network) keeps it here.
-                if (s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network")) {
+                if (s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network", "offline", "own_same")) {
                     OutlinedButton(onClick = { vm.scope("private"); vm.publish() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("나만 보기로 바꿔 저장") }
                 }
                 OutlinedButton(onClick = vm::keepHere, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {

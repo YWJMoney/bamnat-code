@@ -405,6 +405,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             } + (if (s.extras.isNotEmpty()) " · 기능 ${s.extras.size}개" else "") + (s.sources.values.distinct().takeIf { it.isNotEmpty() }?.let { v -> " · " + v.joinToString("·") { "‘$it’" } + " 조각 사용" } ?: ""),
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             if (diff > 0 || s.extras.isNotEmpty()) Text("보기 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            // PC 13차 사용성 제안 (얹은 뒤 '…조각 사용'만 있고 빼는 곳이 안 보임): the last one laid on, taken off right here.
+                            s.layered.lastOrNull()?.let { k -> TextButton(onClick = { vm.unlayer(k) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("얹은 것 빼기") } }
                             if (plainStart && !(area == Area.ALL && tool == Tool.SEED)) TextButton(onClick = { openSeed() }) { Text("한 색 열기") }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
