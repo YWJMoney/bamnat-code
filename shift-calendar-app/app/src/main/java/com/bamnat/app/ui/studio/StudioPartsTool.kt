@@ -78,22 +78,32 @@ internal fun PartsTool(group: String, parts: String, onChange: (String) -> Unit)
     Text("${BlueprintParts.LABELS[id] ?: id} 꾸미기" + (on?.let { " · ${STATE_WORDS[it]}" } ?: ""), style = MaterialTheme.typography.titleSmall,
         modifier = Modifier.semantics { heading() })
     val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on } ?: emptyMap()
-    fun set(k: String, v: Any?) {
-        val next = (line + ("id" to id) + (on?.let { mapOf("on" to it) } ?: emptyMap()) + (k to v)).filterValues { it != null }
+    fun set(vararg kv: Pair<String, Any?>) {
+        val next = (line + ("id" to id) + (on?.let { mapOf("on" to it) } ?: emptyMap()) + kv).filterValues { it != null }
         val others = bp.lines.filterNot { it["id"] == id && it["on"] == on }
         val all = if (next.keys.all { it == "id" || it == "on" }) others else others + next
         val text = runCatching { Blueprint(Blueprint.clean(all)).encode() }.getOrNull() ?: return
         onChange(if (all.isEmpty()) "" else text)
     }
+    fun set(k: String, v: Any?) = set(k to v)
     fun num(k: String): Float? = (line[k] as? Number)?.toFloat()
     fun col(k: String): Long? = line[k] as? Long
+    // PC 확인 46b9004b 사용성 제안: the 막대 keep one 진하기 for "근무 색 그대로" and one for "한 가지 색으로", so going back and forth
+    // brings each one back instead of starting again from 100%.
+    var otherA by remember(id, on) { mutableStateOf<Long?>(null) }
 
     // PC 확인 c9a89b20: a swipe along the chips caught the 둥글기 slider just under them; the groups keep more room between them.
     Column(verticalArrangement = Arrangement.spacedBy(22.dp), modifier = Modifier.padding(top = 4.dp)) {
         Group("채우기") {
             // PC 확인 e262702a 사용성 제안: a 막대 given one colour can go back to each shift's own at one tap.
-            if (id == "cal.line.bar") FilterChip(selected = col("fill") == null, onClick = { set("fill", null) }, label = { Text("근무 색 그대로") })
-            ColorPick(if (id == "cal.line.bar") "한 가지 색으로" else "색", col("fill")) { set("fill", it) }
+            if (id == "cal.line.bar") FilterChip(selected = col("fill") == null, onClick = {
+                if (col("fill") != null) { val was = (line["fillA"] as? Number)?.toLong(); set("fill" to null, "fillA" to otherA); otherA = was }
+            }, label = { Text("근무 색 그대로") })
+            ColorPick(if (id == "cal.line.bar") "한 가지 색으로" else "색", col("fill")) {
+                if (id == "cal.line.bar" && col("fill") == null && it != null) {
+                    val was = (line["fillA"] as? Number)?.toLong(); set("fill" to it, "fillA" to otherA); otherA = was
+                } else set("fill" to it)
+            }
             if (col("fill") != null) LabeledSlider("진하기", num("fillA") ?: 100f, 0f..100f, "%") { set("fillA", it.toLong()) }
             // PC 확인 fc2db3b0 사용성 제안: one colour for every 막대 hid which shift is which; with no 색 the 막대 keep their shift's colour and
             // this sets how strong.
