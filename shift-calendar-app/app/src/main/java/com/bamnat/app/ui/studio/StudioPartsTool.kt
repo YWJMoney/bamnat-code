@@ -50,9 +50,21 @@ internal fun PartsTool(group: String, parts: String, onChange: (String) -> Unit)
     var on by rememberSaveable(id) { mutableStateOf<String?>(null) }
     Text("화면을 부품으로 나눠 하나씩 꾸며요. 비워 둔 칸은 지금 모습 그대로예요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // PC 확인 efc52400 사용성 제안: 달력 has some 30 parts and 타임라인 근무 막대 sat at the very bottom; a row of 묶음 (달력 머리, 날짜 칸,
+    // 타임라인 판 …) on top narrows the chips to one family.
+    val families = remember(group) { ids.filter { it != group && it.count { c -> c == '.' } == 1 && BlueprintParts.CHILDREN[it].orEmpty().isNotEmpty() } }
+    var family by rememberSaveable(group) { mutableStateOf<String?>(null) }
+    if (families.size >= 3) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = family == null, onClick = { family = null }, label = { Text("모두") })
+        families.forEach { f ->
+            FilterChip(selected = family == f, onClick = { family = f; if (!(id == f || id.startsWith("$f."))) id = f },
+                label = { Text(BlueprintParts.LABELS[f] ?: f) })
+        }
+    }
+    val shown = family?.let { f -> ids.filter { it == f || it.startsWith("$f.") } } ?: ids
     // 어느 부품
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        ids.forEach { p ->
+        shown.forEach { p ->
             val touched = bp.touches(p) && bp.lines.any { it["id"] == p }
             FilterChip(selected = p == id, onClick = { id = p },
                 label = { Text((if (touched) "● " else "") + (BlueprintParts.LABELS[p] ?: p)) },

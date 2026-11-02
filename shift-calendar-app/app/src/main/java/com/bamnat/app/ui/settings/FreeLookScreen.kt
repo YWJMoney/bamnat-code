@@ -596,7 +596,8 @@ internal fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPoi
     var v by remember(value) { mutableFloatStateOf(value) }
     Column {
         Text("$label ${v.toInt()}$unit", style = MaterialTheme.typography.bodyMedium)
-        Slider(v, { v = it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
+        // PC 확인 efc52400 사용성 제안: a "%" slider was hard to stop on a round number (45·52·58%); it now settles on steps of 5.
+        Slider(v, { v = if (unit == "%") (Math.round(it / 5f) * 5f).coerceIn(range) else it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
     }
 }
 
