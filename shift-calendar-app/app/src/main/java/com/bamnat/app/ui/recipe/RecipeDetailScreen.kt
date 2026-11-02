@@ -280,7 +280,19 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         title = { Text("이렇게 바뀌어요") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                s.pieces.filter { it.on && it.fits }.forEach { p ->
+                // PC 확인 보안 9차 (단추는 '고른 모양 2개'인데 창은 '달력 모양' 한 줄): the looks ticked in 입어 보기 are listed part by part,
+                // as many as the button said, instead of the whole look piece they come from (which also told changes not ticked).
+                val parts = s.lookParts?.mapNotNull { com.bamnat.core.recipe.LookParts.byId(it) }?.sortedBy { com.bamnat.core.recipe.LookParts.ALL.indexOf(it) }
+                if (!parts.isNullOrEmpty()) {
+                    Text("모양 ${parts.size}개", style = MaterialTheme.typography.labelLarge)
+                    // One line a screen, as 입어 보기 shows them by tab ('위젯 · 위젯' said once).
+                    parts.groupBy { it.tab }.forEach { (tab, ps) ->
+                        val name = com.bamnat.core.recipe.LookParts.tabLabel(tab)
+                        val labels = ps.map { it.label }
+                        Text("• " + if (labels == listOf(name)) name else name + ": " + labels.joinToString(", "), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                s.pieces.filter { it.on && it.fits && (parts == null || it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS) }.forEach { p ->
                     Text(p.kind.label, style = MaterialTheme.typography.labelLarge)
                     p.lines.ifEmpty { listOf(RecipePieces.Change("바뀌는 것이 없어요", true)) }.forEach { l ->
                         Text("• " + l.text, style = MaterialTheme.typography.bodySmall,

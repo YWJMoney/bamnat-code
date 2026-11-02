@@ -353,6 +353,33 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(gone("글자 주→주", exact = false))
     }
 
+    /** PC 확인 보안 9차 (단추는 '고른 모양 2개'인데 창은 '달력 모양' 한 줄): the question lists the parts ticked, as many as the button. */
+    @Test fun theConfirmListsThePartsTicked() = shoot("1343c_rcp_detail_confirm_parts", PHONE) {
+        // A whole theme (its cells, pattern, colours …), as the studio makes them; no starter has more than one part.
+        val theme = com.bamnat.core.recipe.BuiltInThemes.of(WorkStyle.SHIFT).first()
+        val api = object : Starters() {
+            override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc =
+                if (code != "THEM2345") super.show(code, device, version)
+                else RecipeDoc(item(0).copy(code = code, title = theme.title), RecipeCodec.hash(theme), RecipeCodec.write(theme), "public", mine = false)
+        }.also { c.recipeApi = it }
+        style(WorkStyle.SHIFT)
+        val parts = com.bamnat.core.recipe.LookParts.of(theme)
+        assertTrue(parts.size >= 2)
+        val model = RecipeDetailViewModel(c, "THEM2345")
+        content { RecipeDetailScreen(model, onBack = {}, onRemake = {}) }
+        settle()
+        tapText("입어 보고 고르기", exact = true)
+        settle()
+        tapText("고른 모양 ${parts.size}개 넣기", exact = true)
+        settle()
+        assertTrue(appears("이렇게 바뀌어요", exact = true))
+        assertTrue("단추와 같은 수", appears("모양 ${parts.size}개", exact = true))
+        assertTrue(appears("• 달력: 칸 디자인, ", exact = false))
+        parts.forEach { p -> assertTrue(p.label, appears(p.label, exact = false)) }
+        assertTrue("탭 이름만 같은 부분은 한 번", appears("• 위젯", exact = true) || parts.none { it.tab == com.bamnat.core.recipe.LookParts.WIDGET })
+        assertTrue(api.applied == 0)
+    }
+
     @Test fun makingStartsWithWhatToShare() = shoot("1344_rcp_make_step1", PHONE) {
         starters()
         style(WorkStyle.SHIFT)
