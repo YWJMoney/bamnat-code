@@ -606,7 +606,9 @@ private fun DayCell(
     val ownTint = invest?.tint(date, cal.sunday, cal.saturday, dark) ?: shiftColor
         ?.takeIf { look.washAlpha(dark) > 0f }?.copy(alpha = look.washAlpha(dark))
         ?: cal.income.takeIf { heat > 0f }?.copy(alpha = heat * if (dark) 0.30f else 0.20f)
+    // PC 확인 C8 1.36: on a 꾸밈 사진, a cell with no colour of its own (쉬는 날) gets a pale ground so it reads as a cell.
     val tint = cellTint(cellLook, shiftColor, ownTint, invest?.tint(date, cal.sunday, cal.saturday, dark))
+        ?: com.bamnat.app.ui.decor.LocalOnPhoto.current?.copy(alpha = 0.6f)
     val jobs = money?.jobs ?: 0
     // [VIS-01] What the cell shows, read out in the same order.
     val description = buildString {

@@ -33,12 +33,16 @@ object DecorPhotos {
 
     fun of(id: String): ImageBitmap? = shown[id]
 
+    /** How light photo [id] is (0 dark … 1 light), once it is in; the screen's words take their ink from it (PC 확인 C8). */
+    private val light = mutableStateMapOf<String, Float>()
+    fun lightOf(id: String): Float? = light[id]
+
     suspend fun load(c: AppContainer, ids: Collection<String>) {
         for (id in ids) {
             if (shown.containsKey(id)) continue
             var bmp = LookImages.bitmap(c.appContext, id)
             if (bmp == null && ask(id) && LookImages.fetch(c, id)) bmp = LookImages.bitmap(c.appContext, id)
-            bmp?.let { if (shown.size >= 32) shown.clear(); shown[id] = it.asImageBitmap() }
+            bmp?.let { if (shown.size >= 32) { shown.clear(); light.clear() }; light[id] = LookImages.lightness(it); shown[id] = it.asImageBitmap() }
         }
     }
 
@@ -82,4 +86,10 @@ object DecorTap {
  * [LAY-11] What a tapped decoration does on the screens that let it ([MainActivity] gives the phone's own); null in 스튜디오·입어 보기, where
  * a tap picks the part to change instead.
  */
+/**
+ * PC 확인 C8 1.36 (사진 위 '휴' 칸의 회색 테두리가 흐려요): the page's colour while a 꾸밈 사진 fills the screen under the words, so a cell with
+ * no colour of its own gets a pale ground of it; null on a screen without one.
+ */
+val LocalOnPhoto = androidx.compose.runtime.compositionLocalOf<androidx.compose.ui.graphics.Color?> { null }
+
 val LocalDecorTap = staticCompositionLocalOf<((String, java.time.LocalDate?) -> Unit)?> { null }

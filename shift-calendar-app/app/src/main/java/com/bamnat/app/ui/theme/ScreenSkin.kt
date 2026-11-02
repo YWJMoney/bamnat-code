@@ -87,17 +87,24 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val decorUnder = under.isNotEmpty()
     // PC 확인 C7 1.36 (진한 사진 위에서 '2026년'·요일 줄·'모든 조'가 거의 안 읽혀요): a photo filling the screen under the words gets a
     // veil of the page's colour, as a 화면 배경 사진 does, so the screen's own ink reads on it.
-    val photoUnder = under.any { it.kind == com.bamnat.core.recipe.DecorKind.PHOTO && it.full }
-    val skin = if (plain) base else skinned(base, look, photo?.second)
+    // PC 확인 C8 1.36 (55%면 진한 사진이 파스텔처럼 옅어져요): a lighter veil, and the words take their ink from how light the photo is,
+    // as with a 화면 배경 사진 (light words on a dark photo), so the photo keeps its colour and the words still read.
+    val fullPhoto = under.firstOrNull { it.kind == com.bamnat.core.recipe.DecorKind.PHOTO && it.full }
+    val photoUnder = fullPhoto != null
+    val decorLight = if (photo == null) fullPhoto?.let { com.bamnat.app.ui.decor.DecorPhotos.lightOf(it.glyph) } else null
+    val worn = if (photoUnder) look.copy(dim = look.dim ?: PHOTO_VEIL) else look
+    val light = photo?.second ?: decorLight
+    val inked = !plain || decorLight != null
+    val skin = if (!inked) base else skinned(base, worn, light)
     val scheme = if (decorUnder) skin.copy(background = Color.Transparent, surface = Color.Transparent) else skin
-    val dark = Palette.luminance((if (plain) base.background else groundOf(base, look, photo?.second)).argb()) < if (plain) 0.5 else 0.3
+    val dark = Palette.luminance((if (!inked) base.background else groundOf(base, worn, light)).argb()) < if (!inked) 0.5 else 0.3
     // 1.35 [J135-11] The status bar's clock and icons stand on the screen's own ground (dark icons on a dark theme were unreadable).
     if (bars) BarIcons(light = !dark)
     // 1.35 [J135-12] The warning cards and the money colours that do not follow the scheme take the light or dark set of the ground,
     // so a 허용 on an alarm warning card reads on a dark theme too.
     val cal = LocalCalendarColors.current
     val darkened = base !== outer
-    val fitted = if (plain && !darkened) cal else (if (dark) DarkCalendarColors else LightCalendarColors).let { tone ->
+    val fitted = if (!inked && !darkened) cal else (if (dark) DarkCalendarColors else LightCalendarColors).let { tone ->
         cal.copy(warning = tone.warning, warningContainer = tone.warningContainer, income = tone.income, expense = tone.expense,
             alarmOff = tone.alarmOff, changed = tone.changed, holidayWork = tone.holidayWork)
     }
@@ -112,10 +119,12 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             }
             // [LAY-03] 1.36 꾸밈 층 on the screen's background: under its words, then (the maker's choice) over them.
             ScreenDecor(key, over = false)
-            if (photoUnder) Box(Modifier.matchParentSize().background((look.bg?.let { Color(it) } ?: base.background).copy(alpha = PHOTO_VEIL)))
+            val page = look.bg?.let { Color(it) } ?: base.background
+            if (photoUnder) Box(Modifier.matchParentSize().background(page.copy(alpha = (worn.dim ?: PHOTO_VEIL).coerceIn(20, 80) / 100f)))
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
-                androidx.compose.material3.LocalContentColor provides if (plain && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
+                com.bamnat.app.ui.decor.LocalOnPhoto provides if (photoUnder) lerp(page, if (dark) Color.Black else Color.White, 0.2f) else null,
+                androidx.compose.material3.LocalContentColor provides if (!inked && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
             }
             ScreenDecor(key, over = true)
@@ -123,8 +132,11 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     }
 }
 
-/** PC 확인 C7 1.36: how much of the page lies over a 꾸밈 사진 that fills the screen under the words (the words keep the page's ink). */
-const val PHOTO_VEIL = 0.55f
+/**
+ * PC 확인 C7·C8 1.36: how much of the page (in %) lies over a 꾸밈 사진 that fills the screen under the words, unless the screen has its own
+ * 흐리게; the words take their ink from the photo and this veil.
+ */
+const val PHOTO_VEIL = 40
 
 /** [J135-11] The status and navigation bar icons dark ([light] ground) or light, on the window that draws this (a full-screen dialog's own). */
 @Composable

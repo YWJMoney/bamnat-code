@@ -140,6 +140,9 @@ private fun Color.times(a: Float) = copy(alpha = (alpha * a).coerceIn(0f, 1f))
  * [LAY-03] One decoration drawn in [box] (the part's own bounds). [accent] is a shape's colour when it has none chosen, [ink] an icon's
  * or a text's.
  */
+/** What a 꾸밈 사진 still waiting for the operator's look says in its grey box. */
+const val WAITING = "사진은 운영자 확인 뒤 보여요"
+
 fun DrawScope.drawDecor(item: DecorItem, box: Rect, measurer: TextMeasurer, accent: Color, ink: Color,
                         photo: (String) -> ImageBitmap? = DecorPhotos::of) {
     val at = placeOf(item, box)
@@ -201,7 +204,15 @@ fun DrawScope.drawDecor(item: DecorItem, box: Rect, measurer: TextMeasurer, acce
                         val path = DecorShapes.path("rect", at.width, at.height, item.r * density)
                         if (shadow > 0f) translate(shadow / 2, shadow / 2) { drawPath(path, Color.Black.times(0.22f * a)) }
                         val img = photo(item.glyph)
-                        if (img == null) drawPath(path, Color(0xFF9E9E9E).times(0.45f * a))
+                        if (img == null) {
+                            drawPath(path, Color(0xFF9E9E9E).times(0.45f * a))
+                            // PC 확인 C8 1.36 (승인 전 회색 상자가 고장처럼 보여요): says why, where there is room for it.
+                            if (at.width >= 96f * density && at.height >= 24f * density) {
+                                val words = measurer.measure(WAITING, TextStyle(fontSize = 11.sp, color = Color(0xFF424242).times(a)),
+                                    constraints = Constraints(maxWidth = (at.width - 8f * density).toInt().coerceAtLeast(1)), maxLines = 2)
+                                drawText(words, topLeft = Offset((at.width - words.size.width) / 2, (at.height - words.size.height) / 2))
+                            }
+                        }
                         else clipPath(path) {
                             // The photo's middle at the decoration's shape (가득 채우기).
                             val iw = img.width.toFloat()

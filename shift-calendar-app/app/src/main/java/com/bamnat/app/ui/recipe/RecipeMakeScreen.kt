@@ -526,6 +526,10 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     s.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Assertive }) }
                     s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
+                    // PC 확인 C8 1.36 사용성 제안 (새 판 끝 화면에 사진이 운영자 확인을 기다린다는 말이 없어요).
+                    if (sent.scope != "private" && !s.bare && com.bamnat.core.recipe.LookParts.hasPhotos(s.recipe))
+                        Text("사진은 운영자가 본 뒤 다른 분께 보여요. 그 전에는 받는 분께 회색 상자로 보여요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     return@Column
                 }
                 if (!s.ready) {
