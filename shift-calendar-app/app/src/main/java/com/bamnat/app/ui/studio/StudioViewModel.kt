@@ -91,6 +91,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val canUndoWear: Boolean = false,
         /** 1.36: the line said after 얹기 offers 되돌리기, which takes that one step back. */
         val canUndoLayer: Boolean = false,
+        /** PC 14차 (얹은 것 빼기가 아무 안내 없이 빠짐): what was just taken off, so the line said can lay it on again. */
+        val unlaid: ThemeWardrobe.Kept? = null,
         /** 1.36 PC 확인: the name the draft was last saved under, for 올리기 2/4 (saved, not put on). */
         val savedTitle: String? = null,
         /** 1.36 U3: saved or sent since the last change, so leaving does not ask to throw it away. */
@@ -483,7 +485,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun unlayer(k: ThemeWardrobe.Kept) = viewModelScope.launch {
         val s = _state.value
         if (k !in s.layered) return@launch
-        if (s.layered.last() == k && s.past.lastOrNull()?.let { k !in it.layered } == true) { undo(); return@launch }
+        if (s.layered.last() == k && s.past.lastOrNull()?.let { k !in it.layered } == true) {
+            undo()
+            _state.value = _state.value.copy(said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 뺐어요", unlaid = k)
+            return@launch
+        }
         val before = s.past.lastOrNull { k !in it.layered } ?: run {
             _state.value = s.copy(said = "오래전에 얹은 조각이라 뺄 수 없어요. 기록에서 그 앞으로 돌아가 주세요"); return@launch
         }
@@ -506,7 +512,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val left = now.layered - k
         _state.value = now.copy(layered = left,
             sources = if (k.own || left.any { it.from == k.from }) now.sources else now.sources - k.from,
-            said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 뺐어요")
+            said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 뺐어요", unlaid = k)
     }
 
     // ---- 입히기 · 저장 · 올리기 ----
@@ -787,7 +793,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         if (id != 0L) viewModelScope.launch { runCatching { c.recipes.deleteDraft(id) } }
     }
 
-    fun said() { _state.value = _state.value.copy(said = null, canUndoLayer = false) }
+    fun said() { _state.value = _state.value.copy(said = null, canUndoLayer = false, unlaid = null) }
 
     /** 1.36: 되돌리기 on the line said after 얹기: the same step as the 되돌리기 button above, layered parts and 출처 included. */
     fun undoLayer() { if (_state.value.canUndoLayer) undo() }

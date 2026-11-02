@@ -860,6 +860,10 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
                 OutlinedButton(onClick = vm::keepHere, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text(if (com.bamnat.core.recipe.LookParts.partUnit(s.recipe) != null) "이 휴대폰 보관함에 담기" else "이 휴대폰 내 테마에 저장")
                 }
+                // PC 14차 사용성 제안 (셋째 단추가 나만 보기와 어떻게 다른지 모름): the difference in one line.
+                Text(if (s.scope != "private" && s.errorCode != null && s.errorCode !in setOf("pieces", "network", "offline", "own_same"))
+                    "나만 보기는 서버에 두어 내 휴대폰들에서 열고, 이 휴대폰에 담기는 인터넷 없이 이 휴대폰에만 둬요"
+                    else "서버에 올리지 않고 이 휴대폰에만 둬요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
             }
         }
     }
