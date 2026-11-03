@@ -2214,7 +2214,10 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
     val recipesOn by container.recipes.on.collectAsStateWithLifecycle()
     // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
     val member by company.store.member.collectAsStateWithLifecycle()
+    // 사용자 2026-11-03 (마을 스크롤): in 마을 the 팔로잉 줄·오늘의 하나 are the first rows of 광장's own list, scrolled with it.
+    val hubHead = if (inHub) com.bamnat.app.ui.hub.LocalHubHeader.current else null
     val chips: @Composable () -> Unit = {
+        hubHead?.invoke()
         com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
             Modifier.padding(horizontal = 16.dp))
         // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).

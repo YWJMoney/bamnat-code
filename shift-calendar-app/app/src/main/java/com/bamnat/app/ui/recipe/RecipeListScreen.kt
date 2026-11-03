@@ -225,7 +225,7 @@ internal fun entryLine(style: WorkStyle?): String = when (style) {
     null -> "다른 분이 꾸민 근무 색·알람·메모 틀·규칙을 미리 보고, 고른 것만 내 달력에 넣어요"
 } + ". 7일 안에 되돌릴 수 있어요"
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun RecipeListScreen(
     vm: RecipeListViewModel,
@@ -240,9 +240,20 @@ fun RecipeListScreen(
     val state by vm.state.collectAsStateWithLifecycle()
     var codeAsk by remember { mutableStateOf(askCode) }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // 사용자 2026-11-03 (마을 › 장터 스크롤): in 마을 the tab row already says 장터 and whose; the list starts right under it.
+    val hubHeader = if (onBack == null) com.bamnat.app.ui.hub.LocalHubHeader.current else null
+    val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
+    androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > 0) listState.animateScrollToItem(0) }
+    // The 구간 and 정렬 chips stay at the top once the cards above them are gone, so another 구간 is one tap from anywhere in the list.
+    val stickyAt = if (hubHeader != null) 2 else 1
+    val pinned by remember(stickyAt) { derivedStateOf { listState.firstVisibleItemIndex >= stickyAt } }
+    // A 구간 or 정렬 changed while scrolled down starts its list right under the chips (not somewhere in the middle).
+    androidx.compose.runtime.LaunchedEffect(state.kind, state.tab, state.allStyles) {
+        if (listState.firstVisibleItemIndex > stickyAt) listState.scrollToItem(stickyAt)
+    }
     Scaffold(
         topBar = {
-            TopAppBar(
+            if (onBack != null) TopAppBar(
                 title = { Text(title + (vm.style?.let { " · " + RecipeDescribe.short(it) } ?: "")) },
                 navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
@@ -278,8 +289,9 @@ fun RecipeListScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            item {
-                Column(Modifier.widthIn(max = 640.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            hubHeader?.let { h -> item(key = "hub") { Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { h() } } }
+            item(key = "top") {
+                Column(Modifier.widthIn(max = 640.dp).padding(top = if (onBack == null) 4.dp else 0.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(state.query, vm::query, singleLine = true, modifier = Modifier.fillMaxWidth(),
                         label = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) },
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
@@ -304,6 +316,21 @@ fun RecipeListScreen(
                         featured -> "지금 입은 테마는 그대로 두고, 고른 탭 하나만 바꿔요. 입어 보기에서 내 테마 위에 얹어 봐요"
                         else -> "달력·가계부·메모 등 여러 화면을 한 번에 꾸민 테마예요. 입은 뒤 마음에 안 드는 탭은 기능별 탭으로 바꿀 수 있어요"
                     }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            stickyHeader(key = "chips") { Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
+                val logicOnly = state.kind == RecipeClient.SCOPE_LOGIC
+                val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
+                androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
+                Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Pinned: the three 구간 as one small row, since their big cards have scrolled away.
+                    androidx.compose.animation.AnimatedVisibility(pinned) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            FilterChip(selected = !featured && !logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_THEME) }, label = { Text("🎨 테마") })
+                            FilterChip(selected = featured, onClick = { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("🧩 기능별 탭") })
+                            FilterChip(selected = logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_LOGIC) }, label = { Text("⚡ 규칙·단추") })
+                        }
+                    }
                     // PC D10 (사용성 중): 찾은 말이 다른 구간에 있으면 칩으로 (테마 안에서만 찾아 '체크'가 안 나오던 것).
                     if (featured) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
@@ -331,6 +358,12 @@ fun RecipeListScreen(
                             FilterChip(selected = state.allStyles, onClick = { vm.allStyles(!state.allStyles) }, label = { Text("다른 유형도") })
                         }
                     }
+                }
+                }
+                if (pinned) androidx.compose.material3.HorizontalDivider()
+            } }
+            if (state.tab == RecipeListViewModel.Tab.GOOD || state.tab == RecipeListViewModel.Tab.SHOWCASE || state.tab == RecipeListViewModel.Tab.DATA) item(key = "notes") {
+                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (state.tab == RecipeListViewModel.Tab.GOOD) Text("좋아요가 5개 넘은 레시피만 여기 나와요. 표가 적으면 ‘새로’에서 볼 수 있어요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (state.tab == RecipeListViewModel.Tab.SHOWCASE) Text("장터 레시피로 이만큼 꾸밀 수 있다는 걸 보여 주려고 운영자가 만든 판이에요. 미리 보고 마음에 드는 것만 넣어요",

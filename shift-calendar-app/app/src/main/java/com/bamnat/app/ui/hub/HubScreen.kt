@@ -36,7 +36,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -59,6 +58,12 @@ enum class HubSection(val label: String, val line: String) {
     THEMES("테마", "내가 입은 테마와 간직한 테마예요. 기록은 그대로예요"),
     MAKE("공방", "스튜디오 하나에서 꾸미고, 기능까지 묶어 올려요. 내 것은 여기 한곳에"),
 }
+
+/** 장터 in 마을: the rows that open its list (팔로잉 줄, 오늘의 하나, 넘겨 보기), scrolled with it; null on a 장터 of its own. */
+val LocalHubHeader = androidx.compose.runtime.staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
+
+/** Counts the 마을 tab of the part on show pressed again: its list goes back to the top. */
+val LocalHubReselect = androidx.compose.runtime.compositionLocalOf { 0 }
 
 /** [VIL-07] Where 마을 remembers the part last seen (this phone only, not a setting). */
 private const val HUB_PREFS = "village_ui"
@@ -103,6 +108,7 @@ fun HubScreen(
     var section by rememberSaveable { mutableStateOf(prefs.getString("section", null)?.let { n -> HubSection.entries.firstOrNull { it.name == n } } ?: firstSection(style)) }
     androidx.compose.runtime.LaunchedEffect(section) { prefs.edit().putString("section", section.name).apply() }
     var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
+    var reselect by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
@@ -121,50 +127,38 @@ fun HubScreen(
                 }
                 PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = MaterialTheme.colorScheme.surface) {
                     HubSection.entries.forEach { s ->
-                        Tab(selected = section == s, onClick = { if (s == HubSection.SHARE && section != s) shareKind = null; section = s }, text = { Text(s.label) })
+                        // 사용자 2026-11-03: the 장터 tab pressed again while on it goes back to the top of its list.
+                        Tab(selected = section == s, onClick = { if (s == HubSection.SHARE && section != s) shareKind = null; if (section == s) reselect++; section = s }, text = { Text(s.label) })
                     }
                 }
             }
         }
         // [PRF-02] 1.36 (사용자 2026-10-31 "팔로워 한 사람의 프로필에 들어가"): 팔로잉 줄 above 광장 and 장터, where people meet and pick.
         val recipesOn by c.recipes.on.collectAsStateWithLifecycle()
-        // PC 확인 0efe9dbc: the 팔로잉 줄·오늘의 하나·넘겨 보기 fold away while the list is scrolled down and come back on scrolling up,
-        // so 광장·장터's list has the whole screen; 찾기 stays in the top bar.
-        var headerShown by remember { mutableStateOf(true) }
-        androidx.compose.runtime.LaunchedEffect(section) { headerShown = true }
-        val density = androidx.compose.ui.platform.LocalDensity.current
-        val fold = remember(density) {
-            val step = with(density) { 24.dp.toPx() }
-            object : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
-                var run = 0f
-                // PC 확인 38d63451: only what the list really moved counts (and a pull down at its top), so a page too short to
-                // scroll does not jump under the finger and open what is under it.
-                override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset,
-                    source: androidx.compose.ui.input.nestedscroll.NestedScrollSource): androidx.compose.ui.geometry.Offset {
-                    val moved = if (consumed.y != 0f) consumed.y else available.y.coerceAtLeast(0f)
-                    if (moved == 0f) return androidx.compose.ui.geometry.Offset.Zero
-                    run = if ((run < 0) == (moved < 0)) run + moved else moved
-                    if (run < -step) headerShown = false else if (run > step) headerShown = true
-                    return androidx.compose.ui.geometry.Offset.Zero
-                }
-            }
-        }
-        androidx.compose.animation.AnimatedVisibility(headerShown && recipesOn && c.recipeApi.enabled && (section == HubSection.TALK || section == HubSection.SHARE)) {
-          Column {
+        val people: @Composable () -> Unit = {
             val strip = com.bamnat.app.ui.appViewModel(key = "following-strip-${style?.name}") { com.bamnat.app.ui.recipe.FollowingStripViewModel(it, style) }
             com.bamnat.app.ui.recipe.FollowingStrip(strip, onMaker = onMaker, onAll = onPeople, onFind = onSearch)
             TodayOne(c, style, prefs, onRecipe, onMake = { onStudio("plain") })
-            // 1.36 [VIL-17] 마을 V17: 장터's themes one by one, big, flipped upward.
-            if (section == HubSection.SHARE && onSwipe != null) {
-                TextButton(onClick = onSwipe, modifier = Modifier.padding(horizontal = 8.dp)) { Text("🃏 테마 넘겨 보며 고르기") }
-            }
-          }
         }
-        Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)
-            .nestedScroll(fold)) {
+        // 사용자 2026-11-03 (장터를 내리고 올릴 때 박스가 부자연스러움): 광장 and 장터 have the 팔로잉 줄·오늘의 하나 as the first rows of
+        // their own lists, so they scroll away with them in one motion; nothing above a list folds open and shut and moves it under the finger.
+        val showPeople = recipesOn && c.recipeApi.enabled
+        Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
             when (section) {
-                HubSection.TALK -> talk()
-                HubSection.SHARE -> share(shareKind)
+                HubSection.TALK -> androidx.compose.runtime.CompositionLocalProvider(
+                    LocalHubHeader provides if (showPeople) ({ Column { people() } }) else null,
+                    LocalHubReselect provides reselect,
+                ) { talk() }
+                HubSection.SHARE -> androidx.compose.runtime.CompositionLocalProvider(
+                    LocalHubHeader provides if (showPeople) ({
+                        Column {
+                            people()
+                            // 1.36 [VIL-17] 마을 V17: 장터's themes one by one, big, flipped upward.
+                            if (onSwipe != null) TextButton(onClick = onSwipe) { Text("🃏 테마 넘겨 보며 고르기") }
+                        }
+                    }) else null,
+                    LocalHubReselect provides reselect,
+                ) { share(shareKind) }
                 HubSection.THEMES -> Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE },
                     onKept = { id -> onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_KEPT + id) })
                 HubSection.MAKE -> Make(c, style, onStudio, onMake, onMine, onRequests, onCode, onPosts, onRecipe)
