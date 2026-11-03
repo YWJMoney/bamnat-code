@@ -245,6 +245,10 @@ fun PlazaHomeScreen(
         if (open != null) sheetWasOpen = true
         else if (sheetWasOpen) { sheetWasOpen = false; vm.sheetClosed() }
     }
+    // 사용자 2026-11-03: in 마을 the 광장 tab pressed again goes back to the top.
+    val page = rememberScrollState()
+    val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
+    LaunchedEffect(reselect) { if (reselect > 0) page.animateScrollTo(0) }
     Scaffold(
         topBar = {
             TopAppBar(
@@ -255,7 +259,7 @@ fun PlazaHomeScreen(
         },
     ) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            Modifier.fillMaxSize().padding(padding).verticalScroll(page).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
