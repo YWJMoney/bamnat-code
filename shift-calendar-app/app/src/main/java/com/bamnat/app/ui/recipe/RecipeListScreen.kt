@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.recipe
 
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -26,6 +27,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Card
@@ -255,8 +257,18 @@ fun RecipeListScreen(
         floatingActionButton = {
             // PC 확인: scrolled down, the button folds to its + so it does not sit on a card's buttons.
             val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset < 40 } }
-            ExtendedFloatingActionButton(onClick = onMake, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("스튜디오에서 만들기") },
-                expanded = atTop, modifier = Modifier.semantics { contentDescription = "스튜디오에서 만들기" })
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // PC 확인 8d0cddf6 (사용성): far down the list, one tap back to the 구간 cards (테마·기능별 탭·규칙·단추) at its top.
+                if (listState.firstVisibleItemIndex > 2) {
+                    val scope = androidx.compose.runtime.rememberCoroutineScope()
+                    androidx.compose.material3.SmallFloatingActionButton(onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                        modifier = Modifier.semantics { contentDescription = "맨 위 구간으로" }) {
+                        Icon(Icons.Filled.KeyboardArrowUp, null)
+                    }
+                }
+                ExtendedFloatingActionButton(onClick = onMake, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("스튜디오에서 만들기") },
+                    expanded = atTop, modifier = Modifier.semantics { contentDescription = "스튜디오에서 만들기" })
+            }
         },
     ) { padding ->
         LazyColumn(
