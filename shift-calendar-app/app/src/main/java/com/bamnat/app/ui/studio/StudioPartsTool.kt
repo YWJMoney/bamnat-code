@@ -149,14 +149,19 @@ internal fun PartsTool(
         modifier = Modifier.semantics { heading() })
     // [RUL-02] 1.36 조건부 꾸미기: "이럴 때만" (야간이고 메모에 #인수인계가 있으면 …), as a table to pick from or a 수식.
     val conds = remember(bp, id, on) { bp.lines.filter { it["id"] == id && it["on"] == on }.mapNotNull { it["when"] as? String }.distinct() }
-    var cond by rememberSaveable(id, on) { mutableStateOf<String?>(if (conditionFirst) conds.firstOrNull() ?: "" else null) }
-    if (id.startsWith("cal.cell") || conds.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    // [FXR-03] Only a part drawn for a day takes a condition (and is offered one); a part with none keeps the lines it already has
+    // in view, saying they do nothing there, so they can be taken off.
+    val dated = BlueprintParts.dated(id)
+    var cond by rememberSaveable(id, on) { mutableStateOf<String?>(if (conditionFirst && dated) conds.firstOrNull() ?: "" else null) }
+    if (!dated && conds.isNotEmpty()) Text("이 부품은 날짜가 없어서 조건이 맞을 때가 없어요. 조건으로 꾸민 모습은 날짜 칸·메모 카드·가계부 한 줄 같은 곳에서 써요",
+        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (dated || conds.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = cond == null, onClick = { cond = null }, label = { Text("조건 없이") })
         conds.forEach { w ->
             FilterChip(selected = cond == w, onClick = { cond = w },
                 label = { Text("만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(18), maxLines = 1) })
         }
-        if (cond?.isBlank() != true) FilterChip(selected = false, onClick = { cond = "" }, label = { Text("＋ 조건으로 꾸미기") })
+        if (dated && cond?.isBlank() != true) FilterChip(selected = false, onClick = { cond = "" }, label = { Text("＋ 조건으로 꾸미기") })
     }
     cond?.let { now ->
         com.bamnat.app.logic.ConditionEditor(now, { next ->

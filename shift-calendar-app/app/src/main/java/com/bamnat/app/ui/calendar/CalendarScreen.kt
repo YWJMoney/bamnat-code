@@ -1937,9 +1937,11 @@ private fun CalendarHeader(
     var menu by remember { mutableStateOf(false) }
     // [BLU-05] 1.36 부품 꾸미기: 달력 머리, 달 이름, 이동 단추, 오늘 단추.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-    val headPart = bp.style("cal.head")
-    val navPart = bp.style("cal.head.nav")
-    val todayPart = bp.style("cal.head.today")
+    // [FXR-03] With the shown month's day (today in this month, else its first), so 조건부 꾸미기 works on the head too.
+    val headScope = com.bamnat.app.logic.scopeOn(com.bamnat.app.logic.dayOfMonth(month))
+    val headPart = bp.style("cal.head", scope = headScope)
+    val navPart = bp.style("cal.head.nav", scope = headScope)
+    val todayPart = bp.style("cal.head.today", scope = headScope)
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     Row(
         // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
@@ -1969,7 +1971,7 @@ private fun CalendarHeader(
                 }
                 // [J133-22] 1.33 (실사용 테스트 "작은 폰 달력 머리에 '2026년 10월' 글자가 없음"): a small phone shows this year's month
                 // without the year, and the title is never squeezed out by the buttons around it.
-                val titlePart = bp.style("cal.head.title")
+                val titlePart = bp.style("cal.head.title", scope = headScope)
                 val titleText = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) }
                 // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
                 val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }

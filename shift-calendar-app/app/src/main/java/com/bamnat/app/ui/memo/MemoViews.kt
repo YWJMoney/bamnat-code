@@ -473,11 +473,13 @@ internal fun MemoTableView(
         LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(bottom = 160.dp)) {
             items(rows, key = { it.first.id }) { (memo, props) ->
                 val picked = memo.id in selection
+                // [FXR-03] 표 한 줄 with its memo's day, so its 조건부 꾸미기 works.
+                val dayRow = if (memo.date == null) rowPart else com.bamnat.app.logic.partStyleOn("memo.table.row", memo.date)
                 Row(
                     // PC 확인 1be49fd7: a memo picked in the list shows as picked here too.
                     Modifier.heightIn(min = 44.dp).background(if (picked) MaterialTheme.colorScheme.primaryContainer else memoBackground(memo.colorIndex).copy(alpha = 0.35f))
                         .semantics { selected = picked }
-                        .then(com.bamnat.app.ui.parts.PartMods.box(rowPart, RoundedCornerShape(0.dp)))
+                        .then(com.bamnat.app.ui.parts.PartMods.box(dayRow, RoundedCornerShape(0.dp)))
                         .combinedClickable(onClick = { actions.onOpen(memo) }, onLongClick = { actions.onSelect(memo) }),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -718,7 +720,7 @@ internal fun MemoCalendarView(memos: List<Memo>, weekStart: java.time.DayOfWeek,
                             Modifier.weight(1f).heightIn(min = 64.dp)
                                 .background(if (isPicked) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
                                 .then(if (date == today) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier)
-                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal.cell", states), RoundedCornerShape(8.dp)))
+                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal.cell", states, com.bamnat.app.logic.scopeOn(date)), RoundedCornerShape(8.dp)))
                                 .clickable { picked = if (isPicked) null else date.toString() }
                                 .semantics(mergeDescendants = true) {
                                     contentDescription = Fmt.monthDay(date) + if (list.isEmpty()) " 메모 없음" else " 메모 ${list.size}개: " + list.joinToString(", ") { it.title.ifBlank { it.preview } }

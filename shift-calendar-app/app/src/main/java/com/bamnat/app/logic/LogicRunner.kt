@@ -55,9 +55,10 @@ object LogicRunner {
     suspend fun facts(c: AppContainer): DayFactsBook {
         val cal = c.calendars.active.value
         val scope = c.scopeOf(cal)
+        // [FXR-01][FXR-02] With the 받는 칸 answers and the calendar's pay, as the screens have them.
         return dayFactsOf(
             scope.schedule.snapshot.first(), c.memoRepository.memos.first().filter { it.showsOn(cal) }, scope.money.book.first(),
-            c.settingsRepository.current.workStyle, Today.date(),
+            c.settingsRepository.current.workStyle, Today.date(), c.formulaExtras(cal).first(),
         )
     }
 

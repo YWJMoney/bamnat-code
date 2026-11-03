@@ -187,8 +187,10 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                 val number = when (date.dayOfWeek) { java.time.DayOfWeek.SUNDAY -> cal.sunday; java.time.DayOfWeek.SATURDAY -> cal.saturday; else -> scheme.onSurface }
                 // [BLU-05] 1.36 부품 꾸미기 in the example too, by the same states as the phone's cells.
                 val states = com.bamnat.app.ui.parts.dayStates(s.role, date.dayOfWeek, com.bamnat.core.holiday.KoreanHolidays.nameOf(date) != null, true, isToday, false)
-                val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else blueprint.style("cal.cell", states)
-                val parts = if (blueprint.isEmpty) null else com.bamnat.app.ui.parts.CellParts.of(blueprint, states)
+                // [FXR-03] With the day's values (the studio's own book), so a condition shows in the example as on the phone.
+                val sampleScope = if (blueprint.hasFormulas) com.bamnat.app.logic.LocalDayFacts.current?.scope(date) else null
+                val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else blueprint.style("cal.cell", states, sampleScope)
+                val parts = if (blueprint.isEmpty) null else com.bamnat.app.ui.parts.CellParts.of(blueprint, states, sampleScope)
                 val pShape = com.bamnat.app.ui.parts.PartMods.shapeOf(cellPart, shape)
                 Box(
                     Modifier.weight(1f).fillMaxSize()
@@ -478,7 +480,9 @@ internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "가계부 모양 고치기", onClick = onTap)) {
         val band = look.dayHead == "band"
-        val day = bp.style("money.day")
+        // [FXR-03] The example's day is today, with today's values for 조건부 꾸미기.
+        val todayScope = com.bamnat.app.logic.scopeOn(com.bamnat.core.time.Today.date())
+        val day = bp.style("money.day", scope = todayScope)
         val dayShape = com.bamnat.app.ui.parts.PartMods.shapeOf(day, RoundedCornerShape(0.dp))
         Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("money.day"))
             .then(com.bamnat.app.ui.parts.PartMods.box(day.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), dayShape))
@@ -491,8 +495,8 @@ internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
         }
         listOf(Triple("🍚", "점심", -9_000L), Triple("☕", "커피", -4_500L), Triple("💼", "월급", 3_120_000L)).forEach { (emoji, title, amount) ->
             val (minH, padV) = when (look.rows) { "compact" -> 48.dp to 4.dp; "roomy" -> 76.dp to 12.dp; else -> 64.dp to 8.dp }
-            val row = bp.style("money.row")
-            val amountPart = bp.style("money.amount", setOf(if (amount < 0) "out" else "in"))
+            val row = bp.style("money.row", scope = todayScope)
+            val amountPart = bp.style("money.amount", setOf(if (amount < 0) "out" else "in"), todayScope)
             Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("money.row")).heightIn(min = row.h?.dp ?: minH)
                 .background(MaterialTheme.colorScheme.surface)
                 .then(com.bamnat.app.ui.parts.PartMods.box(row.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
@@ -545,13 +549,14 @@ internal fun paySummary(l: PayLook?): String = if (l == null || l.isDefault) "�
 internal fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "급여 모양 고치기", onClick = onTap).padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val head = bp.style("pay.head")
+        val todayScope = com.bamnat.app.logic.scopeOn(com.bamnat.core.time.Today.date())
+        val head = bp.style("pay.head", scope = todayScope)
         if (head.hide != true) Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.head"))
             .then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp))), verticalAlignment = Alignment.CenterVertically) {
             com.bamnat.app.ui.parts.PartText("${style.label.substringBefore(' ')} · 월급", head, MaterialTheme.typography.titleMedium, Modifier.weight(1f))
             Text("‹ 11월 ›", style = MaterialTheme.typography.titleSmall)
         }
-        val total = bp.style("pay.total")
+        val total = bp.style("pay.total", scope = todayScope)
         val fill = total.fillColor ?: look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
         val on = total.ink?.let { Color(it.toInt()) } ?: if (look.plus != null || total.fillColor != null) contentColorOn(fill.copy(alpha = 1f)) else MaterialTheme.colorScheme.onPrimaryContainer
         val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(total, MaterialTheme.shapes.large)
@@ -564,7 +569,7 @@ internal fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
                     when (look.total) { "m" -> MaterialTheme.typography.headlineMedium; "xl" -> MaterialTheme.typography.displayMedium; else -> MaterialTheme.typography.displaySmall }))
         }
         listOf("기본급" to 2_397_500L, "야간근로수당" to 691_778L, "결근 공제" to -96_000L).forEach { (name, v) ->
-            val row = bp.style("pay.row", setOf(if (v < 0) "out" else "in"))
+            val row = bp.style("pay.row", setOf(if (v < 0) "out" else "in"), todayScope)
             val rowShape = com.bamnat.app.ui.parts.PartMods.shapeOf(row, MaterialTheme.shapes.small)
             Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.row"))
                 .then(com.bamnat.app.ui.parts.PartMods.box(row.copy(pad = null, padX = null, padY = null), rowShape))

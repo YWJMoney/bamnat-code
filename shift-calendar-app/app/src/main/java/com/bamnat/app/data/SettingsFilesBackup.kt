@@ -217,6 +217,8 @@ class SettingsFilesBackup(
             "logic_rules" to "규칙을 끈 것·지난 7일 실행 횟수·마지막 되돌리기, 이 휴대폰에서 실행한 만큼(규칙 자체는 설정 logic으로 백업)",
             // [LAY-09] 1.36 곳 줄 자주 쓰는 6곳: how this phone's hands use the studio.
             "studio_ui" to "스튜디오에서 자주 연 곳(곳 줄 순서), 이 휴대폰의 것",
+            // PC 확인 11825213 사용성 제안: the 메모 tab opens on the 칸 last looked at.
+            "memo_list" to "메모 탭에서 마지막으로 본 칸(달력 메모·노트 등), 이 휴대폰의 것",
             // 1.36 [GRW-03][GRW-09] 스튜디오 부탁 풀림을 알린 문의, 작품을 올린 적 있는지(보상 이용권 묻기): this phone's own.
             "studio_solved" to "스튜디오 부탁이 풀렸다고 이 휴대폰에서 이미 알린 문의",
             "maker" to "이 휴대폰에서 작품을 올린 적 있는지(만든 분 보상 이용권을 물을지)",
