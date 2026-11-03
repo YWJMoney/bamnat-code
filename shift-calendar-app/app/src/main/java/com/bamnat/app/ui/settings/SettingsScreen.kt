@@ -721,6 +721,9 @@ private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Comp
         TextButton(
             onClick = { InquiryLinks.ask(InquiryStart(about = "설정 > ${page.title}", help = true)) },
             modifier = Modifier.align(Alignment.CenterHorizontally),
+            // PC 확인 8d0cddf6 (사진 바탕의 설정 맨 아래 파랑이 보라 위에서 안 보여요): on a photo it takes the readable ink.
+            colors = if (com.bamnat.app.ui.decor.LocalPhotoGround.current == null) androidx.compose.material3.ButtonDefaults.textButtonColors()
+                else androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = com.bamnat.app.ui.decor.readableOnPhoto(MaterialTheme.colorScheme.primary)),
         ) {
             Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))

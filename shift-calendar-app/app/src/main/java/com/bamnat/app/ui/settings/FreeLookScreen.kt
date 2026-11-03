@@ -562,7 +562,7 @@ internal fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
         val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(total, MaterialTheme.shapes.large)
         Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.total"))
             .then(com.bamnat.app.ui.parts.PartMods.box(total.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), shape))
-            .clip(shape).background(fill).padding(horizontal = (total.padH ?: 16).dp, vertical = (total.padV ?: 16).dp)) {
+            .clip(shape).then(if (total.paint != null) Modifier else Modifier.background(fill)).padding(horizontal = (total.padH ?: 16).dp, vertical = (total.padV ?: 16).dp)) {
             Text("11월 예상 급여 (세전) · ${style.label.substringBefore(' ')}", style = MaterialTheme.typography.labelLarge, color = on)
             Text("3,120,000원", color = on, fontWeight = FontWeight.Bold,
                 style = com.bamnat.app.ui.parts.PartMods.text(total.copy(ink = null),

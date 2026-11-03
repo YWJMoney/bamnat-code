@@ -645,10 +645,12 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // Where, then which tool.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    val shown = if (allAreas) Area.entries.map { it.name } else AreaRank.shown(Area.entries.map { it.name }, areaUses, area.name)
-                    (listOf(Area.ALL) + Area.entries.filter { it != Area.ALL }).filter { it.name in shown }.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
-                    if (shown.size < Area.entries.size || allAreas) FilterChip(selected = false, onClick = { allAreas = !allAreas },
-                        label = { Text(if (allAreas) "접기" else "더 보기 ${Area.entries.size - shown.size}") })
+                    // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
+                    val fitting = Area.entries.filter { it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST) || area == Area.PAY }
+                    val shown = if (allAreas) fitting.map { it.name } else AreaRank.shown(fitting.map { it.name }, areaUses, area.name)
+                    (listOf(Area.ALL) + fitting.filter { it != Area.ALL }).filter { it.name in shown }.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
+                    if (shown.size < fitting.size || allAreas) FilterChip(selected = false, onClick = { allAreas = !allAreas },
+                        label = { Text(if (allAreas) "접기" else "더 보기 ${fitting.size - shown.size}") })
                     FilterChip(selected = studioAdvanced, onClick = { studioAdvanced = !studioAdvanced }, label = { Text("고급 보기") })
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),

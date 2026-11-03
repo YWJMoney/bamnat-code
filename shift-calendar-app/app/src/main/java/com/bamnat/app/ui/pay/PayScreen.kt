@@ -884,7 +884,9 @@ private fun TotalCard(
         Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.total"))
             .then(com.bamnat.app.ui.parts.PartMods.box(part.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), shape))
             .clip(shape)
-            .background(fill)
+            // PC 확인 8d0cddf6 (목표 급여 진행: 글자만 금빛 기준, 바탕은 남색 그대로): a 채우기 (그라데이션 등) is drawn by the box
+            // above; the plain colour over it hid it.
+            .then(if (part.paint != null) Modifier else Modifier.background(fill))
             .clickable(enabled = unlocked && checks > 0, onClickLabel = "확인 필요한 답 보기", onClick = onChecks)
             .padding(horizontal = (part.padH ?: 20).dp, vertical = (part.padV ?: 20).dp),
     ) {

@@ -106,6 +106,8 @@ fun ConditionEditor(value: String, onChange: (String) -> Unit, scope: FormulaSco
             EasyTable(easy, { onChange(it.toFormula().let { f -> if (it.conds.isEmpty()) "" else f }) }, empty)
             PreviewLine(value, scope)
         }
+        // PC 확인 8d0cddf6 (규칙의 블록 보기에서는 넣은 값이 안 보였어요): the 받는 칸 values in every view, not only 수식으로.
+        if (view != 2 && easy != null || view == 1) InputValuesLine(value, scope)
     }
 }
 

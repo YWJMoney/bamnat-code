@@ -1990,7 +1990,8 @@ private fun CalendarHeader(
             colors = if (com.bamnat.app.ui.decor.LocalPhotoGround.current == null) androidx.compose.material3.ButtonDefaults.textButtonColors()
                 // PC 확인 C16: the pressable 파랑 too stands on the photo (1.4:1 on a dark one before).
                 else androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = com.bamnat.app.ui.decor.readableOnPhoto(MaterialTheme.colorScheme.primary),
-                    disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))) {
+                    // PC 확인 8d0cddf6 (80%로는 4.45:1·3.86:1): on a photo the off button keeps the full ink, like the month title beside it.
+                    disabledContentColor = MaterialTheme.colorScheme.onSurface)) {
             Text("오늘", maxLines = 1, softWrap = false, style = with(com.bamnat.app.ui.parts.PartMods) { text(todayPart, androidx.compose.material3.LocalTextStyle.current) })
         }
         if (roomy) {
