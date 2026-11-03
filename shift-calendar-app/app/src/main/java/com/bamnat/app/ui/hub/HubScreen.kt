@@ -159,9 +159,13 @@ fun HubScreen(
                     }) else null,
                     LocalHubReselect provides reselect,
                 ) { share(shareKind) }
-                HubSection.THEMES -> Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE },
-                    onKept = { id -> onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_KEPT + id) })
-                HubSection.MAKE -> Make(c, style, onStudio, onMake, onMine, onRequests, onCode, onPosts, onRecipe)
+                HubSection.THEMES -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
+                    Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE },
+                        onKept = { id -> onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_KEPT + id) })
+                }
+                HubSection.MAKE -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
+                    Make(c, style, onStudio, onMake, onMine, onRequests, onCode, onPosts, onRecipe)
+                }
             }
         }
     }
@@ -227,6 +231,9 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
 
 @Composable
 private fun Page(scroll: androidx.compose.foundation.ScrollState = rememberScrollState(), content: @Composable () -> Unit) {
+    // 사용자 2026-11-03: tapping the tab you are on goes back to the top, on every 마을 page alike.
+    val reselect = LocalHubReselect.current
+    androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > 0) scroll.animateScrollTo(0) }
     Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             content()

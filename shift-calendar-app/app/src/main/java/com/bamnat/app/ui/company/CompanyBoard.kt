@@ -75,6 +75,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
@@ -131,16 +132,20 @@ fun CompanyBoardScreen(
     val nearEnd by remember { derivedStateOf { list.layoutInfo.visibleItemsInfo.lastOrNull()?.index?.let { it >= list.layoutInfo.totalItemsCount - 3 } ?: false } }
     LaunchedEffect(nearEnd, adopted) { if (nearEnd) vm.more() }
 
+    val boardTitle = if (filter.job.isEmpty()) "규칙 광장" else "${com.bamnat.app.company.Plaza.job(filter.job)} 광장"
+    // [PLZ-14][PLZ-08] Plain buttons, not a menu to find first.
+    val boardActions: @Composable () -> Unit = {
+        if (onRates != null) TextButton(onClick = onRates) { Text("임금표") }
+        TextButton(onClick = vm.activity::show) { Text("내 활동") }
+    }
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(if (filter.job.isEmpty()) "규칙 광장" else "${com.bamnat.app.company.Plaza.job(filter.job)} 광장") },
-                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
-                actions = {
-                    // [PLZ-14][PLZ-08] Plain buttons, not a menu to find first.
-                    if (onRates != null) TextButton(onClick = onRates) { Text("임금표") }
-                    TextButton(onClick = vm.activity::show) { Text("내 활동") }
-                },
+            // 사용자 2026-11-03 (마을 스크롤, 겹친 상단 막대): in 마을 (no 뒤로) the title and its buttons are the list's first row,
+            // under 마을's own tabs, so two bars never stack and the row scrolls away with the list.
+            if (onBack != null) TopAppBar(
+                title = { Text(boardTitle) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                actions = { boardActions() },
             )
         },
         floatingActionButton = {
@@ -160,6 +165,12 @@ fun CompanyBoardScreen(
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
+                if (onBack == null) item(key = "title") {
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(boardTitle, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).semantics { heading() })
+                        boardActions()
+                    }
+                }
                 if (header != null) item(key = "calendars") { header() }
                 // [PLAZA-32] 1.27 AI (443): the way into a company's own room, at the top of the plaza.
                 if (onFind != null) item {

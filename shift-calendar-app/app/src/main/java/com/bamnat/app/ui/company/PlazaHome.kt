@@ -249,12 +249,14 @@ fun PlazaHomeScreen(
     val page = rememberScrollState()
     val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
     LaunchedEffect(reselect) { if (reselect > 0) page.animateScrollTo(0) }
+    // [FREE-05] 광장's own emoji (사용자 2026-10-30: 배경이나 이모티콘), on this phone only.
+    val homeTitle = listOfNotNull(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji, plan.title).joinToString(" ")
     Scaffold(
         topBar = {
-            TopAppBar(
-                // [FREE-05] 광장's own emoji (사용자 2026-10-30: 배경이나 이모티콘), on this phone only.
-                title = { Text(listOfNotNull(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji, plan.title).joinToString(" "), maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = { if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+            // 사용자 2026-11-03 (마을 스크롤, 겹친 상단 막대): in 마을 (no 뒤로) the title is the page's first line, under 마을's tabs.
+            if (onBack != null) TopAppBar(
+                title = { Text(homeTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
     ) { padding ->
@@ -265,6 +267,8 @@ fun PlazaHomeScreen(
         ) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 // [SPD-13] What the phone kept is on screen while it is read again: a thin line, not a spinner.
+                if (onBack == null) Text(homeTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp).semantics { heading() })
                 RefreshLine(state.refreshing, state.stale, onRetry = vm::load)
                 header?.invoke()
                 vm.note?.let { n ->
