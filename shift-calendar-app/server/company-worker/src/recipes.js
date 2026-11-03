@@ -128,8 +128,16 @@ export const PART_IDS = [
   "cal", "cal.head", "cal.head.title", "cal.head.nav", "cal.head.today", "cal.week", "cal.week.day", "cal.grid",
   "cal.cell", "cal.cell.date", "cal.cell.mark", "cal.cell.memo", "cal.cell.money", "cal.cell.hours", "cal.cell.spend",
   "cal.cell.lunar", "cal.cell.holiday", "cal.foot",
+  // [TAB-04] 1.36 달력 판
+  "cal.band", "cal.band.slot", "cal.line", "cal.line.row", "cal.line.bar",
+  "cal.weekly", "cal.weekly.day", "cal.year", "cal.year.month",
   "memo.head", "memo.tags", "memo.card", "memo.card.title", "memo.card.body", "memo.card.date",
+  // [TAB-01][TAB-02] 메모 속성·보드·표
+  "memo.prop", "memo.board", "memo.board.col", "memo.board.head", "memo.table", "memo.table.head", "memo.table.row",
+  "memo.cal", "memo.cal.cell",
   "money.head", "money.day", "money.row", "money.amount",
+  // [TAB-06] 가계부 판
+  "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
   "pay.head", "pay.total", "pay.row",
   "widget", "widget.head", "widget.cell",
 ];
@@ -181,6 +189,11 @@ const partLines = (lines) => {
   return null;
 };
 
+// [TAB-07] core MemoProps.isLabel and MemoView.validBy·validSort: a 칸 name with a letter, at most three words, no link or separator.
+const propLabel = (s) => s.length >= 1 && s.length <= 20 && /\p{L}/u.test(s) && s.split(" ").length <= 3 && !/http/i.test(s) && !/[/|:;]/.test(s);
+const memoBy = (s) => ["tag", "shift", "check", "color"].includes(s) || (s.startsWith("p:") && propLabel(s.slice(2)));
+const memoSort = (s) => s === "" || s === "title" || (s.replace(/^-/, "").startsWith("p:") && propLabel(s.replace(/^-/, "").slice(2)));
+
 /** core PieceKind: key, the kinds of work it fits, its fields. */
 // 1.36 [RUL-03][RUL-04] core formula/Logic.kt: where a button sits, the safe verbs, when a rule runs; a formula may compare amounts.
 const BUTTON_PLACES = ["day", "memo", "cal", "money", "decor"];
@@ -200,7 +213,7 @@ export const RECIPE_PIECES = {
   memoTpl: { styles: STYLES, fields: [I("items", 8, [T("title", 30, { min: 1 }), E("emoji"), TS("check", 20, 60),
     T("body", 300, { lines: true, optional: true }), T("repeat", 4, { optional: true, check: (s) => (s === "" || REPEAT.test(s) ? null : "repeat") }),
     // 1.35 [CVW-10] 입력 칸
-    I("asks", 8, [T("label", 20, { min: 1 }), P("type", ["text", "num", "star", "pick"]), TS("choices", 8, 16)], { optional: true })], { min: 1 })] },
+    I("asks", 8, [T("label", 20, { min: 1 }), P("type", ["text", "num", "star", "pick", "money", "date", "time", "check"]), TS("choices", 8, 16)], { optional: true })], { min: 1 })] },
   hourly: { styles: ["HOURLY"], fields: [M("wage", 0, 1_000_000, { optional: true }), F("five"), F("weeklyPay"), P("weekStart", WEEK_DAYS, { optional: true }),
     P("breakPay", ["UNPAID", "PAID", "AS_WORK"], { optional: true }), F("legalBreaks"), N("night", 0, 200, { optional: true }), F("partTime"),
     P("rounding", ["HOURLY_FIRST", "AT_END", "AT_END_UP", "AT_END_DOWN"], { optional: true }),
@@ -252,6 +265,12 @@ export const RECIPE_PIECES = {
   // [FREE-05][FREE-07] 1.35 화면 색·배경 (pictures by recipe_images id, looked at before others see them) and 급여 모양 by kind of work.
   screenLook: { styles: STYLES, fields: [T("screens", 1600, { optional: true, guard: false, check: screenLooks }),
     T("pay", 400, { optional: true, guard: false, check: payLooks })] },
+  // [TAB-07] 1.36 탭 보기, as core PieceKind.TAB_VIEW (CalendarBoard·MemoView·LedgerBoard).
+  tabView: { styles: STYLES, fields: [P("cal", ["month", "weekly", "list", "rota", "timeline", "yearly"], { optional: true }),
+    P("memo", ["list", "board", "table", "cal", "gallery"], { optional: true }),
+    T("memoBy", 22, { optional: true, guard: false, check: (s) => (memoBy(s) ? null : "memoBy") }),
+    T("memoSort", 23, { optional: true, guard: false, check: (s) => (memoSort(s) ? null : "memoSort") }),
+    P("money", ["list", "cal", "board", "table"], { optional: true })] },
   // [BLU-01] 1.36 부품 꾸미기.
   parts: { styles: STYLES, fields: [I("parts", 96, [P("id", PART_IDS), P("on", PART_STATES, { optional: true }),
     // 1.36 [RUL-02] 조건부 꾸미기: the line only on days its formula holds.
@@ -906,6 +925,10 @@ export function lookOf(body) {
   if (typeof view?.badge === "string") out.badge = view.badge;
   const memo = piece("memoLook");
   if (memo?.layout) out.memo = memo.layout;
+  // [TAB-07] 1.36 탭 보기: the calendar board and memo view a 장터 card can say.
+  const tv = piece("tabView");
+  if (tv?.cal) out.board = tv.cal;
+  if (tv?.memo) out.memoView = tv.memo;
   if (piece("photoLook")?.bg || (typeof screens === "string" && screens.includes("ph:"))) out.photo = true;
   return Object.keys(out).length ? out : null;
 }
@@ -913,7 +936,7 @@ export function lookOf(body) {
 /** [FREE-08] 종류로 보기: what kind of piece a recipe must carry to show under each chip. */
 export const RECIPE_KINDS = {
   skin: ["screenLook", "calTheme", "calView", "photoLook", "shiftLook", "decor"],
-  layout: ["layout", "cards", "appFeel"],
+  layout: ["layout", "cards", "appFeel", "tabView"],
   memo: ["memoLook", "memoTpl"],
   money: ["moneyLook", "shop", "field"],
   rules: ["alarms", "hourly", "invest", "company", "logic"],
@@ -952,6 +975,11 @@ export function tabsOf(body) {
           if (["memoTpl", "newMemo", "checkReset", "memoLine"].includes(x.do) || x.on === "memo" || x.where === "memo") out.add("memo");
           if (["addMoney", "addIncome"].includes(x.do) || x.on === "money" || x.where === "money") out.add("money");
         }
+        break;
+      case "tabView":
+        if (p.cal) out.add("calendar");
+        if (p.memo) out.add("memo");
+        if (p.money) out.add("money");
         break;
       case "layout":
         if (p.calendar) out.add("calendar");

@@ -22,6 +22,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.settings.Chips
 import com.bamnat.app.ui.settings.ColorPick
@@ -96,8 +98,20 @@ internal fun PartsTool(
             else "‘$first’${com.bamnat.app.ui.Fmt.wa(first)} 칩 ${multi.size}개. 고친 값이 고른 곳 모두에 들어가요", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
     }
+    // PC 확인 efc52400 사용성 제안: 달력 has some 30 parts and 타임라인 근무 막대 sat at the very bottom; a row of 묶음 (달력 머리, 날짜 칸,
+    // 타임라인 판 …) on top narrows the chips to one family.
+    val families = remember(group) { ids.filter { it != group && it.count { c -> c == '.' } == 1 && BlueprintParts.CHILDREN[it].orEmpty().isNotEmpty() } }
+    var family by rememberSaveable(group) { mutableStateOf<String?>(null) }
+    if (families.size >= 3) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        FilterChip(selected = family == null, onClick = { family = null }, label = { Text("모두") })
+        families.forEach { f ->
+            FilterChip(selected = family == f, onClick = { family = f; if (!(id == f || id.startsWith("$f."))) id = f },
+                label = { Text(BlueprintParts.LABELS[f] ?: f) })
+        }
+    }
+    val shown = family?.let { f -> ids.filter { it == f || it.startsWith("$f.") } } ?: ids
     // 어느 부품, 묶음마다 제목을 달아서 (PC 1차 사용성 제안): 달력 머리 · 요일 줄 · 날짜 칸 …
-    ids.groupBy { it.split('.').take(2).joinToString(".") }.forEach { (head, list) ->
+    shown.groupBy { it.split('.').take(2).joinToString(".") }.forEach { (head, list) ->
         if (list.size > 1) Text(BlueprintParts.LABELS[head] ?: head, style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -122,6 +136,17 @@ internal fun PartsTool(
     // [BLU-12] 어두운 화면 colours show in the example once it is seen dark.
     if (on == "dark") Text("화면 바탕이 어두울 때만 쓰는 색이에요. 미리 보기 위 ‘어두운 화면’을 켜면 보여요. 화면 색·배경을 밝게 정한 화면은 어두운 휴대폰에서도 밝은 쪽 색 그대로예요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // [TAB-07] PC 확인 b81b643f: the 판 부품 (근무 띠·타임라인·보드·표) drew nowhere in the month example, so they show their own small
+    // example here, and the box says which part it is.
+    // PC 확인 9e234d9e 사용성 제안: picking a 판 부품 brings its example up into view (it sat far under the chips).
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    var firstId by remember { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(id) {
+        if (firstId == null) firstId = id else if (firstId != id) { kotlinx.coroutines.delay(120); bring.bringIntoView(); firstId = "" }
+    }
+    androidx.compose.foundation.layout.Box(Modifier.bringIntoViewRequester(bring)) { BoardPartSample(id, bp) }
+    Text("${BlueprintParts.LABELS[id] ?: id} 꾸미기" + (on?.let { " · ${STATE_WORDS[it]}" } ?: ""), style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.semantics { heading() })
     // [RUL-02] 1.36 조건부 꾸미기: "이럴 때만" (야간이고 메모에 #인수인계가 있으면 …), as a table to pick from or a 수식.
     val conds = remember(bp, id, on) { bp.lines.filter { it["id"] == id && it["on"] == on }.mapNotNull { it["when"] as? String }.distinct() }
     var cond by rememberSaveable(id, on) { mutableStateOf<String?>(if (conditionFirst) conds.firstOrNull() ?: "" else null) }
@@ -172,13 +197,27 @@ internal fun PartsTool(
     fun set(k: String, v: Any?) = setAll(k to v)
     fun num(k: String): Float? = (line[k] as? Number)?.toFloat()
     fun col(k: String): Long? = line[k] as? Long
+    // PC 확인 46b9004b 사용성 제안: the 막대 keep one 진하기 for "근무 색 그대로" and one for "한 가지 색으로", so going back and forth
+    // brings each one back instead of starting again from 100%.
+    var otherA by remember(id, on) { mutableStateOf<Long?>(null) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(top = 4.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(22.dp), modifier = Modifier.padding(top = 4.dp)) {
         if (advanced) PartsAdvanced(bp, id, on, line, many, multi, onMany = { many = it; if (!it) multi = emptyList() },
             set = ::set, onAll = { text -> onChange(text) })
         Group("채우기") {
-            ColorPick("색", col("fill")) { set("fill", it) }
+            // PC 확인 e262702a 사용성 제안: a 막대 given one colour can go back to each shift's own at one tap.
+            if (id == "cal.line.bar") FilterChip(selected = col("fill") == null, onClick = {
+                if (col("fill") != null) { val was = (line["fillA"] as? Number)?.toLong(); set("fill" to null, "fillA" to otherA); otherA = was }
+            }, label = { Text("근무 색 그대로") })
+            ColorPick(if (id == "cal.line.bar") "한 가지 색으로" else "색", col("fill")) {
+                if (id == "cal.line.bar" && col("fill") == null && it != null) {
+                    val was = (line["fillA"] as? Number)?.toLong(); set("fill" to it, "fillA" to otherA); otherA = was
+                } else set("fill" to it)
+            }
             if (col("fill") != null) LabeledSlider("진하기", num("fillA") ?: 100f, 0f..100f, "%") { set("fillA", it.toLong()) }
+            // PC 확인 fc2db3b0 사용성 제안: one colour for every 막대 hid which shift is which; with no 색 the 막대 keep their shift's colour and
+            // this sets how strong.
+            else if (id == "cal.line.bar") LabeledSlider("근무 색 그대로 · 진하기", num("fillA") ?: 90f, 20f..100f, "%") { set("fillA", it.toLong()) }
         }
         Group("선") {
             Chips(listOf(null to "처음대로", "none" to "없음", "solid" to "실선", "dash" to "끊은 선", "dot" to "점선", "double" to "두 줄"), line["line"] as? String) { set("line", it) }
@@ -193,6 +232,7 @@ internal fun PartsTool(
                 Text("네 귀퉁이 따로", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Switch(each, { each = it })
             }
+            androidx.compose.foundation.layout.Spacer(Modifier.padding(top = 6.dp))
             // '네모' in one tap; the slider starts from the corners the part has now and goes one dp at a time (PC 3차).
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(selected = num("r") == 0f, onClick = { set("r", 0L) }, label = { Text("네모") })
@@ -310,6 +350,10 @@ private fun statesOf(id: String): List<String> = when {
     // [BLU-10] 위젯 칸 is a day like the calendar's cells; 위젯 머리 turns red on a public holiday.
     id == "widget.cell" -> listOf("today", "sat", "sun", "holiday", "dim", "role.day", "role.eve", "role.night", "role.long", "role.off")
     id == "widget.head" -> listOf("holiday")
+    // [TAB-07] 1.36 탭 판 부품.
+    id == "cal.band.slot" || id == "cal.line.row" || id == "money.cal.cell" || id == "memo.cal.cell" -> listOf("today", "sel")
+    id == "cal.weekly.day" -> listOf("today", "sel", "sat", "sun", "dim")
+    id == "cal.year.month" -> listOf("today")
     else -> emptyList()
 }
 

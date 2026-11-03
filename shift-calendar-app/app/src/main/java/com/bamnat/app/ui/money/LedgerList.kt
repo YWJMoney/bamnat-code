@@ -116,6 +116,8 @@ import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.MoneySource
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.app.appContainer
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.time.YearMonth
 import com.bamnat.core.time.Today
 
@@ -193,6 +195,15 @@ fun LedgerListPane(
     // Lines picked and then filtered away are let go.
     LaunchedEffect(shown) { if (selecting) onSelection(selection.filter { id -> shown.any { it.id == id } }.toSet()) }
 
+    // [TAB-06] 1.36 가계부 판: kept with the other tabs' views in settings.
+    val container = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val appSettings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+    val board = remember(appSettings.tabViews) { com.bamnat.core.layout.TabViews.decode(appSettings.tabViews).money }
+    val pickBoard: (com.bamnat.core.money.LedgerBoard) -> Unit = { b ->
+        container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(money = b).encode()) }
+    }
+    var pickedDay by remember(month) { mutableStateOf<LocalDate?>(null) }
+    var tableSort by remember { mutableStateOf("date" to true) }
     val list: @Composable (Modifier) -> Unit = { modifier ->
         Column(modifier) {
             if (selecting) {
@@ -211,6 +222,18 @@ fun LedgerListPane(
                             PeriodChips(view, month, onView)
                             ActiveConditions(book, view, onView)
                             if (shown.isNotEmpty()) TotalsStrip(totals, view.filter.categories.isNotEmpty())
+                            // PC 확인 bad7d860 사용성 제안: the 판 chips show before the first line too, so they are found.
+                            LedgerBoardChips(board, pickBoard)
+                        }
+                    }
+                }
+                if ((shown.isNotEmpty() || board == com.bamnat.core.money.LedgerBoard.CAL) && board != com.bamnat.core.money.LedgerBoard.LIST) item(key = "board-${board.key}") {
+                    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                        when (board) {
+                            com.bamnat.core.money.LedgerBoard.CAL -> LedgerMonthGrid(month, shown, pickedDay) { pickedDay = if (pickedDay == it) null else it }
+                            com.bamnat.core.money.LedgerBoard.BOARD -> LedgerCategoryBoard(shown, actions::open)
+                            com.bamnat.core.money.LedgerBoard.TABLE -> LedgerTable(shown, tableSort, { tableSort = it }, actions::open)
+                            com.bamnat.core.money.LedgerBoard.LIST -> Unit
                         }
                     }
                 }
@@ -226,7 +249,22 @@ fun LedgerListPane(
                         }
                     }
                 }
-                if (byDate) {
+                if (board == com.bamnat.core.money.LedgerBoard.BOARD || board == com.bamnat.core.money.LedgerBoard.TABLE) {
+                    // The board or table above holds the lines.
+                } else if (board == com.bamnat.core.money.LedgerBoard.CAL) {
+                    // [TAB-06] Under the month, the picked day's lines (or, with none picked, a word on how).
+                    val day = pickedDay
+                    val lines = if (day == null) emptyList() else shown.filter { it.date == day }
+                    if (day == null) item(key = "cal-hint") {
+                        Text("날짜를 누르면 그날 적은 돈이 여기 나와요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                    }
+                    items(lines, key = { it.id }) { e ->
+                        LedgerRow(e, book, selecting, e.id in selection, actions,
+                            onToggle = { onSelection(if (e.id in selection) selection - e.id else selection + e.id) },
+                            modifier = Modifier.animateItem())
+                    }
+                } else if (byDate) {
                     days.forEach { d ->
                         stickyHeader(key = "d${d.date}") { DayHeader(d.date, d.expense, d.income) }
                         items(d.entries, key = { it.id }) { e ->
@@ -254,6 +292,8 @@ fun LedgerListPane(
                 SearchRow(view, onView, onFilter = null, onExport = { exporting = true })
                 PeriodChips(view, month, onView)
                 if (shown.isNotEmpty()) TotalsStrip(totals, view.filter.categories.isNotEmpty())
+                // [TAB-06] The 판 chips on a wide screen too.
+                LedgerBoardChips(board, pickBoard)
                 Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLowest,
                     border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

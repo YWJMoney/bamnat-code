@@ -185,6 +185,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private val _listView = MutableStateFlow(runCatching { viewPrefs.getBoolean(K_LIST, false) }.getOrDefault(false))
     val listView: StateFlow<Boolean> = _listView.asStateFlow()
 
+    /** [TAB-04] 1.36 달력 판, kept with the other tabs' views ([com.bamnat.core.layout.TabViews]). */
+    fun setBoard(board: com.bamnat.core.layout.CalendarBoard) = container.settingsRepository.update {
+        it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(cal = board).encode())
+    }
+
     fun setListView(on: Boolean) {
         _listView.value = on
         viewPrefs.edit().putBoolean(K_LIST, on).apply()

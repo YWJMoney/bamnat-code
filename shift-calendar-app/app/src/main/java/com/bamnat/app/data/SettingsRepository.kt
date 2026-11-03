@@ -206,6 +206,8 @@ data class AppSettings(
     val moneyLayout: String = "",
     /** [DAILY-15] 화면 꾸미기 of the 메모 page. */
     val memoLayout: String = "",
+    /** [TAB-02][TAB-04][TAB-06] 1.36 탭 보기 ([com.bamnat.core.layout.TabViews.encode]): 달력 판, 메모장 보기, 가계부 판; empty is the app's own. In the backup. */
+    val tabViews: String = "",
     /** [RCP-09] 1.34 달력 테마 ([com.bamnat.core.recipe.CalendarTheme.encode]); empty is the app's own look. In the backup. */
     val calTheme: String = "",
     /** [RCX-14] 1.35 위젯 모양 ([com.bamnat.core.recipe.WidgetLook.encode]); empty is the app's own look. In the backup. */
@@ -410,6 +412,7 @@ class SettingsRepository(context: Context) {
             payLooks = prefs.getString(K_PAY_LOOKS, null) ?: d.payLooks,
             parts = prefs.getString(K_PARTS, null) ?: d.parts,
             memoLayout = prefs.getString(K_MEMO_LAYOUT, null) ?: d.memoLayout,
+            tabViews = prefs.getString(K_TAB_VIEWS, null) ?: d.tabViews,
             rateHint = prefs.getBoolean(K_RATE_HINT, d.rateHint),
             payReviewDue = prefs.getBoolean(K_PAY_REVIEW_DUE, false),
             payReviewAsked = prefs.getBoolean(K_PAY_REVIEW_ASKED, false),
@@ -516,6 +519,7 @@ class SettingsRepository(context: Context) {
             .putString(K_PAY_LOOKS, s.payLooks)
             .putString(K_PARTS, s.parts)
             .putString(K_MEMO_LAYOUT, s.memoLayout)
+            .putString(K_TAB_VIEWS, s.tabViews)
             .putBoolean(K_RATE_HINT, s.rateHint)
             .putBoolean(K_PAY_REVIEW_DUE, s.payReviewDue)
             .putBoolean(K_PAY_REVIEW_ASKED, s.payReviewAsked)
@@ -573,6 +577,7 @@ class SettingsRepository(context: Context) {
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
         const val K_MEMO_LAYOUT = "memo_layout"
+        const val K_TAB_VIEWS = "tab_views"
         const val K_RATE_HINT = "rate_hint"
         const val K_PAY_REVIEW_DUE = "pay_review_due"
         const val K_PAY_REVIEW_ASKED = "pay_review_asked"

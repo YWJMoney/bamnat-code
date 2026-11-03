@@ -865,6 +865,8 @@ internal object StudioStarters {
         // [LAY-01] A star on every 25th, so turning 꾸밈 층 on shows something at once.
         PieceKind.DECOR -> com.bamnat.core.recipe.Decor(listOf(com.bamnat.core.recipe.DecorItem(com.bamnat.core.recipe.DecorKind.SHAPE, "star5",
             com.bamnat.core.recipe.Decor.CELL, on = "d25", x = 820, y = 180, w = 12, h = 12, fill = 0xFFFFB300))).values()
+        // [TAB-07] 1.36 탭 보기: a 근무 띠 calendar and a 보드 메모장 to start from.
+        PieceKind.TAB_VIEW -> mapOf("cal" to "rota", "memo" to "board", "memoBy" to "tag", "money" to "board")
     }
 }
 

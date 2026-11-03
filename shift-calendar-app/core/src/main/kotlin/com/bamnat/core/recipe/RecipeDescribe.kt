@@ -144,6 +144,12 @@ object RecipeDescribe {
                 "메모·가계부를 바꾸는 동작 있음".takeIf { l.writes },
             ).joinToString(" · ").ifEmpty { "수식·규칙" }
         }
+        // [TAB-07] 1.36 탭 보기.
+        PieceKind.TAB_VIEW -> listOfNotNull(
+            (p.values["cal"] as? String)?.let { "달력 " + com.bamnat.core.layout.CalendarBoard.of(it).label },
+            (p.values["memo"] as? String)?.let { "메모 " + (com.bamnat.core.memo.MemoView.LABELS[it] ?: it) },
+            (p.values["money"] as? String)?.let { "가계부 " + com.bamnat.core.money.LedgerBoard.of(it).label },
+        ).joinToString(" · ").ifEmpty { "탭 보기" }
         // [CVW-07]
         PieceKind.APP_FEEL -> listOfNotNull(
             (p.values["theme"] as? String)?.let { RecipeWords.PICKS[it] }, "기기 색".takeIf { p.values["dynamic"] == true },

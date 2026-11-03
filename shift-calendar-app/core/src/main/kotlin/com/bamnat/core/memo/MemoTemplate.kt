@@ -28,7 +28,7 @@ data class MemoTemplate(
         val day = when {
             repeat.startsWith("W") -> (date ?: today).with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.of(repeat.drop(1).toInt())))
             repeat.startsWith("M") -> nextDayOfMonth(date ?: today, repeat.drop(1).toInt())
-            else -> date
+            else -> picked(answers, today) ?: date
         }
         return base.copy(
             title = title,
@@ -41,8 +41,58 @@ data class MemoTemplate(
         )
     }
 
+    /**
+     * [TAB-03] PC 확인 bf62e966 ("고른 날짜 11/12와 메모 날짜 11/11이 따로 놀아 가계부엔 11/11로"): a 날짜 칸 named for the memo's own day
+     * (날짜, 일자, 날) is that day, so the memo, the 달력 and '가계부에 넣기' all go by what the user picked.
+     */
+    private fun picked(answers: Map<String, String>, today: LocalDate): LocalDate? = asks.withIndex().firstNotNullOfOrNull { (i, a) ->
+        if (a.type != "date" || a.label.trim() !in DAY_LABELS) return@firstNotNullOfOrNull null
+        val v = (answers["#$i"] ?: answers[a.label])?.trim()?.takeIf { it.isNotEmpty() } ?: return@firstNotNullOfOrNull null
+        MemoProps.read(a.label, v, today.year).date
+    }
+
     companion object {
         const val MAX = 40
+        private val DAY_LABELS = setOf("날짜", "일자", "날", "작업일", "근무일", "영업일", "매매일")
+
+        /**
+         * [TAB-03] 1.36 이 메모를 틀로 저장 (PC 확인 bad7d860 "눌러도 반응이 없어요", 사용성 제안 "틀 이름을 물어 주세요"): [memo] as a
+         * template named [name]. Each "칸: 값" line whose name is in [asked] becomes an 입력 칸 of that property's type (금액, 날짜, 별점…)
+         * and leaves the body, so starting from it asks for a fresh value instead of copying today's; the other lines stay as written.
+         */
+        fun fromMemo(memo: Memo, id: String, name: String, asked: Set<String>, choices: Map<String, List<String>> = emptyMap()): MemoTemplate {
+            val props = MemoProps.of(memo).associateBy { it.label }
+            val asks = ArrayList<TemplateAsk>()
+            val body = if (memo.isChecklist) "" else memo.body.lineSequence().filter { line ->
+                val label = MemoProps.labelOfLine(line)
+                val p = label?.let { props[it] }
+                if (p != null && label in asked && asks.none { it.label == label }) {
+                    val picks = choices[label].orEmpty().map { it.trim() }.filter { it.isNotEmpty() }.distinct().take(MemoProps.MAX_CHOICES)
+                    asks += when {
+                        // [TAB-01] N9: a 칸 the user gave words to pick from asks as 고르기.
+                        picks.size >= 2 -> TemplateAsk(label, "pick", picks)
+                        p.type == MemoProps.Type.NUM && MemoProps.isMoneyLabel(label) -> TemplateAsk(label, "money")
+                        else -> TemplateAsk(label, askType(p.type))
+                    }
+                    false
+                } else true
+            }.joinToString("\n").trim().take(300)
+            return MemoTemplate(
+                id = id,
+                title = name.trim().ifBlank { memo.title.ifBlank { (memo.checklist.firstOrNull()?.text ?: memo.body.lineSequence().firstOrNull()).orEmpty() } }.take(30),
+                check = if (memo.isChecklist) memo.checklist.map { it.text }.filter { it.isNotBlank() }.take(20) else emptyList(),
+                body = body,
+                repeat = memo.repeat.takeIf { it.startsWith("W") || it.startsWith("M") }.orEmpty(),
+                asks = asks.take(MAX_ASKS),
+            )
+        }
+
+        const val MAX_ASKS = 8
+
+        private fun askType(t: MemoProps.Type): String = when (t) {
+            MemoProps.Type.NUM -> "num"; MemoProps.Type.MONEY -> "money"; MemoProps.Type.STAR -> "star"; MemoProps.Type.DATE -> "date"
+            MemoProps.Type.TIME -> "time"; MemoProps.Type.CHECK -> "check"; MemoProps.Type.TEXT -> "text"; MemoProps.Type.PICK -> "pick"
+        }
 
         /** The next day [d] of a month on or after [from]; a short month uses its last day. */
         fun nextDayOfMonth(from: LocalDate, d: Int): LocalDate {
@@ -60,7 +110,8 @@ data class MemoTemplate(
  */
 data class TemplateAsk(val label: String, val type: String = "text", val choices: List<String> = emptyList()) {
     companion object {
-        val TYPES = listOf("text", "num", "star", "pick")
+        /** [TAB-03] 1.36 금액·날짜·시각·체크 added to 글·숫자·별점·고르기, each read back as that property type ([MemoProps]). */
+        val TYPES = listOf("text", "num", "star", "pick", "money", "date", "time", "check")
 
         /**
          * The answered ones, in the template's order, one "label: 값" a line; 별점 as ★★★☆☆. An answer is found by its place ("#0", "#1"…)
@@ -72,6 +123,11 @@ data class TemplateAsk(val label: String, val type: String = "text", val choices
                 "star" -> v.toIntOrNull()?.coerceIn(1, 5)?.let { n -> "★".repeat(n) + "☆".repeat(5 - n) } ?: return@mapNotNull null
                 // [J135-06] F-62: a 숫자 칸 writes a number or nothing.
                 "num" -> v.replace(",", "").takeIf { it.toDoubleOrNull() != null } ?: return@mapNotNull null
+                // [TAB-03] 금액: whole won with commas and 원, so the 표 adds it up and '가계부에 넣기' reads it.
+                "money" -> v.replace(",", "").replace("원", "").trim().toDoubleOrNull()?.let { "%,d원".format(it.toLong()) } ?: return@mapNotNull null
+                "date" -> MemoProps.read(a.label, v).takeIf { it.type == MemoProps.Type.DATE }?.raw ?: return@mapNotNull null
+                "time" -> MemoProps.read(a.label, if (v.length in 3..4 && v.all { it.isDigit() }) v.dropLast(2) + ":" + v.takeLast(2) else v).takeIf { it.type == MemoProps.Type.TIME }?.raw ?: return@mapNotNull null
+                "check" -> when (v) { "1", "예", "true" -> "예"; "0", "아니오", "false" -> "아니오"; else -> return@mapNotNull null }
                 else -> v
             }
             "${a.label}: $shown"

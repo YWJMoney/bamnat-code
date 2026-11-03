@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -654,7 +655,7 @@ internal fun LabeledSlider(
             StepButton("−", "$label ${step}씩 줄이기", v > range.start, { nudge(-1) }) { onDone(v) }
             StepButton("+", "$label ${step}씩 늘리기", v < range.endInclusive, { nudge(1) }) { onDone(v) }
         }
-        Slider(v, { moved = true; v = it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
+        Slider(v, { moved = true; v = if (unit == "%") (Math.round(it / 5f) * 5f).coerceIn(range) else it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
     }
 }
 
@@ -754,7 +755,12 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
         // PC 제안 1.36: on a new phone, where the colours used will gather.
         if (recent.isEmpty() && memory.pin != null) Text("쓴 색과 ★ 내 색은 줄 맨 앞에 모여요", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
+        // that slides the row on.
+        val swatchScroll = rememberScrollState()
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        Box {
+        Row(Modifier.fillMaxWidth().horizontalScroll(swatchScroll).padding(end = if (swatchScroll.canScrollForward) 36.dp else 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
@@ -770,6 +776,16 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { for (i in split until row.size) Dot(i) }
             }
+        }
+        if (swatchScroll.canScrollForward) {
+            val bg = MaterialTheme.colorScheme.surface
+            Box(
+                Modifier.align(Alignment.CenterEnd).size(44.dp, 36.dp)
+                    .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(bg.copy(alpha = 0f), bg, bg)))
+                    .clickable(onClickLabel = "색 더 보기") { scope.launch { swatchScroll.animateScrollBy(240f) } },
+                contentAlignment = Alignment.CenterEnd,
+            ) { Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp)) }
+        }
         }
     }
     if (custom) CustomColorDialog(value ?: 0xFF2F5BEA, onDismiss = { custom = false }) { custom = false; pick(it) }

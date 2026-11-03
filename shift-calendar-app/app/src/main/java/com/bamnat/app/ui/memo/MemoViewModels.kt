@@ -2,6 +2,7 @@ package com.bamnat.app.ui.memo
 
 import java.time.YearMonth
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -106,7 +107,10 @@ private data class MemoQuery(
 
 class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     private val repo = container.memoRepository
-    private val q = MutableStateFlow(MemoQuery())
+    // PC 확인 11825213 사용성 제안: the 메모 tab opens on the 칸 last looked at (it always opened on 달력 메모, empty or not).
+    private val tabPrefs = container.appContext.getSharedPreferences("memo_list", android.content.Context.MODE_PRIVATE)
+    private val savedTab = tabPrefs.getString("tab", null)?.let { n -> MemoTab.entries.firstOrNull { it.name == n } }
+    private val q = MutableStateFlow(MemoQuery(tab = savedTab ?: MemoTab.CALENDAR))
     private val selection = MutableStateFlow<Set<Long>>(emptySet())
     private var visibleIds: Set<Long> = emptySet()
     /** [MEMO-03][MEMO-04] 1.27 AK: each memo's search text, made once per saved version. */
@@ -255,6 +259,15 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
     fun setTab(tab: MemoTab) {
         q.update { it.copy(tab = tab, tag = null, shift = null) }
         clearSelection()
+        tabPrefs.edit().putString("tab", tab.name).apply()
+    }
+
+    init {
+        // Never chosen yet: the first time, a 칸 with memos rather than an empty 달력 메모.
+        if (savedTab == null) viewModelScope.launch {
+            val first = state.first { it.loaded }
+            if (q.value.tab == MemoTab.CALENDAR && first.calendarCount == 0 && first.generalCount > 0) q.update { it.copy(tab = MemoTab.GENERAL) }
+        }
     }
     fun setQuery(text: String) = q.update { it.copy(query = text) }
     /** [STAB-01] What the search box shows, apart from the list that is built off the main thread. */
@@ -308,6 +321,11 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
 
     fun delete(memo: Memo) {
         viewModelScope.launch { repo.delete(memo) }
+    }
+
+    /** [TAB-02] 누락 점검 N9: a memo changed in a view (보드 칸 옮기기, 표 고르기, 되돌리기) saved as it now reads. */
+    fun saveEdited(memo: Memo) {
+        viewModelScope.launch { repo.save(memo) }
     }
 }
 
@@ -468,18 +486,15 @@ class MemoEditorViewModel(
         }
     }
 
-    /** [RCP-11] 이 메모를 틀로 저장: the memo's words and list (ticks off), never its date or calendars. */
-    fun saveAsTemplate(): Boolean {
+    /**
+     * [RCP-11] 이 메모를 틀로 저장: the memo's words and list (ticks off), never its date or calendars. [TAB-03] 1.36: under the name the user
+     * gave, with the "칸: 값" lines they picked as 입력 칸. Null when saved, else why not (empty memo, 40 틀 already).
+     */
+    fun saveAsTemplate(name: String = "", asked: Set<String> = emptySet(), picks: Map<String, List<String>> = emptyMap()): String? {
         val m = _memo.value
-        if (m.isBlank) return false
-        container.memoTemplates.add(com.bamnat.core.memo.MemoTemplate(
-            id = "m" + com.bamnat.core.time.Today.millis().toString(36),
-            title = m.title.ifBlank { (m.checklist.firstOrNull()?.text ?: m.body.lineSequence().firstOrNull()).orEmpty() }.take(30),
-            check = if (m.isChecklist) m.checklist.map { it.text }.filter { it.isNotBlank() }.take(20) else emptyList(),
-            body = if (m.isChecklist) "" else m.body.take(300),
-            repeat = m.repeat.takeIf { it.startsWith("W") || it.startsWith("M") }.orEmpty(),
-        ))
-        return true
+        if (m.isBlank) return "빈 메모는 틀로 저장할 수 없어요"
+        val t = com.bamnat.core.memo.MemoTemplate.fromMemo(m, "m" + com.bamnat.core.time.Today.millis().toString(36), name, asked, picks)
+        return if (container.memoTemplates.add(t)) null else "틀이 ${com.bamnat.core.memo.MemoTemplate.MAX}개로 가득 찼어요. 새 메모의 ‘틀에서 시작’에서 안 쓰는 틀을 지워 주세요"
     }
 
     fun removeTemplate(id: String) = container.memoTemplates.remove(id)

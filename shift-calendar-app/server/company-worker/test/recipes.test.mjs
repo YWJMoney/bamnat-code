@@ -415,16 +415,19 @@ test("[RUL-07] 규칙·단추만: a recipe of only the logic piece is its own se
   assert.deepEqual(tabs.data.items.map((i) => i.title), ["알람만"]);
 });
 
-test("[FREE-09] every 추천 테마 core wrote reads the same on the server, eight for each kind of work, each with its look for the list", async () => {
+test("[FREE-09] every 추천 테마 core wrote reads the same on the server, nine for each kind of work (전문 달력 first, TAB-05), each with its look for the list", async () => {
   const themes = JSON.parse(readFileSync(new URL("../../../docs/recipes/theme-recipes.json", import.meta.url), "utf8"));
-  assert.equal(themes.length, 48);
+  assert.equal(themes.length, 54);
   for (const s of themes) {
     const r = await cleanRecipe(recipeCanonical(s.recipe));
     assert.equal(r.text, recipeCanonical(s.recipe), s.recipe.title);
     const look = lookOf(r.text);
     assert.ok(look && look.bg && look.cells && look.pattern, s.recipe.title);
   }
-  for (const style of ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"]) assert.equal(themes.filter((s) => s.recipe.styles[0] === style).length, 8, style);
+  for (const style of ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"]) assert.equal(themes.filter((s) => s.recipe.styles[0] === style).length, 9, style);
+  const experts = themes.filter((s) => s.recipe.title.endsWith("전문 달력"));
+  assert.equal(experts.length, 6);
+  for (const s of experts) assert.ok(s.recipe.pieces.some((p) => p.kind === "tabView"), s.recipe.title);
 });
 
 test("[FREE-10] 오늘 says when themes opened with no ad jump (yesterday twice the five days before, 10 or more)", async () => {

@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Palette
@@ -96,6 +97,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.Fmt
@@ -146,6 +148,7 @@ fun MemoListScreen(
         (if (state.tab == MemoTab.CALENDAR) state.calendarFilter != CalendarFilter.ALL else state.generalFilter != GeneralFilter.ALL)
     val fold = parts.any { it.part == MemoPart.FOLD && it.shown }
     val today = Today.date()
+    var undo by remember { mutableStateOf<UndoBar?>(null) }
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
     val actions = CardActions(
         onOpen = open,
@@ -153,7 +156,10 @@ fun MemoListScreen(
         onTogglePin = vm::togglePin,
         onDuplicate = vm::duplicate,
         onDelete = vm::delete,
+        // [TAB-02] 누락 점검 N9: a card moved on the 보드 or a 칸 picked in the 표 — saved at once, with 되돌리기 for 10 seconds (PC 확인 5ff9ae28: 4–6초 was missed).
+        onChange = { before, after, said -> vm.saveEdited(after); undo = UndoBar(said, { vm.saveEdited(before) }, "바꾸기 전으로 돌아왔어요") },
     )
+    androidx.compose.runtime.LaunchedEffect(undo) { undo?.let { u -> kotlinx.coroutines.delay(if (u.back == null) 3_000 else 10_000); undo = null } }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
@@ -210,13 +216,90 @@ fun MemoListScreen(
             }
             // With the search box hidden there is no icon to unfold them, so they stay open.
             if (!fold || filtersOpen || filterOn || parts.none { it.part == MemoPart.SEARCH && it.shown }) FilterRow(state, vm)
+            // [TAB-02] 1.36 메모장 보기: the memos on screen (after the tab, notebook, search and filters) as a list, board, table or gallery.
+            val tabViews = remember(appSettings.tabViews) { com.bamnat.core.layout.TabViews.decode(appSettings.tabViews) }
+            val memoView = tabViews.memo
+            val shown = remember(state.tab, state.upcoming, state.past, state.general) {
+                if (state.tab == MemoTab.CALENDAR) (state.upcoming + state.past).flatMap { it.memos }.distinctBy { it.id } else state.general
+            }
+            val shiftOf = remember(state.upcoming, state.past) {
+                val m = (state.upcoming + state.past).associate { it.date to it.day?.shiftType?.name };
+                { d: LocalDate -> m[d] }
+            }
+            val propColumns = remember(shown) { com.bamnat.core.memo.MemoProps.columns(shown) }
+            // [TAB-01] A 틀's 고르기 choices for a 칸, so its 보드 shows every 칸 and its 표 offers every word.
+            val templates by container.memoTemplates.items.collectAsStateWithLifecycle()
+            val templateChoices = remember(templates) {
+                { label: String -> templates.flatMap { t -> t.asks.filter { it.label == label && it.type == "pick" }.flatMap { it.choices } } }
+            }
+            val setView: (com.bamnat.core.memo.MemoView) -> Unit = { v ->
+                // PC 확인 1be49fd7: memos picked in one view are let go when the view changes, so nothing stays picked unseen.
+                if (v.view != memoView.view) vm.clearSelection()
+                container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(memo = v).encode()) }
+            }
+            // PC 확인 bad7d860 사용성 제안: the chips show from the first visit, so the views are found before there are memos.
+            // A 정렬 picked from the chip or a 표 head says what it did, with 되돌리기 (PC 확인 82196a74, fe5eb3cd).
+            fun said(v: String, base: String) = when {
+                v.isEmpty() -> base
+                v == com.bamnat.core.memo.MemoView.SORT_TITLE -> "제목순"
+                else -> "‘${v.removePrefix("-").removePrefix("p:")}’ ${if (v.startsWith("-")) "큰 순" else "작은 순"}"
+            }
+            val baseLabel = if (state.tab == MemoTab.CALENDAR) "날짜순" else state.sort.label
+            val sortTo: (String) -> Unit = { key ->
+                val before = memoView
+                val beforeBase = baseLabel
+                val beforeSort = state.sort
+                val ms = key.removePrefix("ms:").takeIf { key.startsWith("ms:") }?.let { n -> MemoSort.entries.firstOrNull { it.name == n } }
+                if (ms != null) vm.setSort(ms)
+                val next = if (ms != null) "" else key
+                setView(memoView.copy(sort = next))
+                val now = ms?.label ?: said(next, baseLabel)
+                undo = UndoBar("${now}${com.bamnat.app.ui.Fmt.ro(now)} 정렬했어요", { vm.setSort(beforeSort); setView(before) },
+                    said(before.sort, beforeBase).let { "$it${com.bamnat.app.ui.Fmt.ro(it)} 돌아왔어요" })
+            }
+            // PC 확인 fe5eb3cd: a 칸 order whose 칸 is gone from the memos on screen goes back to the 기본 순서, and says so.
+            androidx.compose.runtime.LaunchedEffect(memoView.sort, propColumns, state.loaded) {
+                val label = memoView.sort.removePrefix("-").removePrefix("p:")
+                if (state.loaded && shown.isNotEmpty() && memoView.sort.removePrefix("-").startsWith("p:") && propColumns.none { it.first == label }) {
+                    val before = memoView
+                    setView(memoView.copy(sort = ""))
+                    undo = UndoBar("‘$label’ 칸이 없어져 기본 순서로 바꿨어요", { setView(before) }, "‘$label’ 순으로 돌아왔어요")
+                }
+            }
+            if (state.loaded) MemoViewChips(memoView, propColumns, setView,
+                baseOptions = if (state.tab == MemoTab.CALENDAR) listOf("" to "날짜순", com.bamnat.core.memo.MemoView.SORT_TITLE to "제목순")
+                    else MemoSort.entries.map { "ms:${it.name}" to it.label },
+                baseLabel = baseLabel, onSort = sortTo)
             when {
                 state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
+                memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions, templateChoices)
+                memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { sort -> sortTo(sort)}, actions, templateChoices, state.selection, state.selecting)
+                memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
+                memoView.view == com.bamnat.core.memo.MemoView.CALENDAR -> MemoCalendarView(shown, appSettings.weekStart, today, actions)
+                !memoView.sort.isEmpty() && state.tab != MemoTab.CALENDAR -> GeneralMemoGrid(state.copy(general = memoView.sorted(state.general)), actions)
                 state.tab == MemoTab.CALENDAR -> CalendarMemoList(state, today, actions)
                 else -> GeneralMemoGrid(state, actions)
             }
         }
 
+        // [TAB-02] 누락 점검 N9: what a 보드·표 change did, and 되돌리기, above the 새 메모 button.
+        undo?.let { (said, back, backSaid) ->
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.inverseSurface,
+                shadowElevation = 4.dp,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 88.dp).fillMaxWidth()
+                    .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+            ) {
+                Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(said, color = MaterialTheme.colorScheme.inverseOnSurface, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    // PC 확인 d0e5457e 사용성 제안: after 되돌리기 the bar says where it came back to, for a moment.
+                    if (back != null) androidx.compose.material3.TextButton(onClick = { back(); undo = UndoBar(backSaid, null) }) {
+                        Text("되돌리기", color = MaterialTheme.colorScheme.inversePrimary)
+                    } else Spacer(Modifier.height(48.dp))
+                }
+            }
+        }
         if (!state.selecting) {
             Column(
                 Modifier.align(Alignment.BottomEnd).padding(16.dp),
@@ -289,12 +372,16 @@ internal fun MemoEditSheet(layout: String, update: ((com.bamnat.app.data.AppSett
     )
 }
 
-private class CardActions(
+internal class CardActions(
     val onOpen: (Memo) -> Unit,
     val onSelect: (Memo) -> Unit,
     val onTogglePin: (Memo) -> Unit,
     val onDuplicate: (Memo) -> Unit,
     val onDelete: (Memo) -> Unit,
+    /**
+     * [TAB-02] 누락 점검 N9: a memo changed in a view (moved to another 보드 칸, a 표 칸 picked) — saved, with [said] and 되돌리기 to [before].
+     */
+    val onChange: (before: Memo, after: Memo, said: String) -> Unit = { _, _, _ -> },
 )
 
 @Composable
@@ -307,7 +394,8 @@ private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash
         verticalAlignment = Alignment.CenterVertically,
     ) {
         com.bamnat.app.ui.parts.PartText("메모", head, MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-        if (state.tab == MemoTab.GENERAL) {
+        // PC 확인 fe5eb3cd: the 정렬 lives in the 보기 chips' 정렬 alone; this icon shows only before the chips do.
+        if (state.tab == MemoTab.GENERAL && !state.loaded) {
             Box {
                 IconButton(onClick = { sortMenu = true }) {
                     Icon(Icons.AutoMirrored.Outlined.Sort, contentDescription = "정렬: ${state.sort.label}")
@@ -565,7 +653,7 @@ fun ShiftLabel(day: ResolvedDay?, modifier: Modifier = Modifier) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun MemoCard(
+internal fun MemoCard(
     memo: Memo,
     query: String,
     selected: Boolean,
@@ -574,6 +662,8 @@ private fun MemoCard(
     actions: CardActions,
 ) {
     var menu by remember { mutableStateOf(false) }
+    var toLedger by remember { mutableStateOf(false) }
+    if (toLedger) MemoToLedgerDialog(memo) { toLedger = false }
     // [FREE-04] 메모장 모양: the card's colour, edge, corners and paper; a 포스트잇 leans a little, one way or the other by the memo.
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
     // [BLU-05] 1.36 부품 꾸미기: 메모 카드와 카드 속 제목, over the 메모장 모양.
@@ -652,6 +742,8 @@ private fun MemoCard(
                 }
                 Column(Modifier.padding(end = 10.dp)) {
                     if (look.layout != "compact") MemoContent(memo, query)
+                    // [TAB-01] 1.36 메모 속성: the memo's "칸: 값" lines as pills.
+                    if (look.layout != "compact") PropPills(memo, modifier = Modifier.padding(top = 6.dp))
                     Footer(memo, showDate && look.date != false)
                 }
             }
@@ -667,6 +759,12 @@ private fun MemoCard(
                 text = { Text("복제") },
                 leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) },
                 onClick = { menu = false; actions.onDuplicate(memo) },
+            )
+            // [TAB-03] PC 확인 bad7d860: '가계부에 넣기' from a card's menu too.
+            DropdownMenuItem(
+                text = { Text("가계부에 넣기") },
+                leadingIcon = { Icon(Icons.Outlined.AccountBalanceWallet, null) },
+                onClick = { menu = false; toLedger = true },
             )
             DropdownMenuItem(
                 text = { Text("여러 개 선택") },
@@ -719,14 +817,21 @@ private fun MemoContent(memo: Memo, query: String) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
     } else if (memo.title.isNotBlank() && memo.body.isNotBlank()) {
+        // PC 확인 d5678f31: a "칸: 값" line shown as a pill under the card (PropPills, the first 3) is not written again in the text.
+        val body = remember(memo.body) {
+            val pills = com.bamnat.core.memo.MemoProps.of(memo).take(3).map { it.label }.toSet()
+            // PC 확인 c9a89b20: a line of 꼬리표 alone is shown by the tag chips, not again in the text.
+            memo.body.lines().filterNot { com.bamnat.core.memo.MemoProps.labelOfLine(it) in pills || TAG_LINE.matches(it.trim()) }.joinToString("\n").trim()
+        }
+        if (body.isEmpty()) return
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.
         val cardLook = LocalMemoCardLook.current
         // [BLU-05] 1.36 부품 '메모 내용'(memo.card.body) over the 메모장 모양.
-        val body = com.bamnat.app.ui.parts.partStyle("memo.card.body")
-        if (body.hide != true) Text(
-            highlighted(com.bamnat.core.memo.MemoSearch.excerpt(memo.body, query), query),
-            style = body.text(memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium),
-            maxLines = body.lines ?: cardLook.lines ?: 8,
+        val bodyPart = com.bamnat.app.ui.parts.partStyle("memo.card.body")
+        if (bodyPart.hide != true) Text(
+            highlighted(com.bamnat.core.memo.MemoSearch.excerpt(body, query), query),
+            style = bodyPart.text(memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium),
+            maxLines = bodyPart.lines ?: cardLook.lines ?: 8,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(top = 4.dp).then(com.bamnat.app.ui.parts.partSpotModifier("memo.card.body")),
         )
@@ -884,3 +989,9 @@ fun MemoLookSample(look: com.bamnat.core.recipe.MemoLook, onTap: () -> Unit) {
         }
     }
 }
+
+/** [TAB-02] What a 보드·표 change did, how to undo it, and what the bar says once undone (null [back]: a short note alone). */
+private data class UndoBar(val said: String, val back: (() -> Unit)?, val backSaid: String = "되돌렸어요")
+
+/** A body line that is only 꼬리표 ("#집안일 #급함"). */
+private val TAG_LINE = Regex("^(#[\\p{L}\\p{N}_]+\\s*)+$")

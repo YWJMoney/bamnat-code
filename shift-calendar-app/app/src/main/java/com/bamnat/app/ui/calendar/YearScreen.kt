@@ -155,7 +155,7 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
 /** [CAL-22] How many of each shift the year holds, and the leave taken, in the badges the calendar uses. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>) {
+internal fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>) {
     // [STAT-07] The month's count, a year long: a day taken off whole with leave is 휴가, not its code.
     val counts = ShiftMonth.counts(days, snap.shiftTypes).associate { it.type.id to it.days }
     // [CAL-26] 반차 is half a day and 반반차 a quarter, as the leave ledger counts them (I 리뷰 P5).
@@ -179,7 +179,7 @@ private fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>) {
 }
 
 @Composable
-private fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat: Map<LocalDate, Heat>?, weekStart: DayOfWeek, today: LocalDate, modifier: Modifier, onOpen: () -> Unit) {
+internal fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat: Map<LocalDate, Heat>?, weekStart: DayOfWeek, today: LocalDate, modifier: Modifier, onOpen: () -> Unit) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val first = month.atDay(1).with(TemporalAdjusters.previousOrSame(weekStart))

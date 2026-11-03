@@ -160,6 +160,10 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.PARTS -> com.bamnat.core.recipe.Blueprint.decode(from.parts).takeIf { !it.isEmpty }?.let { mapOf("parts" to it.sorted()) }
         // [RUL-03][RUL-04] 1.36 수식·규칙·버튼.
         PieceKind.LOGIC -> com.bamnat.core.formula.Logic.decode(from.logic).toValues().takeIf { it.isNotEmpty() }
+        // [TAB-07] 1.36 탭 보기.
+        PieceKind.TAB_VIEW -> com.bamnat.core.layout.TabViews.decode(from.tabViews).takeIf { !it.isDefault }?.let { v ->
+            mapOf("cal" to v.cal.key, "memo" to v.memo.view, "memoBy" to v.memo.by, "memoSort" to v.memo.sort.ifEmpty { null }, "money" to v.money.key)
+        }
         // [CVW-07] 1.35 앱 동작.
         PieceKind.APP_FEEL -> from.let { s ->
             mapOf("theme" to THEMES.entries.first { it.value == s.themeMode }.key, "dynamic" to s.dynamicColor,
@@ -293,7 +297,7 @@ class RecipePieces(private val c: AppContainer) {
                 .ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
         PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
-        PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.DECOR -> {
+        PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.DECOR, PieceKind.TAB_VIEW -> {
             val changes = settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(c.settingsRepository.current, k) != v }.map { (k, _) -> Change(SETTING_NAMES[k] ?: k) }
             // PC 확인 C9 1.36 (확인 전 사진이라는 말이 없어 넣은 뒤 회색 화면에 놀람 / 넣은 뒤 '바뀌는 것이 없어요'라 헷갈림): the photos this
             // phone does not have yet, said before and after it is put in.
@@ -467,7 +471,7 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.BUNDLE -> null
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
-            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR -> {
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR, PieceKind.TAB_VIEW -> {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
                 if (kind == PieceKind.PHOTO_LOOK || kind == PieceKind.SCREEN_LOOK || kind == PieceKind.DECOR) photoIds(values).forEach { LookImages.fetch(c, it) }
                 val now = c.settingsRepository.current
@@ -686,7 +690,7 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.BUNDLE -> {}
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
-            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR -> {
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR, PieceKind.TAB_VIEW -> {
                 val sets = before.optJSONObject("settings") ?: return
                 c.settingsRepository.update { cur ->
                     sets.keys().asSequence().fold(cur) { acc, k ->
@@ -829,6 +833,19 @@ class RecipePieces(private val c: AppContainer) {
                 val mine = com.bamnat.core.recipe.Decor.decode(cur.decor).items.filter { it.at !in places }
                 mapOf("decor" to com.bamnat.core.recipe.Decor((mine + theirs.items).take(com.bamnat.core.recipe.Decor.MAX)).encode())
             }
+            // [TAB-07] 1.36 탭 보기: each tab the piece names takes its view; the others stay the user's own.
+            PieceKind.TAB_VIEW -> {
+                val v = com.bamnat.core.layout.TabViews.decode(cur.tabViews)
+                val memoView = (values["memo"] as? String)?.takeIf { it in com.bamnat.core.memo.MemoView.VIEWS }
+                val after = v.copy(
+                    cal = (values["cal"] as? String)?.takeIf { it in com.bamnat.core.layout.CalendarBoard.KEYS }?.let { com.bamnat.core.layout.CalendarBoard.of(it) } ?: v.cal,
+                    memo = if (memoView == null) v.memo else com.bamnat.core.memo.MemoView(memoView,
+                        (values["memoBy"] as? String)?.takeIf(com.bamnat.core.memo.MemoView::validBy) ?: com.bamnat.core.memo.MemoView.BY_TAG,
+                        (values["memoSort"] as? String)?.takeIf(com.bamnat.core.memo.MemoView::validSort) ?: ""),
+                    money = (values["money"] as? String)?.takeIf { it in com.bamnat.core.money.LedgerBoard.KEYS }?.let { com.bamnat.core.money.LedgerBoard.of(it) } ?: v.money,
+                )
+                mapOf("tabViews" to after.encode())
+            }
             else -> emptyMap()
         }
     }
@@ -839,6 +856,7 @@ class RecipePieces(private val c: AppContainer) {
         "statsLayout" -> s.statsLayout
         "moneyLayout" -> s.moneyLayout
         "memoLayout" -> s.memoLayout
+        "tabViews" -> s.tabViews
         "widgetLook" -> s.widgetLook
         "shiftLooks" -> s.shiftLooks
         "widgetMemo" -> s.widgetMemo.toString()
@@ -877,6 +895,7 @@ class RecipePieces(private val c: AppContainer) {
         "statsLayout" -> s.copy(statsLayout = v)
         "moneyLayout" -> s.copy(moneyLayout = v)
         "memoLayout" -> s.copy(memoLayout = v)
+        "tabViews" -> s.copy(tabViews = v)
         "widgetLook" -> s.copy(widgetLook = v)
         "shiftLooks" -> s.copy(shiftLooks = v)
         "photoLook" -> s.copy(photoLook = v)
@@ -927,7 +946,7 @@ class RecipePieces(private val c: AppContainer) {
                     cell = (values["cell"] as? String)?.takeIf { it != "tint" } ?: if (values["cell"] == "tint") null else t.cell).encode())
             }
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
-            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR ->
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR, PieceKind.TAB_VIEW ->
                 settingsAfter(kind, values, cal, draft).entries.fold(draft) { acc, (k, v) -> withSetting(acc, k, v) }
             else -> draft
         }
@@ -1063,6 +1082,8 @@ class RecipePieces(private val c: AppContainer) {
         /** [FREE-10] What a theme may change, as settings. */
         val LOOK_SETTINGS = listOf("calView", "calTheme", "screenLooks", "memoLook", "moneyLook", "payLooks", "widgetLook", "photoLook",
             "calendarLayout", "statsLayout", "moneyLayout", "memoLayout", "tabOrder",
+            // [TAB-07] 1.36 탭 보기 (달력 판·메모장 보기·가계부 판).
+            "tabViews",
             // [STU-37] 1.36 근무에 따라 바뀌는 모양: 입히기 puts it on with the rest; it stays on this phone (not in a recipe).
             "shiftLooks",
             // [BLU-01] 1.36 부품 꾸미기.
@@ -1073,7 +1094,7 @@ class RecipePieces(private val c: AppContainer) {
             // 스튜디오 입히기가 따로 저장해요 (StudioViewModel.wear).
 
         private val SETTING_NAMES = mapOf("logic" to "수식·규칙·버튼","tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
-            "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "shiftLooks" to "근무에 따라 바뀌는 모양", "widgetMemo" to "위젯 메모 한 줄",
+            "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "tabViews" to "탭 보기 (달력 판·메모장 보기·가계부 판)", "widgetLook" to "위젯 투명도·밝기", "shiftLooks" to "근무에 따라 바뀌는 모양", "widgetMemo" to "위젯 메모 한 줄",
             "photoLook" to "그림 꾸미기 (달력 배경·머리 그림·근무 그림·위젯 배경·모서리)",
             "calView" to "달력 모양 (칸 높이·근무 표시·날짜 자리·메모 줄·줄 순서·칸 디자인·패턴)", "memoInCells" to "날짜 칸의 메모", "showHoursInCells" to "날짜 칸의 근무 시간",
             "showLunar" to "음력 날짜", "spendInCells" to "날짜 밑 쓴 돈", "themeMode" to "밝기", "dynamicColor" to "휴대폰 배경색에 맞추기", "accentColor" to "앱 강조색",

@@ -43,7 +43,8 @@ object RecipeWords {
     "round" to "둥글게", "soft" to "보통", "square" to "각지게",
     "short" to "낮게", "normal" to "보통", "tall" to "높게", "huge" to "아주 높게", "big" to "크게", "small" to "작게", "line" to "선·띠",
     "center" to "가운데", "left" to "왼쪽 위", "large" to "크게", "night" to "야간 근무 때 어둡게", "preview" to "아래에 짧게", "sheet" to "하루 화면",
-    "week" to "그 주만", "menu" to "빠른 메뉴", "memo" to "바로 메모", "open" to "하루 열기", "text" to "글", "num" to "숫자", "star" to "별점", "pick" to "고르기",
+    "week" to "그 주만", "menu" to "빠른 메뉴", "memo" to "바로 메모", "open" to "하루 열기", "text" to "글", "num" to "숫자", "star" to "별점", "pick" to "고르기", "money" to "금액", "date" to "날짜", "time" to "시각", "check" to "체크",
+    "month" to "월", "weekly" to "주", "yearly" to "연간", "rota" to "근무 띠", "timeline" to "타임라인", "board" to "보드", "table" to "표", "gallery" to "갤러리", "cal" to "달력",
     "list" to "목록", "grid2" to "2열 격자", "grid3" to "3열 격자", "sticky" to "포스트잇", "diary" to "다이어리", "compact" to "촘촘히",
     "own" to "메모마다 색", "one" to "한 가지 색", "thin" to "가늘게", "s" to "작게", "m" to "보통", "l" to "크게",
     "sans" to "기본", "serif" to "명조", "mono" to "고정폭", "hand" to "손글씨 느낌", "roomy" to "넉넉히", "emoji" to "이모지", "band" to "색 띠",
@@ -55,6 +56,9 @@ object RecipeWords {
 private val BY_PIECE = mapOf(
     "calView.memo" to "칸의 메모 줄", "calView.text" to "칸 글씨", "appFeel.theme" to "밝기", "widget.memo" to "메모 한 줄",
     "appFeel.textStep" to "글자 크기 단계", "layout.calendar" to "달력 화면 카드", "photoLook.widget" to "위젯 배경 그림",
+    // [TAB-07] 1.36 탭 보기.
+    "tabView.cal" to "달력 판", "tabView.memo" to "메모장 보기", "tabView.memoBy" to "메모 보드 묶음", "tabView.memoSort" to "메모 정렬",
+    "tabView.money" to "가계부 판",
 )
 
 /** A field's word in [kind] (its piece first, then the catalog's), or the key itself. */
