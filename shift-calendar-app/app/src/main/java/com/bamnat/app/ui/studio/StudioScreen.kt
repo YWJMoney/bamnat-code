@@ -40,7 +40,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Compare
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Checkbox
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -181,7 +181,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
         // [RUL-06] 한 색, 근무에 따라, 부품, 규칙·단추 first.
-        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.PARTS, Tool.LOGIC, Tool.COLORS, Tool.DECOR, Tool.BOX, Tool.CORNERS, Tool.TABS)
+        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.PARTS, Tool.LOGIC, Tool.COLORS, Tool.DECOR, Tool.FONT, Tool.MOTION, Tool.BOX, Tool.CORNERS, Tool.TABS)
         FEATURES -> listOf(Tool.FEATURE)
         // PC D4: 장터에서 담은 규칙·단추를 여기 보관함에서 얹어요.
         RULES -> listOf(Tool.RULES, Tool.BUTTONS, Tool.COND, Tool.BOX)
@@ -225,6 +225,8 @@ private enum class Tool(val label: String) {
     LOGIC("규칙·단추"), RULES("규칙"), BUTTONS("단추"), COND("조건부 꾸미기"),
     /** [LAY-04] 1.36 꾸밈 층: 도형·스티커·글상자·아이콘을 마음대로 놓아요. */
     DECOR("꾸밈 층"),
+    // [MAT-05][MAT-07] 1.36 글꼴(앱 전체), 움직임.
+    FONT("글꼴"), MOTION("움직임"),
 }
 
 /** [STU-24] 1.36 미리 보기 크기: the handle under it sets any size between these (사용자 2026-10-31 "크게작게 접기가 너무 불편"). */
@@ -290,6 +292,16 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var resumeShut by rememberSaveable { mutableStateOf(false) }
     var feelOpen by remember { mutableStateOf(false) }
     LaunchedEffect(vm.askFeel) { if (vm.askFeel) { vm.askFeel = false; feelOpen = true } }
+    LaunchedEffect(vm.openFont) {
+        when (vm.openFont) {
+            StudioViewModel.START_FONT -> { area = Area.ALL; tool = Tool.FONT }
+            StudioViewModel.START_MOTION -> { area = Area.ALL; tool = Tool.MOTION }
+            StudioViewModel.START_PARTS -> { area = Area.ALL; tool = Tool.PARTS }
+            StudioViewModel.START_SCREEN_FONT -> { com.bamnat.app.ui.settings.FontRowFocus.label = "이 화면 글꼴"; area = Area.CALENDAR; tool = Tool.COLORS }
+            StudioViewModel.START_DATE_FONT -> { com.bamnat.app.ui.settings.FontRowFocus.pinned = "날짜 글꼴"; area = Area.CALENDAR; tool = Tool.CELL }
+        }
+        vm.openFont = null
+    }
     val shotLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     // [STU-41] The example as a picture, taken as 올리기 opens.
     fun takeShot() { scope.launch { StudioShot.last = runCatching { shotLayer.toImageBitmap().asAndroidBitmap() }.getOrNull() } }
@@ -751,6 +763,19 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             if (label == null) vm.change { it.copy(decor = nd.encode()) } else vm.changeMerged(label) { it.copy(decor = nd.encode()) }
                         }, vm::undo, advancedIn = studioAdvanced, onAdvanced = { studioAdvanced = it }, focus = decorFocus, onFocused = { decorFocus = null },
                             buttons = remember(d) { com.bamnat.app.ui.decor.DecorTap.buttons(d) })
+                        // [MAT-05] 1.36 앱 전체 글꼴: every screen's text, 화면마다 따로는 ‘색·배경’에서.
+                        Tool.FONT -> {
+                            val all = looks.looks[ScreenLooks.ALL] ?: ScreenLook()
+                            com.bamnat.app.ui.settings.FontRow("앱 전체 글꼴", all.font) { f ->
+                                vm.change { it.copy(screenLooks = ScreenLooks.decode(it.screenLooks).with(ScreenLooks.ALL, all.copy(font = f)).encode()) }
+                            }
+                            Text("화면마다 다른 글꼴은 각 화면의 ‘색·배경’에서, 날짜 숫자 글꼴은 달력 ‘칸 디자인’에서 골라요",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        // [MAT-07] 1.36 움직임.
+                        Tool.MOTION -> com.bamnat.app.ui.settings.MotionEditor(com.bamnat.core.recipe.Motion.decode(d.motion)) { m ->
+                            vm.change { it.copy(motion = m.encode()) }
+                        }
                     }
                     Spacer(Modifier.height(24.dp))
                 }

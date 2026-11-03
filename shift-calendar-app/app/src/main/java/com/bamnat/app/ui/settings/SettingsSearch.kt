@@ -260,6 +260,14 @@ internal object SettingsIndex {
         row(C, "메모 보기", "달력 메모", "메모 표시"),
         // U 1.32 [UX132-05][UX132-06] G [WTYP-07]
         row(C, "글자 크기", "글씨", "글씨 크게", "크게", "작게", "노안", "안 보여요", "큰 글씨", "글꼴"),
+        // [MAT-05] 1.36 PC 확인 4차: '글꼴' goes to the studio's font, not only to 글자 크기.
+        screen("스튜디오 › 앱 전체", "앱 전체 글꼴", SettingsGo.STUDIO_FONT, "글꼴", "폰트", "글씨체", "서체", "명조", "바탕체", "손글씨", "내 글꼴", "font"),
+        // PC 확인 5차: the other two fonts come up with it.
+        screen("스튜디오 › 달력 › 색·배경", "화면마다 글꼴", SettingsGo.STUDIO_SCREEN_FONT, "글꼴", "폰트", "글씨체", "서체", "이 화면 글꼴", "화면 글꼴", "font"),
+        screen("스튜디오 › 달력 › 칸 디자인", "날짜 숫자 글꼴", SettingsGo.STUDIO_DATE_FONT, "글꼴", "폰트", "글씨체", "서체", "날짜 글꼴", "숫자 글꼴", "font"),
+        // [MAT-07] PC 확인 (마을 확인 중 '설정 찾기로 꾸밈 효과를 못 찾음'): the studio's 움직임 and each part's own.
+        screen("스튜디오 › 앱 전체", "움직임 효과", SettingsGo.STUDIO_MOTION, "움직임", "효과", "꾸밈 효과", "파티클", "애니메이션", "눈 내리기", "벚꽃", "반짝이", "motion", "animation"),
+        screen("스튜디오 › 앱 전체 › 부품", "부품 움직임", SettingsGo.STUDIO_PARTS, "움직임", "효과", "부품 효과", "애니메이션", "흔들림", "깜빡임", "부품", "animation"),
         row(C, "촘촘하게", "넉넉하게", "간격", "밀도", "한 화면에 많이"),
         row(C, "오전/오후로 보기", "오전", "오후", "12시간", "24시간", "시각 표기"),
         row(C, "날짜 밑에 그날 쓴 돈", "지출 표시", "쓴 돈", "달력에 지출", "하루 지출"), // E 1.32 [LEDX-07]

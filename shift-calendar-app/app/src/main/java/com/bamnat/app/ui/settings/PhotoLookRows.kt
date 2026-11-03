@@ -135,6 +135,9 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
                 }
             }
         }
+        // [MAT-03][MAT-04] 1.36 그림 조정(배경·머리 그림)과 틀 모양(근무 그림·머리 그림).
+        if (look.bg != null || look.head != null) PhotoAdjustEditor(look.adjust) { save(look.copy(adjust = it)) }
+        if (look.head != null || look.icons.isNotEmpty()) PhotoFrameEditor("근무 그림·머리 그림 틀 모양", look.frame) { save(look.copy(frame = it)) }
         ChoiceRow("모서리 모양", "카드·창·칩의 모서리를 고르면 앱 전체가 바뀌어요",
             listOf("round" to "둥글게", "soft" to "보통 (처음)", "square" to "각지게"), look.corners ?: "soft") { k ->
             save(look.copy(corners = k.takeIf { it != "soft" }))

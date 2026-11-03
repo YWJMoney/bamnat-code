@@ -56,7 +56,7 @@ import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.QuestionAnswer
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Badge
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.OutlinedButton

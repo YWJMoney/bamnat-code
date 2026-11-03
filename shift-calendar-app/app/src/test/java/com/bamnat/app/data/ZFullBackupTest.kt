@@ -55,6 +55,8 @@ class ZFullBackupTest {
             act = com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.NOTIFY, "안녕"))))),
         // 1.36 [LAY-01] 꾸밈 층.
         decor = "[{\"kind\":\"emoji\",\"emoji\":\"💰\",\"at\":\"cal.cell\",\"on\":\"d25\"}]",
+        // 1.36 [MAT-07] 움직임.
+        motion = "tn:fade",
         // 1.26 AD.
         tabOrder = listOf("memos", "calendar"),
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].

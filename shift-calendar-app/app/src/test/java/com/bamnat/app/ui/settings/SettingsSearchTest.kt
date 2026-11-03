@@ -25,6 +25,21 @@ class SettingsSearchTest {
         assertEquals("워치·휴대폰 수면 기록 함께 보기", first("갤럭시 워치"))
     }
 
+    /** [MAT-05] PC 확인 4·5차: 글꼴 finds the studio's three fonts, 앱 전체 first. */
+    @Test fun fontFindsTheStudiosFonts() {
+        val titles = SettingsIndex.search("글꼴").map { it.title }
+        assertEquals("앱 전체 글꼴", titles.first())
+        assertTrue(titles.toString(), titles.containsAll(listOf("화면마다 글꼴", "날짜 숫자 글꼴")))
+    }
+
+    @Test fun motionFindsTheStudiosMotion() {
+        for (q in listOf("움직임", "파티클", "애니메이션", "효과")) {
+            val titles = SettingsIndex.search(q).map { it.title }
+            assertTrue("$q: $titles", "움직임 효과" in titles)
+        }
+        assertTrue(SettingsIndex.search("애니메이션").map { it.title }.contains("부품 움직임"))
+    }
+
     @Test fun endingsAreDropped() {
         assertEquals("알람 점검", first("알람이 안 울려요"))
         assertEquals("알람", SearchText.stem("알람이"))

@@ -231,7 +231,7 @@ object LookParts {
             PieceKind.SCREEN_LOOK -> {
                 val line = p.values["screens"] as? String
                 if (line == null) p else {
-                    val bare = ScreenLooks(ScreenLooks.decode(line).looks.mapValues { (_, l) -> l.copy(photo = null, dim = null) }).encode()
+                    val bare = ScreenLooks(ScreenLooks.decode(line).looks.mapValues { (_, l) -> l.copy(photo = null, dim = null, adjust = null) }).encode()
                     p.copy(values = if (bare.isEmpty()) p.values - "screens" else p.values + ("screens" to bare)).takeIf { it.values.isNotEmpty() }
                 }
             }

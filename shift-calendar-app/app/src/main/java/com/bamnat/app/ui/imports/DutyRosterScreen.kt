@@ -40,7 +40,7 @@ import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material.icons.outlined.Backspace
 import com.bamnat.app.ui.components.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton

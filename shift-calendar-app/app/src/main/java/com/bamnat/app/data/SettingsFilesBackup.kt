@@ -204,6 +204,10 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // [MAT-05] 1.36 글꼴 고르기의 최근 쓴 글꼴 다섯, 이 휴대폰의 것.
+            "font_recent" to "글꼴 고르기에서 최근 고른 글꼴(다섯 개), 이 휴대폰의 것",
+            "font_waiting" to "테마가 쓰는데 아직 못 받은 나눈 글꼴(운영자 확인 전 등), 앱을 열 때 다시 받아 보려고 2주 동안 적어 둠",
+            "font_standin" to "아직 못 받은 나눈 글꼴 대신 보일 비슷한 앱 글꼴(보낸 분 휴대폰이 고른 것), 이 휴대폰의 것",
             // PC 재검토 N3 1.36: the look from before a studio wear, for a day's '입히기 전 모양으로'; a restored phone has no such moment.
             "studio_locks" to "스튜디오에서 잠근 화면(한 색·섞기가 건드리지 않을 탭), 이 휴대폰의 것",
             "look_undo" to "스튜디오에서 입히기 전 모양(하루 동안만 되돌리기)",

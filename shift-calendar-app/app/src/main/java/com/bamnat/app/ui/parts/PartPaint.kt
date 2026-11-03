@@ -11,6 +11,13 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.runtime.getValue
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.graphics.addOutline
+import com.bamnat.app.ui.theme.fillWith
+import com.bamnat.app.ui.theme.todayMotion
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -53,7 +60,7 @@ fun partStyle(id: String, states: Set<String> = emptySet()): PartStyle = LocalBl
 fun Long.partColor(alpha: Int? = null): Color = Color(this.toInt()).let { c -> alpha?.let { c.copy(alpha = c.alpha * it.coerceIn(0, 100) / 100f) } ?: c }
 
 /** The part's fill (with its strength), or null. */
-val PartStyle.fillColor: Color? get() = fill?.partColor(fillA)
+val PartStyle.fillColor: Color? get() = fill?.partColor(fillA) ?: paint?.average?.partColor(fillA)
 
 val PartStyle.lineColor: Color? get() = lineC?.partColor(lineA)
 
@@ -64,14 +71,8 @@ fun PartStyle.shape(default: Shape): Shape {
     return RoundedCornerShape(topStart = (c[0] ?: 0).dp, topEnd = (c[1] ?: 0).dp, bottomEnd = (c[2] ?: 0).dp, bottomStart = (c[3] ?: 0).dp)
 }
 
-/** 1판 fonts the app draws itself; another id (갈래 B's catalogue) falls back to the sans. */
-fun fontOf(id: String?): FontFamily? = when (id) {
-    null -> null
-    "serif" -> FontFamily.Serif
-    "mono" -> FontFamily.Monospace
-    "hand" -> FontFamily.Cursive
-    else -> FontFamily.SansSerif
-}
+/** [MAT-05] Any font of the 1.36 글꼴 모음 or the user's own ([com.bamnat.app.ui.theme.AppFonts]); null for the app's own. */
+fun fontOf(id: String?): FontFamily? = com.bamnat.app.ui.theme.AppFonts.family(id)
 
 /** [base] with the part's letters over it. Size is in sp, so 큰 글자 still grows it. */
 fun PartStyle.text(base: TextStyle = TextStyle.Default): TextStyle {
@@ -132,10 +133,42 @@ fun Modifier.partBox(s: PartStyle, shape: Shape = RoundedCornerShape(0.dp), inne
         m = m.shadow(e.dp, sh, clip = false, ambientColor = c, spotColor = c)
     }
     s.alpha?.let { m = m.alpha(it / 100f) }
-    s.fillColor?.let { m = m.clip(sh).background(it, sh) }
+    // [MAT-01] 1.36 채우기 (그라데이션·무늬·질감·유리·셰이더) wins over the plain fill colour.
+    if (s.paint != null) m = m.clip(sh).fillWith(s.paint, sh, alpha = (s.fillA ?: 100) / 100f)
+    else s.fillColor?.let { m = m.clip(sh).background(it, sh) }
     m = m.partLine(s, sh)
+    // [MAT-07] 부품 움직임.
+    m = m.partMotion(s.motion, s.lineColor ?: s.fillColor ?: Color.White)
     if (inner) m = m.partPadding(s)
     return m
+}
+
+/** A solid line in [fill], [w] wide, inside [shape]'s edge. */
+private fun Modifier.paintedLine(fill: com.bamnat.core.recipe.Fill, w: androidx.compose.ui.unit.Dp, shape: Shape): Modifier = drawWithContent {
+    drawContent()
+    val outline = shape.createOutline(size, layoutDirection, this)
+    val path = androidx.compose.ui.graphics.Path().apply { addOutline(outline) }
+    clipPath(path) {
+        drawPath(path, com.bamnat.app.ui.theme.lineBrushOf(fill, size), style = Stroke(w.toPx() * 2))
+    }
+}
+
+/**
+ * [MAT-07] A part's movement (숨쉬기·은은한 빛·도는 테·통통·반짝 지나가기) in [tint]. The app's 움직임 끄기 and the phone's 애니메이션 삭제
+ * keep it still.
+ */
+fun Modifier.partMotion(kind: String?, tint: Color): Modifier = if (kind == null || kind == "none") this else composed {
+    if (com.bamnat.app.ui.theme.LocalMotionOff.current) return@composed Modifier
+    if (kind != "shimmer") return@composed Modifier.todayMotion(kind, tint)
+    val t = androidx.compose.animation.core.rememberInfiniteTransition(label = "shimmer")
+    val v by t.animateFloat(-1f, 2f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(1800)), label = "v")
+    Modifier.drawWithContent {
+        drawContent()
+        val x = size.width * v
+        drawRect(androidx.compose.ui.graphics.Brush.linearGradient(
+            listOf(Color.Transparent, Color.White.copy(alpha = 0.35f), Color.Transparent),
+            start = Offset(x - size.width * 0.3f, 0f), end = Offset(x + size.width * 0.3f, size.height)))
+    }
 }
 
 fun Modifier.partPadding(s: PartStyle): Modifier =
@@ -147,6 +180,8 @@ fun Modifier.partLine(s: PartStyle, shape: Shape): Modifier {
     if (kind == "none") return this
     val w = (s.lineW ?: 1.0).toFloat().dp
     val color = s.lineColor ?: Color.Gray
+    // [MAT-02] 1.36 선 채우기: a gradient (or a fill's colour) along the line.
+    s.linePaint?.let { lp -> if (kind == "solid") return paintedLine(lp, w, shape) }
     if (kind == "solid") return border(w, color, shape)
     val corners = s.corners.map { (it ?: 0).toFloat() }
     return drawWithContent {

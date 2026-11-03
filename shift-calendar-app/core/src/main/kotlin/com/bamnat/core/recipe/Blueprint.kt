@@ -102,6 +102,8 @@ object BlueprintParts {
     const val MAX_LINES = 96
     /** 1.36 [SEC-12] 보안 점검 L1: day-changing lines (`when` or a formula value) a blueprint works out; the rest are left out. */
     const val MAX_BY_DAY = 24
+    /** [MAT-07] How a part moves on its own (오늘 칸이 숨쉬기 등); the phone's 'remove animations' and 움직임 끄기 still stop it. */
+    val MOTIONS = listOf("none", "pulse", "glow", "ring", "bounce", "shimmer")
 
     /** The fields a part may carry besides `id` and `on`, every one optional. */
     val STYLE_FIELDS: List<Field> = listOf(
@@ -128,6 +130,12 @@ object BlueprintParts {
         Field.Pick("justify", JUSTIFIES, optional = true), Field.Text("order", 200, optional = true, guard = false, check = ::orderWords),
         Field.Pick("place", PLACES, optional = true), Field.Num("grow", 0.0, 10.0, optional = true),
         Field.Num("w", 0.0, 600.0, optional = true), Field.Num("h", 0.0, 600.0, optional = true),
+        // [MAT-01..07] 갈래 B 꾸미기 재료: 채우기(이기면 fill보다), 선 채우기, 사진 조정·틀, 움직임.
+        Field.Text("paint", Fill.MAX_LEN, optional = true, guard = false, check = Fill::problem),
+        Field.Text("linePaint", Fill.MAX_LEN, optional = true, guard = false, check = Fill::problem),
+        Field.Text("photo", 60, optional = true, guard = false, check = PhotoAdjust::problem),
+        Field.Text("frame", 30, optional = true, guard = false, check = PhotoFrame::problem),
+        Field.Pick("motion", MOTIONS, optional = true),
     )
 
     /** The keys a child takes from its parent when it has none of its own. */
@@ -178,6 +186,12 @@ data class PartStyle(
     val tshadow: Double? = null, val tshadowC: Long? = null, val tshadowX: Double? = null, val tshadowY: Double? = null, val deco: String? = null,
     val dir: String? = null, val gap: Int? = null, val align: String? = null, val justify: String? = null, val order: List<String>? = null,
     val place: String? = null, val grow: Int? = null, val w: Int? = null, val h: Int? = null,
+    /** [MAT-01] 갈래 B: a [Fill] that wins over [fill]; [linePaint] fills the edge. */
+    val paint: Fill? = null, val linePaint: Fill? = null,
+    /** [MAT-03][MAT-04] 사진 조정과 틀 모양 (for a part that shows a picture). */
+    val photo: PhotoAdjust? = null, val frame: String? = null,
+    /** [MAT-07] One of [BlueprintParts.MOTIONS]. */
+    val motion: String? = null,
 ) {
     val isEmpty: Boolean get() = this == NONE
 
@@ -196,6 +210,7 @@ data class PartStyle(
         o.stroke ?: stroke, o.strokeC ?: strokeC, o.italic ?: italic, o.talign ?: talign, o.lines ?: lines, o.alpha ?: alpha, o.hide ?: hide,
         o.tshadow ?: tshadow, o.tshadowC ?: tshadowC, o.tshadowX ?: tshadowX, o.tshadowY ?: tshadowY, o.deco ?: deco,
         o.dir ?: dir, o.gap ?: gap, o.align ?: align, o.justify ?: justify, o.order ?: order, o.place ?: place, o.grow ?: grow, o.w ?: w, o.h ?: h,
+        paint = o.paint ?: paint, linePaint = o.linePaint ?: linePaint, photo = o.photo ?: photo, frame = o.frame ?: frame, motion = o.motion ?: motion,
     )
 
     /** Only the letters of these, for a child to take. */
@@ -223,6 +238,9 @@ data class PartStyle(
                 d("track"), i("leading"), d("stroke"), c("strokeC"), b("italic"), s("talign"), i("lines"), i("alpha"), b("hide"),
                 d("tshadow"), c("tshadowC"), d("tshadowX"), d("tshadowY"), s("deco"),
                 s("dir"), i("gap"), s("align"), s("justify"), s("order")?.split(',')?.filter { it.isNotEmpty() }, s("place"), i("grow"), i("w"), i("h"),
+                paint = Fill.decode(s("paint")), linePaint = Fill.decode(s("linePaint")),
+                photo = s("photo")?.let { PhotoAdjust.decode(it) }?.takeIf { !it.isDefault }, frame = s("frame")?.takeIf { it.isNotEmpty() },
+                motion = s("motion"),
             )
         }
     }

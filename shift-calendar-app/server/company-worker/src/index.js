@@ -85,6 +85,7 @@ import { RECIPE_COLUMNS, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, pruneRecipe
 import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
+import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
 export const LIMITS = {
@@ -488,6 +489,9 @@ async function routeOnce(request, env, url, ctx) {
     // 1.35 [RCX-01..15] 계보·새 판·요청 판·제작자·고른 것·소식·그림 first: their paths are not a recipe's code.
     const more = await communityRoute(recipeDeps, request, env, path, url);
     if (more) return more;
+    // 1.36 [MAT-06] 내 글꼴 나누기.
+    const font = await fontRoute(recipeDeps, request, env, path);
+    if (font) return font;
     const res = await recipeRoute(recipeDeps, request, env, path, url, ctx);
     if (res) return res;
   }
@@ -699,6 +703,8 @@ const SCHEMA = [
   ...COMMUNITY_SCHEMA,
   // 1.36 [SEC-11] Play Integrity: an install's last verdict (integrity.js).
   ...INTEGRITY_SCHEMA,
+  // 1.36 [MAT-06] 나눈 글꼴 (recipe-fonts.js).
+  ...FONT_SCHEMA,
   // 1.36 [PSH-01] 프로 나눔 1인: a buyer's install, its one-time code and the one install it gave 프로 to.
   `CREATE TABLE IF NOT EXISTS pro_shares (owner TEXT PRIMARY KEY, code TEXT UNIQUE, code_at INTEGER, guest TEXT UNIQUE, guest_at INTEGER)`,
   // 1.36 [LIM-10] 쓰기 제한: no daily cap; strikes (posts or recipes hidden) restrict an install for a while (write-limits.js).
@@ -3251,6 +3257,8 @@ async function forgetMine(request, env) {
   const follows = (await one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE device = ?", dev)).n;
   const sets = (await one(env, "SELECT COUNT(*) AS n FROM recipe_sets WHERE owner = ?", dev)).n;
   await batch(env, forgetCommunity(recipeDeps, env, dev));
+  // 1.36 the fonts it shared and its font reports.
+  await batch(env, forgetFonts(recipeDeps, env, dev));
   return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes,
     ...(recipes ? { recipes } : {}), ...(profile ? { profile } : {}), ...(follows ? { follows } : {}), ...(sets ? { sets } : {}) });
 }
@@ -4372,6 +4380,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/recipes" || path.startsWith("/recipes/")) {
     const more = await communityAdmin(recipeDeps, request, env, path, url, now);
     if (more) return more;
+    const font = await fontAdmin(recipeDeps, request, env, path, url, now);
+    if (font) return font;
     const res = await recipeAdmin(recipeDeps, request, env, path, url, now, actorName(env));
     if (res) return res;
   }
@@ -5167,7 +5177,8 @@ const BADGE_SQL = {
   owed: ["rewards", "SELECT COUNT(*) AS n FROM rewards WHERE status = 'owed'"],
   flaggedPosts: ["community", "SELECT COUNT(*) AS n FROM posts WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')"],
   // [RCP-39] 1.34 나눔 판: recipes waiting for 첫 3개 검토, and those with reports still shown.
-  recipeQueue: ["community", "SELECT COUNT(*) AS n FROM recipes WHERE state = 'pending'"],
+  // 1.36 [SEC-10] and fonts waiting for their first look.
+  recipeQueue: ["community", "SELECT (SELECT COUNT(*) FROM recipes WHERE state = 'pending') + (SELECT COUNT(*) FROM recipe_fonts WHERE state = 'pending') AS n"],
   recipeFlagged: ["community", "SELECT COUNT(*) AS n FROM recipes WHERE flags > 0 AND state = 'visible'"],
   // [ADMUX-18] Departments with two or more live versions: setups waiting beside the rule in use, or two waiting.
   // [FIN130-11] A version held for its shape (BD) is counted once, under 모양이 다른 판 (ax_shape), not here as well.

@@ -165,7 +165,7 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
                 // [STU-21] 1.36 레시피 만들기 합침: one way in for every make.
                 Text("칸·색·부품 하나하나부터 수식·규칙으로 서로 엮는 것까지 직접 만들어요. 입히기·저장·올리기도 여기서 해요",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                androidx.compose.material3.Button(onClick = { onStudio("mine") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 모양 고치기") }
+                com.bamnat.app.ui.components.Button(onClick = { onStudio("mine") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 모양 고치기") }
             }
         }
         // PC 재검토 C10 (꾸미기 시작점이 네 갈래로 흩어짐): every way to start, here — 지금 모양 고치기 above, 새로 만들기 (느낌·처음) and

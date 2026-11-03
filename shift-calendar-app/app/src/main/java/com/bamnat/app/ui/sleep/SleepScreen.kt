@@ -70,7 +70,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Surface
 import com.bamnat.app.ui.settings.InquiryLinks
 import com.bamnat.app.ui.settings.InquiryStart

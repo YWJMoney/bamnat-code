@@ -29,7 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import com.bamnat.app.ui.components.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -427,6 +427,8 @@ class RecipeMakeViewModel(
                 }
                 val shown = if (s.bare) com.bamnat.core.recipe.LookParts.withoutPhotos(s.recipe) else s.recipe
                 val r = RecipeCodec.read(RecipeCodec.write(withServerPictures(shown)))
+                // [MAT-06] 1.36 the open fonts it names go first.
+                val fonts = com.bamnat.app.recipe.RecipeFonts.send(c, r)
                 val up = upCode
                 val sent = if (up != null) c.recipeApi.newVersion(c.companyStore.device, up, r, s.scope)
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
@@ -443,6 +445,7 @@ class RecipeMakeViewModel(
                     if (key == null) note = "내 테마 칸이 꽉 차서 이 테마를 내 테마로 두지 못했어요. 마을 › 테마에서 한 벌을 빼고 다시 올리면 광고 없이 입어요"
                     key?.let { c.wardrobe.markShared(it, sent.code, sent.version, s.bare) }
                 }
+                note = listOfNotNull(note, com.bamnat.app.recipe.RecipeFonts.keptNote(fonts)).joinToString("\n").ifBlank { null }
                 _state.value = _state.value.copy(sending = false, sent = sent, ownNote = note)
             } catch (e: RecipeException) {
                 _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code), errorCode = e.code)
@@ -880,6 +883,17 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
             Text(l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             if (l.fix != null) TextButton(onClick = { vm.fix(l) }) { Text("고치기") }
             else if (l.level != RecipeLint.Level.OK) TextButton(onClick = { vm.go(l.step) }) { Text("가기") }
+        }
+    }
+    // [MAT-06] PC 확인 7차: the fonts that will not go along, said before 올리기 (not only after).
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val fontLines by androidx.compose.runtime.produceState(emptyList<String>(), s.recipe) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.bamnat.app.recipe.RecipeFonts.before(ctx, s.recipe) }.getOrDefault(emptyList()) }
+    }
+    fontLines.forEach { t ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("!", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.width(24.dp))
+            Text(t, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         }
     }
     ExampleCalendars(s.recipe)
