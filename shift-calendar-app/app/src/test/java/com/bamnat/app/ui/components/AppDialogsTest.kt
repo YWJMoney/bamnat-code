@@ -15,4 +15,11 @@ class AppDialogsTest {
             .toList()
         assertEquals("앱 글자 크기가 빠지는 창: components의 AlertDialog·Dialog·DatePickerDialog·AppSheet를 써요", emptyList<String>(), found)
     }
+
+    /** PC 확인 1.36 (두 폰 '응답 없음'): a closed menu is not built, so a month of day cells each with a menu stays light. */
+    @Test fun aClosedMenuIsNotBuilt() {
+        val src = File(ui, "ui/components/AppDialogs.kt").readText()
+        val menu = src.substringAfter("fun DropdownMenu(")
+        assert(menu.indexOf("if (!opened[0]) return") in 0 until menu.indexOf("material3.DropdownMenu(")) { "AppDialogs.DropdownMenu builds material3's menu while closed" }
+    }
 }

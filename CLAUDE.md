@@ -45,6 +45,7 @@ Claude Code는 저장소 맨 위의 이 파일을 저절로 읽어요(클라우�
 2. 디버그 APK를 `rm -rf app/build` 뒤 `bash gradlew :app:assembleDebug --no-build-cache -Pbamnat.companyBaseUrl=http://10.0.2.2:8789 -Pbamnat.shareBaseUrl=http://10.0.2.2:8790 -Pbamnat.remoteBaseUrl=`로 만들고, dex에 10.0.2.2만 있는지 본 뒤 8MB 조각 + `sha256.txt` + `확인할-것.md`(서버가 바뀌었으면 서버 zip도)를 프로젝트 파일 `release/<버전>-빌드/<커밋>/`에 올려요.
 3. PC(메인) 스레드가 조각을 잇고 sha256을 맞춘 뒤, **옛 앱을 지우고**(`adb uninstall com.bamnat.app`) 깔아요. 서버는 그 zip을 풀어 `npm run local -- 8789 --seed --test-clock`(관리자 화면은 `ADMIN_PASSWORD` 임시값), 공유는 `npm run local -- 8790 --test-clock`. 디버그 빌드는 `10.0.2.2:8789/8790`만 써요.
 4. **에뮬레이터는 항상 `C:\Users\yoj07\bamnat-도구\에뮬레이터-켜기` 스크립트로**(`-gpu host -feature -GuestAngle`, 클립보드 공유 끔) 켜요. 시계를 옮기기 전에 근무 알람을 꺼요.
+   - 폰 두 대를 자동으로 누를 때(uiautomator 덤프·adb 입력)는 **한 대씩 번갈아**, 동작 사이에 쉬는 시간을 둬요. 두 대를 동시에 쉬지 않고 돌리면 폰 CPU가 차서 앱이 '응답 없음'이 돼요(2026-11-03). '응답 없음'이 뜨면 닫기 전에 `dumpsys dropbox --print data_app_anr`, `logcat -d -b all`, `logcat -b events`의 `am_anr`을 먼저 받아 둬요.
 5. 결과는 PC `C:\bamnat\_qa-<버전>\빌드-<커밋>-<갈래><차>-확인.md`(사용성 제안 칸 포함)와 화면 사진으로 남기고, 코디네이터가 그 작업 스레드로 돌려줘요.
 
 **검증 방법 (사용자가 정한 것)**

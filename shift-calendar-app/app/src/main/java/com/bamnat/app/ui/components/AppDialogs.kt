@@ -7,6 +7,7 @@ import androidx.compose.material3.DatePickerDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -106,12 +107,19 @@ fun DropdownMenu(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
     offset: DpOffset = DpOffset(0.dp, 0.dp),
-    scrollState: ScrollState = rememberScrollState(),
+    scrollState: ScrollState? = null,
     properties: PopupProperties = PopupProperties(focusable = true),
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // PC 확인 1.36 (두 폰 '응답 없음', 2026-11-03): every calendar cell, list row and chip carries its own menu, and
+    // material3's menu builds a transition state and a scroll state even while closed; a month page of closed menus was
+    // the main thread's work when Android called the app stuck. A menu is built only once it has been opened (and kept
+    // after, so it can still fade out).
+    val opened = remember { BooleanArray(1) }
+    if (expanded) opened[0] = true
+    if (!opened[0]) return
     val d = LocalDensity.current
-    androidx.compose.material3.DropdownMenu(expanded, onDismissRequest, modifier, offset, scrollState, properties) {
+    androidx.compose.material3.DropdownMenu(expanded, onDismissRequest, modifier, offset, scrollState ?: rememberScrollState(), properties) {
         CompositionLocalProvider(LocalDensity provides d) { content() }
     }
 }
