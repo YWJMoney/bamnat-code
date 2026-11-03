@@ -484,13 +484,24 @@ test("an install sends at most ten reports a day, a network three hundred (R131 
   t.mock.timers.tick(24 * 60 * 60 * 1000);
   assert.equal((await call("POST", "/api/reports", report(1, { company: "회사열한번" }), from(1))).status, 201);
 
-  // Thirty-one phones of one plant's Wi-Fi all send (before 1.31 the 31st was refused for the day).
-  for (let i = 0; i < 300; i++) {
+  // 1.36 네트워크 한도 (사용자 결정 2026-11-01 "새 휴대폰만 시간 단위로"): new installs on one network share 300/4 = 75 an hour.
+  for (let i = 0; i < 75; i++) {
     assert.equal((await call("POST", "/api/reports", report(1000 + i, { company: `망${i}번` }), from(9))).status, 201);
   }
-  const net = await call("POST", "/api/reports", report(5000, { company: "망삼백한번" }), from(9));
+  const net = await call("POST", "/api/reports", report(5000, { company: "망칠십육번" }), from(9));
   assert.equal(net.status, 429);
   assert.equal(net.data.why, "network");
+  assert.ok(net.data.retryAfter <= 3600);
+  // An install seen for over three days is not held to its network at all (one carrier address is thousands of phones).
+  t.mock.timers.tick(4 * 24 * 60 * 60 * 1000);
+  for (let i = 0; i < 80; i++) {
+    assert.equal((await call("POST", "/api/reports", report(1000 + i, { company: `오래${i}번` }), from(9))).status, 201, `old ${i}`);
+  }
+  // A new one on that network still is, by the hour.
+  for (let i = 0; i < 75; i++) await call("POST", "/api/reports", report(6000 + i, { company: `새${i}번` }), from(9));
+  assert.equal((await call("POST", "/api/reports", report(7000, { company: "새것" }), from(9))).status, 429);
+  t.mock.timers.tick(60 * 60 * 1000);
+  assert.equal((await call("POST", "/api/reports", report(7000, { company: "새것" }), from(9))).status, 201);
 });
 
 test("without a database the server says so", async () => {

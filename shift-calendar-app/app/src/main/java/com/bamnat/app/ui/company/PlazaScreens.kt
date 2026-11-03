@@ -30,10 +30,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -57,6 +57,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -320,8 +321,9 @@ fun ActivitySheet(holder: ActivityHolder) {
 private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: String? = null, elsewhere: List<Pair<String, Int>> = emptyList()) {
     var nick by rememberSaveable { mutableStateOf(a.nick.orEmpty()) }
     var msg by remember { mutableStateOf<String?>(null) }
-    Text("광장 별명", style = MaterialTheme.typography.titleSmall)
-    Text("고르면 토론과 규칙의 ‘올린 분’에 참여자 번호 대신 보여요. 실명이나 연락처는 쓰지 마세요.",
+    Text("마을 이름", style = MaterialTheme.typography.titleSmall)
+    // 1.36 [V3] 마을 이름 하나.
+    Text("유형별 광장의 글과 장터 작품, 내 프로필에 같은 이름으로 보여요. 회사 방과 회사 규칙에는 이름 없이 참여자 번호로만 보여요. 실명이나 연락처는 쓰지 마세요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedTextField(value = nick, onValueChange = { nick = it.take(12); msg = null }, singleLine = true, placeholder = { Text("예: 야간요정") },
@@ -402,8 +404,13 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Plaza.JOBS.forEach { (key, name) ->
+                    // 1.36 PC 재검토 (골라진 '알바·시급' 칩이 화면 밖이라 안 보여요): the row opens scrolled to the chosen chip.
+                    val jobs = remember { Plaza.JOBS.entries.toList() }
+                    val row = androidx.compose.foundation.lazy.rememberLazyListState()
+                    LaunchedEffect(Unit) { jobs.indexOfFirst { it.key == filter.job }.takeIf { it > 0 }?.let { row.scrollToItem((it - 1).coerceAtLeast(0)) } }
+                    androidx.compose.foundation.lazy.LazyRow(state = row, modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(jobs.size) { i ->
+                            val (key, name) = jobs[i]
                             FilterChip(selected = filter.job == key, onClick = { vm.setFilter(filter.copy(job = key)) }, label = { Text(name) })
                         }
                     }
@@ -567,6 +574,7 @@ private fun AddRateDialog(filter: RatesViewModel.Filter, onDismiss: () -> Unit, 
                     supportingText = { amount.toLongOrNull()?.let { Text(won(it)) } })
                 OutlinedTextField(note, { note = it.take(100); error = null }, label = { Text("한마디 (선택)") }, placeholder = { Text("예: 식대 별도, 숙련 3년") })
                 Text("이름·회사·전화번호는 적지 마세요. 들은 시세여도 괜찮아요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                RulesLink()
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             }
         },

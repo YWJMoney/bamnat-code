@@ -53,7 +53,7 @@ enum class HubSection(val label: String, val line: String) {
     // 1.35 (사용자 2026-10-30 21:37 "장터를 2번째로 옮기고 테마를 3번째로"): 고르고 받기는 장터, 입고 간직하기는 테마, 만들기는 공방.
     SHARE("장터", "테마·알람·메모 틀·급여 규칙·화면 배치를 받아 쓰고 좋아요·댓글을 남겨요"),
     THEMES("테마", "내가 입은 테마와 간직한 테마예요. 기록은 그대로예요"),
-    MAKE("공방", "내 테마와 설정을 레시피로 만들어 올려요"),
+    MAKE("공방", "스튜디오 하나에서 꾸미고, 기능까지 묶어 올려요. 내 것은 여기 한곳에"),
 }
 
 /** [HUB-01] The tab's name, kept in one place so the bottom bar, the guide and the search say the same. */
@@ -73,6 +73,9 @@ fun HubScreen(
     onCode: () -> Unit,
     /** 스튜디오, started from "mine", "plain" or "theme:<key>" ([com.bamnat.app.ui.studio.StudioViewModel]). */
     onStudio: (String) -> Unit,
+    /** [PRF-02] 1.36 a profile from the 팔로잉 줄 (내 프로필 first), and 팔로잉 모두 보기. */
+    onMaker: (String) -> Unit = {},
+    onPeople: () -> Unit = {},
 ) {
     var section by rememberSaveable { mutableStateOf(HubSection.TALK) }
     var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
@@ -91,6 +94,12 @@ fun HubScreen(
                     }
                 }
             }
+        }
+        // [PRF-02] 1.36 (사용자 2026-10-31 "팔로워 한 사람의 프로필에 들어가"): 팔로잉 줄 above 광장 and 장터, where people meet and pick.
+        val recipesOn by c.recipes.on.collectAsStateWithLifecycle()
+        if (recipesOn && c.recipeApi.enabled && (section == HubSection.TALK || section == HubSection.SHARE)) {
+            val strip = com.bamnat.app.ui.appViewModel(key = "following-strip-${style?.name}") { com.bamnat.app.ui.recipe.FollowingStripViewModel(it, style) }
+            com.bamnat.app.ui.recipe.FollowingStrip(strip, onMaker = onMaker, onAll = onPeople)
         }
         Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
             when (section) {
@@ -126,6 +135,7 @@ private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, on
  * [HUB-03] 공방 (사용자 2026-10-30 21:39 "마을 탭 자체를 아주 좋게"): the studio first, large, with my look as it is now; my themes to go on
  * from in a row; then a recipe with 알람·메모 틀·규칙 too, my recipes, the wishes and a code.
  */
+@Suppress("UNUSED_PARAMETER")
 @Composable
 private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit, onMake: () -> Unit, onMine: () -> Unit, onRequests: () -> Unit,
                  onCode: () -> Unit) = Page {
@@ -135,22 +145,51 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
     val mine by androidx.compose.runtime.produceState<com.bamnat.core.recipe.Recipe?>(null, lease) {
         value = com.bamnat.core.recipe.Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
     }
-    SoftCard {
-        Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
+    // PC 확인 S4 (이어서 하기는 스튜디오를 열어야만 보임): what was left in the studio, on 공방's front too.
+    val drafts by c.recipes.drafts.collectAsStateWithLifecycle(emptyList())
+    // PC 확인 1.36: a draft left in 올리기 (step 2 and on) comes back here too, its 이름·설명 kept.
+    val left = drafts.filter { com.bamnat.core.time.Today.millis() - it.updatedAt < 14L * 86_400_000L }.maxByOrNull { it.updatedAt }
+    SoftCard { Column {
+        // PC 확인 W39 1.36 (카드 제목·그림을 눌러도 아무 일 없음): the whole card opens the studio.
+        Row(Modifier.fillMaxWidth().clickable(onClickLabel = "스튜디오 열기") { onStudio("mine") }.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically) {
             mine?.let { r ->
                 Box(Modifier.clickable(onClickLabel = "스튜디오 열기") { onStudio("mine") }) {
-                    com.bamnat.app.ui.recipe.ScaledPhone(r, style, com.bamnat.core.layout.TabOrder.CALENDAR, {}, 0.3f)
+                    androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalOwnMonth provides true) {
+                        com.bamnat.app.ui.recipe.ScaledPhone(r, style, com.bamnat.core.layout.TabOrder.CALENDAR, {}, 0.3f)
+                    }
                 }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("스튜디오", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-                Text("달력 칸, 패턴, 색·배경, 카드 배치, 위젯까지 한곳에서 꾸며요. 입히기 전까지 내 앱은 그대로예요",
+                // [STU-21] 1.36 레시피 만들기 합침: one way in for every make.
+                Text("칸·색·부품 하나하나부터 수식·규칙으로 서로 엮는 것까지 직접 만들어요. 입히기·저장·올리기도 여기서 해요",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                androidx.compose.material3.Button(onClick = { onStudio("mine") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 모양에서 꾸미기") }
-                TextButton(onClick = { onStudio("plain") }) { Text("처음 모양에서 새로") }
+                androidx.compose.material3.Button(onClick = { onStudio("mine") }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 모양 고치기") }
             }
         }
-    }
+        // PC 재검토 C10 (꾸미기 시작점이 네 갈래로 흩어짐): every way to start, here — 지금 모양 고치기 above, 새로 만들기 (느낌·처음) and
+        // 이어서 하기 under it.
+        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.material3.OutlinedButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_FEEL) },
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("느낌으로 새로", maxLines = 1) }
+            androidx.compose.material3.OutlinedButton(onClick = { onStudio("plain") }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                Text("처음 모양에서 새로", maxLines = 1)
+            }
+        }
+        left?.let { d ->
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("만들던 ‘${com.bamnat.app.ui.studio.draftName(d.body)}’", style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                    Text((if (d.step >= 2) "올리던 중" else "스튜디오에서 꾸미던 중") + " · ${com.bamnat.app.ui.studio.ago(d.updatedAt)}", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.FilledTonalButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + d.id) },
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("이어서 하기") }
+            }
+        }
+    } }
     val themes = lease.history.sortedByDescending { it.own }.take(10)
     if (themes.isNotEmpty() || kept.isNotEmpty()) {
         Text("이어서 꾸미기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
@@ -163,8 +202,8 @@ private fun Make(c: AppContainer, style: WorkStyle?, onStudio: (String) -> Unit,
         if (kept.isNotEmpty()) Text("보관함에 조각 ${kept.size}개가 있어요. 마을 › 테마나 스튜디오의 ‘보관함’에서 얹어 섞어요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    Card("레시피 만들기", "테마에 알람·메모 틀·급여 규칙까지 묶어 장터에 올려요", "레시피 만들기", onMake)
-    Card("내 레시피·받은 레시피", "올린 것의 좋아요·댓글과 검토 상태를 보고, 받은 것은 7일 안에 되돌려요", "열기", onMine)
+    // [R136-13] 1.36 (리뷰 R-23·M6): 내 것 in one place — 올린 것·받은 것·만들던 것 — and 코드로 받기 only here.
+    Card("내 것", "올린 레시피의 좋아요·댓글, 받은 레시피(7일 안 되돌리기), 만들던 판을 한곳에서 봐요", "열기", onMine)
     Card("이런 거 있었으면", "필요한 레시피를 부탁하거나, 다른 분의 부탁을 ‘만들게요’로 받아 만들어요", "요청 보기", onRequests)
     OutlinedButton(onClick = onCode, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("코드·링크로 받기") }
 }

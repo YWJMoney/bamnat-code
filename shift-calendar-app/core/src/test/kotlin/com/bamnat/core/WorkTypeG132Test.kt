@@ -32,16 +32,6 @@ import java.time.YearMonth
 class WorkTypeG132Test {
     private val mon = LocalDate.of(2026, 10, 26)
 
-    @Test fun adsWaitAfterLaunchAndWhileTyping() {
-        val opened = Instant.parse("2026-10-28T00:00:00Z")
-        assertFalse(AdRules.bannerNow(true, opened, opened.plusSeconds(5), typing = false, closed = false))
-        assertTrue(AdRules.bannerNow(true, opened, opened.plusSeconds(AdRules.LAUNCH_QUIET_SECONDS + 1), typing = false, closed = false))
-        assertFalse(AdRules.bannerNow(true, opened, opened.plusSeconds(60), typing = true, closed = false))
-        assertFalse(AdRules.bannerNow(true, opened, opened.plusSeconds(60), typing = false, closed = true))
-        assertFalse(AdRules.bannerNow(false, opened, opened.plusSeconds(60), typing = false, closed = false))
-        assertTrue(AdRules.MUTED)
-    }
-
     @Test fun platformDaysAreCountedPaidAndMatched() {
         val j = PlatformWork.job(mon, "쿠팡이츠", 18, 92_000, 390, 8_000, withholding = false)
         assertTrue(PlatformWork.isPlatform(j))

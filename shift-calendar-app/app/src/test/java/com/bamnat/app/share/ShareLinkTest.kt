@@ -233,6 +233,8 @@ class ShareLinkTest {
 
     @Test fun pagesMonthsCoverTheLink() {
         assertEquals(listOf("2026-11", "2026-12", "2027-01"), ShareLinkPayload.months(start).map { it.toString() })
+        // From the 1st, 92 days touch the 4th month for a day or two only: three months, as the sheet says.
+        assertEquals(listOf("2027-01", "2027-02", "2027-03"), ShareLinkPayload.months(java.time.LocalDate.of(2027, 1, 1)).map { it.toString() })
     }
 
     /** [SHR-02] The link id in what people paste: the message the app sends, the page address, or the app button's. */

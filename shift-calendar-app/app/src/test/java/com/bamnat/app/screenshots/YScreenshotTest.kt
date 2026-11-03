@@ -44,7 +44,8 @@ class YScreenshotTest : ScreenshotBase() {
     @Test fun investToolsHideShiftTools() = shoot("890_y_invest_tools", FOLDED, style(WorkStyle.INVEST) {
         tools()
         assertTrue("근무 주기 설정 is put away", gone("근무 주기 설정", exact = true))
-        assertTrue(gone("동료 근무표 받기", exact = true))
+        // [FIT-05] 1.36: 가족·연인 근무표는 투자 달력도 받아요.
+        assertTrue(appears("동료 근무표 받기", exact = true))
         assertTrue("달력 공유, not 근무표", appears("달력 공유", exact = true))
         reveal("이 달력에 안 맞아 숨긴 도구")
     })
@@ -65,7 +66,7 @@ class YScreenshotTest : ScreenshotBase() {
         tools()
         assertTrue(appears(label, exact = true))
         // 더 보기 opens by itself on what was added (its rows may sit below the fold; a swipe would move the sheet).
-        assertTrue("더 보기 stays open on what was added", appears("이 달력에 안 맞아 숨긴 도구 3개 · 접기", exact = true))
+        assertTrue("더 보기 stays open on what was added", appears("이 달력에 안 맞아 숨긴 도구 2개 · 접기", exact = true))
     })
 
     @Test fun investCustomizeHasNoShiftParts() = shoot("892_y_invest_customize", FOLDED, style(WorkStyle.INVEST) {

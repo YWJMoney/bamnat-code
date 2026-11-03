@@ -29,6 +29,7 @@
 // GET    /api/passes              header X-Device: this install's 프로 passes and admin phone link [MON-08][MON-09]
 // POST   /api/passes/code         a recovery code for the backup; /claim moves passes to a new phone with it
 // POST   /api/admin-link          a six-digit code from the developer app ties this phone to that admin
+// GET|POST|DELETE /api/passes/share, POST /api/passes/share/claim  1.36 [PSH-01] 프로 나눔 1인
 // POST   /api/purchases           a Play purchase token, checked with Play when PLAY_SERVICE_ACCOUNT is set [MON-03]
 // POST   /api/consents            the user's answer before a free trial turns paid (전자상거래법 제13조 6항) [MON-06]
 // POST   /api/events              [STAT-01] counts of what consenting phones did each day, no install id
@@ -80,8 +81,10 @@ import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCo
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
-import { RECIPE_COLUMNS, RECIPE_SCHEMA, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
-import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity } from "./recipe-community.js";
+import { RECIPE_COLUMNS, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
+import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
+import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
+import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
 export const LIMITS = {
@@ -98,7 +101,6 @@ export const LIMITS = {
   ask: 1500,
   // [COMM-06] A post in the talk on a rule set.
   post: 500,
-  postsPerDay: 20,
   postsPerNetworkDay: 600,
   flagsToHide: 3,
   muteDays: 30,
@@ -262,6 +264,9 @@ export async function prune(env, now) {
     // [MON-03][MON-09] Spent link codes, and purchases 30 days after they ended.
     stmt(env, "DELETE FROM link_codes WHERE expires < ?", now),
     stmt(env, "DELETE FROM subs WHERE expiry IS NOT NULL AND expiry < ?", now - MONEY.subKeepMs),
+    stmt(env, "DELETE FROM year_passes WHERE purchased_at < ?", now - 400 * 86400000),
+    stmt(env, "DELETE FROM day_rewards WHERE given_at < ?", now - 400 * 86400000),
+    stmt(env, "DELETE FROM device_seen WHERE last < ?", now - NEW_DEVICE.keepDays * DAY),
     // [MON-06][MON-11] Consent answers are the record of a contract: kept 5 years (전자상거래법 시행령 제6조), then gone.
     stmt(env, "DELETE FROM consents WHERE at < ?", now - MONEY.consentKeepMs),
     // [INVITE-04][INVITE-08] An invite never counted goes 30 days after its period of use could end; a counted one after
@@ -403,6 +408,8 @@ async function routeOnce(request, env, url, ctx) {
   // R131 1.31 [SPD-26] I2: the app opens its connection (and this Worker) when a lookup screen opens, before the first letter.
   if (path === "/api/hello" && (method === "GET" || method === "HEAD")) return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
+  // [PRF-11] 1.36 a maker's 프로필 link: a small public page that opens the app.
+  if (path.startsWith("/m/") && method === "GET") return edgeCached(request, ctx, 60, () => makerWebPage(recipeDeps, env, path.slice(3)));
   // AS 1.29 [SRCH-03][SRCH-04] A short edge copy of a search, and the most used companies for the app to keep.
   if (path === "/api/companies" && method === "GET") return edgeCached(request, ctx, SEARCH_EDGE_SECONDS, () => search(env, url));
   // [J133-88] 공개 자료 (국민연금 가입 사업장): what the public record says of a workplace, beside the 광장's own.
@@ -466,6 +473,8 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/activity" && method === "GET") return activity(request, env);
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   if (path === "/api/config" && method === "GET") return json(await config(env));
+  // 1.36 [SEC-11] An install shows Play's verdict once a week (integrity.js).
+  if (path === "/api/integrity" && method === "POST") { await ready(env); return integrityRoute(recipeDeps, request, env, playIntegrity); }
   if (path === "/api/events" && method === "POST") return usage(request, env);
   if (path === "/api/photo-wrong" && method === "POST") return photoWrong(request, env); // AQ 1.29 [PHOTO-10]
   if (path === "/api/plaza/news" && method === "GET") return plazaNews(request, env, url);
@@ -585,6 +594,17 @@ const SCHEMA = [
     auto_renew INTEGER NOT NULL DEFAULT 0, consent_at INTEGER, stopped_at INTEGER, created_at INTEGER NOT NULL, checked_at INTEGER NOT NULL)`,
   "CREATE INDEX IF NOT EXISTS subs_device ON subs (device)",
   "CREATE INDEX IF NOT EXISTS subs_trial ON subs (trial, auto_renew, expiry)",
+  // 1.36 841 1년 이용권 Play confirmed (a one-time product, no automatic payment): kept a year and a month for refunds and counts.
+  `CREATE TABLE IF NOT EXISTS year_passes (hash TEXT PRIMARY KEY, device TEXT NOT NULL, order_id TEXT NOT NULL DEFAULT '', state TEXT NOT NULL,
+    purchased_at INTEGER NOT NULL, created_at INTEGER NOT NULL, checked_at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS year_passes_device ON year_passes (device)",
+  // 1.36 네트워크 한도 (사용자 결정 2026-11-01 "새 휴대폰만 시간 단위로"): when an install was first seen, so only a new one (or one
+  // restricted) is held to its network's hourly share. The install's hash only; gone after NEW_DEVICE.keepDays unseen.
+  "CREATE TABLE IF NOT EXISTS device_seen (device TEXT PRIMARY KEY, first INTEGER NOT NULL, last INTEGER NOT NULL)",
+  // 1.36 841 쓰면 쌓이는 날: days earned without an ad (a bug report fixed), once per source, at most 14 a month.
+  `CREATE TABLE IF NOT EXISTS day_rewards (source TEXT PRIMARY KEY, device TEXT NOT NULL, kind TEXT NOT NULL, days INTEGER NOT NULL,
+    given_at INTEGER NOT NULL)`,
+  "CREATE INDEX IF NOT EXISTS day_rewards_device ON day_rewards (device, given_at)",
   // [MON-06] Answers before a trial turns paid, kept as the law's evidence.
   `CREATE TABLE IF NOT EXISTS consents (id INTEGER PRIMARY KEY AUTOINCREMENT, device TEXT NOT NULL, kind TEXT NOT NULL,
     detail TEXT NOT NULL, at INTEGER NOT NULL)`,
@@ -677,6 +697,12 @@ const SCHEMA = [
   // 1.34 [RCP-28] 나눔 판 (recipes.js).
   ...RECIPE_SCHEMA,
   ...COMMUNITY_SCHEMA,
+  // 1.36 [SEC-11] Play Integrity: an install's last verdict (integrity.js).
+  ...INTEGRITY_SCHEMA,
+  // 1.36 [PSH-01] 프로 나눔 1인: a buyer's install, its one-time code and the one install it gave 프로 to.
+  `CREATE TABLE IF NOT EXISTS pro_shares (owner TEXT PRIMARY KEY, code TEXT UNIQUE, code_at INTEGER, guest TEXT UNIQUE, guest_at INTEGER)`,
+  // 1.36 [LIM-10] 쓰기 제한: no daily cap; strikes (posts or recipes hidden) restrict an install for a while (write-limits.js).
+  ...WRITE_LIMITS_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -750,6 +776,7 @@ const COLUMNS = [
   // 1.34 [RCP-35] 나눔 판의 이야기.
   ...RECIPE_COLUMNS,
   ...COMMUNITY_COLUMNS,
+  ...WRITE_LIMITS_COLUMNS,
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -943,9 +970,27 @@ export async function salt(env) {
   return kept;
 }
 
+/**
+ * 1.36 [SEC-01] The caller's network as the limits count it: an IPv4 address as it is, an IPv6 address by its /64 (the part a
+ * home or a phone carrier gives one subscriber). Before, every IPv6 address counted alone, and one line holds 2^64 of them,
+ * so a script could change its address on every try and step past every network limit.
+ */
+export function netOf(ip) {
+  const a = String(ip ?? "").trim().toLowerCase();
+  if (!a.includes(":")) return a || "unknown";
+  const [head, tail] = a.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail !== undefined && tail ? tail.split(":") : [];
+  // An IPv4 tail (::ffff:1.2.3.4) is that IPv4 address.
+  const last = (t.length ? t : h)[(t.length ? t : h).length - 1] ?? "";
+  if (last.includes(".")) return last;
+  const full = tail === undefined ? h : [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
+  return full.slice(0, 4).map((x) => (x || "0").replace(/^0+(?=.)/, "")).join(":") + "::/64";
+}
+
 /** Salted hashes of the caller's address: this hour's, last hour's, the day's and one for logins. */
 export async function network(request, env, now) {
-  const ip = request.headers.get("cf-connecting-ip") || "unknown";
+  const ip = netOf(request.headers.get("cf-connecting-ip") || "unknown");
   const s = await salt(env);
   const hash = async (what) => (await sha256(`${s}|${what}|${ip}`)).slice(0, 32);
   const hour = Math.floor(now / HOUR);
@@ -955,6 +1000,30 @@ export async function network(request, env, now) {
     day: await hash(`day:${Math.floor(now / DAY)}`),
     login: await hash("login"),
   };
+}
+
+/**
+ * 1.36 네트워크 한도 (사용자 결정 2026-11-01 "새 휴대폰만 시간 단위로", 논의: 통신사 주소 하나를 수천 명이 같이 써서 오래 쓴 사람이
+ * 하루 한도에 막히는 일): an install seen for under [NEW_DEVICE.days] days, or restricted for reports (write_limits, muted), is
+ * counted with its network by the hour — the old day's limit shared out over [NEW_DEVICE.hourShare] hours. Anyone else is not held
+ * to the network at all, only to their own limits and the report strikes. Wiping the app to post again starts as new.
+ */
+export const NEW_DEVICE = { days: 3, hourShare: 4, keepDays: 90 };
+
+/** Whether [dev] is new or restricted (see [NEW_DEVICE]); marks it seen. No install id counts as new. */
+export async function freshDevice(env, dev, now) {
+  if (!dev) return true;
+  const row = await one(env, `INSERT INTO device_seen (device, first, last) VALUES (?1, ?2, ?2)
+    ON CONFLICT (device) DO UPDATE SET last = ?2 RETURNING first`, dev, now);
+  if (now - Number(row?.first ?? now) < NEW_DEVICE.days * DAY) return true;
+  return !!(await one(env, `SELECT 1 AS x FROM write_limits WHERE device = ?1 AND until > ?2
+    UNION ALL SELECT 1 AS x FROM muted WHERE device = ?1 AND until > ?2 LIMIT 1`, dev, now));
+}
+
+/** The network check for [overLimit] as a list to spread in: none for an old install, else [kind]'s hourly share of [perDay]. */
+export async function networkCheck(env, dev, net, kind, perDay, now) {
+  if (!(await freshDevice(env, dev, now))) return [];
+  return [["network", `${kind}|${net.now}`, Math.max(1, Math.ceil(perDay / NEW_DEVICE.hourShare)), HOUR]];
 }
 
 /** Counts one use against [limit] for the window; false once the window's uses are spent. */
@@ -1982,7 +2051,7 @@ async function members(request, env) {
     return json({ joined: false, company: c.id });
   }
   const net = await network(request, env, now);
-  const limitHit = await overLimit(env, now, [["device", `join|${dev}`, MEMBER.joinsPerDay, DAY], ["network", `join|${net.day}`, MEMBER.joinsPerNetworkDay, DAY]]);
+  const limitHit = await overLimit(env, now, [["device", `join|${dev}`, MEMBER.joinsPerDay, DAY], ...(await networkCheck(env, dev, net, "join", MEMBER.joinsPerNetworkDay, now))]);
   if (limitHit) return limitHit;
   const r = await joinCompany(env, dev, c.id, calOf(body.cal), now);
   // SP1 1.30 [SPD-08] With ?with=page (or "with": "page"), the company's page as the member now reads it: 이 설정 쓰기 and 이 급여
@@ -2125,7 +2194,7 @@ const proofText = (proof) => (proof ? `${proof.month}|${proof.match ? "match" : 
 
 export const ROOM = "room";
 export const STYLE_ROOMS = { "style-shift": "교대 광장", "style-day": "일근 광장", "style-field": "현장 광장", "style-shop": "가게 광장", "style-hourly": "알바 광장", "style-invest": "투자 이야기" };
-const ROOM_LIMITS = { perDay: 10, perNetworkDay: 300, shown: 100 };
+const ROOM_LIMITS = { perNetworkDay: 300, shown: 100 };
 /** [PLAZA-33] What the 투자 이야기 does not take: 리딩방, promised returns, moves to a chat room (결정 AI-D8). */
 const INVEST_ADVICE = /리딩\s*방|리딩해|수익\s*(보장|확정)|원금\s*보장|무조건\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\s*채팅|단톡)\s*방?\s*(으로|에|들어|입장|초대)|급등\s*주\s*(추천|알려)|종목\s*(추천|찍어|알려)\s*(드|줄|해)/;
 export const ROOM_PATH = /^\/api\/companies\/([A-Za-z0-9]{12}|style-(?:shift|day|field|shop|hourly|invest))\/setups\/room\/posts$/;
@@ -2166,8 +2235,9 @@ async function roomPost(request, env, body) {
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
   const net = await network(request, env, now);
-  const limitHit = await overLimit(env, now, [["device", `room|${dev}`, ROOM_LIMITS.perDay, DAY],
-    ["network", `room|${net.day}`, ROOM_LIMITS.perNetworkDay, DAY]]);
+  // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; the network's stays.
+  const limitHit = (await writeLimitHit(recipeDeps, env, dev, "room", now))
+    ?? (await overLimit(env, now, await networkCheck(env, dev, net, "room", ROOM_LIMITS.perNetworkDay, now)));
   if (limitHit) return limitHit;
   let parent = null;
   if (given(body.parent)) {
@@ -2538,8 +2608,8 @@ async function state(env, companyId, grp, threshold, adopted) {
         (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1)
           + (SELECT COUNT(*) FROM votes WHERE company_id = ?1 AND grp = ?2 AND ok = 1 AND verified = 1) AS checked,
         (SELECT COUNT(*) FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1) AS sentChecked`, companyId, grp),
-    all(env, `SELECT n.nick FROM reports r JOIN nicks n ON n.device = r.device
-        WHERE r.company_id = ? AND r.grp = ? AND r.status IN ('pending', 'adopted') ORDER BY r.created_at LIMIT 5`, companyId, grp).then((l) => l.map((n) => n.nick)),
+    // 1.36 [V3] 마을 이름 하나: the 마을 이름 is the 프로필's name too, so it never stands next to a company (회사 쪽은 참여자 번호로만).
+    [],
     // [COMM-11] N7 두 달 이상 확인됨: pay-slip checks from at least two networks in two different months.
     one(env, `SELECT COUNT(DISTINCT cluster) AS nets, COUNT(DISTINCT strftime('%Y-%m', at / 1000, 'unixepoch')) AS months FROM (
         SELECT cluster, created_at AS at FROM reports WHERE company_id = ?1 AND grp = ?2 AND status IN ('pending', 'adopted') AND verified = 1
@@ -2625,7 +2695,8 @@ async function readStates(env, pairs) {
       return { id: grp, status: adopted ? "adopted" : "pending", points: s.points, persons: s.persons, bad: s.bad, threshold,
         ...trust(s, threshold), posts: posts.get(k) ?? 0, uses: n, senders: reports.length,
         checked: sentChecked + backing.filter((v) => v.verified === 1).length,
-        by: reports.filter((r) => r.nick !== null && r.nick !== undefined).slice(0, 5).map((r) => r.nick),
+        // 1.36 [V3] No 마을 이름 next to a company.
+        by: [],
         support: support({ uses: n, ok: s.persons, bad: s.bad, verified: sentChecked }),
         ...(nets >= 2 && months >= 2 ? { checkedLong: true } : {}) };
     },
@@ -2799,7 +2870,7 @@ async function report(request, env) {
   const net = await network(request, env, now);
   const dev = await deviceHash(device);
   const limitHit = await overLimit(env, now, [["device", `report|${dev}`, LIMITS.reportsPerDay, DAY],
-    ["network", `report|${net.day}`, LIMITS.reportsPerNetworkDay, DAY]]);
+    ...(await networkCheck(env, dev, net, "report", LIMITS.reportsPerNetworkDay, now))]);
   if (limitHit) return limitHit;
   const c = await companyFor(env, r.company, now, r);
   const grp = (await sha256(`${r.deptNorm}|${await fingerprint(r.setup)}`)).slice(0, 16);
@@ -3136,6 +3207,8 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM rate_votes WHERE device = ?", dev),
     stmt(env, "UPDATE rates SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     stmt(env, "DELETE FROM rates WHERE device = ?", dev),
+    stmt(env, "DELETE FROM day_rewards WHERE device = ?", dev),
+    stmt(env, "DELETE FROM device_seen WHERE device = ?", dev),
   ]);
   const [, reports, votes, , posts, , , , , , , , asked] = await batch(env, [
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
@@ -3163,12 +3236,23 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM invite_uses WHERE invitee = ? AND status NOT IN ('credited', 'capped', 'qualified')", dev),
     stmt(env, "UPDATE invite_uses SET invitee = ? WHERE invitee = ?", `${gone}i`, dev),
     stmt(env, "UPDATE invite_uses SET inviter = ? WHERE inviter = ?", gone, dev),
+    // 1.36 [PSH-01] 프로 나눔: what it gave and what it was given.
+    stmt(env, "DELETE FROM pro_shares WHERE owner = ?", dev),
+    // 1.36 [LIM-10] Strikes go; a restriction still running stays until it ends, like 쓰기 막기 (muted).
+    stmt(env, "DELETE FROM write_strikes WHERE device = ?", dev),
+    stmt(env, "DELETE FROM write_limits WHERE device = ? AND until <= ?", dev, Date.now()),
+    stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL WHERE guest = ?", dev),
   ]);
   // 1.34 [RCP-28] its recipes with their votes and talk, its votes on others' (off their counts), its 신뢰 단계.
   const recipes = await forgetRecipes(recipeDeps, env, dev);
   // 1.35 its requests, likes, follows, maker page and pictures.
+  // [PRF-01] 1.36 what of 마을 goes, so the phone can say it (PC 확인: it said "지울 것이 없었어요" over a profile and 3 works).
+  const profile = (await one(env, "SELECT COUNT(*) AS n FROM recipe_makers WHERE device = ? AND closed = 0", dev)).n;
+  const follows = (await one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE device = ?", dev)).n;
+  const sets = (await one(env, "SELECT COUNT(*) AS n FROM recipe_sets WHERE owner = ?", dev)).n;
   await batch(env, forgetCommunity(recipeDeps, env, dev));
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes, ...(recipes ? { recipes } : {}) });
+  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes,
+    ...(recipes ? { recipes } : {}), ...(profile ? { profile } : {}), ...(follows ? { follows } : {}), ...(sets ? { sets } : {}) });
 }
 
 async function vote(request, env) {
@@ -3395,8 +3479,8 @@ async function talkData(request, env, companyId, grp, known = null) {
     all(env, `SELECT r.id, r.grp, r.status FROM reports r WHERE r.id IN
       (SELECT report_id FROM posts WHERE company_id = ? AND grp = ? AND report_id IS NOT NULL)`, c.id, grp),
     me ? one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, now) : null,
-    // [COMM-11] How many more posts today, so the app can say so before a refusal.
-    me ? one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `${room ? "room" : "post"}|${me}`, now) : null,
+    // [COMM-11] 1.36 [LIM-10] How many more posts today, only while strikes restrict this install.
+    me ? writeLeft(recipeDeps, env, me, room ? "room" : "post", now) : null,
     sealed,
   ]);
   const dropped = new Set();
@@ -3408,6 +3492,9 @@ async function talkData(request, env, companyId, grp, known = null) {
   const posts = [];
   const myVotes = new Map(myVoteRows.map((v) => [v.post_id, v.ok === 1]));
   const nicks = new Map(nickRows.map((n) => [n.device, n.nick]));
+  // 1.36 [V3] In a kind of work's 광장, a writer with a 프로필 (not hidden or closed) leads to it.
+  const makers = new Map(style ? (await all(env, `SELECT device, maker FROM recipe_makers WHERE hidden = 0 AND closed = 0 AND device IN
+    (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp)).map((m) => [m.device, m.maker]) : []);
   const review = new Set(reviewRows.map((r) => r.post_id));
   const proposals = new Map(proposalRows.map((r) => [r.id, r]));
   // [PLZ-02] Where each proposal's setup stands, every one in one round.
@@ -3437,7 +3524,9 @@ async function talkData(request, env, companyId, grp, known = null) {
     posts.push({
       id: p.id,
       who: numbers.get(p.device),
-      nick: nicks.get(p.device) ?? null,
+      // 1.36 [V3] 마을 이름 하나: shown in a kind of work's 광장 (with the 프로필 it leads to), never in a company's.
+      nick: style ? nicks.get(p.device) ?? null : null,
+      ...(style && makers.has(p.device) ? { maker: makers.get(p.device) } : {}),
       stance: senders.has(p.device) ? "sender" : v ? (v.ok ? "ok" : "bad") : null,
       verified: verified.has(p.device) || v?.verified === 1,
       body: p.body,
@@ -3471,10 +3560,9 @@ async function talkData(request, env, companyId, grp, known = null) {
     }
   }
   const past = !room && !(live.current || live.pending);
-  const perDay = room ? ROOM_LIMITS.perDay : LIMITS.postsPerDay;
   return { status: 200, body: { company: { id: c.id, name: c.name }, setup: grp, posts, member, ...(room ? { room: c.style ? "style" : "company" } : {}),
     ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
-    ...(hiddenByYou ? { hiddenByYou } : {}), ...(me ? { left: { posts: Math.max(0, perDay - (used?.count ?? 0)) } } : {}) } };
+    ...(hiddenByYou ? { hiddenByYou } : {}), ...(used?.limit ? { left: { posts: used.limit.left }, limit: used.limit } : {}) } };
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
@@ -3498,8 +3586,8 @@ async function post(request, env) {
   const c = await talkable(env, body.company, body.setup);
   if (!c) return json({ error: "not_found" }, 404);
   const net = await network(request, env, now);
-  const limitHit = await overLimit(env, now, [["device", `post|${dev}`, LIMITS.postsPerDay, DAY],
-    ["network", `post|${net.day}`, LIMITS.postsPerNetworkDay, DAY]]);
+  const limitHit = (await writeLimitHit(recipeDeps, env, dev, "post", now))
+    ?? (await overLimit(env, now, await networkCheck(env, dev, net, "post", LIMITS.postsPerNetworkDay, now)));
   if (limitHit) return limitHit;
   // [PLZ-05] A reply goes under a post of the same talk; replies to replies go under the same first post.
   let parent = null;
@@ -3683,7 +3771,7 @@ async function setNick(request, env) {
   if (why) refuse(why, "nick");
   const now = Date.now();
   const net = await network(request, env, now);
-  const limitHit = await overLimit(env, now, [["device", `nick|${dev}`, 10, DAY], ["network", `nick|${net.day}`, 200, DAY]]);
+  const limitHit = await overLimit(env, now, [["device", `nick|${dev}`, 10, DAY], ...(await networkCheck(env, dev, net, "nick", 200, now))]);
   if (limitHit) return limitHit;
   const taken = await one(env, "SELECT device FROM nicks WHERE norm = ?", norm);
   if (taken && taken.device !== dev) return json({ error: "taken", field: "nick" }, 409);
@@ -3867,7 +3955,7 @@ async function addRate(request, env) {
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
   const net = await network(request, env, now);
   const limitHit = await overLimit(env, now, [["device", `rate|${dev}`, LIMITS.reportsPerDay, DAY],
-    ["network", `rate|${net.day}`, LIMITS.reportsPerNetworkDay, DAY]]);
+    ...(await networkCheck(env, dev, net, "rate", LIMITS.reportsPerNetworkDay, now))]);
   if (limitHit) return limitHit;
   const norm = normName(r.trade);
   const before = await one(env, `SELECT id, status FROM rates WHERE device = ? AND job = ? AND region = ? AND trade_norm = ? AND unit = ? AND year = ?
@@ -4042,7 +4130,9 @@ async function flag(request, env, id) {
   if (!p || p.status !== "shown") return json({ error: "not_found" }, 404);
   if (p.device === dev) return json({ error: "own" }, 400);
   const added = await run(env, "INSERT OR IGNORE INTO post_flags (post_id, device, reason, at) VALUES (?, ?, ?, ?)", id, dev, reason, now);
-  if (added.meta.changes) {
+  // 1.36 보안 점검 [SEC-16] M10: one network counts once a day for one post, so ids made on one line cannot hide it (the report is
+  // kept for the operator). A new install's report still counts here: a new colleague must be able to report a 광장 글 at once.
+  if (added.meta.changes && (await allow(env, `pflagnet|${net.day}|${id}`, 1, DAY, now))) {
     await run(env, `UPDATE posts SET flags = flags + 1,
         status = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'hidden' ELSE status END,
         hide_reason = CASE WHEN kept = 0 AND flags + 1 >= ?2 THEN 'flags' ELSE hide_reason END,
@@ -4052,6 +4142,7 @@ async function flag(request, env, id) {
     if (after.status === "hidden") {
       await batch(env, plazaResults(env, p, "hidden", "hidden", now));
       await audit(env, now, "post_autohide", id, `${p.company_id}/${p.grp}`);
+      await addStrike(recipeDeps, env, p.device, p.company_id === RECIPE_TABLE ? "talk" : "post", id, now);
       await notifyAdmins(env, "flagged", { title: "신고로 가려진 글", body: "신고가 쌓여 글 하나가 가려졌어요", url: "/admin/#/community" }, now);
     }
   }
@@ -4074,6 +4165,12 @@ function health(env) {
 }
 
 /** [ADMIN-15] The setup screen's full state, for the owner: health plus the optional services. */
+/** 1.36 [SEC-11] The service account as Play Integrity uses it, or null. */
+export function playIntegrity(env) {
+  const account = playReady(env);
+  return account ? { pkg: env.PLAY_PACKAGE || "com.bamnat.app", token: (scope) => playToken(env, account, Date.now(), scope) } : null;
+}
+
 function serverState(env) {
   // [MON-03] PLAY_SERVICE_ACCOUNT is optional: without it purchases are not checked with Play.
   // [SRV-05] SHARE_BASE_URL and SHARE_ADMIN_TOKEN are optional: without them 공유 링크 신고 says how to connect.
@@ -4204,7 +4301,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/search" && method === "GET") return json(await adminSearch(env, actor, url.searchParams.get("q"), { can, normName }));
   if (path === "/effects" && method === "GET") return json(await flagEffects(env, actor, now));
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
-  if (path === "/server" && method === "GET") return json(serverState(env));
+  if (path === "/server" && method === "GET") return json({ ...serverState(env), integrity: await integrityState(recipeDeps, env, now, playIntegrity(env) !== null) });
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
   if (path === "/admins" && method === "GET") return json(await adminList(env));
   if (path === "/invites" && method === "POST") return invite(request, env, url, now);
@@ -4264,6 +4361,14 @@ async function signedRoute(request, env, url, path, method, now, session) {
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
+  // 1.36 [LIM-10] 신고 누적 쓰기 제한: who is restricted (or was, in 30 days), the rules, and 풀기.
+  if (path === "/write-limits" && method === "GET") return json({ rules: WRITE_LIMITS, items: await restrictions(recipeDeps, env, now) });
+  m = path.match(/^\/write-limits\/([0-9a-f]{12})\/lift$/);
+  if (m && method === "POST") {
+    const out = await liftLimit(recipeDeps, env, m[1], now);
+    if (out) await audit(env, now, "write_limit_lift", m[1]);
+    return json(out ?? { error: "not_found" }, out ? 200 : 404);
+  }
   if (path === "/recipes" || path.startsWith("/recipes/")) {
     const more = await communityAdmin(recipeDeps, request, env, path, url, now);
     if (more) return more;
@@ -5838,6 +5943,8 @@ async function moderatePost(env, id, body, now) {
         ON CONFLICT (device) DO UPDATE SET until = excluded.until, reason = excluded.reason`, p.device, now + LIMITS.muteDays * DAY, reason));
     }
     await batch(env, stmts);
+    // 1.36 [LIM-10] A post the developer hid counts like one reports hid (once: one already hidden was counted then).
+    if (p.status !== "hidden") await operatorStrike(recipeDeps, env, p.device, "post", id, now);
     await audit(env, now, body.action === "mute" ? "post_mute" : "post_hide", target, reason);
   } else if (body.action === "show") {
     await batch(env, [
@@ -5845,7 +5952,11 @@ async function moderatePost(env, id, body, now) {
       stmt(env, "UPDATE posts SET status = 'shown', hide_reason = NULL, hidden_at = NULL, kept = 1, flags = 0 WHERE id = ?", id),
       stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id),
       stmt(env, "DELETE FROM muted WHERE device = ?", p.device),
+      // 1.36 [LIM-10] Shown again: its strike no longer counts.
+      stmt(env, "DELETE FROM write_strikes WHERE ref = ?", id),
     ]);
+    // 1.36 [SEC-16] M10: and a restriction that strike started ends.
+    if (p.status === "hidden") await strikeTakenBack(recipeDeps, env, p.device, now);
     await audit(env, now, "post_show", target);
   } else if (body.action === "delete") {
     await batch(env, [...plazaResults(env, p, "deleted", "deleted", now),
@@ -6855,7 +6966,9 @@ async function sameSecret(given, secret) {
  * recipe.vote, recipe.talk) as the server sees it now, so nothing is kept before 처리방침 3.8 is in force (결정 D109).
  */
 const recipeDeps = {
-  one, all, run, batch, stmt, json, readJson, deviceId, deviceHash, network, overLimit, allow, tooMany, randomId, paused, edgeCached,
+  one, all, run, batch, stmt, json, readJson, deviceId, deviceHash, network, networkCheck, overLimit, allow, tooMany, randomId, paused, edgeCached,
+  // 1.36 [SEC-11] Play Integrity before a write others see (integrity.js); null to go on.
+  integrity: (env, dev, now) => integrityGate(recipeDeps, env, dev, now),
   legalOpen: async (env, key, now) => serverEval(await flagStore(env), key, now).on,
   hiddenAuthors: async (env, request) => hiddenAuthors(await authorKey(env), request.headers.get("x-hide")),
   authorKey,

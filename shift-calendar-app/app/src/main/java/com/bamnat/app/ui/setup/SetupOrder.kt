@@ -39,6 +39,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +51,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -406,6 +408,28 @@ private fun RosterPaint(vm: SetupViewModel, d: SetupDraft) {
     }
 }
 
+/** 1.36 PC W10: the roster being read, with a spinner, the reading under way, the seconds gone and 취소. */
+@Composable
+private fun RosterReadingCard(vm: SetupViewModel) {
+    val step by vm.rosterStep.collectAsStateWithLifecycle()
+    var seconds by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1_000); seconds += 1 } }
+    androidx.compose.material3.Card(Modifier.fillMaxWidth().semantics(mergeDescendants = false) {
+        liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite
+    }) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
+            Column(Modifier.weight(1f)) {
+                Text("듀티표를 읽는 중이에요…", style = MaterialTheme.typography.titleSmall)
+                val how = if (step.second > 0) "${step.first}/${step.second}번째로 읽는 중" else "처음 읽는 중"
+                Text("$how · ${seconds}초 · 휴대폰 안에서만 읽어요", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            androidx.compose.material3.TextButton(onClick = vm::cancelRosterRead) { Text("취소") }
+        }
+    }
+}
+
 /**
  * [SETUP-15] 듀티표가 있어요 → 사진 · 파일 · 직접 칠하기 (중-8): a nurse gets the month's roster every month, so reading
  * it is offered first; what is read is painted below, where any day is fixed by painting over it.
@@ -442,7 +466,21 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
             label = { Text("엑셀·CSV") }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
         FilterChip(selected = roster == null, onClick = vm::clearRoster, label = { Text("직접 칠하기") }, leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(18.dp)) })
     }
-    if (reading) Text("휴대폰 안에서 듀티표를 여러 방법으로 읽어 맞춰 보고 있어요…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): at once a card that says it is reading, how far, for how long, with 취소;
+    // a photo that gave nothing says why with '직접 칠하기' beside it.
+    if (reading) RosterReadingCard(vm)
+    val failed = roster?.takeIf { !reading && it.rows.isEmpty() }?.error
+    if (failed != null) androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(failed, style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.Button(onClick = vm::clearRoster) { Text("직접 칠하기") }
+                androidx.compose.material3.TextButton(onClick = {
+                    picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) { Text("다른 사진") }
+            }
+        }
+    }
     roster?.advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
     // [READ-04][READ-05] The photo itself: tapped when it read nothing or the wrong thing, or looked at to see what was read.
     var tapping by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }

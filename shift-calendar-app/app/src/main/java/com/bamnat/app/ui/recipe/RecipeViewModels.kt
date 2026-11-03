@@ -27,7 +27,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
+
+/** [MKX-02] A tab's name as the 기능별 탭 chips say it. */
+internal fun tabName(tab: String?): String = com.bamnat.core.recipe.LookParts.tabLabel(tab ?: "")
 
 /** [RCP-21] 나눔 판 목록: the recipes for one kind of work, by tab, with search and 코드로 받기. */
 class RecipeListViewModel(private val c: AppContainer, val calendar: String = PersonalCalendar.MAIN) : ViewModel() {
@@ -38,17 +42,25 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
 
     data class State(val tab: Tab = Tab.HOT, val query: String = "", val items: List<RecipeItem> = emptyList(), val next: Int? = null,
         val loading: Boolean = false, val error: String? = null, val allStyles: Boolean = false,
-        /** [FREE-08] 종류로 보기 (RecipeClient.KINDS); null for all. */
-        val kind: String? = null)
+        /**
+         * [FREE-08] 종류로 보기 (RecipeClient.KINDS); null for all. [MKX-01] 1.36: the 장터 구간 — [RecipeClient.SCOPE_THEME] (테마) or
+         * [RecipeClient.SCOPE_TAB] + a tab (기능별 탭).
+         */
+        val kind: String? = RecipeClient.SCOPE_THEME)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
-    init { load() }
+    init {
+        load()
+        // [PRF-05] 차단·풀기 on a profile shows here at once, not after the app starts again (빌드 221dd083 확인).
+        viewModelScope.launch { c.recipes.blocked.drop(1).collect { load() } }
+    }
 
     fun tab(t: Tab) { _state.value = _state.value.copy(tab = t); load() }
     fun query(q: String) { _state.value = _state.value.copy(query = q) }
     fun allStyles(on: Boolean) { _state.value = _state.value.copy(allStyles = on); load() }
-    fun kind(k: String?) { _state.value = _state.value.copy(kind = k); load() }
+    // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간.
+    fun kind(k: String?) { _state.value = _state.value.copy(kind = if (k == "skin") RecipeClient.SCOPE_THEME else k); load() }
 
     fun load(more: Boolean = false) {
         if (!enabled) { _state.value = _state.value.copy(error = "장터는 아직 열리지 않았어요"); return }
@@ -58,7 +70,9 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         viewModelScope.launch {
             _state.value = try {
                 val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
-                _state.value.copy(items = if (more) _state.value.items + page.items else page.items, next = page.next, loading = false)
+                // [PRF-05] 1.36 차단한 분의 작품은 이 폰에서 빼요 (목록은 모든 폰이 같은 캐시).
+                val got = page.items.filter { RecipeClient.fits(it, s.kind) && !c.recipes.hides(it) }
+                _state.value.copy(items = if (more) _state.value.items + got else got, next = page.next, loading = false)
             } catch (e: Exception) {
                 _state.value.copy(loading = false, error = RecipeClient.problem(e))
             }
@@ -98,7 +112,22 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val appliedAt: Long? = null,
         /** [TRY-01] The look parts ticked in 입어 보기; null: the look pieces whole, as switched on. */
         val lookParts: Set<String>? = null,
+        /**
+         * PC 확인 7525ccff: each put-on 되돌리기 takes back (when, what), in the order put on, for its question. PC 확인 보안 6차 (조각을 바꿔
+         * 넣어도 목록이 없어요): a tab laid on the theme ([MKX-02] 얹기) is one too, as it leaves no record of its own.
+         */
+        val undoable: List<Pair<Long, String>> = emptyList(),
+        /** PC 확인 보안 6차: when a tab of this recipe was last laid on the theme (with no other put-on, the card says that). */
+        val laidAt: Long? = null,
+        /** PC 확인 보안 7차 (넣었는데 쓰는 분 0명): this phone, counted just now, until the page is read again. */
+        val usersPlus: Int = 0,
+        /** PC 확인 7525ccff: reported from this page, so its menu says so (the line below goes in a few seconds). */
+        val flagged: Boolean = false,
     )
+    private suspend fun undoableNow(): List<Pair<Long, String>> = (c.recipes.undoable(code).map { e ->
+        e.appliedAt to ("넣음" + e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.takeIf { it.isNotEmpty() }?.joinToString("·", prefix = " · ").orEmpty())
+    } + laidHere().map { o -> o.at to "테마 위에 얹음 · ‘${tabName(o.tab)}’ 탭" }).sortedBy { it.first } // PC 확인 보안 7차: in the order put on
+    private fun laidHere() = c.wardrobe.overlays.value.filter { it.code == code }
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -107,7 +136,11 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     fun load() {
         viewModelScope.launch {
             try {
-                val doc = c.recipeApi.show(code, device)
+                // PC 확인 W34 1.36 (처음 들어갈 때 한 번 '인터넷에 연결되지 않았어요', 다시 해 보기로 열림): a connection that drops on the
+                // first try is tried once more before it is said.
+                val doc = try { c.recipeApi.show(code, device) } catch (e: java.io.IOException) {
+                    kotlinx.coroutines.delay(800); c.recipeApi.show(code, device)
+                }
                 val r = doc.recipe()
                 val pieces = r.pieces.map { p -> Piece(p.kind, on = style == null || style in p.kind.styles, fits = style == null || style in p.kind.styles) }
                 _state.value = _state.value.copy(doc = doc, recipe = r, pieces = pieces, error = null,
@@ -117,6 +150,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 c.recipes.inUse().filter { it.code == code && c.recipes.canUndo(it) }.maxByOrNull { it.appliedAt }?.let { e ->
                     _state.value = _state.value.copy(appliedId = e.id, appliedAt = e.appliedAt)
                 }
+                _state.value = _state.value.copy(laidAt = laidHere().maxOfOrNull { it.at }, undoable = undoableNow())
                 if (canTalk) loadTalk()
                 if (doc.scope != "private") runCatching { c.recipeApi.lineage(code) }.onSuccess { _state.value = _state.value.copy(lineage = it) }
                 // [LIN-02] What this 수정판 changed from the recipe it was made from (the parent's version now).
@@ -218,17 +252,32 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             // [FREE-10] The looks among the chosen pieces are worn as a theme (its days, 입었던 테마, 벗기 to my own look);
             // the rest (알람, 규칙, 메모 틀) are put on as always and never run out.
             val looks = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }.map { it.kind }.toSet()
-            if (looks.isNotEmpty()) c.wardrobe.beforeWear()
-            val id = runCatching {
-                c.recipes.apply(r, code, doc.item.version, calendar,
-                    s.pieces.filter { it.on && it.fits }.map { RecipeRepository.Pick(it.kind, it.mode) }, s.answers)
-            }.getOrNull()
-            if (id != null && looks.isNotEmpty()) runCatching {
-                c.wardrobe.afterWear(r.copy(pieces = r.pieces.filter { it.kind in looks }), code, own = doc.mine, ver = doc.item.version)
+            // [MKX-02] 1.36 기능별 탭: looks of one tab are laid on the theme worn (it keeps its name), not worn as a theme of their own.
+            val lookRecipe = r.copy(pieces = r.pieces.filter { it.kind in looks })
+            val tab = if (looks.isEmpty()) null else com.bamnat.core.recipe.LookParts.onlyTab(lookRecipe)
+            if (looks.isNotEmpty() && tab == null) c.wardrobe.beforeWear()
+            val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
+            val counted = c.recipes.countedHere(code)
+            val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
+            val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code) }.getOrDefault(false)
+            // PC 확인 보안 8차 (넣어도 쓰는 분 0명): a tab laid on is a use too (it leaves no record, so apply did not count it).
+            // Once a phone [SEC-15], as a theme put on is (the studio thread's own fix sent it at every 얹기).
+            if (laid) c.recipes.countUse(code)
+            val plus = if (!counted && c.recipes.countedHere(code)) 1 else 0
+            if (id != null && looks.isNotEmpty() && tab == null) runCatching {
+                c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
-                message = if (id == null) "바뀐 것이 없어요" else "적용했어요. 7일 안에 되돌릴 수 있어요")
-            onDone(id)
+                undoable = undoableNow(), laidAt = laidHere().maxOfOrNull { it.at }, usersPlus = _state.value.usersPlus + plus,
+                message = when {
+                    laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
+                    id == null -> "바뀐 것이 없어요"
+                    else -> "적용했어요. 7일 안에 되돌릴 수 있어요"
+                })
+            onDone(id ?: if (laid) 0L else null)
+            // PC 제안 1.36 (넣은 직후 상세의 쓰는 분은 0명 그대로): the count read again once it is in.
+            // The count read again already holds this phone's, so the share added above is let go.
+            if (id != null || laid) runCatching { c.recipeApi.show(code, device) }.onSuccess { d -> _state.value = _state.value.copy(doc = d, usersPlus = 0) }
         }
     }
 
@@ -243,10 +292,18 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     fun noAdCounted(reason: String) = c.wardrobe.counted(reason)
 
     fun undo() {
-        val id = _state.value.appliedId ?: return
+        if (_state.value.appliedId == null && _state.value.laidAt == null) return
         viewModelScope.launch {
-            val ok = c.recipes.undo(id)
-            _state.value = _state.value.copy(appliedId = null, appliedAt = null, message = if (ok) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요")
+            val rows = c.recipes.undoAll(code)
+            // PC 확인 보안 6차: a tab of it laid on the theme comes off too, so nothing this page put on is left.
+            val tabs = laidHere().map { it.tab }
+            tabs.forEach { runCatching { c.wardrobe.removeOverlay(it) } }
+            val n = rows + tabs.size
+            // The card says what is truly left on this phone, read again, not only what was asked.
+            val left = c.recipes.inUse().filter { it.code == code && c.recipes.canUndo(it) }.maxByOrNull { it.appliedAt }
+            _state.value = _state.value.copy(appliedId = left?.id, appliedAt = left?.appliedAt, undoable = undoableNow(),
+                laidAt = laidHere().maxOfOrNull { it.at },
+                message = if (n > 0) "되돌렸어요. 그 사이 적은 기록은 그대로예요" else "되돌릴 수 없어요. 넣은 지 7일이 지났거나 이미 되돌렸어요")
         }
     }
 
@@ -262,8 +319,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
 
     fun flag(reason: String) {
         viewModelScope.launch {
-            _state.value = _state.value.copy(message = runCatching { c.recipeApi.flag(device, code, reason) }
-                .fold({ "신고했어요. 운영자가 살펴봐요" }, { RecipeClient.problem(it) }))
+            val sent = runCatching { c.recipeApi.flag(device, code, reason) }
+            _state.value = _state.value.copy(flagged = _state.value.flagged || sent.isSuccess,
+                message = sent.fold({ "신고했어요. 운영자가 살펴봐요" }, { RecipeClient.problem(it) }))
         }
     }
 
@@ -372,6 +430,14 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
 
     fun setOn(v: Boolean) = c.recipes.setOn(v)
     fun canUndo(e: AppliedRecipeEntity) = c.recipes.canUndo(e)
+
+    private var shown = false
+
+    /**
+     * [STU-25] 1.36 빌드 7: coming back to 내 것 (from the studio's 올리기, say) reads 내가 올린 레시피 again, so the one just sent
+     * is there; the first showing has init's read.
+     */
+    fun shownAgain() { if (shown) loadMine() else shown = true }
 
     fun loadMine() {
         if (!c.recipeApi.enabled) return

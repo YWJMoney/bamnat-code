@@ -23,7 +23,7 @@ import com.bamnat.core.work.WorkStyle
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35])
 class MoneyScreenshotTest : ScreenshotBase() {
-    @Test fun foldedFieldDayShifts() = shoot("77_folded_field_day_shifts_toggle", FOLDED, style(WorkStyle.FIELD) { openDay(dayCell); reveal("근무", exact = true) })
+    @Test fun foldedFieldDayShifts() = shoot("77_folded_field_day_shifts_toggle", FOLDED, style(WorkStyle.FIELD) { openDay(dayCell); reveal("일정", exact = true) })
 
     @Test fun foldedDutyTyping() = shoot("364_folded_duty_typing", FOLDED, dutyTyping())
     @Test fun phoneDutyTypingHugeText() = shoot("365_phone_duty_typing_huge_text", PHONE, 1.5f, dutyTyping())

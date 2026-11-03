@@ -106,6 +106,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="bamnat" android:host="r" />
+                <!-- [PRF-11] 1.36 a maker's profile page (/m/<id> on the company server) opens 프로필 with bamnat://m/<id>. -->
+                <data android:scheme="bamnat" android:host="m" />
             </intent-filter>
             <intent-filter android:label="@string/open_file_label">
                 <action android:name="android.intent.action.VIEW" />
@@ -225,6 +227,11 @@
         <!-- [MON-06] The trial's question, 7 days before it turns paid. -->
         <receiver
             android:name=".tier.TrialNoticeReceiver"
+            android:exported="false" />
+
+        <!-- 1.36 840·841: a yearly renewal or a 1년 이용권 ending, 7 days before. -->
+        <receiver
+            android:name=".tier.EndNoticeReceiver"
             android:exported="false" />
 
         <!-- [SHR-12] The shared link closing soon, and its 늘리기 button. -->

@@ -37,8 +37,12 @@ enum class ProReason(val words: String) {
     GRACE("결제가 안 됐어요. Play에서 결제 수단을 확인해 주세요"),
     ADMIN("관리자 휴대폰이라 프로를 무료로 써요"),
     PASS("보상 이용권으로 프로를 써요"),
+    /** 1.36 841: the 1년 이용권 bought on Play, no automatic payment. */
+    PASS_1Y("1년 이용권으로 프로를 써요 · 자동 결제 없음"),
     THANKS("테스트에 참여해 주셔서 드린 프로 기간이에요"),
     DAY_PASS("광고를 보고 오늘 하루 프로 기능을 열었어요"),
+    /** 1.36 [PSH-01] 프로 나눔 1인. */
+    SHARED("프로를 산 분이 나눠 준 프로예요. 그분이 프로를 쓰는 동안 이어져요"),
     NONE("무료로 쓰고 있어요"),
     /** A tester's preview from the alarm check screen; [ProAccess.resolve] never answers it. */
     PREVIEW("알람 점검 화면에서 고른 등급으로 미리 보고 있어요"),
@@ -58,6 +62,10 @@ data class ProSources(
     val thanksMonths: Int = 0,
     /** [MON-07] A rewarded ad watched today opens the pro features until midnight. */
     val dayPassUntil: Instant? = null,
+    /** 1.36 [PSH-01] The 프로 a buyer gave this phone, until their subscription ends. */
+    val sharedUntil: Instant? = null,
+    /** 1.36 841: the end of the 1년 이용권 bought (stacked, [YearPass.until]). */
+    val yearPassUntil: Instant? = null,
 )
 
 data class Access(val pro: Boolean, val reason: ProReason, val until: Instant? = null)
@@ -82,8 +90,10 @@ object ProAccess {
             return Access(true, reason, sub.expiry)
         }
         s.admin?.takeIf { it.approved && Duration.between(it.checkedAt, now) < ADMIN_CHECK }?.let { return Access(true, ProReason.ADMIN) }
+        s.yearPassUntil?.takeIf { now < it }?.let { return Access(true, ProReason.PASS_1Y, it) }
         s.passUntil?.takeIf { now < it }?.let { return Access(true, ProReason.PASS, it) }
         thanksUntil(s.installedAt, s.launchedAt, s.thanksMonths, zone)?.takeIf { now < it }?.let { return Access(true, ProReason.THANKS, it) }
+        s.sharedUntil?.takeIf { now < it }?.let { return Access(true, ProReason.SHARED, it) }
         s.dayPassUntil?.takeIf { now < it }?.let { return Access(true, ProReason.DAY_PASS, it) }
         return Access(false, ProReason.NONE)
     }
@@ -96,4 +106,26 @@ object ProAccess {
         if (installedAt == null || launchedAt == null || months <= 0 || !installedAt.isBefore(launchedAt)) return null
         return launchedAt.atZone(zone).plusMonths(months.toLong()).toInstant()
     }
+}
+
+/**
+ * 1.36 841 1년 이용권 (수익 3판 4절): a one-time Play product, no automatic payment. Each one bought adds [DAYS] days from its purchase
+ * or from the end of the one before, whichever is later ("다시 사면 이어져요"). One notice [NOTICE_DAYS] days before the end; Play lets
+ * the same product be bought again once the phone has used it up (consumed), which the app does from [REBUY_DAYS] before the end.
+ */
+object YearPass {
+    const val PRODUCT = "bamnat_pro_pass_1y"
+    const val DAYS = 365L
+    const val NOTICE_DAYS = 7L
+    const val REBUY_DAYS = 30L
+
+    fun until(purchases: Collection<Instant>): Instant? = purchases.sorted().fold(null as Instant?) { end, at ->
+        maxOf(end ?: at, at).plus(Duration.ofDays(DAYS))
+    }
+
+    /** When the end's notice is due, or null without a pass. */
+    fun noticeAt(until: Instant?): Instant? = until?.minus(Duration.ofDays(NOTICE_DAYS))
+
+    /** Whether [now] is close enough to [until] (or past it) that the pass may be bought again. */
+    fun rebuy(until: Instant?, now: Instant): Boolean = until == null || now >= until.minus(Duration.ofDays(REBUY_DAYS))
 }

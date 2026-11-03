@@ -98,8 +98,13 @@ sealed interface Owed {
         override val name get() = job.title.ifBlank { "일감" }
         override val left get() = job.unpaid
         override val since get() = job.lastDate
-        override val due: LocalDate? get() = null
-        override fun status(today: LocalDate) = if (job.received > 0) ReceivableStatus.PARTLY else ReceivableStatus.OPEN
+        // 1.36 실사용 S16 (약속일 12/5가 지나도 어디에도 '약속일 지났어요'가 없어요): the job's 입금 약속일 counts as a written one's.
+        override val due: LocalDate? get() = job.due
+        override fun status(today: LocalDate) = when {
+            job.due != null && today.isAfter(job.due) -> ReceivableStatus.OVERDUE
+            job.received > 0 -> ReceivableStatus.PARTLY
+            else -> ReceivableStatus.OPEN
+        }
     }
 }
 

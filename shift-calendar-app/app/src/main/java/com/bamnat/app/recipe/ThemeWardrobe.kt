@@ -74,6 +74,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val picks = looks.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
         c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
         afterWear(looks, code, own, ver)
+        // [MKX-02] The tabs laid on stay over the new theme.
+        reOverlay()
         return true
     }
 
@@ -220,8 +222,95 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
 
     fun forgetKept(id: Long) = writeKept(_kept.value.filter { it.id != id })
 
+    // ---- [MKX-02] 1.36 기능별 탭 얹기 (사용자 2026-10-31 "고른 테마에 자신에게 맞는 기능별 좋은 탭을 적용") ----
+
+    /** One tab's looks laid on the theme worn: which tab, from which recipe, its looks, and the look from just before (빼기). */
+    data class Overlay(val tab: String, val code: String, val title: String, val body: String, val before: Map<String, String>, val at: Long)
+
+    private val _overlays = MutableStateFlow(readOverlays())
+    val overlays: StateFlow<List<Overlay>> = _overlays.asStateFlow()
+
+    /** Whether the tabs laid on stay when another theme is put on (on unless the user says no). */
+    var keepOverlays: Boolean
+        get() = prefs.getBoolean(K_KEEP_OVERLAYS, true)
+        set(v) { prefs.edit().putBoolean(K_KEEP_OVERLAYS, v).apply() }
+
+    private fun readOverlays(): List<Overlay> = runCatching {
+        val a = org.json.JSONArray(prefs.getString(K_OVERLAYS, "[]"))
+        (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
+            val b = o.optJSONObject("before")
+            Overlay(o.getString("tab"), o.optString("code"), o.optString("title"), o.getString("body"),
+                b?.keys()?.asSequence()?.associateWith { b.getString(it) }.orEmpty(), o.optLong("at"))
+        }
+    }.getOrDefault(emptyList())
+
+    private fun writeOverlays(list: List<Overlay>) {
+        val a = org.json.JSONArray()
+        list.forEach { o -> a.put(JSONObject().put("tab", o.tab).put("code", o.code).put("title", o.title).put("body", o.body)
+            .put("before", JSONObject(o.before)).put("at", o.at)) }
+        prefs.edit().putString(K_OVERLAYS, a.toString()).apply()
+        _overlays.value = list
+    }
+
+    /** The looks of [r] laid over what the phone wears, the rest of it as it is ([LookParts.layer]). */
+    private suspend fun layOn(r: Recipe) {
+        val now = Recipe("지금", styles = com.bamnat.core.work.WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
+        val merged = com.bamnat.core.recipe.LookParts.layer(now, r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }))
+        var d = c.settingsRepository.current
+        merged.pieces.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+        c.recipes.pieces.restoreLook(c.recipes.pieces.lookOf(d))
+        refreshWidgets()
+    }
+
+    /**
+     * [MKX-02] 얹기: [r]'s one tab ([LookParts.onlyTab]) laid on the theme worn, which keeps its name; one already on that tab is
+     * replaced. False when [r] is not one tab's.
+     */
+    suspend fun overlay(r: Recipe, code: String): Boolean {
+        val tab = com.bamnat.core.recipe.LookParts.onlyTab(r) ?: return false
+        val before = c.recipes.pieces.lookSnapshot()
+        layOn(r)
+        val only = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
+        writeOverlays(_overlays.value.filter { it.tab != tab } + Overlay(tab, code, r.title.take(30), RecipeCodec.write(only), before, Today.millis()))
+        wornLookNow()
+        return true
+    }
+
+    /**
+     * [MKX-02] 1.36 빌드 8 (탭을 얹고 테마를 벗으면 '내가 고친 …'이 저절로 내 테마에): a tab laid on or taken off is not the
+     * user's own change to the theme worn, so the look 벗기 compares with is the one with the tabs.
+     */
+    private fun wornLookNow() {
+        if (_lease.value.worn != null) prefs.edit().putString(K_WORN_LOOK, JSONObject(c.recipes.pieces.lookSnapshot()).toString()).apply()
+    }
+
+    /** 빼기: the tab back to how it looked just before it was laid on (that tab's settings only), and forgotten. */
+    suspend fun removeOverlay(tab: String) {
+        val o = _overlays.value.firstOrNull { it.tab == tab } ?: return
+        writeOverlays(_overlays.value.filter { it.tab != tab })
+        // The theme worn, put back whole on the app's own look (or, with none worn, the look from just before it was laid on); then the
+        // other tabs still on go over it again.
+        val worn = _lease.value.worn?.let { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull() }
+        if (worn != null) {
+            var d = c.recipes.pieces.plainLook(c.settingsRepository.current)
+            worn.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+            c.recipes.pieces.restoreLook(c.recipes.pieces.lookOf(d))
+        } else c.recipes.pieces.restoreLook(o.before)
+        _overlays.value.forEach { other -> runCatching { RecipeCodec.read(other.body) }.getOrNull()?.let { layOn(it) } }
+        wornLookNow()
+        refreshWidgets()
+    }
+
+    /** After a theme goes on: the tabs laid on go back over it ([keepOverlays]), or are let go. */
+    private suspend fun reOverlay() {
+        if (_overlays.value.isEmpty()) return
+        if (!keepOverlays) { writeOverlays(emptyList()); return }
+        _overlays.value.forEach { o -> runCatching { RecipeCodec.read(o.body) }.getOrNull()?.let { layOn(it) } }
+        wornLookNow()
+    }
+
     /** 1.35 [STU-10] 스튜디오의 내 테마로 저장: [r]'s looks kept as one of mine, as [saveMine] keeps the phone's. */
-    fun saveLook(r: Recipe, was: ThemeLease.Wear? = null): Boolean {
+    fun saveLook(r: Recipe, was: ThemeLease.Wear? = null, mixedFrom: String = "", mixedCodes: String = ""): Boolean {
         val l = _lease.value
         val name = r.title.take(30)
         // Saving over one of mine of the same name replaces it (and keeps it in 장터 if it was).
@@ -231,12 +320,22 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         if ((same == null && mine >= outfitLimit()) || only.pieces.isEmpty()) return false
         val keep = was ?: same
         val w = ThemeLease.Wear(name.ifBlank { "내 테마 ${mine + 1}" }, "", RecipeCodec.write(only), keep?.from ?: Today.date().toEpochDay(),
-            keep?.until ?: Today.date().toEpochDay(), own = true, shared = keep?.shared.orEmpty(), ver = keep?.ver ?: 0, bare = keep?.bare == true)
+            keep?.until ?: Today.date().toEpochDay(), own = true, shared = keep?.shared.orEmpty(), ver = keep?.ver ?: 0, bare = keep?.bare == true,
+            mixedFrom = mixedFrom, mixedCodes = mixedCodes)
         save(l.copy(history = (l.history.filter { it.key != w.key } + w).take(ThemeLease.HISTORY)))
         return true
     }
 
     fun outfitLimit(): Int = if (c.featureGate.allows(com.bamnat.app.tier.Feature.THEME_WARDROBE)) PRO_OUTFITS else FREE_OUTFITS
+
+    /**
+     * [THM-07] 1.36 빌드 8: one of mine or one worn before let go from the lists (the theme worn now stays on; a theme of mine in
+     * 장터 stays there).
+     */
+    fun removeKept(key: String) {
+        val l = _lease.value
+        save(l.copy(history = l.history.filter { it.key != key }))
+    }
 
     /** A theme taken back by 되돌리기 (the recipe's own undo put the look back): no longer worn. */
     fun forget(code: String) {
@@ -334,6 +433,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_WAS_PRO = "was_pro"
         private const val K_PREV = "prev_worn"
         private const val K_PARTS = "parts"
+        private const val K_OVERLAYS = "overlays"
+        private const val K_KEEP_OVERLAYS = "keep_overlays"
         private const val K_SKIP = "skip_ver"
         private const val K_PREV_VER = "prev_ver"
     }

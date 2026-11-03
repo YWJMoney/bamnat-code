@@ -22,13 +22,47 @@ object RosterVote {
         val anchor = reads[anchor(reads)]
         val others = usable.filter { it !== anchor }
         val rows = anchor.rows.map { a -> vote(a, others.mapNotNull { match(a, it.rows) }) }
-        return anchor.copy(rows = rows)
+        return anchor.copy(rows = folded(rows))
     }
 
-    /** Which of [reads] the put-together keeps the lines, names and places of: the one with the most known cells. */
+    /**
+     * Which of [reads] the put-together keeps the lines, names and places of: the one with the most known cells under a
+     * name, then the most known cells. Y9 (PC roster1.jpg): one reading broke each person's line into nameless pieces whose
+     * cells added up to the most, and every piece came out as a person of its own; the readings that kept the names whole win.
+     */
     fun anchor(reads: List<RosterPhotoRead>): Int {
-        val best = reads.indices.filter { reads[it].rows.isNotEmpty() }.maxByOrNull { i -> reads[i].rows.sumOf { it.cells.size - it.unknown } }
+        fun known(r: RosterRow) = r.cells.size - r.unknown
+        val best = reads.indices.filter { reads[it].rows.isNotEmpty() }.maxWithOrNull(
+            compareBy<Int> { i -> reads[i].rows.filter { it.label.isNotBlank() }.sumOf { known(it) } }
+                .thenBy { i -> reads[i].rows.sumOf { known(it) } },
+        )
         return best ?: 0
+    }
+
+    /** Fewest days a nameless line shares with a named one before it can be folded into it. */
+    private const val FOLD_SHARED = 10
+
+    /**
+     * Y9: a nameless line that says what a named line says (90% of at least [FOLD_SHARED] shared days) is that person's
+     * line read twice: its days fill the named line's gaps and it goes, so one person never comes out as two.
+     */
+    fun folded(rows: List<RosterRow>): List<RosterRow> {
+        val out = rows.toMutableList()
+        for (u in rows.filter { it.label.isBlank() }) {
+            val best = out.filter { it.label.isNotBlank() }.mapNotNull { n ->
+                val shared = n.cells.keys.intersect(u.cells.keys)
+                if (shared.size < FOLD_SHARED) return@mapNotNull null
+                (n to shared.count { n.cells[it] == u.cells[it] }.toDouble() / shared.size).takeIf { it.second >= 0.9 }
+            }.maxByOrNull { it.second }?.first ?: continue
+            val gaps = u.cells.keys - best.cells.keys
+            val merged = best.copy(
+                cells = (best.cells + gaps.associateWith { u.cells.getValue(it) }).toSortedMap(),
+                unsure = best.unsure + gaps.filter { it in u.unsure },
+            )
+            out[out.indexOf(best)] = merged
+            out.remove(u)
+        }
+        return out
     }
 
     private fun key(label: String) = DutyCodes.norm(label)

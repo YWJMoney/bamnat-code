@@ -2,8 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { server, device, from, signIn } from "./helpers.mjs";
-import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf } from "../src/recipes.js";
+import { server, device, from, signIn, seasoned } from "./helpers.mjs";
+import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf } from "../src/recipes.js";
 
 const cases = JSON.parse(readFileSync(new URL("../../../docs/recipe-cases.json", import.meta.url), "utf8"));
 /** After 처리방침 3.8 is in force (시행 2026-11-29 KST). */
@@ -61,7 +61,8 @@ test("[RCP-29][RCP-30][RCX-28] a public recipe is on the plaza at once (no 승�
   assert.equal((await call("GET", `/api/recipes/${a.data.code}`, undefined, { "x-device": device(2) })).status, 200);
   // Level 0: two a day.
   assert.equal((await up(call, 1, { title: "두 번째 세트" }, "link")).status, 201);
-  assert.equal((await up(call, 1, { title: "세 번째 세트" }, "link")).status, 429);
+  // 1.36 [LIM-10] No daily cap without strikes.
+  assert.equal((await up(call, 1, { title: "세 번째 세트" }, "link")).status, 201);
   const b = await up(call, 3, { title: "링크로만 세트" }, "link");
   assert.equal(b.data.state, "visible");
   assert.equal((await call("GET", `/api/recipes/${b.data.code}`, undefined, { "x-device": device(4) })).status, 200);
@@ -161,6 +162,7 @@ test("[RCP-35] a recipe's talk: 만든 사람 and 쓰는 중 marks, a 안좋아�
 test("[RCP-32][RCP-33] applied counts are a day's total; three 신고 hide a recipe and it is in the 임시 조치 기록", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call, DB } = server({ plaza: true });
+  await seasoned(call, t, [5, 6, 7]);
   const a = await up(call, 1, {}, "link");
   const code = a.data.code;
   await call("POST", `/api/recipes/${code}/applied`, { kind: "applied" }, from(2));
@@ -175,6 +177,76 @@ test("[RCP-32][RCP-33] applied counts are a day's total; three 신고 hide a rec
   assert.equal(log.data.items[0].action, "hide");
   await call("POST", `/api/admin/recipes/${code}/show`, {}, admin);
   assert.equal((await call("GET", `/api/recipes/${code}`, undefined, { "x-device": device(9) })).status, 200);
+});
+
+test("[SEC-16] 보안 점검 M10: new ids and one line cannot hide a recipe; shown again, its maker's mark and the restriction it started go", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, DB } = server({ plaza: true });
+  await seasoned(call, t, [5, 6, 7, 8]);
+  const admin = await signIn(call);
+  const code = (await up(call, 1, { title: "남의 작품" }, "link")).data.code;
+  const other = (await up(call, 1, { title: "같은 분의 다른 작품" }, "link")).data.code;
+  const flags = async () => (await DB.prepare("SELECT flags, state FROM recipes WHERE code = ?").bind(code).first());
+  // Three ids just made, each on its own line: kept for the operator, none counted.
+  for (const n of [2, 3, 4]) assert.equal((await call("POST", `/api/recipes/${code}/flag`, { device: device(n), reason: "fake" }, from(n))).data.flagged, true);
+  assert.deepEqual({ ...(await flags()) }, { flags: 0, state: "visible" });
+  // Known phones: two on one line count once.
+  await call("POST", `/api/recipes/${code}/flag`, { device: device(5), reason: "fake" }, from(5));
+  await call("POST", `/api/recipes/${code}/flag`, { device: device(6), reason: "fake" }, from(5));
+  await call("POST", `/api/recipes/${code}/flag`, { device: device(7), reason: "fake" }, from(7));
+  assert.deepEqual({ ...(await flags()) }, { flags: 2, state: "visible" });
+  const list = (await call("GET", "/api/admin/recipes?tab=flagged", undefined, admin)).data.items.find((x) => x.code === code);
+  assert.deepEqual(list.quiet, { fresh: 3, net: 1 });
+  // PC 확인 보안 6차: the reasons with how many of them counted ("센 신고 2 · 전체 6").
+  assert.deepEqual(list.flags, [{ reason: "fake", n: 6, counted: 2 }]);
+  await call("POST", `/api/recipes/${code}/flag`, { device: device(8), reason: "fake" }, from(8));
+  assert.equal((await flags()).state, "hidden");
+  // The operator hides another of the same maker's: two strikes start a restriction.
+  await call("POST", `/api/admin/recipes/${other}/hide`, { note: "광고" }, admin);
+  const owner = (await DB.prepare("SELECT owner FROM recipes WHERE code = ?").bind(code).first()).owner;
+  const limit = () => DB.prepare("SELECT until FROM write_limits WHERE device = ?").bind(owner).first();
+  assert.ok((await limit()).until > Date.now());
+  assert.equal((await DB.prepare("SELECT hidden FROM recipe_trust WHERE device = ?").bind(owner).first()).hidden, 2);
+  // One hidden by reports and one by the operator: the maker's line says both.
+  const mine = (await call("GET", "/api/recipes/mine", undefined, { "x-device": device(1) })).data;
+  const by = (await DB.prepare("SELECT hidden_by FROM write_strikes WHERE device = ? ORDER BY id").bind(owner).all()).results.map((r) => r.hidden_by);
+  assert.deepEqual(by, [null, "operator"]);
+  assert.deepEqual([mine.limit.by, mine.limit.n, mine.limit.kinds], ["both", 2, ["recipe"]]);
+  // Shown again: the reports were wrong, so its mark goes and the restriction it started ends.
+  await call("POST", `/api/admin/recipes/${code}/show`, {}, admin);
+  assert.equal((await DB.prepare("SELECT hidden FROM recipe_trust WHERE device = ?").bind(owner).first()).hidden, 1);
+  assert.ok((await limit()).until <= Date.now());
+  const log = (await call("GET", "/api/admin/recipes/actions", undefined, admin)).data.items.find((a) => a.code === code && a.action === "show");
+  assert.equal(log.reason, "신고가 맞지 않았어요");
+  // A 소개 the same way: new ids do not hide it.
+  const m = (await call("POST", "/api/recipes/makers/me", { device: device(9), bio: "제 소개예요" }, from(9))).data.maker;
+  for (const n of [2, 3, 4]) await call("POST", `/api/recipes/makers/${m}/flag`, { device: device(n), reason: "bio" }, from(n));
+  assert.equal((await call("GET", `/api/recipes/makers/${m}`, undefined, { "x-device": device(10) })).data.bio, "제 소개예요");
+});
+
+test("[SEC-15] 보안 점검 M9: one line counts a few 넣기 and 7일 유지 a recipe a day, the rest answered but not counted", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, DB } = server({ plaza: true });
+  const code = (await up(call, 1, {}, "link")).data.code;
+  const other = (await up(call, 4, {}, "link")).data.code;
+  for (let i = 0; i < 10; i++) {
+    const res = await call("POST", `/api/recipes/${code}/applied`, { kind: "applied" }, from(2));
+    assert.equal(res.status, 200);
+    if (i >= 3) assert.equal(res.data.counted, false);
+  }
+  for (let i = 0; i < 5; i++) await call("POST", `/api/recipes/${code}/applied`, { kind: "kept" }, from(2));
+  let row = await DB.prepare("SELECT applied, kept7 FROM recipes WHERE code = ?").bind(code).first();
+  assert.deepEqual([row.applied, row.kept7], [3, 3]);
+  // Another line, and another recipe from the same line, count as before.
+  await call("POST", `/api/recipes/${code}/applied`, { kind: "applied" }, from(3));
+  await call("POST", `/api/recipes/${other}/applied`, { kind: "applied" }, from(2));
+  row = await DB.prepare("SELECT applied FROM recipes WHERE code = ?").bind(code).first();
+  assert.equal(row.applied, 4);
+  assert.equal((await DB.prepare("SELECT applied FROM recipes WHERE code = ?").bind(other).first()).applied, 1);
+  // The next day the line counts again.
+  t.mock.timers.tick(24 * 60 * 60 * 1000);
+  await call("POST", `/api/recipes/${code}/applied`, { kind: "applied" }, from(2));
+  assert.equal((await DB.prepare("SELECT applied FROM recipes WHERE code = ?").bind(code).first()).applied, 5);
 });
 
 test("[RCP-28] 모두 지우기 takes a phone's recipes, votes and trust; a new version keeps the code", async (t) => {
@@ -282,6 +354,31 @@ test("[FREE-07][FREE-08] 꾸미기 pieces read as core does, a list card carries
   assert.deepEqual(rules.data.items.map((i) => i.title), ["알람만 세트"]);
 });
 
+test("[MKX-01] 장터 두 구간: a recipe's tabs, 테마 (two tabs or the whole app) or one tab's, and the list by scope and tab", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  assert.deepEqual(tabsOf({ pieces: [{ kind: "calView", size: "tall" }, { kind: "calTheme", sun: 1 }] }), ["calendar"]);
+  assert.deepEqual(tabsOf({ pieces: [{ kind: "screenLook", screens: "money~bg:FF000000" }, { kind: "moneyLook", rows: "roomy" }] }), ["money"]);
+  assert.deepEqual(tabsOf({ pieces: [{ kind: "screenLook", screens: "all~bg:FF000000/calendar~bg:FF111111" }] }), ["app", "calendar"]);
+  assert.deepEqual(tabsOf({ pieces: [{ kind: "cards", stats: "a" }, { kind: "screenLook", screens: "pay.SHIFT~tt:xl" }] }), ["pay"]);
+  assert.equal(scopeOf(["calendar"]), "tab");
+  assert.equal(scopeOf(["app"]), "theme");
+  assert.equal(scopeOf(["calendar", "memo"]), "theme");
+  assert.equal(scopeOf([]), null);
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const theme = { kind: "screenLook", screens: "all~bg:FFFFF8EE|cd:FFFFFFFF/calendar~bg:FFFFF0F0" };
+  await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "온 앱 테마", pieces: [theme, { kind: "calView", size: "tall" }] }) }, admin);
+  await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "가계부 전문", pieces: [{ kind: "moneyLook", rows: "roomy" }] }) }, admin);
+  await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "알람만", pieces: [{ kind: "alarms", byRole: [{ role: "day", before: [60] }] }] }) }, admin);
+  const themes = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=theme&kind=skin");
+  assert.deepEqual(themes.data.items.map((i) => i.title), ["온 앱 테마"]);
+  assert.equal(themes.data.items[0].scope, "theme");
+  const tabs = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=tab");
+  assert.deepEqual(tabs.data.items.map((i) => i.title).sort(), ["가계부 전문", "알람만"].sort());
+  const money = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=tab&tab=money&kind=money");
+  assert.deepEqual(money.data.items.map((i) => [i.title, i.tabs]), [["가계부 전문", ["money"]]]);
+});
+
 test("[FREE-09] every 추천 테마 core wrote reads the same on the server, eight for each kind of work, each with its look for the list", async () => {
   const themes = JSON.parse(readFileSync(new URL("../../../docs/recipes/theme-recipes.json", import.meta.url), "utf8"));
   assert.equal(themes.length, 48);
@@ -301,4 +398,15 @@ test("[FREE-10] 오늘 says when themes opened with no ad jump (yesterday twice 
   assert.equal(at([3, 4, 2, 3, 3, 9, 0]), undefined, "under 10 is quiet");
   assert.equal(at([10, 12, 11, 9, 10, 15, 0]), undefined, "steady is quiet");
   assert.match(at([0, 0, 0, 0, 0, 10, 40]).title, /어제 10번/);
+});
+
+test("[STU-38] 1.36 위젯 꾸미기: background and text colour, corners and text size read; out of range is refused", async () => {
+  const w = { kind: "widget", alpha: 90, theme: "dark", bg: 4280427042, ink: 4294967295, corner: 12, text: "l" };
+  const good = await cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, w] })));
+  for (const k of ['"corner":12', '"text":"l"', '"bg":4280427042', '"ink":4294967295']) assert.ok(good.text.includes(k), k);
+  const old = await cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { kind: "widget", alpha: 80 }] })));
+  assert.ok(old.text.includes('"alpha":80'), "예전 위젯 조각도 그대로");
+  for (const bad of [{ ...w, corner: 40 }, { ...w, text: "xl" }, { ...w, bg: "red" }]) {
+    await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, bad] }))), (e) => e.code !== undefined, JSON.stringify(bad));
+  }
 });

@@ -13,9 +13,20 @@ import java.time.LocalDate
  * setup, the leave taken on the calendar, the 보상휴가 its extra work earned [PAYX-18], and the stored rows.
  */
 object LeaveSources {
+    /**
+     * [LEAVE-14] 1.36: [profile] with a hire date typed on the 연차 screen when it has none — or, with no pay setup at all, a bare
+     * one that only carries the date (5인 이상, the law's way of counting).
+     */
+    fun withHire(profile: PayProfile?, hire: LocalDate?): PayProfile? = when {
+        hire == null -> profile
+        profile == null -> PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, com.bamnat.core.pay.WageType.MONTHLY, com.bamnat.core.pay.ValueTimeline(), hireDate = hire)
+        profile.hireDate == null -> profile.copy(hireDate = hire)
+        else -> profile
+    }
+
     /** Why the app makes no leave by itself, or null when it does. */
     fun noAuto(profile: PayProfile?): String? = when {
-        profile == null -> "급여 설정을 하면 연차를 법대로 세어 드려요"
+        profile == null -> "입사일을 넣으면 연차를 법대로 세어 드려요"
         !profile.rules.leave.auto -> "연차를 직접 넣기로 했어요"
         profile.hireDate == null -> "입사일을 넣으면 연차를 법대로 세어 드려요"
         // 근로기준법 시행령 별표1: 제60조 is not for workplaces under 5.

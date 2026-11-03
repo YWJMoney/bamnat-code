@@ -74,7 +74,9 @@ object StartStepsState {
  * grid is in view under it; 모두 보기 opens the three.
  */
 @Composable
-fun StartStepsCard(rows: List<StartSteps.Row>, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
+fun StartStepsCard(rows: List<StartSteps.Row>, onDismiss: () -> Unit, modifier: Modifier = Modifier, onShifts: (() -> Unit)? = null) {
+    // 03df48fb Y6 ('근무 넣기'가 처음 설정 다시 받기를 열어요): the calendar paints the days itself; the first setup only when it cannot.
+    fun open(step: StartSteps.Step) = if (step == StartSteps.Step.SHIFTS && onShifts != null) onShifts() else openStep(step)
     var expanded by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val next = rows.firstOrNull { !it.done }
     SoftCard(modifier.padding(horizontal = 16.dp, vertical = 6.dp), highlighted = true) {
@@ -114,7 +116,7 @@ fun StartStepsCard(rows: List<StartSteps.Row>, onDismiss: () -> Unit, modifier: 
     }
 }
 
-private fun open(step: StartSteps.Step) = when (step) {
+private fun openStep(step: StartSteps.Step) = when (step) {
     StartSteps.Step.ALARM -> SettingsLinks.open(SettingsPage.ALARM, "알람 사용")
     StartSteps.Step.SHIFTS -> NoticeLinks.open(NoticeLinks.Target.SETUP_AGAIN)
     StartSteps.Step.COMPANY -> NoticeLinks.open(NoticeLinks.Target.COMPANY_FIND)

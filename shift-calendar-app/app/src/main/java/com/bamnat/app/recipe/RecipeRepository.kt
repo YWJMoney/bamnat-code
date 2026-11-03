@@ -47,6 +47,51 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     fun followNews(): Boolean = prefs.getBoolean(K_NEWS_FOLLOW, true)
     fun setFollowNews(v: Boolean) = prefs.edit().putBoolean(K_NEWS_FOLLOW, v).apply()
 
+    /**
+     * [PRF-05] 1.36 차단한 분 (공개 id): the 장터 list is the same for every phone (edge-cached), so this phone leaves them out itself.
+     * Kept here and refreshed from the server's 팔로잉 call.
+     */
+    private val _blocked = MutableStateFlow(prefs.getString(K_BLOCKED, null)?.split(',')?.filter { it.isNotEmpty() }?.toSet().orEmpty())
+    val blocked: StateFlow<Set<String>> = _blocked.asStateFlow()
+    fun setBlocked(ids: Set<String>) { prefs.edit().putString(K_BLOCKED, ids.joinToString(",")).apply(); _blocked.value = ids }
+    fun block(id: String, on: Boolean) = setBlocked(if (on) _blocked.value + id else _blocked.value - id)
+    /** Whether [item] is from a maker this phone blocked. */
+    /** [PRF-02] Goes up on every 팔로우·그만두기·차단·풀기, so 마을's 팔로잉 줄 asks again at once (빌드 221dd083 확인: it waited a minute). */
+    private val _people = MutableStateFlow(0)
+    val people: StateFlow<Int> = _people.asStateFlow()
+    fun peopleChanged() { _people.value++ }
+    fun hides(item: RecipeItem): Boolean = item.maker != null && item.maker in _blocked.value
+
+    /**
+     * [PRF-03] 내 프로필 최근 알림: the milestones and badges already shown (the server works out where each stands, the phone
+     * remembers what it told), and since when new followers, questions and 수정판 count.
+     */
+    fun seenInbox(): Set<String> = keyList(K_SEEN_INBOX_LIST).toSet()
+    /** [at]: the server's time of what was seen, so the next ask starts there whatever this phone's clock says. */
+    fun markInboxSeen(keys: Collection<String>, at: java.time.Instant? = null) {
+        prefs.edit().putString(K_SEEN_INBOX_LIST, keyListJson(keyList(K_SEEN_INBOX_LIST), keys))
+            .putString(K_INBOX_SINCE, (at ?: java.time.Instant.ofEpochMilli(Today.millis())).toString()).apply()
+    }
+    /**
+     * Keys kept in the order they were seen, newest last, so the oldest go first past [KEYS_KEPT]
+     * (a string set has no order, and cutting it could forget a new key and say it again).
+     */
+    private fun keyList(key: String): List<String> = prefs.getString(key, null)?.let { s ->
+        runCatching { org.json.JSONArray(s).let { a -> List(a.length()) { a.getString(it) } } }.getOrNull()
+    }.orEmpty()
+    private fun keyListJson(was: List<String>, add: Collection<String>): String =
+        org.json.JSONArray((was.filterNot { it in add } + add.distinct()).takeLast(KEYS_KEPT)).toString()
+    private fun counted(key: String, code: String) = prefs.edit().putString(key, keyListJson(keyList(key), listOf(code))).apply()
+    /** Whether this phone was counted among a recipe's 쓰는 분 (once a recipe, M9). */
+    fun countedHere(code: String): Boolean = code in keyList(K_COUNTED)
+    /** Set once this phone has a public recipe, so 소식 asks about my profile only then. */
+    fun hasProfile(v: Boolean) = prefs.edit().putBoolean(K_HAS_PROFILE, v).apply()
+    fun hasProfile(): Boolean = prefs.getBoolean(K_HAS_PROFILE, false)
+    /** 1.36 PC 6차: 프로필만 지우기 left the works (the 빈 프로필 line shows only then, not on a first upload). */
+    fun profileCleared(v: Boolean) = prefs.edit().putBoolean(K_PROFILE_CLEARED, v).apply()
+    fun profileCleared(): Boolean = prefs.getBoolean(K_PROFILE_CLEARED, false)
+    fun inboxSince(): java.time.Instant? = prefs.getString(K_INBOX_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+
     /** 요청 판 보이기: the 요청 판 way in on the 나눔 판 card. */
     private val _requestsOn = MutableStateFlow(prefs.getBoolean(K_REQUESTS, true))
     val requestsOn: StateFlow<Boolean> = _requestsOn.asStateFlow()
@@ -80,8 +125,22 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             inputs = JSONObject(filled.mapValues { (_, v) -> v }).toString(), pieces = done.joinToString(","), before = before.toString(),
             appliedAt = now, undoneAt = null, replacedAt = null, keptSent = false,
         ))
-        if (code.isNotEmpty() && c.recipeApi.enabled) runCatching { c.recipeApi.applied(code, kept = false) }
+        countUse(code)
         return id
+    }
+
+    /**
+     * 쓰는 분: this phone counted once for [code]. 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): once a recipe,
+     * however often it is put on again; the server also counts only a few a recipe from one line a day. PC 확인 보안 8차 (넣어도 0명):
+     * called for every way a recipe goes on from its page, a tab laid on the theme too, not only a put-on that leaves a record; a
+     * refusal is tried again at the next put-on. True when counted just now.
+     */
+    suspend fun countUse(code: String): Boolean {
+        if (code.isEmpty() || code.startsWith("builtin:") || !c.recipeApi.enabled || code in keyList(K_COUNTED)) return false
+        val sent = runCatching { c.recipeApi.applied(code, kept = false) }
+        if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.d("BamnatRecipe", "쓰는 분 $code: " + (sent.exceptionOrNull()?.let { "실패 $it" } ?: "보냄"))
+        if (sent.isSuccess) counted(K_COUNTED, code)
+        return sent.isSuccess
     }
 
     // ---- [RCX-02][RCX-03] 1.35 구독과 새 판 ----
@@ -164,7 +223,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         val now = Today.millis()
         inUse().filter { canUndo(it, now) && now - it.appliedAt >= (UNDO_DAYS - 1) * DAY_MILLIS && !prefs.getBoolean("$K_UNDO_SAID${it.id}", false) }
             .forEach { e ->
-                lines += "‘${e.title}’은(는) 내일까지 되돌릴 수 있어요 (설정 › 장터·내 레시피)"
+                lines += "‘${e.title}’${com.bamnat.app.ui.Fmt.eun(e.title)} 내일까지 되돌릴 수 있어요 (설정 › 장터·내 레시피)"
                 prefs.edit().putBoolean("$K_UNDO_SAID${e.id}", true).apply()
             }
         // [LIN-04] 1.35 A 수정판 of my recipe is news whether or not I follow anyone (the news call says it).
@@ -174,7 +233,17 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                 prefs.edit().putString(K_NEWS_SINCE, java.time.Instant.ofEpochMilli(Today.millis()).toString()).apply()
                 if (followNews()) n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 레시피 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
                 if (followNews()) n.replies.firstOrNull()?.let { (_, title, _) -> lines += "‘$title’에 만든 분이 답했어요" }
-                n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’을 고친 수정판 ‘${r.title}’이 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +
+                // [PRF-03] 1.36 My own profile's news, once: new followers and a milestone passed (the rest waits in 내 프로필).
+                // Asked only of a phone with recipes up (내 프로필 has something to say), with the same since as 소식.
+                if (followNews() && prefs.getBoolean(K_HAS_PROFILE, false)) runCatching { c.recipeApi.inbox(c.companyStore.device, since) }.getOrNull()?.let { box ->
+                    val told = keyList(K_TOLD_LIST).toSet() + seenInbox()
+                    if (box.newFollowers > 0) lines += "새 팔로워 ${box.newFollowers}명이 생겼어요 (마을 › 내 프로필)"
+                    box.milestones.firstOrNull { it.key !in told }?.let { m ->
+                        lines += "‘${m.title}’" + (if (m.kind == "users") "${com.bamnat.app.ui.Fmt.obj("‘${m.title}’")} 쓰는 분이 ${m.n}명을 넘었어요" else "에 좋아요가 ${m.n}개를 넘었어요")
+                        prefs.edit().putString(K_TOLD_LIST, keyListJson(keyList(K_TOLD_LIST), listOf(m.key))).apply()
+                    }
+                }
+                n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’${com.bamnat.app.ui.Fmt.obj("‘$mine’")} 고친 수정판 ‘${r.title}’${com.bamnat.app.ui.Fmt.iga("‘${r.title}’")} 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +
                     if (n.remixes.size > 1) " (외 ${n.remixes.size - 1}개)" else "" }
             }
         }
@@ -201,13 +270,31 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         return true
     }
 
+    /**
+     * 되돌리기 on a recipe's own page: every put-on of [code] that can still be taken back, newest first, so none of it is left
+     * (PC 확인 8773e3ae: the same recipe put on twice, with other pieces or on another calendar, kept the older one's card). How many.
+     */
+    suspend fun undoAll(code: String): Int = undoable(code).count { undo(it.id) }
+
+    /** Every put-on of [code] that can still be taken back, newest first (what 되돌리기 on its page takes back). */
+    suspend fun undoable(code: String): List<AppliedRecipeEntity> {
+        if (code.isEmpty()) return emptyList()
+        val now = Today.millis()
+        return dao.applied().filter { it.code == code && canUndo(it, now) }.sortedByDescending { it.appliedAt }
+    }
+
     /** [RCP-26] The 7일 유지 mark of each recipe still on after 7 days, sent once; old rows no longer on are dropped after 90 days. */
     suspend fun sendKept() {
         val now = Today.millis()
         for (e in dao.applied()) {
             if (e.keptSent || e.code.isEmpty() || e.undoneAt != null || now - e.appliedAt < UNDO_DAYS * DAY_MILLIS) continue
             if (!c.recipeApi.enabled) return
-            if (runCatching { c.recipeApi.applied(e.code, kept = true) }.isSuccess) dao.upsertApplied(e.copy(keptSent = true))
+            // M9: 7일 유지 once a recipe a phone too, as 쓰는 분 is.
+            if (e.code in keyList(K_KEPT_COUNTED)) { dao.upsertApplied(e.copy(keptSent = true)); continue }
+            if (runCatching { c.recipeApi.applied(e.code, kept = true) }.isSuccess) {
+                dao.upsertApplied(e.copy(keptSent = true))
+                counted(K_KEPT_COUNTED, e.code)
+            }
         }
         dao.pruneApplied(now - KEEP_DAYS * DAY_MILLIS)
     }
@@ -231,6 +318,16 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_UNDO_SAID = "undo_said_"
         private const val K_REQUESTS = "requests_on"
         private const val K_NEWS_SINCE = "news_since"
+        private const val K_BLOCKED = "blocked_makers"
+        private const val K_SEEN_INBOX_LIST = "seen_inbox_list"
+        private const val KEYS_KEPT = 400
+        private const val K_INBOX_SINCE = "inbox_since"
+        private const val K_TOLD_LIST = "told_inbox_list"
+        /** M9: the codes this phone has already counted toward 쓰는 분 and 7일 유지. */
+        private const val K_COUNTED = "counted_applied"
+        private const val K_KEPT_COUNTED = "counted_kept"
+        private const val K_HAS_PROFILE = "has_profile"
+        private const val K_PROFILE_CLEARED = "profile_cleared"
         const val UNDO_DAYS = 7L
         const val KEEP_DAYS = 90L
         const val DAY_MILLIS = 24L * 60 * 60 * 1000

@@ -210,6 +210,10 @@ data class AppSettings(
     val calTheme: String = "",
     /** [RCX-14] 1.35 위젯 모양 ([com.bamnat.core.recipe.WidgetLook.encode]); empty is the app's own look. In the backup. */
     val widgetLook: String = "",
+    /** [STU-40] 1.36 내 색 모음: colours pinned in the studio, first in every colour line ("FF112233,FF445566", at most 12). In the backup. */
+    val myColors: String = "",
+    /** [STU-37] 1.36 근무에 따라 바뀌는 모양 ([com.bamnat.core.recipe.ShiftLooks.encode]); empty is off. In the backup. */
+    val shiftLooks: String = "",
     /** [RCX-30] 1.35 그림 꾸미기 ([com.bamnat.core.recipe.PhotoLook.encode]); empty is the app's own look. In the backup (the pictures are not). */
     val photoLook: String = "",
     /** [CVW-01] 1.35 달력 모양 ([com.bamnat.core.recipe.CalendarView.encode]); empty is the app's own cells. In the backup. */
@@ -386,6 +390,8 @@ class SettingsRepository(context: Context) {
             moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
             calTheme = prefs.getString(K_CAL_THEME, null) ?: d.calTheme,
             widgetLook = prefs.getString(K_WIDGET_LOOK, null) ?: d.widgetLook,
+            myColors = prefs.getString(K_MY_COLORS, null) ?: d.myColors,
+            shiftLooks = prefs.getString(K_SHIFT_LOOKS, null) ?: d.shiftLooks,
             photoLook = prefs.getString(K_PHOTO_LOOK, null) ?: d.photoLook,
             calView = prefs.getString(K_CAL_VIEW, null) ?: d.calView,
             accentColor = prefs.getLong(K_ACCENT, d.accentColor),
@@ -487,6 +493,8 @@ class SettingsRepository(context: Context) {
             .putString(K_MONEY_LAYOUT, s.moneyLayout)
             .putString(K_CAL_THEME, s.calTheme)
             .putString(K_WIDGET_LOOK, s.widgetLook)
+            .putString(K_MY_COLORS, s.myColors)
+            .putString(K_SHIFT_LOOKS, s.shiftLooks)
             .putString(K_PHOTO_LOOK, s.photoLook)
             .putString(K_CAL_VIEW, s.calView)
             .putLong(K_ACCENT, s.accentColor)
@@ -537,6 +545,8 @@ class SettingsRepository(context: Context) {
         const val K_WIDGET_MEMO = "widget_memo"
         const val K_CAL_THEME = "cal_theme"
         const val K_WIDGET_LOOK = "widget_look"
+        const val K_MY_COLORS = "my_colors"
+        const val K_SHIFT_LOOKS = "shift_looks"
         const val K_PHOTO_LOOK = "photo_look"
         const val K_CAL_VIEW = "cal_view"
         const val K_ACCENT = "accent_color"

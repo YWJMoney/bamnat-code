@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.diag
 
+import com.bamnat.app.appContainer
 import com.bamnat.app.diag.CrashLog
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
@@ -48,7 +49,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
@@ -419,7 +420,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     var more by remember { mutableStateOf(false) }
                     Box {
                         IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
-                        androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                        com.bamnat.app.ui.components.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                             androidx.compose.material3.DropdownMenuItem(
                                 text = { Text("보고서 복사") },
                                 leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
@@ -519,6 +520,9 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                             FilterChip(selected = preview == t, onClick = { vm.setPreview(t) }, label = { Text(t.label) })
                         }
                     }
+                    val trialCtx = androidx.compose.ui.platform.LocalContext.current
+                    // [MON-13] 1.36: 금액 비교하기·세후 예상 일주일 무료, tried again from the start.
+                    if (BuildConfig.DEBUG) androidx.compose.material3.TextButton(onClick = { trialCtx.appContainer.featureGate.resetTrials() }) { Text("일주일 무료 맛보기 처음부터") }
                 }
             }
             // S 1.32 [SECX-01] 기능 상태 and its 관리자 미리 보기 switches are gone from the phone (the developer app sets previews).

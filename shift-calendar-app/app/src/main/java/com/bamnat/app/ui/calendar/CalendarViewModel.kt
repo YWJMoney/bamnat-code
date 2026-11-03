@@ -656,6 +656,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         val tool = _paint.value as? PaintTool.Shift ?: return false
         val snap = snapshot.value ?: return false
         val type = snap.typesById[tool.shiftTypeId] ?: return false
+        // 1.36 실사용 S13 (요일이 그때그때 다른 알바가 칠할 때마다 '대근으로 넣을까요?'): with no roster or fixed days, a painted day
+        // is simply a day worked, never a 대근 (which could add holiday premiums).
+        if (!snap.hasPattern) return false
         val (off, work) = dates.distinct().partition { offDayFor(snap.resolver.resolve(it), type) }
         if (off.isEmpty()) return false
         val ask = CoverAsk(type, off, work)

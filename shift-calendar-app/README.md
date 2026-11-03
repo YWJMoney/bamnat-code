@@ -48,8 +48,7 @@ Kotlin, Jetpack Compose(Material 3), Room, AlarmManager로 만들었습니다.
 - 접고 펼칠 때 화면이 다시 시작되지 않도록 설정해 입력 중인 내용이 유지됩니다.
 
 **광고 자리**
-- `ui/components/AdSlot.kt`에 광고 자리가 미리 잡혀 있습니다. 하단 탭 위(접은 화면) 또는 콘텐츠 아래(펼친 화면) 한 곳에만 들어가며, 달력 칸이나 버튼을 가리지 않습니다.
-- 지금은 꺼져 있습니다(`AdConfig.ENABLED = false`). AdMob을 붙일 때 이 파일만 바꾸면 됩니다.
+- 띠 광고는 1.36에서 코드째 없앴습니다. 광고는 사용자가 고르는 보상형(`ads/RewardedAds.kt`) 하나뿐입니다.
 
 ## 프로젝트 구조
 

@@ -58,6 +58,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     val drafts by vm.drafts.collectAsStateWithLifecycle()
     val mine by vm.mine.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.shownAgain() }
     val newer by vm.newer.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val me by vm.me.collectAsStateWithLifecycle()
@@ -66,10 +67,11 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     // 1.35 자유도 점검: 되돌리기 asks first too (what it puts back and what it keeps).
     var undoing by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
-    LaunchedEffect(message) { message?.let { vm.shown(); snack.showSnackbar(it) } }
+    // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
+    LaunchedEffect(message) { message?.let { snack.showSnackbar(it); vm.shown() } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
-        topBar = { TopAppBar(title = { Text("장터·내 레시피") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
+        topBar = { TopAppBar(title = { Text("내 것 · 올린·받은·만들던 레시피") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
@@ -78,7 +80,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                     Column(Modifier.weight(1f)) {
                         Text("장터 쓰기", style = MaterialTheme.typography.bodyLarge)
                         Text(if (on) "마을에 장터 칸과 설정 화면의 ‘이 설정 나누기’가 보여요"
-                            else "꺼져 있어요. 다시 켜려면 여기(설정 › 장터·내 레시피)로 오세요. 넣어 둔 레시피는 그대로예요",
+                            else "꺼져 있어요. 다시 켜려면 여기(마을 › 공방 › 내 것)로 오세요. 넣어 둔 레시피는 그대로예요",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(on, vm::setOn)
@@ -86,7 +88,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                 if (on) NewsSwitches()
                 if (on) Row {
                     TextButton(onClick = onList) { Text("레시피 보러 가기") }
-                    me?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("내 만든 분 페이지") } }
+                    me?.let { m -> TextButton(onClick = { onMaker(m) }) { Text("내 프로필") } }
                 }
 
                 Header("받은 레시피")
@@ -138,7 +140,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                 RemixCount(item.code)
                                 Row {
                                     TextButton(onClick = { vm.newVersion(item.code) { body -> onNewVersion(item.code, body) } }) { Text("새 판 만들기") }
-                                    TextButton(onClick = { asking = "‘${item.title}’을(를) 장터에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
+                                    TextButton(onClick = { asking = "‘${item.title}’${com.bamnat.app.ui.Fmt.obj(item.title)} 장터에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
                                         Text("지우기", color = MaterialTheme.colorScheme.error)
                                     }
                                 }
@@ -154,7 +156,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                         Column(Modifier.weight(1f).clickable { onDraft(d.id) }.padding(vertical = 8.dp)) {
                             Text(runCatching { org.json.JSONObject(d.body).optString("title") }.getOrNull()?.ifEmpty { null } ?: "이름 없는 레시피",
                                 style = MaterialTheme.typography.bodyLarge)
-                            Muted("${d.step}/5단계에서 멈춤")
+                            Muted(if (d.step <= 1) "스튜디오에서 꾸미던 중" else "올리기 ${d.step - 1}/4단계에서 멈춤")
                         }
                         TextButton(onClick = { asking = "만들던 레시피를 지울까요? 지우면 이어서 만들 수 없어요" to { vm.deleteDraft(d.id) } }) { Text("지우기") }
                     }
@@ -165,13 +167,13 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     }
     update?.let { UpdateDialog(it, vm) }
     undoing?.let { (title, go) ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { undoing = null }, title = { Text("되돌릴까요?") },
+        com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { undoing = null }, title = { Text("되돌릴까요?") },
             text = { Text("‘$title’이 바꾼 것만 넣기 전으로 돌아가요. 넣은 뒤 내가 직접 바꾼 것과 근무 기록·가계부·메모는 그대로예요") },
             confirmButton = { TextButton(onClick = { undoing = null; go() }) { Text("되돌리기") } },
             dismissButton = { TextButton(onClick = { undoing = null }) { Text("닫기") } })
     }
     asking?.let { (q, go) ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { asking = null }, title = { Text("지울까요?") }, text = { Text(q) },
+        com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { asking = null }, title = { Text("지울까요?") }, text = { Text(q) },
             confirmButton = { TextButton(onClick = { asking = null; go() }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { asking = null }) { Text("닫기") } })
     }
@@ -180,7 +182,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
 /** [RCX-03] 새 판 반영: each piece's changed fields; 부딪힘 (I changed it too) is off unless chosen. */
 @Composable
 private fun UpdateDialog(u: RecipeMineViewModel.Update, vm: RecipeMineViewModel) {
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = vm::closeUpdate,
         title = { Text("‘${u.recipe.title}’ v${u.version}에서 바뀐 점") },
         text = {

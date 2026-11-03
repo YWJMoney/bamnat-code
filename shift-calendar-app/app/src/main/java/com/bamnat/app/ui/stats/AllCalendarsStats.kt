@@ -85,7 +85,7 @@ private fun YearIncomeCard(month: YearMonth, calendars: List<com.bamnat.app.data
     }
     val y = year ?: return
     if (y.income <= 0) return
-    SectionCard(title = "${month.year}년 달력별 수입 (1~${month.monthValue}월)") {
+    SectionCard(title = "${month.year}년 달력별 수입 (" + (if (month.monthValue == 1) "1월" else "1~${month.monthValue}월") + ")") {
         y.rows.filter { it.income > 0 }.forEach { r ->
             val color = calendars.firstOrNull { it.id == r.calendar }?.color
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -122,7 +122,7 @@ private fun YearIncomeCard(month: YearMonth, calendars: List<com.bamnat.app.data
                 }
             }
             picking?.let { id ->
-                androidx.compose.material3.AlertDialog(
+                com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = { picking = null },
                     title = { Text("이 달력의 소득 종류") },
                     text = {

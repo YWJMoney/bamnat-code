@@ -18,7 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Button
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -66,16 +66,19 @@ internal fun MoneyField(
     placeholder: String = "",
     /** [J133-80] The keypad's 완료: closes the keypad and, when given, goes on (the setup's 다음). */
     onDone: (() -> Unit)? = null,
+    /** 1.36 PC Y17: what is still missing, in red under the field (the setup's 다음 tapped with it empty). */
+    error: String? = null,
 ) {
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     OutlinedTextField(
+        isError = error != null,
         value = value?.toString() ?: "",
         onValueChange = { s -> onChange(s.filter(Char::isDigit).take(10).toLongOrNull()) },
         label = { Text(label) },
         placeholder = if (placeholder.isNotEmpty()) ({ Text(placeholder) }) else null,
         suffix = { Text("원") },
         // [PAYS-04] Read back in words (250만 8천원) so a missing or extra zero shows at a glance.
-        supportingText = value?.let { { Text("${won(it)} · ${com.bamnat.core.pay.wonWords(it)}") } },
+        supportingText = error?.let { e -> { Text(e) } } ?: value?.let { { Text("${won(it)} · ${com.bamnat.core.pay.wonWords(it)}") } },
         singleLine = true,
         visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide(); onDone?.invoke() }),
@@ -145,6 +148,24 @@ fun LineDetailDialog(
                     Text("입력하지 않은 값을 앱이 짐작해 넣은 부분이 있어요. ‘내 급여 값’에서 실제 값으로 바꾸면 정확해져요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 8.dp))
                 }
+                // 1.36 PC 급여 검토 W5: the days this line came from, so "연장 60시간" can be checked day by day.
+                val from = remember(line, result) {
+                    result.days.mapNotNull { d ->
+                        val parts = d.parts.filter { it.kind == line.kind && (it.label == line.label || line.kind != com.bamnat.core.pay.LineKind.ALLOWANCE) }
+                        parts.sumOf { it.amount }.takeIf { parts.isNotEmpty() }?.let { d to it }
+                    }
+                }
+                if (from.isNotEmpty()) {
+                    HorizontalDivider(Modifier.padding(top = 8.dp))
+                    Text("이 항목이 붙은 날 ${from.size}일", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+                    from.forEach { (d, amount) ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Text("${d.date.monthValue}/${d.date.dayOfMonth} ${(com.bamnat.app.ui.Fmt.dayOfWeekShort(d.date.dayOfWeek))} · ${d.label}" + (d.holidayName?.let { " · $it" } ?: ""),
+                                style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            Text(won(amount), style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
@@ -203,7 +224,7 @@ fun EditValueDialog(
                 Text("어디에 적용할까요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
                 ScopeKind.entries.forEach { k ->
                     val locked = k == ScopeKind.RANGE && !rangeOpen
-                    val pick = { if (locked) { onDismiss(); com.bamnat.app.ui.pro.openPro() } else scope = k }
+                    val pick = { if (locked) { onDismiss(); com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) } else scope = k }
                     Row(Modifier.fillMaxWidth().clickable(onClick = pick), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = scope == k, onClick = pick)
                         Text(

@@ -89,7 +89,8 @@ object BackupArchive {
                 val name = e.name
                 if (e.isDirectory) continue
                 when {
-                    name == SUMS -> sums = zip.readBytes().decodeToString()
+                    // 1.36 [SEC-14] 보안 점검 추가: the list of sums is read up to 256 KB, like the other entries (a made-up file cannot fill the memory).
+                    name == SUMS -> sums = limited(zip, 256 * 1024L, MessageDigest.getInstance("SHA-256")).decodeToString()
                     name == JSON -> {
                         val md = MessageDigest.getInstance("SHA-256")
                         val bytes = limited(zip, MAX_JSON, md)

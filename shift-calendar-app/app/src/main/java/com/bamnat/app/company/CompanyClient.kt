@@ -264,15 +264,64 @@ data class TalkPost(
     val author: String? = null,
     /** [COMM-11] I2: flagged for 개인 정보 once and being checked; shown dimmed with 확인 중. */
     val review: Boolean = false,
+    /** 1.36 [V3] 마을 이름 하나: in a kind of work's 광장, the writer's 프로필 (null without one, and never in a company's). */
+    val maker: String? = null,
 )
 
 /**
  * [PLZ-04] [past]: an older version's talk, read only since a newer version took its place.
  * [COMM-09] [hiddenByYou]: posts left out because the user chose not to see their writers.
  */
-/** [COMM-11] [leftPosts]: how many more posts this phone may write today; null when the server did not say. */
+/**
+ * [COMM-11] [leftPosts]: how many more posts this phone may write today; null when there is no cap. 1.36 [LIM-10] there is a cap
+ * only while reports restrict this install ([limit]).
+ */
 data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false, val hiddenByYou: Int = 0,
-    val leftPosts: Int? = null)
+    val leftPosts: Int? = null, val limit: WriteLimit? = null)
+
+/**
+ * 1.36 [LIM-10] 신고 누적 쓰기 제한: nobody has a daily cap; posts hidden by reports restrict an install until [until] to [perDay]
+ * writes a day of each kind. The line under a write box, said only then.
+ */
+data class WriteLimit(val until: Instant, val perDay: Int, val by: String? = null, val n: Int = 0, val kinds: List<String> = emptyList()) {
+    fun line(left: Int?): String {
+        val day = until.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()
+        val head = "${cause()} ${day.monthValue}월 ${day.dayOfMonth}일까지 하루 ${perDay}번만 쓸 수 있어요"
+        return when {
+            left == null -> head
+            left > 0 -> "$head · 오늘 ${left}번 더"
+            else -> "$head. 오늘은 다 썼어요"
+        }
+    }
+
+    /**
+     * PC 확인 보안 6차 (운영자가 가렸는데 '신고가 쌓여'): why, as the server says who hid what ([by] "operator", "reports" or "both";
+     * [n] how many; [kinds] post, talk, recipe, set, bio, profile). Before it said, reports.
+     */
+    fun cause(): String {
+        val what = when {
+            kinds.isNotEmpty() && kinds.all { it == "recipe" || it == "set" } -> "작품"
+            kinds.isNotEmpty() && kinds.all { it == "post" || it == "talk" } -> "글"
+            kinds.isNotEmpty() && kinds.all { it == "bio" || it == "profile" } -> "프로필"
+            else -> "글·작품"
+        }
+        val count = if (n > 0 && what != "프로필") " ${n}개" else ""
+        return when (by) {
+            "operator" -> if (what == "프로필") "운영자가 프로필을 가려" else "운영자가 $what$count${com.bamnat.app.ui.Fmt.obj(what + count)} 가려"
+            "both" -> "신고와 운영자 확인으로 $what$count${com.bamnat.app.ui.Fmt.iga(what + count)} 가려져"
+            else -> "신고가 쌓여"
+        }
+    }
+
+    companion object {
+        fun of(o: JSONObject?): WriteLimit? = o?.optJSONObject("limit")?.let { l ->
+            runCatching {
+                WriteLimit(Instant.parse(l.getString("until")), l.getInt("perDay"), l.optString("by").takeIf { it.isNotEmpty() }, l.optInt("n"),
+                    l.optJSONArray("kinds")?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty())
+            }.getOrNull()
+        }
+    }
+}
 
 data class PostVote(val agree: Int, val disagree: Int, val trust: Int, val myVote: Boolean?)
 
@@ -881,7 +930,8 @@ class CompanyClient(
 
     override suspend fun forgetMineCounts(device: String): ForgetCounts = serverCall {
         val o = request("DELETE", "/api/mine", device = device)
-        ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"))
+        ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"),
+            recipes = o.optInt("recipes"), profile = o.optInt("profile") > 0, follows = o.optInt("follows"), sets = o.optInt("sets"))
     }
 
     /** 맞았어요 ([ok]) or 달라요 with what was wrong: order, time, pay (1.27 AH-D9), or wrong, old or name. */
@@ -986,12 +1036,16 @@ internal fun onceRequest(
  * page in place of JSON, a missing field) is [CompanyException] "bad_response", never a crash.
  */
 /** [INQ-05] What `DELETE /api/mine` took away, kind by kind. */
-data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int = 0, val inquiries: Int = 0) {
+data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int = 0, val inquiries: Int = 0,
+    /** [PRF-01] 1.36 마을: 올린 작품, 프로필, 팔로우, 모음. */
+    val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0) {
     /** "보낸 규칙 2·토론 글 3·문의 1을 지웠어요", or that there was nothing to delete. */
     fun words(): String {
         val parts = listOfNotNull(
             "보낸 규칙 $reports".takeIf { reports > 0 }, "맞았어요·달라요 $votes".takeIf { votes > 0 },
             "토론 글 $posts".takeIf { posts > 0 }, "문의 $inquiries".takeIf { inquiries > 0 },
+            "작품 ${recipes}개".takeIf { recipes > 0 }, "모음 ${sets}개".takeIf { sets > 0 }, "프로필".takeIf { profile },
+            "팔로우 $follows".takeIf { follows > 0 },
         )
         return if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요"
     }
@@ -1138,12 +1192,14 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             },
             author = p.optStringOrNull("author")?.takeIf { com.bamnat.core.plaza.HideList.MARK.matches(it) },
             review = p.optBoolean("review"),
+            maker = p.optStringOrNull("maker")?.takeIf { Regex("[0-9a-f]{12}").matches(it) },
         )
     },
     mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),
     past = o.optBoolean("past"),
     hiddenByYou = o.optInt("hiddenByYou"),
     leftPosts = o.optJSONObject("left")?.takeIf { it.has("posts") }?.optInt("posts"),
+    limit = WriteLimit.of(o),
 )
 
 internal fun termsOf(o: JSONObject) =
@@ -1261,10 +1317,36 @@ internal fun serverExchange(
 ): Answer {
     // [QA130-01] 1.30 AY: a Play pre-launch robot (Firebase Test Lab) reads but never writes; to it, as if offline.
     if (!com.bamnat.app.diag.TestLab.allows(method)) throw CompanyException("offline")
+    // [SRV-30] 1.36: at api.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
+    val once = {
+        try {
+            ServerAddress.call(baseUrl) { at -> exchangeOnce(at, method, path, body, device, headers, session) }
+        } catch (e: CompanyException) {
+            throw e // the server's own answer (refused, not found …), never 'offline'
+        } catch (e: IOException) {
+            throw CompanyException("offline")
+        }
+    }
+    return try {
+        once()
+    } catch (e: CompanyException) {
+        // 1.36 [SEC-11] The server wants Play's verdict first: asked once, then the same request once more.
+        val dev = device ?: body?.optString("device")?.takeIf { it.isNotEmpty() }
+        if (e.code != "integrity" || dev == null || path == "/api/integrity" || !IntegrityProof.prove(baseUrl, dev)) throw e
+        once()
+    }
+}
+
+/** One try of [serverExchange] at one address; a failure before reaching the server comes out as it is, for [ServerAddress]. */
+private fun exchangeOnce(
+    baseUrl: String, method: String, path: String, body: JSONObject?, device: String?, headers: Map<String, String>,
+    session: ServerSession?,
+): Answer {
     val conn = try {
         // [SPD-26] 1.31 I2: through Cronet (HTTP/3·HTTP/2) when Google Play services has it, otherwise as before.
         NetEngine.open(URL(baseUrl.trimEnd('/') + path))
     } catch (e: IOException) {
+        if (ServerAddress.neverArrived(e)) throw e
         throw CompanyException("offline")
     }
     val started = System.nanoTime()
@@ -1306,6 +1388,7 @@ internal fun serverExchange(
     } catch (e: IOException) {
         // [SPD-27] Only a connection that broke is closed; one read to its end stays open for the next request.
         conn.disconnect()
+        if (ServerAddress.neverArrived(e)) throw e
         throw CompanyException("offline")
     } catch (e: RuntimeException) {
         conn.disconnect()

@@ -49,7 +49,9 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
             MISSION_ROW,
             "알람을 끄려면 풀어야 해요. ${chosen.hint}. ${Missions.GIVE_UP_AFTER.toMinutes()}분이 지나면 미션 없이도 끌 수 있어요",
             missions.map { it to it.label }, chosen,
-        ) { m -> if (!open) openPro() else pick(m) { vm.update { s -> s.copy(alarmMission = m.key) } } }
+        ) { m -> if (!open && !com.bamnat.app.ui.pro.tryFeature(Feature.SURE_ALARM)) openPro(com.bamnat.app.tier.Feature.SURE_ALARM) else pick(m) { vm.update { s -> s.copy(alarmMission = m.key) } } }
+        // 1.36 PC Y14: how and until when 알람 미션 is open stays here, not only in a toast that goes.
+        com.bamnat.app.ui.pro.TrialNote(com.bamnat.app.tier.Feature.SURE_ALARM, gate)
         val photoChosen = settings.alarmMission == AlarmMission.PHOTO.key || settings.shiftMissions.values.any { it == AlarmMission.PHOTO.key }
         if (open && (photoWanted || photoChosen || references.isNotEmpty())) {
             PhotoMissionRows(references, photoWanted, photoChosen,
@@ -66,7 +68,7 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
         if (ringing.isNotEmpty()) {
             HorizontalDivider()
             SwitchRow("근무마다 다르게", "예: 야간 뒤 아침 근무만 계산 문제", perShift || settings.shiftMissions.isNotEmpty()) { on ->
-                if (!open) { openPro(); return@SwitchRow }
+                if (!open && !com.bamnat.app.ui.pro.tryFeature(Feature.SURE_ALARM)) { openPro(com.bamnat.app.tier.Feature.SURE_ALARM); return@SwitchRow }
                 perShift = on
                 if (!on) vm.update { it.copy(shiftMissions = emptyMap()) }
             }
@@ -88,7 +90,7 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
                 "${WakeCheck.ANSWER_SECONDS}초 안에 ‘일어났어요’를 누르지 않으면 알람이 한 번 더 울려요",
             on,
         ) { want ->
-            if (!open) openPro() else vm.update { it.copy(wakeCheckMinutes = if (want) DEFAULT_WAKE_MINUTES else 0) }
+            if (!open && !com.bamnat.app.ui.pro.tryFeature(Feature.SURE_ALARM)) openPro(com.bamnat.app.tier.Feature.SURE_ALARM) else vm.update { it.copy(wakeCheckMinutes = if (want) DEFAULT_WAKE_MINUTES else 0) }
         }
         if (on) {
             ChoiceRow("묻는 때", null, listOf(3, 5, 10, 15).map { it to "${it}분 뒤" }, settings.wakeCheckMinutes) { m ->

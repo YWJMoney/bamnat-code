@@ -14,17 +14,15 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * [MON-07] AdMob ad unit ids from gradle.properties (bamnat.admobBanner, bamnat.admobRewarded; public
- * values the owner gives). Blank in a release build means no ads at all; a debug build uses Google's
- * own test units so the slot can be seen without real ads.
+ * [MON-07] The AdMob ad unit id from gradle.properties (bamnat.admobRewarded; a public value the owner gives). Blank in a
+ * release build means no ads at all; a debug build uses Google's own test unit. 1.36 838 (사용자 2026-10-31 "띠 광고는
+ * 없애는게 좋을거 같아"): there is no banner; the only ad is the rewarded one the user chooses.
  */
 object AdIds {
-    private const val TEST_BANNER = "ca-app-pub-3940256099942544/9214589741"
     private const val TEST_REWARDED = "ca-app-pub-3940256099942544/5224354917"
 
-    val banner: String = BuildConfig.ADMOB_BANNER.ifBlank { if (BuildConfig.DEBUG) TEST_BANNER else "" }
     val rewarded: String = BuildConfig.ADMOB_REWARDED.ifBlank { if (BuildConfig.DEBUG) TEST_REWARDED else "" }
-    val configured: Boolean get() = banner.isNotBlank() || rewarded.isNotBlank()
+    val configured: Boolean get() = rewarded.isNotBlank()
 }
 
 /**

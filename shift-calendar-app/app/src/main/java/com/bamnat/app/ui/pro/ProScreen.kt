@@ -8,17 +8,24 @@ import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -52,12 +59,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
-import com.bamnat.app.ads.DayPassButton
 import com.bamnat.app.appContainer
 import com.bamnat.app.billing.BillingState
 import com.bamnat.app.billing.Plan
@@ -101,8 +108,10 @@ val PRO_PILLARS = listOf(
         setOf(Feature.MONEY_STATS, Feature.MORE_CALENDARS, Feature.NO_ADS)),
     // [FREE-10] 1.35 꾸미기 혜택 (사용자 2026-10-30 "꾸미기 혜택을 추가해서 프로의 장점을 살리는").
     Pillar("내 마음대로 꾸미기",
-        listOf("테마를 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 두고 한 번에 바꿔 입기", "다른 분이 만든 테마도 광고 없이, 기간 없이"),
-        setOf(Feature.THEME_WARDROBE)),
+        listOf("테마를 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 두고 한 번에 바꿔 입기", "다른 분이 만든 테마도 광고 없이, 기간 없이",
+            // [PRF-12] 1.36 창작자 꾸미기.
+            "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프"),
+        setOf(Feature.THEME_WARDROBE, Feature.CREATOR_PRO)),
 )
 
 /** [MON-04] 무료 vs 프로, row by row. Everything not listed is free. */
@@ -138,7 +147,7 @@ fun proDisclosures(plans: List<Plan>, today: LocalDate): List<String> {
     val trialEnd = today.plusMonths(1)
     return listOfNotNull(
         "결제는 Google Play 계정으로 해요. " + (if (prices.isNotEmpty()) "$prices, " else "") + "월 요금제는 매달, 연 요금제는 매년 같은 날 자동으로 결제돼요.",
-        if (plans.any { it.trial }) "1개월 무료 체험은 처음 구독하는 분께 한 번이에요. 오늘 시작하면 ${trialEnd.monthValue}월 ${trialEnd.dayOfMonth}일부터 " +
+        if (plans.any { it.trial }) "1개월 무료 체험은 연 요금제를 처음 구독하는 분께 한 번이에요. 오늘 시작하면 ${trialEnd.monthValue}월 ${trialEnd.dayOfMonth}일부터 " +
             "고른 요금제의 금액이 결제돼요. 끝나기 7일 전에 계속 쓸지 따로 여쭤봐요." else null,
         "해지는 언제든 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 이미 낸 기간이 끝날 때까지 프로를 써요.",
         "결제한 날부터 7일 안에는 청약철회(환불)를 요청할 수 있어요. 이미 쓰기 시작한 디지털 콘텐츠는 법에 따라 철회가 제한될 수 있어요(전자상거래법 제17조 제2항). " +
@@ -176,13 +185,19 @@ fun ProScreen(onBack: () -> Unit) {
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
         )
     }) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+        // PC 확인 d263030e (관리자 연결 코드 칸에서 키보드가 연결하기를 가려요): the page ends above the keyboard, so what is under a
+        // field can be scrolled to while typing.
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
                 StatusCard(gate, pro, zone, settings.workStyle)
+                // 1.36 [PSH-01] 프로 나눔 1인, right under 지금 (PC: 맨 아래에 있어 못 찾았어요).
+                if (c.tierApi.enabled) ProShareCard(c, gate, zone, onMessage = { message = it })
+                // 1.36 840 보상 장부: what this phone was given this month, for someone without 프로.
+                if (gate.live && !gate.preview && gate.tier < com.bamnat.app.tier.Tier.PRO) RewardLedgerCard(c, gate, plans)
                 ConsentWaiting(c, pro, onMessage = { message = it })
                 message?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
                 // [TIER-07] Every pro feature, this calendar's first, a tap from where it lives.
@@ -227,15 +242,15 @@ fun ProScreen(onBack: () -> Unit) {
                     PlansCard(c, gate, pro, plans, billingState, onMessage = { message = it })
                 }
 
-                DayPassButton(gate)
-
                 // [INVITE-02][INVITE-05] AE 1.26: 친구 초대 and 초대 코드 넣기.
                 InviteCard(c, onMessage = { message = it })
 
                 if (c.tierApi.enabled) {
                     PassesCard(c, pro, gate, zone, onMessage = { message = it })
-                    AdminCard(c, pro, onMessage = { message = it })
+                    AdminCard(c, pro)
                 }
+                // 1.36 PC 재검토 (결제 단추가 아래 탭 자리와 겹쳐 잘못 눌려요): the last buttons scroll clear of the bar at the bottom.
+                Spacer(Modifier.navigationBarsPadding().height(72.dp))
             }
         }
     }
@@ -281,12 +296,17 @@ private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamna
                 ProReason.SUBSCRIPTION -> if (pro.sub?.autoRenew == true) "다음 결제일 ${dateWords(day)}" else "${dateWords(day)}까지 써요(해지했어요)"
                 ProReason.GRACE -> "${dateWords(day)}까지 결제 수단을 바꾸면 그대로 써요"
                 ProReason.DAY_PASS -> "오늘 밤 12시까지예요"
+                ProReason.PASS_1Y -> "${dateWords(day)}까지 써요. 자동 결제 없이 그날 끝나요"
                 else -> "${dateWords(day)}까지예요"
             }
             Text(words, style = MaterialTheme.typography.bodyMedium)
         }
         pro.passes?.waitingMonths?.takeIf { it > 0 }?.let {
             Text("받은 보상 이용권 ${it}개월은 정식 출시 날부터 시작돼요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        pro.passes?.waitingDays?.takeIf { it > 0 }?.let {
+            val why = pro.passes?.earned?.map { e -> e.why }?.distinct()?.joinToString(", ")?.takeIf { w -> w.isNotBlank() }
+            Text("받은 프로 ${it}일${why?.let { w -> "($w)" } ?: ""}은 정식 출시 날부터 시작돼요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
         if (gate.access.reason == ProReason.DAY_PASS) DayPassOpened(style)
     }
@@ -331,20 +351,8 @@ private fun PlansCard(c: AppContainer, gate: Gate, pro: ProState, plans: List<Pl
                 else "Play에서 요금제를 불러오는 중이에요. 인터넷을 켜고 잠시 뒤 다시 열어 주세요.",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            else -> plans.forEach { plan ->
-                // [MON-05] Each plan its own button; none is picked for the user.
-                Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text(plan.priceWords + if (plan.yearly) " (1년마다)" else " (매달)", style = MaterialTheme.typography.titleSmall)
-                    if (plan.trial) Text("첫 1개월 무료, 그 뒤 ${plan.priceWords}", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onClick = {
-                        val activity = context.findActivity()
-                        if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
-                    }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (plan.trial) "1개월 무료로 시작 (${if (plan.yearly) "연" else "월"} 요금제)" else "${plan.priceWords}로 구독")
-                    }
-                }
-            }
+            // [MON-05] Each plan its own button; none is picked for the user. 840: the yearly one first, 추천, its discount.
+            else -> PlanRows(c, plans, onMessage)
         }
         proDisclosures(plans, Today.date()).forEach {
             Text("• $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -359,8 +367,8 @@ private fun PlansCard(c: AppContainer, gate: Gate, pro: ProState, plans: List<Pl
                     onMessage(if (c.proStore.current.sub != null) "구독을 다시 찾았어요" else "이 Google 계정에서 찾은 구독이 없어요")
                 }
             }) { Text("구매 복원") }
-            TextButton(onClick = { open(context, TERMS_URL) }) { Text("이용약관") }
-            TextButton(onClick = { open(context, PRIVACY_URL) }) { Text("개인정보처리방침") }
+            TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관") }) { Text("이용약관") }
+            TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침") }) { Text("개인정보처리방침") }
         }
     }
 }
@@ -374,11 +382,15 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
     var code by rememberSaveable { mutableStateOf("") }
     val passes = pro.passes
     SectionCard(title = "보상 이용권") {
-        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나 초대한 친구가 밤낮을 쓰면 프로 이용권을 드려요. 받을수록 기간이 이어져요.",
+        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나 초대한 친구가 밤낮을 쓰면 프로 이용권을 드려요. 보내 주신 문제 신고가 고쳐지면 3일을 드려요(한 달 14일까지). 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
             Text("• 프로 ${item.months}개월 (${passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
                 style = MaterialTheme.typography.bodyMedium)
+        }
+        // 1.36 841 쓰면 쌓이는 날.
+        passes?.earned?.forEach { e ->
+            Text("• 프로 ${e.days}일 (${e.why}, ${dateWords(e.at.atZone(zone).toLocalDate())})", style = MaterialTheme.typography.bodyMedium)
         }
         passes?.until?.let { Text("이용권은 ${dateWords(it.atZone(zone).toLocalDate())}까지예요.", style = MaterialTheme.typography.bodyMedium) }
         if (passes?.deferred?.let { it > 0 } == true) Text("구독 중이라 ${passes.deferred}번은 Play 다음 결제일을 미뤄 드렸어요.", style = MaterialTheme.typography.bodySmall)
@@ -390,7 +402,7 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
         }
         @OptIn(ExperimentalLayoutApi::class)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (passes?.items?.isNotEmpty() == true) {
+            if (passes?.items?.isNotEmpty() == true || passes?.earned?.isNotEmpty() == true) {
                 OutlinedButton(onClick = {
                     scope.launch {
                         runServer(onMessage) {
@@ -427,47 +439,83 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
 
 /** [MON-09] An invited admin's phone, tied with the 6-digit code from the developer app. */
 @Composable
-private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Unit) {
+private fun AdminCard(c: AppContainer, pro: ProState) {
     val scope = rememberCoroutineScope()
     var code by rememberSaveable { mutableStateOf("") }
     val admin = pro.passes?.admin
+    // PC 확인 20ab0254: the answer stays in this card (the page's line is at the top, out of sight from here). PC 확인 보안 8차 (끊은 뒤
+    // 아무 안내가 없어요): 연결 끊기's too, so it is the card's, not the code field's.
+    var said by rememberSaveable { mutableStateOf<String?>(null) }
     SectionCard(title = "관리자 연결") {
         when {
-            admin?.approved == true -> Text("${admin.name} 관리자 휴대폰이에요. 프로를 무료로 써요.", style = MaterialTheme.typography.bodyMedium)
-            admin != null -> Text("${admin.name} 관리자 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
+            // PC 확인 8773e3ae: approved at once said why (the 최고 관리자's own code needs no 승인), not left to guess.
+            admin?.approved == true -> Text("${adminWhose(admin.name)} 휴대폰이에요. 프로를 무료로 써요." +
+                if (admin.owner) " 최고 관리자 코드로 연결해서 따로 승인 없이 바로 열렸어요." else "", style = MaterialTheme.typography.bodyMedium)
+            admin != null -> Text("${adminWhose(admin.name)} 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
             else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (admin == null) {
-            OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("6자리 코드") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.fillMaxWidth())
-            Button(onClick = {
+            // PC 확인 20ab0254: the keyboard goes away once it is sent.
+            val focus = androidx.compose.ui.platform.LocalFocusManager.current
+            val linking = {
+                focus.clearFocus()
                 scope.launch {
-                    runServer(onMessage) {
+                    runServer({ said = it }) {
                         val state = c.tierApi.link(c.companyStore.device, code)
-                        c.syncPasses(force = true)
-                        c.featureGate.refresh()
                         code = ""
-                        onMessage(if (state.approved) "연결했어요. 프로를 무료로 써요." else "연결했어요. 최고 관리자가 승인하면 프로가 열려요.")
-                    }
-                }
-            }, enabled = code.length == 6) { Text("연결하기") }
-        } else {
-            TextButton(onClick = {
-                scope.launch {
-                    runServer(onMessage) {
-                        c.tierApi.unlink(c.companyStore.device)
-                        c.syncPasses(force = true)
+                        said = when {
+                            state.approved && state.owner -> "연결했어요 · 최고 관리자 코드라 바로 승인됐어요. 프로를 무료로 써요."
+                            state.approved -> "연결했어요 · 승인됨. 프로를 무료로 써요."
+                            else -> "연결했어요 · 승인 기다림. 최고 관리자가 승인하면 프로가 열려요."
+                        }
+                        // PC 확인 7525ccff: a new phone had no other reason to ask, so the card stayed on the code field.
+                        c.syncPasses(force = true, linked = true)
                         c.featureGate.refresh()
-                        onMessage("관리자 연결을 끊었어요.")
                     }
                 }
-            }) { Text("연결 끊기") }
+                Unit
+            }
+            // PC 확인 20ab0254 (Gboard 숫자 키보드가 연결하기를 가려요): 연결하기 sits beside the field, so it is in view whenever the
+            // field is; the keyboard's own key links too.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6); said = null }, label = { Text("6자리 코드") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (code.length == 6) linking() }),
+                    modifier = Modifier.weight(1f))
+                Button(onClick = { linking() }, enabled = code.length == 6, modifier = Modifier.heightIn(min = 48.dp)) { Text("연결하기") }
+            }
+            said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
+        } else {
+            // PC 확인 보안 7차 (한 번에 끊겨요): asked once, as linking again needs a new code from the admin app.
+            var asking by rememberSaveable { mutableStateOf(false) }
+            TextButton(onClick = { asking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("연결 끊기") }
+            said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+            if (asking) com.bamnat.app.ui.components.AlertDialog(
+                onDismissRequest = { asking = false },
+                title = { Text("관리자 연결을 끊을까요?") },
+                text = { Text("관리자 휴대폰이라 무료로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 연결하려면 관리자 앱 › 내 정보에서 새 6자리 코드를 받아야 해요.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        asking = false
+                        scope.launch {
+                            runServer({ said = it }) {
+                                c.tierApi.unlink(c.companyStore.device)
+                                c.syncPasses(force = true)
+                                c.featureGate.refresh()
+                                said = "관리자 연결을 끊었어요. 다시 연결하려면 관리자 앱에서 새 6자리 코드를 받아 넣어 주세요."
+                            }
+                        }
+                    }) { Text("끊기") }
+                },
+                dismissButton = { TextButton(onClick = { asking = false }) { Text("닫기") } },
+            )
         }
     }
 }
 
-private suspend fun runServer(onMessage: (String) -> Unit, block: suspend () -> Unit) {
+internal suspend fun runServer(onMessage: (String) -> Unit, block: suspend () -> Unit) {
     try {
         block()
     } catch (e: kotlinx.coroutines.CancellationException) {
@@ -490,6 +538,10 @@ fun passWhy(why: String): String = when (why) {
 /** What to tell the user about a refusal from the company server here. */
 fun serverProblem(code: String): String = when (code) {
     "code" -> "코드가 맞지 않거나 시간이 지났어요. 새 코드로 다시 해 주세요."
+    // 1.36 [PSH-01] 프로 나눔 1인.
+    "not_bought" -> "직접 구독한 프로가 있어야 나눌 수 있어요. 체험·이용권으로 쓰는 프로는 나눌 수 없어요."
+    "giver_ended" -> "코드를 준 분의 프로가 끝나서 쓸 수 없어요."
+    "self" -> "내가 만든 코드는 다른 사람 휴대폰에 넣어 주세요."
     "too_many" -> "이 관리자에게는 휴대폰을 2대까지 연결할 수 있어요. 관리자 앱에서 하나를 끊어 주세요."
     "rate_limited" -> com.bamnat.app.company.RateLimits.text()
     "offline" -> "인터넷에 연결되지 않았어요."
@@ -553,3 +605,35 @@ fun BillingTopLine(modifier: Modifier = Modifier) {
         }
     }
 }
+
+/** 1.36 840 보상 장부 (수익 2판 2-2): the month's free days, what they are worth at the yearly price, and 밤낮이 찾아 준 돈. */
+@Composable
+private fun RewardLedgerCard(c: AppContainer, gate: Gate, plans: List<Plan>) {
+    val moments by c.proMoments.state.collectAsStateWithLifecycle()
+    val yearly = plans.firstOrNull { it.yearly }?.priceMicros
+    val m = remember(gate.leases, moments.found, yearly) { ledgerOf(c, gate, yearly) }
+    if (m.empty) return
+    SectionCard(title = "보상 장부") {
+        // 1.36 PC ('7일 … (7일치)' 말이 겹쳐요): the month's total only when there is more than one to add up.
+        if (m.days > 0) Text("이번 달 받은 것  ${m.partsLine}" + (if (m.parts.size > 1) " (모두 ${m.days}일치)" else ""), style = MaterialTheme.typography.bodyMedium)
+        // 1.36 PC Y16 ('받은 날' 뒤에 날짜가 없어요): each bundle open now, from the day it was given to the day it ends.
+        val now = java.time.Instant.ofEpochMilli(gate.now)
+        for (b in com.bamnat.core.tier.FeatureLease.Bundle.entries) {
+            val end = gate.leases.until[b]?.takeIf { now < it } ?: continue
+            val from = gate.leases.grants.lastOrNull { it.bundle == b }?.at ?: continue
+            Text("${b.label}  ${dayWords(from)}에 받아 ${untilWords(end)}까지 열려 있어요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        m.wonValue?.let { Text("프로 연 요금(하루 ${com.bamnat.core.tier.RewardLedger.perDay(yearly)}원)으로 치면 약 ${won(it)}어치", style = MaterialTheme.typography.bodyMedium) }
+        if (m.found > 0) Text("밤낮이 찾아 준 돈  올해 ${won(m.found)} (명세서보다 계산이 많았던 차이)", style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** "1월 11일", in the phone's zone. */
+private fun dayWords(at: java.time.Instant): String = at.atZone(com.bamnat.core.time.Today.zone()).toLocalDate().let { "${it.monthValue}월 ${it.dayOfMonth}일" }
+
+/**
+ * PC 확인 보안 6차 d00db8a4 ("최고 관리자 관리자 휴대폰이에요"): the owner's name is already "최고 관리자", so "관리자" is not said twice.
+ */
+internal fun adminWhose(name: String): String = name.trim().let { if (it.isEmpty()) "관리자" else if (it.endsWith("관리자")) it else "$it 관리자" }

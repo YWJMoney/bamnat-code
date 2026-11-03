@@ -170,7 +170,12 @@ class SettingsFilesBackup(
             Part("wish_off"),
             // [FREE-10] 1.35 테마 옷장: 입었던 테마, 내 테마, the look kept aside while a theme is on. The 3일 전 notice said and
             // the 프로 mark are this phone's.
-            Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver")),
+            // [R136-03] 1.36: the day each calendar started on this phone (깐 날 표시), so a restored phone says the same day.
+            Part("calendar_start"),
+            Part("leave_hire"), // [LEAVE-14]
+            Part("pro_trials"), // [MON-13]
+            Part("folded_types"), // 1.36 PC 재검토: 안 쓰는 근무 종류
+            Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays")),
         )
 
         /**
@@ -199,6 +204,10 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // PC 재검토 N3 1.36: the look from before a studio wear, for a day's '입히기 전 모양으로'; a restored phone has no such moment.
+            "studio_locks" to "스튜디오에서 잠근 화면(한 색·섞기가 건드리지 않을 탭), 이 휴대폰의 것",
+            "look_undo" to "스튜디오에서 입히기 전 모양(하루 동안만 되돌리기)",
+            "backup_place" to "마지막 백업 파일이 있던 폴더 주소, 이 휴대폰의 저장소 것",
             "company:device" to "이 휴대폰의 설치 번호(문의 기록의 열쇠)",
             // [PLAZA-04] 1.25 X (결정 X-D5): the plaza invitation's waits are this phone's, like share_way.
             "company:invite_due" to "광장 올리기 권유를 다시 보일 날, 이 휴대폰에서 본 만큼",
@@ -258,7 +267,7 @@ class SettingsFilesBackup(
             "first_pay_asked" to "광장 판마다 '첫 급여 방식이 되어 주세요'를 이미 보여 준 기록, 이 휴대폰에서만 (J133-94)",
             "inquiry_reply" to "문의 답을 바로 알린 개수, 같은 답을 두 번 알리지 않으려고 (J133-24)",
             // 1.32 [PROX-02]: when this phone was offered a free day on a money day (끄기는 기능 스위치로 백업).
-            "pro_moments" to "급여일·신고 달의 하루 무료 권유를 이 휴대폰에서 본 날과 닫은 날",
+            "pro_moments" to "프로 제안 카드를 이 휴대폰에서 본 날·닫은 날과 앱을 연 날",
             // 1.32 [STAB-08]: a backup saved on another phone does not keep this one's records.
             "recipe_remix_seen" to "내 판마다 고쳐 만든 판을 이 휴대폰에서 본 수, 새로 생긴 것만 점으로 알리려고 (LIN-04)",
             "backup_nudge" to "이 휴대폰에서 마지막으로 백업 파일을 저장한 날과 ‘나중에’를 누른 날",

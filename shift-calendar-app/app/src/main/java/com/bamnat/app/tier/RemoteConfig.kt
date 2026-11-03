@@ -203,10 +203,10 @@ class RemoteConfigStore(
         return if (sameBoot) at.plusMillis(now - then) else at
     }
 
-    /** Due when never asked, a day has passed, or the clock went back. */
-    fun due(now: Instant): Boolean {
+    /** Due when never asked, [every] (a day) has passed, or the clock went back. */
+    fun due(now: Instant, every: Duration = EVERY): Boolean {
         val at = current.fetchedAt ?: return true
-        return now.isBefore(at) || Duration.between(at, now) >= EVERY
+        return now.isBefore(at) || Duration.between(at, now) >= every
     }
 
     /** [FLAG-04] A fresh answer is stamped with the time since boot, so its server time can be carried forward. */
@@ -217,8 +217,8 @@ class RemoteConfigStore(
     }
 
     /** Asks the server when due; no answer (offline, a sign-in page) keeps the last one. */
-    suspend fun refresh(api: TierApi, now: Instant = Today.instant(), force: Boolean = false): Boolean {
-        if (!api.enabled || (!force && !due(now))) return false
+    suspend fun refresh(api: TierApi, now: Instant = Today.instant(), force: Boolean = false, every: Duration = EVERY): Boolean {
+        if (!api.enabled || (!force && !due(now, every))) return false
         val fresh = try {
             api.config(now)
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -235,6 +235,13 @@ class RemoteConfigStore(
         private const val POLICY_KEY = "policy_agreed"
         private const val POLICY_AT = "policy_agreed_at"
         val EVERY: Duration = Duration.ofDays(1)
+
+        /**
+         * 1.36 PC 재검토 (결제 스위치를 켠 뒤 쓰던 폰은 앱을 다시 열어도 '정식 출시 전' 그대로): when the app is opened afresh (a new
+         * process), asked again after this much, so a switch the developer turned (정식 출시, a rested feature, a notice) reaches a
+         * phone in use on its next open, not up to a day later. Coming back from the background keeps [EVERY].
+         */
+        val ON_OPEN: Duration = Duration.ofMinutes(10)
 
         /** [FLAG-04] Which boot this is (Android 7+); null when the phone does not say. */
         fun bootCount(context: Context): Int? = runCatching {

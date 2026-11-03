@@ -152,11 +152,11 @@ test("an admin's phone: a ten-minute code, the owner's approval, two phones each
   // The owner's own phone needs nobody's approval.
   const oc = (await call("POST", "/api/admin/me/link-code", {}, owner)).data;
   assert.match(oc.code, /^\d{6}$/);
-  assert.deepEqual((await call("POST", "/api/admin-link", { code: oc.code }, phone(1))).data, { status: "approved", name: "최고 관리자" });
+  assert.deepEqual((await call("POST", "/api/admin-link", { code: oc.code }, phone(1))).data, { status: "approved", name: "최고 관리자", owner: true });
 
   const code = (await call("POST", "/api/admin/me/link-code", {}, m)).data.code;
   const linked = await call("POST", "/api/admin-link", { code }, { ...phone(2), ...from(2) });
-  assert.deepEqual(linked.data, { status: "pending", name: "민지" });
+  assert.deepEqual(linked.data, { status: "pending", name: "민지", owner: false });
   // Once only.
   assert.equal((await call("POST", "/api/admin-link", { code }, { ...phone(3), ...from(3) })).status, 404);
   assert.equal((await call("GET", "/api/passes", undefined, phone(2))).data.admin.status, "pending");
@@ -406,4 +406,32 @@ test("[SRV-07] a subscription past its end is asked again once a day without the
   const asked = calls.length - before;
   assert.equal(await recheckLapsed(env, later + 60 * 60 * 1000), 0);
   assert.equal(calls.length - before, asked);
+});
+
+// 1.36 841 1년 이용권: products.get, kept by its token, counted as bought 프로 for the one-person share.
+test("a 1년 이용권 is checked with Play's products.get and counts as bought 프로", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2027-01-10T00:00:00Z") });
+  const { account, publicKey } = await serviceAccount();
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url) === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "play-token", expires_in: 3600 });
+    const m = String(url).match(/\/purchases\/products\/bamnat_pro_pass_1y\/tokens\/([^/:]+)$/);
+    if (!m) return new Response("", { status: 404 });
+    const token = decodeURIComponent(m[1]);
+    if (token === "pass-refunded") return Response.json({ purchaseState: 1, purchaseTimeMillis: String(Date.parse("2027-01-01T00:00:00Z")), orderId: "GPA.2" });
+    return Response.json({ purchaseState: 0, purchaseTimeMillis: String(Date.parse("2027-01-01T00:00:00Z")), orderId: "GPA.1", acknowledgementState: 1 });
+  };
+  t.after(() => { globalThis.fetch = real; });
+  void publicKey;
+  const { call } = server({ PLAY_SERVICE_ACCOUNT: account });
+  const res = await call("POST", "/api/purchases", { product: "bamnat_pro_pass_1y", token: "pass-token-123" }, phone(1));
+  assert.equal(res.data.verified, true);
+  assert.equal(res.data.state, "ACTIVE");
+  assert.equal(res.data.autoRenew, false);
+  assert.equal(res.data.expiry, "2028-01-01T00:00:00.000Z");
+  const refunded = await call("POST", "/api/purchases", { product: "bamnat_pro_pass_1y", token: "pass-refunded" }, phone(2));
+  assert.equal(refunded.data.state, "EXPIRED");
+  // The buyer may make the one-person share code; the refunded phone may not.
+  assert.equal((await call("POST", "/api/passes/share", {}, phone(1))).status < 400, true);
+  assert.equal((await call("POST", "/api/passes/share", {}, phone(2))).data.error, "not_bought");
 });

@@ -156,6 +156,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
                 // [MON-06] The trial's question before it turns paid.
                 com.bamnat.app.tier.TrialNotice.reschedule(context, container.proStore.current)
+                com.bamnat.app.tier.EndNotice.reschedule(context, container.proStore.current)
                 // [SLP-15] What waited while the user slept: its alarm did not survive the reboot either.
                 com.bamnat.app.sleep.QuietHold.release(context)
                 // A new date or time zone changes what "today" is on the widgets.

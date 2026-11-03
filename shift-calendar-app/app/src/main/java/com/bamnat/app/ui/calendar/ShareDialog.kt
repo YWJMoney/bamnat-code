@@ -103,6 +103,8 @@ fun ShareDialog(
     preview: ShareLinkState? = null,
     /** [SHR-02] Opens the sheet that takes a received link; null hides that part. */
     onOpenReceived: (() -> Unit)? = null,
+    /** 1.36 C19: open on every choice at once (screenshots of the full sheet). */
+    detailedFirst: Boolean = false,
 ) {
     val context = LocalContext.current
     val container = context.appContainer
@@ -123,6 +125,9 @@ fun ShareDialog(
     // A second link starts with the name the first one went out with.
     var title by remember(store) { mutableStateOf((link ?: links.firstNotNullOfOrNull { it })?.title.orEmpty()) }
     var ttl by remember(store) { mutableIntStateOf(link?.ttlDays?.let { ShareLinkPayload.allowedTtl(it, moreLinks) } ?: 30) }
+    // 1.36 사용자 결정(공유 링크 기간): with 프로 a link stays open while 프로 lasts, so there is no period to pick.
+    val keeps = gate.keepsLinks
+    if (keeps) ttl = ShareLinkPayload.PRO_KEEP_DAYS
     var auto by remember(store) { mutableStateOf(store.auto) }
     var saved by remember(store) { mutableStateOf(store.options()) }
     var options by remember(store) { mutableStateOf(saved) }
@@ -194,6 +199,52 @@ fun ShareDialog(
                 Text("${calendar.name} 달력만 보내요. 다른 달력은 각자 링크를 따로 만들어요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // 1.36 PC C19 (가족에게 이번 달만 보내고 싶은데 이미지·PDF·링크·받는 사람·보여 줄 것·이름·기간… 끝까지 내려야 '링크 만들어
+            // 보내기'): with no link yet, the two things most people open this for, big, and the rest behind '자세히 정하기'.
+            var detailed by androidx.compose.runtime.saveable.rememberSaveable(slot) { mutableStateOf(detailedFirst || link != null || preview != null || slot > 1) }
+            if (!detailed) {
+                // PC 확인 20ab0254 (링크를 만들 때 이름을 안 물어 '이름 없는 근무표'가 돼요): the name goes with the quick link too.
+                val quickKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                OutlinedTextField(value = title, onValueChange = { if (it.length <= 30) title = it }, singleLine = true,
+                    label = { Text("내 이름 (선택)") }, placeholder = { Text("예: 민지") },
+                    supportingText = { Text("받는 분 화면에 ‘${title.trim().ifEmpty { "민지" }}의 ${com.bamnat.core.work.scheduleWord(style)}’로 보여요") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { quickKeyboard?.hide() }))
+                Button(onClick = { onImage(); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                    Icon(Icons.Outlined.Image, null, Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("${month.monthValue}월 사진으로 보내기")
+                }
+                val quickPaused = container.flags.paused(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE)
+                OutlinedButton(enabled = !busy && !quickPaused, onClick = {
+                    options = ShareOptions.forAudience(com.bamnat.app.share.ShareAudience.FAMILY, employee, field).copy(memos = false, pay = false)
+                    run {
+                        val sent = payload()
+                        val made = client.create(sent)
+                        keep(made, sent)
+                        container.telemetry.event("share_link_create", "quick_family")
+                        send(context, made, style)
+                    }
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    else {
+                        Icon(Icons.Outlined.Link, null, Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("링크로 보내기")
+                    }
+                }
+                Text("링크는 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style)}만 담아요(메모·급여 빼고). " +
+                    (if (keeps) "프로를 쓰는 동안 열려 있어요." else "${ShareLinkPayload.ttlLabel(ttl)} 열려요.") + "\n" + SHARE_SERVER_NOTICE,
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (quickPaused) Text(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                TextButton(onClick = { detailed = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("자세히 정하기 · PDF, 받는 사람, 보여 줄 것, 기간")
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            }
+            if (detailed) {
             OutlinedButton(onClick = { onImage(); onDismiss() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(Icons.Outlined.Image, null, Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
@@ -202,7 +253,7 @@ fun ShareDialog(
             // [PROV-05] 근무표 PDF (프로): the month on screen or its year, on A4 to print or keep.
             val pdfOpen = container.featureGate.state.collectAsState().value.allows(com.bamnat.app.tier.Feature.ROSTER_PDF)
             fun rosterPdf(year: Boolean) {
-                if (!pdfOpen) { com.bamnat.app.ui.pro.openPro(); return }
+                if (!pdfOpen && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.ROSTER_PDF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return }
                 val name = when {
                     title.isNotBlank() -> "${title.trim()}의 ${com.bamnat.core.work.scheduleWord(style)}"
                     added && calendar != null -> "${calendar.name} ${com.bamnat.core.work.scheduleWord(style)}"
@@ -232,14 +283,17 @@ fun ShareDialog(
                 }
                 com.bamnat.app.ui.money.ProPill(locked = !pdfOpen) // [TIER-06]
             }
+            // 1.36 PC Y14: how and until when 인쇄 is open stays under the buttons, not only in a toast that goes.
+            com.bamnat.app.ui.pro.TrialNote(com.bamnat.app.tier.Feature.ROSTER_PDF, container.featureGate.state.collectAsState().value)
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Link, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
                 Spacer(Modifier.width(8.dp))
                 Text("링크로 보내기", style = MaterialTheme.typography.titleMedium)
             }
+            // 빌드 10 (시계를 옮긴 뒤 '12월부터'인데 받은 건 11/2~1/29): a link already made says the months it carries.
             Text(
-                "받는 사람은 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style).let { it + com.bamnat.app.ui.Fmt.obj(it) }} 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
+                "받는 사람은 ${((stored?.from) ?: linkMonth).monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style).let { it + com.bamnat.app.ui.Fmt.obj(it) }} 브라우저로 봐요. 밤낮 앱이 있으면 자기 달력 옆에 두고 바꿔 가며 보고, 같이 쉬는 날도 바로 알아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             // [SHR-20] 1.33 (계획 690): who it is for, first. Each way sets what goes at once; the boxes below still change it.
@@ -249,7 +303,7 @@ fun ShareDialog(
             if (preview == null && links.any { it != null }) {
                 LinkChips(links, slot, moreLinks, onPick = { slot = it }, onNew = {
                     if (moreLinks) links.indexOfFirst { it == null }.takeIf { it >= 0 }?.let { slot = it + 1 }
-                    else com.bamnat.app.ui.pro.openPro()
+                    else com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS)
                 })
             }
             // A link already made comes first: sending it again is what most people open this for.
@@ -259,7 +313,8 @@ fun ShareDialog(
                 val soon = ShareExpiryReminder.closingSoon(made)
                 Surface(shape = RoundedCornerShape(12.dp),
                     color = if (soon) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest) {
-                    Text("만든 링크: ${made.url}\n${expiryText(made)}까지 열려요." + if (soon) " 곧 닫혀요. 아래 ‘기간 늘리기’로 더 열어 둘 수 있어요." else "",
+                    Text("만든 링크: ${made.url}\n" + (if (keeps && auto) "프로를 쓰는 동안 계속 열려요."
+                        else "${expiryText(made)}까지 열려요." + if (soon) " 곧 닫혀요. 아래 ‘기간 늘리기’로 더 열어 둘 수 있어요." else ""),
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.fillMaxWidth().padding(12.dp))
                 }
                 Button(enabled = !busy, onClick = { send(context, made, style) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 링크 다시 보내기") }
@@ -285,7 +340,18 @@ fun ShareDialog(
                         PartRow("연장·휴무일 근무", "이름과 시간, 날마다 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지. 끄면 대근만 근무로 보여요", options.extras) { options = options.copy(extras = it) }
                     }
                     PartRow("메모", "날짜마다 첫 줄, ${ShareLinkPayload.MEMO_CHARS}자까지", options.memos) { options = options.copy(memos = it) }
-                    PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { options = options.copy(pay = it) }
+                    // 1.36 PC C20 (켜면 금액이 그대로 나감): turning the money on asks once, saying the receiver sees the amounts.
+                    var askMoney by remember { mutableStateOf(false) }
+                    PartRow(kind.label, moneyHint(kind, money), options.pay && hasPay, enabled = hasPay) { on ->
+                        if (on) askMoney = true else options = options.copy(pay = false)
+                    }
+                    if (askMoney) com.bamnat.app.ui.components.AlertDialog(
+                        onDismissRequest = { askMoney = false },
+                        title = { Text("${kind.label} 금액도 보낼까요?") },
+                        text = { Text("받는 사람에게 ${kind.label} 금액이 그대로 보여요. 링크를 가진 사람은 누구나 볼 수 있어요.") },
+                        confirmButton = { TextButton(onClick = { askMoney = false; options = options.copy(pay = true) }) { Text("금액도 보내기") } },
+                        dismissButton = { TextButton(onClick = { askMoney = false }) { Text("빼고 보내기") } },
+                    )
                     // [SHR-20] 1.33 (계획 691·694): a coworker's link with the company setup, from 처리방침 3.7's date.
                     if (options.audience == com.bamnat.app.share.ShareAudience.COWORKER && employee && companyWork) {
                         PartRow("회사 설정",
@@ -301,12 +367,17 @@ fun ShareDialog(
                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                 keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide() }))
             // [SHR-12] With a link made, the period is what 기간 늘리기 adds from today.
-            Text(if (link == null) "열어 둘 기간" else "기간 늘리기", style = MaterialTheme.typography.labelLarge)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
+            // 1.36: 프로 keeps links open by itself; receivers see them free either way.
+            if (keeps) Text("프로를 쓰는 동안 링크가 닫히지 않아요. 프로가 끝나면 그날부터 90일까지 열리고, 그 뒤로는 기간을 직접 늘려요. " +
+                "받는 사람은 프로 없이도 무료로 봐요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 1.36 [PSH-01] 프로 나눔 1인: a buyer may also give 프로 itself to one person.
+            if (gate.boughtPro) TextButton(onClick = { com.bamnat.app.ui.pro.openPro() }) { Text("한 사람에게 프로 나눠 주기") }
+            else Text(if (link == null) "열어 둘 기간" else "기간 늘리기", style = MaterialTheme.typography.labelLarge)
+            if (!keeps) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.Center) {
                 ShareLinkPayload.TTL_DAYS.forEach { d ->
                     // [PROV-04] 180일 and 1년 are 프로's.
                     val locked = d in ShareLinkPayload.PRO_TTL_DAYS && !moreLinks
-                    FilterChip(selected = ttl == d, onClick = { if (locked) com.bamnat.app.ui.pro.openPro() else ttl = d },
+                    FilterChip(selected = ttl == d, onClick = { if (locked) com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS) else ttl = d },
                         label = { Text(ShareLinkPayload.ttlLabel(d)) })
                 }
                 com.bamnat.app.ui.money.ProPill(Modifier.align(Alignment.CenterVertically), locked = !moreLinks) // [TIER-06]
@@ -320,7 +391,7 @@ fun ShareDialog(
             FeedRow(
                 on = feed && feedOpen, open = feedOpen, busy = busy, url = link?.takeIf { feed && feedOpen }?.feedUrl(),
                 onChange = { on ->
-                    if (!feedOpen) { com.bamnat.app.ui.pro.openPro(); return@FeedRow }
+                    if (!feedOpen) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ICS_FEED); return@FeedRow }
                     feed = on; store.feed = on
                     // A link already made takes it at once; a new one goes out with it.
                     if (link != null && preview == null) run {
@@ -355,7 +426,7 @@ fun ShareDialog(
             }
             if (current == null) {
                 Button(enabled = !busy && !empty && !createPaused, onClick = {
-                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(); return@Button }
+                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@Button }
                     run {
                         val sent = payload()
                         val made = client.create(sent)
@@ -364,7 +435,7 @@ fun ShareDialog(
                         send(context, made, style)
                     }
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("링크 만들어 보내기")
+                    if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Text("링크로 보내기")
                 }
             } else {
                 // [SHR-13] When the link last got the calendar, and a change still waiting for the internet.
@@ -384,8 +455,9 @@ fun ShareDialog(
                         if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("지금 ${com.bamnat.core.work.scheduleWordRo(style)} 고치기")
                     }
                 }
-                OutlinedButton(enabled = !busy && !empty, onClick = {
-                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(); return@OutlinedButton }
+                // 1.36: with 프로 and 고치면 바로 바꾸기 on the link is kept open by itself.
+                if (!keeps || !auto) OutlinedButton(enabled = !busy && !empty, onClick = {
+                    if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@OutlinedButton }
                     run {
                         val sent = payload(ttl)
                         keep(client.update(current, sent), sent)
@@ -398,7 +470,7 @@ fun ShareDialog(
                 }
                 // [J133-30] Cutting it takes the schedule away from everyone who has the link: asked once.
                 var cutting by remember { mutableStateOf(false) }
-                if (cutting) androidx.compose.material3.AlertDialog(
+                if (cutting) com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = { cutting = false },
                     title = { Text("링크를 끊을까요?") },
                     text = { Text("받은 사람 앱과 브라우저에서도 이 ${com.bamnat.core.work.scheduleWord(style)}${if (style == com.bamnat.core.work.WorkStyle.FIELD || style == com.bamnat.core.work.WorkStyle.BUSINESS || style == com.bamnat.core.work.WorkStyle.INVEST) "이" else "가"} 바로 사라지고, 같은 링크는 다시 쓸 수 없어요.") },
@@ -419,6 +491,7 @@ fun ShareDialog(
                         about = "근무표 공유", kind = com.bamnat.app.company.InquiryKind.BUG, text = "‘$why’라고 나와요. "))
                 }) { Text("계속 안 되면 문의하기") }
             }
+            } // detailed
             if (onOpenReceived != null) {
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 // [UX-03] The other way round: a coworker's schedule beside the user's own.
@@ -620,7 +693,8 @@ internal fun moneyHint(kind: MoneyShare, money: List<SharedPay>?): String = when
 internal fun emptyHint(kind: MoneyShare, field: Boolean): String = when {
     field -> "이 기간에는 근무가 없어요. ‘일정’이나 ‘${kind.label}’을 고르면 링크를 만들 수 있어요."
     kind == MoneyShare.SALES -> "이 기간에는 근무가 없어요. ‘${kind.label}’이나 ‘메모’를 고르면 링크를 만들 수 있어요."
-    else -> "이 기간에는 보낼 근무가 없어요. 근무를 적거나 보여 줄 것을 골라 주세요."
+    // 빌드 10 (알바: 일한 날을 아직 안 칠했는데 무엇을 할지 몰라요): what to do first, in the calendar's words.
+    else -> "이 기간에는 보낼 근무가 없어요. 달력에서 일한 날을 먼저 칠하거나, 보여 줄 것을 골라 주세요."
 }
 
 /** What leaves the phone with a link, where it is kept, and who can open it. Matches privacy policy 1.6, sections 1 and 5. */

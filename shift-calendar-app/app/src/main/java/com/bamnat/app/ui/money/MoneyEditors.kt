@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -41,7 +41,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 /** Most a single line may hold: 100억원, far above any household amount, and safe from overflow. */
-private const val MAX_DIGITS = 11
+// 1.36 실사용 S16 (받을 금액에 900억도 들어가요): up to 99억 원 a line.
+private const val MAX_DIGITS = 10
 
 /** Longest job one booking covers; longer work is several bookings (one per stage). */
 private const val MAX_JOB_DAYS = 60
@@ -118,6 +119,9 @@ fun JobDialog(
     // [UX-08] A long form with a keyboard: a sheet, not a dialog.
     com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = title.trim() != initial?.title.orEmpty() || client.trim() != initial?.client.orEmpty() ||
+            place.trim() != initial?.place.orEmpty() || amount.toAmount() != (initial?.amount ?: 0) || note.trim() != initial?.note.orEmpty() ||
+            costs.toAmount() != (initial?.costs ?: 0) || deposit.toAmount() != (initial?.deposit ?: 0),
         title = { Text(if (initial == null) "${Fmt.dayTitle(date)} 일감" else "일감 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -148,15 +152,15 @@ fun JobDialog(
                 JobStatusRow(status, paid = balancePaid && (!hasDeposit || depositPaid) && amount.toAmount() > 0) { status = it }
                 AmountField("받을 금액 (전체)", amount, { amount = it })
                 SwitchRow("3.3% 떼고 받아요 (사업소득)", withholding) { withholding = it }
-                if (withholding && amount.toAmount() > 0) {
-                    val w = com.bamnat.core.money.Withholding.of(amount.toAmount())
-                    Text("세금 ${Fmt.won(w)}을 떼고 ${Fmt.won(amount.toAmount() - w)}이 들어와요. 5월 종합소득세 신고 때 정산돼요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                // 1.36 U8 (켜면 설명 줄이 생겨 다음 칸이 밀려요): the line is always there, two lines high.
+                val w = com.bamnat.core.money.Withholding.of(amount.toAmount())
+                Text(if (withholding && amount.toAmount() > 0) "세금 ${Fmt.won(w)}을 떼고 ${Fmt.won(amount.toAmount() - w)}이 들어와요. 5월 종합소득세 신고 때 정산돼요."
+                    else if (withholding) "받을 금액을 넣으면 세금을 뗀 금액을 보여 줘요." else "회사가 3.3%를 떼고 주면 켜 주세요. 5월에 돌려받을 수 있어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, minLines = 2)
                 AmountField("선금 (계약금)", deposit, { deposit = it })
                 if (hasDeposit) SwitchRow("선금 받음", depositPaid) { depositPaid = it }
                 SwitchRow(if (hasDeposit) "잔금 받음" else "돈 받음", balancePaid) { balancePaid = it }
-                DueRow(due?.let(LocalDate::parse)) { due = it?.toString() }
+                DueRow(due?.let(LocalDate::parse), opensOn = (initial?.date ?: date).plusDays(days.toLong())) { due = it?.toString() }
                 Text("시작 전 알림", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     JobReminders.CHOICES.forEach { m ->

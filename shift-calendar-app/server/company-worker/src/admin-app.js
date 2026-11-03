@@ -168,6 +168,7 @@ const ADMIN_HTML = `<!doctype html>
 <div id="app"><div class="center"><div class="spinner" role="progressbar" aria-label="불러오는 중"></div></div></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <dialog id="dialog" aria-modal="true"></dialog>
+<dialog id="relogin" aria-modal="true"></dialog>
 <noscript>이 화면은 자바스크립트가 켜져 있어야 열려요.</noscript>
 </body>
 </html>
@@ -182,6 +183,10 @@ function adminApp(L, BUILD, M) {
   const app = document.getElementById("app");
   const toastBox = document.getElementById("toast");
   const dialog = document.getElementById("dialog");
+  // 1.36 P17: signing in again has its own box, so a step that closes the box it came from never closes this one.
+  const reloginBox = document.getElementById("relogin");
+  /** Steps that met "signed out": sent again once signed in, dropped when the user goes to the sign-in screen. */
+  let reloginWaiters = [];
 
   const P = {
     home: '<path d="M4 11.5 12 4l8 7.5V20h-5.5v-5h-5v5H4z"/>',
@@ -482,6 +487,15 @@ function adminApp(L, BUILD, M) {
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 && data.error === "login" && S.phase === "app") {
         // [ADMUX-01] Signed out under way: sign in again over the screen, so nothing typed is lost.
+        // 1.36 P17 (서버를 새로 띄운 뒤 첫 쓰기에서 로그인 화면으로): a change waits for the sign-in and then goes on by itself.
+        if (method !== "GET" && path !== "/login") {
+          const again = new Promise((resolve, reject) => reloginWaiters.push({
+            go: () => api(path, method, body).then(resolve, reject),
+            stop: () => reject(Object.assign(new Error("login"), { quiet: true, data })),
+          }));
+          openRelogin();
+          return again;
+        }
         openRelogin();
         throw Object.assign(new Error("login"), { quiet: true, data });
       }
@@ -514,18 +528,38 @@ function adminApp(L, BUILD, M) {
     document.getElementById("main")?.setAttribute("aria-busy", String(S.busy > 0));
   }
 
-  /** [ADMUX-01] A short note at the bottom; with [undo], a button that takes the last step back for 8 seconds. */
+  /**
+   * [ADMUX-01] A short note at the bottom; with [undo], a button that takes the last step back.
+   * 1.36 P19 ('되돌리기가 8초뿐이고 작아요'): 15 seconds, held while the pointer or focus is on the note, and a bigger button.
+   */
   function toast(text, undo) {
     toastBox.innerHTML = `<span>${esc(text)}</span>${undo ? '<button class="undo" type="button" data-undo="1">되돌리기</button>' : ""}`;
     toastBox.classList.add("show");
     toastBox.classList.toggle("has-undo", Boolean(undo));
     S.undo = undo ?? null;
     clearTimeout(toastTimer);
+    toastLeft = undo ? 15000 : 3000;
+    toastRun();
+  }
+  let toastLeft = 0;
+  let toastStarted = 0;
+  function toastRun() {
+    clearTimeout(toastTimer);
+    toastStarted = Date.now();
     toastTimer = setTimeout(() => {
       toastBox.classList.remove("show", "has-undo");
       S.undo = null;
-    }, undo ? 8000 : 3000);
+    }, toastLeft);
   }
+  function toastHold() {
+    if (!toastBox.classList.contains("has-undo")) return;
+    clearTimeout(toastTimer);
+    toastLeft = Math.max(1500, toastLeft - (Date.now() - toastStarted));
+  }
+  toastBox.addEventListener("pointerenter", toastHold);
+  toastBox.addEventListener("focusin", toastHold);
+  toastBox.addEventListener("pointerleave", () => { if (toastBox.classList.contains("has-undo")) toastRun(); });
+  toastBox.addEventListener("focusout", () => { if (toastBox.classList.contains("has-undo")) toastRun(); });
 
   function fail(e) {
     if (!e.quiet) toast(e.message === "server" || !ERRORS[e.message] ? L.errorText(e.message) : ERRORS[e.message]);
@@ -632,7 +666,8 @@ function adminApp(L, BUILD, M) {
         // An id is one talk: company.setup, opened from the review screen.
         const [company, setup] = (id ?? "").split(".");
         const q = S.postQuery ? `&q=${encodeURIComponent(S.postQuery)}` : "";
-        if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
+        if (!id && S.postFilter === "limits") jobs.push(api("/write-limits").then(keep((d) => { S.data.limits = d; })));
+        else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
         else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
       }
       if (name === "rewards" && can("rewards")) {
@@ -657,7 +692,9 @@ function adminApp(L, BUILD, M) {
       if (name === "recipes") {
         // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
         const t = S.recipeTab ?? "flagged";
-        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests" }[t] ?? `/recipes?tab=${t}`;
+        // [PRF-06][PRF-10] 1.36 신고된 프로필, 이달의 제작자.
+        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", makers: "/recipes/makers/flagged",
+          month: "/recipes/makers/month" }[t] ?? `/recipes?tab=${t}`;
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
@@ -1064,12 +1101,13 @@ function adminApp(L, BUILD, M) {
 
   function communityView() {
     if (S.postFilter === "rates" && !S.route.id) return ratesView();
+    if (S.postFilter === "limits" && !S.route.id) return limitsView();
     const d = S.data.posts;
     const edit = can("community", "edit");
     const talk = Boolean(S.route.id);
     const head = talk ? `<p class="hint">이 규칙에 남긴 글 전부예요. 가려진 글도 보여요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`
       : `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}${seg("post-filter", "limits", S.postFilter, "쓰기 제한")}</div>
         <div class="toolbar"><input id="search" type="search" placeholder="회사 이름으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="토론 찾기"></div>
         <p class="hint">앱 사용자가 회사 규칙마다 남긴 글이에요. 서로 다른 세 분이 신고하면 개발자가 볼 때까지 가려져요. 다시 보이게 한 글은 신고로 가려지지 않아요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`;
     if (!d) return head + skeleton();
@@ -1088,6 +1126,34 @@ function adminApp(L, BUILD, M) {
   }
 
   /**
+   * 1.36 [LIM-10] 신고 누적 쓰기 제한: no one has a daily cap; posts or recipes hidden by reports (or here) restrict the writer for a
+   * while, each time more strictly. Who is restricted now or was in 30 days, the rules in words, and 풀기.
+   */
+  function limitsView() {
+    const d = S.data.limits;
+    const edit = can("community", "edit");
+    const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}${seg("post-filter", "limits", S.postFilter, "쓰기 제한")}</div>`;
+    if (!d) return head + skeleton();
+    const r = d.rules;
+    const step = (i) => { const x = r.steps[i - 1]; return x ? (x.perDay ? `${x.days}일 동안 하루 ${x.perDay}번` : `${x.days}일 쓰기 막기`) : ""; };
+    const rules = `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이 ${r.windowDays}일 안에 ${r.strikes}번이면
+      제한이 걸리고, 받을 때마다 더 줄어요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}. 기간이 지나면 저절로 풀리고, ${r.forgetDays}일 동안 조용하면 한 단계 내려가요.
+      가려진 글을 다시 보이게 하면 그 건은 빠져요.</p>`;
+    // 1.36 PC 6차: 풀거나 끝난 제한은 아래 '최근 30일에 끝난 제한'으로 접혀서, 지금 제한 중인 목록이 바로 비어요.
+    const nowItems = d.items.filter((x) => x.now);
+    const ended = d.items.filter((x) => !x.now);
+    const card = (x) => `<article class="card">
+      <div class="head"><h3>사용자 ${esc(x.who.slice(0, 8))} <span class="dept">${x.step}단계</span></h3>${x.now ? `<span class="pill ${x.perDay ? "warn" : "bad"}">${x.perDay ? `하루 ${x.perDay}번` : "쓰기 막힘"}</span>` : '<span class="pill ok">끝남</span>'}</div>
+      <p class="meta">${esc(day(x.since))}부터 ${esc(day(x.until))}까지 · 제한 ${x.times}번째 · 가려진 글 ${x.strikes}건</p>
+      ${edit && x.now ? `<div class="actions"><button class="btn" data-act="limit-lift" data-id="${esc(x.who)}">지금 풀기</button></div>` : ""}
+    </article>`;
+    const list = nowItems.length ? `<div class="grid">${nowItems.map(card).join("")}</div>`
+      : empty("제한 중인 사람이 없어요", "신고로 가려진 글이 쌓인 사람이 생기면 여기에 보여요.");
+    return head + rules + list + (ended.length ? `<details><summary>최근 30일에 끝난 제한 ${ended.length}</summary><div class="grid">${ended.map(card).join("")}</div></details>` : "");
+  }
+
+  /**
    * [PLZ-14] 임금표: market rates people sent. 확인 필요 is one far from the adopted ones that enough people
    * agreed to; an admin adopts it or hides it. Taking an adopted one down needs 광장 규칙 내리기.
    */
@@ -1096,7 +1162,7 @@ function adminApp(L, BUILD, M) {
     const edit = can("community", "edit");
     const n = d?.counts ?? {};
     const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}${seg("post-filter", "limits", S.postFilter, "쓰기 제한")}</div>
       <div class="chips" role="group" aria-label="임금표 상태">${[["review", "확인 필요"], ["pending", "투표 중"], ["adopted", "채택"], ["hidden", "가려짐"]]
         .map(([k, label]) => `<button type="button" class="chip pick" data-act="rate-filter" data-key="${k}" aria-pressed="${S.rateFilter === k}">${label}${n[k] ? ` ${n[k]}` : ""}</button>`).join("")}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="직종으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="임금표 찾기"></div>
@@ -1148,9 +1214,10 @@ function adminApp(L, BUILD, M) {
     const reasons = Object.entries(S.overview?.hideReasons ?? {}).filter(([key]) => key !== "flags");
     openDialog(`<form data-form="hide-post" data-id="${id}" data-mute="${mute ? 1 : 0}"><h2>${mute ? "30일 동안 쓰기를 막을까요?" : "이 글을 가릴까요?"}</h2>
       <p>${mute ? "이 글은 가려지고, 글쓴이는 30일 동안 어느 토론에도 글을 쓸 수 없어요. " : ""}글쓴이 앱에 이 이유가 보여요.</p>
-      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${i === 0 ? " checked" : ""}>
+      <div class="radios" role="radiogroup" aria-label="가리는 이유">${reasons.map(([key, text]) => `<label class="radio"><input type="radio" name="reason" value="${key}" required>
         <span>${esc(text)}</span></label>`).join("")}</div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">${mute ? "막기" : "가리기"}</button></div></form>`);
+      <p class="hint" data-reason-hint>이유를 고르면 ${mute ? "막기" : "가리기"}를 누를 수 있어요.</p>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit" disabled>${mute ? "막기" : "가리기"}</button></div></form>`);
   }
 
   async function moderate(id, body, done, undo) {
@@ -2204,9 +2271,19 @@ function adminApp(L, BUILD, M) {
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
   const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
-    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"]];
+    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"], ["makers", "프로필 신고"], ["month", "이달의 제작자"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
+  /**
+   * PC 확인 보안 6차 (신고 광고·도배 2가 세지 않은 것까지 합한 수): what counted toward hiding a recipe and all that came, with
+   * reasons. "신고 2 (광고·도배 2)" when all counted, "센 신고 1 · 전체 2 (광고·도배 2)" when some went to the operator only.
+   */
+  function recipeFlagCount(flags) {
+    const all = flags.reduce((a, f) => a + f.n, 0);
+    const counted = flags.reduce((a, f) => a + (f.counted ?? f.n), 0);
+    const why = flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ");
+    return `${counted === all ? `신고 ${all}` : `센 신고 ${counted} · 전체 ${all}`} (${why})`;
+  }
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
     field: "현장 단가표 틀", shop: "가게 영업 틀", invest: "투자 원칙·일지 틀", company: "근무 주기·급여 방식",
     bundle: "묶음", layout: "화면 배치", cards: "카드 순서", widget: "위젯 모양", photoLook: "그림 꾸미기", calView: "달력 모양", appFeel: "앱 동작",
@@ -2233,9 +2310,11 @@ function adminApp(L, BUILD, M) {
     if (tab === "picks") return chips + recipePicksView(d, edit);
     if (tab === "images") return chips + recipeImagesView(d, edit);
     if (tab === "requests") return chips + recipeRequestsView(d, edit);
+    if (tab === "makers") return chips + recipeMakersView(d, edit);
+    if (tab === "month") return chips + recipeMonthView(d, edit);
     const help = {
       queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
-      flagged: "신고가 들어온 레시피예요. 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요.",
+      flagged: "신고가 들어온 레시피예요. 다른 회선의 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요. 새 기기(3일 안)의 신고와 같은 회선의 두 번째 신고는 여기에만 보이고 가리기에는 세지 않아요.",
       hidden: "가린 레시피는 90일 뒤 지워져요.",
       visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
       official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
@@ -2245,7 +2324,8 @@ function adminApp(L, BUILD, M) {
     const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main">
         <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b> <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
-        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · 신고 ${r.flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ")}` : ""}</small>
+        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
+        ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
         ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc(r.hidden)}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
@@ -2287,6 +2367,30 @@ function adminApp(L, BUILD, M) {
         <small>${esc(i.id)} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+
+  /** [PRF-06] 1.36 프로필 신고: 사칭·나쁜 소개. 3건이면 소개가 먼저 가려져요. Who reported is never shown. */
+  function recipeMakersView(d, edit) {
+    if (!d.items.length) return empty("신고된 프로필이 없어요", "앱의 프로필 › ⋮ › 신고하기로 들어온 것이 여기 와요.");
+    const why = { impersonate: "사칭", bio: "나쁜 소개", spam: "광고·도배", other: "그 밖의 것" };
+    return `<p class="hint">소개만 문제면 소개를 가리고, 사칭이면 프로필을 닫아요. 닫힌 프로필은 다른 분이 볼 수도 팔로우할 수도 없고, 작품은 장터에 남아요(작품은 레시피 탭에서 따로 가려요). 문제없으면 신고를 비워요.</p>
+      <ul class="rows">${d.items.map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.face ?? "🙂")} ${esc(m.nick ?? "이름 없음")}</b>
+        <small>${esc(m.maker)} · 신고 ${m.flags}건 · ${Object.entries(m.reasons ?? {}).map(([k, n]) => `${esc(why[k] ?? k)} ${n}`).join(", ")} · ${esc(ago(m.at))}</small>
+        <small>소개: ${m.bio ? esc(m.bio) : "없음"}${m.bioHidden ? ` <span class="pill warn">${m.bioHiddenBy === "operator" ? "운영자가 소개 가림" : "신고로 소개 가림"}</span>` : ""}${m.closed ? ' <span class="pill warn">프로필 닫힘</span>' : ""}</small></span>
+        ${edit ? `<span class="row-side">
+          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.bioHidden ? "bio-show" : "bio-hide"}">${m.bioHidden ? "소개 다시 보이기" : "소개 가리기"}</button>
+          <button class="btn small ${m.closed ? "" : "danger"}" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.closed ? "open" : "close"}">${m.closed ? "프로필 다시 열기" : "프로필 닫기"}</button>
+          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="clear">신고 비우기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+
+  /** [PRF-10] 1.36 이달의 제작자: up to three maker ids for each kind of work; with none, the most put-on makers of the month show. */
+  function recipeMonthView(d, edit) {
+    const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.maker);
+    return `<p class="hint">${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위(팔로우한 분이 없는 분)에 보여요. 비워 두면 이달에 가장 많이 넣은 작품의 만든 분이 저절로 보여요. 프로필 id(12자)는 레시피 탭의 ‘도우미 배지’ 옆이나 앱의 프로필 링크 끝에 있어요.</p>
+      <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-month" data-key="${k}" class="row">
+        <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음 (저절로)"}</small>
+        ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="프로필 id 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
+        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
   }
 
   /** [RCX-04] 1.35 요청 판: what people asked to be made; hide one that breaks the rules. Who wrote it is never shown. */
@@ -2403,9 +2507,40 @@ function adminApp(L, BUILD, M) {
         : empty("자주 쓰는 답이 없어요", "새 답을 넣으면 모든 관리자의 답 칸 아래에 보여요.")}`;
   }
 
+  /**
+   * 1.36 [SEC-11] 서버 상태's Play Integrity part: which way INTEGRITY_MODE is set, today's numbers, and what to do next. require
+   * without a working service account would turn every public write away, so that shows as the thing to fix first.
+   */
+  function integrityPart(g) {
+    if (!g) return "";
+    const MODE = { off: "꺼짐", watch: "지켜보기", require: "막기" };
+    const say = {
+      off: "남에게 보이는 쓰기(공개 올리기·사진·글꼴·신고·초대)에 Play 확인을 묻지 않아요",
+      watch: "Play 확인을 묻기만 하고 막지는 않아요. 아래 숫자로 막았을 때 얼마나 걸릴지 봐요",
+      require: "7일 안에 Play 확인을 받은 휴대폰만 남에게 보이는 쓰기를 할 수 있어요",
+    }[g.mode] ?? "";
+    const broken = g.mode !== "off" && !g.ready;
+    const line = broken
+      ? `${MODE[g.mode]}: PLAY_SERVICE_ACCOUNT가 없거나 Play Integrity를 쓸 수 없어요. ${g.mode === "require" ? "지금 남에게 보이는 쓰기가 모두 막혀요. " : ""}INTEGRITY_MODE를 off로 바꾸거나 서비스 계정을 넣어 주세요`
+      : `${MODE[g.mode] ?? esc(g.mode)}: ${say}`;
+    // Every public write turned away is the one red line on the screen; watch without the account only counts nothing.
+    const tone = broken ? (g.mode === "require" ? "bad" : "todo") : g.mode === "off" ? "off" : "ok";
+    const mark = broken ? "!" : g.mode === "off" ? "–" : "✓";
+    const numbers = g.mode === "off" ? ""
+      : `<p class="meta" data-integrity-numbers>오늘 ${g.mode === "require" ? "확인을 물은 쓰기" : "확인 없이 온 쓰기"} ${g.missToday ?? 0} · 지난 하루 확인에 실패한 휴대폰 ${g.failedDay ?? 0} · 7일 안에 확인된 휴대폰 ${g.provenWeek ?? 0}</p>`;
+    // PC 확인 20ab0254: watch without the account must not suggest require; the account comes first.
+    const next = broken ? "먼저 PLAY_SERVICE_ACCOUNT를 넣고 Play Console › 앱 무결성에서 Google Cloud 프로젝트를 연결해요. 그 전에는 require로 바꾸지 않아요"
+      : { off: "켜려면 Worker › 설정 › 런타임 변수에 INTEGRITY_MODE를 watch로 넣어요. 며칠 숫자를 본 뒤 require로 바꿔요",
+        watch: "실패한 휴대폰이 거의 없으면 INTEGRITY_MODE를 require로 바꿔요",
+        require: "실패한 휴대폰이 갑자기 늘면 INTEGRITY_MODE를 watch로 되돌려요" }[g.mode] ?? "";
+    return `<h3 class="sub" data-integrity="${esc(g.mode)}">무결성 확인 (Play Integrity)</h3>
+        <ul class="checks"><li class="${tone}"><span aria-hidden="true">${mark}</span>${esc(line)}</li></ul>${numbers}
+        <p class="hint">${esc(next)}</p>`;
+  }
+
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
   function serverView() {
-    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) : skeleton(1)}
+    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) + integrityPart(S.server.integrity) : skeleton(1)}
         <p class="meta">회사 ${S.data.today?.companies ?? S.overview?.companies ?? "–"} · 쓰는 규칙 ${S.data.today?.rules ?? S.overview?.rules ?? "–"} · 앱 판 ${esc(BUILD)}</p></section>`;
   }
 
@@ -2705,12 +2840,20 @@ function adminApp(L, BUILD, M) {
     if (S.relogin) return;
     S.relogin = true;
     const owner = S.me?.owner;
-    openDialog(`<form data-form="relogin"><h2>다시 로그인해 주세요</h2><p>로그인이 끝났어요. 적던 글과 화면은 그대로 있어요.</p>
+    reloginBox.innerHTML = (`<form data-form="relogin"><h2>다시 로그인해 주세요</h2><p>로그인이 끝났어요. 적던 글과 화면은 그대로 있어요.</p>
       ${owner ? "" : `<div class="fieldset"><label for="re-email">메일</label><input id="re-email" name="email" type="email" autocomplete="username" value="${esc(S.me?.email ?? "")}" required></div>`}
       <div class="fieldset"><label for="re-pw">${owner ? "최고 관리자 비밀번호" : "비밀번호"}</label>${pwInput("re-pw", "password", "current-password")}</div>
       <div class="fieldset"><label for="re-code">인증 앱 코드(두 번째 확인을 켰을 때만)</label><input id="re-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
       <p class="error" role="alert" id="re-error"></p>
       <div class="actions"><button class="btn" type="button" data-act="relogin-out">로그인 화면으로</button><button class="btn primary" type="submit">로그인</button></div></form>`);
+    if (!reloginBox.open) reloginBox.showModal();
+    reloginBox.querySelector("input:not([type=hidden])")?.focus();
+  }
+
+  function reloginDone(ok) {
+    const waiting = reloginWaiters;
+    reloginWaiters = [];
+    for (const w of waiting) (ok ? w.go : w.stop)();
   }
 
   /** [ADMUX-04] 찾기·이동: screens, saved views, the questions in the list, and a few steps, by typing a few letters. */
@@ -2808,16 +2951,21 @@ function adminApp(L, BUILD, M) {
    * A form being sent is emptied once it went through, with what was kept of it in the browser.
    */
   async function act(work, done, undo) {
+    // 1.36 P18 ('확인이 늦게 떠요'): a step that takes a moment says so at once.
+    const slow = setTimeout(() => toast("처리 중…"), 300);
     try {
       const r = await work();
+      clearTimeout(slow);
       const form = S.submitting;
       if (form?.isConnected && !form.closest("dialog")) {
         for (const id of KEEP) if (form.querySelector(`#${id}`)) writeDraft(id, "");
         form.reset();
       }
       if (done) toast(typeof done === "function" ? done(r) : done, undo ? () => undo(r) : undefined);
+      else if (toastBox.textContent === "처리 중…") { clearTimeout(toastTimer); toastBox.classList.remove("show"); }
       return r;
     } catch (e) {
+      clearTimeout(slow);
       fail(e);
       return null;
     }
@@ -3517,9 +3665,13 @@ function adminApp(L, BUILD, M) {
     "flag-clear": ({ key }) => {
       const r = S.data.flag;
       confirmBox("강제를 풀까요?", `${r?.name ?? key}이(가) 다시 조건대로 켜지고 꺼져요. 지금 조건이면 ${r?.checklist?.every((c) => c.met !== false) ? "켜져요" : "꺼진 채예요"}.`, "풀기", async () => {
-        const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", { force: null }), "강제를 풀었어요");
+        // 1.36 PC 재검토 ('강제 켬 풀기' 뒤에도 '강제로 켰어요'가 남아 다시 누르게 돼요): the answer is drawn at once and the toast
+        // says the state it is in now; the page is read again past any kept copy.
+        const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", { force: null }),
+          (r) => `강제를 풀었어요 · 지금 ${(FLAG_STATE[r?.state] ?? ["", "조건대로"])[1]}`);
         if (d) S.data.flag = d;
         render({ keepScroll: true });
+        etags.clear();
         load({ quiet: true });
       }, "primary");
     },
@@ -3727,6 +3879,9 @@ function adminApp(L, BUILD, M) {
       el.setAttribute("aria-label", show ? "비밀번호 숨기기" : "비밀번호 보기");
     },
     "relogin-out": () => {
+      S.relogin = false;
+      reloginBox.close();
+      reloginDone(false);
       dialog.close();
       signedOut();
     },
@@ -3966,8 +4121,14 @@ function adminApp(L, BUILD, M) {
       S.postPick = null;
       S.ratePick = null;
       S.data.rates = null;
+      S.data.limits = null;
       refilter("posts");
     },
+    "limit-lift": ({ id }) => confirmBox("이 사람의 쓰기 제한을 지금 풀까요?", "단계는 그대로 남아서, 다시 제한되면 이번보다 한 단계 더 줄어요.", "풀기", async () => {
+      await act(() => api(`/write-limits/${id}/lift`, "POST", {}), "풀었어요");
+      S.data.limits = null;
+      load();
+    }, "primary"),
     "rate-filter": ({ key }) => {
       S.rateFilter = key;
       refilter("rates");
@@ -4367,6 +4528,18 @@ function adminApp(L, BUILD, M) {
     "recipe-log": () => { S.recipeLog = true; load(); },
     // [RCX-15][RCX-04][RCX-07] 1.35
     "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },
+    "recipe-maker": async ({ id, key }) => {
+      const said = { "bio-hide": "소개를 가렸어요", "bio-show": "소개가 다시 보여요", close: "프로필을 닫았어요", open: "프로필을 다시 열었어요", clear: "신고를 비웠어요" }[key];
+      // 1.36 PC 사용성 P13: 닫기는 확인을 받고, 닫기·가리기는 8초 되돌리기 (같은 자리 단추를 두 번 눌러 도로 닫히던 것).
+      const back = { close: "open", "bio-hide": "bio-show" }[key];
+      const go = async () => {
+        await act(() => api(`/recipes/makers/${id}/${key}`, "POST", {}), said,
+          back ? async () => { await act(() => api(`/recipes/makers/${id}/${back}`, "POST", {}), "되돌렸어요"); load(); } : undefined);
+        load();
+      };
+      if (key === "close") confirmBox("이 프로필을 닫을까요?", "다른 분은 이 프로필을 볼 수도 팔로우할 수도 없게 돼요. 작품은 장터에 남고, 본인에게는 닫혔다고 보여요. 신고 누적 1번으로 세요.", "닫기", go);
+      else await go();
+    },
     "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
     "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {
       await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
@@ -4463,6 +4636,8 @@ function adminApp(L, BUILD, M) {
     S.error = "";
     S.queue = null;
     S.relogin = false;
+    if (reloginBox.open) reloginBox.close();
+    reloginDone(false);
     etags.clear();
     clearInterval(pollTimer);
     if (forget) {
@@ -4531,8 +4706,10 @@ function adminApp(L, BUILD, M) {
       try {
         await api("/login", "POST", body);
         S.relogin = false;
-        dialog.close();
-        toast("다시 로그인했어요");
+        reloginBox.close();
+        const waiting = reloginWaiters.length;
+        reloginDone(true);
+        toast(waiting ? "다시 로그인했어요. 누르신 것을 이어서 했어요" : "다시 로그인했어요");
         load();
       } catch (e) {
         const box = document.getElementById("re-error");
@@ -4594,6 +4771,12 @@ function adminApp(L, BUILD, M) {
     "recipe-picks": async (form) => {
       const codes = String(new FormData(form).get("codes") ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean);
       await act(() => api("/recipes/picks", "POST", { style: form.dataset.key, codes }), codes.length ? `${codes.length}개 골랐어요` : "이번 주 고른 것을 비웠어요");
+      load();
+    },
+    // [PRF-10]
+    "recipe-month": async (form) => {
+      const makers = String(new FormData(form).get("makers") ?? "").toLowerCase().split(/[\s,]+/).filter(Boolean);
+      await act(() => api("/recipes/makers/month", "POST", { style: form.dataset.key, makers }), makers.length ? `${makers.length}명 골랐어요` : "비웠어요. 저절로 보여요");
       load();
     },
     "recipe-upload": async (form) => {
@@ -5001,6 +5184,12 @@ function adminApp(L, BUILD, M) {
 
   document.addEventListener("change", (e) => {
     const t = e.target;
+    // PC 확인 보안 11차 (가리기 이유가 첫 칸으로 미리 골라져 있었어요): nothing is picked for the admin; 가리기 waits for a reason.
+    if (t.name === "reason" && t.form?.dataset.form === "hide-post") {
+      t.form.querySelector('button[type="submit"]').disabled = false;
+      t.form.querySelector("[data-reason-hint]")?.remove();
+      return;
+    }
     // [ADMIN-10] Picking 개발사항 for 일괄 복사·처리.
     if (t.dataset?.pick && S.devPick) {
       if (t.checked) S.devPick.add(t.dataset.pick);
@@ -5381,9 +5570,12 @@ function adminApp(L, BUILD, M) {
     if (history.state?.dialog) history.replaceState(null, "", location.href);
     S.palette = null;
     S.linkMode = "";
+  });
+  reloginBox.addEventListener("close", () => {
     if (S.relogin) {
-      // Closed without signing in: the sign-in screen, since nothing else would work.
+      // Closed without signing in (Esc): the sign-in screen, since nothing else would work.
       S.relogin = false;
+      reloginDone(false);
       signedOut();
     }
   });

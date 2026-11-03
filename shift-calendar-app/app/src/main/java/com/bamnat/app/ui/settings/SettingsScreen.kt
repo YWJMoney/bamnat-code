@@ -772,8 +772,11 @@ private fun SettingsHub(
         Spacer(Modifier.size(4.dp))
         Shortcuts(onFound, work.workStyle)
         Spacer(Modifier.size(4.dp))
+        // 1.36 PC 재검토: the count of 근무 leaves the kinds put away out ('근무 3가지 · 안 쓰는 종류 3개').
+        val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
+        val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.titleFor(work.workStyle), summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle), selected == p,
+            GroupRow(p.icon, p.titleFor(work.workStyle), summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
         // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
@@ -887,7 +890,8 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
         ) {
             Column(Modifier.weight(1f)) {
                 Text(e.title, style = MaterialTheme.typography.bodyLarge)
-                Text(if (e.where == "설정") "설정" else "설정 › ${whereFor(e.where, screenStyle)}", style = MaterialTheme.typography.bodySmall,
+                // 1.36 PC Y10: a place already starting at 설정 is shown once, not "설정 › 설정 › …".
+                Text(if (e.where == "설정" || e.where.startsWith("설정 ›")) e.where else "설정 › ${whereFor(e.where, screenStyle)}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -998,13 +1002,14 @@ internal const val HELP_TITLE = "자주 묻는 질문"
 
 /** How each group stands now, in a few words. */
 private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapshot?, hasPay: Boolean, notificationsOk: Boolean,
-                    style: com.bamnat.core.work.WorkStyle? = s.workStyle): String = when (page) {
+                    style: com.bamnat.core.work.WorkStyle? = s.workStyle, folded: Set<Long> = emptySet()): String = when (page) {
     // [J133-77] The kinds of day in the work's own word: 근무 for wages, 일정 for jobs, 영업 for a shop; none for trades.
     SettingsPage.WORK -> listOfNotNull(
         s.workStyle?.label ?: "일하는 방식 정하기",
-        snapshot?.shiftTypes?.count { !it.isOff }?.takeIf { it > 0 && style != com.bamnat.core.work.WorkStyle.INVEST }?.let {
+        snapshot?.shiftTypes?.count { !it.isOff && it.id !in folded }?.takeIf { it > 0 && style != com.bamnat.core.work.WorkStyle.INVEST }?.let {
             when (style) { com.bamnat.core.work.WorkStyle.FIELD -> "일정 종류 ${it}가지"; com.bamnat.core.work.WorkStyle.BUSINESS -> "영업시간 종류 ${it}개"; else -> "근무 ${it}가지" }
         },
+        snapshot?.shiftTypes?.count { !it.isOff && it.id in folded }?.takeIf { it > 0 }?.let { "안 쓰는 종류 ${it}개" },
     ).joinToString(" · ")
     SettingsPage.ALARM -> if (s.alarmsEnabled) "켜짐 · 다시 울림 ${s.snoozeMinutes}분 · ${s.ringMinutes}분 뒤 꺼짐" else "모두 꺼짐"
     // [SET-02] Notices first (or that they are off), then sleep, in one line.
@@ -1186,7 +1191,7 @@ private fun alarmFixes(
     val pkg = Uri.parse("package:${context.packageName}")
     val canPost = Notifications.canPost(context)
     return buildList {
-        if (!canPost) add(AlarmFix("알림이 꺼져 있어 잠금 화면에서 알람을 끌 수 없어요", "허용", askNotifications))
+        if (!canPost) add(AlarmFix("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications))
         else if (!Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
             add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
         }
@@ -1217,18 +1222,43 @@ internal class SettingsFiles(
     val shareCompany: () -> Unit,
 )
 
+/**
+ * PC 확인 d263030e (백업 파일 고르기에서 카드 그림을 누르면 Google 지갑이 열려요): the file picker is Android's, and it lists other
+ * apps that hand out files. 파일 불러오기 now opens where the last backup was saved, so the backup is there without going
+ * through that list. Only the saved file's address is kept, on this phone.
+ */
+internal object BackupPlace {
+    private const val PREFS = "backup_place"
+    private const val KEY = "last"
+
+    fun remember(context: Context, uri: Uri) {
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, uri.toString()).apply() }
+    }
+
+    fun last(context: Context): Uri? =
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)?.let(Uri::parse) }.getOrNull()
+
+    class Open : ActivityResultContracts.OpenDocument() {
+        override fun createIntent(context: Context, input: Array<String>): Intent =
+            super.createIntent(context, input).apply { last(context)?.let { putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, it) } }
+    }
+}
+
 @Composable
 private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     val context = LocalContext.current
     // Survives the app being closed behind the file picker, unlike the password itself.
     var sealedExport by rememberSaveable { mutableStateOf(false) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.FILE_MIME)) { uri ->
-        if (uri != null) vm.exportTo(context, uri, sealedExport)
+        if (uri != null) {
+            BackupPlace.remember(context, uri)
+            vm.exportTo(context, uri, sealedExport)
+        }
     }
     val icsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
         if (uri != null) vm.exportIcs(context, uri)
     }
-    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val openLauncher = rememberLauncherForActivityResult(remember { BackupPlace.Open() }) { uri ->
         if (uri != null) vm.readFile(context, uri)
     }
     // [CAL-47] A file opened from a messenger after the setup: read here, as 파일 불러오기 does.

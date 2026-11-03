@@ -245,6 +245,8 @@ class AppContainer(context: Context) {
         proof = { slipProof() })
     /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
     val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
+    /** 1.36 PC 재검토: kinds of day put away per calendar ('안 쓰는 종류'). */
+    val foldedTypes by lazy { com.bamnat.app.data.FoldedTypes(appContext) }
 
     /** [FREE-10] 1.35 테마 옷장: the theme worn, 입었던 테마 and its days. */
     val wardrobe by lazy { com.bamnat.app.recipe.ThemeWardrobe(this, appContext) }
@@ -257,6 +259,8 @@ class AppContainer(context: Context) {
     var pendingPlazaNote: String? = null
     /** [PLAZA-30] 1.27 AI: the plaza form asked the pay screen to open 명세서로 맞춰 보기 (in memory, once). */
     var pendingMatch: Boolean = false
+    /** 1.36 PC 급여 검토 W3: the 길잡이 invitation after a first pay setup, shown once the result was seen (or on the next visit). */
+    var payInviteLater: Boolean = false
     /** [PLAZA-30] 1.27 AI: what a 명세서 tick on the plaza rests on now; null for none. */
     fun slipProof(): com.bamnat.core.pay.SlipProof? =
         com.bamnat.core.pay.SlipProof.best(payStore.profile.value, java.time.YearMonth.from(com.bamnat.core.time.Today.date()))
@@ -381,7 +385,7 @@ class AppContainer(context: Context) {
     val againSetupDrafts by lazy { com.bamnat.app.data.SetupDraftStore(java.io.File(appContext.noBackupFilesDir, "again_setup_draft.json")) }
     val firstSetup by lazy {
         com.bamnat.app.data.FirstSetup(scheduleRepository, settingsRepository, setupDrafts, { companyOf(com.bamnat.app.data.PersonalCalendar.MAIN) },
-            used = ::companySetupUsed)
+            used = ::companySetupUsed, prefs = appContext.getSharedPreferences("device", android.content.Context.MODE_PRIVATE))
     }
     /**
      * [CALI-05] A coworkers' setup from the company server went in with a calendar's setup: counted as used by that calendar
@@ -468,7 +472,7 @@ class AppContainer(context: Context) {
     var tierApi: com.bamnat.app.tier.TierApi = com.bamnat.app.tier.TierClient()
     /** [MON-07] Google's consent form and the ads SDK. */
     val ads = com.bamnat.app.ads.Ads(appScope)
-    init { com.bamnat.app.flags.clearOldPreviews(appContext) }
+    init { com.bamnat.app.flags.clearOldPreviews(appContext); com.bamnat.app.leave.LeaveHire.init(appContext) }
     /** [FLAG-07] Company facts wait for the first month on screen (a store read the start does not need). */
     @Volatile private var flagsWarm = false
     /**
@@ -530,7 +534,8 @@ class AppContainer(context: Context) {
     }
     private val flagInstallHash: String? by lazy { com.bamnat.app.flags.installHash(runCatching { companyStore.device }.getOrNull()) }
 
-    val featureGate = FeatureGate(settingsRepository, remoteConfig, proStore, appScope, flags, installedAt = { installedAt })
+    val featureGate = FeatureGate(settingsRepository, remoteConfig, proStore, appScope, flags, installedAt = { installedAt },
+        trials = com.bamnat.app.tier.FeatureTrials(appContext)).also { com.bamnat.app.ui.pro.ProOffer.gate = it }
     /**
      * [MON-03] Play billing; screenshots and tests put a fake in its place. [PERF-01] Play's billing client is
      * built the first time it is used (after the 정식 출시 switch, or for a known subscription), not while
@@ -543,7 +548,7 @@ class AppContainer(context: Context) {
     private val playBilling by lazy {
         com.bamnat.app.billing.PlayBilling(appContext, proStore, api = { tierApi },
             device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } },
-            onBought = { trial -> telemetry.event(if (trial) com.bamnat.core.stats.UsageEvent.TRIAL_START.key else com.bamnat.core.stats.UsageEvent.SUBSCRIBE.key) })
+            onBought = { trial -> proMoments.welcome(true); telemetry.event(if (trial) com.bamnat.core.stats.UsageEvent.TRIAL_START.key else com.bamnat.core.stats.UsageEvent.SUBSCRIBE.key) })
     }
     // AE 1.26 [INVITE-02][INVITE-03] 친구 초대: built on first use; screenshots and tests put fakes in place of the
     // server, Play's referrer and the phone mark.
@@ -567,8 +572,11 @@ class AppContainer(context: Context) {
      * [MON-02][MON-08][MON-09] On coming to the front: the 정식 출시 switch (once a day), this phone's
      * passes and admin link when it has any reason to, and Play's purchases; then the gate again.
      */
-    fun syncPro(force: Boolean = false) = appScope.launch {
-        runCatching { remoteConfig.refresh(tierApi, force = force) }
+    fun syncPro(force: Boolean = false, opened: Boolean = false) = appScope.launch {
+        // 1.36 PC 재검토: an open afresh asks again sooner ([RemoteConfigStore.ON_OPEN]; debug builds every open, for the PC checks).
+        val every = if (!opened) com.bamnat.app.tier.RemoteConfigStore.EVERY
+            else if (BuildConfig.DEBUG) java.time.Duration.ZERO else com.bamnat.app.tier.RemoteConfigStore.ON_OPEN
+        runCatching { remoteConfig.refresh(tierApi, force = force, every = every) }
         runCatching { remoteFiles.refresh() }.getOrNull()?.let(::noteRemote)
         // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
         runCatching {
@@ -622,7 +630,8 @@ class AppContainer(context: Context) {
     }
 
     /** [MON-08] Only a phone that sent a report or a question, holds passes or brought a code asks the server. */
-    suspend fun syncPasses(force: Boolean = false) {
+    /** [linked]: this phone was just tied to an admin, a reason to ask even on a phone with nothing else (PC 확인 7525ccff). */
+    suspend fun syncPasses(force: Boolean = false, linked: Boolean = false) {
         if (!tierApi.enabled) return
         val s = proStore.current
         val device = companyStore.device
@@ -635,7 +644,7 @@ class AppContainer(context: Context) {
                 if (e.code != "offline" && e.code != "rate_limited") proStore.claimLater(null)
             }
         }
-        val reason = s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null
+        val reason = linked || s.passes != null || companyStore.sent.value.isNotEmpty() || inquiryStore.asked || s.code != null
         val last = proStore.current.passes?.checkedAt
         if (!reason || (!force && last != null && java.time.Duration.between(last, Today.instant()) < PASSES_EVERY)) return
         proStore.setPasses(tierApi.passes(device))
@@ -884,10 +893,14 @@ class AppContainer(context: Context) {
             }.distinctUntilChanged().drop(1).debounce(500)
                 .collect { WidgetRefresher.refresh(appContext) }
         }
-        // [MON-06] The trial's notice follows the subscription and the user's answer.
+        // [MON-06] The trial's notice follows the subscription and the user's answer; 840·841: so does the 7-days-before notice of a
+        // yearly renewal or a 1년 이용권's end (one job, inside the start's budget [PERF-10]).
         keep("trialnotice") {
-            proStore.state.map { Triple(it.sub, it.consentAt, it.trialNoticeFor) }.distinctUntilChanged()
-                .collect { com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current) }
+            proStore.state.map { listOf(it.sub, it.consentAt, it.trialNoticeFor, it.yearPassUntil, it.endNoticeFor) }.distinctUntilChanged()
+                .collect {
+                    com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current)
+                    com.bamnat.app.tier.EndNotice.reschedule(appContext, proStore.current)
+                }
         }
         appScope.launch {
             mainIdle()

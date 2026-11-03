@@ -59,7 +59,11 @@ class RecipePieces(private val c: AppContainer) {
             })
         }
         PieceKind.CAL_THEME -> CalendarTheme.decode(from.calTheme).let { t ->
-            mapOf("today" to t.today, "sat" to t.sat, "sun" to t.sun, "holiday" to t.holiday, "cell" to (t.cell ?: "tint"))
+            // 1.36 PC 재검토 ('근무 색 꽉 채우기'로 꾸몄는데 '옅게 칠하기'로 보여요): with 칸 디자인 the cells are drawn by 달력 모양's
+            // looks, so the old 칸 칠하기 is not shared (it would read wrong and do nothing).
+            val looks = com.bamnat.core.recipe.CalendarView.decode(from.calView).looks.isNotEmpty()
+            mapOf("today" to t.today, "sat" to t.sat, "sun" to t.sun, "holiday" to t.holiday, "cell" to (t.cell ?: "tint").takeUnless { looks })
+                .takeIf { m -> m.values.any { it != null } }
         }
         PieceKind.ALARMS -> {
             val s = from
@@ -123,7 +127,8 @@ class RecipePieces(private val c: AppContainer) {
         }
         PieceKind.WIDGET -> from.let { s ->
             val w = com.bamnat.core.recipe.WidgetLook.decode(s.widgetLook)
-            mapOf("alpha" to w.alpha.toLong(), "theme" to w.theme, "memo" to s.widgetMemo)
+            mapOf("alpha" to w.alpha.toLong(), "theme" to w.theme, "memo" to s.widgetMemo,
+                "bg" to w.bg, "ink" to w.ink, "corner" to w.corner?.toLong(), "text" to w.text)
         }
         // [CVW-01] 1.35 달력 모양 with the cells' own switches.
         PieceKind.CAL_VIEW -> from.let { s ->
@@ -177,8 +182,18 @@ class RecipePieces(private val c: AppContainer) {
             val mine = types(cal)
             pairs(mine, items(values, "items")).map { (i, t) ->
                 if (t == null) Change("‘${i["name"]}’: 맞는 근무가 없어 건너뛰어요", skipped = true)
-                else Change("${t.name}: 글자 ${t.label}→${i["label"] ?: t.label}" + (if (i["color"] != null) ", 색 바뀜" else "") +
-                    (i["emoji"]?.let { ", 이모지 $it" } ?: ""))
+                else {
+                    // PC 확인 보안 7차 ("글자 주→주, 색 바뀜"): only what changes ("주간: 색만 바뀜"), the same letter not said as a change.
+                    val label = (i["label"] as? String)?.takeIf { it != t.label }
+                    val color = (i["color"] as? Number)?.toLong()?.let { it or 0xFF000000L }?.takeIf { it != (t.colorArgb or 0xFF000000L) }
+                    val emoji = (i["emoji"] as? String)?.takeIf { it.isNotEmpty() && it != ShiftIcon.emoji(t.icon) }
+                    val parts = listOfNotNull(label?.let { "글자 ${t.label}→$it" }, color?.let { "색 바뀜" }, emoji?.let { "이모지 $it" })
+                    Change("${t.name}: " + when {
+                        parts.isEmpty() -> "지금과 같아요"
+                        parts == listOf("색 바뀜") -> "색만 바뀜"
+                        else -> parts.joinToString(", ")
+                    }, skipped = parts.isEmpty())
+                }
             }
         }
         PieceKind.CAL_THEME -> listOf(Change(listOfNotNull(
@@ -660,7 +675,10 @@ class RecipePieces(private val c: AppContainer) {
             PieceKind.WIDGET -> {
                 val w = com.bamnat.core.recipe.WidgetLook.decode(cur.widgetLook)
                 val after = w.copy(alpha = (values["alpha"] as? Number)?.toInt()?.coerceIn(30, 100) ?: w.alpha,
-                    theme = (values["theme"] as? String)?.takeIf { it in com.bamnat.core.recipe.WidgetLook.THEMES } ?: w.theme)
+                    theme = (values["theme"] as? String)?.takeIf { it in com.bamnat.core.recipe.WidgetLook.THEMES } ?: w.theme,
+                    bg = (values["bg"] as? Long) ?: w.bg, ink = (values["ink"] as? Long) ?: w.ink,
+                    corner = (values["corner"] as? Number)?.toInt()?.coerceIn(0, 28) ?: w.corner,
+                    text = (values["text"] as? String)?.takeIf { it in com.bamnat.core.recipe.WidgetLook.TEXTS } ?: w.text)
                 listOfNotNull("widgetLook" to after.encode(), (values["memo"] as? Boolean)?.let { "widgetMemo" to it.toString() }).toMap()
             }
             // [RCX-30] Each picture the phone has (or got) takes its place; a kind of day's picture goes to the user's kinds of day
@@ -767,6 +785,7 @@ class RecipePieces(private val c: AppContainer) {
         "moneyLayout" -> s.moneyLayout
         "memoLayout" -> s.memoLayout
         "widgetLook" -> s.widgetLook
+        "shiftLooks" -> s.shiftLooks
         "widgetMemo" -> s.widgetMemo.toString()
         "photoLook" -> s.photoLook
         "calView" -> s.calView
@@ -801,6 +820,7 @@ class RecipePieces(private val c: AppContainer) {
         "moneyLayout" -> s.copy(moneyLayout = v)
         "memoLayout" -> s.copy(memoLayout = v)
         "widgetLook" -> s.copy(widgetLook = v)
+        "shiftLooks" -> s.copy(shiftLooks = v)
         "photoLook" -> s.copy(photoLook = v)
         "widgetMemo" -> s.copy(widgetMemo = v == "true")
         "calView" -> s.copy(calView = v)
@@ -980,10 +1000,12 @@ class RecipePieces(private val c: AppContainer) {
     companion object {
         /** [FREE-10] What a theme may change, as settings. */
         val LOOK_SETTINGS = listOf("calView", "calTheme", "screenLooks", "memoLook", "moneyLook", "payLooks", "widgetLook", "photoLook",
-            "calendarLayout", "statsLayout", "moneyLayout", "memoLayout", "tabOrder")
+            "calendarLayout", "statsLayout", "moneyLayout", "memoLayout", "tabOrder",
+            // [STU-37] 1.36 근무에 따라 바뀌는 모양: 입히기 puts it on with the rest; it stays on this phone (not in a recipe).
+            "shiftLooks")
 
         private val SETTING_NAMES = mapOf("tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
-            "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "widgetMemo" to "위젯 메모 한 줄",
+            "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "shiftLooks" to "근무에 따라 바뀌는 모양", "widgetMemo" to "위젯 메모 한 줄",
             "photoLook" to "그림 꾸미기 (달력 배경·머리 그림·근무 그림·위젯 배경·모서리)",
             "calView" to "달력 모양 (칸 높이·근무 표시·날짜 자리·메모 줄·줄 순서·칸 디자인·패턴)", "memoInCells" to "날짜 칸의 메모", "showHoursInCells" to "날짜 칸의 근무 시간",
             "showLunar" to "음력 날짜", "spendInCells" to "날짜 밑 쓴 돈", "themeMode" to "밝기", "dynamicColor" to "휴대폰 배경색에 맞추기", "accentColor" to "앱 강조색",

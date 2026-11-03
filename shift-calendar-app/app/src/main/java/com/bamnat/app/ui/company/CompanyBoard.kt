@@ -36,9 +36,9 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.ThumbDown
 import androidx.compose.material.icons.outlined.ThumbUp
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -66,6 +66,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
@@ -411,7 +412,8 @@ fun TalkSheet(holder: TalkHolder) {
                 Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(6.dp))
                 Text("다른 분께는 ‘참여자 번호’로만 보여요. 이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                RulesLink()
             }
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val talk = o.talk
@@ -478,13 +480,16 @@ fun TalkSheet(holder: TalkHolder) {
                 if (kind == "proposal" && replyTo == null) {
                     ProposalEditor(change, onChange = { change = it; error = null }, withSetup = withSetup, onWithSetup = { withSetup = it })
                 }
-                // [COMM-11] I4: how many more posts today, so the limit is no surprise.
-                o.talk?.leftPosts?.let { n ->
-                    Text(if (n > 0) "오늘 ${n}번 더 쓸 수 있어요" else "오늘은 더 쓸 수 없어요. 내일 다시 써 주세요",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (n > 0) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                // [COMM-11] I4, 1.36 [LIM-10]: no daily cap; only while reports restrict this install, until when and how many today.
+                o.talk?.limit?.let { l ->
+                    val n = o.talk.leftPosts
+                    Text(l.line(n), style = MaterialTheme.typography.labelSmall,
+                        color = if (n == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp))
                 }
+                // PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked
+                // when the box is first tapped, before anything is written; 보내기 still asks if they were put off (나중에).
+                var rulesAsked by remember { mutableStateOf(false) }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
@@ -497,20 +502,27 @@ fun TalkSheet(holder: TalkHolder) {
                         }) },
                         maxLines = 4,
                         shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) { rulesAsked = true; rules.ensure { } } },
                     )
                     IconButton(
                         onClick = {
                             val proposing = kind == "proposal" && replyTo == null
                             val lines = change.filter { it.want.isNotBlank() }
+                            // What is sent is what the box held when 보내기 was pressed, not what is typed while the rules wait.
+                            val body = text.trim()
+                            val parent = replyTo?.id
+                            val sentKind = if (replyTo != null) "talk" else kind
+                            val withIt = proposing && withSetup
                             if (proposing && lines.isEmpty()) {
                                 error = "무엇을 어떻게 바꾸자는지 한 줄 이상 적어 주세요"
                             } else rules.ensure {
                                 busy = true
-                                holder.send(text.trim(), parent = replyTo?.id, kind = if (replyTo != null) "talk" else kind, change = if (proposing) lines else emptyList(),
-                                    withSetup = proposing && withSetup) { e ->
+                                holder.send(body, parent = parent, kind = sentKind, change = if (proposing) lines else emptyList(), withSetup = withIt) { e ->
                                     busy = false; error = e
-                                    if (e == null) { text = ""; replyTo = null; if (proposing) { change = listOf(blankChange()); kind = "talk" } }
+                                    if (e == null) {
+                                        text = text.trim().removePrefix(body).trimStart(); replyTo = null
+                                        if (proposing) { change = listOf(blankChange()); kind = "talk" }
+                                    }
                                 }
                             }
                         },
@@ -606,7 +618,11 @@ private fun PostRow(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val name = p.nick ?: "참여자 ${p.who}"
-            Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
+            // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
+            val maker = p.maker
+            if (maker != null && !p.mine) Text("$name ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(onClickLabel = "프로필 보기") { com.bamnat.app.recipe.RecipeLinks.openMaker(maker) }.heightIn(min = 32.dp))
+            else Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
             when (p.kind) {
                 "question" -> { Spacer(Modifier.width(4.dp)); StatusChip("질문", Tone.QUIET) }
                 "proposal" -> { Spacer(Modifier.width(4.dp)); StatusChip("고치자는 제안", Tone.WAIT) }

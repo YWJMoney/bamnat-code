@@ -297,8 +297,10 @@ internal fun TradeSheet(
             FieldLabel(if (side == Side.SELL) "갖고 있는 종목" else "전에 산 종목")
             val picks = if (side == Side.SELL) known.filter { it.held } else known
             ChoiceChips(picks, { it.key == key }, { it.title }, { h ->
+                val changed = h.key != key
                 name = h.name; symbol = h.symbol; market = h.market
-                if (side == Side.SELL && qty.isEmpty()) {
+                // 1.36 실사용 S22: a sell stays a sell, and picking a holding fills what is held there (another holding replaces it).
+                if (side == Side.SELL && (qty.isEmpty() || changed)) {
                     val inAccount = state.fullResult.holdings.firstOrNull { it.accountId == accountId && it.key == h.key }?.quantity ?: h.quantity
                     if (inAccount > EPS) qty = InvestFmt.input(inAccount)
                 }
@@ -317,6 +319,11 @@ internal fun TradeSheet(
             DecimalField(if (market.foreign) "단가 (달러)" else "단가", price, { price = it }, Modifier.weight(1.3f), suffix = if (market.foreign) "$" else "원")
         }
         if (side == Side.SELL && held > EPS) {
+            // 1.36 U12 (매도 단가가 빈칸): what it was bought at, as the line to sell from.
+            holding?.takeIf { it.held && it.averagePrice > 0 }?.let { h ->
+                Text("평균 ${InvestFmt.price(h.averagePrice, market)}에 샀어요" + (book.quote(h.key)?.let { " · 현재가 ${InvestFmt.price(it.price, market)}" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("이 계좌에 ${InvestFmt.quantity(held)}${if (market == Market.CRYPTO) "개" else "주"} 있어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -609,7 +616,7 @@ internal fun FeeRatesDialog(settings: com.bamnat.core.invest.InvestSettings, onD
     var sell by rememberSaveable { mutableStateOf(InvestFees.rateText(settings.sellFeeRate)) }
     val b = buy.toDecimal()?.takeIf { it in 0.0..5.0 }
     val s = sell.toDecimal()?.takeIf { it in 0.0..5.0 }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("기본 수수료") },
         text = {

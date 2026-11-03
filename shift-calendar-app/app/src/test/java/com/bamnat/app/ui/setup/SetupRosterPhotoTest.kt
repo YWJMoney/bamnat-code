@@ -84,6 +84,25 @@ class SetupRosterPhotoTest {
         return words
     }
 
+    /** 1.36 PC W10: a slow reading shows it is reading at once, and 취소 stops it with nothing changed and a word on what next. */
+    @Test fun aSlowReadingCanBeCancelled() = runBlocking {
+        RosterScanner.fake = { Thread.sleep(1_500); photo(0.0) }
+        val vm = SetupViewModel(c, now = { now })
+        vm.pickStyle(WorkStyle.SHIFT, roster = true)
+        vm.next()
+        vm.pickBundle(ShiftBundles.HOSPITAL)
+        vm.confirmTimes()
+        vm.readRosterPhoto(app, Uri.parse("content://test/roster.jpg"))
+        assertTrue(vm.rosterReading.value)
+        vm.cancelRosterRead()
+        assertTrue(!vm.rosterReading.value)
+        assertTrue(vm.message.value!!.contains("직접 칠하기"))
+        Thread.sleep(2_000)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertEquals(null, vm.roster.value)
+        assertTrue(draft.painted.isEmpty())
+    }
+
     @Test fun aRosterPhotoAtSetupFillsTheWholeMonth() = runBlocking {
         RosterScanner.fake = { photo(3.0) }
         val vm = SetupViewModel(c, now = { now })

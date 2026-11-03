@@ -294,6 +294,8 @@ data class MonthMoney(
     /** Ledger spending plus the jobs' materials and other costs. */
     val spent: Long get() = expenses + jobCosts
     val balance: Long get() = income - spent
+    /** 1.36 PC C13 (‘12월 남은 돈’에 받지 않은 급여 예상까지): what is left of the money that really came in. */
+    val leftNow: Long get() = received - spent
 }
 
 data class DayMoney(val income: Long, val expense: Long, val jobs: Int, val unpaid: Long) {

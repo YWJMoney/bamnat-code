@@ -16,5 +16,7 @@ test("[STAB-14] a check that starts with 앱 멈춤 is 앱 동작 even with no w
 
 test("[STAB-14] an alarm's question with its check stays 알람", () => {
   assert.equal(triage("bug", "알람이 안 울려요", { diag: "[알람 상태]\n알람 사용: 켜짐" }).topic, "alarm");
-  assert.equal(triage("bug", "이상해요", { diag: "[알람 상태]\n알람 사용: 켜짐" }).topic, "alarm");
+  assert.equal(triage("bug", "이상해요", { diag: "[알람 상태]\n알람 사용: 켜짐" }).topic, "etc");
+  // 1.36 Y12: a settings-search question with the check attached is not 알람.
+  assert.equal(triage("bug", "보상", { diag: "[알람 상태]\n알람 사용: 켜짐" }).topic, "billing");
 });

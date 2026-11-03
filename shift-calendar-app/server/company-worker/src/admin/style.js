@@ -342,6 +342,10 @@ padding:.75rem;box-shadow:var(--shadow)}
 .checks span{flex:none;display:inline-grid;place-items:center;width:1.4rem;height:1.4rem;border-radius:50%;font-size:.8rem;font-weight:900}
 .checks .ok span{background:var(--ok-bg);color:var(--ok)}
 .checks .todo span{background:var(--warn-bg);color:var(--warn)}
+.checks .off span{background:var(--soft);color:var(--muted)}
+.checks .bad span{background:var(--bad-bg);color:var(--bad)}
+.checks .bad{color:var(--bad);font-weight:700}
+.card h3.sub{margin:.9rem 0 .5rem}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;margin:0;font-size:.88rem}
 .kv dt{color:var(--muted)}
 .kv dd{margin:0;font-weight:600}
@@ -457,7 +461,8 @@ background:var(--info-bg);color:var(--info);font-size:.86rem;font-weight:800;tex
 .banner .btn{min-height:2.25rem}
 .failed{text-align:center;padding:2.5rem 1rem;color:var(--muted)}
 .failed h2{color:var(--fg);font-size:1.06rem;margin:.5rem 0 .25rem}
-.toast .undo{margin-left:.75rem;border:0;background:none;color:var(--accent-soft);font-weight:900;text-decoration:underline;cursor:pointer;pointer-events:auto;min-height:2rem}
+.toast .undo{margin-left:.75rem;border:0;border-radius:var(--r);padding:.45rem .9rem;background:var(--accent-soft);color:var(--fg);font-size:.95rem;font-weight:900;cursor:pointer;pointer-events:auto;min-height:2.75rem}
+.toast.has-undo{font-size:.95rem;padding:.6rem .8rem .6rem 1.1rem;display:flex;align-items:center;gap:.25rem}
 .toast.show.has-undo{pointer-events:auto}
 /* Two panes: on a wide screen the list stays beside the open item. */
 @media (min-width:1024px){.split{display:grid;grid-template-columns:minmax(17rem,24rem) minmax(0,1fr);gap:1rem;align-items:start}

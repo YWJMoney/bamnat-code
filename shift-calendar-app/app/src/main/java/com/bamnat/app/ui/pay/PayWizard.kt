@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.material3.ButtonDefaults
 import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -430,6 +433,8 @@ fun PayWizard(
      * setup's, typed into at once, the ways of being paid under it for a pay made by hand.
      */
     companyFind: Boolean = false,
+    /** 1.36 PC X4: bumped by the screen's ← and back; with something changed it asks before leaving. */
+    leaveAsk: Int = 0,
 ) {
     val today = remember { Today.date() }
     val s = remember {
@@ -452,11 +457,28 @@ fun PayWizard(
     val index = steps.indexOf(step).takeIf { it >= 0 } ?: steps.lastIndex
     var advancing by remember { mutableStateOf(false) }
     val latestSteps by rememberUpdatedState(steps)
+    // 1.36 PC X4 (값을 바꾸고 ←를 누르면 묻지 않고 버림): the setup as it opened, to tell whether anything changed.
+    val opened = remember { draft }
+    var askingLeave by remember { mutableStateOf(false) }
+    val leave: () -> Unit = { if (draft != opened) askingLeave = true else onCancel?.invoke() }
+    val leaveAskAtOpen = remember { leaveAsk }
+    androidx.compose.runtime.LaunchedEffect(leaveAsk) { if (leaveAsk != leaveAskAtOpen) leave() }
+    if (askingLeave) com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { askingLeave = false },
+        title = { Text("바꾼 내용을 저장할까요?") },
+        text = { Text("저장하지 않으면 이번에 고친 값은 사라지고 전 설정 그대로 남아요.") },
+        confirmButton = { TextButton(onClick = { askingLeave = false; onDone(draft) }) { Text("저장") } },
+        dismissButton = { Row {
+            TextButton(onClick = { askingLeave = false; onCancel?.invoke() }) { Text("버리기") }
+            TextButton(onClick = { askingLeave = false }) { Text("계속 고치기") }
+        } },
+    )
 
     fun go(to: String) { step = to }
     // [NAV-02] 1.25 Z (U4): back is the step before, like 이전; only the first step leaves the setup (with its answers kept
     // until then). Before, back closed the whole setup and its answers from any step.
-    androidx.activity.compose.BackHandler(enabled = index > 0) { go(steps[index - 1]) }
+    // 1.36 PC E3: with the keyboard up, back puts it away first.
+    com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = index > 0) { go(steps[index - 1]) }
     fun next() { latestSteps.let { list -> list.getOrNull(list.indexOf(step) + 1)?.let(::go) } }
     // A single tap answers and moves on, after a beat so the choice is seen.
     fun answerAndGo(change: () -> Unit) {
@@ -575,14 +597,26 @@ fun PayWizard(
             PreviewBar(range, busy, draft)
         }
         // [J133-80] Above the keypad, so 다음 takes the first tap.
+        // 1.36 PC Y17 (기본급 칸이 빈 채로 '다음'을 누르면 아무 말이 없어요): 다음 always answers; when the step is not done yet, a red
+        // line above says what it still needs.
+        var tried by remember(step) { mutableStateOf(false) }
         Surface(tonalElevation = 3.dp, modifier = Modifier.imePadding()) {
+            Column {
+            if (tried) Text(
+                when {
+                    step == WAGE -> "급여 방식을 하나 골라 주세요"
+                    step == AMOUNT -> "금액을 넣어 주세요. 모르면 명세서 사진으로 채울 수 있어요"
+                    else -> "답을 하나 고르거나 ‘모르겠어요’를 눌러 주세요"
+                },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp).semantics { liveRegion = LiveRegionMode.Polite })
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 // [PAYF-01] Inside 급여 방식 찾기 (쓸까요?·없어요·기본급) back goes to the box, and 다음 waits for it.
                 val finding = step == WAGE && payFind != null && payFind.step != com.bamnat.app.ui.company.PayFindStep.NAME
                 when {
                     finding -> OutlinedButton(onClick = { payFind?.step = com.bamnat.app.ui.company.PayFindStep.NAME }) { Text("이전") }
                     index > 0 -> OutlinedButton(onClick = { go(steps[index - 1]) }) { Text("이전") }
-                    onCancel != null -> TextButton(onClick = onCancel) { Text("취소") }
+                    onCancel != null -> TextButton(onClick = leave) { Text("취소") }
                 }
                 Spacer(Modifier.weight(1f))
                 if (finding) return@Row
@@ -593,9 +627,16 @@ fun PayWizard(
                     question != null -> question.key in s.answered || question.key in s.unknown
                     else -> true
                 }
-                Button(onClick = { if (last) { filledFromSlip(slipNote != null); onDone(com.bamnat.core.pay.RuleText.apply(draft, photoRules.first, photoRules.second)) } else next() }, enabled = ready) {
+                if (ready) tried = false
+                Button(onClick = {
+                    if (!ready) tried = true
+                    else if (last) { filledFromSlip(slipNote != null); onDone(com.bamnat.core.pay.RuleText.apply(draft, photoRules.first, photoRules.second)) }
+                    else next()
+                }, colors = if (ready) ButtonDefaults.buttonColors() else ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))) {
                     Text(if (last) "계산 시작" else "다음")
                 }
+            }
             }
         }
     }

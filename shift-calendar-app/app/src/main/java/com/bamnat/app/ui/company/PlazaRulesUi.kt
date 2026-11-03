@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -94,13 +94,21 @@ private fun PlazaRulesDialog(gate: PlazaRulesGate) {
                     else Text("${i + 1}. $line", style = MaterialTheme.typography.bodySmall)
                 }
                 TextButton(onClick = {
-                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(PlazaRules.URL))) }
+                    com.bamnat.app.ui.components.PolicyPage.open(context, PlazaRules.URL, "광장 운영 규칙")
                 }) { Text("운영 규칙 전체 보기") }
             }
         },
         confirmButton = { TextButton(onClick = gate::accept) { Text("동의하고 쓰기") } },
         dismissButton = { TextButton(onClick = { gate.waiting = null }) { Text("나중에") } },
     )
+}
+
+/** 1.36 PC 재검토 (마을에서 운영 규칙 여는 곳을 못 찾았어요): under every writing guide, the rules in the app's own page. */
+@Composable
+fun RulesLink(modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, PlazaRules.URL, "운영 규칙") },
+        modifier = modifier.heightIn(min = 48.dp)) { Text("운영 규칙 보기") }
 }
 
 /** [COMM-09] Asks before hiding a writer; the list can be undone in 내 활동 > 가린 사람. */

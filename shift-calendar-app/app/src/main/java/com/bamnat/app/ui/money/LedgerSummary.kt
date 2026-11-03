@@ -45,7 +45,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -100,8 +100,13 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
     val cal = LocalCalendarColors.current
     val current = YearMonth.from(today) == m.month
     SectionCard(title = "${m.month.monthValue}월 남은 돈") {
-        FitText(Fmt.won(m.balance), MaterialTheme.typography.displaySmall, if (m.balance < 0) cal.expense else MaterialTheme.colorScheme.onSurface,
+        // 1.36 PC C13: the big figure is what is left now; the pay still to come is a line under it.
+        FitText(Fmt.won(m.leftNow), MaterialTheme.typography.displaySmall, if (m.leftNow < 0) cal.expense else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold)
+        m.payExpected?.let {
+            Text("급여가 들어오면 ${Fmt.won(m.balance)} 남을 예상이에요", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(1f)) {
@@ -119,10 +124,6 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
                 Text("나간 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FitText("-" + Fmt.won(m.spent), MaterialTheme.typography.titleMedium, cal.expense, fontWeight = FontWeight.Bold)
             }
-        }
-        if (m.payExpected != null) {
-            Text("남은 돈은 들어올 급여 예상까지 넣어 셈했어요. 월급이 들어오면 그 금액으로 바뀌어요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
         // [RECV-04] Work written down but not paid yet stays out of 들어온 돈 and shows here instead.
         if (m.jobOwed > 0) {

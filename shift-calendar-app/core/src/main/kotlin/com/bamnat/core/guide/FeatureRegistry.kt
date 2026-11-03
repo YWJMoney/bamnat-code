@@ -665,8 +665,8 @@ object FeatureRegistry {
             ALL, "가계부 › ⋮ › 자동 기록 › 더 정확하게 적기", at(Place.AUTO_RECORD), "내 이름", "내 계좌 이체", "해외 결제", "환율", "해외 수수료", under = "money.auto"),
         f("money.heat", "LEDX-23", "지출 히트맵", "많이 쓴 날일수록 달력 날짜 아래 줄을 진하게 칠해 이달 소비 흐름을 한눈에 봐요. 금액은 보이지 않아요",
             ALL, "설정 › 화면과 글자 › 지출 히트맵", at(Place.SETTINGS_CALENDAR, "지출 히트맵"), "히트맵", "많이 쓴 날", "소비 패턴", "지출 색", off = Off.ELSEWHERE),
-        f("pro.moments", "PROX-02", "돈이 걸린 날 하루 무료 권유", "급여일·근무표 넣은 날·신고 달에만, 그날 쓸 프로 기능을 하루 무료로 열어 볼지 한 번 물어요. 2주에 한 번까지예요",
-            ALL, "달력 맨 위 카드", at(Place.FEATURES), "하루 무료", "체험", "프로 권유", "광고 보고 열기", off = Off.APP),
+        f("pro.moments", "PROX-02", "프로 제안 카드", "같은 묶음을 광고로 두 번 열었을 때, 이번 달 두 묶음을 열었을 때, 일주일에 닷새 쓸 때만 달력 위에 한 장 보여요. 한 달 만에 오면 많이 쓴 묶음을 7일 열어 드려요. 7일에 한 번까지예요",
+            ALL, "달력 맨 위 카드", at(Place.FEATURES), "프로 제안", "보상 장부", "프로 권유", "광고 보고 열기", off = Off.APP),
         f("backup.nudge", "STAB-08", "백업 안 한 지 30일 알림", "매일 자동 백업을 쓰지 않을 때 마지막 백업이 30일 지나면 달력 위에 한 줄로 알려 줘요. 데이터 화면에 마지막 백업 날도 보여요",
             ALL, "설정 › 데이터 › 백업 안 한 지 30일 알림", at(Place.SETTINGS_DATA, "백업 안 한 지 30일 알림"), "백업 알림", "마지막 백업", "기록 잃어버림", "백업 언제", off = Off.ELSEWHERE),
         f("stats.range", "CALX-06", "통계 기간 고르기", "통계를 1일~말일, 급여 기간, 주, 직접 고른 날로 세고, 달력 위에 이번 급여 기간이 끝나는 날을 한 줄로 보여 줘요",
@@ -800,6 +800,10 @@ object FeatureRegistry {
         f("look.wardrobe", "FREE-10", "테마 옷장", "내 모양을 테마로 여러 벌 저장하고 골라 입어요. 다른 분 테마도 광고·기간 없이 계속 써요",
             ALL, "설정 › 화면과 글자 › 화면 꾸미기 › 내 테마 › 지금 모양을 내 테마로 저장", at(Place.SETTINGS_CALENDAR, "화면 꾸미기 (모든 화면)"), "테마 옷장", "내 테마", "테마 저장", "여러 벌",
             under = "look.free"),
+        // [PRF-12] 1.36 창작자 꾸미기 (프로).
+        f("recipe.creatorPro", "PRF-12", "창작자 프로필 꾸미기", "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프를 써요",
+            ALL, "마을 › 맨 위 내 얼굴 › 내 프로필 › 프로필 고치기", at(Place.RECIPES), "표지 그림", "대표 작품", "작품 통계", "창작자", "내 프로필",
+            under = "recipe.maker"),
     )
 
     private val byId: Map<String, AppFeature> = all.associateBy { it.id }

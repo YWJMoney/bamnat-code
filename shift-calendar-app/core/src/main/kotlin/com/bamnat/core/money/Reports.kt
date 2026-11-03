@@ -95,6 +95,7 @@ object Reports {
         val now = YearMonth.from(today)
         val days = when { month == now -> today.dayOfMonth; month.isBefore(now) -> month.lengthOfMonth(); else -> 0 }
         val day = daily(month, book.entries, book.jobs)
+        val first = (book.entries.map { it.date } + book.jobs.map { it.date }).minOrNull()
         val before = daily(month.minusMonths(1), book.entries, book.jobs)
         val spending = book.entries.filter { it.kind == MoneyKind.EXPENSE && YearMonth.from(it.date) == month }
         val byAccount = spending.groupBy { MoneyAccounts.of(it, book.accounts) }.map { (a, list) -> a to list.sumOf { it.amount } }
@@ -112,10 +113,9 @@ object Reports {
             biggest = spending.filter { it.amount > 0 }.sortedWith(compareByDescending<MoneyEntry> { it.amount }.thenBy { it.date }).take(5),
             byWeekday = weekday.toList(),
             // [J133-79] 빌드 5 ('무지출 30일'을 설치 전 날까지 셌어요): only from the first day anything was written down.
-            noSpendDays = run {
-                val first = (book.entries.map { it.date } + book.jobs.map { it.date }).minOrNull()
-                (0 until days).count { day[it] <= 0 && first != null && !month.atDay(it + 1).isBefore(first) }
-            }, daysCounted = days,
+            noSpendDays = (0 until days).count { day[it] <= 0 && first != null && !month.atDay(it + 1).isBefore(first) },
+            // 1.36 실사용 S19: 하루 평균 too counts from the first day written down, not from the 1st of the first month.
+            daysCounted = if (first == null) days else (0 until days).count { !month.atDay(it + 1).isBefore(first) },
         )
     }
 

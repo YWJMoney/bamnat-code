@@ -57,8 +57,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import android.widget.Toast
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DatePickerDialog
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -787,7 +787,7 @@ private const val JUMP_SHOWN_MILLIS = 2_000L
 /** [MEMO-06] 1.27 AK: the memos of the last day with the same shift, to read while writing today's. */
 @Composable
 private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> Unit) {
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("지난 $label 메모") },
         text = {
@@ -814,12 +814,12 @@ private fun MemoTemplateDialog(
     // 1.35 자유도 점검: 지우기 asks first, like every other 지우기 (RCX-26).
     var removing by remember { mutableStateOf<com.bamnat.core.memo.MemoTemplate?>(null) }
     removing?.let { t ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { removing = null }, title = { Text("이 틀을 지울까요?") },
+        com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { removing = null }, title = { Text("이 틀을 지울까요?") },
             text = { Text("‘${t.title}’ 틀만 지워요. 이 틀로 쓴 메모는 그대로예요" + if (t.from != null) ". 장터에서 받은 틀은 레시피를 다시 넣으면 돌아와요" else "") },
             confirmButton = { TextButton(onClick = { removing = null; onRemove(t.id) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { removing = null }) { Text("닫기") } })
     }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("틀에서 시작") },
         text = {
@@ -854,7 +854,7 @@ private fun MemoTemplateDialog(
 @Composable
 internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Map<String, String>) -> Unit, onDismiss: () -> Unit) {
     val answers = remember(t.id) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(listOfNotNull(t.emoji, t.title).joinToString(" ")) },
         text = {

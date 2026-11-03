@@ -13,6 +13,7 @@
 // This file does not import index.js (tools/bundle.mjs puts it in one file); what it needs comes in as [d].
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
+import { addStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -151,7 +152,9 @@ export const RECIPE_PIECES = {
   layout: { styles: STYLES, fields: [TS("tabs", 6, 10), T("calendar", 400, { optional: true, guard: false, check: layoutLine })] },
   cards: { styles: STYLES, fields: [T("stats", 400, { optional: true, guard: false, check: layoutLine }),
     T("money", 400, { optional: true, guard: false, check: layoutLine }), T("memo", 400, { optional: true, guard: false, check: layoutLine })] },
-  widget: { styles: STYLES, fields: [N("alpha", 30, 100, { optional: true }), P("theme", ["system", "light", "dark"], { optional: true }), F("memo")] },
+  // [STU-38] 1.36 위젯 꾸미기 넓히기: background and text colour, corners, text size.
+  widget: { styles: STYLES, fields: [N("alpha", 30, 100, { optional: true }), P("theme", ["system", "light", "dark"], { optional: true }), F("memo"),
+    C("bg", { optional: true }), C("ink", { optional: true }), N("corner", 0, 28, { optional: true }), P("text", ["s", "m", "l"], { optional: true })] },
   // 1.35 [RCX-30] 그림 꾸미기: pictures by their recipe_images id (each looked at before others see it).
   photoLook: { styles: STYLES, fields: [T("bg", 16, { optional: true, guard: false, check: imageId }), N("dim", 0, 80, { optional: true }),
     T("head", 16, { optional: true, guard: false, check: imageId }), T("widget", 16, { optional: true, guard: false, check: imageId }),
@@ -680,8 +683,10 @@ export const keptPercent = (applied, kept7) => (applied < 20 ? null : Math.min(1
 // ---- the server's part ----
 
 export const RECIPE_LIMITS = {
-  /** 신뢰 0단계 하루 2개, 1단계부터 4개 (S9; 1.35 [RCX-28] 승인 없이 올라가니 조금 넉넉히). */
-  perDay: [2, 4, 4],
+  /**
+   * 1.36 [LIM-10] (사용자 2026-10-31 "제한을 두지마"): no daily cap for one install. Only strikes restrict one (write-limits.js);
+   * one network's day still has a cap against a flood.
+   */
   perNetworkDay: 60,
   /**
    * D108 (1.34) had a phone's first 3 public recipes wait for the operator. 1.35 [RCX-28] (사용자 2026-10-30 "3개는 관리자 승인을
@@ -691,8 +696,9 @@ export const RECIPE_LIMITS = {
   votesPerHour: 60,
   /** S8: more votes than this from one network in an hour wait (held) and count nowhere until the operator lets them. */
   networkVotesHour: 30,
-  talkPerDay: 10,
   appliedPerNetworkDay: 200,
+  /** 1.36 보안 점검 M9: one network counts at most this many 넣기 (and as many 7일 유지) for one recipe a day; past it, not counted. */
+  appliedPerRecipeNetworkDay: 3,
   flagsToHide: 3,
   opinion: [5, 120],
   talk: 500,
@@ -737,6 +743,10 @@ export const RECIPE_COLUMNS = [
   // [RCP-35][D107] a 안좋아요 on a talk post carries its reason too, seen by the post's writer only.
   "ALTER TABLE post_votes ADD COLUMN why TEXT",
   "ALTER TABLE post_votes ADD COLUMN note TEXT",
+  // 1.36 보안 점검 [SEC-16] M10: whether a recipe report counted toward hiding it, and why not ("new": a 새싹 install, "net": a second
+  // from one network today), for the operator.
+  "ALTER TABLE recipe_flags ADD COLUMN counted INTEGER NOT NULL DEFAULT 1",
+  "ALTER TABLE recipe_flags ADD COLUMN why TEXT",
 ];
 
 export function newCode() {
@@ -795,11 +805,74 @@ export const RECIPE_KINDS = {
 
 const carries = (body, kinds) => kinds.some((k) => body.includes(`"kind":"${k}"`));
 
+/**
+ * [MKX-01] 1.36 장터 두 구간 (사용자 2026-10-31 "테마는 모든 것을 종합으로 만든 것이고 기능별은 한 개의 탭을 전문적으로"): the tabs a
+ * recipe changes — calendar, pay (근무·급여·통계), money (가계부·장부), memo, alarm, widget, app (앱 전체 색·아래 탭·모서리·느낌).
+ */
+export const MARKET_TABS = ["calendar", "pay", "money", "memo", "alarm", "widget"];
+const SCREEN_TAB = { calendar: "calendar", memo: "memo", money: "money", stats: "pay", alarm: "alarm", all: "app", settings: "app", guarded: "app", plaza: "app" };
+
+export function tabsOf(body) {
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return [];
+  }
+  const out = new Set();
+  for (const p of rec?.pieces ?? []) {
+    switch (p.kind) {
+      case "shiftLook": case "calTheme": case "calView": out.add("calendar"); break;
+      case "memoLook": case "memoTpl": case "invest": out.add("memo"); break;
+      case "moneyLook": case "shop": case "field": out.add("money"); break;
+      case "hourly": case "company": out.add("pay"); break;
+      case "alarms": out.add("alarm"); break;
+      case "widget": out.add("widget"); break;
+      case "appFeel": out.add("app"); break;
+      case "layout":
+        if (p.calendar) out.add("calendar");
+        if (Array.isArray(p.tabs) && p.tabs.length) out.add("app");
+        break;
+      case "cards":
+        if (p.memo) out.add("memo");
+        if (p.money) out.add("money");
+        if (p.stats) out.add("pay");
+        break;
+      case "photoLook":
+        if (p.bg || p.head || p.icons) out.add("calendar");
+        if (p.corners) out.add("app");
+        if (p.widget) out.add("widget");
+        break;
+      case "screenLook":
+        for (const e of String(p.screens ?? "").split("/")) {
+          const key = e.split("~")[0];
+          if (!key) continue;
+          out.add(key.startsWith("pay.") ? "pay" : SCREEN_TAB[key] ?? "app");
+        }
+        if (p.pay) out.add("pay");
+        break;
+      default: break;
+    }
+  }
+  return [...out].sort();
+}
+
+/** [MKX-01] 테마 (앱 전체를 한 벌로, 탭 둘 이상이나 앱 전체 색) or 기능별 탭 (탭 하나만); null for one that changes no tab (묶음). */
+export function scopeOf(tabs) {
+  if (!tabs.length) return null;
+  return tabs.includes("app") || tabs.length >= 2 ? "theme" : "tab";
+}
+
 /** A list row as the app reads it (no owner, no hash of the owner). */
 export function listItem(r, now) {
   const look = r.body ? lookOf(r.body) : null;
+  const tabs = r.body ? tabsOf(r.body) : [];
+  const scope = scopeOf(tabs);
   return {
     ...(look ? { look } : {}),
+    // [MKX-01] Which tabs it changes and whether it is a 테마 or one tab's.
+    ...(tabs.length ? { tabs } : {}),
+    ...(scope ? { scope } : {}),
     code: r.code, title: r.title, summary: r.summary, styles: r.styles.split(","), cover: JSON.parse(r.cover), nick: r.nick ?? null,
     version: r.version, likes: r.likes, dislikes: r.dislikes, users: r.applied, kept: keptPercent(r.applied, r.kept7),
     official: r.official === 1, publicData: r.public_data === 1, parent: r.parent ?? null, at: new Date(r.updated_at).toISOString(),
@@ -817,10 +890,17 @@ export function listItem(r, now) {
 export async function recipeTrust(d, env, dev, now) {
   await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
   const t = await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev);
+  const { level, days } = trustLevel(t, now);
+  return { level, days, approved: t.approved, weight: level <= 0 || days < 3 ? 0.5 : 1 };
+}
+
+/** [RCP-30] The level of a recipe_trust row (none: 0, just come), without writing anything. */
+export function trustLevel(t, now) {
+  if (!t) return { level: 0, days: 0, hidden: 0 };
   const days = (now - t.first_at) / DAY;
   // [RCX-28] With no 승인 any more, time on the 나눔 판 without anything hidden is what earns it.
   const level = (t.approved >= 3 || days >= 14) && t.hidden === 0 ? 2 : t.approved >= 1 || days >= 3 ? 1 : 0;
-  return { level, days, approved: t.approved, weight: level <= 0 || days < 3 ? 0.5 : 1 };
+  return { level, days, hidden: t.hidden };
 }
 
 async function readDevice(d, request, body) {
@@ -856,8 +936,14 @@ async function recipeList(d, env, url) {
   const rows0 = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE ${where.join(" AND ")}
     ORDER BY r.updated_at DESC LIMIT 600`, ...args);
   // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
-  const kind = RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
-  const rows = kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
+  // [MKX-01] 1.36 두 구간: scope=theme, or scope=tab with tab=<one of MARKET_TABS> (or none for every tab's); kind is then left aside.
+  const scope = ["theme", "tab"].includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
+  const tab = scope === "tab" && MARKET_TABS.includes(url.searchParams.get("tab")) ? url.searchParams.get("tab") : null;
+  const kind = !scope && RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
+  const rows = scope ? rows0.filter((r) => {
+    const tabs = tabsOf(r.body);
+    return scopeOf(tabs) === scope && (!tab || tabs[0] === tab);
+  }) : kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
   let scored = rows;
   if (sort === "good") {
     scored = rows.map((r) => ({ r, s: rankGood(r.wlikes, r.wdislikes, r.applied, r.kept7) })).filter((x) => x.s !== null)
@@ -866,7 +952,7 @@ async function recipeList(d, env, url) {
     scored = rows.map((r) => ({ r, s: rankHot(r.wlikes, r.applied, (now - r.created_at) / HOUR) })).sort((a, b) => b.s - a.s).map((x) => x.r);
   }
   const page = scored.slice(cursor, cursor + RECIPE_LIMITS.pageSize);
-  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), items: page.map((r) => listItem(r, now)),
+  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}), items: page.map((r) => listItem(r, now)),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
@@ -921,10 +1007,12 @@ async function publish(d, env, request) {
   }
   const trust = await recipeTrust(d, env, dev, now);
   const net = await d.network(request, env, now);
-  const hit = await d.overLimit(env, now, [["device", `recipe|${dev}`, RECIPE_LIMITS.perDay[trust.level], DAY],
-    ["network", `recipe|${net.day}`, RECIPE_LIMITS.perNetworkDay, DAY]]);
+  const hit = (await writeLimitHit(d, env, dev, "recipe", now))
+    ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "recipe", RECIPE_LIMITS.perNetworkDay, now)));
   if (hit) return hit;
   const scope = readScope(body.scope);
+  // 1.36 [SEC-11] Play Integrity before a write others see; a 나만 보기 recipe is the maker's own (off until INTEGRITY_MODE is set).
+  if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const r = clean.recipe;
   const skel = nameSkeleton(r.title);
   // 사칭 (S4): someone else's recipe with a name that looks the same is refused; the maker's own may share it.
@@ -974,6 +1062,8 @@ async function newVersion(d, env, request, code) {
   const hit = await d.overLimit(env, now, [["device", `recipev|${dev}`, 10, DAY]]);
   if (hit) return hit;
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const trust = await recipeTrust(d, env, dev, now);
   // [RCX-28] Up at once like a first 판; one the operator or 신고 hid stays hidden.
   const state = r.state === "hidden" ? "hidden" : scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
@@ -1077,6 +1167,12 @@ async function applied(d, env, request, code) {
   const r = await d.one(env, "SELECT code FROM recipes WHERE code = ? AND state = 'visible'", code);
   if (!r) return d.json({ error: "not_found" }, 404);
   const col = body.kind === "applied" ? "applied" : "kept7";
+  // 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): 쓰는 분 and 7일 유지 weigh in 좋은 순 and 요즘 뜨는, and
+  // they come with no phone (S8), so one line could push a recipe up 200 a day. A few a recipe a line (a family's phones), then
+  // answered as kept but not counted, so the app has nothing to try again.
+  if (!(await d.allow(env, `rappliedone|${net.day}|${code}|${col}`, RECIPE_LIMITS.appliedPerRecipeNetworkDay, DAY, now))) {
+    return d.json({ ok: true, counted: false });
+  }
   await d.batch(env, [
     d.stmt(env, `INSERT INTO recipe_counts (code, day, ${col}) VALUES (?, ?, 1) ON CONFLICT (code, day) DO UPDATE SET ${col} = ${col} + 1`, code, kstDayOf(now)),
     d.stmt(env, `UPDATE recipes SET ${col} = ${col} + 1 WHERE code = ?`, code),
@@ -1093,11 +1189,28 @@ async function recipeFlag(d, env, request, code) {
   const now = Date.now();
   const hit = await d.overLimit(env, now, [["device", `rflag|${dev}`, 20, DAY]]);
   if (hit) return hit;
-  const r = await d.one(env, "SELECT code, owner, state, flags FROM recipes WHERE code = ?", code);
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+  const r = await d.one(env, "SELECT code, owner, state, flags, body, cover FROM recipes WHERE code = ?", code);
   if (!r || r.state !== "visible") return d.json({ error: "not_found" }, 404);
   if (r.owner === dev) return d.json({ error: "own" }, 400);
   const res = await d.run(env, "INSERT OR IGNORE INTO recipe_flags (code, device, reason, at) VALUES (?, ?, ?, ?)", code, dev, reason, now);
   if (!res?.meta?.changes) return d.json({ flagged: true, already: true });
+  // 1.36 [SEC-05] 보안 점검 M3: one network counts once a day for one recipe, so ids made on one line cannot hide others' work.
+  // [SEC-16] M10 (PC 확인 F 13차): and a 새싹 install's report (under 3 days, nothing approved) is kept for the operator but does not
+  // count, as for pictures (SEC-08) and fonts (SEC-10), so new ids on new lines cannot hide it either. [counts] is what a recipe's
+  // report passes on to its pictures (F).
+  await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
+  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+  const net = await d.network(request, env, now);
+  const why = trust.level < 1 ? "new" : (await d.allow(env, `rflagnet|${net.day}|${code}`, 1, DAY, now)) ? null : "net";
+  const counts = why === null;
+  // F 1.36 [GRW-08] (with F): a recipe's report is its pictures' report too, counted as the recipe's is.
+  if (d.flagRecipeImages) await d.flagRecipeImages(env, r.body, r.cover, dev, reason, now, counts);
+  if (!counts) {
+    await d.run(env, "UPDATE recipe_flags SET counted = 0, why = ? WHERE code = ? AND device = ?", why, code, dev);
+    return d.json({ flagged: true });
+  }
   const flags = r.flags + 1;
   const hide = flags >= RECIPE_LIMITS.flagsToHide;
   await d.batch(env, [
@@ -1106,6 +1219,7 @@ async function recipeFlag(d, env, request, code) {
     ...(hide ? [d.stmt(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'hide', 'flags', '', ?)", code, now),
       d.stmt(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", r.owner)] : []),
   ]);
+  if (hide) await addStrike(d, env, r.owner, "recipe", code, now);
   return d.json({ flagged: true, hidden: hide });
 }
 
@@ -1116,7 +1230,8 @@ async function mine(d, env, request) {
   const now = Date.now();
   const rows = await d.all(env, "SELECT * FROM recipes WHERE owner = ? AND state != 'deleted' ORDER BY updated_at DESC LIMIT 100", dev);
   const trust = await recipeTrust(d, env, dev, now);
-  return d.json({ trust: trust.level, leftToday: null, reviewLeft: Math.max(0, RECIPE_LIMITS.reviewFirst - trust.approved),
+  const lim = await writeLeft(d, env, dev, "recipe", now);
+  return d.json({ trust: trust.level, leftToday: lim.limit ? lim.limit.left : null, ...lim, reviewLeft: Math.max(0, RECIPE_LIMITS.reviewFirst - trust.approved),
     items: rows.map((r) => ({ ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash })) });
 }
 
@@ -1140,6 +1255,9 @@ async function recipeTalk(d, env, request, code) {
   const nick = new Map(nicks.map((n) => [n.device, n.nick]));
   const voted = new Map(myVotes.map((v) => [v.post_id, v.ok === 1 ? 1 : -1]));
   const hidden = await d.hiddenAuthors(env, request);
+  // [PRF-05] 1.36 차단한 분의 이야기도 빼요 (recipe_blocks holds public maker ids; a post's writer is matched by the same one-way id).
+  const blocked = dev ? new Set((await d.all(env, "SELECT maker FROM recipe_blocks WHERE device = ?", dev)).map((b) => b.maker)) : new Set();
+  if (blocked.size) for (const p of rows) if (blocked.has(await makerId(p.device))) hidden.add(p.device);
   const key = await d.authorKey(env);
   const numbers = new Map();
   const mineIds = rows.filter((p) => p.device === dev).map((p) => p.id);
@@ -1165,9 +1283,10 @@ async function recipeTalk(d, env, request, code) {
       ...(p.status === "shown" ? {} : { hidden: true }),
     });
   }
-  const used = dev ? await d.one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", `rtalk|${dev}`, now) : null;
+  // 1.36 [LIM-10] How many more today only while strikes restrict this install; otherwise nothing, there is no cap.
+  const used = dev ? await writeLeft(d, env, dev, "rtalk", now) : {};
   return d.json({ code, posts, ...(muted ? { mutedUntil: new Date(muted.until).toISOString() } : {}),
-    ...(dev ? { left: Math.max(0, RECIPE_LIMITS.talkPerDay - (used?.count ?? 0)) } : {}) });
+    ...(used.limit ? { left: used.limit.left, limit: used.limit } : {}) });
 }
 
 /** POST /api/recipes/:code/talk — {body, kind, parent?, usingDays?}. */
@@ -1188,7 +1307,7 @@ async function talkPost(d, env, request, code) {
   const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
   const net = await d.network(request, env, now);
-  const hit = await d.overLimit(env, now, [["device", `rtalk|${dev}`, RECIPE_LIMITS.talkPerDay, DAY], ["network", `rtalk|${net.day}`, 300, DAY]]);
+  const hit = (await writeLimitHit(d, env, dev, "rtalk", now)) ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "rtalk", 300, now)));
   if (hit) return hit;
   let parent = null;
   if (body.parent !== undefined && body.parent !== null) {
@@ -1273,14 +1392,25 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     code, action, String(reason).slice(0, 200), actorName, now);
   if (path === "/recipes" && method === "GET") {
     const tab = url.searchParams.get("tab") ?? "queue";
-    const where = { queue: "state = 'pending'", flagged: "flags > 0 AND state != 'deleted'", hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1" }[tab]
+    // 1.36 [SEC-16] M10: 신고된 also lists a recipe whose reports all went to the operator only (none counted toward hiding it).
+    const where = { queue: "state = 'pending'", flagged: "(flags > 0 OR EXISTS (SELECT 1 FROM recipe_flags f WHERE f.code = recipes.code)) AND state != 'deleted'",
+      hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1" }[tab]
       ?? "state = 'pending'";
     const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT 200`);
-    const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n FROM recipe_flags WHERE code IN (${rows.map(() => "?").join(",")})
+    const marks = rows.map(() => "?").join(",");
+    // PC 확인 보안 6차: how many of each reason counted toward hiding it too (the operator's own were shown as if they did).
+    const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n, SUM(counted) AS counted FROM recipe_flags WHERE code IN (${marks})
       GROUP BY code, reason`, ...rows.map((r) => r.code)) : [];
+    const quiet = rows.length ? await d.all(env, `SELECT code, why, COUNT(*) AS n FROM recipe_flags WHERE counted = 0 AND code IN (${marks})
+      GROUP BY code, why`, ...rows.map((r) => r.code)) : [];
+    const quietOf = (code) => {
+      const q = quiet.filter((x) => x.code === code);
+      const n = (why) => q.find((x) => x.why === why)?.n ?? 0;
+      return q.length ? { fresh: n("new"), net: n("net") } : null;
+    };
     return d.json({ tab, items: rows.map((r) => ({ ...listItem(r, now), state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
-      late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n })),
-      hidden: r.hidden_reason ?? null })) });
+      late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n, counted: f.counted ?? f.n })),
+      quiet: quietOf(r.code), hidden: r.hidden_reason ?? null })) });
   }
   if (path === "/recipes/actions" && method === "GET") {
     const rows = await d.all(env, "SELECT * FROM recipe_actions ORDER BY id DESC LIMIT 300");
@@ -1325,6 +1455,8 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     if (!r) return d.json({ error: "not_found" }, 404);
     const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
     const stmts = [];
+    let strike = null;
+    let unstrike = null;
     if (what === "approve") {
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', decided_at = ?, note = '' WHERE code = ?", now, code));
       if (r.state === "pending") stmts.push(d.stmt(env, "UPDATE recipe_trust SET approved = approved + 1 WHERE device = ?", r.owner));
@@ -1333,11 +1465,19 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'returned', decided_at = ?, note = ? WHERE code = ?", now, note, code));
       stmts.push(d.stmt(env, "UPDATE recipe_trust SET returned = returned + 1 WHERE device = ?", r.owner));
     } else if (what === "hide") {
+      // 1.36 [LIM-10] Hidden by the operator counts like reports hiding it (not again when reports already did).
+      if (r.state !== "hidden") strike = r.owner;
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ? WHERE code = ?", now, note, code));
-      stmts.push(d.stmt(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", r.owner));
+      if (r.state !== "hidden") stmts.push(d.stmt(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", r.owner));
     } else if (what === "show") {
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, flags = 0, note = '' WHERE code = ?", code));
       stmts.push(d.stmt(env, "DELETE FROM recipe_flags WHERE code = ?", code));
+      stmts.push(d.stmt(env, "DELETE FROM write_strikes WHERE ref = ?", code));
+      // 1.36 [SEC-16] M10: shown again, its maker's mark for it goes too (it kept 단골 away for good) and a restriction it started ends.
+      if (r.state === "hidden") {
+        stmts.push(d.stmt(env, "UPDATE recipe_trust SET hidden = MAX(0, hidden - 1) WHERE device = ?", r.owner));
+        unstrike = r.owner;
+      }
     } else if (what === "official") {
       stmts.push(d.stmt(env, "UPDATE recipes SET official = ? WHERE code = ?", body.on === false ? 0 : 1, code));
     } else if (what === "showcase") {
@@ -1346,8 +1486,11 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     } else {
       stmts.push(...dropRecipe(d, env, code));
     }
-    stmts.push(act(code, what, note));
+    // 1.36 [SEC-16] (PC 확인 F 13차): a recipe the reports hid, shown again, says why in 임시 조치 기록 when the operator wrote nothing.
+    stmts.push(act(code, what, note || (what === "show" && r.hidden_reason === "flags" ? "신고가 맞지 않았어요" : "")));
     await d.batch(env, stmts);
+    if (strike) await operatorStrike(d, env, strike, "recipe", code, now);
+    if (unstrike) await strikeTakenBack(d, env, unstrike, now);
     return d.json({ code, done: what });
   }
   if (path === "/recipes/votes/release" && method === "POST") {
@@ -1379,7 +1522,7 @@ export async function forgetRecipes(d, env, dev) {
       : "UPDATE recipes SET dislikes = dislikes - 1, wdislikes = wdislikes - ? WHERE code = ?", v.weight, v.code));
   }
   stmts.push(d.stmt(env, "DELETE FROM recipe_votes WHERE device = ?", dev));
-  stmts.push(d.stmt(env, "UPDATE recipes SET flags = flags - 1 WHERE code IN (SELECT code FROM recipe_flags WHERE device = ?)", dev));
+  stmts.push(d.stmt(env, "UPDATE recipes SET flags = flags - 1 WHERE code IN (SELECT code FROM recipe_flags WHERE device = ? AND counted = 1)", dev));
   stmts.push(d.stmt(env, "DELETE FROM recipe_flags WHERE device = ?", dev));
   stmts.push(d.stmt(env, "DELETE FROM recipe_trust WHERE device = ?", dev));
   if (stmts.length) await d.batch(env, stmts);

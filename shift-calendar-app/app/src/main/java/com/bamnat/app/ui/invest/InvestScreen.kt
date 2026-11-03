@@ -22,7 +22,7 @@ import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
@@ -248,7 +248,7 @@ private fun OverviewTab(vm: InvestViewModel, state: InvestState, open: (InvestSh
     QuickActions(open)
     if (s.missingQuotes.isNotEmpty()) WarningBanner(
         title = "현재가를 적지 않은 종목이 ${s.missingQuotes.size}개 있어요",
-        message = s.missingQuotes.take(3).joinToString(", ") + "은(는) 산 가격으로 셌어요. 평가손익을 보려면 현재가를 적어 주세요.",
+        message = s.missingQuotes.take(3).joinToString(", ").let { it + com.bamnat.app.ui.Fmt.eun(it) } + " 산 가격으로 셌어요. 평가손익을 보려면 현재가를 적어 주세요.",
         action = "현재가 적기", onAction = { open(InvestSheet.Quotes) },
     )
     if (s.cashShort) WarningBanner(

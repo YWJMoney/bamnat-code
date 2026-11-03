@@ -127,6 +127,18 @@ class BusinessTaxTest {
         assertEquals(Math.round(9_000_000 * 365.0 / 90), y.projectedSales)
     }
 
+    /** 1.36 실사용 S16: a 3.3% job is a 인적용역's pay, free of 부가세, even with the default 일반과세. */
+    @Test fun withheldJobsCarryNoVat() {
+        val jobs = listOf(Job(date = LocalDate.of(2026, 11, 30), title = "도배", amount = 900_000, withholding = true))
+        val y = BusinessTax.year(2026, LocalDate.of(2026, 12, 6), Profile(), jobs, emptyList(), emptyList())
+        assertEquals(0, y.vat)
+        assertTrue(y.dues.none { it.name.contains("부가세") || it.name.contains("사업장현황") })
+        assertTrue(y.dues.any { it.name == "종합소득세 확정신고" })
+        // A shop day beside it still carries its 부가세, the job's pay left out.
+        val mixed = BusinessTax.year(2026, LocalDate.of(2026, 12, 31), Profile(), jobs, listOf(DailySales(LocalDate.of(2026, 5, 1), 11_000_000, 0)), emptyList())
+        assertEquals(1_000_000, mixed.vat)
+    }
+
     @Test fun fromTheLedgerShopDaysAndJobs() {
         val today = LocalDate.of(2026, 12, 31)
         val sales = listOf(DailySales(LocalDate.of(2026, 5, 1), 30_000_000, 5_000_000))
