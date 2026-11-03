@@ -896,7 +896,24 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         Column {
                             // [NAV-06] While the tabs are moved, the line about it shows over the tabs.
                             if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs)
-                            NavigationBar {
+                            // [BLU-05] 1.36 부품 꾸미기: 아래 탭 막대와 탭 (고른 탭은 sel).
+                            val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+                            val barPart = bp.style("app.tabs")
+                            val tabPart = bp.style("app.tab")
+                            val tabOn = bp.style("app.tab", setOf("sel"))
+                            val itemColors = com.bamnat.app.ui.components.Selection.navBarItemColors().let { c ->
+                                if (tabPart.isEmpty && tabOn.isEmpty) c else androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                    indicatorColor = tabOn.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedIndicatorColor,
+                                    selectedIconColor = tabOn.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedIconColor,
+                                    selectedTextColor = tabOn.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedTextColor,
+                                    unselectedIconColor = tabPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.unselectedIconColor,
+                                    unselectedTextColor = tabPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.unselectedTextColor,
+                                )
+                            }
+                            NavigationBar(
+                                modifier = com.bamnat.app.ui.parts.PartMods.box(barPart.copy(fill = null), androidx.compose.ui.graphics.RectangleShape),
+                                containerColor = barPart.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()).copy(alpha = (barPart.fillA ?: 100) / 100f) } ?: androidx.compose.material3.NavigationBarDefaults.containerColor,
+                            ) {
                                 val twoLineRoom = twoLineTabs(tabs.map { it.labelFor(activeStyle) })
                                 tabs.forEachIndexed { index, dest ->
                                     androidx.compose.runtime.key(dest.route) {
@@ -906,9 +923,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                             selected = selected,
                                             onClick = { onTab(dest) },
                                             icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
-                                            label = { TabLabel(label, twoLineRoom) },
+                                            label = { TabLabel(label, twoLineRoom, if (selected) tabOn else tabPart) },
                                             modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = true, tabsShown, tabNames, saveTabs),
-                                            colors = com.bamnat.app.ui.components.Selection.navBarItemColors(),
+                                            colors = itemColors,
                                         )
                                     }
                                 }
@@ -1855,7 +1872,8 @@ private fun AppNavHost(
 
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
-private fun TabLabel(text: String, twoLineRoom: Boolean = false) {
+private fun TabLabel(text: String, twoLineRoom: Boolean = false, part: com.bamnat.core.recipe.PartStyle = com.bamnat.core.recipe.PartStyle.NONE) {
+    val style = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null), MaterialTheme.typography.labelMedium)
     // [VIS-04] 중-3: from 150% a two-word name ("근무·급여") used to take two lines and push its icon above the others'
     // (A11Y-04); then it kept one line with its last word ("급여").
     // 1.36 (PC 확인: '근무·급여'가 '급여'로만 보여 다른 탭인 줄 알았어요): both words, one above the other. PC 확인 8e9e888a
@@ -1865,7 +1883,7 @@ private fun TabLabel(text: String, twoLineRoom: Boolean = false) {
     val parts = text.split('·')
     val density = androidx.compose.ui.platform.LocalDensity.current
     if (parts.size == 2 && density.fontScale >= TWO_LINE_FROM) {
-        val line = one.copy(fontSize = one.fontSize * TWO_LINE_SIZE, lineHeight = one.fontSize * TWO_LINE_HEIGHT)
+        val line = style.copy(fontSize = one.fontSize * TWO_LINE_SIZE, lineHeight = one.fontSize * TWO_LINE_HEIGHT)
         val each = with(density) { (one.fontSize * TWO_LINE_HEIGHT).toDp() }
         Column(Modifier.clearAndSetSemantics { contentDescription = text }, horizontalAlignment = Alignment.CenterHorizontally) {
             parts.forEach {
@@ -1876,9 +1894,9 @@ private fun TabLabel(text: String, twoLineRoom: Boolean = false) {
         }
     } else if (twoLineRoom) {
         val room = with(density) { (one.fontSize * (TWO_LINE_HEIGHT * 2)).toDp() }
-        androidx.compose.foundation.layout.Box(Modifier.heightIn(min = room), contentAlignment = Alignment.Center) { FitText(text, one) }
+        androidx.compose.foundation.layout.Box(Modifier.heightIn(min = room), contentAlignment = Alignment.Center) { FitText(text, style) }
     } else {
-        FitText(text, one)
+        FitText(text, style)
     }
 }
 
@@ -2270,6 +2288,9 @@ private fun LookUndoBand() {
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     var tick by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // PC 20차: in safe mode the looks rest, so '입힌 모양이에요' would say the opposite of what shows.
+    val safe by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
+    if (safe) return
     val kept = androidx.compose.runtime.remember(settings, tick) { com.bamnat.app.data.LookUndo.read(c.appContext) } ?: return
     // Shown only while the look on is the one put on (the settings were not changed back another way).
     if (c.recipes.pieces.lookSnapshot() == kept.first) return

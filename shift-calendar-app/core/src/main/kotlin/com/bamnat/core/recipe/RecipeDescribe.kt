@@ -132,6 +132,10 @@ object RecipeDescribe {
             PayLook.decodeAll(p.values["pay"] as? String).size.takeIf { it > 0 }?.let { "급여 모양 ${it}가지 유형" },
             "그림 있음".takeIf { ScreenLooks.decode(p.values["screens"] as? String).images.isNotEmpty() },
         ).joinToString(" · ").ifEmpty { "화면 색·배경" }
+        // [BLU-01] 1.36 부품 꾸미기: which parts, by the names the studio shows.
+        PieceKind.PARTS -> items(p, "parts").map { it["id"] as String }.distinct().let { ids ->
+            "부품 ${ids.size}개 꾸밈: " + ids.take(4).joinToString("·") { BlueprintParts.LABELS[it] ?: it } + if (ids.size > 4) " 외" else ""
+        }
         // [CVW-07]
         PieceKind.APP_FEEL -> listOfNotNull(
             (p.values["theme"] as? String)?.let { RecipeWords.PICKS[it] }, "기기 색".takeIf { p.values["dynamic"] == true },

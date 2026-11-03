@@ -216,6 +216,16 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     Text(if (s.applying) "넣는 중…" else "입어 보고 고르기")
                 } else Button(onClick = { confirming = true }, enabled = chosen > 0 && ready,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.applying) "넣는 중…" else "고른 ${chosen}개 내 달력에 넣기") }
+                // [BLU-07] PC 6차: a 부품 is kept for the studio from here in one tap, not only inside 입어 보기.
+                val unit = remember(r) { com.bamnat.core.recipe.LookParts.partUnit(r) }
+                if (unit != null) {
+                    var keptLine by remember(r) { mutableStateOf<String?>(null) }
+                    androidx.compose.material3.OutlinedButton(onClick = {
+                        keptLine = if (vm.keep(setOf(unit))) "✓ 보관함에 담았어요. 스튜디오 › 보관함에서 꺼내 얹어요"
+                            else "보관함이 꽉 찼어요. 스튜디오 › 보관함에서 하나를 빼고 다시 담아 주세요"
+                    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 부품 보관함에 담기") }
+                    keptLine?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
                 if (tryOn) {
                     val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
                     TryOnScreen(r, vm.style, onDismiss = { tryOn = false },

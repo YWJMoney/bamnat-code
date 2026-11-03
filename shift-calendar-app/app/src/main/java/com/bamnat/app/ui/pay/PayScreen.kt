@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.theme.CalendarColors
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.components.labelWidth
@@ -421,9 +422,14 @@ private fun PayResult(
         // [VIS-05] With large text the month's arrows took the row and the job's name stood one letter a line:
         // the name gets its own line above them.
         val stack = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+        // [BLU-11] 1.36 누락 점검 N3: 급여 머리 (일 이름과 달 넘기기) as a part.
+        val headPart = com.bamnat.app.ui.parts.partStyle("pay.head")
         val who: @Composable (Modifier) -> Unit = { m ->
-            Text("${profile.occupation.label} · ${profile.wageLabel()}", style = MaterialTheme.typography.titleMedium, modifier = m)
+            if (headPart.hide != true) com.bamnat.app.ui.parts.PartText("${profile.occupation.label} · ${profile.wageLabel()}", headPart, MaterialTheme.typography.titleMedium,
+                modifier = m.then(com.bamnat.app.ui.parts.partSpotModifier("pay.head")))
+            else Spacer(m)
         }
+        Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(headPart.copy(ink = null), RoundedCornerShape(0.dp)))) {
         if (stack) who(Modifier)
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (stack) Spacer(Modifier.weight(1f)) else who(Modifier.weight(1f))
@@ -431,6 +437,7 @@ private fun PayResult(
             com.bamnat.app.ui.calendar.MonthJumpTitle(month, { vm.showMonth(it) }, style = MaterialTheme.typography.titleSmall) // 1.32 [WTYP-21]
             IconButton(onClick = { vm.moveMonth(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
             if (stack) Spacer(Modifier.weight(1f))
+        }
         }
         // The month asked for is still being worked out; the one before stays meanwhile.
         if (result.month != month) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -866,13 +873,19 @@ private fun TotalCard(
     val checks = range?.effects?.size ?: 0
     // [FREE-07] 급여 모양: the total card's own colour (its words black or white on it) and the figure's size.
     val look = LocalPayLook.current
-    val fill = look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
-    val onFill = if (look.plus != null) com.bamnat.app.ui.components.contentColorOn(fill) else MaterialTheme.colorScheme.onPrimaryContainer
+    // [BLU-11] 1.36 누락 점검 N3: 급여 합계 as a part, over 급여 모양 (its fill, corners, line, shadow, padding and the figure's letters).
+    val part = com.bamnat.app.ui.parts.partStyle("pay.total")
+    val fill = part.fillColor ?: look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
+    val onFill = part.ink?.let { Color(it.toInt()) }
+        ?: if (look.plus != null || part.fillColor != null) com.bamnat.app.ui.components.contentColorOn(fill.copy(alpha = 1f)) else MaterialTheme.colorScheme.onPrimaryContainer
+    val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(part, MaterialTheme.shapes.large)
     Column(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large)
+        Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.total"))
+            .then(com.bamnat.app.ui.parts.PartMods.box(part.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), shape))
+            .clip(shape)
             .background(fill)
             .clickable(enabled = unlocked && checks > 0, onClickLabel = "확인 필요한 답 보기", onClick = onChecks)
-            .padding(20.dp),
+            .padding(horizontal = (part.padH ?: 20).dp, vertical = (part.padV ?: 20).dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -902,11 +915,11 @@ private fun TotalCard(
         }
         Text(
             text,
-            style = (if (spread) MaterialTheme.typography.headlineMedium else when (look.total) {
+            style = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null), (if (spread) MaterialTheme.typography.headlineMedium else when (look.total) {
                 "m" -> MaterialTheme.typography.headlineMedium
                 "xl" -> MaterialTheme.typography.displayMedium
                 else -> MaterialTheme.typography.displaySmall
-            }).copy(fontWeight = FontWeight.Bold),
+            }).copy(fontWeight = FontWeight.Bold)),
             color = onFill,
             modifier = if (unlocked || Build.VERSION.SDK_INT < 31) Modifier else Modifier.blur(6.dp),
         )
@@ -1109,16 +1122,20 @@ private fun Legend(color: Color, label: String) {
 @Composable
 private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {}, onClick: () -> Unit) {
     val look = LocalPayLook.current
+    // [BLU-11] 1.36 누락 점검 N3: 급여 한 줄 as a part, 더하는 줄(in)·빼는 줄(out) each its own.
+    val part = com.bamnat.app.ui.parts.partStyle("pay.row", setOf(if (line.amount < 0) "out" else "in"))
+    val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(part, MaterialTheme.shapes.small)
     Row(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(enabled = unlocked, onClick = onClick)
-            .padding(vertical = when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp }),
+        Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.row"))
+            .then(com.bamnat.app.ui.parts.PartMods.box(part.copy(pad = null, padX = null, padY = null), shape)).clip(shape).clickable(enabled = unlocked, onClick = onClick)
+            .padding(horizontal = (part.padH ?: 0).dp, vertical = part.padV?.dp ?: when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(10.dp).clip(RoundedCornerShape(3.dp)).background(kindColor(line.kind)))
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(line.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false))
+                Text(line.label, style = com.bamnat.app.ui.parts.PartMods.text(part, MaterialTheme.typography.bodyLarge), modifier = Modifier.weight(1f, fill = false))
                 if (line.estimated) { Spacer(Modifier.width(6.dp)); EstimatedChip("추정", onClick = onEstimate.takeIf { unlocked }) }
             }
             if (line.minutes > 0) {
@@ -1128,7 +1145,8 @@ private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {
         }
         // [FREE-07] What is taken off in 급여 모양's own colour, when it reads on the page.
         val minus = look.minus?.takeIf { line.amount < 0 }?.let { Color((it or 0xFF000000L).toInt()) }
-        Text(if (unlocked) won(line.amount) else "●●●,●●●원", style = MaterialTheme.typography.titleSmall, color = minus ?: Color.Unspecified)
+        Text(if (unlocked) won(line.amount) else "●●●,●●●원", style = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null), MaterialTheme.typography.titleSmall),
+            color = part.ink?.let { Color(it.toInt()) } ?: minus ?: Color.Unspecified)
     }
 }
 

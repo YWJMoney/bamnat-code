@@ -98,7 +98,12 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
                 Box(Modifier.matchParentSize().background((look.bg?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
             }
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
+            // [BLU-12] PC 15차: on a ground of its own the parts' 어두운 화면 lines follow that ground (a white 화면 색 on a dark phone
+            // keeps the light lines, so a light-grey 금액 meant for dark does not land on white).
+            val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
+            val grounded = if (plain && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted,
+                com.bamnat.app.ui.parts.LocalBlueprint provides (if (raw.isEmpty) com.bamnat.app.ui.parts.LocalBlueprint.current else grounded),
                 androidx.compose.material3.LocalContentColor provides if (plain && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
             }

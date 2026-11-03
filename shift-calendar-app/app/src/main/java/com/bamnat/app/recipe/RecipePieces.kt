@@ -156,6 +156,8 @@ class RecipePieces(private val c: AppContainer) {
             }
             mapOf("screens" to looks.encode().ifEmpty { null }, "pay" to s.payLooks.ifEmpty { null }).takeIf { m -> m.values.any { it != null } }
         }
+        // [BLU-01] 1.36 부품 꾸미기: the blueprint's lines as they are.
+        PieceKind.PARTS -> com.bamnat.core.recipe.Blueprint.decode(from.parts).takeIf { !it.isEmpty }?.let { mapOf("parts" to it.sorted()) }
         // [CVW-07] 1.35 앱 동작.
         PieceKind.APP_FEEL -> from.let { s ->
             mapOf("theme" to THEMES.entries.first { it.value == s.themeMode }.key, "dynamic" to s.dynamicColor,
@@ -272,7 +274,7 @@ class RecipePieces(private val c: AppContainer) {
             ).ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
         PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
-        PieceKind.SCREEN_LOOK ->
+        PieceKind.SCREEN_LOOK, PieceKind.PARTS ->
             settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(c.settingsRepository.current, k) != v }.map { (k, _) -> Change(SETTING_NAMES[k] ?: k) }
                 .ifEmpty { listOf(Change("지금과 같아서 바뀌는 것이 없어요", skipped = true)) }
     }
@@ -439,7 +441,7 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.BUNDLE -> null
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
-            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK -> {
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS -> {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
                 if (kind == PieceKind.PHOTO_LOOK || kind == PieceKind.SCREEN_LOOK) photoIds(values).forEach { LookImages.fetch(c, it) }
                 val now = c.settingsRepository.current
@@ -645,7 +647,7 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.BUNDLE -> {}
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
-            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK -> {
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS -> {
                 val sets = before.optJSONObject("settings") ?: return
                 c.settingsRepository.update { cur ->
                     sets.keys().asSequence().fold(cur) { acc, k ->
@@ -774,6 +776,10 @@ class RecipePieces(private val c: AppContainer) {
                 }
                 listOfNotNull(screens?.let { "screenLooks" to it.encode() }, pay?.let { "payLooks" to it }).toMap()
             }
+            // [BLU-01] 1.36 부품 꾸미기: a recipe's parts are a whole look, so they take the place of mine (tokens already colours).
+            PieceKind.PARTS -> (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()
+                ?.let { l -> runCatching { com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(l)).encode() }.getOrNull() }
+                ?.let { mapOf("parts" to it) }.orEmpty()
             else -> emptyMap()
         }
     }
@@ -810,6 +816,7 @@ class RecipePieces(private val c: AppContainer) {
         "screenLooks" -> s.screenLooks
         "payLooks" -> s.payLooks
         "calTheme" -> s.calTheme
+        "parts" -> s.parts
         else -> ""
     }
 
@@ -845,6 +852,7 @@ class RecipePieces(private val c: AppContainer) {
         "screenLooks" -> s.copy(screenLooks = v)
         "payLooks" -> s.copy(payLooks = v)
         "calTheme" -> s.copy(calTheme = v)
+        "parts" -> s.copy(parts = v.takeIf { com.bamnat.core.recipe.Blueprint.problem(it) == null } ?: s.parts)
         else -> s
     }
 
@@ -866,7 +874,7 @@ class RecipePieces(private val c: AppContainer) {
                     cell = (values["cell"] as? String)?.takeIf { it != "tint" } ?: if (values["cell"] == "tint") null else t.cell).encode())
             }
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
-            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK ->
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS ->
                 settingsAfter(kind, values, cal, draft).entries.fold(draft) { acc, (k, v) -> withSetting(acc, k, v) }
             else -> draft
         }
@@ -1002,7 +1010,9 @@ class RecipePieces(private val c: AppContainer) {
         val LOOK_SETTINGS = listOf("calView", "calTheme", "screenLooks", "memoLook", "moneyLook", "payLooks", "widgetLook", "photoLook",
             "calendarLayout", "statsLayout", "moneyLayout", "memoLayout", "tabOrder",
             // [STU-37] 1.36 근무에 따라 바뀌는 모양: 입히기 puts it on with the rest; it stays on this phone (not in a recipe).
-            "shiftLooks")
+            "shiftLooks",
+            // [BLU-01] 1.36 부품 꾸미기.
+            "parts")
 
         private val SETTING_NAMES = mapOf("tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
             "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "shiftLooks" to "근무에 따라 바뀌는 모양", "widgetMemo" to "위젯 메모 한 줄",
@@ -1012,7 +1022,8 @@ class RecipePieces(private val c: AppContainer) {
             "textStep" to "글자 크기", "compact" to "촘촘하게", "clock12" to "오전/오후로 보기", "phoneDayView" to "날짜를 누르면", "longPress" to "날짜를 길게 누르면",
             "dayGroupOrder" to "하루 화면 순서", "sleepTips" to "오늘의 흐름", "restCheck" to "휴식 점검", "statsByPayPeriod" to "통계를 급여 기간으로",
             "memoLook" to "메모장 모양 (배치·카드·글꼴·배경)", "moneyLook" to "가계부 모양 (줄 간격·금액 크기·표시·색)",
-            "screenLooks" to "화면 색·배경", "payLooks" to "급여 화면 모양 (근무 유형별)")
+            "screenLooks" to "화면 색·배경", "payLooks" to "급여 화면 모양 (근무 유형별)",
+            "parts" to "부품 꾸미기 (달력 머리·칸·날짜·탭 막대·카드 하나하나)")
         /** [CVW-07] 앱 동작's 밝기 and the settings' own. */
         private val THEMES = mapOf("system" to com.bamnat.app.data.ThemeMode.SYSTEM, "light" to com.bamnat.app.data.ThemeMode.LIGHT,
             "dark" to com.bamnat.app.data.ThemeMode.DARK, "night" to com.bamnat.app.data.ThemeMode.NIGHT_SHIFT)

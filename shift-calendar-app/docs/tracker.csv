@@ -1667,3 +1667,16 @@ DESK-12,1.37 효과 확인 7·14일과 주간 보고,1.37,대기,,설계 docs/pl
 DESK-13,1.37 CLAUDE.md에 '처리해' 한 바퀴 순서·운영 열쇠 쓰는 법·묻는 것 목록,1.37,대기,,설계 docs/plans/1.37-문의-개발-운영장부-설계.md
 DESK-14,1.37 한 바퀴 시험: PC 에뮬레이터 두 대 + 로컬 서버(임시 열쇠)로 문의부터 묶음 답·앱 반영까지,1.37,대기,,설계 docs/plans/1.37-문의-개발-운영장부-설계.md
 DESK-15,"1.37 앱 안 업데이트 알림(Google Play 인앱 업데이트): 새 판이면 앱 안에서 업데이트 한 번(유연 방식, 급한 고침만 전체 화면), 묶음 답의 업데이트 단추 연결",1.37,대기,,설계 docs/plans/1.37-문의-개발-운영장부-설계.md
+BLU-01,"1.36 861 부품 설계도 형식 1판(사용자 2026-11-01 스튜디오 완전 자유도, 제안 11): 레시피 조각 parts에 부품 id 43개·상태 14개·공통 스타일 칸·배치 칸을 줄로, 같은 (부품, 상태) 한 번, 순서는 그 부품의 아이만. core·서버 같은 검사",1.36,진행 중,에뮬레이터 확인,"core Blueprint.kt BlueprintParts·PieceKind.PARTS·Field.Items.check, recipes.js PART_IDS·PART_STYLE·parts, docs/blueprint-format.md, recipe-cases [BLU-01], BlueprintTest"
+BLU-02,"1.36 862 공통 스타일 풀이: 기본 → 근무 종류 → 수입·지출 → 토·일 → 공휴일 → 다른 달 → 오늘 → 고름 차례로 덮고, 글자 칸은 부모에서 물려받기",1.36,진행 중,에뮬레이터 확인,"core PartStyle·Blueprint.style·childOrder, BlueprintTest.statesLayInOrderAndLettersComeFromTheParent"
+BLU-03,"1.36 863 옛 조각 옮겨 읽기: 달력 테마·달력 모양(한 가지 칸 모양)·화면 색 전체·메모장 모양·가계부 모양을 같은 뜻의 부품 줄로, 옛 레시피도",1.36,진행 중,에뮬레이터 확인,"core LegacyParts.of, BlueprintTest.olderPiecesReadAsParts·everyBuiltInThemeReadsAsParts"
+BLU-04,"1.36 864 자동 배치(제안 12): 칸 속 조각의 순서·방향(가로·세로·겹침)·간격·정렬·늘어남·자리",1.36,진행 중,에뮬레이터 확인,"core Blueprint.childOrder, app PartLayout"
+BLU-05,"1.36 865 그리기 엔진(제안 11·5): 옛 조각이 그린 위에 부품 스타일을 덮어 그림. 달력 머리·요일 줄·칸·칸 속 날짜·근무 표시·줄들·아래 요약, 앱 바탕·탭 막대·단추·카드, 메모 카드, 가계부 금액",1.36,진행 중,에뮬레이터 확인,"app ui/parts PartPaint·LocalBlueprint, MonthGrid, AppRoot, settings parts·백업"
+BLU-06,"1.36 866 스튜디오 부품 도구: 부품 나무·상태 칩·공통 스타일 칸, 미리 보기 바로, 나누기·되돌리기",1.36,진행 중,에뮬레이터 확인,"StudioPartsTool, RecipePieces PARTS"
+BLU-07,"1.36 866-1 부품 하나만 올리기·담아 두기·얹기: part:<단위> id, partUnit/partUnitOf, 장터 부품 구간(갈래 F)·판 부품(갈래 E)과 같은 규칙",1.36,진행 중,에뮬레이터 확인,"LookParts.unit/partUnit, recipes.js partUnitOf, StudioViewModel.uploadPart"
+BLU-08,"1.36 누락 점검 N11 글자 그림자(tshadow·tshadowC·tshadowX·tshadowY)·밑줄(deco) 형식 칸, 부품 도구, 앱 PartStyle.text 그리기",1.36,진행 중,에뮬레이터 확인,"Blueprint STYLE_FIELDS, recipes.js PART_STYLE, PartPaint.textShadow"
+BLU-09,"1.36 누락 점검 N4 미리 보기에서 누른 부품 바로 고치기, 같은 곳 다시 누르면 부모",1.36,진행 중,에뮬레이터 확인,"ui/parts/PartSpot.kt"
+BLU-10,"1.36 누락 점검 N2 위젯이 widget·widget.head·widget.cell 부품을 그리기(편집 화면은 갈래 C)",1.36,진행 중,에뮬레이터 확인,"widget/"
+BLU-11,"1.36 누락 점검 N3 급여 화면 부품 pay.head·pay.total·pay.row 그리기",1.36,진행 중,에뮬레이터 확인,"ui/pay/"
+BLU-12,"1.36 부품 어두운 화면 상태 dark: 토큰 어두운 색을 dark 줄로, Blueprint.forDark로 앱·스튜디오·위젯이 접음",1.36,진행 중,에뮬레이터 확인,"Blueprint.forDark, RecipeResolve.piece"
+SEC-13,"1.36 보안 점검 M2(A 몫): 안전 모드에서는 부품 설계도 없이 그림(앱·위젯), 평소대로 누르면 다시",1.36,진행 중,에뮬레이터 확인,"app MainActivity partsResting, widget/WidgetLookTheme"

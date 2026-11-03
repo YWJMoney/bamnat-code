@@ -5,6 +5,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.remember
 import androidx.glance.GlanceTheme
 import androidx.glance.LocalContext
 import androidx.glance.appwidget.cornerRadius
@@ -24,6 +25,8 @@ private val LocalWidgetAlpha = compositionLocalOf { 1f }
 private val LocalWidgetBgColor = compositionLocalOf<androidx.compose.ui.graphics.Color?> { null }
 private val LocalWidgetCorner = compositionLocalOf { 20 }
 private val LocalWidgetText = compositionLocalOf { 1f }
+/** [BLU-10] The widget's inner padding (가로 to 세로), 12 dp each unless the `widget` part sets its own. */
+private val LocalWidgetPad = compositionLocalOf { 12 to 12 }
 
 /** [STU-38] A text size in the widget, times the chosen 글자 크기. */
 @Composable
@@ -45,10 +48,23 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
     val picture = pictureId?.let { id ->
         runCatching { com.bamnat.app.recipe.LookImages.file(context, id).takeIf { it.isFile }?.let { com.bamnat.app.recipe.SafeBitmaps.decodeFile(it.path) } }.getOrNull()
     }
+    // [BLU-10] 1.36 위젯 부품: the blueprint's `widget` part over 위젯 모양 (its fill, corners, padding and 글자 색 win).
+    // [BLU-12] Light or dark as the widget is drawn (위젯 모양's own, else the phone's), for the parts' dark lines.
+    val night = when (look.theme) { "dark" -> true; "light" -> false
+        else -> isNight(context) }
+    // 1.36 [SEC-13] 안전 모드: the widget too is drawn without the blueprint.
+    val parts = remember(settings?.parts, night) {
+        if (com.bamnat.app.diag.StartGuard.safe.value) com.bamnat.core.recipe.Blueprint.EMPTY
+        else com.bamnat.core.recipe.Blueprint.decode(settings?.parts).forDark(night)
+    }
+    val whole = if (parts.touches("widget")) parts.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
+    val bgArgb = whole.fill?.let { it or 0xFF000000L } ?: look.bg
+    val inkArgb = whole.ink ?: look.ink
     // [STU-38] A background colour of its own decides light or dark, and the text is the chosen colour only where it reads (4.5:1).
-    val ownBg = look.bg?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
-    val darkGround = look.bg?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
-    val ink = look.ink?.let { i -> look.bg?.let { b -> com.bamnat.core.recipe.Palette.inkOn(i, b) } ?: i }?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
+    val ownBg = bgArgb?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
+    val darkGround = bgArgb?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
+    val ink = inkArgb?.let { i -> bgArgb?.let { b -> com.bamnat.core.recipe.Palette.inkOn(i, b) } ?: i }?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
+    val alpha = whole.fillA?.takeIf { whole.fill != null }?.let { it / 100f } ?: (look.alpha / 100f)
     fun inked(c: androidx.compose.material3.ColorScheme) = if (ink == null) c else c.copy(onSurface = ink, onBackground = ink, onSurfaceVariant = ink.copy(alpha = 0.8f))
     val colors = when {
         darkGround == true || (darkGround == null && look.theme == "dark") -> androidx.glance.material3.ColorProviders(inked(darkColorScheme()))
@@ -58,9 +74,10 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
     }
     GlanceTheme(colors = colors) {
         // A picture behind the widget is veiled at least 45 % so its words read.
-        CompositionLocalProvider(LocalWidgetAlpha provides if (picture != null) minOf(look.alpha / 100f, 0.55f).coerceAtLeast(0.45f) else look.alpha / 100f,
-            LocalWidgetPicture provides picture, LocalWidgetBgColor provides ownBg, LocalWidgetCorner provides (look.corner ?: 20),
-            LocalWidgetText provides look.textScale) { content() }
+        CompositionLocalProvider(LocalWidgetAlpha provides if (picture != null) minOf(alpha, 0.55f).coerceAtLeast(0.45f) else alpha,
+            LocalWidgetPicture provides picture, LocalWidgetBgColor provides ownBg, LocalWidgetCorner provides (whole.r ?: look.corner ?: 20),
+            LocalWidgetText provides look.textScale, LocalWidgetParts provides parts,
+            LocalWidgetPad provides ((whole.padH ?: 12) to (whole.padV ?: 12))) { content() }
     }
 }
 
@@ -85,10 +102,15 @@ fun WidgetSurface(modifier: androidx.glance.GlanceModifier, content: @Composable
     androidx.glance.layout.Box(modifier.fillMaxSize().cornerRadius(r)) {
         if (picture != null) androidx.glance.Image(androidx.glance.ImageProvider(picture), contentDescription = null,
             contentScale = androidx.glance.layout.ContentScale.Crop, modifier = androidx.glance.GlanceModifier.fillMaxSize().cornerRadius(r))
-        androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(r).padding(12.dp)) { content() }
+        val (px, py) = LocalWidgetPad.current
+        androidx.glance.layout.Box(androidx.glance.GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(r).padding(horizontal = px.dp, vertical = py.dp)) { content() }
     }
 }
 
 /** [STU-38] The widget's corners as chosen (20 dp is the app's own). */
 @Composable
 fun widgetCorner(): androidx.compose.ui.unit.Dp = LocalWidgetCorner.current.dp
+
+/** [BLU-12] Whether the phone is in its dark look now (a widget is drawn once per update, not recomposed on a change of it). */
+private fun isNight(context: android.content.Context): Boolean =
+    (context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) == android.content.res.Configuration.UI_MODE_NIGHT_YES

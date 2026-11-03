@@ -523,6 +523,13 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     val trialCtx = androidx.compose.ui.platform.LocalContext.current
                     // [MON-13] 1.36: 금액 비교하기·세후 예상 일주일 무료, tried again from the start.
                     if (BuildConfig.DEBUG) androidx.compose.material3.TextButton(onClick = { trialCtx.appContainer.featureGate.resetTrials() }) { Text("일주일 무료 맛보기 처음부터") }
+                    // PC 17차 사용성 제안: 안전 모드 tried without stopping the app three times (a debug build only).
+                    if (BuildConfig.DEBUG) {
+                        var armed by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+                        androidx.compose.material3.TextButton(onClick = { com.bamnat.app.diag.StartGuard.armNext(trialCtx); armed = true }) {
+                            Text(if (armed) "다음 실행은 안전 모드예요 · 앱을 완전히 닫고 다시 열어요" else "다음 실행을 안전 모드로")
+                        }
+                    }
                 }
             }
             // S 1.32 [SECX-01] 기능 상태 and its 관리자 미리 보기 switches are gone from the phone (the developer app sets previews).

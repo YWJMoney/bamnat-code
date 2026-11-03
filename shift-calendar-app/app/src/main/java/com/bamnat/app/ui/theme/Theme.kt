@@ -275,6 +275,8 @@ fun BamnatTheme(
     corners: String? = null,
     /** [CVW-08] 1.35 앱 강조색 (ARGB, 0 = the app's own): buttons, the picked tab and the selected things. */
     accent: Long = 0L,
+    /** [BLU-05] 1.36 부품 꾸미기: the app-wide parts (앱 전체·단추·카드·칩·아래 창) over the colours, shapes and letters. */
+    parts: com.bamnat.core.recipe.Blueprint = com.bamnat.core.recipe.Blueprint.EMPTY,
     content: @Composable () -> Unit,
 ) {
     val dark = when (themeMode) {
@@ -291,6 +293,9 @@ fun BamnatTheme(
         dark -> DarkColors
         else -> LightColors
     }.let { if (accent == 0L) it else accented(it, accent, dark) }
+    // [BLU-12] 1.36 어두운 화면: the parts' `on: dark` lines (a token's dark colour) laid over theirs when the screen is dark.
+    val raw = parts
+    val parts = androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
     CompositionLocalProvider(LocalCalendarColors provides if (dark) DarkCalendarColors else LightCalendarColors) {
         // U 1.32 [UX132-05] The app's own size times the phone's, never past 2배 so no screen breaks; layouts that measure in
         // sp grow with it and the ones that count columns ([LocalSpacing], the calendar's cells) read the scale.
@@ -307,7 +312,14 @@ fun BamnatTheme(
             androidx.compose.ui.platform.LocalDensity provides scaled,
             LocalSpacing provides if (compact) Spacing.COMPACT else Spacing.ROOMY,
         ) {
-            MaterialTheme(colorScheme = colors, typography = AppTypography, shapes = shapesFor(corners), content = content)
+            MaterialTheme(
+                colorScheme = com.bamnat.app.ui.parts.PartTheme.colors(colors, parts),
+                typography = com.bamnat.app.ui.parts.PartTheme.typography(AppTypography, parts),
+                shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), parts),
+            ) {
+                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides parts,
+                    com.bamnat.app.ui.parts.LocalBlueprintRaw provides raw, content = content)
+            }
         }
     }
 }

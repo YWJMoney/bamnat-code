@@ -91,6 +91,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val canUndoWear: Boolean = false,
         /** 1.36: the line said after 얹기 offers 되돌리기, which takes that one step back. */
         val canUndoLayer: Boolean = false,
+        /** PC 14차 (얹은 것 빼기가 아무 안내 없이 빠짐): what was just taken off, so the line said can lay it on again. */
+        val unlaid: ThemeWardrobe.Kept? = null,
         /** 1.36 PC 확인: the name the draft was last saved under, for 올리기 2/4 (saved, not put on). */
         val savedTitle: String? = null,
         /** 1.36 U3: saved or sent since the last change, so leaving does not ask to throw it away. */
@@ -442,6 +444,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         refresh(both = true)
     }
 
+    /** PC 8차 (따옴표가 ‘‘달력 머리 부품’의 부품 · 달력 머리’처럼 겹침): a kept title that already quotes its theme is not quoted again. */
+    private fun quoted(t: String): String = if (t.startsWith("‘")) t else "‘$t’"
+
     /**
      * [TRY-03] 보관함의 조각 얹기: [k]'s parts laid on the draft, the rest of the draft as it is. Someone else's part keeps where it came
      * from ([State.sources]): putting the look on follows that theme's days and ad, and 올리기 names it.
@@ -449,18 +454,33 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun layer(k: ThemeWardrobe.Kept) = viewModelScope.launch {
         val r = runCatching { RecipeCodec.read(k.body) }.getOrNull() ?: return@launch
         var d = _state.value.draft
-        r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+        var overlap = emptySet<String>()
+        r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p ->
+            // [BLU-07] PC 7차: a 부품 laid on changes only its own units; the parts I made elsewhere stay.
+            d = if (p.kind == com.bamnat.core.recipe.PieceKind.PARTS) {
+                @Suppress("UNCHECKED_CAST")
+                val top = (com.bamnat.core.recipe.RecipeResolve.piece(r, p, com.bamnat.core.recipe.RecipeResolve.answers(r, emptyMap()))["parts"] as? List<Map<String, Any?>>).orEmpty()
+                val (laid, both) = com.bamnat.core.recipe.Blueprint.decode(d.parts).layUnits(top)
+                overlap = overlap + both
+                runCatching { d.copy(parts = com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(laid.lines)).encode()) }.getOrDefault(d)
+            } else c.recipes.pieces.onDraft(d, p.kind, p.values)
+        }
         val was = _state.value.draft
-        where = "보관함 · ‘${k.title}’ 얹기"
+        where = "보관함 · ${quoted(k.title)} 얹기"
         // [STU-39] A locked tab keeps its look when a part is laid on.
         change { keepLocked(it, d) }
         val s = _state.value
         // Nothing changed (the same part again): no step to take back.
         val stepped = s.draft != was
         // 1.36 U17: a part the look already has changes nothing; it says so and is not counted as laid on.
-        if (!stepped) { _state.value = s.copy(said = "‘${k.title}’${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
+        if (!stepped) { _state.value = s.copy(said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
+        val same = overlap.mapNotNull { com.bamnat.core.recipe.BlueprintParts.LABELS[it] }.joinToString("·")
         _state.value = s.copy(layered = s.layered + k, sources = if (k.own) s.sources else s.sources + (k.from to k.fromTitle),
-            said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요", canUndoLayer = stepped)
+            // PC 9차 사용성 제안 (얹기 안내가 두 줄로 길어요): a single part says its own name, and the rest in a few words.
+            said = (k.parts.singleOrNull()?.let { LookParts.byId(it)?.label?.removePrefix("부품 · ") }?.let { "‘$it’ 부품을 얹었어요" }
+                ?: "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요") +
+                (if (same.isNotEmpty()) " · 내 ‘$same’ 꾸밈은 바뀜, 되돌리기로 돌아가요" else " · 다른 부품은 그대로"),
+            canUndoLayer = stepped)
     }
 
     /**
@@ -470,20 +490,34 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun unlayer(k: ThemeWardrobe.Kept) = viewModelScope.launch {
         val s = _state.value
         if (k !in s.layered) return@launch
-        if (s.layered.last() == k && s.past.lastOrNull()?.let { k !in it.layered } == true) { undo(); return@launch }
+        if (s.layered.last() == k && s.past.lastOrNull()?.let { k !in it.layered } == true) {
+            undo()
+            _state.value = _state.value.copy(said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 뺐어요", unlaid = k)
+            return@launch
+        }
         val before = s.past.lastOrNull { k !in it.layered } ?: run {
             _state.value = s.copy(said = "오래전에 얹은 조각이라 뺄 수 없어요. 기록에서 그 앞으로 돌아가 주세요"); return@launch
         }
         val was = Recipe("전", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(before.draft))
         var d = s.draft
-        LookParts.pick(was, k.parts.ifEmpty { LookParts.of(was).map { it.id } }).pieces.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
-        where = "보관함 · ‘${k.title}’ 빼기"
+        LookParts.pick(was, k.parts.ifEmpty { LookParts.of(was).map { it.id } }).pieces.forEach { p ->
+            // [BLU-07] PC 7차: only the units the part brought go back; the parts changed since stay.
+            d = if (p.kind == com.bamnat.core.recipe.PieceKind.PARTS) {
+                val laid = runCatching { com.bamnat.core.recipe.RecipeCodec.read(k.body) }.getOrNull()?.pieces?.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.PARTS }
+                @Suppress("UNCHECKED_CAST")
+                val units = com.bamnat.core.recipe.Blueprint((laid?.values?.get("parts") as? List<Map<String, Any?>>).orEmpty()).units
+                val back = com.bamnat.core.recipe.Blueprint.decode(before.draft.parts).lines.filter { com.bamnat.core.recipe.BlueprintParts.unitOf(it["id"] as String) in units }
+                val keep = com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.filter { com.bamnat.core.recipe.BlueprintParts.unitOf(it["id"] as String) !in units }
+                runCatching { d.copy(parts = com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean((keep + back).take(com.bamnat.core.recipe.BlueprintParts.MAX_LINES))).encode()) }.getOrDefault(d)
+            } else c.recipes.pieces.onDraft(d, p.kind, p.values)
+        }
+        where = "보관함 · ${quoted(k.title)} 빼기"
         change { d }
         val now = _state.value
         val left = now.layered - k
         _state.value = now.copy(layered = left,
             sources = if (k.own || left.any { it.from == k.from }) now.sources else now.sources - k.from,
-            said = "‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 뺐어요")
+            said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 뺐어요", unlaid = k)
     }
 
     // ---- 입히기 · 저장 · 올리기 ----
@@ -731,6 +765,21 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         return RecipeCodec.write(r) to parent
     }
 
+    /**
+     * [BLU-07] 1.36 이 부품만 올리기 (사용자 2026-11-01): the draft's lines of one 부품 [unit] as a recipe of its own, for 장터 '부품'.
+     * Null when the draft has nothing in that 부품 yet.
+     */
+    fun uploadPart(unit: String): String? {
+        val s = _state.value
+        val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)
+        val only = com.bamnat.core.recipe.LookParts.pick(draft, listOf(com.bamnat.core.recipe.LookParts.UNIT + unit))
+        if (only.pieces.isEmpty()) return null
+        val label = com.bamnat.core.recipe.BlueprintParts.LABELS[unit] ?: unit
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = null
+        return RecipeCodec.write(recipe("").copy(title = "$label 부품", summary = "$label 하나만 꾸민 부품이에요", styles = WorkStyle.entries.toSet(),
+            pieces = only.pieces, cover = coverOf(s.draft)))
+    }
+
     /** [STU-41] A 표지 in the draft's colours: '앱 전체' 강조 (or 오늘) to its 바탕, the app's own where it has none. */
     private fun coverOf(d: AppSettings): com.bamnat.core.recipe.Cover {
         val all = ScreenLooks.decode(d.screenLooks).looks[ScreenLooks.ALL]
@@ -749,7 +798,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         if (id != 0L) viewModelScope.launch { runCatching { c.recipes.deleteDraft(id) } }
     }
 
-    fun said() { _state.value = _state.value.copy(said = null, canUndoLayer = false) }
+    fun said() { _state.value = _state.value.copy(said = null, canUndoLayer = false, unlaid = null) }
 
     /** 1.36: 되돌리기 on the line said after 얹기: the same step as the 되돌리기 button above, layered parts and 출처 included. */
     fun undoLayer() { if (_state.value.canUndoLayer) undo() }
