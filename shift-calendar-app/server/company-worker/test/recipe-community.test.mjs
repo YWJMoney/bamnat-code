@@ -512,6 +512,10 @@ test("[VIL-10] 투표 글: 질문에 보기 2~4개, 한 사람 한 표, 바꾸�
   assert.deepEqual(seen, { options: ["주주야야비비", "주야비"], counts: [0, 2], mine: 1 });
   assert.deepEqual((await vote(3, null)).data.poll, { options: ["주주야야비비", "주야비"], counts: [0, 1] });
   assert.equal((await call("GET", path, undefined, as(4))).data.posts.find((p) => p.id === id).poll.mine, undefined);
+  // PC 확인 5c21f3bb: the 관리자 앱's list of posts shows what the poll asked, so a 신고 on it can be judged.
+  const admin = await signIn(call);
+  const listed = (await call("GET", "/api/admin/posts?status=all", undefined, admin)).data.posts.find((p) => p.id === id);
+  assert.deepEqual(listed.poll, ["주주야야비비", "주야비"]);
 });
 
 test("[VIL-13] 내 글: 광장에 쓴 글과 답글을 내 것에서 모아 봐요(쓴 사람만)", async (t) => {

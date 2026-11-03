@@ -6126,6 +6126,9 @@ async function postList(env, url) {
       ...(p.grp === ROOM ? { room: Object.hasOwn(STYLE_ROOMS, p.company_id) ? "style" : "company" } : {}),
       dept: depts.get(key) ?? "",
       body: p.body,
+      // PC 확인 5c21f3bb: a question's poll choices too, so a 신고 on it can be judged by what was asked.
+      ...(p.poll ? { poll: (() => { try { return JSON.parse(p.poll); } catch { return null; } })() } : {}),
+      ...(p.attach ? { attach: p.attach } : {}),
       writer: p.device.slice(0, 6),
       at: iso(p.created_at),
       status: p.status,
