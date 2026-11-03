@@ -133,8 +133,9 @@ fun dayFactsOf(
 /** [FXR-01][FXR-02] Calendar [cal]'s 받는 칸 answers and pay, kept up to date. */
 fun AppContainer.formulaExtras(cal: String): Flow<FormulaExtras> {
     val s = scopeOf(cal)
-    return combine(recipes.formulaInputs(cal), s.pay.profile, s.pay.closed, s.settings) { inputs, profile, closed, settings ->
-        FormulaExtras(inputs, profile?.let { PaySource(it, settings, closed) })
+    // PC 확인 5c21f3bb: a tab laid on (얹은 탭) keeps its 받는 칸 too; a recipe put on later says them again over it.
+    return combine(recipes.formulaInputs(cal), wardrobe.overlays, s.pay.profile, s.pay.closed, s.settings) { inputs, laid, profile, closed, settings ->
+        FormulaExtras(com.bamnat.app.recipe.overlayInputs(laid) + inputs, profile?.let { PaySource(it, settings, closed) })
     }
 }
 

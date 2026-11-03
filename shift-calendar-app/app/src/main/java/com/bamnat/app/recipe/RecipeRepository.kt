@@ -118,7 +118,15 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             before.put(pick.kind.key, snap)
             done += pick.kind.key
         }
-        if (done.isEmpty()) return null
+        if (done.isEmpty()) {
+            // PC 확인 5c21f3bb (적립일 17을 넣었는데 10이 쓰이는 듯): the pieces were all here already, but new answers to its 받는 칸 are
+            // still the receiver's to change; the formulas read them from the record, so the record takes them.
+            val same = if (code.isEmpty() || r.inputs.isEmpty()) null else dao.applied()
+                .filter { it.undoneAt == null && it.replacedAt == null && it.calendarId == cal && it.code == code }.maxByOrNull { it.appliedAt }
+            val now = JSONObject(filled.mapValues { (_, v) -> v }).toString()
+            if (same != null && same.inputs != now) { dao.upsertApplied(same.copy(inputs = now)); return same.id }
+            return null
+        }
         // A later recipe on the same pieces takes the earlier one's place: it is no longer the one 되돌리기 offers.
         val now = Today.millis()
         dao.applied().filter { it.undoneAt == null && it.replacedAt == null && it.calendarId == cal && it.pieces.split(',').any { k -> k in done } }

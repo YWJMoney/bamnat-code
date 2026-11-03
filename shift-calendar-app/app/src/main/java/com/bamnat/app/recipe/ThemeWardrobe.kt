@@ -225,7 +225,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     // ---- [MKX-02] 1.36 기능별 탭 얹기 (사용자 2026-10-31 "고른 테마에 자신에게 맞는 기능별 좋은 탭을 적용") ----
 
     /** One tab's looks laid on the theme worn: which tab, from which recipe, its looks, and the look from just before (빼기). */
-    data class Overlay(val tab: String, val code: String, val title: String, val body: String, val before: Map<String, String>, val at: Long)
+    data class Overlay(val tab: String, val code: String, val title: String, val body: String, val before: Map<String, String>, val at: Long,
+        /** PC 확인 5c21f3bb: the receiver's answers to its 받는 칸 (by id), for its looks and for the formulas' 칸("이름"). */
+        val answers: Map<String, Any?> = emptyMap())
 
     private val _overlays = MutableStateFlow(readOverlays())
     val overlays: StateFlow<List<Overlay>> = _overlays.asStateFlow()
@@ -239,21 +241,26 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val a = org.json.JSONArray(prefs.getString(K_OVERLAYS, "[]"))
         (0 until a.length()).map { a.getJSONObject(it) }.map { o ->
             val b = o.optJSONObject("before")
+            val a = o.optJSONObject("answers")
             Overlay(o.getString("tab"), o.optString("code"), o.optString("title"), o.getString("body"),
-                b?.keys()?.asSequence()?.associateWith { b.getString(it) }.orEmpty(), o.optLong("at"))
+                b?.keys()?.asSequence()?.associateWith { b.getString(it) }.orEmpty(), o.optLong("at"),
+                a?.keys()?.asSequence()?.associateWith { k -> a.get(k).takeIf { it != JSONObject.NULL } }.orEmpty())
         }
     }.getOrDefault(emptyList())
 
     private fun writeOverlays(list: List<Overlay>) {
         val a = org.json.JSONArray()
         list.forEach { o -> a.put(JSONObject().put("tab", o.tab).put("code", o.code).put("title", o.title).put("body", o.body)
-            .put("before", JSONObject(o.before)).put("at", o.at)) }
+            .put("before", JSONObject(o.before)).put("at", o.at).put("answers", JSONObject(o.answers))) }
         prefs.edit().putString(K_OVERLAYS, a.toString()).apply()
         _overlays.value = list
     }
 
     /** The looks of [r] laid over what the phone wears, the rest of it as it is ([LookParts.layer]). */
-    private suspend fun layOn(r: Recipe) {
+    private suspend fun layOn(r0: Recipe, answers: Map<String, Any?> = emptyMap()) {
+        // PC 확인 5c21f3bb (목표 150만을 넣어도 기본 250만): its 받는 칸 and theme colours filled in, as a recipe put on is.
+        val filled = com.bamnat.core.recipe.RecipeResolve.answers(r0, answers)
+        val r = r0.copy(pieces = r0.pieces.map { p -> p.copy(values = com.bamnat.core.recipe.RecipeResolve.piece(r0, p, filled)) })
         val now = Recipe("지금", styles = com.bamnat.core.work.WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
         // [LAY-10] PC 확인 C10 1.36 (기능별 탭으로 얹은 사진 작품은 사진이 안 와요): its 꾸밈 사진 asked for now, and one the operator has not
         // let show yet is marked as waiting, so the calendar says so.
@@ -271,16 +278,17 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
      * [MKX-02] 얹기: [r]'s one tab ([LookParts.onlyTab]) laid on the theme worn, which keeps its name; one already on that tab is
      * replaced. False when [r] is not one tab's.
      */
-    suspend fun overlay(r: Recipe, code: String): Boolean {
+    suspend fun overlay(r: Recipe, code: String, answers: Map<String, Any?> = emptyMap()): Boolean {
         val tab = com.bamnat.core.recipe.LookParts.onlyTab(r) ?: return false
         val before = c.recipes.pieces.lookSnapshot()
         // [MAT-06] PC 확인 9차 (얹은 탭의 글꼴은 받지도 기다리지도 않음): its pictures and shared fonts come first, as when a theme goes on.
         r.pieces.forEach { p -> if (p.kind == com.bamnat.core.recipe.PieceKind.PHOTO_LOOK || p.kind == com.bamnat.core.recipe.PieceKind.SCREEN_LOOK)
             runCatching { c.recipes.pieces.photoIds(p.values).forEach { LookImages.fetch(c, it) } } }
         runCatching { RecipeFonts.fetchIn(c, RecipeCodec.write(r)) }
-        layOn(r)
+        layOn(r, answers)
         val only = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
-        writeOverlays(_overlays.value.filter { it.tab != tab } + Overlay(tab, code, r.title.take(30), RecipeCodec.write(only), before, Today.millis()))
+        writeOverlays(_overlays.value.filter { it.tab != tab } + Overlay(tab, code, r.title.take(30), RecipeCodec.write(only), before, Today.millis(),
+            answers.filterValues { it != null && it != "" }))
         wornLookNow()
         return true
     }
@@ -305,7 +313,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
             worn.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
             c.recipes.pieces.restoreLook(c.recipes.pieces.lookOf(d))
         } else c.recipes.pieces.restoreLook(o.before)
-        _overlays.value.forEach { other -> runCatching { RecipeCodec.read(other.body) }.getOrNull()?.let { layOn(it) } }
+        _overlays.value.forEach { other -> runCatching { RecipeCodec.read(other.body) }.getOrNull()?.let { layOn(it, other.answers) } }
         wornLookNow()
         refreshWidgets()
     }
@@ -314,7 +322,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     private suspend fun reOverlay() {
         if (_overlays.value.isEmpty()) return
         if (!keepOverlays) { writeOverlays(emptyList()); return }
-        _overlays.value.forEach { o -> runCatching { RecipeCodec.read(o.body) }.getOrNull()?.let { layOn(it) } }
+        _overlays.value.forEach { o -> runCatching { RecipeCodec.read(o.body) }.getOrNull()?.let { layOn(it, o.answers) } }
         wornLookNow()
     }
 
@@ -446,5 +454,12 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_KEEP_OVERLAYS = "keep_overlays"
         private const val K_SKIP = "skip_ver"
         private const val K_PREV_VER = "prev_ver"
+    }
+}
+
+/** PC 확인 5c21f3bb: the 받는 칸 answers of the tabs laid on, by name, as formulas' 칸("이름") read them (older first). */
+fun overlayInputs(list: List<ThemeWardrobe.Overlay>): Map<String, Any?> = buildMap {
+    list.sortedBy { it.at }.forEach { o ->
+        runCatching { RecipeCodec.read(o.body) }.getOrNull()?.let { putAll(com.bamnat.core.recipe.RecipeResolve.byLabel(it, o.answers)) }
     }
 }

@@ -319,7 +319,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val picks = s.pieces.filter { it.on && it.fits && !(tab != null && it.kind in looks) }.map { RecipeRepository.Pick(it.kind, it.mode) }
             val counted = c.recipes.countedHere(code)
             val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
-            val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code) }.getOrDefault(false)
+            val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code, s.answers) }.getOrDefault(false)
             // PC 확인 보안 8차 (넣어도 쓰는 분 0명): a tab laid on is a use too (it leaves no record, so apply did not count it).
             // Once a phone [SEC-15], as a theme put on is (the studio thread's own fix sent it at every 얹기).
             if (laid) c.recipes.countUse(code)

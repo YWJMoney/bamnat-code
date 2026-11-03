@@ -172,7 +172,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     update?.let { UpdateDialog(it, vm) }
     undoing?.let { (title, go) ->
         com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { undoing = null }, title = { Text("되돌릴까요?") },
-            text = { Text("‘$title’이 바꾼 것만 넣기 전으로 돌아가요. 넣은 뒤 내가 직접 바꾼 것과 근무 기록·가계부·메모는 그대로예요") },
+            text = { Text("‘$title’${title.lastOrNull()?.let { c -> if (c in '가'..'힣' && (c - '가') % 28 == 0) "가" else "이" } ?: "이"} 바꾼 것만 넣기 전으로 돌아가요. 넣은 뒤 내가 직접 바꾼 것과 근무 기록·가계부·메모는 그대로예요") },
             confirmButton = { TextButton(onClick = { undoing = null; go() }) { Text("되돌리기") } },
             dismissButton = { TextButton(onClick = { undoing = null }) { Text("닫기") } })
     }

@@ -81,4 +81,17 @@ class RecipeApplyTest {
         c.recipes.apply(r, "", 0, PersonalCalendar.MAIN, listOf(RecipeRepository.Pick(PieceKind.ALARMS, RecipePieces.Mode.REPLACE)), mapOf("i1" to 120L))
         assertTrue(repo.snapshot.first().shiftTypes.first { it.id == id }.alarms.any { it.offsetMinutes == 120 })
     }
+
+    /** PC 확인 5c21f3bb: the same work put on again with a new 받는 칸 answer (목표 150만 after 250만) — the formulas read the new one. */
+    @Test fun samePiecesAgainTakeTheNewAnswer() = runBlocking {
+        val r = Recipe(title = "목표 급여 진행", styles = setOf(WorkStyle.SHIFT),
+            inputs = listOf(Input("i1", "목표 급여", InputKind.MONEY, default = 2_500_000L)),
+            pieces = listOf(Piece(PieceKind.PARTS, mapOf("parts" to listOf(mapOf("id" to "pay.total", "fill" to 4280825235L),
+                mapOf("id" to "pay.total", "when" to "이달급여 >= 칸(\"목표 급여\", 2500000)", "paint" to "lg.120.FFFFD54F,FFFFA000"))))))
+        val all = r.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
+        assertNotNull(c.recipes.apply(r, "GOAL2345", 1, PersonalCalendar.MAIN, all, emptyMap()))
+        assertEquals(2_500_000L, (c.recipes.formulaInputs(PersonalCalendar.MAIN).first()["목표 급여"] as Number).toLong())
+        c.recipes.apply(r, "GOAL2345", 1, PersonalCalendar.MAIN, all, mapOf("i1" to 1_500_000L))
+        assertEquals(1_500_000L, (c.recipes.formulaInputs(PersonalCalendar.MAIN).first()["목표 급여"] as Number).toLong())
+    }
 }

@@ -227,7 +227,20 @@ fun FormulaField(value: String, onChange: (String) -> Unit, scope: FormulaScope,
             }, label = { Text(o) })
         }
     }
+    InputValuesLine(value, scope)
     if (!text) PreviewLine(value, scope)
+}
+
+/**
+ * PC 확인 5c21f3bb (적립일 17을 넣었는데 규칙에는 칸("적립일", 10)만 보여요): the 10 is only the fallback; the value put in when the
+ * recipe went on is what the formula reads, said here.
+ */
+@Composable
+private fun InputValuesLine(value: String, scope: FormulaScope) {
+    val labels = remember(value) { com.bamnat.core.formula.FormulaInputs.labels(value) }
+    if (labels.isEmpty()) return
+    val said = labels.joinToString(" · ") { l -> scope.input(l)?.let { "$l ${it.text}" } ?: "$l (넣은 값 없음, 괄호 안 기본값)" }
+    Text("받는 칸 지금 값: $said", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /** Ready pieces to tap in when nothing is being typed. */

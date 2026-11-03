@@ -591,7 +591,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                             Area.MONEY -> MoneySample(moneyLook) { tool = Tool.MONEY_LOOK }
                                             Area.PAY -> PaySample(payLooks[payStyle] ?: PayLook(), payStyle) { tool = Tool.PAY_LOOK }
                                             Area.ALARM -> AlarmSample { tool = Tool.COLORS }
-                                            Area.WIDGET -> WidgetSample(WidgetLook.decode(d.widgetLook))
+                                            Area.WIDGET -> WidgetSample(WidgetLook.decode(d.widgetLook), vm.style)
                                             else -> ScreenSample(t) { tool = Tool.COLORS }
                                         }
                                     }
@@ -1120,7 +1120,7 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
  * '이번 주 근무' and the month's name; a 칸 is a line, a day and a date cell, with its states (오늘·토·일·공휴일·다른 달).
  */
 @Composable
-internal fun WidgetSample(w: WidgetLook) {
+internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     val whole = if (bp.touches("widget")) bp.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
     val bg = whole.fill?.let { it or 0xFF000000L } ?: w.bg
@@ -1167,7 +1167,15 @@ internal fun WidgetSample(w: WidgetLook) {
                 when (kind) {
                     WidgetKind.TODAY -> {
                         // PC 확인 W1 1.36 (예시 근무가 내 근무와 달라요): my own today and tomorrow, the example only before any work is set.
-                        val (today, tomorrow) = rememberTwoDays() ?: ("오늘 · 주간 07:00" to "내일 · 야간 22:00")
+                        // PC 확인 5c21f3bb: the example before any work is set fits the kind of work (투자 had '주간 07:00').
+                        val (today, tomorrow) = rememberTwoDays() ?: when (style) {
+                            WorkStyle.INVEST -> "오늘 · 장 열림 09:00" to "내일 · 장 열림 09:00"
+                            WorkStyle.BUSINESS -> "오늘 · 영업 10:00" to "내일 · 휴무"
+                            WorkStyle.FIELD -> "오늘 · 현장 08:00" to "내일 · 일감 없음"
+                            WorkStyle.HOURLY -> "오늘 · 알바 18:00" to "내일 · 쉬는 날"
+                            WorkStyle.DAY -> "오늘 · 근무 09:00" to "내일 · 근무 09:00"
+                            else -> "오늘 · 주간 07:00" to "내일 · 야간 22:00"
+                        }
                         Head("${day0.monthValue}월 ${day0.dayOfMonth}일")
                         Cell(today, day0, true, true, 16, Modifier.fillMaxWidth())
                         Cell(tomorrow, day0.plusDays(1), true, false, 14, Modifier.fillMaxWidth())
