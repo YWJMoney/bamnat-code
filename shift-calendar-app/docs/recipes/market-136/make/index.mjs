@@ -23,9 +23,30 @@ for (const [file, mod] of [["theme-hourly-field.json", "./themes-hourly-field.mj
   }
 }
 
+// [FXR-01] 받는 칸: 수식이 칸("이름", 기본값)으로 읽는 값을 받는 사람이 넣을 때 정하게, 아직 입력 칸이 없는 작품에 붙여요.
+// '마감'처럼 메모 한 장의 칸을 읽는 이름(메모 카드 자리)은 여기 없어요: 그건 메모의 '칸: 값'이에요.
+const ASK = {
+  "월 예산": { kind: "money", min: 0, hint: "한 달에 쓸 돈" },
+  "적립일": { kind: "number", min: 1, max: 28, hint: "매달 며칠에 넣나요" },
+  "하루 목표 매출": { kind: "money", min: 0, hint: "하루 매출 목표" },
+};
+function withAsks(r) {
+  const text = JSON.stringify(r.pieces);
+  const inputs = [...(r.inputs ?? [])];
+  for (const m of text.matchAll(/칸\(\\"([^\\]+)\\", *([0-9.]+)\)/g)) {
+    const [, label, def] = m;
+    if (!ASK[label] || inputs.some((i) => i.label === label)) continue;
+    let n = 1;
+    while (inputs.some((i) => i.id === `i${n}`)) n++;
+    inputs.push({ id: `i${n}`, label, ...ASK[label], default: Number(def) });
+  }
+  return inputs.length ? { ...r, inputs } : r;
+}
+for (const [name, list] of Object.entries(files)) files[name] = list.map((w) => ({ ...w, recipe: withAsks(w.recipe) }));
+
 // 보여주기 30: 고친 1.35 작품 12(theme-showcase-plus.json) + 새 작품 18(SHOWCASE 제목). 다른 작품의 showcase 표시는 지워요.
 const { PLUS, SHOWCASE } = await import("./showcase.mjs");
-add("theme-showcase-plus.json", PLUS);
+add("theme-showcase-plus.json", PLUS.map((w) => ({ ...w, recipe: withAsks(w.recipe) })));
 const missing = new Set(SHOWCASE);
 for (const [name, list] of Object.entries(files)) {
   if (name === "theme-showcase-plus.json") continue;

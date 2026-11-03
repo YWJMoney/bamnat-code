@@ -56,7 +56,7 @@ export function calView(p, o = {}) {
 }
 
 /**
- * One 테마. [s] = { style, title, summary, wow, who?, changes, note?, p (palette), cover:[a,b,emoji], cells (when 줄), dated (고침 뒤 줄),
+ * One 테마. [s] = { style, title, summary, wow, who?, changes, note?, p (palette), cover:[a,b,emoji], cells (when 줄), dated (달력 밖 날짜 부품 줄),
  *   decor, rules, buttons, tpls, view, cal (calView 옵션), memo/money (모양 옵션), alarms, piece, inputs, extra (더 넣을 조각), feel }.
  */
 export function theme(s) {

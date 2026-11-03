@@ -85,7 +85,7 @@ export default [
   cal({
     title: "근무 띠 대형판", styles: ROSTER, summary: "한 달 근무를 띠 한 줄로, 야간 이어지면 띠가 짙게",
     wow: "달력이 근무 띠 판으로 바뀌어 한 달 주기가 한 줄에 보여요. 날짜 칸으로 돌아가도 야간 연속은 짙게, 회복 날은 초록이에요.",
-    changes: ["근무 띠 판", "띠 칸 야간 연속 표시(고침 뒤)", "회복 날"], cover: ["#263238", "#80CBC4", "📏"],
+    changes: ["근무 띠 판", "띠 칸 야간 연속 표시", "회복 날"], cover: ["#263238", "#80CBC4", "📏"],
     p: P({ accent: "#00897B" }), board: "rota", cells: [C.recovery()], dated: [D.bandNight()],
   }),
   cal({

@@ -1,6 +1,6 @@
 // 부품 31 (기획서 4-8): 부품 단위 하나만 극한까지. 작품마다 '부품 꾸미기' 조각 하나에, 모든 줄이 한 단위(설계도 id 앞 두 마디) 안이에요 → 장터 '부품' 구간 part:<단위>.
 // 판(달력 판·메모 보기·가계부 판) 셋은 tabView 조각 하나로 cal.board·memo.view·money.board 단위예요.
-// 달력 칸(cal.cell)의 수식은 지금 돌아요. 머리·메모 카드·가계부 줄·급여 줄·띠·주간 판의 when 줄은 1.36 고침이 합쳐지면 돌아요(설명에 '고침 뒤').
+// 수식(when·{fx})은 날짜가 있는 부품(core Blueprint.DATED: 달력 칸·머리·판, 메모 카드, 가계부 줄, 급여)에만 써요 (FXR-03).
 // 그 밖의 단위는 오늘·주말·근무 종류·들어온/나간 돈·고른 것 같은 상태 줄로 바뀌어요.
 import { c, ALL, ROSTER, recipe, parts, tabView } from "./lib.mjs";
 import { C, D } from "./kit.mjs";
@@ -60,25 +60,25 @@ export default [
     changes: ["남은 날 따라 테두리 색", "고리 움직임"], cover: ["#1E88E5", "#E53935", "⏳"],
     lines: [C.dday("마감"), { id: "cal.cell.date", when: '꼬리표.포함("마감") 그리고 며칠뒤 <= 3 그리고 며칠뒤 >= 0', weight: 900, ink: c("#E53935") }],
   }),
-  // ---- cal.head: 달력 머리 (when은 고침 뒤) ----
+  // ---- cal.head: 달력 머리 (그달 값으로 when) ----
   part({
-    title: "큰 숫자 머리", summary: "달 이름을 40 크기 굵은 숫자로, 야간 많은 달은 보라(고침 뒤)",
-    wow: "달력 머리의 달 이름을 포스터처럼 큰 숫자로 세워요. 이달 야간이 여덟 번을 넘으면 숫자가 보라로 바뀌어요(고침 뒤).",
-    changes: ["큰 굵은 달 숫자", "가운데 정렬", "야간 많은 달 보라(고침 뒤)"], cover: ["#212121", "#7E57C2", "🔢"],
+    title: "큰 숫자 머리", summary: "달 이름을 40 크기 굵은 숫자로, 야간 많은 달은 보라",
+    wow: "달력 머리의 달 이름을 포스터처럼 큰 숫자로 세워요. 이달 야간이 여덟 번을 넘으면 숫자가 보라로 바뀌어요.",
+    changes: ["큰 굵은 달 숫자", "가운데 정렬", "야간 많은 달 보라"], cover: ["#212121", "#7E57C2", "🔢"],
     lines: [{ id: "cal.head.title", size: 40, weight: 900, font: "bebasneue", talign: "center", track: 2 },
       { id: "cal.head.title", when: "이달야간 >= 8", ink: c("#7E57C2") }, { id: "cal.head", pad: 14 }],
   }),
   part({
-    title: "글상자 머리", summary: "달력 머리를 테두리 글상자로, 이달 근무가 길면 빨간 테두리(고침 뒤)",
-    wow: "달력 머리가 둥근 글상자가 되어 달 이름이 카드처럼 앉아요. 이달 일한 시간이 209시간을 넘으면 테두리가 빨갛게 바뀌어요(고침 뒤).",
-    changes: ["둥근 글상자", "얇은 테두리", "긴 근무 달 빨간 테두리(고침 뒤)"], cover: ["#FFFFFF", "#455A64", "🔲"],
+    title: "글상자 머리", summary: "달력 머리를 테두리 글상자로, 이달 근무가 길면 빨간 테두리",
+    wow: "달력 머리가 둥근 글상자가 되어 달 이름이 카드처럼 앉아요. 이달 일한 시간이 209시간을 넘으면 테두리가 빨갛게 바뀌어요.",
+    changes: ["둥근 글상자", "얇은 테두리", "긴 근무 달 빨간 테두리"], cover: ["#FFFFFF", "#455A64", "🔲"],
     lines: [{ id: "cal.head", fill: c("#FFFFFF"), r: 18, line: "solid", lineW: 1.5, lineC: c("#90A4AE"), pad: 12, out: 8, shadow: 2 },
       { id: "cal.head", when: "이달근무시간 >= 209", lineC: c("#E53935"), lineW: 2.5 }, { id: "cal.head.title", weight: 800 }],
   }),
   part({
-    title: "그라데이션 머리", summary: "보라→분홍 그라데이션 머리, 돈 들어온 달은 반짝(고침 뒤)",
-    wow: "달력 머리를 보라에서 분홍으로 번지는 그라데이션으로 칠하고 흰 글자를 얹었어요. 이달 들어온 돈이 있으면 반짝여요(고침 뒤).",
-    changes: ["그라데이션 머리", "흰 글자 그림자", "수입 있는 달 반짝(고침 뒤)"], cover: ["#7E57C2", "#F06292", "🌈"],
+    title: "그라데이션 머리", summary: "보라→분홍 그라데이션 머리, 돈 들어온 달은 반짝",
+    wow: "달력 머리를 보라에서 분홍으로 번지는 그라데이션으로 칠하고 흰 글자를 얹었어요. 이달 들어온 돈이 있으면 반짝여요.",
+    changes: ["그라데이션 머리", "흰 글자 그림자", "수입 있는 달 반짝"], cover: ["#7E57C2", "#F06292", "🌈"],
     lines: [{ id: "cal.head", paint: "lg.135.FF7E57C2,FFF06292", r: 20, pad: 12 },
       { id: "cal.head.title", ink: c("#FFFFFF"), weight: 800, tshadow: 4, tshadowC: c("#4A148C"), tshadowY: 1 },
       { id: "cal.head", when: "이달수입 > 0", motion: "shimmer" }],
@@ -101,16 +101,16 @@ export default [
   }),
   // ---- 달력 판 부품 ----
   part({
-    title: "근무 띠 칸", styles: ROSTER, summary: "근무 띠 판의 칸이 근무 종류마다 색, 야간 세 번째부터 짙게(고침 뒤)",
-    wow: "근무 띠(주간 띠) 판에서 주간·저녁·야간·쉬는 날 칸이 저마다 색으로 나뉘어요. 야간이 세 번 이어지면 그 칸이 짙은 남색이 돼요(고침 뒤).",
-    changes: ["근무별 띠 칸 색", "둥근 띠 칸", "이어진 야간 짙게(고침 뒤)"], cover: ["#FFE082", "#283593", "🎞️"],
+    title: "근무 띠 칸", styles: ROSTER, summary: "근무 띠 판의 칸이 근무 종류마다 색, 야간 세 번째부터 짙게",
+    wow: "근무 띠(주간 띠) 판에서 주간·저녁·야간·쉬는 날 칸이 저마다 색으로 나뉘어요. 야간이 세 번 이어지면 그 칸이 짙은 남색이 돼요.",
+    changes: ["근무별 띠 칸 색", "둥근 띠 칸", "이어진 야간 짙게"], cover: ["#FFE082", "#283593", "🎞️"],
     lines: [{ id: "cal.band.slot", r: 8 }, { id: "cal.band.slot", on: "role.day", fill: c("#FFE082") }, { id: "cal.band.slot", on: "role.eve", fill: c("#FFAB91") },
       { id: "cal.band.slot", on: "role.night", fill: c("#9FA8DA") }, { id: "cal.band.slot", on: "role.off", fill: c("#E0E0E0"), alpha: 60 }, D.bandNight()],
   }),
   part({
-    title: "주간 판 하루", summary: "주간 판의 오늘은 진한 테두리, 많이 쓴 날은 빨간 밑줄(고침 뒤)",
-    wow: "한 주를 크게 보는 주간 판에서 오늘 하루가 진한 테두리로 서고, 5만 넘게 쓴 날은 빨간 줄이 그어져요(고침 뒤).",
-    changes: ["둥근 하루 칸", "오늘 진한 테두리", "큰 지출 날 빨간 줄(고침 뒤)"], cover: ["#ECEFF1", "#E53935", "🗓️"],
+    title: "주간 판 하루", summary: "주간 판의 오늘은 진한 테두리, 많이 쓴 날은 빨간 밑줄",
+    wow: "한 주를 크게 보는 주간 판에서 오늘 하루가 진한 테두리로 서고, 5만 넘게 쓴 날은 빨간 줄이 그어져요.",
+    changes: ["둥근 하루 칸", "오늘 진한 테두리", "큰 지출 날 빨간 줄"], cover: ["#ECEFF1", "#E53935", "🗓️"],
     lines: [{ id: "cal.weekly.day", r: 14, fill: c("#FAFAFA"), pad: 8 }, { id: "cal.weekly.day", on: "today", line: "solid", lineW: 2.5, lineC: c("#3F51B5") },
       D.weeklySpend()],
   }),
@@ -141,28 +141,28 @@ export default [
     lines: [{ id: "memo.tags", r: 16, line: "solid", lineW: 1, lineC: c("#B39DDB"), padX: 10 }, { id: "memo.tags", on: "sel", fill: c("#7E57C2"), ink: c("#FFFFFF"), weight: 700 }],
   }),
   part({
-    title: "마감 메모 카드", summary: "'마감' 칸이 있는 메모 카드에 빨간 테두리(고침 뒤)",
-    wow: "메모 카드가 둥근 흰 카드가 되고, '마감' 칸을 채운 메모는 빨간 테두리로 눈에 띄어요(고침 뒤).",
-    changes: ["둥근 흰 카드", "마감 메모 빨간 테두리(고침 뒤)"], cover: ["#FFFFFF", "#E53935", "📌"],
+    title: "마감 메모 카드", summary: "'마감' 칸이 있는 메모 카드에 빨간 테두리",
+    wow: "메모 카드가 둥근 흰 카드가 되고, '마감' 칸을 채운 메모는 빨간 테두리로 눈에 띄어요.",
+    changes: ["둥근 흰 카드", "마감 메모 빨간 테두리"], cover: ["#FFFFFF", "#E53935", "📌"],
     lines: [{ id: "memo.card", fill: c("#FFFFFF"), r: 16, shadow: 2, pad: 12 }, { id: "memo.card.title", weight: 800 }, D.memoDue()],
   }),
   part({
-    title: "끝낸 메모 흐리게", summary: "체크를 다 끝낸 메모 카드는 흐리게 물러나요(고침 뒤)",
-    wow: "체크 목록을 다 끝낸 메모 카드는 반쯤 흐려져 남은 일만 또렷하게 보여요(고침 뒤). 카드는 연노랑 포스트잇이에요.",
-    changes: ["포스트잇 카드", "끝낸 메모 흐리게(고침 뒤)"], cover: ["#FFF59D", "#BDBDBD", "🗒️"],
+    title: "끝낸 메모 흐리게", summary: "체크를 다 끝낸 메모 카드는 흐리게 물러나요",
+    wow: "체크 목록을 다 끝낸 메모 카드는 반쯤 흐려져 남은 일만 또렷하게 보여요. 카드는 연노랑 포스트잇이에요.",
+    changes: ["포스트잇 카드", "끝낸 메모 흐리게"], cover: ["#FFF59D", "#BDBDBD", "🗒️"],
     lines: [{ id: "memo.card", fill: c("#FFF9C4"), r: 4, shadow: 3 }, { id: "memo.card.body", font: "nanumpen", size: 15 }, D.memoDone()],
   }),
   part({
-    title: "고정 메모 금색", summary: "고정한 메모 카드는 금색 테두리(고침 뒤)",
-    wow: "고정해 둔 메모가 금색 테두리로 다른 카드와 구분돼요(고침 뒤). 카드 제목은 명조로 단정하게.",
-    changes: ["명조 카드 제목", "고정 메모 금색 테두리(고침 뒤)"], cover: ["#FFFFFF", "#FFB300", "⭐"],
+    title: "고정 메모 금색", summary: "고정한 메모 카드는 금색 테두리",
+    wow: "고정해 둔 메모가 금색 테두리로 다른 카드와 구분돼요. 카드 제목은 명조로 단정하게.",
+    changes: ["명조 카드 제목", "고정 메모 금색 테두리"], cover: ["#FFFFFF", "#FFB300", "⭐"],
     lines: [{ id: "memo.card", r: 12 }, { id: "memo.card.title", font: "nanummyeongjo", weight: 700 }, D.memoPinned()],
   }),
   // ---- 가계부 ----
   part({
-    title: "들어온 돈 나간 돈 줄", summary: "가계부 줄이 수입은 초록 바탕, 지출은 흰 바탕, 큰 지출은 분홍(고침 뒤)",
-    wow: "가계부 한 줄 한 줄이 들어온 돈이면 연한 초록, 나간 돈이면 흰 바탕이에요. 5만 넘는 지출 줄은 분홍으로 물들어요(고침 뒤).",
-    changes: ["수입 줄 초록", "지출 줄 흰색", "큰 지출 분홍(고침 뒤)"], cover: ["#E8F5E9", "#FFEBEE", "💳"],
+    title: "들어온 돈 나간 돈 줄", summary: "가계부 줄이 수입은 초록 바탕, 지출은 흰 바탕, 큰 지출은 분홍",
+    wow: "가계부 한 줄 한 줄이 들어온 돈이면 연한 초록, 나간 돈이면 흰 바탕이에요. 5만 넘는 지출 줄은 분홍으로 물들어요.",
+    changes: ["수입 줄 초록", "지출 줄 흰색", "큰 지출 분홍"], cover: ["#E8F5E9", "#FFEBEE", "💳"],
     lines: [{ id: "money.row", r: 10, padX: 8 }, { id: "money.row", on: "in", fill: c("#E8F5E9") }, { id: "money.row", on: "out", fill: c("#FFFFFF") }, D.bigRow()],
   }),
   part({
@@ -194,16 +194,16 @@ export default [
   }),
   // ---- 근무·급여 ----
   part({
-    title: "근무별 급여 줄", styles: ROSTER, summary: "급여 줄이 근무 종류마다 색, 12시간 넘은 날은 굵게(고침 뒤)",
-    wow: "급여 화면의 날마다 줄이 주간·저녁·야간 색으로 나뉘어요. 12시간 넘게 일한 날 줄은 굵은 테두리가 생겨요(고침 뒤).",
-    changes: ["근무별 줄 색", "둥근 줄", "긴 근무 날 테두리(고침 뒤)"], cover: ["#FFE082", "#9FA8DA", "💵"],
+    title: "근무별 급여 줄", styles: ROSTER, summary: "급여 줄이 근무 종류마다 색, 12시간 넘은 날은 굵게",
+    wow: "급여 화면의 날마다 줄이 주간·저녁·야간 색으로 나뉘어요. 12시간 넘게 일한 날 줄은 굵은 테두리가 생겨요.",
+    changes: ["근무별 줄 색", "둥근 줄", "긴 근무 날 테두리"], cover: ["#FFE082", "#9FA8DA", "💵"],
     lines: [{ id: "pay.row", r: 10, padX: 8 }, { id: "pay.row", on: "role.day", fill: c("#FFF8E1") }, { id: "pay.row", on: "role.eve", fill: c("#FBE9E7") },
       { id: "pay.row", on: "role.night", fill: c("#E8EAF6") }, { id: "pay.row", when: "근무시간 >= 12", line: "solid", lineW: 2, lineC: c("#F57C00") }],
   }),
   part({
-    title: "많이 번 날 금빛 줄", styles: ROSTER, summary: "그날 번 돈이 많은 급여 줄은 금빛(고침 뒤)",
-    wow: "그날 급여가 15만을 넘은 줄은 금빛으로 반짝이고, 공휴일에 일한 줄은 빨간 글자예요(고침 뒤). 수고한 날이 눈에 띄어요.",
-    changes: ["많이 번 날 금빛(고침 뒤)", "공휴일 근무 빨간 글자(고침 뒤)"], cover: ["#FFD54F", "#FFF8E1", "🏅"],
+    title: "많이 번 날 금빛 줄", styles: ROSTER, summary: "그날 번 돈이 많은 급여 줄은 금빛",
+    wow: "그날 급여가 15만을 넘은 줄은 금빛으로 반짝이고, 공휴일에 일한 줄은 빨간 글자예요. 수고한 날이 눈에 띄어요.",
+    changes: ["많이 번 날 금빛", "공휴일 근무 빨간 글자"], cover: ["#FFD54F", "#FFF8E1", "🏅"],
     lines: [{ id: "pay.row", r: 12 }, { id: "pay.row", when: "그날급여 >= 150000", paint: "lg.90.FFFFF8E1,FFFFE082", motion: "shimmer" },
       { id: "pay.row", when: "공휴일 그리고 근무시간 > 0", ink: c("#C62828"), weight: 700 }],
   }),

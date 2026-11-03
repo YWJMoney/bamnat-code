@@ -1,6 +1,6 @@
 // 기능별 · 메모 22 (기획서 4-5, 4-10 1~7). 메모장 하나만 바꿔요.
 // 지금 도는 것: 메모 틀의 {수식}(틀을 쓸 때 그날 값으로 채워짐), 입력 칸이 쓰는 '칸: 값' 속성으로 나누는 보드·정렬하는 표.
-// memo.card의 when 줄은 1.36 고침(날짜 있는 부품 조건)이 합쳐지면 돌아요.
+// memo.card의 when 줄은 그 메모 하나의 값(체크율·고정·메모 칸)으로 돌아요 (FXR-03).
 import { c, H, ALL, recipe, memoLook, memoTpl, tabView, parts, decor, bgShape } from "./lib.mjs";
 import { D, T } from "./kit.mjs";
 
@@ -31,7 +31,7 @@ export default [
   memo({
     title: "습관 기록표", summary: "매주 월요일 새로 생기는 습관 체크와 체크 상태 보드",
     wow: "매주 월요일 이번 주 습관 체크가 새로 생기고(다른 날은 틀로 바로), 메모장은 '다 함·하는 중' 보드로 나뉘어 오늘 남은 습관만 보여요.",
-    changes: ["습관 체크 틀(매주 월요일 저절로)", "체크 상태별 보드", "다 끝낸 카드 흐리게(고침 뒤)"], cover: ["#E8F5E9", "#43A047", "🔥"],
+    changes: ["습관 체크 틀(매주 월요일 저절로)", "체크 상태별 보드", "다 끝낸 카드 흐리게"], cover: ["#E8F5E9", "#43A047", "🔥"],
     p: { bg: "#F5FBF5", accent: "#43A047", titleFont: "jua", memoFont: "jua" },
     tpls: [{ title: "오늘 습관", emoji: "🔥", check: ["물 여덟 잔", "스트레칭", "책 10쪽", "일찍 자기"], repeat: "W1" }], view: { memo: "board", memoBy: "check" }, dated: [D.memoDone()],
   }),
@@ -50,8 +50,8 @@ export default [
   }),
   memo({
     title: "할 일 우선순위", summary: "할 일 틀의 마감·상태 칸으로, 마감 빠른 순 표와 상태 보드",
-    wow: "할 일 틀로 만든 메모는 '마감' 칸이 가까운 순으로 표 맨 위에 서고, 마감이 적힌 카드는 빨간 테두리가 둘러요(고침 뒤).",
-    changes: ["할 일 틀(상태·마감)", "마감 빠른 순 표", "마감 카드 테두리(고침 뒤)"], cover: ["#FFEBEE", "#E53935", "📌"],
+    wow: "할 일 틀로 만든 메모는 '마감' 칸이 가까운 순으로 표 맨 위에 서고, 마감이 적힌 카드는 빨간 테두리가 둘러요.",
+    changes: ["할 일 틀(상태·마감)", "마감 빠른 순 표", "마감 카드 테두리"], cover: ["#FFEBEE", "#E53935", "📌"],
     p: { bg: "#FFFAFA", accent: "#E53935" }, tpls: [T.todo], view: { memo: "table", memoSort: "p:마감" }, dated: [D.memoDue(), D.memoPinned()],
   }),
   memo({
@@ -64,7 +64,7 @@ export default [
   memo({
     title: "인수인계 미완료", styles: ["SHIFT", "DAY", "HOURLY"], summary: "체크가 남은 인수인계만 '남음' 칸에, 틀에는 근무 시각이 저절로",
     wow: "메모장이 체크 상태 보드로 바뀌어 아직 남은 인수인계만 한 칸에 모여요. 인수인계 틀을 쓰면 그날 근무 이름과 시작~끝 시각이 저절로 들어가요.",
-    changes: ["인수인계 틀(근무 시각 저절로)", "체크 상태 보드", "다 끝낸 카드 흐리게(고침 뒤)"], cover: ["#E0F2F1", "#00796B", "🩺"],
+    changes: ["인수인계 틀(근무 시각 저절로)", "체크 상태 보드", "다 끝낸 카드 흐리게"], cover: ["#E0F2F1", "#00796B", "🩺"],
     p: { bg: "#F3FAF9", accent: "#00796B", cardLine: true }, tpls: [T.sbar], view: { memo: "board", memoBy: "check" }, dated: [D.memoDone()],
   }),
   memo({
@@ -150,8 +150,8 @@ export default [
   // ---- 모양 ----
   memo({
     title: "포스트잇 벽", summary: "메모가 알록달록 포스트잇으로, 고정 메모는 금색 테두리",
-    wow: "메모가 벽에 붙인 포스트잇처럼 기울어진 색 카드가 되고, 고정한 메모는 금색 테두리(고침 뒤)로 맨 위에 남아요.",
-    changes: ["포스트잇 판", "손글씨", "고정 메모 금색(고침 뒤)"], cover: ["#FFF59D", "#FF8A80", "🟨"],
+    wow: "메모가 벽에 붙인 포스트잇처럼 기울어진 색 카드가 되고, 고정한 메모는 금색 테두리로 맨 위에 남아요.",
+    changes: ["포스트잇 판", "손글씨", "고정 메모 금색"], cover: ["#FFF59D", "#FF8A80", "🟨"],
     p: { bg: "#FAF7F0", card: "#FFF59D", accent: "#FF7043", memoFont: "gaegu", r: 2, shadow: 3 }, look: { layout: "sticky", card: "own", corner: 2 },
     tpls: [T.todayPlan], dated: [D.memoPinned()],
   }),

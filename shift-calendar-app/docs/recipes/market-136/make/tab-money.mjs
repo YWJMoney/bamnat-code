@@ -1,6 +1,6 @@
 // 기능별 · 가계부 22 (기획서 4-4, 4-10 15~21). 가계부 탭 하나만 바꿔요.
 // 지금 도는 것: 가계부 카드(이번 달 흐름 = 오늘 쓸 수 있는 돈, 예산, 근무별 소비, 다음 카드값 …)와 분류 보드·달력·표 판.
-// money.row·money.board.col의 when 줄은 1.36 고침이 합쳐지면 돌아요.
+// money.row·money.table.row의 when 줄은 그 한 줄의 값(금액·종류)으로 돌아요 (FXR-03, 날짜 있는 부품만).
 import { c, H, ALL, recipe, moneyLook, tabView, parts, decor } from "./lib.mjs";
 import { D } from "./kit.mjs";
 
@@ -41,10 +41,10 @@ export default [
     p: { bg: "#F7FBF2", accent: "#7CB342" }, view: "cal", cards: "pace,hero",
   }),
   money({
-    title: "분류별 예산 신호등", summary: "분류 보드와 예산 카드, 예산 넘은 분류 칸은 빨간 테두리(고침 뒤)",
-    wow: "가계부가 분류 보드로 나뉘어 식비·교통·쇼핑이 칸마다 합쳐지고, 예산 카드가 분류별 남은 돈을 보여 줘요. 한 칸 합계가 기준을 넘으면 그 칸이 빨갛게 둘러요(고침 뒤).",
-    changes: ["분류 보드", "예산 카드 맨 위", "넘은 칸 빨간 테두리(고침 뒤)"], cover: ["#FFF3E0", "#E53935", "🚦"],
-    p: { bg: "#FFFAF5", accent: "#EF6C00" }, view: "board", cards: "budget,pace,hero", dated: [D.colOver(300000)],
+    title: "분류별 예산 신호등", summary: "분류 보드와 예산 카드, 목록에서 큰 지출 줄은 분홍",
+    wow: "가계부가 분류 보드로 나뉘어 식비·교통·쇼핑이 칸마다 합쳐지고, 예산 카드가 분류별 남은 돈을 보여 줘요. 목록으로 바꾸면 큰 지출 줄이 분홍으로 칠해져요.",
+    changes: ["분류 보드", "예산 카드 맨 위", "큰 지출 줄 분홍"], cover: ["#FFF3E0", "#E53935", "🚦"],
+    p: { bg: "#FFFAF5", accent: "#EF6C00" }, view: "board", cards: "budget,pace,hero", dated: [D.bigRow()],
   }),
   money({
     title: "고정비 빠짐 확인", summary: "나갈 돈·반복 지출 찾기 카드로 이달 고정비가 빠졌는지",
@@ -72,10 +72,10 @@ export default [
   }),
   // ---- 판·모양 ----
   money({
-    title: "표 가계부", summary: "가계부를 엑셀처럼 표로, 큰 지출 줄은 분홍(고침 뒤)",
-    wow: "가계부가 날짜·분류·금액 표가 되어 한 달을 스크롤 없이 훑어요. 큰 지출 줄은 분홍으로 칠해져요(고침 뒤).",
+    title: "표 가계부", summary: "가계부를 엑셀처럼 표로, 큰 지출 줄은 분홍",
+    wow: "가계부가 날짜·분류·금액 표가 되어 한 달을 스크롤 없이 훑어요. 큰 지출 줄은 분홍으로 칠해져요.",
     changes: ["표 판", "촘촘한 줄", "모노 숫자"], cover: ["#FFFFFF", "#1E88E5", "📋", 0],
-    p: { bg: "#FFFFFF", accent: "#1E88E5", numFont: "robotomono" }, view: "table", look: { rows: "compact", amount: "m", mark: "dot", dayHead: "line" }, dated: [D.bigRow()],
+    p: { bg: "#FFFFFF", accent: "#1E88E5", numFont: "robotomono" }, view: "table", look: { rows: "compact", amount: "m", mark: "dot", dayHead: "line" }, dated: [D.bigTableRow()],
     cards: "hero,pace",
   }),
   money({
@@ -122,9 +122,9 @@ export default [
     p: { bg: "#F6F8FD", accent: "#3949AB", headPaint: "lg.120.FF3949AB,FF00ACC1", headInk: "#FFFFFF" }, look: { dayHead: "big" }, cards: "pace,hero,recent",
   }),
   money({
-    title: "지출 열지도 가계부", summary: "가계부 달력 판에 금액, 큰 지출 줄은 분홍(고침 뒤)",
-    wow: "가계부 달력에서 날마다 쓴 돈이 보이고, 목록으로 바꾸면 큰 지출 줄이 분홍으로 칠해져요(고침 뒤). 반복 지출 찾기가 숨은 고정비를 찾아요.",
-    changes: ["달력 판", "반복 지출 찾기", "큰 지출 줄(고침 뒤)"], cover: ["#FFEBEE", "#EF5350", "🌡️"],
+    title: "지출 열지도 가계부", summary: "가계부 달력 판에 금액, 큰 지출 줄은 분홍",
+    wow: "가계부 달력에서 날마다 쓴 돈이 보이고, 목록으로 바꾸면 큰 지출 줄이 분홍으로 칠해져요. 반복 지출 찾기가 숨은 고정비를 찾아요.",
+    changes: ["달력 판", "반복 지출 찾기", "큰 지출 줄"], cover: ["#FFEBEE", "#EF5350", "🌡️"],
     p: { bg: "#FFF9F9", accent: "#EF5350" }, view: "cal", cards: "repeat,pace,hero", dated: [D.bigRow(80000)],
   }),
   // ---- 유형에 맞춘 가계부 ----

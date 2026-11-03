@@ -1,6 +1,6 @@
 // 작품마다 쓰는 수식 줄·규칙·메모 틀. 수식 이름은 core FormulaName(서버 formula.js)과 같아요.
 // 달력 월 칸(cal.cell과 그 아래)의 when·{fx}는 지금 폰에서 계산돼요. 날짜가 있는 다른 부품(memo.card, money.row, pay.row, cal.band.slot …)의 when은
-// 1.36 고침(메인 스레드 2026-11-03)이 합쳐지면 계산돼요: 그 줄은 [dated]로 따로 모아 설명에 '고침 뒤'를 숨기지 않아요.
+// 1.36 FXR-03부터 계산돼요(core Blueprint.DATED). 위젯·요일 줄·보드 칸처럼 날짜 없는 부품에는 조건 줄을 쓰지 않아요.
 import { c, fx } from "./lib.mjs";
 
 // ---- 달력 칸 조건 줄 (지금 돌아요) ----
@@ -63,7 +63,7 @@ export const C = {
   nightMonth: () => ({ id: "cal.cell.mark", when: '근무종류 = "야간" 그리고 이달야간 >= 8', tshadow: 6, tshadowC: c("#FFF59D"), tshadowX: 0, tshadowY: 0 }),
 };
 
-// ---- 날짜가 있는 다른 부품의 조건 줄 (1.36 고침이 합쳐지면 돌아요) ----
+// ---- 날짜가 있는 다른 부품의 조건 줄 (FXR-03) ----
 export const D = {
   /** 마감 칸(속성)이 가까운 메모 카드 테두리. */
   memoDue: () => ({ id: "memo.card", when: '아님 비었나(칸("마감"))', line: "solid", lineW: 2, lineC: c("#E53935") }),
@@ -74,7 +74,8 @@ export const D = {
   /** 큰 지출 줄 강조. */
   bigRow: (hi = 50000) => ({ id: "money.row", when: `종류 = "지출" 그리고 금액 >= ${hi}`, fill: c("#FFEBEE"), r: 10 }),
   /** 분류 보드 한 칸 합계가 예산을 넘으면 빨간 머리. */
-  colOver: (lim = 300000) => ({ id: "money.board.col", when: `칸합계 > ${lim}`, line: "solid", lineW: 2, lineC: c("#E53935") }),
+  /** 표 판의 큰 지출 줄. */
+  bigTableRow: (hi = 50000) => ({ id: "money.table.row", when: `종류 = "지출" 그리고 금액 >= ${hi}`, fill: c("#FFEBEE") }),
   /** 그 주 근무 띠 칸: 야간 이어지면 짙게. */
   bandNight: () => ({ id: "cal.band.slot", when: '근무종류 = "야간" 그리고 연속근무 >= 3', fill: c("#283593"), ink: c("#FFFFFF") }),
   /** 주간 판의 하루: 쓴 돈 많으면 빨간 밑줄. */

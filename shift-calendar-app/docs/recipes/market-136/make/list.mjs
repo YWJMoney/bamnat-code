@@ -17,17 +17,17 @@ for (const w of W) {
   const r = w.recipe;
   const s = sectionOf(r);
   const k = s.scope === "tab" ? `tab:${s.tabs[0]}` : s.scope;
-  const fix = r.desc.includes("고침 뒤") || r.desc.includes("1.36 고침");
+  const fix = (r.inputs ?? []).length > 0;
   if (fix) after++;
   const who = r.styles.length === 6 ? "모두" : r.styles.map((x) => SW[x]).join("·");
   (groups[k] ??= []).push(`| ${w.showcase ? "⭐ " : ""}${r.title} | ${who} | ${r.summary}${fix ? " ※" : ""} |`);
 }
 let md = `# 1.36 장터 출시 작품 목록 (${W.length}개)\n\n`;
-md += "⭐ = 보여주기(유형마다 5, 모두 30). ※ = 1.36 고침(받는 칸·달력 밖 조건)이 합쳐져야 다 도는 줄이 있는 작품";
-md += ` (${after}개, 설명에 '고침 뒤'로 적었어요). 만드는 법은 make/README.md.\n\n`;
+md += "⭐ = 보여주기(유형마다 5, 모두 30). ※ = 넣을 때 받는 사람이 값(시급·일당·예산·목표 등)을 정하는 작품";
+md += ` (${after}개). 만드는 법은 make/README.md.\n\n`;
 for (const k of Object.keys(NAME)) {
   const g = groups[k] ?? [];
   md += `## ${NAME[k]} (${g.length})\n\n| 작품 | 유형 | 한 줄 소개 |\n|---|---|---|\n${g.join("\n")}\n\n`;
 }
 writeFileSync(OUT, md);
-console.log(`목록 ${W.length}개 (고침 뒤 ${after}개) → ${OUT}`);
+console.log(`목록 ${W.length}개 (받는 칸 ${after}개) → ${OUT}`);
