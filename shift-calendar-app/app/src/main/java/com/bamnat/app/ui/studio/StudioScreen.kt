@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.studio
 
+import com.bamnat.app.ui.decor.nextPinned
+import com.bamnat.app.ui.decor.decor
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -167,22 +169,30 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     }
 
     val tools: List<Tool> get() = when (this) {
-        CALENDAR -> listOf(Tool.CELL, Tool.PARTS, Tool.BOX, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS)
-        MEMO -> listOf(Tool.MEMO_LOOK, Tool.PARTS, Tool.BOX, Tool.COLORS, Tool.CARDS)
-        MONEY -> listOf(Tool.MONEY_LOOK, Tool.PARTS, Tool.BOX, Tool.COLORS, Tool.CARDS)
-        STATS -> listOf(Tool.COLORS, Tool.BOX, Tool.CARDS)
-        PAY -> listOf(Tool.PAY_LOOK, Tool.PARTS, Tool.COLORS, Tool.BOX)
-        PLAZA -> listOf(Tool.COLORS, Tool.BOX)
-        SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.BOX, Tool.TABS, Tool.CORNERS)
-        WIDGET -> listOf(Tool.WIDGET, Tool.PARTS, Tool.BOX)
+        CALENDAR -> listOf(Tool.CELL, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS)
+        MEMO -> listOf(Tool.MEMO_LOOK, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        MONEY -> listOf(Tool.MONEY_LOOK, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        STATS -> listOf(Tool.COLORS, Tool.DECOR, Tool.BOX, Tool.CARDS)
+        PAY -> listOf(Tool.PAY_LOOK, Tool.PARTS, Tool.COLORS, Tool.DECOR, Tool.BOX)
+        PLAZA -> listOf(Tool.COLORS, Tool.DECOR, Tool.BOX)
+        SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.TABS, Tool.CORNERS)
+        WIDGET -> listOf(Tool.WIDGET, Tool.PARTS, Tool.DECOR, Tool.BOX)
         ALARM -> listOf(Tool.COLORS)
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
         // [RUL-06] 한 색, 근무에 따라, 부품, 규칙·단추 first.
-        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.PARTS, Tool.LOGIC, Tool.COLORS, Tool.BOX, Tool.CORNERS, Tool.TABS)
+        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.PARTS, Tool.LOGIC, Tool.COLORS, Tool.DECOR, Tool.BOX, Tool.CORNERS, Tool.TABS)
         FEATURES -> listOf(Tool.FEATURE)
         // PC D4: 장터에서 담은 규칙·단추를 여기 보관함에서 얹어요.
         RULES -> listOf(Tool.RULES, Tool.BUTTONS, Tool.COND, Tool.BOX)
+    }
+
+    /** [LAY-04] Where this area's 꾸밈 층 can stand. */
+    val decorPlaces: List<String> get() = when (this) {
+        CALENDAR -> listOf("bg.calendar", com.bamnat.core.recipe.Decor.HEAD, com.bamnat.core.recipe.Decor.WEEK, com.bamnat.core.recipe.Decor.CELL)
+        MEMO -> listOf("bg.memo"); MONEY -> listOf("bg.money"); STATS -> listOf("bg.stats"); PAY -> listOf("bg.pay")
+        PLAZA -> listOf("bg.plaza"); SETTINGS -> listOf("bg.settings"); WIDGET -> listOf(com.bamnat.core.recipe.Decor.WIDGET)
+        else -> listOf(com.bamnat.core.recipe.Decor.APP)
     }
 
     /** 사용자 2026-11-01: the 장터 구간 that holds this area's looks — a 기능별 탭 where there is one, else 테마. */
@@ -213,6 +223,8 @@ private enum class Tool(val label: String) {
     PARTS("부품"),
     /** [RUL-06] 1.36 수식·규칙·버튼: 단추와 "이럴 때 이렇게" 규칙. */
     LOGIC("규칙·단추"), RULES("규칙"), BUTTONS("단추"), COND("조건부 꾸미기"),
+    /** [LAY-04] 1.36 꾸밈 층: 도형·스티커·글상자·아이콘을 마음대로 놓아요. */
+    DECOR("꾸밈 층"),
 }
 
 /** [STU-24] 1.36 미리 보기 크기: the handle under it sets any size between these (사용자 2026-10-31 "크게작게 접기가 너무 불편"). */
@@ -242,6 +254,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var tool by rememberSaveable { mutableStateOf(Tool.SEED) }
     var partNow by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var partPick by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    // [LAY-09] 고급 보기 for the whole studio (부품 숫자 칸·여러 부품·색 변수, 꾸밈 층 숫자 칸, 층 나무), and the item the 층 나무 opens.
+    var studioAdvanced by rememberSaveable { mutableStateOf(false) }
+    var partsTogether by remember { mutableIntStateOf(1) }
+    var decorFocus by remember { mutableStateOf<Int?>(null) }
+    // [LAY-09] 곳 줄: the six most used, kept on the phone, and '더 보기'.
+    val studioCtx = LocalContext.current
+    val studioPrefs = remember { studioCtx.getSharedPreferences("studio_ui", android.content.Context.MODE_PRIVATE) }
+    var areaUses by remember { mutableStateOf(AreaRank.decode(studioPrefs.getString("areaUses", null))) }
+    var allAreas by rememberSaveable { mutableStateOf(false) }
     var scale by rememberSaveable { mutableStateOf(SCALE_BIG) }
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
@@ -283,13 +304,19 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val memoLook = remember(d.memoLook) { MemoLook.decode(d.memoLook) }
     val moneyLook = remember(d.moneyLook) { MoneyLook.decode(d.moneyLook) }
     val payLooks = remember(d.payLooks) { PayLook.decodeAll(d.payLooks) }
+    // [LAY-04] 1.36 꾸밈 층 being made.
+    val decor = remember(d.decor) { com.bamnat.core.recipe.Decor.decode(d.decor) }
     // [STU-21] The example draws the 기능 that show (근무 색, 메모 틀, 투자 일지) along with the look.
     val now = remember(s.pieces, s.extras) { vm.shown(s) }
     val before = remember(s.basePieces) { Recipe("처음", styles = WorkStyle.entries.toSet(), pieces = s.basePieces) }
     // [BLU-06] The bar counts what the 바꾼 곳 sheet lists (PC 3차: 막대는 1개인데 시트는 2줄).
     val changedCount = remember(before, now) { LookParts.changed(before, now).size }
     val diff = remember(s.draft, s.base) { c.recipes.pieces.lookDiff(s.draft, s.base) }
-    fun pick(a: Area) { area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true }
+    fun pick(a: Area) {
+        area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true
+        areaUses = AreaRank.used(areaUses, a.name)
+        runCatching { studioPrefs.edit().putString("areaUses", AreaRank.encode(areaUses)).apply() }
+    }
     // PC 확인 1.36 (처음 모양으로 시작하면 달력 › 칸 디자인이 열려 안내가 말한 ‘한 색’이 안 보임): a plain start opens 앱 전체 › 한 색 once.
     val plainStart = diff == 0 && s.origin is StudioViewModel.Origin.Plain && s.extras.isEmpty()
     fun openSeed() { pick(Area.ALL); tool = Tool.SEED }
@@ -316,7 +343,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val firstTool = remember { tool }
     var toolSeen by remember { mutableStateOf(firstTool) }
     LaunchedEffect(tool) {
-        if (tool != toolSeen) { toolSeen = tool; if (scale > SCALE_SMALL) scale = SCALE_SMALL }
+        // PC 확인 C6 1.36 (미리 보기가 커서 꾸밈 층 칸이 좁아요): 꾸밈 층 has its own board, so the example folds away for it.
+        if (tool == Tool.DECOR && tool != toolSeen) { toolSeen = tool; scale = 0f }
+        else if (tool != toolSeen) { toolSeen = tool; if (scale > SCALE_SMALL) scale = SCALE_SMALL }
     }
     // Ask first when the draft has things the phone does not.
     fun guarded(then: () -> Unit) { if (s.changed) startAsk = then else then() }
@@ -521,6 +550,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     // [BLU-06] the draft's parts in 자세히 too.
                                     com.bamnat.app.ui.parts.LocalBlueprint provides (MaterialTheme.colorScheme.background.luminance() < 0.5f).let { dark ->
                                         remember(d.parts, dark) { com.bamnat.core.recipe.Blueprint.decode(d.parts).forDark(dark) } },
+                                    com.bamnat.app.ui.decor.LocalDecor provides decor,
                                     com.bamnat.app.ui.parts.LocalBlueprintRaw provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
                                     // [RUL-02] the phone's own days, so 조건부 꾸미기 shows on the weeks below.
                                     com.bamnat.app.logic.LocalDayFacts provides studioFacts,
@@ -530,7 +560,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                         when (area) {
                                             Area.CALENDAR -> {
                                                 // [STU-25] 1.36 빌드 7: the phone's own weeks, as the example phone above shows them.
-                                                val my = com.bamnat.app.ui.recipe.rememberMyWeeks(emptyList(), weeks = 3)
+                                                // [LAY-03] PC 확인 C1: from the week of a day the 꾸밈 층 is pinned to, when it is past these weeks.
+                                                val now = remember { com.bamnat.core.time.Today.date() }
+                                                val pinnedDay = remember(decor, now) { decor.nextPinned(now)?.takeIf { it.toEpochDay() - now.minusDays((now.dayOfWeek.value % 7).toLong()).toEpochDay() >= 21 } }
+                                                val my = com.bamnat.app.ui.recipe.rememberMyWeeks(emptyList(), weeks = 3, from = pinnedDay)
                                                 CellWeeks(view, rows = if (scale >= 0.5f) 3 else 1, onCell = { i -> lookIndex = i; tool = Tool.CELL },
                                                     start = my?.first, todayDate = my?.today, days = my?.days,
                                                     todayColor = com.bamnat.core.recipe.CalendarTheme.decode(d.calTheme).today?.let { androidx.compose.ui.graphics.Color(it.toInt()) })
@@ -593,8 +626,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // Where, then which tool.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    // PC 제안 1.36 ('앱 전체'가 줄 끝에 숨어 있음): 앱 전체 first, where 한 색 starts.
-                    (listOf(Area.ALL) + Area.entries.filter { it != Area.ALL }).forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
+                    val shown = if (allAreas) Area.entries.map { it.name } else AreaRank.shown(Area.entries.map { it.name }, areaUses, area.name)
+                    (listOf(Area.ALL) + Area.entries.filter { it != Area.ALL }).filter { it.name in shown }.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
+                    if (shown.size < Area.entries.size || allAreas) FilterChip(selected = false, onClick = { allAreas = !allAreas },
+                        label = { Text(if (allAreas) "접기" else "더 보기 ${Area.entries.size - shown.size}") })
+                    FilterChip(selected = studioAdvanced, onClick = { studioAdvanced = !studioAdvanced }, label = { Text("고급 보기") })
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -610,7 +646,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 if ((if (tool in area.tools) tool else area.tools.first()) == Tool.PARTS) partNow?.let { (pid, pon) ->
                     Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("${partWords(pid, null)} 고치는 중", style = MaterialTheme.typography.labelLarge,
+                            Text(if (partsTogether > 1) "${partsTogether}곳 함께 고치는 중" else "${partWords(pid, null)} 고치는 중", style = MaterialTheme.typography.labelLarge,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                                 modifier = Modifier.weight(1f).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                             // PC 4차 사용성 제안: the state changes from here too, when the chips have scrolled away.
@@ -639,6 +675,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     area.target?.takeIf { it.restricted }?.let { Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     val t = if (tool in area.tools) tool else area.tools.first()
                     val key = (area.target ?: FreeTarget.ALL).keyFor(payStyle)
+                    if (studioAdvanced) {
+                        val partIds = if (Tool.PARTS in area.tools) partsGroupOf(area.name).let { g ->
+                            com.bamnat.core.recipe.BlueprintParts.IDS.filter { it == g || it.startsWith("$g.") || (g == "app" && it.startsWith("app")) }
+                        } else emptyList()
+                        val bp = remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) }
+                        LayerTree(treeRows(partIds, bp, decor, if (Tool.DECOR in area.tools) area.decorPlaces else emptyList()),
+                            onPart = { p -> tool = Tool.PARTS; partPick = p to null },
+                            onDecor = { i -> tool = Tool.DECOR; decorFocus = i })
+                    }
                     fun saveView(v: CalendarView) = vm.change { with(CalendarViewSettings) { it.withView(v) } }
                     when (t) {
                         Tool.CELL -> CellDesigner(view, lookIndex, { lookIndex = it }, ::saveView)
@@ -655,7 +700,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         Tool.SEED -> SeedTool(vm, d)
                         Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, focus = partPick?.first, focusOn = partPick?.second, onFocus = { pid, pon -> partNow = pid to pon; partPick = null },
-                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishRound++; publishing = Triple(body, "", null) } }) { v -> vm.change { it.copy(parts = v) } }
+                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishRound++; publishing = Triple(body, "", null) } }, advanced = studioAdvanced,
+                            onTogether = { partsTogether = it }) { v -> vm.change { it.copy(parts = v) } }
                         Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }
@@ -701,6 +747,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 conditionFirst = true, rulesUsing = { f -> com.bamnat.core.formula.Logic.decode(d.logic).rules.filter { it.cond == f }.map { it.name } },
                                 onOpenRules = { area = Area.RULES; tool = Tool.RULES })
                         }
+                        Tool.DECOR -> com.bamnat.app.ui.decor.DecorTool(decor, area.decorPlaces, { label, nd ->
+                            if (label == null) vm.change { it.copy(decor = nd.encode()) } else vm.changeMerged(label) { it.copy(decor = nd.encode()) }
+                        }, vm::undo, advancedIn = studioAdvanced, onAdvanced = { studioAdvanced = it }, focus = decorFocus, onFocused = { decorFocus = null },
+                            buttons = remember(d) { com.bamnat.app.ui.decor.DecorTap.buttons(d) })
                     }
                     Spacer(Modifier.height(24.dp))
                 }
@@ -946,6 +996,9 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
 /**
  * The widget's example: today's day on its plate, light or dark and as see-through as chosen, and [BLU-10] the 위젯 parts as the home
  * screen draws them (판 전체 `widget`, 머리 `widget.head`, 칸 `widget.cell`; a tap on one opens it in 부품).
+ * [LAY-12] 1.36 위젯 편집 화면 (누락 점검 N2, 제안 26): the three widgets the home screen has — 오늘 (today and tomorrow), 주 (this week's
+ * seven days) and 달 (the month) — each picked above the example, so a part's look is seen where it matters: the 머리 is the date line,
+ * '이번 주 근무' and the month's name; a 칸 is a line, a day and a date cell, with its states (오늘·토·일·공휴일·다른 달).
  */
 @Composable
 internal fun WidgetSample(w: WidgetLook) {
@@ -961,28 +1014,79 @@ internal fun WidgetSample(w: WidgetLook) {
     val ink = androidx.compose.ui.graphics.Color(com.bamnat.core.recipe.Palette.inkOn(whole.ink ?: w.ink ?: if (dark) 0xFFFFFFFFL else 0xFF1B1B1BL, ground).toInt())
     val scale = w.textScale
     val face = com.bamnat.core.recipe.PartStyle(font = whole.font, italic = whole.italic, deco = whole.deco)
-    Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),
-        contentAlignment = Alignment.Center) {
-        Column(Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget")).clip(RoundedCornerShape((whole.r ?: w.corner ?: 20).dp)).background(plate)
-            .padding(horizontal = (whole.padH ?: 20).dp, vertical = (whole.padV ?: 14).dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            // PC 확인 W1 1.36 (예시 근무가 내 근무와 달라요): my own today and tomorrow, the example only before any work is set.
-            val (today, tomorrow) = rememberTwoDays() ?: ("오늘 · 주간 07:00" to "내일 · 야간 22:00")
-            val day0 = com.bamnat.core.time.Today.date()
-            val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { com.bamnat.core.holiday.KoreanHolidays.isHoliday(day0) }))
-            if (head.hide != true) com.bamnat.app.ui.parts.PartText("${day0.monthValue}월 ${day0.dayOfMonth}일", face.over(head),
-                MaterialTheme.typography.labelMedium.copy(color = ink.copy(alpha = 0.8f), fontSize = (12 * scale).sp),
-                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(6.dp))))
-            listOf(today to 16, tomorrow to 14).forEachIndexed { i, (line, size) ->
-                val d = day0.plusDays(i.toLong())
-                val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, com.bamnat.core.holiday.KoreanHolidays.isHoliday(d), true, i == 0, false))
-                com.bamnat.app.ui.parts.PartText(line, face.over(cell.copy(size = cell.size?.let { if (i == 0) it * 1.3 else it })),
-                    (if (i == 0) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
-                        .copy(color = if (i == 0) ink else ink.copy(alpha = 0.75f), fontSize = (size * scale).sp),
-                    Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), RoundedCornerShape(6.dp))))
+    var kind by rememberSaveable { mutableStateOf(WidgetKind.TODAY) }
+    val day0 = com.bamnat.core.time.Today.date()
+    fun holiday(d: java.time.LocalDate) = com.bamnat.core.holiday.KoreanHolidays.isHoliday(d)
+    @Composable
+    fun Head(text: String) {
+        val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { holiday(day0) }))
+        if (head.hide != true) com.bamnat.app.ui.parts.PartText(text, face.over(head),
+            MaterialTheme.typography.labelMedium.copy(color = ink.copy(alpha = 0.8f), fontSize = (12 * scale).sp),
+            Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(6.dp))))
+    }
+    @Composable
+    fun Cell(text: String, d: java.time.LocalDate, inMonth: Boolean, big: Boolean, size: Int, modifier: Modifier, center: Boolean = false) {
+        val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, holiday(d), inMonth, d == day0, false))
+        if (cell.hide == true) { Box(modifier); return }
+        val base = (if (big) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
+        com.bamnat.app.ui.parts.PartText(text, face.over(cell.copy(size = cell.size?.let { if (big) it * 1.3 else it })),
+            base.copy(color = if (big || d == day0) ink else ink.copy(alpha = if (inMonth) 0.75f else 0.4f), fontSize = (size * scale).sp,
+                textAlign = if (center) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Unspecified),
+            modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), RoundedCornerShape(6.dp))))
+    }
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            WidgetKind.entries.forEach { k -> FilterChip(selected = k == kind, onClick = { kind = k }, label = { Text(k.label) }) }
+        }
+        Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),
+            contentAlignment = Alignment.Center) {
+            // [LAY-07] 위젯 꾸밈 drawn on the plate as the home screen draws it.
+            Column(Modifier.fillMaxWidth()
+                .then(com.bamnat.app.ui.parts.partSpotModifier("widget")).clip(RoundedCornerShape((whole.r ?: w.corner ?: 20).dp)).background(plate)
+                .decor(com.bamnat.core.recipe.Decor.WIDGET)
+                .padding(horizontal = (whole.padH ?: 20).dp, vertical = (whole.padV ?: 14).dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                when (kind) {
+                    WidgetKind.TODAY -> {
+                        // PC 확인 W1 1.36 (예시 근무가 내 근무와 달라요): my own today and tomorrow, the example only before any work is set.
+                        val (today, tomorrow) = rememberTwoDays() ?: ("오늘 · 주간 07:00" to "내일 · 야간 22:00")
+                        Head("${day0.monthValue}월 ${day0.dayOfMonth}일")
+                        Cell(today, day0, true, true, 16, Modifier.fillMaxWidth())
+                        Cell(tomorrow, day0.plusDays(1), true, false, 14, Modifier.fillMaxWidth())
+                    }
+                    WidgetKind.WEEK -> {
+                        Head("이번 주 근무")
+                        val mon = day0.minusDays((day0.dayOfWeek.value - 1).toLong())
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            (0 until 7).forEach { i ->
+                                val d = mon.plusDays(i.toLong())
+                                Cell("${"월화수목금토일"[i]}\n${d.dayOfMonth}\n${WEEK_SAMPLE[i]}", d, true, false, 11, Modifier.weight(1f), center = true)
+                            }
+                        }
+                    }
+                    WidgetKind.MONTH -> {
+                        Head("${day0.monthValue}월")
+                        val first = day0.withDayOfMonth(1)
+                        val start = first.minusDays((first.dayOfWeek.value % 7).toLong())
+                        val rows = (first.dayOfWeek.value % 7 + day0.lengthOfMonth() + 6) / 7
+                        (0 until rows).forEach { r ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                (0 until 7).forEach { c ->
+                                    val d = start.plusDays((r * 7 + c).toLong())
+                                    Cell("${d.dayOfMonth}", d, d.month == day0.month, false, 11, Modifier.weight(1f), center = true)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
 }
+
+/** [LAY-12] The home screen's widgets, as the studio's widget example shows them. */
+private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK("주 위젯"), MONTH("달 위젯") }
+
+private val WEEK_SAMPLE = listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
 
 /** "오늘 · 야간 19:00" and "내일 · 휴무" from my own calendar, or null while nothing is set for either day. */
 @Composable

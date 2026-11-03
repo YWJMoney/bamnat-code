@@ -53,6 +53,8 @@ class ZFullBackupTest {
         // [RUL-03] 1.36 수식·규칙·버튼.
         logic = com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic(rules = listOf(com.bamnat.core.formula.LogicRule("알림", com.bamnat.core.formula.RuleTrigger.OPEN,
             act = com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.NOTIFY, "안녕"))))),
+        // 1.36 [LAY-01] 꾸밈 층.
+        decor = "[{\"kind\":\"emoji\",\"emoji\":\"💰\",\"at\":\"cal.cell\",\"on\":\"d25\"}]",
         // 1.26 AD.
         tabOrder = listOf("memos", "calendar"),
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].

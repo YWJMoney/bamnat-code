@@ -163,6 +163,30 @@ object RecipeText {
     val emojiGroups: List<String> by lazy { emoji.map { it.group }.distinct() }
 
     /** Emoji whose 한국어 검색어 or 초성 hold every word of [q]; the emoji itself matches too. */
+    /**
+     * [LAY-02] PC 확인 C4 1.36 ('돈'을 찾으면 👌·💇가 섞여 나와요): emoji by how well their words fit — the name starting with [q] first
+     * (💰 돈주머니), then a word that is [q] (👌 돈), then a word starting with it. A word that only holds it in the middle (💇 머리 정돈) is
+     * left out unless nothing better is there.
+     */
+    fun findEmoji(q: String, limit: Int = 120): List<EmojiEntry> {
+        val w = q.trim()
+        if (w.isEmpty()) return emptyList()
+        val loose = searchEmoji(w, 400)
+        fun rank(e: EmojiEntry): Int {
+            val tokens = e.words.split(' ').filter { it.isNotEmpty() }
+            return when {
+                e.emoji == w -> 0
+                tokens.firstOrNull()?.startsWith(w, ignoreCase = true) == true -> 0
+                tokens.any { it.equals(w, ignoreCase = true) } -> 1
+                tokens.any { it.startsWith(w, ignoreCase = true) } -> 2
+                else -> 3
+            }
+        }
+        val ranked = loose.map { it to rank(it) }
+        val good = ranked.filter { it.second < 3 }
+        return (good.ifEmpty { ranked }).sortedBy { it.second }.map { it.first }.take(limit)
+    }
+
     fun searchEmoji(q: String, limit: Int = 120): List<EmojiEntry> {
         val words = q.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (words.isEmpty()) return emptyList()

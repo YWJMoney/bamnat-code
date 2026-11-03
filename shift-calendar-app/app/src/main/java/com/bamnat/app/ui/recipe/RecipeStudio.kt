@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.recipe
 
+import com.bamnat.app.ui.decor.nextPinned
+import com.bamnat.app.ui.decor.decor
 import com.bamnat.app.ui.parts.partSpot
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -222,6 +224,8 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                     com.bamnat.app.ui.theme.LocalScreenLooks provides skin,
                     com.bamnat.app.ui.theme.LocalMemoLook provides (resolved[PieceKind.MEMO_LOOK]?.let(::memoLookOf) ?: com.bamnat.core.recipe.MemoLook()),
                     com.bamnat.app.ui.theme.LocalMoneyLook provides (resolved[PieceKind.MONEY_LOOK]?.let(::moneyLookOf) ?: com.bamnat.core.recipe.MoneyLook()),
+                    // [LAY-03] The recipe's 꾸밈 층 on the example (none: no decorations, not the phone's own).
+                    com.bamnat.app.ui.decor.LocalDecor provides remember(resolved) { com.bamnat.core.recipe.Decor.of(resolved[PieceKind.DECOR]) },
                 ) {
                 com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.fillMaxSize().clickable(onClickLabel = "이 화면 고치기", onClick = onPick).verticalScroll(scroll ?: rememberScrollState()).padding(10.dp),
@@ -334,14 +338,15 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
         fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.part.id, style) }
     placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
     if (placed.any { it.part == CalendarPart.SUMMARY }) Box(Modifier.mockPick("cards")) { MockSummary(style) }
-    val days = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() } ?: exampleDays(style)
+    val ownDays = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() }
+    val days = ownDays ?: exampleDays(style)
     // PC 확인 Z13: this month's own counts of each kind of day, when the calendar has work (else the example's).
     val counts = rememberMonthKinds(days)
     if (placed.any { it.part == CalendarPart.COUNTS }) Row(Modifier.mockPick("days"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         days.forEachIndexed { i, d -> Text("${d["label"]} ${counts?.getOrNull(i) ?: if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
             color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
     }
-    Box(Modifier.mockPick("cells")) { MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW])) }
+    Box(Modifier.mockPick("cells")) { MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]), ownDays.orEmpty()) }
     placed.filter { !above(it.part) }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
 }
 
@@ -365,12 +370,13 @@ internal fun valuesOf(v: com.bamnat.core.recipe.CalendarView, keep: Map<String, 
 internal class MyWeeks(val first: java.time.LocalDate, val today: java.time.LocalDate, val days: List<com.bamnat.app.ui.calendar.SampleDay>)
 
 @Composable
-internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2): MyWeeks? {
+internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from: java.time.LocalDate? = null): MyWeeks? {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
     val today = remember { com.bamnat.core.time.Today.date() }
-    val first = remember(today) { today.minusDays((today.dayOfWeek.value % 7).toLong()) }
+    // [LAY-03] From the week of [from] (a day the 꾸밈 층 is pinned to) when it is given, else this week.
+    val first = remember(today, from) { (from ?: today).let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } }
     val real = remember(snap, days, first, weeks) {
         val s = snap ?: return@remember null
         val resolved = s.resolver.resolveRange(first, first.plusDays(weeks * 7L - 1))
@@ -392,12 +398,20 @@ internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2): MyW
 
 /** An example month in the recipe's 달력 모양 and theme: the kinds of day in turn (2 days each), example memos, today ringed. */
 @Composable
-private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, view: com.bamnat.core.recipe.CalendarView) {
+private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, view: com.bamnat.core.recipe.CalendarView,
+                      /** The recipe's own 근무 모양 (none: my calendar keeps its own colours, not the example's). */
+                      ownDays: List<Map<String, Any?>> = days) {
     // [R136-07] 1.36 (리뷰 R-16·R-21, 후보 1 '내 달력으로 입어 보기'): this week and the next of the phone's own calendar, each day in
     // the recipe's look for its kind of day (the same name, then the same role) or its own; the real holidays and today. Memos stay
     // off the picture. A calendar with no kinds of day yet keeps the example.
-    val mine = rememberMyWeeks(days)
-    val today = mine?.today ?: remember { com.bamnat.core.time.Today.date() }
+    // [LAY-03] PC 확인 C1 1.36 (25일 칸 💰가 예시에 없어요): a 꾸밈 pinned to a date past these two weeks moves the example to its week.
+    val now = remember { com.bamnat.core.time.Today.date() }
+    val layer = com.bamnat.app.ui.decor.LocalDecor.current
+    val pinned = remember(layer, now) { layer.nextPinned(now)?.takeIf { it.toEpochDay() - now.minusDays((now.dayOfWeek.value % 7).toLong()).toEpochDay() >= 14 } }
+    // PC 확인 C4 1.36 (예시 근무 색이 실제 달력 색과 달라요): my days take a recipe's 근무 모양 only when it has one.
+    val mine = rememberMyWeeks(ownDays, from = pinned)
+    val exFirst = pinned?.let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } ?: EXAMPLE_FIRST
+    val today = mine?.today ?: now
     val first = mine?.first ?: today
     // PC 확인 V19 1.36: the 공방 card is my own month, blank days before any work; elsewhere the example shows the kinds of day.
     val own = LocalOwnMonth.current
@@ -412,12 +426,13 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
             memos[i % memos.size], hours = if (d["role"] == "off") null else "8h", off = d["role"] == "off", role = d["role"] as? String)
     }
     Column(Modifier.partSpot("cal"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title, too.
         // [BLU-09] The example's title is the 달력 머리 and 달 이름, drawn as the parts say and found by a tap in the 부품 도구.
         val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
         val head = bp.style("cal.head")
         val title = bp.style("cal.head.title")
         // PC 10차 사용성 제안 (점선이 글자만 감싸 범위가 헷갈림): the head is the whole row, as on the calendar.
-        Box(Modifier.fillMaxWidth().partSpot("cal.head").then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp)))) {
+        Box(Modifier.fillMaxWidth().partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp)))) {
             if (title.hide != true) Box(Modifier.partSpot("cal.head.title").then(com.bamnat.app.ui.parts.PartMods.box(title.copy(ink = null), RoundedCornerShape(0.dp)))) {
                 com.bamnat.app.ui.parts.PartText(if (real != null) "${today.monthValue}월 · 내 달력" else "예시 달력", title,
                     MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
@@ -427,12 +442,12 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         // U15 1.36 (빌드 확인: 누르고 있으면 전 모양이 다른 예시 날로 바뀜): with no own calendar both ways draw the same example — the
         // same days from the same Sunday the 9th, today the 3rd cell — so a cell design added or taken away changes only the looks.
         if ((view.looks.isNotEmpty() || bp.touches("cal") || com.bamnat.app.ui.parts.LocalPartSpots.current != null) && blank == null) com.bamnat.app.ui.settings.CellWeeks(view, rows = 2, onCell = null,
-            start = if (real != null) start0 else EXAMPLE_FIRST, todayDate = if (real != null) today else EXAMPLE_FIRST.plusDays(2), days = sample,
+            start = if (real != null) start0 else exFirst, todayDate = if (real != null) today else exFirst.plusDays(2), days = sample,
             todayColor = (theme["today"] as? Long)?.asColor())
         else if (real != null) com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(),
             rows = 2, numbers = (0 until 14).map { start0.plusDays(it.toLong()).dayOfMonth }, todayAt = (today.toEpochDay() - start0.toEpochDay()).toInt())
         else com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(), rows = 2,
-            start = EXAMPLE_FIRST.dayOfMonth)
+            numbers = (0 until 14).map { exFirst.plusDays(it.toLong()).dayOfMonth })
         if (mine == null) Text("근무를 넣으면 내 달력으로 보여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
@@ -847,6 +862,9 @@ internal object StudioStarters {
             com.bamnat.core.recipe.ScreenLooks.ALL, com.bamnat.core.recipe.ScreenLook(bg = 0xFFFFF8EEL, card = 0xFFFFFFFFL, accent = 0xFFE07A5FL),
         ).encode())
         PieceKind.COMPANY, PieceKind.BUNDLE -> emptyMap()
+        // [LAY-01] A star on every 25th, so turning 꾸밈 층 on shows something at once.
+        PieceKind.DECOR -> com.bamnat.core.recipe.Decor(listOf(com.bamnat.core.recipe.DecorItem(com.bamnat.core.recipe.DecorKind.SHAPE, "star5",
+            com.bamnat.core.recipe.Decor.CELL, on = "d25", x = 820, y = 180, w = 12, h = 12, fill = 0xFFFFB300))).values()
     }
 }
 

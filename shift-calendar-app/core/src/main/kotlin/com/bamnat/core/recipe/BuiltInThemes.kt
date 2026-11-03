@@ -16,6 +16,8 @@ object BuiltInThemes {
         PieceKind.PHOTO_LOOK, PieceKind.LAYOUT, PieceKind.CARDS,
         // [BLU-01] 1.36 부품 꾸미기.
         PieceKind.PARTS,
+        // [LAY-01] 1.36 꾸밈 층.
+        PieceKind.DECOR,
     )
 
     private class Family(

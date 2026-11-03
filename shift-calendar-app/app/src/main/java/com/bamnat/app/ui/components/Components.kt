@@ -120,7 +120,14 @@ fun ShiftBadge(
     outlined: Boolean = false,
     showIcon: Boolean = true,
 ) {
-    val color = type?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.outline
+    // PC 확인 C10 1.36 (아주 어두운 사진 위 '휴' 칩이 회색 바탕에 묻혀요): on a 꾸밈 사진 an outlined badge stands on a ground of its own,
+    // and its line and letters turn to the ink of that ground when their own colour would not show on it.
+    val onPhoto = if (outlined) com.bamnat.app.ui.decor.LocalOnPhoto.current?.copy(alpha = 1f) else null
+    val own = type?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.outline
+    val color = if (onPhoto == null) own else {
+        fun argb(c: Color) = c.toArgb().toLong() and 0xFFFFFFFFL
+        if (com.bamnat.core.layout.Contrast.ratio(argb(own.copy(alpha = 1f)), argb(onPhoto)) >= 3.0) own else contentColorOn(onPhoto)
+    }
     val label = text ?: type?.label ?: "휴"
     val shape = LocalBadgeShape.current ?: RoundedCornerShape(size / 3)
     // The icon only goes with the type's own label, not with stand-in text like "휴" [FEAT-01].
@@ -131,7 +138,7 @@ fun ShiftBadge(
         modifier = modifier
             .clip(shape)
             .then(
-                if (outlined) Modifier.border(1.5.dp, color, shape)
+                if (outlined) Modifier.then(if (onPhoto != null) Modifier.background(onPhoto, shape) else Modifier).border(1.5.dp, color, shape)
                 else Modifier.background(color, shape),
             )
             .widthIn(min = size)

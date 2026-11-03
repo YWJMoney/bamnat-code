@@ -27,6 +27,8 @@ object LookParts {
         data class Screens(val screens: (String) -> Boolean, val pay: Boolean = false) : Take { override val kind = PieceKind.SCREEN_LOOK }
         /** [BLU-05] 1.36 부품 꾸미기: the blueprint lines of the parts under [roots] (`cal` takes `cal`, `cal.head.title` …). */
         data class Parts(val roots: Set<String>) : Take { override val kind = PieceKind.PARTS }
+        /** [LAY-01] The 꾸밈 층's items pinned to the places [at] says yes to. */
+        data class Decor(val at: (String) -> Boolean) : Take { override val kind = PieceKind.DECOR }
     }
 
     data class Part(val id: String, val tab: String, val label: String, val takes: List<Take>)
@@ -65,6 +67,13 @@ object LookParts {
         Part("stats.parts", TabOrder.STATS, "급여 부품", listOf(Take.Parts(setOf("pay")))),
         Part("app.parts", TabOrder.SETTINGS, "앱 전체 부품", listOf(Take.Parts(setOf("app")))),
         Part("widget.parts", WIDGET, "위젯 부품", listOf(Take.Parts(setOf("widget")))),
+        // [LAY-01] 1.36 꾸밈 층, a part on each tab it is pinned to.
+        Part("cal.decor", TabOrder.CALENDAR, "달력 꾸밈", listOf(Take.Decor { it.startsWith("cal.") || it == "bg.calendar" })),
+        Part("memo.decor", TabOrder.MEMOS, "메모 꾸밈", listOf(Take.Decor { it == "bg.memo" })),
+        Part("money.decor", TabOrder.MONEY, "가계부 꾸밈", listOf(Take.Decor { it == "bg.money" })),
+        Part("stats.decor", TabOrder.STATS, "통계·급여 꾸밈", listOf(Take.Decor { it == "bg.stats" || it == "bg.pay" })),
+        Part("app.decor", TabOrder.SETTINGS, "앱 전체 꾸밈", listOf(Take.Decor { it == com.bamnat.core.recipe.Decor.APP || it == "bg.settings" || it == "bg.plaza" })),
+        Part("widget.decor", WIDGET, "위젯 꾸밈", listOf(Take.Decor { it == com.bamnat.core.recipe.Decor.WIDGET })),
     )
 
     /** Whether the blueprint part [id] sits under one of [roots]. */
@@ -121,6 +130,8 @@ object LookParts {
         }
         is Take.Parts -> (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()?.filter { under(it["id"] as? String, t.roots) }
             ?.takeIf { it.isNotEmpty() }?.let { mapOf("parts" to it) }
+        is Take.Decor -> (values["items"] as? List<*>)?.filter { t.at(((it as? Map<*, *>)?.get("at") as? String).orEmpty()) }
+            ?.takeIf { it.isNotEmpty() }?.let { mapOf("items" to it) }
     }
 
     /** The parts [r] has, in the order of [TABS]. */
@@ -150,6 +161,12 @@ object LookParts {
             val over = lines(b)
             val keys = over.map(::key).toSet()
             return mapOf("parts" to (lines(a).filterNot { key(it) in keys } + over).sortedWith(compareBy({ it["id"] as? String }, { it["on"] as? String ?: "" })))
+        }
+        // [LAY-01] Two parts' decorations together; laid on a base, [b]'s places take the place of [a]'s there.
+        if (kind == PieceKind.DECOR) {
+            val bi = (b["items"] as? List<*>).orEmpty()
+            val places = bi.map { (it as? Map<*, *>)?.get("at") }.toSet()
+            return mapOf("items" to ((a["items"] as? List<*>).orEmpty().filter { (it as? Map<*, *>)?.get("at") !in places } + bi).take(com.bamnat.core.recipe.Decor.MAX))
         }
         if (kind != PieceKind.SCREEN_LOOK) return a + b
         val screens = listOfNotNull(a["screens"] as? String, b["screens"] as? String).map { ScreenLooks.decode(it) }
@@ -201,7 +218,7 @@ object LookParts {
      */
     const val OWN_PARTS = 3
 
-    /** Whether [r] names any picture (배경 사진, 머리 그림, 근무 그림, 위젯 사진). */
+    /** Whether [r] names any picture (배경 사진, 머리 그림, 근무 그림, 위젯 사진, 꾸밈 사진). */
     fun hasPhotos(r: Recipe): Boolean = withoutPhotos(r) != r
 
     /** [THM-03] 사진 빼고 올리기: [r] with every picture left out (each screen keeps its colours); the phone keeps its own. */
@@ -215,6 +232,18 @@ object LookParts {
                 }
             }
             PieceKind.PHOTO_LOOK -> p.copy(values = p.values - PHOTO_KEYS).takeIf { it.values.isNotEmpty() }
+            // [LAY-10] 꾸밈 사진 stay on the phone too; the shapes, icons and words go.
+            // PC 확인 C7 1.36 (꾸밈이 사진 하나뿐이면 '사진 빼고 올리기'가 안 나옴): a piece of photos alone goes as a whole, not kept by
+            // the "no items" fallback.
+            PieceKind.DECOR -> {
+                val l = p.values["items"] as? List<*>
+                val bare = l?.filterNot { (it as? Map<*, *>)?.containsKey("photo") == true }
+                when {
+                    l == null || bare!!.size == l.size -> p
+                    bare.isEmpty() -> null
+                    else -> p.copy(values = p.values + ("items" to bare))
+                }
+            }
             else -> p
         }
     })

@@ -209,6 +209,8 @@ class SettingsFilesBackup(
             "look_undo" to "스튜디오에서 입히기 전 모양(하루 동안만 되돌리기)",
             "backup_place" to "마지막 백업 파일이 있던 폴더 주소, 이 휴대폰의 저장소 것",
             "logic_rules" to "규칙을 끈 것·지난 7일 실행 횟수·마지막 되돌리기, 이 휴대폰에서 실행한 만큼(규칙 자체는 설정 logic으로 백업)",
+            // [LAY-09] 1.36 곳 줄 자주 쓰는 6곳: how this phone's hands use the studio.
+            "studio_ui" to "스튜디오에서 자주 연 곳(곳 줄 순서), 이 휴대폰의 것",
             "company:device" to "이 휴대폰의 설치 번호(문의 기록의 열쇠)",
             // [PLAZA-04] 1.25 X (결정 X-D5): the plaza invitation's waits are this phone's, like share_way.
             "company:invite_due" to "광장 올리기 권유를 다시 보일 날, 이 휴대폰에서 본 만큼",

@@ -366,7 +366,8 @@ fun TryOnScreen(
                                 Text("${list.count { it.id in picked }}/${list.size}", style = MaterialTheme.typography.labelMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Row(Modifier.fillMaxWidth().padding(start = 40.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // PC 확인 C6 1.36 (고를 모양 4/4인데 3줄만 보여요): every part in sight, wrapped, not one row to swipe.
+                            androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(start = 40.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 list.forEach { p ->
                                     com.bamnat.app.ui.components.FilterChip(selected = p.id in picked, onClick = {
                                         if (t != LookParts.WIDGET) tab = t

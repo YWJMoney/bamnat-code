@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.decor.decor
 import androidx.compose.ui.layout.layout
 import com.bamnat.app.ui.theme.PhotoBackdrop
 import com.bamnat.app.ui.components.labelWidth
@@ -18,6 +19,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.ui.semantics.heading
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextOverflow
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.schedule.ResolvedDay
@@ -1012,6 +1014,8 @@ fun CalendarScreen(
         }
         // [CAL-50] 상-4: one card at a time above the month, the rest in one line ("알림 2개 더 보기"), in this order.
         val linePlace = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+        // [LAY-10] PC 확인 C9 1.36: a 꾸밈 사진 waiting for the operator is said here, in one line, not over the month.
+        com.bamnat.app.ui.decor.DecorWaitingLine("bg.calendar", Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
         val guideHere = waiting == null && paint == null && viewingReceived == null && visibleMonth == YearMonth.from(today)
         val askOn = partShown(CalendarPart.ASK)
         // [CAL-01] What keeps an alarm from working, the most serious one, only while one is due within a week.
@@ -1881,7 +1885,8 @@ private fun CalendarHeader(
     val todayPart = bp.style("cal.head.today")
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     Row(
-        Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp)
+        // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
+        Modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.HEAD).padding(start = 4.dp, end = 4.dp, top = 8.dp)
             .then(with(com.bamnat.app.ui.parts.PartMods) { box(headPart, MaterialTheme.shapes.medium) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1920,7 +1925,13 @@ private fun CalendarHeader(
         val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
         if (todayPart.hide == true) Unit
         else if (small) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
-        else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod) {
+        // PC 확인 C15 1.36 (사진 위 '오늘' 2.1:1): on this month already the button is off, and its 38% grey vanished on a 꾸밈 사진; there it
+        // keeps most of the ink (still lighter than when it can be pressed).
+        else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod,
+            colors = if (com.bamnat.app.ui.decor.LocalPhotoGround.current == null) androidx.compose.material3.ButtonDefaults.textButtonColors()
+                // PC 확인 C16: the pressable 파랑 too stands on the photo (1.4:1 on a dark one before).
+                else androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = com.bamnat.app.ui.decor.readableOnPhoto(MaterialTheme.colorScheme.primary),
+                    disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))) {
             Text("오늘", maxLines = 1, softWrap = false, style = with(com.bamnat.app.ui.parts.PartMods) { text(todayPart, androidx.compose.material3.LocalTextStyle.current) })
         }
         if (roomy) {
@@ -2278,16 +2289,22 @@ private fun AlarmWarningLine(text: String, action: String, onAction: () -> Unit,
         onClick = onAction,
         shape = MaterialTheme.shapes.medium,
         color = cal.warningContainer,
+        // PC 확인 C10 1.36 (어두운 테마에서 짙은 빨강 띠에 짙은 빨강 글자): the words and 켜기 take the ink of the band itself.
+        contentColor = com.bamnat.app.ui.components.contentColorOn(cal.warningContainer),
         modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
     ) {
+        val ink = com.bamnat.app.ui.components.contentColorOn(cal.warningContainer)
+        fun argb(c: androidx.compose.ui.graphics.Color) = c.toArgb().toLong() and 0xFFFFFFFFL
+        val mark = cal.warning.takeIf { com.bamnat.core.layout.Contrast.ratio(argb(it), argb(cal.warningContainer)) >= 3.0 } ?: ink
+        val act = MaterialTheme.colorScheme.primary.takeIf { com.bamnat.core.layout.Contrast.ratio(argb(it), argb(cal.warningContainer)) >= 4.5 } ?: ink
         Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(20.dp))
+            Icon(Icons.Filled.WarningAmber, null, tint = mark, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             // [VIS-04] What stops the alarm is said whole, at any text size.
-            Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            Text(action, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = ink, modifier = Modifier.weight(1f))
+            Text(action, style = MaterialTheme.typography.labelLarge, color = act, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                 modifier = Modifier.padding(start = 8.dp))
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = act, modifier = Modifier.size(18.dp))
         }
     }
 }

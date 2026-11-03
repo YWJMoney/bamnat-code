@@ -402,6 +402,15 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
                 ),
             ),
         ),
+    ),
+
+    /**
+     * [LAY-01] 1.36 꾸밈 층: shapes, icons, emoji and text boxes placed freely over the screens' backgrounds, the calendar's top, its
+     * weekday line, its day cells (pinned to days or kinds of work too) and the widgets ([Decor]). Only values, drawn by the app.
+     */
+    DECOR(
+        "decor", "꾸밈 층", WorkStyle.entries.toSet(),
+        listOf(Field.Items("items", Decor.MAX, fields = Decor.FIELDS, min = 1)),
     );
 
     companion object {

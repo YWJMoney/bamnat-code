@@ -53,6 +53,9 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         com.bamnat.app.diag.Trail.install(this)
         // [QA130-01] Only the context; whether this is a Play pre-launch robot is read at the first server request.
         com.bamnat.app.diag.TestLab.attach(this)
+        // [LAY-04][RUL-03] 1.36 꾸밈 층의 누르기는 규칙·단추의 단추를 눌러요 (갈래 C와 D를 잇는 곳).
+        com.bamnat.app.ui.decor.DecorTap.buttons = { s -> com.bamnat.core.formula.Logic.decode(s.logic).buttons.map { it.id to "${it.emoji} ${it.label}" } }
+        com.bamnat.app.ui.decor.DecorTap.press = { c, id, date -> com.bamnat.app.logic.LogicRunner.press(c, id, date) }
         // 1.36 [SEC-11] Play Integrity: nothing is asked here; the engine runs only when the server wants a verdict.
         com.bamnat.app.company.IntegrityProof.engine = { nonce -> playIntegrityToken(nonce) }
         watchMainThread()
