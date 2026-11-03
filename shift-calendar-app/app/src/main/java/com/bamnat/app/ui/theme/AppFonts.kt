@@ -173,6 +173,21 @@ fun Typography.inFamily(family: FontFamily?): Typography = if (family == null) t
 )
 
 /**
+ * PC 확인 5c21f3bb (C절 대비 1.09~1.35:1): on a photo the words take their ink from the photo's average, so a bright spot right behind
+ * '오늘' or the month still swallowed them. A soft halo of the other side's colour around every letter keeps them readable on any spot.
+ */
+fun Typography.withHalo(halo: androidx.compose.ui.graphics.Shadow?): Typography = if (halo == null) this else Typography(
+    displayLarge = displayLarge.copy(shadow = halo), displayMedium = displayMedium.copy(shadow = halo),
+    displaySmall = displaySmall.copy(shadow = halo), headlineLarge = headlineLarge.copy(shadow = halo),
+    headlineMedium = headlineMedium.copy(shadow = halo), headlineSmall = headlineSmall.copy(shadow = halo),
+    titleLarge = titleLarge.copy(shadow = halo), titleMedium = titleMedium.copy(shadow = halo),
+    titleSmall = titleSmall.copy(shadow = halo), bodyLarge = bodyLarge.copy(shadow = halo),
+    bodyMedium = bodyMedium.copy(shadow = halo), bodySmall = bodySmall.copy(shadow = halo),
+    labelLarge = labelLarge.copy(shadow = halo), labelMedium = labelMedium.copy(shadow = halo),
+    labelSmall = labelSmall.copy(shadow = halo),
+)
+
+/**
  * [MAT-06] 1.36 내 글꼴: TTF·OTF files the user brought, kept on this phone only under `files/fonts/<id>.ttf` with a line about each
  * (`<id>.json`: its name, the app font most like it, and whether its maker let others use it — OFL 등, 직접 밝힘). A recipe names one by
  * its id and its stand-in; a phone without the file draws the stand-in.

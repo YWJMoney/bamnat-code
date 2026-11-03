@@ -918,7 +918,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [FREE-05] 1.35 화면 색·배경: the screen on show and its tab bar in that screen's look.
             val appFacts = com.bamnat.app.logic.rememberAppDayFacts(com.bamnat.app.ui.parts.LocalBlueprint.current.hasFormulas)
-            com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(route, activeStyle), Modifier.weight(1f), bars = true) {
+            com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(route, activeStyle), Modifier.weight(1f), bars = true,
+                decorated = route?.startsWith("studio") != true) {
             // [FXR-03] 1.36 조건부 꾸미기 on every tab: the day values the dated parts (메모 카드, 가계부 한 줄, 급여, 달력 머리) read, followed
             // only while the blueprint has a line that changes by the day.
             androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.logic.LocalDayFacts provides appFacts) {

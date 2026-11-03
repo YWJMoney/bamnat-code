@@ -74,7 +74,9 @@ const val SCREEN_ALARM = ScreenLooks.ALARM
  * 광장 takes only the background and its emoji; the error colours never change.
  */
 @Composable
-fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false, content: @Composable () -> Unit) {
+fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false,
+    /** PC 확인 5c21f3bb: false for an editing screen (스튜디오), whose own words and bars the 꾸밈 층 would cover; its previews keep it. */
+    decorated: Boolean = true, content: @Composable () -> Unit) {
     val all = LocalScreenLooks.current
     // 사용자 2026-11-01: 결제·처리방침·동의 화면은 어떤 테마에서도 앱 기본 모양 그대로 — 값과 약관이 늘 똑같이 또렷하게 읽혀요.
     val raw = if (key == ScreenLooks.GUARDED) ScreenLook() else all.of(key)
@@ -92,7 +94,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     // what the 꾸밈 층 drew under them. With a decoration under the words, the ground is drawn here once and the page above it is clear.
     val under = com.bamnat.app.ui.decor.LocalDecor.current.let { d ->
         val bg = "bg." + key.substringBefore('.')
-        if (d.isDefault || bg.removePrefix("bg.") !in com.bamnat.core.recipe.Decor.SCREENS) emptyList()
+        if (!decorated || d.isDefault || bg.removePrefix("bg.") !in com.bamnat.core.recipe.Decor.SCREENS) emptyList()
         else d.items.filter { (it.at == com.bamnat.core.recipe.Decor.APP || it.at == bg) && !it.over && !it.hide }
     }
     val decorUnder = under.isNotEmpty()
@@ -156,7 +158,11 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
         }
     }
     SideEffect { holder.screen = made }
-    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography.inFamily(family), shapes = MaterialTheme.shapes) {
+    // PC 확인 5c21f3bb (C절): words on a photo get a soft halo of the other side's colour, so a bright or dark spot behind them
+    // cannot swallow them (the ink alone goes by the photo's average).
+    val halo = if (onPhoto && inked) androidx.compose.ui.graphics.Shadow(
+        color = if (dark) Color.Black.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.85f), offset = Offset.Zero, blurRadius = 3f * density) else null
+    MaterialTheme(colorScheme = scheme, typography = MaterialTheme.typography.inFamily(family).withHalo(halo), shapes = MaterialTheme.shapes) {
         Box((if (plain && !darkened && !decorUnder) modifier else modifier.background(pageColor).fillWith(look.fill))
             .onGloballyPositioned { c -> if (!plain) (c.size to c.positionInWindow()).let { if (it != placed) placed = it } }) {
             if (photo != null && !plain) {
@@ -167,7 +173,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
                 Box(Modifier.matchParentSize().background((look.ground?.let { Color(it) } ?: base.background).copy(alpha = maxOf(veil, 20) / 100f)))
             }
             // [LAY-03] 1.36 꾸밈 층 on the screen's background: under its words, then (the maker's choice) over them.
-            ScreenDecor(key, over = false)
+            if (decorated) ScreenDecor(key, over = false)
             val page = look.bg?.let { Color(it) } ?: base.background
             if (photoUnder) Box(Modifier.matchParentSize().background(page.copy(alpha = (worn.dim ?: PHOTO_VEIL).coerceIn(20, 80) / 100f)))
             // [J135-12] Text drawn straight on the page (no card or bar of its own) takes the skin's ink, not the ink of what is around.
@@ -183,7 +189,7 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
                 androidx.compose.material3.LocalContentColor provides if (!inked && !darkened) androidx.compose.material3.LocalContentColor.current else scheme.onBackground) {
                 content()
             }
-            ScreenDecor(key, over = true)
+            if (decorated) ScreenDecor(key, over = true)
         }
     }
 }
