@@ -296,7 +296,9 @@ fun RecipeListScreen(
                     if (featured) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
                         FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("모든 탭") })
-                        RecipeClient.MARKET_TABS.forEach { t ->
+                        // PC 확인 5c21f3bb 장터 구간 세기: a tab that kind of work has no works for (자영업·투자의 근무·급여, 알람 조각을 받는
+                        // 교대·일근·알바 밖의 알람) is not offered; their 장 시작·영업 준비 알림 are in 규칙·단추.
+                        RecipeClient.MARKET_TABS.filter { t -> marketTabFits(t, vm.style) }.forEach { t ->
                             FilterChip(selected = now == t, onClick = { vm.kind(RecipeClient.SCOPE_TAB + t) }, label = { Text(marketTabLabel(t, vm.style)) })
                         }
                     }
@@ -496,3 +498,10 @@ fun CodeDialog(onCode: (String) -> Unit, onDismiss: () -> Unit) {
  */
 internal fun com.bamnat.app.recipe.RecipeItem.thumb(): com.bamnat.app.recipe.ThemeSwatch? =
     look?.withDays(styles.firstOrNull()) ?: com.bamnat.app.recipe.ThemeSwatch.example(styles.firstOrNull()).takeIf { scope == "theme" || "calendar" in tabs || "app" in tabs }
+
+/** Whether 장터's 기능별 탭 [t] has works for [style] (null: every kind of work). */
+internal fun marketTabFits(t: String, style: WorkStyle?): Boolean = when (t) {
+    "pay" -> style != WorkStyle.BUSINESS && style != WorkStyle.INVEST
+    "alarm" -> style == null || style == WorkStyle.SHIFT || style == WorkStyle.DAY || style == WorkStyle.HOURLY
+    else -> true
+}
