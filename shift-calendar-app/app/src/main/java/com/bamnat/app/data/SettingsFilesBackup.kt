@@ -217,6 +217,11 @@ class SettingsFilesBackup(
             "logic_rules" to "규칙을 끈 것·지난 7일 실행 횟수·마지막 되돌리기, 이 휴대폰에서 실행한 만큼(규칙 자체는 설정 logic으로 백업)",
             // [LAY-09] 1.36 곳 줄 자주 쓰는 6곳: how this phone's hands use the studio.
             "studio_ui" to "스튜디오에서 자주 연 곳(곳 줄 순서), 이 휴대폰의 것",
+            // 1.36 [GRW-03][GRW-09] 스튜디오 부탁 풀림을 알린 문의, 작품을 올린 적 있는지(보상 이용권 묻기): this phone's own.
+            "studio_solved" to "스튜디오 부탁이 풀렸다고 이 휴대폰에서 이미 알린 문의",
+            "maker" to "이 휴대폰에서 작품을 올린 적 있는지(만든 분 보상 이용권을 물을지)",
+            // 1.36 [PUSH-01] the FCM token last given to the server: a new phone gets its own.
+            "push_phone" to "문의 답 바로 알림에 서버로 보낸 이 휴대폰의 알림 토큰",
             // 1.36 [VIL-04][VIL-07] 마을 화면 기억: the part last seen and 오늘의 하나 '오늘은 그만', this phone's own.
             "village_ui" to "마을에서 마지막에 본 칸과 '오늘의 하나'를 그날 접었는지, 이 휴대폰에서 본 만큼",
             "company:device" to "이 휴대폰의 설치 번호(문의 기록의 열쇠)",

@@ -62,7 +62,8 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                 style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             k.theme?.let { theme ->
                 Text("‘$theme’", style = MaterialTheme.typography.bodyLarge)
-                Text("만든 작품을 넣으면 달 끝에 운영자가 3개를 골라 ‘이달의 테마’로 마을에 소개해요 · 지금 ${k.entries}개",
+                // 1.36 [GRW-09] 뽑히면 프로 한 달 (만든 작품 보상).
+                Text("만든 작품을 넣으면 달 끝에 운영자가 3개를 골라 ‘이달의 테마’로 마을에 소개해요. 뽑히면 프로 한 달을 드려요 · 지금 ${k.entries}개",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // PC 확인 V26: what I put in by name, and how many more can go in.
                 if (k.mine.isNotEmpty()) {

@@ -218,7 +218,16 @@ class RecipeMakeViewModel(
     private suspend fun parentTitleOf(code: String) {
         val t = runCatching { c.recipeApi.show(code, null).item.title }.getOrNull() ?: _state.value.showcases.firstOrNull { it.code == code }?.title
         _state.value = _state.value.copy(parentTitle = t)
+        // PC ce2b7091 (높음): 고친 판이 원본 이름을 그대로 들고 와서 4/4에서 '이름이 거의 같아요'로 막히던 것. 처음부터 '원본 · 내 판'으로.
+        val now = _state.value.recipe.title
+        if (t != null && (now.isBlank() || com.bamnat.core.recipe.NameSkeleton.of(now) == com.bamnat.core.recipe.NameSkeleton.of(t))) {
+            _state.value = _state.value.copy(recipe = _state.value.recipe.copy(title = "${t.take(24)} · 내 판"))
+        }
     }
+
+    /** True when [State.recipe]'s name reads the same as the 원본's, which the 장터 refuses for someone else's recipe (사칭 S4). */
+    fun sameAsParent(s: State): Boolean =
+        s.recipe.parent != null && s.parentTitle != null && com.bamnat.core.recipe.NameSkeleton.of(s.recipe.title) == com.bamnat.core.recipe.NameSkeleton.of(s.parentTitle)
 
     // ---- [STU-01]..[STU-05] 1.35 꾸미기 스튜디오 ----
 
@@ -434,6 +443,8 @@ class RecipeMakeViewModel(
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
                 upCode = sent.code
                 if (s.draftId != 0L) c.recipes.deleteDraft(s.draftId)
+                // 1.36 [GRW-09] PC 6ec395bf: 만든 분 보상(공모·모두의 도구·기본 도구)이 프로 › 보상 이용권에 보이도록, 작품을 올린 휴대폰도 이용권을 물어요.
+                c.appContext.getSharedPreferences("maker", android.content.Context.MODE_PRIVATE).edit().putBoolean("made", true).apply()
                 // [THM-01] My own theme in 장터 for everyone: worn without days or ads from now (a new one is kept in 내 테마 first).
                 var note: String? = null
                 if (ownTheme != null && sent.scope == "public" && com.bamnat.core.recipe.BuiltInThemes.isTheme(s.recipe)) {
@@ -558,6 +569,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     Spacer(Modifier.weight(1f))
                     if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = canLeave(s, s.step),
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("다음") }
+                    else Button(onClick = vm::publish, enabled = RecipeLint.ready(vm.lint) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
                 }
             }
         }
@@ -794,6 +807,7 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     val r = s.recipe
     // PC 확인 d263030e (2/4에서 키보드가 아래 단추를 가려요): the keyboard's 완료 puts it away, so 표지·사진 under the name are in reach.
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    val clash = vm.sameAsParent(s)
     // PC D6 (낮): 미리 채운 이름은 처음에 통째로 골라져 있어 쓰면 바뀌어요(뒤에 덧붙지 않게).
     var name by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(r.title, androidx.compose.ui.text.TextRange(0, r.title.length))) }
     if (name.text != r.title) name = androidx.compose.ui.text.input.TextFieldValue(r.title, androidx.compose.ui.text.TextRange(r.title.length))
@@ -806,12 +820,15 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     }, label = { Text("이름 (30자까지)") }, singleLine = true,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { focus.clearFocus() }),
+        isError = clash, supportingText = if (clash) { { Text("원본 ‘${s.parentTitle}’${withWa(s.parentTitle.orEmpty())} 이름이 같으면 장터에 올릴 수 없어요. 내 판 이름을 붙여 주세요") } } else null,
         modifier = Modifier.fillMaxWidth().onFocusChanged { f ->
             if (f.isFocused && focusedAt == 0L) {
                 focusedAt = android.os.SystemClock.uptimeMillis()
                 name = name.copy(selection = androidx.compose.ui.text.TextRange(0, name.text.length))
             } else if (!f.isFocused) focusedAt = 0L
         })
+    // PC 006d0aec 사용성 제안: 안내만 있고 고칠 단추가 없던 것.
+    if (clash) TextButton(onClick = { vm.edit { it.copy(title = "${it.title.trim().take(24)} · 내 판") } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("‘ · 내 판’ 붙이기") }
     Row(verticalAlignment = Alignment.CenterVertically) {
         RecipeCover(r.cover, 72.dp)
         Spacer(Modifier.width(12.dp))
@@ -951,8 +968,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     val advice = lines.count { it.level == RecipeLint.Level.WARN }
     if (RecipeLint.ready(lines) && !needAgree && advice > 0) Text("! 권고 ${advice}개 · 이대로도 올라가요 · 보기", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
-    Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
+    // PC aacb5ce8: 올리기 단추 is in the bottom bar alone (같은 뜻 두 줄이 겹치던 것); here what holds it and what got refused.
     // [BLU-07] PC 7차 (나만 보기로 저장을 눌러도 아무 표시가 없음, 거절 뒤 단추가 없음): the refusal and what gets past it, right here.
     s.error?.let { e ->
         Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
@@ -1057,4 +1073,11 @@ private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit, onStud
             }
         }
     }
+}
+
+/** PC e20cfe53: '과' after a final consonant, '와' after a vowel (‘B 꽉찬 교대’와, ‘야간 세트’와). Not Hangul at the end: '과'. */
+internal fun withWa(word: String): String {
+    val last = word.trimEnd().lastOrNull() ?: return "과"
+    if (last !in '가'..'힣') return "과"
+    return if ((last - '가') % 28 == 0) "와" else "과"
 }

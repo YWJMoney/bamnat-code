@@ -20,6 +20,8 @@ enum class InquiryKind(val code: String, val label: String, val hint: String, va
     IDEA("idea", "건의·제안", "있었으면 하는 기능이나 바뀌면 좋을 점"),
     COMPANY("company", "회사 방식 알려 주기", "회사의 수당·근무 계산 방식이 앱에 없을 때. 개발자만 봐요", public = false),
     OTHER("other", "그 밖의 이야기", "칭찬이나 불편한 점, 무엇이든"),
+    /** 1.36 [GRW-01] 스튜디오 "원하는 꾸미기가 없나요?": 비슷한 부탁끼리 묶여 셋이 모이면 장터 요청 판에 올라가요. */
+    STUDIO("studio", "원하는 꾸미기 부탁", "스튜디오에 없는 꾸미기·도구가 있을 때. 같은 부탁이 셋 모이면 장터에 올라가요", public = false),
     ;
 
     companion object {
@@ -52,6 +54,9 @@ data class Inquiry(
     val photos: Int = 0,
     /** [SRV-06] Why the photos were left out when it was sent: "paused" or "full"; null when they went (or there were none). */
     val photosSkipped: String? = null,
+    /** 1.36 [GRW-01] 스튜디오 요구: 같은 부탁을 한 분 수와 장터에 오르는 수(3), 보낸 때만. */
+    val studioAskers: Int = 0,
+    val studioGoal: Int = 0,
 ) {
     val answers: Int get() = messages.count { it.fromDeveloper }
     val waiting: Boolean get() = status == "open"
@@ -128,6 +133,8 @@ data class InquiryInfo(
     val photos: List<ByteArray> = emptyList(),
     /** [INQ-06] 모두의 문의에 올리기, the switch above 보내기; off keeps it with the developer. A private kind never goes up. */
     val public: Boolean = true,
+    /** 1.36 [GRW-01] 스튜디오 요구: 보낸 분의 근무 유형(WorkStyle 이름), 장터 요청 판의 어느 칸에 올릴지. */
+    val studio: String? = null,
 )
 
 /** [ADMIN-02] 설정 > 문의하기 through the company server; screenshots and tests answer with a fake. */
@@ -155,6 +162,9 @@ interface InquiryApi {
         send(device, kind, text, info)
 
     suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = more(device, id, text)
+
+    /** 1.36 [PUSH-01] This phone's FCM token for 문의 답 바로 알림, or null to forget it. True when the server can send now. */
+    suspend fun pushPhone(device: String, token: String?): Boolean = false
 }
 
 class InquiryClient(
@@ -174,6 +184,7 @@ class InquiryClient(
         info.diag?.takeIf { it.isNotBlank() }?.let { i.put("diag", it.take(DIAG_MAX)) }
         info.pay?.takeIf { it.isNotBlank() }?.let { i.put("pay", it.take(PAY_MAX)) }
         info.setup?.takeIf { it.isNotBlank() }?.let { i.put("setup", it.take(SETUP_MAX)) }
+        info.studio?.takeIf { it.isNotBlank() }?.let { i.put("studio", it.take(12)) }
         // [ADMIN-02] The form says the question goes to 모두의 문의; the server keeps it private without this.
         val body = JSONObject().put("v", 1).put("device", device).put("kind", kind.code).put("text", text.trim()).put("info", i)
             .put("public", kind.public && info.public)
@@ -194,6 +205,11 @@ class InquiryClient(
     }
 
     /** One already gone counts as deleted. */
+    override suspend fun pushPhone(device: String, token: String?): Boolean = serverCall {
+        val body = JSONObject().put("device", device).apply { if (token != null) put("token", token) }
+        serverRequest(baseUrl, if (token != null) "POST" else "DELETE", "/api/push/phone", body, device = device).optBoolean("on")
+    }
+
     override suspend fun delete(device: String, id: String) = serverCall {
         try {
             serverRequest(baseUrl, "DELETE", "/api/inquiries/$id", device = device)
@@ -283,6 +299,8 @@ class InquiryClient(
         rating = when (o.optInt("rating")) { 1 -> true; -1 -> false; else -> null },
         photos = o.optInt("photos"),
         photosSkipped = o.optStringOrNull("photosSkipped"),
+        studioAskers = o.optJSONObject("studio")?.optInt("askers") ?: 0,
+        studioGoal = o.optJSONObject("studio")?.optInt("goal") ?: 0,
     )
 
     companion object {

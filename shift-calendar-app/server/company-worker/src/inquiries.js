@@ -1,6 +1,8 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
+import { needFromInquiry } from "./growth.js";
+import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
 import { bugFixed } from "./money.js";
 // ---- questions from the app [ADMIN-02] ----
@@ -14,7 +16,7 @@ import { bugFixed } from "./money.js";
 
 export const INQUIRY = {
   // [INQ-01] Since 1.14.1 suggestions, anything else and a company's way the app cannot set come here too.
-  kinds: ["question", "bug", "idea", "company", "other"],
+  kinds: ["question", "bug", "idea", "company", "other", "studio"],
   text: 2000,
   diag: 6000,
   pay: 3000,
@@ -40,6 +42,8 @@ export const INQUIRY_INFO = [
   ["급여 계산", "pay", INQUIRY.pay],
   // [INQ-01] 회사 방식 알려 주기: the kind's settings in words, never an amount.
   ["회사 설정", "setup", INQUIRY.setup],
+  // 1.36 [GRW-01] 스튜디오 요구: 보낸 분의 근무 유형(SHIFT…), 장터 요청 판의 어느 칸에 올릴지.
+  ["근무 유형", "studio", 12],
 ];
 
 /** [INQ-01] A company's way names the workplace: it stays with the developer, whatever the app asks. */
@@ -87,7 +91,9 @@ export function triage(kind, text, info) {
   // nothing of the topic (every form can send it, and it always starts with 알람 상태), so a question with no word stays 기타
   // instead of 알람 — a settings-search question about 보상 came in as 문제 신고 · 알람.
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
-  const urgency = ["idea", "company", "other"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
+  // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
+  if (kind === "studio") topic = "look";
+  const urgency = ["idea", "company", "other", "studio"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
   return { topic, topicName: TOPIC_NAMES[topic], urgency };
 }
 
@@ -189,14 +195,16 @@ export async function ask(request, env) {
   // happens without VAPID keys, and a push that fails never fails the question.
   await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
     title: "새 문의",
-    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식" })[body.kind] ?? "문의"} 1건`,
+    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식", studio: "스튜디오 요구" })[body.kind] ?? "문의"} 1건`,
     url: "/admin/#/inquiries",
   }, now);
   // 1.35 [INBOX-02] 자동 대응: answered at once when the owner turned it on for what this one matched (never fails it).
   await autoAnswer(env, id, now);
+  // 1.36 [GRW-01][GRW-02] 스튜디오 요구는 비슷한 요구와 한 묶음으로.
+  const studio = await needFromInquiry(env, id, dev, body.kind, text, info, now);
   const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
   // Photos the server could not take this time (switched off or full): the question went without them.
-  return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}) }, 201);
+  return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}), ...(studio ? { studio } : {}) }, 201);
 }
 
 /** What the user typed: up to 2000 characters, without an email, phone number or amount. */
@@ -516,6 +524,8 @@ export async function replyTo(env, row, body, now, audited = true) {
     stmt(env, "DELETE FROM counters WHERE key LIKE ?", `typing|${row.id}|${env.actor?.id ?? ""}|%`),
   ]);
   if (audited) await audit(env, now, "inquiry_reply", row.id, status);
+  // 1.36 [PUSH-01] the asker's phone hears at once (no words go to Google).
+  await fcmTell(env, [row.id], now);
   return true;
 }
 
@@ -1130,6 +1140,7 @@ export async function devReply(env, row, body, now) {
     devEvent(env, row.id, now, "reply", { count: pick.length, text: cut(text), close: status === "closed" }),
   ]);
   await audit(env, now, "dev_reply", row.title, `${pick.length} ${status} ${row.id}`);
+  await fcmTell(env, pick, now);
   return json({ answered: pick.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
 }
 

@@ -45,6 +45,8 @@ object Notifications {
     const val BACKUP_CHANNEL_ID = "auto_backup_v1"
     /** [COMM-10] 광장 소식, since 1.23 밤낮 소식 [SRV-10]: one bundled notice a day. */
     const val PLAZA_CHANNEL_ID = "plaza_news_v1"
+    /** 1.36 PC 6ec395bf: 내 문의에 온 답은 조용한 밤낮 소식이 아니라 소리 나는 기본 알림으로 (설정 › 알림에서 따로 끌 수 있어요). */
+    const val INQUIRY_CHANNEL_ID = "inquiry_reply_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -170,7 +172,11 @@ object Notifications {
             // 1.36 [SEC-12] 보안 점검 M5: a rule's words can hold the 가계부's numbers ({원(이달지출)}); the lock screen shows only that one came.
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules))
+        val inquiry = NotificationChannel(INQUIRY_CHANNEL_ID, "문의 답", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
+            group = GROUP_DAY
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 

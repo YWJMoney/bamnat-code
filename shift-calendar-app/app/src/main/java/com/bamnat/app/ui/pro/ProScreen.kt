@@ -178,6 +178,8 @@ fun ProScreen(onBack: () -> Unit) {
     val zone = Today.zone()
     // [STAT-04] The first step of the 프로 funnel; only counted once 결제 is open.
     LaunchedEffect(Unit) { if (c.flags.on(com.bamnat.core.flags.FlagCatalog.BILLING)) c.telemetry.event(com.bamnat.core.stats.UsageEvent.PAYWALL_VIEW.key) }
+    // 1.36 [GRW-09] PC 6ec395bf: 프로 화면을 열면 보상 이용권을 새로 물어요(만든 작품 보상이 바로 보이게).
+    LaunchedEffect(Unit) { runCatching { c.syncPasses(force = true) } }
 
     Scaffold(topBar = {
         TopAppBar(
@@ -382,10 +384,10 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
     var code by rememberSaveable { mutableStateOf("") }
     val passes = pro.passes
     SectionCard(title = "보상 이용권") {
-        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나 초대한 친구가 밤낮을 쓰면 프로 이용권을 드려요. 보내 주신 문제 신고가 고쳐지면 3일을 드려요(한 달 14일까지). 받을수록 기간이 이어져요.",
+        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 되거나, 초대한 친구가 밤낮을 쓰면 프로 이용권을 드려요. 보내 주신 문제 신고가 고쳐지면 3일을 드려요(한 달 14일까지). 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
-            Text("• 프로 ${item.months}개월 (${passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
+            Text("• 프로 ${item.months}개월 (${item.what ?: passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
                 style = MaterialTheme.typography.bodyMedium)
         }
         // 1.36 841 쓰면 쌓이는 날.
@@ -393,6 +395,10 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
             Text("• 프로 ${e.days}일 (${e.why}, ${dateWords(e.at.atZone(zone).toLocalDate())})", style = MaterialTheme.typography.bodyMedium)
         }
         passes?.until?.let { Text("이용권은 ${dateWords(it.atZone(zone).toLocalDate())}까지예요.", style = MaterialTheme.typography.bodyMedium) }
+        // 1.36 PC 5차: 출시 전(무료 기간)에 받은 이용권은 끝나는 날이 아직 없어요. 비워 두지 않고 언제 시작하는지 말해요.
+            ?: passes?.waitingMonths?.takeIf { it > 0 }?.let {
+                Text("이용권 ${it}개월은 정식 출시 날부터 이어져요. 그때 끝나는 날이 정해져요.", style = MaterialTheme.typography.bodyMedium)
+            }
         if (passes?.deferred?.let { it > 0 } == true) Text("구독 중이라 ${passes.deferred}번은 Play 다음 결제일을 미뤄 드렸어요.", style = MaterialTheme.typography.bodySmall)
         pro.code?.let { saved ->
             Text("복구 코드", style = MaterialTheme.typography.labelLarge)
@@ -532,6 +538,8 @@ fun passWhy(why: String): String = when (why) {
     "rule" -> "회사 방식 채택"
     "rate" -> "임금표 채택"
     "invite" -> "친구 초대"
+    // 1.36 [GRW-09] 만든 분 보상: 이달의 주제·모두의 도구·기본 도구.
+    "maker" -> "만든 작품 보상"
     else -> "제안 반영"
 }
 

@@ -248,11 +248,21 @@ http.createServer(async (req, res) => {
     res.end();
     return;
   }
+  // 1.36 [GRW-02][GRW-03][GRW-05] POST /__test/tick: the hourly work now (스튜디오 요구 묶음 → 장터, 승격 사다리), so a phone test needn't wait.
+  if (testClock && req.method === "POST" && req.url.startsWith("/__test/tick")) {
+    const waits = [];
+    await worker.scheduled({ cron: "17 * * * *", scheduledTime: Date.now() }, env, { waitUntil: (p) => waits.push(p) });
+    await Promise.all(waits);
+    res.writeHead(204);
+    res.end();
+    return;
+  }
   const chunks = [];
   for await (const c of req) chunks.push(c);
   const headers = new Headers();
   for (const [k, v] of Object.entries(req.headers)) if (typeof v === "string") headers.set(k, v);
-  headers.set("cf-connecting-ip", req.socket.remoteAddress || "unknown");
+  // 1.36 PC 시험: with --test-clock, x-test-ip stands for another network (두 에뮬레이터가 한 회선으로 보이니 회선 규칙을 볼 때).
+  headers.set("cf-connecting-ip", (testClock && typeof req.headers["x-test-ip"] === "string" && req.headers["x-test-ip"]) || req.socket.remoteAddress || "unknown");
   const body = ["GET", "HEAD"].includes(req.method) ? undefined : Buffer.concat(chunks);
   const out = await worker.fetch(new Request(`http://${req.headers.host}${req.url}`, { method: req.method, headers, body, redirect: "manual" }), env);
   const head = {};

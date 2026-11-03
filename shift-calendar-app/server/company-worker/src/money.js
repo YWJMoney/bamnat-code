@@ -153,10 +153,15 @@ export async function installOf(request) {
   return deviceHash(id);
 }
 
+/** 1.36 [GRW-09] '이달의 주제에 뽑힘 (2026-11:CODE)' → the first words, with the recipe's title the grant wrote after '· '. */
+function makerWhat(memo) {
+  return String(memo).split(" (")[0].slice(0, 40);
+}
+
 /** [MON-08][MON-09] What this install has: its passes, its admin link and whether it holds a recovery code. */
 export async function passes(env, dev, now) {
   const [rows, link, code, s] = await Promise.all([
-    all(env, "SELECT months, status, paid_at, deferred, rule_id FROM rewards WHERE device = ?", dev),
+    all(env, "SELECT months, status, paid_at, deferred, rule_id, memo FROM rewards WHERE device = ?", dev),
     one(env, "SELECT status, admin_name, admin, previews FROM admin_devices WHERE device = ?", dev),
     one(env, "SELECT created_at FROM pass_codes WHERE device = ?", dev),
     launchState(env),
@@ -171,7 +176,8 @@ export async function passes(env, dev, now) {
     waitingMonths: p.waiting,
     waitingDays: d.waiting,
     earned: earned.map((r) => ({ days: r.days, at: iso(r.given_at), why: EARNED.words[r.kind] ?? "쓰면 쌓이는 날" })),
-    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id) })),
+    // 1.36 [GRW-09] 만든 분 보상은 무엇 때문인지까지("이달의 주제에 뽑힘 · 테마 이름").
+    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id), ...(r.rule_id === "maker" && r.memo ? { what: makerWhat(r.memo) } : {}) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
     // S 1.32 [SECX-01] previews: the flags the developer app turned on for this phone only (approved phones only).
@@ -400,7 +406,8 @@ export function playIntent(code, store = storeLink(code)) {
 }
 
 /** Why a reward was given, as the app names it. */
-export const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId ? "rule" : "idea");
+// 1.36 [GRW-09] "maker": 만든 분 보상(이달의 주제·모두의 도구·기본 도구).
+export const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId === "maker" ? "maker" : ruleId ? "rule" : "idea");
 
 /** Whole days from one Korean date ("2026-10-25") to another. */
 export const dayGap = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);

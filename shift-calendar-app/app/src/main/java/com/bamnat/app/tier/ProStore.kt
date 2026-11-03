@@ -168,7 +168,7 @@ class ProStore(context: Context) {
             } ?: JSONObject.NULL)
             .put("passes", s.passes?.let { p ->
                 JSONObject().put("until", p.until.json()).put("waitingMonths", p.waitingMonths)
-                    .put("items", JSONArray(p.items.map { JSONObject().put("months", it.months).put("at", it.at.toString()).put("why", it.why) }))
+                    .put("items", JSONArray(p.items.map { JSONObject().put("months", it.months).put("at", it.at.toString()).put("why", it.why).put("what", it.what) }))
                     .put("deferred", p.deferred).put("code", p.hasCode).put("checkedAt", p.checkedAt.toString())
                     .put("shared", p.sharedUntil?.let { JSONObject().put("until", it.toString()) } ?: JSONObject.NULL)
                     .put("waitingDays", p.waitingDays)

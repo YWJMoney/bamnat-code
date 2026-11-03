@@ -739,4 +739,23 @@ ul.mini small{color:var(--muted);margin-left:.3rem}
 @media (pointer:coarse){.kbd-hint{display:none}}
 .sort-nudge{display:flex;align-items:center;gap:.6rem;margin:0 0 .9rem;padding:.7rem .9rem;border-radius:var(--r-sm);background:var(--info-bg);color:var(--fg);text-decoration:none;font-size:.88rem}
 .sort-nudge svg{flex:none;width:1.25rem;height:1.25rem}.sort-nudge span{flex:1;min-width:0}.sort-nudge b{color:var(--info);margin-right:.35rem}
+/* 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구 */
+.rows.work .row{align-items:center}.rows.work .pick{flex:none;display:flex;align-items:center;padding-right:.25rem}
+.rows.work .pick input{width:1.25rem;height:1.25rem}
+.rows.work .row-side{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:.35rem;max-width:62%}
+.rows.work .row-main b{display:block}
+button.tile{font:inherit;text-align:left;cursor:pointer;color:inherit}button.tile[aria-pressed=true]{border-color:var(--accent)}
+.rows.needs>li.item{display:block;padding:1rem;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);margin:0 0 .75rem}
+.rows.needs h3{margin:0;font-size:1rem}
+.samples{margin:.5rem 0;padding-left:1.1rem}.samples li{margin:.15rem 0}
+.copy-box{white-space:pre-wrap;background:var(--soft);padding:.75rem;border-radius:var(--r)}
+.rows.work .row-tags,.rows.work .row-acts{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem}
+/* PC 확인 8d290ec3: 휴대폰 폭에서 상태는 두 줄로 다 보이고, 단추는 제목 아래 한 줄에 같은 폭으로. */
+hr.split{border:0;border-top:2px dashed var(--line);margin:1.5rem 0}
+.linkish{background:none;border:0;padding:0;color:var(--accent,#2b6cb0);text-decoration:underline;cursor:pointer;font:inherit}
+li.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
+img.photo-big{display:block;width:100%;max-width:512px;height:auto;margin:0 auto;image-rendering:auto;border-radius:8px}
+@media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}
+.rows.work .row-acts{flex-wrap:nowrap}.rows.work .row-acts .btn{flex:1 1 0;min-width:0;padding-left:.3rem;padding-right:.3rem}
+.segmented.wrap{flex-wrap:wrap;overflow:visible}.segmented.wrap .seg{flex:1 1 30%}}
 `;

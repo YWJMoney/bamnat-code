@@ -608,9 +608,9 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.equal(t.$("#hubtabs [aria-current]").dataset.tab, "review");
   assert.ok(t.$('.side li[data-hub="plaza"].open .subnav a[data-tab="adopt"]'));
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "plaza");
-  // A hub of one tab has no tab row; 분석 sits under 더 보기 on the phone, which is lit there.
+  // 1.36 [GRW-07] 오늘 has 할 일함 beside it now; 분석 sits under 더 보기 on the phone, which is lit there.
   await t.go("#/home");
-  assert.ok(t.$("#hubtabs").hidden);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "work"]);
   await t.go("#/metrics");
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "more");
   // 민지 answers questions only: 오늘, 문의 (without 답 목표, which is 설정's) and 관리 (내 계정 only).
@@ -618,7 +618,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.deepEqual(sideHubs(u), ["today", "ask", "manage"]);
   assert.deepEqual(bottom(u), ["today", "ask", "manage"], "every hub fits: no 더 보기");
   await u.go("#/inquiries");
-  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "sort", "dev", "templates"]);
+  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "sort", "growth", "dev", "templates"]);
   await u.go("#/account");
   assert.ok(u.$("#hubtabs").hidden, "관리 has one tab for 민지");
   // A tab 민지 cannot use goes to 오늘.
@@ -1595,4 +1595,42 @@ test("[SEC-10] 마을 장터 › 글꼴: a first font waits with what it says of
   await u.settle(20);
   assert.match(u.text("#main"), /글자 모양이 같은 글꼴을 나누는 중: 손글씨 · [+−]\d+B/);
   assert.deepEqual(u.errors, []);
+});
+
+test("[GRW-12] 작품 열기: from 사진 검토 the recipe opens with the photo and its 보이기·가리기, and 돌아가기 leads back", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const s = server({ plaza: true });
+  const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([30, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.from([10, 0, 0, 0]),
+    Buffer.from([0, 0, 0, 0x9d, 0x01, 0x2a, 64, 0, 64, 0]), Buffer.alloc(16, 7)]).toString("base64");
+  const pic = (await s.call("POST", "/api/recipes/images", { device: device(1), webp }, from(1))).data;
+  assert.equal(pic.state, "pending", "a 새싹's first photo waits for a look");
+  const body = { format: "bamnat-recipe", v: 1, title: "열어 볼 세트", summary: "야간이 잘 보여요", styles: ["SHIFT"],
+    cover: { a: 4282339765, b: 4288423856, dir: 1, emoji: "🌙", image: pic.id },
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
+  const made = await s.call("POST", "/api/recipes", { device: device(1), recipe: body, scope: "public" }, from(1));
+  assert.equal(made.status, 201);
+  const code = made.data.code;
+  const t1 = await signedIn(s.env);
+  await t1.go("#/recipes");
+  await t1.click('[data-act="recipe-tab"][data-key="images"]');
+  await t1.settle(20);
+  await t1.click(`[data-act="recipe-open"][data-id="${code}"]`);
+  await t1.settle(20);
+  assert.match(t1.text("#main"), new RegExp(`작품 ${code} 하나만`));
+  assert.match(t1.text("#main"), /열어 볼 세트/);
+  assert.match(t1.text("#main"), /보러 온 사진/);
+  assert.ok(t1.$(`[data-act="recipe-do"][data-id="${code}"][data-key="hide"]`), "가리기 for the recipe is right there");
+  await t1.click('[data-act="photo-big"]');
+  assert.ok(t1.$("dialog img.photo-big"), "the photo opens big");
+  await t1.click('dialog [data-act="close"]');
+  await t1.click(`[data-act="recipe-image"][data-id="${pic.id}"][data-key="ok"]`);
+  await t1.settle(20);
+  assert.match(t1.text("#main"), /보러 온 사진.*보이게 했어요/);
+  assert.ok(!t1.$(`[data-act="recipe-image"][data-id="${pic.id}"]`), "decided: the buttons go");
+  const back = t1.$('[data-act="recipe-tab"][data-key="images"]:not(.chip)');
+  assert.match(back.textContent, /돌아가기 · 사진 검토/);
+  await t1.click(back);
+  await t1.settle(20);
+  assert.match(t1.text("#main"), /볼 사진이 없어요/);
+  assert.deepEqual(t1.errors, []);
 });

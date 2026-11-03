@@ -85,6 +85,23 @@ test("[RCP-29][RCP-30][RCX-28] a public recipe is on the plaza at once (no 승�
   assert.equal(back.data.items[0].note, "설명을 더 적어 주세요");
 });
 
+test("[GRW-12] the admin opens one recipe by its code (사진 검토·고친 판 '작품 열기'); a bad code is refused", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const a = await up(call, 1);
+  await up(call, 2, { title: "다른 세트" });
+  const admin = await signIn(call);
+  const one = await call("GET", `/api/admin/recipes?tab=one&code=${a.data.code.toLowerCase()}`, undefined, admin);
+  assert.equal(one.status, 200);
+  assert.equal(one.data.tab, "one");
+  assert.equal(one.data.code, a.data.code);
+  assert.deepEqual(one.data.items.map((i) => i.code), [a.data.code]);
+  assert.equal((await call("GET", "/api/admin/recipes?tab=one&code=x' OR 1=1", undefined, admin)).status, 400);
+  assert.equal((await call("GET", "/api/admin/recipes?tab=one", undefined, admin)).status, 400);
+  await call("POST", `/api/admin/recipes/${a.data.code}/delete`, {}, admin);
+  assert.equal((await call("GET", `/api/admin/recipes?tab=one&code=${a.data.code}`, undefined, admin)).data.items.length, 0);
+});
+
 test("[RCP-31] 안좋아요 needs a reason and a short opinion; the count is public, the reasons the maker's only (D107)", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call } = server({ plaza: true });

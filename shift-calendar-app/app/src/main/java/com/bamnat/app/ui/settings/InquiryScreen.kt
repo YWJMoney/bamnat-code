@@ -160,7 +160,17 @@ private const val HELP = "help"
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
+fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit, onOpenRecipe: (String) -> Unit = {}) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalOpenRecipe provides onOpenRecipe) { InquiryScreenBody(vm, onBack) }
+}
+
+/** 1.36 [GRW-03] 스튜디오 요구가 풀렸다는 답의 작품 코드를 바로 열어요(PC 확인 8d290ec3 '풀렸어요 · 보러 가기'). */
+private val LocalOpenRecipe = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Unit> { {} }
+private val SOLVED_CODE = Regex("""코드 ([2-9A-HJ-NP-Z]{8})""")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InquiryScreenBody(vm: InquiryViewModel, onBack: () -> Unit) {
     val list by vm.list.collectAsStateWithLifecycle()
     val offline by vm.offline.collectAsStateWithLifecycle()
     val unread by vm.unread.collectAsStateWithLifecycle()
@@ -548,7 +558,8 @@ private fun InquiryForm(
             }
         }
         StepTitle("1. 어떤 문의인가요?")
-        InquiryKind.entries.forEach { k ->
+        // 1.36 [GRW-01] 원하는 꾸미기 부탁은 스튜디오에서 열었을 때만 골라요.
+        InquiryKind.entries.filter { it != InquiryKind.STUDIO || kind == InquiryKind.STUDIO }.forEach { k ->
             KindOption(k, selected = kind == k) { kind = k }
         }
 
@@ -776,6 +787,7 @@ private fun placeholder(kind: InquiryKind?): String = when (kind) {
     InquiryKind.IDEA -> "예: 달력이 일요일부터 시작하면 좋겠어요"
     InquiryKind.COMPANY -> "예: OO공장 생산2팀이에요. 휴무일 근무는 8시간에 기본급 10%, 8시간 넘으면 0.5 가산이에요"
     InquiryKind.OTHER -> "예: 야간 근무 날 화면이 어두워져서 좋아요"
+    InquiryKind.STUDIO -> "예: 달력 칸마다 그라데이션 배경을 넣고 싶어요"
     else -> "예: 대근을 4시간만 하면 급여에 어떻게 들어가나요?"
 }
 
@@ -811,6 +823,7 @@ private fun InquiryKind.icon(): ImageVector = when (this) {
     InquiryKind.IDEA -> Icons.Outlined.Lightbulb
     InquiryKind.COMPANY -> Icons.Outlined.Apartment
     InquiryKind.OTHER -> Icons.Outlined.ChatBubbleOutline
+    InquiryKind.STUDIO -> Icons.Outlined.ChatBubbleOutline
 }
 
 @Composable
@@ -1152,6 +1165,11 @@ private fun Bubble(text: String, fromDeveloper: Boolean, at: String) {
                     color = if (fromDeveloper) scheme.onPrimaryContainer else scheme.onSurface, modifier = Modifier.padding(12.dp))
             }
         }
+        val code = if (fromDeveloper) SOLVED_CODE.find(text)?.groupValues?.get(1) else null
+        if (code != null) {
+            val open = LocalOpenRecipe.current
+            TextButton(onClick = { open(code) }) { Text("풀렸어요 · 보러 가기") }
+        }
     }
 }
 
@@ -1323,7 +1341,7 @@ private fun HelpSettingRow(e: SettingEntry) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(e.title, style = MaterialTheme.typography.bodyLarge)
-            Text(if (e.where == "설정") "설정" else "설정 › ${e.where}", style = MaterialTheme.typography.bodySmall,
+            Text(settingsPath(e.where), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -1344,18 +1362,17 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
     SoftCard(Modifier.padding(top = 12.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // [GUIDE-07] Not found: the words go to the developer as 건의·제안, with the kind of work.
+            // PC ce2b7091: 못 찾았을 때 '없다고 알리기'·'의견 보내기'·'그대로 물어볼까요?'가 겹치던 것 → 두 단추.
             if (query.isNotBlank()) {
-                Text("못 찾았나요?", style = MaterialTheme.typography.titleMedium)
-                Text("찾던 말과 지금 달력의 일하는 방식을 담아 의견으로 보내요. 있는 기능이면 어디 있는지 답해 드리고, 없으면 만들 때 참고해요.",
+                Text("‘$query’ 못 찾았나요?", style = MaterialTheme.typography.titleMedium)
+                Text("이름 없이 이 말만 알리거나, 지금 달력의 일하는 방식을 담아 개발자에게 보내요. 있는 기능이면 어디 있는지 답해 드려요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(onClick = onIdea, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    Icon(Icons.Outlined.QuestionAnswer, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("못 찾았어요 · 의견 보내기")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SearchMissButton("help", query, Modifier.weight(1f))
+                    Button(onClick = onIdea, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("개발자에게 보내기") }
                 }
-                HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            }
-            Text(if (query.isBlank()) "찾는 답이 없나요?" else "‘$query’ 그대로 물어볼까요?", style = MaterialTheme.typography.titleMedium)
+            } else {
+            Text("찾는 답이 없나요?", style = MaterialTheme.typography.titleMedium)
             Text(
                 if (vm.online) "개발자가 직접 읽고 답해요. 답이 오면 설정 탭에 표시돼요."
                 else "메일로 물어보면 개발자가 직접 읽고 메일로 답해요.",
@@ -1365,6 +1382,7 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
                 Icon(if (vm.online) Icons.Outlined.QuestionAnswer else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (vm.online) "새 문의 쓰기" else "메일로 문의하기")
+            }
             }
             if (vm.online && !list.isNullOrEmpty()) {
                 Row(

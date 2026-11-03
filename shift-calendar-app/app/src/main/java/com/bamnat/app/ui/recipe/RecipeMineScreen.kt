@@ -134,6 +134,10 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                             Column(Modifier.padding(12.dp)) {
                                 Text(item.title, style = MaterialTheme.typography.titleSmall)
                                 Text(stateLabel(st.first, st.second), style = MaterialTheme.typography.bodySmall)
+                                when (m.photos[item.code]) {
+                                    "held" -> com.bamnat.app.ui.company.StatusChip("사진이 신고로 잠시 가려졌어요", com.bamnat.app.ui.company.Tone.BAD)
+                                    "pending" -> com.bamnat.app.ui.company.StatusChip("사진 확인 중 · 보통 하루 안", com.bamnat.app.ui.company.Tone.WAIT)
+                                }
                                 st.third?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
                                 Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 쓰는 분 ${item.users} · 코드 ${item.code}",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

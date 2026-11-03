@@ -103,6 +103,10 @@ data class RecipeDoc(
     val state: String? = null,
     val note: String? = null,
     val reasons: Reasons? = null,
+    /** 1.36 [GRW-08] 만든 분께만: 운영자 확인을 기다리는 사진 수(새싹 첫 사진, 신고로 먼저 가린 사진). */
+    val photosWaiting: Int = 0,
+    /** 신고 2번으로 다른 분께 잠시 가려진 사진 수. */
+    val photosHeld: Int = 0,
 ) {
     /** The recipe itself, checked again on this phone: the written form hashes to what the server named it (S10). */
     fun recipe(): Recipe {
@@ -147,16 +151,27 @@ data class RecipeTalk(val posts: List<RecipePost>, val left: Int?, val mutedUnti
 data class Votes(val likes: Int, val dislikes: Int, val myVote: Int?, val held: Boolean = false)
 
 /** [RCP-29] The phone's own recipes in every state. */
-data class MyRecipes(val trust: Int, val reviewLeft: Int, val items: List<Pair<RecipeItem, Triple<String, String, String?>>>)
+/** [photos]: 1.36 [GRW-08] 사진이 운영자를 기다리는("pending") 또는 신고로 가려진("held") 작품의 코드별 표시. */
+data class MyRecipes(val trust: Int, val reviewLeft: Int, val items: List<Pair<RecipeItem, Triple<String, String, String?>>>,
+    val photos: Map<String, String> = emptyMap())
 
 /** [RCX-01] 계보: the recipes it was made from (nearest first; null where one is gone) and those made from it. */
-data class Lineage(val parents: List<RecipeItem?>, val children: List<RecipeItem>)
+data class Lineage(val parents: List<RecipeItem?>, val children: List<RecipeItem>,
+    /** 1.36 누락 점검 N15: 고친 판 코드 → 바꾼 곳 (조각 종류 열쇠, "add"·"del"·"edit"). */
+    val changed: Map<String, List<Pair<String, String>>> = emptyMap())
 
 /** [RCX-04] 요청 판: a wish, its likes and where it stands (waiting → making → done with a recipe's [code]). */
 data class RecipeRequest(
     val id: String, val style: WorkStyle?, val body: String, val likes: Int, val state: String, val code: String?, val at: Instant,
     val mine: Boolean, val taking: Boolean, val liked: Boolean,
+    /** 1.36 [GRW-03] 스튜디오 요구가 모여 저절로 올라온 줄이면 부탁한 분 수. */
+    val askers: Int = 0,
+    /** 1.36 누락 점검 N14: 14일 동안 아무도 만들지 않아 개발자에게 넘어간 요청. */
+    val told: Boolean = false,
 )
+
+/** 1.36 [GRW-05] 모두의 도구: 많이 쓰이고 7일 뒤에도 쓰는 장터 작품(표 수가 아니라 쓴 사람 수로 올라와요). */
+data class CommonTool(val code: String, val title: String, val summary: String, val users: Int, val kept: Int?, val tierName: String)
 
 /** [RCX-05][RCX-06] A maker's page; [PRF-01] 1.36 the 창작자 프로필 on it. */
 data class MakerPage(
@@ -280,6 +295,10 @@ interface RecipeApi {
     /** [RCX-02] The newest version of each code (no device sent). */
     suspend fun versions(codes: List<String>): Map<String, Int> = emptyMap()
     suspend fun requests(device: String?, style: WorkStyle?): List<RecipeRequest> = emptyList()
+    /** 1.36 [GRW-05] 모두의 도구 (no device sent). */
+    suspend fun tools(style: WorkStyle?): List<CommonTool> = emptyList()
+    /** 1.36 누락 점검 N13: 찾아도 없던 말 하나 (휴대폰 번호 없이). True when the server took it. */
+    suspend fun searchMiss(place: String, query: String): Boolean = false
     suspend fun request(device: String, style: WorkStyle, body: String): String = throw CompanyException("offline")
     /** [what] like · take · done · delete; [on] false takes a like or a 만들게요 back; [code] for done. */
     suspend fun requestAct(device: String, id: String, what: String, on: Boolean = true, code: String? = null) {}
@@ -368,6 +387,8 @@ class RecipeClient(
                 Reasons(t?.keys()?.asSequence()?.associateWith { t.optInt(it) }.orEmpty(),
                     r.optJSONArray("opinions").objects().map { it.optString("reason") to it.optString("text") })
             },
+            photosWaiting = o.optInt("photosWaiting"),
+            photosHeld = o.optInt("photosHeld"),
         )
     }
 
@@ -409,9 +430,10 @@ class RecipeClient(
 
     override suspend fun mine(device: String): MyRecipes = readCall {
         val o = call("GET", "/api/recipes/mine", device = device)
-        MyRecipes(o.optInt("trust"), o.optInt("reviewLeft"), o.optJSONArray("items").objects().map {
+        val rows = o.optJSONArray("items").objects()
+        MyRecipes(o.optInt("trust"), o.optInt("reviewLeft"), rows.map {
             item(it) to Triple(it.optString("state"), it.optString("scope"), it.optStringOrNull("note"))
-        })
+        }, rows.mapNotNull { r -> r.optStringOrNull("photos")?.let { r.optString("code") to it } }.toMap())
     }
 
     override suspend fun talk(device: String?, code: String): RecipeTalk = readCall {
@@ -441,7 +463,10 @@ class RecipeClient(
 
     override suspend fun lineage(code: String): Lineage = readCall {
         val o = call("GET", "/api/recipes/$code/lineage")
-        Lineage(o.optJSONArray("parents").objects().map { if (it.optBoolean("gone")) null else item(it) }, o.optJSONArray("children").objects().map(::item))
+        Lineage(o.optJSONArray("parents").objects().map { if (it.optBoolean("gone")) null else item(it) }, o.optJSONArray("children").objects().map(::item),
+            o.optJSONArray("children").objects().associate { k ->
+                k.optString("code") to (k.optJSONArray("changed")?.objects()?.map { c -> c.optString("kind") to c.optString("how") } ?: emptyList())
+            })
     }
 
     override suspend fun versions(codes: List<String>): Map<String, Int> = readCall {
@@ -454,9 +479,22 @@ class RecipeClient(
         call("GET", "/api/recipes/requests" + (style?.let { "?style=${it.name}" } ?: ""), device = device).optJSONArray("items").objects().map { q ->
             RecipeRequest(q.getString("id"), WorkStyle.entries.firstOrNull { it.name == q.optString("style") }, q.optString("body"), q.optInt("likes"),
                 q.optString("state", "waiting"), q.optStringOrNull("code"), Instant.parse(q.getString("at")), q.optBoolean("mine"), q.optBoolean("taking"),
-                q.optBoolean("liked"))
+                q.optBoolean("liked"), q.optInt("askers"), q.optBoolean("told"))
         }
     }
+
+    override suspend fun tools(style: WorkStyle?): List<CommonTool> = readCall {
+        call("GET", "/api/recipes/tools" + (style?.let { "?style=${it.name}" } ?: "")).optJSONArray("items").objects().map { t ->
+            CommonTool(t.getString("code"), t.optString("title"), t.optString("summary"), t.optInt("users"), if (t.isNull("kept") || !t.has("kept")) null else t.optInt("kept"),
+                t.optString("tierName", "모두의 도구"))
+        }
+    }
+
+    override suspend fun searchMiss(place: String, query: String): Boolean = runCatching {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            call("POST", "/api/growth/miss", JSONObject().put("place", place).put("q", query.take(40))).optBoolean("ok")
+        }
+    }.getOrDefault(false)
 
     override suspend fun request(device: String, style: WorkStyle, body: String): String = serverCall {
         call("POST", "/api/recipes/requests", JSONObject().put("device", device).put("style", style.name).put("body", body)).getString("id")

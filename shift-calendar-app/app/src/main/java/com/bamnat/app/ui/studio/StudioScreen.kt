@@ -273,6 +273,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var publishRound by remember { mutableStateOf(0) }
     var preparing by remember { mutableStateOf(false) }
     var uploadWhat by remember { mutableStateOf<List<String>?>(null) }
+    // PC 006d0aec: what went up from here (body → the answer), so 올리기 with nothing changed says so at once, before '무엇을 올릴까요'.
+    var sentBodies by remember { mutableStateOf(mapOf<String, com.bamnat.app.recipe.Sent>()) }
+    var noChange by remember { mutableStateOf<com.bamnat.app.recipe.Sent?>(null) }
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
@@ -287,6 +290,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var saving by remember { mutableStateOf(false) }
     var startAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
     var inkAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // 1.36 [GRW-01] 원하는 꾸미기가 없을 때 스튜디오를 떠나지 않고 그 자리에서 부탁해요.
+    var wish by remember { mutableStateOf(false) }
     val snack = remember { SnackbarHostState() }
     val resumable by vm.resumable.collectAsStateWithLifecycle()
     var resumeShut by rememberSaveable { mutableStateOf(false) }
@@ -479,8 +484,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 if (tabs.isNotEmpty()) { uploadWhat = tabs; preparing = false }
                                 else scope.launch {
                                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
-                                    publishRound++
-                                    publishing = Triple(body, parent, vm.nextOf())
+                                    // PC 006d0aec: nothing changed since it last went up from here: said at once.
+                                    val same = sentBodies[body]
+                                    if (same != null) { noChange = same; preparing = false }
+                                    else { publishRound++; publishing = Triple(body, parent, vm.nextOf()) }
                                 }
                             } }, enabled = !preparing && publishing == null,
                                 modifier = Modifier.heightIn(min = 48.dp)) { Text(if (preparing) "준비 중…" else "올리기") }
@@ -777,9 +784,25 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             vm.change { it.copy(motion = m.encode()) }
                         }
                     }
+                    TextButton(onClick = { wish = true }) { Text("원하는 꾸미기가 없나요? 부탁하기") }
                     Spacer(Modifier.height(24.dp))
                 }
             }
+        }
+    }
+
+    if (wish) StudioWish(where = "${area.label} › ${tool.label}", style = vm.style, onDismiss = { wish = false }) { sent ->
+        wish = false
+        val gathered = sent?.takeIf { it.studioGoal > 0 }?.let { q ->
+            if (q.studioAskers >= q.studioGoal) "같은 부탁이 ${q.studioAskers}명 모였어요. 장터 '만들어 주세요'에 올라가요"
+            else "같은 부탁 ${q.studioAskers}/${q.studioGoal}명 모였어요. ${q.studioGoal}명이 되면 장터 '만들어 주세요'에 올라가고, 모이지 않아도 운영자가 함께 봐요"
+        }
+        scope.launch {
+            snack.showSnackbar(when {
+                sent == null -> "보내지 못했어요. 인터넷을 확인하고 다시 눌러 주세요"
+                gathered != null -> "보냈어요. $gathered. 풀리면 알림과 '내 문의'로 알려 드려요"
+                else -> "보냈어요. 같은 부탁이 모이면 장터 '만들어 주세요'에 올라가고, 풀리면 알려 드려요"
+            })
         }
     }
 
@@ -870,30 +893,101 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         )
     }
     publishing?.let { (body, parent, own) ->
+        val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own-$publishRound") {
+            com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
+        }
+        // PC e20cfe53: 바뀐 것 없이 다시 올리기를 누르면 지난 '올렸어요' 끝 화면 대신, 바뀐 곳이 없다고 말하고 지난번 올린 것을 열어요.
+        val already = remember(publishing) { up.state.value.sent }
+        if (already != null) {
+            NoChangeDialog(already, onOpen = { publishing = null; onOpen(already.code) }, onDismiss = { publishing = null })
+            return@let
+        }
         // [STU-21] 올리기 over the studio (레시피 만들기 steps 2–5): 스튜디오로 or closing comes back with the draft as it was.
         com.bamnat.app.ui.components.Dialog(onDismissRequest = { publishing = null },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
             Surface(Modifier.fillMaxSize()) {
                 // W37: once 올리기 is drawn, the 무엇을 올릴까요 window and 준비 중 go.
                 LaunchedEffect(Unit) { uploadWhat = null; preparing = false }
-                val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own-$publishRound") {
-                    com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
-                }
                 // 빌드 751b88f6 PC 확인 (올린 뒤 나가도 '바꾼 것을 어떻게 할까요?'): once it is up, what was changed counts as kept,
                 // whether 레시피 보기 or 뒤로 follows.
                 val upState by up.state.collectAsState()
-                LaunchedEffect(upState.sent != null) { if (upState.sent != null) vm.markKept() }
+                LaunchedEffect(upState.sent != null) { upState.sent?.let { sent -> vm.markKept(); sentBodies = sentBodies + (body to sent) } }
                 com.bamnat.app.ui.recipe.RecipeMakeScreen(up, onBack = { publishing = null }, onOpen = { code -> publishing = null; vm.markKept(); onOpen(code) }, finishOnly = true)
             }
         }
     }
+    noChange?.let { sent -> NoChangeDialog(sent, onOpen = { noChange = null; onOpen(sent.code) }, onDismiss = { noChange = null }) }
     if (saving) SaveDialog(vm, s, onDismiss = { saving = false }) { name, toPlaza ->
         saving = false
         scope.launch { vm.save(name, toPlaza).join(); if (leaving) onBack() }
     }
 }
 
+/** PC e20cfe53·006d0aec: 올리기 with nothing changed since the last time it went up. */
+@Composable
+private fun NoChangeDialog(sent: com.bamnat.app.recipe.Sent, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("바뀐 곳이 없어요") },
+        text = { Text("지난번에 올린 그대로예요 (코드 ${sent.code} · ${sent.version}판). 스튜디오에서 고친 뒤 올리면 새로 올라가요",
+            style = MaterialTheme.typography.bodyMedium) },
+        confirmButton = { TextButton(onClick = onOpen) { Text("지난번 올린 것 보기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("스튜디오로") } },
+    )
+}
+
 /** 내 앱에 입히기: an ad first when the look keeps someone else's days ([StudioViewModel.needsAd]). */
+/**
+ * 1.36 [GRW-01] 스튜디오 요구: 보는 칸·도구를 앞에 붙여 개발자에게 보내요(공개 안 함). 서버가 같은 부탁끼리 묶고, 3명이 모이면 장터
+ * '만들어 주세요'에, 풀리거나 기본 도구가 되면 문의 답으로 알려 줘요. 고치던 꾸미기는 그대로예요.
+ */
+@Composable
+private fun StudioWish(where: String, style: WorkStyle?, onDismiss: () -> Unit, onSent: (com.bamnat.app.company.Inquiry?) -> Unit) {
+    val c = LocalContext.current.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var text by rememberSaveable { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    val tools by androidx.compose.runtime.produceState(emptyList<com.bamnat.app.recipe.CommonTool>()) {
+        value = runCatching { c.recipeApi.tools(style) }.getOrDefault(emptyList())
+    }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("원하는 꾸미기 부탁하기") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("[$where]에서 무엇을 하고 싶은지 적어 주세요. 같은 부탁이 모이면 다른 분이 만들어 주거나 기본 도구가 돼요",
+                    style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = text, onValueChange = { text = it.take(500) }, minLines = 3, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("예: 야간 근무 칸에 달 모양을 넣고 싶어요") })
+                if (tools.isNotEmpty()) {
+                    Text("먼저 모두의 도구를 살펴보세요", style = MaterialTheme.typography.labelLarge)
+                    tools.take(3).forEach { t -> Text("• ${t.title} · ${t.users}명이 써요", style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy && text.isNotBlank(), onClick = {
+                busy = true
+                scope.launch {
+                    val sent = runCatching {
+                        c.inquiryApi.send(c.companyStore.device, com.bamnat.app.company.InquiryKind.STUDIO, "[스튜디오 › $where] ${text.trim()}",
+                            com.bamnat.app.ui.company.deviceInquiryInfo().copy(studio = style?.name, public = false))
+                    }.getOrNull()
+                    if (sent != null) {
+                        // PC 확인 8d290ec3: 답(풀림·기본 도구·거절)이 오면 알림과 '내 문의'에 보이게, 다른 문의처럼 표시해요.
+                        c.inquiryStore.asked = true
+                        c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
+                        com.bamnat.app.company.InquiryReplyJob.schedule(c.appContext)
+                    }
+                    busy = false
+                    onSent(sent)
+                }
+            }) { Text(if (busy) "보내는 중" else "보내기") }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("닫기") } },
+    )
+}
+
 @Composable
 private fun WearButton(vm: StudioViewModel, busy: Boolean, check: (() -> Unit) -> Unit) {
     val c = LocalContext.current.appContainer

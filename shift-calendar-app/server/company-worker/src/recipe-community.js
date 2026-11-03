@@ -4,6 +4,7 @@
 // What a phone is known by stays the install hash it already has on the plaza; a maker is shown by [makerId], a one-way id of
 // it, never the hash. 구독 is kept on the phone only: it asks for the newest version of the codes it took (no device sent), so
 // the server never learns who uses which recipe. Everything that sends (요청, 팔로우, 그림) waits for 처리방침 3.8 like the rest.
+import { autoCheck, autoCheckOn, firstState, flagImage, passedPhotos, PHOTO_GUARD, PHOTO_WHY } from "./photo-guard.js";
 import { CODE, cleanText, graphemes, investAdvice, listItem, makerId, oneEmoji, sha256hex, textProblem, trustLevel } from "./recipes.js";
 import { DAY, HOUR } from "./units.js";
 import { addStrike, limitJson, operatorStrike, writeAllowance, writeLimitHit } from "./write-limits.js";
@@ -23,6 +24,9 @@ export const RECIPE_BADGES = {
   remix10: "고쳐 만든 것 10개",
   requests5: "요청 완성 5번",
   helper: "공개 자료 정리 도움",
+  // 1.36 [GRW-05][GRW-09] 승격 사다리.
+  tool: "모두의 도구 만든 분",
+  adopted: "기본 도구 만든 분",
 };
 
 export const COMMUNITY_SCHEMA = [
@@ -129,7 +133,31 @@ async function rcLineage(d, env, code) {
   }
   const kids = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner
     WHERE r.parent = ? AND r.state = 'visible' AND r.scope = 'public' ORDER BY r.likes DESC, r.created_at DESC LIMIT 30`, code);
-  return d.json({ code, parents: up, children: await rcWithMaker(d, env, kids, now) });
+  // 1.36 누락 점검 N15: 고친 판마다 '바꾼 곳' 한 줄 (조각 종류마다 새로 넣음·뺌·바꿈), 열어 보지 않아도.
+  const mine = kids.length ? (await d.one(env, "SELECT body FROM recipes WHERE code = ?", code))?.body : null;
+  const children = (await rcWithMaker(d, env, kids, now)).map((k, i) => ({ ...k, changed: pieceChanges(mine, kids[i].body) }));
+  return d.json({ code, parents: up, children });
+}
+
+/** 1.36 N15: which kinds of piece differ between two recipe bodies, as [{kind, how: add|del|edit}] (at most 8). */
+export function pieceChanges(fromBody, toBody) {
+  const group = (body) => {
+    const m = new Map();
+    try {
+      for (const p of JSON.parse(body)?.pieces ?? []) {
+        const k = String(p?.kind ?? "");
+        if (k) m.set(k, [...(m.get(k) ?? []), JSON.stringify(p)]);
+      }
+    } catch { /* an unreadable body has no pieces */ }
+    for (const [k, v] of m) m.set(k, v.sort().join("\n"));
+    return m;
+  };
+  const a = group(fromBody);
+  const b = group(toBody);
+  const out = [];
+  for (const [k, v] of b) if (!a.has(k)) out.push({ kind: k, how: "add" }); else if (a.get(k) !== v) out.push({ kind: k, how: "edit" });
+  for (const k of a.keys()) if (!b.has(k)) out.push({ kind: k, how: "del" });
+  return out.slice(0, 8);
 }
 
 // ---- [RCX-02] 새 판 확인 (구독은 휴대폰에만) ----
@@ -145,21 +173,28 @@ async function rcVersions(d, env, url) {
 
 // ---- [RCX-04] 요청 판 ----
 
-function rcRequestItem(q, dev, liked) {
+function rcRequestItem(q, dev, liked, told = false) {
   return {
     id: q.id, style: q.style, body: q.body, likes: q.likes, state: q.state, code: q.code ?? null, at: new Date(q.created_at).toISOString(),
     mine: Boolean(dev && q.device === dev), taking: Boolean(dev && q.maker === dev), ...(liked ? { liked: true } : {}),
+    // 1.36 [GRW-03] 스튜디오 요구가 모여 저절로 올라온 줄: 부탁한 분 수.
+    ...(q.device === "operator" && q.askers > 0 ? { askers: q.askers } : {}),
+    // 1.36 누락 점검 N14: 14일 동안 아무도 만들지 않아 스튜디오 요구로 넘어간 요청 (개발자에게 알림).
+    ...(told && q.state === "waiting" ? { told: true } : {}),
   };
 }
 
 async function rcRequestList(d, env, request, url) {
   const dev = await rcReadDev(d, request, null);
   const style = RC_STYLE_KEYS.includes(url.searchParams.get("style")) ? url.searchParams.get("style") : null;
-  const rows = await d.all(env, `SELECT * FROM recipe_requests WHERE hidden = 0 ${style ? "AND style = ?" : ""}
+  // 1.36 [GRW-03] style ALL: a group of 스튜디오 요구 that named no kind of work shows on every one.
+  const rows = await d.all(env, `SELECT * FROM recipe_requests WHERE hidden = 0 ${style ? "AND (style = ? OR style = 'ALL')" : ""}
     ORDER BY CASE state WHEN 'done' THEN 1 ELSE 0 END, likes DESC, created_at DESC LIMIT 60`, ...(style ? [style] : []));
   const liked = dev && rows.length ? new Set((await d.all(env, `SELECT id FROM recipe_request_likes WHERE device = ? AND id IN (${rows.map(() => "?").join(",")})`,
     dev, ...rows.map((q) => q.id))).map((x) => x.id)) : new Set();
-  return d.json({ items: rows.map((q) => rcRequestItem(q, dev, liked.has(q.id))) });
+  const told = rows.length ? new Set((await d.all(env, `SELECT ref FROM studio_need_links WHERE src = 'req' AND ref IN (${rows.map(() => "?").join(",")})`,
+    ...rows.map((q) => q.id))).map((x) => x.ref)) : new Set();
+  return d.json({ items: rows.map((q) => rcRequestItem(q, dev, liked.has(q.id), told.has(q.id))) });
 }
 
 async function rcRequestPost(d, env, request) {
@@ -229,6 +264,8 @@ async function rcRequestAct(d, env, request, id, what) {
     const r = await d.one(env, "SELECT owner, state, scope FROM recipes WHERE code = ?", body.code);
     if (!r || r.owner !== dev || r.scope === "private" || r.state === "deleted") return d.json({ error: "code", field: "code" }, 400);
     await d.run(env, "UPDATE recipe_requests SET state = 'done', code = ?, updated_at = ? WHERE id = ?", body.code, now, id);
+    // 1.36 [GRW-03] 사용자 부품으로 먼저 풀림: 이 요청이 온 스튜디오 요구 묶음과 부탁한 분들.
+    if (d.needSolved) await d.needSolved(env, id, body.code, now);
     return d.json({ id, state: "done", code: body.code });
   }
   return null;
@@ -245,6 +282,9 @@ async function rcBadgesOf(d, env, dev, m, sums) {
   const done = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_requests WHERE maker = ? AND state = 'done'", dev);
   if (done.n >= 5) out.push("requests5");
   if (m?.helper) out.push("helper");
+  const tier = await d.one(env, "SELECT MAX(t.tier) AS t FROM recipe_tiers t JOIN recipes r ON r.code = t.code WHERE r.owner = ? AND r.state = 'visible'", dev);
+  if (tier?.t >= 4) out.push("adopted");
+  else if (tier?.t >= 2) out.push("tool");
   return out.map((k) => ({ key: k, name: RECIPE_BADGES[k] }));
 }
 
@@ -912,14 +952,23 @@ async function rcImagePost(d, env, request) {
   if (!bytes || !RC_WEBP(bytes)) return d.json({ error: "image", field: "webp" }, 400);
   if (bytes.length > COMMUNITY_LIMITS.imageBytes) return d.json({ error: "too_big", field: "webp" }, 413);
   { const size = rcWebpSize(bytes); if (!size || size.w < 1 || size.h < 1 || size.w > RC_IMAGE_SIDE || size.h > RC_IMAGE_SIDE) return d.json({ error: "image_size", field: "webp" }, 400); }
-  const hit = await d.overLimit(env, now, [["device", `rimg|${dev}`, COMMUNITY_LIMITS.imagesPerDay, DAY]]);
+  const net = await d.network(request, env, now);
+  // 1.36 [SEC-07] 보안 점검 H1: a day's pictures per network and for everyone, not only per install (an id costs nothing to make).
+  const hit = await d.overLimit(env, now, [["device", `rimg|${dev}`, COMMUNITY_LIMITS.imagesPerDay, DAY],
+    ["network", `rimgnet|${net.day}`, PHOTO_GUARD.perNetworkDay, DAY], ["network", `rimgall|${Math.floor(now / DAY)}`, PHOTO_GUARD.allDay, DAY]]);
   if (hit) return hit;
   // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
   { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
 
   const id = (await sha256hex(`${dev}|${now}|${body.webp.length}|${d.randomId(8)}`)).slice(0, 16);
-  await d.run(env, "INSERT INTO recipe_images (id, owner, data, bytes, at) VALUES (?, ?, ?, ?, ?)", id, dev, body.webp, bytes.length, now);
-  return d.json({ id, state: "pending" }, 201);
+  // 1.36 [GRW-08] 세 겹: 자동 검사 → 믿음 단계(새싹 첫 사진만 운영자가) → 신고 즉시 가림. Before 1.36 every picture waited for the operator.
+  const check = await autoCheck(env, body.webp);
+  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+  const first = firstState(check, trust.level, await passedPhotos(env, dev));
+  await d.run(env, "INSERT INTO recipe_images (id, owner, data, bytes, at, state, checked, why, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", id, dev, body.webp,
+    bytes.length, now, first.state === "ok" ? "ok" : first.state, check, first.why, first.state === "ok" ? now : null);
+  // The phone hears ok or pending only; why it waits stays with the operator.
+  return d.json({ id, state: first.state === "ok" ? "ok" : "pending" }, 201);
 }
 
 async function rcImageGet(d, env, request, id) {
@@ -936,8 +985,28 @@ async function rcImageGet(d, env, request, id) {
 
 // ---- routing ----
 
+/** 1.36 [GRW-08] POST /api/recipes/images/:id/flag — {device, reason}: 사진 신고, 두 번이면 먼저 가려요. */
+async function rcImageFlag(d, env, request, id) {
+  const body = await d.readJson(request, 512);
+  const dev = await rcReadDev(d, request, body);
+  if (!dev) return d.json({ error: "device", field: "device" }, 400);
+  const now = Date.now();
+  const hit = await d.overLimit(env, now, [["device", `rflag|${dev}`, 20, DAY]]);
+  if (hit) return hit;
+  // 1.36 [SEC-08] 보안 점검 M3: a 새싹's report and a second one from the same network today count for the operator only.
+  // The first time an install comes to the 나눔 판 starts its time there (a report counts once it is 이웃, 3 days on).
+  await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
+  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+  const net = await d.network(request, env, now);
+  const counts = trust.level >= 1 && (await d.allow(env, `rimgflagnet|${net.day}|${id}`, 1, DAY, now));
+  const out = await flagImage(env, id, dev, body.reason, now, counts);
+  return d.json({ flagged: true, ...out });
+}
+
 export async function communityRoute(d, request, env, path, url) {
   const method = request.method;
+  const flag = path.match(/^\/api\/recipes\/images\/([0-9a-f]{16})\/flag$/);
+  if (flag && method === "POST") return rcImageFlag(d, env, request, flag[1]);
   if (path === "/api/recipes/versions" && method === "GET") return rcVersions(d, env, url);
   if (path === "/api/recipes/requests" && method === "GET") return rcRequestList(d, env, request, url);
   if (path === "/api/recipes/requests" && method === "POST") return rcRequestPost(d, env, request);
@@ -988,18 +1057,36 @@ export async function communityAdmin(d, request, env, path, url, now) {
     return d.json({ week, style, codes });
   }
   if (path === "/recipes/images" && method === "GET") {
-    const rows = await d.all(env, "SELECT id, bytes, state, at, data FROM recipe_images WHERE state = ? ORDER BY at LIMIT 50",
-      url.searchParams.get("state") === "hidden" ? "hidden" : "pending");
-    return d.json({ items: rows.map((r) => ({ ...r, at: new Date(r.at).toISOString() })) });
+    // 1.36 [GRW-08] 볼 것: 새싹 첫 사진(pending)과 자동 검사·신고로 먼저 가린 것(held), 신고 많은 순·오래된 순. 이유와 신고 이유별 수.
+    const want = url.searchParams.get("state");
+    const where = want === "hidden" ? "state = 'hidden'" : want === "ok" ? "state = 'ok' AND flags > 0" : "state IN ('pending', 'held')";
+    const rows = await d.all(env, `SELECT id, owner, bytes, state, at, data, checked, why, flags FROM recipe_images WHERE ${where} ORDER BY flags DESC, at LIMIT 50`);
+    // PC 8d290ec3 사용성 제안: 한 줄에 작품 이름, 올린 분의 믿음 단계, 같은 사진을 쓴 다른 곳까지.
+    for (const r of rows) {
+      const uses = await d.all(env, "SELECT code, title FROM recipes WHERE state != 'deleted' AND (cover = ? OR instr(body, ?) > 0) ORDER BY updated_at DESC LIMIT 4", r.id, r.id);
+      r.uses = uses;
+      r.trustName = ["새싹", "이웃", "단골"][trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", r.owner), now).level] ?? "새싹";
+      delete r.owner;
+    }
+    const reasons = rows.length ? await d.all(env, `SELECT id, reason, COUNT(*) AS n FROM recipe_image_flags WHERE id IN (${rows.map(() => "?").join(",")}) GROUP BY id, reason`,
+      ...rows.map((r) => r.id)) : [];
+    const counts = Object.fromEntries((await d.all(env, "SELECT state, COUNT(*) AS n FROM recipe_images WHERE state IN ('pending', 'held') GROUP BY state")).map((r) => [r.state, r.n]));
+    return d.json({ items: rows.map((r) => ({ ...r, at: new Date(r.at).toISOString(), whyName: PHOTO_WHY[r.why] ?? null,
+      reasons: Object.fromEntries(reasons.filter((x) => x.id === r.id).map((x) => [x.reason, x.n])) })), counts, rules: { ...PHOTO_GUARD, checkOn: autoCheckOn(env) } });
   }
   let m = path.match(/^\/recipes\/images\/([0-9a-f]{16})\/(ok|hide)$/);
   if (m && method === "POST") {
-    await d.run(env, "UPDATE recipe_images SET state = ?, decided_at = ? WHERE id = ?", m[2] === "ok" ? "ok" : "hidden", now, m[1]);
+    const img = await d.one(env, "SELECT owner, state FROM recipe_images WHERE id = ?", m[1]);
+    if (!img) return d.json({ error: "not_found" }, 404);
+    // 1.36 [GRW-08] 괜찮아요: 신고를 비우고 다시 보여요. 가려요: 신고가 맞으면 쓰기 제한 한 번(V1 단계 규칙).
+    await d.batch(env, [d.stmt(env, "UPDATE recipe_images SET state = ?, decided_at = ?, why = NULL, flags = ? WHERE id = ?", m[2] === "ok" ? "ok" : "hidden", now,
+      m[2] === "ok" ? 0 : 0, m[1]), ...(m[2] === "ok" ? [d.stmt(env, "DELETE FROM recipe_image_flags WHERE id = ?", m[1])] : [])]);
+    if (m[2] === "hide" && img.state !== "hidden") await rcStrike(d, env, img.owner, "image", m[1], now);
     return d.json({ id: m[1], state: m[2] === "ok" ? "ok" : "hidden" });
   }
   if (path === "/recipes/requests" && method === "GET") {
     // Newest first, hidden ones too, so the operator can put one back. Never who wrote it.
-    const rows = await d.all(env, "SELECT id, style, body, likes, state, code, hidden, created_at FROM recipe_requests ORDER BY created_at DESC LIMIT 100");
+    const rows = await d.all(env, "SELECT id, style, body, likes, state, code, hidden, askers, created_at FROM recipe_requests ORDER BY created_at DESC LIMIT 100");
     return d.json({ items: rows.map((r) => ({ ...r, hidden: r.hidden === 1, at: new Date(r.created_at).toISOString() })) });
   }
   m = path.match(/^\/recipes\/requests\/(q[A-Za-z0-9]{12})\/(hide|show)$/);
