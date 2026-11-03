@@ -111,6 +111,29 @@ object StopTrail {
     fun stuckEnds(lines: List<Line>): List<Line> =
         lines.zipWithNext().filter { (a, b) -> b.kind == Kind.START && a.kind in STUCK }.map { it.first }
 
+    /** 1.36 PC C22: how long after the app starts a slow drawing is the start, not a freeze. */
+    const val START_GRACE_MS = 30_000L
+    /** 1.36 PC A21: how long after the screen is made again or changes size (글자 크기, 화면 돌림, 설정 바뀜) the same holds. */
+    const val REMADE_GRACE_MS = 10_000L
+    /** On a [Kind.STALL] or [Kind.NO_DRAW] line: the screen was being drawn again whole on purpose (`redraw=text`). */
+    const val REDRAW_MARK = "redraw="
+
+    /**
+     * The newest time worth asking the person about a freeze (the calendar's '앱이 멈춰 있던 적이 있어요' card), 0 when none:
+     * the app ended stuck ([stuckEnds]) or the screen was not drawn ([Kind.NO_DRAW]). Not a slow drawing the app expected:
+     * a line marked [REDRAW_MARK], or one within [START_GRACE_MS] of a [Kind.START] or [REMADE_GRACE_MS] of the screen made
+     * again ([Kind.MADE], not its `first_draw` line) or resized ([Kind.LAYOUT]). Those stay in 진단.
+     */
+    fun askAboutStuckAt(lines: List<Line>): Long {
+        val starts = lines.filter { it.kind == Kind.START }.map { it.atMillis }
+        val remades = lines.filter { it.kind == Kind.LAYOUT || it.kind == Kind.MADE && !it.detail.startsWith("first_draw") }.map { it.atMillis }
+        fun expected(l: Line) = REDRAW_MARK in l.detail ||
+            starts.any { l.atMillis - it in 0..START_GRACE_MS } || remades.any { l.atMillis - it in 0..REMADE_GRACE_MS }
+        return (stuckEnds(lines) + lines.filter { it.kind == Kind.NO_DRAW })
+            .filterNot(::expected)
+            .maxOfOrNull { it.atMillis } ?: 0L
+    }
+
     /** The newest time the app was seen stuck (멈춤, 안 그려짐, 눌러도 그대로), 0 when never. */
     fun lastStuckAt(lines: List<Line>): Long = lines.lastOrNull { it.kind in STUCK }?.atMillis ?: 0L
 

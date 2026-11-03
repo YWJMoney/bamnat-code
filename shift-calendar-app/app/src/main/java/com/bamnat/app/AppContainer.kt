@@ -540,9 +540,11 @@ class AppContainer(context: Context) {
      * the app starts.
      */
     var billing: com.bamnat.app.billing.Billing
-        get() = billingSet ?: playBilling
+        get() = billingSet ?: deferredBilling
         set(value) { billingSet = value }
     private var billingSet: com.bamnat.app.billing.Billing? = null
+    // 1.36 첫 실행 멈춤 (PC 확인 C12, 4.8초): Play's client is made on appScope's thread, never while a screen waits on the main one.
+    private val deferredBilling by lazy { com.bamnat.app.billing.DeferredBilling(appScope) { playBilling } }
     private val playBilling by lazy {
         com.bamnat.app.billing.PlayBilling(appContext, proStore, api = { tierApi },
             device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } },
