@@ -68,9 +68,8 @@ object MainStall {
                         // 1.36 (PC 확인: 글자 크기를 적용한 직후 첫 그리기가 멈춤 카드에): the whole screen drawn again at a new
                         // size on purpose is no stop; it stays on the trail, marked, and is no note for the 멈춤 card.
                         val redraw = redrawFrom.let { it > 0 && now - it <= REDRAW_GRACE_MS }
-                        if (redraw) redrawFrom = 0L
                         noted = if (redraw) File("") else runCatching { write(app, late, frames, Today.millis()) }.getOrNull() ?: File("")
-                        Trail.add(com.bamnat.core.diag.StopTrail.Kind.STALL, "at=${where(frames)} ${Trail.memoryNow()}${if (redraw) " redraw=$redrawWhy" else ""}")
+                        Trail.add(com.bamnat.core.diag.StopTrail.Kind.STALL, "at=${where(frames)} ${Trail.memoryNow()}${if (redraw) " ${com.bamnat.core.diag.StopTrail.REDRAW_MARK}$redrawWhy" else ""}")
                     } else if (late < STALL_MS && noted != null) {
                         // [STAB-11] How long it really lasted, on the note and the trail.
                         val ms = answeredAt - since
@@ -92,8 +91,11 @@ object MainStall {
                         noDrawNoted = true
                         val frames = Looper.getMainLooper().thread.stackTrace
                         val free = late < STALL_MS
+                        // 1.36 PC A21: the screen made again at a new text size (the activity remade) takes long to draw on purpose.
+                        val redraw = redrawFrom.let { it > 0 && now - it <= REDRAW_GRACE_MS }
                         Trail.add(com.bamnat.core.diag.StopTrail.Kind.NO_DRAW,
-                            "ms=${now - waiting} main=${if (free) "free" else "busy"} focus=${if (focused) 1 else 0} at=${where(frames)}")
+                            "ms=${now - waiting} main=${if (free) "free" else "busy"} focus=${if (focused) 1 else 0} at=${where(frames)}" +
+                                if (redraw) " ${com.bamnat.core.diag.StopTrail.REDRAW_MARK}$redrawWhy" else "")
                     }
                     if (++ticks % MEMORY_EVERY_TICKS == 0) Trail.add(com.bamnat.core.diag.StopTrail.Kind.MEMORY, Trail.memoryNow())
                     val nowTight = Trail.heapTight()
@@ -117,8 +119,10 @@ object MainStall {
     }
 
     /**
-     * 1.36: within [REDRAW_GRACE_MS] of this, the first stall is the screen drawn again whole on purpose ([why]: "text" for
-     * 글자 크기), not a stop. Called on the main thread as that frame starts; its draw ([drew]) ends the grace.
+     * 1.36: within [REDRAW_GRACE_MS] of this, a stall or a screen not drawn is the screen drawn again whole on purpose ([why]: "text" for
+     * 글자 크기, "remade" for the screen made again after a setting changed, "config" for a size change it handles), not a stop.
+     * 1.36 PC A21: the grace no longer ends at the first draw; a new size measures the month, its cards and lists again over
+     * the next frames too, and the stall can come in any of them.
      */
     const val REDRAW_GRACE_MS = 8_000L
     @Volatile private var redrawFrom = 0L
@@ -131,7 +135,6 @@ object MainStall {
 
     /** [STAB-11] The window drew (its ViewTreeObserver's draw listener, on the main thread). */
     fun drew() {
-        redrawFrom = 0L
         val from = drawWaitFrom
         if (from > 0) {
             drawWaitFrom = 0L

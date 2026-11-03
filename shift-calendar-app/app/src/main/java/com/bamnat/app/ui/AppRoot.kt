@@ -1941,7 +1941,7 @@ private fun TabLabel(text: String, twoLineRoom: Boolean = false, part: com.bamna
     // 1.36 (PC 확인: '근무·급여'가 '급여'로만 보여 다른 탭인 줄 알았어요): both words, one above the other. PC 확인 8e9e888a
     // 사용성 제안 (두 줄 글자가 다른 탭보다 아주 작아요): each line is 0.8 of the others' size, and with [twoLineRoom] (the bar
     // has such a name) every other name gets the same room under its icon, so all the icons stay in one line.
-    val one = MaterialTheme.typography.labelMedium
+    val one = style
     val parts = text.split('·')
     val density = androidx.compose.ui.platform.LocalDensity.current
     if (parts.size == 2 && density.fontScale >= TWO_LINE_FROM) {

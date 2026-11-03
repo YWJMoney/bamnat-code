@@ -31,12 +31,14 @@ object StartGuard {
         val n = p.getInt(K_UNSETTLED, 0)
         _safe.value = n >= LIMIT
         byHand = n >= LIMIT && p.getBoolean(K_BY_HAND, false)
-        p.edit().putInt(K_UNSETTLED, n + 1).remove(K_BY_HAND).apply()
+        // 1.36 PC A21: '점검용' is kept while the phone stays safe, so a start of the process again (the phone closed it while
+        // the person was in its settings) still says 점검용; it goes with the count ([settled]).
+        p.edit().putInt(K_UNSETTLED, n + 1).apply()
     }
 
     /** [SETTLE_MS] after the month: this start went well, the count starts over (a safe start stays safe until 평소대로). */
     fun settled(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(K_UNSETTLED, 0).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(K_UNSETTLED, 0).remove(K_BY_HAND).apply()
     }
 
     /** PC 17차 (adb force-stop으로는 안전 모드에 들어갈 길이 없음): a debug build's 진단 makes the next start a safe one. */
@@ -48,5 +50,6 @@ object StartGuard {
     fun leave(context: Context) {
         settled(context)
         _safe.value = false
+        byHand = false
     }
 }

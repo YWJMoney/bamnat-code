@@ -1021,12 +1021,6 @@ fun CalendarScreen(
         val askOn = partShown(CalendarPart.ASK)
         // [CAL-01] What keeps an alarm from working, the most serious one, only while one is due within a week.
         val alarmLine: Pair<String, @Composable () -> Unit>? = when {
-            // C 1.32 [STAB-04] Opened safely after stopping in a row: said first, with the way back.
-            safeStart -> "안전 모드로 열었어요" to {
-                // PC 19·20차 사용성 제안 (감겨서 달력이 밀림): a line short enough not to wrap; 알람 점검 says the rest.
-                AlarmWarningLine((if (com.bamnat.app.diag.StartGuard.byHand) "점검용 안전 모드" else "멈춰서 안전 모드") + " · 꾸밈·규칙 쉼",
-                    "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace)
-            }
             // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
             alarmsOffUntil != null -> "오늘 알람 끔" to {
                 val text = "오늘 알람 끔 · ${com.bamnat.app.alarm.AlarmsOff.untilText(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(alarmsOffUntil!!))}까지"
@@ -1121,7 +1115,16 @@ fun CalendarScreen(
                 if (gone > 0 && pageScroll.value > 0) pageScroll.scrollTo((pageScroll.value - gone).coerceAtLeast(0))
             }
         }
-        if (!holding) NoticeStack(modifier = Modifier.onSizeChanged { aboveHeights[0] = it.height }, state = notices, open = if (sideways) 0 else 1, notices = buildList {
+        // C 1.32 [STAB-04] Opened safely after stopping in a row: said first, with the way back.
+        // 1.36 PC A21 (안전 모드 중 글자 크기를 1.3배로 바꾸면 띠가 사라짐): the line stands above the notices, never in them, so no
+        // other card (a '멈춰 있던 적' card, a phone on its side with no card open) folds it into '알림 N개 더 보기'.
+        if (!holding) Column(Modifier.onSizeChanged { aboveHeights[0] = it.height }) {
+        if (safeStart) {
+            // PC 19·20차 사용성 제안 (감겨서 달력이 밀림): a line short enough not to wrap; 알람 점검 says the rest.
+            AlarmWarningLine((if (com.bamnat.app.diag.StartGuard.byHand) "점검용 안전 모드" else "멈춰서 안전 모드") + " · 꾸밈·규칙 쉼",
+                "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace)
+        }
+        NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
             // [MAT-06] 1.36 PC 확인 7차: shared fonts a theme was waiting for, come down by themselves (was a toast). PC 8차: first, so it
             // is the one open (it was folded as '글꼴' under the others); it goes once closed or taken back.
             if (FontArrivals.fonts.isNotEmpty()) add(Notice("fontArrived", "기다리던 글꼴") { FontArrivedLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
@@ -1281,6 +1284,7 @@ fun CalendarScreen(
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
         })
+        }
         // [CUST-01] The parts under the month, by part; [CVW-06] 1.35 any of them can stand above it too.
         val partBody: @Composable (CalendarPart) -> Unit = { part ->
             when (part) {
