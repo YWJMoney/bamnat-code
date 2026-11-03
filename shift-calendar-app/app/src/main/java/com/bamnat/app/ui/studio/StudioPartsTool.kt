@@ -231,14 +231,15 @@ internal fun PartsTool(
             set = ::set, onAll = { text -> onChange(text) })
         Group("채우기") {
             // PC 확인 e262702a 사용성 제안: a 막대 given one colour can go back to each shift's own at one tap.
-            if (id == "cal.line.bar") FilterChip(selected = col("fill") == null, onClick = {
-                if (col("fill") != null) { val was = (line["fillA"] as? Number)?.toLong(); setAll("fill" to null, "fillA" to otherA); otherA = was }
-            }, label = { Text("근무 색 그대로") })
-            ColorPick(if (id == "cal.line.bar") "한 가지 색으로" else "색", col("fill")) {
-                if (id == "cal.line.bar" && col("fill") == null && it != null) {
-                    val was = (line["fillA"] as? Number)?.toLong(); setAll("fill" to it, "fillA" to otherA); otherA = was
-                } else setAll("fill" to it)
+            // PC 확인 5c21f3bb (1절 3번): 색 고르기의 '처음대로'도 근무 색 그대로로 가는 길이라, 그때도 두 진하기를 바꿔 끼워요.
+            fun pickFill(next: Long?) {
+                if (id == "cal.line.bar" && (col("fill") == null) != (next == null)) {
+                    val was = (line["fillA"] as? Number)?.toLong(); setAll("fill" to next, "fillA" to otherA); otherA = was
+                } else setAll("fill" to next)
             }
+            if (id == "cal.line.bar") FilterChip(selected = col("fill") == null, onClick = { if (col("fill") != null) pickFill(null) },
+                label = { Text("근무 색 그대로") })
+            ColorPick(if (id == "cal.line.bar") "한 가지 색으로" else "색", col("fill")) { pickFill(it) }
             if (col("fill") != null) LabeledSlider("진하기", num("fillA") ?: 100f, 0f..100f, "%") { set("fillA", it.toLong()) }
             // PC 확인 fc2db3b0 사용성 제안: one colour for every 막대 hid which shift is which; with no 색 the 막대 keep their shift's colour and
             // this sets how strong.

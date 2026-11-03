@@ -152,7 +152,7 @@ fun HubScreen(
         androidx.compose.animation.AnimatedVisibility(headerShown && recipesOn && c.recipeApi.enabled && (section == HubSection.TALK || section == HubSection.SHARE)) {
           Column {
             val strip = com.bamnat.app.ui.appViewModel(key = "following-strip-${style?.name}") { com.bamnat.app.ui.recipe.FollowingStripViewModel(it, style) }
-            com.bamnat.app.ui.recipe.FollowingStrip(strip, onMaker = onMaker, onAll = onPeople)
+            com.bamnat.app.ui.recipe.FollowingStrip(strip, onMaker = onMaker, onAll = onPeople, onFind = onSearch)
             TodayOne(c, style, prefs, onRecipe, onMake = { onStudio("plain") })
             // 1.36 [VIL-17] 마을 V17: 장터's themes one by one, big, flipped upward.
             if (section == HubSection.SHARE && onSwipe != null) {

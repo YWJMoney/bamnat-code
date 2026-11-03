@@ -1181,7 +1181,7 @@ class FollowingStripViewModel(private val c: AppContainer, private val style: Wo
  * and 모두 보기; with no one followed, 이달의 제작자 to start from.
  */
 @Composable
-fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll: () -> Unit) {
+fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll: () -> Unit, onFind: (() -> Unit)? = null) {
     val s by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { vm.load() }
     if (!s.loaded) return
@@ -1192,7 +1192,9 @@ fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             s.me?.let { m -> StripFace(m.copy(nick = m.nick), "내 프로필", m.fresh) { onMaker(m.maker) } }
             (s.following.ifEmpty { s.month }).forEach { m -> StripFace(m, m.nick ?: "이름 없는 분", m.fresh) { onMaker(m.maker) } }
-            if (s.following.isNotEmpty() || s.month.isEmpty()) Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "팔로잉 모두 보기", onClick = onAll),
+            if (s.following.isNotEmpty() || s.month.isEmpty()) Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (s.following.isEmpty()) "마을에서 찾기" else "팔로잉 모두 보기",
+                // PC 확인 5c21f3bb: '🔍 찾아보기' opened the 팔로잉 새 작품 (empty with no one followed), not a search.
+                onClick = if (s.following.isEmpty()) onFind ?: onAll else onAll),
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.size(64.dp).clip(CircleShape).border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), CircleShape),
                     contentAlignment = Alignment.Center) { Text(if (s.following.isEmpty()) "🔍" else "＋", style = MaterialTheme.typography.titleLarge) }
