@@ -90,9 +90,19 @@ private val DarkInk = Color(0xFF151927)
  * [VIS-01] Readable text color on top of [background]: whichever of white and the app's dark ink
  * has the higher contrast (WCAG), so 오후 #F2994A or 대근 #0E9F6E get dark letters, not faint white.
  */
-fun contentColorOn(background: Color): Color =
+fun contentColorOn(background: Color): Color {
+    val argb = background.toArgb()
+    // PC 확인 1.36 (두 폰 '응답 없음'): every day cell asks this for its 근무 배지 on each draw, with a handful of colours;
+    // the answer is kept per colour so a month page does not work out the same contrast forty times.
+    InkCache[argb]?.let { return it }
     // [WEAR-02] The same rule as the widgets and the watch, in core.
-    if (com.bamnat.core.layout.Contrast.inkOn(background.toArgb().toLong() and 0xFFFFFFFFL, DarkInk.toArgb().toLong() and 0xFFFFFFFFL) == com.bamnat.core.layout.Contrast.WHITE) Color.White else DarkInk
+    val ink = if (com.bamnat.core.layout.Contrast.inkOn(argb.toLong() and 0xFFFFFFFFL, DarkInk.toArgb().toLong() and 0xFFFFFFFFL) == com.bamnat.core.layout.Contrast.WHITE) Color.White else DarkInk
+    if (InkCache.size > 512) InkCache.clear()
+    InkCache[argb] = ink
+    return ink
+}
+
+private val InkCache = java.util.concurrent.ConcurrentHashMap<Int, Color>()
 
 /** [DAY-02] Inside the day's groups sections drop their own card, so a group never holds a box in a box. */
 val LocalFlatSections = androidx.compose.runtime.staticCompositionLocalOf { false }
