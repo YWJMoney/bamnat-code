@@ -70,6 +70,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.CompositionLocalProvider
 import com.bamnat.app.ui.company.companyCalendarOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -936,13 +937,17 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             val barPart = bp.style("app.tabs")
                             val tabPart = bp.style("app.tab")
                             val tabOn = bp.style("app.tab", setOf("sel"))
+                            // 1.36 PC 통합 확인 f629c6f1 (연한 분홍 탭 막대에 안 고른 탭 글자가 흰색이라 안 보여요): a bar given its own colour and
+                            // no 글자 colour reads in the ink that stands on that colour, not the theme's (a dark theme's light words).
+                            val barInk = barPart.fill?.let { inkOn(androidx.compose.ui.graphics.Color(it.toInt())) }
                             val itemColors = com.bamnat.app.ui.components.Selection.navBarItemColors().let { c ->
-                                if (tabPart.isEmpty && tabOn.isEmpty) c else androidx.compose.material3.NavigationBarItemDefaults.colors(
+                                if (tabPart.isEmpty && tabOn.isEmpty && barInk == null) c else androidx.compose.material3.NavigationBarItemDefaults.colors(
                                     indicatorColor = tabOn.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedIndicatorColor,
-                                    selectedIconColor = tabOn.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedIconColor,
-                                    selectedTextColor = tabOn.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.selectedTextColor,
-                                    unselectedIconColor = tabPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.unselectedIconColor,
-                                    unselectedTextColor = tabPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: c.unselectedTextColor,
+                                    selectedIconColor = tabOn.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) }
+                                        ?: tabOn.fill?.let { inkOn(androidx.compose.ui.graphics.Color(it.toInt())) } ?: c.selectedIconColor,
+                                    selectedTextColor = tabOn.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: barInk ?: c.selectedTextColor,
+                                    unselectedIconColor = tabPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: barInk?.copy(alpha = 0.78f) ?: c.unselectedIconColor,
+                                    unselectedTextColor = tabPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: barInk?.copy(alpha = 0.78f) ?: c.unselectedTextColor,
                                 )
                             }
                             NavigationBar(
@@ -2380,3 +2385,7 @@ private fun LookUndoBand() {
         androidx.compose.material3.TextButton(onClick = { com.bamnat.app.data.LookUndo.clear(c.appContext); tick++ }) { Text("닫기") }
     }
 }
+
+/** The words' colour that reads on [ground]: near-black on a light colour, white on a dark one. */
+private fun inkOn(ground: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color =
+    if (ground.luminance() > 0.45f) androidx.compose.ui.graphics.Color(0xFF1C1B1F) else androidx.compose.ui.graphics.Color.White

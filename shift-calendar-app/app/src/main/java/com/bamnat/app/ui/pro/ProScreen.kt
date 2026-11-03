@@ -241,6 +241,11 @@ fun ProScreen(onBack: () -> Unit) {
                             else "지금은 정식 출시 전이라 모든 기능이 무료예요. 출시하는 날 앱에서 알려 드리고, 테스트에 참여한 분께는 프로 ${config.thanksMonths.coerceAtLeast(1)}개월을 드려요.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
+                        // 1.36 PC 통합 확인 f629c6f1 (프로 화면에 '사업자 정보'가 없어요): before 정식 출시 the 결제 card has no plans, and
+                        // the 사업자 정보 lived only under them; it is shown here too.
+                        var seller by remember { mutableStateOf(false) }
+                        TextButton(onClick = { seller = true }) { Text("사업자 정보") }
+                        if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
                     }
                 } else {
                     PlansCard(c, gate, pro, plans, billingState, onMessage = { message = it })
