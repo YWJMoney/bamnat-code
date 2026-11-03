@@ -2210,5 +2210,378 @@
     "emoji": "🌇"
    }
   }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "라벤더 위젯",
+   "summary": "연보라 바탕, 쉬는 날 민트, 오늘 진보라",
+   "desc": "연보라 위젯에 쉬는 날은 민트 칸, 오늘은 진보라 칸이에요.\n적용하면 바뀌는 것:\n· 연보라 바탕\n· 쉬는 날 민트\n· 오늘 진보라\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294374140,
+     "ink": 4283045004,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294374140,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4283045004,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4283045004
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4286470082,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4289912795,
+       "fillA": 35
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293781494,
+    "b": 4286470082,
+    "dir": 2,
+    "emoji": "💜"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "모노 위젯",
+   "summary": "고정폭 글자 흑백 위젯, 일하는 날만 굵게",
+   "desc": "고정폭 글자의 흑백 위젯이에요. 일하는 날만 굵고, 쉬는 날은 흐려요.\n적용하면 바뀌는 것:\n· 고정폭 글자\n· 근무 날 굵게\n· 쉬는 날 흐리게\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294638330,
+     "ink": 4280361249,
+     "corner": 6,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294638330,
+       "fillA": 92,
+       "r": 6,
+       "font": "jetbrainsmono",
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4280361249,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4280361249
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4280361249,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.long",
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 45
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294638330,
+    "b": 4280361249,
+    "dir": 2,
+    "emoji": "⌨️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "귤 위젯",
+   "summary": "주황 귤색 바탕, 오늘 초록 잎 칸",
+   "desc": "귤색 위젯에 오늘 칸은 초록 잎색이에요. 쉬는 날은 연한 노랑이에요.\n적용하면 바뀌는 것:\n· 귤색 바탕\n· 오늘 초록\n· 쉬는 날 노랑\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294964192,
+     "ink": 4283315246,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294964192,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4283315246,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4283315246
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4282622023,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4294964637,
+       "fillA": 35
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294948685,
+    "b": 4284922730,
+    "dir": 2,
+    "emoji": "🍊"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "밤하늘 위젯",
+   "summary": "짙은 남색 바탕, 야간 날 노란 별빛 글자",
+   "desc": "짙은 남색 위젯에 야간 날은 노란 별빛 글자, 오늘은 하늘색 칸이에요.\n적용하면 바뀌는 것:\n· 남색 바탕\n· 야간 별빛 글자\n· 오늘 하늘색\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4278915110,
+     "ink": 4293454582,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4278915110,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4293454582,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4293454582
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4286698746,
+       "ink": 4278915110,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "ink": 4294964637,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 50
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278915110,
+    "b": 4294964637,
+    "dir": 2,
+    "emoji": "🌌"
+   }
+  }
  }
 ]

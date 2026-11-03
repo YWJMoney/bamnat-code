@@ -6,7 +6,7 @@ import { D } from "./kit.mjs";
 
 const NOTE = "가계부 모양과 카드만 바뀌어요. 적은 돈 기록은 그대로예요";
 
-function money(s) {
+export function money(s) {
   const p = { bg: "#FFFFFF", card: "#FFFFFF", ink: "#222222", accent: "#3F51B5", ...s.p };
   const lines = [
     { id: "money.head", ...(p.headPaint ? { paint: p.headPaint } : { fill: c(p.card) }), r: p.r ?? 16, pad: 12, ...(p.titleFont ? { font: p.titleFont } : {}), ink: c(p.headInk ?? p.ink) },

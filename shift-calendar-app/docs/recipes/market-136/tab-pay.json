@@ -1529,5 +1529,1942 @@
     "emoji": "📅"
    }
   }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "야간 수당 하이라이트",
+   "summary": "야간 근무 줄은 남색 바탕, 근무 종류 비율 카드",
+   "desc": "급여 줄 가운데 야간 근무 날만 연한 남색 바탕으로 서서 야간이 이달 급여에 얼마나 섞였는지 보여요. 근무 종류 비율 카드가 같이 서요.\n적용하면 바뀌는 것:\n· 야간 줄 남색\n· 근무 종류 비율·급여 카드\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF283593",
+     "pay": "SHIFT~tt:xl|pl:FFF3F5FA|mn:FF283593|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFF3F5FA|mn:FF283593|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFF3F5FA|mn:FF283593|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "kinds,pay,weeks"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4280825235,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "근무종류 = \"야간\"",
+       "fill": 4293454582,
+       "weight": 700
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279903102,
+    "b": 4291152617,
+    "dir": 2,
+    "emoji": "🌙"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "주말 근무 표시 급여",
+   "summary": "주말에 일한 줄은 주황 바탕, 주별 카드 먼저",
+   "desc": "토·일에 일한 날 급여 줄이 주황 바탕으로 서요. 주별 카드가 먼저 나와 주말이 많은 주를 찾기 쉬워요.\n적용하면 바뀌는 것:\n· 주말 근무 줄 주황\n· 주별·급여 카드\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFEF6C00",
+     "pay": "SHIFT~tt:xl|pl:FFF3F5FA|mn:FFEF6C00|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFF3F5FA|mn:FFEF6C00|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFF3F5FA|mn:FFEF6C00|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4293880832,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "주말 그리고 근무시간 > 0",
+       "fill": 4294964192
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294675456,
+    "b": 4294959282,
+    "dir": 2,
+    "emoji": "📆"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "공휴일 근무 급여 줄",
+   "summary": "공휴일에 일한 줄은 빨간 글자, 수당 확인을 잊지 않게",
+   "desc": "공휴일에 일한 날 급여 줄이 빨간 굵은 글자로 서요. 휴일 수당이 제대로 붙었는지 한 줄씩 확인해요.\n적용하면 바뀌는 것:\n· 공휴일 근무 줄 빨강\n· 급여·지난달 대비 카드\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFC62828",
+     "pay": "SHIFT~tt:xl|pl:FFF3F5FA|mn:FFC62828|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFF3F5FA|mn:FFC62828|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFF3F5FA|mn:FFC62828|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4291176488,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "공휴일 그리고 근무시간 > 0",
+       "ink": 4291176488,
+       "weight": 800
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293212469,
+    "b": 4294962158,
+    "dir": 2,
+    "emoji": "🎌"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "긴 근무 날 급여 줄",
+   "summary": "12시간 넘게 일한 날 줄에 주황 테두리, 이어 일한 날은 빨강",
+   "desc": "12시간 넘은 날 급여 줄은 주황 테두리, 다섯째 날 넘게 이어 일한 날은 빨간 테두리예요. 몸이 고된 날이 급여 화면에서도 보여요.\n적용하면 바뀌는 것:\n· 긴 날 주황 테두리\n· 연속근무 빨간 테두리\n· 주별 카드\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFF57C00",
+     "pay": "SHIFT~tt:xl|pl:FFF3F5FA|mn:FFF57C00|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFF3F5FA|mn:FFF57C00|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFF3F5FA|mn:FFF57C00|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,pay,tiles"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4294278144,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 12",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294278144
+      },
+      {
+       "id": "pay.row",
+       "when": "연속근무 >= 5",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294278144,
+    "b": 4294954450,
+    "dir": 2,
+    "emoji": "⏱️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "다크 급여 대시보드",
+   "summary": "검은 바탕 큰 합계, 목표를 넘으면 금빛",
+   "desc": "급여 화면이 검은 대시보드가 되고 합계가 큰 흰 숫자로 서요. 이달 예상 급여가 목표(넣을 때 정해요)를 넘으면 합계 카드가 금빛으로 반짝여요.\n적용하면 바뀌는 것:\n· 검은 대시보드\n· 목표 넘으면 금빛\n· 3개월 평균·지난달 대비\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF121212|cd:FF1E1E1E|ik:FFEEEEEE|ac:FFFFD54F",
+     "pay": "SHIFT~tt:xl|pl:FF242424|mn:FFFFD54F|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FF242424|mn:FFFFD54F|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FF242424|mn:FFFFD54F|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,three,compare"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4293848814
+      },
+      {
+       "id": "pay.total",
+       "fill": 4294956367,
+       "r": 18,
+       "pad": 16,
+       "ink": 4279308561,
+       "size": 42,
+       "weight": 800,
+       "font": "bebasneue"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 2500000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279308561,
+    "b": 4294956367,
+    "dir": 2,
+    "emoji": "🖤"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "default": 2500000,
+     "min": 0
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "파스텔 급여 노트",
+   "summary": "파스텔 카드와 둥근 줄, 많이 번 날은 금빛 줄",
+   "desc": "급여 화면이 파스텔 노트처럼 둥글어지고, 그날 번 돈이 15만을 넘는 날 줄은 금빛으로 칠해져요.\n적용하면 바뀌는 것:\n· 파스텔 둥근 카드\n· 많이 번 날 금빛 줄\n· 타일·주별 카드\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFAFC|cd:FFFFFFFF|ik:FF222222|ac:FFEC407A",
+     "pay": "SHIFT~tt:xl|pl:FFFCE4EC|mn:FFEC407A|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFFCE4EC|mn:FFEC407A|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFFCE4EC|mn:FFEC407A|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "tiles,weeks,pay"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "jua",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4293673082,
+       "r": 24,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6,
+       "r": 14
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "그날급여 >= 150000",
+       "paint": "lg.90.FFFFF8E1,FFFFE082"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294491088,
+    "b": 4294964637,
+    "dir": 2,
+    "emoji": "🧁"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "근무 시간 급여 표",
+   "summary": "촘촘한 줄과 고정폭 숫자, 일한 시간 긴 줄은 굵게",
+   "desc": "급여 줄이 표처럼 촘촘해지고 숫자가 고정폭이라 자릿수가 맞아요. 10시간 넘게 일한 줄은 굵게 서요.\n적용하면 바뀌는 것:\n· 촘촘한 표 줄\n· 고정폭 숫자\n· 긴 날 굵게\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF37474F",
+     "pay": "SHIFT~tt:l|pl:FFF3F5FA|mn:FF37474F|rw:compact|op:1|dy:1/DAY~tt:l|pl:FFF3F5FA|mn:FF37474F|rw:compact|op:1|dy:1/HOURLY~tt:l|pl:FFF3F5FA|mn:FF37474F|rw:compact|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,weeks"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4281812815,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "jetbrainsmono"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 10",
+       "weight": 800
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293718001,
+    "b": 4281812815,
+    "dir": 2,
+    "emoji": "📋"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "이달 급여 목표 바",
+   "summary": "목표 급여를 정하면 넘는 날부터 합계 금빛, 연간 카드까지",
+   "desc": "목표 급여(넣을 때 정해요)에 이달 예상 급여가 닿으면 합계가 금빛이 되고, 연간 카드가 열두 달 흐름을 보여 줘요.\n적용하면 바뀌는 것:\n· 목표 넘으면 금빛\n· 연간·3개월 평균 카드\n주의할 점: 근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF3949AB",
+     "pay": "SHIFT~tt:xl|pl:FFF3F5FA|mn:FF3949AB|rw:roomy|op:1|dy:1/DAY~tt:xl|pl:FFF3F5FA|mn:FF3949AB|rw:roomy|op:1|dy:1/HOURLY~tt:xl|pl:FFF3F5FA|mn:FF3949AB|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "cards",
+     "stats": "pay,year,three"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF283593,FF5C6BC0",
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 급여\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280825235,
+    "b": 4294956367,
+    "dir": 2,
+    "emoji": "🎯"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 급여",
+     "kind": "money",
+     "default": 3000000,
+     "min": 0
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "형광 공수판",
+   "summary": "검정 바탕에 형광 노랑 합계, 10시간 넘은 날 굵게",
+   "desc": "일감·수입 화면이 검정 바탕 형광 노랑 숫자로 바뀌고, 10시간 넘게 일한 날 줄이 굵은 주황으로 서요.\n적용하면 바뀌는 것:\n· 형광 합계\n· 긴 날 굵게\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF151515|cd:FF212121|ik:FFF5F5F5|ac:FFFFEB3B",
+     "pay": "FIELD~tt:xl|pl:FF2A2A2A|mn:FFFFEB3B|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4294309365
+      },
+      {
+       "id": "pay.total",
+       "fill": 4294961979,
+       "r": 18,
+       "pad": 16,
+       "ink": 4279308561,
+       "size": 30,
+       "weight": 800,
+       "font": "blackhansans"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 10",
+       "weight": 800,
+       "ink": 4293284096
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280361249,
+    "b": 4294961979,
+    "dir": 2,
+    "emoji": "🦺"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "일당 목표 달성판",
+   "summary": "목표 수입을 넘으면 합계가 금빛, 큰 일당 날은 금 테두리",
+   "desc": "이달 번 돈이 목표(넣을 때 정해요)를 넘는 순간 합계가 금빛으로 반짝이고, 20만 넘게 번 날 줄은 금 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 목표 넘으면 금빛\n· 큰 일당 날 테두리\n· 목표 수입 칸\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFF57F17",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FFF57F17|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF5D4037,FF8D6E63",
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 수입\", 4000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      },
+      {
+       "id": "pay.row",
+       "when": "그날급여 >= 200000",
+       "weight": 800,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4294947584
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294947584,
+    "b": 4294965473,
+    "dir": 2,
+    "emoji": "🎯"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 수입",
+     "kind": "money",
+     "default": 4000000,
+     "min": 0,
+     "hint": "이달 벌고 싶은 돈"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "우천 쉼 표시",
+   "summary": "#우천 날 줄은 흐리게, 일한 날만 또렷하게",
+   "desc": "비 때문에 쉰 #우천 날 줄은 반쯤 흐려지고, 일한 날 줄만 또렷해요. 이달 몇 날 공쳤는지 한눈에 보여요.\n적용하면 바뀌는 것:\n· #우천 줄 흐리게\n· 회색 하늘 화면\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFF4F6F7|cd:FFFFFFFF|ik:FF222222|ac:FF546E7A",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FF546E7A|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4283723386,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "꼬리표.포함(\"우천\")",
+       "alpha": 50
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 10",
+       "weight": 800,
+       "ink": 4293284096
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4283723386,
+    "b": 4291811548,
+    "dir": 2,
+    "emoji": "🌧️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "주말 현장 표시",
+   "summary": "주말에 일한 줄은 주황 바탕, 공휴일은 빨간 글자",
+   "desc": "토·일에 나간 현장 줄은 주황 바탕, 공휴일에 일한 줄은 빨간 글자예요. 쉬는 날 일한 날이 수입 화면에서 바로 보여요.\n적용하면 바뀌는 것:\n· 주말 줄 주황\n· 공휴일 빨간 글자\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFEF6C00",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FFEF6C00|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4293880832,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "주말 그리고 근무시간 > 0",
+       "fill": 4294964192
+      },
+      {
+       "id": "pay.row",
+       "when": "공휴일 그리고 근무시간 > 0",
+       "ink": 4291176488,
+       "weight": 700
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294675456,
+    "b": 4294962158,
+    "dir": 2,
+    "emoji": "📅"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "연속 현장 경고판",
+   "summary": "여섯째 날 넘게 이어 나간 줄은 빨간 테두리",
+   "desc": "쉬지 않고 여섯째 날 넘게 이어 일한 날 줄에 빨간 테두리가 생겨요. 쉬어야 할 때를 수입 화면에서도 알려요.\n적용하면 바뀌는 것:\n· 연속 현장 빨간 테두리\n· 긴 날 굵게\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFC62828",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FFC62828|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4291176488,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "연속근무 >= 6",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 10",
+       "weight": 800,
+       "ink": 4293284096
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4291176488,
+    "b": 4294954450,
+    "dir": 2,
+    "emoji": "🛑"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "이달 시간 경고 머리",
+   "summary": "이달 일한 시간이 200시간을 넘으면 머리 글자가 빨강",
+   "desc": "이달 일한 시간이 200시간을 넘으면 일감·수입 화면 머리 글자가 빨갛게 바뀌어요. 큰 일당 날 줄에는 금 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 200시간 넘으면 빨간 머리\n· 큰 일당 날 테두리\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFD32F2F",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FFD32F2F|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4292030255,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.head",
+       "when": "이달근무시간 >= 200",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "when": "그날급여 >= 250000",
+       "weight": 800,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4294947584
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4292030255,
+    "b": 4294965473,
+    "dir": 2,
+    "emoji": "⏳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "출장 현장 수입",
+   "summary": "#출장 날 줄은 하늘색, 주말 줄은 주황",
+   "desc": "#출장 꼬리표를 단 날 수입 줄이 하늘색으로, 주말에 나간 줄은 주황으로 칠해져요. 멀리 다녀온 일감이 따로 보여요.\n적용하면 바뀌는 것:\n· #출장 줄 하늘색\n· 주말 줄 주황\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF0288D1",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FF0288D1|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4278356177,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "꼬리표.포함(\"출장\")",
+       "fill": 4292998654
+      },
+      {
+       "id": "pay.row",
+       "when": "주말 그리고 근무시간 > 0",
+       "fill": 4294964192
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278356177,
+    "b": 4292998654,
+    "dir": 2,
+    "emoji": "🧳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "청사진 수입판",
+   "summary": "청사진 파랑 화면과 흰 합계, 긴 날 굵게",
+   "desc": "일감·수입 화면이 청사진처럼 파란 모눈 위에 흰 숫자로 서요. 10시간 넘은 날 줄이 굵어요.\n적용하면 바뀌는 것:\n· 청사진 화면\n· 흰 합계\n· 긴 날 굵게\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF0D2A57|cd:FF123A75|ik:FFE3F2FD|ac:FF90CAF9|fl:pt.grid.FF0D2A57.FF174A92.50.0",
+     "pay": "FIELD~tt:xl|pl:FF174A92|mn:FF90CAF9|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4293128957
+      },
+      {
+       "id": "pay.total",
+       "fill": 4287679225,
+       "r": 18,
+       "pad": 16,
+       "ink": 4279052887,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 10",
+       "weight": 800,
+       "ink": 4293284096
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279060385,
+    "b": 4290502395,
+    "dir": 2,
+    "emoji": "📐"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "콘크리트 수입판",
+   "summary": "콘크리트 질감 합계와 굵은 글꼴, 공휴일 빨강",
+   "desc": "합계 카드가 콘크리트 질감 위 굵은 글꼴로 서고, 공휴일에 일한 줄은 빨간 글자예요.\n적용하면 바뀌는 것:\n· 콘크리트 합계\n· 굵은 글꼴\n· 공휴일 빨강\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF455A64",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FF455A64|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "paint": "tx.concrete.FF78909C.80",
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800,
+       "font": "blackhansans"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "공휴일 그리고 근무시간 > 0",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 10",
+       "weight": 800,
+       "ink": 4293284096
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4284513675,
+    "b": 4293718001,
+    "dir": 2,
+    "emoji": "🧱"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "안전 노랑 수입판",
+   "summary": "노랑·검정 띠 합계, 연속 현장 빨간 테두리",
+   "desc": "합계 카드가 안전 노랑·검정 띠가 되고, 여섯째 날 넘게 이어 일한 줄에는 빨간 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 노랑·검정 띠\n· 연속 현장 경고\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF212121",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FF212121|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "paint": "pt.stripes.FFFFD600.FF212121.60.45",
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "연속근무 >= 6",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294956544,
+    "b": 4280361249,
+    "dir": 2,
+    "emoji": "⚠️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "배달 수입 민트판",
+   "summary": "민트 합계와 큰 금액 날 금 테두리, 주말 주황",
+   "desc": "플랫폼 수입 화면이 민트 대시보드가 되고, 많이 번 날은 금 테두리, 주말 줄은 주황이에요.\n적용하면 바뀌는 것:\n· 민트 합계\n· 많이 번 날 금 테두리\n· 주말 주황\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF00897B",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FF00897B|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF00897B,FF1DE9B6",
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "그날급여 >= 150000",
+       "weight": 800,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4294947584
+      },
+      {
+       "id": "pay.row",
+       "when": "주말 그리고 근무시간 > 0",
+       "fill": 4294964192
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278239141,
+    "b": 4292932337,
+    "dir": 2,
+    "emoji": "🛵"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "프리랜서 건별 수입",
+   "summary": "깔끔한 흰 화면, 큰 건 금 테두리, 목표 넘으면 금빛",
+   "desc": "건별 수입 화면이 깔끔한 흰 카드가 되고, 큰 건은 금 테두리, 이달 목표(넣을 때 정해요)를 넘으면 합계가 금빛이에요.\n적용하면 바뀌는 것:\n· 흰 카드\n· 큰 건 테두리\n· 목표 금빛\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF7E57C2",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FF7E57C2|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4286470082,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "그날급여 >= 300000",
+       "weight": 800,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4294947584
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 수입\", 3000000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4286470082,
+    "dir": 2,
+    "emoji": "💼"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 수입",
+     "kind": "money",
+     "default": 3000000,
+     "min": 0,
+     "hint": "이달 벌고 싶은 돈"
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "촬영 스태프 수입",
+   "summary": "어두운 슬레이트 화면, 긴 촬영 날 굵게",
+   "desc": "촬영장 슬레이트 같은 어두운 화면에 흰 숫자, 10시간 넘은 촬영 날 줄이 굵은 주황으로 서요.\n적용하면 바뀌는 것:\n· 어두운 슬레이트\n· 긴 날 굵게\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FF1C2328|cd:FF263238|ik:FFECEFF1|ac:FFFF7043",
+     "pay": "FIELD~tt:xl|pl:FF2E3B42|mn:FFFF7043|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4293718001
+      },
+      {
+       "id": "pay.total",
+       "fill": 4294930499,
+       "r": 18,
+       "pad": 16,
+       "ink": 4280034088,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 10",
+       "weight": 800,
+       "ink": 4293284096
+      },
+      {
+       "id": "pay.row",
+       "when": "공휴일 그리고 근무시간 > 0",
+       "ink": 4291176488,
+       "weight": 700
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280693304,
+    "b": 4294930499,
+    "dir": 2,
+    "emoji": "🎬"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "용달 운행 수입",
+   "summary": "도로 회색 화면, 큰 운행 날 금 테두리, 주말 주황",
+   "desc": "운행 수입 화면이 도로 회색과 노란 선으로 바뀌고, 많이 번 날은 금 테두리, 주말 운행은 주황이에요.\n적용하면 바뀌는 것:\n· 도로 회색\n· 큰 운행 날 테두리\n· 주말 주황\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFFBC02D",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FFFBC02D|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.180.FF37474F,FF546E7A",
+       "r": 18,
+       "pad": 16,
+       "ink": 4294961979,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "그날급여 >= 200000",
+       "weight": 800,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4294947584
+      },
+      {
+       "id": "pay.row",
+       "when": "주말 그리고 근무시간 > 0",
+       "fill": 4294964192
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4282735204,
+    "b": 4294961979,
+    "dir": 2,
+    "emoji": "🚚"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "인테리어 공정 수입",
+   "summary": "나무색 화면, 긴 날 굵게, #출장 하늘색",
+   "desc": "나무결 같은 따뜻한 화면에 공정 수입이 서요. 긴 날은 굵게, #출장 현장은 하늘색 줄이에요.\n적용하면 바뀌는 것:\n· 나무색 화면\n· 긴 날 굵게\n· #출장 하늘색\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFBF7F3|cd:FFFFFFFF|ik:FF222222|ac:FF6D4C41",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FF6D4C41|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FF8D6E63,FFBCAAA4",
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 10",
+       "weight": 800,
+       "ink": 4293284096
+      },
+      {
+       "id": "pay.row",
+       "when": "꼬리표.포함(\"출장\")",
+       "fill": 4292998654
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4287458915,
+    "b": 4292332744,
+    "dir": 2,
+    "emoji": "🪚"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "큰 숫자 일당판",
+   "summary": "합계를 아주 큰 숫자로, 많이 번 날 금 테두리",
+   "desc": "이달 번 돈이 포스터처럼 큰 숫자로 서고, 많이 번 날 줄에 금 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 아주 큰 합계\n· 많이 번 날 테두리\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF212121",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FF212121|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4280361249,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 48,
+       "weight": 800,
+       "font": "anton"
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "그날급여 >= 200000",
+       "weight": 800,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4294947584
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278190080,
+    "b": 4294951175,
+    "dir": 2,
+    "emoji": "🔢"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "미니멀 일감 수입",
+   "summary": "흑백만, 공휴일과 긴 날만 굵게",
+   "desc": "아무 색 없이 흑백으로 정리하고, 공휴일과 10시간 넘은 날만 굵게 남겨요.\n적용하면 바뀌는 것:\n· 흑백\n· 공휴일·긴 날 굵게\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF111111",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FF111111|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4279308561,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279308561
+      },
+      {
+       "id": "pay.row",
+       "when": "공휴일 그리고 근무시간 > 0",
+       "ink": 4279308561,
+       "weight": 700
+      },
+      {
+       "id": "pay.row",
+       "when": "근무시간 >= 10",
+       "weight": 800,
+       "ink": 4279308561
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4278190080,
+    "dir": 2,
+    "emoji": "◻️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "새벽 현장 수입",
+   "summary": "새벽 하늘 그라데이션 합계, 연속 현장 경고",
+   "desc": "합계 카드가 새벽 남색에서 주황으로 번지는 하늘이 되고, 여섯째 날 넘게 이어 일한 줄에는 빨간 테두리가 생겨요.\n적용하면 바뀌는 것:\n· 새벽 하늘 합계\n· 연속 현장 경고\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFFF8F00",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FFFF8F00|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.135.FF1A237E,FFFF8F00",
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.row",
+       "when": "연속근무 >= 6",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469
+      },
+      {
+       "id": "pay.row",
+       "when": "꼬리표.포함(\"우천\")",
+       "alpha": 50
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279903102,
+    "b": 4294938368,
+    "dir": 2,
+    "emoji": "🌅"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "현장 목표 저금통",
+   "summary": "목표 수입을 넘으면 금빛 합계, 우천 날 흐리게",
+   "desc": "이달 목표(넣을 때 정해요)를 넘으면 합계가 금빛, #우천으로 쉰 날 줄은 흐리게 보여요.\n적용하면 바뀌는 것:\n· 목표 금빛\n· #우천 흐리게\n· 목표 수입 칸\n주의할 점: 일감·수입 화면 모양만 바뀌어요. 일당·공수 설정과 기록은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "stats~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFEC407A",
+     "pay": "FIELD~tt:xl|pl:FFF3F5FA|mn:FFEC407A|rw:roomy|op:1|dy:1"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "pay.head",
+       "font": "jua",
+       "weight": 700,
+       "ink": 4280427042
+      },
+      {
+       "id": "pay.total",
+       "fill": 4293673082,
+       "r": 18,
+       "pad": 16,
+       "ink": 4294967295,
+       "size": 30,
+       "weight": 800
+      },
+      {
+       "id": "pay.row",
+       "padY": 6
+      },
+      {
+       "id": "pay.row",
+       "on": "out",
+       "ink": 4291176488
+      },
+      {
+       "id": "pay.row",
+       "on": "in",
+       "ink": 4279983648
+      },
+      {
+       "id": "pay.total",
+       "when": "이달급여 >= 칸(\"목표 수입\", 3500000)",
+       "paint": "lg.120.FFFFD54F,FFFFA000",
+       "ink": 4282263331,
+       "motion": "shimmer"
+      },
+      {
+       "id": "pay.row",
+       "when": "꼬리표.포함(\"우천\")",
+       "alpha": 50
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294491088,
+    "b": 4294956367,
+    "dir": 2,
+    "emoji": "🐷"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "목표 수입",
+     "kind": "money",
+     "default": 3500000,
+     "min": 0,
+     "hint": "이달 벌고 싶은 돈"
+    }
+   ]
+  }
  }
 ]

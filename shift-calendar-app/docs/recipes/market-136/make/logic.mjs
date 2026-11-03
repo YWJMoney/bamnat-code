@@ -7,7 +7,7 @@ import { R, B } from "./kit.mjs";
 
 const NOTE = "꾸미기는 바뀌지 않아요. 규칙은 스튜디오 › 규칙·단추에서 하나씩 끄거나 지울 수 있고, 규칙이 쓴 것은 되돌릴 수 있어요";
 
-function rule(s) {
+export function rule(s) {
   return {
     recipe: recipe({ title: s.title, summary: s.summary, wow: s.wow, who: s.who, changes: s.changes, note: s.note ?? NOTE, styles: s.styles ?? ALL, cover: s.cover,
       inputs: s.inputs, pieces: [logic({ rules: s.rules, buttons: s.buttons })] }),

@@ -6,7 +6,7 @@ import { D, T } from "./kit.mjs";
 
 const NOTE = "메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요";
 
-function memo(s) {
+export function memo(s) {
   const p = { bg: "#FFFFFF", card: "#FFFFFF", ink: "#222222", accent: "#3F51B5", ...s.p };
   const lines = [
     { id: "memo.head", ...(p.headPaint ? { paint: p.headPaint } : { fill: c(p.bg) }), pad: 8, ...(p.titleFont ? { font: p.titleFont } : {}), ink: c(p.headInk ?? p.ink) },

@@ -6,7 +6,7 @@ import { c, H, recipe, parts } from "./lib.mjs";
 const NOTE = "근무·급여 화면 모양과 카드만 바뀌어요. 근무 기록과 급여 설정은 그대로예요";
 const PAID = ["SHIFT", "DAY", "HOURLY"];
 
-function pay(s) {
+export function pay(s) {
   const p = { bg: "#FFFFFF", card: "#FFFFFF", card2: "#F3F5FA", ink: "#222222", accent: "#3F51B5", ...s.p };
   const styles = s.styles ?? PAID;
   const lines = [

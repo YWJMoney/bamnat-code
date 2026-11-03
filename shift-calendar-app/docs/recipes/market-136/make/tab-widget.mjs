@@ -5,7 +5,7 @@ import { c, ALL, recipe, parts, decor, widgetSticker } from "./lib.mjs";
 
 const NOTE = "홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요";
 
-function widget(s) {
+export function widget(s) {
   const p = { bg: "#FFFFFF", ink: "#222222", accent: "#3F51B5", alpha: 92, r: 18, ...s.p };
   const roles = s.roles ?? {};
   const lines = [

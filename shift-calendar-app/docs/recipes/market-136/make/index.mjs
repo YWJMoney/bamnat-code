@@ -23,6 +23,11 @@ for (const [file, mod] of [["theme-hourly-field.json", "./themes-hourly-field.mj
   }
 }
 
+// 유형마다 구간 채우기 (fill.mjs): 같은 구간 파일 뒤에 붙여요.
+const fill = await import("./fill.mjs");
+for (const [file, more] of [["tab-calendar.json", fill.calendar], ["tab-pay.json", fill.payAll], ["tab-money.json", fill.moneyMore], ["tab-memo.json", fill.memoMore],
+  ["tab-alarm.json", fill.alarmMore], ["tab-widget.json", fill.widgetMore], ["logic.json", fill.logicMore]]) files[file] = [...files[file], ...more];
+
 // [FXR-01] 받는 칸: 수식이 칸("이름", 기본값)으로 읽는 값을 받는 사람이 넣을 때 정하게, 아직 입력 칸이 없는 작품에 붙여요.
 // '마감'처럼 메모 한 장의 칸을 읽는 이름(메모 카드 자리)은 여기 없어요: 그건 메모의 '칸: 값'이에요.
 const ASK = {
