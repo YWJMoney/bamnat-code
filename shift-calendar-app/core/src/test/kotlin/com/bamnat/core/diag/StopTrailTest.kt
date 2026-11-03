@@ -51,6 +51,39 @@ class StopTrailTest {
         assertTrue(summary, summary.contains("멈춘 채 끝남 1번"))
     }
 
+    /** 1.36 PC A21: 안전 모드 중 글자 크기를 1.3배로 바꿔 화면이 다시 만들어져도 '앱이 멈춰 있던 적' 카드는 뜨지 않아요. */
+    @Test fun aScreenMadeAgainIsNoFreezeToAskAbout() {
+        val start = Line(now, Kind.START, "last=user")
+        val firstDraw = Line(now + 20_000, Kind.MADE, "first_draw ms=900 font=1.0")
+        // The phone's text size changed in its settings: the screen made again, slow to draw, not marked.
+        val remade = listOf(Line(now + 120_000, Kind.MADE, "restore=1 w=411 h=914"), Line(now + 120_500, Kind.FRONT, ""),
+            Line(now + 124_000, Kind.NO_DRAW, "ms=3500 main=busy focus=1"))
+        // The app's own text size: the watch marked the redraw.
+        val marked = Line(now + 200_000, Kind.STALL, "at=X.y:1 ${StopTrail.REDRAW_MARK}text")
+        val nextStart = Line(now + 300_000, Kind.START, "last=user")
+        assertEquals(0L, StopTrail.askAboutStuckAt(listOf(start, firstDraw) + remade + listOf(marked, nextStart)))
+        // A size change the screen handles itself (화면 돌림) is the same.
+        assertEquals(0L, StopTrail.askAboutStuckAt(listOf(Line(now, Kind.LAYOUT, "w=914 h=411"), Line(now + 5_000, Kind.NO_DRAW, "ms=3000"))))
+        // Slow to draw right after the app started (PC C22) is the start.
+        assertEquals(0L, StopTrail.askAboutStuckAt(listOf(start, Line(now + 25_000, Kind.NO_DRAW, "ms=3000"))))
+    }
+
+    @Test fun aRealFreezeIsStillAskedAbout() {
+        val lines = listOf(
+            Line(now, Kind.START, "last=user"), Line(now + 20_000, Kind.MADE, "first_draw ms=900"),
+            Line(now + 100_000, Kind.MADE, "restore=1"),
+            // Long after the screen was made and its first draw: the screen did not draw.
+            Line(now + 200_000, Kind.FRONT, ""), Line(now + 204_000, Kind.NO_DRAW, "ms=4000 main=busy"),
+            // A stall the app ended in, not marked.
+            Line(now + 300_000, Kind.STALL, "at=X.y:1"), Line(now + 360_000, Kind.START, "last=swipe"),
+        )
+        assertEquals(now + 300_000, StopTrail.askAboutStuckAt(lines))
+        assertEquals(now + 204_000, StopTrail.askAboutStuckAt(lines.take(5)))
+        // A marked stall the app ended in is still the redraw, not a freeze.
+        val markedEnd = listOf(Line(now + 100_000, Kind.STALL, "at=X.y:1 ${StopTrail.REDRAW_MARK}remade"), Line(now + 160_000, Kind.START, ""))
+        assertEquals(0L, StopTrail.askAboutStuckAt(markedEnd))
+    }
+
     @Test fun theFullestHeapIsSaid() {
         val lines = listOf(Line(now, Kind.MEMORY, StopTrail.memory(230L shl 20, 256L shl 20, 80L shl 20)), Line(now + 1, Kind.MEMORY, "heap=100/256 native=80"))
         assertEquals(89, StopTrail.heapPercent(lines[0].detail))

@@ -301,6 +301,13 @@ fun BamnatTheme(
         // sp grow with it and the ones that count columns ([LocalSpacing], the calendar's cells) read the scale.
         val base = androidx.compose.ui.platform.LocalDensity.current
         val scaled = androidx.compose.ui.unit.Density(base.density, TextSize.scale(base.fontScale, textStep))
+        // 1.36 (PC 확인: 글자 크기를 적용한 직후 첫 그리기가 멈춤 카드에): a new size draws every screen again; that frame is
+        // told to the freeze watch before it is made, so it is not kept as a stop.
+        val lastScale = androidx.compose.runtime.remember { floatArrayOf(scaled.fontScale) }
+        if (lastScale[0] != scaled.fontScale) {
+            lastScale[0] = scaled.fontScale
+            com.bamnat.app.diag.MainStall.redrawAhead("text")
+        }
         CompositionLocalProvider(
             androidx.compose.ui.platform.LocalDensity provides scaled,
             LocalSpacing provides if (compact) Spacing.COMPACT else Spacing.ROOMY,

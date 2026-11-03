@@ -52,6 +52,9 @@ class MainActivity : ComponentActivity() {
         // 1.32.1 [STAB-10][STAB-11] 멈춤 관찰: the screen made again (a Fold, a theme) and every draw of the window.
         com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.MADE,
             "restore=${if (savedInstanceState != null) 1 else 0} ${com.bamnat.app.diag.Trail.size(resources.configuration)}")
+        // 1.36 PC A21 (안전 모드 중 휴대폰 글자 크기를 1.3배로 바꾸면 '멈춰 있던 적' 카드): made again after a setting changed, the
+        // whole screen is drawn anew; that slow drawing is no stop.
+        if (savedInstanceState != null) com.bamnat.app.diag.MainStall.redrawAhead("remade")
         window.decorView.viewTreeObserver.addOnDrawListener { com.bamnat.app.diag.MainStall.drew() }
         // 1.36 PC C22: how long the first screen took to draw after the app started, with the text size, for 진단.
         val firstDraw = java.util.concurrent.atomic.AtomicBoolean(false)
@@ -226,6 +229,7 @@ class MainActivity : ComponentActivity() {
         super.onConfigurationChanged(newConfig)
         // [STAB-10] A Fold opened or closed, the phone turned: the screen's new size.
         com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.LAYOUT, com.bamnat.app.diag.Trail.size(newConfig))
+        com.bamnat.app.diag.MainStall.redrawAhead("config")
     }
 
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
