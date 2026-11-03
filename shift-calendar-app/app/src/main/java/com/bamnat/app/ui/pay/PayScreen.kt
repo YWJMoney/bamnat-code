@@ -535,7 +535,7 @@ private fun PayResult(
             else Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }) {
             for (line in shown.lines) {
-                LineRow(line, unlocked, payDayOf(shown), onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked) detail = line }
+                LineRow(line, unlocked, onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked) detail = line }
                 if (explainAll && unlocked) {
                     Text(com.bamnat.core.pay.PayExplain.explain(line), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 6.dp))
@@ -1123,10 +1123,12 @@ private fun Legend(color: Color, label: String) {
 }
 
 @Composable
-private fun LineRow(line: PayLine, unlocked: Boolean, day: java.time.LocalDate? = null, onEstimate: () -> Unit = {}, onClick: () -> Unit) {
+private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {}, onClick: () -> Unit) {
     val look = LocalPayLook.current
-    // [BLU-11] 1.36 누락 점검 N3: 급여 한 줄 as a part, 더하는 줄(in)·빼는 줄(out) each its own. [FXR-03] with the pay month's day.
-    val part = com.bamnat.app.logic.partStyleOn("pay.row", day, setOf(if (line.amount < 0) "out" else "in"))
+    // [BLU-11] 1.36 누락 점검 N3: 급여 한 줄 as a part, 더하는 줄(in)·빼는 줄(out) each its own.
+    // PC 확인 8d0cddf6 (그날급여·근무시간 같은 그날 수식 줄이 어디 나오는지 못 찾음): a line of the month (기본급, 야간수당 …) has no
+    // day of its own, so the day's 수식 lines go to 날짜별 내역 ([DayLedger]); here only the part's own look.
+    val part = com.bamnat.app.ui.parts.LocalBlueprint.current.style("pay.row", setOf(if (line.amount < 0) "out" else "in"))
     val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(part, MaterialTheme.shapes.small)
     Row(
         Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.row"))
@@ -1289,21 +1291,31 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
         Text("달력과 연결돼 있어요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }) {
         shown.forEach { d ->
-            Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(enabled = unlocked) { open = if (open == d.date) null else d.date }
-                .padding(vertical = 6.dp)) {
+            // PC 확인 8d0cddf6: '급여 한 줄' 부품 on each day, with that day's values, so a line like 그날급여 >= 150000 (많이 번 날 금빛)
+            // or 근무시간 >= 10 lights the days it is about; its 근무 종류 (role.*), 토·일·공휴일 too.
+            val role = remember(d.label) { com.bamnat.core.recipe.ShiftRole.guess(d.label, d.label == "휴무", null, 0).key }
+            val part = com.bamnat.app.logic.partStyleOn("pay.row", d.date,
+                com.bamnat.app.ui.parts.dayStates(role, d.date.dayOfWeek, d.holidayName != null, inMonth = true, today = false, selected = false) + "in")
+            val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(part, MaterialTheme.shapes.small)
+            val ink = part.ink?.let { Color(it.toInt()) }
+            Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(part.copy(ink = null, pad = null, padX = null, padY = null), shape))
+                .clip(shape).clickable(enabled = unlocked) { open = if (open == d.date) null else d.date }
+                .padding(horizontal = (part.padH ?: 0).dp, vertical = (part.padV ?: 6).dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("${d.date.monthValue}/${d.date.dayOfMonth} (${Fmt.dayOfWeekShort(d.date.dayOfWeek)})", style = MaterialTheme.typography.labelLarge,
-                        color = if (d.holidayName != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        color = if (d.holidayName != null) MaterialTheme.colorScheme.error else ink ?: MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.labelWidth(76.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(listOfNotNull(d.label, d.holidayName).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                        Text(listOfNotNull(d.label, d.holidayName).joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
+                            color = ink ?: androidx.compose.ui.graphics.Color.Unspecified)
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                             d.parts.map { it.kind }.distinct().forEach { k ->
                                 Box(Modifier.padding(top = 3.dp).size(8.dp).clip(RoundedCornerShape(2.dp)).background(kindColor(k)))
                             }
                         }
                     }
-                    Text(if (unlocked) won(d.amount) else "●●,●●●원", style = MaterialTheme.typography.titleSmall)
+                    Text(if (unlocked) won(d.amount) else "●●,●●●원", color = ink ?: androidx.compose.ui.graphics.Color.Unspecified,
+                        style = with(com.bamnat.app.ui.parts.PartMods) { text(part.copy(ink = null), MaterialTheme.typography.titleSmall) })
                 }
                 if (open == d.date) {
                     d.parts.forEach { part ->

@@ -447,7 +447,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         _state.value = _state.value.copy(draft = d, base = d, origin = o, past = emptyList(), future = emptyList(), said = null, canUndoWear = false,
             sources = emptyMap(), layered = emptyList(), extras = emptyMap(), parentCode = null, ownCode = null, meta = null,
             // [STU-34] A new start is a new 자동 저장, never written over the one left before.
-            draftId = 0, savedTitle = null, kept = false, previewMode = com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL, modePieces = null)
+            draftId = 0, savedTitle = null, kept = false, previewMode = com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL, modePieces = null,
+            // PC 확인 8d0cddf6 ('처음 모양에서' 직후 '✓ 지금 내 앱에 입힌 모양'): a new start is not what the app wears.
+            wornNow = false)
         refresh(both = true)
     }
 
