@@ -33,6 +33,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
@@ -895,6 +897,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             // [NAV-06] While the tabs are moved, the line about it shows over the tabs.
                             if (tabEdit.editing) TabEditHint(tabEdit.said, saveTabs)
                             NavigationBar {
+                                val twoLineRoom = twoLineTabs(tabs.map { it.labelFor(activeStyle) })
                                 tabs.forEachIndexed { index, dest ->
                                     androidx.compose.runtime.key(dest.route) {
                                         val selected = dest == topLevel
@@ -903,7 +906,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                             selected = selected,
                                             onClick = { onTab(dest) },
                                             icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
-                                            label = { TabLabel(label) },
+                                            label = { TabLabel(label, twoLineRoom) },
                                             modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = true, tabsShown, tabNames, saveTabs),
                                             colors = com.bamnat.app.ui.components.Selection.navBarItemColors(),
                                         )
@@ -1852,16 +1855,42 @@ private fun AppNavHost(
 
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
-private fun TabLabel(text: String) {
+private fun TabLabel(text: String, twoLineRoom: Boolean = false) {
     // [VIS-04] 중-3: from 150% a two-word name ("근무·급여") used to take two lines and push its icon above the others'
-    // (A11Y-04); now it keeps one line with its last word ("급여"), as big as the other tabs, and TalkBack reads it whole.
+    // (A11Y-04); then it kept one line with its last word ("급여").
+    // 1.36 (PC 확인: '근무·급여'가 '급여'로만 보여 다른 탭인 줄 알았어요): both words, one above the other. PC 확인 8e9e888a
+    // 사용성 제안 (두 줄 글자가 다른 탭보다 아주 작아요): each line is 0.8 of the others' size, and with [twoLineRoom] (the bar
+    // has such a name) every other name gets the same room under its icon, so all the icons stay in one line.
+    val one = MaterialTheme.typography.labelMedium
     val parts = text.split('·')
-    if (parts.size == 2 && androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
-        FitText(parts[1], MaterialTheme.typography.labelMedium, Modifier.clearAndSetSemantics { contentDescription = text })
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    if (parts.size == 2 && density.fontScale >= TWO_LINE_FROM) {
+        val line = one.copy(fontSize = one.fontSize * TWO_LINE_SIZE, lineHeight = one.fontSize * TWO_LINE_HEIGHT)
+        val each = with(density) { (one.fontSize * TWO_LINE_HEIGHT).toDp() }
+        Column(Modifier.clearAndSetSemantics { contentDescription = text }, horizontalAlignment = Alignment.CenterHorizontally) {
+            parts.forEach {
+                androidx.compose.foundation.layout.Box(Modifier.height(each).wrapContentHeight(unbounded = true), contentAlignment = Alignment.Center) {
+                    FitText(it, line)
+                }
+            }
+        }
+    } else if (twoLineRoom) {
+        val room = with(density) { (one.fontSize * (TWO_LINE_HEIGHT * 2)).toDp() }
+        androidx.compose.foundation.layout.Box(Modifier.heightIn(min = room), contentAlignment = Alignment.Center) { FitText(text, one) }
     } else {
-        FitText(text, MaterialTheme.typography.labelMedium)
+        FitText(text, one)
     }
 }
+
+/** A two-word tab name takes two lines from this text scale, each [TWO_LINE_SIZE] of the others' size in [TWO_LINE_HEIGHT] of room. */
+private const val TWO_LINE_FROM = 1.5f
+private const val TWO_LINE_SIZE = 0.8f
+private const val TWO_LINE_HEIGHT = 0.9f
+
+/** True when the bar's tab names at this text scale include a two-line one, so the others keep the same room. */
+@Composable
+private fun twoLineTabs(names: List<String>): Boolean =
+    androidx.compose.ui.platform.LocalDensity.current.fontScale >= TWO_LINE_FROM && names.any { it.split('·').size == 2 }
 
 /** [UX-05] A tab's icon; 설정 carries how many answers to the user's questions are new. */
 @Composable
