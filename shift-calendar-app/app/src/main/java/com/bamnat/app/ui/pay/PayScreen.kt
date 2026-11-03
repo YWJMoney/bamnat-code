@@ -423,7 +423,8 @@ private fun PayResult(
         // the name gets its own line above them.
         val stack = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
         // [BLU-11] 1.36 누락 점검 N3: 급여 머리 (일 이름과 달 넘기기) as a part.
-        val headPart = com.bamnat.app.ui.parts.partStyle("pay.head")
+        // [FXR-03] With a day of the pay month shown, so 조건부 꾸미기 (만약 이달급여 > 3000000 …) works here too.
+        val headPart = com.bamnat.app.logic.partStyleOn("pay.head", payDayOf(result))
         val who: @Composable (Modifier) -> Unit = { m ->
             if (headPart.hide != true) com.bamnat.app.ui.parts.PartText("${profile.occupation.label} · ${profile.wageLabel()}", headPart, MaterialTheme.typography.titleMedium,
                 modifier = m.then(com.bamnat.app.ui.parts.partSpotModifier("pay.head")))
@@ -534,7 +535,7 @@ private fun PayResult(
             else Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }) {
             for (line in shown.lines) {
-                LineRow(line, unlocked, onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked) detail = line }
+                LineRow(line, unlocked, payDayOf(shown), onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked) detail = line }
                 if (explainAll && unlocked) {
                     Text(com.bamnat.core.pay.PayExplain.explain(line), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 6.dp))
@@ -874,7 +875,7 @@ private fun TotalCard(
     // [FREE-07] 급여 모양: the total card's own colour (its words black or white on it) and the figure's size.
     val look = LocalPayLook.current
     // [BLU-11] 1.36 누락 점검 N3: 급여 합계 as a part, over 급여 모양 (its fill, corners, line, shadow, padding and the figure's letters).
-    val part = com.bamnat.app.ui.parts.partStyle("pay.total")
+    val part = com.bamnat.app.logic.partStyleOn("pay.total", payDayOf(result))
     val fill = part.fillColor ?: look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
     val onFill = part.ink?.let { Color(it.toInt()) }
         ?: if (look.plus != null || part.fillColor != null) com.bamnat.app.ui.components.contentColorOn(fill.copy(alpha = 1f)) else MaterialTheme.colorScheme.onPrimaryContainer
@@ -1120,10 +1121,10 @@ private fun Legend(color: Color, label: String) {
 }
 
 @Composable
-private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {}, onClick: () -> Unit) {
+private fun LineRow(line: PayLine, unlocked: Boolean, day: java.time.LocalDate? = null, onEstimate: () -> Unit = {}, onClick: () -> Unit) {
     val look = LocalPayLook.current
-    // [BLU-11] 1.36 누락 점검 N3: 급여 한 줄 as a part, 더하는 줄(in)·빼는 줄(out) each its own.
-    val part = com.bamnat.app.ui.parts.partStyle("pay.row", setOf(if (line.amount < 0) "out" else "in"))
+    // [BLU-11] 1.36 누락 점검 N3: 급여 한 줄 as a part, 더하는 줄(in)·빼는 줄(out) each its own. [FXR-03] with the pay month's day.
+    val part = com.bamnat.app.logic.partStyleOn("pay.row", day, setOf(if (line.amount < 0) "out" else "in"))
     val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(part, MaterialTheme.shapes.small)
     Row(
         Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.row"))
@@ -1616,4 +1617,14 @@ private fun GuideFold(guides: @Composable () -> Unit) {
         if (open) Column(Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { guides() }
     }
+}
+
+/**
+ * [FXR-03] The day a pay month's parts (급여 머리·합계·한 줄) are drawn for: today while it is in the month's period, else the period's
+ * last day, so 이달급여 and the 오늘·지난 날 values read this pay month (20일 마감: 10/25 is November's, not October's).
+ */
+internal fun payDayOf(result: MonthPay, today: java.time.LocalDate = com.bamnat.core.time.Today.date()): java.time.LocalDate {
+    val from = result.periodStart ?: result.month.atDay(1)
+    val to = result.periodEnd ?: result.month.atEndOfMonth()
+    return if (today in from..to) today else to
 }

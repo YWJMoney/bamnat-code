@@ -677,6 +677,20 @@ function fields(schema, o, path, ctx) {
   return out;
 }
 
+/**
+ * [FXR-04] 1.36 받는 칸을 수식이 읽기: the 칸 names a text reads through `칸("이름")` / `칸("이름", 기본값)` (`input(...)`), in any text of a
+ * piece (a `when` line, a {"fx":…} value, a rule's 조건, a message with {…}). The same as core FormulaInputs.labels.
+ */
+const FORMULA_INPUT = /(?<![\p{L}\p{N}_])(?:칸|[iI][nN][pP][uU][tT])\s*\(\s*["“”'‘’]([^"“”'‘’]*)["“”'‘’]/gu;
+
+export function formulaInputLabels(v, into = new Set()) {
+  if (typeof v === "string") {
+    if (v.includes("(")) for (const m of v.matchAll(FORMULA_INPUT)) { const l = m[1].trim(); if (l) into.add(l); }
+  } else if (Array.isArray(v)) v.forEach((x) => formulaInputLabels(x, into));
+  else if (isObj(v)) Object.values(v).forEach((x) => formulaInputLabels(x, into));
+  return into;
+}
+
 function inputsUsed(v, into) {
   if (Array.isArray(v)) v.forEach((x) => inputsUsed(x, into));
   else if (isObj(v)) {
@@ -748,13 +762,16 @@ export function cleanRecipeObject(raw) {
   }
   const used = new Set();
   pieces.forEach((p) => inputsUsed(p, used));
+  // [FXR-04] An input a formula reads by its name (칸("이름")) is used too, or it would go here and never reach the formula.
+  const named = new Set();
+  pieces.forEach((p) => formulaInputLabels(p, named));
   const out = { format: RECIPE.format, v: RECIPE.version, title };
   if (summary) out.summary = summary;
   if (desc) out.desc = desc;
   out.styles = styles;
   out.cover = cover;
   if (tokens.length) out.tokens = tokens;
-  const kept = inputs.filter((i) => used.has(i.id)).map((i) => {
+  const kept = inputs.filter((i) => used.has(i.id) || named.has(i.label)).map((i) => {
     const o = { id: i.id, label: i.label, kind: i.kind };
     if (i.default !== null) o.default = i.default;
     if (i.min !== null) o.min = i.min;

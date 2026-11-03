@@ -106,9 +106,11 @@ object RecipeCodec {
             )
         } ?: Cover()
         val parent = (m["parent"] as? String)?.also { if (!CODE.matches(it)) throw RecipeException("parent", "parent") }
-        // An input no field uses is dropped, so a receiver is never asked for something that changes nothing.
+        // An input no field uses is dropped, so a receiver is never asked for something that changes nothing. [FXR-04] A formula's
+        // 칸("이름") is a use too (by the input's name), or an input read only by formulas would go on upload and never reach them.
         val used = HashSet<String>().also { u -> pieces.forEach { collectInputs(it.values, u) } }
-        return Recipe(title, summary, desc, styles, cover, tokens, inputs.filter { it.id in used }, pieces, parent)
+        val named = LinkedHashSet<String>().also { n -> pieces.forEach { com.bamnat.core.formula.FormulaInputs.labelsIn(it.values, n) } }
+        return Recipe(title, summary, desc, styles, cover, tokens, inputs.filter { it.id in used || it.label in named }, pieces, parent)
     }
 
     private class Ctx(val inputs: Map<String, Input>, val tokens: Set<String>)

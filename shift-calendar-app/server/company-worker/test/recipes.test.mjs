@@ -490,3 +490,21 @@ test("[BLU-08] 글자 그림자·밑줄: the parts' letter shadow and line read;
     await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { kind: "parts", parts: [bad] }] }))), (e) => e.code !== undefined, JSON.stringify(bad));
   }
 });
+
+test("[FXR-04] a 받는 칸 read only by a formula (칸(\"이름\")) is kept, as core keeps it", async () => {
+  const { formulaInputLabels } = await import("../src/recipes.js");
+  assert.deepEqual([...formulaInputLabels("만약(지출 > 칸(\"목표\", 1) 그리고 메모수 > INPUT( '한도' ), 1, 2)")], ["목표", "한도"]);
+  assert.deepEqual([...formulaInputLabels("{칸(“목표”)}원 남았어요")], ["목표"]);
+  assert.deepEqual([...formulaInputLabels("빈칸(\"목표\") 칸 하나")], []);
+  assert.deepEqual([...formulaInputLabels([{ ink: { fx: "칸('한도')" } }])], ["한도"]);
+  const raw = {
+    format: "bamnat-recipe", v: 1, title: "목표 넘으면 빨강", styles: ["SHIFT"],
+    inputs: [
+      { id: "i1", kind: "money", label: "목표", default: 50000 },
+      { id: "i2", kind: "text", label: "안 쓰는 칸", default: "x" },
+    ],
+    pieces: [{ kind: "parts", parts: [{ id: "memo.card", when: "지출 > 칸(\"목표\", 50000)", fill: 4294901760 }] }],
+  };
+  const r = await cleanRecipe(recipeCanonical(raw));
+  assert.deepEqual(JSON.parse(r.text).inputs.map((i) => i.label), ["목표"]);
+});

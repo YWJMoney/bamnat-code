@@ -22,7 +22,10 @@ class DayFactsBook(
     private val monthPay: (YearMonth) -> Long? = { null },
     private val dayPay: (LocalDate) -> Long? = { null },
     private val now: () -> String = { "" },
+    /** [FXR-01] The 받는 칸 answers of the recipes in use, by name, for `칸("이름")`. */
     private val inputs: Map<String, Any?> = emptyMap(),
+    /** [FXR-02] The pay month a day belongs to (20일 마감: 10/25 is November's), for 이달급여. */
+    private val payMonth: (LocalDate) -> YearMonth = { YearMonth.from(it) },
 ) {
     /** A day's work as the calendar resolved it. [role] is [com.bamnat.core.recipe.ShiftRole]'s key. */
     data class DayShift(
@@ -41,7 +44,29 @@ class DayFactsBook(
     private val cache = HashMap<LocalDate, FormulaScope>()
     private val monthSums = HashMap<YearMonth, Map<LocalDate, Triple<Int, Double, Pair<Long, Long>>>>()
 
-    fun scope(date: LocalDate): FormulaScope = cache.getOrPut(date) { FormulaScope.of(values(date), inputs) }
+    /**
+     * The day's values as formulas read them. [FXR-02] 이달급여·그날급여 are worked out only when a formula reads them (a pay month is a
+     * whole calculation), and then once a day.
+     */
+    fun scope(date: LocalDate): FormulaScope = cache.getOrPut(date) {
+        val plain = plainValues(date)
+        var pay: Map<String, Any?>? = null
+        object : FormulaScope {
+            override fun get(name: String): Value? {
+                if (name == FormulaName.MONTH_PAY.ko || name == FormulaName.HOUR_PAY.ko) {
+                    val p = pay ?: payValues(date).also { pay = it }
+                    return Value.of(p[name])
+                }
+                return if (plain.containsKey(name)) Value.of(plain[name]) else null
+            }
+            override fun input(label: String): Value? = if (inputs.containsKey(label)) Value.of(inputs[label]) else null
+        }
+    }
+
+    private fun payValues(date: LocalDate): Map<String, Any?> = mapOf(
+        FormulaName.MONTH_PAY.ko to runCatching { monthPay(payMonth(date)) }.getOrNull(),
+        FormulaName.HOUR_PAY.ko to runCatching { dayPay(date) }.getOrNull(),
+    )
 
     private fun isNight(s: DayShift?) = s != null && !s.off && s.role == "night"
     private fun hoursOf(s: DayShift?) = if (s == null || s.off) 0.0 else s.minutes / 60.0
@@ -62,7 +87,10 @@ class DayFactsBook(
         }
     }
 
-    fun values(date: LocalDate): Map<String, Any?> {
+    /** Every value of the day, 급여 included. */
+    fun values(date: LocalDate): Map<String, Any?> = plainValues(date) + payValues(date)
+
+    private fun plainValues(date: LocalDate): Map<String, Any?> {
         val s = shifts(date)
         val dayMemos = memos(date)
         val cash = money(date)
@@ -115,8 +143,6 @@ class DayFactsBook(
             FormulaName.SPEND_KINDS.ko to cash?.kinds.orEmpty().distinct().take(Formula.MAX_LIST),
             FormulaName.MONTH_SPEND.ko to (m?.third?.first ?: 0L),
             FormulaName.MONTH_INCOME.ko to (m?.third?.second ?: 0L),
-            FormulaName.MONTH_PAY.ko to monthPay(YearMonth.from(date)),
-            FormulaName.HOUR_PAY.ko to dayPay(date),
             FormulaName.NOW.ko to now(),
         )
     }
