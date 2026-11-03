@@ -6,7 +6,7 @@ import { H, recipe } from "./lib.mjs";
 const NOTE = "근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요";
 const MISSION = { none: "", math: "끌 때 간단한 덧셈 문제", shake: "끌 때 휴대폰 흔들기" };
 
-function alarm(s) {
+export function alarm(s) {
   const p = { bg: "#101828", card: "#1D2939", ink: "#F2F4F7", accent: "#7F56D9", ...s.p };
   const screens = `alarm~bg:${H(p.bg)}|cd:${H(p.card)}|ik:${H(p.ink)}|ac:${H(p.accent)}${p.bgPaint ? `|fl:${p.bgPaint}` : ""}${p.font ? `|ft:${p.font}` : ""}`;
   const a = { kind: "alarms", byRole: s.byRole.map(([role, ...before]) => ({ role, before })), snooze: s.snooze ?? 5, ring: s.ring ?? 3,

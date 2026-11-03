@@ -1678,5 +1678,333 @@
     "emoji": "💳"
    }
   }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "큰 지출 경고 줄",
+   "summary": "큰 지출 한 줄은 분홍 바탕, 이번 달 흐름 카드 맨 위",
+   "desc": "가계부에서 큰 지출 한 줄이 분홍 바탕으로 서고, 맨 위 이번 달 흐름 카드가 오늘 쓸 수 있는 돈을 보여 줘요.\n적용하면 바뀌는 것:\n· 큰 지출 분홍 줄\n· 이번 달 흐름 카드\n주의할 점: 가계부 모양과 카드만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFFFFAFA|cd:FFFFFFFF|ik:FF222222|ac:FFE53935"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "cards",
+     "money": "pace,hero,recent"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294967295,
+       "r": 16,
+       "pad": 12,
+       "ink": 4280427042
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 10,
+       "padX": 10,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"지출\" 그리고 금액 >= 50000",
+       "fill": 4294962158,
+       "r": 10
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294962158,
+    "b": 4293212469,
+    "dir": 2,
+    "emoji": "🚨"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "수입 금빛 줄",
+   "summary": "들어온 돈 줄은 금빛, 큰 수입은 반짝",
+   "desc": "들어온 돈 줄이 금빛으로 칠해지고, 큰 수입 한 줄은 반짝여요. 돈 들어온 날이 목록에서 바로 보여요.\n적용하면 바뀌는 것:\n· 수입 줄 금빛\n· 큰 수입 반짝임\n· 수입 내역 카드\n주의할 점: 가계부 모양과 카드만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFFFFDF6|cd:FFFFFFFF|ik:FF222222|ac:FFF9A825"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4294278935,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "cards",
+     "money": "income,hero,recent"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294967295,
+       "r": 16,
+       "pad": 12,
+       "ink": 4280427042
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 10,
+       "padX": 10,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4294278935,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "on": "in",
+       "paint": "lg.90.FFFFF8E1,FFFFECB3"
+      },
+      {
+       "id": "money.row",
+       "when": "종류 = \"수입\" 그리고 금액 >= 1000000",
+       "motion": "shimmer"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294956367,
+    "b": 4294965473,
+    "dir": 2,
+    "emoji": "💰"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "주말 지출 표시",
+   "summary": "주말에 쓴 날 날짜 띠가 주황, 평일은 차분하게",
+   "desc": "가계부 날짜 띠가 주말이면서 돈을 쓴 날엔 주황으로 바뀌어요. 주말 소비가 얼마나 잦은지 목록에서 보여요.\n적용하면 바뀌는 것:\n· 주말 지출 날 주황 띠\n· 이번 달 흐름 카드\n주의할 점: 가계부 모양과 카드만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFFFFBF6|cd:FFFFFFFF|ik:FF222222|ac:FFEF6C00"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "cards",
+     "money": "pace,hero"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294967295,
+       "r": 16,
+       "pad": 12,
+       "ink": 4280427042
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 10,
+       "padX": 10,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "money.day",
+       "when": "주말 그리고 지출 > 0",
+       "fill": 4294959282
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294675456,
+    "b": 4294964192,
+    "dir": 2,
+    "emoji": "🛍️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "분류 색 가계부",
+   "summary": "식비 주황·교통 파랑·카페 갈색, 분류마다 줄 색",
+   "desc": "가계부 줄이 분류에 따라 식비는 주황, 교통은 파랑, 카페는 갈색 바탕으로 칠해져요. 어디에 많이 쓰는지 색으로 보여요.\n적용하면 바뀌는 것:\n· 분류별 줄 색\n· 예산 카드\n주의할 점: 가계부 모양과 카드만 바뀌어요. 적은 돈 기록은 그대로예요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "money~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FF5D4037"
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "cards",
+     "money": "budget,hero,recent"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "money.head",
+       "fill": 4294967295,
+       "r": 16,
+       "pad": 12,
+       "ink": 4280427042
+      },
+      {
+       "id": "money.day",
+       "fill": 4294967295,
+       "r": 10,
+       "padX": 10,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "money.row",
+       "when": "분류 = \"식비\"",
+       "fill": 4294964192
+      },
+      {
+       "id": "money.row",
+       "when": "분류 = \"교통\"",
+       "fill": 4293128957
+      },
+      {
+       "id": "money.row",
+       "when": "분류 = \"카페\"",
+       "fill": 4293913577
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294954112,
+    "b": 4287679225,
+    "dir": 2,
+    "emoji": "🎨"
+   }
+  }
  }
 ]

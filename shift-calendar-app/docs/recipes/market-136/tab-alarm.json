@@ -1190,5 +1190,603 @@
     "emoji": "🌲"
    }
   }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "한 번에 깨는 알람",
+   "summary": "근무마다 60분 전 한 번, 덧셈 풀어야 꺼져요",
+   "desc": "알람은 한 번만, 대신 덧셈을 풀어야 꺼져요. 여러 번 울리는 게 싫지만 놓치고 싶지 않은 분께 맞아요.\n적용하면 바뀌는 것:\n· 근무마다 60분 전\n· 남색 화면\n· 끌 때 간단한 덧셈 문제\n· 다시 울림 5분, 한 번에 3분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF0F1A3D|cd:FF16245A|ik:FFF2F4F7|ac:FF9FA8DA"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "math"
+    }
+   ],
+   "cover": {
+    "a": 4280825235,
+    "b": 4291152617,
+    "dir": 2,
+    "emoji": "➕"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "세 번 넉넉한 알람",
+   "summary": "근무 90·60·30분 전 세 번, 점점 크게",
+   "desc": "아침잠이 깊은 분을 위해 근무 90분·60분·30분 전 세 번 울려요. 소리는 작게 시작해 커져요.\n적용하면 바뀌는 것:\n· 근무마다 90·60·30분 전\n· 새벽 보라 화면\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF1F0A33|cd:FF2E1050|ik:FFF2F4F7|ac:FFCE93D8"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60,
+        30
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90,
+        60,
+        30
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        90,
+        60,
+        30
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        90,
+        60,
+        30
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4283045004,
+    "b": 4292984551,
+    "dir": 2,
+    "emoji": "🔔"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "긴 근무 전날 알람",
+   "summary": "긴 근무(당직·24시간) 날은 세 시간 전부터 두 번",
+   "desc": "긴 근무 날은 몸을 준비하도록 세 시간 전과 한 시간 전에 울려요. 다른 근무는 50분 전 한 번이에요.\n적용하면 바뀌는 것:\n· 긴 근무 180·60분 전\n· 다른 근무 50분 전\n· 짙은 빨강 화면\n· 다시 울림 5분, 한 번에 3분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF2A0505|cd:FF3D0B0B|ik:FFF2F4F7|ac:FFEF9A9A"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "long",
+       "before": [
+        180,
+        60
+       ]
+      },
+      {
+       "role": "day",
+       "before": [
+        50
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        50
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        50
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4287496192,
+    "b": 4294954450,
+    "dir": 2,
+    "emoji": "⏳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "저녁 근무 낮잠 알람",
+   "summary": "저녁 근무 날 낮잠 깨우기 두 번, 흔들어서 끄기",
+   "desc": "저녁 근무 전 낮잠을 자도 두 시간 전과 40분 전에 깨워요. 휴대폰을 흔들어야 꺼져요.\n적용하면 바뀌는 것:\n· 저녁 120·40분 전\n· 주간·야간 60분 전\n· 노을 화면\n· 끌 때 휴대폰 흔들기\n· 다시 울림 5분, 한 번에 3분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF3E1A10|cd:FF1D2939|ik:FFF2F4F7|ac:FFFF8A65|fl:lg.180.FF3E1A10,FFBF360C"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "eve",
+       "before": [
+        120,
+        40
+       ]
+      },
+      {
+       "role": "day",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "shake"
+    }
+   ],
+   "cover": {
+    "a": 4294930499,
+    "b": 4294954172,
+    "dir": 2,
+    "emoji": "🌇"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "커피 한 잔 알람",
+   "summary": "근무 45분 전, 따뜻한 커피색 화면",
+   "desc": "커피 내릴 시간만큼 45분 전에 울려요. 따뜻한 커피색 화면이라 아침이 덜 차가워요.\n적용하면 바뀌는 것:\n· 근무마다 45분 전\n· 커피색 화면\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF3E2723|cd:FF4E342E|ik:FFEFEBE9|ac:FFBCAAA4"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        45
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        45
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        45
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        45
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4285353025,
+    "b": 4292332744,
+    "dir": 2,
+    "emoji": "☕"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "다시 울림 없이",
+   "summary": "다시 울림 1분·울림 5분, 끌 때까지 이어 울려요",
+   "desc": "다시 울림을 1분으로 줄이고 한 번에 5분 울려서 미루기가 어려워요. 근무 35분 전이에요.\n적용하면 바뀌는 것:\n· 근무마다 35분 전\n· 흰 화면\n· 다시 울림 1분, 한 번에 5분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FFFFFFFF|cd:FFF5F5F5|ik:FF111111|ac:FF111111"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        35
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        35
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        35
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        35
+       ]
+      }
+     ],
+     "snooze": 1,
+     "ring": 5,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4280361249,
+    "dir": 2,
+    "emoji": "⏰"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "별빛 야간 알람",
+   "summary": "야간 날 150·45분 전, 별빛 화면",
+   "desc": "야간 근무 날 저녁잠을 깨우도록 두 시간 반 전과 45분 전에 울려요. 별빛 화면이라 밤 출근이 덜 서운해요.\n적용하면 바뀌는 것:\n· 야간 150·45분 전\n· 다른 근무 60분 전\n· 별빛 화면\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 3분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF0B1026|cd:FF141B3F|ik:FFF2F4F7|ac:FFFFF59D|fl:pt.star.FF0B1026.FF1A237E.60.0"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "night",
+       "before": [
+        150,
+        45
+       ]
+      },
+      {
+       "role": "day",
+       "before": [
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4278915110,
+    "b": 4294964637,
+    "dir": 2,
+    "emoji": "✨"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "바다 소리 알람",
+   "summary": "점점 크게, 다시 울림 8분, 바다 파랑 화면",
+   "desc": "파도처럼 작게 시작해 커지는 알람이에요. 다시 울림은 8분, 근무 70분 전에 울려요.\n적용하면 바뀌는 것:\n· 근무마다 70분 전\n· 바다 파랑 화면\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 8분, 한 번에 3분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF01579B|cd:FF1D2939|ik:FFF2F4F7|ac:FFB3E5FC|fl:lg.180.FF01579B,FF0288D1"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        70
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        70
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        70
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        70
+       ]
+      }
+     ],
+     "snooze": 8,
+     "ring": 3,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4278351805,
+    "b": 4289979900,
+    "dir": 2,
+    "emoji": "🌊"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "두 번 흔들기 알람",
+   "summary": "근무 50·20분 전 두 번, 흔들어서 끄기",
+   "desc": "50분 전에 한 번, 20분 전에 한 번. 둘 다 흔들어야 꺼져서 몸이 먼저 깨요.\n적용하면 바뀌는 것:\n· 근무마다 50·20분 전\n· 주황 화면\n· 끌 때 휴대폰 흔들기\n· 다시 울림 5분, 한 번에 3분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FF2B1300|cd:FF3E1D00|ik:FFFFF3E0|ac:FFFF9800"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        50,
+        20
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        50,
+        20
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        50,
+        20
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        50,
+        20
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 3,
+     "vibrate": true,
+     "mission": "shake"
+    }
+   ],
+   "cover": {
+    "a": 4293284096,
+    "b": 4294959282,
+    "dir": 2,
+    "emoji": "📳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "벚꽃 알람",
+   "summary": "분홍 벚꽃 화면, 근무 80분 전 부드럽게",
+   "desc": "분홍 벚꽃 화면에 소리가 천천히 커지는 알람이에요. 근무 80분 전, 한 번에 4분 울려요.\n적용하면 바뀌는 것:\n· 근무마다 80분 전\n· 벚꽃 분홍 화면\n· 소리가 작게 시작해 점점 커져요\n· 다시 울림 5분, 한 번에 4분 울려요\n주의할 점: 근무 알람 설정과 알람 화면 색만 바뀌어요. 이미 켜 둔 근무 알람은 새 설정으로 다시 맞춰져요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "alarm~bg:FFFFF0F5|cd:FFFFFFFF|ik:FF880E4F|ac:FFF06292|ft:jua"
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        80
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        80
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        80
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        80
+       ]
+      }
+     ],
+     "snooze": 5,
+     "ring": 4,
+     "gradual": true,
+     "vibrate": true,
+     "mission": "none"
+    }
+   ],
+   "cover": {
+    "a": 4294491088,
+    "b": 4294967295,
+    "dir": 2,
+    "emoji": "🌸"
+   }
+  }
  }
 ]

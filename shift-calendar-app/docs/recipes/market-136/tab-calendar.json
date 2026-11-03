@@ -2211,5 +2211,923 @@
     "emoji": "🪙"
    }
   }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "현장 출근 도장 달력",
+   "summary": "일한 날 금빛, 10시간 넘은 날 굵은 테두리, #우천 날 회색 점선",
+   "desc": "돈 들어온 날은 금빛으로 번지고, 10시간 넘게 일한 날은 주황 굵은 테두리, #우천 꼬리표 날은 회색 점선이에요. 이달 현장 리듬이 칸에 그대로 남아요.\n누구에게 좋아요: 일당으로 일하는 현장 근무자\n적용하면 바뀌는 것:\n· 수입 날 금빛\n· 긴 날 굵은 테두리\n· #우천 점선\n주의할 점: 달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "calendar~bg:FFFFF8F0|cd:FFF7F7FA|ik:FF222222|ac:FFFF6F00"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FFF7F7FA|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4294930176,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "fill": 4294440954,
+       "r": 16,
+       "pad": 10
+      },
+      {
+       "id": "cal.head.title",
+       "size": 22,
+       "weight": 800,
+       "ink": 4280427042
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294930176,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "수입 > 0",
+       "paint": "rg.50.40.90.FFFFD54F,00FFFFFF",
+       "motion": "shimmer"
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무시간 >= 10",
+       "line": "solid",
+       "lineW": 2.5,
+       "lineC": 4294278144
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"우천\")",
+       "line": "dash",
+       "lineW": 2,
+       "lineC": 4286091420
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294930176,
+    "b": 4294959282,
+    "dir": 2,
+    "emoji": "🦺"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "출장 지역 달력",
+   "summary": "#출장 날 하늘색 칸, 일한 시간만큼 진해지는 칸",
+   "desc": "#출장 꼬리표 날은 하늘색으로, 일한 시간이 길수록 칸이 진해져요. 멀리 나간 날과 오래 일한 날이 한눈에 겹쳐 보여요.\n적용하면 바뀌는 것:\n· #출장 하늘색\n· 일한 시간 농도\n주의할 점: 달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "calendar~bg:FFF5FBFF|cd:FFF7F7FA|ik:FF222222|ac:FF0288D1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FFF7F7FA|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4278356177,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "fill": 4294440954,
+       "r": 16,
+       "pad": 10
+      },
+      {
+       "id": "cal.head.title",
+       "size": 22,
+       "weight": 800,
+       "ink": 4280427042
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4278356177,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"출장\")",
+       "fill": 4283417591,
+       "fillA": 30
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무시간 > 0",
+       "fill": 4278351805,
+       "fillA": {
+        "fx": "최소(80, 반올림(근무시간 * 6))"
+       }
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278356177,
+    "b": 4289979900,
+    "dir": 2,
+    "emoji": "🧳"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "영업일 매출 달력",
+   "summary": "하루 매출이 목표를 넘은 날 금색 칸, 많이 쓴 날 빨간 금액",
+   "desc": "가계부에 매출을 적으면 하루 목표(넣을 때 정해요)를 넘은 날이 금색 칸으로 바뀌어요. 지출이 큰 날은 칸 아래 금액이 빨갛게 서요.\n누구에게 좋아요: 매출을 날마다 보는 사장님\n적용하면 바뀌는 것:\n· 목표 넘은 날 금색\n· 큰 지출 빨간 금액\n· 하루 목표 칸\n주의할 점: 달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+   "styles": [
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "calendar~bg:FFFFFDF5|cd:FFF7F7FA|ik:FF222222|ac:FFFFB300"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "spend": true,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FFF7F7FA|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4294947584,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "fill": 4294440954,
+       "r": 16,
+       "pad": 10
+      },
+      {
+       "id": "cal.head.title",
+       "size": 22,
+       "weight": 800,
+       "ink": 4280427042
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "수입 >= 칸(\"하루 목표 매출\", 500000)",
+       "fill": 4294959234,
+       "fillA": 80,
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      },
+      {
+       "id": "cal.cell.spend",
+       "when": "지출 >= 100000",
+       "ink": 4292030255,
+       "weight": 800
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294947584,
+    "b": 4294965473,
+    "dir": 2,
+    "emoji": "🏆"
+   },
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "하루 목표 매출",
+     "kind": "money",
+     "min": 0,
+     "hint": "하루 매출 목표",
+     "default": 500000
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "예약 손님 달력",
+   "summary": "#예약 날 분홍 테두리, #단체 날 진한 칸, 메모 많은 날 숨쉬기",
+   "desc": "#예약 메모가 있는 날은 분홍 테두리, #단체 주문 날은 진한 칸이에요. 메모가 세 개 넘는 바쁜 날은 칸이 숨 쉬어요.\n적용하면 바뀌는 것:\n· #예약 분홍 테두리\n· #단체 진한 칸\n· 바쁜 날 숨쉬기\n주의할 점: 달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+   "styles": [
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "calendar~bg:FFFFF8FB|cd:FFF7F7FA|ik:FF222222|ac:FFEC407A"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FFF7F7FA|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4293673082,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "fill": 4294440954,
+       "r": 16,
+       "pad": 10
+      },
+      {
+       "id": "cal.head.title",
+       "size": 22,
+       "weight": 800,
+       "ink": 4280427042
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293673082,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"예약\")",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293673082
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"단체\")",
+       "fill": 4287458915,
+       "fillA": 40
+      },
+      {
+       "id": "cal.cell",
+       "when": "메모수 >= 3",
+       "motion": "pulse"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293673082,
+    "b": 4294763756,
+    "dir": 2,
+    "emoji": "📒"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "매매 기록 달력",
+   "summary": "#매매 날 테두리, 일지 쓴 날 초록 칸",
+   "desc": "#매매 꼬리표 날은 짙은 테두리가, 같은 날 #일지가 있으면 초록 칸이 생겨요. 매매만 하고 일지를 안 쓴 날이 바로 드러나요.\n누구에게 좋아요: 매매를 기록하는 투자자\n적용하면 바뀌는 것:\n· #매매 테두리\n· #일지 초록 칸\n주의할 점: 달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+   "styles": [
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "calendar~bg:FFF6F8F7|cd:FFF7F7FA|ik:FF222222|ac:FF455A64"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FFF7F7FA|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4282735204,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "fill": 4294440954,
+       "r": 16,
+       "pad": 10
+      },
+      {
+       "id": "cal.head.title",
+       "size": 22,
+       "weight": 800,
+       "ink": 4280427042
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282735204,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"매매\")",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282735204
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"일지\")",
+       "fill": 4282622023,
+       "fillA": 30
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280693304,
+    "b": 4289058471,
+    "dir": 2,
+    "emoji": "📈"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "배당 적립 달력",
+   "summary": "#배당 날 금색, #적립 날 새싹색, 돈 들어온 날 빛",
+   "desc": "#배당 꼬리표 날은 금색, #적립 날은 새싹색 칸이에요. 가계부에 들어온 돈이 있는 날은 금빛이 번져요.\n적용하면 바뀌는 것:\n· #배당 금색\n· #적립 새싹색\n· 수입 날 금빛\n주의할 점: 달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+   "styles": [
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "calendar~bg:FFFBFCF6|cd:FFF7F7FA|ik:FF222222|ac:FF7CB342"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FFF7F7FA|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4286362434,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "fill": 4294440954,
+       "r": 16,
+       "pad": 10
+      },
+      {
+       "id": "cal.head.title",
+       "size": 22,
+       "weight": 800,
+       "ink": 4280427042
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4286362434,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"배당\")",
+       "fill": 4294956367,
+       "fillA": 45
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"적립\")",
+       "fill": 4289648001,
+       "fillA": 40
+      },
+      {
+       "id": "cal.cell",
+       "when": "수입 > 0",
+       "paint": "rg.50.40.90.FFFFD54F,00FFFFFF",
+       "motion": "shimmer"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4291404327,
+    "b": 4292668872,
+    "dir": 2,
+    "emoji": "🌱"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "돈 흐름 달력",
+   "summary": "쓴 돈만큼 칸이 물들고, 들어온 날 금빛, 무지출 날 초록 날짜",
+   "desc": "그날 쓴 돈이 많을수록 노랑·주황·빨강으로 물들고, 돈이 들어온 날은 금빛, 지난날 중 안 쓴 날은 날짜가 초록이에요.\n적용하면 바뀌는 것:\n· 지출 열지도\n· 수입 날 금빛\n· 무지출 초록 날짜\n주의할 점: 달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+   "styles": [
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "calendar~bg:FFFFFFFF|cd:FFF7F7FA|ik:FF222222|ac:FF2E7D32"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FFF7F7FA|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4281236786,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "fill": 4294440954,
+       "r": 16,
+       "pad": 10
+      },
+      {
+       "id": "cal.head.title",
+       "size": 22,
+       "weight": 800,
+       "ink": 4280427042
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4281236786,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "지출 >= 20000",
+       "fill": {
+        "fx": "만약(지출 >= 100000, \"#EF9A9A\", 지출 >= 50000, \"#FFCC80\", \"#FFF59D\")"
+       },
+       "fillA": 70
+      },
+      {
+       "id": "cal.cell",
+       "when": "수입 > 0",
+       "paint": "rg.50.40.90.FFFFD54F,00FFFFFF",
+       "motion": "shimmer"
+      },
+      {
+       "id": "cal.cell.date",
+       "when": "지난날 그리고 지출 = 0",
+       "ink": 4281236786,
+       "weight": 800
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294964637,
+    "b": 4281236786,
+    "dir": 2,
+    "emoji": "💸"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "할 일 체크 달력",
+   "summary": "체크를 다 끝낸 날 초록 고리, 남은 날 노랑, #마감 날 남은 날 색",
+   "desc": "그날 체크 목록을 다 끝내면 칸이 초록 고리, 남았으면 노랑이에요. #마감 꼬리표 날은 다가올수록 파랑·주황·빨강으로 바뀌어요.\n적용하면 바뀌는 것:\n· 체크 고리\n· #마감 남은 날 색\n주의할 점: 달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+   "styles": [
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "calendar~bg:FFFFFFFF|cd:FFF7F7FA|ik:FF222222|ac:FF43A047"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FFF7F7FA|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4282622023,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "fill": 4294440954,
+       "r": 16,
+       "pad": 10
+      },
+      {
+       "id": "cal.head.title",
+       "size": 22,
+       "weight": 800,
+       "ink": 4280427042
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282622023,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "메모수 > 0 그리고 (체크율 > 0 또는 남은체크 > 0)",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "fx": "만약(체크율 >= 100, \"#43A047\", \"#FFB300\")"
+       }
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"마감\")",
+       "line": "solid",
+       "lineW": 2.5,
+       "lineC": {
+        "fx": "만약(며칠뒤 < 0, \"#9E9E9E\", 며칠뒤 <= 3, \"#E53935\", 며칠뒤 <= 7, \"#FB8C00\", \"#1E88E5\")"
+       },
+       "motion": "ring"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4282622023,
+    "b": 4293212469,
+    "dir": 2,
+    "emoji": "✅"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "꼬리표 색 달력",
+   "summary": "#중요 빨간 칸, #약속 초록 표시, 메모 많은 날 숨쉬기",
+   "desc": "메모에 #중요를 붙이면 그 날 칸이 연한 빨강, #약속은 칸 표시가 초록으로 바뀌어요. 바쁜 날은 칸이 숨 쉬어요.\n적용하면 바뀌는 것:\n· #중요 빨간 칸\n· #약속 초록 표시\n· 바쁜 날 숨쉬기\n주의할 점: 달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요",
+   "styles": [
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "calendar~bg:FFFFFFFF|cd:FFF7F7FA|ik:FF222222|ac:FFE53935"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FFF7F7FA|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4293212469,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.head",
+       "fill": 4294440954,
+       "r": 16,
+       "pad": 10
+      },
+      {
+       "id": "cal.head.title",
+       "size": 22,
+       "weight": 800,
+       "ink": 4280427042
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293212469,
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"중요\")",
+       "fill": 4293212469,
+       "fillA": 25
+      },
+      {
+       "id": "cal.cell.mark",
+       "when": "꼬리표.포함(\"약속\")",
+       "ink": 4282622023,
+       "weight": 800
+      },
+      {
+       "id": "cal.cell",
+       "when": "메모수 >= 3",
+       "motion": "pulse"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293212469,
+    "b": 4282622023,
+    "dir": 2,
+    "emoji": "🏷️"
+   }
+  }
  }
 ]

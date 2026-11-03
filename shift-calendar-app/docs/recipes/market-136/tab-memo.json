@@ -2069,5 +2069,333 @@
     "emoji": "🙏"
    }
   }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "체크 진행 카드",
+   "summary": "하던 체크는 노란 테두리, 다 끝낸 카드는 흐리게",
+   "desc": "체크를 시작했지만 남은 카드는 노란 테두리, 다 끝낸 카드는 흐려져요. 할 일 틀로 바로 시작해요.\n적용하면 바뀌는 것:\n· 하는 중 노란 테두리\n· 끝낸 카드 흐리게\n· 할 일 틀\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFFFDF7|cd:FFFFFFFF|ik:FF222222|ac:FFFFB300"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 14,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "date": true,
+     "bg": 4294966775
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "할 일",
+       "emoji": "✅",
+       "check": [
+        "첫째 일",
+        "둘째 일",
+        "셋째 일"
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "fill": 4294966775,
+       "pad": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "memo.card",
+       "fill": 4294967295,
+       "r": 14,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4294947584
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 > 0 그리고 체크율 < 100",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294965473,
+    "b": 4294947584,
+    "dir": 2,
+    "emoji": "🟨"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "고정 메모 보드",
+   "summary": "꼬리표별 보드, 고정한 메모는 금색 테두리",
+   "desc": "메모장이 꼬리표별 보드로 나뉘고, 고정한 메모는 금색 테두리로 칸 맨 위에서 빛나요.\n적용하면 바뀌는 것:\n· 꼬리표 보드\n· 고정 금색 테두리\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFAFAFA|cd:FFFFFFFF|ik:FF222222|ac:FFFFB300"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 14,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "date": true,
+     "bg": 4294638330
+    },
+    {
+     "kind": "tabView",
+     "memo": "board",
+     "memoBy": "tag"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "fill": 4294638330,
+       "pad": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "memo.card",
+       "fill": 4294967295,
+       "r": 14,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4294947584
+      },
+      {
+       "id": "memo.card",
+       "when": "고정",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4294947584
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4294947584,
+    "dir": 2,
+    "emoji": "📌"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "중요 꼬리표 카드",
+   "summary": "#중요 메모 카드는 연한 빨강, #나중에 는 흐리게",
+   "desc": "#중요 꼬리표를 단 메모 카드는 연한 빨강 바탕, #나중에 꼬리표는 흐리게 물러나요. 꼬리표만 붙이면 메모장이 정리돼요.\n적용하면 바뀌는 것:\n· #중요 빨간 카드\n· #나중에 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFFFFFFF|cd:FFFFFFFF|ik:FF222222|ac:FFE53935"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 14,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "date": true,
+     "bg": 4294967295
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "fill": 4294967295,
+       "pad": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "memo.card",
+       "fill": 4294967295,
+       "r": 14,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4293212469
+      },
+      {
+       "id": "memo.card",
+       "when": "꼬리표.포함(\"중요\")",
+       "fill": 4294962158
+      },
+      {
+       "id": "memo.card",
+       "when": "꼬리표.포함(\"나중에\")",
+       "alpha": 50
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294962158,
+    "b": 4293212469,
+    "dir": 2,
+    "emoji": "❗"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "오늘 메모 강조",
+   "summary": "오늘 날짜 메모는 진한 테두리, 지난 메모는 흐리게",
+   "desc": "오늘 날짜 메모 카드는 진한 파란 테두리로 서고, 지난날 메모는 조금 흐려져요. 오늘 할 것만 눈에 들어와요.\n적용하면 바뀌는 것:\n· 오늘 메모 테두리\n· 지난 메모 흐리게\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "memo~bg:FFF7FAFF|cd:FFFFFFFF|ik:FF222222|ac:FF1565C0"
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 14,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "date": true,
+     "bg": 4294441727
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "memo.head",
+       "fill": 4294441727,
+       "pad": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "memo.card",
+       "fill": 4294967295,
+       "r": 14,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700
+      },
+      {
+       "id": "memo.tags",
+       "ink": 4279592384
+      },
+      {
+       "id": "memo.card",
+       "when": "오늘",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4279592384
+      },
+      {
+       "id": "memo.card",
+       "when": "지난날",
+       "alpha": 65
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293128957,
+    "b": 4279592384,
+    "dir": 2,
+    "emoji": "📍"
+   }
+  }
  }
 ]

@@ -5,7 +5,7 @@ import { calView } from "./build-theme.mjs";
 
 const NOTE = "달력 모양만 바뀌어요. 근무·메모·가계부 기록과 다른 탭은 그대로예요";
 
-function cal(s) {
+export function cal(s) {
   const p = s.p;
   const base = [
     { id: "cal.head", ...(p.headPaint ? { paint: p.headPaint } : { fill: c(p.card) }), r: p.r ?? 16, pad: 10 },
