@@ -74,7 +74,8 @@ private fun rememberInLedger(memo: Memo, prop: MemoProps.Prop?, amount: Long?): 
 @Composable
 internal fun MemoToLedgerDialog(memo: Memo, onDismiss: () -> Unit) {
     val prop = remember(memo.body) { MemoProps.money(memo) }
-    val amount = prop?.num?.toLong()?.takeIf { it > 0 }
+    // PC 확인 5c21f3bb ('4500원'이 본문에 있어도 금액이 비어요): with no 금액 칸, the first '…원' in the memo is offered.
+    val amount = prop?.num?.toLong()?.takeIf { it > 0 } ?: remember(memo.title, memo.body) { wonInText(memo.title + "\n" + memo.body) }
     val container = LocalContext.current.appContainer
     val money = container.moneyRepository
     val done = rememberInLedger(memo, prop, amount)
@@ -122,3 +123,14 @@ internal fun MemoToLedgerDialog(memo: Memo, onDismiss: () -> Unit) {
 }
 
 private val INCOME_WORDS = listOf("매출", "수입", "급여", "팁", "받은", "입금", "현금", "카드")
+
+/** PC 확인 5c21f3bb: the first amount written as '4500원', '4,500 원' or '3만원'·'1.5만 원' in [text], or null. */
+internal fun wonInText(text: String): Long? {
+    val m = Regex("""(?<![\d.,])(\d{1,3}(?:,\d{3})+|\d+)(?:\.(\d+))?\s*(만)?\s*원""").find(text) ?: return null
+    val whole = m.groupValues[1].replace(",", "").toLongOrNull() ?: return null
+    val won = if (m.groupValues[3].isNotEmpty()) {
+        val frac = m.groupValues[2].take(4).padEnd(4, '0').toLongOrNull() ?: 0L
+        whole * 10_000 + frac
+    } else whole
+    return won.takeIf { it in 1..9_999_999_999L }
+}

@@ -545,6 +545,15 @@ fun TalkSheet(holder: TalkHolder) {
                 if (o.room && kind == "question" && replyTo == null) {
                     PollEditor(pollDraft, onChange = { pollDraft = it; error = null })
                 }
+                // PC 확인 5c21f3bb (9번 '투표·첨부 단추가 없어요'): they come with a kind of post, so say which.
+                if (o.room && replyTo == null && kind != "question" && kind != "show") {
+                    Text(if (styleRoom) "투표는 ‘질문’에서, 내 작품 붙이기는 ‘자랑’에서 넣어요" else "투표는 ‘질문’에서 넣어요",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                }
+                if (styleRoom && kind == "show" && replyTo == null && showable.isEmpty()) {
+                    Text("장터에 올린 내 작품이 생기면 여기서 붙여 보여 줄 수 있어요", style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                }
                 if (styleRoom && kind == "show" && replyTo == null && showable.isNotEmpty()) {
                     Text("내 작품 붙이기 (보는 분이 바로 입어 봐요)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

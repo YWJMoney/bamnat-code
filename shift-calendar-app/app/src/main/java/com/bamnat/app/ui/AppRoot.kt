@@ -1300,6 +1300,8 @@ private fun AppNavHost(
         }
         composable(TopLevel.MEMOS.route) {
             val vm = appViewModel { MemoListViewModel(it) }
+            val memoSettings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+            val memoStyle = container.calendars.styleOf(companyCalendarOf(container, null), memoSettings.workStyle)
             // [DAILY-15] Unfolded, a memo opens in the right pane (list 40%, memo 60%) instead of a screen of its own.
             var pane by rememberSaveable(stateSaver = com.bamnat.app.ui.memo.MemoPane.Saver) { mutableStateOf<com.bamnat.app.ui.memo.MemoPane?>(null) }
             fun next(id: Long, checklist: Boolean = false, date: LocalDate? = null) =
@@ -1310,6 +1312,7 @@ private fun AppNavHost(
                     onOpen = { id -> if (wide) pane = next(id) else nav.navigate(Routes.memo(id)) },
                     onNew = { checklist, date -> if (wide) pane = next(0, checklist, date) else nav.navigate(Routes.memo(0, date, checklist, notebook = true)) },
                     onOpenTrash = { nav.navigate(Routes.MEMO_TRASH) { launchSingleTop = true } },
+                    style = memoStyle,
                 )
             }
             if (wide) com.bamnat.app.ui.memo.MemoPanes(pane, onOpenChange = { pane = it }, onNew = { pane = next(0) }) { list() }
@@ -2209,20 +2212,21 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
     var calendar by rememberSaveable { mutableStateOf(companyCalendarOf(container, calendarArg)) }
     val company = remember(calendar) { container.companyOf(calendar) }
     val recipesOn by container.recipes.on.collectAsStateWithLifecycle()
+    // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
+    val member by company.store.member.collectAsStateWithLifecycle()
     val chips: @Composable () -> Unit = {
         com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
             Modifier.padding(horizontal = 16.dp))
         // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).
         // [HUB-01] In 마을 the recipes have their own 장터 next to 광장.
-        if (!inHub && recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
+        // PC 확인 5c21f3bb ('이 설정 쓰기' 뒤 '장터 · 레시피'가 먼저 보여 헷갈려요): a company's own 정보 광장 is about the company only.
+        if (!inHub && member == null && recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
             onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
             onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
             onItem = { code -> nav.navigate(Routes.recipe(code, calendar)) },
             onRequests = { nav.navigate(Routes.recipeRequests(calendar)) { launchSingleTop = true } },
         )
     }
-    // [PLAZA-32][PLAZA-33] 1.27 AI: 광장 opens to the joined company's 정보 광장, or the plaza of the kind of work.
-    val member by company.store.member.collectAsStateWithLifecycle()
     val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
     val plan = remember(member, style) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
     CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {

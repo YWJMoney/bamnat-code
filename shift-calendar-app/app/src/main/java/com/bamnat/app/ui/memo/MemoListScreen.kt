@@ -119,6 +119,7 @@ fun MemoListScreen(
     onOpen: (Long) -> Unit,
     onNew: (checklist: Boolean, date: LocalDate?) -> Unit,
     onOpenTrash: () -> Unit,
+    style: com.bamnat.core.work.WorkStyle? = null,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
@@ -271,7 +272,7 @@ fun MemoListScreen(
                     else MemoSort.entries.map { "ms:${it.name}" to it.label },
                 baseLabel = baseLabel, onSort = sortTo)
             when {
-                state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering)
+                state.loaded && state.shownCount == 0 -> EmptyMemos(state.tab, searching = state.filtering, style = style)
                 memoView.view == com.bamnat.core.memo.MemoView.BOARD -> MemoBoardView(shown, memoView, shiftOf, state, actions, templateChoices)
                 memoView.view == com.bamnat.core.memo.MemoView.TABLE -> MemoTableView(shown, memoView, onSort = { sort -> sortTo(sort)}, actions, templateChoices, state.selection, state.selecting)
                 memoView.view == com.bamnat.core.memo.MemoView.GALLERY -> MemoGalleryView(shown, memoView, actions, state.selection)
@@ -898,7 +899,7 @@ private fun Pill(text: String, background: Color, content: Color) {
 }
 
 @Composable
-private fun EmptyMemos(tab: MemoTab, searching: Boolean) {
+private fun EmptyMemos(tab: MemoTab, searching: Boolean, style: com.bamnat.core.work.WorkStyle? = null) {
     Column(
         Modifier.fillMaxWidth().padding(top = 56.dp, start = 32.dp, end = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -921,7 +922,13 @@ private fun EmptyMemos(tab: MemoTab, searching: Boolean) {
         Text(
             when {
                 searching -> "검색어나 필터를 바꿔 보세요"
-                tab == MemoTab.CALENDAR -> "달력에서 날짜를 누르거나 아래 버튼으로 오늘 메모를 남겨 보세요. 그날 근무가 함께 보여요."
+                // PC 확인 5c21f3bb: 투자 has no 근무 — the day's trades show with it; 자영업 its 영업일, 현장 its 일감.
+                tab == MemoTab.CALENDAR -> "달력에서 날짜를 누르거나 아래 버튼으로 오늘 메모를 남겨 보세요. " + when (style) {
+                    com.bamnat.core.work.WorkStyle.INVEST -> "그날 매매 기록이 함께 보여요."
+                    com.bamnat.core.work.WorkStyle.BUSINESS -> "그날 영업 여부가 함께 보여요."
+                    com.bamnat.core.work.WorkStyle.FIELD -> "그날 일감이 함께 보여요."
+                    else -> "그날 근무가 함께 보여요."
+                }
                 else -> "인수인계, 준비물, 교대 약속처럼 날짜와 상관없는 메모를 적어 두세요. #태그로 묶을 수 있어요."
             },
             style = MaterialTheme.typography.bodyMedium,

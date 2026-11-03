@@ -644,7 +644,7 @@ fun MoneyScreen(
         MoneyPart.OTHER to { com.bamnat.app.ui.guide.FeatureCard("money.otherPlaces", vm.calendarId) { OtherPlacesCard(otherPlaces, book.categoriesOf(MoneyKind.EXPENSE), onPick = { g, c -> vm.recategorize(g.entries, c) }) } },
         MoneyPart.UPCOMING to {
             UpcomingCard(upcoming, book.fixed, leftFixed, onRecord = { vm.recordFixed(it, today) },
-                onEdit = { c -> if (c == null) addingFixed = true else editingFixed = c })
+                onEdit = { c -> if (c == null) addingFixed = true else editingFixed = c }, style = style)
         },
         MoneyPart.REPEAT to { com.bamnat.app.ui.guide.FeatureCard("money.repeat", vm.calendarId) { RepeatSuggestCard(repeats, onAdd = vm::addRepeat, onNo = vm::notRepeating) } },
         MoneyPart.ACCOUNTS to { AccountsCard(book, today, onAdd = { t -> if (t == null) addingAnyAccount = true else addingAccount = t }, onEdit = { editingAccount = it }) },

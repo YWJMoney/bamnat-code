@@ -466,6 +466,7 @@ fun UpcomingCard(
     leftThisMonth: Long,
     onRecord: (Upcoming) -> Unit,
     onEdit: (FixedCost?) -> Unit,
+    style: com.bamnat.core.work.WorkStyle? = null,
 ) {
     var showAll by rememberSaveable { mutableStateOf(false) }
     val cal = LocalCalendarColors.current
@@ -475,7 +476,14 @@ fun UpcomingCard(
         trailing = { com.bamnat.app.ui.components.AddButton("반복", onClick = { onEdit(null) }) },
     ) {
         if (all.isEmpty() && upcoming.isEmpty()) {
-            Text("월세·보험·통신비처럼 매달 나가는 돈, 월급처럼 들어오는 돈을 적어 두면 3일 전과 당일 아침에 알려 드려요. 그날 저절로 가계부에 적게 할 수도 있어요.",
+            // PC 확인 5c21f3bb: 자영업·투자 have no 월급; the example of money coming in fits the kind of work.
+            val comesIn = when (style) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "임대료처럼 매달 나가는 돈, 정기 납품 대금처럼 들어오는 돈"
+                com.bamnat.core.work.WorkStyle.INVEST -> "통신비·보험처럼 매달 나가는 돈, 적립식 투자금·배당처럼 오가는 돈"
+                com.bamnat.core.work.WorkStyle.FIELD -> "월세·보험·통신비처럼 매달 나가는 돈, 정기 계약처럼 들어오는 돈"
+                else -> "월세·보험·통신비처럼 매달 나가는 돈, 월급처럼 들어오는 돈"
+            }
+            Text("${comesIn}을 적어 두면 3일 전과 당일 아침에 알려 드려요. 그날 저절로 가계부에 적게 할 수도 있어요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             return@SectionCard
         }
