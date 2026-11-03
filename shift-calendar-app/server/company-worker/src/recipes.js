@@ -13,7 +13,7 @@
 // This file does not import index.js (tools/bundle.mjs puts it in one file); what it needs comes in as [d].
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
-import { addStrike, writeLeft, writeLimitHit } from "./write-limits.js";
+import { addStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -697,6 +697,8 @@ export const RECIPE_LIMITS = {
   /** S8: more votes than this from one network in an hour wait (held) and count nowhere until the operator lets them. */
   networkVotesHour: 30,
   appliedPerNetworkDay: 200,
+  /** 1.36 보안 점검 M9: one network counts at most this many 넣기 (and as many 7일 유지) for one recipe a day; past it, not counted. */
+  appliedPerRecipeNetworkDay: 3,
   flagsToHide: 3,
   opinion: [5, 120],
   talk: 500,
@@ -741,6 +743,10 @@ export const RECIPE_COLUMNS = [
   // [RCP-35][D107] a 안좋아요 on a talk post carries its reason too, seen by the post's writer only.
   "ALTER TABLE post_votes ADD COLUMN why TEXT",
   "ALTER TABLE post_votes ADD COLUMN note TEXT",
+  // 1.36 보안 점검 [SEC-16] M10: whether a recipe report counted toward hiding it, and why not ("new": a 새싹 install, "net": a second
+  // from one network today), for the operator.
+  "ALTER TABLE recipe_flags ADD COLUMN counted INTEGER NOT NULL DEFAULT 1",
+  "ALTER TABLE recipe_flags ADD COLUMN why TEXT",
 ];
 
 export function newCode() {
@@ -1005,6 +1011,8 @@ async function publish(d, env, request) {
     ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "recipe", RECIPE_LIMITS.perNetworkDay, now)));
   if (hit) return hit;
   const scope = readScope(body.scope);
+  // 1.36 [SEC-11] Play Integrity before a write others see; a 나만 보기 recipe is the maker's own (off until INTEGRITY_MODE is set).
+  if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const r = clean.recipe;
   const skel = nameSkeleton(r.title);
   // 사칭 (S4): someone else's recipe with a name that looks the same is refused; the maker's own may share it.
@@ -1054,6 +1062,8 @@ async function newVersion(d, env, request, code) {
   const hit = await d.overLimit(env, now, [["device", `recipev|${dev}`, 10, DAY]]);
   if (hit) return hit;
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const trust = await recipeTrust(d, env, dev, now);
   // [RCX-28] Up at once like a first 판; one the operator or 신고 hid stays hidden.
   const state = r.state === "hidden" ? "hidden" : scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
@@ -1157,6 +1167,12 @@ async function applied(d, env, request, code) {
   const r = await d.one(env, "SELECT code FROM recipes WHERE code = ? AND state = 'visible'", code);
   if (!r) return d.json({ error: "not_found" }, 404);
   const col = body.kind === "applied" ? "applied" : "kept7";
+  // 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): 쓰는 분 and 7일 유지 weigh in 좋은 순 and 요즘 뜨는, and
+  // they come with no phone (S8), so one line could push a recipe up 200 a day. A few a recipe a line (a family's phones), then
+  // answered as kept but not counted, so the app has nothing to try again.
+  if (!(await d.allow(env, `rappliedone|${net.day}|${code}|${col}`, RECIPE_LIMITS.appliedPerRecipeNetworkDay, DAY, now))) {
+    return d.json({ ok: true, counted: false });
+  }
   await d.batch(env, [
     d.stmt(env, `INSERT INTO recipe_counts (code, day, ${col}) VALUES (?, ?, 1) ON CONFLICT (code, day) DO UPDATE SET ${col} = ${col} + 1`, code, kstDayOf(now)),
     d.stmt(env, `UPDATE recipes SET ${col} = ${col} + 1 WHERE code = ?`, code),
@@ -1173,11 +1189,28 @@ async function recipeFlag(d, env, request, code) {
   const now = Date.now();
   const hit = await d.overLimit(env, now, [["device", `rflag|${dev}`, 20, DAY]]);
   if (hit) return hit;
-  const r = await d.one(env, "SELECT code, owner, state, flags FROM recipes WHERE code = ?", code);
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+  const r = await d.one(env, "SELECT code, owner, state, flags, body, cover FROM recipes WHERE code = ?", code);
   if (!r || r.state !== "visible") return d.json({ error: "not_found" }, 404);
   if (r.owner === dev) return d.json({ error: "own" }, 400);
   const res = await d.run(env, "INSERT OR IGNORE INTO recipe_flags (code, device, reason, at) VALUES (?, ?, ?, ?)", code, dev, reason, now);
   if (!res?.meta?.changes) return d.json({ flagged: true, already: true });
+  // 1.36 [SEC-05] 보안 점검 M3: one network counts once a day for one recipe, so ids made on one line cannot hide others' work.
+  // [SEC-16] M10 (PC 확인 F 13차): and a 새싹 install's report (under 3 days, nothing approved) is kept for the operator but does not
+  // count, as for pictures (SEC-08) and fonts (SEC-10), so new ids on new lines cannot hide it either. [counts] is what a recipe's
+  // report passes on to its pictures (F).
+  await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
+  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+  const net = await d.network(request, env, now);
+  const why = trust.level < 1 ? "new" : (await d.allow(env, `rflagnet|${net.day}|${code}`, 1, DAY, now)) ? null : "net";
+  const counts = why === null;
+  // F 1.36 [GRW-08] (with F): a recipe's report is its pictures' report too, counted as the recipe's is.
+  if (d.flagRecipeImages) await d.flagRecipeImages(env, r.body, r.cover, dev, reason, now, counts);
+  if (!counts) {
+    await d.run(env, "UPDATE recipe_flags SET counted = 0, why = ? WHERE code = ? AND device = ?", why, code, dev);
+    return d.json({ flagged: true });
+  }
   const flags = r.flags + 1;
   const hide = flags >= RECIPE_LIMITS.flagsToHide;
   await d.batch(env, [
@@ -1359,14 +1392,25 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     code, action, String(reason).slice(0, 200), actorName, now);
   if (path === "/recipes" && method === "GET") {
     const tab = url.searchParams.get("tab") ?? "queue";
-    const where = { queue: "state = 'pending'", flagged: "flags > 0 AND state != 'deleted'", hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1" }[tab]
+    // 1.36 [SEC-16] M10: 신고된 also lists a recipe whose reports all went to the operator only (none counted toward hiding it).
+    const where = { queue: "state = 'pending'", flagged: "(flags > 0 OR EXISTS (SELECT 1 FROM recipe_flags f WHERE f.code = recipes.code)) AND state != 'deleted'",
+      hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1" }[tab]
       ?? "state = 'pending'";
     const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT 200`);
-    const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n FROM recipe_flags WHERE code IN (${rows.map(() => "?").join(",")})
+    const marks = rows.map(() => "?").join(",");
+    // PC 확인 보안 6차: how many of each reason counted toward hiding it too (the operator's own were shown as if they did).
+    const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n, SUM(counted) AS counted FROM recipe_flags WHERE code IN (${marks})
       GROUP BY code, reason`, ...rows.map((r) => r.code)) : [];
+    const quiet = rows.length ? await d.all(env, `SELECT code, why, COUNT(*) AS n FROM recipe_flags WHERE counted = 0 AND code IN (${marks})
+      GROUP BY code, why`, ...rows.map((r) => r.code)) : [];
+    const quietOf = (code) => {
+      const q = quiet.filter((x) => x.code === code);
+      const n = (why) => q.find((x) => x.why === why)?.n ?? 0;
+      return q.length ? { fresh: n("new"), net: n("net") } : null;
+    };
     return d.json({ tab, items: rows.map((r) => ({ ...listItem(r, now), state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
-      late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n })),
-      hidden: r.hidden_reason ?? null })) });
+      late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n, counted: f.counted ?? f.n })),
+      quiet: quietOf(r.code), hidden: r.hidden_reason ?? null })) });
   }
   if (path === "/recipes/actions" && method === "GET") {
     const rows = await d.all(env, "SELECT * FROM recipe_actions ORDER BY id DESC LIMIT 300");
@@ -1412,6 +1456,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
     const stmts = [];
     let strike = null;
+    let unstrike = null;
     if (what === "approve") {
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', decided_at = ?, note = '' WHERE code = ?", now, code));
       if (r.state === "pending") stmts.push(d.stmt(env, "UPDATE recipe_trust SET approved = approved + 1 WHERE device = ?", r.owner));
@@ -1423,11 +1468,16 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       // 1.36 [LIM-10] Hidden by the operator counts like reports hiding it (not again when reports already did).
       if (r.state !== "hidden") strike = r.owner;
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ? WHERE code = ?", now, note, code));
-      stmts.push(d.stmt(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", r.owner));
+      if (r.state !== "hidden") stmts.push(d.stmt(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", r.owner));
     } else if (what === "show") {
       stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, flags = 0, note = '' WHERE code = ?", code));
       stmts.push(d.stmt(env, "DELETE FROM recipe_flags WHERE code = ?", code));
       stmts.push(d.stmt(env, "DELETE FROM write_strikes WHERE ref = ?", code));
+      // 1.36 [SEC-16] M10: shown again, its maker's mark for it goes too (it kept 단골 away for good) and a restriction it started ends.
+      if (r.state === "hidden") {
+        stmts.push(d.stmt(env, "UPDATE recipe_trust SET hidden = MAX(0, hidden - 1) WHERE device = ?", r.owner));
+        unstrike = r.owner;
+      }
     } else if (what === "official") {
       stmts.push(d.stmt(env, "UPDATE recipes SET official = ? WHERE code = ?", body.on === false ? 0 : 1, code));
     } else if (what === "showcase") {
@@ -1436,9 +1486,11 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     } else {
       stmts.push(...dropRecipe(d, env, code));
     }
-    stmts.push(act(code, what, note));
+    // 1.36 [SEC-16] (PC 확인 F 13차): a recipe the reports hid, shown again, says why in 임시 조치 기록 when the operator wrote nothing.
+    stmts.push(act(code, what, note || (what === "show" && r.hidden_reason === "flags" ? "신고가 맞지 않았어요" : "")));
     await d.batch(env, stmts);
-    if (strike) await addStrike(d, env, strike, "recipe", code, now);
+    if (strike) await operatorStrike(d, env, strike, "recipe", code, now);
+    if (unstrike) await strikeTakenBack(d, env, unstrike, now);
     return d.json({ code, done: what });
   }
   if (path === "/recipes/votes/release" && method === "POST") {
@@ -1470,7 +1522,7 @@ export async function forgetRecipes(d, env, dev) {
       : "UPDATE recipes SET dislikes = dislikes - 1, wdislikes = wdislikes - ? WHERE code = ?", v.weight, v.code));
   }
   stmts.push(d.stmt(env, "DELETE FROM recipe_votes WHERE device = ?", dev));
-  stmts.push(d.stmt(env, "UPDATE recipes SET flags = flags - 1 WHERE code IN (SELECT code FROM recipe_flags WHERE device = ?)", dev));
+  stmts.push(d.stmt(env, "UPDATE recipes SET flags = flags - 1 WHERE code IN (SELECT code FROM recipe_flags WHERE device = ? AND counted = 1)", dev));
   stmts.push(d.stmt(env, "DELETE FROM recipe_flags WHERE device = ?", dev));
   stmts.push(d.stmt(env, "DELETE FROM recipe_trust WHERE device = ?", dev));
   if (stmts.length) await d.batch(env, stmts);

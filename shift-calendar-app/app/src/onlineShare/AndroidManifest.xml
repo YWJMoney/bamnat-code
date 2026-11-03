@@ -20,6 +20,8 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="${shareHost}" android:pathPrefix="/s/" />
                 <data android:host="${shareHostOld}" />
+                <!-- https again in release (no change); http in debug builds for the local share server (build.gradle.kts). -->
+                <data android:scheme="${shareSchemeLocal}" />
             </intent-filter>
         </activity>
     </application>

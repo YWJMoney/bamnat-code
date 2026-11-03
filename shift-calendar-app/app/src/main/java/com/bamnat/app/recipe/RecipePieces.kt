@@ -182,8 +182,18 @@ class RecipePieces(private val c: AppContainer) {
             val mine = types(cal)
             pairs(mine, items(values, "items")).map { (i, t) ->
                 if (t == null) Change("‘${i["name"]}’: 맞는 근무가 없어 건너뛰어요", skipped = true)
-                else Change("${t.name}: 글자 ${t.label}→${i["label"] ?: t.label}" + (if (i["color"] != null) ", 색 바뀜" else "") +
-                    (i["emoji"]?.let { ", 이모지 $it" } ?: ""))
+                else {
+                    // PC 확인 보안 7차 ("글자 주→주, 색 바뀜"): only what changes ("주간: 색만 바뀜"), the same letter not said as a change.
+                    val label = (i["label"] as? String)?.takeIf { it != t.label }
+                    val color = (i["color"] as? Number)?.toLong()?.let { it or 0xFF000000L }?.takeIf { it != (t.colorArgb or 0xFF000000L) }
+                    val emoji = (i["emoji"] as? String)?.takeIf { it.isNotEmpty() && it != ShiftIcon.emoji(t.icon) }
+                    val parts = listOfNotNull(label?.let { "글자 ${t.label}→$it" }, color?.let { "색 바뀜" }, emoji?.let { "이모지 $it" })
+                    Change("${t.name}: " + when {
+                        parts.isEmpty() -> "지금과 같아요"
+                        parts == listOf("색 바뀜") -> "색만 바뀜"
+                        else -> parts.joinToString(", ")
+                    }, skipped = parts.isEmpty())
+                }
             }
         }
         PieceKind.CAL_THEME -> listOf(Change(listOfNotNull(

@@ -110,6 +110,10 @@ class RecipeCoreTest {
         val base = InputExtract.extract(hourly(12_000L))
         val lines = RecipeLint.check(base.copy(summary = "내가 꾸민 모양", desc = "누구에게 좋아요: \n적용하면 바뀌는 것: \n주의할 점: "))
         assertEquals(RecipeLint.Level.WARN, lines.first { it.code == "summary" }.level)
+        // PC 확인 20ab0254: ‘내가 꾸민 모양’은, not 는.
+        assertTrue(lines.first { it.code == "summary" }.text.contains("‘내가 꾸민 모양’은 처음 넣어 둔 말"))
+        assertEquals("는", RecipeLint.topic("테마"))
+        assertEquals("은", RecipeLint.topic("모양"))
         assertEquals(RecipeLint.Level.WARN, lines.first { it.code == "desc" }.level)
         val filled = RecipeLint.check(base.copy(summary = "주휴 계산 맞게", desc = "누구에게 좋아요: 편의점 알바를 처음 하는 분\n주의할 점: "))
         assertEquals(RecipeLint.Level.OK, filled.first { it.code == "desc" }.level)

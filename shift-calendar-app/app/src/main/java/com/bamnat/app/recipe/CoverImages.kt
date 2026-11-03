@@ -32,7 +32,7 @@ object CoverImages {
                 try {
                     if (conn.responseCode != 200) return@runCatching null
                     val bytes = conn.inputStream.use { com.bamnat.app.recipe.readAtMost(it, MAX_BYTES + 1) }
-                    if (bytes.size > MAX_BYTES) null else BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    if (bytes.size > MAX_BYTES) null else SafeBitmaps.decode(bytes, SIDE) // 1.36 [SEC-04]
                 } finally {
                     conn.disconnect()
                 }

@@ -66,6 +66,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
@@ -486,6 +487,9 @@ fun TalkSheet(holder: TalkHolder) {
                         color = if (n == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp))
                 }
+                // PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked
+                // when the box is first tapped, before anything is written; 보내기 still asks if they were put off (나중에).
+                var rulesAsked by remember { mutableStateOf(false) }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
@@ -498,20 +502,27 @@ fun TalkSheet(holder: TalkHolder) {
                         }) },
                         maxLines = 4,
                         shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) { rulesAsked = true; rules.ensure { } } },
                     )
                     IconButton(
                         onClick = {
                             val proposing = kind == "proposal" && replyTo == null
                             val lines = change.filter { it.want.isNotBlank() }
+                            // What is sent is what the box held when 보내기 was pressed, not what is typed while the rules wait.
+                            val body = text.trim()
+                            val parent = replyTo?.id
+                            val sentKind = if (replyTo != null) "talk" else kind
+                            val withIt = proposing && withSetup
                             if (proposing && lines.isEmpty()) {
                                 error = "무엇을 어떻게 바꾸자는지 한 줄 이상 적어 주세요"
                             } else rules.ensure {
                                 busy = true
-                                holder.send(text.trim(), parent = replyTo?.id, kind = if (replyTo != null) "talk" else kind, change = if (proposing) lines else emptyList(),
-                                    withSetup = proposing && withSetup) { e ->
+                                holder.send(body, parent = parent, kind = sentKind, change = if (proposing) lines else emptyList(), withSetup = withIt) { e ->
                                     busy = false; error = e
-                                    if (e == null) { text = ""; replyTo = null; if (proposing) { change = listOf(blankChange()); kind = "talk" } }
+                                    if (e == null) {
+                                        text = text.trim().removePrefix(body).trimStart(); replyTo = null
+                                        if (proposing) { change = listOf(blankChange()); kind = "talk" }
+                                    }
                                 }
                             }
                         },

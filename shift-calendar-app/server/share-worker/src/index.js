@@ -39,6 +39,9 @@ export const LIMITS = {
   // [PROV-04] 180 days and a year since 1.20 (프로 in the app).
   ttlDays: [7, 30, 90, 180, 365],
   createsPerHour: 20,
+  // 1.36 [SEC-02] Reads a network may make in an hour: a whole plant on one Wi-Fi opening shared calendars stays far under it.
+  readsPerHour: 3000,
+  groupReadsPerHour: 60,
   // [SHR-01] What a sharer may add to v2 links.
   memo: 80,
   extras: 4,
@@ -119,6 +122,10 @@ export default {
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
+  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/api/share/") || path.startsWith("/api/groups/"))) {
+    if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
+    if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
+  }
   if (path === "/api/share" && request.method === "POST") return create(request, env, url);
   if (path === "/api/groups" || path.startsWith("/api/groups/")) return groups(request, env, path);
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
@@ -137,6 +144,18 @@ async function route(request, env) {
     return new Response("User-agent: *\nDisallow: /\n", { headers: { "content-type": "text/plain; charset=utf-8" } });
   }
   return new Response("Not found", { status: 404 });
+}
+
+function tooManyReads(path) {
+  const wait = String(3600 - Math.floor((Date.now() / 1000) % 3600));
+  if (path.startsWith("/s/") && !path.endsWith(".ics")) {
+    const res = html(page("잠시 뒤에 다시 열어 주세요", `<p class="empty">이 네트워크에서 너무 많이 열었어요. 잠시 뒤에 다시 열어 주세요.</p>`), 429);
+    res.headers.set("retry-after", wait);
+    return res;
+  }
+  const res = json({ error: "rate_limited" }, 429);
+  res.headers.set("retry-after", wait);
+  return res;
 }
 
 async function create(request, env, url) {
@@ -290,7 +309,7 @@ async function report(request, env, id, fromPage) {
   if (!Object.hasOwn(REPORT_REASONS, reason ?? "")) return done(400, fromPage ? "신고 이유를 골라 주세요." : "reason");
   const record = await env.SHARES.get(id, "json");
   if (!record || record.removed || Date.parse(record.expiresAt) < Date.now()) return done(404, fromPage ? "이미 닫힌 링크예요." : "not_found");
-  const ip = request.headers.get("cf-connecting-ip") || "unknown";
+  const ip = netOf(request.headers.get("cf-connecting-ip"));
   const day = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const once = `rp:${(await sha256(`${env.RATE_SALT || "bamnat"}:${ip}:${id}:${day}`)).slice(0, 24)}`;
   const thanks = "신고를 받았어요. 운영자가 확인하고 운영 규칙에 어긋나면 링크를 내려요. 고마워요.";
@@ -688,8 +707,41 @@ const allowCreate = (request, env) => allow(env, request, "rl", LIMITS.createsPe
  */
 const counted = new WeakMap();
 
+/** 1.36 [SEC-01] An IPv4 address as it is, an IPv6 address by its /64 (one subscriber's line), as the company server counts. */
+export function netOf(ip) {
+  const a = String(ip ?? "").trim().toLowerCase();
+  if (!a.includes(":")) return a || "unknown";
+  const [head, tail] = a.split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail !== undefined && tail ? tail.split(":") : [];
+  const last = (t.length ? t : h)[(t.length ? t : h).length - 1] ?? "";
+  if (last.includes(".")) return last;
+  const full = tail === undefined ? h : [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
+  return full.slice(0, 4).map((x) => (x || "0").replace(/^0+(?=.)/, "")).join(":") + "::/64";
+}
+
+/**
+ * 1.36 [SEC-02] Reads (the page, the app's 받은 달력, the calendar feed, a group) are held to [LIMITS.readsPerHour] an hour per
+ * network, counted in this Worker's memory only: a KV write per read would spend the day's writes faster than a bot its reads.
+ * Before, nothing held them, and one caller could spend KV's daily reads and stop every shared calendar. A group's code is
+ * also held to [LIMITS.groupReadsPerHour] tries an hour, so its 6 letters cannot be guessed through.
+ */
+const reads = new Map();
+
+export function readAllowed(request, kind, max) {
+  const hour = Math.floor(Date.now() / 3600000);
+  const key = `${kind}|${netOf(request.headers.get("cf-connecting-ip"))}|${hour}`;
+  const n = (reads.get(key) ?? 0) + 1;
+  reads.set(key, n);
+  if (reads.size > 20000) for (const k of reads.keys()) if (!k.endsWith(`|${hour}`)) reads.delete(k);
+  return n <= max;
+}
+
+/** For tests: forget the read counts. */
+export function readsForget() { reads.clear(); }
+
 async function allow(env, request, prefix, max) {
-  const ip = request.headers.get("cf-connecting-ip") || "unknown";
+  const ip = netOf(request.headers.get("cf-connecting-ip"));
   const hour = Math.floor(Date.now() / 3600000);
   const local = `${prefix}|${ip}|${hour}`;
   let counts = counted.get(env.SHARES);

@@ -178,6 +178,8 @@ data class MakerPage(
     /** The maker's own: 1.36 [LIM-10] writes a day while reports restrict this install, and until when. */
     val limitPerDay: Int? = null,
     val limitUntil: java.time.Instant? = null,
+    /** PC 확인 보안 6차: the same restriction with who hid what, for its line ([com.bamnat.app.company.WriteLimit.cause]). */
+    val limit: com.bamnat.app.company.WriteLimit? = null,
 ) {
     val themes: List<RecipeItem> get() = recipes.filter { it.scope != "tab" }
     val tabRecipes: List<RecipeItem> get() = recipes.filter { it.scope == "tab" }
@@ -448,7 +450,8 @@ class RecipeClient(
             trustDays = o.optJSONObject("trustNext")?.takeIf { it.has("days") }?.optInt("days"),
             trustHeld = o.optJSONObject("trustNext")?.optBoolean("held") == true,
             limitPerDay = o.optJSONObject("limit")?.optInt("perDay"),
-            limitUntil = o.optJSONObject("limit")?.optStringOrNull("until")?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() })
+            limitUntil = o.optJSONObject("limit")?.optStringOrNull("until")?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() },
+            limit = com.bamnat.app.company.WriteLimit.of(o))
     }
 
     override suspend fun followQuiet(device: String, id: String, quiet: Boolean) = serverCall {
@@ -618,7 +621,8 @@ class RecipeClient(
                 "reason" -> "안좋아요 이유를 골라 주세요"
                 "opinion" -> "의견을 5자 이상 120자 이하로 적어 주세요"
                 "own" -> "내 레시피에는 누를 수 없어요"
-                "muted" -> "신고가 쌓여 30일 동안 쓸 수 없어요"
+                // PC 확인 보안 6차: not always 신고, nor 30 days (운영자 가림, 30·90일 단계); the same words as 광장's.
+                "muted" -> "운영 원칙을 지키지 않은 글·작품이 있어 지금은 쓸 수 없어요"
                 "not_found" -> "지워졌거나 가려진 레시피예요"
                 "too_long" -> "40자까지 쓸 수 있어요"
                 "two_themes" -> "모음에는 테마를 하나만 넣을 수 있어요. 나머지는 기능별 탭으로 골라 주세요"
@@ -630,6 +634,9 @@ class RecipeClient(
                 "not_yours" -> "내 작품만 넣을 수 있어요"
                 "same" -> "바뀐 것이 없어요"
                 "paused" -> "잠시 쉬고 있어요"
+                // 1.36 [SEC-11] Play Integrity: the app from Play on a real phone is needed to write where others see.
+                "integrity" -> "Play 스토어에서 받은 밤낮으로만 올리거나 신고할 수 있어요. Play 스토어 앱을 업데이트한 뒤 다시 해 주세요"
+                "image_size" -> "사진이 너무 커요. 다른 사진을 골라 주세요"
                 "too_big", "too_large" -> "레시피가 너무 커요. 조각을 줄여 주세요"
                 else -> com.bamnat.core.recipe.RecipeText.problemText(c)
             }

@@ -152,11 +152,11 @@ test("an admin's phone: a ten-minute code, the owner's approval, two phones each
   // The owner's own phone needs nobody's approval.
   const oc = (await call("POST", "/api/admin/me/link-code", {}, owner)).data;
   assert.match(oc.code, /^\d{6}$/);
-  assert.deepEqual((await call("POST", "/api/admin-link", { code: oc.code }, phone(1))).data, { status: "approved", name: "최고 관리자" });
+  assert.deepEqual((await call("POST", "/api/admin-link", { code: oc.code }, phone(1))).data, { status: "approved", name: "최고 관리자", owner: true });
 
   const code = (await call("POST", "/api/admin/me/link-code", {}, m)).data.code;
   const linked = await call("POST", "/api/admin-link", { code }, { ...phone(2), ...from(2) });
-  assert.deepEqual(linked.data, { status: "pending", name: "민지" });
+  assert.deepEqual(linked.data, { status: "pending", name: "민지", owner: false });
   // Once only.
   assert.equal((await call("POST", "/api/admin-link", { code }, { ...phone(3), ...from(3) })).status, 404);
   assert.equal((await call("GET", "/api/passes", undefined, phone(2))).data.admin.status, "pending");

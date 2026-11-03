@@ -452,6 +452,34 @@ test("[ADMUX-19] 토론: pick two posts, 가리기 asks once, both are hidden on
   assert.deepEqual(u.errors, []);
 });
 
+test("PC 확인 보안 11차: 글 가리기는 이유를 고르기 전에는 누를 수 없고, 고른 이유로 가려요", async (t) => {
+  offline(t);
+  const s = server({ plaza: true });
+  const { call, env, DB } = s;
+  const a = await call("POST", "/api/reports", report(1), from(1));
+  await call("POST", "/api/posts", { device: device(2), company: a.data.company.id, setup: a.data.setup, body: "가릴 글이에요" }, from(2));
+  const u = await asOwner(env, t);
+  await u.go("#/community?show=all");
+  await u.click('#main [data-act="post-hide"]');
+  const form = u.$('dialog form[data-form="hide-post"]');
+  const radios = [...form.querySelectorAll('input[name="reason"]')];
+  assert.ok(radios.length >= 2);
+  assert.equal(radios.filter((r) => r.checked).length, 0, "미리 골라 두지 않아요");
+  assert.equal(form.querySelector('button[type="submit"]').disabled, true);
+  assert.match(u.text("dialog"), /이유를 고르면 가리기를 누를 수 있어요/);
+  const pick = radios[1];
+  pick.checked = true;
+  pick.dispatchEvent(new u.window.Event("change", { bubbles: true }));
+  assert.equal(form.querySelector('button[type="submit"]').disabled, false);
+  assert.doesNotMatch(u.text("dialog"), /이유를 고르면/);
+  form.requestSubmit();
+  await u.settle(30);
+  const row = DB.db.prepare("SELECT status, hide_reason FROM posts").get();
+  assert.equal(row.status, "hidden");
+  assert.equal(row.hide_reason, pick.value, "고른 이유로 가려요");
+  assert.deepEqual(u.errors, []);
+});
+
 // AE 1.26 시작
 test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", async () => {
   const { call, env, DB } = await world();
@@ -1519,4 +1547,23 @@ test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 
   assert.match(copied ?? "", /# 밤낮 관리자 앱 → 개발 넘김/);
   assert.ok(t.$('[data-act="sort-handoff"]').disabled, "nothing left to hand over");
   assert.deepEqual(t.errors, []);
+});
+
+test("[SEC-11] 서버 상태 shows Play Integrity: off, and require without a service account as the thing to fix", async () => {
+  // PC 확인 d263030e: /server answered integrity but the screen drew none of it.
+  const off = await signedIn(server().env);
+  await off.go("#/server");
+  assert.ok(off.$('[data-integrity="off"]'), "the part is there when off");
+  assert.match(off.text("#main"), /무결성 확인 \(Play Integrity\)/);
+  assert.match(off.text("#main"), /꺼짐: 남에게 보이는 쓰기/);
+  assert.ok(!off.$("[data-integrity-numbers]"), "no numbers while off");
+
+  const stuck = await signedIn(server({ INTEGRITY_MODE: "require" }).env);
+  await stuck.go("#/server");
+  assert.ok(stuck.$('[data-integrity="require"]'));
+  assert.match(stuck.text("#main"), /지금 남에게 보이는 쓰기가 모두 막혀요/);
+  assert.ok(stuck.$('[data-integrity="require"] + ul.checks li.bad'), "drawn as the thing to fix first");
+  assert.match(stuck.text("[data-integrity-numbers]"), /오늘 확인을 물은 쓰기 0 · 지난 하루 확인에 실패한 휴대폰 0 · 7일 안에 확인된 휴대폰 0/);
+  assert.equal(stuck.$$("#main [style]").length, 0);
+  assert.deepEqual([...off.errors, ...stuck.errors], []);
 });

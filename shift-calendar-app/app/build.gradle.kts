@@ -60,11 +60,15 @@ android {
         buildConfigField("String", "COMPANY_FALLBACK_URL", "\"$companyFallbackUrl\"")
         buildConfigField("String", "REMOTE_BASE_URL", "\"${remoteBaseUrl.takeIf { shareBaseUrl.isNotBlank() || companyBaseUrl.isNotBlank() }.orEmpty()}\"")
         buildConfigField("String", "ADMOB_REWARDED", "\"${adProp("bamnat.admobRewarded")}\"")
+        // 1.36 [SEC-11] Play Integrity: the Google Cloud project number linked in Play Console (앱 무결성), blank for none.
+        buildConfigField("String", "INTEGRITY_PROJECT", "\"${adProp("bamnat.integrityProject")}\"")
         manifestPlaceholders["admobAppId"] = admobAppId
         // [SHR-02] The share server's host, for its /s/ links to open in the app (src/onlineShare).
         manifestPlaceholders["shareHost"] = runCatching { URI(shareBaseUrl).host }.getOrNull() ?: "share.invalid"
         // [SRV-30] Links made before 1.36 (the old workers.dev name) keep opening in the app.
         manifestPlaceholders["shareHostOld"] = runCatching { URI(shareFallbackUrl).host }.getOrNull() ?: "share-old.invalid"
+        // The /s/ link's second scheme: https again (no change) except in debug builds, below.
+        manifestPlaceholders["shareSchemeLocal"] = "https"
     }
     // The internet permission comes only with a server, see src/online; with the share server,
     // tapped schedule links open in the app too (src/onlineShare).
@@ -101,6 +105,10 @@ android {
     }
 
     buildTypes {
+        // PC 확인 7525ccff: the local share server's links are http://10.0.2.2:8790/s/<id>; in debug builds they open 받기 too.
+        debug {
+            manifestPlaceholders["shareSchemeLocal"] = "http"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -241,6 +249,8 @@ dependencies {
     // [INVITE-03] 친구 초대: the code an invite link put in Play's install referrer, read once after the first setup.
     // 8 KB, no dependencies; adds one normal permission (BIND_GET_INSTALL_REFERRER_SERVICE, 처리방침 4항).
     implementation("com.android.installreferrer:installreferrer:2.2")
+    // 1.36 [SEC-11] 보안 점검 L4: Play Integrity, asked only when the server wants a verdict (a write others see, once a week).
+    implementation("com.google.android.play:integrity:1.4.0")
     // [NXT-01] 1.29 AU (AO D8): WorkManager came only through the ads SDK (2.7.1, started by androidx.startup at every
     // app start). Named here so BamnatApp can be its Configuration.Provider and WorkManager starts on first use; 2.10
     // also has the Android 14 fixes 2.7 lacks. The app's own jobs stay on JobScheduler (OutboxJob, PlazaNewsJob, AutoBackupJob).

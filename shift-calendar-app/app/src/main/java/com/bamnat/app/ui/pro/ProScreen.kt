@@ -22,6 +22,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -55,6 +59,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -180,7 +185,9 @@ fun ProScreen(onBack: () -> Unit) {
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
         )
     }) { padding ->
-        Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+        // PC 확인 d263030e (관리자 연결 코드 칸에서 키보드가 연결하기를 가려요): the page ends above the keyboard, so what is under a
+        // field can be scrolled to while typing.
+        Box(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(), contentAlignment = Alignment.TopCenter) {
             Column(
                 Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -240,7 +247,7 @@ fun ProScreen(onBack: () -> Unit) {
 
                 if (c.tierApi.enabled) {
                     PassesCard(c, pro, gate, zone, onMessage = { message = it })
-                    AdminCard(c, pro, onMessage = { message = it })
+                    AdminCard(c, pro)
                 }
                 // 1.36 PC 재검토 (결제 단추가 아래 탭 자리와 겹쳐 잘못 눌려요): the last buttons scroll clear of the bar at the bottom.
                 Spacer(Modifier.navigationBarsPadding().height(72.dp))
@@ -432,42 +439,78 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
 
 /** [MON-09] An invited admin's phone, tied with the 6-digit code from the developer app. */
 @Composable
-private fun AdminCard(c: AppContainer, pro: ProState, onMessage: (String) -> Unit) {
+private fun AdminCard(c: AppContainer, pro: ProState) {
     val scope = rememberCoroutineScope()
     var code by rememberSaveable { mutableStateOf("") }
     val admin = pro.passes?.admin
+    // PC 확인 20ab0254: the answer stays in this card (the page's line is at the top, out of sight from here). PC 확인 보안 8차 (끊은 뒤
+    // 아무 안내가 없어요): 연결 끊기's too, so it is the card's, not the code field's.
+    var said by rememberSaveable { mutableStateOf<String?>(null) }
     SectionCard(title = "관리자 연결") {
         when {
-            admin?.approved == true -> Text("${admin.name} 관리자 휴대폰이에요. 프로를 무료로 써요.", style = MaterialTheme.typography.bodyMedium)
-            admin != null -> Text("${admin.name} 관리자 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
+            // PC 확인 8773e3ae: approved at once said why (the 최고 관리자's own code needs no 승인), not left to guess.
+            admin?.approved == true -> Text("${adminWhose(admin.name)} 휴대폰이에요. 프로를 무료로 써요." +
+                if (admin.owner) " 최고 관리자 코드로 연결해서 따로 승인 없이 바로 열렸어요." else "", style = MaterialTheme.typography.bodyMedium)
+            admin != null -> Text("${adminWhose(admin.name)} 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
             else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (admin == null) {
-            OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6) }, label = { Text("6자리 코드") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.fillMaxWidth())
-            Button(onClick = {
+            // PC 확인 20ab0254: the keyboard goes away once it is sent.
+            val focus = androidx.compose.ui.platform.LocalFocusManager.current
+            val linking = {
+                focus.clearFocus()
                 scope.launch {
-                    runServer(onMessage) {
+                    runServer({ said = it }) {
                         val state = c.tierApi.link(c.companyStore.device, code)
-                        c.syncPasses(force = true)
-                        c.featureGate.refresh()
                         code = ""
-                        onMessage(if (state.approved) "연결했어요. 프로를 무료로 써요." else "연결했어요. 최고 관리자가 승인하면 프로가 열려요.")
-                    }
-                }
-            }, enabled = code.length == 6) { Text("연결하기") }
-        } else {
-            TextButton(onClick = {
-                scope.launch {
-                    runServer(onMessage) {
-                        c.tierApi.unlink(c.companyStore.device)
-                        c.syncPasses(force = true)
+                        said = when {
+                            state.approved && state.owner -> "연결했어요 · 최고 관리자 코드라 바로 승인됐어요. 프로를 무료로 써요."
+                            state.approved -> "연결했어요 · 승인됨. 프로를 무료로 써요."
+                            else -> "연결했어요 · 승인 기다림. 최고 관리자가 승인하면 프로가 열려요."
+                        }
+                        // PC 확인 7525ccff: a new phone had no other reason to ask, so the card stayed on the code field.
+                        c.syncPasses(force = true, linked = true)
                         c.featureGate.refresh()
-                        onMessage("관리자 연결을 끊었어요.")
                     }
                 }
-            }) { Text("연결 끊기") }
+                Unit
+            }
+            // PC 확인 20ab0254 (Gboard 숫자 키보드가 연결하기를 가려요): 연결하기 sits beside the field, so it is in view whenever the
+            // field is; the keyboard's own key links too.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(code, { code = it.filter(Char::isDigit).take(6); said = null }, label = { Text("6자리 코드") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { if (code.length == 6) linking() }),
+                    modifier = Modifier.weight(1f))
+                Button(onClick = { linking() }, enabled = code.length == 6, modifier = Modifier.heightIn(min = 48.dp)) { Text("연결하기") }
+            }
+            said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
+        } else {
+            // PC 확인 보안 7차 (한 번에 끊겨요): asked once, as linking again needs a new code from the admin app.
+            var asking by rememberSaveable { mutableStateOf(false) }
+            TextButton(onClick = { asking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("연결 끊기") }
+            said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+            if (asking) com.bamnat.app.ui.components.AlertDialog(
+                onDismissRequest = { asking = false },
+                title = { Text("관리자 연결을 끊을까요?") },
+                text = { Text("관리자 휴대폰이라 무료로 쓰던 프로가 꺼져요. 직접 구독한 것은 그대로예요. 다시 연결하려면 관리자 앱 › 내 정보에서 새 6자리 코드를 받아야 해요.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        asking = false
+                        scope.launch {
+                            runServer({ said = it }) {
+                                c.tierApi.unlink(c.companyStore.device)
+                                c.syncPasses(force = true)
+                                c.featureGate.refresh()
+                                said = "관리자 연결을 끊었어요. 다시 연결하려면 관리자 앱에서 새 6자리 코드를 받아 넣어 주세요."
+                            }
+                        }
+                    }) { Text("끊기") }
+                },
+                dismissButton = { TextButton(onClick = { asking = false }) { Text("닫기") } },
+            )
         }
     }
 }
@@ -589,3 +632,8 @@ private fun RewardLedgerCard(c: AppContainer, gate: Gate, plans: List<Plan>) {
 
 /** "1월 11일", in the phone's zone. */
 private fun dayWords(at: java.time.Instant): String = at.atZone(com.bamnat.core.time.Today.zone()).toLocalDate().let { "${it.monthValue}월 ${it.dayOfMonth}일" }
+
+/**
+ * PC 확인 보안 6차 d00db8a4 ("최고 관리자 관리자 휴대폰이에요"): the owner's name is already "최고 관리자", so "관리자" is not said twice.
+ */
+internal fun adminWhose(name: String): String = name.trim().let { if (it.isEmpty()) "관리자" else if (it.endsWith("관리자")) it else "$it 관리자" }

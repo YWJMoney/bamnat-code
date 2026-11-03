@@ -53,6 +53,8 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         com.bamnat.app.diag.Trail.install(this)
         // [QA130-01] Only the context; whether this is a Play pre-launch robot is read at the first server request.
         com.bamnat.app.diag.TestLab.attach(this)
+        // 1.36 [SEC-11] Play Integrity: nothing is asked here; the engine runs only when the server wants a verdict.
+        com.bamnat.app.company.IntegrityProof.engine = { nonce -> playIntegrityToken(nonce) }
         watchMainThread()
         channelsOnce()
         // While locked the database and settings cannot be opened; alarms ring from BootAlarms then,
@@ -63,6 +65,15 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         if (!BootAlarms.isLocked(this)) com.bamnat.app.diag.StartGuard.begin(this)
         if (!BootAlarms.isLocked(this)) building = Thread({ container }, "bamnat-container").apply { start() }
         StartupTrace.mark(StartupTrace.Step.APP)
+    }
+
+    /** 1.36 [SEC-11] A Play Integrity token for [nonce], on the caller's (network) thread; null when Play cannot give one. */
+    private fun playIntegrityToken(nonce: String): String? {
+        if (isRobolectric) return null
+        val request = com.google.android.play.core.integrity.IntegrityTokenRequest.builder().setNonce(nonce)
+            .apply { BuildConfig.INTEGRITY_PROJECT.toLongOrNull()?.let { setCloudProjectNumber(it) } }.build()
+        val task = com.google.android.play.core.integrity.IntegrityManagerFactory.create(this).requestIntegrityToken(request)
+        return com.google.android.gms.tasks.Tasks.await(task, 20, java.util.concurrent.TimeUnit.SECONDS).token()
     }
 
     /**

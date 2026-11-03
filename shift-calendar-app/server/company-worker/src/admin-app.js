@@ -1214,9 +1214,10 @@ function adminApp(L, BUILD, M) {
     const reasons = Object.entries(S.overview?.hideReasons ?? {}).filter(([key]) => key !== "flags");
     openDialog(`<form data-form="hide-post" data-id="${id}" data-mute="${mute ? 1 : 0}"><h2>${mute ? "30일 동안 쓰기를 막을까요?" : "이 글을 가릴까요?"}</h2>
       <p>${mute ? "이 글은 가려지고, 글쓴이는 30일 동안 어느 토론에도 글을 쓸 수 없어요. " : ""}글쓴이 앱에 이 이유가 보여요.</p>
-      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${i === 0 ? " checked" : ""}>
+      <div class="radios" role="radiogroup" aria-label="가리는 이유">${reasons.map(([key, text]) => `<label class="radio"><input type="radio" name="reason" value="${key}" required>
         <span>${esc(text)}</span></label>`).join("")}</div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">${mute ? "막기" : "가리기"}</button></div></form>`);
+      <p class="hint" data-reason-hint>이유를 고르면 ${mute ? "막기" : "가리기"}를 누를 수 있어요.</p>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit" disabled>${mute ? "막기" : "가리기"}</button></div></form>`);
   }
 
   async function moderate(id, body, done, undo) {
@@ -2273,6 +2274,16 @@ function adminApp(L, BUILD, M) {
     ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"], ["makers", "프로필 신고"], ["month", "이달의 제작자"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
+  /**
+   * PC 확인 보안 6차 (신고 광고·도배 2가 세지 않은 것까지 합한 수): what counted toward hiding a recipe and all that came, with
+   * reasons. "신고 2 (광고·도배 2)" when all counted, "센 신고 1 · 전체 2 (광고·도배 2)" when some went to the operator only.
+   */
+  function recipeFlagCount(flags) {
+    const all = flags.reduce((a, f) => a + f.n, 0);
+    const counted = flags.reduce((a, f) => a + (f.counted ?? f.n), 0);
+    const why = flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ");
+    return `${counted === all ? `신고 ${all}` : `센 신고 ${counted} · 전체 ${all}`} (${why})`;
+  }
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
     field: "현장 단가표 틀", shop: "가게 영업 틀", invest: "투자 원칙·일지 틀", company: "근무 주기·급여 방식",
     bundle: "묶음", layout: "화면 배치", cards: "카드 순서", widget: "위젯 모양", photoLook: "그림 꾸미기", calView: "달력 모양", appFeel: "앱 동작",
@@ -2303,7 +2314,7 @@ function adminApp(L, BUILD, M) {
     if (tab === "month") return chips + recipeMonthView(d, edit);
     const help = {
       queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
-      flagged: "신고가 들어온 레시피예요. 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요.",
+      flagged: "신고가 들어온 레시피예요. 다른 회선의 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요. 새 기기(3일 안)의 신고와 같은 회선의 두 번째 신고는 여기에만 보이고 가리기에는 세지 않아요.",
       hidden: "가린 레시피는 90일 뒤 지워져요.",
       visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
       official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
@@ -2313,7 +2324,8 @@ function adminApp(L, BUILD, M) {
     const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main">
         <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b> <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
-        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · 신고 ${r.flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ")}` : ""}</small>
+        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
+        ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
         ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc(r.hidden)}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
@@ -2495,9 +2507,40 @@ function adminApp(L, BUILD, M) {
         : empty("자주 쓰는 답이 없어요", "새 답을 넣으면 모든 관리자의 답 칸 아래에 보여요.")}`;
   }
 
+  /**
+   * 1.36 [SEC-11] 서버 상태's Play Integrity part: which way INTEGRITY_MODE is set, today's numbers, and what to do next. require
+   * without a working service account would turn every public write away, so that shows as the thing to fix first.
+   */
+  function integrityPart(g) {
+    if (!g) return "";
+    const MODE = { off: "꺼짐", watch: "지켜보기", require: "막기" };
+    const say = {
+      off: "남에게 보이는 쓰기(공개 올리기·사진·글꼴·신고·초대)에 Play 확인을 묻지 않아요",
+      watch: "Play 확인을 묻기만 하고 막지는 않아요. 아래 숫자로 막았을 때 얼마나 걸릴지 봐요",
+      require: "7일 안에 Play 확인을 받은 휴대폰만 남에게 보이는 쓰기를 할 수 있어요",
+    }[g.mode] ?? "";
+    const broken = g.mode !== "off" && !g.ready;
+    const line = broken
+      ? `${MODE[g.mode]}: PLAY_SERVICE_ACCOUNT가 없거나 Play Integrity를 쓸 수 없어요. ${g.mode === "require" ? "지금 남에게 보이는 쓰기가 모두 막혀요. " : ""}INTEGRITY_MODE를 off로 바꾸거나 서비스 계정을 넣어 주세요`
+      : `${MODE[g.mode] ?? esc(g.mode)}: ${say}`;
+    // Every public write turned away is the one red line on the screen; watch without the account only counts nothing.
+    const tone = broken ? (g.mode === "require" ? "bad" : "todo") : g.mode === "off" ? "off" : "ok";
+    const mark = broken ? "!" : g.mode === "off" ? "–" : "✓";
+    const numbers = g.mode === "off" ? ""
+      : `<p class="meta" data-integrity-numbers>오늘 ${g.mode === "require" ? "확인을 물은 쓰기" : "확인 없이 온 쓰기"} ${g.missToday ?? 0} · 지난 하루 확인에 실패한 휴대폰 ${g.failedDay ?? 0} · 7일 안에 확인된 휴대폰 ${g.provenWeek ?? 0}</p>`;
+    // PC 확인 20ab0254: watch without the account must not suggest require; the account comes first.
+    const next = broken ? "먼저 PLAY_SERVICE_ACCOUNT를 넣고 Play Console › 앱 무결성에서 Google Cloud 프로젝트를 연결해요. 그 전에는 require로 바꾸지 않아요"
+      : { off: "켜려면 Worker › 설정 › 런타임 변수에 INTEGRITY_MODE를 watch로 넣어요. 며칠 숫자를 본 뒤 require로 바꿔요",
+        watch: "실패한 휴대폰이 거의 없으면 INTEGRITY_MODE를 require로 바꿔요",
+        require: "실패한 휴대폰이 갑자기 늘면 INTEGRITY_MODE를 watch로 되돌려요" }[g.mode] ?? "";
+    return `<h3 class="sub" data-integrity="${esc(g.mode)}">무결성 확인 (Play Integrity)</h3>
+        <ul class="checks"><li class="${tone}"><span aria-hidden="true">${mark}</span>${esc(line)}</li></ul>${numbers}
+        <p class="hint">${esc(next)}</p>`;
+  }
+
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
   function serverView() {
-    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) : skeleton(1)}
+    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) + integrityPart(S.server.integrity) : skeleton(1)}
         <p class="meta">회사 ${S.data.today?.companies ?? S.overview?.companies ?? "–"} · 쓰는 규칙 ${S.data.today?.rules ?? S.overview?.rules ?? "–"} · 앱 판 ${esc(BUILD)}</p></section>`;
   }
 
@@ -5141,6 +5184,12 @@ function adminApp(L, BUILD, M) {
 
   document.addEventListener("change", (e) => {
     const t = e.target;
+    // PC 확인 보안 11차 (가리기 이유가 첫 칸으로 미리 골라져 있었어요): nothing is picked for the admin; 가리기 waits for a reason.
+    if (t.name === "reason" && t.form?.dataset.form === "hide-post") {
+      t.form.querySelector('button[type="submit"]').disabled = false;
+      t.form.querySelector("[data-reason-hint]")?.remove();
+      return;
+    }
     // [ADMIN-10] Picking 개발사항 for 일괄 복사·처리.
     if (t.dataset?.pick && S.devPick) {
       if (t.checked) S.devPick.add(t.dataset.pick);

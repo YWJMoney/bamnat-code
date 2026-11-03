@@ -371,7 +371,8 @@ fun MakerScreen(
         part = when { pg.themes.isNotEmpty() -> 0; pg.tabRecipes.isNotEmpty() -> 1; pg.sets.isNotEmpty() -> 2; else -> 0 }
     }
     var tabFilter by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
+    // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
+    LaunchedEffect(s.message) { s.message?.let { snack.showSnackbar(it); vm.shown() } }
     val p = s.page
     val mine = p?.mine == true && !s.asOthers
     androidx.compose.runtime.CompositionLocalProvider(LocalViewerStyle provides viewerStyle(vm.c)) {
@@ -440,8 +441,10 @@ fun MakerScreen(
                             p.limitPerDay?.let { n ->
                                 // 1.36 PC 6차: the same words (and date) as 광장's 쓰기 제한 line.
                                 val until = p.limitUntil
-                                add(("⏳ " + (if (until != null && n > 0) com.bamnat.app.company.WriteLimit(until, n).line(null)
-                                    else "신고가 쌓여 " + (until?.let { com.bamnat.app.ui.Fmt.monthDay(it.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()) + "까지 " }.orEmpty()) + "글을 쓸 수 없어요") +
+                                // PC 확인 보안 6차: who hid what ("운영자가 프로필을 가려"), not always 신고.
+                                val lim = p.limit ?: until?.let { com.bamnat.app.company.WriteLimit(it, n) }
+                                add(("⏳ " + (if (lim != null && n > 0) lim.line(null)
+                                    else (lim?.cause() ?: "신고가 쌓여") + " " + (until?.let { com.bamnat.app.ui.Fmt.monthDay(it.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()) + "까지 " }.orEmpty()) + "글을 쓸 수 없어요") +
                                     ". 기간이 지나면 저절로 풀려요") to null)
                             }
                         }
@@ -863,7 +866,7 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
     val pro = vm.c.featureGate.allows(Feature.CREATOR_PRO)
     val context = LocalContext.current
     val photo = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) vm.coverPhoto(runCatching { context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) } }.getOrNull())
+        if (uri != null) vm.coverPhoto(com.bamnat.app.recipe.SafeBitmaps.decodeUri(context, uri)) // 1.36 [SEC-04]
     }
     if (leaving) AlertDialog(
         onDismissRequest = { leaving = false },
@@ -1010,7 +1013,8 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
     val parts = listOf("new" to "새 작품", "following" to "팔로잉", "followers" to "팔로워", "blocked" to "차단")
     var part by rememberSaveable { mutableStateOf(parts.indexOfFirst { it.first == start }.coerceAtLeast(0)) }
     val snack = remember { SnackbarHostState() }
-    LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
+    // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
+    LaunchedEffect(s.message) { s.message?.let { snack.showSnackbar(it); vm.shown() } }
     LaunchedEffect(s.unblocked) {
         val id = s.unblocked ?: return@LaunchedEffect
         vm.undoShown()

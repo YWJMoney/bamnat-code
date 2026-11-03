@@ -211,14 +211,10 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // [SHR-20] 1.33 (계획 692·693): the sheet says whose it is once the link says who it was made for.
-            val audience = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.audience
-            Text(when (audience) {
-                com.bamnat.app.share.ShareAudience.FAMILY -> "가족 근무표 받기"
-                com.bamnat.app.share.ShareAudience.FRIEND -> "친구 근무표 받기"
-                com.bamnat.app.share.ShareAudience.COWORKER -> "동료 근무표 받기"
-                // [J133-79] Before the link says who it is for (or from a server before 1.33), no one is called 동료.
-                else -> "받은 근무표 넣기"
-            }, style = MaterialTheme.typography.titleLarge)
+            // PC 확인 8773e3ae (받기 창 제목에 가족·동료가 섞여요): '링크로 보내기' sends the same link to anyone, so the sheet names the
+            // sender, not who it was meant for. [J133-79] Before a link is read, no one is called 동료.
+            val sender = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.title?.trim().orEmpty()
+            Text(if (sender.isNotEmpty()) "${sender}의 근무표 받기" else "근무표 받기", style = MaterialTheme.typography.titleLarge)
             Text("받은 링크를 넣으면 내 달력과 바꿔 가며 볼 수 있어요. 같이 쉬는 날도 바로 보여요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (startId == null) {
@@ -379,7 +375,8 @@ private fun NoLinkYet() {
     Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
             Text("링크가 아직 없나요?", style = MaterialTheme.typography.titleSmall)
-            Text("동료가 밤낮 달력 위 ‘공유’에서 ‘링크 만들어 보내기’를 누르면 받을 수 있어요. 받은 링크를 누르면 여기로 바로 열려요.",
+            // PC 확인 20ab0254 (공유 말과 단추 이름이 섞여 있어요): the button is ‘링크로 보내기’ in both of 공유's views.
+            Text("보내는 분이 밤낮 달력 위 ‘공유’에서 ‘링크로 보내기’를 누르면 받을 수 있어요. 받은 링크를 누르면 여기로 바로 열려요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp, end = 8.dp))
             TextButton(onClick = {
@@ -394,7 +391,7 @@ private fun NoLinkYet() {
 }
 
 /** [UX-03] What the ask says: where the link is made, in the app's own words. */
-internal const val LINK_ASK = "근무표 같이 보고 싶어요! 밤낮 앱 달력 위 ‘공유’ → ‘링크 만들어 보내기’로 링크 하나 보내 줄래요?"
+internal const val LINK_ASK = "근무표 같이 보고 싶어요! 밤낮 앱 달력 위 ‘공유’ → ‘링크로 보내기’로 링크 하나 보내 줄래요?"
 
 @Composable
 private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, today: LocalDate) {

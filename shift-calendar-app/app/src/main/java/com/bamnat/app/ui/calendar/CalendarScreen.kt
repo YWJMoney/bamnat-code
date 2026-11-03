@@ -1014,7 +1014,7 @@ fun CalendarScreen(
         val alarmLine: Pair<String, @Composable () -> Unit>? = when {
             // C 1.32 [STAB-04] Opened safely after stopping in a row: said first, with the way back.
             safeStart -> "안전 모드로 열었어요" to {
-                AlarmWarningLine("연달아 멈춰서 안전 모드로 열었어요. 달력·알람은 그대로, 위젯·워치·연동은 잠시 쉬어요",
+                AlarmWarningLine("연달아 멈춰서 안전 모드로 열었어요. 달력·알람은 그대로, 꾸밈·받은 테마·규칙·위젯·워치·연동은 잠시 쉬어요",
                     "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace)
             }
             // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.

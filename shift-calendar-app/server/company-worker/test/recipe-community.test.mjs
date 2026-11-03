@@ -1,7 +1,7 @@
 // 1.35 [RCX-01]..[RCX-15] 나눔 판 완성: 계보, 새 판 확인, 요청 판, 제작자·배지·팔로우, 고른 것, 소식, 그림 표지. `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, device, from, signIn } from "./helpers.mjs";
+import { server, device, from, signIn, seasoned } from "./helpers.mjs";
 import { weekOf } from "../src/recipe-community.js";
 
 const AFTER = Date.parse("2026-11-30T03:00:00Z");
@@ -118,7 +118,9 @@ test("[RCX-08] 이번 주 고른 것: the operator's three for a kind of work; l
 test("[RCX-15] 그림 표지: WebP only, small, shown to others once the operator looks", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call } = server({ plaza: true });
-  const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([20, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.alloc(16)]).toString("base64");
+  // A lossy WebP's header: VP8 frame tag, start code 9d 01 2a, then 512 × 512.
+  const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([30, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.from([10, 0, 0, 0]),
+    Buffer.from([0, 0, 0, 0x9d, 0x01, 0x2a, 0x00, 0x02, 0x00, 0x02]), Buffer.alloc(8)]).toString("base64");
   const png = Buffer.from("\x89PNG\r\n\x1a\n0000000000000000").toString("base64");
   assert.equal((await call("POST", "/api/recipes/images", { device: device(1), webp: png }, from(1))).data.error, "image");
   const big = Buffer.concat([Buffer.from("RIFF0000WEBP"), Buffer.alloc(170_000)]).toString("base64");
@@ -226,6 +228,7 @@ test("[PRF-03] 내 프로필 최근 알림: 새 팔로워, 질문, 고친 판, �
 test("[PRF-05][PRF-06] 차단과 프로필 신고: 서로 팔로우가 끊기고, 차단당한 쪽엔 없는 프로필; 신고 3번이면 소개가 먼저 가려져요", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call } = server({ plaza: true });
+  await seasoned(call, t, [3, 4, 5]);
   const admin = await signIn(call);
   const m1 = (await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "공식 밤낮 팀이에요" }, from(1))).data.maker;
   const m2 = (await call("POST", "/api/recipes/makers/me", { device: device(2), face: "🐼" }, from(2))).data.maker;
@@ -340,6 +343,7 @@ test("[PRF-11] 프로필 링크의 공개 페이지: 이름·소개·대표 작�
 test("[PRF-05][PRF-06] 리뷰: 모두 지우기로 남의 차단·운영자 닫기를 벗어나지 못하고, 새 소개는 신고를 지우고, 차단한 분의 질문은 알림에 없어요", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call } = server({ plaza: true });
+  await seasoned(call, t, [6, 7, 8]);
   const admin = await signIn(call);
   const m1 = (await call("POST", "/api/recipes/makers/me", { device: device(1), bio: "처음 소개" }, from(1))).data.maker;
   const m2 = (await call("POST", "/api/recipes/makers/me", { device: device(2), face: "🐼" }, from(2))).data.maker;
@@ -433,4 +437,5 @@ test("[V20] 보이는 믿음 단계: 새싹 → 3일 뒤 이웃 → 가려진 �
   assert.deepEqual(p.trustNext, { held: true });
   assert.equal(p.limit.perDay, 5);
   assert.match(p.limit.until, /^\d{4}-/);
+  assert.deepEqual([p.limit.by, p.limit.n, p.limit.kinds], ["operator", 2, ["bio", "profile"]]);
 });

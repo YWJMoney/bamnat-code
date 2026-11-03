@@ -5,6 +5,11 @@ import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -52,6 +57,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.material3.Surface
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -461,8 +467,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                         Text(if (finishOnly && s.step == 2) "스튜디오로" else "이전")
                     }
                     Spacer(Modifier.weight(1f))
-                    if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = s.recipe.pieces.isNotEmpty() && (s.step != 3 || s.recipe.title.isNotBlank()) &&
-                        (s.step != 2 || s.recipe.inputs.none { val lo = it.min; val hi = it.max; lo != null && hi != null && lo > hi }),
+                    if (s.step < 5) Button(onClick = { vm.go(s.step + 1) }, enabled = canLeave(s, s.step),
                         modifier = Modifier.heightIn(min = 48.dp)) { Text("다음") }
                 }
             }
@@ -478,8 +483,11 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 LinearProgressIndicator(progress = { (s.step - shift) / (5f - shift) }, modifier = Modifier.fillMaxWidth())
+                // PC 확인 d263030e (4/4에서 열린 판에서 2/4로 돌아갈 길이 잘 안 보여요): every step is a chip. A step behind opens with
+                // one tap; a step ahead does once the steps before it are filled, as 다음 would.
+                if (s.sent == null) StepChips(s.step, shift, reachable = { t -> t <= s.step || (s.step until t).all { canLeave(s, it) } }, onGo = vm::go)
                 s.sent?.let { sent ->
-                    SentCard(s.recipe.title, sent, onOpen)
+                    SentCard(s.recipe.title, sent, onOpen, onStudio = if (finishOnly) onBack else null)
                     s.ownNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
                     return@Column
                 }
@@ -515,7 +523,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     4 -> StepWords(s, vm)
                     else -> StepCheck(s, vm) { scope.launch { scroll.animateScrollTo(0) } }
                 }
-                s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (s.step != 5) s.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 Text("만들던 내용은 이 휴대폰에 저장돼요. 마을 › 공방 › 내 것에서 이어서 만들 수 있어요", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // Room for the small example (or its pill) at the bottom corner, so nothing stays under it.
@@ -536,6 +544,43 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             } else androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).heightIn(min = 40.dp)) { Text("예시 보기") }
         }
+        }
+    }
+}
+
+/** Whether 다음 may leave [step]: something chosen, a name by 이름·표지, and no range upside down in 받는 분이 넣을 값. */
+private fun canLeave(s: RecipeMakeViewModel.State, step: Int): Boolean =
+    s.recipe.pieces.isNotEmpty() && (step != 3 || s.recipe.title.isNotBlank()) &&
+        (step != 2 || s.recipe.inputs.none { val lo = it.min; val hi = it.max; lo != null && hi != null && lo > hi })
+
+/**
+ * The steps, numbered as the title counts them ([shift] 1 when 올리기 from the studio starts at 받는 분이 넣을 값). PC 확인
+ * 20ab0254 (칩 4개가 두 줄이에요): one row of equal parts, the number over a short name, so every step is in view on a phone.
+ */
+@Composable
+private fun StepChips(step: Int, shift: Int, reachable: (Int) -> Boolean, onGo: (Int) -> Unit) {
+    val names = listOf("꾸미기", "넣을 값", "이름·표지", "설명", "마치기")
+    val shape = MaterialTheme.shapes.small
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (t in (1 + shift)..names.size) {
+            val here = t == step
+            val open = here || reachable(t)
+            val ink = when {
+                here -> MaterialTheme.colorScheme.onPrimaryContainer
+                open -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            }
+            Column(Modifier.weight(1f).heightIn(min = 48.dp).clip(shape)
+                .background(if (here) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+                .border(1.dp, if (here) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.outlineVariant, shape)
+                .clickable(enabled = open && !here, role = Role.Tab, onClickLabel = "${names[t - 1]} 단계로 가기") { onGo(t) }
+                .semantics { selected = here }
+                .padding(vertical = 4.dp, horizontal = 2.dp),
+                horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text("${t - shift}", style = MaterialTheme.typography.labelMedium, color = ink)
+                Text(names[t - 1], style = MaterialTheme.typography.labelSmall, color = ink, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
         }
     }
 }
@@ -645,7 +690,11 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
 @Composable
 private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     val r = s.recipe
-    OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+    // PC 확인 d263030e (2/4에서 키보드가 아래 단추를 가려요): the keyboard's 완료 puts it away, so 표지·사진 under the name are in reach.
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+    OutlinedTextField(r.title, { t -> vm.edit { it.copy(title = t.take(30)) } }, label = { Text("이름 (30자까지)") }, singleLine = true,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { focus.clearFocus() }), modifier = Modifier.fillMaxWidth())
     Row(verticalAlignment = Alignment.CenterVertically) {
         RecipeCover(r.cover, 72.dp)
         Spacer(Modifier.width(12.dp))
@@ -664,9 +713,7 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     // [RCX-15] 사진 표지: made small and written again on this phone (위치·기기 정보 없이), shown once the operator looked.
     val context = androidx.compose.ui.platform.LocalContext.current
     val photo = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri != null) vm.coverPhoto(runCatching {
-            context.contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
-        }.getOrNull())
+        if (uri != null) vm.coverPhoto(com.bamnat.app.recipe.SafeBitmaps.decodeUri(context, uri)) // 1.36 [SEC-04]
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = {
@@ -765,6 +812,9 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
         color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
     Button(onClick = vm::publish, enabled = RecipeLint.ready(lines) && (s.agreed || s.scope == "private") && vm.canPublish && !s.sending,
         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.sending) "올리는 중…" else if (s.scope == "private") "나만 보기로 저장" else "올리기") }
+    // PC 확인 20ab0254 (막힘 안내가 화면 맨 아래에 떠요): why 올리기 did not go (Play 확인, 한도, 이름) shows right under it.
+    s.error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
+        modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
     // [STU-05] 1.35 올리지 않고 끝내기 (사용자 2026-10-30 "제작만 할수도 있어야해").
     HorizontalDivider()
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)
@@ -785,7 +835,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
 }
 
 @Composable
-private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit) {
+private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit, onStudio: (() -> Unit)? = null) {
     val context = LocalContext.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -799,6 +849,8 @@ private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit) {
                 }) { Text("링크 보내기") }
                 Button(onClick = { onOpen(sent.code) }) { Text("레시피 보기") }
             }
+            // PC 확인 보안 7차 (끝 화면에 '스튜디오로'가 없어요): from the studio, back to it to go on making.
+            onStudio?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("스튜디오로") } }
         }
     }
 }

@@ -81,6 +81,9 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     }.orEmpty()
     private fun keyListJson(was: List<String>, add: Collection<String>): String =
         org.json.JSONArray((was.filterNot { it in add } + add.distinct()).takeLast(KEYS_KEPT)).toString()
+    private fun counted(key: String, code: String) = prefs.edit().putString(key, keyListJson(keyList(key), listOf(code))).apply()
+    /** Whether this phone was counted among a recipe's 쓰는 분 (once a recipe, M9). */
+    fun countedHere(code: String): Boolean = code in keyList(K_COUNTED)
     /** Set once this phone has a public recipe, so 소식 asks about my profile only then. */
     fun hasProfile(v: Boolean) = prefs.edit().putBoolean(K_HAS_PROFILE, v).apply()
     fun hasProfile(): Boolean = prefs.getBoolean(K_HAS_PROFILE, false)
@@ -122,8 +125,22 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             inputs = JSONObject(filled.mapValues { (_, v) -> v }).toString(), pieces = done.joinToString(","), before = before.toString(),
             appliedAt = now, undoneAt = null, replacedAt = null, keptSent = false,
         ))
-        if (code.isNotEmpty() && c.recipeApi.enabled) runCatching { c.recipeApi.applied(code, kept = false) }
+        countUse(code)
         return id
+    }
+
+    /**
+     * 쓰는 분: this phone counted once for [code]. 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): once a recipe,
+     * however often it is put on again; the server also counts only a few a recipe from one line a day. PC 확인 보안 8차 (넣어도 0명):
+     * called for every way a recipe goes on from its page, a tab laid on the theme too, not only a put-on that leaves a record; a
+     * refusal is tried again at the next put-on. True when counted just now.
+     */
+    suspend fun countUse(code: String): Boolean {
+        if (code.isEmpty() || code.startsWith("builtin:") || !c.recipeApi.enabled || code in keyList(K_COUNTED)) return false
+        val sent = runCatching { c.recipeApi.applied(code, kept = false) }
+        if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.d("BamnatRecipe", "쓰는 분 $code: " + (sent.exceptionOrNull()?.let { "실패 $it" } ?: "보냄"))
+        if (sent.isSuccess) counted(K_COUNTED, code)
+        return sent.isSuccess
     }
 
     // ---- [RCX-02][RCX-03] 1.35 구독과 새 판 ----
@@ -253,13 +270,31 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         return true
     }
 
+    /**
+     * 되돌리기 on a recipe's own page: every put-on of [code] that can still be taken back, newest first, so none of it is left
+     * (PC 확인 8773e3ae: the same recipe put on twice, with other pieces or on another calendar, kept the older one's card). How many.
+     */
+    suspend fun undoAll(code: String): Int = undoable(code).count { undo(it.id) }
+
+    /** Every put-on of [code] that can still be taken back, newest first (what 되돌리기 on its page takes back). */
+    suspend fun undoable(code: String): List<AppliedRecipeEntity> {
+        if (code.isEmpty()) return emptyList()
+        val now = Today.millis()
+        return dao.applied().filter { it.code == code && canUndo(it, now) }.sortedByDescending { it.appliedAt }
+    }
+
     /** [RCP-26] The 7일 유지 mark of each recipe still on after 7 days, sent once; old rows no longer on are dropped after 90 days. */
     suspend fun sendKept() {
         val now = Today.millis()
         for (e in dao.applied()) {
             if (e.keptSent || e.code.isEmpty() || e.undoneAt != null || now - e.appliedAt < UNDO_DAYS * DAY_MILLIS) continue
             if (!c.recipeApi.enabled) return
-            if (runCatching { c.recipeApi.applied(e.code, kept = true) }.isSuccess) dao.upsertApplied(e.copy(keptSent = true))
+            // M9: 7일 유지 once a recipe a phone too, as 쓰는 분 is.
+            if (e.code in keyList(K_KEPT_COUNTED)) { dao.upsertApplied(e.copy(keptSent = true)); continue }
+            if (runCatching { c.recipeApi.applied(e.code, kept = true) }.isSuccess) {
+                dao.upsertApplied(e.copy(keptSent = true))
+                counted(K_KEPT_COUNTED, e.code)
+            }
         }
         dao.pruneApplied(now - KEEP_DAYS * DAY_MILLIS)
     }
@@ -288,6 +323,9 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val KEYS_KEPT = 400
         private const val K_INBOX_SINCE = "inbox_since"
         private const val K_TOLD_LIST = "told_inbox_list"
+        /** M9: the codes this phone has already counted toward 쓰는 분 and 7일 유지. */
+        private const val K_COUNTED = "counted_applied"
+        private const val K_KEPT_COUNTED = "counted_kept"
         private const val K_HAS_PROFILE = "has_profile"
         private const val K_PROFILE_CLEARED = "profile_cleared"
         const val UNDO_DAYS = 7L

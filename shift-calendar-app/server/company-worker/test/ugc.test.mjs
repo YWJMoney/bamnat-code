@@ -20,6 +20,18 @@ async function talk(call) {
   return { c, g, say, read, flag, news };
 }
 
+test("[SEC-16] 보안 점검 M10: one line counts once a day for one post, however many ids report it", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server({ plaza: true });
+  await signIn(call);
+  const { say } = await talk(call);
+  const post = (await say(2, "평범한 글이에요")).data.id;
+  for (const n of [3, 4, 5]) await call("POST", `/api/posts/${post}/flag`, { device: device(n), reason: "abuse" }, from(3));
+  const row = await DB.prepare("SELECT flags, status FROM posts WHERE id = ?").bind(post).first();
+  assert.deepEqual([row.flags, row.status], [1, "shown"]);
+  assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM post_flags WHERE post_id = ?").bind(post).first()).n, 3);
+});
+
 test("[COMM-11] flaggers hear what became of the post, and its writer hears it too", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const { call } = server({ plaza: true });

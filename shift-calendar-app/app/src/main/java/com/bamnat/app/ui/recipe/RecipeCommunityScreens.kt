@@ -147,7 +147,8 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
     var writing by remember { mutableStateOf(false) }
     var finishing by remember { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(s.message) { s.message?.let { vm.shown(); snack.showSnackbar(it) } }
+    // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
+    LaunchedEffect(s.message) { s.message?.let { snack.showSnackbar(it); vm.shown() } }
     Scaffold(
         snackbarHost = { SnackbarHost(snack) },
         topBar = {

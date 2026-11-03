@@ -100,9 +100,13 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     var undoing by remember { mutableStateOf(false) }
     LaunchedEffect(s.message) {
         val m = s.message ?: return@LaunchedEffect
+        // PC 확인 보안 6차: a tab laid on the theme is taken back here too (with 마을 › 테마's 빼기 as before).
+        val undo = (s.appliedId != null && m.startsWith("적용했어요")) || (s.laidAt != null && m.contains("테마 위에 얹었어요"))
+        // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
+        // PC 확인 7525ccff (신고 띠가 아래 스위치를 가려요): a line with nothing to do has its own ✕, so it goes at once when asked.
+        val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else null, withDismissAction = !undo,
+            duration = if (undo) SnackbarDuration.Long else SnackbarDuration.Short)
         vm.shown()
-        val undo = s.appliedId != null && m.startsWith("적용했어요")
-        val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else null, duration = if (undo) SnackbarDuration.Long else SnackbarDuration.Short)
         if (r == SnackbarResult.ActionPerformed) vm.undo()
     }
     Scaffold(
@@ -121,7 +125,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     DropdownMenu(menu, { menu = false }) {
                         if (s.doc?.mine == true) DropdownMenuItem(text = { Text("새 판 만들기") }, onClick = { menu = false; vm.body()?.let(onNewVersion) }, enabled = s.recipe != null)
                         DropdownMenuItem(text = { Text("고쳐 만들기") }, onClick = { menu = false; vm.body()?.let(onRemake) }, enabled = s.recipe != null)
-                        if (s.doc?.mine != true) DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; flagging = true })
+                        // PC 확인 7525ccff: once reported here, the menu says so (the line about it is gone in a few seconds).
+                        if (s.doc?.mine != true) {
+                            if (s.flagged) DropdownMenuItem(text = { Text("신고했어요 · 운영자가 살펴봐요") }, onClick = {}, enabled = false)
+                            else DropdownMenuItem(text = { Text("신고하기") }, onClick = { menu = false; flagging = true })
+                        }
                     }
                 },
             )
@@ -158,11 +166,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         }
                     }
                 }
-                Text("쓰는 분 ${doc.item.users}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
+                Text("쓰는 분 ${doc.item.users + s.usersPlus}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 VoteRow(s, vm, onDislike = { disliking = true })
                 if (doc.mine) MakerCard(doc, onNewVersion = vm.body()?.let { b -> { onNewVersion(b) } })
-                s.appliedAt?.let { at -> AppliedCard(at) { undoing = true } }
+                (s.appliedAt ?: s.laidAt)?.let { at -> AppliedCard(at, laidOnly = s.appliedAt == null) { undoing = true } }
                 if (r.desc.isNotEmpty()) Text(r.desc, style = MaterialTheme.typography.bodyMedium)
                 // [LIN-02][LIN-03] 1.35 a 수정판 of my recipe: what it changed, and 내 판에 가져오기.
                 s.parentDoc?.takeIf { it.mine }?.let { pd -> DiffSection(pd, s.diff, onOpen) { picked -> vm.takeInto(picked)?.let { body -> onTakeInto(pd.item.code, body) } } }
@@ -231,13 +239,18 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         val fn = others.count { it.on }
                         if (!ready && missing.isNotEmpty()) Text("‘${missing.first().label}’${com.bamnat.app.ui.Fmt.obj(missing.first().label)} 위에서 채우면 넣을 수 있어요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.error)
-                        Button(onClick = { vm.lookParts(picked); tryOn = false; confirming = true }, enabled = n > 0 && ready,
+                        // PC 확인 보안 10차 (넣기 창을 닫으면 입어 보기까지 닫혀요): the question opens over 입어 보기, so 닫기 goes back to it.
+                        Button(onClick = { vm.lookParts(picked); confirming = true }, enabled = n > 0 && ready,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                            // PC 확인 보안 8차 ('모양 1개·기능 1개'에서 근무 꾸미기를 기능으로 세요): what goes with the look is said by
+                            // its own names (근무 꾸미기·알람 묶음), as the list above shows them, and counted only when there are many.
+                            val names = others.filter { it.on }.map { it.kind.label }
+                            val rest = if (names.size <= 2) names.joinToString("·") else "함께 넣을 것 ${names.size}개"
                             Text(when {
                                 n == 0 -> "넣을 것을 골라 주세요"
                                 fn == 0 -> "고른 모양 ${picked.size}개 넣기"
-                                picked.isEmpty() -> "기능 ${fn}개 넣기"
-                                else -> "모양 ${picked.size}개·기능 ${fn}개 넣기"
+                                picked.isEmpty() -> "$rest 넣기"
+                                else -> "모양 ${picked.size}개 · $rest 넣기"
                             })
                         }
                     }
@@ -270,7 +283,19 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         title = { Text("이렇게 바뀌어요") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                s.pieces.filter { it.on && it.fits }.forEach { p ->
+                // PC 확인 보안 9차 (단추는 '고른 모양 2개'인데 창은 '달력 모양' 한 줄): the looks ticked in 입어 보기 are listed part by part,
+                // as many as the button said, instead of the whole look piece they come from (which also told changes not ticked).
+                val parts = s.lookParts?.mapNotNull { com.bamnat.core.recipe.LookParts.byId(it) }?.sortedBy { com.bamnat.core.recipe.LookParts.ALL.indexOf(it) }
+                if (!parts.isNullOrEmpty()) {
+                    Text("모양 ${parts.size}개", style = MaterialTheme.typography.labelLarge)
+                    // One line a screen, as 입어 보기 shows them by tab ('위젯 · 위젯' said once).
+                    parts.groupBy { it.tab }.forEach { (tab, ps) ->
+                        val name = com.bamnat.core.recipe.LookParts.tabLabel(tab)
+                        val labels = ps.map { it.label }
+                        Text("• " + if (labels == listOf(name)) name else name + ": " + labels.joinToString(", "), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                s.pieces.filter { it.on && it.fits && (parts == null || it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS) }.forEach { p ->
                     Text(p.kind.label, style = MaterialTheme.typography.labelLarge)
                     p.lines.ifEmpty { listOf(RecipePieces.Change("바뀌는 것이 없어요", true)) }.forEach { l ->
                         Text("• " + l.text, style = MaterialTheme.typography.bodySmall,
@@ -295,18 +320,29 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
             // [FREE-10] 적용할 때만 광고 (사용자 2026-10-30 15:53): the looks of someone else's theme, past the first free ones.
             if (adGate) com.bamnat.app.ads.ThemeAdButton(
                 "광고 보고 넣기", "모양(테마)은 광고를 끝까지 보면 30일 동안 써요. 알람·규칙 같은 기능은 기간 없이 계속 써요",
-                onReward = { confirming = false; vm.apply { } },
+                onReward = { confirming = false; tryOn = false; vm.apply { } },
                 onQuit = { adNote = "광고를 끝까지 봐야 넣을 수 있어요" },
                 onOffline = { adNote = "인터넷에 연결되면 다시 해 주세요" },
-                onNoAd = { reason -> confirming = false; vm.noAdCounted(reason); vm.apply { } },
-            ) else TextButton(onClick = { confirming = false; vm.apply { } }) { Text("넣기") }
+                onNoAd = { reason -> confirming = false; tryOn = false; vm.noAdCounted(reason); vm.apply { } },
+            ) else TextButton(onClick = { confirming = false; tryOn = false; vm.apply { } }) { Text("넣기") }
         },
         dismissButton = { TextButton(onClick = { confirming = false }) { Text("닫기") } },
     )
     if (undoing) AlertDialog(
         onDismissRequest = { undoing = false },
         title = { Text("넣기 전으로 되돌릴까요?") },
-        text = { Text("이 레시피가 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // PC 확인 7525ccff (두 번 넣은 것 중 무엇이 돌아가는지 몰라요): each put-on it takes back, when and what.
+                // PC 확인 보안 6차 (목록이 없어요): always, one line a put-on, a tab laid on the theme as well.
+                if (s.undoable.size >= 2) Text("이 레시피를 ${s.undoable.size}번 넣었어요. 모두 넣기 전으로 돌아가요", style = MaterialTheme.typography.bodyMedium)
+                s.undoable.forEach { (at, what) ->
+                    Text("· " + java.text.SimpleDateFormat("M월 d일 HH:mm", java.util.Locale.KOREA).format(java.util.Date(at)) + " " + what,
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                Text("이 레시피가 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요")
+            }
+        },
         confirmButton = { TextButton(onClick = { undoing = false; vm.undo() }) { Text("되돌리기") } },
         dismissButton = { TextButton(onClick = { undoing = false }) { Text("닫기") } },
     )
@@ -594,13 +630,14 @@ private fun LineageSection(l: com.bamnat.app.recipe.Lineage, onOpen: (String) ->
 
 /** [RCX-24] This recipe is on this phone: when, how long 되돌리기 lasts, and the button (설계서 4-3 5: 소식과 레시피 화면에). */
 @Composable
-private fun AppliedCard(at: Long, onUndo: () -> Unit) {
+private fun AppliedCard(at: Long, laidOnly: Boolean = false, onUndo: () -> Unit) {
     val left = (com.bamnat.app.recipe.RecipeRepository.UNDO_DAYS - (com.bamnat.core.time.Today.millis() - at) / 86_400_000L).coerceAtLeast(1)
     Card(Modifier.fillMaxWidth()) {
         Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("내 달력에 넣어 둔 레시피예요", style = MaterialTheme.typography.titleSmall)
-                Text(java.text.SimpleDateFormat("M월 d일", java.util.Locale.KOREA).format(java.util.Date(at)) + " 넣음 · ${left}일 안에 되돌릴 수 있어요",
+                Text(java.text.SimpleDateFormat("M월 d일", java.util.Locale.KOREA).format(java.util.Date(at)) +
+                    (if (laidOnly) " 테마 위에 얹음 · 언제든 되돌릴 수 있어요" else " 넣음 · ${left}일 안에 되돌릴 수 있어요"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             OutlinedButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }

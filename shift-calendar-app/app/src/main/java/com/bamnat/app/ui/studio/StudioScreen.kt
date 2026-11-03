@@ -228,6 +228,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var history by remember { mutableStateOf(false) }
     var changes by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
+    // PC 확인 보안 7차 (두 번째 올리기에 지난 끝 화면이 먼저 나와요): each 올리기 is a new round, not the last one's screen.
+    var publishRound by remember { mutableStateOf(0) }
     var preparing by remember { mutableStateOf(false) }
     var uploadWhat by remember { mutableStateOf<List<String>?>(null) }
     var openedLine by remember { mutableStateOf<String?>(null) }
@@ -413,6 +415,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 if (tabs.isNotEmpty()) { uploadWhat = tabs; preparing = false }
                                 else scope.launch {
                                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
+                                    publishRound++
                                     publishing = Triple(body, parent, vm.nextOf())
                                 }
                             } }, enabled = !preparing && publishing == null,
@@ -689,6 +692,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 preparing = true
                 scope.launch {
                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload(choice) }
+                    publishRound++
                     publishing = Triple(body, parent, if (choice != null) null else vm.nextOf())
                 }
             }, enabled = !preparing) {
@@ -705,7 +709,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             Surface(Modifier.fillMaxSize()) {
                 // W37: once 올리기 is drawn, the 무엇을 올릴까요 window and 준비 중 go.
                 LaunchedEffect(Unit) { uploadWhat = null; preparing = false }
-                val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own") {
+                val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own-$publishRound") {
                     com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
                 }
                 // 빌드 751b88f6 PC 확인 (올린 뒤 나가도 '바꾼 것을 어떻게 할까요?'): once it is up, what was changed counts as kept,

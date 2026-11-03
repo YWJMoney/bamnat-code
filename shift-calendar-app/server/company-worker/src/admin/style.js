@@ -342,6 +342,10 @@ padding:.75rem;box-shadow:var(--shadow)}
 .checks span{flex:none;display:inline-grid;place-items:center;width:1.4rem;height:1.4rem;border-radius:50%;font-size:.8rem;font-weight:900}
 .checks .ok span{background:var(--ok-bg);color:var(--ok)}
 .checks .todo span{background:var(--warn-bg);color:var(--warn)}
+.checks .off span{background:var(--soft);color:var(--muted)}
+.checks .bad span{background:var(--bad-bg);color:var(--bad)}
+.checks .bad{color:var(--bad);font-weight:700}
+.card h3.sub{margin:.9rem 0 .5rem}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;margin:0;font-size:.88rem}
 .kv dt{color:var(--muted)}
 .kv dd{margin:0;font-weight:600}

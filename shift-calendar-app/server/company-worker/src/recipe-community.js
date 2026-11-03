@@ -6,7 +6,7 @@
 // the server never learns who uses which recipe. Everything that sends (요청, 팔로우, 그림) waits for 처리방침 3.8 like the rest.
 import { CODE, cleanText, graphemes, investAdvice, listItem, makerId, oneEmoji, sha256hex, textProblem, trustLevel } from "./recipes.js";
 import { DAY, HOUR } from "./units.js";
-import { addStrike, writeAllowance, writeLimitHit } from "./write-limits.js";
+import { addStrike, limitJson, operatorStrike, writeAllowance, writeLimitHit } from "./write-limits.js";
 
 const RC_STYLE_KEYS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
 // 1.35 [RCX-30] 그림 꾸미기 backgrounds (1080 px) fit in 160 KB; a whole look is up to 9 pictures.
@@ -56,6 +56,8 @@ export const COMMUNITY_SCHEMA = [
 ];
 /** [RCX-05] Each recipe knows its maker's public id, so a list row links the maker's page without the install hash. */
 export const COMMUNITY_COLUMNS = ["ALTER TABLE recipes ADD COLUMN maker TEXT",
+  // 1.36 보안 점검 [SEC-16] M10: whether a 프로필 report counts toward hiding the 소개 (not a 새싹's, nor a second from one network a day).
+  "ALTER TABLE recipe_maker_flags ADD COLUMN counted INTEGER NOT NULL DEFAULT 1",
   // [RCX-32] 1.35 보여주기: the operator's showcases of what 나눔 판 can do, at the top of each kind of work's 나눔 판.
   "ALTER TABLE recipes ADD COLUMN showcase INTEGER NOT NULL DEFAULT 0",
   // [PRF-01] 1.36 창작자 프로필: 한 줄 소개, 대표 작품(코드들), 보여 줄 근무 유형, 프로필 숨기기, 운영자가 가린 소개·프로필.
@@ -247,9 +249,9 @@ async function rcBadgesOf(d, env, dev, m, sums) {
 }
 
 /** 1.36 [LIM-10][V20] Something of the maker's that reports or the operator hid: one strike, and 단골 waits (as for a hidden recipe). */
-async function rcStrike(d, env, dev, kind, ref, now) {
+async function rcStrike(d, env, dev, kind, ref, now, operator = false) {
   await d.run(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", dev);
-  return addStrike(d, env, dev, kind, ref, now);
+  return operator ? operatorStrike(d, env, dev, kind, ref, now) : addStrike(d, env, dev, kind, ref, now);
 }
 
 /** [PRF-05] Whether [dev] blocked the maker [id], or the maker blocked [dev] (then the page is not there for them). */
@@ -297,7 +299,7 @@ async function rcMakerPage(d, env, request, id) {
     ...(trust ? { trust: trust.level } : {}),
     ...(mine && trust && trust.level < 2 ? { trustNext: trust.level === 0 ? { days: Math.max(1, Math.ceil(3 - trust.days)) }
       : trust.hidden > 0 ? { held: true } : { days: Math.max(1, Math.ceil(14 - trust.days)) } } : {}),
-    ...(limit ? { limit: { perDay: limit.perDay, until: new Date(limit.until).toISOString() } } : {}),
+    ...(limit ? { limit: limitJson(limit) } : {}),
     sets, ...(cover ? { cover: cover.id } : {}), ...(mine && m?.cover && !cover ? { coverPending: m.cover } : {}),
     maker: id, nick, face: m?.face ?? null, color: m?.color ?? null, mine,
     ...(m?.bio && !m.bio_hidden ? { bio: m.bio } : {}),
@@ -453,12 +455,21 @@ async function rcMakerFlag(d, env, request, id) {
   if (!m) return d.json({ error: "not_found" }, 404);
   if (m.device === dev) return d.json({ error: "own" }, 400);
   const now = Date.now();
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const net = await d.network(request, env, now);
   const hit = await d.overLimit(env, now, [["device", `mflag|${dev}`, COMMUNITY_LIMITS.flagsPerDay, DAY],
     ["network", `mflag|${net.day}`, COMMUNITY_LIMITS.flagsPerNetworkDay, DAY]]);
   if (hit) return hit;
-  await d.run(env, "INSERT OR IGNORE INTO recipe_maker_flags (maker, device, reason, at) VALUES (?, ?, ?, ?)", id, dev, body.reason, now);
-  const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ?", id);
+  // 1.36 보안 점검 [SEC-16] M10: a 새싹 install's report, or a second one from the same network today, is kept for the operator but
+  // does not count toward hiding the 소개 (as for recipes, pictures and fonts).
+  await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
+  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+  const had = await d.one(env, "SELECT 1 AS x FROM recipe_maker_flags WHERE maker = ? AND device = ?", id, dev);
+  const counts = !had && trust.level >= 1 && (await d.allow(env, `mflagnet|${net.day}|${id}`, 1, DAY, now));
+  await d.run(env, "INSERT OR IGNORE INTO recipe_maker_flags (maker, device, reason, at, counted) VALUES (?, ?, ?, ?, ?)", id, dev, body.reason, now,
+    counts ? 1 : 0);
+  const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ? AND counted = 1", id);
   if (n.n >= COMMUNITY_LIMITS.flagsToHideBio) {
     const r = await d.run(env, "UPDATE recipe_makers SET bio_hidden = 1 WHERE maker = ? AND bio IS NOT NULL AND bio_hidden = 0", id);
     // 1.36 [LIM-10] A 소개 the reports hid is one strike for its maker.
@@ -847,6 +858,33 @@ async function rcPicks(d, env, url) {
 
 const RC_WEBP = (bytes) => bytes.length > 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP";
 
+/**
+ * 1.36 [SEC-04] A WebP's width and height from its header (VP8, VP8L or VP8X), or null when it cannot be read or is animated.
+ * Before, only the first bytes and the size were looked at: a picture of one colour, 16383 px a side, is a few KB yet takes about
+ * a gigabyte on a phone that opens it, and the operator's browser shows it as an ordinary picture.
+ */
+export function rcWebpSize(b) {
+  if (!RC_WEBP(b) || b.length < 30) return null;
+  const tag = String.fromCharCode(...b.slice(12, 16));
+  if (tag === "VP8 ") {
+    if (b[23] !== 0x9d || b[24] !== 0x01 || b[25] !== 0x2a) return null;
+    return { w: (b[26] | (b[27] << 8)) & 0x3fff, h: (b[28] | (b[29] << 8)) & 0x3fff };
+  }
+  if (tag === "VP8L") {
+    if (b[20] !== 0x2f) return null;
+    const v = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24);
+    return { w: (v & 0x3fff) + 1, h: ((v >>> 14) & 0x3fff) + 1 };
+  }
+  if (tag === "VP8X") {
+    if (b[20] & 0x02) return null; // animation: the app never makes one
+    return { w: (b[24] | (b[25] << 8) | (b[26] << 16)) + 1, h: (b[27] | (b[28] << 8) | (b[29] << 16)) + 1 };
+  }
+  return null;
+}
+
+/** The largest side a recipe picture may have: the app makes 1080 at most (달력 배경), covers 512. */
+export const RC_IMAGE_SIDE = 1280;
+
 function rcB64bytes(s) {
   try {
     const bin = atob(s);
@@ -869,8 +907,12 @@ async function rcImagePost(d, env, request) {
   const bytes = typeof body.webp === "string" ? rcB64bytes(body.webp) : null;
   if (!bytes || !RC_WEBP(bytes)) return d.json({ error: "image", field: "webp" }, 400);
   if (bytes.length > COMMUNITY_LIMITS.imageBytes) return d.json({ error: "too_big", field: "webp" }, 413);
+  { const size = rcWebpSize(bytes); if (!size || size.w < 1 || size.h < 1 || size.w > RC_IMAGE_SIDE || size.h > RC_IMAGE_SIDE) return d.json({ error: "image_size", field: "webp" }, 400); }
   const hit = await d.overLimit(env, now, [["device", `rimg|${dev}`, COMMUNITY_LIMITS.imagesPerDay, DAY]]);
   if (hit) return hit;
+  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
+  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+
   const id = (await sha256hex(`${dev}|${now}|${body.webp.length}|${d.randomId(8)}`)).slice(0, 16);
   await d.run(env, "INSERT INTO recipe_images (id, owner, data, bytes, at) VALUES (?, ?, ?, ?, ?)", id, dev, body.webp, bytes.length, now);
   return d.json({ id, state: "pending" }, 201);
@@ -994,7 +1036,7 @@ export async function communityAdmin(d, request, env, path, url, now) {
     const set = await d.one(env, "SELECT owner, hidden FROM recipe_sets WHERE id = ?", m[1]);
     await d.run(env, "UPDATE recipe_sets SET hidden = ? WHERE id = ?", m[2] === "hide" ? 1 : 0, m[1]);
     // 1.36 [LIM-10] The operator hiding a 모음 is one strike.
-    if (set && m[2] === "hide" && !set.hidden) await rcStrike(d, env, set.owner, "set", m[1], Date.now());
+    if (set && m[2] === "hide" && !set.hidden) await rcStrike(d, env, set.owner, "set", m[1], Date.now(), true);
     return d.json({ id: m[1], hidden: m[2] === "hide" });
   }
   m = path.match(/^\/recipes\/makers\/([0-9a-f]{12})\/(bio-hide|bio-show|close|open|clear)$/);
@@ -1004,7 +1046,7 @@ export async function communityAdmin(d, request, env, path, url, now) {
     else {
       // 1.36 [LIM-10] The operator hiding a 소개 (not one the reports already hid) or closing a profile is one strike.
       const was = await d.one(env, "SELECT device, bio_hidden, closed FROM recipe_makers WHERE maker = ?", id);
-      if (was && ((what === "bio-hide" && !was.bio_hidden) || (what === "close" && !was.closed))) await rcStrike(d, env, was.device, what === "close" ? "profile" : "bio", id, Date.now());
+      if (was && ((what === "bio-hide" && !was.bio_hidden) || (what === "close" && !was.closed))) await rcStrike(d, env, was.device, what === "close" ? "profile" : "bio", id, Date.now(), true);
     }
     // bio_hidden: 1 = 신고 셋으로 저절로, 2 = 운영자가 가림.
     if (what !== "clear") await d.run(env, `UPDATE recipe_makers SET ${what.startsWith("bio") ? "bio_hidden" : "closed"} = ? WHERE maker = ?`,

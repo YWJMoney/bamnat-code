@@ -11,6 +11,9 @@ const args = process.argv.slice(2);
 const port = Number(args.find((a) => /^\d+$/.test(a)) || 8788);
 const file = args.includes("--db") ? args[args.indexOf("--db") + 1] : ":memory:";
 const env = { DB: d1(file), RATE_SALT: "local", ADMIN_PASSWORD: process.env.ADMIN_PASSWORD };
+// 1.36 [SEC-11] Play Integrity on the PC: INTEGRITY_MODE=watch or require to see the app ask (no PLAY_SERVICE_ACCOUNT here, so
+// the server answers not_set and the app shows why it cannot post).
+if (process.env.INTEGRITY_MODE) env.INTEGRITY_MODE = process.env.INTEGRITY_MODE;
 if (!env.ADMIN_PASSWORD) console.log("ADMIN_PASSWORD is not set: the developer app shows what is missing.");
 
 const send = (path, body, ip, method = "POST") => worker.fetch(new Request(`http://localhost:${port}${path}`, {
