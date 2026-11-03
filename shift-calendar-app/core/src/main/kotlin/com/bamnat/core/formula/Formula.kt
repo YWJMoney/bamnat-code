@@ -514,7 +514,7 @@ internal class Eval(val scope: FormulaScope) {
             Fn.OR -> Value.Bool(args.any { eval(it, d + 1).truthy })
             Fn.IFNONE -> eval(args[0], d + 1).let { if (isEmpty(it)) eval(args[1], d + 1) else it }
             Fn.INPUT -> {
-                val label = eval(args[0], d + 1).text
+                val label = eval(args[0], d + 1).text.trim()
                 scope.input(label) ?: (if (args.size > 1) eval(args[1], d + 1) else Value.None)
             }
             else -> Value.None

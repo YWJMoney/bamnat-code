@@ -663,8 +663,10 @@ internal fun MemoCard(
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
     // [BLU-05] 1.36 부품 꾸미기: 메모 카드와 카드 속 제목, over the 메모장 모양.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-    val cardPart = bp.style("memo.card")
-    val titlePart = bp.style("memo.card.title")
+    // [FXR-03] With the memo's day, so 조건부 꾸미기 (만약 야간이면 …) works on the card as it does in the month's cells.
+    val memoScope = com.bamnat.app.logic.scopeOn(memo.date)
+    val cardPart = bp.style("memo.card", scope = memoScope)
+    val titlePart = bp.style("memo.card.title", scope = memoScope)
     val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(cardPart, look.corner?.let { RoundedCornerShape(it.dp) } ?: MaterialTheme.shapes.large)
     val own = memoBackground(memo.colorIndex)
     val cardColor = cardPart.fill?.let { Color(it.toInt()).copy(alpha = (cardPart.fillA ?: 100) / 100f) } ?: when (look.card) {
@@ -822,7 +824,7 @@ private fun MemoContent(memo: Memo, query: String) {
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.
         val cardLook = LocalMemoCardLook.current
         // [BLU-05] 1.36 부품 '메모 내용'(memo.card.body) over the 메모장 모양.
-        val bodyPart = com.bamnat.app.ui.parts.partStyle("memo.card.body")
+        val bodyPart = com.bamnat.app.logic.partStyleOn("memo.card.body", memo.date)
         if (bodyPart.hide != true) Text(
             highlighted(com.bamnat.core.memo.MemoSearch.excerpt(body, query), query),
             style = bodyPart.text(memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium),
@@ -847,7 +849,7 @@ private fun Footer(memo: Memo, showDate: Boolean) {
     ) {
         val pillColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
         // [BLU-05] 1.36 부품 '메모 날짜'(memo.card.date).
-        val datePart = com.bamnat.app.ui.parts.partStyle("memo.card.date")
+        val datePart = com.bamnat.app.logic.partStyleOn("memo.card.date", memo.date)
         if (date != null && datePart.hide != true) {
             val dateShape = datePart.shape(MaterialTheme.shapes.small)
             Row(

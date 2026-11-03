@@ -128,7 +128,7 @@ internal fun ShiftBandMonth(
                             .background((c ?: MaterialTheme.colorScheme.surfaceContainerHighest).copy(alpha = (if (off) 0.28f else 0.85f) * (if (inMonth) 1f else 0.35f)), shape)
                             .then(if (date == selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
                             // [TAB-07] 부품 cal.band.slot (오늘·고른 날 상태도).
-                            .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.band.slot", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { isPicked })), shape, ))
+                            .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.band.slot", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { isPicked }), com.bamnat.app.logic.scopeOn(date)), shape, ))
                             .clickable { onDay(date) }
                             .clearAndSetSemantics { contentDescription = "${Fmt.monthDay(date)} ${name ?: "근무 없음"}"; this.selected = isPicked },
                         contentAlignment = Alignment.Center,
@@ -208,11 +208,16 @@ internal fun TimelineMonth(
             val times = timesOf(day)
             val weekend = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
             val isPicked = date == selected
+            // [FXR-03] 타임라인 하루 줄과 막대 with the day's values, so 조건부 꾸미기 works on them.
+            val dayScope = com.bamnat.app.logic.scopeOn(date)
+            val dayBar = dayScope?.let { bp.style("cal.line.bar", scope = it) }
+            val rowBarColor = dayBar?.fillColor ?: barColor
+            val rowBarAlpha = dayBar?.fillA?.let { it / 100f } ?: barAlpha
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 30.dp)
                     .background(if (date == selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent, RoundedCornerShape(8.dp))
                     // [TAB-07] 부품 cal.line.row (오늘, 고른 날).
-                    .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.line.row", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { isPicked })), rowShape))
+                    .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.line.row", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { isPicked }), dayScope), rowShape))
                     .clickable { onDay(date) }
                     .clearAndSetSemantics {
                         contentDescription = "${Fmt.monthDay(date)} ${day.shiftType?.name ?: "근무 없음"}" + (times?.let { " $it" } ?: "") +
@@ -231,11 +236,11 @@ internal fun TimelineMonth(
                     for (h in 1..3) drawLine(grid, Offset(w * h / 4f, 0f), Offset(w * h / 4f, size.height), 1f)
                     for (s in spans) {
                         // PC 확인 fc2db3b0: the night carried into the morning takes the 막대 꾸밈 too.
-                        val color = barColor ?: (if (s.carried) beforeColor else c) ?: Color.Gray
+                        val color = rowBarColor ?: (if (s.carried) beforeColor else c) ?: Color.Gray
                         val at = Offset(w * s.from / Timeline.DAY, 0f)
                         val box = Size(w * s.minutes / Timeline.DAY, size.height)
-                        val alpha = barAlpha?.let { if (s.carried) it * 0.6f else it } ?: if (s.carried) 0.5f else 0.9f
-                        drawRoundRect((if (barColor != null) color else color.copy(alpha = alpha)), topLeft = at, size = box, cornerRadius = CornerRadius(6f, 6f))
+                        val alpha = rowBarAlpha?.let { if (s.carried) it * 0.6f else it } ?: if (s.carried) 0.5f else 0.9f
+                        drawRoundRect((if (rowBarColor != null) color else color.copy(alpha = alpha)), topLeft = at, size = box, cornerRadius = CornerRadius(6f, 6f))
                         // PC 확인 bad7d860: the night carried into the morning was too faint; it gets its colour's outline too.
                         if (s.carried) drawRoundRect(color, topLeft = at, size = box, cornerRadius = CornerRadius(6f, 6f),
                             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.5.dp.toPx()))
@@ -297,7 +302,7 @@ internal fun WeekCardsMonth(
                             Modifier.weight(1f).heightIn(min = 104.dp)
                                 .background(if (isPicked) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
                                 .then(if (date == today) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier)
-                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.weekly.day", states), RoundedCornerShape(8.dp)))
+                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.weekly.day", states, com.bamnat.app.logic.scopeOn(date)), RoundedCornerShape(8.dp)))
                                 .clickable { onDay(date) }
                                 .clearAndSetSemantics {
                                     contentDescription = "${Fmt.monthDay(date)} ${Fmt.dayOfWeekShort(date.dayOfWeek)} ${day.shiftType?.name ?: "근무 없음"}" +
@@ -369,7 +374,7 @@ internal fun YearBoard(
                     row.forEach { m ->
                         val month = YearMonth.of(year, m)
                         Box(Modifier.weight(1f).then(com.bamnat.app.ui.parts.PartMods.box(
-                            bp.style("cal.year.month", setOfNotNull("today".takeIf { YearMonth.from(today) == month })), RoundedCornerShape(12.dp)))) {
+                            bp.style("cal.year.month", setOfNotNull("today".takeIf { YearMonth.from(today) == month }), com.bamnat.app.logic.scopeOn(com.bamnat.app.logic.dayOfMonth(month, today))), RoundedCornerShape(12.dp)))) {
                             MiniMonth(month, loaded, null, weekStart, today, Modifier.fillMaxWidth()) { onOpen(month) }
                         }
                     }

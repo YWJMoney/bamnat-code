@@ -430,8 +430,9 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title, too.
         // [BLU-09] The example's title is the 달력 머리 and 달 이름, drawn as the parts say and found by a tap in the 부품 도구.
         val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-        val head = bp.style("cal.head")
-        val title = bp.style("cal.head.title")
+        val headScope = com.bamnat.app.logic.scopeOn(com.bamnat.core.time.Today.date())
+        val head = bp.style("cal.head", scope = headScope)
+        val title = bp.style("cal.head.title", scope = headScope)
         // PC 10차 사용성 제안 (점선이 글자만 감싸 범위가 헷갈림): the head is the whole row, as on the calendar.
         Box(Modifier.fillMaxWidth().partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp)))) {
             if (title.hide != true) Box(Modifier.partSpot("cal.head.title").then(com.bamnat.app.ui.parts.PartMods.box(title.copy(ink = null), RoundedCornerShape(0.dp)))) {

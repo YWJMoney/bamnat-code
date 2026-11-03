@@ -466,7 +466,7 @@ private fun DayHeader(date: LocalDate, expense: Long, income: Long) {
     val look = com.bamnat.app.ui.theme.LocalMoneyLook.current
     val band = look.dayHead == "band"
     // [BLU-05] 1.36 부품 '가계부 날짜 머리'(money.day), over the 가계부 모양.
-    val day = com.bamnat.app.ui.parts.partStyle("money.day")
+    val day = com.bamnat.app.logic.partStyleOn("money.day", date)
     val dayShape = day.shape(androidx.compose.foundation.shape.RoundedCornerShape(0.dp))
     Row(
         Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(day.copy(fill = null, paint = null, pad = null, padX = null, padY = null), dayShape))
@@ -610,8 +610,10 @@ private fun LedgerRow(
             val (minH, padV) = when (look.rows) { "compact" -> 48.dp to 4.dp; "roomy" -> 76.dp to 12.dp; else -> 64.dp to 8.dp }
             // [BLU-05] 1.36 부품 꾸미기: 가계부 한 줄과 금액 (수입 in·지출 out).
             val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-            val rowPart = bp.style("money.row")
-            val amountPart = bp.style("money.amount", setOfNotNull(when (e.kind) { MoneyKind.INCOME -> "in"; MoneyKind.EXPENSE -> "out"; else -> null }))
+            // [FXR-03] With the record's day, so 조건부 꾸미기 (만약 지출 > 50000 …) works on the line as it does in the month's cells.
+            val dayScope = com.bamnat.app.logic.scopeOn(e.date)
+            val rowPart = bp.style("money.row", scope = dayScope)
+            val amountPart = bp.style("money.amount", setOfNotNull(when (e.kind) { MoneyKind.INCOME -> "in"; MoneyKind.EXPENSE -> "out"; else -> null }), dayScope)
             Row(Modifier.heightIn(min = rowPart.h?.dp ?: minH).then(com.bamnat.app.ui.parts.PartMods.box(rowPart.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
                 .padding(horizontal = rowPart.padH?.dp ?: 16.dp, vertical = rowPart.padV?.dp ?: padV), verticalAlignment = Alignment.CenterVertically) {
                 if (selecting) {

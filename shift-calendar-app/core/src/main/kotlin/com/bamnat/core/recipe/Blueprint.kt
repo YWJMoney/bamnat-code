@@ -54,6 +54,24 @@ object BlueprintParts {
         "widget" to "위젯", "widget.head" to "위젯 머리", "widget.cell" to "위젯 칸",
     )
 
+    /**
+     * [FXR-03] 1.36 조건부 꾸미기가 도는 곳: the parts drawn for one day (or one month: 달력 머리, 연간 판 한 달, 급여), which the app draws
+     * with that day's values, so their `when` lines and formula values work. Any other part (요일 줄, 판 전체, 위젯 …) has no day of its
+     * own: the studio does not offer it a condition, as one would do nothing there.
+     */
+    val DATED: Set<String> = setOf(
+        "cal.head", "cal.head.title", "cal.head.nav", "cal.head.today",
+        "cal.cell", "cal.cell.date", "cal.cell.mark", "cal.cell.memo", "cal.cell.money", "cal.cell.hours", "cal.cell.spend",
+        "cal.cell.lunar", "cal.cell.holiday",
+        "cal.band.slot", "cal.line.row", "cal.line.bar", "cal.weekly.day", "cal.year.month",
+        "memo.card", "memo.card.title", "memo.card.body", "memo.card.date", "memo.table.row", "memo.cal.cell",
+        "money.day", "money.row", "money.amount", "money.cal.cell", "money.table.row",
+        "pay.head", "pay.total", "pay.row",
+    )
+
+    /** Whether [id] is drawn for a day, so a condition on it can hold ([DATED]). */
+    fun dated(id: String): Boolean = id in DATED
+
     /** Parts that hold data: hidden, they still speak to TalkBack (as `mark:none`). */
     val DATA = setOf("cal.cell.date", "cal.cell.mark", "cal.cell.holiday", "money.amount", "pay.total")
 

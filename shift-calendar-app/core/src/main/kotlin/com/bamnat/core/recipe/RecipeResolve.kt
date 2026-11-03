@@ -70,6 +70,15 @@ object RecipeResolve {
             }
         }
         walk(p.values)
-        return ids.mapNotNull { r.input(it) }
+        // [FXR-04] And those its formulas read by name (칸("목표")).
+        val named = com.bamnat.core.formula.FormulaInputs.labelsIn(p.values)
+        return ids.mapNotNull { r.input(it) } + r.inputs.filter { it.id !in ids && it.label in named }
     }
+
+    /**
+     * [FXR-01] 1.36 받는 칸을 수식이 읽기: [r]'s answers by the input's name, as a formula's `칸("이름")` reads them: [given] (by id) where
+     * the receiver filled one, else the maker's default. A field left empty is left out, so `칸("이름", 기본값)` falls back to its own.
+     */
+    fun byLabel(r: Recipe, given: Map<String, Any?>): Map<String, Any> =
+        answers(r, given).mapNotNull { (id, v) -> r.input(id)?.let { it.label to v } }.toMap()
 }

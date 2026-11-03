@@ -13,6 +13,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import org.json.JSONObject
 
 /**
@@ -160,6 +163,15 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         val v = runCatching { c.recipeApi.versions(mine.map { it.code }) }.getOrDefault(emptyMap())
         return mine.mapNotNull { e -> v[e.code]?.takeIf { it > e.version }?.let { e.code to it } }.toMap()
     }
+
+    /**
+     * [FXR-01] 1.36 받는 칸을 수식이 읽기: the answers of every recipe still in use, by the input's name, as `칸("이름")` reads them. A
+     * recipe put on [cal] wins over one put on another calendar, a newer one over an older.
+     */
+    fun formulaInputs(rows: List<AppliedRecipeEntity>, cal: String): Map<String, Any?> = formulaInputsOf(rows, cal)
+
+    fun formulaInputs(cal: String): Flow<Map<String, Any?>> =
+        applied.map { formulaInputs(it, cal) }.distinctUntilChanged().flowOn(kotlinx.coroutines.Dispatchers.Default)
 
     private fun answersOf(e: AppliedRecipeEntity): Map<String, Any?> = runCatching {
         val o = JSONObject(e.inputs)
@@ -337,4 +349,20 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         const val KEEP_DAYS = 90L
         const val DAY_MILLIS = 24L * 60 * 60 * 1000
     }
+}
+
+/** [FXR-01] [RecipeRepository.formulaInputs] without the repository, for tests. */
+internal fun formulaInputsOf(rows: List<AppliedRecipeEntity>, cal: String): Map<String, Any?> {
+    val out = LinkedHashMap<String, Any?>()
+    rows.filter { it.undoneAt == null && it.replacedAt == null }
+        .sortedWith(compareBy<AppliedRecipeEntity>({ it.calendarId == cal }, { it.appliedAt }))
+        .forEach { e ->
+            val r = runCatching { RecipeCodec.read(e.body) }.getOrNull() ?: return@forEach
+            val given = runCatching {
+                val o = JSONObject(e.inputs)
+                o.keys().asSequence().associateWith { k -> o.get(k).takeIf { it != JSONObject.NULL } }
+            }.getOrDefault(emptyMap())
+            out.putAll(RecipeResolve.byLabel(r, given))
+        }
+    return out
 }
