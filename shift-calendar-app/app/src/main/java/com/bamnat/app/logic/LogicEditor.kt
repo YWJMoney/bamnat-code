@@ -95,19 +95,19 @@ fun ConditionEditor(value: String, onChange: (String) -> Unit, scope: FormulaSco
             SegmentedButton(selected = view == 1, onClick = { view = 1 }, shape = SegmentedButtonDefaults.itemShape(1, 3)) { Text("블록") }
             SegmentedButton(selected = view == 2 || (view == 0 && easy == null), onClick = { view = 2 }, shape = SegmentedButtonDefaults.itemShape(2, 3)) { Text("수식으로") }
         }
+        // PC 확인 8d0cddf6 (규칙 창에서 수식 칸 아래 줄이 창 밖이라 안 보였어요): the 받는 칸 values first, above the condition, in every view.
+        InputValuesLine(value, scope)
         if (view == 1) {
             BlockEditor(value, onChange, scope)
             PreviewLine(value, scope)
         } else if (view == 2 || easy == null) {
-            FormulaField(value, onChange, scope)
+            FormulaField(value, onChange, scope, inputs = false)
             if (easy == null && value.isNotBlank()) Text("이 수식은 표로 나타낼 수 없어 블록이나 수식으로 보여요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             EasyTable(easy, { onChange(it.toFormula().let { f -> if (it.conds.isEmpty()) "" else f }) }, empty)
             PreviewLine(value, scope)
         }
-        // PC 확인 8d0cddf6 (규칙의 블록 보기에서는 넣은 값이 안 보였어요): the 받는 칸 values in every view, not only 수식으로.
-        if (view != 2 && easy != null || view == 1) InputValuesLine(value, scope)
     }
 }
 
@@ -194,7 +194,9 @@ private fun OpPicker(current: EasyCond.Op, ops: List<EasyCond.Op>, onPick: (Easy
  * chips (누르면 넣어져요), and the answer on the day shown.
  */
 @Composable
-fun FormulaField(value: String, onChange: (String) -> Unit, scope: FormulaScope, text: Boolean = false, label: String = "수식") {
+fun FormulaField(value: String, onChange: (String) -> Unit, scope: FormulaScope, text: Boolean = false, label: String = "수식",
+    /** The 받는 칸 line under the field; [ConditionEditor] says it once above its views instead. */
+    inputs: Boolean = true) {
     var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
     if (field.text != value) field = TextFieldValue(value, TextRange(value.length))
     val error = remember(value, text) {
@@ -229,7 +231,7 @@ fun FormulaField(value: String, onChange: (String) -> Unit, scope: FormulaScope,
             }, label = { Text(o) })
         }
     }
-    InputValuesLine(value, scope)
+    if (inputs) InputValuesLine(value, scope)
     if (!text) PreviewLine(value, scope)
 }
 

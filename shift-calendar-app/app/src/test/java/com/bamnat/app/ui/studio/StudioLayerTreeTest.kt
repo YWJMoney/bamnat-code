@@ -50,4 +50,10 @@ class StudioLayerTreeTest {
         assertEquals("매달 25일", cell[2].sub)
         assertEquals("잠금", rows.first { it.decor == 1 }.sub)
     }
+
+    /** PC 확인 8d0cddf6: the studio's own frame (제목·칩·저장) never wears a screen's photo or 꾸밈 층. */
+    @org.junit.Test fun studioFrameStaysPlain() {
+        org.junit.Assert.assertEquals(com.bamnat.core.recipe.ScreenLooks.GUARDED,
+            com.bamnat.app.ui.theme.screenKeyOf("studio?start={start}", com.bamnat.core.work.WorkStyle.SHIFT))
+    }
 }

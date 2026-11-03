@@ -224,4 +224,13 @@ class RulScreenshotTest : ScreenshotBase() {
         assertTrue("names offered", appears("만약("))
         assertTrue("answer on the day", appears("이 날에는"))
     }
+
+    /** PC 확인 8d0cddf6: '적립식 루틴 판 플러스'의 매달 적립일 규칙, 적립일 17로 넣은 뒤 — the value put in shows under the formula. */
+    @Test fun ruleShowsTheValuePutIn() = shoot("887_rul_input_value", FOLDED) {
+        val rule = LogicRule("매달 적립일", RuleTrigger.DAILY, at = "09:30", cond = "일 = 칸(\"적립일\", 10)",
+            act = LogicAct(LogicVerb.NOTIFY, "오늘은 적립하는 날이에요"))
+        val scope = com.bamnat.core.formula.FormulaScope.of(mapOf("일" to 3L), mapOf("적립일" to 17L))
+        content { RuleDialog(rule, scope, {}, {}) }
+        assertTrue("value put in", appears("받는 칸 지금 값: 적립일 17"))
+    }
 }

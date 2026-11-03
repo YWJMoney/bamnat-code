@@ -58,6 +58,9 @@ fun screenKeyOf(route: String?, style: WorkStyle?): String {
         r in setOf("stats", "year", "health_report") -> "stats"
         r == "plaza" || r.startsWith("company") || r.startsWith("recipe") || r in setOf("style_plaza", "plaza_rates") -> "plaza"
         r in setOf("pro", "privacy", "consent", "policy") -> ScreenLooks.GUARDED
+        // PC 확인 8d0cddf6 (스튜디오 제목·칩·저장 위에 화면 배경 사진의 점): the studio is where looks are made and tried in its own
+        // example, so its own frame stays plain like 결제·처리방침, and nothing behind its words is mistaken for the look being made.
+        r == "studio" -> ScreenLooks.GUARDED
         r == "calendar" || r.startsWith("calendar") || r in setOf("shift_types", "pattern", "work_style", "shop_days", "combined",
             "duty_roster", "duty_roster_month", "leave", "extra_kinds", "setup_again") -> "calendar"
         r.isEmpty() -> "calendar"
