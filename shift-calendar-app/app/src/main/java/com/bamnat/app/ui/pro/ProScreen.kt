@@ -153,6 +153,8 @@ fun proDisclosures(plans: List<Plan>, today: LocalDate): List<String> {
         "결제한 날부터 7일 안에는 청약철회(환불)를 요청할 수 있어요. 이미 쓰기 시작한 디지털 콘텐츠는 법에 따라 철회가 제한될 수 있어요(전자상거래법 제17조 제2항). " +
             "Google Play 환불 요청이나 설정 › 문의하기로 접수해요.",
         "구독하면 이용약관과 개인정보처리방침에 동의하는 거예요.",
+        // 1.36 [MON-12] Who sells it, as the 전자상거래법 asks on the screen that sells.
+        com.bamnat.app.ui.settings.SellerInfo.SHORT,
     )
 }
 
@@ -371,6 +373,10 @@ private fun PlansCard(c: AppContainer, gate: Gate, pro: ProState, plans: List<Pl
             }) { Text("구매 복원") }
             TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관") }) { Text("이용약관") }
             TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침") }) { Text("개인정보처리방침") }
+            // 1.36 [MON-12]
+            var seller by remember { mutableStateOf(false) }
+            TextButton(onClick = { seller = true }) { Text("사업자 정보") }
+            if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }
         }
     }
 }

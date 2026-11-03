@@ -1017,7 +1017,7 @@ class CompanyClient(
 
     override suspend fun forgetMineCounts(device: String): ForgetCounts = serverCall {
         val o = request("DELETE", "/api/mine", device = device)
-        ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"),
+        ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"), inquiriesKept = o.optInt("inquiriesKept"),
             recipes = o.optInt("recipes"), profile = o.optInt("profile") > 0, follows = o.optInt("follows"), sets = o.optInt("sets"))
     }
 
@@ -1124,6 +1124,8 @@ internal fun onceRequest(
  */
 /** [INQ-05] What `DELETE /api/mine` took away, kind by kind. */
 data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int = 0, val inquiries: Int = 0,
+    /** 1.36 [INQ-07] Of [inquiries], the 결제·환불 ones gone from the phone that the law keeps with the developer. */
+    val inquiriesKept: Int = 0,
     /** [PRF-01] 1.36 마을: 올린 작품, 프로필, 팔로우, 모음. */
     val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0) {
     /** "보낸 규칙 2·토론 글 3·문의 1을 지웠어요", or that there was nothing to delete. */
@@ -1134,7 +1136,8 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
             "작품 ${recipes}개".takeIf { recipes > 0 }, "모음 ${sets}개".takeIf { sets > 0 }, "프로필".takeIf { profile },
             "팔로우 $follows".takeIf { follows > 0 },
         )
-        return if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요"
+        val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
+        return if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept
     }
 }
 

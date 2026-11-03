@@ -1,0 +1,11 @@
+# [SITE-01] bamnat.app: the public pages on GitHub Pages, shown under the app's own domain.
+# Deploy: `npx wrangler deploy` (or paste src/index.js into a dashboard Worker named bamnat-site),
+# then add the custom domain bamnat.app (and www.bamnat.app, which is sent on to bamnat.app).
+name = "bamnat-site"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+routes = [
+  { pattern = "bamnat.app", custom_domain = true },
+  { pattern = "www.bamnat.app", custom_domain = true },
+]

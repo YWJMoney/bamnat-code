@@ -381,7 +381,7 @@ function adminApp(L, BUILD, M) {
     // AM 1.28 [ADMUX-21][ADMUX-24][ADMUX-25] 기능 관리: 상태 거르기, 찾기, 목록·일정, 미리 보기의 휴대폰.
     flagShow: "all", flagQuery: "", flagView: "", flagSim: null,
     // AT 1.29 [ADMCP-02][ADMCP-06] 문의 종류·복사 전만·같은 기기 거르기, the copy box open now, the row a Shift range starts at.
-    inquiryKind: "", inquiryCopied: "", inquirySender: "", copy: null, pickAnchor: null, bulkMore: false,
+    inquiryKind: "", inquiryCopied: "", inquirySender: "", inquiryBilling: "", copy: null, pickAnchor: null, bulkMore: false,
     // AX 1.30 [ADMX-06][ADMX-09][ADMX-03][ADMX-08] 회사 순서·여러 개, 검토 여러 개, 여러 판 같은 항목도 보기, 찾기·이동의 서버 찾기, 주의 필요 수.
     companySort: "", companyPick: null, reviewPick: null, cmpAll: null, alertsN: 0,
   };
@@ -417,7 +417,7 @@ function adminApp(L, BUILD, M) {
   /** Which state each screen's address filters stand for. */
   const BIND = {
     inquiries: { status: "inquiryStatus", who: "inquiryWho", topic: "inquiryTopic", q: "inquiryQuery", sort: "inquirySort",
-      kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */ },
+      kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */, billing: "inquiryBilling" /* 1.36 [INQ-07] */ },
     dev: { status: "devStatus", who: "devWho", q: "devQuery" },
     review: { show: "reviewFilter" },
     community: { show: "postFilter", q: "postQuery" },
@@ -756,7 +756,7 @@ function adminApp(L, BUILD, M) {
       const q = S.inquiryQuery ? `&q=${encodeURIComponent(S.inquiryQuery)}` : "";
       const after = more && S.data.inquiries?.next ? `&after=${S.data.inquiries.next}` : "";
       // AT 1.29 [ADMCP-02][ADMCP-06] 문제 신고만, 복사 전만, one phone's questions.
-      const more2 = `${S.inquiryKind ? `&kind=${S.inquiryKind}` : ""}${S.inquiryCopied ? `&copied=${S.inquiryCopied}` : ""}${S.inquirySender ? `&sender=${S.inquirySender}` : ""}`;
+      const more2 = `${S.inquiryKind ? `&kind=${S.inquiryKind}` : ""}${S.inquiryCopied ? `&copied=${S.inquiryCopied}` : ""}${S.inquirySender ? `&sender=${S.inquirySender}` : ""}${S.inquiryBilling ? "&billing=1" : ""}`;
       const d = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}${who}${q}${more2}&sort=${S.inquirySort}${after}`);
       if (n !== undefined && !seq.current("load", n)) return;
       S.data.inquiries = more ? { ...d, inquiries: [...S.data.inquiries.inquiries, ...d.inquiries] } : d;
@@ -1379,7 +1379,7 @@ function adminApp(L, BUILD, M) {
       <div class="filterbar"><div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"], ["late", "놓친 것(하루 넘음)"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${kindChips()}${topicChips(d)}</div>`;
     if (!d) return head + skeleton();
-    const filtered = S.inquiryQuery || S.inquiryWho || S.inquiryTopic || S.inquiryKind || S.inquiryCopied || S.inquirySender;
+    const filtered = S.inquiryQuery || S.inquiryWho || S.inquiryTopic || S.inquiryKind || S.inquiryCopied || S.inquirySender || S.inquiryBilling;
     if (!d.inquiries.length) {
       return head + freshStrip(d) + empty(S.inquiryQuery ? "찾는 문의가 없어요" : S.inquiryCopied === "no" ? "복사 전인 문의가 없어요. 모두 개발에 넘겼어요" : S.inquiryWho === "late" ? "하루 넘게 기다리는 문의가 없어요. 잘하고 있어요" : S.inquiryWho === "mine" ? "내가 맡은 문의가 없어요" : S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요",
         S.inquiryQuery ? "다른 말로 찾아보세요. 보낸 분과 관리자가 쓴 글, 앱 판·기기 이름, 문의 번호를 모두 찾아요." : S.inquiryWho === "mine" ? "문의를 열어 내가 맡기를 누르거나 답하면 여기에 모여요." : "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.",
@@ -1409,8 +1409,9 @@ function adminApp(L, BUILD, M) {
     return `<div class="chips" role="group" aria-label="종류와 복사">${kinds.map(([key, label]) =>
       `<button type="button" class="chip pick" data-act="inquiry-kind" data-key="${key}" aria-pressed="${S.inquiryKind === key}">${label}</button>`).join("")}
       <button type="button" class="chip pick" data-act="inquiry-copied" data-key="no" aria-pressed="${S.inquiryCopied === "no"}">복사 전만</button>
+      <button type="button" class="chip pick" data-act="inquiry-billing-only" aria-pressed="${S.inquiryBilling === "1"}" title="전자상거래법에 따라 3년 보관하는 문의(보낸 분이 지운 것 포함)">결제·환불 기록</button>
       ${S.inquirySender ? `<button type="button" class="chip pick" data-act="inquiry-sender" data-key="" aria-pressed="true">같은 기기 #${esc(S.inquirySender)} ✕</button>` : ""}
-      ${S.inquiryKind || S.inquiryCopied || S.inquirySender ? '<button type="button" class="chip pick" data-act="inquiry-clear">조건 지우기</button>' : ""}</div>`;
+      ${S.inquiryKind || S.inquiryCopied || S.inquirySender || S.inquiryBilling ? '<button type="button" class="chip pick" data-act="inquiry-clear">조건 지우기</button>' : ""}</div>`;
   }
 
   /**
@@ -1448,6 +1449,7 @@ function adminApp(L, BUILD, M) {
     if (e.action === "inquiry_status") return `${by}님이 ${e.detail === "closed" ? "닫았어요" : e.detail === "open" ? "다시 열었어요" : `상태를 ${STATUS_NAMES[e.detail] ?? e.detail}(으)로 바꿨어요`}`;
     if (e.action === "inquiry_hide") return `${by}님이 모두의 문의에서 숨겼어요`;
     if (e.action === "inquiry_show") return `${by}님이 다시 보이게 했어요`;
+    if (e.action === "inquiry_billing") return `${by}님이 결제·환불 기록${e.detail === "on" ? "으로 정했어요(3년 보관)" : "에서 뺐어요"}`;
     if (e.action === "dev_link") return `${by}님이 개발사항 "${e.detail}"에 연결했어요`;
     return `${by} · ${ACTION_NAMES[e.action] ?? e.action}`;
   }
@@ -1487,7 +1489,7 @@ function adminApp(L, BUILD, M) {
           <div class="thread">${thread}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
-            <p class="meta">사진은 위치 정보를 지운 채로 받았어요. 문의를 닫고 90일 뒤에 지워져요.</p>` : ""}</div>
+            <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
@@ -1508,6 +1510,7 @@ function adminApp(L, BUILD, M) {
             ${q.status === "closed" ? '<button class="btn" data-act="inquiry-state" data-status="open">다시 열기</button>'
             : '<button class="btn" data-act="inquiry-state" data-status="closed">닫기</button>'}</div></section>` : ""}
         ${copiedCard(q) /* AT 1.29 */}
+        ${billingCard(q, editable) /* 1.36 [INQ-07] */}
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
           ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
         ${q.public ? `<section class="card"><h2>모두의 문의</h2>
@@ -1524,6 +1527,18 @@ function adminApp(L, BUILD, M) {
             <div class="actions"><button class="btn small" type="submit">메모 남기기</button></div></form>` : ""}</section>
         <details class="card"><summary>기록</summary>${timeline(q)}</details>
       </aside></div>`;
+  }
+
+  /**
+   * 1.36 [INQ-07] 결제·환불 기록: the 전자상거래법 keeps a 소비자 불만·분쟁 처리 기록 three years from its last word,
+   * even when the asker deletes it. Set from the words when it came; the admin sets or clears it by hand.
+   */
+  function billingCard(q, editable) {
+    const day = (iso) => (iso ? new Date(iso).toLocaleDateString("ko-KR") : "");
+    return `<section class="card"><h2>결제·환불 기록</h2>
+      <p class="meta">${q.billing ? `법에 따라 ${esc(day(q.billing.keepUntil))}까지 보관해요(마지막 글부터 3년).` : "아니에요. 마지막 글부터 180일 뒤에 지워져요."}
+        ${q.leftByAsker ? " 보낸 분이 앱에서 지웠어요. 앱에는 보이지 않고 답도 닿지 않아요." : ""}</p>
+      ${editable ? `<div class="actions start"><button class="btn" data-act="inquiry-billing" data-on="${q.billing ? "" : "1"}">${q.billing ? "기록에서 빼기" : "결제·환불 기록으로 정하기"}</button></div>` : ""}</section>`;
   }
 
   /**
@@ -4123,6 +4138,12 @@ function adminApp(L, BUILD, M) {
       S.inquiryPick = null;
       refilter("inquiries");
     },
+    // 1.36 [INQ-07] Only the 결제·환불 records, open or closed, the ones their askers deleted too.
+    "inquiry-billing-only": () => {
+      S.inquiryBilling = S.inquiryBilling ? "" : "1";
+      if (S.inquiryBilling) S.inquiryStatus = "all";
+      refilter("inquiries");
+    },
     "inquiry-copied": ({ key }) => {
       S.inquiryCopied = S.inquiryCopied === key ? "" : key;
       refilter("inquiries");
@@ -4414,6 +4435,7 @@ function adminApp(L, BUILD, M) {
       S.inquiryKind = "";
       S.inquiryCopied = "";
       S.inquirySender = "";
+      S.inquiryBilling = "";
       refilter("inquiries");
     },
     "inquiry-who": ({ key }) => {
@@ -4520,6 +4542,19 @@ function adminApp(L, BUILD, M) {
       const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "hide", reason }), "숨겼어요. 보낸 분 앱에 이유가 보여요");
       if (q) S.data.inquiry = q;
       load();
+    },
+    "inquiry-billing": async ({ on }) => {
+      const save = async () => {
+        const left = S.data.inquiry?.leftByAsker;
+        const q = await act(() => api(`/inquiries/${S.route.id}/billing`, "POST", { on: on === "1" }),
+          on === "1" ? "결제·환불 기록으로 정했어요. 3년 동안 보관해요" : left ? "기록에서 빼고, 보낸 분이 지운 대로 지웠어요" : "결제·환불 기록에서 뺐어요");
+        if (q?.deleted) return go("inquiries");
+        if (q) S.data.inquiry = q;
+        render({ keepScroll: true });
+      };
+      // 1.36 [INQ-07] Taking one out of the law's three years asks first; putting one in does not.
+      if (on === "1") return save();
+      confirmBox("결제·환불 기록에서 뺄까요?", `결제·구독·환불과 관계없는 문의일 때만 빼 주세요. ${S.data.inquiry?.leftByAsker ? "보낸 분이 앱에서 지운 문의라 빼면 바로 지워져요." : "빼면 마지막 글부터 180일 뒤에 지워져요."} 누가 뺐는지는 활동 기록에 남아요.`, "빼기", save);
     },
     "inquiry-show": async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "show" }), "다시 보이게 했어요. 신고로는 더 가려지지 않아요");

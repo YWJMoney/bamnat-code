@@ -30,7 +30,29 @@ export const INQUIRY = {
   // Each side of a thread; a longer back and forth is better as a new question.
   messages: 40,
   keepMs: 180 * DAY,
+  // 1.36 [INQ-07] A question about paying or a refund is the 소비자 불만·분쟁 처리 기록 the 전자상거래법 시행령
+  // 제6조 keeps for three years: from its last word, and still when the asker deletes it (처리방침 3.10).
+  billingKeepMs: 3 * 366 * DAY,
 };
+
+/**
+ * 1.36 [INQ-07] Words that make a question a 결제·환불 record. Narrower than the 결제 topic below (광고 or 무료
+ * alone is not a dispute about money), and an admin can set or clear it on the question by hand.
+ */
+export const BILLING_RECORD = /결제|환불|청약\s*철회|구독|구매|이용권|주문\s*번호|영수증|요금|해지|돈이\s*(빠져|나갔)|두\s*번\s*(빠져|나갔)/;
+
+/** 1.36 [INQ-07] The questions old enough to go: half a year without a word, three years for a 결제·환불 record. */
+export const expiredInquiries = (now) => ["(billing_at IS NULL AND updated_at < ?) OR updated_at < ?", now - INQUIRY.keepMs, now - INQUIRY.billingKeepMs];
+
+/**
+ * 1.36 [INQ-07] What deleting the questions [where] picks does: an ordinary one goes with everything hung on
+ * it; a 결제·환불 record leaves the asker's app (cut from the phone, off 모두의 문의) and stays with the
+ * developer until its three years are over.
+ */
+export const forgetInquiries = (env, where, ...params) => [
+  stmt(env, `UPDATE inquiries SET device = 'gone' || id, public = 0, status = 'closed' WHERE billing_at IS NOT NULL AND (${where})`, ...params),
+  ...dropInquiries(env, `billing_at IS NULL AND (${where})`, ...params),
+];
 
 /** What the app may send with a question, as the developer app shows it: label, field, longest. */
 export const INQUIRY_INFO = [
@@ -130,7 +152,7 @@ export async function inquiries(request, env, path) {
   if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
   if (!m[2] && method === "GET") return json(await inquiryView(env, row));
   if (!m[2] && method === "DELETE") {
-    await batch(env, dropInquiries(env, "id = ?", row.id));
+    await batch(env, forgetInquiries(env, "id = ?", row.id));
     return new Response(null, { status: 204 });
   }
   if (m[2] && method === "POST") {
@@ -142,7 +164,9 @@ export async function inquiries(request, env, path) {
     if (count.n >= INQUIRY.messages) return json({ error: "too_many", field: "text" }, 409);
     await batch(env, [
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id, text, now),
-      stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ? WHERE id = ?", now, row.id),
+      // 1.36 [INQ-07] A thread that turns to paying or a refund becomes a 결제·환불 record from then on.
+      stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ?, billing_at = COALESCE(billing_at, ?) WHERE id = ?", now,
+        BILLING_RECORD.test(text) ? now : null, row.id),
     ]);
     return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id)), 201);
   }
@@ -184,11 +208,12 @@ export async function ask(request, env) {
     ...photos.list.map((data, i) => stmt(env, "INSERT INTO inquiry_photos (inquiry_id, n, data, bytes, at) VALUES (?, ?, ?, ?, ?)",
       id, i + 1, data.base64, data.bytes, now)),
     // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
-    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
-      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now),
+    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, billing_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)",
+      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now,
+      BILLING_RECORD.test(text) ? now : null),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
-    // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all.
-    ...dropInquiries(env, "updated_at < ?", now - INQUIRY.keepMs),
+    // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all (결제·환불: 3 years).
+    ...dropInquiries(env, ...expiredInquiries(now)),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
   ]);
   // [ADMIN-19] Admins who asked for it hear of a new question (a bug or a problem counts as urgent); nothing
@@ -448,7 +473,7 @@ export async function adminInquiries(request, env, url, path, now) {
   // [SRV-06] A photo sent with a question, for an admin who may read questions.
   const photo = path.match(/^\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
   if (photo && method === "GET") return photoFile(env, photo[1], Number(photo[2]));
-  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes|\/typing)?$/);
+  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes|\/typing|\/billing)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
   if (!row) return json({ error: "not_found" }, 404);
@@ -475,6 +500,17 @@ export async function adminInquiries(request, env, url, path, now) {
     // [ADMIN-12] A note for the other admins: never in the app's view of the question.
     const text = plainText(body.text, DEV.note, "text", true);
     await run(env, "INSERT INTO inquiry_notes (inquiry_id, by, text, at) VALUES (?, ?, ?, ?)", row.id, actorName(env), text, now);
+  } else if (m[2] === "/billing") {
+    // 1.36 [INQ-07] 결제·환불 기록: kept three years from its last word. Set by hand when the words missed it, or
+    // cleared when they matched by chance; the activity log keeps who did which.
+    if (typeof body.on !== "boolean") refuse("on", "on");
+    await audit(env, now, "inquiry_billing", row.id, body.on ? "on" : "off");
+    // Its asker already deleted it, and it is no record the law keeps: it goes now, as they asked.
+    if (!body.on && String(row.device).startsWith("gone")) {
+      await batch(env, dropInquiries(env, "id = ?", row.id));
+      return json({ deleted: true });
+    }
+    await run(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", body.on ? row.billing_at ?? now : null, row.id);
   } else if (m[2] === "/visibility") {
     // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
     if (!row.public) refuse("public", "action");
@@ -589,7 +625,7 @@ export async function inquiryBulk(request, env, now) {
  * that moment and before a status change or a hide (a question is linked, then closed).
  */
 export function timeline(events, links) {
-  const late = new Set(["inquiry_status", "inquiry_hide", "inquiry_show"]);
+  const late = new Set(["inquiry_status", "inquiry_hide", "inquiry_show", "inquiry_billing"]);
   const out = [];
   const queue = [...links].sort((x, y) => x.at - y.at);
   for (const e of events) {
@@ -608,7 +644,7 @@ export async function adminInquiryView(env, row) {
   const now = Date.now();
   const [events, links, typing] = (await batch(env, [
     stmt(env, `SELECT at, action, detail, actor FROM audit WHERE target = ? AND action IN ('inquiry_assign', 'inquiry_status', 'inquiry_reply',
-      'inquiry_hide', 'inquiry_show') ORDER BY id LIMIT 200`, row.id),
+      'inquiry_hide', 'inquiry_show', 'inquiry_billing') ORDER BY id LIMIT 200`, row.id),
     stmt(env, "SELECT l.at, l.by, d.id, d.title FROM dev_links l JOIN dev_items d ON d.id = l.item_id WHERE l.inquiry_id = ? ORDER BY l.at", row.id),
     stmt(env, "SELECT key FROM counters WHERE key LIKE ? AND expires > ?", `typing|${row.id}|%`, now),
   ])).map((r) => r.results);
@@ -619,6 +655,9 @@ export async function adminInquiryView(env, row) {
     // AT 1.29 [ADMCP-03][ADMCP-06] 복사함, the phone's short mark and how many other questions it sent.
     ...copyFields(row),
     sameSender: (await one(env, "SELECT COUNT(*) AS n FROM inquiries WHERE device = ? AND id != ?", row.device, row.id)).n,
+    // 1.36 [INQ-07] A 결제·환불 record: since when, until when it is kept, and whether the asker deleted it.
+    billing: row.billing_at ? { since: iso(row.billing_at), keepUntil: iso(row.updated_at + INQUIRY.billingKeepMs) } : null,
+    leftByAsker: String(row.device).startsWith("gone"),
   };
   if (view.waitingHours !== null) {
     const last = view.messages[view.messages.length - 1];
@@ -687,6 +726,8 @@ export async function inquiryList(env, params, actorId = "") {
   const kind = INQUIRY.kinds.includes(params.get("kind")) ? params.get("kind") : null;
   const copied = ["no", "yes"].includes(params.get("copied")) ? params.get("copied") : "";
   const sender = /^[0-9a-f]{6}$/.test(params.get("sender") ?? "") ? params.get("sender") : "";
+  // 1.36 [INQ-07] 결제·환불 기록만.
+  const billing = params.get("billing") === "1" ? 1 : 0;
   const now = Date.now();
   const [rows, statusRows, slaRows, typing, fresh] = (await batch(env, [stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
@@ -703,7 +744,8 @@ export async function inquiryList(env, params, actorId = "") {
       AND (?7 IS NULL OR i.kind = ?7)
       AND (?8 = '' OR (?8 = 'no' AND i.copied_at IS NULL) OR (?8 = 'yes' AND i.copied_at IS NOT NULL))
       AND (?9 = '' OR substr(i.device, 1, 6) = ?9)
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender),
+      AND (?10 = 0 OR i.billing_at IS NOT NULL)
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender, billing),
   stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status"),
   slaQuery(env),
   stmt(env, "SELECT key FROM counters WHERE key LIKE 'typing|%' AND expires > ?", now),

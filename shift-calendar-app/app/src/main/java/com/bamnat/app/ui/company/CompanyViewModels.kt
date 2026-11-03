@@ -1513,26 +1513,37 @@ class CompanyReportViewModel(
     /** [INQ-05] I28: as [forgetAll], with what was deleted in words. */
     fun forgetAllSaying(done: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull()
-            val ok = counts != null
-            if (ok) {
-                // [CALI-08] The server forgot everything this phone sent, from every calendar.
-                c.forgetSentEverywhere()
-                // [SPD-13] and 내 활동 kept on the phone with it.
-                c.companySearch.cache.forgetActivity()
-                _statuses.value = emptyMap()
-                // [ADMIN-02] The server deleted this phone's questions with the rest.
-                c.inquiryStore.update(emptyList())
-                c.inquiryStore.asked = false
-                // [PRF-05] 1.36 마을 프로필·차단도 서버에서 지워졌어요: 이 폰의 차단 사본과 '내 프로필' 표시도 함께.
-                c.recipes.setBlocked(emptySet())
-                c.recipes.hasProfile(false)
-                c.recipes.peopleChanged()
-            }
-            done(ok, counts?.words())
+            val counts = forgetEverythingSent(c)
+            if (counts != null) _statuses.value = emptyMap()
+            done(counts != null, counts?.words())
         }
     }
 }
+
+/**
+ * [INQ-05] 이 휴대폰이 보낸 정보 모두 지우기, from 보낸 설정 and (1.36 [INQ-07]) from 설정 › 개인정보·앱 정보:
+ * the server forgets what this phone sent and the phone forgets its copies. Null when the server could not be reached.
+ */
+suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.ForgetCounts? {
+    val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull() ?: return null
+    // [CALI-08] The server forgot everything this phone sent, from every calendar.
+    c.forgetSentEverywhere()
+    // [SPD-13] and 내 활동 kept on the phone with it.
+    c.companySearch.cache.forgetActivity()
+    // [ADMIN-02] The server deleted this phone's questions with the rest (a 결제·환불 one stays with the developer).
+    c.inquiryStore.update(emptyList())
+    c.inquiryStore.asked = false
+    // [PRF-05] 1.36 마을 프로필·차단도 서버에서 지워졌어요: 이 폰의 차단 사본과 '내 프로필' 표시도 함께.
+    c.recipes.setBlocked(emptySet())
+    c.recipes.hasProfile(false)
+    c.recipes.peopleChanged()
+    return counts
+}
+
+/** [INQ-05] What 모두 지우기 asks before it goes; 1.36 [INQ-07] says what the law keeps. */
+const val FORGET_ALL_WORDS = "보낸 설정, 맞았어요·달라요, 토론 글과 신고, 받기로 한 보상, 앱 문의, 마을에 올린 레시피·프로필·모음·팔로우·차단까지 서버에서 모두 지워요. " +
+    "이 휴대폰에서 쓰는 설정과 넣은 레시피는 그대로예요. 결제·환불 문의는 전자상거래법에 따라 앱에서만 사라지고 운영자가 3년 보관해요."
+
 
 /**
  * [COMM-02][COMM-03] The small asks around a company setup, on the pay screen and in settings:
