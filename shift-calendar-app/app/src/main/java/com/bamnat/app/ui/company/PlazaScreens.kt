@@ -125,7 +125,7 @@ fun PlazaFilterBar(
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(selected = filter.job.isEmpty(), onClick = { onChange(filter.copy(job = "")) }, label = { Text("모든 광장") })
-            Plaza.JOBS.forEach { (key, name) ->
+            rememberJobs().forEach { (key, name) ->
                 val n = plazas.firstOrNull { it.key == key }?.let { it.adopted + it.voting } ?: 0
                 FilterChip(selected = filter.job == key, onClick = { onChange(filter.copy(job = if (filter.job == key) "" else key)) },
                     label = { Text(if (n > 0) "$name $n" else name) })
@@ -405,9 +405,9 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
             ) {
                 item {
                     // 1.36 PC 재검토 (골라진 '알바·시급' 칩이 화면 밖이라 안 보여요): the row opens scrolled to the chosen chip.
-                    val jobs = remember { Plaza.JOBS.entries.toList() }
+                    val jobs = rememberJobs()
                     val row = androidx.compose.foundation.lazy.rememberLazyListState()
-                    LaunchedEffect(Unit) { jobs.indexOfFirst { it.key == filter.job }.takeIf { it > 0 }?.let { row.scrollToItem((it - 1).coerceAtLeast(0)) } }
+                    LaunchedEffect(Unit) { jobs.indexOfFirst { it.first == filter.job }.takeIf { it > 0 }?.let { row.scrollToItem((it - 1).coerceAtLeast(0)) } }
                     androidx.compose.foundation.lazy.LazyRow(state = row, modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         items(jobs.size) { i ->
                             val (key, name) = jobs[i]

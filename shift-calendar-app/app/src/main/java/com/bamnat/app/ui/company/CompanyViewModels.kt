@@ -602,6 +602,8 @@ class TalkHolder(
         val refreshing: Boolean = false,
         /** [J133-55] The kind of post the writing starts on: "proposal" after 달라요. */
         val startKind: String? = null,
+        /** 1.36 [VIL-06] PC 확인: the post to scroll to and mark, opened from 마을에서 찾기 or 간직한 글 · 내 글. */
+        val focus: String? = null,
     ) {
         val room: Boolean get() = setup == com.bamnat.core.plaza.StylePlaza.ROOM
     }
@@ -623,12 +625,12 @@ class TalkHolder(
      * [SPD-13] 1.30 AP1: the talk kept on the phone ([com.bamnat.app.company.PageCache]; a room's also from its company's page)
      * shows at once, without a spinner, while it is read again.
      */
-    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null, kind: String? = null) {
+    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null, kind: String? = null, focus: String? = null) {
         val kept = c.companySearch.cache.talk(company, setup)?.value
         changed = false
         last = kept
         com.bamnat.app.company.NetTimings.cached(kept != null)
-        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null, startKind = kind)
+        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null, startKind = kind, focus = focus)
         reload()
     }
 
@@ -681,9 +683,14 @@ class TalkHolder(
         setupText: String? = null,
         /** [J133-83] The user's own proposal this one is sent in place of: taken down once this one is in. */
         replacing: String? = null,
+        /** 1.36 [VIL-10] A question's choices to vote on (none: no poll). */
+        poll: List<String> = emptyList(),
+        /** 1.36 [VIL-16] A 자랑's recipe of mine, as (code, title). */
+        attach: Pair<String, String>? = null,
         done: (String?) -> Unit,
     ) {
         val o = _open.value ?: return done(null)
+        poll.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
         CompanyText.personal(text)?.let { return done(talkProblem(it)) }
         change.flatMap { listOf(it.now, it.want, it.why) }.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
         // [COMM-13] 같은 글 되풀이 is held back here, before the server's own limits.
@@ -692,7 +699,9 @@ class TalkHolder(
         if (replacing == null && !com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
         // [SPD-16] 1.30 AP1: the post shows in the talk at once ("나 (보내는 중)") and the server's talk takes its place after.
         val pending = com.bamnat.app.company.TalkPost("local-${now.toEpochMilli()}", 0, null, false, text.trim(), now, mine = true, nick = SENDING,
-            parent = parent, kind = kind, change = change)
+            parent = parent, kind = kind, change = change,
+            poll = poll.takeIf { it.size >= 2 }?.let { com.bamnat.app.company.Poll(it, it.map { 0 }) },
+            attach = attach.takeIf { kind == "show" && parent == null })
         _open.value?.takeIf { it.company == o.company && it.setup == o.setup && it.talk != null }?.let { cur ->
             _open.value = cur.copy(talk = cur.talk!!.copy(posts = cur.talk.posts + pending))
         }
@@ -701,7 +710,9 @@ class TalkHolder(
                 // [PLAZA-02] 다른 점 말하기 sends the company's setup as edited, not this phone's own.
                 val setup = if (kind != "proposal") null
                 else setupText?.let { org.json.JSONObject(it) } ?: if (withSetup) c.companyOf(calendar).share.exportForServer() else null
-                if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
+                if (attach != null && parent == null && kind == "show") c.companyApi.postShow(c.companyStore.device, o.company, o.setup, text, attach.first)
+                else if (poll.size >= 2 && parent == null && kind == "question") c.companyApi.postPoll(c.companyStore.device, o.company, o.setup, text, poll)
+                else if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
                 else c.companyApi.post(c.companyStore.device, o.company, o.setup, text, parent, kind, change, setup)
                 c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")
                 // [FIN130-06] A proposal is a version of the company's page: the page kept on the phone is read again next time.
@@ -719,6 +730,52 @@ class TalkHolder(
             }
             done(error)
             if (error == null) reload()
+        }
+    }
+
+    /** 1.36 [VIL-16] My recipes that can go on a 자랑: up and public, as (code, title); empty without 장터. */
+    suspend fun showable(): List<Pair<String, String>> =
+        if (!c.recipeApi.enabled || !c.recipes.on.value) emptyList()
+        else runCatching { c.recipeApi.mine(c.companyStore.device).items }.getOrDefault(emptyList())
+            .filter { (_, st) -> st.first == "visible" && st.second == "public" }.map { (r, _) -> r.code to r.title }
+
+    /** 1.36 [VIL-10] One choice on a poll ([choice] null takes it back); the counts come back with it. */
+    fun pollVote(post: String, choice: Int?, done: (String?) -> Unit = {}) {
+        val o = _open.value ?: return
+        scope.launch {
+            val error = try {
+                val v = c.companyApi.pollVote(c.companyStore.device, post, choice)
+                val now = _open.value
+                if (now?.setup == o.setup && now.talk != null) {
+                    _open.value = now.copy(talk = now.talk.copy(posts = now.talk.posts.map { if (it.id == post) it.copy(poll = v) else it }))
+                }
+                changed = true
+                null
+            } catch (e: CompanyException) {
+                companyProblem(e)
+            }
+            done(error)
+        }
+    }
+
+    /** 1.36 [VIL-09] 도움 됐어요 on a reply under my question; the same again takes it back. */
+    fun answer(question: String, reply: String, done: (String?) -> Unit = {}) {
+        val o = _open.value ?: return
+        val q = o.talk?.posts?.firstOrNull { it.id == question } ?: return
+        val next = if (q.answer == reply) null else reply
+        scope.launch {
+            val error = try {
+                val a = c.companyApi.postAnswer(c.companyStore.device, question, next)
+                val now = _open.value
+                if (now?.setup == o.setup && now.talk != null) {
+                    _open.value = now.copy(talk = now.talk.copy(posts = now.talk.posts.map { if (it.id == question) it.copy(answer = a) else it }))
+                }
+                changed = true
+                null
+            } catch (e: CompanyException) {
+                companyProblem(e)
+            }
+            done(error)
         }
     }
 

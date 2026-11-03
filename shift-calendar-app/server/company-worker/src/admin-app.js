@@ -667,6 +667,10 @@ function adminApp(L, BUILD, M) {
         const [company, setup] = (id ?? "").split(".");
         const q = S.postQuery ? `&q=${encodeURIComponent(S.postQuery)}` : "";
         if (!id && S.postFilter === "limits") jobs.push(api("/write-limits").then(keep((d) => { S.data.limits = d; })));
+        // 1.36 [VIL-21] 마을 운영: 유형 광장마다 이번 주 주제.
+        else if (!id && S.postFilter === "village") {
+          jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })));
+        }
         else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
         else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
       }
@@ -923,6 +927,11 @@ function adminApp(L, BUILD, M) {
     // AN 1.28 [ADMUX-31] '지금 기다리는 것' above a hub's first tab.
     main.innerHTML = waitingStrip() + view();
     rememberOpened();
+    // 1.36 [VIL-21] On a phone the 보기 row scrolls sideways: the chosen one is kept in sight (마을 운영 sits last).
+    for (const row of main.querySelectorAll(".segmented")) {
+      const on = row.querySelector('[aria-pressed="true"]');
+      if (on && row.scrollWidth > row.clientWidth) row.scrollLeft = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+    }
     for (const id of KEEP) {
       const el = document.getElementById(id);
       if (el && !typed.has(id) && !el.value) el.value = readDraft(id);
@@ -1077,7 +1086,7 @@ function adminApp(L, BUILD, M) {
     const d = S.data;
     return Boolean({
       home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
-      companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
+      companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
     }[name]);
@@ -1102,12 +1111,12 @@ function adminApp(L, BUILD, M) {
   function communityView() {
     if (S.postFilter === "rates" && !S.route.id) return ratesView();
     if (S.postFilter === "limits" && !S.route.id) return limitsView();
+    if (S.postFilter === "village" && !S.route.id) return villageView();
     const d = S.data.posts;
     const edit = can("community", "edit");
     const talk = Boolean(S.route.id);
     const head = talk ? `<p class="hint">이 규칙에 남긴 글 전부예요. 가려진 글도 보여요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`
-      : `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}${seg("post-filter", "limits", S.postFilter, "쓰기 제한")}</div>
+      : `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>
         <div class="toolbar"><input id="search" type="search" placeholder="회사 이름으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="토론 찾기"></div>
         <p class="hint">앱 사용자가 회사 규칙마다 남긴 글이에요. 서로 다른 세 분이 신고하면 개발자가 볼 때까지 가려져요. 다시 보이게 한 글은 신고로 가려지지 않아요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`;
     if (!d) return head + skeleton();
@@ -1125,6 +1134,61 @@ function adminApp(L, BUILD, M) {
     return head + tools + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk, picking)).join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
   }
 
+  /** 커뮤니티의 보기 칸: 신고·가려짐·모든 글·광장·임금표·쓰기 제한·마을 운영 (1.36 [VIL-21]). */
+  function communityTabs() {
+    return [["flagged", "신고됨", S.overview?.flaggedPosts], ["hidden", "가려짐"], ["all", "모든 글"], ["room", "회사·유형 광장"], ["rates", "임금표"],
+      ["limits", "쓰기 제한"], ["village", "마을 운영"]].map(([k, label, n]) => seg("post-filter", k, S.postFilter, label, n)).join("");
+  }
+
+  /**
+   * 1.36 [VIL-21] 마을 운영 (조사 V11·V21): this week's 이야기 주제 for each kind of work's plaza, shown on top of that plaza in the app.
+   * An empty line takes it off; next Monday (KST) every one is gone by itself.
+   */
+  function villageView() {
+    const d = S.data.village;
+    const edit = can("community", "edit");
+    const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>
+      <p class="hint">유형 광장 맨 위에 보이는 이번 주 이야기 주제예요. 쓸 거리가 없을 때 문을 열어 줘요(60자까지, 비우면 숨겨요). 월요일(한국 시간)마다 저절로 비어요.
+      신고된 글은 ‘신고됨’, 신고가 쌓인 사람은 ‘쓰기 제한’, 레시피 신고는 레시피 › 검토 대기에서 봐요.</p>`;
+    if (!d) return head + skeleton();
+    const [, m, dd] = d.week.split("-").map(Number);
+    return head + `<h3>이번 주 이야기 주제</h3><p class="meta">${m}월 ${dd}일(월)부터 이번 주</p><div class="grid">${d.items.map((x) => `<article class="card">
+      <div class="head"><h3>${esc(x.name)}</h3>${x.text ? '<span class="pill ok">보이는 중</span>' : '<span class="pill">없음</span>'}</div>
+      <label class="field"><span>이번 주 주제</span><input id="topic-${esc(x.room)}" type="text" maxlength="60" value="${esc(x.text)}"
+        placeholder="예: 야간 끝나고 잠드는 나만의 방법"${edit ? "" : " readonly"}></label>
+      ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">저장</button>
+        ${x.text ? `<button class="btn ghost" data-act="topic-clear" data-id="${esc(x.room)}">내리기</button>` : ""}</div>` : ""}
+    </article>`).join("")}</div>` + contestsView(edit);
+  }
+
+  const STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
+
+  /**
+   * 1.36 [VIL-19] 이달의 주제 공모: this month's theme for each kind of work (makers put their public recipes in from the app), and
+   * last month's entries by likes, where up to three are picked as 이달의 테마. The makers' 프로 보상 goes the 832 way, by hand for now.
+   */
+  function contestsView(edit) {
+    const d = S.data.contests;
+    if (!d) return skeleton(1);
+    const now = d.items.filter((x) => x.month === d.month);
+    const last = d.items.filter((x) => x.month !== d.month && x.theme);
+    const card = (x, current) => `<article class="card">
+      <div class="head"><h3>${esc(STYLE_NAMES[x.style] ?? x.style)}</h3><span class="pill${x.entries.length ? " info" : ""}">작품 ${x.entries.length}</span>
+        ${!current && x.picks.length ? `<span class="pill ok">고름 ${x.picks.length}/3 · 앱에 보여요</span>` : ""}</div>
+      ${current ? `<label class="field"><span>이달의 주제</span><input id="contest-${esc(x.style)}" type="text" maxlength="40" value="${esc(x.theme)}"
+        placeholder="예: 야간 근무용 어두운 테마"${edit ? "" : " readonly"}></label>
+        ${edit ? `<div class="actions"><button class="btn primary" data-act="contest-save" data-id="${esc(x.style)}">저장</button></div>` : ""}`
+        : `<p>${esc(x.theme)}</p>`}
+      ${x.entries.length ? `<ul class="plain">${x.entries.slice(0, 10).map((e) => `<li><label><input type="checkbox" data-pick="${esc(x.month)}|${esc(x.style)}" value="${esc(e.code)}"
+        ${x.picks.includes(e.code) ? "checked" : ""}${edit && !current ? "" : " disabled"}> ${esc(e.title)} <span class="meta">좋아요 ${e.likes} · 쓰는 분 ${e.users} · ${esc(e.code)}</span></label></li>`).join("")}</ul>` : '<p class="meta">아직 넣은 작품이 없어요</p>'}
+      ${edit && !current && x.entries.length ? `<div class="actions"><button class="btn primary" data-act="contest-pick" data-id="${esc(x.month)}|${esc(x.style)}">고른 작품을 이달의 테마로 (3개까지)</button></div>` : ""}
+    </article>`;
+    return `<h3>이달의 주제 공모</h3><p class="hint">달마다 유형별 주제를 정하면 앱 마을 › 공방 맨 위에 보이고, 만든 분이 내 공개 작품을 넣어요(한 사람 한 달 3개). 다음 달에 지난 달 작품 중 3개까지 고르면
+      앱에 ‘지난 달 이달의 테마’로 보여요. 고른 분께 드릴 프로 보상(조사 V19·832)은 아직 앱에 약속하지 않았고, 보상 길이 생기면 함께 열어요.</p>
+      <div class="grid">${now.map((x) => card(x, true)).join("")}</div>
+      ${last.length ? `<h3>지난 달 고르기</h3><div class="grid">${last.map((x) => card(x, false)).join("")}</div>` : ""}`;
+  }
+
   /**
    * 1.36 [LIM-10] 신고 누적 쓰기 제한: no one has a daily cap; posts or recipes hidden by reports (or here) restrict the writer for a
    * while, each time more strictly. Who is restricted now or was in 30 days, the rules in words, and 풀기.
@@ -1132,8 +1196,7 @@ function adminApp(L, BUILD, M) {
   function limitsView() {
     const d = S.data.limits;
     const edit = can("community", "edit");
-    const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}${seg("post-filter", "limits", S.postFilter, "쓰기 제한")}</div>`;
+    const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>`;
     if (!d) return head + skeleton();
     const r = d.rules;
     const step = (i) => { const x = r.steps[i - 1]; return x ? (x.perDay ? `${x.days}일 동안 하루 ${x.perDay}번` : `${x.days}일 쓰기 막기`) : ""; };
@@ -1161,8 +1224,7 @@ function adminApp(L, BUILD, M) {
     const d = S.data.rates;
     const edit = can("community", "edit");
     const n = d?.counts ?? {};
-    const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}${seg("post-filter", "limits", S.postFilter, "쓰기 제한")}</div>
+    const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>
       <div class="chips" role="group" aria-label="임금표 상태">${[["review", "확인 필요"], ["pending", "투표 중"], ["adopted", "채택"], ["hidden", "가려짐"]]
         .map(([k, label]) => `<button type="button" class="chip pick" data-act="rate-filter" data-key="${k}" aria-pressed="${S.rateFilter === k}">${label}${n[k] ? ` ${n[k]}` : ""}</button>`).join("")}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="직종으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="임금표 찾기"></div>
@@ -4164,6 +4226,8 @@ function adminApp(L, BUILD, M) {
       S.ratePick = null;
       S.data.rates = null;
       S.data.limits = null;
+      S.data.village = null;
+      S.data.contests = null;
       refilter("posts");
     },
     "limit-lift": ({ id }) => confirmBox("이 사람의 쓰기 제한을 지금 풀까요?", "단계는 그대로 남아서, 다시 제한되면 이번보다 한 단계 더 줄어요.", "풀기", async () => {
@@ -4171,6 +4235,40 @@ function adminApp(L, BUILD, M) {
       S.data.limits = null;
       load();
     }, "primary"),
+    // 1.36 [VIL-21] 이번 주 주제 저장·내리기.
+    "topic-save": async ({ id }) => {
+      const text = document.getElementById(`topic-${id}`)?.value?.trim() ?? "";
+      await act(() => api("/village/topics", "POST", { room: id, text }), text ? "저장했어요. 앱 광장 맨 위에 보여요" : "내렸어요");
+      S.data.village = null;
+      load();
+    },
+    "contest-save": async ({ id }) => {
+      const theme = document.getElementById(`contest-${id}`)?.value?.trim() ?? "";
+      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? "저장했어요. 앱 마을 › 공방 맨 위에 보여요" : "내렸어요");
+      S.data.contests = null;
+      load();
+    },
+    "contest-pick": async ({ id }) => {
+      const [month, style] = id.split("|");
+      const codes = [...document.querySelectorAll(`input[data-pick="${id}"]:checked`)].map((el) => el.value);
+      if (codes.length > 3) return toast("3개까지 골라 주세요");
+      // PC 확인 V30: said plainly, with 되돌리기 to the picks before.
+      const before = S.data.contests?.items.find((x) => x.month === month && x.style === style)?.picks ?? [];
+      await act(() => api("/village/contests/pick", "POST", { month, style, codes }),
+        codes.length ? `저장했어요 · 고름 ${codes.length}/3, 앱 공방에 보여요` : "고른 것을 비웠어요",
+        async () => {
+          await act(() => api("/village/contests/pick", "POST", { month, style, codes: before }), "되돌렸어요");
+          S.data.contests = null;
+          load();
+        });
+      S.data.contests = null;
+      load();
+    },
+    "topic-clear": async ({ id }) => {
+      await act(() => api("/village/topics", "POST", { room: id, text: "" }), "내렸어요");
+      S.data.village = null;
+      load();
+    },
     "rate-filter": ({ key }) => {
       S.rateFilter = key;
       refilter("rates");

@@ -262,6 +262,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setAlarmsEnabled(on: Boolean) {
         update { it.copy(alarmsEnabled = on) }
+        // PC 확인 f6b585f8 (꺼 둔 알람이 다시 예약됐는데 누가 켰는지 기록이 없었어요): every turn of the master switch says where.
+        container.telemetry.event("alarms_switch", (if (on) "on" else "off") + " settings")
         if (!on) container.alarmScheduler.cancelSnooze()
     }
 

@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -52,6 +53,14 @@ fun ThemeThumb(look: ThemeSwatch, modifier: Modifier = Modifier, width: Dp = 120
     val view = remember(look) { CalendarView(badge = look.badge, looks = CellLook.decodeAll(look.cells), pattern = CellPattern.decode(look.pattern)) }
     val days = look.days.ifEmpty { listOf(ThemeSwatch.Day(0xFF1E88E5, "근", null, "day"), ThemeSwatch.Day(0xFF757575, "휴", null, "off")) }
     val accent = look.accent?.let { Color((it or 0xFF000000L).toInt()) } ?: scheme.primary
+    // PC 확인 f39bcfbe: an example week's letters sat on the date numbers. A wide picture makes its cells taller for both; a small one
+    // (넣기 창, 64dp) shows the letters alone.
+    val numbers = !look.example || width >= 100.dp
+    // PC 확인 13503764: a picture, not text to read: its letters keep their size under 큰 글자 and never wrap (10~14 broke in two at 96dp).
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val tiny = with(density) { 6.dp.toSp() }
+    val small = with(density) { 7.dp.toSp() }
+    val cellRatio = if (look.example && numbers) 0.6f else 0.8f
     Column(
         modifier.width(width).clip(RoundedCornerShape(10.dp)).background(page).padding(5.dp)
             .semantics { contentDescription = "테마 미리 그림" },
@@ -68,18 +77,26 @@ fun ThemeThumb(look: ThemeSwatch, modifier: Modifier = Modifier, width: Dp = 120
                     val color = Color(((d.color ?: 0xFF757575L) or 0xFF000000L).toInt())
                     val off = d.role == "off"
                     val shape = cellShape(view, cellLook)
-                    val tint = cellTint(cellLook, color.takeIf { !off }, if (off) null else color.copy(alpha = 0.16f), null)
+                    val tint = cellTint(cellLook, color.takeIf { !off }, if (off) null else color.copy(alpha = 0.34f), null)
                     val number = when {
                         today -> look.today?.let { Color((it or 0xFF000000L).toInt()) } ?: accent
                         dow == 7 -> look.sun?.let { Color((it or 0xFF000000L).toInt()) } ?: Color(0xFFC62828)
                         dow == 6 -> look.sat?.let { Color((it or 0xFF000000L).toInt()) } ?: Color(0xFF1565C0)
                         else -> cellLook?.dateColor?.let { Color((it or 0xFF000000L).toInt()) } ?: ink
                     }
-                    Box(Modifier.weight(1f).aspectRatio(0.8f).cellEdge(view, cellLook, shape, ink.copy(alpha = 0.18f)).clip(shape)
+                    Box(Modifier.weight(1f).aspectRatio(cellRatio).cellEdge(view, cellLook, shape, ink.copy(alpha = 0.18f)).clip(shape)
                         .background(tint ?: Color.Transparent)) {
-                        Text("$n", fontSize = 6.sp, color = number, fontWeight = if (cellLook?.dateBold == true || today) FontWeight.Bold else null,
-                            modifier = Modifier.align(placeOf(cellLook?.datePlace)).padding(1.dp), lineHeight = 7.sp)
-                        if (!off && cellLook?.mark != "none") Box(
+                        if (numbers) Text("$n", fontSize = tiny, color = number, fontWeight = if (cellLook?.dateBold == true || today) FontWeight.Bold else null,
+                            modifier = Modifier.align(placeOf(cellLook?.datePlace)).padding(horizontal = 0.5.dp, vertical = 1.dp), lineHeight = small,
+                            maxLines = 1, softWrap = false)
+                        // PC 확인 V44: an example week says its days, 주·야·휴, as the calendar does.
+                        if (look.example && d.label.isNotEmpty()) Text(d.label.take(1), fontSize = if (numbers) tiny else small, lineHeight = small, maxLines = 1, softWrap = false,
+                            // PC 확인 7b26965a: on a dark card the day's own colour can be too dim to read; then the page's ink.
+                            color = if (off) ink.copy(alpha = 0.6f)
+                                else if (com.bamnat.core.layout.Contrast.ratio(color.argb(), (tint?.compositeOver(card) ?: card).argb()) < 3.0) ink else color,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(if (numbers) Alignment.BottomCenter else Alignment.Center).padding(bottom = if (numbers) 1.dp else 0.dp))
+                        else if (!off && cellLook?.mark != "none") Box(
                             Modifier.align(if (cellLook?.markPlace == "bottom") Alignment.BottomCenter else Alignment.Center)
                                 .size(if (cellLook?.mark == "dot") 3.dp else 5.dp).clip(if (cellLook?.mark == "line") RoundedCornerShape(1.dp) else CircleShape)
                                 .background(color),

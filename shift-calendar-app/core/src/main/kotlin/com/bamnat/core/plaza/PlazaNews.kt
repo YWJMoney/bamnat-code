@@ -52,6 +52,8 @@ object PlazaNews {
             "room" -> "${i.company ?: "참여한 회사"} 광장에 다르게 쓰는 판이 ${i.count.coerceAtLeast(1)}개 올라왔어요. 눌러서 바뀐 값만 봐요."
             // [PLAZA-35] AI 1.27: new posts in 회사 정보 광장, n of them in one line a day.
             "room_posts" -> "${i.company ?: "참여한 회사"} 정보 광장에 새 글이 ${i.count.coerceAtLeast(1)}개 올라왔어요."
+            // 1.36 [VIL-09] PC 확인 V1: answers to what I wrote in a room (질문이면 도움 됐어요를 고를 수 있어요).
+            "replies" -> "${i.company?.takeIf { it.isNotBlank() } ?: "광장"}에 쓴 내 글에 새 답이 ${i.count.coerceAtLeast(1)}개 달렸어요."
             else -> null
         }
     }

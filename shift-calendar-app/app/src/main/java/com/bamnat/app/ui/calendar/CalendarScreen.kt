@@ -1423,6 +1423,7 @@ fun CalendarScreen(
                     Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
                     switch()
                 }
+                if (bigCounts && partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp))
             }
             if (sideways) {
                 // [CAL-51] On its side the summary's one line and the counts share a row.

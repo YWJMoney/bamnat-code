@@ -602,7 +602,11 @@ async function rcNews(d, env, request, url) {
   const remixes = await d.all(env, `SELECT r.*, n.nick, p.title AS parent_title FROM recipes r JOIN recipes p ON p.code = r.parent
     LEFT JOIN nicks n ON n.device = r.owner
     WHERE p.owner = ? AND r.owner != ? AND r.state = 'visible' AND r.scope = 'public' AND r.created_at > ? ORDER BY r.created_at DESC LIMIT 20`, dev, dev, since);
+  // 1.36 [VIL-15] 마을 V15: a request this phone wrote that someone finished, with the recipe that answers it.
+  const finished = await d.all(env, `SELECT q.body, q.code, r.title FROM recipe_requests q JOIN recipes r ON r.code = q.code
+    WHERE q.device = ? AND q.state = 'done' AND q.hidden = 0 AND q.updated_at > ? AND r.state = 'visible' ORDER BY q.updated_at DESC LIMIT 10`, dev, since);
   return d.json({
+    requests: finished.map((x) => ({ code: x.code, title: x.title, body: x.body.slice(0, 60) })),
     recipes: await rcWithMaker(d, env, fresh, now),
     replies: replies.map((x) => ({ code: x.code, title: x.title, body: x.body.slice(0, 80), at: new Date(x.created_at).toISOString() })),
     remixes: (await rcWithMaker(d, env, remixes, now)).map((x, i) => ({ ...x, parentTitle: remixes[i].parent_title })),

@@ -1105,6 +1105,7 @@ export function listItem(r, now) {
     version: r.version, likes: r.likes, dislikes: r.dislikes, users: r.applied, kept: keptPercent(r.applied, r.kept7),
     official: r.official === 1, publicData: r.public_data === 1, parent: r.parent ?? null, at: new Date(r.updated_at).toISOString(),
     ...(r.showcase === 1 ? { showcase: true } : {}),
+    ...(r._newMaker ? { newMaker: true } : {}),
     // [RCX-05] Who made it, as the public maker id only (never the install).
     ...(r.maker ? { maker: r.maker } : {}),
     ...(r.created_at > now - 7 * DAY ? { fresh: true } : {}),
@@ -1139,6 +1140,28 @@ async function readDevice(d, request, body) {
 const SORTS = ["good", "hot", "new", "official", "data", "showcase"];
 
 /** GET /api/recipes: one kind of work's plaza, a page at a time, the same for every phone (edge-cached). */
+/** 1.36 [VIL-18] How long a maker's first work counts as a 새 창작자's. */
+export const NEW_MAKER_DAYS = 14;
+
+/** 1.36 [VIL-18] [list] in its order, but each block of [block] holds one [isNew] when one is left further down (moved up to its end). */
+export function withNewMakers(list, isNew, block = 10) {
+  const rest = [...list];
+  const out = [];
+  while (rest.length) {
+    const take = rest.splice(0, block);
+    if (take.length === block && !take.some(isNew)) {
+      const i = rest.findIndex(isNew);
+      if (i >= 0) {
+        const [n] = rest.splice(i, 1);
+        rest.unshift(take.pop());
+        take.push(n);
+      }
+    }
+    out.push(...take.map((r) => (isNew(r) ? Object.assign(r, { _newMaker: true }) : r)));
+  }
+  return out;
+}
+
 async function recipeList(d, env, url) {
   const style = url.searchParams.get("style");
   const sort = SORTS.includes(url.searchParams.get("sort")) ? url.searchParams.get("sort") : "hot";
@@ -1179,6 +1202,11 @@ async function recipeList(d, env, url) {
   } else if (sort === "hot") {
     scored = rows.map((r) => ({ r, s: rankHot(r.wlikes, r.applied, (now - r.created_at) / HOUR) })).sort((a, b) => b.s - a.s).map((x) => x.r);
   }
+  // 1.36 [VIL-18] 새 창작자 자리: in 요즘 뜨는 and 좋은 순, each ten has at least one first work of a new maker (Roblox-style cold start).
+  const counts = new Map();
+  for (const r of rows0) counts.set(r.owner, (counts.get(r.owner) ?? 0) + 1);
+  const newMaker = (r) => r.owner !== "operator" && counts.get(r.owner) === 1 && now - r.created_at < NEW_MAKER_DAYS * DAY;
+  if (sort === "hot" || sort === "good") scored = withNewMakers(scored, newMaker);
   const page = scored.slice(cursor, cursor + RECIPE_LIMITS.pageSize);
   return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}), items: page.map((r) => listItem(r, now)),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },

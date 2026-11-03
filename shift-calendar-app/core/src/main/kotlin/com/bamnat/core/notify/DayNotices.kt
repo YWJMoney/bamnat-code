@@ -175,6 +175,15 @@ object QuietHours {
      * When a notice due at [at] may come, seen at [now]: null when it need not wait. An open log is
      * expected to end when the plan's sleep does (or after the target); "깼어요" moves it to then.
      */
+    /**
+     * 1.36 [VIL-05] 마을 소식 that comes due during work waits until 30 minutes after it ends (and never more than [MAX_HOLD_HOURS]);
+     * null when [at] is not in any of [work] or that time has passed.
+     */
+    fun workHoldUntil(at: LocalDateTime, now: LocalDateTime, work: List<Pair<LocalDateTime, LocalDateTime>>): LocalDateTime? {
+        val w = work.firstOrNull { (from, to) -> !at.isBefore(from) && at.isBefore(to) } ?: return null
+        return minOf(w.second.plusMinutes(AFTER_WAKE_MINUTES), at.plusHours(MAX_HOLD_HOURS)).takeIf { it.isAfter(now) }
+    }
+
     fun holdUntil(at: LocalDateTime, now: LocalDateTime, plan: SleepSchedule?, log: List<SleepEntry>, targetMinutes: Int): LocalDateTime? {
         val cap = at.plusHours(MAX_HOLD_HOURS)
         fun result(until: LocalDateTime): LocalDateTime? = minOf(until.plusMinutes(AFTER_WAKE_MINUTES), cap).takeIf { it.isAfter(now) }

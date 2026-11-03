@@ -65,6 +65,10 @@ test("[RCX-04] 요청 판: write, like, 만들게요, 완성 with a recipe; noth
   assert.equal((await act(4, "done", { code: mine })).data.state, "done");
   const list = (await call("GET", "/api/recipes/requests?style=SHIFT", undefined, dev(2))).data.items;
   assert.deepEqual([list[0].state, list[0].code, list[0].liked, list[0].mine], ["done", mine, true, false]);
+  // 1.36 [VIL-15] The one who asked hears of it in 소식, with the recipe that answers it; nobody else does.
+  const news = (n) => call("GET", "/api/recipes/news", undefined, dev(n));
+  assert.deepEqual((await news(1)).data.requests.map((x) => [x.code, x.title]), [[mine, "간호사 알람 세트"]]);
+  assert.deepEqual((await news(2)).data.requests, []);
   // The operator can hide one.
   const admin = await signIn(call);
   await call("POST", `/api/admin/recipes/requests/${q}/hide`, {}, admin);
@@ -438,4 +442,189 @@ test("[V20] 보이는 믿음 단계: 새싹 → 3일 뒤 이웃 → 가려진 �
   assert.equal(p.limit.perDay, 5);
   assert.match(p.limit.until, /^\d{4}-/);
   assert.deepEqual([p.limit.by, p.limit.n, p.limit.kinds], ["operator", 2, ["bio", "profile"]]);
+});
+
+test("[VIL-02] 차단 하나로: 장터·프로필에서 차단한 분의 글은 유형 광장에서도 빠져요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const as = (n) => ({ ...from(n), "x-device": device(n) });
+  const m1 = (await call("POST", "/api/recipes/makers/me", { device: device(1), face: "🐼" }, from(1))).data.maker;
+  assert.equal((await call("POST", "/api/posts", { device: device(1), company: "style-shift", setup: "room", body: "야간 끝나고 잠 어떻게 자요?" }, from(1))).status, 201);
+  assert.equal((await call("POST", "/api/posts", { device: device(3), company: "style-shift", setup: "room", body: "저는 암막 커튼 써요" }, from(3))).status, 201);
+  const path = "/api/companies/style-shift/setups/room/posts";
+  assert.equal((await call("GET", path, undefined, as(2))).data.posts.length, 2);
+  await call("POST", `/api/recipes/makers/${m1}/block`, { device: device(2) }, from(2));
+  const seen = (await call("GET", path, undefined, as(2))).data;
+  assert.deepEqual([seen.posts.length, seen.hiddenByYou], [1, 1]);
+  // 다른 분에게는 그대로, 풀면 다시 보여요.
+  assert.equal((await call("GET", path, undefined, as(4))).data.posts.length, 2);
+  await call("POST", `/api/recipes/makers/${m1}/block`, { device: device(2), on: false }, from(2));
+  assert.equal((await call("GET", path, undefined, as(2))).data.posts.length, 2);
+});
+
+test("[VIL-08][VIL-09] 광장 글 꼬리표(이야기·질문·팁·자랑)와 질문의 '도움 됐어요'", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const as = (n) => ({ ...from(n), "x-device": device(n) });
+  const write = (n, body, extra = {}) => call("POST", "/api/posts", { device: device(n), company: "style-shift", setup: "room", body, ...extra }, from(n));
+  assert.equal((await write(1, "야간 끝나고 커피 끊는 법 나눠요", { kind: "tip" })).status, 201);
+  assert.equal((await write(1, "제 달력 꾸민 것 보세요", { kind: "show" })).status, 201);
+  assert.equal((await write(1, "아무 꼬리표", { kind: "proposal" })).status, 400);
+  const q = (await write(1, "3조2교대 잠 어떻게 나눠 자요?", { kind: "question" })).data.id;
+  const a = (await write(2, "저는 4시간씩 두 번 자요", { parent: q, kind: "tip" })).data.id;
+  const mine = (await write(1, "고마워요", { parent: q })).data.id;
+  const path = "/api/companies/style-shift/setups/room/posts";
+  const kinds = (await call("GET", path, undefined, as(3))).data.posts.map((p) => p.kind);
+  assert.deepEqual(kinds, ["tip", "show", "question", "talk", "talk"], "a reply is a plain one");
+  const pick = (n, reply) => call("POST", `/api/posts/${q}/answer`, { device: device(n), reply }, from(n));
+  assert.equal((await pick(2, a)).status, 403, "only the question's writer");
+  assert.equal((await pick(1, mine)).data.error, "own");
+  assert.equal((await pick(1, a)).data.answer, a);
+  const shown = (await call("GET", path, undefined, as(3))).data.posts.find((p) => p.id === q);
+  assert.equal(shown.answer, a);
+  assert.equal((await pick(1, null)).data.answer, null);
+  assert.equal((await call("GET", path, undefined, as(3))).data.posts.find((p) => p.id === q).answer, undefined);
+  // PC 확인 V1: the question's writer hears of the answer in 광장 소식 (their own 고마워요 does not count).
+  const since = new Date(Date.now() - 60000).toISOString();
+  const news = (n) => call("GET", `/api/plaza/news?since=${since}`, undefined, as(n)).then((r) => r.data.items.filter((i) => i.kind === "replies"));
+  assert.deepEqual((await news(1)).map((i) => [i.company, i.count]), [[{ id: "style-shift", name: "교대 광장" }, 1]]);
+  assert.deepEqual(await news(2), [], "answering is not news to the one who answered");
+});
+
+test("[VIL-10] 투표 글: 질문에 보기 2~4개, 한 사람 한 표, 바꾸고 거둘 수 있어요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const as = (n) => ({ ...from(n), "x-device": device(n) });
+  const write = (n, body, extra = {}) => call("POST", "/api/posts", { device: device(n), company: "style-shift", setup: "room", body, ...extra }, from(n));
+  assert.equal((await write(1, "어느 쪽이 덜 피곤해요?", { kind: "question", poll: ["주주야야"] })).status, 400, "two at least");
+  assert.equal((await write(1, "어느 쪽이 덜 피곤해요?", { kind: "question", poll: ["a", "a"] })).status, 400, "different");
+  assert.equal((await write(1, "어느 쪽이 덜 피곤해요?", { kind: "question", poll: ["a", "b", "c", "d", "e"] })).status, 400);
+  const id = (await write(1, "어느 쪽이 덜 피곤해요?", { kind: "question", poll: [" 주주야야비비 ", "주야비"] })).data.id;
+  const talk = (await write(1, "그냥 글", { poll: ["a", "b"] })).data.id;
+  const vote = (n, choice, post = id) => call("POST", `/api/posts/${post}/poll`, { device: device(n), choice }, from(n));
+  assert.equal((await vote(2, 0, talk)).status, 404, "only a question carries a poll");
+  assert.equal((await vote(2, 2)).status, 400);
+  assert.deepEqual((await vote(2, 0)).data.poll, { options: ["주주야야비비", "주야비"], counts: [1, 0], mine: 0 });
+  await vote(3, 1);
+  assert.deepEqual((await vote(2, 1)).data.poll.counts, [0, 2], "a changed vote moves");
+  const path = "/api/companies/style-shift/setups/room/posts";
+  const seen = (await call("GET", path, undefined, as(3))).data.posts.find((p) => p.id === id).poll;
+  assert.deepEqual(seen, { options: ["주주야야비비", "주야비"], counts: [0, 2], mine: 1 });
+  assert.deepEqual((await vote(3, null)).data.poll, { options: ["주주야야비비", "주야비"], counts: [0, 1] });
+  assert.equal((await call("GET", path, undefined, as(4))).data.posts.find((p) => p.id === id).poll.mine, undefined);
+});
+
+test("[VIL-13] 내 글: 광장에 쓴 글과 답글을 내 것에서 모아 봐요(쓴 사람만)", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const write = (n, body, extra = {}) => call("POST", "/api/posts", { device: device(n), company: "style-shift", setup: "room", body, ...extra }, from(n));
+  const q = (await write(1, "야간 끝나고 뭐 드세요?", { kind: "question" })).data.id;
+  t.mock.timers.setTime(AFTER + 60_000);
+  await write(2, "저는 죽이요", { parent: q });
+  const reply = (await write(1, "좋네요", { parent: q })).data.id;
+  const mine = (n) => call("GET", "/api/posts/mine", undefined, { ...from(n), "x-device": device(n) });
+  assert.equal((await call("GET", "/api/posts/mine", undefined, from(1))).status, 400);
+  const items = (await mine(1)).data.items;
+  assert.deepEqual(items.map((p) => p.id), [reply, q]);
+  assert.equal(items[1].name, "교대 광장");
+  assert.equal(items[1].replies, 2);
+  assert.equal(items[0].parent, q);
+  assert.deepEqual((await mine(3)).data.items, []);
+});
+
+test("[VIL-06] 마을 검색: 유형 광장 글과 요청을 한 번에, 회사 방 글은 빼요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const write = (n, body, extra = {}) => call("POST", "/api/posts", { device: device(n), company: "style-shift", setup: "room", body, ...extra }, from(n));
+  await write(1, "야간 끝나고 잠드는 법 알려 주세요", { kind: "question" });
+  t.mock.timers.setTime(AFTER + 60_000);
+  const top = (await write(2, "야간 전에 낮잠 두 시간", { kind: "tip" })).data.id;
+  await write(3, "답글에도 야간이 있어요", { parent: top });
+  await call("POST", "/api/recipes/requests", { device: device(4), style: "SHIFT", body: "야간 근무용 어두운 테마 있었으면" }, from(4));
+  const find = (q) => call("GET", `/api/village/search?q=${encodeURIComponent(q)}`, undefined, from(5));
+  const r = (await find("야간")).data;
+  assert.equal(r.posts.length, 2, "no replies");
+  assert.equal(r.posts[0].name, "교대 광장");
+  assert.equal(r.posts[0].replies, 1);
+  assert.ok(!("device" in r.posts[0]) && !("author" in r.posts[0]));
+  assert.equal(r.requests.length, 1);
+  assert.deepEqual((await find("야")).data, { posts: [], requests: [] }, "two letters at least");
+});
+
+test("[VIL-16] 자랑 글에 내 공개 작품 하나를 카드로 붙여요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const write = (n, body, extra = {}) => call("POST", "/api/posts", { device: device(n), company: "style-shift", setup: "room", body, ...extra }, from(n));
+  const mine = (await up(call, 1, { title: "야간 다크" }, "public")).data.code;
+  const other = (await up(call, 2, { title: "남의 것" }, "public")).data.code;
+  const link = (await up(call, 1, { title: "링크만" }, "link")).data.code;
+  assert.equal((await write(1, "제 달력 보세요", { kind: "show", attach: other })).data.error, "attach", "only one's own");
+  assert.equal((await write(1, "제 달력 보세요", { kind: "show", attach: link })).data.error, "attach", "only a public one");
+  const id = (await write(1, "제 달력 보세요", { kind: "show", attach: mine })).data.id;
+  const talk = (await write(1, "이야기에는 안 붙어요", { attach: mine })).data.id;
+  const posts = (await call("GET", "/api/companies/style-shift/setups/room/posts", undefined, { ...from(3), "x-device": device(3) })).data.posts;
+  const card = posts.find((p) => p.id === id).attach;
+  assert.deepEqual([card.code, card.title], [mine, "야간 다크"]);
+  // PC 확인 V27: with its look for a small picture.
+  assert.equal(typeof card.look, "object");
+  assert.equal(posts.find((p) => p.id === talk).attach, undefined);
+});
+
+test("[VIL-19] 이달의 주제 공모: 운영자가 주제를 정하면 내 공개 작품을 넣고, 다음 달에 고른 셋이 보여요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const see = (n, style = "SHIFT") => call("GET", `/api/village/contest?style=${style}`, undefined, { ...from(n), "x-device": device(n) });
+  const enter = (n, code, extra = {}) => call("POST", "/api/village/contest/enter", { device: device(n), style: "SHIFT", code, ...extra }, from(n));
+  const mine = (await up(call, 1, { title: "야간 다크" }, "public")).data.code;
+  assert.equal((await see(1)).data.theme, null);
+  assert.equal((await enter(1, mine)).status, 404, "no theme, nothing to enter");
+  assert.equal((await call("POST", "/api/admin/village/contests", { style: "SHIFT", theme: "야간 근무용 어두운 테마" }, admin)).status, 200);
+  const other = (await up(call, 2, { title: "남의 것" }, "public")).data.code;
+  assert.equal((await enter(1, other)).data.error, "code", "only my own");
+  assert.equal((await enter(1, mine)).status, 201);
+  const seen = (await see(1)).data;
+  assert.deepEqual([seen.theme, seen.entries, seen.mine], ["야간 근무용 어두운 테마", 1, [mine]]);
+  assert.deepEqual(seen.mineTitles.map((m) => m.code), [mine], "PC 확인 V26: by name");
+  assert.equal((await call("POST", "/api/admin/village/contests", { style: "SHIFT", theme: "" }, admin)).status, 409, "not taken off once entered");
+  const list = (await call("GET", "/api/admin/village/contests", undefined, admin)).data;
+  const here = list.items.find((x) => x.month === list.month && x.style === "SHIFT");
+  assert.deepEqual(here.entries.map((e) => e.code), [mine]);
+  assert.equal((await call("POST", "/api/admin/village/contests/pick", { month: list.month, style: "SHIFT", codes: [other] }, admin)).status, 400);
+  assert.equal((await call("POST", "/api/admin/village/contests/pick", { month: list.month, style: "SHIFT", codes: [mine] }, admin)).status, 200);
+  t.mock.timers.setTime(AFTER + 3 * 86_400_000); // December (KST): November's picks show
+  const next = (await see(3)).data;
+  assert.deepEqual([next.theme, next.last.theme, next.last.picks.map(({ look, ...p }) => p)], [null, "야간 근무용 어두운 테마", [{ code: mine, title: "야간 다크" }]]);
+  // PC 확인 f39bcfbe: a pick brings its look, for the card's small picture.
+  assert.deepEqual(next.last.picks[0].look.days.map((d) => d.l), ["주", "야"]);
+});
+
+test("[VIL-11] 이번 주 이야기 주제: 운영자가 유형 광장마다 한 줄, 다음 주엔 저절로 사라져요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const as = (n) => ({ ...from(n), "x-device": device(n) });
+  const path = "/api/companies/style-shift/setups/room/posts";
+  assert.equal((await call("GET", path, undefined, as(1))).data.topic, undefined);
+  assert.equal((await call("POST", "/api/admin/village/topics", { room: "style-nope", text: "x" }, admin)).status, 400);
+  assert.equal((await call("POST", "/api/admin/village/topics", { room: "style-shift", text: "야간 끝나고 잠드는 나만의 방법" }, admin)).status, 200);
+  assert.equal((await call("GET", path, undefined, as(1))).data.topic, "야간 끝나고 잠드는 나만의 방법");
+  assert.equal((await call("GET", "/api/companies/style-day/setups/room/posts", undefined, as(1))).data.topic, undefined);
+  const list = (await call("GET", "/api/admin/village/topics", undefined, admin)).data.items;
+  assert.equal(list.find((x) => x.room === "style-shift").text, "야간 끝나고 잠드는 나만의 방법");
+  t.mock.timers.setTime(AFTER + 8 * 86_400_000);
+  assert.equal((await call("GET", path, undefined, as(1))).data.topic, undefined);
+});
+
+test("[VIL-18] 새 창작자 자리: 열 개마다 첫 작품 하나가 끝에 올라와요", async () => {
+  const { withNewMakers } = await import("../src/recipes.js");
+  const list = Array.from({ length: 25 }, (_, i) => ({ id: i, fresh: i === 17 || i === 22 }));
+  const out = withNewMakers(list, (r) => r.fresh);
+  assert.deepEqual(out.slice(0, 10).map((r) => r.id), [0, 1, 2, 3, 4, 5, 6, 7, 8, 17]);
+  assert.deepEqual(out.slice(10, 20).map((r) => r.id), [9, 10, 11, 12, 13, 14, 15, 16, 18, 22]);
+  assert.equal(out.length, 25);
+  assert.equal(out[9]._newMaker, true);
+  // Already one in the ten: nothing moves.
+  const two = withNewMakers(Array.from({ length: 10 }, (_, i) => ({ id: i, fresh: i === 3 })), (r) => r.fresh);
+  assert.deepEqual(two.map((r) => r.id), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
 });

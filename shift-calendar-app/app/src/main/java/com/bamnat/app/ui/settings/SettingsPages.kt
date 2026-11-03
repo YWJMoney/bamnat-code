@@ -468,13 +468,13 @@ private fun NoticesPage(
     // [COMM-10] The plaza's news once a day; [SRV-10] since 1.23 밤낮 소식 with answers, notices and received schedules.
     SectionCard(title = "소식") {
         SwitchRow("밤낮 소식", "받은 동료 근무표의 다음 7일이 바뀌거나, 광장에서 쓰는 규칙·보낸 글·신고에 소식이 있으면 " +
-            "하루 한 번 묶어서 소리 없이 알려 줘요. 문의에 답이 오면 바로 알려 줘요", settings.plazaNews,
+            "마을 장터 소식(팔로우한 분 새 작품·답)과 함께 하루 한 번 묶어서 소리 없이 알려 줘요. 문의에 답이 오면 바로 알려 줘요", settings.plazaNews,
             warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
             set(on) { it.copy(plazaNews = on) }
         }
     }
     SectionCard(title = "자는 동안") {
-        SwitchRow("자는 동안 미루기", "자는 동안 생긴 돈·연차 알림은 깨고 30분 뒤에 보내요. 근무 알람과 일감 알림은 그대로 와요",
+        SwitchRow("자는 동안 미루기", "자는 동안 생긴 돈·연차 알림은 깨고 30분 뒤에 보내요. 밤낮·마을 소식은 근무 중에 생겨도 근무 끝나고 30분 뒤에 와요. 근무 알람과 일감 알림은 그대로 와요",
             settings.quietWhileAsleep) { on -> vm.update { it.copy(quietWhileAsleep = on) } }
     }
 }

@@ -137,6 +137,11 @@ class RequestsViewModel(private val c: AppContainer, val calendar: String = Pers
     fun shown() { _state.value = _state.value.copy(message = null) }
 }
 
+/** 1.36 [VIL-15] Words to start 요청 쓰기 with, from a plaza question (광장 › 장터에 요청으로 올리기); taken once. */
+object RequestDraft {
+    @Volatile var text: String? = null
+}
+
 private fun stateWord(s: String) = when (s) { "making" -> "만드는 중"; "done" -> "완성"; else -> "기다림" }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -144,9 +149,15 @@ private fun stateWord(s: String) = when (s) { "making" -> "만드는 중"; "done
 fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit, onMake: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val snack = remember { SnackbarHostState() }
-    var writing by remember { mutableStateOf(false) }
+    // 1.36 [VIL-15] Opened from a plaza question: 요청 쓰기 starts with its words.
+    val draft = remember { RequestDraft.text.also { RequestDraft.text = null } }
+    var writing by remember { mutableStateOf(draft != null && vm.canWrite) }
     var finishing by remember { mutableStateOf<String?>(null) }
+    // 1.36 [VIL-15] While I make something for a request, my newest recipe is offered to finish it with in one tap.
+    val taking = s.items.orEmpty().any { it.taking }
+    LaunchedEffect(taking) { if (taking) vm.loadMine() }
     var deleting by remember { mutableStateOf<String?>(null) }
+    var takingAsk by remember { mutableStateOf<String?>(null) }
     // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
     LaunchedEffect(s.message) { s.message?.let { snack.showSnackbar(it); vm.shown() } }
     Scaffold(
@@ -174,17 +185,24 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                                 Text(q.body, style = MaterialTheme.typography.bodyLarge)
                                 Text("${stateWord(q.state)} · 좋아요 ${q.likes}" + (if (q.mine) " · 내 요청" else "") + (if (q.taking) " · 내가 만드는 중" else ""),
                                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (!q.mine && vm.canWrite) FilterChip(q.liked, onClick = { vm.act(q.id, "like", !q.liked) }, label = { Text("👍 나도 바라요") })
                                     when {
                                         q.state == "done" && q.code != null -> TextButton(onClick = { onOpen(q.code) }) { Text("완성된 레시피 보기") }
-                                        q.taking -> {
+                                        q.taking && q.state == "making" -> {
+                                            TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }
                                             TextButton(onClick = { vm.loadMine(); finishing = q.id }) { Text("완성") }
                                             TextButton(onClick = { vm.act(q.id, "take", false) }) { Text("내려놓기") }
                                         }
-                                        q.state == "waiting" && !q.mine && vm.canWrite -> TextButton(onClick = { vm.act(q.id, "take") }) { Text("만들게요") }
+                                        q.state == "waiting" && !q.mine && vm.canWrite -> TextButton(onClick = { takingAsk = q.id }) { Text("만들게요") }
                                     }
                                     if (q.mine) TextButton(onClick = { deleting = q.id }) { Text("지우기", color = MaterialTheme.colorScheme.error) }
+                                }
+                                // 1.36 [VIL-15] 올리고 돌아오면 바로 잇기: my newest public recipe, one tap.
+                                if (q.taking && q.state == "making") s.mine.firstOrNull()?.let { r ->
+                                    OutlinedButton(onClick = { vm.act(q.id, "done", code = r.code) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                        Text("‘${r.title}’${com.bamnat.app.ui.Fmt.ro("‘${r.title}’")} 완성하기", maxLines = 1)
+                                    }
                                 }
                             }
                         }
@@ -194,6 +212,13 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
             }
         }
     }
+    // 1.36 [VIL-15] 만들게요 says what it means before taking: no deadline, 내려놓기 any time.
+    takingAsk?.let { id ->
+        AlertDialog(onDismissRequest = { takingAsk = null }, title = { Text("이 요청을 맡을까요?") },
+            text = { Text("요청한 분에게 \"만드는 중\"으로 보여요. 마감은 없고, 못 하게 되면 언제든 내려놓기를 누르면 다른 분이 맡을 수 있어요. 스튜디오에서 만들어 올린 뒤 이 화면에서 완성을 눌러 이어 주세요.") },
+            confirmButton = { TextButton(onClick = { vm.act(id, "take"); takingAsk = null }) { Text("만들게요") } },
+            dismissButton = { TextButton(onClick = { takingAsk = null }) { Text("취소") } })
+    }
     // [RCX-26] 요청 지우기 asks first.
     deleting?.let { id ->
         AlertDialog(onDismissRequest = { deleting = null }, title = { Text("요청을 지울까요?") },
@@ -202,7 +227,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
             dismissButton = { TextButton(onClick = { deleting = null }) { Text("닫기") } })
     }
     if (writing) {
-        var text by remember { mutableStateOf("") }
+        var text by remember { mutableStateOf(draft?.take(200).orEmpty()) }
         AlertDialog(
             onDismissRequest = { writing = false },
             title = { Text("이런 레시피 있었으면") },

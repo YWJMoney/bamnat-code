@@ -6,7 +6,6 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
 import java.util.Locale
 
 object Fmt {
@@ -24,7 +23,10 @@ object Fmt {
         return "${if (t.hour < 12) "오전" else "오후"} ${if (h == 0) 12 else h}:${"%02d".format(t.minute)}"
     }
 
-    fun dayOfWeekShort(d: DayOfWeek): String = d.getDisplayName(TextStyle.SHORT, korean)
+    // PC 확인 f6b585f8 (멈춤 2,099ms: 달력 칸마다 dayOfWeekShort): the locale's display names were looked up on the main thread for every
+    // cell, and the first lookup loads the locale data; the seven Korean names are fixed.
+    private val weekdays = arrayOf("월", "화", "수", "목", "금", "토", "일")
+    fun dayOfWeekShort(d: DayOfWeek): String = weekdays[d.value - 1]
 
     fun time(t: LocalTime?): String = t?.let { if (clock12) twelve(it) else it.format(time) } ?: "--:--"
 

@@ -1368,7 +1368,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [CUST-01] 화면 꾸미기 changes the app's own settings, not the calendar's view of them. */
     fun updateSettings(change: (com.bamnat.app.data.AppSettings) -> com.bamnat.app.data.AppSettings) = container.settingsRepository.update(change)
 
-    fun setAlarmsEnabled(on: Boolean) = container.settingsRepository.update { it.copy(alarmsEnabled = on) }
+    fun setAlarmsEnabled(on: Boolean) {
+        container.settingsRepository.update { it.copy(alarmsEnabled = on) }
+        // PC 확인 f6b585f8: where the master switch was turned, for 알람 점검.
+        container.telemetry.event("alarms_switch", (if (on) "on" else "off") + " calendar")
+    }
 
     /** [DAY-04] The day view's groups in the user's order; empty goes back to the default. */
     fun setDayGroupOrder(order: List<String>) = container.settingsRepository.update { it.copy(dayGroupOrder = order) }
