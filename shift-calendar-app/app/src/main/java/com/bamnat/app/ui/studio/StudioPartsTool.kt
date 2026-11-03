@@ -227,12 +227,12 @@ internal fun PartsTool(
         Group("채우기") {
             // PC 확인 e262702a 사용성 제안: a 막대 given one colour can go back to each shift's own at one tap.
             if (id == "cal.line.bar") FilterChip(selected = col("fill") == null, onClick = {
-                if (col("fill") != null) { val was = (line["fillA"] as? Number)?.toLong(); set("fill" to null, "fillA" to otherA); otherA = was }
+                if (col("fill") != null) { val was = (line["fillA"] as? Number)?.toLong(); setAll("fill" to null, "fillA" to otherA); otherA = was }
             }, label = { Text("근무 색 그대로") })
             ColorPick(if (id == "cal.line.bar") "한 가지 색으로" else "색", col("fill")) {
                 if (id == "cal.line.bar" && col("fill") == null && it != null) {
-                    val was = (line["fillA"] as? Number)?.toLong(); set("fill" to it, "fillA" to otherA); otherA = was
-                } else set("fill" to it)
+                    val was = (line["fillA"] as? Number)?.toLong(); setAll("fill" to it, "fillA" to otherA); otherA = was
+                } else setAll("fill" to it)
             }
             if (col("fill") != null) LabeledSlider("진하기", num("fillA") ?: 100f, 0f..100f, "%") { set("fillA", it.toLong()) }
             // PC 확인 fc2db3b0 사용성 제안: one colour for every 막대 hid which shift is which; with no 색 the 막대 keep their shift's colour and
@@ -435,7 +435,7 @@ internal val PART_COLOR_FIELDS = listOf("fill" to "채우기", "lineC" to "선",
 @Composable
 private fun PartsAdvanced(bp: Blueprint, id: String, on: String?, line: Map<String, Any?>, many: Boolean, multi: List<String>,
                           onMany: (Boolean) -> Unit, set: (String, Any?) -> Unit, onAll: (String) -> Unit) {
-    Group("고급 보기") {
+    com.bamnat.app.ui.settings.Group("고급 보기") {
         // PC 확인 C4 (글자 줄을 눌러도 안 켜져요): the whole row turns it on and off.
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
             .toggleable(value = many, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = onMany)) {

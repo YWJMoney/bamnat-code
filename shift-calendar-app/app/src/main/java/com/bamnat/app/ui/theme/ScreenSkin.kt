@@ -143,7 +143,6 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
     val holder = remember { BackdropHolder() }
     val density = androidx.compose.ui.platform.LocalDensity.current.density
     var placed by remember { mutableStateOf<Pair<IntSize, Offset>?>(null) }
-    val pageColor = look.bg?.let { Color(it) } ?: base.background
     val veilColor = (look.ground?.let { Color(it) } ?: base.background).copy(alpha = maxOf((look.dim ?: 30).coerceIn(0, 80), 20) / 100f)
     val made = remember(plain, look, photo?.first, placed, pageColor, veilColor, density) {
         val p = placed
