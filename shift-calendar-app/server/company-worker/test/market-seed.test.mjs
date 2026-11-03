@@ -78,6 +78,7 @@ test("[MKS-02] the 출시 작품 builder checks each work as the server will, co
   assert.deepEqual(out.entries.map((e) => [e.hold, e.replace, e.minApp, e.showcase ?? false]), [[true, true, MIN_APP, false], [true, true, MIN_APP, true]]);
   assert.equal(out.count["tab:calendar"], 1);
   assert.equal(out.count["tab:memo"], 1);
-  assert.ok(out.short.includes("theme 0/48"));
+  assert.ok(out.short.includes("theme 0/68"));
+  assert.ok(!out.short.some((s) => s.startsWith("tab:app")));
   assert.equal(sectionKey(JSON.stringify(memo)), "tab:memo");
 });

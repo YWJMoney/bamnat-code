@@ -10,6 +10,8 @@
 // operator's paste in the 관리자 앱, after the user's last say-so (CLAUDE.md 3-1).
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+// index.js first: recipes.js → photo-guard.js → index.js is a cycle that only loads cleanly from this end (as the tests do).
+import "../src/index.js";
 import { cleanRecipe, tabsOf, scopeOf, RecipeError } from "../src/recipes.js";
 import * as recipes from "../src/recipes.js";
 
@@ -19,7 +21,9 @@ const OUT = join(ROOT, "market-136.json");
 export const BATCH = "1.36 출시 작품";
 /** 1.36's versionCode (gradle.properties bamnat.versionCode): older apps never see these. */
 export const MIN_APP = 49;
-export const GOALS = { theme: 48, "tab:calendar": 20, "tab:pay": 20, "tab:money": 20, "tab:memo": 20, "tab:alarm": 20, "tab:widget": 20, "tab:app": 20, part: 20, logic: 20 };
+// 테마 68 = 유형별 48 + 앱 전체 20. '앱 전체'는 기능별 탭이 아니라 테마예요: 서버 scopeOf가 app이 든 작품을 theme로 보내고, 앱 장터의
+// 기능별 칩에도 앱 전체가 없어요 (메인 스레드 결정 2026-11-03).
+export const GOALS = { theme: 68, "tab:calendar": 20, "tab:pay": 20, "tab:money": 20, "tab:memo": 20, "tab:alarm": 20, "tab:widget": 20, part: 20, logic: 20 };
 
 /** The 장터 구간 a written recipe falls in: the server's own sectionOf when it has one (갈래 F), else 테마 / 기능별 탭. */
 export function sectionKey(text) {
