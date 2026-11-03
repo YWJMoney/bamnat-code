@@ -895,13 +895,19 @@ export async function inquiryCopied(request, env, now) {
     await audit(env, now, "dev_create", title, item.id);
   }
   const found = rows.map((r) => r.id);
-  const marks = found.map(() => "?").join(", ");
-  const stmts = [stmt(env, `UPDATE inquiries SET copied_at = ?, copied_by = ? WHERE id IN (${marks})`, now, name, ...found)];
-  if (body.status === "open" || body.status === "closed") stmts.push(stmt(env, `UPDATE inquiries SET status = ? WHERE id IN (${marks})`, body.status, ...found));
+  // D1 binds at most 100 values in one statement: 100 questions plus the two set values went over, so in groups of 90.
+  const stmts = [];
+  for (let i = 0; i < found.length; i += 90) {
+    const part = found.slice(i, i + 90);
+    const marks = part.map(() => "?").join(", ");
+    stmts.push(stmt(env, `UPDATE inquiries SET copied_at = ?, copied_by = ? WHERE id IN (${marks})`, now, name, ...part));
+    if (body.status === "open" || body.status === "closed") stmts.push(stmt(env, `UPDATE inquiries SET status = ? WHERE id IN (${marks})`, body.status, ...part));
+  }
   // Only the ones nobody holds: copying is no reason to take a question from another admin.
   const free = body.assign === true ? rows.filter((r) => !r.assignee).map((r) => r.id) : [];
-  if (free.length) {
-    stmts.push(stmt(env, `UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id IN (${free.map(() => "?").join(", ")})`, a.id, name, ...free));
+  for (let i = 0; i < free.length; i += 90) {
+    const part = free.slice(i, i + 90);
+    stmts.push(stmt(env, `UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id IN (${part.map(() => "?").join(", ")})`, a.id, name, ...part));
   }
   await batch(env, stmts);
   let linked = 0;

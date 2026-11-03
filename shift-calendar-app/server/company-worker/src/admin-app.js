@@ -2489,7 +2489,7 @@ function adminApp(L, BUILD, M) {
   function recipeReleaseView(d, edit) {
     if (!d) return skeleton(1);
     if (!d.items.length) return `<p class="hint">출시 대기 중인 작품이 없어요.</p>`;
-    return `<ul class="rows">${d.items.map((b) => `<li><form data-form="recipe-release" data-key="${esc(b.batch ?? "")}" class="row">
+    return `<ul class="rows">${d.items.map((b) => `<li><form data-form="recipe-release" data-key="${esc(b.batch ?? "")}" data-n="${b.n}" class="row">
       <span class="row-main"><b>${esc(b.batch ?? "묶음 없음")}</b><small>${b.n}개 기다림${b.minApp ? ` · 앱 판 ${b.minApp} 이상만` : ""}${b.releaseAt ? ` · 공개 예약 ${esc(new Date(b.releaseAt).toLocaleString("ko-KR"))}` : " · 예약 없음"}</small>
       ${edit ? `<label>공개할 때 <input type="datetime-local" name="at"></label>` : ""}</span>
       ${edit ? `<span class="row-side"><button class="btn small" type="submit" name="do" value="schedule">예약</button>
@@ -5069,8 +5069,10 @@ function adminApp(L, BUILD, M) {
       if (how === "schedule" && !at) { toast("공개할 때를 골라 주세요"); return; }
       const body = { batch, ...(how === "schedule" ? { at: new Date(at).toISOString() } : how === "unschedule" ? { at: null } : {}) };
       if (how === "now") {
-        confirmBox("이 묶음을 지금 장터에 공개할까요?", "공개하면 바로 장터 ‘새로’ 맨 위에 보여요. ‘이 판부터’를 적은 작품은 그 판 이상 앱에만 보여요.", "지금 공개", async () => {
-          await act(() => api("/recipes/release", "POST", body), "공개했어요");
+        // 클라우드 관리자 앱 확인: how many go up, on the box and after.
+        const n = Number(form.dataset.n) || 0;
+        confirmBox(n ? `${batch || "이 묶음"} ${n}개를 지금 장터에 공개할까요?` : "이 묶음을 지금 장터에 공개할까요?", "공개하면 바로 장터 ‘새로’ 맨 위에 보여요. ‘이 판부터’를 적은 작품은 그 판 이상 앱에만 보여요.", "지금 공개", async () => {
+          await act(() => api("/recipes/release", "POST", body), (r) => `${r?.released ?? 0}개를 공개했어요`);
           S.data.recipes = null; load();
         });
         return;
@@ -5090,12 +5092,22 @@ function adminApp(L, BUILD, M) {
         ...(String(f.get("batch") ?? "").trim() ? { batch: String(f.get("batch")).trim() } : {}), ...(Number.isInteger(minApp) && minApp > 0 ? { minApp } : {}) };
       let done = 0;
       const failed = [];
+      // 1.36 클라우드 관리자 앱 확인 (출시 작품 267개를 붙여 넣으면 몇 분 동안 단추만 흐려지고 아무 말이 없어서, 창을 닫으면 반만 들어가요):
+      // the button counts what went up, and leaving the page asks first until the last one is in.
+      const button = form.querySelector('button[type="submit"], button:not([type])');
+      const label = button?.textContent;
+      S.uploading = list.length > 1;
+      let i = 0;
       for (const x of list) {
+        i++;
+        if (button && list.length > 1) button.textContent = `올리는 중 ${i}/${list.length} · 창을 닫지 마세요`;
         // [RCX-32] showcase-recipes.json's own {showcase: true}, or the 보여주기 tab's form.
         const own = Object.fromEntries(["hold", "replace", "batch", "minApp", "releaseAt"].filter((k) => x[k] !== undefined).map((k) => [k, x[k]]));
         try { await api("/recipes", "POST", { recipe: x.recipe, publicData: x.publicData === true, showcase: x.showcase === true || f.get("showcase") === "on", ...hold, ...own }); done++; }
         catch (e) { failed.push(x.recipe?.title ?? "?"); }
       }
+      S.uploading = false;
+      if (button && label != null) button.textContent = label;
       toast(`${done}개 올렸어요${failed.length ? ` · 못 올린 것 ${failed.length}개: ${failed.slice(0, 3).join(", ")}` : ""}`);
       if (done) { form.reset(); S.data.recipes = null; load(); }
     },
@@ -5940,7 +5952,7 @@ function adminApp(L, BUILD, M) {
   });
   window.addEventListener("beforeunload", (e) => {
     // Typed answers are kept in the browser; only settings would be lost.
-    if (S.draft || S.slaDraft) {
+    if (S.draft || S.slaDraft || S.uploading) {
       e.preventDefault();
       e.returnValue = "";
     }

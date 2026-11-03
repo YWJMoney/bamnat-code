@@ -74,8 +74,14 @@ export async function fcmTell(env, inquiryIds, now = Date.now()) {
   const ids = [...new Set((inquiryIds ?? []).filter(Boolean))].slice(0, 200);
   if (!env.FCM_SERVICE_ACCOUNT || !ids.length) return 0;
   try {
-    const phones = await all(env, `SELECT DISTINCT p.device, p.token FROM push_phones p JOIN inquiries i ON i.device = p.device
-      WHERE i.id IN (${ids.map(() => "?").join(",")})`, ...ids);
+    // D1 binds at most 100 values in one query, so the questions go in groups of 90.
+    const seen = new Map();
+    for (let i = 0; i < ids.length; i += 90) {
+      const part = ids.slice(i, i + 90);
+      for (const p of await all(env, `SELECT DISTINCT p.device, p.token FROM push_phones p JOIN inquiries i ON i.device = p.device
+        WHERE i.id IN (${part.map(() => "?").join(",")})`, ...part)) seen.set(`${p.device}\u0000${p.token}`, p);
+    }
+    const phones = [...seen.values()];
     if (!phones.length) return 0;
     const { token, project } = await fcmAccess(env, now);
     let sent = 0;

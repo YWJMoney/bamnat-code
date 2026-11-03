@@ -1770,13 +1770,22 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1",
       one: "code = ? AND state != 'deleted'", waiting: "state = 'waiting'" }[tab]
       ?? "state = 'pending'";
-    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT 200`, ...(tab === "one" ? [code] : []));
-    const marks = rows.map(() => "?").join(",");
+    // 1.36 클라우드 관리자 앱 확인 (출시 작품 267개 중 200개만 보이고 구간 수가 틀려요): 출시 대기 lists the whole batch.
+    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${tab === "waiting" ? 1000 : 200}`, ...(tab === "one" ? [code] : []));
+    // D1 takes at most 100 bound values in one query, so the codes go in groups (a list of 200 failed on the real server).
+    const byCodes = async (sql) => {
+      const out = [];
+      for (let i = 0; i < rows.length; i += 90) {
+        const part = rows.slice(i, i + 90).map((r) => r.code);
+        out.push(...await d.all(env, sql(part.map(() => "?").join(",")), ...part));
+      }
+      return out;
+    };
     // PC 확인 보안 6차: how many of each reason counted toward hiding it too (the operator's own were shown as if they did).
-    const flags = rows.length ? await d.all(env, `SELECT code, reason, COUNT(*) AS n, SUM(counted) AS counted FROM recipe_flags WHERE code IN (${marks})
-      GROUP BY code, reason`, ...rows.map((r) => r.code)) : [];
-    const quiet = rows.length ? await d.all(env, `SELECT code, why, COUNT(*) AS n FROM recipe_flags WHERE counted = 0 AND code IN (${marks})
-      GROUP BY code, why`, ...rows.map((r) => r.code)) : [];
+    const flags = await byCodes((marks) => `SELECT code, reason, COUNT(*) AS n, SUM(counted) AS counted FROM recipe_flags WHERE code IN (${marks})
+      GROUP BY code, reason`);
+    const quiet = await byCodes((marks) => `SELECT code, why, COUNT(*) AS n FROM recipe_flags WHERE counted = 0 AND code IN (${marks})
+      GROUP BY code, why`);
     const quietOf = (code) => {
       const q = quiet.filter((x) => x.code === code);
       const n = (why) => q.find((x) => x.why === why)?.n ?? 0;

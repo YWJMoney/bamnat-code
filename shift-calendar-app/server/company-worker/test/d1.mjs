@@ -3,12 +3,17 @@ import { DatabaseSync } from "node:sqlite";
 
 export function d1(path = ":memory:") {
   const db = new DatabaseSync(path);
-  const check = (params) => params.map((p) => {
+  const check = (params) => {
+    // 1.36: D1 takes at most 100 bound values in one statement (node's SQLite takes thousands), so a list that grew past it
+    // failed only on the real server. Refused here too, in tests and the local server alike.
+    if (params.length > 100) throw new RangeError(`D1: too many SQL variables (${params.length} > 100)`);
+    return params.map((p) => {
     // D1 refuses undefined; booleans become 1 and 0 there, so the worker binds numbers.
     if (p === undefined) throw new TypeError("D1_TYPE_ERROR: undefined is not supported");
     if (typeof p === "boolean") throw new TypeError("bind 0/1, not a boolean");
     return p;
-  });
+    });
+  };
   const statement = (sql, params = []) => ({
     sql,
     bind: (...values) => statement(sql, check(values)),

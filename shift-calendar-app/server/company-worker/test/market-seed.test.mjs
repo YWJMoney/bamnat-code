@@ -82,3 +82,22 @@ test("[MKS-02] the 출시 작품 builder checks each work as the server will, co
   assert.ok(!out.short.some((s) => s.startsWith("tab:app")));
   assert.equal(sectionKey(JSON.stringify(memo)), "tab:memo");
 });
+
+test("[MKS-03] 출시 대기 lists a whole batch past 200 (267 in 1.36) and its flags, within D1's 100 bound values", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  for (let i = 0; i < 230; i++) {
+    const r = await call("POST", "/api/admin/recipes", { recipe: recipe(`출시 작품 ${i + 1}번`), hold: true, batch: "1.36 출시 작품", minApp: 49 }, admin);
+    assert.equal(r.status, 201, `work ${i + 1}`);
+  }
+  const waiting = await call("GET", "/api/admin/recipes?tab=waiting", undefined, admin);
+  assert.equal(waiting.status, 200);
+  assert.equal(waiting.data.items.length, 230);
+  assert.equal(new Set(titles(waiting)).size, 230);
+  // Released in one go; the other lists keep their 200.
+  const pub = await call("POST", "/api/admin/recipes/release", { batch: "1.36 출시 작품" }, admin);
+  assert.equal(pub.data.released, 230);
+  assert.equal(pub.status, 200, JSON.stringify(pub.data));
+  assert.equal((await call("GET", "/api/admin/recipes?tab=official", undefined, admin)).data.items.length, 200);
+});
