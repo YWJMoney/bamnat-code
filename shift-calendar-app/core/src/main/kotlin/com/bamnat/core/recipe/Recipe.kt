@@ -101,6 +101,13 @@ data class Piece(val kind: PieceKind, val values: Map<String, Any?>)
 sealed interface Ref {
     data class Input(val id: String) : Ref
     data class Token(val name: String) : Ref
+
+    /**
+     * [RUL-02] 1.36 수식 값 (`{"fx":"만약(지출 > 50000, \"주황\", 없음)"}`): a part's style value worked out for each day by the app's formula
+     * engine ([com.bamnat.core.formula.Formula]). Allowed only in the 부품 꾸미기 style fields; a formula that fails leaves the field the
+     * app's own.
+     */
+    data class Formula(val src: String) : Ref
 }
 
 /** Why a recipe could not be read: a short [code] and where ([path]), never the text of the recipe. */

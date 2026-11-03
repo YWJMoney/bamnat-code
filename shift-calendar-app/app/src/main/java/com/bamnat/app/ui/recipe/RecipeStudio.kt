@@ -205,7 +205,9 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
     MaterialTheme(colorScheme = com.bamnat.app.ui.parts.PartTheme.colors(MaterialTheme.colorScheme, blueprint),
         typography = com.bamnat.app.ui.parts.PartTheme.typography(MaterialTheme.typography, blueprint),
         shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), blueprint)) {
-      CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides blueprint, com.bamnat.app.ui.parts.LocalBlueprintRaw provides rawParts) {
+      // [RUL-02] 조건부 꾸미기 in the example too: the phone's own days decide which lines hold.
+      val facts = com.bamnat.app.logic.LocalDayFacts.current ?: if (blueprint.hasFormulas) com.bamnat.app.logic.rememberAppDayFacts() else null
+      CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides blueprint, com.bamnat.app.logic.LocalDayFacts provides facts, com.bamnat.app.ui.parts.LocalBlueprintRaw provides rawParts) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(
                 Modifier.widthIn(max = 340.dp).fillMaxWidth().height(560.dp)
@@ -820,6 +822,11 @@ internal object StudioStarters {
         PieceKind.CAL_THEME -> mapOf("cell" to "tint", "sun" to 0xFFC62828L, "sat" to 0xFF1565C0L)
         // [BLU-06] 1.36 부품 꾸미기: a bold month name and a rounded 오늘, so turning it on shows at once.
         PieceKind.PARTS -> mapOf("parts" to listOf(mapOf("id" to "cal.head.title", "weight" to 800L), mapOf("id" to "cal.cell.date", "on" to "today", "r" to 6L)))
+        // [RUL-06] 1.36 수식·규칙·버튼: one button that opens today's memo with a template, and one rule for night work days.
+        PieceKind.LOGIC -> mapOf(
+            "buttons" to listOf(mapOf("label" to "오늘 기록", "emoji" to "📝", "where" to "day", "do" to "memoTpl", "arg" to "{근무} 인수인계\n- ")),
+            "rules" to listOf(mapOf("name" to "야간 전 알림", "on" to "start", "min" to -60L, "role" to "night", "do" to "notify", "arg" to "{근무} 한 시간 전이에요")),
+        )
         PieceKind.ALARMS -> mapOf("byRole" to listOf(mapOf("role" to "day", "before" to listOf(60L))), "snooze" to 5L)
         PieceKind.MEMO_TEMPLATES -> mapOf("items" to listOf(mapOf("title" to "하루 기록", "emoji" to "📝",
             "asks" to listOf(mapOf("label" to "기분", "type" to "star"), mapOf("label" to "한 줄", "type" to "text")))))

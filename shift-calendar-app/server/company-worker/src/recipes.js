@@ -14,6 +14,7 @@
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
 import { addStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
+import { FORMULA, formulaProblem, formulaTextProblem } from "./formula.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -171,7 +172,7 @@ export const PART_STYLE = [
 const partLines = (lines) => {
   const seen = new Set();
   for (const l of lines) {
-    const k = `${l.id}|${l.on ?? ""}`;
+    const k = `${l.id}|${l.on ?? ""}|${l.when ?? ""}`;
     if (seen.has(k)) return "dup";
     seen.add(k);
     if (typeof l.order === "string" && l.order.split(",").some((x) => !(PART_CHILDREN[l.id] ?? []).includes(x))) return "order";
@@ -180,6 +181,13 @@ const partLines = (lines) => {
 };
 
 /** core PieceKind: key, the kinds of work it fits, its fields. */
+// 1.36 [RUL-03][RUL-04] core formula/Logic.kt: where a button sits, the safe verbs, when a rule runs; a formula may compare amounts.
+const BUTTON_PLACES = ["day", "memo", "cal", "money", "decor"];
+const LOGIC_VERBS = ["notify", "memoTpl", "screen", "newMemo", "checkReset", "addMoney", "memoLine", "addIncome"];
+const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open", "money", "hold"];
+const logicGuard = (s) => textProblemExcept(s, "amount") ?? (investAdvice(s) ? "invest_advice" : null);
+const logicFormula = (s) => (s === "" ? null : formulaProblem(s) ?? logicGuard(s));
+const logicText = (s) => (s === "" ? null : formulaTextProblem(s) ?? logicGuard(s));
 export const RECIPE_PIECES = {
   shiftLook: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("items", 12, [T("name", 20, { min: 1 }), P("role", ROLES),
     T("label", 2, { min: 1, check: (s) => (graphemes(s) > 2 ? "label" : null) }), C("color"), E("emoji")], { min: 1 })] },
@@ -244,7 +252,19 @@ export const RECIPE_PIECES = {
   screenLook: { styles: STYLES, fields: [T("screens", 1600, { optional: true, guard: false, check: screenLooks }),
     T("pay", 400, { optional: true, guard: false, check: payLooks })] },
   // [BLU-01] 1.36 부품 꾸미기.
-  parts: { styles: STYLES, fields: [I("parts", 96, [P("id", PART_IDS), P("on", PART_STATES, { optional: true }), ...PART_STYLE], { min: 1, check: partLines })] },
+  parts: { styles: STYLES, fields: [I("parts", 96, [P("id", PART_IDS), P("on", PART_STATES, { optional: true }),
+    // 1.36 [RUL-02] 조건부 꾸미기: the line only on days its formula holds.
+    T("when", FORMULA.maxLen, { optional: true, guard: false, check: (s) => logicFormula(s) }), ...PART_STYLE], { min: 1, check: partLines })] },
+  // 1.36 [RUL-03][RUL-04] 수식·규칙·버튼 (core PieceKind.LOGIC, formula/Logic.kt): formulas read as core reads them, safe verbs only.
+  logic: { styles: STYLES, fields: [
+    // 누락 점검 N8: id (core LogicButton.ID), what a 꾸밈 항목 tap names.
+    I("buttons", 8, [T("id", 12, { optional: true, guard: false, check: (s) => (/^[a-z0-9]{1,12}$/.test(s) ? null : "id") }), T("label", 16, { min: 1 }), E("emoji", { input: false }), P("where", BUTTON_PLACES), P("do", LOGIC_VERBS),
+      T("arg", 120, { optional: true, guard: false, check: logicText }), M("amount", 0, 100_000_000, { optional: true }),
+      T("show", FORMULA.maxLen, { optional: true, guard: false, check: logicFormula })], { optional: true }),
+    I("rules", 12, [T("name", 20, { min: 1 }), P("on", RULE_TRIGGERS), N("min", -720, 720, { optional: true }), K("at", { optional: true, input: false }),
+      P("role", ROLES, { optional: true }), T("when", FORMULA.maxLen, { optional: true, guard: false, check: logicFormula }), P("do", LOGIC_VERBS),
+      T("arg", 120, { optional: true, guard: false, check: logicText }), M("amount", 0, 100_000_000, { optional: true })], { optional: true }),
+  ] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);
 
@@ -322,6 +342,13 @@ export function textProblem(text) {
   // [RCP-40] Read as it looks: full-width letters and dots (ｂｉｔ．ｌｙ) and 。 are the plain ones (core does the same).
   const t = String(text).normalize("NFKC").replace(/。/g, ".");
   for (const [code, re] of PROBLEMS) if (re.test(t)) return code;
+  return null;
+}
+
+/** core RecipeText.problemExcept: as textProblem without [skip]. */
+export function textProblemExcept(text, skip) {
+  const t = String(text).normalize("NFKC").replace(/。/g, ".");
+  for (const [code, re] of PROBLEMS) if (code !== skip && re.test(t)) return code;
   return null;
 }
 
@@ -484,6 +511,15 @@ function ref(f, v, path, ctx) {
   if (!isObj(v)) return null;
   const keys = Object.keys(v);
   if (keys.length !== 1) fail("ref", path);
+  // 1.36 [RUL-02] a formula, only where a part's style takes one (core RecipeCodec.ref).
+  if (typeof v.fx === "string") {
+    if (!PART_STYLE.includes(f)) fail("ref", path);
+    const t = v.fx.trim();
+    if (t.length === 0 || t.length > FORMULA.maxLen) fail("text", path);
+    const why = logicFormula(t);
+    if (why) fail(why, path);
+    return { fx: t };
+  }
   if (typeof v.token === "string") {
     if (f.t !== "color" || !ctx.tokens.has(v.token)) fail("ref", path);
     return { token: v.token };
@@ -865,7 +901,7 @@ export const RECIPE_KINDS = {
   layout: ["layout", "cards", "appFeel"],
   memo: ["memoLook", "memoTpl"],
   money: ["moneyLook", "shop", "field"],
-  rules: ["alarms", "hourly", "invest", "company"],
+  rules: ["alarms", "hourly", "invest", "company", "logic"],
 };
 
 const carries = (body, kinds) => kinds.some((k) => body.includes(`"kind":"${k}"`));
@@ -894,6 +930,14 @@ export function tabsOf(body) {
       case "alarms": out.add("alarm"); break;
       case "widget": out.add("widget"); break;
       case "appFeel": out.add("app"); break;
+      // 1.36 [RUL-03] 수식·규칙·버튼: the app's, and the tabs its verbs touch (메모 틀·가계부).
+      case "logic":
+        out.add("app");
+        for (const x of [...(p.buttons ?? []), ...(p.rules ?? [])]) {
+          if (["memoTpl", "newMemo", "checkReset", "memoLine"].includes(x.do) || x.on === "memo" || x.where === "memo") out.add("memo");
+          if (["addMoney", "addIncome"].includes(x.do) || x.on === "money" || x.where === "money") out.add("money");
+        }
+        break;
       case "layout":
         if (p.calendar) out.add("calendar");
         if (Array.isArray(p.tabs) && p.tabs.length) out.add("app");
@@ -966,7 +1010,18 @@ export function partUnitOf(body) {
 const VIEW_UNITS = { "cal.board": ["cal"], "memo.view": ["memo", "memoBy", "memoSort"], "money.board": ["money"] };
 
 /** [MKX-01] 테마 (앱 전체를 한 벌로, 탭 둘 이상이나 앱 전체 색) or 기능별 탭 (탭 하나만); null for one that changes no tab (묶음). */
-export function scopeOf(tabs) {
+/** [RUL-07] 1.36 규칙·단추만 (LookParts.partUnit == "logic"): the only piece is the logic piece. 장터 '규칙·단추' 구간 (scope `logic`). */
+export function logicOnly(body) {
+  try {
+    const rec = typeof body === "string" ? JSON.parse(body) : body;
+    return rec?.pieces?.length === 1 && rec.pieces[0]?.kind === "logic";
+  } catch {
+    return false;
+  }
+}
+
+export function scopeOf(tabs, body) {
+  if (body !== undefined && logicOnly(body)) return "logic";
   if (!tabs.length) return null;
   return tabs.includes("app") || tabs.length >= 2 ? "theme" : "tab";
 }
@@ -975,7 +1030,7 @@ export function scopeOf(tabs) {
 export function listItem(r, now) {
   const look = r.body ? lookOf(r.body) : null;
   const tabs = r.body ? tabsOf(r.body) : [];
-  const scope = scopeOf(tabs);
+  const scope = scopeOf(tabs, r.body);
   return {
     ...(look ? { look } : {}),
     // [MKX-01] Which tabs it changes and whether it is a 테마 or one tab's.
@@ -1045,12 +1100,12 @@ async function recipeList(d, env, url) {
     ORDER BY r.updated_at DESC LIMIT 600`, ...args);
   // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
   // [MKX-01] 1.36 두 구간: scope=theme, or scope=tab with tab=<one of MARKET_TABS> (or none for every tab's); kind is then left aside.
-  const scope = ["theme", "tab"].includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
+  const scope = ["theme", "tab", "logic"].includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
   const tab = scope === "tab" && MARKET_TABS.includes(url.searchParams.get("tab")) ? url.searchParams.get("tab") : null;
   const kind = !scope && RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
   const rows = scope ? rows0.filter((r) => {
     const tabs = tabsOf(r.body);
-    return scopeOf(tabs) === scope && (!tab || tabs[0] === tab);
+    return scopeOf(tabs, r.body) === scope && (!tab || tabs[0] === tab);
   }) : kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
   let scored = rows;
   if (sort === "good") {

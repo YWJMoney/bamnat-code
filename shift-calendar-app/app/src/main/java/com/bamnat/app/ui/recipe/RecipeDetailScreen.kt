@@ -215,7 +215,17 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     Text(if (s.applying) "넣는 중…" else "입어 보고 고르기")
                 } else Button(onClick = { confirming = true }, enabled = chosen > 0 && ready,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (s.applying) "넣는 중…" else "고른 ${chosen}개 내 달력에 넣기") }
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    // PC D15 (사용성 낮): 규칙·단추만 있는 작품은 실제로 들어가는 수로 ('고른 1개'인데 규칙 2개가 들어갔어요).
+                    val logicOnly = remember(r) { r.pieces.isNotEmpty() && r.pieces.all { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC } }
+                    val inside = remember(r) { r.pieces.filter { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }.fold(com.bamnat.core.formula.Logic()) { a, p -> a.plus(com.bamnat.core.formula.Logic.from(p.values)) } }
+                    Text(when {
+                        s.applying -> "넣는 중…"
+                        logicOnly -> listOfNotNull(inside.rules.size.takeIf { it > 0 }?.let { "규칙 ${it}개" }, inside.buttons.size.takeIf { it > 0 }?.let { "단추 ${it}개" })
+                            .joinToString("·") + " 넣기"
+                        else -> "고른 ${chosen}개 내 달력에 넣기"
+                    })
+                }
                 // [BLU-07] PC 6차: a 부품 is kept for the studio from here in one tap, not only inside 입어 보기.
                 val unit = remember(r) { com.bamnat.core.recipe.LookParts.partUnit(r) }
                 if (unit != null) {
@@ -225,6 +235,15 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                             else "보관함이 꽉 찼어요. 스튜디오 › 보관함에서 하나를 빼고 다시 담아 주세요"
                     }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 부품 보관함에 담기") }
                     keptLine?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                // [RUL-07] 1.36 규칙·단추는 보관함에 담아 두고 스튜디오 › 규칙·단추에서 내 것에 더해 얹어요.
+                if (r.pieces.any { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }) {
+                    var keptLogic by remember(r) { mutableStateOf<String?>(null) }
+                    OutlinedButton(onClick = {
+                        keptLogic = if (vm.keep(setOf(com.bamnat.core.recipe.LookParts.LOGIC))) "✓ 보관함에 담았어요. 스튜디오 › 규칙·단추 › 보관함에서 내 규칙에 더해 얹어요"
+                            else "보관함이 꽉 찼어요 (${vm.partsLimit()}개까지)"
+                    }, modifier = Modifier.fillMaxWidth()) { Text("규칙·단추만 보관함에 담기") }
+                    keptLogic?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 if (tryOn) {
                     val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }

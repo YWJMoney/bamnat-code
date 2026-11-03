@@ -96,6 +96,12 @@ object RecipeText {
         return PERSONAL.firstOrNull { (_, re) -> re.containsMatchIn(t) }?.first
     }
 
+    /** [RUL-01] As [problem] but without [skip] (a formula may compare amounts: 지출 > 50000). */
+    fun problemExcept(text: String, skip: String): String? {
+        val t = RecipePlatform.nfkc(text).replace('。', '.')
+        return PERSONAL.firstOrNull { (code, re) -> code != skip && re.containsMatchIn(t) }?.first
+    }
+
     /** [RCP-15] What 투자 광장 never takes (결정 AI-D8): 리딩방, promised returns, 종목 추천 — the server's INVEST_ADVICE. */
     private val INVEST_ADVICE = Regex(
         "리딩\\s*방|리딩해|수익\\s*(보장|확정)|원금\\s*보장|무조건\\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\\s*채팅|단톡)\\s*방?\\s*(으로|에|들어|입장|초대)|" +

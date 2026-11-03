@@ -482,6 +482,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             // [TAX-02] Likewise, to open 세금·실수령.
             NoticeLinks.Target.TAX -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
+            // [RUL-03] 메모 틀 열기 from a button or rule: a new memo on that day, started from the template.
+            NoticeLinks.Target.LOGIC_MEMO -> {
+                val day = NoticeLinks.payload.value?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                nav.navigate(Routes.memo(0, day)) { launchSingleTop = true }
+                NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -759,6 +765,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             container.memoRepository.consumeLastDeleted()
         }
     }
+
+    // [RUL-03][RUL-04] 1.36 what a button or rule did, with 되돌리기 when it wrote.
+    com.bamnat.app.logic.LogicMessageHost(container, snackbar)
 
     // [UNDO-01][UNDO-02][UNDO-03] A kind of work changed, records cleared or a calendar removed: 되돌리기 at
     // once, wherever it was done, and 설정 › 데이터 › 최근 지운 기록 for 7 days after.
@@ -2004,6 +2013,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.JOURNAL -> Routes.JOURNAL
     SettingsGo.RECIPES -> Routes.RECIPE_MINE
     SettingsGo.STUDIO -> Routes.studio()
+    SettingsGo.STUDIO_RULES -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "RULES")
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SENT -> Routes.companySent()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,

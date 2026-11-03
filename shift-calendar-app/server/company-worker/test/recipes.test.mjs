@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { server, device, from, signIn, seasoned } from "./helpers.mjs";
-import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf, partUnitOf } from "../src/recipes.js";
+import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf, partUnitOf, logicOnly } from "../src/recipes.js";
 
 const cases = JSON.parse(readFileSync(new URL("../../../docs/recipe-cases.json", import.meta.url), "utf8"));
 /** After 처리방침 3.8 is in force (시행 2026-11-29 KST). */
@@ -389,6 +389,30 @@ test("[MKX-01] 장터 두 구간: a recipe's tabs, 테마 (two tabs or the whole
   assert.deepEqual(tabs.data.items.map((i) => i.title).sort(), ["가계부 전문", "알람만"].sort());
   const money = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=tab&tab=money&kind=money");
   assert.deepEqual(money.data.items.map((i) => [i.title, i.tabs]), [["가계부 전문", ["money"]]]);
+});
+
+test("[RUL-07] 규칙·단추만: a recipe of only the logic piece is its own section (scope logic), not one tab's", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const logic = { kind: "logic", rules: [{ name: "퇴근 뒤 체크 비우기", on: "end", min: 30, do: "checkReset" }],
+    buttons: [{ label: "오늘 기록", emoji: "📝", where: "day", do: "memoTpl", arg: "하루 기록" }] };
+  assert.equal(logicOnly({ pieces: [logic] }), true);
+  assert.equal(logicOnly({ pieces: [logic, { kind: "calView", size: "tall" }] }), false);
+  assert.equal(scopeOf(["alarm"], JSON.stringify({ pieces: [logic] })), "logic");
+  // 누락 점검 N8: a button's id (꾸밈 층 tap), the 꾸밈 층 place and 길게 누르면.
+  const n8 = { kind: "logic", buttons: [{ id: "deco1", label: "알려 줘", where: "decor", do: "notify", arg: "꾸밈" }],
+    rules: [{ name: "길게 메모장", on: "hold", do: "screen", arg: "memo" }] };
+  const ok = await cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, n8] })));
+  for (const k of ['"id":"deco1"', '"where":"decor"', '"on":"hold"']) assert.ok(ok.text.includes(k), k);
+  await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { ...n8, buttons: [{ ...n8.buttons[0], id: "Bad-Id" }] }] }))), (e) => e.code !== undefined);
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const put = await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "퇴근 규칙·단추", pieces: [logic] }) }, admin);
+  assert.ok(put.status < 300, JSON.stringify(put.data));
+  await call("POST", "/api/admin/recipes", { recipe: recipe({ title: "알람만", pieces: [{ kind: "alarms", byRole: [{ role: "day", before: [60] }] }] }) }, admin);
+  const got = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=logic&kind=rules");
+  assert.deepEqual(got.data.items.map((i) => [i.title, i.scope]), [["퇴근 규칙·단추", "logic"]]);
+  const tabs = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=tab");
+  assert.deepEqual(tabs.data.items.map((i) => i.title), ["알람만"]);
 });
 
 test("[FREE-09] every 추천 테마 core wrote reads the same on the server, eight for each kind of work, each with its look for the list", async () => {

@@ -79,6 +79,8 @@ object NoticeLinks {
         PAY_GAP,
         /** 1.32.1 [STAB-13] 문의하기 as 앱 멈춤 with the 점검 기록 ticked, from the notice after the app stopped. */
         STOP_REPORT,
+        /** [RUL-03] 1.36 a button or rule's 메모 틀 열기: a new memo on the day in [payload] from [com.bamnat.app.logic.LogicLinks.template]. */
+        LOGIC_MEMO,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

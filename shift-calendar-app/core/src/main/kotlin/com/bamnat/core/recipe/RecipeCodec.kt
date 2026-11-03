@@ -234,6 +234,14 @@ object RecipeCodec {
     private fun ref(f: Field, v: Any?, path: String, ctx: Ctx): Ref? {
         val m = v as? Map<*, *> ?: return null
         if (m.size != 1) throw RecipeException("ref", path)
+        // [RUL-02] A formula, only where a part's style takes one (부품 꾸미기); checked as every formula field is.
+        (m["fx"] as? String)?.let { src ->
+            if (BlueprintParts.STYLE_FIELDS.none { it === f }) throw RecipeException("ref", path)
+            val t = src.trim()
+            if (t.isEmpty() || t.length > com.bamnat.core.formula.Formula.MAX_LEN) throw RecipeException("text", path)
+            com.bamnat.core.formula.Logic.formulaProblem(t)?.let { throw RecipeException(it, path) }
+            return Ref.Formula(t)
+        }
         (m["token"] as? String)?.let { name ->
             if (f !is Field.Color || name !in ctx.tokens) throw RecipeException("ref", path)
             return Ref.Token(name)
@@ -307,6 +315,7 @@ object RecipeCodec {
             is String -> str(b, v)
             is Ref.Input -> put(b, mapOf("input" to v.id))
             is Ref.Token -> put(b, mapOf("token" to v.name))
+            is Ref.Formula -> put(b, mapOf("fx" to v.src))
             is Map<*, *> -> {
                 b.append('{')
                 v.entries.filter { it.value != null }.sortedBy { it.key as String }.forEachIndexed { i, (k, x) ->

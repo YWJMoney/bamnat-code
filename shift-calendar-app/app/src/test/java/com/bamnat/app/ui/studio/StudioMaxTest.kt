@@ -85,6 +85,28 @@ class StudioMaxTest {
         assertTrue(Palette.contrast(all.ink!!, all.bg!!) >= 4.5)
     }
 
+    @Test fun rulesSaveRightAwayAndFollowThePhone() {
+        // PC D10: 스튜디오 규칙 목록이 설정과 달랐고, 규칙만 바꾸고 나갈 때 입힐지 물었어요.
+        val vm = StudioViewModel(c)
+        idle()
+        vm.change { it.copy(calTheme = "cell=fill") }
+        val rule = com.bamnat.core.formula.LogicRule("아침", com.bamnat.core.formula.RuleTrigger.DAILY, at = "07:00",
+            act = com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.NOTIFY, "x"))
+        vm.changeLogic(com.bamnat.core.formula.Logic(rules = listOf(rule)))
+        idle()
+        assertEquals("바로 휴대폰에", listOf("아침"), com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic).rules.map { it.name })
+        assertEquals("바꾼 곳으로 세지 않아요", vm.state.value.base.logic, vm.state.value.draft.logic)
+        vm.undo()
+        assertEquals("되돌리기는 모양만", listOf("아침"), com.bamnat.core.formula.Logic.decode(vm.state.value.draft.logic).rules.map { it.name })
+        // 장터에서 넣은 규칙은 돌아오면 보여요.
+        val more = com.bamnat.core.formula.Logic(rules = listOf(rule, rule.copy(name = "저녁", at = "21:00")))
+        c.settingsRepository.update { it.copy(logic = com.bamnat.core.formula.Logic.encode(more)) }
+        idle()
+        vm.syncLogic()
+        assertEquals(2, com.bamnat.core.formula.Logic.decode(vm.state.value.draft.logic).rules.size)
+        vm.changeLogic(com.bamnat.core.formula.Logic())
+    }
+
     @Test fun draftIsKeptAndComesBack() {
         val vm = StudioViewModel(c)
         idle()

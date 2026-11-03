@@ -409,6 +409,8 @@ fun CalendarScreen(
     LaunchedEffect(vm) { vm.openMemo.collect { onOpenMemo(it) } }
 
     val snap = snapshot
+    // [RUL-05] 1.36 탭 사이 흐름: the days' values formulas read (근무·메모·꼬리표·지출), for 조건부 꾸미기, 단추 and 규칙.
+    val dayFacts = com.bamnat.app.logic.rememberDayFacts(snap, datedMemos, moneyBook, settings.workStyle, today)
     // [SPD-28] 1.31 N5: the month kept from last time, read off the main thread, drawn while the data is read.
     val ctx31 = LocalContext.current
     val firstFrame by androidx.compose.runtime.produceState<FirstFrame.Frame?>(null) {
@@ -578,6 +580,8 @@ fun CalendarScreen(
             scope.launch { delay(TIP_DELAY_MILLIS); vm.tip(tip) }
         }
         vm.onDayTapped(date)
+        // [RUL-04] 날짜를 누르면 규칙 (메모 틀 열기·알림 …), never while painting days.
+        if (!painting && mark == null && rangeFrom == null) com.bamnat.app.logic.LogicRunner.onTap(context.appContainer, date, dayFacts)
         val m = YearMonth.from(date)
         if (m != visibleMonth && !weekOnly) slideToMonth(m)
         // [CAL-20] With the day card on, the first tap shows it and the second opens the day.
@@ -1015,7 +1019,7 @@ fun CalendarScreen(
             // C 1.32 [STAB-04] Opened safely after stopping in a row: said first, with the way back.
             safeStart -> "안전 모드로 열었어요" to {
                 // PC 19·20차 사용성 제안 (감겨서 달력이 밀림): a line short enough not to wrap; 알람 점검 says the rest.
-                AlarmWarningLine((if (com.bamnat.app.diag.StartGuard.byHand) "점검용 안전 모드" else "멈춰서 안전 모드") + " · 꾸밈 쉼",
+                AlarmWarningLine((if (com.bamnat.app.diag.StartGuard.byHand) "점검용 안전 모드" else "멈춰서 안전 모드") + " · 꾸밈·규칙 쉼",
                     "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace)
             }
             // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
@@ -1405,6 +1409,7 @@ fun CalendarScreen(
                 // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
                 val stamping = mark != null || (paint != null && paint != PaintTool.Pick)
                 val memoCounts = remember(datedMemos) { datedMemos.groupingBy { it.date!! }.eachCount() }
+                androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.logic.LocalDayFacts provides dayFacts) {
                 HorizontalPager(
                     state = pagerState,
                     // [CAL-08] The list is as tall as its month; the grid is always six weeks.
@@ -1464,10 +1469,13 @@ fun CalendarScreen(
                         wishDays = if (stamping || !wishShown) emptySet() else wishOff.days,
                     )
                 }
+                }
                 // B 1.32 [CALX-01] (사용자 2026-10-28 "달 넘길 때 몇 월인지 인지 부족"): while the month turns, the month it lands on
                 // shows big over the grid, then fades; the top bar's small title alone was missed mid-swipe.
                 SwipeMonthBadge(pagerState, baseMonth, Modifier.align(Alignment.TopCenter).padding(top = 4.dp))
             }
+            // [RUL-03] 1.36 단추 on the calendar screen, for the picked day.
+            if (paint == null) com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.CALENDAR, selected)
             // 1.32 [LEDX-23] What the strips under the dates mean, while the heat map is on.
             if (settings.spendHeat && focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null) {
                 com.bamnat.app.ui.money.SpendHeatLegend(Modifier.padding(start = 16.dp, top = 4.dp))

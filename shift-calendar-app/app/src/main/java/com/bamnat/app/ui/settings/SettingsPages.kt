@@ -291,6 +291,16 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             }
         }
     }
+    // [RUL-06] 1.36 수식·규칙·버튼: "이럴 때 이렇게" 규칙과 화면 단추, 스튜디오와 같은 편집기.
+    // PC 3차 사용성 제안: '규칙·단추' 칩·검색은 이 칸으로 바로 내려와요.
+    SectionCard(title = com.bamnat.app.logic.LOGIC_ROW, modifier = Modifier.focusMark(com.bamnat.app.logic.LOGIC_ROW)) {
+        // 스튜디오 갈래·PC 1차 확인: 만들고 고치는 곳은 스튜디오 › 규칙·단추 하나, 여기는 켜고 끄기와 '다음 실행'·'지난번 결과'.
+        NavRow("스튜디오에서 열기", "규칙·단추·조건부 꾸미기를 만들고 고쳐요") { SettingsLinks.go(SettingsGo.STUDIO_RULES) }
+        com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(settings.logic), { l ->
+            vm.update { it.copy(logic = com.bamnat.core.formula.Logic.encode(l)) }
+        }, phone = true, readOnly = true, onOpen = { SettingsLinks.go(SettingsGo.STUDIO_RULES) })
+        com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.LOGIC)
+    }
     SectionCard(title = null) {
         // 1.32.1 [STAB-13] It also holds 앱 멈춤 and 앱 멈춤 관찰, so it says so.
         NavRow("알람 점검", "알람이 안 울리거나 늦을 때, 앱이 멈췄을 때 원인을 찾아요") { onOpenDiagnostics(false) }

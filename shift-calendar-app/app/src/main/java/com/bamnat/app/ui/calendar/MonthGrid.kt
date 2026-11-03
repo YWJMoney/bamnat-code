@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.calendar
 
 import com.bamnat.app.ui.parts.partSpot
+import com.bamnat.app.appContainer
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.parts.partBox
 import com.bamnat.app.ui.parts.partStyle
@@ -550,6 +551,8 @@ private fun DayCell(
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val haptics = LocalHapticFeedback.current
+    val holdContainer = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val holdFacts = com.bamnat.app.logic.LocalDayFacts.current
     var menu by remember { mutableStateOf(false) }
     // [CVW-01] 1.35 달력 모양; the app's own cells when it is the default.
     val view = LocalCalendarView.current
@@ -578,8 +581,11 @@ private fun DayCell(
             date.dayOfWeek, holidayName != null, inMonth, isToday, isSelected,
         )
     }
-    val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else blueprint.style("cal.cell", partStates)
-    val cellParts = if (blueprint.isEmpty) null else remember(blueprint, partStates) { com.bamnat.app.ui.parts.CellParts.of(blueprint, partStates) }
+    // [RUL-02] 1.36 조건부 꾸미기: lines with a 수식 read this day's values (근무·메모·꼬리표·지출), only when the blueprint has one.
+    val dayFacts = com.bamnat.app.logic.LocalDayFacts.current
+    val factScope = if (blueprint.hasFormulas) dayFacts?.scope(date) else null
+    val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else remember(blueprint, partStates, factScope) { blueprint.style("cal.cell", partStates, factScope) }
+    val cellParts = if (blueprint.isEmpty) null else remember(blueprint, partStates, factScope) { com.bamnat.app.ui.parts.CellParts.of(blueprint, partStates, factScope) }
     val partShape = cellPart.shape(shape)
     // [RCP-09] 1.34 달력 테마: the user's colours for 토·일·공휴일 and today, and how strong the wash is.
     val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
@@ -673,6 +679,8 @@ private fun DayCell(
                     })
                     quickMenu -> ({
                         haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                        // 누락 점검 N8: '날짜를 길게 누르면' 규칙이 화면·메모 틀을 열면 그것 하나만.
+                        if (!com.bamnat.app.logic.LogicRunner.onHold(holdContainer, day.date, holdFacts))
                         // [CVW-09] 1.35 날짜를 길게 누르면: the quick menu, a memo for the day at once, or the whole day.
                         when (hold) {
                             "memo" -> onQuickAction(QuickAction.Memo)

@@ -98,8 +98,13 @@ object ShareContent {
      */
     suspend fun memos(c: AppContainer, from: LocalDate, calendar: String = PersonalCalendar.MAIN): Map<LocalDate, String> {
         val until = from.plusDays(ShareLinkPayload.DAYS.toLong())
+        // 1.36 [SEC-12] 보안 점검 M5: what rules wrote (a memo, a line with {원(이달지출)} in it) stays on the phone.
+        val ruled = com.bamnat.app.logic.LogicStore(c.appContext)
         return c.memoRepository.memos.first()
-            .filter { m -> m.showsOn(calendar, MemoSharing.SEPARATE) && !m.inTrash && !m.isBlank && m.date?.let { !it.isBefore(from) && it.isBefore(until) } == true }
+            .filter { m -> m.showsOn(calendar, MemoSharing.SEPARATE) && !m.inTrash && m.date?.let { !it.isBefore(from) && it.isBefore(until) } == true }
+            .filterNot { ruled.madeMemo(it.id) }
+            .map { m -> ruled.madeLines(m.id).takeIf { it.isNotEmpty() }?.let { lines -> m.copy(body = m.body.lines().filterNot { it in lines }.joinToString("\n")) } ?: m }
+            .filter { !it.isBlank }
             .sortedByDescending { it.updatedAtMillis }
             .groupBy { it.date!! }
             .mapNotNull { (date, list) -> ShareLinkPayload.memoLine(list)?.let { date to it } }

@@ -37,6 +37,9 @@ import kotlinx.coroutines.flow.stateIn
  * someone else's theme, or parts of others' from 보관함 ([State.sources]), keep their days and ad, as wearing them from 장터 would.
  */
 class StudioViewModel(private val c: AppContainer, start: String = START_MINE) : ViewModel() {
+    /** [RUL-06] "area:RULES" opens the studio on that area (설정 › 알람 › 규칙·단추 → 스튜디오에서 열기). */
+    val startArea: String? = if (start.startsWith(START_AREA)) start.removePrefix(START_AREA) else null
+
     /**
      * [STU-20] 1.36 one step of 되돌리기: the look and the 기능 at that point, and what was changed there (기록 목록, 사용자 2026-10-31
      * "최상의 엔터프라이즈급 스튜디오").
@@ -454,6 +457,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     fun layer(k: ThemeWardrobe.Kept) = viewModelScope.launch {
         val r = runCatching { RecipeCodec.read(k.body) }.getOrNull() ?: return@launch
         var d = _state.value.draft
+        var merged: String? = null
         var overlap = emptySet<String>()
         r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.forEach { p ->
             // [BLU-07] PC 7차: a 부품 laid on changes only its own units; the parts I made elsewhere stay.
@@ -465,6 +469,21 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 runCatching { d.copy(parts = com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(laid.lines)).encode()) }.getOrDefault(d)
             } else c.recipes.pieces.onDraft(d, p.kind, p.values)
         }
+        // [RUL-07] 규칙·단추 are added to mine (the same one twice is kept once), up to the limits; they never take mine away.
+        r.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }?.let { p ->
+            val mine = com.bamnat.core.formula.Logic.decode(d.logic)
+            // [SEC-12] 보관함으로 받은 남의 규칙도 장터에서 바로 넣을 때와 같아요: 가계부 100만 원까지, 메모·가계부를 쓰는 새 규칙은 꺼진 채로.
+            val got = com.bamnat.core.formula.Logic.from(p.values).let { if (k.own) it else it.received() }
+            if (!k.own) {
+                val had = mine.rules.map { it.key }.toSet()
+                val store = com.bamnat.app.logic.LogicStore(c.appContext)
+                got.writingRules.filter { it.key !in had }.forEach { store.gotOff(it.key) }
+                store.markGot(got.rules.map { it.key }.filter { it !in had })
+                store.noteSame(mine, got)
+            }
+            d = d.copy(logic = com.bamnat.core.formula.Logic.encode(mine.plus(got)))
+            merged = mine.mergeSay(got)
+        }
         val was = _state.value.draft
         where = "보관함 · ${quoted(k.title)} 얹기"
         // [STU-39] A locked tab keeps its look when a part is laid on.
@@ -473,13 +492,18 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         // Nothing changed (the same part again): no step to take back.
         val stepped = s.draft != was
         // 1.36 U17: a part the look already has changes nothing; it says so and is not counted as laid on.
-        if (!stepped) { _state.value = s.copy(said = "${quoted(k.title)}${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
+        if (!stepped) { _state.value = s.copy(said = merged ?: "${quoted(k.title)}${com.bamnat.app.ui.Fmt.eun(k.title)} 이미 지금 모양과 같아요", canUndoLayer = false); return@launch }
         val same = overlap.mapNotNull { com.bamnat.core.recipe.BlueprintParts.LABELS[it] }.joinToString("·")
-        _state.value = s.copy(layered = s.layered + k, sources = if (k.own) s.sources else s.sources + (k.from to k.fromTitle),
+        // PC D4: 규칙·단추만 얹은 것은 테마가 아니라서 입히기가 그 테마 기간·광고를 따르지 않아요 (출처는 레시피에 남아요).
+        val logicOnly = LookParts.partUnit(r) == LookParts.LOGIC
+        val writesOff = !k.own && r.pieces.any { p -> p.kind == com.bamnat.core.recipe.PieceKind.LOGIC && com.bamnat.core.formula.Logic.from(p.values).writingRules.isNotEmpty() }
+        val tail = if (!logicOnly) "" else if (writesOff) ". 메모·가계부를 바꾸는 규칙은 꺼진 채로 들어가요. 입힌 뒤 설정 › 수식·규칙·버튼에서 켜요" else ". 입히면 규칙이 켜져요"
+        _state.value = s.copy(layered = s.layered + k, sources = if (k.own || logicOnly) s.sources else s.sources + (k.from to k.fromTitle),
             // PC 9차 사용성 제안 (얹기 안내가 두 줄로 길어요): a single part says its own name, and the rest in a few words.
-            said = (k.parts.singleOrNull()?.let { LookParts.byId(it)?.label?.removePrefix("부품 · ") }?.let { "‘$it’ 부품을 얹었어요" }
-                ?: "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요") +
-                (if (same.isNotEmpty()) " · 내 ‘$same’ 꾸밈은 바뀜, 되돌리기로 돌아가요" else " · 다른 부품은 그대로"),
+            said = (if (logicOnly) "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요" + tail
+                else (k.parts.singleOrNull()?.let { LookParts.byId(it)?.label?.removePrefix("부품 · ") }?.let { "‘$it’ 부품을 얹었어요" }
+                    ?: "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요") +
+                    (if (same.isNotEmpty()) " · 내 ‘$same’ 꾸밈은 바뀜, 되돌리기로 돌아가요" else " · 다른 부품은 그대로")) + merged?.let { ". $it" }.orEmpty(),
             canUndoLayer = stepped)
     }
 
@@ -500,6 +524,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         }
         val was = Recipe("전", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(before.draft))
         var d = s.draft
+        // [RUL-07] 규칙·단추: what it added comes off; the rest of mine stays.
+        runCatching { RecipeCodec.read(k.body) }.getOrNull()?.pieces?.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }?.let { p ->
+            val got = com.bamnat.core.formula.Logic.from(p.values).let { if (k.own) it else it.received() }
+            d = d.copy(logic = com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(d.logic).minus(got)))
+        }
         LookParts.pick(was, k.parts.ifEmpty { LookParts.of(was).map { it.id } }).pieces.forEach { p ->
             // [BLU-07] PC 7차: only the units the part brought go back; the parts changed since stay.
             d = if (p.kind == com.bamnat.core.recipe.PieceKind.PARTS) {
@@ -626,17 +655,62 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                 }
             }
         }.getOrDefault(false)
+        // PC D4 (높): 규칙·단추는 모양이 아니라 테마 입기에 들어가지 않아요. 입히기가 스튜디오에서 만든 그대로 저장해요.
+        val logicSaid = if (done) wearLogic(s.draft.logic) else null
         // F-94: once on, the draft is the phone's look: 바꾼 곳 counts from here (the settings may still be being written, so the draft
         // itself is the new start, not a read of them).
-        _state.value = _state.value.copy(busy = false, said = if (done) "내 앱에 입혔어요. 기록은 그대로예요" else "입히지 못했어요. 다시 해 주세요",
+        _state.value = _state.value.copy(busy = false, said = if (done) "내 앱에 입혔어요. 기록은 그대로예요" + logicSaid.orEmpty() else "입히지 못했어요. 다시 해 주세요",
             canUndoWear = done && beforeWear != null, base = if (done) s.draft else _state.value.base, past = if (done) emptyList() else _state.value.past,
             future = emptyList(), wornNow = done)
         if (done) refresh(both = true)
     }
 
+    /**
+     * PC D10 (사용성 중): 규칙·단추는 휴대폰 것이라 스튜디오에서 고치면 바로 저장돼요. 설정 › 수식·규칙·버튼과 같은 목록이고, 규칙만 바꾸고
+     * 나갈 때 입힐지 묻지 않아요. 지난 단계에도 같은 규칙을 넣어 되돌리기가 규칙을 되돌리지 않게 해요(규칙은 줄마다 빼기·끄기로).
+     */
+    fun changeLogic(l: com.bamnat.core.formula.Logic) {
+        val enc = com.bamnat.core.formula.Logic.encode(l)
+        c.settingsRepository.update { it.copy(logic = enc) }
+        com.bamnat.app.logic.LogicRunner.rulesChanged(c)
+        withLogic(enc)
+    }
+
+    /** PC D10: 장터에서 넣는 등 스튜디오 밖에서 바뀐 규칙을 화면에 돌아올 때 받아요 (스튜디오에서 얹고 아직 안 입힌 것이 없을 때). */
+    fun syncLogic() {
+        val now = c.settingsRepository.current.logic
+        val s = _state.value
+        if (s.draft.logic == s.base.logic && now != s.draft.logic) withLogic(now)
+    }
+
+    private fun withLogic(enc: String) {
+        val s = _state.value
+        fun AppSettings.l() = copy(logic = enc)
+        _state.value = s.copy(draft = s.draft.l(), base = s.base.l(), past = s.past.map { it.copy(draft = it.draft.l()) },
+            future = s.future.map { it.copy(draft = it.draft.l()) })
+    }
+
+    /** The rules and buttons before the last 입히기, for 되돌리기. */
+    private var beforeLogic: String? = null
+
+    /** Puts the draft's 규칙·단추 on (they stay with the phone, not a theme) and says what is on now: " · 규칙 2개·단추 1개가 켜졌어요". */
+    private fun wearLogic(draft: String): String? {
+        val now = c.settingsRepository.current.logic
+        // PC D10: 입히기는 규칙을 더하기만 해요 (스튜디오를 연 뒤 장터에서 넣은 규칙이 지워지지 않게). 빼기는 줄마다 바로 저장돼요.
+        val logic = com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(now).plus(com.bamnat.core.formula.Logic.decode(draft)))
+        if (now == logic) return null
+        beforeLogic = now
+        c.settingsRepository.update { it.copy(logic = logic) }
+        val l = com.bamnat.core.formula.Logic.decode(logic)
+        return if (l.isEmpty) " · 규칙과 단추를 모두 껐어요"
+        else " · " + listOfNotNull(l.rules.size.takeIf { it > 0 }?.let { "규칙 ${it}개" }, l.buttons.size.takeIf { it > 0 }?.let { "단추 ${it}개" }).joinToString("·") + "가 켜졌어요"
+    }
+
     /** 입히기 바로 뒤의 되돌리기: the look from just before, back on the phone and in the draft. */
     fun undoWear() {
         val before = beforeWear ?: return
+        beforeLogic?.let { l -> c.settingsRepository.update { it.copy(logic = l) } }
+        beforeLogic = null
         c.recipes.pieces.restoreLook(before)
         beforeWear = null
         com.bamnat.app.data.LookUndo.clear(c.appContext)
@@ -769,6 +843,16 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      * [BLU-07] 1.36 이 부품만 올리기 (사용자 2026-11-01): the draft's lines of one 부품 [unit] as a recipe of its own, for 장터 '부품'.
      * Null when the draft has nothing in that 부품 yet.
      */
+    /** [RUL-07] 규칙·단추만 장터에 올리기 (장터 '규칙·단추' 구간): the draft's buttons and rules alone, for every kind of work. */
+    fun uploadLogic(): String? {
+        val l = com.bamnat.core.formula.Logic.decode(_state.value.draft.logic)
+        if (l.isEmpty) return null
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = null
+        val title = (l.rules.firstOrNull()?.name ?: l.buttons.first().label).take(20) + " 규칙·단추"
+        return RecipeCodec.write(recipe("").copy(title = title.take(30), summary = "규칙 ${l.rules.size}개 · 단추 ${l.buttons.size}개", styles = WorkStyle.entries.toSet(),
+            pieces = listOf(com.bamnat.core.recipe.Piece(com.bamnat.core.recipe.PieceKind.LOGIC, l.toValues())), cover = coverOf(_state.value.draft)))
+    }
+
     fun uploadPart(unit: String): String? {
         val s = _state.value
         val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)
@@ -842,6 +926,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         const val LOCK_PREFS = "studio_locks"
         /** "feature:<piece key>": 설정의 '이 설정 나누기' — the studio with that 기능 on (or the look as it is). */
         const val START_FEATURE = "feature:"
+        const val START_AREA = "area:"
         /** A start for [START_RECIPE], one of a kind each time (the studio's ViewModel is kept per start). */
         fun recipeStart(own: String?): String = START_RECIPE + (own?.let { ":$it" } ?: "") + "@" + com.bamnat.core.time.Today.millis()
         /** [STU-21] The 기능 the studio can carry, in the order shown. */

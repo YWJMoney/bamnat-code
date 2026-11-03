@@ -35,6 +35,8 @@ object Notifications {
     const val SHARE_CHANNEL_ID = "share_expiry_v1"
     /** [FEAT-18] The lock-screen 오늘 근무 notice: no sound, no badge, shown in full on the lock screen. */
     const val TODAY_CHANNEL_ID = "today_shift_v1"
+    /** [RUL-04] 1.36 수식·규칙: what a rule says (내일 야간 준비 등). */
+    const val RULES_CHANNEL_ID = "rules_v1"
     /** [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 확인 and date notices. */
     const val INVEST_CHANNEL_ID = "invest_alarm_v1"
     /** [MON-06] The one notice before a free trial turns paid. */
@@ -162,7 +164,13 @@ object Notifications {
             description = "문의 답, 받은 근무표 바뀜, 광장 규칙·신고 결과를 하루에 한 번 모아서 조용히 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza))
+        val rules = NotificationChannel(RULES_CHANNEL_ID, "내 규칙 알림", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "스튜디오나 받은 테마의 규칙이 띄우는 알림이에요(예: 야간 근무 3시간 전 준비). 규칙은 설정 › 알람 › 수식·규칙·버튼에서 하나씩 끌 수 있어요"
+            group = GROUP_DAY
+            // 1.36 [SEC-12] 보안 점검 M5: a rule's words can hold the 가계부's numbers ({원(이달지출)}); the lock screen shows only that one came.
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 

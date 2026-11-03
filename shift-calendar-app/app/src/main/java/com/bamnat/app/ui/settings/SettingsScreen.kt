@@ -68,6 +68,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material.icons.outlined.WorkspacePremium
@@ -972,6 +973,8 @@ private val SHORTCUTS = listOf(
     Triple("근무표 공유", "근무표 공유", Icons.Outlined.Share),
     Triple("알람음", "알람 소리", Icons.Outlined.MusicNote),
     Triple("백업 저장", "백업", Icons.Outlined.SettingsBackupRestore),
+    // [RUL-06] 1.36 PC 1차 확인: 규칙은 설정 › 알람 맨 아래에만 있어 찾기 어려웠어요.
+    Triple(com.bamnat.app.logic.LOGIC_ROW, "규칙·단추", Icons.Outlined.Rule),
 )
 
 /**

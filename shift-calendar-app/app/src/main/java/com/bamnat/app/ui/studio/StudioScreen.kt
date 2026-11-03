@@ -142,6 +142,11 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
      * in the row (it was eleventh, three swipes away).
      */
     FEATURES("기능", null, TabOrder.CALENDAR),
+    /**
+     * [RUL-06] 1.36 규칙·단추 (사용자 2026-11-01 "수식·조건으로 모든 곳을 이어 직접"): 규칙, 단추, 조건부 꾸미기 in one place. PC D8: third in
+     * the row, next to 기능 (맨 끝이라 스튜디오 안에서 못 찾고 설정 › 스튜디오에서 열기로 들어갔어요).
+     */
+    RULES("규칙·단추", null, TabOrder.CALENDAR),
     MONEY("가계부", FreeTarget.MONEY, TabOrder.MONEY),
     MEMO("메모", FreeTarget.MEMO, TabOrder.MEMOS),
     STATS("통계", FreeTarget.STATS, TabOrder.STATS),
@@ -173,8 +178,11 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         ALARM -> listOf(Tool.COLORS)
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
-        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.COLORS, Tool.PARTS, Tool.BOX, Tool.CORNERS, Tool.TABS)
+        // [RUL-06] 한 색, 근무에 따라, 부품, 규칙·단추 first.
+        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.PARTS, Tool.LOGIC, Tool.COLORS, Tool.BOX, Tool.CORNERS, Tool.TABS)
         FEATURES -> listOf(Tool.FEATURE)
+        // PC D4: 장터에서 담은 규칙·단추를 여기 보관함에서 얹어요.
+        RULES -> listOf(Tool.RULES, Tool.BUTTONS, Tool.COND, Tool.BOX)
     }
 
     /** 사용자 2026-11-01: the 장터 구간 that holds this area's looks — a 기능별 탭 where there is one, else 테마. */
@@ -203,6 +211,8 @@ private enum class Tool(val label: String) {
     BOX("보관함"), FEATURE("켜고 고치기"), SEED("한 색"), SHIFT("근무에 따라"),
     /** [BLU-06] 1.36 부품 하나하나 꾸미기. */
     PARTS("부품"),
+    /** [RUL-06] 1.36 수식·규칙·버튼: 단추와 "이럴 때 이렇게" 규칙. */
+    LOGIC("규칙·단추"), RULES("규칙"), BUTTONS("단추"), COND("조건부 꾸미기"),
 }
 
 /** [STU-24] 1.36 미리 보기 크기: the handle under it sets any size between these (사용자 2026-10-31 "크게작게 접기가 너무 불편"). */
@@ -224,8 +234,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     val c = LocalContext.current.appContainer
     val s by vm.state.collectAsStateWithLifecycle()
     val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
+    val studioFacts = com.bamnat.app.logic.rememberAppDayFacts()
+    // PC D10: rules put in from the market (or switched in 설정) while the studio was behind show here too.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.syncLogic() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var area by rememberSaveable { mutableStateOf(Area.ALL) }
+    var area by rememberSaveable { mutableStateOf(vm.startArea?.let { a -> Area.entries.firstOrNull { it.name == a } } ?: Area.ALL) }
     var tool by rememberSaveable { mutableStateOf(Tool.SEED) }
     var partNow by remember { mutableStateOf<Pair<String, String?>?>(null) }
     var partPick by remember { mutableStateOf<Pair<String, String?>?>(null) }
@@ -509,6 +522,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     com.bamnat.app.ui.parts.LocalBlueprint provides (MaterialTheme.colorScheme.background.luminance() < 0.5f).let { dark ->
                                         remember(d.parts, dark) { com.bamnat.core.recipe.Blueprint.decode(d.parts).forDark(dark) } },
                                     com.bamnat.app.ui.parts.LocalBlueprintRaw provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
+                                    // [RUL-02] the phone's own days, so 조건부 꾸미기 shows on the weeks below.
+                                    com.bamnat.app.logic.LocalDayFacts provides studioFacts,
                                 ) {
                                     val t = area.target ?: FreeTarget.ALL
                                     ScreenSkin(t.keyFor(payStyle), Modifier.fillMaxWidth()) {
@@ -661,7 +676,31 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Tool.WIDGET -> WidgetTool(WidgetLook.decode(d.widgetLook)) { w -> vm.change { it.copy(widgetLook = w.encode()) } }
                         Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer,
                             onMarket = onMarket?.let { go -> { go(area.marketKind) } }, style = vm.style)
-                        Tool.FEATURE -> FeaturesTool(vm, s.extras)
+                        Tool.FEATURE -> {
+                            // [RUL-06] PC 1차 확인: '규칙·단추'를 못 찾았어요.
+                            OutlinedButton(onClick = { pick(Area.RULES) }, modifier = Modifier.fillMaxWidth()) { Text("＋ 이럴 때 이렇게: 규칙·단추 만들기") }
+                            FeaturesTool(vm, s.extras)
+                        }
+                        Tool.LOGIC, Tool.RULES, Tool.BUTTONS -> {
+                            // PC D10: 규칙·단추는 고치면 바로 휴대폰에 저장돼요 (설정과 같은 목록).
+                            Text("규칙·단추는 고치면 바로 저장돼요. 입히지 않아도 돼요", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(d.logic), { l -> vm.changeLogic(l) }, show = when (t) { Tool.RULES -> com.bamnat.app.logic.LogicShow.RULES; Tool.BUTTONS -> com.bamnat.app.logic.LogicShow.BUTTONS; else -> com.bamnat.app.logic.LogicShow.ALL },
+                                usedInParts = { f -> com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.any { it["when"] == f } },
+                                onOpenParts = { area = Area.RULES; tool = Tool.COND })
+                            // [RUL-07] 규칙·단추만 따로 장터에 올려요(테마 없이). 받는 사람은 보관함에서 얹어요.
+                            if (!com.bamnat.core.formula.Logic.decode(d.logic).isEmpty) {
+                                OutlinedButton(onClick = { vm.uploadLogic()?.let { body -> publishing = Triple(body, "", null) } },
+                                    modifier = Modifier.fillMaxWidth()) { Text("규칙·단추만 장터에 올리기") }
+                            }
+                        }
+                        Tool.COND -> {
+                            Text("조건이 맞는 날의 칸만 다르게 꾸며요. 예: 야간이고 메모에 #인수인계가 있으면 테두리 빨강",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            PartsTool("cal", d.parts, focus = "cal.cell", onChange = { v -> vm.change { it.copy(parts = v) } },
+                                conditionFirst = true, rulesUsing = { f -> com.bamnat.core.formula.Logic.decode(d.logic).rules.filter { it.cond == f }.map { it.name } },
+                                onOpenRules = { area = Area.RULES; tool = Tool.RULES })
+                        }
                     }
                     Spacer(Modifier.height(24.dp))
                 }
@@ -987,7 +1026,8 @@ private fun BoxTool(kept0: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area:
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
-    val here = kept.filter { k -> k.parts.isEmpty() || k.parts.any { LookParts.byId(it)?.tab == area.tab } }
+    val here = if (area == Area.RULES) kept.filter { k -> LookParts.LOGIC in k.parts }
+        else kept.filter { k -> k.parts.isEmpty() || k.parts.any { LookParts.byId(it)?.tab == area.tab } }
     val rest = kept - here.toSet()
     Text("누르면 지금 모양에 얹어요. 얹은 조각은 ‘빼기’로 다시 빼요. 미리 보기를 누르고 있으면 바로 전 모양이에요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     // [STU-27] 1.36 빌드 8 (S32: 메모 조각이 달력 영역에서 안 보이는 줄 앎): every piece shows in every area, this area's first, under a title.

@@ -158,6 +158,8 @@ class RecipePieces(private val c: AppContainer) {
         }
         // [BLU-01] 1.36 부품 꾸미기: the blueprint's lines as they are.
         PieceKind.PARTS -> com.bamnat.core.recipe.Blueprint.decode(from.parts).takeIf { !it.isEmpty }?.let { mapOf("parts" to it.sorted()) }
+        // [RUL-03][RUL-04] 1.36 수식·규칙·버튼.
+        PieceKind.LOGIC -> com.bamnat.core.formula.Logic.decode(from.logic).toValues().takeIf { it.isNotEmpty() }
         // [CVW-07] 1.35 앱 동작.
         PieceKind.APP_FEEL -> from.let { s ->
             mapOf("theme" to THEMES.entries.first { it.value == s.themeMode }.key, "dynamic" to s.dynamicColor,
@@ -272,6 +274,21 @@ class RecipePieces(private val c: AppContainer) {
                 values["widget"]?.let { Change("위젯 배경 그림") },
                 (values["corners"] as? String)?.let { Change(com.bamnat.core.recipe.RecipeDescribe.CORNER_NAMES[it] ?: "모서리") },
             ).ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
+        }
+        // [RUL-04] 켜기 전 한 줄 요약 (사용성 제안): each button and rule as it will act; one that writes data says so first.
+        PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(values).let { raw ->
+            val l = raw.received()
+            (l.buttons.map { Change((if (it.act.verb.writes) "⚠ " else "") + it.say()) } +
+                l.rules.map { Change((if (it.act.verb.writes) "⚠ " else "") + "규칙 ‘${it.name}’: " + it.say() + if (it.act.verb.writes) " (꺼진 채로 들어와요)" else "") } +
+                // 1.36 [SEC-12] 보안 점검 M4: said before 넣기.
+                listOfNotNull(
+                    Change("메모·가계부를 바꾸는 규칙은 꺼진 채로 들어와요. 설정 › 알람 › 수식·규칙·버튼에서 하나씩 켜요").takeIf { l.writingRules.isNotEmpty() },
+                    Change("받은 규칙·단추는 가계부에 한 번에 100만 원까지만 넣어요").takeIf { raw.overReceived },
+                    // PC D6: 내 규칙 뒤에 더해지고, 같은 것은 하나로 둬요 (말없이 합쳐지지 않게).
+                    Change("내 규칙·단추는 그대로 두고 뒤에 더해요"),
+                    com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic).mergeSay(l)?.let { Change(it) },
+                ))
+                .ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
         PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
         PieceKind.SCREEN_LOOK, PieceKind.PARTS ->
@@ -441,15 +458,28 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.BUNDLE -> null
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
-            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS -> {
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC -> {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
                 if (kind == PieceKind.PHOTO_LOOK || kind == PieceKind.SCREEN_LOOK) photoIds(values).forEach { LookImages.fetch(c, it) }
                 val now = c.settingsRepository.current
-                val changes = settingsAfter(kind, values, cal).filter { (k, v) -> settingOf(now, k) != v }
+                // 1.36 [SEC-12] 보안 점검 M4: someone else's buttons and rules come in with 가계부 amounts held to 100만 원.
+                val vals = if (kind == PieceKind.LOGIC) com.bamnat.core.formula.Logic.from(values).received().toValues() else values
+                // PC D7: one of theirs kept once because mine does the same shows its name on my line (all of it the same is no change).
+                if (kind == PieceKind.LOGIC) com.bamnat.app.logic.LogicStore(c.appContext)
+                    .noteSame(com.bamnat.core.formula.Logic.decode(now.logic), com.bamnat.core.formula.Logic.from(vals))
+                val changes = settingsAfter(kind, vals, cal).filter { (k, v) -> settingOf(now, k) != v }
                 if (changes.isEmpty()) null else {
                     val out = JSONObject()
                     changes.forEach { (k, v) -> out.put(k, JSONArray().put(settingOf(now, k)).put(v)) }
                     c.settingsRepository.update { cur -> changes.entries.fold(cur) { acc, (k, v) -> withSetting(acc, k, v) } }
+                    // ...and a rule of theirs that writes the memo or the 가계부 starts switched off (one that was here already keeps its switch).
+                    if (kind == PieceKind.LOGIC) {
+                        val had = com.bamnat.core.formula.Logic.decode(now.logic).rules.map { it.key }.toSet()
+                        val store = com.bamnat.app.logic.LogicStore(c.appContext)
+                        com.bamnat.core.formula.Logic.from(vals).writingRules.filter { it.key !in had }.forEach { store.gotOff(it.key) }
+                        store.markGot(com.bamnat.core.formula.Logic.from(vals).rules.map { it.key }.filter { it !in had })
+                        com.bamnat.app.logic.LogicRunner.rulesChanged(c)
+                    }
                     JSONObject().put("settings", out)
                 }
             }
@@ -647,7 +677,7 @@ class RecipePieces(private val c: AppContainer) {
             }
             PieceKind.BUNDLE -> {}
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
-            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS -> {
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC -> {
                 val sets = before.optJSONObject("settings") ?: return
                 c.settingsRepository.update { cur ->
                     sets.keys().asSequence().fold(cur) { acc, k ->
@@ -780,6 +810,9 @@ class RecipePieces(private val c: AppContainer) {
             PieceKind.PARTS -> (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()
                 ?.let { l -> runCatching { com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(l)).encode() }.getOrNull() }
                 ?.let { mapOf("parts" to it) }.orEmpty()
+            // [RUL-03][RUL-04] The recipe's buttons and rules take the place of the ones there were (되돌리기 puts them back).
+            // PC D6: they are added after mine (the same one kept once), as from the studio's 보관함; they never take mine away.
+            PieceKind.LOGIC -> mapOf("logic" to com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic.decode(cur.logic).plus(com.bamnat.core.formula.Logic.from(values))))
             else -> emptyMap()
         }
     }
@@ -817,6 +850,7 @@ class RecipePieces(private val c: AppContainer) {
         "payLooks" -> s.payLooks
         "calTheme" -> s.calTheme
         "parts" -> s.parts
+        "logic" -> s.logic
         else -> ""
     }
 
@@ -848,6 +882,7 @@ class RecipePieces(private val c: AppContainer) {
         "restCheck" -> s.copy(restCheck = v == "true")
         "statsByPayPeriod" -> s.copy(statsByPayPeriod = v == "true")
         "memoLook" -> s.copy(memoLook = v)
+        "logic" -> s.copy(logic = v)
         "moneyLook" -> s.copy(moneyLook = v)
         "screenLooks" -> s.copy(screenLooks = v)
         "payLooks" -> s.copy(payLooks = v)
@@ -874,7 +909,7 @@ class RecipePieces(private val c: AppContainer) {
                     cell = (values["cell"] as? String)?.takeIf { it != "tint" } ?: if (values["cell"] == "tint") null else t.cell).encode())
             }
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
-            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS ->
+            PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC ->
                 settingsAfter(kind, values, cal, draft).entries.fold(draft) { acc, (k, v) -> withSetting(acc, k, v) }
             else -> draft
         }
@@ -1013,8 +1048,10 @@ class RecipePieces(private val c: AppContainer) {
             "shiftLooks",
             // [BLU-01] 1.36 부품 꾸미기.
             "parts")
+            // [RUL-03] PC D4 (입히기 뒤 규칙이 모두 사라짐): 단추·규칙은 모양이 아니에요. 테마를 입거나 처음 모양으로 돌려도 그대로이고,
+            // 스튜디오 입히기가 따로 저장해요 (StudioViewModel.wear).
 
-        private val SETTING_NAMES = mapOf("tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
+        private val SETTING_NAMES = mapOf("logic" to "수식·규칙·버튼","tabOrder" to "아래 탭 순서", "calendarLayout" to "달력 화면 카드 순서·보이기", "statsLayout" to "통계 카드 순서·보이기",
             "moneyLayout" to "가계부 카드 순서·보이기", "memoLayout" to "메모 카드 순서·보이기", "widgetLook" to "위젯 투명도·밝기", "shiftLooks" to "근무에 따라 바뀌는 모양", "widgetMemo" to "위젯 메모 한 줄",
             "photoLook" to "그림 꾸미기 (달력 배경·머리 그림·근무 그림·위젯 배경·모서리)",
             "calView" to "달력 모양 (칸 높이·근무 표시·날짜 자리·메모 줄·줄 순서·칸 디자인·패턴)", "memoInCells" to "날짜 칸의 메모", "showHoursInCells" to "날짜 칸의 근무 시간",

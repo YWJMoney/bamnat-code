@@ -224,6 +224,8 @@ data class AppSettings(
     val longPress: String = "menu",
     /** [FREE-04] 1.35 메모장 모양 ([com.bamnat.core.recipe.MemoLook.encode]); empty is the app's own list. In the backup. */
     val memoLook: String = "",
+    /** [RUL-03][RUL-04] 1.36 수식·규칙·버튼 ([com.bamnat.core.formula.Logic.encode]); empty for none. */
+    val logic: String = "",
     /** [FREE-06] 1.35 가계부 모양 ([com.bamnat.core.recipe.MoneyLook.encode]). In the backup. */
     val moneyLook: String = "",
     /** [FREE-05] 1.35 화면 색·배경 by screen ([com.bamnat.core.recipe.ScreenLooks.encode]). In the backup (the pictures are not). */
@@ -399,6 +401,7 @@ class SettingsRepository(context: Context) {
             accentColor = prefs.getLong(K_ACCENT, d.accentColor),
             longPress = prefs.getString(K_LONG_PRESS, null) ?: d.longPress,
             memoLook = prefs.getString(K_MEMO_LOOK, null) ?: d.memoLook,
+            logic = prefs.getString(K_LOGIC, null) ?: d.logic,
             moneyLook = prefs.getString(K_MONEY_LOOK, null) ?: d.moneyLook,
             screenLooks = prefs.getString(K_SCREEN_LOOKS, null) ?: d.screenLooks,
             payLooks = prefs.getString(K_PAY_LOOKS, null) ?: d.payLooks,
@@ -503,6 +506,7 @@ class SettingsRepository(context: Context) {
             .putLong(K_ACCENT, s.accentColor)
             .putString(K_LONG_PRESS, s.longPress)
             .putString(K_MEMO_LOOK, s.memoLook)
+            .putString(K_LOGIC, s.logic)
             .putString(K_MONEY_LOOK, s.moneyLook)
             .putString(K_SCREEN_LOOKS, s.screenLooks)
             .putString(K_PAY_LOOKS, s.payLooks)
@@ -556,6 +560,7 @@ class SettingsRepository(context: Context) {
         const val K_ACCENT = "accent_color"
         const val K_LONG_PRESS = "long_press"
         const val K_MEMO_LOOK = "memo_look"
+        const val K_LOGIC = "logic"
         const val K_MONEY_LOOK = "money_look"
         const val K_SCREEN_LOOKS = "screen_looks"
         const val K_PAY_LOOKS = "pay_looks"
