@@ -103,7 +103,7 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("보관함", prefix = true)
         tapText("장터 ‘기능별 탭 › 달력’에서 찾기", exact = true)
         assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))
-        assertTrue(appears("탭 하나를 전문으로", exact = true))
+        assertTrue(appears("탭 하나만", exact = true))
         back()
         assertTrue("뒤로 → the studio", appears("앱 화면", exact = true))
     } }

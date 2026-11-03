@@ -15,10 +15,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -665,7 +665,7 @@ fun LogicEditor(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (asking) androidx.compose.material3.AlertDialog(
+            if (asking) com.bamnat.app.ui.components.AlertDialog(
                 onDismissRequest = { asking = false },
                 title = { Text("규칙이 쓴 것을 모두 되돌릴까요?") },
                 text = { Text("최근 7일 동안 규칙과 단추가 만든 메모·메모 줄·가계부 ${written.size}개를 지우고, 비운 체크는 다시 채워요. 직접 쓴 것은 그대로예요") },

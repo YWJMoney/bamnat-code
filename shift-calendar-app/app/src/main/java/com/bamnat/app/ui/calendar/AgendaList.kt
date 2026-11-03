@@ -276,7 +276,7 @@ private fun DayRow(
 private fun OtherDayPicker(start: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate) -> Unit) {
     val state = androidx.compose.material3.rememberDatePickerState(
         initialSelectedDateMillis = start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli())
-    androidx.compose.material3.DatePickerDialog(
+    com.bamnat.app.ui.components.DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             androidx.compose.material3.TextButton(onClick = {

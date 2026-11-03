@@ -673,7 +673,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             if (states.isNotEmpty()) Box {
                                 var open by remember { mutableStateOf(false) }
                                 TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("${stateWord(pid, pon)} ▾") }
-                                androidx.compose.material3.DropdownMenu(open, { open = false }) {
+                                com.bamnat.app.ui.components.DropdownMenu(open, { open = false }) {
                                     (listOf<String?>(null) + states).forEach { st ->
                                         androidx.compose.material3.DropdownMenuItem(text = { Text(stateWord(pid, st)) },
                                             onClick = { open = false; partPick = pid to st })

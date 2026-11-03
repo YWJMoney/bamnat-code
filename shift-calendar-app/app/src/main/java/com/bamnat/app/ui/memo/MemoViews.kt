@@ -45,7 +45,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -376,7 +376,7 @@ private fun MoveHandle(
     }
     if (adding && newLabel != null) {
         var text by remember { mutableStateOf("") }
-        androidx.compose.material3.AlertDialog(
+        com.bamnat.app.ui.components.AlertDialog(
             onDismissRequest = { adding = false },
             title = { Text(newLabel) },
             text = {
@@ -570,7 +570,7 @@ private fun PickCell(memo: Memo, label: String, type: MemoProps.Type, prop: Memo
     }
     if (writing) {
         var text by remember { mutableStateOf("") }
-        androidx.compose.material3.AlertDialog(
+        com.bamnat.app.ui.components.AlertDialog(
             onDismissRequest = { writing = false },
             title = { Text("$label 새 값") },
             text = {
@@ -618,7 +618,7 @@ private fun EditCell(memo: Memo, label: String, type: MemoProps.Type, prop: Memo
     } else if (editing) {
         val numeric = type == MemoProps.Type.MONEY || type == MemoProps.Type.NUM
         var text by remember { mutableStateOf(if (numeric) prop?.num?.let { if (it == Math.floor(it)) it.toLong().toString() else it.toString() } ?: "" else prop?.raw.orEmpty()) }
-        androidx.compose.material3.AlertDialog(
+        com.bamnat.app.ui.components.AlertDialog(
             onDismissRequest = { editing = false },
             title = { Text(label) },
             text = {
@@ -647,7 +647,7 @@ private fun EditCell(memo: Memo, label: String, type: MemoProps.Type, prop: Memo
 @Composable
 private fun DateCellPicker(start: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate) -> Unit) {
     val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli())
-    androidx.compose.material3.DatePickerDialog(
+    com.bamnat.app.ui.components.DatePickerDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
             androidx.compose.material3.TextButton(onClick = {
@@ -662,7 +662,7 @@ private fun DateCellPicker(start: LocalDate, onDismiss: () -> Unit, onPick: (Loc
 @Composable
 private fun TimeCellPicker(start: java.time.LocalTime?, onDismiss: () -> Unit, onPick: (java.time.LocalTime) -> Unit) {
     val state = androidx.compose.material3.rememberTimePickerState(start?.hour ?: 9, start?.minute ?: 0, is24Hour = true)
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         text = { androidx.compose.material3.TimePicker(state) },
         confirmButton = { androidx.compose.material3.TextButton(onClick = { onPick(java.time.LocalTime.of(state.hour, state.minute)) }) { Text("저장") } },
