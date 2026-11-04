@@ -155,6 +155,8 @@ private fun PutDialog(s: EnvelopeStatus, onDone: (Long) -> Unit, onDismiss: () -
                 }
                 AmountField("금액", digits, { digits = it })
                 Muted("지금 ${Fmt.won(s.saved)}" + if (s.envelope.target > 0) " · 남은 ${Fmt.won(s.left)}" else "")
+                // 1.37 PC 확인 6a4efc92 제안: 넣기가 통장 돈을 옮기는 게 아니라는 것을 넣는 자리에서도.
+                Muted("돈은 통장에 그대로 있어요. 봉투는 그중 이만큼은 ‘${s.envelope.name}’에 쓸 돈이라고 붙여 두는 이름표예요.")
             }
         },
         confirmButton = {

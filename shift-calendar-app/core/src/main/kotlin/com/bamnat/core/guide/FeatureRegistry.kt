@@ -678,6 +678,8 @@ object FeatureRegistry {
             setOf(SHIFT, DAY, HOURLY), "가계부 › 요약 › 예산 › 고치기 › 월급날 기준으로 보기", at(Place.MONEY), "급여일 주기", "월급날 기준", "25일부터", "예산 기간", off = Off.ELSEWHERE),
         f("money.workTime", "LEDH-07", "근무 시간으로 보기", "5만 원이 넘는 지출 옆에 '근무 6시간'처럼 내 실수령 시급으로 몇 시간 일한 돈인지 작게 보여 줘요. 현장은 공수, 자영업은 하루 매출 대비로 보여요",
             setOf(SHIFT, DAY, HOURLY, FIELD, SHOP), "설정 › 화면과 글자 › 큰 지출을 근무 시간으로", at(Place.SETTINGS_CALENDAR, "큰 지출을 근무 시간으로"), "근무 시간 환산", "몇 시간 일한 돈", "시급으로", "공수", "매출 대비", off = Off.ELSEWHERE),
+        f("money.dayClose", "LEDH-09", "퇴근 뒤 가계부 정리 알림", "근무가 끝나고 30분 뒤(야간이면 다음 날 아침, 쉬는 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요",
+            setOf(SHIFT, DAY, HOURLY, FIELD), "설정 › 알림과 잠 › 퇴근 뒤 가계부 정리 알림", at(Place.SETTINGS_NOTICES, "퇴근 뒤 가계부 정리 알림"), "하루 마감", "가계부 알림", "지출 적기 알림", "퇴근 뒤", off = Off.ELSEWHERE),
         f("pro.moments", "PROX-02", "프로 제안 카드", "같은 묶음을 광고로 두 번 열었을 때, 이번 달 두 묶음을 열었을 때, 일주일에 닷새 쓸 때만 달력 위에 한 장 보여요. 한 달 만에 오면 많이 쓴 묶음을 7일 열어 드려요. 7일에 한 번까지예요",
             ALL, "달력 맨 위 카드", at(Place.FEATURES), "프로 제안", "보상 장부", "프로 권유", "광고 보고 열기", off = Off.APP),
         f("backup.nudge", "STAB-08", "백업 안 한 지 30일 알림", "매일 자동 백업을 쓰지 않을 때 마지막 백업이 30일 지나면 달력 위에 한 줄로 알려 줘요. 데이터 화면에 마지막 백업 날도 보여요",

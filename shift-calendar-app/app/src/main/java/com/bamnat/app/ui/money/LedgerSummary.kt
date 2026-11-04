@@ -99,7 +99,9 @@ import com.bamnat.core.time.Today
 fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: () -> Unit) {
     val cal = LocalCalendarColors.current
     val current = YearMonth.from(today) == m.month
-    SectionCard(title = "${m.month.monthValue}월 남은 돈") {
+    // 1.37 PC 확인 6a4efc92: '11월 남은 돈 0원'이 통장 잔액으로 본 '오늘 쓸 돈'과 나란히 있어 헷갈렸어요. 이 카드는 가계부에 적은
+    // 수입에서 지출을 뺀 것이라 그대로 이름을 붙여요.
+    SectionCard(title = "${m.month.monthValue}월 수입 − 지출") {
         // 1.36 PC C13: the big figure is what is left now; the pay still to come is a line under it.
         FitText(Fmt.won(m.leftNow), MaterialTheme.typography.displaySmall, if (m.leftNow < 0) cal.expense else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold)
@@ -246,7 +248,8 @@ fun BudgetEditor(
         months.flatMap { it.expenseByCategory }.groupBy { it.category }.mapValues { (_, l) -> l.sumOf { it.amount } / counted }
     }
     val sum = categories.sumOf { values[it]?.toAmount() ?: 0 }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("예산 정하기", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -404,7 +407,10 @@ fun AccountEditor(
     var remind by rememberSaveable { mutableStateOf(initial?.remind ?: true) }
     val banks = book.activeAccounts.filter { it.keepsBalance && it.id != initial?.id }
     val card = kind == AccountType.CREDIT || kind == AccountType.CHECK
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 확인 6a4efc92: 끌어서 닫을 때 적은 것을 묻기 (같은 구조의 돈 시트 모두).
+    val typed = name.trim() != initial?.name.orEmpty() || last4 != initial?.last4.orEmpty() || opening != amountDigits(initial?.opening ?: 0) ||
+        (initial != null && (kind != initial.type || payDay != (initial.payDay ?: 14) || payFrom != initial.payFromId))
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = typed, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle(if (initial == null) "결제수단 추가" else "결제수단 고치기", onDismiss) {
                 if (initial != null) IconButton(onClick = { onRemove(initial) }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
@@ -517,7 +523,8 @@ fun CategoryEditor(
     }
     var renaming by remember { mutableStateOf<Int?>(null) }
     var adding by remember { mutableStateOf("") }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("분류 편집", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),

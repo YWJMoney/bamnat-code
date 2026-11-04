@@ -80,15 +80,41 @@ internal fun todayLine(forecast: MoneyForecast?, budget: BudgetStatus, style: Wo
 internal fun AheadCard(
     book: MoneyBook, style: WorkStyle?, today: LocalDate, pay: AheadPay?, budget: BudgetStatus, toSort: Int, gate: Gate,
     onAddAccount: () -> Unit, onOpenPay: () -> Unit,
+    snapshot: com.bamnat.app.data.ScheduleSnapshot? = null,
 ) {
     var span by rememberSaveable { mutableIntStateOf(MoneyAhead.FREE_DAYS) }
     val full = remember(book, today, pay) { MoneyAhead.forecast(book, today, MoneyAhead.FULL_DAYS, pay?.days.orEmpty()) }
     val shown = remember(full, span) { full.copy(days = full.days.take(span)) }
     val todaySpent = remember(book, today) { book.entries.filter { it.date == today && it.kind == com.bamnat.core.money.MoneyKind.EXPENSE }.sumOf { it.amount } }
     val line = todayLine(full, budget, style, toSort, todaySpent)
+    // 1.37 [LEDH-08] 근무 리듬 예산: the money until pay shared out by how each kind of day spends (교대·일근·알바).
+    val rhythm by androidx.compose.runtime.produceState<com.bamnat.core.money.ShiftRhythm.Plan?>(null, full, snapshot, style, today) {
+        value = if (snapshot == null || style?.usesPayEngine != true) null else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            runCatching {
+                val until = full.untilNext(nextKinds(style), todaySpent) ?: return@runCatching null
+                val perDay = until.perDay ?: return@runCatching null
+                val label = com.bamnat.core.tax.TaxPlus.dayLabel(snapshot.resolver::resolve)
+                val everyday = book.entries.filter { it.source != com.bamnat.core.money.MoneySource.FIXED }
+                val rows = com.bamnat.core.tax.TaxPlus.byShift(everyday, today.minusDays(89), today, label)
+                com.bamnat.core.money.ShiftRhythm.plan(perDay * until.daysLeft, today, until.next.date.minusDays(1), label, rows)
+            }.getOrNull()
+        }
+    }
     if (line == null && shown.flows.isEmpty() && !shown.hasBalance) return
     SectionCard(title = "앞으로의 돈") {
         line?.let { Text(it, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
+        // 1.37 PC 확인 6a4efc92 제안: '오늘 쓸 돈'을 어떻게 셌는지 한 줄 풀이.
+        full.untilNext(nextKinds(style), todaySpent)?.takeIf { it.perDay != null }?.let { u ->
+            Muted("(" + (if (todaySpent > 0) "오늘 아침 통장 " else "통장 ") + "${Fmt.won(full.start + todaySpent)}" + (if (u.reserved > 0) " − 그 전에 나갈 돈 ${Fmt.won(u.reserved)}" else "") +
+                (if (u.arriving > 0) " + 들어올 돈 ${Fmt.won(u.arriving)}" else "") + ") ÷ ${u.daysLeft}일 = 하루 ${Fmt.won(u.perDay!!)}" +
+                (if (todaySpent > 0) ", 오늘 쓴 ${Fmt.won(todaySpent)}을 빼고 보여요" else ""))
+        }
+        rhythm?.let { p ->
+            val say: @Composable () -> Unit = {
+                Muted("근무 리듬대로 하루: ${p.words(Fmt::wonShort)}. 오늘(${p.todayLabel})은 ${Fmt.won((p.today - todaySpent).coerceAtLeast(0))} 남았어요.")
+            }
+            if (gate.allows(Feature.MONEY_STATS)) say() else com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) { say() }
+        }
         if (shown.hasBalance) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 FilterChip(span == MoneyAhead.FREE_DAYS, { span = MoneyAhead.FREE_DAYS }, { Text("30일") })
@@ -169,6 +195,14 @@ data class WorkTimeSay(val from: Long, val hourly: Long? = null, val dayRate: Lo
             ?: dayRate?.let { com.bamnat.core.money.WorkTime.units(amount, it) }
             ?: daySales?.let { com.bamnat.core.money.WorkTime.salesShare(amount, it) }
     }
+
+    /**
+     * 1.37 PC 확인 6a4efc92 ("근무 4.2시간 — 기준이 불분명"): what the hours are counted by. 시급 is the latest finished pay
+     * month's take-home (세후) over the hours it counted, so it is below the 통상시급.
+     */
+    fun basis(): String? = hourly?.let { "최근 한 달 실수령 ÷ 일한 시간 = 시간당 ${Fmt.won(it)} 기준" }
+        ?: dayRate?.let { "최근 90일 공수 1당 ${Fmt.won(it)} 기준" }
+        ?: daySales?.let { "최근 90일 하루 매출 평균 ${Fmt.won(it)} 기준" }
 
     companion object {
         /** What the calendar knows: 투자 says nothing; 현장 by 공수, 자영업 by sales, the rest by pay. */

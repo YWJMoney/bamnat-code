@@ -219,6 +219,11 @@
             android:name=".alarm.LeaveTimeReceiver"
             android:exported="false" />
 
+        <!-- 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림. -->
+        <receiver
+            android:name=".money.DayCloseReceiver"
+            android:exported="false" />
+
         <!-- 1.32 [WTYP-11][WTYP-29] 희망 오프 신청 마감, 코인 12월 31일 시가 기록. -->
         <receiver
             android:name=".calendar.DateNoticeReceiver"

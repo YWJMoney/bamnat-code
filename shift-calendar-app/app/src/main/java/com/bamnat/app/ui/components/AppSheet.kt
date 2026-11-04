@@ -19,6 +19,9 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -65,4 +68,38 @@ fun SheetHandle(onClose: () -> Unit) {
             Icon(Icons.Filled.Close, "닫기")
         }
     }
+}
+
+/**
+ * 1.37 PC 확인 6a4efc92 (높음, 돈 적기 시트를 아래로 끌자 적은 금액·날짜·카드가 말없이 사라졌어요): a form sheet that asks before
+ * a swipe, 뒤로 or a tap outside throws away what was typed ([unsaved]); the X and the form's own 닫기 still close at once.
+ * Same as [FormSheet]'s guard, for sheets that lay out their own form.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GuardedSheet(
+    onDismissRequest: () -> Unit,
+    unsaved: Boolean,
+    modifier: Modifier = Modifier,
+    closeButton: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    var asking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val keep by androidx.compose.runtime.rememberUpdatedState(unsaved)
+    if (asking) AlertDialog(
+        onDismissRequest = { asking = false },
+        title = { androidx.compose.material3.Text("적은 내용을 버릴까요?") },
+        text = { androidx.compose.material3.Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { asking = false; onDismissRequest() }) { androidx.compose.material3.Text("버리기") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { asking = false }) { androidx.compose.material3.Text("계속 적기") } },
+    )
+    val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
+        if (v == androidx.compose.material3.SheetValue.Hidden && keep) { asking = true; false } else true
+    })
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    AppSheet(
+        // 뒤로 hides the sheet without the swipe's check, so it comes back up and asks (as FormSheet does).
+        onDismissRequest = { if (!keep) onDismissRequest() else { asking = true; scope.launch { state.show() } } },
+        modifier = modifier, sheetState = state, closeButton = closeButton, onClose = onDismissRequest, content = content,
+    )
 }

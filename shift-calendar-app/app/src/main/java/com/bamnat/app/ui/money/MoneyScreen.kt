@@ -700,7 +700,7 @@ fun MoneyScreen(
         },
         MoneyPart.AHEAD to {
             AheadCard(book, style, today, aheadPay, budget, toSort = unseen.size, gate = gate,
-                onAddAccount = { addingAccount = com.bamnat.core.money.AccountType.BANK }, onOpenPay = onOpenPay)
+                onAddAccount = { addingAccount = com.bamnat.core.money.AccountType.BANK }, onOpenPay = onOpenPay, snapshot = snapshot)
         },
         MoneyPart.STORY to { MonthStoryCard(book, envelopeBook.second, aheadPay?.lastMonth, today, gate) },
         MoneyPart.ENVELOPES to {
@@ -1013,8 +1013,9 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
 private fun Line(label: String, value: String, muted: Boolean = false, strong: Boolean = false) {
     val color = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        // 1.37 PC 확인 6a4efc92: '(지급일 실수령 예상)3,530,963원'처럼 붙지 않게 글과 금액 사이를 띄워요.
         Text(label, style = if (muted) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyLarge, color = color,
-            modifier = Modifier.weight(1f))
+            modifier = Modifier.weight(1f).padding(end = 8.dp))
         Text(value, style = if (strong) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge, color = color,
             fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal)
     }

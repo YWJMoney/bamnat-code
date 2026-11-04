@@ -215,7 +215,12 @@ fun EntryDialog(
         )
     }
 
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 확인 6a4efc92 (높음): 시트 안에서 위로 가려고 아래로 끌면 시트가 닫히고 금액·날짜·카드가 말없이 사라졌어요. 적은 것이
+    // 있으면 끌기·뒤로·바깥 누르기는 먼저 물어요 (FormSheet와 같은 방식). 제목 줄의 닫기는 그대로 바로 닫아요.
+    val typed = if (initial == null) amount > 0 || place.isNotBlank() || memo.isNotBlank() || tagsText.isNotBlank()
+    else amount != abs(initial.amount) || kind != initial.kind || category != initial.category || day != initial.date.toString() ||
+        account != initial.accountId || place.trim() != initial.merchant.ifBlank { initial.note }.trim() || memo.trim() != initial.memo.trim()
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = typed, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             // Title row: what this is, and the line's own actions while editing.
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -278,9 +283,10 @@ fun EntryDialog(
                     textStyle = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
                 )
                 // 1.37 [LEDH-07] 근무 시간 환산: "근무 6시간이에요", for spending of 5만 원 and more (설정 › 가계부에서 끔).
-                if (kind == MoneyKind.EXPENSE && !cancel) LocalWorkTime.current?.words(amount)?.let { w ->
-                    Text("$w${Fmt.ieyo(w)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                if (kind == MoneyKind.EXPENSE && !cancel) LocalWorkTime.current?.let { say -> say.words(amount)?.let { w ->
+                    Text("$w${Fmt.ieyo(w)}" + (say.basis()?.let { " ($it)" } ?: ""), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } }
                 val quick = remember(kind) { frequent(kind) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     quick.forEach { a -> FilterChip(selected = amount == a, onClick = { digits = amountDigits(a) }, label = { Text(Fmt.won(a)) }) }

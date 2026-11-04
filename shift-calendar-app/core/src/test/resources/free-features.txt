@@ -253,3 +253,4 @@ money.envelopes
 money.hide
 money.payCycle
 money.workTime
+money.dayClose
