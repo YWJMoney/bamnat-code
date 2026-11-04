@@ -360,6 +360,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val startMine: (Boolean) -> Unit = { keep -> rootScope.launch { container.example.startMine(keep) } }
     // [SETUP-15] "무슨 일 하세요?" before the consent screen: its answer ("" when skipped) shapes that screen and starts the setup.
     var firstStyleKey by rememberSaveable { mutableStateOf<String?>(null) }
+    // [SETUP-17] The first screen's file chooser was opened (it opens once).
+    var fileAsked by rememberSaveable { mutableStateOf(false) }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
@@ -377,7 +379,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
                     // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
                     val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
-                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { sizeSeen(); firstStyleKey = it.key }, onSkip = { sizeSeen(); firstStyleKey = com.bamnat.app.ui.onboarding.FirstStyle.FILE },
+                    // [SETUP-17] A backup, a company file or looking around first: the features pages come after the setup (as on a
+                    // new phone that answers), not as '새로 생긴 기능이 있어요' over the calendar (1.37 PC 270fc15e).
+                    val skip: (String) -> Unit = { k -> sizeSeen(); container.consentStore.afterSetup = true; firstStyleKey = k }
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { sizeSeen(); firstStyleKey = it.key }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
+                        onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
                     return
                 }
@@ -385,7 +391,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 // that answered on an older build and was updated mid-way still sees it here.
                 // [SETUP-17] 1.37 PC f42b2eba: '백업이나 회사 파일로 시작할게요' went through the features and "어떻게 일하세요?" first;
                 // a backup brings its own answers, so the file chooser opens straight away.
-                if (!container.consentStore.afterSetup && key != com.bamnat.app.ui.onboarding.FirstStyle.FILE) {
+                if (!container.consentStore.afterSetup && key != com.bamnat.app.ui.onboarding.FirstStyle.FILE && key != com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) {
                     val first = com.bamnat.app.ui.onboarding.FirstStyle.of(key)
                     androidx.activity.compose.BackHandler { firstStyleKey = null }
                     ConsentPages(container, onDone = {}, style = first?.style, onBrowse = {
@@ -397,9 +403,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             SetupHost(appViewModel { SetupViewModel(it) },
-                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst,
+                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } },
+                browseFirst = browseFirst || firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.BROWSE,
                 firstStyle = com.bamnat.app.ui.onboarding.FirstStyle.of(firstStyleKey)?.let { it.style to it.roster },
-                openFileFirst = firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.FILE,
+                // [SETUP-17] Once: 1.37 PC 270fc15e: kept, every later 이어서 하기 opened the file chooser first.
+                openFileFirst = firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.FILE && !fileAsked,
+                onFileOpened = { fileAsked = true },
                 onFirstStyleUsed = { firstStyleKey = "" })
             return
         }
@@ -1239,7 +1248,11 @@ private fun AppNavHost(
                 scope.launch {
                     if (clear == null) {
                         // [CALS-02] Each calendar keeps its own kind of work: the main one in settings, an added one in its entry.
-                        if (isMain) container.settingsRepository.update { it.copy(workStyle = style) } else container.calendars.setStyle(calendar, style)
+                        // [SETUP-16] A setup waiting, changed to work with nothing more to ask: the setup is saved with it, here, before the
+                        // screens below (1.37 PC 270fc15e: 자영업 stayed on this screen, no 영업일, no '접어 둘까요').
+                        if (setupWaits && style != before && with(com.bamnat.app.data.SetupLater) { !style.asksMore }) {
+                            runCatching { container.firstSetup.save(com.bamnat.core.setup.SetupDraft(style = style), quiet = true) }
+                        } else if (isMain) container.settingsRepository.update { it.copy(workStyle = style) } else container.calendars.setStyle(calendar, style)
                     }
                     val schedule = container.calendars.repository(calendar)
                     val patterns = schedule.patterns.first()

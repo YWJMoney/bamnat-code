@@ -210,6 +210,9 @@ class SetupFlowTest {
         assertEquals(WorkStyle.HOURLY, c.settingsRepository.current.workStyle)
         assertTrue(c.settingsRepository.current.setupLater)
         waitFor("the setup back") { c.setupDrafts.draft.value?.style == WorkStyle.HOURLY }
+        // 1.37 PC 270fc15e: the setup's own watch must not start the next question over the answers brought back.
+        val until = System.currentTimeMillis() + 800
+        waitFor("the watch to settle") { System.currentTimeMillis() > until }
         assertEquals(step, draft.step)
         assertTrue(draft.later)
     }

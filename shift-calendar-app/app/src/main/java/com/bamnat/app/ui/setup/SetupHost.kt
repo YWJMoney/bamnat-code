@@ -104,6 +104,7 @@ fun SetupHost(
     firstStyle: Pair<com.bamnat.core.work.WorkStyle, Boolean>? = null,
     /** [SETUP-17] '백업이나 회사 파일로 시작할게요' on the first screen: the file chooser opens once, at once. */
     openFileFirst: Boolean = false,
+    onFileOpened: () -> Unit = {},
     onFirstStyleUsed: () -> Unit = {},
 ) {
     val d by vm.draft.collectAsStateWithLifecycle()
@@ -142,11 +143,10 @@ fun SetupHost(
     val incoming by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
     LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
     val onOpenFile = { openFile.launch(arrayOf(BackupManager.MIME_TYPE, CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) }
-    // The first screen's choice stays (the features pages are not put over the chooser); opened once, across a turned phone.
-    var fileOpened by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    // The first screen's choice stays (the features pages are not put over the chooser); the caller keeps that it was opened.
     LaunchedEffect(openFileFirst) {
-        if (!openFileFirst || fileOpened) return@LaunchedEffect
-        fileOpened = true
+        if (!openFileFirst) return@LaunchedEffect
+        onFileOpened()
         runCatching { onOpenFile() }
     }
     var searching by remember { mutableStateOf(false) }

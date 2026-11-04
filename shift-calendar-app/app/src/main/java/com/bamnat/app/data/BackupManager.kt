@@ -940,6 +940,15 @@ class BackupManager(
             goneCalendars.forEach(tools::reload)
         }
         root.optJSONObject("settings")?.let { o ->
+            // [SETUP-16] The setup put off on the old phone goes on from its step here; one without its answers starts at the kind of
+            // work's next question. Put back before the settings (1.37 PC 270fc15e: after them, the setup's own watch saw no answers
+            // yet and started that next question over them, so the card said 2단계 instead of 3).
+            val waits = o.optBoolean("setupLater", false)
+            val style = o.optStringOrNull("workStyle")
+            if (waits && style != null) root.optJSONObject("setupDraft")?.let { d ->
+                runCatching { SetupDraftCodec.decode(d) }.getOrNull()?.takeIf { it.style?.name == style }
+                    ?.let { setupDrafts()?.save(it.copy(later = true, committing = false)) }
+            }
             settings.update { s ->
                 s.copy(
                     weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(s.weekStart),
@@ -1049,10 +1058,6 @@ class BackupManager(
                     swapCoversAnswered = s.swapCoversAnswered && schedule.extras != null,
                 )
             }
-        }
-        // [SETUP-16] The setup put off on the old phone goes on from its step here (one without its answers starts at the kind of work's next question).
-        if (settings.current.setupLater) root.optJSONObject("setupDraft")?.let { o ->
-            runCatching { SetupDraftCodec.decode(o) }.getOrNull()?.takeIf { it.style == settings.current.workStyle }?.let { setupDrafts()?.save(it.copy(later = true, committing = false)) }
         }
     }
 

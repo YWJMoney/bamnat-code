@@ -52,7 +52,7 @@ object SetupLater {
                 when (val step = step(settings.current, drafts.draft.value)) {
                     Step.Nothing -> Unit
                     is Step.Draft -> drafts.save(step.draft)
-                    is Step.Finish -> runCatching { setup.save(SetupDraft(style = step.style)) }
+                    is Step.Finish -> runCatching { setup.save(SetupDraft(style = step.style), quiet = true) }
                         .onFailure { android.util.Log.w("SetupLater", "finish", it) }
                 }
             }
