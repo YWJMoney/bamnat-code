@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.hub
 
+import kotlinx.coroutines.flow.first
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -234,6 +235,19 @@ private fun Page(scroll: androidx.compose.foundation.ScrollState = rememberScrol
     // 사용자 2026-11-03: tapping the tab you are on goes back to the top, on every 마을 page alike.
     val reselect = LocalHubReselect.current
     androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > 0) scroll.animateScrollTo(0) }
+    // PC c6a6e361 (공방을 반쯤 내린 채 달력에 다녀오면 132px 위로 어긋남): the kept place was cut to the page's first, shorter
+    // height (cards that load a moment later were not in yet). Keep where it was left and go back there once the page is that long.
+    var left by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
+    androidx.compose.runtime.LaunchedEffect(scroll) {
+        val target = left
+        if (target > 0 && scroll.value < target) {
+            kotlinx.coroutines.withTimeoutOrNull(1_500) {
+                androidx.compose.runtime.snapshotFlow { scroll.maxValue }.first { (it != Int.MAX_VALUE && it >= target) || scroll.isScrollInProgress }
+            }
+            if (!scroll.isScrollInProgress && scroll.maxValue != Int.MAX_VALUE) scroll.scrollTo(target.coerceAtMost(scroll.maxValue))
+        }
+        androidx.compose.runtime.snapshotFlow { scroll.value }.collect { left = it }
+    }
     Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             content()
