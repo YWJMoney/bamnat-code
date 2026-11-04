@@ -172,7 +172,7 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
         }
         for (e in rows.take(MAX_TABLE_ROWS)) {
             val (amount, color) = signedText(e)
-            Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.logic.scopeOn(e.date)?.let { bp.style("money.table.row", scope = it) } ?: rowPart, RoundedCornerShape(0.dp))).clickable { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }?.let { bp.style("money.table.row", scope = it) } ?: rowPart, RoundedCornerShape(0.dp))).clickable { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${e.date.monthValue}/${e.date.dayOfMonth}", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
                     modifier = Modifier.width(widths["date"]!!).padding(horizontal = 8.dp).semantics { contentDescription = Fmt.monthDay(e.date) })
                 Text(e.category, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(widths["category"]!!).padding(horizontal = 8.dp))

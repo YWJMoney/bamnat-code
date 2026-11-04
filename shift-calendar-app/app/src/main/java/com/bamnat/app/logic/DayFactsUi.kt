@@ -190,6 +190,24 @@ fun scopeOn(date: LocalDate?): com.bamnat.core.formula.FormulaScope? {
     return LocalDayFacts.current?.scope(date)
 }
 
+/**
+ * [TAB-08] PC 4277abca (분류 색 가계부·고정 메모 금색이 안 바뀜): a part drawn for one thing — a ledger line, a memo card — reads that
+ * thing's own values first (분류·종류·금액, 고정·체크율·꼬리표 …, [com.bamnat.core.layout.TabFacts]), then its day's.
+ */
+@Composable
+@androidx.compose.runtime.ReadOnlyComposable
+fun scopeFor(date: LocalDate?, facts: () -> com.bamnat.core.layout.TabFacts.Facts): com.bamnat.core.formula.FormulaScope? {
+    if (!com.bamnat.app.ui.parts.LocalBlueprint.current.hasFormulas) return null
+    val day = date?.let { LocalDayFacts.current?.scope(it) }
+    val own = facts()
+    return object : com.bamnat.core.formula.FormulaScope {
+        override fun get(name: String): com.bamnat.core.formula.Value? =
+            if (own.values.containsKey(name)) com.bamnat.core.formula.Value.of(own.values[name]) else day?.get(name)
+        override fun input(label: String): com.bamnat.core.formula.Value? =
+            if (own.inputs.containsKey(label)) com.bamnat.core.formula.Value.of(own.inputs[label]) else day?.input(label)
+    }
+}
+
 /** [FXR-03] The day a month's part is drawn for (달력 머리, 연간 판 한 달, 급여): today in this month, else its first day. */
 fun dayOfMonth(m: YearMonth, today: LocalDate = com.bamnat.core.time.Today.date()): LocalDate =
     if (YearMonth.from(today) == m) today else m.atDay(1)

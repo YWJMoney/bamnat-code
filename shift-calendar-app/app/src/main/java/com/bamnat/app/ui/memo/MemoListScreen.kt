@@ -665,7 +665,8 @@ internal fun MemoCard(
     // [BLU-05] 1.36 부품 꾸미기: 메모 카드와 카드 속 제목, over the 메모장 모양.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     // [FXR-03] With the memo's day, so 조건부 꾸미기 (만약 야간이면 …) works on the card as it does in the month's cells.
-    val memoScope = com.bamnat.app.logic.scopeOn(memo.date)
+    // PC 4277abca: and the memo's own 고정·체크율·꼬리표·색번호, so '고정' rings a pinned card.
+    val memoScope = com.bamnat.app.logic.scopeFor(memo.date) { com.bamnat.core.layout.TabFacts.memo(memo) }
     val cardPart = bp.style("memo.card", scope = memoScope)
     val titlePart = bp.style("memo.card.title", scope = memoScope)
     val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(cardPart, look.corner?.let { RoundedCornerShape(it.dp) } ?: MaterialTheme.shapes.large)

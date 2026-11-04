@@ -611,7 +611,8 @@ private fun LedgerRow(
             // [BLU-05] 1.36 부품 꾸미기: 가계부 한 줄과 금액 (수입 in·지출 out).
             val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
             // [FXR-03] With the record's day, so 조건부 꾸미기 (만약 지출 > 50000 …) works on the line as it does in the month's cells.
-            val dayScope = com.bamnat.app.logic.scopeOn(e.date)
+            // PC 4277abca: and the line's own 분류·종류·금액, so '분류 = "식비"' colours that line.
+            val dayScope = com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }
             val rowPart = bp.style("money.row", scope = dayScope)
             val amountPart = bp.style("money.amount", setOfNotNull(when (e.kind) { MoneyKind.INCOME -> "in"; MoneyKind.EXPENSE -> "out"; else -> null }), dayScope)
             Row(Modifier.heightIn(min = rowPart.h?.dp ?: minH).then(com.bamnat.app.ui.parts.PartMods.box(rowPart.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))

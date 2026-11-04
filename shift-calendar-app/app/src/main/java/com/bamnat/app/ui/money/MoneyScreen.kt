@@ -740,7 +740,9 @@ fun MoneyScreen(
                     snapshot = snapshot, onMessage = vm::message)
             }
         }
-        AnimatedVisibility(selection.isEmpty(), enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
+        // PC 4277abca (통계에서 '돈 적기'가 카페 줄 금액·카드 머리를 덮음): 통계 is for reading, so the floating button is not over it;
+        // 돈 적기 stays on 요약 and 내역.
+        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
             ExtendedFloatingActionButton(
                 onClick = { adding = MoneyKind.EXPENSE },

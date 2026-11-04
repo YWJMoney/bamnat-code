@@ -1294,8 +1294,10 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
             // PC 확인 8d0cddf6: '급여 한 줄' 부품 on each day, with that day's values, so a line like 그날급여 >= 150000 (많이 번 날 금빛)
             // or 근무시간 >= 10 lights the days it is about; its 근무 종류 (role.*), 토·일·공휴일 too.
             val role = remember(d.label) { com.bamnat.core.recipe.ShiftRole.guess(d.label, d.label == "휴무", null, 0).key }
-            val part = com.bamnat.app.logic.partStyleOn("pay.row", d.date,
-                com.bamnat.app.ui.parts.dayStates(role, d.date.dayOfWeek, d.holidayName != null, inMonth = true, today = false, selected = false) + "in")
+            // PC 4277abca (줄 자기 값이 수식에 안 들어감): the line's own 금액·제목 too, so '금액 >= 200000' (공수 합계판) reads that day's line.
+            val part = com.bamnat.app.ui.parts.LocalBlueprint.current.style("pay.row",
+                com.bamnat.app.ui.parts.dayStates(role, d.date.dayOfWeek, d.holidayName != null, inMonth = true, today = false, selected = false) + "in",
+                com.bamnat.app.logic.scopeFor(d.date) { com.bamnat.core.layout.TabFacts.Facts(mapOf("금액" to d.amount, "제목" to d.label)) })
             val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(part, MaterialTheme.shapes.small)
             val ink = part.ink?.let { Color(it.toInt()) }
             Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(part.copy(ink = null, pad = null, padX = null, padY = null), shape))

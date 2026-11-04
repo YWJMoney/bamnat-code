@@ -29,4 +29,22 @@ class TabFactsTest {
         assertEquals("김밥", f.values["내용"])
         assertEquals("월", f.values["요일"])
     }
+
+    /** PC 4277abca: '분류 색 가계부' and '고정 메모 금색' read the line's and the card's own values through these facts. */
+    @Test fun aLinesOwnValuesDriveItsPart() {
+        val bp = com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(listOf(
+            mapOf("id" to "money.row", "when" to "분류 = \"식비\"", "fill" to 0xFFFFF3E0L),
+            mapOf("id" to "money.row", "when" to "분류 = \"교통\"", "fill" to 0xFFE3F2FDL),
+            mapOf("id" to "memo.card", "when" to "고정", "line" to "solid", "lineW" to 2.0, "lineC" to 0xFFFFB300L),
+        )))
+        fun row(cat: String) = TabFacts.money(MoneyEntry(date = LocalDate.of(2026, 11, 2), kind = MoneyKind.EXPENSE, amount = 5000, category = cat))
+            .let { bp.style("money.row", emptySet(), com.bamnat.core.formula.FormulaScope.of(it.values, it.inputs)) }
+        assertEquals(0xFFFFF3E0L, row("식비").fill)
+        assertEquals(0xFFE3F2FDL, row("교통").fill)
+        assertEquals(null, row("카페").fill)
+        fun card(pinned: Boolean) = TabFacts.memo(Memo(id = 1, title = "a", pinned = pinned))
+            .let { bp.style("memo.card", emptySet(), com.bamnat.core.formula.FormulaScope.of(it.values, it.inputs)) }
+        assertEquals(0xFFFFB300L, card(true).lineC)
+        assertEquals(null, card(false).lineC)
+    }
 }

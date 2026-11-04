@@ -327,11 +327,12 @@ fun RecipeListScreen(
                     }
                     // Pinned: the three 구간 as one small row, since their big cards have scrolled away. PC c6a6e361 제안 (기능별 탭은
                     // 붙는 줄이 세 줄이라 목록이 좁음): pinned, 기능별 탭's tab chips go on that same row after the 구간, so two rows stay on top.
-                    androidx.compose.animation.AnimatedVisibility(pinned) {
+                    // PC 4277abca (붙는 순간 한 장에서 구간·탭 줄이 빠짐): no grow-in animation; the 구간 row comes in the same frame the
+                    // tab row below goes, so the header never draws without both.
+                    if (pinned) {
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                             FilterChip(selected = !featured && !logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_THEME) }, label = { Text("🎨 테마") })
-                            FilterChip(selected = featured, onClick = { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text(if (featured) "🧩" else "🧩 기능별 탭") },
-                                modifier = Modifier.semantics { contentDescription = "기능별 탭" })
+                            FilterChip(selected = featured, onClick = { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("🧩 기능별 탭") })
                             FilterChip(selected = logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_LOGIC) }, label = { Text("⚡ 규칙·단추") })
                             if (featured) {
                                 androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
