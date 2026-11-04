@@ -52,7 +52,7 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
         return
     }
     val label = "광고 보고 ${bundle.label} 7일 열기"
-    val note = "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요."
+    val note = "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요(밤 12시에 다시 세요)."
     if (gate.preview) {
         Column(modifier) {
             OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(label) }
@@ -87,7 +87,9 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
     when {
         left != null -> Text("${bundle.label} 묶음이 열려 있어요 · ${left}일 남았어요", style = small, color = dim, textAlign = TextAlign.Center,
             modifier = modifier.fillMaxWidth())
-        FeatureLease.capped(leases, today) -> Text("오늘 광고 두 편을 다 봤어요. 내일 다시 열 수 있어요.", style = small, color = dim,
+        // 1.36.1 (사용자 2026-11-04 "광고 제한에 걸리면 기능도 다음날 사용가능하게, 00시 기준"): closing the sheet now is not a 'no'
+        // (ProOfferHost counts one only while the ad can be watched), and the button comes back at 00:00 (FeatureGate's clock).
+        FeatureLease.capped(leases, today) -> Text("오늘 광고 두 편을 다 봤어요. 밤 12시가 지나면 다시 광고로 열 수 있어요.", style = small, color = dim,
             textAlign = TextAlign.Center, modifier = modifier.fillMaxWidth())
         !FeatureLease.canWatch(leases, bundle, now, today) -> Text(
             "세 번 닫으셔서 ${bundle.label} 광고는 쉬고 있어요" + (leases.quietUntil[bundle]?.let { " · ${com.bamnat.app.ui.pro.untilWords(it)}부터 다시 보여요" } ?: ""),
@@ -144,7 +146,7 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
     val allowed = AdRules.rewardedOffer(adsRow, gate.tier >= Tier.PRO, AdIds.rewarded.isNotBlank(), null, Today.date())
     if (shared && adsRow && gate.tier < Tier.PRO && FeatureLease.capped(gate.leases, Today.date())) {
         Column(modifier) {
-            Text("오늘 광고 두 편을 다 봤어요. 내일 다시 할 수 있어요. 프로는 광고 없이 바로 돼요.",
+            Text("오늘 광고 두 편을 다 봤어요. 밤 12시가 지나면 다시 할 수 있어요. 프로는 광고 없이 바로 돼요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth())
             onCappedLater?.let { later ->

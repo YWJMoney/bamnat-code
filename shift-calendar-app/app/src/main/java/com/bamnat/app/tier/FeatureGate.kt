@@ -179,7 +179,8 @@ class FeatureGate(
                 // it — the phone's time changed, or days asleep, which the wait does not count. It looks at the clock every minute.
                 while (true) {
                     val now = clock()
-                    val next = s.until.values.filter { it > now }.minOrNull() ?: break
+                    // 1.36.1: with today's two ads used, 00:00 too, so a screen left open offers the ad again then.
+                    val next = com.bamnat.core.tier.FeatureLease.nextChange(s, now, zone()) ?: break
                     kotlinx.coroutines.delay(minOf(java.time.Duration.between(now, next).toMillis() + 1_000, END_CHECK_MS))
                     if (!clock().isBefore(next)) tick.value++
                 }

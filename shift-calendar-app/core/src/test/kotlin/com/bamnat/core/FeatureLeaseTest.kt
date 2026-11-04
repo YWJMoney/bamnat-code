@@ -11,6 +11,8 @@ import org.junit.Test
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
 
 /** 1.36 839 묶음 7일권: first week quietly, one ad = 7 days, two ads a day, a missing ad opens it anyway, three no's hide it. */
 class FeatureLeaseTest {
@@ -88,6 +90,27 @@ class FeatureLeaseTest {
         assertTrue(FeatureLease.capped(t, today))
         assertFalse(FeatureLease.capped(t, today.plusDays(1)))
         assertEquals(1, FeatureLease.themeAd(t, today.plusDays(1)).adsToday(today.plusDays(1)))
+    }
+
+    @Test fun theTwoComeBackAtMidnightNotADayLater() {
+        // 사용자 2026-11-04: "광고 제한에 걸리면 기능도 다음날 사용가능하게, 대신 횟수 초기화는 00시 기준".
+        val seoul = ZoneId.of("Asia/Seoul")
+        val late = ZonedDateTime.of(2027, 3, 1, 23, 50, 0, 0, seoul)
+        val day = late.toLocalDate()
+        var s = FeatureLease.granted(FeatureLease.State(), Bundle.PAY, late.toInstant(), day)
+        s = FeatureLease.themeAd(s, day)
+        assertTrue(FeatureLease.capped(s, day))
+        assertFalse(FeatureLease.canWatch(s, Bundle.MONEY, late.toInstant(), day))
+        // The gate looks again at 00:00, ten minutes on, and the ad is there for the bundles still closed.
+        val midnight = ZonedDateTime.of(2027, 3, 2, 0, 0, 0, 0, seoul).toInstant()
+        assertEquals(midnight, FeatureLease.nextChange(s, late.toInstant(), seoul))
+        assertFalse(FeatureLease.capped(s, day.plusDays(1)))
+        assertTrue(FeatureLease.canWatch(s, Bundle.MONEY, midnight, day.plusDays(1)))
+        assertEquals(1, FeatureLease.granted(s, Bundle.MONEY, midnight, day.plusDays(1)).adsToday(day.plusDays(1)))
+        // Under the two, only a bundle's end is waited for; nothing open, nothing.
+        val one = FeatureLease.granted(FeatureLease.State(), Bundle.PAY, late.toInstant(), day)
+        assertEquals(late.toInstant().plus(days(7)), FeatureLease.nextChange(one, late.toInstant(), seoul))
+        assertNull(FeatureLease.nextChange(FeatureLease.State(), late.toInstant(), seoul))
     }
 
     @Test fun theSecondAdInAMonthIsCounted() {

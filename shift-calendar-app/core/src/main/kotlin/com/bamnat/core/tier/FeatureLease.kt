@@ -3,6 +3,7 @@ package com.bamnat.core.tier
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * 1.36 839 묶음 7일권 (사용자 2026-10-31 수익 2판 B안 "사용자가 불편함을 느끼지 않고 확실히 보상받는다는 느낌", 조사
@@ -97,8 +98,22 @@ object FeatureLease {
     fun canWatch(s: State, bundle: Bundle, now: Instant, today: LocalDate): Boolean =
         !s.open(bundle, now) && s.adsToday(today) < ADS_PER_DAY && s.quietUntil[bundle]?.let { now < it } != true
 
-    /** Today's ads are used up: the ad button says so and the 프로 line stays. */
+    /**
+     * Today's ads are used up: the ad button says so and the 프로 line stays. 'Today' is the phone's calendar day, so the count
+     * starts again at 00:00 (사용자 2026-11-04 "횟수 초기화는 00시 기준"), not 24 hours after an ad.
+     */
     fun capped(s: State, today: LocalDate): Boolean = s.adsToday(today) >= ADS_PER_DAY
+
+    /**
+     * 1.36.1 (사용자 2026-11-04 "광고 제한에 걸리면 기능도 다음날 사용가능하게"): when the gate looks again. The soonest of a bundle's
+     * end and, with today's two used, 00:00 on the phone's clock: the ad comes back then, even on a screen left open. Null when
+     * nothing is waiting.
+     */
+    fun nextChange(s: State, now: Instant, zone: ZoneId): Instant? {
+        val today = now.atZone(zone).toLocalDate()
+        val midnight = today.plusDays(1).atStartOfDay(zone).toInstant().takeIf { capped(s, today) }
+        return (s.until.values.filter { it > now } + listOfNotNull(midnight)).minOrNull()
+    }
 
     /** An ad watched to the end, or one that did not come ([why] [Why.NO_AD], with its [reason]): [bundle] for [AD_DAYS]. */
     fun granted(s: State, bundle: Bundle, now: Instant, today: LocalDate, why: Why = Why.AD, reason: String? = null): State {
