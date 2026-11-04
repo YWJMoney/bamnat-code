@@ -1619,6 +1619,7 @@ private fun AppNavHost(
                 onRecipe = { code -> nav.navigate(Routes.recipe(code)) { launchSingleTop = true } },
                 // [DRW-02] 1.37 내 서랍 › 장터 올리기: one of my themes to finish in 올리기 (이름·설명·확인).
                 onUpload = { nav.navigate(Routes.recipeMake()) { launchSingleTop = true } },
+                onMakeDraft = { id -> nav.navigate(Routes.recipeMake(draft = id)) { launchSingleTop = true } },
             )
         }
         composable(Routes.STUDIO, arguments = listOf(navArgument("start") { type = NavType.StringType; defaultValue = "mine" })) { entry ->

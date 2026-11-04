@@ -93,6 +93,8 @@ fun ThemeDrawer(
     onRecipe: (String) -> Unit,
     /** 올리기 (만들기's 이름·설명·확인) with [RecipeLinks.remake] set. */
     onUpload: () -> Unit,
+    /** PC d12d4cf1: a 만들던 레시피 from 만들기 (규칙 나누기 …) opens there again, at the step it was left on. */
+    onMakeDraft: ((Long) -> Unit)? = null,
 ) {
     val c = LocalContext.current.appContainer
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
@@ -224,7 +226,8 @@ fun ThemeDrawer(
         val h = byKey[key]
         if (item == null || h == null) open = null
         else ItemSheet(item, h, onDismiss = { open = null }, onTry = { r, code, ver -> open = null; trying = Triple(r, code, ver) },
-            onStudio = { open = null; onStudio(it) }, onRecipe = { open = null; onRecipe(it) }, onUpload = { open = null; onUpload() })
+            onStudio = { open = null; onStudio(it) }, onRecipe = { open = null; onRecipe(it) }, onUpload = { open = null; onUpload() },
+            onMakeDraft = { open = null; onMakeDraft?.invoke(it) ?: onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + it) })
     }
 }
 
@@ -236,10 +239,10 @@ private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: Li
     val worn = lease.worn
     // PC 3차: a theme worn in part stays itself in the drawer (입는 중 · 일부), not a new ‘… 일부’.
     // PC 08a6f771: a mix made in the studio (‘조합 · …’) is mine, on its own, and the theme its parts came from stays as it was.
-    val mix = worn?.takeIf { ThemeWardrobe.isMix(it.title) }
+    val mix = worn?.takeIf { ThemeWardrobe.isMix(it.title) && !it.own }
     val whole = if (mix != null) null else worn?.let { w ->
         lease.history.firstOrNull { it.key == w.key } ?: lease.history.firstOrNull { it.own && w.own && it.title == w.title.removeSuffix(" 일부") } }
-    (listOfNotNull(worn?.takeIf { whole == null }) + lease.history.filter { !ThemeWardrobe.isMix(it.title) }).forEach { w ->
+    (listOfNotNull(worn?.takeIf { whole == null }) + lease.history.filter { !(ThemeWardrobe.isMix(it.title) && !it.own) }).forEach { w ->
         val isMix = mix != null && w === mix
         val now = if (mix != null) isMix else w.key == (whole ?: worn)?.key
         val words = listOfNotNull(w.mixedFrom.takeIf { it.isNotBlank() }, "장터".takeIf { w.free }, "입는 중".takeIf { now }, "섞음".takeIf { isMix }).joinToString(" ")
@@ -325,7 +328,7 @@ private fun Thumb(h: Held?, width: androidx.compose.ui.unit.Dp) {
         is Held.Got -> h.e.pieces.split(',').firstNotNullOfOrNull { PieceKind.of(it) }?.let(::emojiOf) ?: "📦"
         else -> "🧩"
     }
-    Box(Modifier.width(width).aspectRatio(0.75f).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+    Box(Modifier.width(width).aspectRatio(1.8f).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center) { Text(emoji, style = MaterialTheme.typography.headlineMedium) }
 }
 
@@ -341,7 +344,7 @@ private fun emojiOf(k: PieceKind): String = when {
 /** One short line on where it stands. */
 private fun status(h: Held?): String? = when (h) {
     is Held.Theme -> (if (h.part) "일부 입는 중 · " else if (h.now) "입는 중 · " else "") +
-        when { ThemeWardrobe.isMix(h.w.title) -> "내가 섞은 것"; h.w.free -> "내 것 · 장터에 있음"; h.w.own && h.w.mixedFrom.isNotBlank() -> "내 것 · 섞음"; h.w.own -> "내 것 · 나만"; h.now -> "남의 테마"; else -> "입었던" }
+        when { ThemeWardrobe.isMix(h.w.title) && !h.w.own -> "내가 섞은 것"; h.w.free -> "내 것 · 장터에 있음"; h.w.own && h.w.mixedFrom.isNotBlank() -> "내 것 · 섞음"; h.w.own -> "내 것 · 나만"; h.now -> "남의 테마"; else -> "입었던" }
     is Held.Draft -> if (h.d.step >= 2) "만들던 · 올리던 중" else "만들던 · ${com.bamnat.app.ui.studio.ago(h.d.updatedAt)}"
     is Held.Got -> "받음 · " + h.e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.take(2).joinToString("·")
     is Held.Part -> if (h.k.own) "조각 · 내 것" else "조각 · ‘${h.k.fromTitle}’에서"
@@ -359,7 +362,7 @@ private fun marketCode(code: String): String? = code.takeIf { it.isNotEmpty() &&
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Recipe, String, Int) -> Unit, onStudio: (String) -> Unit,
-                      onRecipe: (String) -> Unit, onUpload: () -> Unit) {
+                      onRecipe: (String) -> Unit, onUpload: () -> Unit, onMakeDraft: (Long) -> Unit) {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
     var asking by remember { mutableStateOf<Triple<String, String, () -> Unit>?>(null) }
@@ -413,7 +416,7 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                     }
                     Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
                     // A mix worn now lives only while it is worn (벗기 is on the card above); its key is the theme its parts came from.
-                    if (!ThemeWardrobe.isMix(w.title)) Act(if (w.own) "지우기" else "서랍에서 빼기") {
+                    if (!(ThemeWardrobe.isMix(w.title) && !w.own)) Act(if (w.own) "지우기" else "서랍에서 빼기") {
                         asking = Triple(if (w.own) "내 테마를 지울까요?" else "입었던 것에서 뺄까요?",
                             "‘${w.title}’${Fmt.obj(w.title)} 서랍에서 빼요. 지금 입은 모양은 그대로예요" + if (w.own && w.shared.isNotEmpty()) ". 장터에 올린 것은 장터에 그대로 있어요" else "") {
                             c.wardrobe.removeKept(w.key); c.wardrobe.setFolder(i.key, null); onDismiss()
@@ -468,8 +471,11 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                 }
                 is Held.Draft -> {
                     val d = h.d
-                    Act("이어서 하기", if (d.step >= 2) "올리기 ${d.step - 1}/4단계에서 멈춘 곳부터" else "스튜디오에서 꾸미던 곳부터", primary = true) {
-                        onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + d.id)
+                    // 스튜디오 drafts (step 1, looks) go back to the studio; one from 만들기 (올리기 단계, 규칙 같은 기능) to 만들기.
+                    val made = d.step >= 2 || draftKinds(d.body).orEmpty().any { it !in BuiltInThemes.LOOK_KINDS }
+                    Act("이어서 하기", if (d.step >= 2) "올리기 ${d.step - 1}/4단계에서 멈춘 곳부터" else if (made) "만들기에서 멈춘 곳부터" else "스튜디오에서 꾸미던 곳부터", primary = true) {
+                        if (made) onMakeDraft(d.id)
+                        else onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + d.id)
                     }
                     Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
                     Act("지우기") {
@@ -530,13 +536,15 @@ private fun FolderRename(f: String, onRenamed: (String?) -> Unit) {
         TextButton(onClick = { editing = true }) { Text("‘$f’ 묶음 이름 바꾸기") }
     }
     if (!editing) return
-    var name by remember(f) { mutableStateOf(f) }
+    // PC d12d4cf1 (묶음 이름 칸을 누르면 커서가 맨 앞): the cursor starts after the name.
+    var field by remember(f) { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(f, androidx.compose.ui.text.TextRange(f.length))) }
+    val name = field.text
     AlertDialog(
         onDismissRequest = { editing = false },
         title = { Text("묶음 이름") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                OutlinedTextField(name, { name = it.take(ThemeWardrobe.FOLDER_NAME) }, Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(field, { field = if (it.text.length <= ThemeWardrobe.FOLDER_NAME) it else field }, Modifier.fillMaxWidth(), singleLine = true)
                 Text("묶음을 풀어도 안에 있던 것은 서랍에 그대로 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },

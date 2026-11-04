@@ -106,6 +106,8 @@ fun HubScreen(
     onSwipe: (() -> Unit)? = null,
     /** [DRW-02] 1.37 내 서랍 › 장터에 올리기 (만들기's 올리기, with the theme handed over). */
     onUpload: () -> Unit = {},
+    /** 내 서랍 › 만들던 것 (만들기에서 멈춘 것) › 이어서 하기. */
+    onMakeDraft: ((Long) -> Unit)? = null,
 ) {
     // [VIL-07] 1.36 마을 V7: 마을 opens on the part last seen; the first time on the one that fits the kind of work (자영업·투자 have a quiet 광장).
     val prefs = remember { c.appContext.getSharedPreferences(HUB_PREFS, android.content.Context.MODE_PRIVATE) }
@@ -168,7 +170,7 @@ fun HubScreen(
                 ) { share(shareKind) }
                 HubSection.THEMES -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
                     Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE },
-                        onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload)
+                        onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload, onMakeDraft = onMakeDraft)
                 }
                 HubSection.MAKE -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
                     Make(c, style, onStudio, onMake, onMine, onRequests, onCode, onPosts, onRecipe)
@@ -266,9 +268,10 @@ private fun Page(scroll: androidx.compose.foundation.ScrollState = rememberScrol
 /** [HUB-02][DRW-01] 테마 = 내 서랍: the user's own page; new themes are found in 장터, made in 공방. */
 @Composable
 private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, onStudio: (String) -> Unit, onRecipe: (String) -> Unit,
-                   onUpload: () -> Unit) = Page {
+                   onUpload: () -> Unit, onMakeDraft: ((Long) -> Unit)? = null) = Page {
     Text(HubSection.THEMES.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    com.bamnat.app.ui.recipe.ThemeDrawer(style, onFind = onFind, onFix = onLook, onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload)
+    com.bamnat.app.ui.recipe.ThemeDrawer(style, onFind = onFind, onFix = onLook, onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload,
+        onMakeDraft = onMakeDraft)
 }
 
 /** [HUB-03] 공방: the studio, my recipes and what others wish for, in one place. */

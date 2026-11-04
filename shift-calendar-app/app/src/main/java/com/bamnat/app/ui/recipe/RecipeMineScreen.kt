@@ -94,8 +94,9 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                 Header("받은 레시피")
                 // 1.37 PC 3차 (받은 꾸밈이 서랍과 공방에 나뉘어 있어요): where all of it is together.
                 Muted("입은 테마·얹은 탭·담아 둔 조각까지 한곳에서 보려면 마을 › 테마(내 서랍)로 가요. 여기서는 새 판 반영과 알림을 정해요")
-                if (applied.isEmpty()) Muted("아직 넣은 레시피가 없어요")
-                applied.take(30).forEach { e ->
+                if (applied.none { !com.bamnat.app.recipe.ThemeWardrobe.isMix(it.title) }) Muted("아직 넣은 레시피가 없어요")
+                // 1.37 PC d12d4cf1: a look mixed and put on in the studio (‘조합 · …’) is mine, in 내 서랍, not a recipe received.
+                applied.filterNot { com.bamnat.app.recipe.ThemeWardrobe.isMix(it.title) }.take(30).forEach { e ->
                     Card(Modifier.fillMaxWidth().clickable(enabled = e.code.isNotEmpty()) { onOpen(e.code) }) {
                         Column(Modifier.padding(12.dp)) {
                             Text(e.title, style = MaterialTheme.typography.titleSmall)

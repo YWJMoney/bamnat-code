@@ -29,6 +29,29 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         _lease.value = l
     }
 
+    /**
+     * 1.37 PC d12d4cf1 (백업을 복원하면 담아 둔 조각·입어 본 테마·묶음이 사라짐): after a restore wrote this file, what is held in memory
+     * is read again from it, so the next save does not write the old phone's state back over it.
+     */
+    fun reload() {
+        _lease.value = ThemeLease.decode(prefs.getString(K_LEASE, null))
+        _kept.value = readKept()
+        _overlays.value = readOverlays()
+        _folders.value = readFolders()
+        _placed.value = readPlaced()
+    }
+
+    /**
+     * 1.37 PC d12d4cf1 (입던 조합을 벗거나 바꾸면 서랍에서 사라져요): a mix of other themes' parts made in the studio stays in 입어 본
+     * 테마 as one of mine mixed from them ([ThemeLease.Wear.mixedFrom]: the 30-day rule, 장터 only as a 수정판), to wear again.
+     */
+    private fun keepMix(l: ThemeLease): ThemeLease {
+        val w = l.worn?.takeIf { isMix(it.title) && !it.own } ?: return l
+        val from = l.history.firstOrNull { it.key == w.key }?.title ?: w.title.removePrefix(MIX)
+        val mine = ThemeLease.Wear(w.title, "", w.body, w.from, w.until, own = true, mixedFrom = from.take(30), mixedCodes = w.code)
+        return l.copy(history = (listOf(mine) + l.history.filter { it.key != mine.key }).take(ThemeLease.HISTORY))
+    }
+
     /** Whether ads may run (the `ads` switch) and the user is on 프로; before launch the gate says 프로, so nothing runs. */
     fun adsOn(): Boolean = c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS)
     fun pro(): Boolean = c.featureGate.allows(com.bamnat.app.tier.Feature.THEME_WARDROBE)
@@ -87,7 +110,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
 
     /** [looks] are on: the theme worn from today, its days running for someone else's (not [own]) under the ads switch. */
     suspend fun afterWear(looks: Recipe, code: String, own: Boolean, ver: Int = 0, whole: Recipe? = null) {
-        val l = _lease.value
+        val l = keepMix(_lease.value)
         // [J135-16] What was worn before, so 되돌리기 of this one puts its name back with its look.
         prefs.edit().putString(K_WORN_LOOK, JSONObject(c.recipes.pieces.lookSnapshot()).toString())
             .putString(K_PREV, ThemeLease.encode(ThemeLease(worn = l.worn))).apply()
@@ -101,7 +124,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         save(when {
             whole != null -> keepWhole(l, next, whole)
             // 1.37 PC (스튜디오에서 입힌 섞은 모양이 서랍에서 그 테마 자리를 차지해요): the theme its parts came from stays in 입었던 테마.
-            isMix(looks.title) -> next.copy(history = (l.history.filter { it.key == next.worn?.key && !isMix(it.title) } + next.history.filter { it.key != next.worn?.key && !isMix(it.title) })
+            isMix(looks.title) && !own -> next.copy(history = (l.history.filter { it.key == next.worn?.key && !isMix(it.title) } + next.history.filter { it.key != next.worn?.key && !(isMix(it.title) && !it.own) })
                 .take(ThemeLease.HISTORY))
             else -> next
         })
@@ -130,7 +153,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val worn = _lease.value.worn ?: return
         val now = c.recipes.pieces.lookSnapshot()
         val after = readMap(K_WORN_LOOK)
-        var l = _lease.value
+        var l = keepMix(_lease.value)
         if (after != null && after != now) {
             val mine = myLookRecipe("내가 고친 ${worn.title}".take(30))
             l = l.wear(ThemeLease.Wear(mine.title, "", RecipeCodec.write(mine), 0, 0, own = true), Today.date().toEpochDay(), free = false)

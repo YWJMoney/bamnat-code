@@ -618,10 +618,15 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 }
                 when (s.step) {
                     1 -> {
-                        RecipeStudio(s, vm, tab, { tab = it }, onMockShown = { mockShown = it },
-                            onEdit = { top -> scope.launch { scroll.animateScrollTo((scroll.value + top - boxTop - 8f).toInt().coerceAtLeast(0)) } })
-                        // 1.37 PC (이 설정 나누기로 오면 골라진 것이 접힌 칸 안에만 있어요): open on what it was started from.
+                        // 1.37 PC (이 설정 나누기로 오면 골라진 것이 접힌 칸 안에만 있어요): open on what it was started from, and, PC d12d4cf1
+                        // (펼친 칸이 두 화면 반 아래), first on the page.
                         var more by rememberSaveable { mutableStateOf(vm.startKind != null) }
+                        val pickFirst = vm.startKind != null
+                        val studio: @Composable () -> Unit = {
+                            RecipeStudio(s, vm, tab, { tab = it }, onMockShown = { mockShown = it },
+                                onEdit = { top -> scope.launch { scroll.animateScrollTo((scroll.value + top - boxTop - 8f).toInt().coerceAtLeast(0)) } })
+                        }
+                        if (!pickFirst) studio()
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -635,6 +640,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                                 if (more) StepPick(s, vm)
                             }
                         }
+                        if (pickFirst) studio()
                     }
                     2 -> StepInputs(s, vm)
                     3 -> StepLook(s, vm)

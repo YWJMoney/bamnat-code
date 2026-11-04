@@ -133,6 +133,32 @@ class ThemeDrawerTest {
         assertEquals(theme.title, l.history.first { it.key == code }.title)
         assertTrue(l.history.none { ThemeWardrobe.isMix(it.title) })
         assertTrue(c.recipes.inUse().none { it.title == mix.title && it.code.isNotEmpty() })
+        // PC d12d4cf1: taken off, it stays in 입어 본 테마 as one of mine mixed from that theme, to wear again.
         c.wardrobe.takeOff()
+        val kept = c.wardrobe.lease.value.history.first { it.title == mix.title }
+        assertTrue(kept.own)
+        assertEquals(theme.title, kept.mixedFrom)
+        assertEquals(code, kept.mixedCodes)
+    }
+
+    /** PC d12d4cf1 (복원하면 조각·입어 본 테마·묶음이 사라짐): a restore of the backup's files is what 내 서랍 shows and keeps. */
+    @Test fun aRestoreComesBackToTheDrawer() = runBlocking {
+        val theme = BuiltInThemes.of(WorkStyle.SHIFT).first()
+        assertTrue(c.wardrobe.keep(theme, "", com.bamnat.core.recipe.LookParts.of(theme).take(1).map { it.id }))
+        c.wardrobe.setFolder("part:1", "겨울")
+        assertTrue(c.wardrobe.saveMine("출근용"))
+        val files = com.bamnat.app.data.SettingsFilesBackup(app) { c.wardrobe.reload() }
+        val saved = files.export()
+        c.wardrobe.forgetKept(c.wardrobe.kept.value.first().id)
+        c.wardrobe.setFolder("part:1", null)
+        c.wardrobe.removeKept("own:출근용")
+        files.restore(saved)
+        assertEquals(1, c.wardrobe.kept.value.size)
+        assertEquals("겨울", c.wardrobe.folders.value["part:1"])
+        assertTrue(c.wardrobe.lease.value.history.any { it.key == "own:출근용" })
+        // What is held after the restore is what is saved next (a later change does not write the old state back).
+        c.wardrobe.setFolder("part:2", "여름")
+        assertEquals("겨울", com.bamnat.app.data.SettingsFilesBackup(app).export().getJSONObject("prefs").getJSONObject("theme_wardrobe")
+            .getJSONObject("folders").getString("s").let { org.json.JSONObject(it).getString("part:1") })
     }
 }
