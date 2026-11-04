@@ -966,10 +966,11 @@ class AppContainer(context: Context) {
                 combine(scheduleRepository.snapshot, settingsRepository.settings.map { it.leaveTimeNotice to it.workStyle }.distinctUntilChanged()) { _, _ -> Unit }
                     .debounce(500).collect { com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext) }
             }
-            // [SETUP-16] A first setup put off follows its kind of work wherever it changes (설정, a backup brought back).
-            keep("setuplater") { com.bamnat.app.data.SetupLater.follow(settingsRepository, setupDrafts, firstSetup) }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
             keep("leave") {
+                // [SETUP-16] In the same job (StartupBudgetTest): a first setup put off follows its kind of work wherever it
+                // changes (설정 > 일하는 방식, a backup brought back).
+                launch { com.bamnat.app.data.SetupLater.follow(settingsRepository, setupDrafts, firstSetup) }
                 val lots = leaveRepository.summary.map { s -> s.lots.map { it.lot } }.distinctUntilChanged()
                 val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
                 combine(lots, on) { l, o -> l to o }

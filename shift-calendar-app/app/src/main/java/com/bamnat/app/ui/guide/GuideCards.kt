@@ -42,6 +42,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.GuideStore
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.core.guide.AppFeature
@@ -92,6 +93,12 @@ fun GuideArea(
     // [J133-52] A calendar already filled by the setup has its 근무 주기 done: the checklist does not offer it as new.
     LaunchedEffect(calendar, style?.usesPattern) {
         if (style?.usesPattern == true && "shift.pattern" !in state.used) store.used("shift.pattern")
+    }
+    // 1.37 PC: a field calendar whose way of counting was already chosen (the first 일감 적기 asks it) has '일당형·건별형 고르기' done.
+    val calendars by context.appContainer.calendars.calendars.collectAsStateWithLifecycle()
+    val fieldModeSet = calendars.firstOrNull { it.id == calendar }?.field?.mode != null
+    LaunchedEffect(calendar, fieldModeSet) {
+        if (fieldModeSet && "field.mode" !in state.used) store.used("field.mode")
     }
 
     val checklist = remember(state, calendar, style, today) {
