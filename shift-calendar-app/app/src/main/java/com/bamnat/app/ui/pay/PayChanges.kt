@@ -86,13 +86,17 @@ internal fun PayHistoryDialog(history: List<PayStore.Change>, current: PayProfil
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("지금: ${sketch(current)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (history.isEmpty()) Text("최근 7일 동안 바꾼 것이 없어요.", style = MaterialTheme.typography.bodyMedium)
-                history.forEach { c ->
+                history.forEachIndexed { i, c ->
                     HorizontalDivider()
+                    // PC 5566ff20 (기록 줄이 '기본급 ○원 · 수당 1개'뿐이라 무엇이 바뀌었는지 안 보임): what this change did, before → after.
+                    val after = if (i == 0) current else history[i - 1].before
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(c.why, style = MaterialTheme.typography.bodyMedium)
-                            Text(PayStore.whenText(c.at) + " · 전: " + sketch(c.before), style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(PayStore.whenText(c.at), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            diff(c.before, after).forEach { d ->
+                                Text("· $d", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                         TextButton(onClick = { asking = c }, modifier = Modifier.heightIn(min = 48.dp)) { Text("전으로") }
                     }
@@ -101,6 +105,36 @@ internal fun PayHistoryDialog(history: List<PayStore.Change>, current: PayProfil
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
+}
+
+/**
+ * [PAYIN-06] What changed from [before] to [after], line by line in plain words: "기본급 2,400,000원 → 2,508,000원", "식대 0원 →
+ * 200,000원", "수당 ‘교대수당’ 더함", "직접 만든 항목 1개 → 2개", "회사 규칙(가산율·기준) 바뀜". At most six lines.
+ */
+internal fun diff(before: PayProfile?, after: PayProfile?): List<String> {
+    val m = Today.month()
+    if (before == null && after == null) return listOf("바뀐 것 없음")
+    if (before == null) return listOf("급여 설정을 새로 만듦: ${sketch(after)}")
+    if (after == null) return listOf("급여 설정을 비움 (전: ${sketch(before)})")
+    val out = mutableListOf<String>()
+    val b0 = before.base.on(m).value; val b1 = after.base.on(m).value
+    if (before.wageType != after.wageType) out += "받는 방식 ${before.wageType.baseName()} → ${after.wageType.baseName()}"
+    if (b0 != b1) out += "${after.wageType.baseName()} ${won(b0)} → ${won(b1)}"
+    val olds = before.items.associateBy { it.id }
+    val news = after.items.associateBy { it.id }
+    after.items.filter { it.id !in olds }.forEach { out += "‘${it.name}’ 더함 (${won(it.amount.on(m).value)})" }
+    before.items.filter { it.id !in news }.forEach { out += "‘${it.name}’ 뺌" }
+    after.items.forEach { n ->
+        val o = olds[n.id] ?: return@forEach
+        val a0 = o.amount.on(m).value; val a1 = n.amount.on(m).value
+        if (a0 != a1) out += "‘${n.name}’ ${won(a0)} → ${won(a1)}"
+        else if (o != n) out += "‘${n.name}’ 설정 바뀜"
+    }
+    if (before.customRules.size != after.customRules.size) out += "직접 만든 항목 ${before.customRules.size}개 → ${after.customRules.size}개"
+    else if (before.customRules != after.customRules) out += "직접 만든 항목 바뀜"
+    if (before.rules != after.rules) out += "회사 규칙(가산율·기준) 바뀜"
+    if (out.isEmpty()) out += "그 밖의 설정 바뀜"
+    return out.take(6)
 }
 
 /** A setup in a few words: "월급 기본급 2,500,000원 · 수당 3개 · 직접 만든 항목 1개", or that there was none. */

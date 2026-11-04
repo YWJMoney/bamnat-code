@@ -70,30 +70,45 @@ internal fun PinnedPhotos(photos: List<Bitmap>, labels: List<String> = listOf("�
     // A small phone or big letters keep the photo smaller, so the tabs and the first lines still show under it.
     val tight = screen < 700 || LocalDensity.current.fontScale > 1.3f
     val share = when {
-        ime -> if (tight) 0.18f else 0.24f
+        ime -> if (tight) 0.16f else 0.2f
         big -> 0.55f
-        tight -> 0.22f
-        else -> 0.3f
+        tight -> 0.2f
+        else -> 0.26f
     }
     val photo = photos.getOrElse(index) { photos.first() }
+    // PC 5566ff20: the lines had only a quarter of the screen. The photo's buttons sit on the photo now, not on a row of their own.
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = modifier.fillMaxWidth()) {
-        androidx.compose.foundation.layout.Column {
-            if (!folded) ZoomablePhoto(photo, Modifier.fillMaxWidth().height((screen * share).dp))
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                if (photos.size > 1) photos.indices.forEach { i ->
-                    FilterChip(selected = i == index, onClick = { index = i; folded = false }, label = { Text(labels.getOrElse(i) { "사진 ${i + 1}" }) })
-                }
-                if (folded) TextButton(onClick = { folded = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("사진 펴기") }
-                else {
-                    if (!tight) Text("두 손가락으로 키우고 밀어서 봐요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    TextButton(onClick = { big = !big }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (big) "사진 작게" else "사진 크게") }
-                    TextButton(onClick = { folded = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
+        if (folded) Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (photos.size > 1) photos.indices.forEach { i ->
+                FilterChip(selected = i == index, onClick = { index = i; folded = false }, label = { Text(labels.getOrElse(i) { "사진 ${i + 1}" }) })
+            }
+            TextButton(onClick = { folded = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("사진 펴기") }
+        } else Box(Modifier.fillMaxWidth().height((screen * share).dp)) {
+            ZoomablePhoto(photo, Modifier.matchParentSize())
+            if (photos.size > 1) Row(Modifier.align(Alignment.TopStart).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                photos.indices.forEach { i ->
+                    FilterChip(selected = i == index, onClick = { index = i }, label = { Text(labels.getOrElse(i) { "사진 ${i + 1}" }) })
                 }
             }
+            Row(Modifier.align(Alignment.BottomEnd).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                PhotoPill(if (big) "사진 작게" else "사진 크게") { big = !big }
+                PhotoPill("접기") { folded = true }
+            }
+        }
+    }
+}
+
+/** [PAYIN-01] A small button laid on the photo. */
+@Composable
+private fun PhotoPill(text: String, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.78f),
+        modifier = Modifier.heightIn(min = 48.dp).padding(vertical = 6.dp)) {
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+            Text(text, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.inverseOnSurface)
         }
     }
 }

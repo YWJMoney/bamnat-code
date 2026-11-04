@@ -137,12 +137,14 @@ internal fun SlipCheck(
                 .semantics { if (doubt) contentDescription = "${line.name} ${line.amount?.let(::won).orEmpty()}, 사진에서 두 가지로 읽혔어요" },
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(line.name + (line.minutes?.let { " · ${com.bamnat.core.pay.PayCalculator.hours(it)}" } ?: ""),
+                // PC 5566ff20 ('실지급액객'): a total's name is its kind's own word; what the photo printed stays under it.
+                val shownName = if (line.role in TOTALS) line.role.label else line.name
+                Text(shownName + (line.minutes?.let { " · ${com.bamnat.core.pay.PayCalculator.hours(it)}" } ?: ""),
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 2)
                 if (fixing) Text("고치기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(line.role.short().takeIf { it != line.name } ?: "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                Text((if (line.role in TOTALS) line.name.takeIf { it != line.role.label } else line.role.short().takeIf { it != line.name }) ?: "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                 Text(line.amount?.let(::won) ?: "금액 없음", style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (line.role in TOTALS) androidx.compose.ui.text.font.FontWeight.Bold else null)
             }

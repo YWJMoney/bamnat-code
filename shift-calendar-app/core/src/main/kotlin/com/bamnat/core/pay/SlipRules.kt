@@ -88,16 +88,25 @@ object SlipRules {
             changes += ruleChanges.map { "회사 계산 방법: ${it.summary}" }
         }
 
+        // [PAYIN-03] 1.37 PC 5566ff20 (명세서 기본급·식대가 '0원'으로 들어가고, '모든 달 같게'로 고쳐도 그대로): values were dated from the
+        // pay period's first day, which for a period that starts mid-month (21일~20일) is after the 1st the screens and the month read
+        // from, so the month showed 0원. They are dated from the month's 1st when that is earlier; a setup with only 0원 (a first setup)
+        // takes the payslip's amount for every month it has, and a new item starts where the setup starts.
+        val dated = minOf(from, month.atDay(1))
+        val start = (p.base.entries.map { it.from } + dated).min()
+        fun baseWith(v: Long): ValueTimeline =
+            if (p.base.entries.all { it.value <= 0 }) ValueTimeline(listOf(DatedValue(start, v)), p.base.raise) else p.base.with(DatedValue(dated, v))
+
         // 1. 기본급 or 시급.
         val hourlyOnSlip = read.amount(SlipRole.HOURLY)?.takeIf { it in 1..99_999 }
         when {
             hourlyOnSlip != null && slip.base == null || hourlyOnSlip != null && p.wageType == WageType.HOURLY -> {
                 if (p.wageType != WageType.HOURLY || p.base.on(month).value != hourlyOnSlip) changes += "시급 ${won(hourlyOnSlip)}"
-                p = p.copy(wageType = WageType.HOURLY, base = p.base.with(DatedValue(from, hourlyOnSlip)), annual = null)
+                p = p.copy(wageType = WageType.HOURLY, base = baseWith(hourlyOnSlip), annual = null)
             }
             slip.base != null && p.wageType == WageType.MONTHLY -> {
                 if (p.base.on(month).value != slip.base) changes += "월 기본급 ${won(slip.base)}"
-                p = p.copy(base = p.base.with(DatedValue(from, slip.base)), annual = null)
+                p = p.copy(base = baseWith(slip.base), annual = null)
             }
         }
         p = p.copy(estimatedFields = p.estimatedFields - Unknowns.BASE)
@@ -110,20 +119,20 @@ object SlipRules {
             if (p.items.any { norm(it.name) == norm(name) } || p.customRules.any { norm(it.name) == norm(name) }) continue
             val role = read.lines.firstOrNull { it.name == name }?.role
             val item = if (role == SlipRole.BONUS) {
-                PayItem(id(name), name, ValueTimeline(listOf(DatedValue(from, amount))), Cadence.BONUS, months = setOf(month.monthValue))
+                PayItem(id(name), name, ValueTimeline(listOf(DatedValue(start, amount))), Cadence.BONUS, months = setOf(month.monthValue))
             } else {
                 val n = norm(name)
                 val byType = days.filter { it.isWorkDay }.groupBy { it.shiftType }.entries
                     .firstOrNull { (t, ds) -> t != null && t.name.isNotBlank() && n.contains(norm(t.name)) && amount % ds.size == 0L }
                 when {
-                    byType != null -> PayItem(id(name), name, ValueTimeline(listOf(DatedValue(from, amount / byType.value.size))),
+                    byType != null -> PayItem(id(name), name, ValueTimeline(listOf(DatedValue(start, amount / byType.value.size))),
                         Cadence.PER_SHIFT_TYPE, shiftTypeIds = setOf(byType.key!!.id))
                     Regex("나이트|야간|밤").containsMatchIn(n) && nights > 0 && amount % nights == 0L ->
-                        PayItem(id(name), name, ValueTimeline(listOf(DatedValue(from, amount / nights))), Cadence.PER_NIGHT_SHIFT)
+                        PayItem(id(name), name, ValueTimeline(listOf(DatedValue(start, amount / nights))), Cadence.PER_NIGHT_SHIFT)
                     Regex("식대|식비|교통|출근").containsMatchIn(n) && workDays > 0 && amount % workDays == 0L && amount / workDays <= 30_000 ->
-                        PayItem(id(name), name, ValueTimeline(listOf(DatedValue(from, amount / workDays))), Cadence.PER_WORK_DAY)
+                        PayItem(id(name), name, ValueTimeline(listOf(DatedValue(start, amount / workDays))), Cadence.PER_WORK_DAY)
                     // Fixed every month for the job (직책·자격·면허·근속·교대): 통상임금 (대법원 2013다4174 전원합의체 기준의 고정성).
-                    else -> PayItem(id(name), name, ValueTimeline(listOf(DatedValue(from, amount))), Cadence.MONTHLY,
+                    else -> PayItem(id(name), name, ValueTimeline(listOf(DatedValue(start, amount))), Cadence.MONTHLY,
                         ordinary = Regex("직책|자격|면허|근속|교대|직무|위험").containsMatchIn(n))
                 }
             }

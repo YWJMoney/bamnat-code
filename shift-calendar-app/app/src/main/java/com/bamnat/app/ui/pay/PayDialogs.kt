@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.contentDescription
@@ -70,21 +71,45 @@ internal fun MoneyField(
     error: String? = null,
 ) {
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    // [PAYIN-02] 1.37 PC 5566ff20 (칸을 눌러 2,600,000 뒤에 250을 쳐서 26억이 경고 없이 저장됨): a tap on the field selects what is
+    // in it, so typing replaces it; an amount over 1억 원 says so in red under the field (it can still be kept).
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "")) }
+    if ((field.text.toLongOrNull()) != value) field = androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "", androidx.compose.ui.text.TextRange((value?.toString() ?: "").length))
+    var selectOnFocus by remember { mutableStateOf(false) }
+    // The tap that focused the field moves the cursor right after; the select-all is kept over that one move.
+    var keepSelection by remember { mutableStateOf(false) }
+    val huge = value != null && value >= HUGE_WON
     OutlinedTextField(
-        isError = error != null,
-        value = value?.toString() ?: "",
-        onValueChange = { s -> onChange(s.filter(Char::isDigit).take(10).toLongOrNull()) },
+        isError = error != null || huge,
+        value = field,
+        onValueChange = { v ->
+            if (keepSelection && v.text == field.text) { keepSelection = false; return@OutlinedTextField }
+            keepSelection = false
+            val digits = v.text.filter(Char::isDigit).take(10)
+            field = v.copy(text = digits, selection = if (v.text == digits) v.selection else androidx.compose.ui.text.TextRange(digits.length))
+            onChange(digits.toLongOrNull())
+        },
         label = { Text(label) },
         placeholder = if (placeholder.isNotEmpty()) ({ Text(placeholder) }) else null,
         suffix = { Text("원") },
         // [PAYS-04] Read back in words (250만 8천원) so a missing or extra zero shows at a glance.
-        supportingText = error?.let { e -> { Text(e) } } ?: value?.let { { Text("${won(it)} · ${com.bamnat.core.pay.wonWords(it)}") } },
+        supportingText = error?.let { e -> { Text(e) } }
+            ?: value?.let { { Text("${won(it)} · ${com.bamnat.core.pay.wonWords(it)}" + if (huge) " · 1억 원이 넘어요. 0이 더 들어가지 않았는지 봐 주세요" else "") } },
         singleLine = true,
         visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide(); onDone?.invoke() }),
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().onFocusChanged { f ->
+            if (f.isFocused && !selectOnFocus) {
+                selectOnFocus = true
+                keepSelection = true
+                field = field.copy(selection = androidx.compose.ui.text.TextRange(0, field.text.length))
+            } else if (!f.isFocused) selectOnFocus = false
+        },
     )
 }
+
+/** [PAYIN-02] A pay amount from this much on is said to be checked (one 0 too many turns 260만 into 2,600만, 2억 6천만…). */
+internal const val HUGE_WON = 100_000_000L
 
 /**
  * [PAYX-23][INPUT-02] 월 소정근로시간 for a company that uses e.g. 182 or 195 hours: the one stepper, 100~320 hours, held
