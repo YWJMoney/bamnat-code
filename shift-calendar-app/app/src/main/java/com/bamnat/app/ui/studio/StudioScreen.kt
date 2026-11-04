@@ -687,9 +687,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 }
                 // B 11차 PC 제안 (미리 보기가 화면 2/3라 편집 목록이 3~4줄만 보임): scrolling the controls down makes the example small
                 // once, as picking a tool does; a double tap or 크게 on the example brings it back.
+                // PC c6a6e361 (판을 맨 위로 다시 올려도 미리 보기가 처음 크기로 안 돌아옴): back at the top of the controls, the example
+                // goes back to the size it had before the scroll made it small, unless the user sized it by hand in between.
                 val toolScroll = rememberScrollState()
+                val shrunkFrom = remember { floatArrayOf(-1f) }
                 LaunchedEffect(toolScroll) {
-                    androidx.compose.runtime.snapshotFlow { toolScroll.value > 48 }.collect { down -> if (down && scale > SCALE_SMALL) scale = SCALE_SMALL }
+                    androidx.compose.runtime.snapshotFlow { when { toolScroll.value > 48 -> 1; toolScroll.value == 0 -> -1; else -> 0 } }.collect { at ->
+                        if (at == 1 && scale > SCALE_SMALL) { shrunkFrom[0] = scale; scale = SCALE_SMALL }
+                        else if (at == -1 && shrunkFrom[0] > 0f) { if (scale == SCALE_SMALL) scale = shrunkFrom[0]; shrunkFrom[0] = -1f }
+                    }
                 }
                 Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(toolScroll).padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {

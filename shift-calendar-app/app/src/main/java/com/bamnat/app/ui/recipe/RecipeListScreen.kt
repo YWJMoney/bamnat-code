@@ -316,15 +316,7 @@ fun RecipeListScreen(
                 androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
                 Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Pinned: the three 구간 as one small row, since their big cards have scrolled away.
-                    androidx.compose.animation.AnimatedVisibility(pinned) {
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(selected = !featured && !logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_THEME) }, label = { Text("🎨 테마") })
-                            FilterChip(selected = featured, onClick = { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("🧩 기능별 탭") })
-                            FilterChip(selected = logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_LOGIC) }, label = { Text("⚡ 규칙·단추") })
-                        }
-                    }
-                    // PC D10 (사용성 중): 찾은 말이 다른 구간에 있으면 칩으로 (테마 안에서만 찾아 '체크'가 안 나오던 것).
-                    if (featured) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    val tabChips: @Composable () -> Unit = {
                         val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
                         FilterChip(selected = now.isEmpty(), onClick = { vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text("모든 탭") })
                         // PC 확인 5c21f3bb 장터 구간 세기: a tab that kind of work has no works for (자영업·투자의 근무·급여, 알람 조각을 받는
@@ -333,6 +325,22 @@ fun RecipeListScreen(
                             FilterChip(selected = now == t, onClick = { vm.kind(RecipeClient.SCOPE_TAB + t) }, label = { Text(marketTabLabel(t, vm.style)) })
                         }
                     }
+                    // Pinned: the three 구간 as one small row, since their big cards have scrolled away. PC c6a6e361 제안 (기능별 탭은
+                    // 붙는 줄이 세 줄이라 목록이 좁음): pinned, 기능별 탭's tab chips go on that same row after the 구간, so two rows stay on top.
+                    androidx.compose.animation.AnimatedVisibility(pinned) {
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            FilterChip(selected = !featured && !logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_THEME) }, label = { Text("🎨 테마") })
+                            FilterChip(selected = featured, onClick = { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) }, label = { Text(if (featured) "🧩" else "🧩 기능별 탭") },
+                                modifier = Modifier.semantics { contentDescription = "기능별 탭" })
+                            FilterChip(selected = logicOnly, onClick = { vm.kind(RecipeClient.SCOPE_LOGIC) }, label = { Text("⚡ 규칙·단추") })
+                            if (featured) {
+                                androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp))
+                                tabChips()
+                            }
+                        }
+                    }
+                    // PC D10 (사용성 중): 찾은 말이 다른 구간에 있으면 칩으로 (테마 안에서만 찾아 '체크'가 안 나오던 것).
+                    if (featured && !pinned) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) { tabChips() }
                     // How sorted and whose, under the half chosen.
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         // PC D14 (사용성 낮): 다른 칸 칩은 이 줄 맨 앞에 (따로 줄을 두면 칸을 누를 때·첫 글자에 아래가 두 번 내려갔어요).
