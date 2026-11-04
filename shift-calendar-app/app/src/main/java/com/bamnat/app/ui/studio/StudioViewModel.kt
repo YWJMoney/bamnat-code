@@ -124,6 +124,17 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     /** The 보관함 ids last seen on the studio screen, so what came in while 장터 was open is said on the way back. */
     var seenKept: Set<Long>? = null
 
+    // 내 서랍 3c42b520 (조각 › 스튜디오에서 꾸미기가 꺼짐, NPE lockedNow): init lays a kept part on, which reads the locks, so they are
+    // made before init.
+    /** [STU-39] 1.36 영역 잠그기: the tabs ([com.bamnat.core.layout.TabOrder]) that 한 색·섞기·모든 화면에·조각 얹기 leave as they are. */
+    // PC 확인 L5 (덮어 설치 뒤 잠금이 풀려 있음): kept on the phone as soon as it is set, so it holds next time too.
+    private val lockPrefs = c.appContext.getSharedPreferences(LOCK_PREFS, android.content.Context.MODE_PRIVATE)
+    private var lockedNow: Set<String> by androidx.compose.runtime.mutableStateOf(
+        lockPrefs.getString("locked", null).orEmpty().split(',').filter { it in StudioColors.LOCKABLE }.toSet())
+    var locked: Set<String>
+        get() = lockedNow
+        set(v) { lockedNow = v; lockPrefs.edit().putString("locked", v.joinToString(",")).apply() }
+
     init {
         when {
             start == START_PLAIN -> startPlain()
@@ -132,7 +143,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             // F-93: 마을 › 테마의 담아 둔 조각 › 꾸미기 opens the studio on my look with that part laid on.
             start.startsWith(START_KEPT) -> {
                 refresh(both = true)
-                c.wardrobe.kept.value.firstOrNull { it.id.toString() == start.removePrefix(START_KEPT) }?.let { layer(it) }
+                // Laid on once the model is whole (layer runs at once on the main thread, and fields below init are not made yet).
+                c.wardrobe.kept.value.firstOrNull { it.id.toString() == start.removePrefix(START_KEPT) }?.let { k ->
+                    viewModelScope.launch { kotlinx.coroutines.yield(); layer(k) }
+                }
             }
             start.startsWith(START_RECIPE) -> {
                 refresh(both = true)
@@ -321,15 +335,6 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         _state.value = _state.value.copy(previewMode = m)
         refresh()
     }
-
-    /** [STU-39] 1.36 영역 잠그기: the tabs ([com.bamnat.core.layout.TabOrder]) that 한 색·섞기·모든 화면에·조각 얹기 leave as they are. */
-    // PC 확인 L5 (덮어 설치 뒤 잠금이 풀려 있음): kept on the phone as soon as it is set, so it holds next time too.
-    private val lockPrefs = c.appContext.getSharedPreferences(LOCK_PREFS, android.content.Context.MODE_PRIVATE)
-    private var lockedNow: Set<String> by androidx.compose.runtime.mutableStateOf(
-        lockPrefs.getString("locked", null).orEmpty().split(',').filter { it in StudioColors.LOCKABLE }.toSet())
-    var locked: Set<String>
-        get() = lockedNow
-        set(v) { lockedNow = v; lockPrefs.edit().putString("locked", v.joinToString(",")).apply() }
 
     private fun darkOf(d: AppSettings): Boolean = when (d.themeMode) {
         com.bamnat.app.data.ThemeMode.DARK -> true

@@ -132,4 +132,17 @@ class StudioMaxTest {
         assertEquals(id, again.state.value.draftId)
         assertEquals(0xFF1565C0L, CalendarTheme.decode(again.state.value.draft.calTheme).sat)
     }
+
+    /** 내 서랍 3c42b520: 조각 › 스튜디오에서 꾸미기 (START_KEPT) closed the app with an NPE on the locks while the model was still being made. */
+    @Test fun aKeptPartOpensTheStudio() {
+        val first = StudioViewModel(c)
+        idle()
+        val r = com.bamnat.core.recipe.Recipe("조각", styles = com.bamnat.core.work.WorkStyle.entries.toSet(), pieces = first.state.value.pieces)
+        val ids = com.bamnat.core.recipe.LookParts.of(r).map { it.id }.take(2)
+        org.junit.Assert.assertTrue(c.wardrobe.keep(r, "", ids))
+        val k = c.wardrobe.kept.value.first()
+        val vm = StudioViewModel(c, StudioViewModel.START_KEPT + k.id)
+        idle()
+        org.junit.Assert.assertNotNull(vm.state.value.draft)
+    }
 }
