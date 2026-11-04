@@ -34,6 +34,9 @@ class FeatureTrials(context: Context?) {
     fun grant(bundle: FeatureLease.Bundle, now: Instant, today: LocalDate, why: FeatureLease.Why, reason: String? = null) =
         save(FeatureLease.granted(state.value, bundle, now, today, why, reason))
 
+    /** 1.36.1: a theme's ad watched to the end, counted in today's two (it opens no bundle). */
+    fun themeAd(today: LocalDate) = save(FeatureLease.themeAd(state.value, today))
+
     /** 840: back after a month away: [bundle] for 7 days, no ad. */
     fun back(bundle: FeatureLease.Bundle, now: Instant) = save(FeatureLease.back(state.value, bundle, now))
 

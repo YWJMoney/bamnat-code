@@ -340,6 +340,8 @@ fun ThemeExpiryAsk() {
                         said("광고를 불러오지 못해 ${ThemeLease.NO_AD_DAYS}일 연장했어요")
                         shown = false
                     },
+                    // 1.36.1: today's two ads are used, so the theme stays on and the ask comes back tomorrow.
+                    onCappedLater = { shown = false; c.wardrobe.later() },
                 )
             }
         },

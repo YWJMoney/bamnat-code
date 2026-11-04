@@ -109,6 +109,12 @@ object FeatureLease {
             grants = s.grants + Grant(bundle, now, end, why, reason))
     }
 
+    /**
+     * 1.36.1 (약관·스토어·앱 안 '광고 약속' "하루 두 편까지", 2026-11-04 점검): a theme's ad watched to the end (입기, 넣기, 30일 연장)
+     * uses one of today's [ADS_PER_DAY] too, so features and themes together never pass two a day. It opens no bundle.
+     */
+    fun themeAd(s: State, today: LocalDate): State = s.copy(adsDay = today, adsCount = s.adsToday(today) + 1)
+
     /** The offer closed without watching: after [DECLINES] in a row the bundle's ad hides, [FIRST_QUIET_DAYS] then [QUIET_DAYS]. */
     fun declined(s: State, bundle: Bundle, now: Instant): State {
         val n = (s.declines[bundle] ?: 0) + 1

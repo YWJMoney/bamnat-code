@@ -75,6 +75,21 @@ class FeatureLeaseTest {
         assertNull(s.declines[Bundle.PAY])
     }
 
+    @Test fun themeAdsShareTheTwoADayWithTheBundles() {
+        // One theme ad and one bundle ad: today's two are used, so neither a bundle nor a theme may ask again.
+        var s = FeatureLease.themeAd(FeatureLease.State(), today)
+        assertFalse(FeatureLease.capped(s, today))
+        assertTrue(s.until.isEmpty())
+        s = FeatureLease.granted(s, Bundle.PRINT, now, today)
+        assertTrue(FeatureLease.capped(s, today))
+        assertFalse(FeatureLease.canWatch(s, Bundle.PAY, now, today))
+        // Two theme ads alone fill the day too, and the next day starts again.
+        val t = FeatureLease.themeAd(FeatureLease.themeAd(FeatureLease.State(), today), today)
+        assertTrue(FeatureLease.capped(t, today))
+        assertFalse(FeatureLease.capped(t, today.plusDays(1)))
+        assertEquals(1, FeatureLease.themeAd(t, today.plusDays(1)).adsToday(today.plusDays(1)))
+    }
+
     @Test fun theSecondAdInAMonthIsCounted() {
         var s = FeatureLease.State()
         s = FeatureLease.granted(s, Bundle.PAY, now, today)

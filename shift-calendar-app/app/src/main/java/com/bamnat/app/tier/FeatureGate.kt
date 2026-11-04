@@ -213,6 +213,9 @@ class FeatureGate(
     /** 840: back after a month away, [bundle] for 7 days ([com.bamnat.core.tier.ProOfferTimes.Time.BACK]). */
     fun back(bundle: com.bamnat.core.tier.FeatureLease.Bundle) = trials.back(bundle, clock())
 
+    /** 1.36.1 광고 하루 두 편: a theme's ad watched to the end uses one of today's two. */
+    fun countThemeAd() = trials.themeAd(clock().atZone(zone()).toLocalDate())
+
     /** [MON-13] 839: the offer closed without an ad. */
     fun decline(bundle: com.bamnat.core.tier.FeatureLease.Bundle) = trials.decline(bundle, clock())
 

@@ -109,7 +109,9 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
                 onQuit = {},
                 onOffline = { opened(FeatureLease.Why.NO_AD, "offline", "인터넷이 없어 광고 없이 열었어요") },
                 onNoAd = { why -> opened(FeatureLease.Why.NO_AD, why, "광고가 오지 않아 그냥 열었어요") },
-                modifier = modifier)
+                modifier = modifier,
+                // The bundle counts its own grant (FeatureLease.granted) and says 'two today' above.
+                shared = false)
         }
     }
 }
@@ -123,7 +125,14 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
  */
 @Composable
 fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () -> Unit, onOffline: () -> Unit, onNoAd: (String) -> Unit,
-    modifier: Modifier = Modifier) {
+    modifier: Modifier = Modifier,
+    /**
+     * 1.36.1 광고 하루 두 편 (약관 "잠긴 기능이나 테마에서 고를 때만 … 하루 두 편까지"): a theme's ad shares the bundles' two a day.
+     * Past them it is not offered until tomorrow, and one watched to the end is counted. The bundles' own button passes false.
+     */
+    shared: Boolean = true,
+    /** When today's two are used: a visible way to leave the ask for tomorrow (the 30-day 연장 dialog), or null. */
+    onCappedLater: (() -> Unit)? = null) {
     val c = LocalContext.current.appContainer
     val rows by c.flags.byKey.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -133,6 +142,18 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
     val adsRow = rows[com.bamnat.core.flags.FlagCatalog.ADS]?.on == true
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val allowed = AdRules.rewardedOffer(adsRow, gate.tier >= Tier.PRO, AdIds.rewarded.isNotBlank(), null, Today.date())
+    if (shared && adsRow && gate.tier < Tier.PRO && FeatureLease.capped(gate.leases, Today.date())) {
+        Column(modifier) {
+            Text("오늘 광고 두 편을 다 봤어요. 내일 다시 할 수 있어요. 프로는 광고 없이 바로 돼요.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth())
+            onCappedLater?.let { later ->
+                androidx.compose.material3.TextButton(onClick = later, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("내일 다시 물어보기") }
+            }
+        }
+        return
+    }
+    val rewarded: () -> Unit = { if (shared) c.featureGate.countThemeAd(); onReward() }
 
     fun play(activity: android.app.Activity) {
         var tries = 0
@@ -150,7 +171,7 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
                     loading = false
                     var earned = false
                     ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                        override fun onAdDismissedFullScreenContent() { if (earned) onReward() else onQuit() }
+                        override fun onAdDismissedFullScreenContent() { if (earned) rewarded() else onQuit() }
                         override fun onAdFailedToShowFullScreenContent(e: com.google.android.gms.ads.AdError) { onNoAd("show_failed") }
                     }
                     ad.show(activity) { earned = true }
