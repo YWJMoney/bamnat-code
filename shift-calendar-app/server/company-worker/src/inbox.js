@@ -1,6 +1,8 @@
 import { fcmTell } from "./fcm.js";
 import { all, audit, batch, can, iso, json, one, randomId, readJson, refuse, run, stmt } from "./index.js";
 import { DEV, INQUIRY, actorName, cut, devEvent, devUpdate, plainText, triage } from "./inquiries.js";
+// 1.37 [ADM2-02] 나간 판: 반영 판이 Play에 나간 판 이하일 때만 '이미 고침'.
+import { isOut, laterText, shippedVersion } from "./desk.js";
 
 // ---- 문의 정리함 [INBOX-01]~[INBOX-08] (1.35, 사용자 2026-10-30 "중복이나 이미 처리된 문의는 자동 대응 … 새롭거나 신규 문제
 // 개선사항을 개발에 넘겨서 … 올인원 관리 체계") ----
@@ -112,7 +114,7 @@ export function titleFrom(text) {
 
 /** What the server knows to weigh questions against: 개발사항, answered questions, saved answers. */
 async function known(env) {
-  const [devs, answered, templates] = await Promise.all([
+  const [devs, answered, templates, shipped] = await Promise.all([
     all(env, `SELECT id, title, body, status, reason, released_in FROM dev_items WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ${SORTING.devs}`),
     // Questions an admin answered (the last word theirs), with the first question and that answer.
     all(env, `SELECT i.id, i.kind, i.info,
@@ -121,8 +123,10 @@ async function known(env) {
       FROM inquiries i WHERE i.status != 'open' OR EXISTS (SELECT 1 FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin')
       ORDER BY i.updated_at DESC LIMIT ${SORTING.answered}`),
     all(env, "SELECT id, label, text, topic FROM reply_templates ORDER BY id").catch(() => []),
+    shippedVersion(env),
   ]);
   return {
+    shipped,
     devs: devs.map((d) => ({ ...d, g: grams(`${d.title} ${d.title} ${d.body}`) })),
     answered: answered.filter((a) => a.answer && a.first).map((a) => ({ ...a, g: grams(a.first), topic: triage(a.kind, a.first, JSON.parse(a.info)).topic })),
     templates: templates.map((t) => ({ ...t, g: grams(`${t.label} ${t.text}`) })),
@@ -144,7 +148,8 @@ export function classify(q, k) {
     const match = { type: "dev", id: d.id, title: d.title, status: d.status, reason: d.reason || "", releasedIn: d.released_in ?? null, score: round(dev.score) };
     let pile;
     if (d.status === "rejected") pile = "declined";
-    else if (d.status === "done" && d.released_in) {
+    // 1.37 [ADM2-02] 고쳤어도 그 판이 아직 Play에 나가지 않았으면 '개발 목록에 있음'(다음 업데이트에 들어가요).
+    else if (d.status === "done" && d.released_in && isOut(d.released_in, k.shipped)) {
       const fixed = version(d.released_in);
       // Unknown app version: most likely an old one, so 'update'.
       pile = !app || !fixed || compareVersions(app, fixed) < 0 ? "fixed" : "again";
@@ -296,7 +301,7 @@ async function link(env, item, id, now, by) {
 }
 
 /** An answer on question [id] by [by], the question then 답함 (taken by whoever answered when nobody held it). */
-async function inboxAnswer(env, id, text, now, by) {
+export async function inboxAnswer(env, id, text, now, by) {
   const t = plainText(text, INQUIRY.text, "text", true);
   const r = await run(env, "UPDATE inquiries SET status = 'answered', updated_at = ?, assignee = COALESCE(assignee, ?), assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?",
     now, env.actor?.id ?? null, by, id);
@@ -426,14 +431,16 @@ export async function applyResult(request, env, now) {
   if (plan.some((l) => l.status !== "doing" && l.status !== "todo") && !can(env.actor, "devStatus", "edit")) return json({ error: "no_permission", area: "devStatus" }, 403);
   let changed = 0;
   let answered = 0;
+  const shipped = await shippedVersion(env);
   for (const l of plan.filter((x) => !x.problem)) {
     const row = await one(env, "SELECT * FROM dev_items WHERE id = ?", l.id);
     const r = await devUpdate(env, row, { status: l.status, ...(l.status === "rejected" ? { reason: l.reason } : {}), ...(l.version ? { releasedIn: l.version } : {}) }, now);
     if (r === true) changed++;
     if (body.notify === true && (l.status === "done" || l.status === "rejected")) {
       const waitingOnes = await all(env, `SELECT i.id FROM dev_links k JOIN inquiries i ON i.id = k.inquiry_id WHERE k.item_id = ? AND i.status != 'closed'`, l.id);
+      // 1.37 [ADM2-02] 'Play 업데이트'는 그 판이 나갔을 때만. 나가기 전이면 "업데이트에 들어가요", 판을 저장할 때 다시 알려요.
       const text = l.status === "done"
-        ? (l.version ? `말씀해 주신 내용을 ${l.version} 버전에서 고쳤어요. 업데이트가 나오면 Play 스토어에서 밤낮을 업데이트해 주세요.` : "말씀해 주신 내용을 고쳤어요. 다음 업데이트에 들어가요.")
+        ? (l.version && isOut(l.version, shipped) ? `말씀해 주신 내용을 ${l.version} 버전에서 고쳤어요. Play 스토어에서 밤낮을 최신 버전으로 업데이트해 주세요.` : laterText(l.version))
         : replyFor("declined", { reason: l.reason });
       for (const w of waitingOnes) if (await inboxAnswer(env, w.id, text, now, actorName(env))) answered++;
     }

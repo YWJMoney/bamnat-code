@@ -1,6 +1,8 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
+// 1.37 [ADM2-02] 나간 판.
+import { isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
 import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
@@ -317,8 +319,11 @@ export async function inquiryView(env, row, admin = false) {
 export async function inquiryProgress(env, row, messages) {
   const items = await all(env, `SELECT d.status, d.released_in FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
     WHERE l.inquiry_id = ?`, row.id);
-  const done = items.filter((d) => d.status === "done");
+  // 1.37 [ADM2-02] '반영'은 고친 판이 Play에 나갔을 때만. 고쳤지만 아직 안 나갔으면 '만드는 중'.
+  const shipped = items.some((d) => d.status === "done") ? await shippedVersion(env) : null;
+  const done = items.filter((d) => d.status === "done" && (!d.released_in || isOut(d.released_in, shipped)));
   if (done.length) return { stage: "released", version: done.map((d) => d.released_in).find(Boolean) ?? null };
+  if (items.some((d) => d.status === "done")) return { stage: "building" };
   if (items.some((d) => d.status === "todo" || d.status === "doing")) return { stage: items.some((d) => d.status === "doing") ? "building" : "planned" };
   const answered = messages.some((m) => m.sender === "admin");
   const last = messages[messages.length - 1];

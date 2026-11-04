@@ -1,0 +1,278 @@
+import { all, audit, iso, json, one, randomId, readJson, refuse, run, sha256 } from "./index.js";
+import { compareVersions, handoff, sortInbox, version } from "./inbox.js";
+import { slaKey, slaTargets } from "./inquiries.js";
+import { DAY, HOUR } from "./units.js";
+
+// ---- 1.37 [ADM2] 운영 장부: 나간 판, 흐름(관제), Claude 운영 열쇠 (사용자 2026-11-04 "전달하고 개발 후 배포한 뒤 너가 모든 사항을
+// 처리하도록 … 관리성 관측성 처리성 인터랙션") ----
+//
+// 설계: docs/plans/1.37-문의-개발-운영장부-설계.md (DESK-01, 04, 07, 10).
+//   나간 판 [ADM2-02]  'Play에 나간 판'을 따로 적어요. 개발사항의 '반영 판'이 그 판 이하일 때만 앱에 '반영'이 뜨고, 정리함의 '이미 고침'과
+//                     "업데이트하세요" 답이 나가요. 판을 저장하면 새로 나간 개발사항에 묶여 기다리던 문의에 한꺼번에 답해요.
+//   흐름 [ADM2-01][ADM2-05]  들어온 문의부터 출시·답까지 단계마다 건수·가장 오래 기다린 시간·막힘, 그리고 30일 운영 숫자.
+//   운영 열쇠 [ADM2-03]  주인이 만드는 열쇠 하나 = 'Claude' 관리자 하나. 문의·개발사항 읽기·답·상태만, 지우기·제한·스위치·결제·계정은 못 해요.
+//   장부 [ADM2-04]  GET /api/admin/desk: Claude가 한 번에 읽는 처리할 것 전부.
+
+export const DESK = {
+  /** 열쇠: 기한(일), 한 번에 살아 있는 수, 하루 요청·바꾸기 한도. */
+  keyDays: 90,
+  keysAlive: 3,
+  keyDaily: 3000,
+  keyWrites: 400,
+  /** 흐름 단계가 '막힘'이 되는 시간(이보다 오래 기다린 것이 있으면). */
+  stuck: { answer: 24 * HOUR, todo: 3 * DAY, handed: 7 * DAY, doing: 14 * DAY, built: 14 * DAY, notify: 0 },
+  weeks: 8,
+  /** 출시 전 '고쳐 두었어요' 답에 들어가는 말: 판을 저장할 때 이 답을 받은 문의에 다시 알려요. */
+  later: "업데이트에 들어가요",
+};
+
+export const DESK_SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS admin_keys (id TEXT PRIMARY KEY, hash TEXT NOT NULL UNIQUE, label TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL, revoked_at INTEGER, last_at INTEGER, day TEXT NOT NULL DEFAULT '', n INTEGER NOT NULL DEFAULT 0, writes INTEGER NOT NULL DEFAULT 0)`,
+];
+
+// ---- 나간 판 [ADM2-02] ----
+
+/** 'Play에 나간 판' { v, at, by } 또는 null(아직 안 적음: 1.36까지처럼 반영 판을 적으면 나간 것으로 봐요). */
+export async function shippedVersion(env) {
+  const row = await one(env, "SELECT value FROM settings WHERE key = 'shipped_version'").catch(() => null);
+  if (!row) return null;
+  try {
+    const v = JSON.parse(row.value);
+    return typeof v?.v === "string" && version(v.v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** [released] 판으로 고친 것이 사용자에게 나갔는지. 나간 판을 아직 안 적었으면 1.36까지처럼 나간 것으로 봐요. */
+export function isOut(released, shipped) {
+  const r = version(released);
+  if (!r) return false;
+  if (!shipped) return true;
+  const s = version(typeof shipped === "string" ? shipped : shipped.v);
+  return !s || compareVersions(r, s) <= 0;
+}
+
+const shipText = (v) => `말씀해 주신 내용을 고친 ${v} 버전이 나왔어요. Play 스토어에서 밤낮을 최신 버전으로 업데이트해 주세요. 업데이트한 뒤에도 같은 일이 생기면 이 문의에 다시 알려 주세요.`;
+export const laterText = (v) => `말씀해 주신 내용을 고쳐 두었어요. ${v ? `${v} ` : "다음 "}${DESK.later}. 나오면 이 문의에서 다시 알려 드릴게요.`;
+
+/** 새로 [v]가 나가면 답할 문의: 그 판 이하로 고친 개발사항에 묶였고, 아직 기다리거나 '출시 전' 답만 받은 문의. */
+async function shipTargets(env, v) {
+  const rows = await all(env, `SELECT d.id AS item, d.title, d.released_in, i.id AS inquiry,
+      (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
+      (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin' ORDER BY m.id DESC LIMIT 1) AS said
+    FROM dev_items d JOIN dev_links l ON l.item_id = d.id JOIN inquiries i ON i.id = l.inquiry_id
+    WHERE d.deleted_at IS NULL AND d.status = 'done' AND d.released_in IS NOT NULL AND i.status != 'closed'`);
+  const out = new Map();
+  for (const r of rows) {
+    if (!isOut(r.released_in, v)) continue;
+    const waiting = r.last === "user" || String(r.said ?? "").includes(DESK.later);
+    if (waiting && !out.has(r.inquiry)) out.set(r.inquiry, { inquiry: r.inquiry, item: r.item, title: r.title, version: r.released_in });
+  }
+  return [...out.values()];
+}
+
+/** POST /desk/ship {version, notify?, dry?}: 나간 판 저장. [dry]는 답할 문의만 세어 보여 줘요. */
+async function ship(request, env, now, answer) {
+  const body = await readJson(request, 2048);
+  const v = String(body.version ?? "").trim();
+  if (!/^\d{1,2}\.\d{1,2}\.\d{1,3}$/.test(v)) refuse("version", "version");
+  const targets = await shipTargets(env, v);
+  const was = await shippedVersion(env);
+  if (body.dry === true) return json({ version: v, was: was?.v ?? null, answers: targets.length, items: [...new Set(targets.map((t) => t.title))].slice(0, 20) });
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)", JSON.stringify({ v, at: now, by: env.actor?.name ?? "" }));
+  let answered = 0;
+  if (body.notify === true) for (const t of targets) if (await answer(env, t.inquiry, shipText(t.version), now)) answered++;
+  await audit(env, now, "shipped_version", v, answered ? `문의 ${answered}건에 업데이트 안내` : "");
+  return json({ version: v, was: was?.v ?? null, answered });
+}
+
+// ---- 흐름(관제)과 운영 숫자 [ADM2-01][ADM2-05] ----
+
+const median = (xs) => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+/** GET /flow: 단계마다 건수·가장 오래·막힘, 다음 할 일, 30일 숫자와 8주 추이. */
+export async function flow(env, now) {
+  const shipped = await shippedVersion(env);
+  const [asks, devs, linkedWaiting, recent, sla, keys] = await Promise.all([
+    all(env, `SELECT i.id, i.kind, i.created_at, i.updated_at,
+        (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
+        EXISTS (SELECT 1 FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = i.id) AS linked
+      FROM inquiries i WHERE i.status = 'open'`),
+    all(env, `SELECT d.id, d.title, d.status, d.released_in, d.handed_at, d.created_at, d.updated_at,
+        (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d WHERE d.deleted_at IS NULL AND (d.status != 'done' OR d.updated_at > ?)
+        AND (d.status != 'rejected' OR d.updated_at > ?)`, now - 60 * DAY, now - 30 * DAY),
+    all(env, `SELECT d.released_in, d.status, i.updated_at FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL JOIN inquiries i ON i.id = l.inquiry_id
+      WHERE i.status != 'closed' AND d.status = 'done' AND (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) = 'user'`),
+    all(env, `SELECT i.id, i.kind, i.created_at, i.rating, (SELECT MIN(m.at) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS first
+      FROM inquiries i WHERE i.created_at > ?`, now - DESK.weeks * 7 * DAY),
+    slaTargets(env),
+    one(env, "SELECT COUNT(*) AS n, MAX(last_at) AS last FROM admin_keys WHERE revoked_at IS NULL AND expires_at > ?", now).catch(() => ({ n: 0, last: null })),
+  ]);
+  const stage = (key, name, list, at, hint, act) => {
+    const oldest = list.length ? Math.min(...list.map(at)) : null;
+    const wait = oldest === null ? 0 : now - oldest;
+    return { key, name, n: list.length, oldest: oldest === null ? null : iso(oldest), hours: Math.floor(wait / HOUR),
+      stuck: list.length > 0 && wait > DESK.stuck[key], hint, act };
+  };
+  const fresh = asks.filter((q) => q.last === "user" && !q.linked);
+  const todo = devs.filter((d) => d.status === "todo" && !d.handed_at);
+  const handed = devs.filter((d) => d.status === "todo" && d.handed_at);
+  const doing = devs.filter((d) => d.status === "doing");
+  const built = devs.filter((d) => d.status === "done" && !isOut(d.released_in, shipped));
+  const notify = linkedWaiting.filter((r) => isOut(r.released_in, shipped));
+  const stages = [
+    stage("answer", "새 문의", fresh, (q) => q.created_at, "정리함에서 나눠 답하거나 개발사항으로 넘겨요", { route: "sort", label: "정리함 열기" }),
+    stage("todo", "개발 대기", todo, (d) => d.created_at, "Claude에게 넘기기로 복사하거나, 열쇠가 있으면 Claude가 직접 가져가요", { route: "sort", label: "Claude에게 넘기기" }),
+    stage("handed", "Claude에게 넘김", handed, (d) => d.handed_at, "Claude가 개발을 시작하면 개발중으로 바뀌어요", { route: "dev", label: "개발사항 보기" }),
+    stage("doing", "개발 중", doing, (d) => d.updated_at, "PR·디버그 빌드·PC 확인 중이에요", { route: "dev", label: "개발사항 보기" }),
+    stage("built", "고침 · 출시 전", built, (d) => d.updated_at, "Play에 올린 뒤 '나간 판'을 저장하면 앱에 반영이 떠요", { act: "flow-ship", label: "나간 판 저장" }),
+    stage("notify", "출시됨 · 답 남음", notify, (r) => r.updated_at, "고친 판이 나갔는데 아직 답을 기다리는 문의예요", { route: "inquiries", label: "문의 보기" }),
+  ];
+  // 30일 숫자: 첫 답까지 걸린 시간, 답 목표 지킴, 도움이 됐어요, 개발 걸린 날.
+  const month = recent.filter((q) => q.created_at > now - 30 * DAY);
+  const firsts = month.filter((q) => q.first).map((q) => (q.first - q.created_at) / HOUR);
+  const target = (q) => (sla[slaKey(q.kind)] ?? 24) * HOUR;
+  const judged = month.filter((q) => q.first || now - q.created_at > target(q));
+  const kept = judged.filter((q) => q.first && q.first - q.created_at <= target(q)).length;
+  const rated = month.filter((q) => q.rating === 1 || q.rating === -1);
+  const doneDevs = devs.filter((d) => d.status === "done" && d.updated_at > now - 60 * DAY).map((d) => (d.updated_at - d.created_at) / DAY);
+  const weeks = [];
+  for (let w = DESK.weeks - 1; w >= 0; w--) {
+    const from = now - (w + 1) * 7 * DAY;
+    const to = now - w * 7 * DAY;
+    weeks.push({ from: iso(from), in: recent.filter((q) => q.created_at > from && q.created_at <= to).length,
+      out: recent.filter((q) => q.first && q.first > from && q.first <= to).length });
+  }
+  const r1 = (x) => (x === null ? null : Math.round(x * 10) / 10);
+  const metrics = {
+    firstAnswerHours: r1(median(firsts)),
+    slaKept: judged.length ? Math.round((kept / judged.length) * 100) : null,
+    helpful: rated.length ? Math.round((rated.filter((q) => q.rating === 1).length / rated.length) * 100) : null,
+    devDays: r1(median(doneDevs)),
+    inMonth: month.length,
+    answeredMonth: month.filter((q) => q.first).length,
+    weeks,
+  };
+  const next = stages.find((s) => s.stuck) ?? stages.find((s) => s.n && s.key !== "handed" && s.key !== "doing") ?? null;
+  return { now: iso(now), shipped, stages, metrics, next: next?.key ?? null,
+    claude: { keys: keys?.n ?? 0, lastAt: keys?.last ? iso(keys.last) : null },
+    built: built.slice(0, 20).map((d) => ({ id: d.id, title: d.title, releasedIn: d.released_in ?? null, asks: d.asks })) };
+}
+
+// ---- Claude 운영 열쇠 [ADM2-03] ----
+
+const KEY = /^bko_[A-Za-z0-9]{40}$/;
+const keyHash = (key) => sha256(`opskey|${key}`);
+const keyDayOf = (now) => new Date(now + 9 * HOUR).toISOString().slice(0, 10);
+
+/** 열쇠로 할 수 있는 것: 문의·개발사항 읽기·답·상태·묶기, 장부, 나간 판. 이 밖은 모두 막아요. */
+const KEY_GET = [/^\/desk$/, /^\/flow$/, /^\/me$/, /^\/badges$/, /^\/inquiries$/, /^\/inquiries\/[A-Za-z0-9]{22}$/, /^\/inquiries\/sort$/, /^\/inquiries\/handoff$/,
+  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}$/, /^\/templates$/];
+const KEY_POST = [/^\/inquiries\/[A-Za-z0-9]{22}\/(reply|status|assign|notes)$/, /^\/inquiries\/sort\/apply$/, /^\/inquiries\/handoff\/(mark|result)$/,
+  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}(\/links|\/links\/remove|\/notes|\/reply)?$/, /^\/desk\/ship$/];
+export const keyAllows = (path, method) => (method === "GET" ? KEY_GET : method === "POST" ? KEY_POST : []).some((r) => r.test(path));
+
+/** 'Claude' 관리자: 문의와 개발사항만, 처리까지. 기록에는 'Claude'로 남아요. */
+const keyActorOf = (row) => ({ id: `key:${row.id}`, name: "Claude", email: "", owner: false, key: row.id,
+  perms: { inquiries: "edit", dev: "edit", devStatus: "edit" } });
+
+/**
+ * Authorization: Bearer bko_… 로 온 부름. 열쇠가 아니면 null(쿠키 로그인으로), 맞지 않거나 막힌 길이면 Response, 맞으면 { actor }.
+ * 하루 요청·바꾸기 수를 세고 넘으면 429.
+ */
+export async function keySession(request, env, path, method, now) {
+  const auth = request.headers.get("authorization") ?? "";
+  if (!auth.startsWith("Bearer bko_")) return null;
+  const key = auth.slice(7).trim();
+  const row = KEY.test(key) ? await one(env, "SELECT * FROM admin_keys WHERE hash = ?", await keyHash(key)) : null;
+  if (!row || row.revoked_at || row.expires_at <= now) return json({ error: "key" }, 401);
+  if (!keyAllows(path, method)) return json({ error: "key_scope" }, 403);
+  const day = keyDayOf(now);
+  const n = row.day === day ? row.n + 1 : 1;
+  const writes = (row.day === day ? row.writes : 0) + (method === "GET" ? 0 : 1);
+  if (n > DESK.keyDaily || writes > DESK.keyWrites) return json({ error: "key_limit", daily: DESK.keyDaily, writes: DESK.keyWrites }, 429);
+  await run(env, "UPDATE admin_keys SET day = ?, n = ?, writes = ?, last_at = ? WHERE id = ?", day, n, writes, now, row.id);
+  return { actor: keyActorOf(row) };
+}
+
+/** 문의 하나를 열쇠로 읽을 때: 알람 점검 기록은 빼요(설계 9장, Claude는 읽지 않아요). */
+export function keyView(d) {
+  if (d?.context) delete d.context["알람 점검"];
+  return d;
+}
+
+async function keyList(env, now) {
+  const rows = await all(env, "SELECT id, label, created_at, expires_at, revoked_at, last_at, day, n, writes FROM admin_keys ORDER BY created_at DESC LIMIT 20");
+  const day = keyDayOf(now);
+  return { limits: { days: DESK.keyDays, alive: DESK.keysAlive, daily: DESK.keyDaily, writes: DESK.keyWrites },
+    keys: rows.map((r) => ({ id: r.id, label: r.label, createdAt: iso(r.created_at), expiresAt: iso(r.expires_at), revokedAt: r.revoked_at ? iso(r.revoked_at) : null,
+      lastAt: r.last_at ? iso(r.last_at) : null, alive: !r.revoked_at && r.expires_at > now, today: r.day === day ? r.n : 0 })) };
+}
+
+async function keyMake(request, env, now) {
+  const body = await readJson(request, 1024);
+  const label = String(body.label ?? "").replace(/\s+/g, " ").trim().slice(0, 40) || "Claude";
+  const alive = await one(env, "SELECT COUNT(*) AS n FROM admin_keys WHERE revoked_at IS NULL AND expires_at > ?", now);
+  if (alive.n >= DESK.keysAlive) return json({ error: "too_many", most: DESK.keysAlive }, 409);
+  const key = `bko_${randomId(40)}`;
+  const id = `k${randomId(15)}`;
+  await run(env, "INSERT INTO admin_keys (id, hash, label, created_at, expires_at) VALUES (?, ?, ?, ?, ?)", id, await keyHash(key), label, now, now + DESK.keyDays * DAY);
+  await audit(env, now, "ops_key_make", label, `${DESK.keyDays}일`);
+  // 열쇠는 이때 한 번만 보여요. 서버에는 해시만 남아요.
+  return json({ id, key, label, expiresAt: iso(now + DESK.keyDays * DAY) });
+}
+
+async function keyRevoke(env, id, now) {
+  const r = await run(env, "UPDATE admin_keys SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL", now, id);
+  if (!r.meta.changes) return json({ error: "not_found" }, 404);
+  await audit(env, now, "ops_key_revoke", id);
+  return json({ ok: true });
+}
+
+// ---- 장부 [ADM2-04] ----
+
+/** GET /desk: Claude가 "처리해"에서 처음 읽는 것. 흐름, 정리함(문의 원문 앞부분·겹침 후보·추천 답), 진행 중인 개발사항, 넘김 글. */
+async function desk(env, now) {
+  const [f, sorted, devs, text] = await Promise.all([
+    flow(env, now),
+    sortInbox(env),
+    all(env, `SELECT d.id, d.title, d.status, d.released_in, d.handed_at, d.updated_at, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks
+      FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing', 'done') ORDER BY d.updated_at DESC LIMIT 200`),
+    handoff(env, new URLSearchParams(), now),
+  ]);
+  const shipped = f.shipped;
+  return {
+    now: iso(now),
+    rules: [
+      "답은 쉬운 존댓말, 결론부터. '고쳤어요'는 나간 판(shipped) 이하로 고친 것에만.",
+      "환불·결제·보상, 법·안전 신고, 개인정보 요청, 크게 화난 민원, 약관·처리방침 질문, 회사 이름이 나오는 회사 방식, 큰 방향 개선은 보내지 말고 사용자에게 물어요.",
+      "지우기·사용자 제한·스위치·공지·관리자 계정은 이 열쇠로 할 수 없어요.",
+    ],
+    shipped,
+    flow: { stages: f.stages, metrics: f.metrics, next: f.next },
+    sort: sorted,
+    dev: devs.filter((d) => d.status !== "done" || !isOut(d.released_in, shipped)).map((d) => ({ id: d.id, title: d.title, status: d.status, releasedIn: d.released_in ?? null,
+      handed: Boolean(d.handed_at), asks: d.asks, updatedAt: iso(d.updated_at) })),
+    handoff: text.text,
+  };
+}
+
+/** /api/admin/desk·/flow·/keys 길. 없는 길이면 null. [answer]는 문의 하나에 답하기(inbox.js의 inboxAnswer). */
+export async function deskRoute(request, env, path, method, now, answer) {
+  if (path === "/flow" && method === "GET") return json(await flow(env, now));
+  if (path === "/desk" && method === "GET") return json(await desk(env, now));
+  if (path === "/desk/ship" && method === "POST") return ship(request, env, now, answer);
+  if (path === "/keys" && method === "GET") return json(await keyList(env, now));
+  if (path === "/keys" && method === "POST") return keyMake(request, env, now);
+  const m = path.match(/^\/keys\/(k[A-Za-z0-9]{15})\/revoke$/);
+  if (m && method === "POST") return keyRevoke(env, m[1], now);
+  return null;
+}
+
