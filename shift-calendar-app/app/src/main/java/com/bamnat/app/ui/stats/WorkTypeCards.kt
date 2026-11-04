@@ -88,11 +88,13 @@ internal fun WorkTypeFirstCard(
     nonTaxable: Long? = null,
     /** G 1.32 [WTYP-07] The days the month counts (the pay period when chosen). */
     range: Pair<LocalDate, LocalDate>? = null,
+    /** The week limit the whole screen reads (see StatsScreen); null works it out from [profile]. */
+    weekLimitHours: Int? = null,
 ) {
     when {
         // [GUIDE-05] Each card can be turned off for its calendar.
         style.isShift() -> FeatureCard("shift.firstCard", calendarId) { ShiftFirstCard(snapshot, month, payTotal, range) }
-        style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns, nonTaxable) }
+        style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns, nonTaxable, weekLimitHours) }
     }
 }
 
@@ -215,6 +217,7 @@ private fun DayFirstCard(
     profile: PayProfile?,
     columns: Int,
     nonTaxable: Long? = null,
+    weekLimitHours: Int? = null,
 ) {
     val context = LocalContext.current
     val prefs = WorkTypePrefs.get(context)
@@ -260,7 +263,7 @@ private fun DayFirstCard(
         if (YearMonth.from(today) == month) {
             val week = remember(snapshot, today) { com.bamnat.core.hours.WorkHoursCalculator(snapshot.resolver, java.time.DayOfWeek.MONDAY).week(today) }
             // PC f42b2eba: the same limit as the 주별 근무시간 lines on this screen.
-            legalWeekHours(profile)?.let { HoursBar("이번 주 근무", week.totalMinutes, it) }
+            (weekLimitHours ?: legalWeekHours(profile))?.let { HoursBar("이번 주 근무", week.totalMinutes, it) }
         }
         com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)?.let { cap ->
             HoursBar("${month.monthValue}월 시간외", summary.extraMinutes, cap)

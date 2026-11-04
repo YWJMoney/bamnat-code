@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.stats
 
+import com.bamnat.core.work.words
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -128,7 +129,9 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
                     style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 y.pay?.let { Text(MonthCompare.man(it), style = MaterialTheme.typography.titleSmall.merge(NumberStyle)) }
             }
-            Text("근무표대로 앞으로의 달도 셌어요. 급여 리포트(PDF·CSV)는 근무·급여 화면에서 만들어요.",
+            // PC e1ca9e5b: the tab as this calendar names it (알바 '출근·시급'), not always 근무·급여.
+            val tab = vm.settings.value.workStyle.words().tab
+            Text("근무표대로 앞으로의 달도 셌어요. 급여 리포트(PDF·CSV)는 ‘$tab’ 화면에서 만들어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         }
     }

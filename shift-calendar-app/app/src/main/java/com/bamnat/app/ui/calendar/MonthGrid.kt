@@ -406,7 +406,9 @@ fun MonthGrid(
                         onLongPress = onLongPress?.let { f -> { f(date) } },
                         isRangeStart = date == rangeFrom,
                         hourly = hourly,
-                        holidayWeekDone = col == 6 && holidayWeek?.holidayPay == true,
+                        // PC e1ca9e5b (11/8–14 주의 ✓가 11/21 칸에): on the 주휴 week's own last day, not the row's last cell, which
+                        // is a later week's day when the 주휴 week does not start with the row.
+                        holidayWeekDone = holidayWeek?.holidayPay == true && date == holidayWeek.start.plusDays(6),
                         quietWorkDays = quietWorkDays,
                         invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight().then(

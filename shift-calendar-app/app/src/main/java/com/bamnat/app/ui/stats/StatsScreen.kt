@@ -145,8 +145,12 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         return
     }
     // [WEEK-01] Monday to Sunday, whatever day the calendar's rows start on.
-    val calc = remember(snap, settings.limits) {
-        WorkHoursCalculator(snap.resolver, DayOfWeek.MONDAY, settings.limits)
+    // PC f42b2eba·e1ca9e5b (근무·급여 한 화면에 주 52시간과 64시간이 섞임; 급여를 안 정한 일근은 '한 주 근무 경고' 값이어야 함):
+    // one week limit for every week line on this screen, the 다음 주 예상 too: the law's for the pay setup (52, 64 under
+    // 탄력적 근로시간제, the exception's), else the user's own 한 주 근무 경고 (no setup yet, 5인 미만, a non-wage calendar).
+    val weekLimit = (if (style?.usesPayEngine != false) payProfile?.let(::legalWeekHours) else null) ?: settings.weeklyLimitHours
+    val calc = remember(snap, settings.limits, weekLimit) {
+        WorkHoursCalculator(snap.resolver, DayOfWeek.MONDAY, settings.limits.copy(legalWeeklyHours = weekLimit))
     }
     val today = com.bamnat.app.ui.calendar.rememberToday() // [CAL-25]
     // [CAL-41] I 리뷰 P18: the month, three months and the six-month trend are worked out off the main thread, so
@@ -312,7 +316,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             if (total != null) payProfile?.let { p -> NetPayLine(vm, p, total, month, payFree) }
         }
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
-        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree,
+        WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree, weekLimitHours = weekLimit,
             range = if (wholeMonth) null else range.from to range.to)
 
         // [EXTRA-01] The four tiles add up to the total: the roster, extra work on working days, work on days off.
@@ -429,10 +433,6 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
 
                 }
                 StatsPart.WEEKS -> {
-                // PC f42b2eba (근무·급여 한 화면에 주 52시간과 64시간 기준이 섞여 보임): the weeks are read against the same week limit as
-                // the warning above and the 이번 주 bar: the law's for this setup (52, 64 under 탄력적 근로시간제, the exception's),
-                // and the user's own 한 주 근무 경고 only where the law sets none (5인 미만, no pay setup on a non-wage calendar).
-                val weekLimit = (if (style?.usesPayEngine != false) legalWeekHours(payProfile) else null) ?: settings.weeklyLimitHours
                 SectionCard(title = "주별 근무시간 (주 ${weekLimit}시간 기준)") {
                     val maxHours = maxOf(
                         weekLimit.toDouble(),

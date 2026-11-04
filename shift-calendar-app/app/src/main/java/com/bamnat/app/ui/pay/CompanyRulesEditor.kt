@@ -197,7 +197,7 @@ fun CompanyRulesEditor(
                     Toggle("감시·단속 근로 승인", "경비·시설처럼 대기가 많은 일로 고용노동부 승인을 받았으면 켜요. 연장·휴일 가산과 주휴가 없고 야간 가산은 받아요(근로기준법 제63조)",
                         rules.supervisoryApproved) { setRules(rules.copy(supervisoryApproved = it), Unknowns.SUPERVISORY) }
                 }
-                Toggle("근무표 시간은 모두 기본 근무", "12시간 교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 켜 주세요. 잔업으로 적은 시간만 연장이 돼요",
+                Toggle("근무표 시간은 모두 기본 근무", "12시간 교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 켜 주세요. 잔업으로 적은 시간만 연장이 돼요. 탄력적 근로시간제(주 64시간까지)도 켜고 단위를 골라요",
                     draft.scheduleIsRegular) {
                     draft = draft.copy(scheduleIsRegular = it, flexPeriod = if (it) draft.flexPeriod else null).settled(Unknowns.SCHEDULE_IS_REGULAR)
                 }

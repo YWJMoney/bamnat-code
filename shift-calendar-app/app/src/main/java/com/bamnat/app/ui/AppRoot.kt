@@ -2069,6 +2069,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.PAY_BASE -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.BASE.key)
     SettingsGo.PAY_ITEMS -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.ITEMS.key)
     SettingsGo.PAY_PERIOD -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.PERIOD.key)
+    SettingsGo.PAY_HOURS -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.HOURS.key)
     SettingsGo.CALENDARS -> Routes.CALENDARS
     SettingsGo.DIAGNOSTICS -> Routes.diagnostics(false)
     SettingsGo.INQUIRY -> Routes.INQUIRY

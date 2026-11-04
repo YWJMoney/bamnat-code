@@ -26,7 +26,7 @@ enum class SettingsGo {
     /** [EASY-08][OBS-02] 내 정보 and 밤낮이 한 일. */
     PROFILE, JOURNAL,
     /** [J133-34] 순번 714: the pay screen opened at a value (기본급·시급, 수당, 월급날), as its 고치기 chips do. */
-    PAY_BASE, PAY_ITEMS, PAY_PERIOD,
+    PAY_BASE, PAY_ITEMS, PAY_PERIOD, PAY_HOURS,
     /** [RCP-38] 1.34 설정 › 나눔 판. */
     RECIPES,
     /** [STU-10] 1.35 스튜디오 (화면 꾸미기와 합침). */
