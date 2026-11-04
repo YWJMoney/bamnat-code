@@ -656,6 +656,10 @@ private fun LedgerRow(
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         e.kind == MoneyKind.TRANSFER -> Text("이체", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         e.amount < 0 -> Text("취소", style = MaterialTheme.typography.labelSmall, color = cal.income)
+                        // 1.37 [LEDH-07] 근무 시간 환산, for spending of 5만 원 and more.
+                        e.kind == MoneyKind.EXPENSE -> LocalWorkTime.current?.words(e.amount)?.let {
+                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
                     }
                 }
             }

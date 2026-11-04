@@ -277,6 +277,10 @@ fun EntryDialog(
                     if (cancel) "돌려받은 금액" else "금액", digits, { digits = it }, Modifier.focusRequester(amountFocus),
                     textStyle = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
                 )
+                // 1.37 [LEDH-07] 근무 시간 환산: "근무 6시간이에요", for spending of 5만 원 and more (설정 › 가계부에서 끔).
+                if (kind == MoneyKind.EXPENSE && !cancel) LocalWorkTime.current?.words(amount)?.let { w ->
+                    Text("$w${Fmt.ieyo(w)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 val quick = remember(kind) { frequent(kind) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     quick.forEach { a -> FilterChip(selected = amount == a, onClick = { digits = amountDigits(a) }, label = { Text(Fmt.won(a)) }) }

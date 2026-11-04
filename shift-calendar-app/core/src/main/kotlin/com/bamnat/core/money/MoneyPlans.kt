@@ -131,6 +131,10 @@ object UpcomingPayments {
         }
     }
 
+    /** 1.37 [LEDH-06] What is still to leave from [today] to [to] (the end of a 급여일 주기), counted as spending. */
+    fun leftUntil(costs: List<FixedCost>, entries: List<MoneyEntry>, today: LocalDate, to: LocalDate): Long =
+        costs.filter { it.kind == MoneyKind.EXPENSE }.sumOf { c -> c.occurrences(today, to).count { !recorded(c, it, entries) } * c.amount }
+
     /** The ledger line for paying [cost] on [date]. */
     fun entry(cost: FixedCost, date: LocalDate) = MoneyEntry(
         date = date, kind = cost.kind, amount = cost.amount, category = cost.category,

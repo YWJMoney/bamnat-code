@@ -130,8 +130,9 @@ internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today:
         }
     }
     if (rows.size < 2) return
-    SectionCard(title = "근무별 소비 (90일)", trailing = { if (gate.locked(Feature.MONEY_STATS)) ProPill(locked = true) }) {
-        com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) {
+    // 1.37 [LEDH-10] 근무별 소비는 밤낮의 얼굴이라 기본 카드는 무료예요(상세 기간·분류별은 통계의 7일권).
+    SectionCard(title = "근무별 소비 (90일)") {
+        run {
             Column {
                 TaxPlus.shiftWords(rows)?.let { Text(it, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp)) }
                 val top = rows.maxOf { it.perDay }.coerceAtLeast(1)

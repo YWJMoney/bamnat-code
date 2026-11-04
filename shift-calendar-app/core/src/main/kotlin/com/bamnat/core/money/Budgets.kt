@@ -44,7 +44,12 @@ data class BudgetStatus(
     val fixedLeft: Long,
     /** The share of the month gone by, 0..1, to set the money against the days. */
     val elapsed: Float,
+    /** 1.37 [LEDH-06] The first and last day counted: the month's, or a 급여일 주기's. */
+    val from: LocalDate = month.atDay(1),
+    val to: LocalDate = month.atEndOfMonth(),
 ) {
+    /** 1.37 [LEDH-06] Counted over a 급여일 주기 rather than the calendar month. */
+    val isCycle: Boolean get() = from != month.atDay(1) || to != month.atEndOfMonth()
     val hasBudget: Boolean get() = total != null
     val over: List<BudgetLine> get() = categories.filter { it.level == BudgetLevel.OVER }
     /** What is left for today itself; below zero once today went past its share. */
@@ -61,20 +66,28 @@ object Budgets {
      * adds the pace of everyday spending to what is spent, without repeating lines, which come
      * once ([fixedLeft] is added to the whole month's).
      */
-    fun status(budgets: List<MoneyBudget>, entries: List<MoneyEntry>, month: YearMonth, today: LocalDate, fixedLeft: Long = 0): BudgetStatus {
-        val spent = entries.filter { it.kind == MoneyKind.EXPENSE && YearMonth.from(it.date) == month }
+    fun status(budgets: List<MoneyBudget>, entries: List<MoneyEntry>, month: YearMonth, today: LocalDate, fixedLeft: Long = 0): BudgetStatus =
+        statusIn(budgets, entries, month.atDay(1), month.atEndOfMonth(), today, fixedLeft)
+
+    /**
+     * 1.37 [LEDH-06] The same budgets over any stretch of days, such as 급여일 주기 (25일~다음 달 24일): the monthly
+     * amounts stand for the stretch, as a month's pay stands for the month it covers.
+     */
+    fun statusIn(budgets: List<MoneyBudget>, entries: List<MoneyEntry>, from: LocalDate, to: LocalDate, today: LocalDate, fixedLeft: Long = 0): BudgetStatus {
+        val month = YearMonth.from(to)
+        val spent = entries.filter { it.kind == MoneyKind.EXPENSE && !it.date.isBefore(from) && !it.date.isAfter(to) }
         val byCategory = HashMap<String, Long>()
         val everyday = HashMap<String, Long>()
         for (e in spent) for ((c, a) in e.shares()) {
             byCategory.merge(c, a, Long::plus)
             if (e.source != MoneySource.FIXED) everyday.merge(c, a, Long::plus)
         }
-        val length = month.lengthOfMonth()
-        val now = YearMonth.from(today)
-        val current = now == month
-        val gone = when { current -> today.dayOfMonth; month.isBefore(now) -> length; else -> 0 }
-        val daysLeft = when { current -> length - today.dayOfMonth + 1; month.isAfter(now) -> length; else -> 0 }
-        val after = if (current) length - today.dayOfMonth else 0
+        val length = (java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1).toInt().coerceAtLeast(1)
+        val current = !today.isBefore(from) && !today.isAfter(to)
+        val dayIndex = (java.time.temporal.ChronoUnit.DAYS.between(from, today) + 1).toInt()
+        val gone = when { current -> dayIndex; to.isBefore(today) -> length; else -> 0 }
+        val daysLeft = when { current -> length - dayIndex + 1; from.isAfter(today) -> length; else -> 0 }
+        val after = if (current) length - dayIndex else 0
         fun forecast(spentSoFar: Long, everydaySoFar: Long): Long =
             if (!current || gone == 0) spentSoFar else spentSoFar + (everydaySoFar.coerceAtLeast(0) * after / gone)
         val fixedAside = if (current) fixedLeft else 0
@@ -89,7 +102,7 @@ object Budgets {
         val todaySpent = if (current) spent.filter { it.date == today }.sumOf { it.amount } else 0
         val perDay = if (total == null || daysLeft == 0) null else
             ((total.budget - (all - todaySpent) - fixedAside) / daysLeft).coerceAtLeast(0)
-        return BudgetStatus(month, total, lines, daysLeft, perDay, todaySpent, fixedAside, gone.toFloat() / length)
+        return BudgetStatus(month, total, lines, daysLeft, perDay, todaySpent, fixedAside, gone.toFloat() / length, from, to)
     }
 
     /**

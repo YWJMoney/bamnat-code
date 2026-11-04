@@ -648,6 +648,9 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         SwitchRow(SPEND_HEAT_ROW, "날짜 밑 막대가 진할수록 그달 다른 날보다 많이 쓴 날이에요. 금액은 보이지 않아요", settings.spendHeat) { on ->
             vm.update { it.copy(spendHeat = on) }
         }
+        // 1.37 [LEDH-07] 근무 시간 환산 (결정 4: 5만 원 넘는 지출에만, 켜 둠). 투자 달력에는 보이지 않아요.
+        if (settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST) SwitchRow(WORK_TIME_ROW, "5만 원이 넘는 지출 옆에 '근무 6시간'처럼 내 실수령 시급으로 몇 시간 일한 돈인지 보여요. 현장은 공수, 자영업은 하루 매출 대비예요",
+            settings.workTimeFrom > 0) { on -> vm.update { it.copy(workTimeFrom = if (on) com.bamnat.core.money.WorkTime.DEFAULT_FROM else 0L) } }
         // [FEAT-17][DAY-04] For people who keep their days in notes. Where 메모 sits in the day is the order below.
         val memo = when { settings.memoInCells -> MemoView.CELLS; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
         ChoiceRow("메모 보기", when (memo) {
@@ -1191,6 +1194,7 @@ internal const val FREE_LOOK_ROW = "화면 꾸미기 (모든 화면)"
 
 /** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
 internal const val SPEND_HEAT_ROW = "지출 히트맵"
+internal const val WORK_TIME_ROW = "큰 지출을 근무 시간으로"
 internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 /** 1.32 [WTYP-12] */
 internal const val STRETCH_ROW = "연속 근무 경고"

@@ -172,6 +172,10 @@ data class AppSettings(
     val calendarOnly: Boolean = false,
     /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. */
     val statsByPayPeriod: Boolean = false,
+    /** 1.37 [LEDH-06] 가계부 예산·하루 쓸 돈을 월급날~다음 월급날 전날로 봄 (급여일 주기); off is 1일~말일. In the backup. */
+    val moneyByPayCycle: Boolean = false,
+    /** 1.37 [LEDH-07] 근무 시간 환산: spending of this many won or more says the work it took; 0 is off (결정 4: 5만 원). In the backup. */
+    val workTimeFrom: Long = com.bamnat.core.money.WorkTime.DEFAULT_FROM,
     /** [LOCK-01] 앱 잠금: the phone's own lock before the app shows, on opening and after a minute away. */
     val appLock: Boolean = false,
     /** [CUST-01] 화면 꾸미기: the calendar page's parts in the user's order, "hours,-todayFlow" ([com.bamnat.core.layout.PageLayout]). */
@@ -383,6 +387,8 @@ class SettingsRepository(context: Context) {
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
             statsByPayPeriod = prefs.getBoolean(K_STATS_PERIOD, d.statsByPayPeriod),
+            moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
+            workTimeFrom = prefs.getLong(K_WORK_TIME, d.workTimeFrom),
             appLock = prefs.getBoolean(K_APP_LOCK, d.appLock),
             calendarLayout = prefs.getString(K_CALENDAR_LAYOUT, null) ?: d.calendarLayout,
             statsLayout = prefs.getString(K_STATS_LAYOUT, null) ?: d.statsLayout,
@@ -493,6 +499,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
             .putBoolean(K_STATS_PERIOD, s.statsByPayPeriod)
+            .putBoolean(K_MONEY_CYCLE, s.moneyByPayCycle)
+            .putLong(K_WORK_TIME, s.workTimeFrom)
             .putBoolean(K_APP_LOCK, s.appLock)
             .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
             .putString(K_STATS_LAYOUT, s.statsLayout)
@@ -581,6 +589,8 @@ class SettingsRepository(context: Context) {
         const val K_MOTION = "motion"
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
+        const val K_MONEY_CYCLE = "money_pay_cycle"
+        const val K_WORK_TIME = "work_time_from"
         const val K_MEMO_LAYOUT = "memo_layout"
         const val K_TAB_VIEWS = "tab_views"
         const val K_RATE_HINT = "rate_hint"

@@ -214,7 +214,8 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
 fun BudgetCard(status: BudgetStatus, today: LocalDate, onEdit: () -> Unit) {
     if (status.categories.isEmpty()) return
     val current = YearMonth.from(today) == status.month
-    SectionCard(title = "분류별 예산", trailing = { TextButton(onClick = onEdit) { Text("고치기") } }) {
+    // 1.37 [LEDH-06] Counted over 급여일 주기, it says which days.
+    SectionCard(title = if (status.isCycle) "분류별 예산 (${status.from.monthValue}/${status.from.dayOfMonth}~${status.to.monthValue}/${status.to.dayOfMonth})" else "분류별 예산", trailing = { TextButton(onClick = onEdit) { Text("고치기") } }) {
         if (status.over.isNotEmpty()) {
             Text("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", style = MaterialTheme.typography.bodySmall,
                 color = LocalCalendarColors.current.warning, modifier = Modifier.padding(bottom = 4.dp))
@@ -229,7 +230,11 @@ fun BudgetCard(status: BudgetStatus, today: LocalDate, onEdit: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BudgetEditor(book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) -> Unit, onDismiss: () -> Unit) {
+fun BudgetEditor(
+    book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) -> Unit, onDismiss: () -> Unit,
+    /** 1.37 [LEDH-06] 월급날 기준 on or off; null when no pay day is set, so the choice is not offered. */
+    byPayCycle: Boolean? = null, onPayCycle: (Boolean) -> Unit = {},
+) {
     val categories = remember(book) { book.categoriesOf(MoneyKind.EXPENSE) }
     val values = remember {
         mutableStateMapOf<String, String>().apply { book.budgets.forEach { put(it.category, amountDigits(it.amount)) } }
@@ -249,6 +254,18 @@ fun BudgetEditor(book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) 
                 Text("매달 같은 예산으로 계산해요. 비워 두면 예산이 없어요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 AmountField("한 달 전체 예산", values[MoneyBudget.TOTAL].orEmpty(), { values[MoneyBudget.TOTAL] = it })
+                // 1.37 [LEDH-06] 급여일 주기: the budget runs from pay day to the day before the next.
+                byPayCycle?.let { on ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("월급날 기준으로 보기", style = MaterialTheme.typography.bodyLarge)
+                            Text("예산과 하루 쓸 돈을 1일~말일 대신 월급날~다음 월급날 전날로 계산해요.", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        androidx.compose.material3.Switch(checked = on, onCheckedChange = onPayCycle,
+                            modifier = Modifier.semantics { contentDescription = "월급날 기준으로 보기" })
+                    }
+                }
                 if (values[MoneyBudget.TOTAL].isNullOrEmpty() && sum > 0) {
                     Text("전체를 비우면 분류별 예산의 합 ${Fmt.won(sum)}이 한 달 예산이 돼요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)

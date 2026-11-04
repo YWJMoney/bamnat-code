@@ -189,6 +189,30 @@ class MoneyViewModel(
             .takeIf { it > 0 }
     }
 
+    /**
+     * 1.37 [LEDH-01][LEDH-07] What the pay engine knows ahead, from the shifts on the calendar: the take-home on
+     * each pay day from last month to [until]'s month, and the take-home per hour of the latest month worked.
+     * The same engine and tax setting as the pay screen, so the numbers match it to the won.
+     */
+    suspend fun aheadPay(style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, today: java.time.LocalDate, until: java.time.LocalDate): AheadPay =
+        withContext(Dispatchers.Default) {
+            if (style?.usesPayEngine == false || profile == null || snapshot == null || snapshot.isEmpty) return@withContext AheadPay()
+            val first = YearMonth.from(today).minusMonths(1)
+            val months = generateSequence(first) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(until)) }.toList()
+            val pays = months.associateWith { m -> runCatching { payCalculator.calculate(profile, m, snapshot.resolver::resolve, checks = false) }.getOrNull() }
+            val days = pays.mapNotNull { (m, p) ->
+                val gross = p?.total?.takeIf { it > 0 } ?: return@mapNotNull null
+                val date = profile.period.payDate(m)
+                com.bamnat.core.money.PayDay(date ?: m.atEndOfMonth(), PayIncome.net(profile, m, gross), "${m.monthValue}월 급여", dateGuessed = date == null)
+            }
+            // The latest month whose work is done: its take-home over the minutes it counted.
+            val hourly = pays.entries.filter { (m, _) -> profile.period.end(m).isBefore(today) }.reversed().firstNotNullOfOrNull { (m, p) ->
+                p ?: return@firstNotNullOfOrNull null
+                com.bamnat.core.money.WorkTime.hourly(PayIncome.net(profile, m, p.total), p.minutes.sumOf { it.total.worked })
+            }
+            AheadPay(days, hourly, profile.period.payDay)
+        }
+
     /** E 1.32 [LEDX-09] A subscription the user said they still use, by place, so it is not asked again for 90 days. */
     fun stillUsing(place: String) = container.autoRecordPrefs.lookedAt(com.bamnat.core.money.PaymentParser.placeKey(place))
 
@@ -596,7 +620,19 @@ fun MoneyScreen(
     }
     val upcoming = remember(book, today) { UpcomingPayments.within(book.fixed, book.entries, today, accounts = book.accounts) }
     val leftFixed = remember(book, today) { UpcomingPayments.leftThisMonth(book.fixed, book.entries, today) }
-    val budget = remember(book, month, today, leftFixed) { Budgets.status(book.budgets, book.entries, month, today, leftFixed) }
+    // 1.37 [LEDH-01][LEDH-07] Pay days ahead and take-home per hour from the shifts on the calendar.
+    val aheadPay by produceState<AheadPay?>(null, style, profile, snapshot, today) {
+        value = vm.aheadPay(style, profile, snapshot, today, today.plusDays(com.bamnat.core.money.MoneyAhead.FULL_DAYS.toLong()))
+    }
+    // 1.37 [LEDH-06] 급여일 주기: this month's budget counted from the last pay day to the day before the next.
+    val cycle = remember(settings.moneyByPayCycle, profile, today, month) {
+        if (!settings.moneyByPayCycle || month != YearMonth.from(today)) null
+        else profile?.period?.let { p -> com.bamnat.core.money.PayCycle.around(today, (-2L..2L).mapNotNull { p.payDate(YearMonth.from(today).plusMonths(it)) }) }
+    }
+    val budget = remember(book, month, today, leftFixed, cycle) {
+        cycle?.let { c -> Budgets.statusIn(book.budgets, book.entries, c.from, c.to, today, UpcomingPayments.leftUntil(book.fixed, book.entries, today, c.to)) }
+            ?: Budgets.status(book.budgets, book.entries, month, today, leftFixed)
+    }
     val recent = remember(book, month) { book.entries.filter { YearMonth.from(it.date) == month }.take(5) }
     val listActions = remember(vm) {
         object : LedgerListActions {
@@ -616,6 +652,10 @@ fun MoneyScreen(
                 onFinish = { finishing = it }, onDrop = vm::dropCapture,
                 waiting = autoRecord.confirmFirst, onConfirm = vm::confirm, onDelete = vm::delete,
                 guesses = { e -> learner.guess(e).filter { it.category != "기타" } }, onPick = { e, c -> vm.recategorize(listOf(e), c) })
+        },
+        MoneyPart.AHEAD to {
+            AheadCard(book, style, today, aheadPay, budget, toSort = unseen.size, gate = gate,
+                onAddAccount = { addingAccount = com.bamnat.core.money.AccountType.BANK }, onOpenPay = onOpenPay)
         },
         MoneyPart.RECENT to { RecentCard(recent, month, onOpen = { editing = it }, onAll = { vm.setView(LedgerView()); vm.showPage(MoneyViewModel.Page.LIST) }) },
         MoneyPart.INCOME to {
@@ -672,6 +712,9 @@ fun MoneyScreen(
     val left: @Composable () -> Unit = { placed.filter { !wide || !it.right }.forEach { cards.getValue(it)() } }
     val right: @Composable () -> Unit = { if (wide) placed.filter { it.right }.forEach { cards.getValue(it)() } }
 
+    // 1.37 [LEDH-07] 근무 시간 환산 for the lines and the 돈 적기 sheet of this tab.
+    val workTime = remember(style, settings.workTimeFrom, book, today, aheadPay) { WorkTimeSay.of(style, settings.workTimeFrom, book, today, aheadPay?.hourly) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalWorkTime provides workTime) {
     Box(Modifier.fillMaxSize().nestedScroll(fabScroll)) {
         Column(Modifier.fillMaxSize()) {
             // At very large text the tab has no room for the 프로 mark (the cards inside still carry it),
@@ -789,7 +832,9 @@ fun MoneyScreen(
         JobDialog(j.date, j, onSave = { vm.saveJob(it); editingJob = null },
             onDelete = { vm.deleteJob(it); editingJob = null }, onDismiss = { editingJob = null })
     }
-    if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false }, onDismiss = { budgeting = false })
+    if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false }, onDismiss = { budgeting = false },
+        byPayCycle = settings.moneyByPayCycle.takeIf { profile?.period?.payDay != null && style?.usesPayEngine != false },
+        onPayCycle = { on -> vm.updateSettings { it.copy(moneyByPayCycle = on) } })
     if (editingAccount != null || addingAccount != null || addingAnyAccount) {
         AccountEditor(editingAccount, addingAccount, book,
             onSave = { vm.saveAccount(it); editingAccount = null; addingAccount = null; addingAnyAccount = false },
@@ -807,6 +852,7 @@ fun MoneyScreen(
     if (editingCategories) {
         CategoryEditor(book, onSave = { k, edits, renames -> vm.saveCategories(k, edits, renames); editingCategories = false },
             onDismiss = { editingCategories = false }, startKind = editing?.kind ?: adding ?: MoneyKind.EXPENSE)
+    }
     }
 }
 
@@ -942,6 +988,8 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     NEW("new", "새로 들어온 기록", "자동 기록·확인할 기록이 있을 때만", movable = false, right = true),
     // 1.32 [LEDX-16][LEDX-19]
     ASK("ask", "확인할 것", "원래 결제를 못 찾은 환불, 처음 보는 카드", movable = false, right = true),
+    // 1.37 [LEDH-01][LEDH-02][LEDH-03] 근무가 보이는 가계부.
+    AHEAD("ahead", "앞으로의 돈", "오늘 쓸 돈·월급까지 며칠·날마다 남을 돈"),
     RECENT("recent", "최근 기록", "이번 달 마지막 다섯 줄", right = true),
     INCOME("income", "수입 내역", "급여 예상과 적은 수입", right = true),
     TAX("tax", "세금·실수령", "세전·세후 예상, 올해 낼 세금", right = true),
