@@ -96,4 +96,13 @@ class StudioCanvasTest {
         assertEquals(TabOrder.MONEY to "budget", StudioEdit.card(StudioEdit.cardId(TabOrder.MONEY, "budget")))
         assertEquals(null, StudioEdit.card("memo.card"))
     }
+
+    @Test fun myMoneyFillsTheCardsThatHaveItsNumbers() {
+        val d = java.time.LocalDate.of(2026, 11, 3)
+        val m = MyMoney(3_000_000, 1_200_000, listOf(com.bamnat.core.money.MoneyEntry(date = d, kind = com.bamnat.core.money.MoneyKind.EXPENSE,
+            amount = 8_000, category = "식비", merchant = "김밥집")))
+        assertEquals("1,800,000원", myMoneyBody("hero", m)!!.rows.last().second)
+        assertEquals("김밥집" to "-8,000원", myMoneyBody("recent", m)!!.rows.single())
+        assertEquals(null, myMoneyBody("budget", m))
+    }
 }

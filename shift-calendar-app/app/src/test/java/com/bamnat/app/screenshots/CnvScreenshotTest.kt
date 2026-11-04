@@ -72,4 +72,16 @@ class CnvScreenshotTest : ScreenshotBase() {
         tapText("내 틀로 담기", exact = true)
         assertTrue("kept as mine", app.container.wardrobe.kept.value.any { it.own && "cal.cards" in it.parts })
     } }
+
+    /** [CNV-12] 사용자 2026-11-04 "실제의 현재 모습": the studio's 메모 example is my own memos. */
+    @Test fun theStudioShowsMyOwnMemos() {
+        shift()
+        kotlinx.coroutines.runBlocking { app.container.memoRepository.save(com.bamnat.core.memo.Memo(title = "주말 등산 준비", body = "물 두 병")) }
+        shoot("1504_cnv_my_memos", PHONE) {
+            tab(2, wide = false)
+            tapText("카드 배치", exact = true)
+            assertTrue("my memo, not the example's", appears("주말 등산 준비", exact = true))
+            assertTrue(gone("여행 계획", exact = true))
+        }
+    }
 }

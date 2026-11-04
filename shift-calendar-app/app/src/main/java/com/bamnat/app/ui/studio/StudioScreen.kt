@@ -326,7 +326,7 @@ internal fun pageCards(tab: String, style: WorkStyle?, added: Set<String> = empt
     TabOrder.CALENDAR -> {
         val skip = setOf(CalendarPart.ASK, CalendarPart.JOURNAL, CalendarPart.MONTH)
         val ids = CalendarPart.entries.map { it.id }
-        fun fits(p: CalendarPart) = style == null || com.bamnat.core.guide.FitTable.visible(FitSurface.CALENDAR_PARTS, p.id, style, added)
+        fun fits(p: CalendarPart) = com.bamnat.core.guide.FitTable.visible(FitSurface.CALENDAR_PARTS, p.id, style, added)
         fun aboveIn(d: AppSettings, p: CalendarPart) = com.bamnat.app.ui.calendar.calendarAbove(d.calendarParts().map { it.part })(p)
         PageCards("달력", ids, CalendarPart.entries.associate { it.id to it.labelFor(style) }, skip.map { it.id }.toSet(),
             { id -> CalendarPart.byId(id)?.let(::fits) == true }, { it.calendarLayout }, { d, l -> d.copy(calendarLayout = l) },
@@ -357,12 +357,12 @@ internal fun pageCards(tab: String, style: WorkStyle?, added: Set<String> = empt
             })
     }
     TabOrder.MONEY -> PageCards(com.bamnat.app.ui.TopLevel.MONEY.labelFor(style), MoneyPart.entries.map { it.id }, MoneyPart.entries.associate { it.id to it.label },
-        MoneyPart.entries.filterNot { it.movable }.map { it.id }.toSet(), { style == null || com.bamnat.core.guide.FitTable.visible(FitSurface.MONEY_PARTS, it, style, added) },
+        MoneyPart.entries.filterNot { it.movable }.map { it.id }.toSet(), { com.bamnat.core.guide.FitTable.visible(FitSurface.MONEY_PARTS, it, style, added) },
         { it.moneyLayout }, { d, l -> d.copy(moneyLayout = l) })
     TabOrder.MEMOS -> PageCards("메모", MemoPart.entries.map { it.id }, MemoPart.entries.associate { it.id to it.label },
         MemoPart.entries.filterNot { it.movable }.map { it.id }.toSet(), { true }, { it.memoLayout }, { d, l -> d.copy(memoLayout = l) })
     TabOrder.STATS -> PageCards(com.bamnat.app.ui.TopLevel.STATS.labelFor(style), StatsPart.entries.map { it.id }, StatsPart.entries.associate { it.id to it.label },
-        StatsPart.entries.filterNot { it.movable }.map { it.id }.toSet(), { style == null || com.bamnat.core.guide.FitTable.visible(FitSurface.STATS_PARTS, it, style, added) },
+        StatsPart.entries.filterNot { it.movable }.map { it.id }.toSet(), { com.bamnat.core.guide.FitTable.visible(FitSurface.STATS_PARTS, it, style, added) },
         { it.statsLayout }, { d, l -> d.copy(statsLayout = l) })
     else -> PageCards.NONE
 }
@@ -452,7 +452,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     }
     val shotLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
     // [STU-41] The example as a picture, taken as 올리기 opens.
-    fun takeShot() { scope.launch { StudioShot.last = runCatching { shotLayer.toImageBitmap().asAndroidBitmap() }.getOrNull() } }
+    // [CNV-12] The example shows my own month, money and memos; the 표지 others see is taken on the made-up example (a frame or two of it).
+    var shotExample by remember { mutableStateOf(false) }
+    fun takeShot() { scope.launch {
+        shotExample = true
+        repeat(3) { androidx.compose.runtime.withFrameNanos { } }
+        StudioShot.last = runCatching { shotLayer.toImageBitmap().asAndroidBitmap() }.getOrNull()
+        shotExample = false
+    } }
     // [STU-36] 미리 보기 조건.
     var seeDark by rememberSaveable { mutableStateOf(false) }
     var seeBig by rememberSaveable { mutableStateOf(false) }
@@ -758,7 +765,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             // [STU-41] What the example shows is kept as a picture, for 올리기's 표지.
                             .drawWithContent { shotLayer.record { this@drawWithContent.drawContent() }; drawLayer(shotLayer) }) {
                         CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalMockPick provides ::picked,
-                            com.bamnat.app.ui.parts.LocalPartSpots provides (if (spotsOn) spots else null)) {
+                            com.bamnat.app.ui.parts.LocalPartSpots provides (if (spotsOn) spots else null), LocalRealLook provides !shotExample) {
                         Conditioned(seeDark, seeBig, seeCvd, c.settingsRepository.current.accentColor) {
                         if (!detail && !area.detailOnly) {
                             // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.
@@ -801,8 +808,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                                     start = my?.first, todayDate = my?.today, days = my?.days,
                                                     todayColor = com.bamnat.core.recipe.CalendarTheme.decode(d.calTheme).today?.let { androidx.compose.ui.graphics.Color(it.toInt()) })
                                             }
-                                            Area.MEMO -> com.bamnat.app.ui.memo.MemoLookSample(memoLook) { openTool(Area.MEMO, Tool.MEMO_LOOK) }
-                                            Area.MONEY -> MoneySample(moneyLook) { openTool(Area.MONEY, Tool.MONEY_LOOK) }
+                                            Area.MEMO -> com.bamnat.app.ui.memo.MemoLookSample(memoLook, rememberMyMemos()) { openTool(Area.MEMO, Tool.MEMO_LOOK) }
+                                            Area.MONEY -> MoneySample(moneyLook, rememberMyMoney()) { openTool(Area.MONEY, Tool.MONEY_LOOK) }
                                             Area.PAY -> PaySample(payLooks[payStyle] ?: PayLook(), payStyle) { openTool(Area.PAY, Tool.PAY_LOOK) }
                                             Area.ALARM -> AlarmSample { openTool(Area.ALARM, Tool.COLORS) }
                                             Area.WIDGET -> WidgetSample(WidgetLook.decode(d.widgetLook), vm.style)

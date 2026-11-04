@@ -1790,3 +1790,4 @@ CNV-08,"1.37 각 탭 카드 배치(달력 도구·가계부·메모·통계)는 
 CNV-09,"1.37 예시를 실제 화면처럼: 가계부·통계 카드가 실제 화면의 줄과 숫자(예시 숫자, 올리기 표지 때문에 내 돈·시간은 쓰지 않음)로 보이기. 실제 화면 컴포저블로 그리기는 다음 단계",1.37,진행 중,에뮬레이터 확인,"ui/studio/StudioExamples.kt, recipe/RecipeStudio.kt MockCard"
 CNV-10,"1.37 내 틀 만들기: 빈 판에서 카드 넣기, 내 틀로 저장(보관함, 색은 빼고 카드 자리·부품만), 장터 올리기",1.37,진행 중,에뮬레이터 확인,"ui/studio/StudioViewModel.kt keepFrame/frameBody, StudioScreen.kt 카드 넣기 판"
 CNV-11,"1.37 메모장·달력·가계부 캔버스 맞춤: 화면에서 고른 부품에 언제(오늘·야간·수입/지출…)와 조건(수식) 붙여 바로 꾸미기",1.37,진행 중,에뮬레이터 확인,"StudioCanvas.kt PartBar 언제 ▾, StudioPartsTool.kt onWhen"
+CNV-12,"1.37 스튜디오·입어 보기 예시를 내 실제 모습으로: 이번 달 내 달력 전체, 요약·통계의 근무일·시간, 가계부 합계·최근 기록, 내 메모. 올리기 표지는 예시로(내 데이터가 장터에 나가지 않게)",1.37,진행 중,에뮬레이터 확인,"ui/studio/StudioReal.kt LocalRealLook, recipe/RecipeStudio.kt MockMonth, StudioScreen.kt takeShot"

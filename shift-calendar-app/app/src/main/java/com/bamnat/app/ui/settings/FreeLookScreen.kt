@@ -475,7 +475,9 @@ internal fun moneySummary(l: MoneyLook): String = if (l.isDefault) "처음대로
 
 /** A money list's example: a day's line and three records, by the real colours and sizes and the 가계부 parts (BLU-05·BLU-09). */
 @Composable
-internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
+internal fun MoneySample(look: MoneyLook,
+    /** [CNV-12] My own latest lines this month (the example's lunch, coffee and pay when null). */
+    mine: com.bamnat.app.ui.studio.MyMoney? = null, onTap: () -> Unit) {
     val (income, expense) = com.bamnat.app.ui.money.moneyInks()
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "가계부 모양 고치기", onClick = onTap)) {
@@ -488,12 +490,17 @@ internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
             .then(com.bamnat.app.ui.parts.PartMods.box(day.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), dayShape))
             .background(day.fillColor ?: if (band) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, dayShape)
             .padding(horizontal = (day.padH ?: 16).dp, vertical = (day.padV ?: 8).dp)) {
-            Text("11월 4일 (수)", modifier = Modifier.weight(1f),
+            val dayNow = com.bamnat.core.time.Today.date()
+            Text(if (mine != null) "${dayNow.monthValue}월 ${dayNow.dayOfMonth}일 (${"월화수목금토일"[dayNow.dayOfWeek.value - 1]})" else "11월 4일 (수)", modifier = Modifier.weight(1f),
                 style = com.bamnat.app.ui.parts.PartMods.text(day, (if (look.dayHead == "big") MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelLarge)
                     .copy(color = if (band) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary)))
-            Text("-13,500원", style = MaterialTheme.typography.labelMedium, color = expense)
+            Text(if (mine != null) "이번 달 -${"%,d원".format(mine.expense)}" else "-13,500원", style = MaterialTheme.typography.labelMedium, color = expense)
         }
-        listOf(Triple("🍚", "점심", -9_000L), Triple("☕", "커피", -4_500L), Triple("💼", "월급", 3_120_000L)).forEach { (emoji, title, amount) ->
+        val lines = mine?.recent?.take(3)?.map { e ->
+            val sign = if (e.kind == com.bamnat.core.money.MoneyKind.INCOME) 1L else -1L
+            Triple(if (sign > 0) "💼" else "🧾", e.merchant.ifBlank { e.note.ifBlank { e.category } }.take(14), sign * e.amount)
+        } ?: listOf(Triple("🍚", "점심", -9_000L), Triple("☕", "커피", -4_500L), Triple("💼", "월급", 3_120_000L))
+        lines.forEach { (emoji, title, amount) ->
             val (minH, padV) = when (look.rows) { "compact" -> 48.dp to 4.dp; "roomy" -> 76.dp to 12.dp; else -> 64.dp to 8.dp }
             val row = bp.style("money.row", setOf(if (amount < 0) "out" else "in"), todayScope)
             val amountPart = bp.style("money.amount", setOf(if (amount < 0) "out" else "in"), todayScope)
