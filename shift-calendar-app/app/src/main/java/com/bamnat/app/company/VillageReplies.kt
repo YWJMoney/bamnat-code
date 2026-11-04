@@ -15,6 +15,21 @@ object VillageReplies {
     private const val PREFS = "village_ui"
     private const val K_SEEN = "reply_seen"
 
+    /**
+     * [TOWN-07] PC 확인 649e4c4c 제안 (새 답이 있으면 마을 탭에 점): how many new answers there are as last worked out — once a run
+     * after the app starts ([refresh]), and each time 광장's line or 내 글 looks.
+     */
+    private val _count = kotlinx.coroutines.flow.MutableStateFlow(0)
+    val count: kotlinx.coroutines.flow.StateFlow<Int> = _count
+    fun publish(n: Int) { _count.value = n.coerceAtLeast(0) }
+
+    /** Asks the server once and sets [count]; nothing on a phone that never agreed to the plaza's rules. */
+    suspend fun refresh(c: com.bamnat.app.AppContainer) {
+        if (!c.companyApi.enabled || c.settingsRepository.current.plazaRulesAgreed <= 0) return
+        val posts = runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() ?: return
+        publish(fresh(c.appContext, posts).values.sum())
+    }
+
     /** Answers by others under each of my top posts, by post id. */
     fun others(posts: List<MyPost>): Map<String, Int> {
         val mineUnder = posts.mapNotNull { it.parent }.groupingBy { it }.eachCount()
@@ -69,5 +84,5 @@ object VillageReplies {
     }
 
     /** What [posts] show now counts as seen (kept for the posts still listed, so the note stays small). */
-    fun markSeen(context: Context, posts: List<MyPost>) = write(context, others(posts))
+    fun markSeen(context: Context, posts: List<MyPost>) { write(context, others(posts)); publish(0) }
 }

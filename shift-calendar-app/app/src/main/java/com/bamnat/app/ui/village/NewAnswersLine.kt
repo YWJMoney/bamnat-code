@@ -41,6 +41,7 @@ fun NewAnswersLine(c: AppContainer, except: String?, onOpen: () -> Unit, modifie
         val rooms = posts.associate { it.id to it.room }
         val all = VillageReplies.fresh(c.appContext, posts)
         fresh = all.filterKeys { rooms[it] != except }.values.sum()
+        VillageReplies.publish(all.values.sum())
         // PC 확인용 (디버그 빌드만): adb logcat -s BamnatTown
         if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.i("BamnatTown", "posts=${posts.size} answers=${VillageReplies.others(posts)} new=$all except=$except")
     }

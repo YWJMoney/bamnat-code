@@ -19,6 +19,7 @@ import com.bamnat.app.alarm.AlarmService
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.TextButton
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.appContainer
@@ -660,6 +661,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [UX-05] A new answer to the user's question shows on the 설정 tab from the moment the app opens.
     val inquiryUnread by container.inquiryStore.unread.collectAsStateWithLifecycle()
+    // [TOWN-07] New answers to my plaza posts: a dot on 마을.
+    val villageNew by com.bamnat.app.company.VillageReplies.count.collectAsStateWithLifecycle()
     LaunchedEffect(homeRequests) {
         if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
@@ -917,7 +920,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             NavigationRailItem(
                                 selected = selected,
                                 onClick = { onTab(dest) },
-                                icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
+                                icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0, dot = dest == TopLevel.PLAZA && villageNew > 0) } },
                                 label = { TabLabel(label) },
                                 modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = false, tabsShown, tabNames, saveTabs),
                                 // [VIS-03] The chosen tab in the same blue as every other chosen thing.
@@ -974,7 +977,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                         NavigationBarItem(
                                             selected = selected,
                                             onClick = { onTab(dest) },
-                                            icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
+                                            icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0, dot = dest == TopLevel.PLAZA && villageNew > 0) } },
                                             label = { TabLabel(label, twoLineRoom, if (selected) tabOn else tabPart) },
                                             modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = true, tabsShown, tabNames, saveTabs),
                                             colors = itemColors,
@@ -2000,8 +2003,13 @@ private fun twoLineTabs(names: List<String>): Boolean =
 
 /** [UX-05] A tab's icon; 설정 carries how many answers to the user's questions are new. */
 @Composable
-private fun TabIcon(dest: TopLevel, selected: Boolean, badge: Int) {
+private fun TabIcon(dest: TopLevel, selected: Boolean, badge: Int, dot: Boolean = false) {
     val icon = if (selected) dest.selectedIcon else dest.icon
+    // [TOWN-07] 마을: a dot, no number, when my plaza posts have new answers.
+    if (badge <= 0 && dot) {
+        BadgedBox(badge = { androidx.compose.material3.Badge(Modifier.semantics { contentDescription = "광장 내 글에 새 답" }) }) { Icon(icon, contentDescription = null) }
+        return
+    }
     if (badge <= 0) {
         Icon(icon, contentDescription = null)
         return
