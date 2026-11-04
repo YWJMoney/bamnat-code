@@ -135,7 +135,7 @@ private fun KitDialog(
                 busy = false
                 if (ok) {
                     if (switching) Toast.makeText(context.applicationContext,
-                        "일하는 방식을 ‘${theirs!!.label}’(으)로 바꿨어요. 설정 › 일하는 방식에서 다시 바꿔요", Toast.LENGTH_LONG).show()
+                        "일하는 방식을 ‘${theirs!!.label}’${ro(theirs!!.label)} 바꿨어요. 설정 › 일하는 방식에서 다시 바꿔요", Toast.LENGTH_LONG).show()
                     onPut(id!!, picks.size)
                     onDismiss()
                 } else Toast.makeText(context.applicationContext, "넣지 못했어요. 다시 해 주세요", Toast.LENGTH_LONG).show()
@@ -178,15 +178,16 @@ private fun KitDialog(
         title = { Text("내 근무 주기를 바꿀까요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("내 달력의 근무 종류와 순서가 보낸 설정으로 바뀌어요. 지금 것은 남겨 두어 7일 안에 되돌릴 수 있어요.")
+                Text("내 달력의 근무 종류와 순서가 보낸 설정으로 바뀌어요. 지금 것은 남겨 두어 7일 안에 되돌릴 수 있어요." +
+                    if (theirs != null) " 오늘 전 날짜는 지금까지의 근무 그대로 남아요." else "")
                 if (theirs != null) Row(
                     Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(switchStyle, role = Role.Checkbox) { switchStyle = it },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(checked = switchStyle, onCheckedChange = null)
                     Column(Modifier.padding(start = 8.dp).weight(1f)) {
-                        Text("일하는 방식도 ‘${theirs.label}’(으)로 바꾸기", style = MaterialTheme.typography.bodyMedium)
-                        Text("보낸 분은 ‘${theirs.label}’이에요. 지금 방식(${mine?.label ?: "정하지 않음"})으로 두면 달력에 근무 글자가 잘 안 보일 수 있어요.",
+                        Text("일하는 방식도 ‘${theirs.label}’${ro(theirs.label)} 바꾸기", style = MaterialTheme.typography.bodyMedium)
+                        Text("보낸 분은 ‘${theirs.label}’${yeyo(theirs.label)}. 지금 방식(${mine?.label ?: "정하지 않음"})으로 두면 달력에 근무 글자가 잘 안 보일 수 있어요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -196,6 +197,13 @@ private fun KitDialog(
         dismissButton = { TextButton(onClick = { asking = false }) { Text("취소") } },
     )
 }
+
+/** The last Hangul syllable's 받침: null none, else its index (8 = ㄹ). PC 2차: "(으)로", "근무이에요". */
+private fun batchim(w: String): Int? = w.lastOrNull { it in '가'..'힣' }?.let { (it - '가') % 28 }?.takeIf { it != 0 }
+/** 로 after a vowel or ㄹ, else 으로. */
+internal fun ro(w: String): String = batchim(w).let { if (it == null || it == 8) "로" else "으로" }
+/** 예요 after a vowel, else 이에요. */
+internal fun yeyo(w: String): String = if (batchim(w) == null) "예요" else "이에요"
 
 /** "보낸 분이" with no name, "○○ 님이" with one (PC 1차: "보낸 분 님이"). */
 private fun subject(name: String): String = if (name.isEmpty()) "보낸 분이" else "$name 님이"
