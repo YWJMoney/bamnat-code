@@ -147,7 +147,10 @@ class PayViewModel(
 
     // [PAYS-01] A second setup over an existing one can be undone like any other change ('방금 바꾼 것 되돌리기').
     fun saveSetup(profile: PayProfile, fromSlip: Boolean = false, invite: Boolean = true) = viewModelScope.launch {
-        payStore.save(profile)
+        val before = payStore.profile.value
+        val why = if (before == null) "급여 설정을 만들었어요" else "급여 설정을 다시 했어요"
+        payStore.save(profile, why = why)
+        noteAfter(why, before)
         container.telemetry.event("pay_setup_done", profile.occupation.name)
         // [J133-51] No question cards or tips for the rest of the day the pay was set up.
         container.asks.set(calendarId, com.bamnat.core.profile.AskScheduler.rest(container.asks.of(calendarId), com.bamnat.core.time.Today.date()))
@@ -225,10 +228,77 @@ class PayViewModel(
             container.calendars.repository(calendarId).saveShiftType(type.copy(start = start, end = end, breakMinutes = breakMinutes))
         }
 
-    fun update(transform: (PayProfile) -> PayProfile) = viewModelScope.launch {
+    fun update(transform: (PayProfile) -> PayProfile) = update("급여 값을 고쳤어요", transform)
+
+    /** As [update], with what the change was: said once under the screen with the month before and after ([note]). */
+    fun update(why: String, transform: (PayProfile) -> PayProfile) = viewModelScope.launch {
         val before = payStore.profile.value
-        payStore.update(transform)
+        payStore.update(why, transform)
         checkVerified(before, payStore.profile.value)
+        noteAfter(why, before)
+        if (why in FIX_WHYS) offerShareAfterFix()
+    }
+
+    /**
+     * [PAYIN-08] 1.37 B8 (사용자 2026-11-04 "정보 제공도 물어봐서 다른 사용자들에게 공유"): the setup put right against a payslip or the
+     * company's rules: once, the invitation to send the company's way to coworkers (the 광장's own path: rules in words, no amount,
+     * read before it goes, 다음에 remembered). Only for a calendar that has a company ([com.bamnat.core.work.WorkStyle.usesCompany]).
+     */
+    private fun offerShareAfterFix() {
+        if (settings.value.workStyle?.usesCompany != true) return
+        if (!com.bamnat.app.company.ShareAskGate.open(container.appContext)) return
+        if (_shareMoment.value == null) _shareMoment.value = com.bamnat.app.ui.company.ShareMoment.FIXED
+    }
+
+    // ---- [PAYIN-05][PAYIN-06] 1.37 B5·B6·B7: what a change did, the 7 days of changes, starting over ----
+
+    /** [PAYIN-05] One change just saved: what it was, the month on screen before and after, and the change to put back. */
+    data class ChangeNote(val what: String, val month: YearMonth, val before: Long?, val after: Long?, val change: com.bamnat.app.pay.PayStore.Change?)
+
+    private val _note = MutableStateFlow<ChangeNote?>(null)
+    /**
+     * [PAYIN-05] 1.37 B5 (사용자 "저장을 했고 적용이 안 되는 경우도 있어"): after a save the screen says what changed and what the month
+     * comes to now ("이번 달 2,980,000원 → 3,046,000원"), with 되돌리기; nothing moved says that too, so a save is never silent.
+     */
+    val note: StateFlow<ChangeNote?> = _note.asStateFlow()
+
+    private suspend fun noteAfter(what: String, before: PayProfile?) {
+        val after = payStore.profile.value
+        val change = payStore.history.value.firstOrNull()?.takeIf { it.why == what }
+        val snap = snapshot.value ?: scope.schedule.lastSnapshot
+        val m = month.value
+        val total = { p: PayProfile? -> p?.let { q -> snap?.let { runCatching { calculator.calculate(q.named(settings.value.extraKinds).hourlyWeek(settings.value), m, it.resolver::resolve, checks = false).total }.getOrNull() } } }
+        val (b, a) = withContext(Dispatchers.Default) { total(before) to total(after) }
+        _note.value = ChangeNote(what, m, b, a, change)
+    }
+
+    fun noteShown() { _note.value = null }
+
+    /** [PAYIN-05] The change in [note] put back. */
+    fun undoNote() = viewModelScope.launch {
+        val c = _note.value?.change
+        _note.value = null
+        if (c != null) payStore.restore(c) else payStore.undo()
+    }
+
+    /** [PAYIN-06] The last 7 days of changes, newest first. */
+    val history: StateFlow<List<com.bamnat.app.pay.PayStore.Change>> = payStore.history
+
+    /** [PAYIN-06] The setup as it was before [change]. */
+    fun restore(change: com.bamnat.app.pay.PayStore.Change) = viewModelScope.launch {
+        val before = payStore.profile.value
+        payStore.restore(change)
+        noteAfter(payStore.history.value.firstOrNull()?.why ?: "되돌렸어요", before)
+    }
+
+    /**
+     * [PAYIN-06] 1.37 B6 (사용자 2026-11-04 "이미 급여를 입력한 사람도 초기화 하고 처음부터 다시 만들기… 되돌리기를 7일 안에"): the setup
+     * emptied and the setup's first step opened; the old one stays 7 days in [history] and on the setup's top band.
+     */
+    fun restart() = viewModelScope.launch {
+        payStore.restart()
+        container.companyOf(calendarId).payWays.use(null)
+        container.telemetry.event("pay_restart", "")
     }
 
     /** [PAYX-22] A change that would move a month matched with a payslip, until the user picks what to do. */
@@ -421,7 +491,7 @@ class PayViewModel(
 
     /** [PAYS-06] Changes read from rules in words, from [from] on; one tap on 되돌리기 brings the old setup back. */
     fun applyRuleChanges(changes: List<com.bamnat.core.pay.RuleChange>, from: YearMonth) {
-        update { com.bamnat.core.pay.RuleText.apply(it, changes, from) }
+        update("회사 규칙 ${changes.size}개를 넣었어요") { com.bamnat.core.pay.RuleText.apply(it, changes, from) }
         container.telemetry.event("pay_rule_text", "changes=${changes.size}")
     }
 
@@ -511,7 +581,7 @@ class PayViewModel(
     }
 
     /** [PAYS-14] Keeps the rules a payslip pointed to; one tap on 되돌리기 brings the old ones back. */
-    fun applySlipRules(result: com.bamnat.core.pay.SlipRulesResult) = update { p ->
+    fun applySlipRules(result: com.bamnat.core.pay.SlipRulesResult) = update("명세서에 맞춰 규칙을 바꿨어요") { p ->
         result.profile.copy(rules = result.profile.rules.copy(extraNames = p.rules.extraNames),
             // [PLAZA-30] 1.27 AI: the month it was checked against is what a 명세서 tick rests on (close or not, SlipProof says).
             verified = com.bamnat.core.pay.PayslipCheck(result.month, result.gross, result.total, Today.millis(), com.bamnat.core.pay.SlipProof.RULES))
@@ -564,16 +634,19 @@ class PayViewModel(
     }.also { container.telemetry.event("pay_fit_months", when { it == null -> "none"; it.improved -> "better"; else -> "same" }) }
 
     /** D 1.32 [PAYA-03] Keeps the settings that fit every month; 되돌리기 brings the old ones back. */
-    fun applyFit(result: com.bamnat.core.pay.MultiMonthFit.Result) = update { p ->
+    fun applyFit(result: com.bamnat.core.pay.MultiMonthFit.Result) = update("여러 달에 맞춰 바꿨어요") { p ->
         result.profile.copy(rules = result.profile.rules.copy(extraNames = p.rules.extraNames), checks = p.checks, verified = p.verified)
     }
 
     /** [PAYS-02] Keeps the matched settings and the check; one tap on 되돌리기 brings the old ones back. */
-    fun applyMatch(match: PayslipMatch) = update { p ->
+    fun applyMatch(match: PayslipMatch) = update("명세서에 맞춰 바꿨어요") { p ->
         val v = match.verifiedProfile(Today.millis())
         v.copy(rules = v.rules.copy(extraNames = p.rules.extraNames))
     }
 }
+
+/** [PAYIN-08] The changes that put the setup right against a payslip or the company's rules. */
+private val FIX_WHYS = setOf("명세서에 맞춰 바꿨어요", "명세서에 맞춰 규칙을 바꿨어요", "여러 달에 맞춰 바꿨어요")
 
 /** [EASY-06] How sure a payslip read is taken to be: the user saw every value it filled before saving. */
 private const val SLIP_CONFIDENCE = 0.8

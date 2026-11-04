@@ -125,12 +125,16 @@ private class SlipForm {
     /** [PAYS-05] Fills the form from a payslip read from a photo or text; the user can still correct every field. */
     fun fill(read: PayslipRead, profile: PayProfile) {
         this.read = read
-        read.gross?.let { gross = it }
-        read.amount(SlipRole.BASE)?.let { base = it }
+        // [PAYIN-03] 1.37 B3 (PC E11): a second payslip filled over the first left the first one's figures in every field the new
+        // one does not print (its 연장 stayed when this month had none), and the match then aimed at both. The form is this
+        // payslip's alone now: what it does not say is empty.
+        gross = read.gross
+        base = read.amount(SlipRole.BASE)
         listOf(overtime to SlipRole.OVERTIME, night to SlipRole.NIGHT, holiday to SlipRole.HOLIDAY).forEach { (p, role) ->
-            read.amount(role)?.let { p.amount = it }
-            read.minutes(role)?.let { m -> p.stepped = m }
+            p.amount = read.amount(role)
+            p.stepped = read.minutes(role) ?: 0
         }
+        items.clear()
         others.clear()
         fun norm(n: String) = n.filterNot { it.isWhitespace() }.lowercase()
         read.allowances.forEach { (name, amount) ->
@@ -194,6 +198,8 @@ fun PayslipMatchDialog(
             vm.applyRuleChanges(changes, m ?: chosen)
             filled = "회사 규칙 ${changes.size}개를 급여 설정에 넣었어요"
         }) { read ->
+        // [PAYIN-03] Only the company's rules came (no payslip line): the figures typed here stay as they are.
+        if (read.lines.isEmpty()) { scanning = false; return@PayslipFillDialog }
         form.fill(read, profile)
         vm.observePayslip(read, chosen) // [TAX-04] 세금 예측도 이 명세서로 맞춰요
         more = true

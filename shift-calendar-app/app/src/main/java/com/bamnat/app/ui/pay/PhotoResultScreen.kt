@@ -129,10 +129,8 @@ internal fun PhotoResultScreen(
             ) { padding ->
                 Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
                     Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
-                        if (photos.isNotEmpty()) Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) { photos.forEach { PhotoThumb(it, Modifier.size(width = 112.dp, height = 84.dp)) } }
+                        // [PAYIN-01] 1.37 B1: the photo pinned over the lines (zoom, move, fold), not a thumbnail to open and close.
+                        PinnedPhotos(photos)
                         if (tabs.size > 1) TabRow(selectedTabIndex = tabIndex) {
                             tabs.forEachIndexed { i, t ->
                                 Tab(selected = tabIndex == i, onClick = { tabIndex = i }, modifier = Modifier.heightIn(min = 48.dp), text = {
@@ -151,13 +149,10 @@ internal fun PhotoResultScreen(
                             read.month?.let { Text("${it.year}년 ${it.monthValue}월 명세서", style = MaterialTheme.typography.titleSmall) }
                             when (tab) {
                                 ResultTab.SLIP -> {
-                                    if (read.lines.isEmpty()) Hint("금액을 찾지 못했어요. 아래 ‘칸 더하기’로 명세서 줄을 직접 넣거나, 이름과 금액이 함께 보이게 다시 찍어 주세요.")
+                                    if (read.lines.isEmpty()) Hint(if (photos.isNotEmpty()) "위 사진을 보면서 왼쪽에 지급, 오른쪽에 공제를 넣어 주세요. 이름을 누르면 금액만 넣으면 돼요."
+                                        else "명세서를 보면서 왼쪽에 지급, 오른쪽에 공제를 넣어 주세요. 이름을 누르면 금액만 넣으면 돼요.")
                                     SlipCheck(read, unsure, same, fromPhoto = fromPhoto && read.lines.isNotEmpty(), onAnswer = onSame, onChange = onSlip, reviewAsk = reviewAsk)
-                                    // [READ-08] What the tax estimate (묶음 W) starts from: 공제 합계 and 실수령.
-                                    val net = read.net
-                                    if (read.deducted != null || net != null) Text(
-                                        listOfNotNull(read.deducted?.let { "공제 ${won(it)}" }, net?.let { "실수령 ${won(it)}" }).joinToString(" · "),
-                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    // [READ-08] 공제 합계 and 실수령 (the tax estimate's start) are under the two sides now ([SlipSums], PAYIN-02).
                                     slipExtras()
                                 }
                                 ResultTab.RULES -> if (sheet != null && host != null) {

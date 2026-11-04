@@ -73,8 +73,12 @@ private fun ocrFailed(context: android.content.Context, e: Throwable): String {
 internal fun ScanButtons(
     onText: (String) -> Unit = {}, modifier: Modifier = Modifier,
     onScan: ((PayslipScanner.Scan) -> Unit)? = null,
-    /** [PHOTO-01] 1.29: no words found or the photo failed to read: the screen to fill by hand ('직접 넣기' under the message). */
-    onEmpty: (() -> Unit)? = null,
+    /**
+     * [PHOTO-01] 1.29: no words found or the photo failed to read: the screen to fill by hand ('직접 넣기' under the message).
+     * [PAYIN-01] 1.37 B1 (PC E10 "고른 사진이 화면에서 사라져요"): it gets the photo that could not be read (screen-sized, in memory
+     * only), so the lines are typed while looking at it; null when there is none to show.
+     */
+    onEmpty: ((android.graphics.Bitmap?) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -88,7 +92,12 @@ internal fun ScanButtons(
     // A 1.32 [FIX132-01] The photo just read, kept for '돌려서 다시 읽기' (a photo taken here is deleted once the screen goes).
     var last by remember { mutableStateOf<Triple<Uri, Boolean, Boolean>?>(null) }
     var lastTurn by remember { mutableStateOf(0) }
-    DisposableEffect(Unit) { onDispose { if (last?.second == true) PayslipScanner.clear(context) } }
+    // [PAYIN-01] The photo being read or that failed to read: kept for '같은 사진 다시 읽기' and to show while typing by hand.
+    var current by remember { mutableStateOf<Triple<Uri, Boolean, Boolean>?>(null) }
+    // [PAYIN-04] The reading model coming down: percent, or -1 while its size is not known; null when not waiting for it.
+    var preparing by remember { mutableStateOf<Int?>(null) }
+    var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    DisposableEffect(Unit) { onDispose { if (last?.second == true || current?.second == true) PayslipScanner.clear(context) } }
 
     fun read(uri: Uri, taken: Boolean, scanned: Boolean, turn: Int = 0) {
         reading = true
@@ -96,9 +105,12 @@ internal fun ScanButtons(
         advice = null
         straighten = false
         step = null
-        scope.launch {
+        preparing = null
+        current = Triple(uri, taken, scanned)
+        job = scope.launch {
             try {
-                val scan = PayslipScanner.scan(context, uri, scanned = scanned, turn = turn) { n, m -> step = n to m }
+                val scan = PayslipScanner.scan(context, uri, scanned = scanned, turn = turn,
+                    preparing = { p -> preparing = p ?: -1 }) { n, m -> preparing = null; step = n to m }
                 last = Triple(uri, taken, scanned)
                 lastTurn = scan.turn
                 val quality = scan.quality
@@ -120,9 +132,32 @@ internal fun ScanButtons(
             } catch (e: OutOfMemoryError) {
                 ocrFailed(context, e).let { error = it }
             } finally {
-                if (taken && last?.first != uri) PayslipScanner.clear(context)
+                // [PAYIN-01] A photo taken here stays while it can still be read again or shown; it goes with the screen.
+                if (taken && last?.first != uri && current?.first != uri) PayslipScanner.clear(context)
                 reading = false
+                preparing = null
             }
+        }
+    }
+
+    /** [PAYIN-01] Typing by hand from the photo that could not be read (or while the model comes down): the photo goes along. */
+    fun byHand() {
+        val photo = current
+        job?.cancel()
+        error = null
+        reading = false
+        preparing = null
+        val go = onEmpty ?: return
+        if (photo == null) { go(null); return }
+        scope.launch {
+            val shown = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                runCatching {
+                    var p = com.bamnat.app.imports.ImagePrep.load(context, photo.first)
+                    if (lastTurn != 0 && last?.first == photo.first) p = com.bamnat.app.imports.ImagePrep.turned(p, lastTurn.toFloat())
+                    com.bamnat.app.imports.ImagePrep.forScreen(p).first
+                }.getOrNull()
+            }
+            go(shown)
         }
     }
 
@@ -152,12 +187,25 @@ internal fun ScanButtons(
         )
         if (reading) Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-            Text(step?.let { (n, m) -> if (m > 0) "  휴대폰 안에서 ${n}/${m}번째 방법으로 읽는 중" else null } ?: "  휴대폰 안에서 글자를 읽고 있어요",
+            Text(
+                preparing?.let { p -> "  글자 인식 준비물을 받는 중" + (if (p >= 0) " ${p}%" else "") + " · 다 받으면 바로 읽어요" }
+                    ?: step?.let { (n, m) -> if (m > 0) "  휴대폰 안에서 ${n}/${m}번째 방법으로 읽는 중" else null } ?: "  휴대폰 안에서 글자를 읽고 있어요",
                 style = MaterialTheme.typography.bodySmall)
+        }
+        // [PAYIN-04] Waiting for the model need not hold the user: the photo goes to the lines to fill while it comes.
+        if (reading && preparing != null && onEmpty != null) OutlinedButton(onClick = ::byHand, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Text("기다리지 않고 사진 보며 직접 넣기")
         }
         error?.let {
             Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            if (onEmpty != null) TextButton(onClick = { error = null; onEmpty() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("직접 넣기") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                if (onEmpty != null) Button(onClick = ::byHand, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                    Text(if (current != null) "사진 보며 직접 넣기" else "직접 넣기", maxLines = 1)
+                }
+                current?.let { (uri, taken, scanned) ->
+                    OutlinedButton(onClick = { read(uri, taken, scanned) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("같은 사진 다시 읽기", maxLines = 1) }
+                }
+            }
         }
         advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
         // A 1.32 [FIX132-01] The way up the phone chose was wrong: the same photo turned by the user, read again.

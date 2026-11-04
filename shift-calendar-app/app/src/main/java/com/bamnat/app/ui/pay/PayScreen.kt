@@ -184,6 +184,13 @@ fun PayScreen(
     /** 1.36 PC X4: the ← and back while 자세히 고치기 is open, handed to it so it can ask before leaving. */
     var wizardLeave by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var plazaAsk by rememberSaveable { mutableStateOf(false) }
+    // [PAYIN-05][PAYIN-06] 1.37 B5·B6·B7: what a save did, the 7 days of changes, starting over.
+    val note by vm.note.collectAsStateWithLifecycle()
+    val history by vm.history.collectAsStateWithLifecycle()
+    var showHistory by rememberSaveable { mutableStateOf(false) }
+    var askRestart by rememberSaveable { mutableStateOf(false) }
+    if (showHistory) PayHistoryDialog(history, profile, onRestore = vm::restore, onDismiss = { showHistory = false })
+    if (askRestart) RestartDialog(onRestart = { vm.restart(); detailedFrom = null; editingSetup = false }, onDismiss = { askRestart = false })
     if (plazaAsk && onShareWay != null) PlazaAskDialog(onShare = { plazaAsk = false; onShareWay() }, onDismiss = { plazaAsk = false })
     // The back gesture does what the arrow does: close the editor, not the whole pay screen.
     com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = editingSetup || editingRules || detailedFrom != null) {
@@ -249,6 +256,11 @@ fun PayScreen(
                                     onClick = { menu = false; detailedFrom = null; editingSetup = true })
                                 androidx.compose.material3.DropdownMenuItem(text = { Text("$rulesTitle (가산율·수당 기준)") },
                                     onClick = { menu = false; editingRules = true })
+                                // [PAYIN-06] 1.37 B6·B7.
+                                androidx.compose.material3.DropdownMenuItem(text = { Text("고친 기록 · 되돌리기 (7일)") },
+                                    onClick = { menu = false; showHistory = true })
+                                androidx.compose.material3.DropdownMenuItem(text = { Text("처음부터 다시 만들기 (지금 설정 7일 보관)") },
+                                    onClick = { menu = false; askRestart = true })
                             }
                         }
                     }
@@ -269,6 +281,11 @@ fun PayScreen(
                     val setupContext = LocalContext.current
                     // [PAYS-12] The easy setup first; the question-by-question one behind 자세히 고치기, from what it had.
                     val detailed = detailedFrom
+                    // [PAYIN-06] 1.37 B6: the setup emptied by '처음부터 다시' in the last 7 days, to bring back from here.
+                    val emptied = history.firstOrNull()?.takeIf { profile == null && it.why == com.bamnat.app.pay.PayStore.RESTART && it.before != null }
+                    Column(Modifier.fillMaxSize()) {
+                    emptied?.let { c -> RestoreBand(c, onRestore = { vm.restore(c) }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
+                    Box(Modifier.weight(1f)) {
                     if (detailed == null) PayQuickSetup(
                         initial = profile,
                         style = settings.workStyle,
@@ -299,6 +316,8 @@ fun PayScreen(
                         companyFind = companyFind,
                         leaveAsk = wizardLeave,
                     )
+                    }
+                    }
                 }
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
@@ -313,6 +332,8 @@ fun PayScreen(
                     focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true })
                 }
             }
+            // [PAYIN-05] What the last save did, with 되돌리기.
+            note?.let { n -> ChangeNoteBar(n, onUndo = vm::undoNote, onClose = vm::noteShown, modifier = Modifier.align(Alignment.BottomCenter)) }
         }
     }
 }
