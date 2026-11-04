@@ -18,6 +18,13 @@ object Fmt {
      */
     @Volatile var clock12: Boolean = false
 
+    /**
+     * 1.37 [LEDH-22] 금액 가리기: every amount Fmt writes shows as dots, for opening the app on a bus or at work. Set from
+     * the settings with [clock12]; the eye on 가계부 turns it on and off, and the widgets follow.
+     */
+    @Volatile var masked: Boolean = false
+    const val MASK = "•••••"
+
     private fun twelve(t: LocalTime): String {
         val h = t.hour % 12
         return "${if (t.hour < 12) "오전" else "오후"} ${if (h == 0) 12 else h}:${"%02d".format(t.minute)}"
@@ -55,10 +62,11 @@ object Fmt {
     private val wonFormat = java.text.NumberFormat.getIntegerInstance(korean)
 
     /** "1,250,000원" */
-    fun won(amount: Long): String = wonFormat.format(amount) + "원"
+    fun won(amount: Long): String = if (masked) MASK + "원" else wonFormat.format(amount) + "원"
 
     /** Amounts for a calendar cell: "125만", "8천", "500" [WORK-02]. */
     fun wonShort(amount: Long): String {
+        if (masked) return "•••"
         val a = kotlin.math.abs(amount)
         val sign = if (amount < 0) "-" else ""
         return sign + when {

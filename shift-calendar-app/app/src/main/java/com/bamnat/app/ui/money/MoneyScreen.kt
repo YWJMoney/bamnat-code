@@ -25,6 +25,8 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -210,7 +212,12 @@ class MoneyViewModel(
                 .firstOrNull { (_, p) -> p!!.minutes.sumOf { it.total.worked } >= 600 }
             val hourly = done?.let { (m, p) -> com.bamnat.core.money.WorkTime.hourly(PayIncome.net(profile, m, p!!.total), p.minutes.sumOf { it.total.worked }) }
             val perShift = done?.let { (m, p) -> p!!.minutes.count { it.total.worked > 0 }.takeIf { it > 0 }?.let { PayIncome.net(profile, m, p.total) / it } }
-            AheadPay(days, hourly, profile.period.payDay, perShift)
+            // 1.37 [LEDH-16] Last month's work for 지난달 돈 이야기.
+            val last = pays[YearMonth.from(today).minusMonths(1)]?.let { p ->
+                MonthWork(p.minutes.sumOf { it.total.worked }, p.minutes.count { it.total.worked > 0 }, p.minutes.count { it.total.night > 0 },
+                    PayIncome.net(profile, p.month, p.total))
+            }
+            AheadPay(days, hourly, profile.period.payDay, perShift, last)
         }
 
     /** E 1.32 [LEDX-09] A subscription the user said they still use, by place, so it is not asked again for 90 days. */
@@ -695,6 +702,7 @@ fun MoneyScreen(
             AheadCard(book, style, today, aheadPay, budget, toSort = unseen.size, gate = gate,
                 onAddAccount = { addingAccount = com.bamnat.core.money.AccountType.BANK }, onOpenPay = onOpenPay)
         },
+        MoneyPart.STORY to { MonthStoryCard(book, envelopeBook.second, aheadPay?.lastMonth, today, gate) },
         MoneyPart.ENVELOPES to {
             val (envs, moves) = envelopeBook
             EnvelopesCard(book, envs, moves, style, today, aheadPay?.perShift, pro = !gate.live || gate.tier >= com.bamnat.app.tier.Tier.PRO,
@@ -748,12 +756,32 @@ fun MoneyScreen(
     )
     // [FIT-01][FIT-02] The parts that suit this calendar's kind of work, and those the user added.
     val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(vm.calendarId)
-    val placed = moneyParts(settings.moneyLayout).filter { it.shown }.map { it.part }
+    val shownParts = moneyParts(settings.moneyLayout).filter { it.shown }.map { it.part }
         .filter { com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.MONEY_PARTS, it.id, style, fitAdded) }
+    // 1.37 [LEDH-15] With 정리함 on, its four parts live inside it (in the user's order and on/off) instead of apart.
+    val inboxParts = listOf(MoneyPart.NEW, MoneyPart.ASK, MoneyPart.OTHER, MoneyPart.REPEAT)
+    val inboxOn = MoneyPart.INBOX in shownParts
+    val placed = if (inboxOn) shownParts.filter { it !in inboxParts } else shownParts
+    val askCount = remember(book, today, autoRecord.askedCards) {
+        book.entries.count { com.bamnat.core.money.LedgerChecks.isUnmatchedRefund(it) } +
+            com.bamnat.core.money.LedgerChecks.unknownCards(book.entries, book.accounts, today.minusDays(90)).count { it.last4 !in autoRecord.askedCards }.coerceAtMost(2)
+    }
+    val inboxCount = (if (MoneyPart.NEW in shownParts) unseen.size + captures.size else 0) + (if (MoneyPart.ASK in shownParts) askCount else 0) +
+        (if (MoneyPart.OTHER in shownParts) otherPlaces.size else 0) + (if (MoneyPart.REPEAT in shownParts) repeats.size else 0)
+    val inboxCard: @Composable () -> Unit = {
+        if (inboxCount > 0) com.bamnat.app.ui.components.SectionCard(title = "정리함 $inboxCount") {
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.components.LocalFlatSections provides true) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    shownParts.filter { it in inboxParts }.forEach { cards.getValue(it)() }
+                }
+            }
+        }
+    }
     var arranging by rememberSaveable { mutableStateOf(false) }
     // Unfolded: the overview on the left, the month's lines on the right, each side in the user's order.
-    val left: @Composable () -> Unit = { placed.filter { !wide || !it.right }.forEach { cards.getValue(it)() } }
-    val right: @Composable () -> Unit = { if (wide) placed.filter { it.right }.forEach { cards.getValue(it)() } }
+    @Composable fun draw(p: MoneyPart) { if (p == MoneyPart.INBOX) inboxCard() else cards.getValue(p)() }
+    val left: @Composable () -> Unit = { placed.filter { !wide || !it.right }.forEach { draw(it) } }
+    val right: @Composable () -> Unit = { if (wide) placed.filter { it.right }.forEach { draw(it) } }
 
     // 1.37 [LEDH-07] 근무 시간 환산 for the lines and the 돈 적기 sheet of this tab.
     val workTime = remember(style, settings.workTimeFrom, book, today, aheadPay) { WorkTimeSay.of(style, settings.workTimeFrom, book, today, aheadPay?.hourly) }
@@ -776,6 +804,18 @@ fun MoneyScreen(
                 IconButton(onClick = { vm.showMonth(month.plusMonths(1)) }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
                 }
+                // 1.37 [LEDH-22] 금액 가리기: one tap, the whole app (and the widgets) shows dots for amounts.
+                val eyeContext = LocalContext.current
+                val flipHide = {
+                    vm.updateSettings { it.copy(hideAmounts = !it.hideAmounts) }
+                    eyeContext.appContainer.appScope.launch { com.bamnat.app.widget.WidgetRefresher.refresh(eyeContext) }
+                    Unit
+                }
+                // At very large text the eye waits in ⋮ (금액 가리기) so the month keeps its room.
+                if (roomy) IconButton(onClick = flipHide) {
+                    Icon(if (settings.hideAmounts) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
+                        if (settings.hideAmounts) "금액 보이기" else "금액 가리기")
+                }
                 // [LEDG-16] What is set once and changed rarely, always in the same place.
                 Box {
                     com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
@@ -786,6 +826,7 @@ fun MoneyScreen(
                         DropdownMenuItem(text = { Text("분류 편집") }, onClick = { menuOpen = false; editingCategories = true })
                         // [DAILY-15] 화면 꾸미기, as on 달력 and 근무·급여.
                         DropdownMenuItem(text = { Text("카드 배치") }, onClick = { menuOpen = false; arranging = true })
+                        DropdownMenuItem(text = { Text(if (settings.hideAmounts) "금액 보이기" else "금액 가리기") }, onClick = { menuOpen = false; flipHide() })
                     }
                 }
             }
@@ -1028,9 +1069,13 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
  */
 internal enum class MoneyPart(val id: String, val label: String, val what: String, val movable: Boolean = true, val right: Boolean = false) {
     HERO("hero", "이번 달 합계", "수입·지출·남은 돈과 예산", movable = false),
+    // 1.37 [LEDH-15] 정리함 하나로: the four below in one card, one count, when it is on.
+    INBOX("inbox", "정리함", "새로 들어온 기록·확인할 것·분류 제안·반복 지출을 한곳에", movable = false, right = true),
     NEW("new", "새로 들어온 기록", "자동 기록·확인할 기록이 있을 때만", movable = false, right = true),
     // 1.32 [LEDX-16][LEDX-19]
     ASK("ask", "확인할 것", "원래 결제를 못 찾은 환불, 처음 보는 카드", movable = false, right = true),
+    // 1.37 [LEDH-16] 지난달 돈 이야기, the first week of a month only.
+    STORY("story", "지난달 돈 이야기", "달 초 일주일, 일한 시간·번 돈·쓴 돈·모은 돈"),
     // 1.37 [LEDH-01][LEDH-02][LEDH-03] 근무가 보이는 가계부.
     AHEAD("ahead", "앞으로의 돈", "오늘 쓸 돈·월급까지 며칠·날마다 남을 돈"),
     // 1.37 [LEDH-11][LEDH-13]

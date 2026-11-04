@@ -41,7 +41,14 @@ import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
 
 /** 1.37 [LEDH-01][LEDH-07] The pay engine's pay days ahead and take-home per hour; empty without pay set up. */
-data class AheadPay(val days: List<PayDay> = emptyList(), val hourly: Long? = null, val payDay: Int? = null, val perShift: Long? = null)
+data class AheadPay(
+    val days: List<PayDay> = emptyList(), val hourly: Long? = null, val payDay: Int? = null, val perShift: Long? = null,
+    /** 1.37 [LEDH-16] Last month's work, for 지난달 돈 이야기. */
+    val lastMonth: MonthWork? = null,
+)
+
+/** 1.37 [LEDH-16] A month's work as the pay engine counted it, and its take-home. */
+data class MonthWork(val minutes: Int, val days: Int, val nights: Int, val net: Long)
 
 /** 1.37 [LEDH-02] The kinds of money a calendar of [style] waits for until its next 'pay'. */
 internal fun nextKinds(style: WorkStyle?): Set<FlowKind> = when (style) {

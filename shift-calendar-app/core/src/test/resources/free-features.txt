@@ -247,3 +247,9 @@ look.themes
 hub.village
 hub.themes
 hub.make
+money.ahead
+money.story
+money.envelopes
+money.hide
+money.payCycle
+money.workTime

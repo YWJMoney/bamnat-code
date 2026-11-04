@@ -110,12 +110,12 @@ object FeatureSwitches {
         "money.asks", "money.installPlan", "money.heat", "backup.nudge", "day.leaveTime",
         "recipe.browse", // [RCP-38] 1.34 설정 › 나눔 판의 스위치
         "recipe.update", "recipe.maker", "recipe.request", // [RCX-20] 1.35 새 판 알림·팔로우·답 알림·요청 판 보이기
-        "money.ahead", "money.envelopes", "money.payCycle", "money.workTime") // 1.37 [LEDH-01][LEDH-06][LEDH-07]
+        "money.ahead", "money.story", "money.envelopes", "money.payCycle", "money.workTime") // 1.37 [LEDH-01][LEDH-06][LEDH-07]
 
     /** 1.32 [WTYP-08] The 가계부 card each of these features is ([com.bamnat.app.ui.money.MoneyPart]). */
     private val MONEY_CARDS = mapOf("money.cardBill" to "cardbill", "money.shiftSpend" to "shiftspend",
         "money.subscriptions" to "subs", "money.cardThreshold" to "card25", "money.asks" to "ask", "money.installPlan" to "install",
-        "money.ahead" to "ahead", "money.envelopes" to "envelopes")
+        "money.ahead" to "ahead", "money.story" to "story", "money.envelopes" to "envelopes")
 
     private fun moneyCardShown(c: AppContainer, card: String) =
         com.bamnat.app.ui.money.moneyParts(c.settingsRepository.current.moneyLayout).firstOrNull { it.part.id == card }?.shown ?: true

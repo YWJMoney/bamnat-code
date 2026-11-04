@@ -126,6 +126,7 @@ class MainActivity : ComponentActivity() {
         }
         // G 1.32 [WTYP-07] 오전/오후로 보기: every time on screen is written by Fmt, so the root is drawn again on a change.
         com.bamnat.app.ui.Fmt.clock12 = settings.clock12
+        com.bamnat.app.ui.Fmt.masked = settings.hideAmounts // 1.37 [LEDH-22]
         val photoLook = androidx.compose.runtime.remember(settings.photoLook) { com.bamnat.core.recipe.PhotoLook.decode(settings.photoLook) }
         // [STU-37] 1.36 근무에 따라 바뀌는 모양: 야간 근무 중·쉬는 날의 화면 색과 달력 색 over the usual ones.
         val shiftLooks = androidx.compose.runtime.remember(settings.shiftLooks) { com.bamnat.core.recipe.ShiftLooks.decode(settings.shiftLooks) }
