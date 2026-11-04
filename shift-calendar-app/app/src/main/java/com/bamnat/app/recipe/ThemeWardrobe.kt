@@ -151,6 +151,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     suspend fun wearAgain(w: ThemeLease.Wear): Boolean = runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { wear(it, w.code, w.own, w.ver) } ?: false
 
     /** The look on the phone now as a theme of mine (its looks only). */
+    /** 1.37 PC 3차: the name of the theme worn now, so a link calls the look by it; null when the user's own look is on. */
+    fun wornTitle(): String? = _lease.value.worn?.let { w -> runCatching { RecipeCodec.read(w.body).title }.getOrNull() }?.trim()?.takeIf { it.isNotEmpty() }
+
     suspend fun myLookRecipe(title: String): Recipe {
         val pieces = BuiltInThemes.LOOK_KINDS.mapNotNull { k ->
             runCatching { c.recipes.pieces.current(k, emptyMap(), PersonalCalendar.MAIN) }.getOrNull()?.takeIf { it.isNotEmpty() }

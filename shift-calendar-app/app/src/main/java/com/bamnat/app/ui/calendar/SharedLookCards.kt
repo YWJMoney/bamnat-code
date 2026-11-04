@@ -60,6 +60,8 @@ internal fun SharedLookCards(schedule: com.bamnat.app.share.SharedSchedule, link
     // PC 1차: after 넣기 nothing on screen said it went on or how to take it back; the card now says so with 되돌리기 beside it.
     var done by remember(linkId) { mutableStateOf<Pair<Long, Int>?>(null) }
     var undone by remember(linkId) { mutableStateOf(false) }
+    // PC 3차: 되돌리기 put the days back but left 일하는 방식 on the sender's; the line then offers the old one back too.
+    var switchedFrom by remember(linkId) { mutableStateOf<com.bamnat.core.work.WorkStyle?>(null) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -86,13 +88,21 @@ internal fun SharedLookCards(schedule: com.bamnat.app.share.SharedSchedule, link
                         scope.launch { if (c.recipes.undo(id)) undone = true }
                     }, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
                 }
+                val back = switchedFrom
+                if (undone && back != null) OutlinedButton(onClick = {
+                    scope.launch {
+                        runCatching { c.settingsRepository.update { it.copy(workStyle = back) } }
+                        switchedFrom = null
+                        Toast.makeText(c.appContext, "일하는 방식을 ‘${back.label}’${ro(back.label)} 되돌렸어요", Toast.LENGTH_SHORT).show()
+                    }
+                }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("일하는 방식도 ‘${back.label}’${ro(back.label)} 되돌리기") }
             }
             if (kit != null && fits.isNotEmpty()) {
                 var picking by remember { mutableStateOf(false) }
                 OutlinedButton(onClick = { picking = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text("근무 설정 골라 넣기 (${fits.size}가지)")
                 }
-                if (picking) KitDialog(kit.copy(pieces = fits), name, style, onPut = { id, n -> done = id to n; undone = false }) { picking = false }
+                if (picking) KitDialog(kit.copy(pieces = fits), name, style, onPut = { id, n, from -> done = id to n; undone = false; switchedFrom = from }) { picking = false }
             } else if (kit != null) {
                 Text("보낸 근무 설정은 지금 근무 방식에는 맞지 않아 넣을 것이 없어요.", style = MaterialTheme.typography.bodySmall)
             }
@@ -103,7 +113,7 @@ internal fun SharedLookCards(schedule: com.bamnat.app.share.SharedSchedule, link
 /** [SHR-32] One row per piece: its name, what it would do here, ticked at first; 고른 것 넣기 puts the ticked ones on 내 달력. */
 @Composable
 private fun KitDialog(
-    kit: Recipe, name: String, mine: com.bamnat.core.work.WorkStyle?, onPut: (Long, Int) -> Unit, onDismiss: () -> Unit,
+    kit: Recipe, name: String, mine: com.bamnat.core.work.WorkStyle?, onPut: (Long, Int, com.bamnat.core.work.WorkStyle?) -> Unit, onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
     val c = context.appContainer
@@ -136,7 +146,7 @@ private fun KitDialog(
                 if (ok) {
                     if (switching) Toast.makeText(context.applicationContext,
                         "일하는 방식을 ‘${theirs!!.label}’${ro(theirs!!.label)} 바꿨어요. 설정 › 일하는 방식에서 다시 바꿔요", Toast.LENGTH_LONG).show()
-                    onPut(id!!, picks.size)
+                    onPut(id!!, picks.size, if (switching) mine else null)
                     onDismiss()
                 } else Toast.makeText(context.applicationContext, "넣지 못했어요. 다시 해 주세요", Toast.LENGTH_LONG).show()
             }

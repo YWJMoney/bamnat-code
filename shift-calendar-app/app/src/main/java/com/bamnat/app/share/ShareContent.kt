@@ -55,7 +55,9 @@ object ShareContent {
      * or too big for a link.
      */
     suspend fun lookFile(c: AppContainer, title: String): String? = runCatching {
-        val name = title.trim().take(20).let { if (it.isEmpty()) "보낸 분의 테마" else "${it}의 테마" }
+        // PC 3차: with no theme worn it is the sender's own look, not a 테마; a worn theme keeps its name.
+        val name = c.wardrobe.wornTitle()?.take(30)
+            ?: title.trim().take(20).let { if (it.isEmpty()) "보낸 분의 달력 모양" else "${it} 님의 달력 모양" }
         val r = com.bamnat.core.recipe.LookParts.withoutPhotos(c.wardrobe.myLookRecipe(name))
         ShareKit.lookText(r)
     }.getOrNull()
