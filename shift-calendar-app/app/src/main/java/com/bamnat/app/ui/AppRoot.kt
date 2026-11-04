@@ -1643,7 +1643,8 @@ private fun AppNavHost(
                     onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
                     onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
                     onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-                    header = {
+                    // PC 확인 41e73582: the talk comes first; 장터's cards follow it.
+                    footer = {
                         if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
                             onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
                             onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },

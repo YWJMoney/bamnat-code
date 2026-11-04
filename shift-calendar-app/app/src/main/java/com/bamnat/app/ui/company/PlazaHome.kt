@@ -232,6 +232,8 @@ fun PlazaHomeScreen(
     onShare: () -> Unit,
     /** [CALI-08] Above everything: which calendar's 광장 this is (the calendar chips), when the phone has two or more. */
     header: (@Composable () -> Unit)? = null,
+    /** PC 확인 41e73582: what goes under the talk (교대 광장's 장터 cards, which pushed 글 보기·쓰기 two screens down). */
+    footer: (@Composable () -> Unit)? = null,
 ) {
     val plan by vm.plan.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
@@ -304,6 +306,7 @@ fun PlazaHomeScreen(
                 }
                 // [J133-71] 1.33: other companies' rules mean something to 교대·일근 and to a company's room, not to 알바·현장·가게·투자.
                 if (plan.top == StylePlaza.Top.COMPANY_ROOM) TextButton(onClick = onAll, modifier = Modifier.fillMaxWidth()) { Text("다른 회사 규칙 광장 보기") }
+                footer?.invoke()
                 Spacer(Modifier.height(24.dp))
             }
         }

@@ -19,6 +19,8 @@ import androidx.compose.ui.unit.dp
 import com.bamnat.app.AppContainer
 import com.bamnat.app.company.VillageReplies
 import com.bamnat.app.ui.company.SoftCard
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.flow.map
 
 /**
  * [TOWN-02] 1.37: at the top of 마을 › 광장, "💬 내 글에 새 답 N개" for answers in any plaza I wrote in, except the room on
@@ -27,14 +29,20 @@ import com.bamnat.app.ui.company.SoftCard
  */
 @Composable
 fun NewAnswersLine(c: AppContainer, except: String?, onOpen: () -> Unit, modifier: Modifier = Modifier) {
-    if (!c.companyApi.enabled || c.settingsRepository.current.plazaRulesAgreed <= 0) return
+    // Read as the settings change, so agreeing to the rules on this run brings the line without leaving 광장.
+    val agreed by remember { c.settingsRepository.settings.map { it.plazaRulesAgreed } }.collectAsStateWithLifecycle(c.settingsRepository.current.plazaRulesAgreed)
+    if (!c.companyApi.enabled || agreed <= 0) return
     var fresh by remember { mutableIntStateOf(0) }
     var looks by remember { mutableIntStateOf(0) }
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { looks++ }
     androidx.compose.runtime.LaunchedEffect(looks, except) {
-        val posts = runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() ?: return@LaunchedEffect
+        val posts = runCatching { c.companyApi.myPosts(c.companyStore.device) }
+            .onFailure { if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.i("BamnatTown", "myPosts failed: $it") }.getOrNull() ?: return@LaunchedEffect
         val rooms = posts.associate { it.id to it.room }
-        fresh = VillageReplies.fresh(c.appContext, posts).filterKeys { rooms[it] != except }.values.sum()
+        val all = VillageReplies.fresh(c.appContext, posts)
+        fresh = all.filterKeys { rooms[it] != except }.values.sum()
+        // PC 확인용 (디버그 빌드만): adb logcat -s BamnatTown
+        if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.i("BamnatTown", "posts=${posts.size} answers=${VillageReplies.others(posts)} new=$all except=$except")
     }
     if (fresh <= 0) return
     SoftCard(modifier.fillMaxWidth(), highlighted = true) {

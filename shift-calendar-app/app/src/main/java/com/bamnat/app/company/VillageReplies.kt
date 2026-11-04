@@ -28,17 +28,46 @@ object VillageReplies {
         o.keys().asSequence().associateWith { o.optInt(it) }
     }.getOrNull()
 
-    /** New answers per post since this phone last saw them; on the very first look, none (and what is there now is noted). */
-    fun fresh(context: Context, posts: List<MyPost>): Map<String, Int> {
-        val now = others(posts)
-        val was = seen(context) ?: run { markSeen(context, posts); return emptyMap() }
-        return now.mapValues { (id, n) -> (n - (was[id] ?: 0)).coerceAtLeast(0) }.filterValues { it > 0 }
+    /** How recent a post must be, on the very first look, for its answers to count as new. */
+    private val RECENT: java.time.Duration = java.time.Duration.ofDays(7)
+
+    /**
+     * New answers per post since this phone last saw them. PC 확인 41e73582 (첫 기준이 답이 온 뒤에 잡히면 그 답이 끝내 새 답이 안 돼요):
+     * on the very first look, posts of the last 7 days count all their answers as new; only older ones are noted as seen.
+     */
+    fun fresh(context: Context, posts: List<MyPost>, now: java.time.Instant = com.bamnat.core.time.Today.instant()): Map<String, Int> {
+        val counts = others(posts)
+        val was = seen(context) ?: run {
+            val old = posts.filter { it.parent == null && it.at.isBefore(now.minus(RECENT)) }.map { it.id }.toSet()
+            write(context, counts.filterKeys { it in old })
+            counts.filterKeys { it in old }
+        }
+        return counts.mapValues { (id, n) -> (n - (was[id] ?: 0)).coerceAtLeast(0) }.filterValues { it > 0 }
+    }
+
+    /**
+     * PC 확인 41e73582: answers read in the talk itself count as seen too, so 광장's line does not keep saying them. [posts] are a
+     * talk's posts as (id, parent, mine).
+     */
+    fun seenInTalk(context: Context, posts: List<Triple<String, String?, Boolean>>) {
+        val mineTop = posts.filter { it.third && it.second == null }.map { it.first }.toSet()
+        if (mineTop.isEmpty()) return
+        val read = posts.filter { it.second in mineTop && !it.third }.groupingBy { it.second!! }.eachCount()
+        val was = seen(context).orEmpty().toMutableMap()
+        var changed = false
+        for (id in mineTop) {
+            val n = read[id] ?: 0
+            if (n > (was[id] ?: 0)) { was[id] = n; changed = true }
+        }
+        if (changed || seen(context) == null) write(context, was)
+    }
+
+    private fun write(context: Context, counts: Map<String, Int>) {
+        val o = JSONObject()
+        counts.forEach { (id, n) -> o.put(id, n) }
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(K_SEEN, o.toString()).apply() }
     }
 
     /** What [posts] show now counts as seen (kept for the posts still listed, so the note stays small). */
-    fun markSeen(context: Context, posts: List<MyPost>) {
-        val o = JSONObject()
-        others(posts).forEach { (id, n) -> o.put(id, n) }
-        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(K_SEEN, o.toString()).apply() }
-    }
+    fun markSeen(context: Context, posts: List<MyPost>) = write(context, others(posts))
 }

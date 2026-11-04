@@ -389,12 +389,16 @@ fun VoteButtons(
 fun TalkSheet(holder: TalkHolder) {
     val open by holder.open.collectAsStateWithLifecycle()
     val o = open ?: return
-    var text by rememberSaveable(o.setup) { mutableStateOf("") }
+    // PC 확인 41e73582: the words, the post answered and the kind live in the holder, so the rules and name cards cannot drop them.
+    var text by holder.draft
     var busy by remember { mutableStateOf(false) }
     var error by remember(o.setup) { mutableStateOf<String?>(null) }
     var flagging by remember { mutableStateOf<TalkPost?>(null) }
-    var replyTo by remember(o.setup) { mutableStateOf<TalkPost?>(null) }
-    var kind by rememberSaveable(o.setup) { mutableStateOf(o.startKind ?: "talk") }
+    var replyId by holder.replyId
+    val replyTo = replyId?.let { id -> o.talk?.posts?.firstOrNull { it.id == id } }
+    var kind by holder.kind
+    var justSent by holder.justSent
+    LaunchedEffect(justSent) { if (justSent != null) { kotlinx.coroutines.delay(4_000); justSent = null } }
     // 1.36 [VIL-08] The kind the list shows (null for all).
     var only by rememberSaveable(o.setup) { mutableStateOf<String?>(null) }
     var change by remember(o.setup) { mutableStateOf(listOf(blankChange())) }
@@ -498,7 +502,7 @@ fun TalkSheet(holder: TalkHolder) {
                             Column(if (focused) Modifier.bringIntoViewRequester(bring)
                                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f), MaterialTheme.shapes.medium) else Modifier) {
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
-                                onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
+                                onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
                                 company = o.company, setup = o.setup, roomName = if (o.room) o.title else null,
                                 onRedo = if (talk.past || o.room) null else ({ redoing = p }),
                                 onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i) { e -> error = e } }))
@@ -508,7 +512,7 @@ fun TalkSheet(holder: TalkHolder) {
                                     Spacer(Modifier.width(20.dp))
                                     Column(Modifier.weight(1f)) {
                                         PostRow(r, onDelete = { holder.delete(r.id) }, onFlag = { flagging = r }, onHide = { hiding = r },
-                                            onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
+                                            onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
                                             helpful = r.id == p.answer,
                                             onHelpful = if (p.kind == "question" && p.mine && !r.mine && r.hidden == null && !talk.past)
                                                 ({ holder.answer(p.id, r.id) { e -> error = e } }) else null)
@@ -538,6 +542,10 @@ fun TalkSheet(holder: TalkHolder) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             } else {
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
+                // PC 확인 41e73582 (보낸 답이 안 보여 한 번 더 보냈어요): said, and the list goes to it, marked.
+                if (justSent != null && error == null) Text("✓ 올렸어요 · 위에 표시한 글이에요", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp)
+                        .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                 // [PLZ-09] What kind of post: a word, a question, or a proposal to change the rule.
                 if (replyTo == null) {
                     // PC 확인 f39bcfbe: what kind of post to write, as buttons joined in one bar under "쓸 글", so it does not look like
@@ -557,7 +565,7 @@ fun TalkSheet(holder: TalkHolder) {
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                         Text("${replyTo?.let { it.nick ?: "참여자 ${it.who}" }}에게 답글", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { replyTo = null }) { Text("답글 취소") }
+                        TextButton(onClick = { replyId = null }) { Text("답글 취소") }
                     }
                 }
                 if (o.room && kind == "question" && replyTo == null) {
@@ -635,7 +643,7 @@ fun TalkSheet(holder: TalkHolder) {
                                     busy = false; error = e
                                     // PC 확인 V35: sent, the box starts over: 이야기, no recipe, no choices.
                                     if (e == null) {
-                                        text = text.trim().removePrefix(body).trimStart(); replyTo = null; pollDraft = emptyList(); attach = null
+                                        text = text.trim().removePrefix(body).trimStart(); replyId = null; pollDraft = emptyList(); attach = null
                                         change = listOf(blankChange()); if (o.room || proposing) kind = "talk"
                                     }
                                 }

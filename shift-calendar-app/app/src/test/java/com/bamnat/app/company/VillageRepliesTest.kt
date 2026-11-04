@@ -25,12 +25,25 @@ class VillageRepliesTest {
         assertEquals(mapOf("a" to 1), VillageReplies.others(listOf(q("a", 3), mine("r1", "a"), mine("r2", "a"))))
     }
 
-    @Test fun firstLookOnlyTakesNoteThenNewAnswersShowUntilSeen() {
-        assertTrue(VillageReplies.fresh(context, listOf(q("a", 2))).isEmpty())
+    @Test fun firstLookNotesOldPostsThenNewAnswersShowUntilSeen() {
+        val now = at.plus(java.time.Duration.ofDays(10))
+        assertTrue(VillageReplies.fresh(context, listOf(q("a", 2)), now).isEmpty())
         val later = listOf(q("a", 4), q("b", 1))
-        assertEquals(mapOf("a" to 2, "b" to 1), VillageReplies.fresh(context, later))
+        assertEquals(mapOf("a" to 2, "b" to 1), VillageReplies.fresh(context, later, now))
         VillageReplies.markSeen(context, later)
-        assertTrue(VillageReplies.fresh(context, later).isEmpty())
+        assertTrue(VillageReplies.fresh(context, later, now).isEmpty())
+    }
+
+    /** PC 확인 41e73582: answers that came before 광장 was first opened after the update still show for a recent post. */
+    @Test fun firstLookAfterTheAnswersStillShowsThemOnARecentPost() {
+        assertEquals(mapOf("a" to 2), VillageReplies.fresh(context, listOf(q("a", 2)), at.plusSeconds(600)))
+    }
+
+    @Test fun answersReadInTheTalkAreSeen() {
+        val now = at.plusSeconds(600)
+        VillageReplies.seenInTalk(context, listOf(Triple("a", null, true), Triple("r1", "a", false), Triple("r2", "a", false), Triple("r3", "a", true)))
+        assertTrue(VillageReplies.fresh(context, listOf(q("a", 3), mine("r3", "a")), now).isEmpty())
+        assertEquals(mapOf("a" to 1), VillageReplies.fresh(context, listOf(q("a", 4), mine("r3", "a")), now))
     }
 
     @Test fun hiddenPostsSayNothing() {

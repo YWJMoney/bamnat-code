@@ -1786,3 +1786,4 @@ TOWN-03,"1.37 묶음 D2 후보 2: 마을 이름을 처음 보이는 곳에서 �
 TOWN-04,"1.37 묶음 D2 후보 3: 올리기 확인 스위치를 아래 고정 줄의 '올리기' 단추 바로 위로(줄 전체를 눌러도 켜짐)",1.37,진행 중,에뮬레이터 확인,RecipeMakeScreen bottomBar
 TOWN-05,"1.37 묶음 D2 후보 26: 회사 규칙 토론 창에 맞아요·달라요와 제안 채택 기준 한 줄(서버 기준값)",1.37,진행 중,에뮬레이터 확인,"TalkHolder.voteLine, CompanyBoard TalkSheet"
 TOWN-06,"1.37 묶음 D2 후보 8·25: 마을에서 찾기에 근무 유형 거르기 칩(전체·유형별), 전체에서는 내 유형 작품·글·요청 먼저, 작품 줄에 유형 표시",1.37,진행 중,에뮬레이터 확인,"VillageSearchScreen, FoundRequest.style"
+ADAGE-01,"1.37 Play 대상 연령 13세 이상(사용자 2026-11-04 13:07): 앱 광고 요청에 최대 광고 콘텐츠 등급 T(기존 RequestConfiguration은 유지하고 합침). AdMob 콘솔 설정은 사용자가",1.37,진행 중,광고 켜기 전 확인,"Ads.kt AdContent.teenSafe, AdContentTest"

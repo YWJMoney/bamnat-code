@@ -612,6 +612,17 @@ class TalkHolder(
     val open: StateFlow<Open?> = _open.asStateFlow()
 
     /**
+     * PC 확인 41e73582 (처음 답글을 누르면 규칙 창·이름 카드를 거친 뒤 '○○에게 답글'이 풀려 새 글로 바뀌었어요): what is being written
+     * — the words, the post it answers and the kind — is held here, outside the sheet's own state, until it is sent or the talk
+     * is opened anew.
+     */
+    val draft = androidx.compose.runtime.mutableStateOf("")
+    val replyId = androidx.compose.runtime.mutableStateOf<String?>(null)
+    val kind = androidx.compose.runtime.mutableStateOf("talk")
+    /** PC 확인 41e73582: the post just sent, so the sheet shows it and says so (보낸 답이 안 보여 두 번 보냈어요). */
+    val justSent = androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    /**
      * [SPD-14] Whether this phone changed the talk (wrote, took back, voted, hid) since it was shown: the screen under the sheet
      * takes [last] when it closes instead of reading everything again.
      */
@@ -630,6 +641,8 @@ class TalkHolder(
         changed = false
         last = kept
         com.bamnat.app.company.NetTimings.cached(kept != null)
+        val same = _open.value?.let { it.company == company && it.setup == setup } == true
+        if (!same) { draft.value = ""; replyId.value = null; this.kind.value = kind ?: "talk"; justSent.value = null }
         _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null, startKind = kind, focus = focus)
         reload()
     }
@@ -672,13 +685,15 @@ class TalkHolder(
                 val t = c.companyApi.talk(c.companyStore.device, o.company, o.setup)
                 c.companySearch.cache.keepTalk(o.company, o.setup, t)
                 if (o.company == _open.value?.company || _open.value == null) last = t
+                // [TOWN-02] Answers to my posts read here are not new on 광장's line any more.
+                if (o.room) runCatching { com.bamnat.app.company.VillageReplies.seenInTalk(c.appContext, t.posts.map { Triple(it.id, it.parent, it.mine) }) }
                 o.copy(talk = t, error = null, refreshing = false)
             } catch (e: CompanyException) {
                 // [SPD-13] What was kept stays on screen; the problem shows only when there is nothing to show.
                 o.copy(error = if (o.talk != null) null else companyProblem(e), refreshing = false)
             }
             val now = _open.value
-            if (now?.company == o.company && now.setup == o.setup) _open.value = next.copy(talk = next.talk ?: now.talk)
+            if (now?.company == o.company && now.setup == o.setup) _open.value = next.copy(talk = next.talk ?: now.talk, focus = now.focus)
         }
     }
 
@@ -723,10 +738,13 @@ class TalkHolder(
                 // [PLAZA-02] 다른 점 말하기 sends the company's setup as edited, not this phone's own.
                 val setup = if (kind != "proposal") null
                 else setupText?.let { org.json.JSONObject(it) } ?: if (withSetup) c.companyOf(calendar).share.exportForServer() else null
-                if (attach != null && parent == null && kind == "show") c.companyApi.postShow(c.companyStore.device, o.company, o.setup, text, attach.first)
+                val newId = if (attach != null && parent == null && kind == "show") c.companyApi.postShow(c.companyStore.device, o.company, o.setup, text, attach.first)
                 else if (poll.size >= 2 && parent == null && kind == "question") c.companyApi.postPoll(c.companyStore.device, o.company, o.setup, text, poll)
                 else if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
                 else c.companyApi.post(c.companyStore.device, o.company, o.setup, text, parent, kind, change, setup)
+                // PC 확인 41e73582: the sheet goes to what was just sent and marks it.
+                justSent.value = newId
+                _open.value?.takeIf { it.company == o.company && it.setup == o.setup }?.let { _open.value = it.copy(focus = newId) }
                 c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")
                 // [FIN130-06] A proposal is a version of the company's page: the page kept on the phone is read again next time.
                 if (kind == "proposal") c.companySearch.forgetPage(o.company)
@@ -1031,6 +1049,17 @@ class ActivityHolder(
 
     private val _open = MutableStateFlow<Open?>(null)
     val open: StateFlow<Open?> = _open.asStateFlow()
+
+    /**
+     * PC 확인 41e73582 (처음 답글을 누르면 규칙 창·이름 카드를 거친 뒤 '○○에게 답글'이 풀려 새 글로 바뀌었어요): what is being written
+     * — the words, the post it answers and the kind — is held here, outside the sheet's own state, until it is sent or the talk
+     * is opened anew.
+     */
+    val draft = androidx.compose.runtime.mutableStateOf("")
+    val replyId = androidx.compose.runtime.mutableStateOf<String?>(null)
+    val kind = androidx.compose.runtime.mutableStateOf("talk")
+    /** PC 확인 41e73582: the post just sent, so the sheet shows it and says so (보낸 답이 안 보여 두 번 보냈어요). */
+    val justSent = androidx.compose.runtime.mutableStateOf<String?>(null)
 
     /**
      * [SPD-13] 1.30 AP1: 내 활동 as last read shows at once (kept by this phone's install, its own 시세 amounts left out), then
