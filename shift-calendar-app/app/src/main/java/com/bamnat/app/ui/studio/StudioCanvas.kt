@@ -87,6 +87,8 @@ internal class ZoomState {
     var size by mutableStateOf(IntSize.Zero)
     var origin by mutableStateOf(Offset.Zero)
     var density = 1f
+    /** [CNV-04] How much of the space's bottom the 더 보기 판 covers (px): the example can be moved up that much more. */
+    var cover by mutableFloatStateOf(0f)
 
     val min: Float get() = min(StudioEdit.ZOOM_MIN, fit)
     val percent: Int get() = Math.round(scale * 100)
@@ -123,40 +125,70 @@ internal class ZoomState {
         touched = true
     }
 
+    /** [CNV-04] Moved (not resized) so the box [r] (root coordinates, as drawn now) sits in the middle of what the 판 leaves in view. */
+    fun reveal(r: Rect) {
+        if (size.height == 0) return
+        val top = origin.y
+        val bottom = origin.y + size.height - cover
+        if (r.top >= top + 8f && r.bottom <= bottom - 8f) return
+        val want = (top + bottom) / 2f
+        offset = clamp(offset + Offset(0f, want - r.center.y), scale)
+        touched = true
+    }
+
+    /** Whether one finger moves the example: it is bigger than its space, or the 판 covers some of it. */
+    val pannable: Boolean get() = scale > fit + 0.01f || cover > 0f
+
     /** Some of the example always stays in view. */
     private fun clamp(o: Offset, s: Float): Offset {
         val cw = CANVAS_W.value * density * s
         val ch = CANVAS_H.value * density * s
         val ax = max(0f, (cw - size.width) / 2f) + size.width * 0.35f
         val ay = max(0f, (ch - size.height) / 2f) + size.height * 0.35f
-        return Offset(o.x.coerceIn(-ax, ax), o.y.coerceIn(-ay, ay))
+        return Offset(o.x.coerceIn(-ax, ax), o.y.coerceIn(-ay - cover, ay))
     }
 }
 
-/** Two fingers zoom and move; one finger is left to what is under it. */
+/**
+ * Two fingers zoom and move. One finger taps what is under it; a drag with one finger moves the example when it is bigger than its space
+ * (PC 확인 1.37 A1: 300%에서 한 손가락으로 끌면 누르기가 되어 고르기가 풀리고 아래 판이 열렸어요).
+ */
 private fun Modifier.twoFingers(z: ZoomState): Modifier = pointerInput(z) {
     awaitEachGesture {
         awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        var moved = Offset.Zero
+        var dragging = false
+        var two = false
         do {
             val e = awaitPointerEvent(PointerEventPass.Initial)
-            if (e.changes.count { it.pressed } >= 2) {
+            val down = e.changes.filter { it.pressed }
+            if (down.size >= 2) {
+                two = true
                 val mid = Offset(size.width / 2f, size.height / 2f)
                 z.transform(e.calculateZoom(), e.calculatePan(), e.calculateCentroid(useCurrent = true) - mid)
                 e.changes.forEach { it.consume() }
-            }
+            } else if (!two && down.size == 1 && z.pannable) {
+                val c = down[0]
+                val step = c.position - c.previousPosition
+                moved += step
+                if (!dragging && moved.getDistance() > viewConfiguration.touchSlop) dragging = true
+                if (dragging) { z.transform(1f, step, Offset.Zero); c.consume() }
+            } else if (dragging || two) e.changes.forEach { it.consume() }
         } while (e.changes.any { it.pressed })
     }
 }
 
 /** [CNV-01][CNV-02] The canvas: the example in the middle of all the space it has, at [z]'s size and place. */
 @Composable
-internal fun ZoomCanvas(z: ZoomState, modifier: Modifier = Modifier, height: Dp = CANVAS_H, picking: Modifier = Modifier, content: @Composable () -> Unit) {
+internal fun ZoomCanvas(z: ZoomState, modifier: Modifier = Modifier, height: Dp = CANVAS_H, picking: Modifier = Modifier,
+    /** A tap nothing on the example took (PC 확인 1.37 A1: 빈 곳을 눌러도 고르기가 안 풀렸어요). */
+    onEmptyTap: () -> Unit = {}, content: @Composable () -> Unit) {
     z.density = LocalDensity.current.density
     BoxWithConstraints(
         modifier.clipToBounds()
             .onGloballyPositioned { z.origin = it.positionInRoot(); z.size = it.size }
             .twoFingers(z)
-            .pointerInput(z) { detectTapGestures(onDoubleTap = { if (z.touched) z.toFit() else z.zoomTo(z.scale * 2f, it - Offset(size.width / 2f, size.height / 2f)) }) }
+            .pointerInput(z, onEmptyTap) { detectTapGestures(onTap = { onEmptyTap() }, onDoubleTap = { if (z.touched) z.toFit() else z.zoomTo(z.scale * 2f, it - Offset(size.width / 2f, size.height / 2f)) }) }
             .then(picking),
     ) {
         val fit = (min(maxWidth.value / CANVAS_W.value, maxHeight.value / height.value) * 0.97f).coerceAtMost(1.6f)
@@ -171,7 +203,15 @@ internal fun ZoomCanvas(z: ZoomState, modifier: Modifier = Modifier, height: Dp 
 /** [CNV-02] − 배율 + 맞춤, over the canvas's corner; the percent itself goes to 100%. */
 @Composable
 internal fun ZoomControls(z: ZoomState, onFocus: (() -> Unit)?, modifier: Modifier = Modifier) {
+    // PC 확인 1.37 A1 (확대 상자가 미리 보기의 아래 탭 막대를 늘 가림): folded to its percent, one tap opens it.
+    var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     Surface(modifier, shape = RoundedCornerShape(20.dp), tonalElevation = 4.dp, shadowElevation = 2.dp) {
+        if (!open) {
+            TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 44.dp).semantics { contentDescription = "확대 ${z.percent}퍼센트, 확대 단추 펴기" }) {
+                Text("🔍 ${z.percent}%")
+            }
+            return@Surface
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { z.step(-1) }, enabled = z.scale > z.min + 0.01f, modifier = Modifier.size(44.dp)
                 .semantics { contentDescription = "작게 보기" }) { Text("−") }
@@ -182,6 +222,7 @@ internal fun ZoomControls(z: ZoomState, onFocus: (() -> Unit)?, modifier: Modifi
                 .semantics { contentDescription = "크게 보기" }) { Text("+") }
             if (onFocus != null) TextButton(onClick = onFocus, modifier = Modifier.heightIn(min = 44.dp)) { Text("고른 곳 확대") }
             TextButton(onClick = { z.toFit() }, enabled = z.touched, modifier = Modifier.heightIn(min = 44.dp)) { Text("맞춤") }
+            TextButton(onClick = { open = false }, modifier = Modifier.size(44.dp).semantics { contentDescription = "확대 단추 접기" }) { Text("›") }
         }
     }
 }
@@ -301,7 +342,8 @@ internal fun CardBar(
     onHide: () -> Unit, onLook: () -> Unit,
 ) {
     BarSurface {
-        Trail(listOf("" to page, "card" to label)) { if (it == "") onSel(null) }
+        // PC 확인 1.37 A1: 고르기 끝 and the page's name both let the card go (Trail gives null for them).
+        Trail(listOf("" to page, "card" to label)) { onSel(null) }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(selected = false, onClick = { onMove(-1) }, enabled = canUp, label = { Text("▲ 위로") })
             FilterChip(selected = false, onClick = { onMove(1) }, enabled = canDown, label = { Text("▼ 아래로") })

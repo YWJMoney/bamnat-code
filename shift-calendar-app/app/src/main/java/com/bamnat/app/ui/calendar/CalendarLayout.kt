@@ -65,7 +65,21 @@ internal fun calendarAbove(order: List<CalendarPart>): (CalendarPart) -> Boolean
 }
 
 /** [CUST-01] The parts in the user's order, each with whether it shows; three follow their own settings switch. */
-internal fun AppSettings.calendarParts(): List<PageLayout.Placed<CalendarPart>> {
+internal fun AppSettings.calendarParts(): List<PageLayout.Placed<CalendarPart>> =
+    lineParts().map { p ->
+        when (p.part) {
+            CalendarPart.DAY_CARD -> p.copy(shown = showDayCard)
+            CalendarPart.REST -> p.copy(shown = restCheck)
+            CalendarPart.MEMOS -> p.copy(shown = calendarMemos)
+            else -> p
+        }
+    }
+
+/**
+ * [CNV-06] The parts as the layout line has them, the three with their own switch as the line says. A move writes this back, so
+ * moving a card never turns 하루 카드 off in the line (PC 확인 1.37 A1: 요약을 내렸다 올리면 하루 카드가 숨겨졌어요).
+ */
+private fun AppSettings.lineParts(): List<PageLayout.Placed<CalendarPart>> {
     val layout = PageLayout.decode(calendarLayout)
     // [CVW-06] An order from before 1.35 has no month: it goes where the parts above end, never shown as new.
     val placed = layout.arrange(CalendarPart.entries.toList()) { it.id }.let { list ->
@@ -75,15 +89,7 @@ internal fun AppSettings.calendarParts(): List<PageLayout.Placed<CalendarPart>> 
             rest.take(at) + PageLayout.Placed(CalendarPart.MONTH, true, false) + rest.drop(at)
         }
     }
-    return placed.map { p ->
-        when (p.part) {
-            CalendarPart.MONTH -> p.copy(shown = true, isNew = false)
-            CalendarPart.DAY_CARD -> p.copy(shown = showDayCard)
-            CalendarPart.REST -> p.copy(shown = restCheck)
-            CalendarPart.MEMOS -> p.copy(shown = calendarMemos)
-            else -> p
-        }
-    }
+    return placed.map { p -> if (p.part == CalendarPart.MONTH) p.copy(shown = true, isNew = false) else p }
 }
 
 /** [FIT-01] Whether [part] belongs on this calendar: it suits its kind of work, or the user added it ([added]). */
@@ -101,7 +107,7 @@ internal fun AppSettings.withPartShown(part: CalendarPart, shown: Boolean): AppS
     CalendarPart.REST -> copy(restCheck = shown)
     CalendarPart.MEMOS -> copy(calendarMemos = shown, memoInCells = memoInCells && shown)
     else -> {
-        val placed = calendarParts().map { if (it.part == part) it.copy(shown = shown) else it }
+        val placed = lineParts().map { if (it.part == part) it.copy(shown = shown) else it }
         copy(calendarLayout = PageLayout.of(placed) { it.id }.encode())
     }
 }
@@ -111,7 +117,7 @@ internal fun AppSettings.withPartShown(part: CalendarPart, shown: Boolean): AppS
  * side (이번 달 메모 above the month for a memo-first page). The fixed parts stay where they are.
  */
 internal fun AppSettings.withPartMoved(part: CalendarPart, by: Int, seen: (CalendarPart) -> Boolean = { true }): AppSettings {
-    val placed = calendarParts()
+    val placed = lineParts()
     val movable = placed.filter { it.part.movable }.toMutableList()
     val from = movable.indexOfFirst { it.part == part }
     // The next part the user can see that way (one that does not suit this calendar is stepped over).

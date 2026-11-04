@@ -70,6 +70,11 @@ class StudioCanvasTest {
         assertFalse(calendarAbove(under.calendarParts().map { it.part })(CalendarPart.SUMMARY))
         val up = cards.across!!(under, CalendarPart.SUMMARY.id)
         assertTrue(calendarAbove(up.calendarParts().map { it.part })(CalendarPart.SUMMARY))
+        // PC 확인 1.37 A1: down and back up leaves 하루 카드 (a card with its own switch) as the line had it.
+        val dayShown = { x: AppSettings -> com.bamnat.app.ui.studio.StudioEdit.cardShown(x.calendarLayout, CalendarPart.entries.map { it.id }, CalendarPart.DAY_CARD.id) }
+        assertTrue(dayShown(d))
+        assertTrue(dayShown(under))
+        assertTrue(dayShown(up))
         // Hidden and put back from ‘카드 넣기’.
         val gone = cards.show(d, CalendarPart.COUNTS.id, false)
         assertTrue(CalendarPart.COUNTS.id in cards.hidden(gone))

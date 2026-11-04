@@ -717,10 +717,17 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 12.dp))
                 // [CNV-01] The canvas: the example takes all the room left, at any size ([CNV-02]).
                 val spotsOn = !half && !comparing && !peeking
+                BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
+                val panelH = (totalH * (if (panelBig) 0.66f else 0.42f)).coerceAtMost(maxHeight - 96.dp).coerceAtLeast(160.dp)
+                val coverPx = with(androidx.compose.ui.platform.LocalDensity.current) { if (panel) panelH.toPx() else 0f }
+                androidx.compose.runtime.SideEffect { zoom.cover = coverPx }
+                // [CNV-04] A part picked while the 판 is open (or the 판 opened over one) is brought into the part left in view.
+                LaunchedEffect(sel, panel, panelBig) { if (panel) sel?.let { id -> spots.boxes(id).firstOrNull()?.let { zoom.reveal(it) } } }
+                Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().weight(1f).background(MaterialTheme.colorScheme.surfaceContainerLowest)) {
                     ZoomCanvas(zoom, Modifier.fillMaxSize(), picking = Modifier
                         .holdToPeek(enabled = s.prevPieces != null) { peeking = it; if (!it) peekMarks = 0 }
-                        .partPicking(if (spotsOn) spots else null, sel) { id -> selectPart(id) }) {
+                        .partPicking(if (spotsOn) spots else null, sel) { id -> selectPart(id) }, onEmptyTap = { if (sel != null) selectPart(null) }) {
                         Box(Modifier.fillMaxSize()
                             // [STU-41] What the example shows is kept as a picture, for 올리기's 표지.
                             .drawWithContent { shotLayer.record { this@drawWithContent.drawContent() }; drawLayer(shotLayer) }) {
@@ -785,7 +792,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     }
                     if (sel == null && !hintSeen) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
                     ZoomControls(zoom, onFocus = sel?.let { id -> { spots.boxes(id).firstOrNull()?.let { zoom.focus(it) }; Unit } },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp))
+                        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp + if (panel) panelH else 0.dp))
                 }
                 // Lines about the example, under it.
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize()) {
@@ -829,9 +836,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                     }
                 }
-                // [CNV-04] 더 보기 판: every tool the studio has, under the canvas, at the height asked; the canvas keeps the rest.
+                }
+                // [CNV-04] 더 보기 판 (PC 확인 1.37 A1: 크게 열면 캔버스가 줄었어요): over the canvas, which keeps its size; the picked part is moved into the part left in view.
                 if (panel) Surface(tonalElevation = 2.dp, shadowElevation = 6.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
-                    modifier = Modifier.fillMaxWidth().height(totalH * (if (panelBig) 0.66f else 0.42f))) {
+                    modifier = Modifier.fillMaxWidth().height(panelH).align(Alignment.BottomCenter)) {
                     Column(Modifier.fillMaxSize()) {
                         val t = if (tool in area.tools) tool else area.tools.first()
                         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -976,6 +984,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             Spacer(Modifier.height(24.dp))
                         }
                     }
+                }
                 }
             }
             }
