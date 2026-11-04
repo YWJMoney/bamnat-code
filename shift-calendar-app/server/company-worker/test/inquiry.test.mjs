@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import worker from "../src/index.js";
+import { BILLING_KEEP_FROM } from "../src/inquiries.js";
 import { server, device, from, signIn, report, ORIGIN, adminHome } from "./helpers.mjs";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
@@ -329,6 +330,8 @@ test("[INQ-02][INQ-03][INQ-04] the asker sees where a question stands, rates the
 });
 
 test("1.36 [INQ-07] a 결제·환불 question is kept three years, also when its phone deletes it", async (t) => {
+  // From 처리방침 3.10's date for it (2026-12-02); before then the next test shows deleting deletes.
+  t.mock.timers.enable({ apis: ["Date"], now: Math.max(Date.now(), BILLING_KEEP_FROM + 60_000) });
   const { call, env, DB } = server();
   const n = (sql, ...p) => DB.db.prepare(sql).get(...p).n;
   const pay = (await call("POST", "/api/inquiries", question(1, { kind: "question", text: "구독을 해지했는데 환불은 어떻게 받나요" }), from(1))).data;
@@ -370,11 +373,12 @@ test("1.36 [INQ-07] a 결제·환불 question is kept three years, also when its
   // Half a year on, only the records are left; three years on, they go too.
   const day = 24 * 60 * 60 * 1000;
   const sweep = async (at) => {
-    t.mock.timers.enable({ apis: ["Date"], now: at });
+    const back = Date.now();
+    t.mock.timers.setTime(at);
     const waits = [];
     await worker.scheduled({ cron: "17 * * * *", scheduledTime: at }, env, { waitUntil: (p) => waits.push(p) });
     await Promise.all(waits);
-    t.mock.timers.reset();
+    t.mock.timers.setTime(back);
   };
   const start = Date.now();
   await sweep(start + 181 * day);
@@ -384,7 +388,18 @@ test("1.36 [INQ-07] a 결제·환불 question is kept three years, also when its
   assert.equal(n("SELECT COUNT(*) AS n FROM inquiry_messages"), 0);
 });
 
-test("1.36 [INQ-07] a deleted question taken out of the 결제·환불 record goes at once", async () => {
+test("1.36 [INQ-07] before 2026-12-02 a deleted 결제·환불 question goes at once, as any other", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: BILLING_KEEP_FROM - 24 * 60 * 60 * 1000 });
+  const { call, DB } = server();
+  const id = (await call("POST", "/api/inquiries", question(1, { kind: "question", text: "환불은 어떻게 받나요" }), from(1))).data.id;
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiries WHERE billing_at IS NOT NULL").get().n, 1);
+  assert.equal((await call("DELETE", `/api/inquiries/${id}`, undefined, mine(1))).status, 204);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiries").get().n, 0);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiry_messages").get().n, 0);
+});
+
+test("1.36 [INQ-07] a deleted question taken out of the 결제·환불 record goes at once", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Math.max(Date.now(), BILLING_KEEP_FROM + 60_000) });
   const { call, DB } = server();
   const id = (await call("POST", "/api/inquiries", question(1, { kind: "question", text: "결제는 됐는데 프로가 안 켜져요" }), from(1))).data.id;
   await call("DELETE", `/api/inquiries/${id}`, undefined, mine(1));

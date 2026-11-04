@@ -49,10 +49,17 @@ export const expiredInquiries = (now) => ["(billing_at IS NULL AND updated_at < 
  * it; a 결제·환불 record leaves the asker's app (cut from the phone, off 모두의 문의) and stays with the
  * developer until its three years are over.
  */
-export const forgetInquiries = (env, where, ...params) => [
-  stmt(env, `UPDATE inquiries SET device = 'gone' || id, public = 0, status = 'closed' WHERE billing_at IS NOT NULL AND (${where})`, ...params),
-  ...dropInquiries(env, `billing_at IS NULL AND (${where})`, ...params),
-];
+export const forgetInquiries = (env, where, ...params) => {
+  // 처리방침 3.10: keeping a deleted 결제·환불 record starts on 2026-12-02 (30 days' notice); before then, deleting deletes.
+  const keep = Date.now() >= BILLING_KEEP_FROM ? 1 : 0;
+  return [
+    stmt(env, `UPDATE inquiries SET device = 'gone' || id, public = 0, status = 'closed' WHERE billing_at IS NOT NULL AND ${keep} = 1 AND (${where})`, ...params),
+    ...dropInquiries(env, `(billing_at IS NULL OR ${keep} = 0) AND (${where})`, ...params),
+  ];
+};
+
+/** 처리방침 3.10's date for 결제·환불 records kept after the asker deletes them: 2026-12-02 00:00 KST. */
+export const BILLING_KEEP_FROM = Date.UTC(2026, 11, 1, 15);
 
 /** What the app may send with a question, as the developer app shows it: label, field, longest. */
 export const INQUIRY_INFO = [
