@@ -68,9 +68,10 @@ class DrwScreenshotTest : ScreenshotBase() {
         assertTrue(appears("내 서랍", exact = true))
         assertTrue(appears("지금 입은 테마"))
         assertTrue(appears(themes[1].title))
-        assertTrue(appears("전체 3", exact = true))
+        assertTrue(appears("전체 4", exact = true))
         assertTrue(appears("내가 만든 것 1", exact = true))
-        assertTrue(appears("입었던 것 1", exact = true))
+        assertTrue(appears("입었던 것 2", exact = true))
+        assertTrue(appears("입는 중 · 남의 테마"))
         assertTrue(appears("담아 둔 조각 1", exact = true))
         assertTrue(appears("📁 겨울", exact = true))
     }
@@ -114,6 +115,30 @@ class DrwScreenshotTest : ScreenshotBase() {
         fill()
         drawer()
         assertTrue(appears("내 서랍", exact = true))
+    }
+
+    /** PC 확인 e34fae4e (입은 뒤 되돌리기를 눌러도 그대로): the whole app, 마을 › 테마, a starter worn from 입어 보기, then 되돌리기. */
+    @Test fun aStarterWornThenUndoneInTheApp() = shoot("1495_drw_app_undo", PHONE_393) {
+        tab(4, wide = false)
+        tapText("테마", exact = true)
+        val first = themes.first().title
+        tapText(first, exact = true)
+        tapText("이 테마 입기", exact = true)
+        assertTrue(appears("입었어요. 기록은 그대로예요"))
+        assertEquals(first, c.wardrobe.lease.value.worn?.title)
+        tapText("되돌리기", exact = true)
+        assertTrue(appears("되돌렸어요", exact = true))
+        assertEquals(null, c.wardrobe.lease.value.worn)
+        assertTrue(appears("내 모양 (테마 없음)"))
+        // The starters stay after one is worn (PC 확인 e34fae4e), and saving asks for a name.
+        assertTrue(appears("처음이라면 이런 테마부터"))
+        tapText("지금 모양을 내 테마로 저장", prefix = true)
+        assertTrue(appears("어떤 이름으로 저장할까요?"))
+        typeInto("테마 이름", "출근용")
+        tapText("저장", exact = true)
+        assertEquals(listOf("출근용"), c.wardrobe.lease.value.history.filter { it.own }.map { it.title })
+        reveal("‘출근용’으로 서랍에 저장했어요")
+        reveal("🎨 출근용")
     }
 
     private companion object {

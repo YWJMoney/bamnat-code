@@ -455,8 +455,20 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
      * 입기 → 되돌리기 → 입기 does not hand out free ones. A 받은 레시피 row the 입기 wrote is marked taken back.
      */
     suspend fun undoTo(m: Mark) {
-        lastApplied?.let { id -> runCatching { c.recipes.undo(id) } }
+        val id = lastApplied
         lastApplied = null
+        // PC 확인 e34fae4e (입은 뒤 되돌리기를 눌러도 그대로): the look and the theme go back first, at once, whatever the 받은 레시피 row
+        // does after; that row's own 되돌리기 (shift colours, pictures) gets a few seconds and never holds the rest up.
+        putBack(m)
+        if (id != null) {
+            val done = kotlinx.coroutines.withTimeoutOrNull(UNDO_ROW_MS) { runCatching { c.recipes.undo(id) }.onFailure { android.util.Log.w(TAG, "row undo", it) } }
+            if (done == null) android.util.Log.w(TAG, "row undo took over ${UNDO_ROW_MS}ms")
+            // Its own undo also says what is worn (forget) and puts its looks back: what was worn just before stays the answer.
+            putBack(m)
+        }
+    }
+
+    private suspend fun putBack(m: Mark) {
         val used = _lease.value.freeUsed
         val e = prefs.edit()
         m.saved.forEach { (k, v) -> if (v == null) e.remove(k) else e.putString(k, v) }
@@ -514,6 +526,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_SKIP = "skip_ver"
         private const val K_PREV_VER = "prev_ver"
         private const val K_FOLDERS = "folders"
+        private const val TAG = "BamnatDrawer"
+        private const val UNDO_ROW_MS = 4_000L
         const val FOLDER_NAME = 12
         /** What [mark] keeps of this wardrobe: the theme worn and what 벗기 and 되돌리기 need of it. */
         private val UNDO_KEYS = listOf(K_LEASE, K_MINE, K_WORN_LOOK, K_PREV, K_OVERLAYS)

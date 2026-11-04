@@ -168,9 +168,10 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit
         val m = c.wardrobe.mark()
         if (c.wardrobe.wear(worn, code, own)) {
             after()
+            // The sheet closes first, so the line with 되돌리기 is not under it.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { onDismiss() }
             com.bamnat.app.ui.PutOnNotice.say(if (whole) "‘${r.title}’${com.bamnat.app.ui.Fmt.obj(r.title)} 입었어요. 기록은 그대로예요"
                 else "‘${r.title}’에서 고른 ${picked.size}개를 입었어요. 기록은 그대로예요") { c.wardrobe.undoTo(m); true }
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { onDismiss() }
         }
     }
     TryOnScreen(r, style, onDismiss,

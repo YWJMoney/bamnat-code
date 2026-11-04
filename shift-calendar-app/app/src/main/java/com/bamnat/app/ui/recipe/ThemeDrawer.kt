@@ -65,7 +65,7 @@ import kotlinx.coroutines.launch
 
 /** What one [DrawerItem] stands for, so its sheet knows what it can do. */
 private sealed interface Held {
-    data class Theme(val w: ThemeLease.Wear) : Held
+    data class Theme(val w: ThemeLease.Wear, val now: Boolean = false) : Held
     data class Got(val e: AppliedRecipeEntity) : Held
     data class Part(val k: ThemeWardrobe.Kept) : Held
     data class Draft(val d: RecipeDraftEntity) : Held
@@ -142,7 +142,7 @@ fun ThemeDrawer(
     }
 
     val shown = Drawer.shown(items, kind, folder, query, sort)
-    if (items.isEmpty()) Text("아직 서랍이 비었어요. 테마를 입거나, 지금 모양을 저장하거나, 장터에서 마음에 드는 조각을 담아 두면 여기에 모여요",
+    if (items.isEmpty()) Text("아직 서랍이 비었어요. 아래 테마를 입거나, 지금 모양을 저장하거나, 장터에서 마음에 드는 조각을 담아 두면 여기에 모여요",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     else if (shown.isEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
         Text("찾는 것이 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
@@ -153,21 +153,47 @@ fun ThemeDrawer(
     val mineCount = lease.history.count { it.own }
     val limit = c.wardrobe.outfitLimit()
     var saveNote by remember { mutableStateOf<String?>(null) }
-    OutlinedButton(onClick = {
-        scope.launch {
-            val name = "내 테마 ${mineCount + 1}"
-            saveNote = if (kotlinx.coroutines.withContext(c.appScope.coroutineContext) { c.wardrobe.saveMine(name) }) "지금 모양을 ‘$name’${Fmt.ro(name)} 서랍에 저장했어요" else "더 저장할 수 없어요"
-        }
-    }, enabled = mineCount < limit, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("지금 모양을 내 테마로 저장 ($mineCount/$limit)") }
+    // PC 확인 e34fae4e (이름을 묻지 않고 '내 테마 1'로 저장): the name is asked first, '내 테마 N' already in it.
+    var naming by remember { mutableStateOf<String?>(null) }
+    OutlinedButton(onClick = { naming = "내 테마 ${mineCount + 1}" }, enabled = mineCount < limit, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text("지금 모양을 내 테마로 저장 ($mineCount/$limit)")
+    }
+    naming?.let { start ->
+        var name by remember(start) { mutableStateOf(start) }
+        AlertDialog(
+            onDismissRequest = { naming = null },
+            title = { Text("어떤 이름으로 저장할까요?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(name, { name = it.take(30) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("테마 이름") })
+                    Text("지금 보이는 모양(색·칸·배치)만 저장해요. 기록은 그대로예요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val n = name.trim().ifBlank { start }
+                    naming = null
+                    scope.launch {
+                        saveNote = if (kotlinx.coroutines.withContext(c.appScope.coroutineContext) { c.wardrobe.saveMine(n) }) "지금 모양을 ‘$n’${Fmt.ro(n)} 서랍에 저장했어요"
+                            else if (lease.history.any { it.own && it.title == n }) "‘$n’ 이름이 이미 있어요. 다른 이름으로 저장해 주세요" else "더 저장할 수 없어요"
+                    }
+                }) { Text("저장") }
+            },
+            dismissButton = { TextButton(onClick = { naming = null }) { Text("닫기") } },
+        )
+    }
     Text(saveNote ?: if (limit <= ThemeWardrobe.FREE_OUTFITS) "무료는 ${limit}벌까지예요. 프로는 ${ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 바꿔 입어요"
         else "장터에 올린 내 테마는 광고 없이 입어요. 혼자 쓰는 테마는 다른 테마처럼 처음 2번 무료, 그 뒤 광고 한 번에 30일이에요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
     // A phone that never wore a theme: three of its kind of work to start with, the rest in 장터.
     var trying by remember { mutableStateOf<Pair<Recipe, String>?>(null) }
-    if (lease.worn == null && lease.history.isEmpty()) {
-        val starters = remember(style) { BuiltInThemes.of(style).take(3) }
-        Text("처음이라면 이런 테마부터", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+    // PC 확인 e34fae4e (하나 입으면 추천이 사라짐): the starters stay while the drawer holds little, without the ones already in it.
+    val inDrawer = remember(lease) { (lease.history.map { it.title } + listOfNotNull(lease.worn?.title)).toSet() }
+    val starters = remember(style, inDrawer) { BuiltInThemes.of(style).filter { it.title !in inDrawer }.take(3) }
+    if (items.size < 4 && starters.isNotEmpty()) {
+        Text(if (lease.worn == null && lease.history.isEmpty()) "처음이라면 이런 테마부터" else "이런 테마도 있어요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             starters.forEach { r ->
                 Column(Modifier.width(112.dp).clickable(onClickLabel = "테마 보기") { trying = r to "builtin:${r.title}" },
@@ -198,9 +224,13 @@ fun ThemeDrawer(
 /** Everything of mine, each with what it is. The theme worn now is on its own card above, so it is not here twice. */
 private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: List<RecipeDraftEntity>, applied: List<AppliedRecipeEntity>): List<Pair<DrawerItem, Held>> {
     val out = ArrayList<Pair<DrawerItem, Held>>()
-    lease.history.filter { it.key != lease.worn?.key }.forEach { w ->
-        val words = listOfNotNull(w.mixedFrom.takeIf { it.isNotBlank() }, "장터".takeIf { w.free }).joinToString(" ")
-        out += DrawerItem("theme:${w.key}", if (w.own) DrawerKind.MINE else DrawerKind.WORN, w.title, w.from * DAY, words = words) to Held.Theme(w)
+    // PC 확인 e34fae4e (테마를 입었는데 서랍이 비었다고 해요): the theme worn now is in the drawer too, first, marked 입는 중.
+    val worn = lease.worn
+    (listOfNotNull(worn?.takeIf { w -> lease.history.none { it.key == w.key } }) + lease.history).forEach { w ->
+        val now = w.key == worn?.key
+        val words = listOfNotNull(w.mixedFrom.takeIf { it.isNotBlank() }, "장터".takeIf { w.free }, "입는 중".takeIf { now }).joinToString(" ")
+        out += DrawerItem("theme:${w.key}", if (w.own) DrawerKind.MINE else DrawerKind.WORN, w.title, if (now) Long.MAX_VALUE else w.from * DAY,
+            words = words) to Held.Theme(w, now)
     }
     drafts.forEach { d ->
         out += DrawerItem("draft:${d.id}", DrawerKind.MINE, com.bamnat.app.ui.studio.draftName(d.body), d.updatedAt, words = "만들던") to Held.Draft(d)
@@ -275,7 +305,8 @@ private fun emojiOf(k: PieceKind): String = when {
 
 /** One short line on where it stands. */
 private fun status(h: Held?): String? = when (h) {
-    is Held.Theme -> when { h.w.free -> "내 것 · 장터에 있음"; h.w.own && h.w.mixedFrom.isNotBlank() -> "내 것 · 섞음"; h.w.own -> "내 것 · 나만"; else -> "입었던" }
+    is Held.Theme -> (if (h.now) "입는 중 · " else "") +
+        when { h.w.free -> "내 것 · 장터에 있음"; h.w.own && h.w.mixedFrom.isNotBlank() -> "내 것 · 섞음"; h.w.own -> "내 것 · 나만"; h.now -> "남의 테마"; else -> "입었던" }
     is Held.Draft -> if (h.d.step >= 2) "만들던 · 올리던 중" else "만들던 · ${com.bamnat.app.ui.studio.ago(h.d.updatedAt)}"
     is Held.Got -> "받음 · " + h.e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.take(2).joinToString("·")
     is Held.Part -> if (h.k.own) "조각 · 내 것" else "조각 · ‘${h.k.fromTitle}’에서"
@@ -323,14 +354,14 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                     val w = h.w
                     val r = remember(w.body) { runCatching { RecipeCodec.read(w.body) }.getOrNull() }
                     val ad = remember(w.key) { c.wardrobe.needsAdFor(w.code, w.title) }
-                    if (r != null && !ad) Act("바로 입기", primary = true) {
+                    if (r != null && !ad && !h.now) Act("바로 입기", primary = true) {
                         onDismiss()
                         c.appScope.launch {
                             val m = c.wardrobe.mark()
                             if (c.wardrobe.wearAgain(w)) PutOnNotice.say("‘${w.title}’${Fmt.obj(w.title)} 입었어요. 기록은 그대로예요") { c.wardrobe.undoTo(m); true }
                         }
                     }
-                    if (r != null) Act(if (ad) "입어 보고 입기 (광고)" else "입어 보고 고른 것만 입기", primary = ad) { onTry(r, w.code) }
+                    if (r != null && !h.now) Act(if (ad) "입어 보고 입기 (광고)" else "입어 보고 고른 것만 입기", primary = ad) { onTry(r, w.code) }
                     Act("스튜디오로 고치기") { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_THEME + w.key) }
                     val code = if (w.own) marketCode(w.shared) else marketCode(w.code)
                     if (w.own && code == null && c.recipeApi.enabled && r != null) Act("장터에 올리기",
