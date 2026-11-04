@@ -851,14 +851,18 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
                 }
                 // [STU-34] 만들던 것 이어서 하기: offered once on a fresh start, until anything is changed or it is shut.
-                resumable?.takeIf { !resumeShut && s.past.isEmpty() && s.draftId == 0L }?.let { r ->
+                // PC 확인 1.37 A4 (안 입히고 나간 뒤 다른 화면의 스튜디오까지 따라와 예시를 가림): not when opened for a page's cards, and once shut
+                // it stays shut for that 만들던 것 (until it changes).
+                val shutAt = remember(resumeShut) { runCatching { studioPrefs.getLong("resumeShut", 0L) }.getOrDefault(0L) }
+                resumable?.takeIf { !resumeShut && vm.startArea == null && it.updatedAt != shutAt && s.past.isEmpty() && s.draftId == 0L }?.let { r ->
                     Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                         Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(draftName(r.body).let { n -> "만들던 ‘$n’${com.bamnat.app.ui.Fmt.iga("$n’")} 남아 있어요" } + " · ${ago(r.updatedAt)}",
                                 style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
                             TextButton(onClick = { vm.resume(r.id) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이어서 하기") }
-                            TextButton(onClick = { resumeShut = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+                            TextButton(onClick = { runCatching { studioPrefs.edit().putLong("resumeShut", r.updatedAt).apply() }; resumeShut = true },
+                                modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
                         }
                     }
                 }
