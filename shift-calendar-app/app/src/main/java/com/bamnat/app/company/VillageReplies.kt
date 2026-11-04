@@ -14,6 +14,7 @@ import org.json.JSONObject
 object VillageReplies {
     private const val PREFS = "village_ui"
     private const val K_SEEN = "reply_seen"
+    private const val K_COUNT = "reply_new_count"
 
     /**
      * [TOWN-07] PC 확인 649e4c4c 제안 (새 답이 있으면 마을 탭에 점): how many new answers there are as last worked out — once a run
@@ -21,7 +22,18 @@ object VillageReplies {
      */
     private val _count = kotlinx.coroutines.flow.MutableStateFlow(0)
     val count: kotlinx.coroutines.flow.StateFlow<Int> = _count
-    fun publish(n: Int) { _count.value = n.coerceAtLeast(0) }
+    @Volatile private var store: android.content.SharedPreferences? = null
+    fun publish(n: Int) {
+        _count.value = n.coerceAtLeast(0)
+        runCatching { store?.edit()?.putInt(K_COUNT, _count.value)?.apply() }
+    }
+
+    /** PC 확인 a54724f7 (점이 앱을 켜고 18초 뒤에 생겨요): the count last worked out shows at once as the app starts. */
+    fun restore(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        store = prefs
+        _count.value = runCatching { prefs.getInt(K_COUNT, 0) }.getOrDefault(0)
+    }
 
     /** Asks the server once and sets [count]; nothing on a phone that never agreed to the plaza's rules. */
     suspend fun refresh(c: com.bamnat.app.AppContainer) {
