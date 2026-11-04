@@ -1023,6 +1023,8 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
     // [J133-77] The kinds of day in the work's own word: 근무 for wages, 일정 for jobs, 영업 for a shop; none for trades.
     SettingsPage.WORK -> listOfNotNull(
         s.workStyle?.label ?: "일하는 방식 정하기",
+        // [SETUP-16] A first setup put off shows its kind of work, and that the setup is still to finish.
+        "첫 설정 남음".takeIf { s.setupLater },
         snapshot?.shiftTypes?.count { !it.isOff && it.id !in folded }?.takeIf { it > 0 && style != com.bamnat.core.work.WorkStyle.INVEST }?.let {
             when (style) { com.bamnat.core.work.WorkStyle.FIELD -> "일정 종류 ${it}가지"; com.bamnat.core.work.WorkStyle.BUSINESS -> "영업시간 종류 ${it}개"; else -> "근무 ${it}가지" }
         },

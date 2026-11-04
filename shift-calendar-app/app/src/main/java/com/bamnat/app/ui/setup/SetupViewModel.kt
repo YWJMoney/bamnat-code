@@ -175,11 +175,26 @@ class SetupViewModel(
         update { it.copy(step = step) }
     }
 
-    /** "나중에": the app opens on the calendar with a card to go on from here. */
+    /**
+     * "나중에": the app opens on the calendar with a card to go on from here. [SETUP-16] 1.37: the kind of work already
+     * chosen is the app's from now on (설정 > 내 근무, the tabs, pay and every card that fits a kind of work), with
+     * [com.bamnat.app.data.AppSettings.setupLater] so the setup still counts as not done.
+     */
     fun later() {
         c.telemetry.event("setup_later", current.step.name)
         if (again) return cancelAgain()
         update { it.copy(later = true) }
+        if (calendarId == null) current.style?.let { style -> keepStyle(style) }
+    }
+
+    /** [SETUP-16] A first setup put off with [style] chosen: that kind of work shows now, its setup waits. */
+    private fun keepStyle(style: WorkStyle) {
+        c.settingsRepository.update { s -> if (s.setupDone) s else s.copy(workStyle = style, setupLater = true) }
+        // 알바 taps its own 오전·오후·저녁 알바 on the calendar meanwhile, as when the kind of work is changed in settings; the same
+        // names as the setup's 알바 shifts, so finishing the setup takes them over rather than adding them twice.
+        if (style == WorkStyle.HOURLY) c.appScope.launch {
+            runCatching { c.scheduleRepository.addHourlyTypes() }.onFailure { android.util.Log.w("Setup", "hourly types", it) }
+        }
     }
 
     /** [PLAZA-06] Leaves 처음 설정 다시 받기: its answers go, the calendar stays as it was. */
@@ -193,6 +208,8 @@ class SetupViewModel(
 
     fun pickStyle(style: WorkStyle, roster: Boolean = false) {
         val d = current
+        // [SETUP-16] A setup put off and taken up again: the kind of work shown everywhere follows the new answer at once.
+        if (calendarId == null && !again && c.settingsRepository.current.setupLater && c.settingsRepository.current.workStyle != style) keepStyle(style)
         when (style) {
             // Field and shop work are written day by day: nothing more to ask.
             WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST -> {
@@ -281,7 +298,7 @@ class SetupViewModel(
                 c.backupManager.restore(json)
                 c.telemetry.event("setup_restore")
                 // A backup from before the kind of work was asked, without a pattern: the setup goes on.
-                if (c.settingsRepository.current.workStyle != null) store.clear()
+                if (c.settingsRepository.current.setupDone) store.clear()
             }.onFailure { e -> _message.value = (e as? BackupException)?.message ?: "백업을 불러오지 못했어요" }
             _saving.value = false
         }
@@ -739,6 +756,15 @@ class SetupViewModel(
         c.calendars.finishSetup(id, style)
         store.clear()
         _done.value = true
+    }
+
+    // Last in the class, after every property it reads.
+    init {
+        // [SETUP-16] The kind of work was changed in 설정 > 내 근무 while the first setup waited: it goes on with that one.
+        val s = c.settingsRepository.current
+        val d = current
+        val style = s.workStyle
+        if (calendarId == null && !again && s.setupLater && style != null && !d.committing && d.style != null && d.style != style) pickStyle(style)
     }
 
     companion object {

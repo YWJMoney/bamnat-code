@@ -336,14 +336,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val calendarList by container.calendars.calendars.collectAsStateWithLifecycle()
     val activeStyle = calendarList.firstOrNull { it.id == activeCalendarId }?.takeIf { !it.isMain }?.style ?: settingsNow.workStyle
     val setupDraft by container.setupDrafts.draft.collectAsStateWithLifecycle()
-    val needsSetup by produceState<Boolean?>(if (settingsNow.workStyle != null) false else null, settingsNow.workStyle, setupDraft == null) {
+    // [SETUP-16] A setup put off keeps its kind of work in the settings: done is [AppSettings.setupDone], not the kind of work alone.
+    val needsSetup by produceState<Boolean?>(if (settingsNow.setupDone) false else null, settingsNow.setupDone, setupDraft == null) {
         value = when {
-            settingsNow.workStyle != null -> {
+            settingsNow.setupDone -> {
                 // Set some other way meanwhile (a backup restored in settings): the setup left is not needed.
                 if (setupDraft?.committing == false) container.setupDrafts.clear()
                 false
             }
-            setupDraft == null && container.scheduleRepository.patterns.first().isNotEmpty() -> {
+            settingsNow.workStyle == null && setupDraft == null && container.scheduleRepository.patterns.first().isNotEmpty() -> {
                 container.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
                 false
             }
@@ -677,7 +678,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val ctx = container.appContext
         val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
         // [J133-53] A phone with no setup yet (reinstalled, data cleared) has nothing new to compare against.
-        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime || container.settingsRepository.current.workStyle == null
+        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime || !container.settingsRepository.current.setupDone
         mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
     }
     // [ONBOARD-04] A phone set up before 1.22 keeps its own values; the update notice offers the rest once.

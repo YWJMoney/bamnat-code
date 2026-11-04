@@ -58,7 +58,7 @@ class FirstSetup(
         }
         val saved = schedule.applySetup(marked, today())
         keepCompany(company(), marked, used)
-        settings.update { it.copy(workStyle = style, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }
+        settings.update { it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }
         drafts.clear()
         prefs?.edit()?.putString(DAY_KEY, today().toString())?.apply()
         _saved.value = saved

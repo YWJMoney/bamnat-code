@@ -520,7 +520,7 @@ class AppContainer(context: Context) {
                 ads.consent.value?.let { put("ads", it) }
             },
             profile = setOfNotNull(
-                "setup.done".takeIf { s.workStyle != null },
+                "setup.done".takeIf { s.setupDone },
                 "pay.setup".takeIf { payStore.profile.value != null },
                 "company.linked".takeIf { warm && (companyStore.member.value != null || companyStore.applied.value != null) },
             ),
@@ -559,7 +559,7 @@ class AppContainer(context: Context) {
     var phoneMark: () -> String? = { com.bamnat.app.tier.PhoneMark.of(appContext) }
     val invites by lazy {
         com.bamnat.app.tier.Invites(appContext, com.bamnat.app.tier.InviteStore(appContext), { inviteApi }, { companyStore.device }, { phoneMark() },
-            setupDone = { settingsRepository.current.workStyle != null }, installedAt = { installedAt }, referrer = { referrerSource })
+            setupDone = { settingsRepository.current.setupDone }, installedAt = { installedAt }, referrer = { referrerSource })
     }
     /** AG 1.27 [INVITE-11][INVITE-12] When this phone was asked to invite friends or to tell the developer. */
     val grow by lazy { com.bamnat.app.data.GrowStore(appContext) }
