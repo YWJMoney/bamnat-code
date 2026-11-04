@@ -268,13 +268,16 @@ fun CompanyRulesEditor(
                         FilterChip(selected = period.endDay == d, onClick = { draft = draft.copy(period = period.copy(endDay = d)) },
                             label = { Text("${d}일") })
                     }
-                    OutlinedButton(onClick = { draft = draft.copy(period = period.copy(endDay = ((period.endDay ?: 31) - 1).coerceIn(1, 30))) }) { Text("−") }
-                    Text(period.endDay?.let { "${it}일" } ?: "말일", style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    OutlinedButton(onClick = {
-                        val next = (period.endDay ?: 30) + 1
-                        draft = draft.copy(period = period.copy(endDay = next.takeIf { it <= 30 }))
-                    }) { Text("+") }
+                    // PC 6da49f0b (−/+ 단추가 줄바꿈되면서 '말일'·'-' 글자만 혼자 남음): the stepper keeps together on one line.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = { draft = draft.copy(period = period.copy(endDay = ((period.endDay ?: 31) - 1).coerceIn(1, 30))) }) { Text("−") }
+                        Text(period.endDay?.let { "${it}일" } ?: "말일", style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        OutlinedButton(onClick = {
+                            val next = (period.endDay ?: 30) + 1
+                            draft = draft.copy(period = period.copy(endDay = next.takeIf { it <= 30 }))
+                        }) { Text("+") }
+                    }
                 }
                 Hint("${month.monthValue}월 급여는 ${period.label(month)} 근무로 계산해요.")
                 Label("월급날")
@@ -285,10 +288,13 @@ fun CompanyRulesEditor(
                         FilterChip(selected = period.payDay == d, onClick = { draft = draft.copy(period = period.copy(payDay = d)) },
                             label = { Text("${d}일") })
                     }
-                    OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 26) - 1).coerceIn(1, 31))) }) { Text("−") }
-                    Text(period.payDay?.let { "${it}일" } ?: "−", style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                    OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 24) + 1).coerceIn(1, 31))) }) { Text("+") }
+                    // PC 6da49f0b (−/+ 단추가 줄바꿈되면서 '말일'·'-' 글자만 혼자 남음): the stepper keeps together on one line.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 26) - 1).coerceIn(1, 31))) }) { Text("−") }
+                        Text(period.payDay?.let { "${it}일" } ?: "없음", style = MaterialTheme.typography.titleSmall,
+                            modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                        OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 24) + 1).coerceIn(1, 31))) }) { Text("+") }
+                    }
                 }
                 if (period.payDay != null) {
                     Toggle("마감한 다음 달에 지급", "예: 말일 마감, 다음 달 10일 지급", period.payNextMonth) {

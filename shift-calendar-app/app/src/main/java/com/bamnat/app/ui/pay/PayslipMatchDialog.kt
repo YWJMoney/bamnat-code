@@ -181,7 +181,8 @@ fun PayslipMatchDialog(
     var more by remember { mutableStateOf(false) }
     var match by remember { mutableStateOf<PayslipMatch?>(null) }
     // [PAYIN-03] PC 3e347ec6: each change is the user's to take or leave (a way of counting is not swept in with the amounts).
-    var keep by remember(match) { mutableStateOf(match?.changes?.map { it.key }?.toSet().orEmpty()) }
+    // PC 6da49f0b: a way of counting (시간·연장·휴일) starts unticked; the user ticks it only when the company really does so.
+    var keep by remember(match) { mutableStateOf(match?.let { m -> m.changes.map { it.key }.filterNot(m::isWayChange).toSet() }.orEmpty()) }
     var failed by remember { mutableStateOf(false) }
     // Payslip allowances the user chose to add; ids stay the same when the match runs again.
     val added = remember { mutableStateListOf<PayItem>() }
