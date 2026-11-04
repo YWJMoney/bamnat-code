@@ -176,6 +176,8 @@ fun PayScreen(
     val rulesTitle = PayTab.RULES.labelFor(workStyle)
     var editingSetup by rememberSaveable { mutableStateOf(false) }
     var editingRules by rememberSaveable { mutableStateOf(false) }
+    // 가계부 스레드·PC (설정 찾기 '월급날'이 회사 규칙 맨 위로만 열림): the value the rules editor opens at.
+    var rulesFocus by remember { mutableStateOf<PayFocus?>(null) }
     // [J133-97] 1.33 빌드 8 확인 ("회사 규칙 칩으로 들어가면 ←·뒤로·취소로 못 나가요", 1.32부터): the result leaves the screen while
     // the rules editor is open, so a 'done' kept inside it started again on the way back and opened the editor once more.
     var focusUsed by rememberSaveable { mutableStateOf(false) }
@@ -321,12 +323,12 @@ fun PayScreen(
                 }
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
-                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
+                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false; rulesFocus = null }, onOpenKinds = onOpenExtraKinds, focus = rulesFocus)
                 }
                 // [FREE-07] 1.35 급여 모양 of this kind of work; the figures and their 예상·추정 marks show whatever it says.
                 else -> androidx.compose.runtime.CompositionLocalProvider(LocalPayLook provides
                     (com.bamnat.app.ui.theme.LocalPayLooks.current[workStyle ?: com.bamnat.core.work.WorkStyle.SHIFT] ?: com.bamnat.core.recipe.PayLook())) {
-                    PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, top = top,
+                    PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, onEditRulesAt = { f -> rulesFocus = f; editingRules = true }, top = top,
                     onDetailed = { detailedFrom = DetailedStart(profile); editingSetup = true },
                     underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, onOpenShiftTypes = onOpenShiftTypes, startMatching = startMatching,
                     focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true })
@@ -359,6 +361,7 @@ private fun PayResult(
     focus: PayFocus? = null,
     focusUsed: Boolean = false,
     onFocusUsed: () -> Unit = {},
+    onEditRulesAt: (PayFocus) -> Unit = { onEditRules() },
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     // U 1.32 [UX132-03] 결과 · 내 급여 값 · 회사 규칙 · 도구.
@@ -431,7 +434,8 @@ private fun PayResult(
         onFocusUsed()
         when (focus) {
             PayFocus.BASE -> editTarget = ValueTarget.Base
-            PayFocus.HOURS, PayFocus.PERIOD, PayFocus.RULES -> onEditRules()
+            PayFocus.HOURS, PayFocus.PERIOD -> onEditRulesAt(focus)
+            PayFocus.RULES -> onEditRules()
             else -> Unit
         }
     }

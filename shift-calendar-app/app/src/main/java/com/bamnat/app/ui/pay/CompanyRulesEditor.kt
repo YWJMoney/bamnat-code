@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.foundation.border
 import androidx.compose.ui.semantics.stateDescription
 import com.bamnat.core.pay.LeaveBook
 import androidx.compose.foundation.clickable
@@ -94,8 +97,23 @@ fun CompanyRulesEditor(
     month: YearMonth,
     onClose: () -> Unit,
     onOpenKinds: () -> Unit,
+    /** Opened for one value (설정 찾기 '월급날', the 근무시간 chip): scrolled to it and lit for a moment. */
+    focus: PayFocus? = null,
 ) {
     var draft by remember { mutableStateOf(saved) }
+    val scroll = rememberScrollState()
+    var periodY by remember { mutableStateOf<Int?>(null) }
+    var hoursY by remember { mutableStateOf<Int?>(null) }
+    var lit by remember { mutableStateOf(focus) }
+    val target = when (focus) { PayFocus.PERIOD -> periodY; PayFocus.HOURS -> hoursY; else -> null }
+    androidx.compose.runtime.LaunchedEffect(focus, target != null) {
+        val y = target ?: return@LaunchedEffect
+        scroll.animateScrollTo(y)
+        kotlinx.coroutines.delay(2_500)
+        lit = null
+    }
+    @Composable
+    fun Modifier.litWhen(f: PayFocus): Modifier = if (lit == f) border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.medium) else this
     var example by remember { mutableStateOf<com.bamnat.core.pay.PayExamples.Example?>(null) }
     val kinds = com.bamnat.app.ui.calendar.LocalExtraKinds.current
     val rates = remember(month) { com.bamnat.core.pay.RateTable.on(month.atDay(1)) }
@@ -159,13 +177,13 @@ fun CompanyRulesEditor(
 
     Column(Modifier.fillMaxSize()) {
         Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp).widthIn(max = 720.dp),
+            Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp, vertical = 12.dp).widthIn(max = 720.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("취업규칙·근로계약서·급여명세서를 보고 회사 방식에 맞춰 주세요. 고르지 않은 것은 법정 기준으로 계산해요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            SectionCard(title = "기본") {
+            SectionCard(title = "기본", modifier = Modifier.onGloballyPositioned { hoursY = it.positionInParent().y.toInt() }.litWhen(PayFocus.HOURS)) {
                 Toggle("5인 이상 사업장", "아니면 법정 가산이 없어요. 회사가 주는 가산은 아래에서 따로 넣어요", draft.fiveOrMoreEmployees) {
                     draft = draft.copy(fiveOrMoreEmployees = it).settled(Unknowns.FIVE_OR_MORE)
                 }
@@ -239,7 +257,8 @@ fun CompanyRulesEditor(
             }
 
             // [PAYX-15] The days a month's pay covers and the pay day, e.g. 전월 21일~20일, 25일 지급.
-            SectionCard(title = "정산 기간과 월급날") {
+            SectionCard(title = "정산 기간과 월급날", modifier = Modifier
+                .onGloballyPositioned { periodY = it.positionInParent().y.toInt() }.litWhen(PayFocus.PERIOD)) {
                 val period = draft.period
                 Label("근무를 며칠까지 모아 그 달 급여로 계산하나요?")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
