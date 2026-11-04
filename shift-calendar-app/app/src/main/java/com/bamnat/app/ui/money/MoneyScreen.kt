@@ -744,6 +744,7 @@ fun MoneyScreen(
         // [LEDG-02] Ways to type less.
         MoneyPart.AUTO to { AutoRecordCard(onPaste = { pasting = true }) },
         MoneyPart.PACE to { PaceCard(book, today, budget) },
+        MoneyPart.FOUND to { FoundMoneyCard(book.entries, today, autoRecord.lookedAt, onOpen = vm::showPlace) },
         MoneyPart.SUBS to { SubscriptionsCard(book.entries, today, autoRecord.lookedAt, onStillUsing = vm::stillUsing, onOpen = vm::showPlace) },
         MoneyPart.CARD25 to {
             val gross by androidx.compose.runtime.produceState<Long?>(null, profile, snapshot, today.year) { value = vm.yearGross(style, profile, snapshot, today.year) }
@@ -1083,6 +1084,8 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     AHEAD("ahead", "앞으로의 돈", "오늘 쓸 돈·월급까지 며칠·날마다 남을 돈"),
     // 1.37 [LEDH-11][LEDH-13]
     ENVELOPES("envelopes", "모으기 봉투", "목표까지 얼마·근무 몇 번, 월급 나누기, 세금 봉투"),
+    // 1.37 [LEDH-17]
+    FOUND("found", "찾아 준 돈", "올해 이어 붙인 환불, 볼 만한 구독, 오른 값"),
     RECENT("recent", "최근 기록", "이번 달 마지막 다섯 줄", right = true),
     INCOME("income", "수입 내역", "급여 예상과 적은 수입", right = true),
     TAX("tax", "세금·실수령", "세전·세후 예상, 올해 낼 세금", right = true),

@@ -2,6 +2,7 @@ package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -96,5 +97,38 @@ internal fun CardGaugeCard(book: MoneyBook, today: LocalDate, yearGross: Long?) 
         Text(gauge.tip, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
         Text("통장·카드에 카드 종류를 넣으면 더 정확해요. 전통시장·대중교통·문화비는 공제율이 더 높아요(40~80%).",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * 1.37 [LEDH-17] 찾아 준 돈 한 판: this year's refunds the ledger tied to their payment (the big number: money that came back),
+ * then the subscriptions worth a look and the ones whose price went up. Nothing found, no card.
+ */
+@Composable
+internal fun FoundMoneyCard(entries: List<MoneyEntry>, today: LocalDate, lookedAt: Map<String, LocalDate>, onOpen: (String) -> Unit) {
+    val f = remember(entries, today, lookedAt) { com.bamnat.core.money.FoundMoney.of(entries, today, lookedAt) }
+    if (f.isEmpty) return
+    SectionCard(title = "${f.year}년 밤낮이 찾아 준 돈") {
+        if (f.refunds > 0) {
+            Text(Fmt.won(f.refunded), style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Text("결제 취소·부분취소 ${f.refunds}건을 원래 결제에 이어 붙여 되찾은 돈이에요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (f.staleSubs.isNotEmpty()) {
+            Text("석 달 넘게 안 본 구독 ${f.staleSubs.size}개 · 1년이면 ${Fmt.won(f.staleYearly)}", style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp))
+            f.staleSubs.take(4).forEach { s ->
+                Row(Modifier.fillMaxWidth().clickable { onOpen(s.place) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Text("${Fmt.won(s.monthly)}/월", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+        if (f.raisedSubs.isNotEmpty()) {
+            Text("값이 오른 구독: " + f.raisedSubs.take(3).joinToString(" · ") { "${it.place} +${Fmt.won(it.raised ?: 0)}" },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        }
+        Text("구독을 해지하거나 계속 쓰기로 하면 구독 점검 카드에서 정리돼요.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
     }
 }

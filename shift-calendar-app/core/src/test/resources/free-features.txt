@@ -254,3 +254,4 @@ money.hide
 money.payCycle
 money.workTime
 money.dayClose
+money.found
