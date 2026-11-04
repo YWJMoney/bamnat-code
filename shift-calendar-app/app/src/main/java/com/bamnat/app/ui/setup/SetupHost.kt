@@ -102,6 +102,8 @@ fun SetupHost(
     vm: SetupViewModel, onBrowse: ((com.bamnat.core.work.WorkStyle) -> Unit)? = null, browseFirst: Boolean = false,
     /** [SETUP-15] The work answered on the first screen: the first question is answered with it, once. */
     firstStyle: Pair<com.bamnat.core.work.WorkStyle, Boolean>? = null,
+    /** [SETUP-17] '백업이나 회사 파일로 시작할게요' on the first screen: the file chooser opens once, at once. */
+    openFileFirst: Boolean = false,
     onFirstStyleUsed: () -> Unit = {},
 ) {
     val d by vm.draft.collectAsStateWithLifecycle()
@@ -140,7 +142,15 @@ fun SetupHost(
     val incoming by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
     LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
     val onOpenFile = { openFile.launch(arrayOf(BackupManager.MIME_TYPE, CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) }
+    // The first screen's choice stays (the features pages are not put over the chooser); opened once, across a turned phone.
+    var fileOpened by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(openFileFirst) {
+        if (!openFileFirst || fileOpened) return@LaunchedEffect
+        fileOpened = true
+        runCatching { onOpenFile() }
+    }
     var searching by remember { mutableStateOf(false) }
+    var browseAsks by remember { mutableStateOf(0) }
     // [SPAT-07] 1.27 AH: a company tapped in the list under the name opens the search at its page.
     var openCompany by remember { mutableStateOf<String?>(null) }
     var longShifts by remember { mutableStateOf<List<ShiftType>>(emptyList()) }
@@ -199,6 +209,11 @@ fun SetupHost(
                     },
                     actions = {
                         // [MCAL-02] An added calendar is set up now or not made; its questions wait on no card.
+                        // [SETUP-17] 1.37 PC f42b2eba: the first question had no way to put the setup off. Without a kind of work
+                        // there is nothing to keep, so '나중에' looks around an example first (the first write asks again).
+                        if (d.step == SetupStep.STYLE && !fixing && vm.calendarId == null && !vm.again && onBrowse != null) {
+                            TextButton(onClick = { browseAsks++ }) { Text("나중에 할게요") }
+                        }
                         if (d.step != SetupStep.STYLE && !fixing) {
                             if (vm.again) TextButton(onClick = vm::cancelAgain) { Text("그만두기") }
                             else if (vm.calendarId == null) TextButton(onClick = vm::later) { Text("나중에 할게요") }
@@ -254,7 +269,7 @@ fun SetupHost(
                 ) {
                     when (step) {
                         SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
-                            onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst)
+                            onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst, browseAsks = browseAsks)
                         SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = { openCompany = null; searching = true }, onOpenFile = onOpenFile,
                             onOpenCompany = { openCompany = it; searching = true }, inline = !searching)
                         SetupStep.BUNDLE -> BundleStep(d, onPick = vm::pickBundle)

@@ -60,6 +60,8 @@ class BackupManager(
     private val recordsTrash: () -> RecordsTrash? = { null },
     /** [CREW-01] Each calendar's teams for 모든 조 보기. */
     private val teams: TeamStore? = null,
+    /** [SETUP-16] A first setup put off: its answers so far go with the backup, so a new phone goes on where it stopped. */
+    private val setupDrafts: () -> SetupDraftStore? = { null },
     /** [MON-08] The 프로 recovery code, so passes follow to a new phone; never the purchase itself. */
     private val pro: () -> com.bamnat.app.tier.ProStore? = { null },
     /** [PROV-04] The links the user made, with their keys, so a new phone keeps updating them. */
@@ -487,6 +489,7 @@ class BackupManager(
         profiles()?.let { p -> root.put("profile", JSONObject(p.export() as Map<*, *>)) }
         settingsFiles()?.let { root.put("settingsFiles", it.export()) }
         val s = settings.current
+        if (s.setupLater) setupDrafts()?.draft?.value?.takeIf { !it.committing }?.let { root.put("setupDraft", SetupDraftCodec.encode(it.copy(later = true))) }
         root.put(
             "settings",
             JSONObject()
@@ -1046,6 +1049,10 @@ class BackupManager(
                     swapCoversAnswered = s.swapCoversAnswered && schedule.extras != null,
                 )
             }
+        }
+        // [SETUP-16] The setup put off on the old phone goes on from its step here (one without its answers starts at the kind of work's next question).
+        if (settings.current.setupLater) root.optJSONObject("setupDraft")?.let { o ->
+            runCatching { SetupDraftCodec.decode(o) }.getOrNull()?.takeIf { it.style == settings.current.workStyle }?.let { setupDrafts()?.save(it.copy(later = true, committing = false)) }
         }
     }
 

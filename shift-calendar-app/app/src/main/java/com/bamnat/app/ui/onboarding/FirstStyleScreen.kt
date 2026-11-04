@@ -72,6 +72,8 @@ data class FirstStyle(val style: WorkStyle, val roster: Boolean) {
 
     companion object {
         private const val ROSTER = "_ROSTER"
+        /** [SETUP-17] '백업이나 회사 파일로 시작할게요': no kind of work, the file chooser opens at once. */
+        const val FILE = "FILE"
         fun of(key: String?): FirstStyle? {
             val k = key ?: return null
             val style = WorkStyle.entries.firstOrNull { it.name == k.removeSuffix(ROSTER) } ?: return null

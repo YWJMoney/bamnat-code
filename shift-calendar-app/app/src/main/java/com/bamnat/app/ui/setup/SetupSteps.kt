@@ -99,8 +99,13 @@ internal fun StyleStep(
     onBrowse: ((WorkStyle) -> Unit)? = null,
     /** Came from the first page's 우선 둘러볼게요: the cards pick the example straight away. */
     browseFirst: Boolean = false,
+    /** [SETUP-17] Counts the top bar's '나중에 할게요' on this question: each opens the example choice. */
+    browseAsks: Int = 0,
 ) {
     var browsing by rememberSaveable { mutableStateOf(browseFirst && onBrowse != null) }
+    LaunchedEffect(browseAsks) { if (browseAsks > 0 && onBrowse != null) browsing = true }
+    // [SETUP-17] 1.37 PC f42b2eba: back on '어떤 일로 둘러볼까요?' did nothing; it goes back to the question.
+    androidx.activity.compose.BackHandler(enabled = browsing && onBrowse != null) { browsing = false }
     // [FLAG-12][FLAG-13] 1.28 AL: a hidden kind of work leaves this list (first setup, a new calendar, 둘러보기); the kind
     // already picked stays, and the owner's phone sees hidden ones marked.
     val shown = com.bamnat.app.ui.flags.typeChoices(keep = d.style)

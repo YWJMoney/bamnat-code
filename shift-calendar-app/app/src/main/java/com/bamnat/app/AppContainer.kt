@@ -207,6 +207,7 @@ class AppContainer(context: Context) {
         if (id == com.bamnat.app.data.PersonalCalendar.MAIN || calendars.get(id) == null) database else calendars.database(id))
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
+        setupDrafts = { setupDrafts },
         teams = teams, pro = { proStore }, dutyCodes = { dutyCodes },
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
@@ -965,6 +966,8 @@ class AppContainer(context: Context) {
                 combine(scheduleRepository.snapshot, settingsRepository.settings.map { it.leaveTimeNotice to it.workStyle }.distinctUntilChanged()) { _, _ -> Unit }
                     .debounce(500).collect { com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext) }
             }
+            // [SETUP-16] A first setup put off follows its kind of work wherever it changes (설정, a backup brought back).
+            keep("setuplater") { com.bamnat.app.data.SetupLater.follow(settingsRepository, setupDrafts, firstSetup) }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
             keep("leave") {
                 val lots = leaveRepository.summary.map { s -> s.lots.map { it.lot } }.distinctUntilChanged()

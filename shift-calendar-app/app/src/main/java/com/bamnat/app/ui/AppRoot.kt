@@ -377,13 +377,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
                     // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
                     val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
-                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { sizeSeen(); firstStyleKey = it.key }, onSkip = { sizeSeen(); firstStyleKey = "" },
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { sizeSeen(); firstStyleKey = it.key }, onSkip = { sizeSeen(); firstStyleKey = com.bamnat.app.ui.onboarding.FirstStyle.FILE },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
                     return
                 }
                 // 1.36 W4: before 1.36 the recommended-features page came here, between "무슨 일 하세요?" and the setup. A phone
                 // that answered on an older build and was updated mid-way still sees it here.
-                if (!container.consentStore.afterSetup) {
+                // [SETUP-17] 1.37 PC f42b2eba: '백업이나 회사 파일로 시작할게요' went through the features and "어떻게 일하세요?" first;
+                // a backup brings its own answers, so the file chooser opens straight away.
+                if (!container.consentStore.afterSetup && key != com.bamnat.app.ui.onboarding.FirstStyle.FILE) {
                     val first = com.bamnat.app.ui.onboarding.FirstStyle.of(key)
                     androidx.activity.compose.BackHandler { firstStyleKey = null }
                     ConsentPages(container, onDone = {}, style = first?.style, onBrowse = {
@@ -397,6 +399,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             SetupHost(appViewModel { SetupViewModel(it) },
                 onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst,
                 firstStyle = com.bamnat.app.ui.onboarding.FirstStyle.of(firstStyleKey)?.let { it.style to it.roster },
+                openFileFirst = firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.FILE,
                 onFirstStyleUsed = { firstStyleKey = "" })
             return
         }
@@ -1228,6 +1231,8 @@ private fun AppNavHost(
             // clear: null when nothing is changed from a kind of work (the first one, or the same again).
             val apply: (WorkStyle, Boolean?) -> Unit = { style, clear ->
                 val before = current
+                // [SETUP-16] 1.37 PC f42b2eba HIGH-1: the first setup is still waiting: it goes on with this kind of work at once.
+                val setupWaits = isMain && container.settingsRepository.current.setupLater
                 // [WORK-07] A new kind of work goes straight on to what it still needs, as its card said
                 // ("다음: …"): the order for shift work, the days for weekday work, the wage for hourly work.
                 // What it already has is kept, so switching back and forth never asks twice.
@@ -1259,6 +1264,14 @@ private fun AppNavHost(
                     val added = addStyleTypes(container, calendar, style)
                     // 1.36 PC 재검토: the old kind of work's 근무 종류 are offered once to be put away (never deleted).
                     com.bamnat.app.ui.shifts.TypeFoldAsk.after(container, calendar, before, style)
+                    // Shifts, days and hours are then asked by the setup, not by the pattern or pay screen. 현장·자영업·투자 have
+                    // nothing more to ask: the setup's own watch saves it ([com.bamnat.app.data.SetupLater]) and the screens below follow.
+                    if (setupWaits && style != before && with(com.bamnat.app.data.SetupLater) { style.asksMore }) {
+                        nav.popFrom(Routes.WORK_STYLE)
+                        container.setupDrafts.save(com.bamnat.app.data.SetupLater.fresh(style, company = container.setupDrafts.draft.value?.companyName.orEmpty()))
+                        if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, null)
+                        return@launch
+                    }
                     var opened: String? = null
                     fun go(route: String, pattern: String) {
                         opened = pattern
