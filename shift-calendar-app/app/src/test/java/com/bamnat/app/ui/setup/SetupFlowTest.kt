@@ -89,7 +89,11 @@ class SetupFlowTest {
         assertNull(c.settingsRepository.current.workStyle)
 
         vm.save()
-        waitFor("the save") { c.settingsRepository.current.workStyle != null && c.setupDrafts.draft.value == null }
+        // FirstSetup.save clears the draft a step before it hands over the saved setup, on the app's own thread:
+        // wait for the whole save, not only the draft, or the offer below is read in between (CI, 2026-11-04).
+        waitFor("the save") {
+            c.settingsRepository.current.workStyle != null && c.setupDrafts.draft.value == null && c.firstSetup.saved.value != null
+        }
         assertEquals(WorkStyle.SHIFT, c.settingsRepository.current.workStyle)
         assertFalse(c.settingsRepository.current.rosterMonthly)
         val snap = c.scheduleRepository.snapshot.first()
