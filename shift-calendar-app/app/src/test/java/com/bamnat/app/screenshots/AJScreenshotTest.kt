@@ -147,6 +147,11 @@ class AJScreenshotTest : ScreenshotBase() {
     @Test fun slipLine() = shoot("1148_aj_slip_line_fix", PHONE_393, slip {
         tapText("다른 곳이 있어요")
         settle()
+        // [PAYIN-01] The photo is pinned over the lines (a drag on it moves the photo): folded so the drag moves the lines.
+        tapText("접기", exact = true)
+        settle()
+        scrollDown(500)
+        settle()
         tapText("야간근로수당", scrolls = 4)
         settle()
         assertTrue(appears("이 줄 고치기"))

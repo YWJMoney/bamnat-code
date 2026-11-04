@@ -142,7 +142,7 @@ internal fun SlipCheck(
                 if (fixing) Text("고치기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(line.role.short(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                Text(line.role.short().takeIf { it != line.name } ?: "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                 Text(line.amount?.let(::won) ?: "금액 없음", style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (line.role in TOTALS) androidx.compose.ui.text.font.FontWeight.Bold else null)
             }
@@ -160,12 +160,20 @@ internal fun SlipCheck(
             if (indices.isEmpty()) Text("아직 없어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 6.dp))
             indices.forEach { i -> key(i) { cell(i, read.lines[i]) } }
-            // [PAYIN-02] The names payslips print most, one tap to a new line with its kind and name (only the amount to type).
+            // [PAYIN-02] The names payslips print most, one tap to a new line with its kind and name (only the amount to type). A
+            // kind a payslip has once (기본급, 지급·공제 합계, 연장·야간·휴일) is not offered again; a side with lines folds them under one button.
             val have = read.lines.map { it.name.filterNot(Char::isWhitespace) }.toSet()
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
-                quick.filter { (_, n) -> n.filterNot(Char::isWhitespace) !in have }.forEach { (role, name) ->
-                    androidx.compose.material3.AssistChip(onClick = { preset = SlipLine(name, role, null); editing = -1 },
-                        label = { Text("+ $name", style = MaterialTheme.typography.labelSmall) })
+            val roles = read.lines.map { it.role }.toSet()
+            val left = quick.filter { (role, n) -> n.filterNot(Char::isWhitespace) !in have && !(role in ONCE && (role in roles || role == SlipRole.GROSS && SlipRole.TOTAL in roles)) }
+            var open by remember { mutableStateOf(false) }
+            if (left.isNotEmpty()) {
+                if (indices.size >= 3 && !open) TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("+ 자주 쓰는 이름 ${left.size}개", style = MaterialTheme.typography.labelMedium)
+                } else FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    left.forEach { (role, name) ->
+                        androidx.compose.material3.SuggestionChip(onClick = { preset = SlipLine(name, role, null); editing = -1 },
+                            label = { Text("+ $name", style = MaterialTheme.typography.labelSmall) })
+                    }
                 }
             }
         }
@@ -230,6 +238,9 @@ internal fun SlipCheck(
 }
 
 private val TOTALS = setOf(SlipRole.GROSS, SlipRole.TOTAL, SlipRole.DEDUCTION_TOTAL, SlipRole.NET)
+
+/** [PAYIN-02] Kinds a payslip prints once: not offered as a quick name when there is one. */
+private val ONCE = setOf(SlipRole.BASE, SlipRole.GROSS, SlipRole.TOTAL, SlipRole.DEDUCTION_TOTAL, SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY)
 
 /** [PAYIN-02] The 공제 side of a payslip. */
 private val RIGHT = setOf(SlipRole.DEDUCTION, SlipRole.DEDUCTION_TOTAL)

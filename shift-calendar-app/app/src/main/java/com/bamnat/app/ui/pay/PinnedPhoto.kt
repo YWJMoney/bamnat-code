@@ -43,6 +43,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
@@ -60,14 +61,19 @@ import androidx.compose.ui.unit.dp
 internal fun PinnedPhotos(photos: List<Bitmap>, labels: List<String> = listOf("명세서", "계산 방법"), modifier: Modifier = Modifier) {
     if (photos.isEmpty()) return
     var index by rememberSaveable { mutableIntStateOf(0) }
-    var folded by rememberSaveable { mutableStateOf(false) }
-    var big by rememberSaveable { mutableStateOf(false) }
     val screen = LocalConfiguration.current.screenHeightDp
+    // A very small screen at very big letters has no room for photo and lines together: it starts folded (one tap opens it).
+    val cramped = screen * 1.3f / LocalDensity.current.fontScale.coerceAtLeast(1f) < 500
+    var folded by rememberSaveable { mutableStateOf(cramped) }
+    var big by rememberSaveable { mutableStateOf(false) }
     val ime = WindowInsets.isImeVisible
+    // A small phone or big letters keep the photo smaller, so the tabs and the first lines still show under it.
+    val tight = screen < 700 || LocalDensity.current.fontScale > 1.3f
     val share = when {
-        ime -> 0.24f
+        ime -> if (tight) 0.18f else 0.24f
         big -> 0.55f
-        else -> 0.36f
+        tight -> 0.22f
+        else -> 0.3f
     }
     val photo = photos.getOrElse(index) { photos.first() }
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHighest, modifier = modifier.fillMaxWidth()) {
@@ -83,7 +89,7 @@ internal fun PinnedPhotos(photos: List<Bitmap>, labels: List<String> = listOf("�
                 }
                 if (folded) TextButton(onClick = { folded = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("사진 펴기") }
                 else {
-                    Text("두 손가락으로 키우고 밀어서 봐요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!tight) Text("두 손가락으로 키우고 밀어서 봐요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     TextButton(onClick = { big = !big }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (big) "사진 작게" else "사진 크게") }
                     TextButton(onClick = { folded = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
                 }
