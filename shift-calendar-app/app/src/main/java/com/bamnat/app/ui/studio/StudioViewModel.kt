@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -217,7 +218,13 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                     k.changed && !k.done && s.pieces.isNotEmpty() -> {
                         val r = (s.meta ?: recipe("")).copy(title = draftTitle(s), parent = null,
                             pieces = (s.pieces + s.extras.map { (kind, v) -> Piece(kind, v) }).sortedBy { it.kind.ordinal })
-                        val id = runCatching { c.recipes.saveDraft(s.draftId, RecipeCodec.write(r), 1, s.ownCode, "public") }.getOrNull() ?: return@collect
+                        val body = RecipeCodec.write(r)
+                        // 내 서랍 (PR #170): each '안 입히고 나가기' with the same look left one more '지금 모양에서 꾸미던 것'. A new studio
+                        // whose draft is the same as one kept already takes that one instead of adding another.
+                        val same = if (s.draftId != 0L) null else runCatching {
+                            c.recipes.drafts.first().firstOrNull { it.step <= 1 && it.body == body }
+                        }.getOrNull()
+                        val id = same?.id ?: runCatching { c.recipes.saveDraft(s.draftId, body, 1, s.ownCode, "public") }.getOrNull() ?: return@collect
                         if (_state.value.draftId != id) _state.value = _state.value.copy(draftId = id)
                     }
                 }
