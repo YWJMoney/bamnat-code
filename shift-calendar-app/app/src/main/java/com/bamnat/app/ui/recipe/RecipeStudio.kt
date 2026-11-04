@@ -506,8 +506,11 @@ private fun MockSummary(style: WorkStyle?) {
         else -> listOf("근무" to "18일", "시간" to "162h", "급여" to "예상")
     }.let { ex ->
         // PC 확인 Z5 (예시 숫자 '근무 18일 · 162h'): this month of the phone's own calendar, when it has work in it.
-        val mine = rememberMonthWork() ?: return@let ex
-        if (style == WorkStyle.BUSINESS || style == WorkStyle.INVEST) ex
+        // PC 확인 1.37 A10 (현장 기록 0건인데 '일한 날 15일 · 공수 16.5'): on my phone a kind of work with no 근무표 says my month, 0 when empty.
+        val realOn = com.bamnat.app.ui.studio.LocalRealLook.current
+        val noTable = style != null && !style.usesPattern && style != WorkStyle.HOURLY
+        val mine = rememberMonthWork() ?: if (realOn && noTable) 0 to 0 else return@let ex
+        if (style == WorkStyle.BUSINESS || style == WorkStyle.INVEST) (if (realOn) ex.map { (k, v) -> k to (if (v.endsWith("일")) "${mine.first}일" else v) } else ex)
         else listOf((if (style == WorkStyle.HOURLY || style == WorkStyle.FIELD) "일한 날" else "근무") to "${mine.first}일", "시간" to "${mine.second}h", ex.last())
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

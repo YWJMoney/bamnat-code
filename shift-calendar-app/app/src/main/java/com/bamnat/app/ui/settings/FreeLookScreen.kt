@@ -788,7 +788,8 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
     val memory = LocalColorMemory.current
     fun pick(c: Long?) { c?.let(memory.used); onPick(c) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // PC 확인 1.37 A10 (색을 처음 고르면 머리줄에 ‘☆ 내 색에’가 생겨 색 줄이 밀림): the line keeps one height, with or without its buttons.
+        Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             // PC 확인 1.36 (색·배경의 바탕색 줄에 이름표가 안 보임): the colour's name as a heading, like 배경 사진 above the rows.
             Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
             Text(value?.let { colorName(it) } ?: "처음대로", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -273,9 +273,10 @@ internal fun PartBar(
             StudioEdit.tools(sel).forEach { q ->
                 FilterChip(selected = quick == q, onClick = { onQuick(if (quick == q) null else q) }, label = { Text(q.label) })
             }
+            FilterChip(selected = false, onClick = onMore, label = { Text("더 보기 ›") })
+            // PC 확인 1.37 A10 (펼친 줄에서 잘못 눌려 메모 제목이 숨겨짐): 숨기기 last, after the tools, away from where the next tap goes.
             if (StudioEdit.canHide(sel)) FilterChip(selected = hidden, onClick = { set("숨기기", arrayOf("hide" to (if (hidden) null else true))) },
                 label = { Text(if (hidden) "다시 보이기" else "숨기기") })
-            FilterChip(selected = false, onClick = onMore, label = { Text("더 보기 ›") })
         }
         quick?.let { q ->
             // PC 확인 1.37 A9 (도구를 열면 예시가 33~49%로 줄어요): the quick tool takes less of the height; the rest scrolls inside it.

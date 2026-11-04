@@ -868,7 +868,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // PC 확인 1.37 A4 (안 입히고 나간 뒤 다른 화면의 스튜디오까지 따라와 예시를 가림): not when opened for a page's cards, and once shut
                 // it stays shut for that 만들던 것 (until it changes).
                 val shutAt = remember(resumeShut) { runCatching { studioPrefs.getLong("resumeShut", 0L) }.getOrDefault(0L) }
-                resumable?.takeIf { !resumeShut && vm.startArea == null && it.updatedAt != shutAt && s.past.isEmpty() && s.draftId == 0L }?.let { r ->
+                // PC 확인 1.37 A10 (첫 색을 고르는 순간 띠가 사라져 예시가 커지고 다음 누름이 엉뚱한 색으로): the band goes when a part or a 판 is picked,
+                // before the first change, so nothing moves between picks.
+                resumable?.takeIf { !resumeShut && vm.startArea == null && it.updatedAt != shutAt && s.past.isEmpty() && s.draftId == 0L && sel == null && !panel }?.let { r ->
                     Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                         Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {

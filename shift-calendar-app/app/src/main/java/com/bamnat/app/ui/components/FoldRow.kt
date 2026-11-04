@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.components
 
 import android.content.Context
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -127,7 +128,10 @@ fun FoldOverlay(host: FoldHost) {
     var held by remember { mutableStateOf(false) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     fun fold() { if (host.open === o) host.open = null }
-    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().pointerInput(o) { detectTapGestures { fold() } })
+    // PC 확인 1.37 A10 (펼친 칩이 밑의 단추를 덮어 그 자리를 누르면 '숨기기'가 눌림): what is under the open row is dimmed, so it reads
+    // as covered, and a tap there only folds the row.
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f))
+        .pointerInput(o) { detectTapGestures { fold() } })
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shadowElevation = 6.dp, tonalElevation = 2.dp,
         shape = androidx.compose.foundation.shape.RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp),
         modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset(pos.x.toInt(), pos.y.toInt()) }
