@@ -474,7 +474,8 @@ internal fun MemoTableView(
             items(rows, key = { it.first.id }) { (memo, props) ->
                 val picked = memo.id in selection
                 // [FXR-03] 표 한 줄 with its memo's day, so its 조건부 꾸미기 works.
-                val dayRow = if (memo.date == null) rowPart else com.bamnat.app.logic.partStyleOn("memo.table.row", memo.date)
+                // PC 4277abca: with the memo's own 고정·체크율·꼬리표 too, as its card.
+                val dayRow = com.bamnat.app.logic.scopeFor(memo.date) { com.bamnat.core.layout.TabFacts.memo(memo) }?.let { com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table.row", scope = it) } ?: rowPart
                 Row(
                     // PC 확인 1be49fd7: a memo picked in the list shows as picked here too.
                     Modifier.heightIn(min = 44.dp).background(if (picked) MaterialTheme.colorScheme.primaryContainer else memoBackground(memo.colorIndex).copy(alpha = 0.35f))

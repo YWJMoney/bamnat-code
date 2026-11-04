@@ -826,7 +826,7 @@ private fun MemoContent(memo: Memo, query: String) {
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.
         val cardLook = LocalMemoCardLook.current
         // [BLU-05] 1.36 부품 '메모 내용'(memo.card.body) over the 메모장 모양.
-        val bodyPart = com.bamnat.app.logic.partStyleOn("memo.card.body", memo.date)
+        val bodyPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.card.body", scope = com.bamnat.app.logic.scopeFor(memo.date) { com.bamnat.core.layout.TabFacts.memo(memo) })
         if (bodyPart.hide != true) Text(
             highlighted(com.bamnat.core.memo.MemoSearch.excerpt(body, query), query),
             style = bodyPart.text(memoFont(cardLook.font)?.let { MaterialTheme.typography.bodyMedium.copy(fontFamily = it) } ?: MaterialTheme.typography.bodyMedium),
@@ -851,7 +851,7 @@ private fun Footer(memo: Memo, showDate: Boolean) {
     ) {
         val pillColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
         // [BLU-05] 1.36 부품 '메모 날짜'(memo.card.date).
-        val datePart = com.bamnat.app.logic.partStyleOn("memo.card.date", memo.date)
+        val datePart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.card.date", scope = com.bamnat.app.logic.scopeFor(memo.date) { com.bamnat.core.layout.TabFacts.memo(memo) })
         if (date != null && datePart.hide != true) {
             val dateShape = datePart.shape(MaterialTheme.shapes.small)
             Row(
