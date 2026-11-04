@@ -275,7 +275,7 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
     }
     val looks = view.looks.ifEmpty { listOf(CellLook()) }
     val i = index.coerceIn(0, looks.lastIndex)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    com.bamnat.app.ui.components.FoldRow("freelook.1") {
         looks.indices.forEach { n -> FilterChip(selected = n == i, onClick = { onIndex(n) }, label = { Text("모양 ${n + 1}") }) }
         if (looks.size < CellLook.MAX) TextButton(onClick = { onChange(view.copy(looks = looks + looks[i])); onIndex(looks.size) }) { Text("+ 모양 더하기") }
     }
@@ -782,6 +782,7 @@ val LocalColorMemory = androidx.compose.runtime.staticCompositionLocalOf { Color
  * (빛깔·맑기·밝기, or a code). 처음대로 when [allowNone].
  */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (Long?) -> Unit) {
     var custom by remember { mutableStateOf(false) }
     val memory = LocalColorMemory.current
@@ -811,9 +812,23 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             )
         }
         val split = recent.size + LIGHT_SWATCHES
+        // [CNV-13] 펼쳐 보기: the colours all at once (kept open for every 색 고르기 once opened), or the two rows that slide.
+        val (allOut, setAllOut) = com.bamnat.app.ui.components.rememberFold("color.swatches")
         // PC 제안 1.36: on a new phone, where the colours used will gather.
-        if (recent.isEmpty() && memory.pin != null) Text("쓴 색과 ★ 내 색은 줄 맨 앞에 모여요", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (recent.isEmpty() && memory.pin != null) "쓴 색과 ★ 내 색은 줄 맨 앞에 모여요" else "", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.FoldButton(if (allOut) "접기 ▴" else "모두 펼치기 ▾", if (allOut) "$label 색 한 줄로 접기" else "$label 색 모두 펼쳐 보기") { setAllOut(!allOut) }
+        }
+        if (allOut) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(
+                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
+                    .semantics { contentDescription = "$label 직접 고르기" },
+                contentAlignment = Alignment.Center,
+            ) { Text("+", style = MaterialTheme.typography.titleMedium) }
+            for (i in row.indices) Dot(i)
+        } else {
         // that slides the row on.
         val swatchScroll = rememberScrollState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -844,6 +859,7 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                     .clickable(onClickLabel = "색 더 보기") { scope.launch { swatchScroll.animateScrollBy(240f) } },
                 contentAlignment = Alignment.CenterEnd,
             ) { Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp)) }
+        }
         }
         }
     }

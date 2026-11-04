@@ -84,4 +84,14 @@ class CnvScreenshotTest : ScreenshotBase() {
             assertTrue(gone("여행 계획", exact = true))
         }
     }
+
+    /** [CNV-13] 사용자 2026-11-04 "좌우로 스크롤인데 펼쳐서 볼수도 있게": a row that does not fit opens, folds, and stays open next time. */
+    @Test fun aSlidingRowOpensAndFolds() { shift(); shoot("1505_cnv_fold_row", PHONE) {
+        tapText("도구")
+        tapText("카드 배치", exact = true)
+        assertTrue("a row that does not fit offers 펼치기", appears("펼치기 ▾", exact = true))
+        tapText("펼치기 ▾", exact = true)
+        assertTrue("open, it folds again", appears("접기 ▴", exact = true))
+        assertTrue("kept open", app.getSharedPreferences("fold_rows", android.content.Context.MODE_PRIVATE).all.values.any { it == true })
+    } }
 }

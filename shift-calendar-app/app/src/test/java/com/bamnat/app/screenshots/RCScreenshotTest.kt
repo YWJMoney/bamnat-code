@@ -98,7 +98,8 @@ class RCScreenshotTest : ScreenshotBase() {
         // [CNV-08] 달력 도구 › 카드 배치 opens the studio on 달력 (the 화면 menu on top is a popup these tests do not read).
         tapText("도구")
         tapText("카드 배치", exact = true)
-        swipeRowLeft("칸 디자인", until = "보관함 0", dp = 80)
+        // [CNV-13] the tool row opens with 펼치기 instead of sliding it.
+        tapText("도구 줄 모두 펼쳐 보기", exact = true)
         tapText("보관함", prefix = true)
         tapText("장터 ‘기능별 탭 › 달력’에서 찾기", exact = true)
         assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))

@@ -405,6 +405,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var panelMode by rememberSaveable { mutableStateOf(PanelMode.TOOL) }
     var panelBig by rememberSaveable { mutableStateOf(false) }
     var condFirst by remember { mutableStateOf(false) }
+    // PC 확인 1.37 A8: each ‘＋ 조건으로 꾸미기’ asks again, also when the part's panel is already open.
+    var condAsk by remember { mutableStateOf(0) }
     var hintSeen by rememberSaveable { mutableStateOf(false) }
     val zoom = remember { ZoomState() }
     val spots = remember { com.bamnat.app.ui.parts.PartSpots() }
@@ -678,7 +680,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     quick = quick, onQuick = { quick = it },
                     set = { label, kv -> setPart(label, kv) },
                     onMore = { openPanel(PanelMode.PART) },
-                    onCondition = { condFirst = true; openPanel(PanelMode.PART) })
+                    onCondition = { condFirst = true; condAsk++; openPanel(PanelMode.PART) })
                 else if (cardPick != null) {
                     val (page, cid) = cardPick
                     val cards = remember(page, d, vm.style) { pageCards(page, vm.style) }
@@ -689,8 +691,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         onHide = { vm.change { cards.show(it, cid, false).sameLinesAs(s.base) }; selectPart(null) },
                         onLook = { selectPart("app.card") })
                 } else ScreenBar {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.app.ui.components.FoldRow("studio.top", what = "화면 줄") {
                         // 화면 고르기: the screens of the app (영역 칩 12개 → 하나).
                         Box {
                             var open by remember { mutableStateOf(false) }
@@ -721,8 +722,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.
                         ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it })
                     }
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.app.ui.components.FoldRow("studio.tools", what = "도구 줄") {
                         // [CNV-07] 숨긴 카드 다시 넣기 (빈 판에서 카드 넣기도 여기서).
                         val toAdd = rememberCardsToAdd(area.tab, vm.style, d)
                         if (!detail && toAdd.page !== PageCards.NONE)
@@ -948,7 +948,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     PartsTool(partsGroupOf(areaOfPart(id)), d.parts, focus = id, focusOn = selOn,
                                         onFocus = { pid, pon -> if (pid != sel) { sel = pid; selWhen = null; quick = null }; selOn = pon },
                                         onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishRound++; publishing = Triple(body, "", null) } }, advanced = studioAdvanced,
-                                        conditionFirst = condFirst, onWhen = { w -> selWhen = w },
+                                        conditionFirst = condFirst, conditionAsk = condAsk, onWhen = { w -> selWhen = w },
                                         rulesUsing = { f -> com.bamnat.core.formula.Logic.decode(d.logic).rules.filter { it.cond == f }.map { it.name } },
                                         onOpenRules = { openTool(Area.RULES, Tool.RULES) },
                                         onTogether = { partsTogether = it }) { v -> vm.change { it.copy(parts = v) } }
@@ -981,7 +981,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                         Tool.MONEY_LOOK -> MoneyLookEditor(moneyLook) { l -> vm.change { it.copy(moneyLook = l.encode()) } }
                                         Tool.PAY_LOOK -> {
                                             Text("근무 유형마다 따로 꾸며요", style = MaterialTheme.typography.labelLarge)
-                                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            com.bamnat.app.ui.components.FoldRow("studio.paystyle", what = "근무 유형") {
                                                 WorkStyle.entries.forEach { st -> FilterChip(selected = st == payStyle, onClick = { payStyle = st }, label = { Text(st.label.substringBefore(' ')) }) }
                                             }
                                             PayLookEditor(payLooks[payStyle] ?: PayLook()) { l ->
@@ -1322,7 +1322,7 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
         }
     }
     Text("바탕 투명도", style = MaterialTheme.typography.labelLarge)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    com.bamnat.app.ui.components.FoldRow("studio.widget1") {
         listOf(100 to "불투명", 85 to "조금 비침", 65 to "반쯤 비침", 40 to "많이 비침").forEach { (a, label) ->
             FilterChip(selected = w.alpha == a, onClick = { onChange(w.copy(alpha = a)) }, label = { Text(label) })
         }
@@ -1335,7 +1335,7 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
     if (wi != null && wb != null && com.bamnat.core.recipe.Palette.inkOn(wi, wb) != wi) Text("고른 글자색은 바탕에서 잘 안 보여서 검정이나 흰색으로 보여요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
     Text("모서리", style = MaterialTheme.typography.labelLarge)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    com.bamnat.app.ui.components.FoldRow("studio.widget2") {
         listOf(null to "처음대로", 4 to "각지게", 12 to "조금 둥글게", 28 to "아주 둥글게").forEach { (r, label) ->
             FilterChip(selected = w.corner == r, onClick = { onChange(w.copy(corner = r)) }, label = { Text(label) })
         }
@@ -1344,7 +1344,7 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
     if (android.os.Build.VERSION.SDK_INT >= 31) Text("안드로이드 12부터는 홈 화면이 위젯 모서리를 직접 둥글게 하기도 해요. 그런 휴대폰에서는 ‘각지게’가 덜 각져 보여요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("글자 크기", style = MaterialTheme.typography.labelLarge)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    com.bamnat.app.ui.components.FoldRow("studio.widget3") {
         listOf(null to "보통", "s" to "작게", "l" to "크게").forEach { (t, label) ->
             FilterChip(selected = w.text == t, onClick = { onChange(w.copy(text = t)) }, label = { Text(label) })
         }
@@ -1357,7 +1357,7 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
     if (runCatching { wm.isRequestPinAppWidgetSupported }.getOrDefault(false)) {
         var placed by remember { mutableStateOf(false) }
         Text("홈 화면에 놓기", style = MaterialTheme.typography.labelLarge)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.app.ui.components.FoldRow("studio.widget4") {
             // PC 확인 W3 1.36: each chip says how big the widget is.
             listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘 · 2×1", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주 · 4×1",
                 com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1").forEach { (cls, label) ->
@@ -1414,7 +1414,7 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
             modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), RoundedCornerShape(6.dp))))
     }
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.app.ui.components.FoldRow("studio.widgetkind", Modifier.padding(horizontal = 12.dp, vertical = 4.dp), what = "위젯 종류") {
             WidgetKind.entries.forEach { k -> FilterChip(selected = k == kind, onClick = { kind = k }, label = { Text(k.label) }) }
         }
         Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),

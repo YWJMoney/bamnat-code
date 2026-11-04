@@ -105,7 +105,7 @@ fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (
         }
         // [MAT-01] PC 확인 1차 (사용성 제안 "바로 고르기를 위로"): ready-made fills first, whichever kind is chosen.
         Text("바로 고르기", style = MaterialTheme.typography.labelMedium, color = scheme.onSurfaceVariant)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        com.bamnat.app.ui.components.FoldRow("material.1", spacing = 8.dp) {
             Fill.PRESETS.forEach { (name, f) ->
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.clickable(onClickLabel = "$name 채우기") { onChange(f) }
                     .semantics { selected = value == f }) {
@@ -115,7 +115,7 @@ fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (
                 }
             }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.app.ui.components.FoldRow("material.2") {
             FillKind.entries.forEach { k ->
                 FilterChip(selected = kindOf(value) == k, onClick = { onChange(start(k, value, base, accent)) }, label = { Text(k.label) })
             }
@@ -198,7 +198,7 @@ fun FillEditor(label: String, value: Fill?, base: Long = 0xFFFFF4CC, onChange: (
 
 @Composable
 private fun GradientHandles(g: Fill.Gradient, onChange: (Fill?) -> Unit) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    com.bamnat.app.ui.components.FoldRow("material.3") {
         FilterChip(selected = g is Fill.Linear, onClick = { onChange(Fill.Linear(135, g.stops)) }, label = { Text("선형") })
         FilterChip(selected = g is Fill.Radial, onClick = { onChange(Fill.Radial(50, 40, 90, g.stops)) }, label = { Text("방사형") })
         FilterChip(selected = g is Fill.Sweep, onClick = { onChange(Fill.Sweep(50, 50, 0, g.stops)) }, label = { Text("원뿔형") })
@@ -206,7 +206,7 @@ private fun GradientHandles(g: Fill.Gradient, onChange: (Fill?) -> Unit) {
     }
     when (g) {
         is Fill.Linear -> {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.bamnat.app.ui.components.FoldRow("material.4") {
                 listOf(0 to "↓", 45 to "↘", 90 to "→", 135 to "↗", 180 to "↑", 270 to "←").forEach { (a, arrow) ->
                     FilterChip(selected = g.angle == a, onClick = { onChange(g.copy(angle = a)) }, label = { Text(arrow) },
                         modifier = Modifier.semantics { contentDescription = "방향 ${a}도" })
@@ -313,7 +313,7 @@ fun PhotoAdjustEditor(value: PhotoAdjust, onChange: (PhotoAdjust) -> Unit) {
     MatSlider("흐림", value.blur.toFloat(), 0f..25f, "", shown = { if (it < 1) "없음" else "${it.toInt()}" }) { onChange(value.copy(blur = it.toInt())) }
     Text("흐림은 안드로이드 12부터 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("아래와 섞기", style = MaterialTheme.typography.bodyMedium)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    com.bamnat.app.ui.components.FoldRow("material.5") {
         PhotoAdjust.BLENDS.forEach { b -> FilterChip(selected = value.blend == b, onClick = { onChange(value.copy(blend = b)) }, label = { Text(PhotoAdjust.BLEND_NAMES[b] ?: b) }) }
     }
 }
@@ -523,7 +523,7 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
         title = { Text("글꼴 고르기") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.bamnat.app.ui.components.FoldRow("material.6") {
                     FilterChip(selected = group == null, onClick = { group = null }, label = { Text("모두 ${FontCatalog.ALL.size + mine.size}") })
                     FontCatalog.Group.entries.forEach { g -> FilterChip(selected = group == g, onClick = { group = g }, label = { Text(g.label) }) }
                 }

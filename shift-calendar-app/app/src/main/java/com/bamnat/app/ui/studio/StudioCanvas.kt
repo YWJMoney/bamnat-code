@@ -247,8 +247,7 @@ internal fun PartBar(
     val hidden = line["hide"] == true
     BarSurface {
         Trail(StudioEdit.trail(sel).map { it to (BlueprintParts.LABELS[it] ?: it) }, onSel)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically) {
+        com.bamnat.app.ui.components.FoldRow("studio.partbar", what = "꾸미기 도구") {
             // 언제 고치나: 언제나, the part's own states, its conditions.
             val states = statesFor(sel)
             val conds = remember(parts, sel, on) { StudioEdit.conditions(parts, sel, on) }
@@ -346,7 +345,7 @@ internal fun CardBar(
     BarSurface {
         // PC 확인 1.37 A1: 고르기 끝 and the page's name both let the card go (Trail gives null for them).
         Trail(listOf("" to page, "card" to label)) { onSel(null) }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.app.ui.components.FoldRow("studio.cardbar", what = "카드 도구") {
             FilterChip(selected = false, onClick = { onMove(-1) }, enabled = canUp, label = { Text("▲ 위로") })
             FilterChip(selected = false, onClick = { onMove(1) }, enabled = canDown, label = { Text("▼ 아래로") })
             if (above != null && onAcross != null) FilterChip(selected = false, onClick = onAcross,
