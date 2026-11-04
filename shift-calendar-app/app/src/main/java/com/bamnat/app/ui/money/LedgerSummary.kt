@@ -127,6 +127,11 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
                 FitText("-" + Fmt.won(m.spent), MaterialTheme.typography.titleMedium, cal.expense, fontWeight = FontWeight.Bold)
             }
         }
+        // 1.37 PC 실사용(자영업 S5-16): '나간 돈 −0원'인데 경비 30만이 있어 헷갈렸어요. 가게 경비는 가게 순수익(들어온 돈)에서 빠져요.
+        if (m.salesCosts > 0) {
+            Text("가게 경비 ${Fmt.won(m.salesCosts)}은 나간 돈이 아니라 들어온 돈의 가게 순수익(매출 − 경비)에서 뺐어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        }
         // [RECV-04] Work written down but not paid yet stays out of 들어온 돈 and shows here instead.
         if (m.jobOwed > 0) {
             Text("아직 안 받은 일감 ${Fmt.won(m.jobOwed)}은 받을 돈에 있어요. 돈 받음을 켜면 들어온 돈에 더해져요.",

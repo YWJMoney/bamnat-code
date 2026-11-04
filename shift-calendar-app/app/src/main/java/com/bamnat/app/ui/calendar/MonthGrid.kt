@@ -636,7 +636,7 @@ private fun DayCell(
             type != null && (focus == CalendarFocus.SHIFTS || !type.isOff || jobs == 0 && sales == null) -> type.name
             focus == CalendarFocus.SHIFTS -> "쉬는 날"
             jobs > 0 || sales != null -> null
-            else -> focus.emptyDay
+            else -> focus.emptyDay(day.isWorkDay)
         }
         shiftWords?.let { append(", ").append(it) }
         day.leave?.let { append(", ").append(it.label) }

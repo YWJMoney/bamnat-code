@@ -253,7 +253,7 @@ private fun DayRow(
         Column(Modifier.weight(1f)) {
             row.holiday?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = cal.sunday) }
             if (lines.isEmpty() && row.holiday == null && row.memos == 0) {
-                Text(focus.emptyDay, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                Text(focus.emptyDay(row.day.isWorkDay), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
             }
             lines.forEachIndexed { i, l ->
                 Text(l, style = if (i == 0) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,
