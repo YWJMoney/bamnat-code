@@ -146,6 +146,25 @@ class MoneyRepository(
 
     suspend fun allBudgets(): List<MoneyBudget> = dao.allBudgets().map { it.toModel() }
 
+    /** 1.37 [LEDH-11][LEDH-13] 봉투 and the money in them, in the user's order. */
+    val envelopes: Flow<Pair<List<com.bamnat.core.money.Envelope>, List<com.bamnat.core.money.EnvelopeMove>>> =
+        combine(dao.observeEnvelopes(), dao.observeEnvelopeMoves()) { e, m -> e.map { it.toModel() } to m.map { it.toModel() } }.flowOn(Dispatchers.Default)
+
+    suspend fun saveEnvelope(e: com.bamnat.core.money.Envelope): Long = dao.upsertEnvelope(e.toEntity()).let { if (it > 0) it else e.id }
+
+    /** Removes an envelope and its moves; [restoreEnvelope] with what [envelopeWithMoves] gave puts them back. */
+    suspend fun deleteEnvelope(id: Long) = db.withTransaction { dao.deleteMovesOf(id); dao.deleteEnvelope(id) }
+
+    suspend fun envelopeWithMoves(id: Long) = dao.allEnvelopes().firstOrNull { it.id == id }?.toModel() to dao.allEnvelopeMoves().filter { it.envelopeId == id }.map { it.toModel() }
+
+    suspend fun restoreEnvelope(e: com.bamnat.core.money.Envelope, moves: List<com.bamnat.core.money.EnvelopeMove>) = db.withTransaction {
+        dao.upsertEnvelope(e.toEntity()); moves.forEach { dao.insertEnvelopeMove(it.toEntity()) }
+    }
+
+    suspend fun moveEnvelope(m: com.bamnat.core.money.EnvelopeMove): Long = dao.insertEnvelopeMove(m.toEntity())
+
+    suspend fun deleteEnvelopeMove(id: Long) = dao.deleteEnvelopeMove(id)
+
     suspend fun allCategories(): List<CategoryEdit> = dao.allCategories().mapNotNull { it.toModel() }
 
     /** [LEDG-08] Adds an account at the end of the list, or saves the one with the same id. */

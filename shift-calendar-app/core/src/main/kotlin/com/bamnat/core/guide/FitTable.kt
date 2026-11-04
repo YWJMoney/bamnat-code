@@ -78,7 +78,7 @@ object FitTable {
         stats("tiles", PAID), stats("pay", PAID), stats("kinds", PAID), stats("three", PAID), stats("weeks", PAID),
         stats("trend", PAID), stats("compare", PAID), stats("year", PAID),
         // 돈 화면 꾸미기 (MoneyPart).
-        money("hero"), money("new"), money("ahead"), money("recent"), money("income"), money("owed"),
+        money("hero"), money("new"), money("ahead"), money("envelopes"), money("recent"), money("income"), money("owed"),
         money("work", setOf(FIELD, SHOP)),
         money("all"), money("budget"), money("other"), money("upcoming"), money("repeat"), money("accounts"), money("auto"),
         // E 1.32 [LEDX-07][LEDX-09][LEDX-10] 카드 문턱 is for pay that has 총급여.

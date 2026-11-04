@@ -109,11 +109,13 @@ object FeatureSwitches {
         // 1.32 조사 대조 [LEDX-16][LEDX-17][LEDX-23]
         "money.asks", "money.installPlan", "money.heat", "backup.nudge", "day.leaveTime",
         "recipe.browse", // [RCP-38] 1.34 설정 › 나눔 판의 스위치
-        "recipe.update", "recipe.maker", "recipe.request") // [RCX-20] 1.35 새 판 알림·팔로우·답 알림·요청 판 보이기
+        "recipe.update", "recipe.maker", "recipe.request", // [RCX-20] 1.35 새 판 알림·팔로우·답 알림·요청 판 보이기
+        "money.ahead", "money.envelopes", "money.payCycle", "money.workTime") // 1.37 [LEDH-01][LEDH-06][LEDH-07]
 
     /** 1.32 [WTYP-08] The 가계부 card each of these features is ([com.bamnat.app.ui.money.MoneyPart]). */
     private val MONEY_CARDS = mapOf("money.cardBill" to "cardbill", "money.shiftSpend" to "shiftspend",
-        "money.subscriptions" to "subs", "money.cardThreshold" to "card25", "money.asks" to "ask", "money.installPlan" to "install")
+        "money.subscriptions" to "subs", "money.cardThreshold" to "card25", "money.asks" to "ask", "money.installPlan" to "install",
+        "money.ahead" to "ahead", "money.envelopes" to "envelopes")
 
     private fun moneyCardShown(c: AppContainer, card: String) =
         com.bamnat.app.ui.money.moneyParts(c.settingsRepository.current.moneyLayout).firstOrNull { it.part.id == card }?.shown ?: true
@@ -141,6 +143,8 @@ object FeatureSwitches {
             "money.inCells" -> c.settingsRepository.current.spendInCells
             "pay.depositCompare" -> c.settingsRepository.current.payDepositNotice
             "money.heat" -> c.settingsRepository.current.spendHeat
+            "money.payCycle" -> c.settingsRepository.current.moneyByPayCycle
+            "money.workTime" -> c.settingsRepository.current.workTimeFrom > 0
             "backup.nudge" -> c.settingsRepository.current.backupNudge
             "day.leaveTime" -> c.settingsRepository.current.leaveTimeNotice
             "recipe.browse" -> c.recipes.on.value
@@ -182,6 +186,8 @@ object FeatureSwitches {
                 "money.inCells" -> c.settingsRepository.update { it.copy(spendInCells = on) }
                 "pay.depositCompare" -> c.settingsRepository.update { it.copy(payDepositNotice = on) }
                 "money.heat" -> c.settingsRepository.update { it.copy(spendHeat = on) }
+                "money.payCycle" -> c.settingsRepository.update { it.copy(moneyByPayCycle = on) }
+                "money.workTime" -> c.settingsRepository.update { it.copy(workTimeFrom = if (on) com.bamnat.core.money.WorkTime.DEFAULT_FROM else 0L) }
                 "backup.nudge" -> c.settingsRepository.update { it.copy(backupNudge = on) }
                 "day.leaveTime" -> c.settingsRepository.update { it.copy(leaveTimeNotice = on) }
                 "recipe.browse" -> c.recipes.setOn(on)

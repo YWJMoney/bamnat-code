@@ -205,12 +205,12 @@ class MoneyViewModel(
                 val date = profile.period.payDate(m)
                 com.bamnat.core.money.PayDay(date ?: m.atEndOfMonth(), PayIncome.net(profile, m, gross), "${m.monthValue}월 급여", dateGuessed = date == null)
             }
-            // The latest month whose work is done: its take-home over the minutes it counted.
-            val hourly = pays.entries.filter { (m, _) -> profile.period.end(m).isBefore(today) }.reversed().firstNotNullOfOrNull { (m, p) ->
-                p ?: return@firstNotNullOfOrNull null
-                com.bamnat.core.money.WorkTime.hourly(PayIncome.net(profile, m, p.total), p.minutes.sumOf { it.total.worked })
-            }
-            AheadPay(days, hourly, profile.period.payDay)
+            // The latest month whose work is done: its take-home over the minutes it counted, and over the days worked.
+            val done = pays.entries.filter { (m, p) -> p != null && profile.period.end(m).isBefore(today) }.reversed()
+                .firstOrNull { (_, p) -> p!!.minutes.sumOf { it.total.worked } >= 600 }
+            val hourly = done?.let { (m, p) -> com.bamnat.core.money.WorkTime.hourly(PayIncome.net(profile, m, p!!.total), p.minutes.sumOf { it.total.worked }) }
+            val perShift = done?.let { (m, p) -> p!!.minutes.count { it.total.worked > 0 }.takeIf { it > 0 }?.let { PayIncome.net(profile, m, p.total) / it } }
+            AheadPay(days, hourly, profile.period.payDay, perShift)
         }
 
     /** E 1.32 [LEDX-09] A subscription the user said they still use, by place, so it is not asked again for 90 days. */
@@ -464,6 +464,35 @@ class MoneyViewModel(
     }
 
     /** [LEDG-06] Saves the month's budget and each category's; 0 removes one. */
+    /** 1.37 [LEDH-11][LEDH-13] 봉투 and the money in them. */
+    val envelopes: StateFlow<Pair<List<com.bamnat.core.money.Envelope>, List<com.bamnat.core.money.EnvelopeMove>>> =
+        money.envelopes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList<com.bamnat.core.money.Envelope>() to emptyList())
+
+    fun saveEnvelope(e: com.bamnat.core.money.Envelope) {
+        container.appScope.launch {
+            money.saveEnvelope(e)
+            _undo.tryEmit(UndoMessage(if (e.id == 0L) "'${e.name}' 봉투를 만들었어요" else "'${e.name}' 봉투를 고쳤어요", undo = null))
+        }
+    }
+
+    fun deleteEnvelope(e: com.bamnat.core.money.Envelope) {
+        container.appScope.launch {
+            val (kept, moves) = money.envelopeWithMoves(e.id)
+            money.deleteEnvelope(e.id)
+            _undo.tryEmit(UndoMessage("'${e.name}' 봉투를 지웠어요") { kept?.let { money.restoreEnvelope(it, moves) } })
+        }
+    }
+
+    /** Puts [amounts] (envelope id → won, negative takes out) in on [date]; one 되돌리기 takes them all back. */
+    fun moveToEnvelopes(amounts: Map<Long, Long>, date: java.time.LocalDate, note: String, entryId: Long? = null) {
+        if (amounts.values.all { it == 0L }) return
+        container.appScope.launch {
+            val ids = amounts.filterValues { it != 0L }.map { (id, a) -> money.moveEnvelope(com.bamnat.core.money.EnvelopeMove(envelopeId = id, date = date, amount = a, note = note, entryId = entryId)) }
+            val total = amounts.values.sum()
+            _undo.tryEmit(UndoMessage(if (total >= 0) "봉투에 ${Fmt.won(total)} 넣었어요" else "봉투에서 ${Fmt.won(-total)} 뺐어요") { ids.forEach { money.deleteEnvelopeMove(it) } })
+        }
+    }
+
     fun saveBudgets(values: Map<String, Long>) {
         container.appScope.launch {
             values.forEach { (c, v) -> money.setBudget(c, v) }
@@ -624,6 +653,15 @@ fun MoneyScreen(
     val aheadPay by produceState<AheadPay?>(null, style, profile, snapshot, today) {
         value = vm.aheadPay(style, profile, snapshot, today, today.plusDays(com.bamnat.core.money.MoneyAhead.FULL_DAYS.toLong()))
     }
+    // 1.37 [LEDH-11] 봉투.
+    val envelopeBook by vm.envelopes.collectAsStateWithLifecycle()
+    val envelopeActions = remember(vm) {
+        object : EnvelopeActions {
+            override fun save(e: com.bamnat.core.money.Envelope) = vm.saveEnvelope(e)
+            override fun delete(e: com.bamnat.core.money.Envelope) = vm.deleteEnvelope(e)
+            override fun move(amounts: Map<Long, Long>, date: java.time.LocalDate, note: String, entryId: Long?) = vm.moveToEnvelopes(amounts, date, note, entryId)
+        }
+    }
     // 1.37 [LEDH-06] 급여일 주기: this month's budget counted from the last pay day to the day before the next.
     val cycle = remember(settings.moneyByPayCycle, profile, today, month) {
         if (!settings.moneyByPayCycle || month != YearMonth.from(today)) null
@@ -656,6 +694,11 @@ fun MoneyScreen(
         MoneyPart.AHEAD to {
             AheadCard(book, style, today, aheadPay, budget, toSort = unseen.size, gate = gate,
                 onAddAccount = { addingAccount = com.bamnat.core.money.AccountType.BANK }, onOpenPay = onOpenPay)
+        },
+        MoneyPart.ENVELOPES to {
+            val (envs, moves) = envelopeBook
+            EnvelopesCard(book, envs, moves, style, today, aheadPay?.perShift, pro = !gate.live || gate.tier >= com.bamnat.app.tier.Tier.PRO,
+                actions = envelopeActions)
         },
         MoneyPart.RECENT to { RecentCard(recent, month, onOpen = { editing = it }, onAll = { vm.setView(LedgerView()); vm.showPage(MoneyViewModel.Page.LIST) }) },
         MoneyPart.INCOME to {
@@ -990,6 +1033,8 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     ASK("ask", "확인할 것", "원래 결제를 못 찾은 환불, 처음 보는 카드", movable = false, right = true),
     // 1.37 [LEDH-01][LEDH-02][LEDH-03] 근무가 보이는 가계부.
     AHEAD("ahead", "앞으로의 돈", "오늘 쓸 돈·월급까지 며칠·날마다 남을 돈"),
+    // 1.37 [LEDH-11][LEDH-13]
+    ENVELOPES("envelopes", "모으기 봉투", "목표까지 얼마·근무 몇 번, 월급 나누기, 세금 봉투"),
     RECENT("recent", "최근 기록", "이번 달 마지막 다섯 줄", right = true),
     INCOME("income", "수입 내역", "급여 예상과 적은 수입", right = true),
     TAX("tax", "세금·실수령", "세전·세후 예상, 올해 낼 세금", right = true),

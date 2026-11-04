@@ -41,7 +41,7 @@ import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
 
 /** 1.37 [LEDH-01][LEDH-07] The pay engine's pay days ahead and take-home per hour; empty without pay set up. */
-data class AheadPay(val days: List<PayDay> = emptyList(), val hourly: Long? = null, val payDay: Int? = null)
+data class AheadPay(val days: List<PayDay> = emptyList(), val hourly: Long? = null, val payDay: Int? = null, val perShift: Long? = null)
 
 /** 1.37 [LEDH-02] The kinds of money a calendar of [style] waits for until its next 'pay'. */
 internal fun nextKinds(style: WorkStyle?): Set<FlowKind> = when (style) {

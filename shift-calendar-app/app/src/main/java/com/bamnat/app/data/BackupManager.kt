@@ -201,6 +201,19 @@ class BackupManager(
         into.put("budgets", JSONArray().apply {
             money.allBudgets().forEach { b -> put(JSONObject().put("category", b.category).put("amount", b.amount)) }
         })
+        // 1.37 [LEDH-11][LEDH-13] 봉투 and the money moved into them. Older apps ignore this key.
+        into.put("envelopes", JSONObject()
+            .put("list", JSONArray().apply {
+                money.allEnvelopes().forEach { e ->
+                    put(JSONObject().put("id", e.id).put("name", e.name).put("target", e.target).putOpt("due", e.dueEpochDay).put("kind", e.kind)
+                        .put("share", e.sharePercent).put("emoji", e.emoji).put("order", e.sortOrder).put("closed", e.closed).putOpt("created", e.createdEpochDay))
+                }
+            })
+            .put("moves", JSONArray().apply {
+                money.allEnvelopeMoves().forEach { m ->
+                    put(JSONObject().put("id", m.id).put("envelope", m.envelopeId).put("day", m.epochDay).put("amount", m.amount).put("note", m.note).putOpt("entry", m.entryId))
+                }
+            }))
         into.put("categories", JSONArray().apply {
             money.allCategories().forEach { c ->
                 put(JSONObject().put("kind", c.kind).put("name", c.name).put("position", c.position).put("hidden", c.hidden))
@@ -718,6 +731,8 @@ class BackupManager(
         val tax: TaxBackup.Rows? = null,
         /** [RCP-25] Null for a backup without "recipes" (before 1.34): the phone's then stay. */
         val recipes: RecipeBackup.Rows? = null,
+        /** 1.37 [LEDH-11] Null for a backup without "envelopes" (before 1.37): the phone's then stay. */
+        val envelopes: Pair<List<com.bamnat.app.data.db.EnvelopeEntity>, List<com.bamnat.app.data.db.EnvelopeMoveEntity>>? = null,
     )
 
     private fun readMoney(from: JSONObject): MoneyRows {
@@ -790,7 +805,19 @@ class BackupManager(
         val invest = from.optJSONObject("invest")?.let(InvestBackup::read)
         val tax = from.optJSONObject("tax")?.let(TaxBackup::read)
         val recipes = from.optJSONObject("recipes")?.let { RecipeBackup.read(it, com.bamnat.core.time.Today.millis()) }
-        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest, tax, recipes)
+        val envelopes = from.optJSONObject("envelopes")?.let { o ->
+            val list = o.optJSONArray("list")?.objects()?.map { e ->
+                com.bamnat.app.data.db.EnvelopeEntity(e.optLong("id"), e.optString("name").take(com.bamnat.core.money.Envelope.MAX_NAME), e.optLong("target").coerceAtLeast(0),
+                    e.optLongOrNull("due"), e.optInt("kind"), e.optInt("share").coerceIn(0, 100), e.optString("emoji"), e.optInt("order"),
+                    e.optBoolean("closed"), e.optLongOrNull("created"))
+            }.orEmpty()
+            val ids = list.map { it.id }.toSet()
+            val moves = o.optJSONArray("moves")?.objects()?.map { m ->
+                com.bamnat.app.data.db.EnvelopeMoveEntity(m.optLong("id"), m.optLong("envelope"), m.optLong("day"), m.optLong("amount"), m.optString("note"), m.optLongOrNull("entry"))
+            }.orEmpty().filter { it.envelopeId in ids }
+            list to moves
+        }
+        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest, tax, recipes, envelopes)
     }
 
     /** [MCAL-06] Replaces a calendar's money with a backup's, part by part; call inside its transaction. */
@@ -805,6 +832,12 @@ class BackupManager(
         // Backups from before version 15 carry no accounts, budgets or categories; the ones on the phone then stay.
         rows.accounts?.let { list -> money.clearAccounts(); list.forEach { money.restoreAccount(it) } }
         rows.budgets?.let { list -> money.clearBudgets(); list.forEach { money.upsertBudget(it) } }
+        // 1.37 [LEDH-11] Backups from before 1.37 carry no envelopes; the ones on the phone then stay.
+        rows.envelopes?.let { (list, moves) ->
+            money.clearEnvelopeMoves(); money.clearEnvelopes()
+            list.forEach { money.upsertEnvelope(it) }
+            moves.forEach { money.insertEnvelopeMove(it) }
+        }
         rows.categories?.let { list -> money.clearAllCategories(); money.insertCategories(list) }
         // Backups from before version 13 carry no receivables; the ones on the phone then stay.
         rows.owed?.let { list ->
