@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -75,8 +76,12 @@ internal fun PlatformDayDialog(date: LocalDate, platform: String?, existing: Job
     var minutes by rememberSaveable { mutableStateOf(existing?.let { PlatformWork.minutes(it) % 60 }?.takeIf { it > 0 }?.toString() ?: "") }
     var costs by rememberSaveable { mutableStateOf(amountDigits(existing?.costs ?: 0)) }
     val drive = (hours.toIntOrNull() ?: 0) * 60 + (minutes.toIntOrNull() ?: 0)
+    // PC 확인 1.37 A11 (현장 공수 창과 같은 구조): once something is written, a tap outside does not drop it; 저장·취소·뒤로 가기 close.
+    val first = remember { listOf(name, count.toString(), amount, hours, minutes, costs) }
+    val written = listOf(name, count.toString(), amount, hours, minutes, costs) != first
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = !written),
         title = { Text("${Fmt.dayTitle(date)} 플랫폼 기록") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {

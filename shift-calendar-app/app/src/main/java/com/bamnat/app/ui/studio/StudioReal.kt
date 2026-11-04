@@ -64,3 +64,25 @@ internal fun myMoneyBody(id: String, m: MyMoney): StudioExamples.Body? = when (i
     "income" -> StudioExamples.Body(listOf("이번 달 수입" to won(m.income)))
     else -> null
 }
+
+/** [CNV-12] PC 확인 1.37 A11 (현장 일감 2건인데 스튜디오는 0일·빈 칸): this month's 일감 of the main calendar; null when not real. */
+@Composable
+internal fun rememberMyJobs(): List<com.bamnat.core.money.Job>? {
+    val real = LocalRealLook.current
+    val c = LocalContext.current.appContainer
+    val flow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).money.jobs }
+    val jobs by flow.collectAsStateWithLifecycle(emptyList())
+    return remember(jobs, real) { if (!real) null else jobs.filter { !it.cancelled } }
+}
+
+/** A 일감's word in a day cell: its 공수 (1공, 1.5) or the start of its title. */
+internal fun jobCell(j: com.bamnat.core.money.Job): String = j.units?.let { com.bamnat.core.money.DayRate.cell(it) } ?: j.title.take(4)
+
+/** This month's 일감: days worked, 공수 (null when none were 공수형) and the money, as the 현장 summary card says them. */
+internal data class MyJobMonth(val days: Int, val units: Double?, val amount: Long)
+
+internal fun jobMonth(jobs: List<com.bamnat.core.money.Job>, month: java.time.YearMonth = java.time.YearMonth.from(com.bamnat.core.time.Today.date())): MyJobMonth {
+    val now = jobs.filter { java.time.YearMonth.from(it.date) == month && !com.bamnat.core.money.PlatformWork.isPlatform(it) }
+    val units = now.mapNotNull { it.units }.takeIf { it.isNotEmpty() }?.sum()
+    return MyJobMonth(now.map { it.date }.distinct().size, units, now.sumOf { it.amount })
+}

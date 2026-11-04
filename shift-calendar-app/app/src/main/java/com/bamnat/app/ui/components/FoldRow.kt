@@ -106,6 +106,8 @@ val LocalFoldHold = androidx.compose.runtime.staticCompositionLocalOf<() -> Unit
 class FoldHost {
     internal var box: androidx.compose.ui.layout.LayoutCoordinates? = null
     internal var open by mutableStateOf<FoldOpen?>(null)
+    val isOpen: Boolean get() = open != null
+    fun fold() { open = null }
 }
 
 internal class FoldOpen(val at: () -> androidx.compose.ui.layout.LayoutCoordinates?, val spacing: Dp, val what: String, val content: @Composable () -> Unit)

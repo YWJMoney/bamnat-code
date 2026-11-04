@@ -625,6 +625,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 )
             },
             bottomBar = {
+                // PC 확인 1.37 A11 (덮개가 아래 저장·입히기 줄은 안 덮음): an open row above dims this bar too, and a tap on it only folds the row.
+                Box {
                 Surface(tonalElevation = 3.dp) {
                     Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -669,6 +671,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             }
                         }
                     }
+                }
+                if (foldHost.isOpen) Box(Modifier.matchParentSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f))
+                    .pointerInput(Unit) { detectTapGestures { foldHost.fold() } })
                 }
             },
         ) { padding ->

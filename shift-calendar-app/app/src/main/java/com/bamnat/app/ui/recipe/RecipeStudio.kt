@@ -387,18 +387,23 @@ internal class MyWeeks(val first: java.time.LocalDate, val today: java.time.Loca
 internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from: java.time.LocalDate? = null,
     /** PC 확인 1.37 A9 (현장 일감 3건인데 입어 보기·스튜디오 달력이 예시): a kind of work written day by day has no 근무표, so its month is
      *  my own dates and holidays, the days blank, never the example. */
-    blankOk: Boolean = false): MyWeeks? {
+    blankOk: Boolean = false,
+    /** PC 확인 1.37 A11: on those blank days, my 일감 (현장) by its 공수 or title. */
+    jobs: List<com.bamnat.core.money.Job>? = null): MyWeeks? {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
     val today = remember { com.bamnat.core.time.Today.date() }
     // [LAY-03] From the week of [from] (a day the 꾸밈 층 is pinned to) when it is given, else this week.
     val first = remember(today, from) { (from ?: today).let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } }
-    val real = remember(snap, days, first, weeks, blankOk) {
+    val real = remember(snap, days, first, weeks, blankOk, jobs) {
         val s = snap ?: return@remember null
         val resolved = s.resolver.resolveRange(first, first.plusDays(weeks * 7L - 1))
         if (resolved.none { it.shiftType != null }) return@remember if (!blankOk) null else resolved.map { r ->
-            com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = true, blank = true)
+            val job = jobs?.firstOrNull { j -> !r.date.isBefore(j.date) && !r.date.isAfter(j.endDate ?: j.date) }
+            if (job != null) com.bamnat.app.ui.calendar.SampleDay(com.bamnat.app.ui.studio.jobCell(job), 0xFF8D6E63L,
+                holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date))
+            else com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = true, blank = true)
         }
         resolved.map { r ->
             val t = r.shiftType
@@ -435,7 +440,9 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
     val monthStart = remember(now) { now.withDayOfMonth(1) }
     val weeksN = remember(now) { ((monthStart.dayOfWeek.value % 7) + now.lengthOfMonth() + 6) / 7 }
     val whole = pinned == null
-    val mine = rememberMyWeeks(ownDays, weeks = if (whole) weeksN else 2, from = pinned ?: monthStart, blankOk = style != null && !style.usesPattern && style != WorkStyle.HOURLY).takeIf { realOn }
+    val myJobs = if (style == WorkStyle.FIELD) com.bamnat.app.ui.studio.rememberMyJobs() else null
+    val mine = rememberMyWeeks(ownDays, weeks = if (whole) weeksN else 2, from = pinned ?: monthStart, blankOk = style != null && !style.usesPattern && style != WorkStyle.HOURLY,
+        jobs = myJobs).takeIf { realOn }
     val rows = if (mine != null && whole) weeksN else 2
     val n = rows * 7
     val exFirst = pinned?.let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } ?: EXAMPLE_FIRST
@@ -505,6 +512,12 @@ private fun MockSummary(style: WorkStyle?) {
         WorkStyle.INVEST -> listOf("기록" to "9일", "수익률" to "이번 달", "원금" to "합계")
         else -> listOf("근무" to "18일", "시간" to "162h", "급여" to "예상")
     }.let { ex ->
+        // PC 확인 1.37 A11: 현장 on my phone says my 일감 this month (일한 날 · 공수 · 받을 돈).
+        val jobs = if (style == WorkStyle.FIELD) com.bamnat.app.ui.studio.rememberMyJobs() else null
+        if (jobs != null) return@let com.bamnat.app.ui.studio.jobMonth(jobs).let { m ->
+            listOf("일한 날" to "${m.days}일", (if (m.units != null) "공수" to com.bamnat.core.money.DayRate.trim(m.units) else "일감" to "${m.days}건"),
+                "받을 돈" to (if (m.amount > 0) com.bamnat.app.ui.studio.won(m.amount) else "0원"))
+        }
         // PC 확인 Z5 (예시 숫자 '근무 18일 · 162h'): this month of the phone's own calendar, when it has work in it.
         // PC 확인 1.37 A10 (현장 기록 0건인데 '일한 날 15일 · 공수 16.5'): on my phone a kind of work with no 근무표 says my month, 0 when empty.
         val realOn = com.bamnat.app.ui.studio.LocalRealLook.current
