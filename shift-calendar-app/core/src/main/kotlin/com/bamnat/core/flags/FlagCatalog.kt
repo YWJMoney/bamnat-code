@@ -29,6 +29,8 @@ object FlagCatalog {
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
     const val SHARE_SETUP = "share.setup"
+    /** 1.37 [SHR-31][SHR-32] 묶음 E: a 근무표 링크 also carries the sharer's 테마 and 근무 설정 (no amounts), once 처리방침 3.10 names them. */
+    const val SHARE_LOOK = "share.look"
     /** 1.34 [RCP-37] 나눔 판: reading the plaza's recipes (no information sent but the phone's install hash, as any plaza read). */
     const val RECIPE_BROWSE = "recipe.browse"
     /** 1.34 [RCP-37] Putting a recipe up, once 처리방침 3.8 names it. */
@@ -228,6 +230,23 @@ object FlagCatalog {
     )
 
     /**
+     * 1.37 [SHR-31][SHR-32] 묶음 E (사용자 2026-11-04 "달력 공유 시 테마와 설정까지"): the sharer may tick 내 테마 (the look pieces, no
+     * photos) and 근무 설정 (근무 꾸미기·알람 시각 틀·근무 주기, never 급여 규칙 or an amount) to go in the link, for the receiving app
+     * to try on and pick from. Both reach the share server, which 처리방침 1항 lists item by item, so they wait for 3.10 (정식 출시
+     * 뒤의 개정: 9항대로 알린 뒤 그날부터). The admin app can move 3.10's date like any version's.
+     */
+    val SHARE_LOOK_FLAG = Flag(
+        SHARE_LOOK, "링크에 테마·근무 설정 담기",
+        what = "근무표 링크를 만들 때 ‘내 테마’와 ‘근무 설정’을 고르면 링크에 함께 담아요. 테마는 달력·메모·가계부의 모양(사진은 빼요), 근무 설정은 근무 이름·색·글자, 근무 전 알람 시각, 근무 주기예요. 급여 규칙·기본급·금액·메모·사진은 담지 않아요. 받는 분은 밤낮 앱에서 입어 보고 고른 것만 넣어요.",
+        whyOff = "처리방침 3.10의 시행일부터 저절로 켜져요. 그 전에는 공유 창에 날짜만 알려 주고 링크에는 담지 않아요.",
+        basis = Basis(policy = "3.10 1항", requirement = "SHR-31", note = "1.37 묶음 E 달력 공유에 테마·설정"),
+        conditions = listOf(Condition.Date(policy = SHARE_LOOK_POLICY), Condition.Policy(SHARE_LOOK_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "1.37.0", group = FlagGroup.LAW,
+    )
+    /** The 처리방침 version that names a link's 테마·근무 설정 (draft: 프로젝트 파일 legal/3.10-초안-테마-설정-공유.md). */
+    const val SHARE_LOOK_POLICY = "3.10"
+
+    /**
      * 1.34 [RCP-37] 나눔 판 (계획 745~787, 결정 D109): looking at the plaza's recipes, previewing and applying one happen on the phone
      * and read the public list only, so they are open from 1.34 (the server can still rest them). Sending — a recipe, a vote with
      * its reason, a post in a recipe's talk — waits for 처리방침 3.8 (게시 2026-10-30, 시행 2026-11-29, 1-4항).
@@ -276,7 +295,7 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG) +
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

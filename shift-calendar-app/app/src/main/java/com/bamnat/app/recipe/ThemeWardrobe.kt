@@ -437,6 +437,12 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     companion object {
+        /**
+         * 1.37 [SHR-31] The code of a theme that came in a 근무표 링크 (+ the link's id). It starts with `builtin:` so every place that
+         * leaves 장터 out for a built-in theme (쓰는 분 세기, 새 판 찾기, 고쳐 만들기의 원작) leaves it out too; its days and ad follow
+         * someone else's theme, as a built-in one's do.
+         */
+        const val LINK = "builtin:link:"
         const val FREE_OUTFITS = 1
         const val PRO_OUTFITS = 10
         /** [TRY-03] 조각 보관함: free 20, 프로 200. */

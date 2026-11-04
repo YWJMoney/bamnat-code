@@ -151,6 +151,12 @@ fun ShareDialog(
     // [SHR-20][J133-71] 1.33: the 동료 way's words and setup only for work with a company; the setup in the link from 3.7's date.
     val companyWork = remember(calendarId) { container.companyFits(calendarId, needsServer = false) }
     val setupOpen = remember(calendarId) { ShareContent.setupInLink(container, calendarId) }
+    // 1.37 [SHR-31][SHR-32] 내 테마·근무 설정 in the link from 처리방침 3.10's date; before, the rows say the date once it is set.
+    val lookOpen = remember { ShareContent.lookInLink(container) }
+    val kitFits = remember(style) { com.bamnat.core.recipe.ShareKit.kitFits(style) }
+    val lookFrom = remember {
+        container.remoteConfig.config.value.calendar.of(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK_POLICY)?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" }
+    }
     val setupFrom = remember {
         container.remoteConfig.config.value.calendar.of(com.bamnat.core.ops.PolicyConsent.VERSION)?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: "정식 출시일"
     }
@@ -166,6 +172,7 @@ fun ShareDialog(
             pay = options.pay && hasPay, jobs = options.jobs && field,
             leaveKinds = options.leaveKinds && employee, extras = options.extras && employee,
             setup = options.setup && setupOpen && employee && companyWork,
+            look = options.look && lookOpen, kit = options.kit && lookOpen && kitFits,
         )
     }
     // [J133-30] 1.33 (실사용 테스트 "공유 링크가 오늘이 아니라 보던 달부터 시작해요"): a link starts this month, unless a month
@@ -298,7 +305,10 @@ fun ShareDialog(
             )
             // [SHR-20] 1.33 (계획 690): who it is for, first. Each way sets what goes at once; the boxes below still change it.
             Text("누구에게 보내요?", style = MaterialTheme.typography.titleSmall)
-            AudienceRows(options.audience, companyWork, setupOpen, style) { a -> options = ShareOptions.forAudience(a, employee, field).copy(memos = false, pay = false) }
+            AudienceRows(options.audience, companyWork, setupOpen, style) { a ->
+                // 1.37: 내 테마·근무 설정 are the sharer's own picks, whoever the link is for.
+                options = ShareOptions.forAudience(a, employee, field).copy(memos = false, pay = false, look = options.look, kit = options.kit)
+            }
             // [PROV-04] The calendar's links side by side once there is one, with a new one for 프로.
             if (preview == null && links.any { it != null }) {
                 LinkChips(links, slot, moreLinks, onPick = { slot = it }, onNew = {
@@ -359,6 +369,17 @@ fun ShareDialog(
                             else "${setupFrom}부터 링크에 함께 담겨요. 지금은 링크를 만든 뒤 ‘회사 설정 파일도 보내기’로 보내 주세요",
                             options.setup && setupOpen, enabled = setupOpen) { options = options.copy(setup = it) }
                     }
+                    // 1.37 [SHR-31][SHR-32] 묶음 E: the look and the 근무 설정, for the receiver to try on and pick from in the app.
+                    if (lookOpen || lookFrom != null) {
+                        PartRow("내 테마",
+                            if (lookOpen) "달력·메모·가계부 모양. 사진은 빼요. 받는 분이 앱에서 입어 보고 골라 입어요" else "${lookFrom}부터 링크에 함께 담을 수 있어요",
+                            options.look && lookOpen, enabled = lookOpen) { options = options.copy(look = it) }
+                        if (kitFits) PartRow("근무 설정",
+                            if (lookOpen) "근무 이름·색, 근무 전 알람 시각" + (if (!added && style in com.bamnat.core.recipe.PieceKind.COMPANY.styles && !chosen().sendsSetup) ", 근무 주기" else "") +
+                                ". 급여 규칙·기본급·금액은 빼요. 받는 분이 골라 넣어요"
+                            else "${lookFrom}부터 링크에 함께 담을 수 있어요",
+                            options.kit && lookOpen, enabled = lookOpen) { options = options.copy(kit = it) }
+                    }
                 }
             }
             val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
@@ -410,6 +431,7 @@ fun ShareDialog(
             Text(
                 // [FEAT-15] The feed also sends the phone's time zone name (처리방침 2.6, 1항).
                 "보내는 것: " + (listOf("근무") + chosen().partNames(kind) + listOfNotNull("회사 설정(금액 없이)".takeIf { chosen().sendsSetup },
+                    "내 테마(사진 빼고)".takeIf { chosen().look }, "근무 설정(급여 빼고)".takeIf { chosen().kit },
                     "휴대폰 시간대 이름".takeIf { feed && feedOpen }))
                     .joinToString(", ") + "\n" + SHARE_SERVER_NOTICE,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

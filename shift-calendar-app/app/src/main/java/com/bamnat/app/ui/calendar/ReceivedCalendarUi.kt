@@ -265,6 +265,8 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
                         // 조 at once, 다른 조예요 asks which; then only the 기본급 is left on the pay screen.
                         val setup = p.schedule.setup?.takeIf { p.schedule.audience == com.bamnat.app.share.ShareAudience.COWORKER }
                         if (setup != null) CoworkerSetupCard(p.schedule.title, setup, onBefore = { vm.add(p) }, onDone = onAdded)
+                        // 1.37 [SHR-31][SHR-32] The sender's 테마 and 근무 설정, to try on and pick from; nothing goes on by itself.
+                        SharedLookCards(p.schedule, p.id)
                         if (setup == null || p.existing) Button(onClick = { if (vm.add(p)) onAdded() }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                             Text(if (p.existing) "새로 받아 보기" else "내 달력 옆에 두고 보기")
                         }

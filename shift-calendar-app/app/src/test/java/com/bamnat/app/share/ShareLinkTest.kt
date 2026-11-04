@@ -60,6 +60,37 @@ class ShareLinkTest {
     }
 
     /** [SHR-04] Days with no work at all say so, for the receiver's 같이 쉬는 날; the day off with a 대근 does not. */
+    /** 1.37 [SHR-31][SHR-32] 묶음 E: the 테마 and 근무 설정 go only when ticked, come back as recipes, and a pay part never does. */
+    @Test fun lookAndKit() {
+        val look = com.bamnat.core.recipe.ShareKit.lookText(com.bamnat.core.recipe.BuiltInThemes.of(com.bamnat.core.work.WorkStyle.SHIFT).first())!!
+        val kit = com.bamnat.core.recipe.ShareKit.kitText(com.bamnat.core.recipe.Recipe("민지의 근무 설정", styles = setOf(com.bamnat.core.work.WorkStyle.SHIFT),
+            pieces = listOf(com.bamnat.core.recipe.Piece(com.bamnat.core.recipe.PieceKind.ALARMS,
+                mapOf("byRole" to listOf(mapOf("role" to "day", "before" to listOf(60L))))))))!!
+        val friend = ShareOptions.forAudience(ShareAudience.FRIEND, employee = true, field = false)
+        assertFalse(friend.look || friend.kit)
+        val none = ShareLinkPayload.build(snapshot, start, "", 30, friend, look = look, kit = kit)
+        assertFalse(none.has("look") || none.has("kit"))
+        val both = ShareLinkPayload.build(snapshot, start, "민지", 30, friend.copy(look = true, kit = true), look = look, kit = kit)
+        assertEquals(look, both.getString("look"))
+        assertEquals(kit, both.getString("kit"))
+        // Ticking alone is not shown on the page: the days stay v1 when nothing else is ticked.
+        assertEquals(1, both.getInt("v"))
+        val read = SharedSchedule.parse(org.json.JSONObject(both.toString()))
+        assertTrue(read.look!!.pieces.all { it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS })
+        assertEquals(listOf(com.bamnat.core.recipe.PieceKind.ALARMS), read.kit!!.pieces.map { it.kind })
+        // What the codec refuses is left out; a link without them reads as before.
+        val junk = SharedSchedule.parse(org.json.JSONObject(both.toString()).put("look", "{}").put("kit", look))
+        assertEquals(null, junk.look)
+        assertEquals(null, junk.kit)
+        assertEquals(null, SharedSchedule.parse(org.json.JSONObject(none.toString())).look)
+        // The sheet's picks are kept with the link, for the automatic update.
+        val store = ShareLinkStore(androidx.test.core.app.ApplicationProvider.getApplicationContext(), "test-look")
+        store.saveOptions(friend.copy(look = true, kit = true))
+        assertTrue(store.options().look && store.options().kit)
+        store.saveOptions(friend)
+        assertFalse(store.options().look || store.options().kit)
+    }
+
     /** [SHR-20] 1.33 (계획 690~694): who the link is for, and the company setup only on a coworker's with the box ticked. */
     @Test fun audienceAndCoworkerSetup() {
         val file = org.json.JSONObject().put("format", "bamnat-company").put("company", "가나공업").toString()

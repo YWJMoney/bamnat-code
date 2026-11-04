@@ -265,7 +265,9 @@ class RecipePieces(private val c: AppContainer) {
             texts(values, "journal").takeIf { it.isNotEmpty() }?.let { Change("메모 틀 ‘$JOURNAL_TITLE’ 더하기") },
         )
         PieceKind.COMPANY -> if (cal != PersonalCalendar.MAIN) listOf(Change("회사 설정은 ‘내 달력’에만 넣을 수 있어요", skipped = true))
-            else listOf(Change(runCatching { c.companyShare.summarize(values["setup"] as String).let { s -> "근무 ${s.shiftTypes.size}가지와 순서, 급여 규칙" } }
+            else listOf(Change(runCatching { c.companyShare.summarize(values["setup"] as String).let { s ->
+                // 1.37 [SHR-32] A 근무표 링크's 근무 주기 has no pay part: it says so.
+                "근무 ${s.shiftTypes.size}가지와 순서" + if (s.hasRules || s.items.isNotEmpty()) ", 급여 규칙" else "" } }
                 .getOrDefault("근무 주기와 급여 규칙")))
         PieceKind.BUNDLE -> listOf(Change("묶음 안 레시피 ${items(values, "items").size}개는 아래에서 하나씩 열어 골라 넣어요", skipped = true))
         // [RCX-30] Said from the recipe itself: its pictures come down only when it is put in.
