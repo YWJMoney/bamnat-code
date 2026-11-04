@@ -159,7 +159,7 @@ fun ThemeDrawer(
     } else Grid(shown, byKey) { open = it.key }
 
     // 내 테마로 저장: the look on the phone now kept as one of mine (free one, 프로 ten).
-    val mineCount = lease.history.count { it.own }
+    val mineCount = c.wardrobe.ownCount(lease)
     val limit = c.wardrobe.outfitLimit()
     var saveNote by remember { mutableStateOf<String?>(null) }
     // PC 확인 e34fae4e (이름을 묻지 않고 '내 테마 1'로 저장): the name is asked first, '내 테마 N' already in it.

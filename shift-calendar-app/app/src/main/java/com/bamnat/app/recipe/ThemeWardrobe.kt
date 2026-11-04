@@ -42,6 +42,12 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     /**
+     * 내 테마로 저장's count: my themes, without a studio mix kept by itself when it was taken off (PC 6eed57a2: 저장한 적 없는 조합이
+     * 한 칸을 써요).
+     */
+    fun ownCount(l: ThemeLease = _lease.value): Int = l.history.count { it.own && !isMix(it.title) }
+
+    /**
      * 1.37 PC d12d4cf1 (입던 조합을 벗거나 바꾸면 서랍에서 사라져요): a mix of other themes' parts made in the studio stays in 입어 본
      * 테마 as one of mine mixed from them ([ThemeLease.Wear.mixedFrom]: the 30-day rule, 장터 only as a 수정판), to wear again.
      */
@@ -119,7 +125,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val shared = was?.shared?.takeIf { own }.orEmpty().ifEmpty { if (own && code.isNotEmpty() && !code.startsWith("builtin:")) code else "" }
         val free = shared.isEmpty() && adsOn() && !pro() && l.freeUsed < ThemeLease.FREE_FIRST
         val only = looks.copy(pieces = looks.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
-        val next = l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own, shared, if (ver > 0) ver else was?.ver ?: 0, was?.bare == true),
+        // PC 6eed57a2 (섞은 테마를 다시 입으면 '내 것 · 나만'으로): one of mine mixed from others keeps where it came from.
+        val next = l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own, shared, if (ver > 0) ver else was?.ver ?: 0, was?.bare == true,
+            mixedFrom = was?.mixedFrom?.takeIf { own }.orEmpty(), mixedCodes = was?.mixedCodes?.takeIf { own }.orEmpty()),
             Today.date().toEpochDay(), free)
         save(when {
             whole != null -> keepWhole(l, next, whole)
@@ -212,7 +220,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
 
     /** [FREE-10] 내 테마로 저장: the look on the phone now kept as one of mine (free [FREE_OUTFITS], 프로 [PRO_OUTFITS]). */
     suspend fun saveMine(title: String): Boolean {
-        val mine = _lease.value.history.count { it.own }
+        val mine = ownCount()
         if (mine >= outfitLimit()) return false
         val r = myLookRecipe(title.take(30).ifBlank { "내 테마 ${mine + 1}" })
         if (r.pieces.isEmpty()) return false
@@ -379,7 +387,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val name = r.title.take(30)
         // Saving over one of mine of the same name replaces it (and keeps it in 장터 if it was).
         val same = l.history.firstOrNull { it.own && it.key == "own:$name" }
-        val mine = l.history.count { it.own }
+        val mine = ownCount(l)
         val only = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
         if ((same == null && mine >= outfitLimit()) || only.pieces.isEmpty()) return false
         val keep = was ?: same

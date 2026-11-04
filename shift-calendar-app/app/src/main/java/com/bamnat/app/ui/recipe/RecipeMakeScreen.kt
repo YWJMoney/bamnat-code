@@ -716,7 +716,8 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     Text("내 설정에서 나눌 것을 골라요. 근무 기록·가계부·메모 글은 들어가지 않아요", style = MaterialTheme.typography.bodyMedium)
     val fits = PieceKind.entries.filter { it != PieceKind.BUNDLE && (vm.style == null || vm.style in it.styles) }
     var more by remember { mutableStateOf(false) }
-    (if (more) PieceKind.entries.filter { it != PieceKind.BUNDLE } else fits).forEach { k ->
+    // PC 6eed57a2 (이 설정 나누기로 오면 골라진 줄이 목록 15줄 아래): the piece it was started from comes first.
+    (if (more) PieceKind.entries.filter { it != PieceKind.BUNDLE } else fits).sortedBy { if (it == vm.startKind) 0 else 1 }.forEach { k ->
         val mine = s.mine[k]
         Row(Modifier.fillMaxWidth().selectable(selected = k in s.chosen, enabled = mine != null, role = Role.Checkbox) { vm.toggle(k) }.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {

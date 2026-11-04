@@ -163,7 +163,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                         Column(Modifier.weight(1f).clickable { onDraft(d.id) }.padding(vertical = 8.dp)) {
                             Text(runCatching { org.json.JSONObject(d.body).optString("title") }.getOrNull()?.ifEmpty { null } ?: "이름 없는 레시피",
                                 style = MaterialTheme.typography.bodyLarge)
-                            Muted(if (d.step <= 1) "스튜디오에서 꾸미던 중" else "올리기 ${d.step - 1}/4단계에서 멈춤")
+                            Muted(if (d.step <= 1) "만들던 중 · 이어서 하면 멈춘 곳부터" else "올리기 ${d.step - 1}/4단계에서 멈춤")
                         }
                         TextButton(onClick = { asking = "만들던 레시피를 지울까요? 지우면 이어서 만들 수 없어요" to { vm.deleteDraft(d.id) } }) { Text("지우기") }
                     }
