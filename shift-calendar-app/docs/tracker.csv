@@ -1787,6 +1787,6 @@ CNV-05,"1.37 고르면 바로 입혀짐: 색·크기 등은 확인 단추 없이
 CNV-06,"1.37 카드 옮기기: 카드를 눌러 위로·아래로, 달력 아래로 보내기/위로 올리기(이번 달 요약·근무 횟수 줄도 달력 아래로), 숨기기",1.37,진행 중,에뮬레이터 확인,"StudioScreen.kt PageCards, calendar/CalendarLayout.kt·CalendarScreen.kt 요약·횟수 아래, StudioCanvasTest"
 CNV-07,"1.37 숨긴 카드 다시 넣기(＋ 카드 넣기), 내 틀 만들기의 첫 단계",1.37,진행 중,에뮬레이터 확인,"StudioScreen.kt ScreenBar"
 CNV-08,"1.37 각 탭 카드 배치(달력 도구·가계부·메모·통계)는 스튜디오의 그 화면으로 열기(한 곳에서 고침)",1.37,진행 중,에뮬레이터 확인,"settings/SettingsLinks.kt STUDIO_CALENDAR 등, AppRoot.kt"
-CNV-09,"1.37 예시 대신 실제 화면 그리기(달력·가계부·메모)",1.37,대기,,
-CNV-10,"1.37 내 틀 만들기: 빈 판에서 카드 넣기, 내 틀로 저장, 장터 올리기",1.37,대기,,
+CNV-09,"1.37 예시를 실제 화면처럼: 가계부·통계 카드가 실제 화면의 줄과 숫자(예시 숫자, 올리기 표지 때문에 내 돈·시간은 쓰지 않음)로 보이기. 실제 화면 컴포저블로 그리기는 다음 단계",1.37,진행 중,에뮬레이터 확인,"ui/studio/StudioExamples.kt, recipe/RecipeStudio.kt MockCard"
+CNV-10,"1.37 내 틀 만들기: 빈 판에서 카드 넣기, 내 틀로 저장(보관함, 색은 빼고 카드 자리·부품만), 장터 올리기",1.37,진행 중,에뮬레이터 확인,"ui/studio/StudioViewModel.kt keepFrame/frameBody, StudioScreen.kt 카드 넣기 판"
 CNV-11,"1.37 메모장·달력·가계부 캔버스 맞춤: 화면에서 고른 부품에 언제(오늘·야간·수입/지출…)와 조건(수식) 붙여 바로 꾸미기",1.37,진행 중,에뮬레이터 확인,"StudioCanvas.kt PartBar 언제 ▾, StudioPartsTool.kt onWhen"

@@ -89,6 +89,8 @@ internal class ZoomState {
     var density = 1f
     /** [CNV-04] How much of the space's bottom the 더 보기 판 covers (px): the example can be moved up that much more. */
     var cover by mutableFloatStateOf(0f)
+    /** The −·+·맞춤 box is open (folded to its percent, it sits where it covers the least: PC 확인 1.37 A2, 글꼴 1.3배). */
+    var controlsOpen by mutableStateOf(false)
 
     val min: Float get() = min(StudioEdit.ZOOM_MIN, fit)
     val percent: Int get() = Math.round(scale * 100)
@@ -204,7 +206,7 @@ internal fun ZoomCanvas(z: ZoomState, modifier: Modifier = Modifier, height: Dp 
 @Composable
 internal fun ZoomControls(z: ZoomState, onFocus: (() -> Unit)?, modifier: Modifier = Modifier) {
     // PC 확인 1.37 A1 (확대 상자가 미리 보기의 아래 탭 막대를 늘 가림): folded to its percent, one tap opens it.
-    var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var open by z::controlsOpen
     Surface(modifier, shape = RoundedCornerShape(20.dp), tonalElevation = 4.dp, shadowElevation = 2.dp) {
         if (!open) {
             TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 44.dp).semantics { contentDescription = "확대 ${z.percent}퍼센트, 확대 단추 펴기" }) {

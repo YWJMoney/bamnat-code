@@ -52,4 +52,24 @@ class CnvScreenshotTest : ScreenshotBase() {
         tapText("카드 배치", exact = true)
         assertTrue("달력, not 메모", appears("화면: 달력 ▾", exact = true))
     } }
+
+    /** [CNV-10] 빈 판에서 시작해 카드 하나를 넣고, 내 틀로 보관함에 담아요. */
+    @Test fun aBlankPageBecomesMyFrame() { shift(); shoot("1503_cnv_my_frame", PHONE) {
+        tapText("도구")
+        tapText("카드 배치", exact = true)
+        tapText("＋ 카드 넣기", prefix = true)
+        tapText("빈 판으로", prefix = true)
+        assertTrue("the summary is put away", gone("255h", exact = true))
+        // Put back one by one (each 넣기 picks the card it put back, so the panel opens again each time) until 요약 is there.
+        var n = 0
+        while (!shows("255h", exact = true) && n++ < 8) {
+            tapText("넣기", exact = true)
+        }
+        assertTrue("and back", appears("255h", exact = true))
+        tapText("고르기 끝", exact = true)
+        tapText("크게", exact = true)
+        reveal("내 틀로 담기", exact = true)
+        tapText("내 틀로 담기", exact = true)
+        assertTrue("kept as mine", app.container.wardrobe.kept.value.any { it.own && "cal.cards" in it.parts })
+    } }
 }

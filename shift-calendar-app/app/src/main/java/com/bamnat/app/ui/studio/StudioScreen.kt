@@ -270,6 +270,8 @@ internal class PageCards(
     fun show(d: AppSettings, id: String, shown: Boolean): AppSettings = showFn?.invoke(d, id, shown) ?: put(d, StudioEdit.showCard(get(d), ids, id, shown))
     fun hidden(d: AppSettings): List<String> = hiddenFn?.invoke(d) ?: ids.filter { it !in fixed && seen(it) && !StudioEdit.cardShown(get(d), ids, it) }
     fun above(d: AppSettings, id: String): Boolean? = aboveFn?.invoke(d, id)
+    /** [CNV-10] The cards shown now that can be put away (빈 판). */
+    fun movable(d: AppSettings): List<String> = ids.filter { it !in fixed && seen(it) && it !in hidden(d) }
 
     companion object {
         val NONE = PageCards("", emptyList(), emptyMap(), emptySet(), { false }, { "" }, { d, _ -> d })
@@ -716,7 +718,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         // [CNV-07] 숨긴 카드 다시 넣기 (빈 판에서 카드 넣기도 여기서).
                         val toAdd = rememberCardsToAdd(area.tab, vm.style, d)
-                        if (!detail && (toAdd.hidden.isNotEmpty() || toAdd.fit.isNotEmpty()))
+                        if (!detail && toAdd.page !== PageCards.NONE)
                             FilterChip(selected = panel && panelMode == PanelMode.CARDS, onClick = { openPanel(PanelMode.CARDS) },
                                 label = { Text("＋ 카드 넣기" + if (toAdd.hidden.isEmpty()) "" else " ${toAdd.hidden.size}") })
                         area.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.forEach { t ->
@@ -815,7 +817,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     }
                     if (sel == null && !hintSeen) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
                     ZoomControls(zoom, onFocus = sel?.let { id -> { spots.boxes(id).firstOrNull()?.let { zoom.focus(it) }; Unit } },
-                        modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp + if (panel) panelH else 0.dp))
+                        modifier = (if (zoom.controlsOpen) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp + if (panel) panelH else 0.dp)
+                            else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)))
                 }
                 // Lines about the example, under it.
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize()) {
@@ -890,11 +893,33 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                                 modifier = Modifier.heightIn(min = 48.dp)) { Text("넣기") }
                                         }
                                     }
+                                    // [CNV-10] 빈 판에서 시작: every card this page can move or hide put away, to put back one by one.
+                                    val movableHere = remember(toAdd.page, d) { toAdd.page.movable(d) }
+                                    if (movableHere.isNotEmpty()) OutlinedButton(onClick = {
+                                        vm.change { x -> movableHere.fold(x) { acc, cid -> toAdd.page.show(acc, cid, false) }.sameLinesAs(s.base) }
+                                        selectPart(null)
+                                    }, modifier = Modifier.heightIn(min = 48.dp)) { Text("빈 판으로 (카드 ${movableHere.size}개 모두 숨기기)") }
                                     val surface = fitSurface(area.tab)
                                     val ctx = androidx.compose.ui.platform.LocalContext.current
                                     if (surface != null) com.bamnat.app.ui.components.FitMore(toAdd.fit, { id, on ->
                                         com.bamnat.app.ui.guide.setFitAdded(ctx, com.bamnat.app.data.PersonalCalendar.MAIN, surface, id, on)
                                     })
+                                    // [CNV-10] 내 틀: 카드 자리와 부품만 보관함에, 원하면 장터에.
+                                    HorizontalDivider()
+                                    Text("내 틀", style = MaterialTheme.typography.titleSmall)
+                                    Text("카드 자리·숨긴 카드·부품 모양만 담아요. 색은 빼고 담아서 어느 테마에든 얹을 수 있어요",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    var frameName by rememberSaveable { mutableStateOf("") }
+                                    OutlinedTextField(frameName, { frameName = it.take(24) }, label = { Text("틀 이름") }, singleLine = true,
+                                        placeholder = { Text("내 틀") }, modifier = Modifier.fillMaxWidth())
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        androidx.compose.material3.Button(onClick = { vm.keepFrame(frameName) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 틀로 담기") }
+                                        if (onMarket != null) OutlinedButton(onClick = {
+                                            val body = vm.frameBody(frameName)
+                                            if (body == null) openedLine = "아직 옮기거나 숨긴 카드가 없어 올릴 틀이 없어요"
+                                            else { publishRound++; publishing = Triple(body, "", null) }
+                                        }, modifier = Modifier.heightIn(min = 48.dp)) { Text("장터에 틀 올리기") }
+                                    }
                                 }
                                 PanelMode.LAYERS -> {
                                     val partIds = partsGroupOf(area.name).let { g ->

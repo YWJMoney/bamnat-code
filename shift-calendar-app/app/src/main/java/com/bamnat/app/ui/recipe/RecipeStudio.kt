@@ -499,11 +499,27 @@ private fun MockSummary(style: WorkStyle?) {
 }
 
 @Composable
-private fun MockCard(title: String, what: String, bars: Boolean = false, spot: String? = null) {
+private fun MockCard(title: String, what: String, bars: Boolean = false, spot: String? = null,
+    /** [CNV-09] What the card shows on the phone (example numbers), in place of the words about it. */
+    body: com.bamnat.app.ui.studio.StudioExamples.Body? = null) {
     Card(Modifier.fillMaxWidth().partSpot("app.card").let { m -> if (spot != null) m.partSpot(spot) else m }.mockPick("cards"), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.labelLarge)
-            Text(what, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            if (body == null) Text(what, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            else {
+                body.rows.forEach { (k, v) ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(k, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(v, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    }
+                }
+                body.meter?.let { f ->
+                    Box(Modifier.fillMaxWidth().height(6.dp).background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.extraSmall)) {
+                        Box(Modifier.fillMaxWidth(f).fillMaxSize().background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall))
+                    }
+                }
+            }
             if (bars) Row(Modifier.height(24.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
                 listOf(0.5f, 0.8f, 0.65f, 1f, 0.7f).forEach { h -> Box(Modifier.width(14.dp).fillMaxSize(h).background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall)) }
             }
@@ -515,7 +531,8 @@ private fun MockCard(title: String, what: String, bars: Boolean = false, spot: S
 private fun MockParts(line: String?, parts: List<Triple<String, String, String>>, bars: Boolean = false, fits: (String) -> Boolean = { true }, page: String? = null) {
     val placed = PageLayout.decode(line).arrange(parts) { it.first }.filter { it.shown && fits(it.part.first) }
     placed.forEach { (p, _, _) -> MockCard(p.second, p.third, bars && p.first in setOf("weeks", "trend", "year", "three"),
-        spot = page?.let { com.bamnat.app.ui.studio.StudioEdit.cardId(it, p.first) }) }
+        spot = page?.let { com.bamnat.app.ui.studio.StudioEdit.cardId(it, p.first) },
+        body = page?.let { com.bamnat.app.ui.studio.StudioExamples.body(it, p.first) }) }
 }
 
 @Suppress("UNCHECKED_CAST")
