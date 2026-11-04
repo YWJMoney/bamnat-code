@@ -22,6 +22,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.onSizeChanged
 
 /**
  * [J133-49] 1.33 (사용자 2026-10-29 13:32 "닫는 창도 없는 것"): every sheet of the app, with an X to close it in the handle's row,
@@ -38,6 +42,11 @@ fun AppSheet(
     closeButton: Boolean = true,
     /** [J133-78] What the X does, when the sheet asks before closing (typed days that would be lost). */
     onClose: () -> Unit = onDismissRequest,
+    /**
+     * PC 확인 1.37 첫 설정 270fc15e (날짜 시트 높이가 넣기·빼기·다음 날마다 바뀌어 움직이는 사이 '주간 대근'이 잘못 눌림): the sheet
+     * never gets shorter while it is open, so a change in it (or the next day in it) does not slide what is under the finger.
+     */
+    holdHeight: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     // PC 확인 7b26965a ("아주 크게"에서도 자유 토의 시트 글자는 그대로): a sheet is a window of its own, whose view gives it the
@@ -51,7 +60,15 @@ fun AppSheet(
         sheetState = sheetState,
         dragHandle = if (closeButton) ({ SheetHandle(onClose) }) else ({ BottomSheetDefaults.DragHandle() }),
     ) {
-        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides appDensity) { content() }
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides appDensity) {
+            if (!holdHeight) content()
+            else {
+                var tallest by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+                val min = with(appDensity) { tallest.toDp() }
+                androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().heightIn(min = min)
+                    .onSizeChanged { if (it.height > tallest) tallest = it.height }) { content() }
+            }
+        }
     }
 }
 

@@ -1854,7 +1854,7 @@ private fun DaySheet(snackbar: SnackbarHostState, onDismiss: () -> Unit, content
     // [STAB-01] A message still showing here when the sheet closes is closed with it: otherwise it waits for
     // a host that is gone, and every later message (되돌리기 and the rest) stops appearing.
     DisposableEffect(snackbar) { onDispose { snackbar.currentSnackbarData?.dismiss() } }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state, holdHeight = true) {
         // [UX-13] 1.25 Z (U13): scrolling the day up to its top no longer goes on to close it.
         Box(Modifier.fillMaxWidth().sheetScrollGuard()) {
             content()
