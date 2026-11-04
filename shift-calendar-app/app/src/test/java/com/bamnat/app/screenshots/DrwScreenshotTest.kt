@@ -89,6 +89,15 @@ class DrwScreenshotTest : ScreenshotBase() {
         assertFalse(shows("🎨 겨울 밤 내 테마"))
     }
 
+    /** 스튜디오 9차 (조각 카드를 눌러도 반응 없음): a kept part's card itself opens what can be done with it. */
+    @Test fun aPartsCardOpensItsSheet() = shoot("1496_drw_part", PHONE_393) {
+        fill()
+        drawer()
+        tapText("조각 · 내 것")
+        assertTrue(appears("스튜디오에서 꾸미기", exact = true))
+        assertTrue(appears("서랍에서 빼기", exact = true))
+    }
+
     @Test fun oneThingsSheet() = shoot("1492_drw_sheet", PHONE_393) {
         fill()
         drawer()
