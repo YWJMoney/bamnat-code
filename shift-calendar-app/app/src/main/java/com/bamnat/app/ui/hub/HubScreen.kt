@@ -147,7 +147,10 @@ fun HubScreen(
         // 사용자 2026-11-03 (장터를 내리고 올릴 때 박스가 부자연스러움): 광장 and 장터 have the 팔로잉 줄·오늘의 하나 as the first rows of
         // their own lists, so they scroll away with them in one motion; nothing above a list folds open and shut and moves it under the finger.
         val showPeople = recipesOn && c.recipeApi.enabled
+        // 1.37 PC 3차 (테마↔장터↔공방을 오가면 칩·검색·스크롤이 처음으로): each part keeps what was picked, typed and scrolled while away.
+        val kept = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
         Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
+            kept.SaveableStateProvider(section.name) {
             when (section) {
                 HubSection.TALK -> androidx.compose.runtime.CompositionLocalProvider(
                     LocalHubHeader provides if (showPeople) ({ Column { people() } }) else null,
@@ -170,6 +173,7 @@ fun HubScreen(
                 HubSection.MAKE -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
                     Make(c, style, onStudio, onMake, onMine, onRequests, onCode, onPosts, onRecipe)
                 }
+            }
             }
         }
     }

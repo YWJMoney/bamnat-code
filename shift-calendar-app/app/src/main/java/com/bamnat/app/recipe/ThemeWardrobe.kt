@@ -67,13 +67,13 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
      * Puts on [r]'s looks (nothing else in it) with 7일 되돌리기 as any recipe; the user's own look is kept aside the first time.
      * [code] is the 나눔 판 code, "builtin:<title>" or "" for one of mine.
      */
-    suspend fun wear(r: Recipe, code: String, own: Boolean, ver: Int = 0): Boolean {
+    suspend fun wear(r: Recipe, code: String, own: Boolean, ver: Int = 0, whole: Recipe? = null): Boolean {
         val looks = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
         if (looks.pieces.isEmpty()) return false
         beforeWear()
         val picks = looks.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
         lastApplied = c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
-        afterWear(looks, code, own, ver)
+        afterWear(looks, code, own, ver, whole)
         // [MKX-02] The tabs laid on stay over the new theme.
         reOverlay()
         return true
@@ -85,7 +85,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     /** [looks] are on: the theme worn from today, its days running for someone else's (not [own]) under the ads switch. */
-    suspend fun afterWear(looks: Recipe, code: String, own: Boolean, ver: Int = 0) {
+    suspend fun afterWear(looks: Recipe, code: String, own: Boolean, ver: Int = 0, whole: Recipe? = null) {
         val l = _lease.value
         // [J135-16] What was worn before, so 되돌리기 of this one puts its name back with its look.
         prefs.edit().putString(K_WORN_LOOK, JSONObject(c.recipes.pieces.lookSnapshot()).toString())
@@ -95,9 +95,24 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val shared = was?.shared?.takeIf { own }.orEmpty().ifEmpty { if (own && code.isNotEmpty() && !code.startsWith("builtin:")) code else "" }
         val free = shared.isEmpty() && adsOn() && !pro() && l.freeUsed < ThemeLease.FREE_FIRST
         val only = looks.copy(pieces = looks.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
-        save(l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own, shared, if (ver > 0) ver else was?.ver ?: 0, was?.bare == true),
-            Today.date().toEpochDay(), free))
+        val next = l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own, shared, if (ver > 0) ver else was?.ver ?: 0, was?.bare == true),
+            Today.date().toEpochDay(), free)
+        save(if (whole == null) next else keepWhole(l, next, whole))
+        next.worn?.let { stamp(it.key) }
         refreshWidgets()
+    }
+
+    /**
+     * 1.37 PC (일부만 입으면 서랍의 테마가 ‘… 일부’로 바뀌어요): [whole]'s parts were picked, so 입었던 테마 keeps the whole theme under its
+     * own name (worn first), and only what is worn now is ‘… 일부’.
+     */
+    private fun keepWhole(prev: ThemeLease, l: ThemeLease, whole: Recipe): ThemeLease {
+        val now = l.worn ?: return l
+        val looks = whole.copy(pieces = whole.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
+        val w = now.copy(title = whole.title.take(30), body = RecipeCodec.write(looks))
+        val before = prev.history.firstOrNull { it.key == w.key }
+        val keep = before?.copy(from = now.from, until = now.until) ?: w
+        return l.copy(history = (listOf(keep) + l.history.filter { it.key != w.key && it.key != now.key }).take(ThemeLease.HISTORY))
     }
 
     /**
@@ -173,7 +188,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         if (r.pieces.isEmpty()) return false
         val l = _lease.value
         val w = ThemeLease.Wear(r.title, "", RecipeCodec.write(r), Today.date().toEpochDay(), Today.date().toEpochDay(), own = true)
-        save(l.copy(history = (l.history.filter { it.key != w.key } + w).take(ThemeLease.HISTORY)))
+        save(l.copy(history = (listOf(w) + l.history.filter { it.key != w.key }).take(ThemeLease.HISTORY)))
+        stamp(w.key)
         return true
     }
 
@@ -339,7 +355,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val w = ThemeLease.Wear(name.ifBlank { "내 테마 ${mine + 1}" }, "", RecipeCodec.write(only), keep?.from ?: Today.date().toEpochDay(),
             keep?.until ?: Today.date().toEpochDay(), own = true, shared = keep?.shared.orEmpty(), ver = keep?.ver ?: 0, bare = keep?.bare == true,
             mixedFrom = mixedFrom, mixedCodes = mixedCodes)
-        save(l.copy(history = (l.history.filter { it.key != w.key } + w).take(ThemeLease.HISTORY)))
+        save(l.copy(history = (listOf(w) + l.history.filter { it.key != w.key }).take(ThemeLease.HISTORY)))
+        stamp(w.key)
         return true
     }
 
@@ -507,6 +524,25 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         _folders.value = next
     }
 
+    /**
+     * 1.37 PC 3차 (‘최근 것부터’로 보면 방금 저장한 테마가 맨 뒤에): when each theme came into 내 서랍 or was last put on, to the
+     * millisecond ([ThemeLease.Wear.from] is only the day), by its key.
+     */
+    private val _placed = MutableStateFlow(readPlaced())
+    val placed: StateFlow<Map<String, Long>> = _placed.asStateFlow()
+
+    private fun readPlaced(): Map<String, Long> = runCatching {
+        val o = JSONObject(prefs.getString(K_PLACED, "{}") ?: "{}")
+        o.keys().asSequence().associateWith { o.getLong(it) }
+    }.getOrDefault(emptyMap())
+
+    private fun stamp(key: String) {
+        val keys = _lease.value.history.map { it.key }.toSet() + key
+        val next = (_placed.value + (key to Today.millis())).filterKeys { it in keys }
+        prefs.edit().putString(K_PLACED, JSONObject(next).toString()).apply()
+        _placed.value = next
+    }
+
     companion object {
         const val FREE_OUTFITS = 1
         const val PRO_OUTFITS = 10
@@ -526,6 +562,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_SKIP = "skip_ver"
         private const val K_PREV_VER = "prev_ver"
         private const val K_FOLDERS = "folders"
+        private const val K_PLACED = "placed"
         private const val TAG = "BamnatDrawer"
         private const val UNDO_ROW_MS = 4_000L
         const val FOLDER_NAME = 12

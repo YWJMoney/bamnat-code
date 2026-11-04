@@ -151,7 +151,7 @@ fun WornNow(onFix: (() -> Unit)?) {
  * asks for a rewarded ad watched to the end; mine, 프로 and the ads switch off never do.
  */
 @Composable
-fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit) {
+fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0, onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
     var note by remember { mutableStateOf<String?>(null) }
@@ -166,12 +166,17 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit
         val worn = if (whole) r else com.bamnat.core.recipe.LookParts.pick(r, picked).copy(title = "${r.title} 일부".take(30))
         // [DRW-03] 1.37 넣었어요 · 되돌리기: what was worn just before, so the line under it takes this one back.
         val m = c.wardrobe.mark()
-        if (c.wardrobe.wear(worn, code, own)) {
+        if (c.wardrobe.wear(worn, code, own, ver, whole = r.takeIf { !whole })) {
             after()
             // The sheet closes first, so the line with 되돌리기 is not under it.
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { onDismiss() }
-            com.bamnat.app.ui.PutOnNotice.say(if (whole) "‘${r.title}’${com.bamnat.app.ui.Fmt.obj(r.title)} 입었어요. 기록은 그대로예요"
-                else "‘${r.title}’에서 고른 ${picked.size}개를 입었어요. 기록은 그대로예요") { c.wardrobe.undoTo(m); true }
+            // PC 3차 (얹은 탭이 같은 곳을 덮으면 일부만 입은 게 안 보여요): the tabs laid on over what was just put on are named.
+            val tabs = com.bamnat.core.recipe.LookParts.of(worn).map { it.tab }.toSet()
+            val under = c.wardrobe.overlays.value.filter { it.tab in tabs }
+            val hidden = if (under.isEmpty()) "" else ". " + under.joinToString(", ") { "‘${com.bamnat.core.recipe.LookParts.tabLabel(it.tab)}’" } +
+                " 탭은 얹은 탭이 덮고 있어 그대로 보여요. 마을 › 테마 › 테마 위에 얹은 탭에서 빼면 보여요"
+            com.bamnat.app.ui.PutOnNotice.say((if (whole) "‘${r.title}’${com.bamnat.app.ui.Fmt.obj(r.title)} 입었어요" else "‘${r.title}’에서 고른 ${picked.size}개를 입었어요") +
+                hidden.ifEmpty { ". 기록은 그대로예요" }) { c.wardrobe.undoTo(m); true }
         }
     }
     TryOnScreen(r, style, onDismiss,

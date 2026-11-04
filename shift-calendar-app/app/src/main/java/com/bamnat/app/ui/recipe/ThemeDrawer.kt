@@ -65,10 +65,13 @@ import kotlinx.coroutines.launch
 
 /** What one [DrawerItem] stands for, so its sheet knows what it can do. */
 private sealed interface Held {
-    data class Theme(val w: ThemeLease.Wear, val now: Boolean = false) : Held
+    /** [part]: only some of its parts are worn now (입어 보고 고른 것만 입기). */
+    data class Theme(val w: ThemeLease.Wear, val now: Boolean = false, val part: Boolean = false) : Held
     data class Got(val e: AppliedRecipeEntity) : Held
     data class Part(val k: ThemeWardrobe.Kept) : Held
     data class Draft(val d: RecipeDraftEntity) : Held
+    /** A tab laid on the theme worn (장터 › 기능별 탭). */
+    data class Laid(val o: ThemeWardrobe.Overlay) : Held
 }
 
 private const val DAY = 86_400_000L
@@ -97,12 +100,14 @@ fun ThemeDrawer(
     val folders by c.wardrobe.folders.collectAsStateWithLifecycle()
     val drafts by c.recipes.drafts.collectAsStateWithLifecycle(emptyList())
     val applied by c.recipes.applied.collectAsStateWithLifecycle(emptyList())
+    val laid by c.wardrobe.overlays.collectAsStateWithLifecycle()
+    val placed by c.wardrobe.placed.collectAsStateWithLifecycle()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     WornNow(onFix)
 
     // Everything of mine as one list; what each one is, kept by its key.
-    val held = remember(lease, kept, drafts, applied) { gather(lease, kept, drafts, applied) }
+    val held = remember(lease, kept, drafts, applied, laid, placed) { gather(lease, kept, drafts, applied, laid, placed) }
     val items = remember(held, folders) { held.map { (i, _) -> i.copy(folder = folders[i.key]) } }
     val byKey = remember(held) { held.associate { (i, h) -> i.key to h } }
 
@@ -135,8 +140,9 @@ fun ThemeDrawer(
                 names.forEach { f -> FilterChip(folder == f, { folder = if (folder == f) null else f }, label = { Text("📁 $f") }) }
                 FilterChip(folder == Drawer.NO_FOLDER, { folder = Drawer.NO_FOLDER }, label = { Text("묶음 없음") })
             }
-            if (folder != null && folder != Drawer.NO_FOLDER && folder !in names) folder = null
         }
+        // PC 3차 (묶음을 풀면 걸러 놓은 빈 화면이 남아요): a 묶음 gone (or the last one) lets its filter go too.
+        if (folder != null && (names.isEmpty() || folder != Drawer.NO_FOLDER && folder !in names)) folder = null
         val f = folder
         if (f != null && f != Drawer.NO_FOLDER) FolderRename(f)
     }
@@ -188,7 +194,7 @@ fun ThemeDrawer(
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
     // A phone that never wore a theme: three of its kind of work to start with, the rest in 장터.
-    var trying by remember { mutableStateOf<Pair<Recipe, String>?>(null) }
+    var trying by remember { mutableStateOf<Triple<Recipe, String, Int>?>(null) }
     // PC 확인 e34fae4e (하나 입으면 추천이 사라짐): the starters stay while the drawer holds little, without the ones already in it.
     val inDrawer = remember(lease) { (lease.history.map { it.title } + listOfNotNull(lease.worn?.title)).toSet() }
     val starters = remember(style, inDrawer) { BuiltInThemes.of(style).filter { it.title !in inDrawer }.take(3) }
@@ -196,7 +202,7 @@ fun ThemeDrawer(
         Text(if (lease.worn == null && lease.history.isEmpty()) "처음이라면 이런 테마부터" else "이런 테마도 있어요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             starters.forEach { r ->
-                Column(Modifier.width(112.dp).clickable(onClickLabel = "테마 보기") { trying = r to "builtin:${r.title}" },
+                Column(Modifier.width(112.dp).clickable(onClickLabel = "테마 보기") { trying = Triple(r, "builtin:${r.title}", 0) },
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     swatchOf(r)?.let { ThemeThumb(it, width = 112.dp) }
                     Text(r.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -211,32 +217,39 @@ fun ThemeDrawer(
     Text("테마는 색, 칸 모양, 배치처럼 보이는 방식만 바꿔요. 근무, 메모, 가계부, 급여 기록과 알람은 그대로예요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-    trying?.let { (r, code) -> ThemeSheet(r, code, style) { trying = null } }
+    trying?.let { (r, code, ver) -> ThemeSheet(r, code, style, ver) { trying = null } }
     open?.let { key ->
         val item = items.firstOrNull { it.key == key }
         val h = byKey[key]
         if (item == null || h == null) open = null
-        else ItemSheet(item, h, onDismiss = { open = null }, onTry = { r, code -> open = null; trying = r to code },
+        else ItemSheet(item, h, onDismiss = { open = null }, onTry = { r, code, ver -> open = null; trying = Triple(r, code, ver) },
             onStudio = { open = null; onStudio(it) }, onRecipe = { open = null; onRecipe(it) }, onUpload = { open = null; onUpload() })
     }
 }
 
 /** Everything of mine, each with what it is. The theme worn now is on its own card above, so it is not here twice. */
-private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: List<RecipeDraftEntity>, applied: List<AppliedRecipeEntity>): List<Pair<DrawerItem, Held>> {
+private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: List<RecipeDraftEntity>, applied: List<AppliedRecipeEntity>,
+                   laid: List<ThemeWardrobe.Overlay> = emptyList(), placed: Map<String, Long> = emptyMap()): List<Pair<DrawerItem, Held>> {
     val out = ArrayList<Pair<DrawerItem, Held>>()
     // PC 확인 e34fae4e (테마를 입었는데 서랍이 비었다고 해요): the theme worn now is in the drawer too, first, marked 입는 중.
     val worn = lease.worn
-    (listOfNotNull(worn?.takeIf { w -> lease.history.none { it.key == w.key } }) + lease.history).forEach { w ->
-        val now = w.key == worn?.key
+    // PC 3차: a theme worn in part stays itself in the drawer (입는 중 · 일부), not a new ‘… 일부’.
+    val whole = worn?.let { w -> lease.history.firstOrNull { it.key == w.key } ?: lease.history.firstOrNull { it.own && w.own && it.title == w.title.removeSuffix(" 일부") } }
+    (listOfNotNull(worn?.takeIf { whole == null }) + lease.history).forEach { w ->
+        val now = w.key == (whole ?: worn)?.key
         val words = listOfNotNull(w.mixedFrom.takeIf { it.isNotBlank() }, "장터".takeIf { w.free }, "입는 중".takeIf { now }).joinToString(" ")
-        out += DrawerItem("theme:${w.key}", if (w.own) DrawerKind.MINE else DrawerKind.WORN, w.title, if (now) Long.MAX_VALUE else w.from * DAY,
-            words = words) to Held.Theme(w, now)
+        out += DrawerItem("theme:${w.key}", if (w.own) DrawerKind.MINE else DrawerKind.WORN, w.title, if (now) Long.MAX_VALUE else placed[w.key] ?: (w.from * DAY),
+            words = words) to Held.Theme(w, now, part = now && worn != null && worn.body != w.body)
     }
-    drafts.forEach { d ->
-        out += DrawerItem("draft:${d.id}", DrawerKind.MINE, com.bamnat.app.ui.studio.draftName(d.body), d.updatedAt, words = "만들던") to Held.Draft(d)
+    // PC 3차 (빈 ✏ 카드): a draft with nothing in it yet is not shown.
+    drafts.mapNotNull { d -> runCatching { RecipeCodec.read(d.body) }.getOrNull()?.takeIf { it.pieces.isNotEmpty() }?.let { d to it } }.forEach { (d, r) ->
+        // A draft with no name yet says what it holds (규칙·단추 …), not 꾸미던 모양 for everything.
+        val what = r.pieces.filter { it.kind !in BuiltInThemes.LOOK_KINDS }.map { it.kind.label }.distinct().take(2).joinToString("·")
+        val title = r.title.ifBlank { if (what.isEmpty()) "꾸미던 모양" else "만들던 $what" }
+        out += DrawerItem("draft:${d.id}", DrawerKind.MINE, title, d.updatedAt, words = "만들던 $what") to Held.Draft(d)
     }
-    // 받은 것: recipes from 장터 still on (the newest put-on of each); one that was only a theme's looks is 입었던 것 already.
-    val themeCodes = lease.history.map { it.code }.toSet() + listOfNotNull(lease.worn?.code)
+    // 받은 것: recipes from 장터 still on (the newest put-on of each); one that was only a theme's (or a tab's) looks shows as that already.
+    val themeCodes = lease.history.map { it.code }.toSet() + listOfNotNull(lease.worn?.code) + laid.map { it.code }
     applied.filter { it.code.isNotEmpty() && it.undoneAt == null && it.replacedAt == null }
         .groupBy { it.code }.values.map { l -> l.maxBy { it.appliedAt } }
         .filterNot { e -> e.code in themeCodes && e.pieces.split(',').all { k -> PieceKind.of(k)?.let { it in BuiltInThemes.LOOK_KINDS } != false } }
@@ -246,6 +259,10 @@ private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: Li
         }
     kept.forEach { k ->
         out += DrawerItem("part:${k.id}", DrawerKind.PART, k.title, k.id, words = k.fromTitle) to Held.Part(k)
+    }
+    // PC 3차 (덮개 꾸밈은 서랍에도 공방에도 없어요): the tabs laid on the theme are things got too.
+    laid.forEach { o ->
+        out += DrawerItem("tab:${o.tab}", DrawerKind.GOT, o.title, o.at, words = "얹은 탭 ${com.bamnat.core.recipe.LookParts.tabLabel(o.tab)}") to Held.Laid(o)
     }
     return out
 }
@@ -282,7 +299,7 @@ private fun Cell(i: DrawerItem, h: Held?, width: androidx.compose.ui.unit.Dp, on
 /** Its look as a little phone; a recipe with no look or a draft gets a tile with what it holds. */
 @Composable
 private fun Thumb(h: Held?, width: androidx.compose.ui.unit.Dp) {
-    val body = when (h) { is Held.Theme -> h.w.body; is Held.Part -> h.k.body; is Held.Got -> h.e.body; else -> null }
+    val body = when (h) { is Held.Theme -> h.w.body; is Held.Part -> h.k.body; is Held.Got -> h.e.body; is Held.Laid -> h.o.body; is Held.Draft -> h.d.body; null -> null }
     val look = remember(body) { body?.let { b -> runCatching { RecipeCodec.read(b) }.getOrNull()?.let(::swatchOf) } }
     if (look != null) { ThemeThumb(look, width = width); return }
     val emoji = when (h) {
@@ -305,11 +322,12 @@ private fun emojiOf(k: PieceKind): String = when {
 
 /** One short line on where it stands. */
 private fun status(h: Held?): String? = when (h) {
-    is Held.Theme -> (if (h.now) "입는 중 · " else "") +
+    is Held.Theme -> (if (h.part) "일부 입는 중 · " else if (h.now) "입는 중 · " else "") +
         when { h.w.free -> "내 것 · 장터에 있음"; h.w.own && h.w.mixedFrom.isNotBlank() -> "내 것 · 섞음"; h.w.own -> "내 것 · 나만"; h.now -> "남의 테마"; else -> "입었던" }
     is Held.Draft -> if (h.d.step >= 2) "만들던 · 올리던 중" else "만들던 · ${com.bamnat.app.ui.studio.ago(h.d.updatedAt)}"
     is Held.Got -> "받음 · " + h.e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.take(2).joinToString("·")
     is Held.Part -> if (h.k.own) "조각 · 내 것" else "조각 · ‘${h.k.fromTitle}’에서"
+    is Held.Laid -> "얹은 탭 · ${com.bamnat.core.recipe.LookParts.tabLabel(h.o.tab)}"
     null -> null
 }
 
@@ -322,7 +340,7 @@ private fun marketCode(code: String): String? = code.takeIf { it.isNotEmpty() &&
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Recipe, String) -> Unit, onStudio: (String) -> Unit,
+private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Recipe, String, Int) -> Unit, onStudio: (String) -> Unit,
                       onRecipe: (String) -> Unit, onUpload: () -> Unit) {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
@@ -354,14 +372,14 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                     val w = h.w
                     val r = remember(w.body) { runCatching { RecipeCodec.read(w.body) }.getOrNull() }
                     val ad = remember(w.key) { c.wardrobe.needsAdFor(w.code, w.title) }
-                    if (r != null && !ad && !h.now) Act("바로 입기", primary = true) {
+                    if (r != null && !ad && (!h.now || h.part)) Act(if (h.part) "전부 입기" else "바로 입기", primary = true) {
                         onDismiss()
                         c.appScope.launch {
                             val m = c.wardrobe.mark()
                             if (c.wardrobe.wearAgain(w)) PutOnNotice.say("‘${w.title}’${Fmt.obj(w.title)} 입었어요. 기록은 그대로예요") { c.wardrobe.undoTo(m); true }
                         }
                     }
-                    if (r != null && !h.now) Act(if (ad) "입어 보고 입기 (광고)" else "입어 보고 고른 것만 입기", primary = ad) { onTry(r, w.code) }
+                    if (r != null && (!h.now || h.part)) Act(if (ad) "입어 보고 입기 (광고)" else "입어 보고 고른 것만 입기", primary = ad) { onTry(r, w.code, w.ver) }
                     Act("스튜디오로 고치기") { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_THEME + w.key) }
                     val code = if (w.own) marketCode(w.shared) else marketCode(w.code)
                     if (w.own && code == null && c.recipeApi.enabled && r != null) Act("장터에 올리기",
@@ -410,6 +428,23 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                             c.wardrobe.forgetKept(k.id); c.wardrobe.setFolder(i.key, null); onDismiss()
                         }
                     }
+                }
+                is Held.Laid -> {
+                    val o = h.o
+                    val tab = com.bamnat.core.recipe.LookParts.tabLabel(o.tab)
+                    Act("탭에서 빼기", "‘$tab’ 탭이 입은 테마 모양으로 돌아가요", primary = true) {
+                        onDismiss()
+                        c.appScope.launch {
+                            val m = c.wardrobe.mark()
+                            c.wardrobe.removeOverlay(o.tab)
+                            PutOnNotice.say("‘$tab’ 탭에서 ‘${o.title}’${Fmt.obj(o.title)} 뺐어요") { c.wardrobe.undoTo(m); true }
+                        }
+                    }
+                    marketCode(o.code)?.let { code ->
+                        Act("장터에서 보기") { onRecipe(code) }
+                        Act("링크 나누기") { share(o.title, code) }
+                    }
+                    Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
                 }
                 is Held.Draft -> {
                     val d = h.d

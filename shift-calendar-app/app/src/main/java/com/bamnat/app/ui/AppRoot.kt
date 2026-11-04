@@ -751,7 +751,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(sharing) {
         val kind = sharing ?: return@LaunchedEffect
         com.bamnat.app.recipe.RecipeLinks.shared()
-        nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_FEATURE + kind.key)) { launchSingleTop = true }
+        // 1.37 PC 3차 (설정 › 규칙 › '이 설정 나누기'가 규칙이 아닌 지금 테마를 올려요): the studio takes only its 기능
+        // ([StudioViewModel.FEATURES]) and the looks; anything else (규칙·단추 …) goes to 만들기 with that piece chosen.
+        if (kind in com.bamnat.app.ui.studio.StudioViewModel.FEATURES || kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS)
+            nav.navigate(Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_FEATURE + kind.key)) { launchSingleTop = true }
+        else nav.navigate(Routes.recipeMake(kind = kind.key)) { launchSingleTop = true }
     }
 
     // AG 1.27 [MON-12] A tap on a locked 프로 feature: 프로, the rewarded ad, or 친구 초대 (ProOffer).

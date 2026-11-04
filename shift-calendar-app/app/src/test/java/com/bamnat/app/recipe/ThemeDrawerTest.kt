@@ -85,4 +85,39 @@ class ThemeDrawerTest {
         assertEquals(worn, c.recipes.pieces.lookSnapshot())
         c.wardrobe.takeOff()
     }
+
+    /** PC 3차 (3c42b520): 담아 둔 조각 › 스튜디오에서 꾸미기 used to stop the app (layer() ran before the studio's 잠금 existed). */
+    @Test fun partOpensInTheStudio() {
+        val theme = BuiltInThemes.of(WorkStyle.SHIFT).first()
+        assertTrue(c.wardrobe.keep(theme, "", com.bamnat.core.recipe.LookParts.of(theme).take(1).map { it.id }))
+        val k = c.wardrobe.kept.value.first()
+        val vm = com.bamnat.app.ui.studio.StudioViewModel(c, com.bamnat.app.ui.studio.StudioViewModel.START_KEPT + k.id)
+        org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertTrue("조각이 얹혀 고친 걸음이 생겨요", vm.state.value.past.isNotEmpty())
+        c.wardrobe.forgetKept(k.id)
+    }
+
+    /** PC 3차: 고른 것만 입어도 입었던 테마는 그 이름·전부 그대로이고, 방금 들어온 것이 ‘최근 것부터’ 맨 앞이에요. */
+    @Test fun partWornKeepsTheWhole() = runBlocking {
+        val theme = BuiltInThemes.of(WorkStyle.SHIFT).first()
+        val code = "builtin:${theme.title}"
+        assertTrue(c.wardrobe.wear(theme, code, own = false))
+        val one = com.bamnat.core.recipe.LookParts.of(theme).first().id
+        val part = com.bamnat.core.recipe.LookParts.pick(theme, listOf(one)).copy(title = "${theme.title} 일부")
+        val m = c.wardrobe.mark()
+        assertTrue(c.wardrobe.wear(part, code, own = false, whole = theme))
+        val l = c.wardrobe.lease.value
+        assertEquals("${theme.title} 일부", l.worn?.title)
+        val h = l.history.first { it.key == code }
+        assertEquals(theme.title, h.title)
+        assertEquals(1, l.history.count { it.key == code })
+        assertTrue(l.history.none { it.title.endsWith("일부") })
+        c.wardrobe.undoTo(m)
+        assertEquals(theme.title, c.wardrobe.lease.value.worn?.title)
+        // 내 테마로 저장 goes first in 입었던 테마 and is stamped to the millisecond.
+        assertTrue(c.wardrobe.saveMine("출근용"))
+        assertEquals("own:출근용", c.wardrobe.lease.value.history.first().key)
+        assertTrue((c.wardrobe.placed.value["own:출근용"] ?: 0) >= (c.wardrobe.placed.value[code] ?: 0))
+        c.wardrobe.takeOff()
+    }
 }
