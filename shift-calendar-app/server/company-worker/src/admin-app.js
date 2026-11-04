@@ -14,6 +14,8 @@ import { plazaViews } from "./admin/views/plaza.js";
 import { insightViews } from "./admin/views/insight.js";
 // 1.36 [GRW-07] 할 일함, [GRW-04]~[GRW-06] 스튜디오 요구·기본 도구 후보·손잡이 지도.
 import { workViews } from "./admin/views/work.js";
+// 1.37 [ADM2-01][ADM2-03] 흐름(관제)과 Claude 운영 열쇠.
+import { flowViews } from "./admin/views/flow.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -70,7 +72,7 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews} }`;
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -651,6 +653,9 @@ function adminApp(L, BUILD, M) {
     try {
       // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
       if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; S.alertsN = d.alerts?.length ?? 0; })));
+      // 1.37 [ADM2-01] 흐름과 [ADM2-03] 운영 열쇠.
+      if (name === "flow") jobs.push(api("/flow").then(keep((d) => { S.data.flow = d; })));
+      if (name === "keys") jobs.push(api("/keys").then(keep((d) => { S.data.keys = d; })));
       // 1.36 [GRW-07] 할 일함: 상태와 종류로 거른 한 대기열.
       if (name === "work") jobs.push(api(`/work?state=${S.workState ?? "open"}${S.workGroup ? `&group=${S.workGroup}` : ""}`).then(keep((d) => { S.data.work = d; })));
       // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구의 칸마다 제 목록.
@@ -1057,6 +1062,9 @@ function adminApp(L, BUILD, M) {
     home: () => V.homeView(),
     // 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
     work: () => V.workView(),
+    // 1.37 [ADM2-01] 흐름, [ADM2-03] 운영 열쇠.
+    flow: () => V.flowView(),
+    keys: () => V.keysView(),
     growth: () => V.growthView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
@@ -1101,7 +1109,7 @@ function adminApp(L, BUILD, M) {
     const { name, id } = S.route;
     const d = S.data;
     return Boolean({
-      home: d.today, work: d.work, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
+      home: d.today, work: d.work, flow: d.flow, keys: d.keys, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
@@ -5565,8 +5573,8 @@ function adminApp(L, BUILD, M) {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide,
   };
-  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A) };
-  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms } });
+  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A), ...M.flow(A) };
+  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions, ...M.flow(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms, ...M.flow(A).forms } });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
 
