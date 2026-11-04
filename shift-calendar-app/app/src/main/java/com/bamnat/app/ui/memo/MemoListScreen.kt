@@ -176,7 +176,7 @@ fun MemoListScreen(
                     onShare = if (state.manyCalendars) ({ sharing = true }) else null,
                 )
             } else {
-                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash, onArrange = { arranging = true })
+                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash, onArrange = { com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MEMO) })
             }
             for (p in parts) {
                 if (!p.shown) continue

@@ -23,8 +23,9 @@ enum class CalendarPart(val id: String, val label: String, val what: String, val
     JOURNAL("journal", "밤낮이 한 일", "백업·자료 갱신처럼 오늘 알아서 한 일을 한 줄로", above = true, movable = false),
     TODAY_FLOW("todayFlow", "오늘의 흐름", "잘 시간·출근·쉬는 시간을 오늘 하루 줄로", above = true),
     TODAY_WORK("todayWork", "오늘 일감·매출·투자", "현장·가게·투자 달력의 오늘 카드", above = true),
-    SUMMARY("summary", "이번 달 요약", "근무·급여(또는 수입·매출) 세 숫자", above = true, movable = false),
-    COUNTS("counts", "근무 횟수 줄", "달력 바로 위 근무 종류별 횟수", above = true, movable = false),
+    // [CNV-06] 1.37 (사용자 2026-11-04 "위쪽 유닛을 아래쪽에 배치하고 싶을수도"): 요약·횟수 줄도 달력 아래로 옮겨요.
+    SUMMARY("summary", "이번 달 요약", "근무·급여(또는 수입·매출) 세 숫자", above = true),
+    COUNTS("counts", "근무 횟수 줄", "근무 종류별 횟수", above = true),
     /** [CVW-06] 1.35 The month itself: where it stands among the movable parts says which of them are above it. Always shown. */
     MONTH("month", "이번 달 달력", "근무표 칸. 다른 카드를 이 위나 아래로 옮겨요", above = false),
     DAY_CARD("dayCard", "하루 카드", "누른 날의 근무 시간·특근·알람 끄기", above = false),

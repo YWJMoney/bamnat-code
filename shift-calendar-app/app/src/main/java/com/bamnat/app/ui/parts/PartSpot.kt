@@ -53,6 +53,8 @@ class PartSpots {
     fun boxes(id: String?): List<Rect> = if (id == null) emptyList() else spots.values.filter { it.first == id }.map { it.second }
 
     private fun depth(id: String): Int {
+        // [CNV-06] 1.37 a page's card (card:<tab>:<id>) before the 카드 part it is drawn with, so the first tap is that card.
+        if (id.startsWith("card:")) return 3
         var d = 0
         var p: String? = id
         while (p != null) { d++; p = BlueprintParts.parentOf(p).takeIf { it != p } }

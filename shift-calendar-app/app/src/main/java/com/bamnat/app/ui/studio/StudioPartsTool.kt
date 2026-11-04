@@ -69,6 +69,8 @@ internal fun PartsTool(
     advanced: Boolean = false,
     /** [LAY-08] PC 확인 C4: how many parts the next change goes to, for the line kept above ('3곳 함께 고치는 중'). */
     onTogether: (Int) -> Unit = {},
+    /** [CNV-11] 1.37: the condition being changed here, for the canvas's tool line to write the same line. */
+    onWhen: (String?) -> Unit = {},
     onChange: (String) -> Unit,
 ) {
     val bp = remember(parts) { Blueprint.decode(parts) }
@@ -184,6 +186,9 @@ internal fun PartsTool(
         }
     }
     val whenNow = cond?.takeIf { it.isNotBlank() && com.bamnat.core.formula.Logic.formulaProblem(it) == null }
+    // The first one is said only when a condition opened first (else the canvas keeps the one it had).
+    val whenSaid = remember(id, on) { booleanArrayOf(conditionFirst) }
+    LaunchedEffect(whenNow) { if (whenSaid[0]) onWhen(whenNow); whenSaid[0] = true }
     if (cond != null && whenNow == null) return
     val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on && it["when"] == whenNow } ?: emptyMap()
     fun setAll(vararg kv: Pair<String, Any?>) {

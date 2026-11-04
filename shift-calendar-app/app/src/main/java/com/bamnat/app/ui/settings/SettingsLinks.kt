@@ -43,6 +43,8 @@ enum class SettingsGo {
     STUDIO_SCREEN_FONT, STUDIO_DATE_FONT,
     /** [MAT-07] PC 확인 (마을 확인 중 사용성 제안): 스튜디오 › 앱 전체 › 움직임 and › 부품 (each part's own 움직임). */
     STUDIO_MOTION, STUDIO_PARTS,
+    /** [CNV-08] 1.37 각 탭의 카드 배치 → 스튜디오의 그 화면 (한 곳에서 고쳐요). */
+    STUDIO_CALENDAR, STUDIO_MONEY, STUDIO_MEMO, STUDIO_STATS,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

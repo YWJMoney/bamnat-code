@@ -236,13 +236,14 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                             MockParts(resolved[PieceKind.CARDS]?.get("money") as? String, MoneyPart.entries.map { Triple(it.id, it.label,
                                 // 빌드 6 확인: 일감 is 현장·가게 words.
                                 if (it == MoneyPart.OWED && style != WorkStyle.FIELD && style != WorkStyle.BUSINESS) "빌려준 돈·외상" else it.what) },
-                                fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.MONEY_PARTS, id, style) })
+                                fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.MONEY_PARTS, id, style) }, page = TabOrder.MONEY)
                             // [FREE-06]
-                            resolved[PieceKind.MONEY_LOOK]?.let { com.bamnat.app.ui.settings.MoneySample(moneyLookOf(it)) {} }
+                            // [CNV-11] 1.37 always there, so 날짜 머리·한 줄·금액 can be picked on the canvas.
+                            com.bamnat.app.ui.settings.MoneySample(resolved[PieceKind.MONEY_LOOK]?.let(::moneyLookOf) ?: com.bamnat.core.recipe.MoneyLook()) {}
                         }
                         TabOrder.MEMOS -> MockMemos(resolved)
                         TabOrder.STATS -> MockParts(resolved[PieceKind.CARDS]?.get("stats") as? String, StatsPart.entries.map { Triple(it.id, it.label, it.what) }, bars = true,
-                            fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.STATS_PARTS, id, style) })
+                            fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.STATS_PARTS, id, style) }, page = TabOrder.STATS)
                         TabOrder.PLAZA -> MockNote(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji.orEmpty() + "마을",
                             "마을은 글과 단추 자리가 모두 같아요. 배경과 이모티콘만 내 화면에서 바뀌어요")
                         else -> MockSettings(resolved)
@@ -337,18 +338,29 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
     // Only the cards this kind of work has, as on the phone (no 오늘 일감·매출 on a 교대 example, 자유도 점검).
     val placed = all.filter { it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.ASK && it.part != CalendarPart.JOURNAL &&
         fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.part.id, style) }
-    placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
-    if (placed.any { it.part == CalendarPart.SUMMARY }) Box(Modifier.mockPick("cards")) { MockSummary(style) }
+    // [CNV-06] 1.37 Each card says which it is, for the studio's canvas to pick and move it.
+    fun spot(p: CalendarPart) = com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.CALENDAR, p.id)
+    placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style), spot = spot(it.part)) }
+    if (placed.any { it.part == CalendarPart.SUMMARY && above(it.part) }) Box(Modifier.partSpot(spot(CalendarPart.SUMMARY)).mockPick("cards")) { MockSummary(style) }
     val ownDays = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() }
     val days = ownDays ?: exampleDays(style)
     // PC 확인 Z13: this month's own counts of each kind of day, when the calendar has work (else the example's).
     val counts = rememberMonthKinds(days)
-    if (placed.any { it.part == CalendarPart.COUNTS }) Row(Modifier.mockPick("days"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        days.forEachIndexed { i, d -> Text("${d["label"]} ${counts?.getOrNull(i) ?: if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
-            color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
+    val countsRow: @Composable () -> Unit = {
+        Row(Modifier.partSpot(spot(CalendarPart.COUNTS)).mockPick("days"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            days.forEachIndexed { i, d -> Text("${d["label"]} ${counts?.getOrNull(i) ?: if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
+                color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
+        }
     }
+    if (placed.any { it.part == CalendarPart.COUNTS && above(it.part) }) countsRow()
     Box(Modifier.mockPick("cells")) { MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]), ownDays.orEmpty()) }
-    placed.filter { !above(it.part) }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
+    placed.filter { !above(it.part) }.forEach {
+        when (it.part) {
+            CalendarPart.SUMMARY -> Box(Modifier.partSpot(spot(CalendarPart.SUMMARY)).mockPick("cards")) { MockSummary(style) }
+            CalendarPart.COUNTS -> countsRow()
+            else -> MockCard(it.part.labelFor(style), mockWhat(it.part, style), spot = spot(it.part))
+        }
+    }
 }
 
 /** [CVW-01] 달력 모양's values as the calendar reads them. */
@@ -487,8 +499,8 @@ private fun MockSummary(style: WorkStyle?) {
 }
 
 @Composable
-private fun MockCard(title: String, what: String, bars: Boolean = false) {
-    Card(Modifier.fillMaxWidth().partSpot("app.card").mockPick("cards"), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+private fun MockCard(title: String, what: String, bars: Boolean = false, spot: String? = null) {
+    Card(Modifier.fillMaxWidth().partSpot("app.card").let { m -> if (spot != null) m.partSpot(spot) else m }.mockPick("cards"), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.labelLarge)
             Text(what, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
@@ -500,9 +512,10 @@ private fun MockCard(title: String, what: String, bars: Boolean = false) {
 }
 
 @Composable
-private fun MockParts(line: String?, parts: List<Triple<String, String, String>>, bars: Boolean = false, fits: (String) -> Boolean = { true }) {
+private fun MockParts(line: String?, parts: List<Triple<String, String, String>>, bars: Boolean = false, fits: (String) -> Boolean = { true }, page: String? = null) {
     val placed = PageLayout.decode(line).arrange(parts) { it.first }.filter { it.shown && fits(it.part.first) }
-    placed.forEach { (p, _, _) -> MockCard(p.second, p.third, bars && p.first in setOf("weeks", "trend", "year", "three")) }
+    placed.forEach { (p, _, _) -> MockCard(p.second, p.third, bars && p.first in setOf("weeks", "trend", "year", "three"),
+        spot = page?.let { com.bamnat.app.ui.studio.StudioEdit.cardId(it, p.first) }) }
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -511,10 +524,10 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
     val placed = PageLayout.decode(resolved[PieceKind.CARDS]?.get("memo") as? String).arrange(MemoPart.entries.toList()) { it.id }.filter { it.shown }
     placed.forEach { p ->
         when (p.part) {
-            MemoPart.SEARCH -> Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
+            MemoPart.SEARCH -> Box(Modifier.fillMaxWidth().partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)).background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
                 Text("🔍 제목·내용·#태그 찾기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            MemoPart.NOTEBOOKS -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            MemoPart.NOTEBOOKS -> Row(Modifier.partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("전체", "근무", "개인").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer) }
             }
@@ -523,14 +536,14 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
     }
     val tpls = (resolved[PieceKind.MEMO_TEMPLATES]?.get("items") as? List<Map<String, Any?>>).orEmpty()
     val journal = (resolved[PieceKind.INVEST]?.get("journal") as? List<String>).orEmpty()
-    if (tpls.isEmpty() && journal.isEmpty()) MockNote("메모", "메모 틀을 더하면 '틀에서 시작'에 여기처럼 보여요")
     tpls.forEach { t ->
         MockCard("${t["emoji"] ?: "📝"} ${t["title"]}" + ((t["repeat"] as? String)?.let { " · ${repeatLabel(it)}" } ?: ""),
             (t["check"] as? List<String>)?.joinToString(" · ") { "☐ $it" }?.ifEmpty { null } ?: (t["body"] as? String).orEmpty())
     }
     if (journal.isNotEmpty()) MockCard("📒 투자일지", journal.joinToString(" · "))
     // [FREE-04] The memos in the recipe's 메모장 모양.
-    resolved[PieceKind.MEMO_LOOK]?.let { Box(Modifier.mockPick("memo")) { com.bamnat.app.ui.memo.MemoLookSample(memoLookOf(it)) {} } }
+    // [CNV-11] 1.37 always there, so each memo card's parts (카드·제목·내용·날짜) can be picked on the canvas.
+    Box(Modifier.mockPick("memo")) { com.bamnat.app.ui.memo.MemoLookSample(resolved[PieceKind.MEMO_LOOK]?.let(::memoLookOf) ?: com.bamnat.core.recipe.MemoLook()) {} }
 }
 
 /** [FREE-04][FREE-06] A piece's values as the look they write (the same k=v line the settings keep). */

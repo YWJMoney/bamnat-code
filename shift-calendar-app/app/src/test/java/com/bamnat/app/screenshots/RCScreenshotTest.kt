@@ -95,17 +95,16 @@ class RCScreenshotTest : ScreenshotBase() {
 
     /** 사용자 2026-11-01: 스튜디오 › 보관함 › 장터에서 찾기 opens 장터 on this area's 구간, and 뒤로 comes back to the studio as it was. */
     @Test fun studioBoxOpensMarketAndComesBack() { starters(); style(WorkStyle.SHIFT); shoot("1349_rcp_studio_market", PHONE) {
-        tab(4, wide = false)
-        tapText("공방", exact = true)
-        tapText("지금 모양 고치기", exact = true)
-        // PC 확인 1.36: the studio opens on 앱 전체 › 한 색 now; 달력 first for its 기능별 탭.
-        tapText("달력", exact = true)
+        // [CNV-08] 달력 도구 › 카드 배치 opens the studio on 달력 (the 화면 menu on top is a popup these tests do not read).
+        tapText("도구")
+        tapText("카드 배치", exact = true)
+        swipeRowLeft("칸 디자인", until = "보관함 0", dp = 80)
         tapText("보관함", prefix = true)
         tapText("장터 ‘기능별 탭 › 달력’에서 찾기", exact = true)
         assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))
         assertTrue(appears("탭 하나만", exact = true))
         back()
-        assertTrue("뒤로 → the studio", appears("앱 화면", exact = true))
+        assertTrue("뒤로 → the studio", appears("화면: 달력 ▾", exact = true))
     } }
 
     /** PC 확인 1.36: a code typed in 찾기 opens that work whatever its 구간; nothing found says what was looked for and offers the other 구간. */
