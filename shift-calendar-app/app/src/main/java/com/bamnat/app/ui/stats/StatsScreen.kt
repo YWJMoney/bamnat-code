@@ -148,7 +148,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
     // PC f42b2eba·e1ca9e5b (근무·급여 한 화면에 주 52시간과 64시간이 섞임; 급여를 안 정한 일근은 '한 주 근무 경고' 값이어야 함):
     // one week limit for every week line on this screen, the 다음 주 예상 too: the law's for the pay setup (52, 64 under
     // 탄력적 근로시간제, the exception's), else the user's own 한 주 근무 경고 (no setup yet, 5인 미만, a non-wage calendar).
-    val weekLimit = (if (style?.usesPayEngine != false) payProfile?.let(::legalWeekHours) else null) ?: settings.weeklyLimitHours
+    val employee = style?.usesPayEngine != false
+    val weekLimit = (if (employee) payProfile?.let(::legalWeekHours) else null) ?: settings.limits.weeklyLimitHours
     val calc = remember(snap, settings.limits, weekLimit) {
         WorkHoursCalculator(snap.resolver, DayOfWeek.MONDAY, settings.limits.copy(legalWeeklyHours = weekLimit))
     }
@@ -354,7 +355,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         // 11-hour rest instead.
         val profile = payProfile
         val exception = profile?.rules?.hoursException ?: com.bamnat.core.hours.HoursException.NONE
-        if (profile?.fiveOrMoreEmployees != false) {
+        // Only for wage work with a pay setup: the law's hours are an employee's (자영업·현장·투자 have none), and with no setup the
+        // screen reads the user's own 한 주 근무 경고 instead.
+        if (employee && profile != null && profile.fiveOrMoreEmployees) {
             val legalHours = legalWeekHours(profile)
             val overLegal = legalHours?.let { h -> summary.weeks.filter { it.totalMinutes > h * 60 } }.orEmpty()
             if (legalHours != null && overLegal.isNotEmpty()) {
@@ -406,7 +409,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                             "주 평균",
                             HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
                             Modifier.weight(1f),
-                            caption = "기준 ${settings.averageLimitHours}시간",
+                            caption = if (employee) "기준 ${settings.averageLimitHours}시간" else "참고용",
                             warning = three.overLimit,
                         )
                         StatTile(
@@ -417,12 +420,12 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                         )
                     }
                     Spacer(Modifier.height(12.dp))
-                    LimitBar(
+                    if (employee) LimitBar(
                         value = three.averageWeeklyMinutes / 60.0,
                         limit = settings.averageLimitHours.toDouble(),
                         max = maxOf(settings.weeklyLimitHours.toDouble(), three.averageWeeklyMinutes / 60.0),
                     )
-                    if (three.overLimit) {
+                    if (employee && three.overLimit) {
                         Spacer(Modifier.height(10.dp))
                         WarningBanner(
                             "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
@@ -433,7 +436,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
 
                 }
                 StatsPart.WEEKS -> {
-                SectionCard(title = "주별 근무시간 (주 ${weekLimit}시간 기준)") {
+                SectionCard(title = if (employee) "주별 근무시간 (주 ${weekLimit}시간 기준)" else "주별 일한 시간") {
                     val maxHours = maxOf(
                         weekLimit.toDouble(),
                         summary.weeks.maxOfOrNull { it.totalMinutes / 60.0 } ?: 0.0,
@@ -446,8 +449,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                         if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
                     }
                     // 1.32 [WTYP-12] 연속 근무 경고: stretches in these days past the limit set in 근무시간 경고.
-                    val long = remember(snap, summary, settings.stretchLimitHours) {
-                        summary.weeks.firstOrNull()?.let { first ->
+                    val long = remember(snap, summary, settings.stretchLimitHours, employee) {
+                        if (!employee) emptyList() else summary.weeks.firstOrNull()?.let { first ->
                             com.bamnat.core.hours.Stretches.over(com.bamnat.core.hours.Stretches.of(first.start, summary.weeks.last().end, snap.resolver::resolve), settings.stretchLimitHours)
                         }.orEmpty()
                     }
@@ -459,7 +462,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                     }
                     // [CAL-40] I 리뷰 I19: the coming week read from the roster, so 52시간 is seen before it is passed.
                     val next = remember(calc, today) { calc.glance(today.plusWeeks(1)) }
-                    if (next.minutes > 0) {
+                    if (employee && next.minutes > 0) {
                         Text(
                             "다음 주(${Fmt.shortDate(next.start)}~) 예상 ${next.text}",
                             style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),

@@ -253,7 +253,9 @@ data class AppSettings(
     /** [ALRM-03] What was answered ([com.bamnat.core.alarm.AlarmSuggest.Memory]); kept on this phone only, like [monthRecapSeen]. */
     val alarmSuggestMemory: String = "",
 ) {
-    val limits: HourLimits get() = if (workStyle == com.bamnat.core.work.WorkStyle.BUSINESS) OWNER_HOURS
+    // PC 첫 설정 3차 (자영업 매출·영업 탭에 '주 52시간을 넘은 주'): no 근로기준법 hours for work that is not wage work: a shop,
+    // a freelancer's 현장 jobs, investing.
+    val limits: HourLimits get() = if (workStyle?.usesPayEngine == false) OWNER_HOURS
         else HourLimits(weeklyLimitHours, averageLimitHours)
 
     companion object {
