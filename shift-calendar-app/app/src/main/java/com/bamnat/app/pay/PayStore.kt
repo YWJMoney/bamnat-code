@@ -168,7 +168,7 @@ class PayStore(
         const val RESTART = "처음부터 다시 만들려고 비웠어요"
 
         /** "11월 4일 19:52", on the phone's clock. */
-        fun whenText(at: Long): String = java.time.Instant.ofEpochMilli(at).atZone(java.time.ZoneId.systemDefault())
+        fun whenText(at: Long): String = java.time.Instant.ofEpochMilli(at).atZone(com.bamnat.core.time.Today.zone())
             .let { "${it.monthValue}월 ${it.dayOfMonth}일 %02d:%02d".format(it.hour, it.minute) }
     }
 

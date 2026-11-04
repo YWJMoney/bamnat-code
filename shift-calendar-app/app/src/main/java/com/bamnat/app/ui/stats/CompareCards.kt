@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.stats
 
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.heightIn
 import com.bamnat.core.work.words
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -95,7 +97,9 @@ private fun CompareTable(now: MonthCompare.Side, before: MonthCompare.Side, befo
 
 /** [PROV-02] 올해 근무·급여 (프로): every month of the year with its hours and pay, and the year so far. */
 @Composable
-internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate) {
+internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate,
+    /** PC 02d6dabf: the pay screen's 도구, where the report is made (this card sits on 근무·급여 itself). */
+    onOpenReport: (() -> Unit)? = null) {
     val year by com.bamnat.app.ui.rememberLast("year:${vm.calendarId}:${month.year}", snap, month.year, profile) {
         runCatching {
             withContext(Dispatchers.Default) {
@@ -109,7 +113,8 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
     val y = year ?: return
     val now = Today.month()
     ProLock(Feature.WORK_COMPARE, gate) {
-        SectionCard(title = "${y.year}년 근무·급여", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
+        // PC 02d6dabf: named as the tab it sits on (알바 '출근·시급').
+        SectionCard(title = "${y.year}년 ${vm.settings.value.workStyle.words().tab}", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
             y.months.forEach { s ->
                 val ahead = s.month.isAfter(now)
                 val color = if (ahead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
@@ -129,10 +134,10 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
                     style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 y.pay?.let { Text(MonthCompare.man(it), style = MaterialTheme.typography.titleSmall.merge(NumberStyle)) }
             }
-            // PC e1ca9e5b: the tab as this calendar names it (알바 '출근·시급'), not always 근무·급여.
-            val tab = vm.settings.value.workStyle.words().tab
-            Text("근무표대로 앞으로의 달도 셌어요. 급여 리포트(PDF·CSV)는 ‘$tab’ 화면에서 만들어요.",
+            // PC e1ca9e5b·02d6dabf: the report is the pay screen's (도구), not this tab's; a link goes there.
+            Text("근무표대로 앞으로의 달도 셌어요. 급여 리포트(PDF·CSV)는 급여 계산 › 도구에서 만들어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+            onOpenReport?.let { go -> TextButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text("급여 리포트 만들러 가기") } }
         }
     }
 }

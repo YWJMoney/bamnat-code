@@ -486,7 +486,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
 
                 }
                 StatsPart.COMPARE -> CompareCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate)
-                StatsPart.YEAR -> YearWorkCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate)
+                StatsPart.YEAR -> YearWorkCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate,
+                    onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.TOOLS.key) } })
                 else -> Unit
             }
         }

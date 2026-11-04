@@ -202,6 +202,8 @@ fun CompanyRulesEditor(
                     draft = draft.copy(scheduleIsRegular = it, flexPeriod = if (it) draft.flexPeriod else null).settled(Unknowns.SCHEDULE_IS_REGULAR)
                 }
                 if (draft.scheduleIsRegular) {
+                    // PC 02d6dabf (켜면 연장 두 줄이 말없이 사라짐): what went with them, said where they were.
+                    Hint("‘하루 8시간·주 40시간 넘으면 연장’은 쓰지 않아요. 근무표 시간은 기본 근무로, 잔업으로 적은 시간만 연장으로 세요. 끄면 다시 나와요.")
                     FlexPicker(draft.flexPeriod, { draft = draft.copy(flexPeriod = it).settled(Unknowns.SCHEDULE_IS_REGULAR) },
                         start = draft.flexStart, onStart = { draft = draft.copy(flexStart = it) })
                 }
@@ -213,6 +215,15 @@ fun CompanyRulesEditor(
                         draft = draft.copy(weeklyLimitMinutes = if (it) 2400 else null)
                     }
                 }
+                // PC 02d6dabf (회사 규칙 어디에서도 '주 52시간 예외'를 못 찾음, '회사마다 다른 계산' 접힌 칸 안에 있었음): with 5인 이상 and
+                // 탄력제 in 기본, where the week's limit is decided.
+                Label("근로시간 제도 (주 52시간 예외)")
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.core.hours.HoursException.entries.forEach { e ->
+                        FilterChip(selected = rules.hoursException == e, onClick = { setRules(rules.copy(hoursException = e)) }, label = { Text(e.label) })
+                    }
+                }
+                Hint(rules.hoursException.note + " 근무시간 화면의 한도 경고가 이 기준으로 바뀌어요.")
                 if (SetupQuestion.BREAK_PAY in askedKinds || rules.breakPay != BreakPay.UNPAID) {
                     // [PAYS-03] 근로기준법 제54조: a break is free time; 대기 under direction is work (제50조 제3항).
                     Label("휴게 시간")
@@ -546,13 +557,6 @@ fun CompanyRulesEditor(
                     Toggle("단시간 근로자 초과근로 50%", "소정근로시간이 주 40시간보다 짧은 계약이면 켜요. 소정 넘는 시간은 8시간 안이어도 50%를 더 받아요(기간제법 제6조 제3항)",
                         rules.partTimePremium) { setRules(rules.copy(partTimePremium = it)) }
                 }
-                Label("근로시간 제도 (주 52시간 예외)")
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    com.bamnat.core.hours.HoursException.entries.forEach { e ->
-                        FilterChip(selected = rules.hoursException == e, onClick = { setRules(rules.copy(hoursException = e)) }, label = { Text(e.label) })
-                    }
-                }
-                Hint(rules.hoursException.note + " 근무시간 화면의 한도 경고가 이 기준으로 바뀌어요.")
             }
             // [PAYX-25] 생산직 연장·야간·휴일수당 비과세, for 예상 실수령.
             FoldSection(title = "세금") {

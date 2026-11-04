@@ -178,6 +178,13 @@ fun PayScreen(
     var editingRules by rememberSaveable { mutableStateOf(false) }
     // 가계부 스레드·PC (설정 찾기 '월급날'이 회사 규칙 맨 위로만 열림): the value the rules editor opens at.
     var rulesFocus by remember { mutableStateOf<PayFocus?>(null) }
+    // PC 02d6dabf (설정 찾기로 연 회사 규칙을 저장하면 급여 화면으로 감): opened for one value from elsewhere, closing it goes back there.
+    fun closeRules() {
+        editingRules = false
+        val back = rulesFocus != null
+        rulesFocus = null
+        if (back) onBack()
+    }
     // [J133-97] 1.33 빌드 8 확인 ("회사 규칙 칩으로 들어가면 ←·뒤로·취소로 못 나가요", 1.32부터): the result leaves the screen while
     // the rules editor is open, so a 'done' kept inside it started again on the way back and opened the editor once more.
     var focusUsed by rememberSaveable { mutableStateOf(false) }
@@ -199,7 +206,7 @@ fun PayScreen(
         when {
             detailedFrom != null -> wizardLeave++
             editingSetup -> editingSetup = false
-            else -> editingRules = false
+            else -> closeRules()
         }
     }
     // [PAYX-22] A change that moves a month matched with a payslip.
@@ -239,7 +246,7 @@ fun PayScreen(
                         when {
                             detailedFrom != null -> wizardLeave++
                             editingSetup -> editingSetup = false
-                            editingRules -> editingRules = false
+                            editingRules -> closeRules()
                             else -> onBack()
                         }
                     }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") }
@@ -323,7 +330,7 @@ fun PayScreen(
                 }
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
-                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false; rulesFocus = null }, onOpenKinds = onOpenExtraKinds, focus = rulesFocus)
+                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = ::closeRules, onOpenKinds = onOpenExtraKinds, focus = rulesFocus)
                 }
                 // [FREE-07] 1.35 급여 모양 of this kind of work; the figures and their 예상·추정 marks show whatever it says.
                 else -> androidx.compose.runtime.CompositionLocalProvider(LocalPayLook provides
