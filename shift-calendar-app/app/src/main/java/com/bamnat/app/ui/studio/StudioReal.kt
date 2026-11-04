@@ -102,5 +102,8 @@ internal fun jobMonth(jobs: List<com.bamnat.core.money.Job>, rules: com.bamnat.c
 @Composable
 internal fun rememberFieldRules(): com.bamnat.core.money.FieldRules {
     val c = LocalContext.current.appContainer
-    return remember(c) { runCatching { c.calendars.current().field }.getOrNull() ?: com.bamnat.core.money.FieldRules() }
+    // PC 확인 1.37 A13 (받을 돈이 수수료 전 362,000원): read as the calendar does, from the calendar list as it loads, not once at the
+    // start (the list was still the default then, without its 수수료).
+    val cal by c.calendars.activeCalendar.collectAsStateWithLifecycle(c.calendars.current())
+    return cal.field ?: com.bamnat.core.money.FieldRules()
 }
