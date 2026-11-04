@@ -36,8 +36,9 @@ fun NewAnswersLine(c: AppContainer, except: String?, onOpen: () -> Unit, modifie
     var looks by remember { mutableIntStateOf(0) }
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { looks++ }
     androidx.compose.runtime.LaunchedEffect(looks, except) {
-        val posts = runCatching { c.companyApi.myPosts(c.companyStore.device) }
-            .onFailure { if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.i("BamnatTown", "myPosts failed: $it") }.getOrNull() ?: return@LaunchedEffect
+        // PC 확인 699bbbc8: leaving 광장 cancels the ask; that is not a failure, so it is passed on, not logged.
+        val posts = try { c.companyApi.myPosts(c.companyStore.device) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+            catch (e: Exception) { if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.i("BamnatTown", "myPosts failed: $e"); null } ?: return@LaunchedEffect
         val rooms = posts.associate { it.id to it.room }
         val all = VillageReplies.fresh(c.appContext, posts)
         fresh = all.filterKeys { rooms[it] != except }.values.sum()

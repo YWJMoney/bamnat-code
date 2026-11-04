@@ -23,7 +23,9 @@ object VillageReplies {
     private val _count = kotlinx.coroutines.flow.MutableStateFlow(0)
     val count: kotlinx.coroutines.flow.StateFlow<Int> = _count
     @Volatile private var store: android.content.SharedPreferences? = null
+    @Volatile private var worked = false
     fun publish(n: Int) {
+        worked = true
         _count.value = n.coerceAtLeast(0)
         runCatching { store?.edit()?.putInt(K_COUNT, _count.value)?.apply() }
     }
@@ -31,12 +33,15 @@ object VillageReplies {
     /** PC 확인 a54724f7 (점이 앱을 켜고 18초 뒤에 생겨요): the count last worked out shows at once as the app starts. */
     fun restore(context: Context) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        store = prefs
-        _count.value = runCatching { prefs.getInt(K_COUNT, 0) }.getOrDefault(0)
+        val last = runCatching { prefs.getInt(K_COUNT, 0) }.getOrDefault(0)
+        if (store == null) store = prefs
+        // A count worked out on this run already is newer than the stored one; store it now that there is somewhere to.
+        if (!worked) _count.value = last else if (last != _count.value) runCatching { prefs.edit().putInt(K_COUNT, _count.value).apply() }
     }
 
     /** Asks the server once and sets [count]; nothing on a phone that never agreed to the plaza's rules. */
     suspend fun refresh(c: com.bamnat.app.AppContainer) {
+        if (store == null) restore(c.appContext)
         if (!c.companyApi.enabled || c.settingsRepository.current.plazaRulesAgreed <= 0) return
         val posts = runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() ?: return
         publish(fresh(c.appContext, posts).values.sum())

@@ -46,6 +46,20 @@ class VillageRepliesTest {
         assertEquals(mapOf("a" to 1), VillageReplies.fresh(context, listOf(q("a", 4), mine("r3", "a")), now))
     }
 
+    /** PC 확인 699bbbc8: the dot's count is kept on the phone and read back as the app starts. */
+    @Test fun lastCountIsKeptForTheNextStart() {
+        VillageReplies.restore(context)
+        VillageReplies.publish(3)
+        VillageReplies.publish(0); VillageReplies.publish(2)
+        Thread.sleep(50)
+        val stored = context.getSharedPreferences("village_ui", Context.MODE_PRIVATE).getInt("reply_new_count", -1)
+        assertEquals(2, stored)
+        // A count already worked out this run is not replaced by the stored one.
+        context.getSharedPreferences("village_ui", Context.MODE_PRIVATE).edit().putInt("reply_new_count", 5).commit()
+        VillageReplies.restore(context)
+        assertEquals(2, VillageReplies.count.value)
+    }
+
     @Test fun hiddenPostsSayNothing() {
         assertTrue(VillageReplies.others(listOf(q("a", 2).copy(hidden = true))).isEmpty())
     }

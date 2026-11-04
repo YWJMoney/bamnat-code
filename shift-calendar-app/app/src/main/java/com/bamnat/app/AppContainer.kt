@@ -973,8 +973,6 @@ class AppContainer(context: Context) {
                     .collect { (l, o) -> LeaveReminder.reschedule(appContext, l, o) }
             }
             mainIdle()
-            // [TOWN-07] The dot as it was last known, at once; read again below.
-            runCatching { com.bamnat.app.company.VillageReplies.restore(appContext) }
             delay(LATER_THIRD_MILLIS)
             // [TOWN-07] 1.37: whether my plaza posts got new answers, for the dot on 마을 (one ask a run, only after writing there).
             appScope.launch { runCatching { com.bamnat.app.company.VillageReplies.refresh(this@AppContainer) } }

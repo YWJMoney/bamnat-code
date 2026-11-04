@@ -1787,4 +1787,4 @@ TOWN-04,"1.37 묶음 D2 후보 3: 올리기 확인 스위치를 아래 고정 �
 TOWN-05,"1.37 묶음 D2 후보 26: 회사 규칙 토론 창에 맞아요·달라요와 제안 채택 기준 한 줄(서버 기준값)",1.37,진행 중,에뮬레이터 확인,"TalkHolder.voteLine, CompanyBoard TalkSheet"
 TOWN-06,"1.37 묶음 D2 후보 8·25: 마을에서 찾기에 근무 유형 거르기 칩(전체·유형별), 전체에서는 내 유형 작품·글·요청 먼저, 작품 줄에 유형 표시",1.37,진행 중,에뮬레이터 확인,"VillageSearchScreen, FoundRequest.style"
 ADAGE-01,"1.37 Play 대상 연령 13세 이상(사용자 2026-11-04 13:07): 앱 광고 요청에 최대 광고 콘텐츠 등급 T(기존 RequestConfiguration은 유지하고 합침). AdMob 콘솔 설정은 사용자가",1.37,진행 중,광고 켜기 전 확인,"Ads.kt AdContent.teenSafe, AdContentTest"
-TOWN-07,"1.37 묶음 D PC 확인 649e4c4c 제안: 광장 내 글에 새 답이 있으면 아래 마을 탭 아이콘에 점(숫자 없이). 앱 시작 뒤 한 번, 광장 줄·내 글을 볼 때 갱신",1.37,진행 중,에뮬레이터 확인,"VillageReplies.count·refresh, AppContainer, AppRoot TabIcon dot; a54724f7 제안: 마지막으로 알던 수를 village_ui에 두고 앱 시작 때 바로 보임(restore)"
+TOWN-07,"1.37 묶음 D PC 확인 649e4c4c 제안: 광장 내 글에 새 답이 있으면 아래 마을 탭 아이콘에 점(숫자 없이). 앱 시작 뒤 한 번, 광장 줄·내 글을 볼 때 갱신",1.37,진행 중,에뮬레이터 확인,"VillageReplies.count·refresh, AppContainer, AppRoot TabIcon dot; a54724f7 제안: 마지막으로 알던 수를 village_ui에 두고 앱 시작 때 바로 보임(restore); 699bbbc8 PC: 22초 뒤에야 보임 → AppRoot가 탭을 그릴 때 IO에서 바로 읽음, 광장을 나갈 때의 취소는 실패로 적지 않음"

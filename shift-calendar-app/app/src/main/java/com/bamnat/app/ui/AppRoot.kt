@@ -663,6 +663,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val inquiryUnread by container.inquiryStore.unread.collectAsStateWithLifecycle()
     // [TOWN-07] New answers to my plaza posts: a dot on 마을.
     val villageNew by com.bamnat.app.company.VillageReplies.count.collectAsStateWithLifecycle()
+    // [TOWN-07] PC 확인 699bbbc8 (켠 뒤 22초까지 점이 없어요): the count last worked out is read as the tabs first show, off the main thread.
+    LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.bamnat.app.company.VillageReplies.restore(container.appContext) } } }
     LaunchedEffect(homeRequests) {
         if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
