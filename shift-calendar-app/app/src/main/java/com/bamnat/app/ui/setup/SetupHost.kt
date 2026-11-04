@@ -105,12 +105,15 @@ fun SetupHost(
     /** [SETUP-17] '백업이나 회사 파일로 시작할게요' on the first screen: the file chooser opens once, at once. */
     openFileFirst: Boolean = false,
     onFileOpened: () -> Unit = {},
+    /** [SETUP-17] Back on the examples opened from the very first screen goes back to it. */
+    onBrowseBack: (() -> Unit)? = null,
     onFirstStyleUsed: () -> Unit = {},
 ) {
     val d by vm.draft.collectAsStateWithLifecycle()
     val fixing by vm.fixing.collectAsStateWithLifecycle()
     val saving by vm.saving.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val note by vm.note.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
         val m = message ?: return@LaunchedEffect
@@ -267,9 +270,19 @@ fun SetupHost(
                         .semantics { paneTitle = step.title },
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
+                    // [SETUP-16] The backup's setup goes on here: said where it stays in sight, not in a passing line.
+                    note?.let { n ->
+                        androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
+                            androidx.compose.foundation.layout.Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                Text(n, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                IconButton(onClick = vm::closeNote) { Icon(Icons.Filled.Close, "안내 닫기") }
+                            }
+                        }
+                    }
                     when (step) {
                         SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
-                            onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst, browseAsks = browseAsks)
+                            onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst, browseAsks = browseAsks, onBrowseBack = onBrowseBack)
                         SetupStep.COMPANY -> CompanyStep(vm, d, onSearch = { openCompany = null; searching = true }, onOpenFile = onOpenFile,
                             onOpenCompany = { openCompany = it; searching = true }, inline = !searching)
                         SetupStep.BUNDLE -> BundleStep(d, onPick = vm::pickBundle)

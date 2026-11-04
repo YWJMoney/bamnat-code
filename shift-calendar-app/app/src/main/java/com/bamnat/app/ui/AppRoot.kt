@@ -409,6 +409,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 // [SETUP-17] Once: 1.37 PC 270fc15e: kept, every later 이어서 하기 opened the file chooser first.
                 openFileFirst = firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.FILE && !fileAsked,
                 onFileOpened = { fileAsked = true },
+                onBrowseBack = { firstStyleKey = null }.takeIf { firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.BROWSE },
                 onFirstStyleUsed = { firstStyleKey = "" })
             return
         }

@@ -117,6 +117,14 @@ class SetupViewModel(
     /** [READ-15] A line to show, e.g. why the document scanner could not run. */
     fun say(text: String) { _message.value = text }
 
+    /**
+     * [SETUP-16] 1.37 PC fca16ba8 ('백업을 불러왔어요… 이어서 해요'가 잠깐 떴다 사라져 못 봤어요): a line that stays over the step
+     * until the user goes on or closes it.
+     */
+    private val _note = MutableStateFlow<String?>(null)
+    val note: StateFlow<String?> = _note.asStateFlow()
+    fun closeNote() { _note.value = null }
+
     fun consumeMessage() {
         _message.value = null
     }
@@ -150,6 +158,7 @@ class SetupViewModel(
     // ---- moving between steps ----
 
     fun next() {
+        _note.value = null
         val d = current
         if (!d.canLeave()) return
         if (d.step == SetupStep.SUMMARY) return save()
@@ -161,6 +170,7 @@ class SetupViewModel(
 
     /** One step back; while fixing from the summary, straight back to it. */
     fun back() {
+        _note.value = null
         if (_fixing.value) {
             _fixing.value = false
             update { it.copy(step = SetupStep.SUMMARY) }
@@ -304,7 +314,7 @@ class SetupViewModel(
                 // [SETUP-16] 1.37 PC f42b2eba HIGH-2: a backup made while its first setup was put off goes on here, from its step, and says so.
                 else if (c.settingsRepository.current.setupLater) {
                     store.draft.value?.let { store.save(it.copy(later = false)) }
-                    _message.value = "백업을 불러왔어요. ${c.settingsRepository.current.workStyle?.label ?: "근무"} 설정을 멈췄던 곳부터 이어서 해요"
+                    _note.value = "백업을 불러왔어요. ${c.settingsRepository.current.workStyle?.label ?: "근무"} 설정을 멈췄던 곳부터 이어서 해요"
                 }
             }.onFailure { e -> _message.value = (e as? BackupException)?.message ?: "백업을 불러오지 못했어요" }
             _saving.value = false
