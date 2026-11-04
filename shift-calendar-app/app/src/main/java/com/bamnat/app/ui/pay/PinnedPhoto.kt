@@ -2,6 +2,8 @@ package com.bamnat.app.ui.pay
 
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.horizontalScroll
@@ -88,19 +90,34 @@ internal fun PinnedPhotos(photos: List<Bitmap>, labels: List<String> = listOf("�
             }
             TextButton(onClick = { folded = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("사진 펴기") }
         } else Box(Modifier.fillMaxWidth().height((screen * share).dp)) {
-            ZoomablePhoto(photo, Modifier.matchParentSize())
-            if (photos.size > 1) Row(Modifier.align(Alignment.TopStart).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                photos.indices.forEach { i ->
-                    FilterChip(selected = i == index, onClick = { index = i }, label = { Text(labels.getOrElse(i) { "사진 ${i + 1}" }) })
+            // PC 3e347ec6 (사진 크게·접기 칩이 사진의 공제 숫자를 가림): the buttons show for a moment, then step aside; one tap on the
+            // photo brings them back.
+            var controls by remember { mutableIntStateOf(1) }
+            androidx.compose.runtime.LaunchedEffect(controls) {
+                if (controls > 0) { kotlinx.coroutines.delay(CONTROLS_MS); controls = 0 }
+            }
+            ZoomablePhoto(photo, Modifier.matchParentSize(), onTap = { controls = if (controls > 0) 0 else 1 })
+            if (controls > 0) {
+                if (photos.size > 1) Row(Modifier.align(Alignment.TopStart).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    photos.indices.forEach { i ->
+                        FilterChip(selected = i == index, onClick = { index = i }, label = { Text(labels.getOrElse(i) { "사진 ${i + 1}" }) })
+                    }
                 }
-            }
-            Row(Modifier.align(Alignment.BottomEnd).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                PhotoPill(if (big) "사진 작게" else "사진 크게") { big = !big }
-                PhotoPill("접기") { folded = true }
-            }
+                Row(Modifier.align(Alignment.BottomEnd).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    PhotoPill(if (big) "사진 작게" else "사진 크게") { big = !big; controls++ }
+                    PhotoPill("접기") { folded = true }
+                }
+            } else Text("단추 보기", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.inverseOnSurface,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp)
+                    .clickable { controls = 1 }
+                    .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.5f), MaterialTheme.shapes.small).padding(horizontal = 6.dp, vertical = 2.dp))
         }
     }
 }
+
+/** How long the photo's buttons stay before stepping aside from the numbers under them. */
+private const val CONTROLS_MS = 3_000L
 
 /** [PAYIN-01] A small button laid on the photo. */
 @Composable
@@ -115,7 +132,7 @@ private fun PhotoPill(text: String, onClick: () -> Unit) {
 
 /** [PAYIN-01] One photo filling [modifier]'s box from the top, as wide as the box; zoomed and moved by hand, never past its edges. */
 @Composable
-internal fun ZoomablePhoto(photo: Bitmap, modifier: Modifier = Modifier) {
+internal fun ZoomablePhoto(photo: Bitmap, modifier: Modifier = Modifier, onTap: (() -> Unit)? = null) {
     val image = remember(photo) { photo.asImageBitmap() }
     var box by remember { mutableStateOf(IntSize.Zero) }
     var scale by remember(photo) { mutableFloatStateOf(1f) }
@@ -140,7 +157,7 @@ internal fun ZoomablePhoto(photo: Bitmap, modifier: Modifier = Modifier) {
                 }
             }
             .pointerInput(photo) {
-                detectTapGestures(onDoubleTap = { at ->
+                detectTapGestures(onTap = { onTap?.invoke() }, onDoubleTap = { at ->
                     if (scale > 1.01f) { scale = 1f; offset = clamp(Offset.Zero, 1f) }
                     else { val next = 2.5f; offset = clamp(at - (at - offset) * next, next); scale = next }
                 })

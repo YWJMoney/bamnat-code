@@ -1051,11 +1051,12 @@ private fun effectText(e: com.bamnat.core.pay.UnknownEffect): String = when {
 @Composable
 private fun AmountDialog(title: String, label: String, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
     var amount by remember { mutableStateOf<Long?>(null) }
+    val huge = rememberHugeCheck()
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { MoneyField(label, amount, { amount = it }) },
-        confirmButton = { Button(onClick = { amount?.let(onSave) }, enabled = (amount ?: 0) > 0) { Text("넣기") } },
+        confirmButton = { Button(onClick = { amount?.let { a -> huge.run(a) { onSave(a) } } }, enabled = (amount ?: 0) > 0) { Text("넣기") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }

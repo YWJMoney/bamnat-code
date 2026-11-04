@@ -75,16 +75,22 @@ internal fun MoneyField(
     // in it, so typing replaces it; an amount over 1억 원 says so in red under the field (it can still be kept).
     var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "")) }
     if ((field.text.toLongOrNull()) != value) field = androidx.compose.ui.text.input.TextFieldValue(value?.toString() ?: "", androidx.compose.ui.text.TextRange((value?.toString() ?: "").length))
-    var selectOnFocus by remember { mutableStateOf(false) }
-    // The tap that focused the field moves the cursor right after; the select-all is kept over that one move.
-    var keepSelection by remember { mutableStateOf(false) }
+    // PC 3e347ec6 (누를 때 전체 선택이 안 돼 200,000에 150000을 치니 1,500,020,000): the tap that focuses the field moves the cursor
+    // after the focus, sometimes more than once. For a short while after the focus every cursor-only move is taken back to
+    // all-selected, and once more after the tap has settled; a later tap places the cursor as usual.
+    var focusedAt by remember { mutableStateOf(0L) }
+    fun all() { field = field.copy(selection = androidx.compose.ui.text.TextRange(0, field.text.length)) }
+    androidx.compose.runtime.LaunchedEffect(focusedAt) {
+        if (focusedAt == 0L) return@LaunchedEffect
+        kotlinx.coroutines.delay(SELECT_ALL_MS)
+        if (field.selection.collapsed) all()
+    }
     val huge = value != null && value >= HUGE_WON
     OutlinedTextField(
         isError = error != null || huge,
         value = field,
         onValueChange = { v ->
-            if (keepSelection && v.text == field.text) { keepSelection = false; return@OutlinedTextField }
-            keepSelection = false
+            if (v.text == field.text && focusedAt != 0L && android.os.SystemClock.uptimeMillis() - focusedAt < SELECT_ALL_MS) { all(); return@OutlinedTextField }
             val digits = v.text.filter(Char::isDigit).take(10)
             field = v.copy(text = digits, selection = if (v.text == digits) v.selection else androidx.compose.ui.text.TextRange(digits.length))
             onChange(digits.toLongOrNull())
@@ -99,17 +105,45 @@ internal fun MoneyField(
         visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = androidx.compose.ui.text.input.ImeAction.Done),
         keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { keyboard?.hide(); onDone?.invoke() }),
         modifier = modifier.fillMaxWidth().onFocusChanged { f ->
-            if (f.isFocused && !selectOnFocus) {
-                selectOnFocus = true
-                keepSelection = true
-                field = field.copy(selection = androidx.compose.ui.text.TextRange(0, field.text.length))
-            } else if (!f.isFocused) selectOnFocus = false
+            if (f.isFocused && focusedAt == 0L) { focusedAt = android.os.SystemClock.uptimeMillis(); all() }
+            else if (!f.isFocused) focusedAt = 0L
         },
     )
 }
 
 /** [PAYIN-02] A pay amount from this much on is said to be checked (one 0 too many turns 260만 into 2,600만, 2억 6천만…). */
 internal const val HUGE_WON = 100_000_000L
+
+/**
+ * [PAYIN-02] PC 3e347ec6 (1억 경고가 떠도 '적용'하면 15억이 그대로 저장됨): a save with an amount from 1억 원 on asks once more first.
+ * [run] goes straight on under 1억 원.
+ */
+@androidx.compose.runtime.Stable
+internal class HugeCheck {
+    internal var asking by mutableStateOf<Pair<Long, () -> Unit>?>(null)
+    fun run(vararg amounts: Long?, go: () -> Unit) {
+        val big = amounts.filterNotNull().filter { it >= HUGE_WON }.maxOrNull()
+        if (big == null) go() else asking = big to go
+    }
+}
+
+@Composable
+internal fun rememberHugeCheck(): HugeCheck {
+    val c = remember { HugeCheck() }
+    c.asking?.let { (amount, go) ->
+        AlertDialog(
+            onDismissRequest = { c.asking = null },
+            title = { Text("${won(amount)}이 맞나요?") },
+            text = { Text("${com.bamnat.core.pay.wonWords(amount)}이에요. 1억 원이 넘어서 한 번 더 여쭤봐요. 0이 더 들어갔다면 ‘고치기’를 눌러 주세요.") },
+            confirmButton = { TextButton(onClick = { c.asking = null; go() }) { Text("맞아요, 저장") } },
+            dismissButton = { TextButton(onClick = { c.asking = null }) { Text("고치기") } },
+        )
+    }
+    return c
+}
+
+/** How long after a tap focuses a [MoneyField] its cursor moves are kept as all-selected. */
+private const val SELECT_ALL_MS = 400L
 
 /**
  * [PAYX-23][INPUT-02] 월 소정근로시간 for a company that uses e.g. 182 or 195 hours: the one stepper, 100~320 hours, held
@@ -234,6 +268,7 @@ fun EditValueDialog(
         kotlinx.coroutines.delay(250)
         this.value = v?.let { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.planEdit(profile, snapshot, target, it, editScope, month) } }
     }
+    val huge = rememberHugeCheck()
     val name = when (target) {
         ValueTarget.Base -> "기본 금액"
         is ValueTarget.Item -> profile.items.firstOrNull { it.id == target.id }?.name ?: "수당"
@@ -272,7 +307,9 @@ fun EditValueDialog(
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
                     val changed = p.changedMonths
                     Text(
-                        if (changed.isEmpty()) "앞으로 12개월 합계는 그대로예요"
+                        // PC 3e347ec6: '그대로예요' under a new amount read as if it had not been taken.
+                        if (v == current && scope == ScopeKind.ALL && timeline.entries.size <= 1) "지금 값과 같아요"
+                        else if (changed.isEmpty()) "앞으로 12개월 합계는 그대로예요 (이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요)"
                         else "${changed.size}개월이 바뀌어요 · 합계 ${signed(p.totalDelta)}",
                         style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
                     )
@@ -292,7 +329,7 @@ fun EditValueDialog(
             }
         },
         confirmButton = {
-            Button(onClick = { plan?.let { vm.applyEdit(target, it) }; onDismiss() }, enabled = plan != null) { Text("적용") }
+            Button(onClick = { plan?.let { p -> huge.run(v) { vm.applyEdit(target, p); onDismiss() } } }, enabled = plan != null) { Text("적용") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
@@ -543,6 +580,7 @@ fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, on
     var ordinaryTouched by remember { mutableStateOf(false) }
     var fixedOtHours by remember { mutableStateOf(0) }
     fun guess() { if (!ordinaryTouched) ordinary = OrdinaryGuess.of(name, cadence) ?: false }
+    val huge = rememberHugeCheck()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("수당 추가") },
@@ -586,7 +624,7 @@ fun AddItemDialog(onDismiss: () -> Unit, allowUnknownAmount: Boolean = false, on
         },
         confirmButton = {
             Button(
-                onClick = { onAdd(name, amount?.takeIf { it > 0 }, cadence, ordinary && fixedOtHours == 0 && cadence == Cadence.MONTHLY, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) },
+                onClick = { huge.run(amount) { onAdd(name, amount?.takeIf { it > 0 }, cadence, ordinary && fixedOtHours == 0 && cadence == Cadence.MONTHLY, if (cadence == Cadence.MONTHLY) fixedOtHours * 60 else 0) } },
                 enabled = name.isNotBlank() && (allowUnknownAmount || (amount ?: 0) > 0),
             ) { Text("추가") }
         },

@@ -55,7 +55,7 @@ internal fun changeLine(note: PayViewModel.ChangeNote): String {
     val a = note.after
     return when {
         b == null && a == null -> "$m 계산은 아직 없어요"
-        b == null -> "$m ${won(a!!)}로 계산해요"
+        b == null -> "$m ${won(a!!)}으로 계산해요"
         a == null -> "$m 계산을 비웠어요 (전에는 ${won(b)})"
         a == b -> "$m ${won(a)} 그대로예요 (이 달에는 영향이 없어요)"
         else -> "$m ${won(b)} → ${won(a)} (${if (a > b) "+" else "−"}${won(kotlin.math.abs(a - b))})"

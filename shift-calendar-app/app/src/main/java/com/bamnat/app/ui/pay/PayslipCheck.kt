@@ -324,6 +324,7 @@ internal fun SlipLineEditor(
     var amount by remember { mutableStateOf(line?.amount) }
     var more by remember { mutableStateOf(role !in COMMON_ROLES) }
     // [PHOTO-06] The hours a premium line shows (연장 12시간), in hours as payslips print them.
+    val huge = rememberHugeCheck()
     var hours by remember { mutableStateOf(line?.minutes?.let { com.bamnat.app.ui.components.decimalText(it / 60.0) }.orEmpty()) }
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -348,7 +349,7 @@ internal fun SlipLineEditor(
                 TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("취소") }
                 Button(onClick = {
                     val minutes = if (role in TIMED) hours.toDoubleOrNull()?.takeIf { it > 0 && it < 500 }?.let { Math.round(it * 60).toInt() } else null
-                    onSave(SlipLine(name.trim().ifBlank { role.label }, role, amount, minutes, line?.source.orEmpty()))
+                    huge.run(amount) { onSave(SlipLine(name.trim().ifBlank { role.label }, role, amount, minutes, line?.source.orEmpty())) }
                 }, enabled = amount != null, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (line == null) "더하기" else "고치기") }
             }
         }

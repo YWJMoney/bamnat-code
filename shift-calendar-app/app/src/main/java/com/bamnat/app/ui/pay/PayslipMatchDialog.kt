@@ -180,6 +180,8 @@ fun PayslipMatchDialog(
     val form = remember { SlipForm() }
     var more by remember { mutableStateOf(false) }
     var match by remember { mutableStateOf<PayslipMatch?>(null) }
+    // [PAYIN-03] PC 3e347ec6: each change is the user's to take or leave (a way of counting is not swept in with the amounts).
+    var keep by remember(match) { mutableStateOf(match?.changes?.map { it.key }?.toSet().orEmpty()) }
     var failed by remember { mutableStateOf(false) }
     // Payslip allowances the user chose to add; ids stay the same when the match runs again.
     val added = remember { mutableStateListOf<PayItem>() }
@@ -280,9 +282,15 @@ fun PayslipMatchDialog(
                             MatchStage.RESULT -> if (m != null) {
                                 OutlinedButton(onClick = { stage = MatchStage.AMOUNTS }, modifier = Modifier.heightIn(min = 52.dp)) { Text("다시 넣기") }
                                 Button(
-                                    onClick = { vm.applyMatch(m); stage = MatchStage.DONE },
+                                    onClick = { vm.applyMatch(m, keep); stage = MatchStage.DONE },
                                     modifier = Modifier.weight(1f).heightIn(min = 52.dp),
-                                ) { Text(if (m.changes.isEmpty() && added.isEmpty() && addedRules.isEmpty()) "확인했어요" else "이 설정으로 바꾸기") }
+                                ) {
+                                    Text(when {
+                                        m.changes.isEmpty() && added.isEmpty() && addedRules.isEmpty() -> "확인했어요"
+                                        keep.size < m.changes.size -> "고른 것만 바꾸기"
+                                        else -> "이 설정으로 바꾸기"
+                                    })
+                                }
                             }
                             MatchStage.DONE -> Button(onClick = onDismiss, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("닫기") }
                             else -> Unit
@@ -309,7 +317,7 @@ fun PayslipMatchDialog(
                                 MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed, filled) { scanning = true }
                                 MatchStage.WORKING -> Working()
                                 MatchStage.RESULT -> match?.let { m ->
-                                    ResultStage(m, added, addedRules, onMakeGap = { makingFor = m },
+                                    ResultStage(m, added, addedRules, keep, { k -> keep = if (k in keep) keep - k else keep + k }, onMakeGap = { makingFor = m },
                                         audit = { SlipAuditCard(m, form.payslip(profile), form.read, snapshot) }) { names ->
                                         val from = profile.period.start(chosen)
                                         names.forEachIndexed { i, (name, amount) ->
@@ -505,6 +513,8 @@ private fun ResultStage(
     m: PayslipMatch,
     added: List<PayItem>,
     addedRules: List<CustomRule>,
+    keep: Set<String>,
+    onToggle: (String) -> Unit,
     onMakeGap: () -> Unit,
     audit: @Composable () -> Unit = {},
     onAdd: (List<Pair<String, Long>>) -> Unit,
@@ -542,7 +552,17 @@ private fun ResultStage(
 
     if (m.changes.isNotEmpty() || added.isNotEmpty() || addedRules.isNotEmpty()) {
         SectionCard(title = "바뀌는 것") {
-            m.changes.forEach { c -> ChangeRow(c.label, "${c.from} → ${c.to}") }
+            val (amounts, ways) = m.changes.partition { !m.isWayChange(it.key) }
+            if (m.changes.isNotEmpty()) Text("바꿀 것만 골라 주세요. 빼면 지금 설정 그대로예요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            amounts.forEach { c -> PickRow(c.label, "${c.from} → ${c.to}", c.key in keep) { onToggle(c.key) } }
+            if (ways.isNotEmpty()) {
+                Text("계산 방식 (회사가 정말 이렇게 계산하는지 알 때만)", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 8.dp))
+                ways.forEach { c -> PickRow(c.label, "${c.from} → ${c.to}", c.key in keep) { onToggle(c.key) } }
+            }
+            if (keep.size < m.changes.size) Text("다 고르지 않으면 이 달 계산이 명세서와 다를 수 있어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
             added.forEach { a ->
                 val now = m.profile.items.firstOrNull { it.id == a.id } ?: a
                 ChangeRow(now.name, "새 수당 · ${now.cadence.label} ${won(now.amount.on(m.month).value)} · 통상임금 ${if (now.ordinary) "포함" else "제외"}")
@@ -701,6 +721,18 @@ private fun GapCard(gap: Long, onMake: () -> Unit) {
                 Icon(Icons.Filled.Add, null)
                 Text(" 이 차이를 항목으로 만들기")
             }
+        }
+    }
+}
+
+/** [PAYIN-03] One change to take or leave. */
+@Composable
+private fun PickRow(label: String, text: String, checked: Boolean, onToggle: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Checkbox, onClick = onToggle), verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = checked, onCheckedChange = null, modifier = Modifier.padding(12.dp))
+        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

@@ -639,8 +639,8 @@ class PayViewModel(
     }
 
     /** [PAYS-02] Keeps the matched settings and the check; one tap on 되돌리기 brings the old ones back. */
-    fun applyMatch(match: PayslipMatch) = update("명세서에 맞춰 바꿨어요") { p ->
-        val v = match.verifiedProfile(Today.millis())
+    fun applyMatch(match: PayslipMatch, keep: Set<String> = match.changes.map { it.key }.toSet()) = update("명세서에 맞춰 바꿨어요") { p ->
+        val v = match.picked(p, keep, Today.millis())
         v.copy(rules = v.rules.copy(extraNames = p.rules.extraNames))
     }
 }
