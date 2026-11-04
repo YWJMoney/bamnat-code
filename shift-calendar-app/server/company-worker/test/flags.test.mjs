@@ -386,3 +386,13 @@ test("[FLAG-21] the shared evaluator: order of the steps, a legal flag forced on
   assert.match(L.parseConditions("date >= 2026-11-10\nweather sunny").error, /2째 줄/);
   assert.deepEqual(L.parseConditions("date >= policy 3.1\nconsent ads?").list, [{ type: "date", policy: "3.1" }, { type: "consent", key: "ads", unknownMeets: true }]);
 });
+
+test("a database made by an older server takes the new tables: the ALTERs in SCHEMA no longer fail it (1.37 hotfix, from 4c06d827)", async () => {
+  const { env, DB, call } = server();
+  assert.equal((await call("GET", "/api/config")).status, 200);
+  // As if this database was made by the server before this one: a different schema version, all columns already there.
+  await DB.prepare("UPDATE settings SET value = 'older' WHERE key = 'schema'").run();
+  // A new key, as a freshly started copy of the worker has: the schema step runs again on the same database.
+  const res = await worker.fetch(new Request("https://company.example/api/config"), { ...env, DB_ROOT: {} });
+  assert.equal(res.status, 200);
+});
