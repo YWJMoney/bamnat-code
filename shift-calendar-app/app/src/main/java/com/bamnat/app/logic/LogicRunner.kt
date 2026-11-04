@@ -113,6 +113,16 @@ object LogicRunner {
                 )
                 store.wrote(who, JSONObject().put("money", entry.id).put("cal", c.calendars.active.value).put("say", act.say()))
             }
+            // 1.37 [LEDH-12] 봉투에 넣기: the envelope by name, or the first open one; none, nothing happens (said in the message).
+            LogicVerb.ENVELOPE -> {
+                val amount = act.amount?.takeIf { it > 0 } ?: return
+                val cal = c.calendars.active.value
+                val money = c.scopeOf(cal).money
+                val open = money.envelopes.first().first.filter { !it.closed }.sortedWith(compareBy({ it.order }, { it.id }))
+                val e = open.firstOrNull { it.name == act.arg.trim() } ?: open.firstOrNull() ?: return
+                val id = money.moveEnvelope(com.bamnat.core.money.EnvelopeMove(envelopeId = e.id, date = date, amount = amount))
+                store.wrote(who, JSONObject().put("envMove", id).put("cal", cal).put("say", act.say()))
+            }
             // 사용자 2026-11-01 "메모와 달력을 연동": the day's first memo gets a line made from its values; none, a new one.
             LogicVerb.MEMO_LINE -> {
                 val line = words.ifBlank { return }.take(200)
@@ -138,6 +148,7 @@ object LogicRunner {
                 LogicVerb.ADD_MONEY -> "가계부에 ‘${act.arg.ifEmpty { "기타" }}’ ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
                 LogicVerb.ADD_INCOME -> "가계부 수입에 ‘${act.arg.ifEmpty { "기타" }}’ ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
                 LogicVerb.MEMO_LINE -> "그날 메모에 ‘${words.take(20)}’ 줄을 더했어요"
+                LogicVerb.ENVELOPE -> "${act.arg.ifEmpty { "첫" }} 봉투에 ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
                 else -> act.say()
             }
         }
@@ -179,6 +190,7 @@ object LogicRunner {
             o.has("memo") -> c.memoRepository.get(o.getLong("memo"))?.let { c.memoRepository.delete(it, offerUndo = false) }
             o.has("money") -> c.scopeOf(o.optString("cal", c.calendars.active.value)).money.book.first().entries
                 .firstOrNull { it.id == o.getLong("money") }?.let { c.scopeOf(o.optString("cal")).money.delete(it) }
+            o.has("envMove") -> c.scopeOf(o.optString("cal", c.calendars.active.value)).money.deleteEnvelopeMove(o.getLong("envMove"))
             o.has("checks") -> {
                 val a = o.getJSONArray("checks")
                 for (i in 0 until a.length()) {

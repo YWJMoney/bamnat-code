@@ -203,7 +203,7 @@ const memoSort = (s) => s === "" || s === "title" || (s.replace(/^-/, "").starts
 /** core PieceKind: key, the kinds of work it fits, its fields. */
 // 1.36 [RUL-03][RUL-04] core formula/Logic.kt: where a button sits, the safe verbs, when a rule runs; a formula may compare amounts.
 const BUTTON_PLACES = ["day", "memo", "cal", "money", "decor"];
-const LOGIC_VERBS = ["notify", "memoTpl", "screen", "newMemo", "checkReset", "addMoney", "memoLine", "addIncome"];
+const LOGIC_VERBS = ["notify", "memoTpl", "screen", "newMemo", "checkReset", "addMoney", "memoLine", "addIncome", "envelope"];
 const RULE_TRIGGERS = ["tap", "start", "end", "daily", "memo", "open", "money", "hold"];
 const logicGuard = (s) => textProblemExcept(s, "amount") ?? (investAdvice(s) ? "invest_advice" : null);
 const logicFormula = (s) => (s === "" ? null : formulaProblem(s) ?? logicGuard(s));
@@ -1006,7 +1006,7 @@ export function tabsOf(body) {
         out.add("app");
         for (const x of [...(p.buttons ?? []), ...(p.rules ?? [])]) {
           if (["memoTpl", "newMemo", "checkReset", "memoLine"].includes(x.do) || x.on === "memo" || x.where === "memo") out.add("memo");
-          if (["addMoney", "addIncome"].includes(x.do) || x.on === "money" || x.where === "money") out.add("money");
+          if (["addMoney", "addIncome", "envelope"].includes(x.do) || x.on === "money" || x.where === "money") out.add("money");
         }
         break;
       case "tabView":
@@ -1123,7 +1123,7 @@ export function scopeOf(tabs, body) {
 export const MARKET_SCOPES = ["theme", "tab", "part", "logic"];
 const PART_TAB = { cal: "calendar", memo: "memo", money: "money", pay: "pay", stats: "pay", app: "app", widget: "widget", alarm: "alarm" };
 const LOGIC_TAB = { day: "calendar", cal: "calendar", calendar: "calendar", memo: "memo", memoTpl: "memo", newMemo: "memo", checkReset: "memo", memoLine: "memo",
-  money: "money", addMoney: "money", addIncome: "money", notify: "alarm", pay: "pay", stats: "pay", alarm: "alarm" };
+  money: "money", addMoney: "money", addIncome: "money", envelope: "money", notify: "alarm", pay: "pay", stats: "pay", alarm: "alarm" };
 // D 갈래: 'screen' 동작은 arg가 보낼 탭이에요.
 const logicTab = (x) => (x?.do === "screen" ? LOGIC_TAB[x.arg] : null) ?? LOGIC_TAB[x?.do];
 

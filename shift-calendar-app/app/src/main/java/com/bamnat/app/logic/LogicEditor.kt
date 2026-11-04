@@ -305,8 +305,9 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
             LogicVerb.SCREENS.forEach { (k, label) -> FilterChip(selected = act.arg == k, onClick = { onChange(act.copy(arg = k)) }, label = { Text(label) }) }
         }
         LogicVerb.MEMO_LINE -> FormulaField(act.arg, { onChange(act.copy(arg = it.take(120))) }, scope, text = true, label = "더할 줄 (예: 야간 {이번주야간}번째 · 이달 지출 {원(이달지출)})")
-        LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(act.arg, { onChange(act.copy(arg = it.take(20))) }, Modifier.weight(1f), singleLine = true, label = { Text("분류") })
+        LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME, LogicVerb.ENVELOPE -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(act.arg, { onChange(act.copy(arg = it.take(20))) }, Modifier.weight(1f), singleLine = true,
+                label = { Text(if (act.verb == LogicVerb.ENVELOPE) "봉투 이름(비우면 첫 봉투)" else "분류") })
             OutlinedTextField(act.amount?.toString() ?: "", { s -> onChange(act.copy(amount = s.filter(Char::isDigit).take(9).toLongOrNull())) },
                 Modifier.weight(1f), singleLine = true, label = { Text("금액(원)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }
@@ -484,7 +485,7 @@ internal fun nextLine(r: LogicRule, facts: com.bamnat.core.formula.DayFactsBook?
     return "다음: ${at.monthValue}/${at.dayOfMonth}($wd) ${"%02d:%02d".format(at.hour, at.minute)}"
 }
 
-private val MONEY_VERBS = setOf(LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME)
+private val MONEY_VERBS = setOf(LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME, LogicVerb.ENVELOPE)
 
 /** The 1.36 build 3 fixed 알림 글, read as untouched so an old draft also follows. */
 private const val OLD_NOTIFY = "{근무시작}에 야간 근무예요"
@@ -522,6 +523,7 @@ internal fun ruleName(r: LogicRule, taken: Set<String>): String {
 private val VERB_SHORT = mapOf(
     LogicVerb.NOTIFY to "알림", LogicVerb.MEMO_TEMPLATE to "메모 틀", LogicVerb.SCREEN to "화면 열기", LogicVerb.NEW_MEMO to "메모",
     LogicVerb.CHECK_RESET to "체크 비우기", LogicVerb.ADD_MONEY to "지출 넣기", LogicVerb.MEMO_LINE to "메모 한 줄", LogicVerb.ADD_INCOME to "수입 넣기",
+    LogicVerb.ENVELOPE to "봉투 넣기",
 )
 
 /** PC D14: said once when a rule puts more than 100만 원 in the 가계부 each time it runs. */

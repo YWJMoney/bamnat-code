@@ -26,7 +26,10 @@ class DayFactsBook(
     private val inputs: Map<String, Any?> = emptyMap(),
     /** [FXR-02] The pay month a day belongs to (20일 마감: 10/25 is November's), for 이달급여. */
     private val payMonth: (LocalDate) -> YearMonth = { YearMonth.from(it) },
+    /** 1.37 [LEDH-19] The 가계부's forecast and envelopes, worked out the first time a formula reads one of [MONEY_AHEAD]. */
+    moneyFacts: () -> MoneyFacts? = { null },
 ) {
+    private val ahead: MoneyFacts? by lazy { runCatching(moneyFacts).getOrNull() }
     /** A day's work as the calendar resolved it. [role] is [com.bamnat.core.recipe.ShiftRole]'s key. */
     data class DayShift(
         val name: String,
@@ -53,6 +56,7 @@ class DayFactsBook(
         var pay: Map<String, Any?>? = null
         object : FormulaScope {
             override fun get(name: String): Value? {
+                if (name in MONEY_AHEAD) return Value.of(aheadValue(name, date, plain))
                 if (name == FormulaName.MONTH_PAY.ko || name == FormulaName.HOUR_PAY.ko) {
                     val p = pay ?: payValues(date).also { pay = it }
                     return Value.of(p[name])
@@ -60,6 +64,22 @@ class DayFactsBook(
                 return if (plain.containsKey(name)) Value.of(plain[name]) else null
             }
             override fun input(label: String): Value? = if (inputs.containsKey(label)) Value.of(inputs[label]) else null
+        }
+    }
+
+    private fun aheadValue(name: String, date: LocalDate, plain: Map<String, Any?>): Any? {
+        val a = ahead ?: return null
+        return when (name) {
+            FormulaName.SPEND_TODAY.ko -> a.perDay
+            FormulaName.DAYS_TO_PAY.ko -> a.daysToPay
+            FormulaName.BALANCE_AHEAD.ko -> a.balance[date]
+            FormulaName.ENVELOPE_SAVED.ko -> a.envelopeSaved
+            FormulaName.ENVELOPE_RATE.ko -> a.envelopeRate
+            FormulaName.SPEND_HOURS.ko -> a.hourly?.takeIf { it > 0 }?.let { h ->
+                val spent = (plain[FormulaName.SPEND.ko] as? Number)?.toDouble() ?: 0.0
+                Math.round(spent / h * 10) / 10.0
+            }
+            else -> null
         }
     }
 
@@ -150,5 +170,11 @@ class DayFactsBook(
     companion object {
         /** A kind of shift as formulas say it (주간·저녁·야간·당직·휴무·기타). */
         val ROLE_WORDS = mapOf("day" to "주간", "eve" to "저녁", "night" to "야간", "long" to "당직", "off" to "휴무", "other" to "기타")
+
+        /** 1.37 [LEDH-19] The names read from [MoneyFacts]. */
+        val MONEY_AHEAD: Set<String> = listOf(
+            FormulaName.SPEND_TODAY, FormulaName.DAYS_TO_PAY, FormulaName.BALANCE_AHEAD,
+            FormulaName.ENVELOPE_SAVED, FormulaName.ENVELOPE_RATE, FormulaName.SPEND_HOURS,
+        ).map { it.ko }.toSet()
     }
 }
