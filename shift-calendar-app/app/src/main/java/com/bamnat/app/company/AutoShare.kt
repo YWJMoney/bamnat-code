@@ -36,11 +36,13 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
     }
 
     /**
-     * 1.37 PC fca16ba8 (현장 건별형을 고른 뒤 회사 광장에 나눌까요?): only work with a company setup ([com.bamnat.core.work.WorkStyle.usesCompany])
-     * is offered to its company; a calendar that once had a company and now works another way is not asked.
+     * 1.37 PC fca16ba8 (현장 건별형을 고른 뒤 회사 광장에 나눌까요?): work written day by day (현장·자영업·투자) is never offered to a
+     * company, even by a calendar that once had one. 교대·일근, and an 알바 that joined its company, are asked as before.
      */
-    private fun companyWork(): Boolean =
-        c.calendars.styleOf(cal, c.settingsRepository.current.workStyle)?.usesCompany != false
+    private fun companyWork(): Boolean = when (c.calendars.styleOf(cal, c.settingsRepository.current.workStyle)) {
+        com.bamnat.core.work.WorkStyle.FIELD, com.bamnat.core.work.WorkStyle.BUSINESS, com.bamnat.core.work.WorkStyle.INVEST -> false
+        else -> true
+    }
 
     /** This calendar's company things. */
     private val scope: CompanyScope get() = c.companyOf(cal)
