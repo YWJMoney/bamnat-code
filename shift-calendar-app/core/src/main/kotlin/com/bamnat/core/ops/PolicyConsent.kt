@@ -25,6 +25,17 @@ object PolicyConsent {
     /** 3.2~3.8이 약속한 가장 늦은 시행일. 이날부터는 동의가 없어도 원래 약속대로 시행돼요. */
     val HELD_UNTIL: LocalDate = LocalDate.of(2026, 11, 29)
 
+    /**
+     * 1.37 [SHR-31][SHR-32] 3.11(사용자 2026-11-04 "11월10일로 맞춰서"): 근무표 링크의 테마·근무 설정(1항). 정식 출시 전에 게시하니 결정 D111대로
+     * 시행일은 정식 출시일([EFFECTIVE])이고, 3.11을 게시하기 전에 깐 휴대폰은 달력 위 카드로 한 번 묻고, 동의하지 않으면 30일
+     * 고지가 끝나는 [SHARE_LOOK_HELD_UNTIL]부터예요. 카드는 가장 새 판 [ASK_VERSION]을 물어요(동의하면 3.9·3.1도 동의한 것으로 쳐요).
+     */
+    const val SHARE_LOOK_VERSION = "3.11"
+    val SHARE_LOOK_POSTED: LocalDate = LocalDate.of(2026, 11, 4)
+    val SHARE_LOOK_HELD_UNTIL: LocalDate = LocalDate.of(2026, 12, 4)
+    /** The newest version the calendar card asks for and a yes writes. */
+    const val ASK_VERSION = SHARE_LOOK_VERSION
+
     /** 결제·광고의 처리방침(결정 D84). */
     const val LAUNCH_VERSION = "3.1"
     /** 3.1 게시(1.27.0을 main에 합친 날 기준). 이날 전에 깐 휴대폰에 물어요. */
@@ -41,8 +52,8 @@ object PolicyConsent {
     fun holdsLaunch(installed: LocalDate?, agreed: Boolean, today: LocalDate): Boolean = asks(installed, agreed, today)
 
     val lines: List<String> = listOf(
-        "정식 출시일(11월 10일 예정)부터 처리방침 3.9·이용약관이 시행돼요(원래 11월 24~29일)",
-        "그날부터 레시피 올리기·좋아요·이야기·구독, 동료 링크에 회사 설정 담기, 문의에 멈춤 관찰 기록 붙이기, 회사 공통 수당 금액 나누기, ‘사진이 달라요’ 횟수, 따로 동의한 분의 통계 더 보내기가 시작돼요",
+        "정식 출시일(11월 10일 예정)부터 처리방침 3.11·이용약관이 시행돼요(원래 11월 24일~12월 4일)",
+        "그날부터 레시피 올리기·좋아요·이야기·구독, 동료 링크에 회사 설정 담기, 근무표 링크에 테마·근무 설정 담기, 문의에 멈춤 관찰 기록 붙이기, 회사 공통 수당 금액 나누기, ‘사진이 달라요’ 횟수, 따로 동의한 분의 통계 더 보내기가 시작돼요",
         "프로·광고는 Play 정식 출시가 승인된 날부터 켜져요. 그 전엔 지금처럼 모두 무료예요",
     )
 }

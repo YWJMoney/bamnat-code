@@ -45,7 +45,7 @@ object ShareContent {
     fun setupInLink(c: AppContainer, calendar: String = PersonalCalendar.MAIN): Boolean =
         c.companyFits(calendar, needsServer = false) && runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_SETUP) }.getOrDefault(false)
 
-    /** 1.37 [SHR-31][SHR-32] A link may carry the 테마 and the 근무 설정 from 처리방침 3.10's date (`share.look`, LEGAL). */
+    /** 1.37 [SHR-31][SHR-32] A link may carry the 테마 and the 근무 설정 from 처리방침 3.11's date (`share.look`, LEGAL). */
     fun lookInLink(c: AppContainer): Boolean =
         runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK) }.getOrDefault(false)
 

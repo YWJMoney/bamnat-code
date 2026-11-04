@@ -56,9 +56,9 @@ data class ShareOptions(
     val audience: ShareAudience? = null,
     /** [SHR-20] A coworker's link also carries the company setup (no amounts), from 처리방침 3.7's date. */
     val setup: Boolean = false,
-    /** 1.37 [SHR-31] The sharer's 테마 (looks only, no photos), for the receiver to try on; from 처리방침 3.10 (`share.look`). */
+    /** 1.37 [SHR-31] The sharer's 테마 (looks only, no photos), for the receiver to try on; from 처리방침 3.11 (`share.look`). */
     val look: Boolean = false,
-    /** 1.37 [SHR-32] The sharer's 근무 설정 (근무 꾸미기·알람 시각 틀·근무 주기), never 급여 규칙 or an amount; from 3.10. */
+    /** 1.37 [SHR-32] The sharer's 근무 설정 (근무 꾸미기·알람 시각 틀·근무 주기), never 급여 규칙 or an amount; from 3.11. */
     val kit: Boolean = false,
 ) {
     /** The server's names for the ticked parts, in its order. */

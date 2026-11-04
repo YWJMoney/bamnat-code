@@ -152,6 +152,8 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   const owner = await signIn(call);
   // [PRIV-05] 3.9 shares 11-10 with 3.1: move it later here so only 결제·광고 speak.
   await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
+  // 1.37 3.11 (share.look) also starts on 11-10: move it later too.
+  await call("POST", "/api/admin/policy", { version: "3.11", posted: "2026-11-04", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
   const b = await browser(1);
   assert.equal((await call("POST", "/api/admin/me/push", { subscription: b.subscription, kinds: ["flags"] }, owner)).data.ready, true);
   const sent = [];

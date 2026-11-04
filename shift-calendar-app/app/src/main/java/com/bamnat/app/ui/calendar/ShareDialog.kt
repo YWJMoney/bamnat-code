@@ -151,7 +151,7 @@ fun ShareDialog(
     // [SHR-20][J133-71] 1.33: the 동료 way's words and setup only for work with a company; the setup in the link from 3.7's date.
     val companyWork = remember(calendarId) { container.companyFits(calendarId, needsServer = false) }
     val setupOpen = remember(calendarId) { ShareContent.setupInLink(container, calendarId) }
-    // 1.37 [SHR-31][SHR-32] 내 테마·근무 설정 in the link from 처리방침 3.10's date; before, the rows say the date once it is set.
+    // 1.37 [SHR-31][SHR-32] 내 테마·근무 설정 in the link from 처리방침 3.11's date; before, the rows say the date once it is set.
     val lookOpen = remember { ShareContent.lookInLink(container) }
     val kitFits = remember(style) { com.bamnat.core.recipe.ShareKit.kitFits(style) }
     val lookFrom = remember {
