@@ -105,4 +105,21 @@ class StudioCanvasTest {
         assertEquals("김밥집" to "-8,000원", myMoneyBody("recent", m)!!.rows.single())
         assertEquals(null, myMoneyBody("budget", m))
     }
+
+    /** PC 확인 1.37 A12: 플랫폼형 배민 5건 62,000원 is 1일 · 5건 · the money after costs, not 0일 · 0건 · 0원; 공수형 keeps its 공수. */
+    @org.junit.Test fun aPlatformDayCountsInTheFieldSummary() {
+        val day = java.time.LocalDate.of(2026, 11, 3)
+        val m = java.time.YearMonth.from(day)
+        val p = com.bamnat.core.money.PlatformWork.job(day, "배민", 5, 62_000, 0, 2_040)
+        val got = jobMonth(listOf(p), month = m)
+        org.junit.Assert.assertEquals(1, got.days)
+        org.junit.Assert.assertEquals(5, got.count)
+        org.junit.Assert.assertNull(got.units)
+        org.junit.Assert.assertEquals(59_960L, got.amount)
+        org.junit.Assert.assertEquals("5건", jobCell(p))
+        val d = com.bamnat.core.money.DayRate.job(day.plusDays(1), 1.5, 300_000, "")
+        val both = jobMonth(listOf(p, d), month = m)
+        org.junit.Assert.assertEquals(2, both.days)
+        org.junit.Assert.assertEquals(1.5, both.units!!, 0.0)
+    }
 }

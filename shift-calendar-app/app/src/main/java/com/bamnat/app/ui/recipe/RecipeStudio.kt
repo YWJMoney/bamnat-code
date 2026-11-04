@@ -514,8 +514,9 @@ private fun MockSummary(style: WorkStyle?) {
     }.let { ex ->
         // PC 확인 1.37 A11: 현장 on my phone says my 일감 this month (일한 날 · 공수 · 받을 돈).
         val jobs = if (style == WorkStyle.FIELD) com.bamnat.app.ui.studio.rememberMyJobs() else null
-        if (jobs != null) return@let com.bamnat.app.ui.studio.jobMonth(jobs).let { m ->
-            listOf("일한 날" to "${m.days}일", (if (m.units != null) "공수" to com.bamnat.core.money.DayRate.trim(m.units) else "일감" to "${m.days}건"),
+        val rules = com.bamnat.app.ui.studio.rememberFieldRules()
+        if (jobs != null) return@let com.bamnat.app.ui.studio.jobMonth(jobs, rules).let { m ->
+            listOf("일한 날" to "${m.days}일", (if (m.units != null) "공수" to com.bamnat.core.money.DayRate.trim(m.units) else "일감" to "${m.count}건"),
                 "받을 돈" to (if (m.amount > 0) com.bamnat.app.ui.studio.won(m.amount) else "0원"))
         }
         // PC 확인 Z5 (예시 숫자 '근무 18일 · 162h'): this month of the phone's own calendar, when it has work in it.

@@ -75,14 +75,32 @@ internal fun rememberMyJobs(): List<com.bamnat.core.money.Job>? {
     return remember(jobs, real) { if (!real) null else jobs.filter { !it.cancelled } }
 }
 
-/** A 일감's word in a day cell: its 공수 (1공, 1.5) or the start of its title. */
-internal fun jobCell(j: com.bamnat.core.money.Job): String = j.units?.let { com.bamnat.core.money.DayRate.cell(it) } ?: j.title.take(4)
+/** A 일감's word in a day cell: its 공수 (1공, 1.5, as the calendar writes it), a platform day's 건수 (5건), or the start of its title. */
+internal fun jobCell(j: com.bamnat.core.money.Job): String = when {
+    com.bamnat.core.money.PlatformWork.isPlatform(j) -> "${com.bamnat.core.money.PlatformWork.count(j)}건"
+    else -> j.units?.let { com.bamnat.core.money.DayRate.cell(it) } ?: j.title.take(4)
+}
 
-/** This month's 일감: days worked, 공수 (null when none were 공수형) and the money, as the 현장 summary card says them. */
-internal data class MyJobMonth(val days: Int, val units: Double?, val amount: Long)
+/**
+ * This month's 일감: days worked, 공수 (null when none were 공수형), 건수 (건별·배달) and the money to come, as the 현장 summary card says
+ * them. PC 확인 1.37 A12 (플랫폼형 배민 5건인데 요약이 0일·0건·0원): a platform day counts its 건수 and what comes after the platform's
+ * 수수료 and the day's own costs, as 배달 정산 does.
+ */
+internal data class MyJobMonth(val days: Int, val units: Double?, val count: Int, val amount: Long)
 
-internal fun jobMonth(jobs: List<com.bamnat.core.money.Job>, month: java.time.YearMonth = java.time.YearMonth.from(com.bamnat.core.time.Today.date())): MyJobMonth {
-    val now = jobs.filter { java.time.YearMonth.from(it.date) == month && !com.bamnat.core.money.PlatformWork.isPlatform(it) }
-    val units = now.mapNotNull { it.units }.takeIf { it.isNotEmpty() }?.sum()
-    return MyJobMonth(now.map { it.date }.distinct().size, units, now.sumOf { it.amount })
+internal fun jobMonth(jobs: List<com.bamnat.core.money.Job>, rules: com.bamnat.core.money.FieldRules = com.bamnat.core.money.FieldRules(),
+    month: java.time.YearMonth = java.time.YearMonth.from(com.bamnat.core.time.Today.date())): MyJobMonth {
+    val now = jobs.filter { java.time.YearMonth.from(it.date) == month && !it.cancelled }
+    val (platform, rest) = now.partition { com.bamnat.core.money.PlatformWork.isPlatform(it) }
+    val units = rest.mapNotNull { it.units }.takeIf { it.isNotEmpty() }?.sum()
+    val count = platform.sumOf { com.bamnat.core.money.PlatformWork.count(it) } + rest.count { it.units == null }
+    val got = com.bamnat.core.money.PlatformWork.month(month, platform, rules = rules).net
+    return MyJobMonth(now.map { it.date }.distinct().size, units, count, rest.sumOf { it.amount } + got)
+}
+
+/** The main calendar's 현장 rules (일당·플랫폼 수수료), for [jobMonth]. */
+@Composable
+internal fun rememberFieldRules(): com.bamnat.core.money.FieldRules {
+    val c = LocalContext.current.appContainer
+    return remember(c) { runCatching { c.calendars.current().field }.getOrNull() ?: com.bamnat.core.money.FieldRules() }
 }
