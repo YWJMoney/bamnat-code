@@ -88,14 +88,16 @@ internal fun jobCell(j: com.bamnat.core.money.Job): String = when {
  */
 internal data class MyJobMonth(val days: Int, val units: Double?, val count: Int, val amount: Long)
 
-internal fun jobMonth(jobs: List<com.bamnat.core.money.Job>, rules: com.bamnat.core.money.FieldRules = com.bamnat.core.money.FieldRules(),
+internal fun jobMonth(jobs: List<com.bamnat.core.money.Job>, @Suppress("UNUSED_PARAMETER") rules: com.bamnat.core.money.FieldRules = com.bamnat.core.money.FieldRules(),
     month: java.time.YearMonth = java.time.YearMonth.from(com.bamnat.core.time.Today.date())): MyJobMonth {
     val now = jobs.filter { java.time.YearMonth.from(it.date) == month && !it.cancelled }
     val (platform, rest) = now.partition { com.bamnat.core.money.PlatformWork.isPlatform(it) }
     val units = rest.mapNotNull { it.units }.takeIf { it.isNotEmpty() }?.sum()
     val count = platform.sumOf { com.bamnat.core.money.PlatformWork.count(it) } + rest.count { it.units == null }
-    val got = com.bamnat.core.money.PlatformWork.month(month, platform, rules = rules).net
-    return MyJobMonth(now.map { it.date }.distinct().size, units, count, rest.sumOf { it.amount } + got)
+    // PC 확인 1.37 A14: 받을 돈 is what the calendar and the day sheet call it, each 일감's own (Job.unpaid: after 3.3% and what came in
+    // already), one sum for 공수·건별·배달 alike, so the three places say the same number. [rules] stays for when the calendar takes
+    // the platform's 수수료 off too.
+    return MyJobMonth(now.map { it.date }.distinct().size, units, count, now.sumOf { it.unpaid })
 }
 
 /** The main calendar's 현장 rules (일당·플랫폼 수수료), for [jobMonth]. */

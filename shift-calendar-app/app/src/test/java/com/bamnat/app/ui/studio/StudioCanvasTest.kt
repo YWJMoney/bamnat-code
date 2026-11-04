@@ -115,11 +115,11 @@ class StudioCanvasTest {
         org.junit.Assert.assertEquals(1, got.days)
         org.junit.Assert.assertEquals(5, got.count)
         org.junit.Assert.assertNull(got.units)
-        org.junit.Assert.assertEquals(59_960L, got.amount)
+        org.junit.Assert.assertEquals("받을 돈 as the calendar says it", p.unpaid, got.amount)
         org.junit.Assert.assertEquals("5건", jobCell(p))
-        // PC 확인 1.37 A13: the platform's 수수료·건당 보험 come off, as the day sheet says (59,960 → 57,920 with 408원 a 건).
+        // PC 확인 1.37 A14: 받을 돈 is the calendar's (Job.unpaid: 62,000 less 3.3% = 59,960), whatever 수수료 is set.
         val cut = com.bamnat.core.money.FieldRules(platformCosts = mapOf("배민" to com.bamnat.core.money.PlatformWork.Cut(perCall = 408)))
-        org.junit.Assert.assertEquals(57_920L, jobMonth(listOf(p), cut, m).amount)
+        org.junit.Assert.assertEquals(p.unpaid, jobMonth(listOf(p), cut, m).amount)
         val d = com.bamnat.core.money.DayRate.job(day.plusDays(1), 1.5, 300_000, "")
         val both = jobMonth(listOf(p, d), month = m)
         org.junit.Assert.assertEquals(2, both.days)
