@@ -122,3 +122,14 @@ test("[ADM2-03] the key's ground is a fixed list of routes", () => {
   assert.equal(keyAllows("/keys", "POST"), false);
   assert.equal(keyAllows("/desk", "DELETE"), false);
 });
+
+test("[ADM2] a database made by an older server takes the new tables: the ALTERs in SCHEMA no longer fail it (1.37 hotfix)", async () => {
+  const { env, DB, call } = server();
+  assert.equal((await call("GET", "/api/admin/session")).status, 200);
+  // As if this database was made by the server before this one: a different schema version, all columns already there.
+  await DB.prepare("UPDATE settings SET value = 'older' WHERE key = 'schema'").run();
+  const worker = (await import("../src/index.js")).default;
+  const res = await worker.fetch(new Request("https://company.example/api/admin/session"), { ...env });
+  assert.equal(res.status, 200);
+  assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM admin_keys").first()).n, 0);
+});

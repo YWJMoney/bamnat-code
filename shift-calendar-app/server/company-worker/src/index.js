@@ -917,8 +917,12 @@ function ready(env) {
   if (!done) {
     done = env.DB.prepare("SELECT value FROM settings WHERE key = 'schema'").first("value").catch(() => null).then(async (made) => {
       if (made === SCHEMA_VERSION) return;
-      await batch(env, SCHEMA.map((sql) => env.DB.prepare(sql)));
-      for (const sql of COLUMNS) {
+      // 1.37 hotfix: an ALTER TABLE in SCHEMA (recipe-fonts' info·glyphs·fallback) fails as "duplicate column" on a database that
+      // already has it, and that failed the whole batch, so every request was a 500 after any later schema change. ALTERs run
+      // with the columns below, where a column already there is skipped.
+      const alter = (sql) => /^\s*ALTER\s+TABLE/i.test(sql);
+      await batch(env, SCHEMA.filter((sql) => !alter(sql)).map((sql) => env.DB.prepare(sql)));
+      for (const sql of [...SCHEMA.filter(alter), ...COLUMNS]) {
         try {
           await env.DB.prepare(sql).run();
         } catch (e) {
