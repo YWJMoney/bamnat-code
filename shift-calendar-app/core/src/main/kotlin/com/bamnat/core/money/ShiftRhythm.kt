@@ -21,8 +21,10 @@ object ShiftRhythm {
      * day were learned or the days ahead are all of one kind (nothing to share differently), or nothing is left.
      */
     fun plan(pool: Long, from: LocalDate, until: LocalDate, label: (LocalDate) -> String?, rows: List<TaxPlus.ShiftSpend>): Plan? {
-        if (pool <= 0 || rows.size < 2 || until.isBefore(from)) return null
-        val learned = rows.associate { it.label to it.perDay.coerceAtLeast(0) }
+        // PC 확인 37446021: 새로 깔아 지출이 없는데도 모든 날이 '2만'으로 나왔어요. 쓴 돈이 있는 날 종류가 둘은 있어야 배워요.
+        val spent = rows.filter { it.perDay > 0 }
+        if (pool <= 0 || spent.size < 2 || until.isBefore(from)) return null
+        val learned = spent.associate { it.label to it.perDay }
         val avg = (learned.values.sum() / learned.size).coerceAtLeast(1)
         val ahead = generateSequence(from) { it.plusDays(1) }.takeWhile { !it.isAfter(until) }
             .map { d -> d to (label(d) ?: TaxPlus.OFF) }.toList()
@@ -33,6 +35,7 @@ object ShiftRhythm {
         if (total <= 0.0) return null
         fun share(l: String) = (pool * w(l) / total).toLong() / 100 * 100
         val shares = counts.map { (l, n) -> Share(l, share(l), n) }.sortedByDescending { it.perDay }
+        if (shares.map { it.perDay }.distinct().size < 2) return null
         val todayLabel = ahead.first().second
         return Plan(todayLabel, share(todayLabel), shares)
     }

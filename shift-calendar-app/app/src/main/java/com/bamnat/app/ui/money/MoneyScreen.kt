@@ -537,6 +537,8 @@ fun MoneyScreen(
     vm: MoneyViewModel,
     wide: Boolean,
     onOpenPay: () -> Unit,
+    /** 1.37 PC 확인 37446021: 앞으로의 돈의 '월급날 넣기'는 급여 화면의 월급날 칸으로 (설정 찾기와 같은 곳). */
+    onOpenPayDay: () -> Unit = onOpenPay,
     snackbar: SnackbarHostState? = null,
     today: LocalDate = Today.date(),
 ) {
@@ -700,7 +702,7 @@ fun MoneyScreen(
         },
         MoneyPart.AHEAD to {
             AheadCard(book, style, today, aheadPay, budget, toSort = unseen.size, gate = gate,
-                onAddAccount = { addingAccount = com.bamnat.core.money.AccountType.BANK }, onOpenPay = onOpenPay, snapshot = snapshot)
+                onAddAccount = { addingAccount = com.bamnat.core.money.AccountType.BANK }, onOpenPay = onOpenPayDay, snapshot = snapshot)
         },
         MoneyPart.STORY to { MonthStoryCard(book, envelopeBook.second, aheadPay?.lastMonth, today, gate) },
         MoneyPart.ENVELOPES to {
