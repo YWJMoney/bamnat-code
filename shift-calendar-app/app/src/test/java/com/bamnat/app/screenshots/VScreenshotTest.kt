@@ -153,10 +153,13 @@ class VScreenshotTest : ScreenshotBase() {
     private fun slipRules(then: Screen.() -> Unit = {}): Screen.() -> Unit = {
         payScreen(Tier.PRO, withProfile = true) { vm -> PayScreen(vm, onBack = {}, onShareWay = { shared = true }) }.invoke(this)
         // [PAYS-19] 1.27 AJ: 합계 아래 ‘명세서와 맞춰 보기’ 카드의 ‘계산 방식 찾기’.
+        openPayGuides()
         tapText("계산 방식 찾기", scrolls = 40)
         then()
     }
     private fun Screen.typeSlip() {
+        // 1.36 W9: pasting is under '다른 방법'.
+        tapText("다른 방법:")
         tapText("글로 붙여 넣기", exact = true)
         typeInto("명세서 글", SLIP)
         tapText("읽기", exact = true)
@@ -164,6 +167,7 @@ class VScreenshotTest : ScreenshotBase() {
 
     @Test fun slipRulesTwoPhotos() = shoot("838_v_slip_two_photos", FOLDED, slipRules {
         assertTrue(appears("1. 명세서"))
+        tapText("다른 방법:")
         assertTrue(appears("2. 회사 계산 방법"))
         assertTrue(appears("사진과 금액은 어디에도 보내지 않아요"))
     })

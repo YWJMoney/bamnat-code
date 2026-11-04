@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.diag
 
+import com.bamnat.app.appContainer
 import com.bamnat.app.diag.CrashLog
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
@@ -30,7 +31,7 @@ import com.bamnat.app.ui.components.SystemSettings
 import com.bamnat.app.alarm.AlarmScheduler
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.CheckCircle
@@ -48,7 +49,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
@@ -237,7 +238,11 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun turnOnAlarms() = container.settingsRepository.update { it.copy(alarmsEnabled = true) }
+    fun turnOnAlarms() {
+        container.settingsRepository.update { it.copy(alarmsEnabled = true) }
+        // PC 확인 f6b585f8: where the master switch was turned, for 알람 점검.
+        container.telemetry.event("alarms_switch", "on diagnostics")
+    }
 
     /** [ALRM-01] I24: the test alarm three minutes on, to wait with the screen off as at night. */
     fun scheduleScreenOffTest() = container.alarmScheduler.scheduleTest(minutes = SCREEN_OFF_MINUTES)
@@ -419,7 +424,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     var more by remember { mutableStateOf(false) }
                     Box {
                         IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, "더 보기") }
-                        androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                        com.bamnat.app.ui.components.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                             androidx.compose.material3.DropdownMenuItem(
                                 text = { Text("보고서 복사") },
                                 leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
@@ -517,6 +522,16 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                         FilterChip(selected = preview == null, onClick = { vm.setPreview(null) }, label = { Text("실제") })
                         listOf(Tier.FREE, Tier.PRO).forEach { t ->
                             FilterChip(selected = preview == t, onClick = { vm.setPreview(t) }, label = { Text(t.label) })
+                        }
+                    }
+                    val trialCtx = androidx.compose.ui.platform.LocalContext.current
+                    // [MON-13] 1.36: 금액 비교하기·세후 예상 일주일 무료, tried again from the start.
+                    if (BuildConfig.DEBUG) androidx.compose.material3.TextButton(onClick = { trialCtx.appContainer.featureGate.resetTrials() }) { Text("일주일 무료 맛보기 처음부터") }
+                    // PC 17차 사용성 제안: 안전 모드 tried without stopping the app three times (a debug build only).
+                    if (BuildConfig.DEBUG) {
+                        var armed by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+                        androidx.compose.material3.TextButton(onClick = { com.bamnat.app.diag.StartGuard.armNext(trialCtx); armed = true }) {
+                            Text(if (armed) "다음 실행은 안전 모드예요 · 앱을 완전히 닫고 다시 열어요" else "다음 실행을 안전 모드로")
                         }
                     }
                 }

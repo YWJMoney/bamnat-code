@@ -14,28 +14,42 @@ import kotlinx.coroutines.flow.StateFlow
 object StartGuard {
     private const val PREFS = "start_guard"
     private const val K_UNSETTLED = "unsettled"
+    private const val K_BY_HAND = "by_hand"
     const val LIMIT = 3
     const val SETTLE_MS = 10_000L
 
     private val _safe = MutableStateFlow(false)
     val safe: StateFlow<Boolean> = _safe
 
+    /** PC 18차: this safe start was asked for in 진단 (점검용), not caused by stops in a row. */
+    var byHand: Boolean = false
+        private set
+
     /** Application.onCreate: one more start that has not settled yet; the third in a row opens safely. */
     fun begin(context: Context) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val n = p.getInt(K_UNSETTLED, 0)
         _safe.value = n >= LIMIT
+        byHand = n >= LIMIT && p.getBoolean(K_BY_HAND, false)
+        // 1.36 PC A21: '점검용' is kept while the phone stays safe, so a start of the process again (the phone closed it while
+        // the person was in its settings) still says 점검용; it goes with the count ([settled]).
         p.edit().putInt(K_UNSETTLED, n + 1).apply()
     }
 
     /** [SETTLE_MS] after the month: this start went well, the count starts over (a safe start stays safe until 평소대로). */
     fun settled(context: Context) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(K_UNSETTLED, 0).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(K_UNSETTLED, 0).remove(K_BY_HAND).apply()
+    }
+
+    /** PC 17차 (adb force-stop으로는 안전 모드에 들어갈 길이 없음): a debug build's 진단 makes the next start a safe one. */
+    fun armNext(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt(K_UNSETTLED, LIMIT).putBoolean(K_BY_HAND, true).commit()
     }
 
     /** "평소대로": back to a normal start now. */
     fun leave(context: Context) {
         settled(context)
         _safe.value = false
+        byHand = false
     }
 }

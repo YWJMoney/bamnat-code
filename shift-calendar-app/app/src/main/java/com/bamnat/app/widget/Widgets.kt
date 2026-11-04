@@ -182,7 +182,7 @@ private fun TodayContent(data: WidgetData) {
             val warn = data.flow.state == TodayFlow.State.ALARM_OFF || data.flow.state == TodayFlow.State.FORGOT_WAKE
             Text(
                 "${flowMark(data.flow)} $line",
-                style = TextStyle(color = if (warn) GlanceTheme.colors.error else GlanceTheme.colors.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium),
+                style = TextStyle(color = if (warn) GlanceTheme.colors.error else GlanceTheme.colors.primary, fontSize = wsp(13), fontWeight = FontWeight.Medium),
                 maxLines = 1,
             )
         }
@@ -216,10 +216,14 @@ private fun flowMark(card: TodayFlow.Card): String = when (card.state) {
 @Composable
 private fun DateLabel(title: String, date: LocalDate) {
     val holiday = KoreanHolidays.nameOf(date)
+    // [BLU-10] 위젯 머리: the date line is the today widget's head.
+    val head = widgetPart("widget.head", setOfNotNull("holiday".takeIf { holiday != null }))
+    if (head.hide == true) return
     Text(
         "$title ${date.monthValue}/${date.dayOfMonth}(${Fmt.dayOfWeekShort(date.dayOfWeek)})" + (holiday?.let { " · $it" } ?: ""),
-        style = small(if (holiday != null) WidgetRed else GlanceTheme.colors.onSurfaceVariant),
+        style = small(if (holiday != null) WidgetRed else GlanceTheme.colors.onSurfaceVariant).widgetLetters(head),
         maxLines = 1,
+        modifier = GlanceModifier.widgetBox(head),
     )
 }
 
@@ -245,7 +249,7 @@ private fun JobsToday(data: WidgetData) {
             Column {
                 Text(
                     jobs.firstOrNull()?.title ?: "잡힌 일감 없음",
-                    style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = if (date == data.today) 18.sp else 14.sp, fontWeight = FontWeight.Bold),
+                    style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = if (date == data.today) wsp(18) else wsp(14), fontWeight = FontWeight.Bold),
                     maxLines = 1,
                 )
                 jobs.firstOrNull()?.let { j ->
@@ -279,13 +283,13 @@ private fun SalesToday(data: WidgetData) {
     DateLabel("오늘", data.today)
     Text(
         today?.let { "매출 " + Fmt.won(it.sales) } ?: "아직 안 적었어요",
-        style = TextStyle(color = if (today != null) WidgetGreen else GlanceTheme.colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold),
+        style = TextStyle(color = if (today != null) WidgetGreen else GlanceTheme.colors.onSurface, fontSize = wsp(18), fontWeight = FontWeight.Bold),
         maxLines = 1,
     )
     Spacer(GlanceModifier.height(8.dp))
     val month = YearMonth.from(data.today)
     Text("${month.monthValue}월 매출", style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
-    Text(Fmt.wonShort(data.monthSales(month)), style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 14.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+    Text(Fmt.wonShort(data.monthSales(month)), style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14), fontWeight = FontWeight.Bold), maxLines = 1)
     // G 1.32 [WTYP-23] 이번 달 영업·휴무 일수.
     ShopDaysLine(data)
 }
@@ -306,7 +310,7 @@ private fun InvestToday(data: WidgetData) {
             line.hide || v == 0L -> GlanceTheme.colors.onSurface
             v > 0 -> WidgetRed
             else -> WidgetBlue
-        }, fontSize = 18.sp, fontWeight = FontWeight.Bold),
+        }, fontSize = wsp(18), fontWeight = FontWeight.Bold),
         maxLines = 1,
     )
     Spacer(GlanceModifier.height(8.dp))
@@ -318,7 +322,7 @@ private fun InvestToday(data: WidgetData) {
             r == null || r == 0.0 -> GlanceTheme.colors.onSurface
             r > 0 -> WidgetRed
             else -> WidgetBlue
-        }, fontSize = 14.sp, fontWeight = FontWeight.Bold),
+        }, fontSize = wsp(14), fontWeight = FontWeight.Bold),
         maxLines = 1,
     )
 }
@@ -330,7 +334,9 @@ private fun InvestToday(data: WidgetData) {
 @Composable
 private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String? = null, memo: String? = null) {
     val context = androidx.glance.LocalContext.current
-    Column(GlanceModifier.fillMaxWidth().clickable(openDay(context, day.date))) {
+    // [BLU-10] 위젯 칸: each day line of the today widget, in its day's states.
+    val cell = widgetPart("widget.cell", widgetDayStates(day, Today.date()))
+    Column(GlanceModifier.fillMaxWidth().widgetBox(cell).clickable(openDay(context, day.date))) {
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             DateLabel(title, day.date)
             when {
@@ -347,16 +353,16 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String
                     dayName(day),
                     style = TextStyle(
                         color = GlanceTheme.colors.onSurface,
-                        fontSize = if (big) 18.sp else 14.sp,
+                        fontSize = if (big) wsp(18) else wsp(14),
                         fontWeight = FontWeight.Bold,
-                    ),
+                    ).widgetLetters(widgetFace()).widgetLetters(cell.copy(size = cell.size?.let { if (big) it * 1.3 else it })),
                     maxLines = 1,
                 )
                 val start = day.start
                 val end = day.end
                 val leave = day.leave?.takeIf { !it.isFullDay }
                 if (day.isWorkDay && start != null && end != null) {
-                    Text(Fmt.timeRange(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                    Text(Fmt.timeRangeShort(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
                 }
             }
         }
@@ -377,21 +383,24 @@ private fun WeekContent(data: WidgetData) {
     val tiny = height < 90.dp
     val short = height < 140.dp
     val twoWeeks = height >= 200.dp
+    // [BLU-10] 위젯 머리: '이번 주 근무'·'다음 주'.
+    val head = widgetPart("widget.head")
     Column(GlanceModifier.fillMaxSize()) {
-        if (!tiny) Text(
+        if (!tiny && head.hide != true) Text(
             when (data.focus) {
                 CalendarFocus.SHIFTS -> "이번 주 근무"
                 CalendarFocus.JOBS -> "이번 주 일감"
                 CalendarFocus.SALES -> "이번 주 매출"
                 CalendarFocus.INVEST -> "이번 주 손익"
             },
-            style = small(GlanceTheme.colors.onSurfaceVariant),
+            style = small(GlanceTheme.colors.onSurfaceVariant).widgetLetters(head),
+            modifier = GlanceModifier.widgetBox(head),
         )
         if (!tiny) Spacer(GlanceModifier.height(if (short) 4.dp else 6.dp))
         WeekDays(data, CalendarGrid.week(monday), short, tiny)
         if (twoWeeks) {
             Spacer(GlanceModifier.height(8.dp))
-            Text("다음 주", style = small(GlanceTheme.colors.onSurfaceVariant))
+            if (head.hide != true) Text("다음 주", style = small(GlanceTheme.colors.onSurfaceVariant).widgetLetters(head), modifier = GlanceModifier.widgetBox(head))
             Spacer(GlanceModifier.height(4.dp))
             WeekDays(data, CalendarGrid.week(monday.plusWeeks(1)), short = false, tiny = false)
         }
@@ -404,12 +413,16 @@ private fun WeekDays(data: WidgetData, days: List<java.time.LocalDate>, short: B
     Row(GlanceModifier.fillMaxWidth()) {
         for (date in days) {
             val day = data.day(date)
+            // [BLU-10] 위젯 칸: a day of the week widget, in its states.
+            val cell = widgetPart("widget.cell", widgetDayStates(day, data.today))
             // [DAILY-06] Each day opens itself.
-            Column(GlanceModifier.defaultWeight().clickable(openDay(androidx.glance.LocalContext.current, date)), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(GlanceModifier.defaultWeight().padding(horizontal = if (cell.fill != null) 1.dp else 0.dp).clickable(openDay(androidx.glance.LocalContext.current, date)),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+              Column(GlanceModifier.fillMaxWidth().widgetBox(cell), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (short) {
                     Text(
                         (if (date == data.today) "오늘" else Fmt.dayOfWeekShort(date.dayOfWeek)) + " ${date.dayOfMonth}",
-                        style = small(weekdayColor(date.dayOfWeek, date == data.today, KoreanHolidays.isHoliday(date))).copy(textAlign = TextAlign.Center),
+                        style = small(weekdayColor(date.dayOfWeek, date == data.today, KoreanHolidays.isHoliday(date))).copy(textAlign = TextAlign.Center).widgetLetters(cell),
                         maxLines = 1,
                     )
                     Spacer(GlanceModifier.height(2.dp))
@@ -425,17 +438,18 @@ private fun WeekDays(data: WidgetData, days: List<java.time.LocalDate>, short: B
                     style = TextStyle(
                         // [CAL-11] A public holiday is red as on the calendar.
                         color = if (KoreanHolidays.isHoliday(date) && date != data.today) WidgetRed else GlanceTheme.colors.onSurface,
-                        fontSize = 15.sp,
+                        fontSize = wsp(15),
                         fontWeight = if (date == data.today) FontWeight.Bold else FontWeight.Normal,
                         textAlign = TextAlign.Center,
-                    ),
+                    ).widgetLetters(widgetFace()).widgetLetters(cell),
                 )
                 Spacer(GlanceModifier.height(4.dp))
                 WeekMark(data, day, 26)
                 // [DAILY-07] The day's alarm is off.
                 if (day.alarmSkipped && (day.isWorkDay || day.coveredShift != null)) {
-                    Text("🔕", style = TextStyle(fontSize = 9.sp, textAlign = TextAlign.Center), maxLines = 1)
+                    Text("🔕", style = TextStyle(fontSize = wsp(9), textAlign = TextAlign.Center), maxLines = 1)
                 }
+              }
             }
         }
     }
@@ -445,11 +459,13 @@ private fun WeekDays(data: WidgetData, days: List<java.time.LocalDate>, short: B
 private fun MonthContent(data: WidgetData, offset: Int = 0) {
     val month = YearMonth.from(data.today).plusMonths(offset.toLong())
     val weeks = CalendarGrid.monthWeeks(month, data.weekStart)
+    // [BLU-10] 위젯 머리: the month's name and its page buttons.
+    val head = widgetPart("widget.head")
     Column(GlanceModifier.fillMaxSize()) {
-        Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(GlanceModifier.fillMaxWidth().widgetBox(head), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                Fmt.month(month),
-                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Bold),
+                if (head.hide == true) "" else Fmt.month(month),
+                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(15), fontWeight = FontWeight.Bold).widgetLetters(widgetFace()).widgetLetters(head),
                 maxLines = 1,
                 modifier = GlanceModifier.defaultWeight(),
             )
@@ -489,7 +505,7 @@ private fun PageButton(label: String, delta: Int) {
                 androidx.glance.action.actionParametersOf(MonthPageAction.DELTA to delta))),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = TextStyle(color = GlanceTheme.colors.primary, fontSize = if (delta == 0) 12.sp else 18.sp, fontWeight = FontWeight.Bold), maxLines = 1)
+        Text(label, style = TextStyle(color = GlanceTheme.colors.primary, fontSize = if (delta == 0) wsp(12) else wsp(18), fontWeight = FontWeight.Bold), maxLines = 1)
     }
 }
 
@@ -508,7 +524,7 @@ private fun WeekMark(data: WidgetData, day: ResolvedDay, sizeDp: Int) {
             Text(
                 s?.let { Fmt.wonShort(it.sales) } ?: "–",
                 style = TextStyle(color = if (s != null) WidgetGreen else GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                    fontSize = wsp(11), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
                 maxLines = 1,
             )
         }
@@ -526,7 +542,7 @@ private fun WeekMark(data: WidgetData, day: ResolvedDay, sizeDp: Int) {
                     v == null || v == 0L -> GlanceTheme.colors.onSurfaceVariant
                     v > 0 -> WidgetRed
                     else -> WidgetBlue
-                }, fontSize = 11.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
+                }, fontSize = wsp(11), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
                 maxLines = 1,
             )
         }
@@ -555,7 +571,9 @@ private fun MonthCell(data: WidgetData, date: LocalDate, inMonth: Boolean, modif
     val type = if (leave != null) null else day.shiftType?.takeIf { !it.isOff || day.coveredShift == null } ?: day.coveredShift
     val isToday = date == data.today
     val red = KoreanHolidays.isHoliday(date) || date.dayOfWeek == DayOfWeek.SUNDAY
-    Column(modifier.padding(1.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    // [BLU-10] 위젯 칸: the month cell in its day's states (오늘·토·일·공휴일·다른 달·근무 종류).
+    val cell = widgetPart("widget.cell", widgetDayStates(day, data.today, inMonth))
+    Column(modifier.padding(1.dp).widgetBox(cell, defaultCorner = 4), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             "${date.dayOfMonth}",
             style = TextStyle(
@@ -565,30 +583,30 @@ private fun MonthCell(data: WidgetData, date: LocalDate, inMonth: Boolean, modif
                     red -> WidgetRed
                     else -> GlanceTheme.colors.onSurface
                 },
-                fontSize = 11.sp,
+                fontSize = wsp(11),
                 fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
                 textAlign = TextAlign.Center,
-            ),
+            ).widgetLetters(widgetFace()).widgetLetters(cell),
         )
         val jobs = if (inMonth && data.focus == CalendarFocus.JOBS) data.jobsOn(date).size else 0
         val sold = inMonth && data.focus == CalendarFocus.SALES && data.sales[date] != null
         if (leave != null && inMonth) {
-            Text(leave.short, style = TextStyle(color = GlanceTheme.colors.onTertiaryContainer, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+            Text(leave.short, style = TextStyle(color = GlanceTheme.colors.onTertiaryContainer, fontSize = wsp(10), fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center), maxLines = 1,
                 modifier = GlanceModifier.fillMaxWidth().background(GlanceTheme.colors.tertiaryContainer).cornerRadius(4.dp))
         } else if (jobs > 0 && (type == null || type.isOff)) {
-            Text(if (jobs > 1) "일$jobs" else "일", style = TextStyle(color = GlanceTheme.colors.onSecondaryContainer, fontSize = 10.sp,
+            Text(if (jobs > 1) "일$jobs" else "일", style = TextStyle(color = GlanceTheme.colors.onSecondaryContainer, fontSize = wsp(10),
                 fontWeight = FontWeight.Bold, textAlign = TextAlign.Center), maxLines = 1,
                 modifier = GlanceModifier.fillMaxWidth().background(GlanceTheme.colors.secondaryContainer).cornerRadius(4.dp))
         } else if (sold && type == null) {
-            Text("●", style = TextStyle(color = WidgetGreen, fontSize = 9.sp, textAlign = TextAlign.Center), maxLines = 1)
+            Text("●", style = TextStyle(color = WidgetGreen, fontSize = wsp(9), textAlign = TextAlign.Center), maxLines = 1)
         } else if (type != null && inMonth) {
             val color = Color(type.colorArgb.toInt())
             Text(
                 type.label,
                 style = TextStyle(
                     color = ColorProvider(if (type.isOff) color else onColor(color)),
-                    fontSize = 10.sp,
+                    fontSize = wsp(10),
                     fontWeight = FontWeight.Bold,
                     textAlign = TextAlign.Center,
                 ),
@@ -601,7 +619,7 @@ private fun MonthCell(data: WidgetData, date: LocalDate, inMonth: Boolean, modif
         }
         // [WIDG-02] I 리뷰 I21: one more mark under the shift, in the calendar cell's order: extra work, part leave, memo.
         if (inMonth) monthMark(data, day)?.let { (text, tone) ->
-            Text(text, style = TextStyle(color = tone, fontSize = 8.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center), maxLines = 1)
+            Text(text, style = TextStyle(color = tone, fontSize = wsp(8), fontWeight = FontWeight.Bold, textAlign = TextAlign.Center), maxLines = 1)
         }
     }
 }
@@ -677,6 +695,11 @@ private fun weekdayColor(dow: DayOfWeek, today: Boolean, holiday: Boolean = fals
     else -> GlanceTheme.colors.onSurfaceVariant
 }
 
-private fun small(color: ColorProvider) = TextStyle(color = color, fontSize = 12.sp)
+@Composable
+private fun small(color: ColorProvider) = TextStyle(color = color, fontSize = wsp(12)).widgetLetters(widgetFace())
+
+/** [BLU-10] The `widget` part's 글꼴·기울임·밑줄 for every word on the widget (its colours stay the theme's, which already follow it). */
+@Composable
+internal fun widgetFace(): com.bamnat.core.recipe.PartStyle = widgetPart("widget").let { com.bamnat.core.recipe.PartStyle(font = it.font, italic = it.italic, deco = it.deco) }
 
 private fun onColor(background: Color): Color = contentColorOn(background)

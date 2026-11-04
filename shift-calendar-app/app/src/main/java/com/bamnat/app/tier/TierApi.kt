@@ -12,7 +12,11 @@ import java.time.Instant
 import com.bamnat.core.time.Today
 
 /** [MON-08] One reward pass the developer gave this install: [why] is "rule" (회사 방식) or "idea" (제안). */
-data class PassItem(val months: Int, val at: Instant, val why: String)
+/** [what]: 1.36 [GRW-09] 만든 분 보상이 무엇 때문인지("이달의 주제에 뽑힘" 등), 다른 이용권은 null. */
+data class PassItem(val months: Int, val at: Instant, val why: String, val what: String? = null)
+
+/** 1.36 841 쓰면 쌓이는 날: days earned without an ad (a problem report fixed), [why] in words from the server. */
+data class EarnedDays(val days: Int, val at: Instant, val why: String)
 
 /**
  * [MON-09] This phone tied to an admin account: "pending" until the owner approves it, then "approved".
@@ -35,6 +39,25 @@ data class Passes(
     val admin: AdminState?,
     val hasCode: Boolean,
     val checkedAt: Instant,
+    /** 1.36 [PSH-01] 프로 나눔 1인: the 프로 a buyer gave this phone runs until their subscription ends; null when none. */
+    val sharedUntil: Instant? = null,
+    /** 1.36 841 쓰면 쌓이는 날 (at most 14 a month), and how many start at the launch. */
+    val earned: List<EarnedDays> = emptyList(),
+    val waitingDays: Int = 0,
+)
+
+/**
+ * 1.36 [PSH-01] 프로 나눔 1인, as the buyer sees it: whether this phone's bought 프로 can be given ([can]), the code waiting
+ * for the one person and until when, whether someone has it now, and the 프로 given to this phone.
+ */
+data class ProShare(
+    val can: Boolean,
+    val until: Instant? = null,
+    val code: String? = null,
+    val codeUntil: Instant? = null,
+    val given: Boolean = false,
+    val givenAt: Instant? = null,
+    val sharedUntil: Instant? = null,
 )
 
 /** [MON-03] A subscription as Play told the server; [verified] false when the server has no Play key. */
@@ -68,6 +91,15 @@ interface TierApi {
      * [SRV-07] [answeredAt] is when they tapped, which may be before a queued answer is sent.
      */
     suspend fun consent(device: String, answer: String, product: String, price: String, trialEnd: Instant, shown: String, answeredAt: Instant)
+
+    /** 1.36 [PSH-01] 프로 나눔 1인: what this phone gives and is given. */
+    suspend fun share(device: String): ProShare = throw CompanyException("offline")
+    /** A new one-time code for the one person (the code before stops working). */
+    suspend fun shareCode(device: String): ProShare = throw CompanyException("offline")
+    /** Puts a buyer's code in: this phone gets their 프로 while they keep it. */
+    suspend fun shareClaim(device: String, code: String): ProShare = throw CompanyException("offline")
+    /** Ends it: a buyer takes it back, or the person gives it back. */
+    suspend fun shareEnd(device: String): ProShare = throw CompanyException("offline")
 }
 
 /** [MON-02] The company server (server/company-worker); a build without its address asks nothing. */
@@ -119,6 +151,13 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
         Unit
     }
 
+    override suspend fun share(device: String): ProShare = serverCall { readShare(request("GET", "/api/passes/share", device = device)) }
+    override suspend fun shareCode(device: String): ProShare = serverCall { readShare(request("POST", "/api/passes/share", JSONObject(), device)) }
+    override suspend fun shareClaim(device: String, code: String): ProShare = serverCall {
+        readShare(request("POST", "/api/passes/share/claim", JSONObject().put("code", code.trim()), device))
+    }
+    override suspend fun shareEnd(device: String): ProShare = serverCall { readShare(request("DELETE", "/api/passes/share", device = device)) }
+
     private fun request(method: String, path: String, body: JSONObject? = null, device: String? = null): JSONObject {
         if (!enabled) throw CompanyException("offline")
         return serverRequest(baseUrl, method, path, body, device)
@@ -128,7 +167,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
         fun readPasses(o: JSONObject): Passes = Passes(
             until = o.optStringOrNull("until")?.let(Instant::parse),
             waitingMonths = o.optInt("waitingMonths"),
-            items = o.optJSONArray("items").objects().map { PassItem(it.getInt("months"), Instant.parse(it.getString("at")), it.optString("why")) },
+            items = o.optJSONArray("items").objects().map { PassItem(it.getInt("months"), Instant.parse(it.getString("at")), it.optString("why"), it.optString("what").ifEmpty { null }) },
             deferred = o.optInt("deferred"),
             // S 1.32 [SECX-01] previews: set in the developer app for this phone only.
             admin = o.optJSONObject("admin")?.let { a ->
@@ -137,6 +176,19 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             },
             hasCode = o.optBoolean("code"),
             checkedAt = o.optStringOrNull("checkedAt")?.let(Instant::parse) ?: Today.instant(),
+            sharedUntil = o.optJSONObject("shared")?.optStringOrNull("until")?.let(Instant::parse),
+            earned = o.optJSONArray("earned").objects().map { EarnedDays(it.getInt("days"), Instant.parse(it.getString("at")), it.optString("why")) },
+            waitingDays = o.optInt("waitingDays"),
+        )
+
+        fun readShare(o: JSONObject): ProShare = ProShare(
+            can = o.optBoolean("can"),
+            until = o.optStringOrNull("until")?.let(Instant::parse),
+            code = o.optStringOrNull("code"),
+            codeUntil = o.optStringOrNull("codeUntil")?.let(Instant::parse),
+            given = o.optBoolean("given"),
+            givenAt = o.optStringOrNull("givenAt")?.let(Instant::parse),
+            sharedUntil = o.optJSONObject("shared")?.optStringOrNull("until")?.let(Instant::parse),
         )
     }
 }

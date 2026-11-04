@@ -82,7 +82,8 @@ internal fun JobAsk(
                     matches.forEach { m ->
                         val choice = choiceFor(m.job)
                         ChoiceCard(
-                            title = "${m.job.name} · ${choice.title}",
+                            // 빌드 10 S13 ('아르바이트 · 아르바이트 · 시급'): a word already in the kind's name is said once.
+                            title = (listOf(m.job.name) + choice.title.split(" · ")).distinct().joinToString(" · "),
                             subtitle = shown.mark(m.job.style, "누르면 이 일에 맞는 달력과 기능으로 다음 질문을 이어 가요"),
                             icon = choice.icon,
                             selected = false,

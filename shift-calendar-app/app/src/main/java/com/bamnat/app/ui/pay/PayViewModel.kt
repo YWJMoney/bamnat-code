@@ -489,6 +489,8 @@ class PayViewModel(
             PayslipMatcher.match(profile.named(settings.value.extraKinds).hourlyWeek(settings.value), month, snapshot.resolver::resolve, payslip, calculator = calculator)
         }
         container.telemetry.event("pay_payslip_match", if (match.matched) "matched" else "gap")
+        // 1.36 840 밤낮이 찾아 준 돈: the app's month beyond the payslip, outside the matching tolerance.
+        container.proMoments.found(month, if (!match.matched && match.gap < 0) -match.gap else 0)
         return match
     }
 

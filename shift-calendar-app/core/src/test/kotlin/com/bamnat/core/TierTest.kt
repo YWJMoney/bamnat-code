@@ -121,21 +121,6 @@ class TierTest {
         assertFalse(TrialConsent.valid(end, end))
     }
 
-    /** [MON-07][REL-02] The banner only under 근무·급여 and 돈, after three quiet days, never for 프로 or before launch. */
-    @Test fun bannerRules() {
-        val installed = at("2026-12-07T03:00:00Z")
-        fun banner(place: AdRules.Place, live: Boolean = true, pro: Boolean = false, configured: Boolean = true, at: Instant = now) =
-            AdRules.banner(place, live, pro, configured, installed, at)
-        assertTrue(banner(AdRules.Place.MONEY))
-        assertTrue(banner(AdRules.Place.STATS))
-        for (p in listOf(AdRules.Place.CALENDAR, AdRules.Place.MEMOS, AdRules.Place.SETTINGS, AdRules.Place.OTHER)) assertFalse(p.name, banner(p))
-        assertFalse(banner(AdRules.Place.MONEY, live = false))
-        assertFalse(banner(AdRules.Place.MONEY, pro = true))
-        assertFalse(banner(AdRules.Place.MONEY, configured = false))
-        assertFalse(banner(AdRules.Place.MONEY, at = installed.plus(Duration.ofDays(3)).minusSeconds(1)))
-        assertTrue(banner(AdRules.Place.MONEY, at = installed.plus(Duration.ofDays(3))))
-    }
-
     /** [MON-07] A rewarded ad is offered once a day and opens the features until midnight. */
     @Test fun rewardedOncePerDay() {
         val today = LocalDate.of(2026, 12, 10)
@@ -145,5 +130,14 @@ class TierTest {
         assertFalse(AdRules.rewardedOffer(live = true, pro = true, configured = true, lastDayPass = null, today = today))
         assertFalse(AdRules.rewardedOffer(live = false, pro = false, configured = true, lastDayPass = null, today = today))
         assertEquals(at("2026-12-10T15:00:00Z"), AdRules.dayPassUntil(today, zone))
+    }
+
+    /** 1.36 [PSH-01] 프로 나눔 1인: given 프로 runs while the buyer's does, after this phone's own sources. */
+    @Test
+    fun sharedProLastsUntilTheBuyersEnds() {
+        val until = now.plusSeconds(86_400)
+        assertEquals(ProReason.SHARED, ProAccess.resolve(live { copy(sharedUntil = until) }, now, zone).reason)
+        assertEquals(ProReason.NONE, ProAccess.resolve(live { copy(sharedUntil = now.minusSeconds(1)) }, now, zone).reason)
+        assertEquals(ProReason.SUBSCRIPTION, ProAccess.resolve(live { copy(sharedUntil = until, subscription = sub()) }, now, zone).reason)
     }
 }

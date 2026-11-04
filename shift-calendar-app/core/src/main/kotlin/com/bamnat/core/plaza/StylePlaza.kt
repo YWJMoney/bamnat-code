@@ -51,6 +51,9 @@ object StylePlaza {
         null -> null
     }
 
+    /** The kind of work whose plaza [room] is; null for a company's room. */
+    fun styleOf(room: String): WorkStyle? = WorkStyle.entries.firstOrNull { styleRoom(it) == room }
+
     /**
      * The plaza of [style] itself, with no company: for 교대·일근 their talk ([RCP-34] 1.34; their [plan] with no company is the
      * rule plaza, which links here), for the rest the same as [plan].

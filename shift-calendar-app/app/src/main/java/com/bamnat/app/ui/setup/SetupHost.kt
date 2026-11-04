@@ -36,7 +36,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -111,15 +111,16 @@ fun SetupHost(
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(message) {
         val m = message ?: return@LaunchedEffect
-        vm.consumeMessage()
+        // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
         snackbar.showSnackbar(m)
+        vm.consumeMessage()
     }
     LaunchedEffect(firstStyle) {
         val (style, roster) = firstStyle ?: return@LaunchedEffect
         if (d.style == null && vm.calendarId == null) vm.pickStyle(style, roster)
         onFirstStyleUsed()
     }
-    BackHandler(enabled = fixing || d.previous() != null) { vm.back() }
+    com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = fixing || d.previous() != null) { vm.back() }
     // [MCAL-02] A calendar being added: back on the first question gives it up, after asking.
     var leaving by remember { mutableStateOf(false) }
     BackHandler(enabled = vm.calendarId != null && !fixing && d.previous() == null) { leaving = true }

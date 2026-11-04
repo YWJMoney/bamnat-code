@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.company
 
+import com.bamnat.app.appContainer
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -31,7 +32,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Inbox
 import androidx.compose.material.icons.outlined.VolunteerActivism
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -47,6 +48,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -326,7 +328,8 @@ private fun SentPanel(status: ReportStatus, onDone: () -> Unit, onOpenSent: () -
                 Text(status.detail(), style = MaterialTheme.typography.bodyMedium)
                 if (status.status == "pending" && !status.review) PointsBar(status.points, status.threshold)
                 if (status.rewardMonths > 0 && status.status == "pending") {
-                    RewardPill(rewardText(status.rewardMonths))
+                    val gate by androidx.compose.ui.platform.LocalContext.current.appContainer.featureGate.state.collectAsState()
+                    RewardPill(rewardText(status.rewardMonths, gate.live))
                 }
             }
         }
@@ -415,10 +418,11 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
                     Column(Modifier.fillMaxWidth().padding(top = 48.dp), horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         HeroIcon(Icons.Outlined.Inbox)
-                        Text("아직 보낸 정보가 없어요", style = MaterialTheme.typography.titleMedium)
-                        Text("내 설정을 나누면 같은 회사 분들이 1분 만에 설정해요.", style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
-                        Button(onClick = onShare) { Text("내 설정 나누기") }
+                        Text("나눈 회사 설정은 아직 없어요", style = MaterialTheme.typography.titleMedium)
+                        // 1.36 PC 확인: 레시피·프로필만 올린 분(알바 등)도 여기서 모두 지워요; 이 화면은 회사 설정만 줄로 보여요.
+                        Text("마을에 올린 레시피·프로필·팔로우·차단, 광장 글과 앱 문의는 아래 ‘모두 지우기’로 한 번에 지울 수 있어요.",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                        if (vm.companyFits) OutlinedButton(onClick = onShare) { Text("내 설정 나누기") }
                     }
                 }
                 sent.forEach { r ->
@@ -426,10 +430,8 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
                         // Already gone from the server: only the line here is left to drop.
                         onDrop = { vm.takeBack(r.id) {} })
                 }
-                if (sent.isNotEmpty()) {
-                    TextButton(onClick = { forgetting = true }, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp)) {
-                        Text("이 휴대폰이 보낸 정보 모두 지우기", color = MaterialTheme.colorScheme.error)
-                    }
+                TextButton(onClick = { forgetting = true }, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp)) {
+                    Text("이 휴대폰이 보낸 정보 모두 지우기", color = MaterialTheme.colorScheme.error)
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -450,9 +452,11 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
         )
     }
     if (forgetting) {
+        val village by vm.village.collectAsStateWithLifecycle()
+        LaunchedEffect(Unit) { vm.loadVillage() }
         ConfirmDialog(
             title = "보낸 정보를 모두 지울까요?",
-            message = "보낸 설정, 맞았어요·달라요, 토론 글과 신고, 받기로 한 보상, 앱 문의까지 서버에서 모두 지워요. 이 휴대폰에서 쓰는 설정은 그대로예요.",
+            message = (village?.let { "마을에서 $it${com.bamnat.app.ui.Fmt.iga(it)} 지워져요.\n\n" } ?: "") + FORGET_ALL_WORDS,
             confirmLabel = "모두 지우기",
             destructive = true,
             onDismiss = { forgetting = false },
@@ -518,7 +522,7 @@ private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (Str
         } else {
             Text("어떤 일인가요? (선택)", style = MaterialTheme.typography.titleSmall)
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                com.bamnat.app.company.Plaza.JOBS.forEach { (key, name) ->
+                com.bamnat.app.ui.company.rememberJobs().forEach { (key, name) ->
                     com.bamnat.app.ui.components.FilterChip(selected = job == key, onClick = { onJob(if (job == key) "" else key) }, label = { Text(name) })
                 }
             }
@@ -528,7 +532,7 @@ private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (Str
             Box {
                 com.bamnat.app.ui.components.FilterChip(selected = region.isNotEmpty(), onClick = { open = true },
                     label = { Text(if (region.isEmpty()) "지역 고르기 (전국)" else com.bamnat.app.company.Plaza.region(region)) })
-                androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                com.bamnat.app.ui.components.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                     androidx.compose.material3.DropdownMenuItem(text = { Text("전국") }, onClick = { open = false; onRegion("") })
                     com.bamnat.app.company.Plaza.REGIONS.forEach { (k, n) ->
                         androidx.compose.material3.DropdownMenuItem(text = { Text(n) }, onClick = { open = false; onRegion(k) })

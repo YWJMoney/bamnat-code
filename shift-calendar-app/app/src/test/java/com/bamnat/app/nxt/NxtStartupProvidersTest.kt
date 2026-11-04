@@ -67,6 +67,18 @@ class NxtStartupProvidersTest {
         assertTrue(manifest.contains("com.google.mlkit.common.internal.MlKitInitProvider") && manifest.contains("tools:node=\"remove\""))
     }
 
+    /**
+     * 1.36 PC 사진 인식 원인 (logcat "MlKitContext has not been initialized" at InputImage.fromBitmap): ML Kit's image is made only
+     * inside OcrModel.read, after MlKitStart.ensure, never as an argument evaluated before it.
+     */
+    @Test fun mlKitsImageIsMadeOnlyAfterItStarts() {
+        val makers = File("src/main/java").walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .filter { Regex("""InputImage\.from\w+\(""").containsMatchIn(it.readText()) }.map { it.name }.toList()
+        assertEquals(listOf("OcrModel.kt"), makers)
+        val ocr = File("src/main/java/com/bamnat/app/pay/OcrModel.kt").readText()
+        assertTrue(ocr.indexOf("MlKitStart.ensure(") in 0 until ocr.indexOf("InputImage.fromBitmap("))
+    }
+
     @Test fun proFeatureNamesAreCoresTable() {
         val pro = Feature.entries.filter { it.minTier == Tier.PRO }
         assertEquals(ProFeatures.NAMES.keys.toList(), pro.map { it.name })

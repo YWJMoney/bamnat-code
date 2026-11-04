@@ -40,6 +40,9 @@ fun AppSheet(
     onClose: () -> Unit = onDismissRequest,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    // PC 확인 7b26965a ("아주 크게"에서도 자유 토의 시트 글자는 그대로): a sheet is a window of its own, whose view gives it the
+    // phone's own density again; the app's 글자 크기 (BamnatTheme's LocalDensity) is handed on to it here.
+    val appDensity = androidx.compose.ui.platform.LocalDensity.current
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         // [J133-49] 1.33 (중간 빌드 확인: 끝까지 펼친 시트의 X가 상태줄 밑에 그려져 눌리지 않았어요): a sheet stops under the status
@@ -47,8 +50,9 @@ fun AppSheet(
         modifier = modifier.windowInsetsPadding(WindowInsets.statusBars.only(WindowInsetsSides.Top)),
         sheetState = sheetState,
         dragHandle = if (closeButton) ({ SheetHandle(onClose) }) else ({ BottomSheetDefaults.DragHandle() }),
-        content = content,
-    )
+    ) {
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides appDensity) { content() }
+    }
 }
 
 /** The drag handle, and the X at its end. */

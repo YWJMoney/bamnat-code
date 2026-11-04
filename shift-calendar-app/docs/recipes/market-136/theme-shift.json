@@ -1,0 +1,3852 @@
+[
+ {
+  "showcase": true,
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "오로라 뜨는 나이트",
+   "summary": "야간이 이어질수록 칸이 오로라처럼 짙어지는 하이엔드 교대 테마",
+   "desc": "야간 첫날은 은은한 남색, 세 번째 야간부터는 칸에 오로라가 흘러요. 그 주 야간이 세 번을 넘긴 쉬는 날은 연두빛 '회복'으로 바뀌어요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 깊은 남색 화면과 오로라 머리, 근무 네 가지 색\n· 야간 연속·회복 날·피로 테두리가 그날 기록대로 저절로\n· 야간 끝 잠자리 알림, 세 번째 야간 회복 알림\n· 근무 회고·수면 기록 틀, 이어 일한 날이 길면 근무 전 알림\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FF0B1033|cd:FF151B47|ik:FFE8EAF6|ac:FF7C4DFF|ft:notosanskr",
+     "pay": "SHIFT~tt:xl|pl:FF1C2459|mn:FF7C4DFF|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:10|dp:mc|ds:l|dw:b|pd:2/bg:FF101642|cr:10|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4289956095,
+     "sat": 4286755327,
+     "sun": 4294937216,
+     "holiday": 4294937216,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "주간",
+       "role": "day",
+       "label": "주",
+       "color": 4294948685,
+       "emoji": "☀️"
+      },
+      {
+       "name": "저녁",
+       "role": "eve",
+       "label": "저",
+       "color": 4290406600,
+       "emoji": "🌆"
+      },
+      {
+       "name": "야간",
+       "role": "night",
+       "label": "야",
+       "color": 4284246976,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4280723098,
+       "emoji": "🛌"
+      }
+     ]
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4279573319,
+     "border": "thin",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "date": true,
+     "bg": 4278915123
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4279573319,
+     "ink": 4293454582,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "rota",
+     "memo": "board",
+     "memoBy": "shift",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "dark",
+     "accent": 4286336511,
+     "motion": "tn:fade|td:glow|sp:s"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.bar",
+       "fill": {
+        "token": "바탕"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "orbitron",
+       "weight": 700,
+       "ink": {
+        "token": "글자"
+       }
+      },
+      {
+       "id": "app.tabs",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 0,
+       "shadow": 2
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": {
+        "token": "포인트"
+       },
+       "weight": 700
+      },
+      {
+       "id": "app.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 18,
+       "line": "none",
+       "shadow": 1
+      },
+      {
+       "id": "app.button",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 24,
+       "ink": 4294967295,
+       "weight": 700
+      },
+      {
+       "id": "app.chip",
+       "r": 20,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       }
+      },
+      {
+       "id": "cal.head",
+       "paint": "sh.aurora.FF1A237E,FF7C4DFF,FF00BFA5.3",
+       "r": 18,
+       "pad": 10,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "orbitron",
+       "size": 22,
+       "weight": 800,
+       "ink": 4294967295,
+       "tshadow": 6,
+       "tshadowC": 4289956095,
+       "tshadowX": 0,
+       "tshadowY": 0
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4294937216
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4286755327
+      },
+      {
+       "id": "cal.cell",
+       "r": 10
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "token": "포인트"
+       },
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell.date",
+       "weight": 600
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 45
+      },
+      {
+       "id": "memo.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 18,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700
+      },
+      {
+       "id": "money.day",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "padX": 10
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "pay.total",
+       "paint": "sh.aurora.FF1A237E,FF7C4DFF,FF00BFA5.3",
+       "r": 18,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget",
+       "fill": 4279573319,
+       "r": 18,
+       "font": "notosanskr"
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4286336511,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\"",
+       "paint": "lg.160.FF283593,FF1A237E"
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\" 그리고 연속근무 >= 3",
+       "paint": "sh.aurora.FF1A237E,FF651FFF,FF00BFA5.2",
+       "motion": "shimmer"
+      },
+      {
+       "id": "cal.cell",
+       "when": "쉬는날 그리고 이번주야간 >= 3",
+       "fill": 4285132974,
+       "fillA": 55
+      },
+      {
+       "id": "cal.cell",
+       "when": "연속근무 >= 4",
+       "line": "solid",
+       "lineC": 4294922834,
+       "lineW": {
+        "fx": "만약(연속근무 >= 7, 3.5, 연속근무 >= 6, 2.5, 연속근무 >= 5, 2, 1.5)"
+       }
+      },
+      {
+       "id": "cal.band.slot",
+       "when": "근무종류 = \"야간\" 그리고 연속근무 >= 3",
+       "fill": 4280825235,
+       "ink": 4294967295
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "🌙",
+       "at": "cal.cell",
+       "on": "role.night",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      },
+      {
+       "emoji": "✨",
+       "at": "cal.cell",
+       "on": "today",
+       "x": 180,
+       "y": 180,
+       "w": 13,
+       "h": 13
+      },
+      {
+       "shape": "sparkle",
+       "at": "cal.head",
+       "x": 960,
+       "y": 250,
+       "w": 26,
+       "h": 26,
+       "fill": 4289956095,
+       "fillA": 70
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "label": "잠 기록",
+       "emoji": "😴",
+       "where": "day",
+       "do": "newMemo",
+       "arg": "수면 기록",
+       "show": "근무종류 = \"야간\""
+      }
+     ],
+     "rules": [
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      },
+      {
+       "name": "야간 세 번째 회복",
+       "on": "end",
+       "role": "night",
+       "when": "이번주야간 >= 3",
+       "do": "notify",
+       "arg": "이번 주 야간 {이번주야간}번째예요. 다음 쉬는 날은 회복이 먼저예요"
+      },
+      {
+       "name": "연속근무 경고",
+       "on": "start",
+       "min": -60,
+       "when": "연속근무 >= 5",
+       "do": "notify",
+       "arg": "{연속근무}일째 이어 일해요. 물과 간식을 챙겨요"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "수면 기록",
+       "emoji": "😴",
+       "body": "{근무} 끝 {근무끝} · 이번 주 야간 {이번주야간}번\n잔 시간: \n깬 횟수: ",
+       "asks": [
+        {
+         "label": "잠 점수",
+         "type": "star"
+        }
+       ]
+      },
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "gradual": true,
+     "vibrate": true
+    }
+   ],
+   "cover": {
+    "a": 4278915123,
+    "b": 4281944491,
+    "dir": 2,
+    "emoji": "🌌"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4278915123,
+     "dark": 4278915123
+    },
+    {
+     "name": "카드",
+     "light": 4279573319,
+     "dark": 4279573319
+    },
+    {
+     "name": "글자",
+     "light": 4293454582,
+     "dark": 4293454582
+    },
+    {
+     "name": "포인트",
+     "light": 4286336511,
+     "dark": 4286336511
+    },
+    {
+     "name": "선",
+     "light": 4280955504,
+     "dark": 4280955504
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "까만 병동 달력",
+   "summary": "인수인계 꼬리표가 남은 근무 날만 빨간 테두리가 남는 병동용",
+   "desc": "#인수인계 메모가 있는 근무 날은 칸이 빨간 테두리로 남고, 체크를 다 끝내면 초록으로 바뀌어요. 근무 30분 전엔 인수인계 틀이 그날 새 메모로 생겨요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 어두운 병동 화면과 3교대 색 띠\n· 인수인계 꼬리표·체크율로 칸 테두리가 바뀜\n· 인수인계 남은 개수 알림, SBAR 틀\n· 메모장은 근무별 보드\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FF101418|cd:FF1A2026|ik:FFE0F2F1|ac:FF26A69A|ft:ibmplexsanskr",
+     "pay": "SHIFT~tt:xl|pl:FF1A2026|mn:FF26A69A|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:8|dp:mc|ds:l|dw:b|pd:2/bg:FF151A1F|cr:8|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4280723098,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "주간",
+       "role": "day",
+       "label": "주",
+       "color": 4283283116,
+       "emoji": "☀️"
+      },
+      {
+       "name": "저녁",
+       "role": "eve",
+       "label": "저",
+       "color": 4294948685,
+       "emoji": "🌆"
+      },
+      {
+       "name": "야간",
+       "role": "night",
+       "label": "야",
+       "color": 4286154443,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4283723386,
+       "emoji": "🛌"
+      }
+     ]
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4279902246,
+     "border": "thin",
+     "corner": 12,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "date": true,
+     "bg": 4279243800
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4279902246,
+     "ink": 4292932337,
+     "corner": 12,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "board",
+     "memoBy": "shift",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "dark",
+     "accent": 4280723098,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.bar",
+       "fill": {
+        "token": "바탕"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "ibmplexsanskr",
+       "weight": 700,
+       "ink": {
+        "token": "글자"
+       }
+      },
+      {
+       "id": "app.tabs",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 0,
+       "shadow": 2
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": {
+        "token": "포인트"
+       },
+       "weight": 700
+      },
+      {
+       "id": "app.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 12,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.button",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 24,
+       "ink": 4294967295,
+       "weight": 700
+      },
+      {
+       "id": "app.chip",
+       "r": 20,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       }
+      },
+      {
+       "id": "cal.head",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 12,
+       "pad": 10,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "ibmplexsanskr",
+       "size": 22,
+       "weight": 800,
+       "ink": 4292932337
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 8
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "token": "포인트"
+       },
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell.date",
+       "weight": 600
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 45
+      },
+      {
+       "id": "memo.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 12,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700
+      },
+      {
+       "id": "money.day",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "padX": 10
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "pay.total",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 12,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget",
+       "fill": 4279902246,
+       "r": 12,
+       "font": "ibmplexsanskr"
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4280723098,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"인수인계\")",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293874512
+      },
+      {
+       "id": "cal.cell",
+       "when": "메모수 > 0 그리고 (체크율 > 0 또는 남은체크 > 0)",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "fx": "만약(체크율 >= 100, \"#43A047\", \"#FFB300\")"
+       }
+      },
+      {
+       "id": "cal.cell",
+       "when": "연속근무 >= 4",
+       "line": "solid",
+       "lineC": 4294930499,
+       "lineW": {
+        "fx": "만약(연속근무 >= 7, 3.5, 연속근무 >= 6, 2.5, 연속근무 >= 5, 2, 1.5)"
+       }
+      },
+      {
+       "id": "memo.card",
+       "when": "체크율 >= 100",
+       "alpha": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "📋",
+       "at": "cal.cell",
+       "on": "role.day",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13,
+       "alpha": 80
+      },
+      {
+       "icon": "medical_services",
+       "at": "cal.head",
+       "x": 930,
+       "y": 500,
+       "w": 22,
+       "h": 22,
+       "ink": 4283283116
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "label": "인수인계",
+       "emoji": "🩺",
+       "where": "day",
+       "do": "newMemo",
+       "arg": "인수인계",
+       "show": "아님 쉬는날"
+      }
+     ],
+     "rules": [
+      {
+       "name": "인수인계 남은 것",
+       "on": "memo",
+       "when": "꼬리표.포함(\"인수인계\") 그리고 남은체크 > 0",
+       "do": "notify",
+       "arg": "인수인계 {남은체크}개가 남았어요"
+      },
+      {
+       "name": "근무 전 인수인계 새로",
+       "on": "start",
+       "min": -30,
+       "do": "newMemo",
+       "arg": "인수인계"
+      },
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      },
+      {
+       "name": "야간 세 번째 회복",
+       "on": "end",
+       "role": "night",
+       "when": "이번주야간 >= 3",
+       "do": "notify",
+       "arg": "이번 주 야간 {이번주야간}번째예요. 다음 쉬는 날은 회복이 먼저예요"
+      },
+      {
+       "name": "연속근무 경고",
+       "on": "start",
+       "min": -60,
+       "when": "연속근무 >= 5",
+       "do": "notify",
+       "arg": "{연속근무}일째 이어 일해요. 물과 간식을 챙겨요"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "gradual": true,
+     "vibrate": true
+    }
+   ],
+   "cover": {
+    "a": 4279243800,
+    "b": 4278225275,
+    "dir": 2,
+    "emoji": "🩺"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4279243800,
+     "dark": 4279243800
+    },
+    {
+     "name": "카드",
+     "light": 4279902246,
+     "dark": 4279902246
+    },
+    {
+     "name": "글자",
+     "light": 4292932337,
+     "dark": 4292932337
+    },
+    {
+     "name": "포인트",
+     "light": 4280723098,
+     "dark": 4280723098
+    },
+    {
+     "name": "선",
+     "light": 4281021757,
+     "dark": 4281021757
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "별 스티커 교대 수첩",
+   "summary": "근무마다 별 스티커, 넷째 날엔 졸린 스티커가 붙는 귀여운 수첩",
+   "desc": "근무 종류마다 다른 별 스티커가 칸에 붙고, 쉬지 않고 이어 일한 날이 길어지면 테두리가 두꺼워져요. 쉬는 날 칸은 반짝여요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 밤하늘 파스텔 화면과 둥근 칸\n· 주간 ⭐ · 저녁 🌟 · 야간 🌙 · 휴무 💤 스티커\n· 연속근무 테두리, 쉬는 날 반짝임\n· 하루 일기 틀(기분 별점)\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FFF5F3FF|cd:FFFFFFFF|ik:FF3E2C5A|ac:FF9575CD|ft:jua",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF9575CD|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:16|dp:mc|ds:l|dw:b|pd:2/bg:FFFFF8E1|cr:16|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4287985101,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "주간",
+       "role": "day",
+       "label": "주",
+       "color": 4294956367,
+       "emoji": "☀️"
+      },
+      {
+       "name": "저녁",
+       "role": "eve",
+       "label": "저",
+       "color": 4294217649,
+       "emoji": "🌆"
+      },
+      {
+       "name": "야간",
+       "role": "night",
+       "label": "야",
+       "color": 4286154443,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4289912795,
+       "emoji": "🛌"
+      }
+     ]
+    },
+    {
+     "kind": "memoLook",
+     "layout": "sticky",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 20,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "gaegu",
+     "date": true,
+     "bg": 4294308863
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4282264666,
+     "corner": 22,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "board",
+     "memoBy": "shift",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "light",
+     "accent": 4287985101,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.bar",
+       "fill": {
+        "token": "바탕"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "jua",
+       "weight": 700,
+       "ink": {
+        "token": "글자"
+       }
+      },
+      {
+       "id": "app.tabs",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 0,
+       "shadow": 2
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": {
+        "token": "포인트"
+       },
+       "weight": 700
+      },
+      {
+       "id": "app.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 22,
+       "line": "none",
+       "shadow": 1
+      },
+      {
+       "id": "app.button",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 28,
+       "ink": 4294967295,
+       "weight": 700
+      },
+      {
+       "id": "app.chip",
+       "r": 20,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       }
+      },
+      {
+       "id": "cal.head",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 22,
+       "pad": 10,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "jua",
+       "size": 22,
+       "weight": 800,
+       "ink": 4282264666
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 16
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "token": "포인트"
+       },
+       "motion": "bounce"
+      },
+      {
+       "id": "cal.cell.date",
+       "weight": 600
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 45
+      },
+      {
+       "id": "memo.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 22,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "gaegu"
+      },
+      {
+       "id": "money.day",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "padX": 10
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "pay.total",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 22,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "r": 22,
+       "font": "jua"
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4287985101,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.cell",
+       "when": "연속근무 >= 4",
+       "line": "solid",
+       "lineC": 4293943954,
+       "lineW": {
+        "fx": "만약(연속근무 >= 7, 3.5, 연속근무 >= 6, 2.5, 연속근무 >= 5, 2, 1.5)"
+       }
+      },
+      {
+       "id": "cal.cell",
+       "on": "role.off",
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "⭐",
+       "at": "cal.cell",
+       "on": "role.day",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      },
+      {
+       "emoji": "🌟",
+       "at": "cal.cell",
+       "on": "role.eve",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      },
+      {
+       "emoji": "🌙",
+       "at": "cal.cell",
+       "on": "role.night",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      },
+      {
+       "emoji": "💤",
+       "at": "cal.cell",
+       "on": "role.off",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      },
+      {
+       "text": "오늘도 반짝",
+       "at": "cal.head",
+       "x": 840,
+       "y": 500,
+       "w": 110,
+       "h": 28,
+       "ink": 4287985101,
+       "size": 12,
+       "weight": 700,
+       "font": "jua"
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "label": "일기 쓰기",
+       "emoji": "🌙",
+       "where": "day",
+       "do": "newMemo",
+       "arg": "하루 일기"
+      }
+     ],
+     "rules": [
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      },
+      {
+       "name": "야간 세 번째 회복",
+       "on": "end",
+       "role": "night",
+       "when": "이번주야간 >= 3",
+       "do": "notify",
+       "arg": "이번 주 야간 {이번주야간}번째예요. 다음 쉬는 날은 회복이 먼저예요"
+      },
+      {
+       "name": "연속근무 경고",
+       "on": "start",
+       "min": -60,
+       "when": "연속근무 >= 5",
+       "do": "notify",
+       "arg": "{연속근무}일째 이어 일해요. 물과 간식을 챙겨요"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "하루 일기",
+       "emoji": "🌙",
+       "body": "{날짜} {요일} · {근무}\n기분: \n고마운 것: ",
+       "asks": [
+        {
+         "label": "기분",
+         "type": "star"
+        }
+       ]
+      },
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "gradual": true,
+     "vibrate": true
+    }
+   ],
+   "cover": {
+    "a": 4293454582,
+    "b": 4294491088,
+    "dir": 2,
+    "emoji": "⭐"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4294308863,
+     "dark": 4279374354
+    },
+    {
+     "name": "카드",
+     "light": 4294967295,
+     "dark": 4280163870
+    },
+    {
+     "name": "글자",
+     "light": 4282264666,
+     "dark": 4293717228
+    },
+    {
+     "name": "포인트",
+     "light": 4287985101,
+     "dark": 4287985101
+    },
+    {
+     "name": "선",
+     "light": 4292991479,
+     "dark": 4282006074
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "철판 공장 근무표",
+   "summary": "금속 질감 칸과 근무 띠, 근무 1시간 전 안전 점검이 열리는 공장판",
+   "desc": "근무 한 시간 반 전에 준비물·안전 점검 틀이 저절로 열리고, 주말에 일하는 날은 점선, 공휴일 근무는 금색 이중선으로 보여요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 강철 회색과 주황 안전색, 굵은 숫자\n· 근무 띠 판으로 4조 2교대 한눈에\n· 출근 전 준비물 틀, 공휴일 근무 수당 메모\n· 주말·공휴일 근무 칸 표시\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FFECEFF1|cd:FFFFFFFF|ik:FF263238|ac:FFFF6F00",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FFFF6F00|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "line",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:4|dp:mc|ds:l|dw:b|pd:2|ff:oswald/bg:FFFFFFFF|cr:4|dp:mc|ds:l|mk:dot|pd:2|ff:oswald",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4294930176,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "주간",
+       "role": "day",
+       "label": "주",
+       "color": 4294942720,
+       "emoji": "☀️"
+      },
+      {
+       "name": "저녁",
+       "role": "eve",
+       "label": "저",
+       "color": 4284301367,
+       "emoji": "🌆"
+      },
+      {
+       "name": "야간",
+       "role": "night",
+       "label": "야",
+       "color": 4281812815,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4287669422,
+       "emoji": "🛌"
+      }
+     ]
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 6,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "date": true,
+     "bg": 4293718001
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4280693304,
+     "corner": 6,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "rota",
+     "memo": "board",
+     "memoBy": "shift",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "light",
+     "accent": 4294930176,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.bar",
+       "fill": {
+        "token": "바탕"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "bebasneue",
+       "weight": 700,
+       "ink": {
+        "token": "글자"
+       }
+      },
+      {
+       "id": "app.tabs",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 0,
+       "shadow": 2
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": {
+        "token": "포인트"
+       },
+       "weight": 700
+      },
+      {
+       "id": "app.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 6,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       },
+       "shadow": 1
+      },
+      {
+       "id": "app.button",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 6,
+       "ink": 4294967295,
+       "weight": 700
+      },
+      {
+       "id": "app.chip",
+       "r": 20,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       }
+      },
+      {
+       "id": "cal.head",
+       "paint": "tx.concrete.FF607D8B.70",
+       "r": 6,
+       "pad": 10,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "bebasneue",
+       "size": 28,
+       "weight": 800,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 4
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "token": "포인트"
+       },
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "oswald",
+       "weight": 600
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 45
+      },
+      {
+       "id": "memo.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 6,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700
+      },
+      {
+       "id": "money.day",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "padX": 10
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "pay.total",
+       "paint": "tx.concrete.FF607D8B.70",
+       "r": 6,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "r": 6
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294930176,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.cell",
+       "when": "주말 그리고 아님 쉬는날",
+       "line": "dash",
+       "lineW": 1.5,
+       "lineC": 4294930176
+      },
+      {
+       "id": "cal.cell",
+       "when": "공휴일 그리고 아님 쉬는날",
+       "line": "double",
+       "lineW": 2.5,
+       "lineC": 4294951936
+      },
+      {
+       "id": "cal.cell",
+       "when": "연속근무 >= 4",
+       "line": "solid",
+       "lineC": 4292363029,
+       "lineW": {
+        "fx": "만약(연속근무 >= 7, 3.5, 연속근무 >= 6, 2.5, 연속근무 >= 5, 2, 1.5)"
+       }
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "zigzag",
+       "at": "cal.head",
+       "x": 500,
+       "y": 920,
+       "w": 360,
+       "h": 10,
+       "fill": 4294951936,
+       "fillA": 90
+      },
+      {
+       "emoji": "⚙️",
+       "at": "cal.cell",
+       "on": "role.night",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13,
+       "alpha": 70
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "출근 전 준비물",
+       "on": "start",
+       "min": -90,
+       "do": "memoTpl",
+       "arg": "근무 준비물"
+      },
+      {
+       "name": "공휴일 근무 메모",
+       "on": "end",
+       "when": "공휴일",
+       "do": "memoLine",
+       "arg": "{공휴일이름} 근무 {근무시간}시간: 휴일 수당 확인"
+      },
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      },
+      {
+       "name": "야간 세 번째 회복",
+       "on": "end",
+       "role": "night",
+       "when": "이번주야간 >= 3",
+       "do": "notify",
+       "arg": "이번 주 야간 {이번주야간}번째예요. 다음 쉬는 날은 회복이 먼저예요"
+      },
+      {
+       "name": "연속근무 경고",
+       "on": "start",
+       "min": -60,
+       "when": "연속근무 >= 5",
+       "do": "notify",
+       "arg": "{연속근무}일째 이어 일해요. 물과 간식을 챙겨요"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "근무 준비물",
+       "emoji": "🦺",
+       "check": [
+        "안전화·안전모",
+        "보호 장갑",
+        "사원증",
+        "물·간식"
+       ]
+      },
+      {
+       "title": "안전 점검",
+       "emoji": "🦺",
+       "check": [
+        "안전모·안전화",
+        "추락 방지",
+        "장비 점검",
+        "물·그늘 쉬는 곳"
+       ]
+      },
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "gradual": true,
+     "vibrate": true
+    }
+   ],
+   "cover": {
+    "a": 4281812815,
+    "b": 4294930176,
+    "dir": 2,
+    "emoji": "🏭"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4293718001,
+     "dark": 4279374354
+    },
+    {
+     "name": "카드",
+     "light": 4294967295,
+     "dark": 4280163870
+    },
+    {
+     "name": "글자",
+     "light": 4280693304,
+     "dark": 4293717228
+    },
+    {
+     "name": "포인트",
+     "light": 4294930176,
+     "dark": 4294930176
+    },
+    {
+     "name": "선",
+     "light": 4289773253,
+     "dark": 4282006074
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "당비휴 소방관",
+   "summary": "당·비·휴 세 색, 당번 날 연속 피로와 비번 날 지출을 한눈에",
+   "desc": "24시간 당번이 이어지면 칸 테두리가 굵어지고, 비번 날 쓴 돈이 많으면 칸 아래 금액이 빨갛게 굵어져요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 빨강·남색 소방 화면과 당·비·휴 색\n· 피로 테두리, 비번 날 지출 줄 강조\n· 당번 끝 잠자리 알림, 장비 점검 틀\n· 위젯은 빨간 테두리\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FFFFF8F6|cd:FFFFFFFF|ik:FF2B1B1B|ac:FFD32F2F",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FFD32F2F|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "spend": true,
+     "looks": "mk:fill|ba:85|cr:6|dp:mc|ds:l|dw:b|pd:2/bg:FFFFFFFF|cr:6|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4292030255,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "주간",
+       "role": "day",
+       "label": "주",
+       "color": 4292030255,
+       "emoji": "☀️"
+      },
+      {
+       "name": "저녁",
+       "role": "eve",
+       "label": "저",
+       "color": 4294938368,
+       "emoji": "🌆"
+      },
+      {
+       "name": "야간",
+       "role": "night",
+       "label": "야",
+       "color": 4280825235,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4286091420,
+       "emoji": "🛌"
+      }
+     ]
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 10,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "date": true,
+     "bg": 4294965494
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4281015067,
+     "corner": 10,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "board",
+     "memoBy": "shift",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "light",
+     "accent": 4292030255,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.bar",
+       "fill": {
+        "token": "바탕"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "blackhansans",
+       "weight": 700,
+       "ink": {
+        "token": "글자"
+       }
+      },
+      {
+       "id": "app.tabs",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 0,
+       "shadow": 2
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": {
+        "token": "포인트"
+       },
+       "weight": 700
+      },
+      {
+       "id": "app.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "line": "none",
+       "shadow": 1
+      },
+      {
+       "id": "app.button",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 24,
+       "ink": 4294967295,
+       "weight": 700
+      },
+      {
+       "id": "app.chip",
+       "r": 20,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       }
+      },
+      {
+       "id": "cal.head",
+       "paint": "lg.120.FFB71C1C,FF263238",
+       "r": 10,
+       "pad": 10,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "blackhansans",
+       "size": 22,
+       "weight": 800,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 6
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "token": "포인트"
+       },
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell.date",
+       "weight": 600
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 45
+      },
+      {
+       "id": "memo.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700
+      },
+      {
+       "id": "money.day",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "padX": 10
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "pay.total",
+       "paint": "lg.120.FFB71C1C,FF263238",
+       "r": 10,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "r": 10
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4292030255,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.cell",
+       "when": "연속근무 >= 4",
+       "line": "solid",
+       "lineC": 4290190364,
+       "lineW": {
+        "fx": "만약(연속근무 >= 7, 3.5, 연속근무 >= 6, 2.5, 연속근무 >= 5, 2, 1.5)"
+       }
+      },
+      {
+       "id": "cal.cell.spend",
+       "when": "지출 >= 40000",
+       "ink": 4292030255,
+       "weight": 800
+      },
+      {
+       "id": "cal.cell",
+       "when": "쉬는날 그리고 이번주야간 >= 3",
+       "fill": 4291356361,
+       "fillA": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "icon": "local_fire_department",
+       "at": "cal.head",
+       "x": 930,
+       "y": 500,
+       "w": 22,
+       "h": 22,
+       "ink": 4294953512
+      },
+      {
+       "emoji": "🔥",
+       "at": "cal.cell",
+       "on": "role.long",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "label": "장비 점검",
+       "emoji": "🧯",
+       "where": "day",
+       "do": "newMemo",
+       "arg": "장비 점검",
+       "show": "아님 쉬는날"
+      }
+     ],
+     "rules": [
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      },
+      {
+       "name": "야간 세 번째 회복",
+       "on": "end",
+       "role": "night",
+       "when": "이번주야간 >= 3",
+       "do": "notify",
+       "arg": "이번 주 야간 {이번주야간}번째예요. 다음 쉬는 날은 회복이 먼저예요"
+      },
+      {
+       "name": "연속근무 경고",
+       "on": "start",
+       "min": -60,
+       "when": "연속근무 >= 5",
+       "do": "notify",
+       "arg": "{연속근무}일째 이어 일해요. 물과 간식을 챙겨요"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "장비 점검",
+       "emoji": "🧯",
+       "check": [
+        "공기호흡기",
+        "무전기 배터리",
+        "개인 장비",
+        "차량 점검"
+       ]
+      },
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "long",
+       "before": [
+        120,
+        60
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        120
+       ]
+      }
+     ],
+     "snooze": 5,
+     "vibrate": true
+    }
+   ],
+   "cover": {
+    "a": 4290190364,
+    "b": 4280693304,
+    "dir": 2,
+    "emoji": "🚒"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4294965494,
+     "dark": 4279374354
+    },
+    {
+     "name": "카드",
+     "light": 4294967295,
+     "dark": 4280163870
+    },
+    {
+     "name": "글자",
+     "light": 4281015067,
+     "dark": 4293717228
+    },
+    {
+     "name": "포인트",
+     "light": 4292030255,
+     "dark": 4292030255
+    },
+    {
+     "name": "선",
+     "light": 4294168779,
+     "dark": 4282006074
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "해 뜨기 전 커피",
+   "summary": "이른 근무 날은 날짜가 해 뜨는 색, 근무 두 시간째 물 한 잔 알림",
+   "desc": "근무 시작이 7시 전인 날은 날짜가 해 뜨는 주황으로 바뀌어요. 근무 두 시간째엔 물 한 잔, 네 시간째엔 스트레칭을 알려 줘요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 크림·커피색 화면과 손글씨 메모\n· 이른 근무 날짜 색, 오늘 칸 숨쉬기\n· 근무 중 물·스트레칭 알림\n· ☕ 스티커는 주간 근무 날에\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FFFBF4EC|cd:FFFFFFFF|ik:FF4E342E|ac:FF8D6E63|fl:tx.paper.FFFBF4EC.40",
+     "pay": "SHIFT~tt:xl|pl:FFFFFFFF|mn:FF8D6E63|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:12|dp:mc|ds:l|dw:b|pd:2/bg:FFFFFFFF|cr:12|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4287458915,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "주간",
+       "role": "day",
+       "label": "주",
+       "color": 4294948685,
+       "emoji": "☀️"
+      },
+      {
+       "name": "저녁",
+       "role": "eve",
+       "label": "저",
+       "color": 4288776319,
+       "emoji": "🌆"
+      },
+      {
+       "name": "야간",
+       "role": "night",
+       "label": "야",
+       "color": 4284301367,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4291356361,
+       "emoji": "🛌"
+      }
+     ]
+    },
+    {
+     "kind": "memoLook",
+     "layout": "diary",
+     "card": "own",
+     "cardColor": 4294967295,
+     "border": "thin",
+     "corner": 18,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "nanumpen",
+     "date": true,
+     "bg": 4294702316
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4283315246,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "board",
+     "memoBy": "shift",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "light",
+     "accent": 4287458915,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.bar",
+       "fill": {
+        "token": "바탕"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "gowunbatang",
+       "weight": 700,
+       "ink": {
+        "token": "글자"
+       }
+      },
+      {
+       "id": "app.tabs",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 0,
+       "shadow": 2
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": {
+        "token": "포인트"
+       },
+       "weight": 700
+      },
+      {
+       "id": "app.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 18,
+       "line": "none",
+       "shadow": 1
+      },
+      {
+       "id": "app.button",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 24,
+       "ink": 4294967295,
+       "weight": 700
+      },
+      {
+       "id": "app.chip",
+       "r": 20,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       }
+      },
+      {
+       "id": "cal.head",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 18,
+       "pad": 10,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "gowunbatang",
+       "size": 22,
+       "weight": 800,
+       "ink": 4283315246
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 12
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "token": "포인트"
+       },
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell.date",
+       "weight": 600
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 45
+      },
+      {
+       "id": "memo.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 18,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "nanumpen"
+      },
+      {
+       "id": "money.day",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "padX": 10
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "pay.total",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 18,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "r": 18
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4287458915,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.cell.date",
+       "when": "아님 비었나(근무시작) 그리고 근무시작 < \"07:00\"",
+       "ink": 4293880832,
+       "weight": 800
+      },
+      {
+       "id": "cal.cell",
+       "when": "메모수 >= 3",
+       "motion": "pulse"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "☕",
+       "at": "cal.cell",
+       "on": "role.day",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      },
+      {
+       "emoji": "🥐",
+       "at": "cal.cell",
+       "on": "role.eve",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "근무 중 물 마시기",
+       "on": "start",
+       "min": 120,
+       "do": "notify",
+       "arg": "근무 두 시간째예요. 물 한 잔 마셔요"
+      },
+      {
+       "name": "근무 중 스트레칭",
+       "on": "start",
+       "min": 240,
+       "do": "notify",
+       "arg": "어깨와 허리를 한 번 펴요"
+      },
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      },
+      {
+       "name": "야간 세 번째 회복",
+       "on": "end",
+       "role": "night",
+       "when": "이번주야간 >= 3",
+       "do": "notify",
+       "arg": "이번 주 야간 {이번주야간}번째예요. 다음 쉬는 날은 회복이 먼저예요"
+      },
+      {
+       "name": "연속근무 경고",
+       "on": "start",
+       "min": -60,
+       "when": "연속근무 >= 5",
+       "do": "notify",
+       "arg": "{연속근무}일째 이어 일해요. 물과 간식을 챙겨요"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "gradual": true,
+     "vibrate": true
+    }
+   ],
+   "cover": {
+    "a": 4285353025,
+    "b": 4294959282,
+    "dir": 2,
+    "emoji": "☕"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4294702316,
+     "dark": 4279374354
+    },
+    {
+     "name": "카드",
+     "light": 4294967295,
+     "dark": 4280163870
+    },
+    {
+     "name": "글자",
+     "light": 4283315246,
+     "dark": 4293717228
+    },
+    {
+     "name": "포인트",
+     "light": 4287458915,
+     "dark": 4287458915
+    },
+    {
+     "name": "선",
+     "light": 4293581254,
+     "dark": 4282006074
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "한밤의 유리",
+   "summary": "유리 카드와 지금 시각 따라 바뀌는 오늘 칸, 밤에 어울리는 고급판",
+   "desc": "오늘 칸은 지금 시각에 따라 새벽 남색, 아침 금빛, 낮 하늘, 저녁 보라로 바뀌어요. 카드는 모두 반투명 유리예요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 짙은 남색 바탕에 유리 카드\n· 오늘 칸이 시각마다 색이 바뀜\n· 야간 연속 짙어짐·회복 날\n· 근무 띠 판\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FF0D1B2A|cd:FF1B263B|ik:FFE0E1DD|ac:FF64B5F6",
+     "pay": "SHIFT~tt:xl|pl:FF1B263B|mn:FF64B5F6|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "none",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:12|dp:mc|ds:l|dw:b|pd:2|fl:gl.1AFFFFFF.12/bg:FF14233A|cr:12|dp:mc|ds:l|mk:dot|pd:2",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4284790262,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "주간",
+       "role": "day",
+       "label": "주",
+       "color": 4287679225,
+       "emoji": "☀️"
+      },
+      {
+       "name": "저녁",
+       "role": "eve",
+       "label": "저",
+       "color": 4291728344,
+       "emoji": "🌆"
+      },
+      {
+       "name": "야간",
+       "role": "night",
+       "label": "야",
+       "color": 4281944491,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4283283116,
+       "emoji": "🛌"
+      }
+     ]
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4279969339,
+     "border": "thin",
+     "corner": 20,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "date": true,
+     "bg": 4279049002
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4279969339,
+     "ink": 4292927965,
+     "corner": 20,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "rota",
+     "memo": "board",
+     "memoBy": "shift",
+     "money": "cal"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "dark",
+     "accent": 4284790262,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.bar",
+       "fill": {
+        "token": "바탕"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "montserrat",
+       "weight": 700,
+       "ink": {
+        "token": "글자"
+       }
+      },
+      {
+       "id": "app.tabs",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 0,
+       "shadow": 2
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": {
+        "token": "포인트"
+       },
+       "weight": 700
+      },
+      {
+       "id": "app.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 20,
+       "line": "none",
+       "shadow": 1
+      },
+      {
+       "id": "app.button",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 24,
+       "ink": 4294967295,
+       "weight": 700
+      },
+      {
+       "id": "app.chip",
+       "r": 20,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       }
+      },
+      {
+       "id": "cal.head",
+       "paint": "gl.33FFFFFF.24",
+       "r": 20,
+       "pad": 10,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "montserrat",
+       "size": 22,
+       "weight": 800,
+       "ink": 4292927965
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 12
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "token": "포인트"
+       },
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell.date",
+       "weight": 600
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 45
+      },
+      {
+       "id": "memo.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 20,
+       "shadow": 1
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700
+      },
+      {
+       "id": "money.day",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "padX": 10
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "pay.total",
+       "paint": "gl.33FFFFFF.24",
+       "r": 20,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget",
+       "fill": 4279969339,
+       "r": 20
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4284790262,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "when": "오늘",
+       "paint": {
+        "fx": "만약(지금시각 < \"06:00\", \"lg.135.FF1A237E,FF3949AB\", 지금시각 < \"12:00\", \"lg.135.FFFFE082,FFFFB74D\", 지금시각 < \"18:00\", \"lg.135.FF81D4FA,FF4FC3F7\", \"lg.135.FF7E57C2,FF283593\")"
+       }
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\"",
+       "paint": "lg.180.FF1A237E,FF0D1B2A"
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\" 그리고 연속근무 >= 3",
+       "paint": "lg.180.FF311B92,FF1A237E",
+       "motion": "shimmer"
+      },
+      {
+       "id": "cal.cell",
+       "when": "쉬는날 그리고 이번주야간 >= 3",
+       "fill": 4283283116,
+       "fillA": 55
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "moon",
+       "at": "cal.head",
+       "x": 950,
+       "y": 300,
+       "w": 22,
+       "h": 22,
+       "fill": 4294964637,
+       "fillA": 80
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      },
+      {
+       "name": "야간 세 번째 회복",
+       "on": "end",
+       "role": "night",
+       "when": "이번주야간 >= 3",
+       "do": "notify",
+       "arg": "이번 주 야간 {이번주야간}번째예요. 다음 쉬는 날은 회복이 먼저예요"
+      },
+      {
+       "name": "연속근무 경고",
+       "on": "start",
+       "min": -60,
+       "when": "연속근무 >= 5",
+       "do": "notify",
+       "arg": "{연속근무}일째 이어 일해요. 물과 간식을 챙겨요"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "gradual": true,
+     "vibrate": true
+    }
+   ],
+   "cover": {
+    "a": 4279049002,
+    "b": 4279969339,
+    "dir": 2,
+    "emoji": "🌃"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4279049002,
+     "dark": 4279049002
+    },
+    {
+     "name": "카드",
+     "light": 4279969339,
+     "dark": 4279969339
+    },
+    {
+     "name": "글자",
+     "light": 4292927965,
+     "dark": 4292927965
+    },
+    {
+     "name": "포인트",
+     "light": 4284790262,
+     "dark": 4284790262
+    },
+    {
+     "name": "선",
+     "light": 4281089623,
+     "dark": 4281089623
+    }
+   ]
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "타자기 근무표",
+   "summary": "타자기 글꼴과 종이 표, 이달 야간 수가 도장처럼 찍히는 근무표",
+   "desc": "이달 야간이 여덟 번을 넘으면 야간 칸 근무 글자에 노란 빛이 돌아요. 공휴일 근무는 이중선, 메모가 많은 날은 칸이 살짝 숨 쉬어요.\n누구에게 좋아요: 3교대·2교대로 밤낮이 바뀌는 분\n적용하면 바뀌는 것:\n· 누런 종이 질감과 타자기 글꼴\n· 표 줄이 보이는 달력, 공휴일 근무 이중선\n· 야간 많은 달 표시\n· 근무 기록은 근무 끝에 메모 한 줄로\n주의할 점: 근무·메모·가계부 기록은 그대로예요. 메모를 만들거나 메모에 한 줄 더하는 규칙은 넣기 전에 한 번 묻고, 스튜디오 › 규칙·단추에서 끄거나 되돌릴 수 있어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "screenLook",
+     "screens": "all~bg:FFF7EED6|cd:FFFFF9E8|ik:FF3B2F2F|ac:FFA1887F|fl:tx.kraft.FFF7EED6.55|ft:nanumgothiccoding",
+     "pay": "SHIFT~tt:xl|pl:FFFFF9E8|mn:FFA1887F|rw:roomy|dy:1"
+    },
+    {
+     "kind": "calView",
+     "size": "tall",
+     "badge": "small",
+     "date": "center",
+     "text": "normal",
+     "grid": "line",
+     "memo": 2,
+     "looks": "mk:fill|ba:85|cr:2|dp:mc|ds:l|dw:b|pd:2|ff:spacemono/bg:FFFFF9E8|cr:2|dp:mc|ds:l|mk:dot|pd:2|ff:spacemono",
+     "pattern": "shift:off=1",
+     "today": 2
+    },
+    {
+     "kind": "calTheme",
+     "today": 4288776319,
+     "sat": 4280191205,
+     "sun": 4293212469,
+     "holiday": 4293212469,
+     "cell": "tint"
+    },
+    {
+     "kind": "shiftLook",
+     "items": [
+      {
+       "name": "주간",
+       "role": "day",
+       "label": "주",
+       "color": 4290814048,
+       "emoji": "☀️"
+      },
+      {
+       "name": "저녁",
+       "role": "eve",
+       "label": "저",
+       "color": 4289755226,
+       "emoji": "🌆"
+      },
+      {
+       "name": "야간",
+       "role": "night",
+       "label": "야",
+       "color": 4284301367,
+       "emoji": "🌙"
+      },
+      {
+       "name": "휴무",
+       "role": "off",
+       "label": "휴",
+       "color": 4290624957,
+       "emoji": "🛌"
+      }
+     ]
+    },
+    {
+     "kind": "memoLook",
+     "layout": "grid2",
+     "card": "own",
+     "cardColor": 4294965736,
+     "border": "thin",
+     "corner": 4,
+     "lines": 4,
+     "title": "m",
+     "bold": true,
+     "font": "spacemono",
+     "date": true,
+     "bg": 4294438614
+    },
+    {
+     "kind": "moneyLook",
+     "rows": "roomy",
+     "amount": "l",
+     "mark": "emoji",
+     "income": 4281236786,
+     "expense": 4291176488,
+     "dayHead": "band"
+    },
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294965736,
+     "ink": 4282068783,
+     "corner": 4,
+     "text": "m"
+    },
+    {
+     "kind": "tabView",
+     "cal": "month",
+     "memo": "table",
+     "memoBy": "shift",
+     "money": "cal",
+     "memoSort": "title"
+    },
+    {
+     "kind": "appFeel",
+     "theme": "light",
+     "accent": 4288776319,
+     "motion": "tn:fade|td:glow|sp:n"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "app.bar",
+       "fill": {
+        "token": "바탕"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.bar.title",
+       "font": "spacemono",
+       "weight": 700,
+       "ink": {
+        "token": "글자"
+       }
+      },
+      {
+       "id": "app.tabs",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 0,
+       "shadow": 2
+      },
+      {
+       "id": "app.tab",
+       "on": "sel",
+       "ink": {
+        "token": "포인트"
+       },
+       "weight": 700
+      },
+      {
+       "id": "app.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 4,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       },
+       "shadow": 0
+      },
+      {
+       "id": "app.button",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 4,
+       "ink": 4294967295,
+       "weight": 700
+      },
+      {
+       "id": "app.chip",
+       "r": 20,
+       "line": "solid",
+       "lineW": 1,
+       "lineC": {
+        "token": "선"
+       }
+      },
+      {
+       "id": "cal.head",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 4,
+       "pad": 10,
+       "out": 6
+      },
+      {
+       "id": "cal.head.title",
+       "font": "spacemono",
+       "size": 22,
+       "weight": 800,
+       "ink": 4282068783
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "cal.week.day",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "r": 2
+      },
+      {
+       "id": "cal.cell",
+       "on": "today",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "token": "포인트"
+       },
+       "motion": "glow"
+      },
+      {
+       "id": "cal.cell.date",
+       "font": "spacemono",
+       "weight": 600
+      },
+      {
+       "id": "cal.cell",
+       "on": "dim",
+       "alpha": 45
+      },
+      {
+       "id": "memo.card",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 4,
+       "shadow": 0
+      },
+      {
+       "id": "memo.card.title",
+       "weight": 700,
+       "font": "spacemono"
+      },
+      {
+       "id": "money.day",
+       "fill": {
+        "token": "카드"
+       },
+       "r": 10,
+       "padX": 10
+      },
+      {
+       "id": "money.amount",
+       "on": "out",
+       "ink": 4291176488,
+       "weight": 700
+      },
+      {
+       "id": "money.amount",
+       "on": "in",
+       "ink": 4281236786,
+       "weight": 700
+      },
+      {
+       "id": "pay.total",
+       "fill": {
+        "token": "포인트"
+       },
+       "r": 4,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget",
+       "fill": 4294965736,
+       "r": 4,
+       "font": "nanumgothiccoding"
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4288776319,
+       "ink": 4294967295
+      },
+      {
+       "id": "cal.cell.mark",
+       "when": "근무종류 = \"야간\" 그리고 이달야간 >= 8",
+       "tshadow": 6,
+       "tshadowC": 4294964637,
+       "tshadowX": 0,
+       "tshadowY": 0
+      },
+      {
+       "id": "cal.cell",
+       "when": "공휴일 그리고 아님 쉬는날",
+       "line": "double",
+       "lineW": 2.5,
+       "lineC": 4287458915
+      },
+      {
+       "id": "cal.cell",
+       "when": "메모수 >= 3",
+       "motion": "pulse"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "text": "근무표",
+       "at": "cal.head",
+       "x": 840,
+       "y": 500,
+       "w": 110,
+       "h": 28,
+       "ink": 4287458915,
+       "size": 12,
+       "weight": 700,
+       "font": "spacemono",
+       "fill": 4294965736,
+       "fillA": 100,
+       "r": 2
+      },
+      {
+       "shape": "seal",
+       "at": "cal.cell",
+       "on": "role.night",
+       "x": 820,
+       "y": 220,
+       "w": 12,
+       "h": 12,
+       "fill": 4290190364,
+       "fillA": 60
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "근무 끝 한 줄 기록",
+       "on": "end",
+       "min": 5,
+       "do": "memoLine",
+       "arg": "{근무} {근무시작}~{근무끝} · {근무시간}시간"
+      },
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      },
+      {
+       "name": "야간 세 번째 회복",
+       "on": "end",
+       "role": "night",
+       "when": "이번주야간 >= 3",
+       "do": "notify",
+       "arg": "이번 주 야간 {이번주야간}번째예요. 다음 쉬는 날은 회복이 먼저예요"
+      },
+      {
+       "name": "연속근무 경고",
+       "on": "start",
+       "min": -60,
+       "when": "연속근무 >= 5",
+       "do": "notify",
+       "arg": "{연속근무}일째 이어 일해요. 물과 간식을 챙겨요"
+      }
+     ]
+    },
+    {
+     "kind": "memoTpl",
+     "items": [
+      {
+       "title": "인수인계",
+       "emoji": "🩺",
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각"
+       ],
+       "body": "{근무} 근무 · {근무시작}~{근무끝} #인수인계"
+      },
+      {
+       "title": "근무 준비물",
+       "emoji": "🎒",
+       "check": [
+        "사원증",
+        "충전기",
+        "물·간식",
+        "여벌 양말",
+        "필기구"
+       ]
+      },
+      {
+       "title": "근무 회고",
+       "emoji": "📝",
+       "body": "오늘: {근무} {근무시간}시간\n이번 주 야간 {이번주야간}번 · {연속근무}일째\n이달 쓴 돈 {원(이달지출)}\n잘한 것: \n내일 바꿀 것: ",
+       "asks": [
+        {
+         "label": "컨디션",
+         "type": "star"
+        },
+        {
+         "label": "잠",
+         "type": "num"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "kind": "alarms",
+     "byRole": [
+      {
+       "role": "day",
+       "before": [
+        90,
+        60
+       ]
+      },
+      {
+       "role": "eve",
+       "before": [
+        90
+       ]
+      },
+      {
+       "role": "night",
+       "before": [
+        180,
+        60
+       ]
+      }
+     ],
+     "snooze": 5,
+     "gradual": true,
+     "vibrate": true
+    }
+   ],
+   "cover": {
+    "a": 4294174123,
+    "b": 4287458915,
+    "dir": 2,
+    "emoji": "📜"
+   },
+   "tokens": [
+    {
+     "name": "바탕",
+     "light": 4294438614,
+     "dark": 4279374354
+    },
+    {
+     "name": "카드",
+     "light": 4294965736,
+     "dark": 4280163870
+    },
+    {
+     "name": "글자",
+     "light": 4282068783,
+     "dark": 4293717228
+    },
+    {
+     "name": "포인트",
+     "light": 4288776319,
+     "dark": 4288776319
+    },
+    {
+     "name": "선",
+     "light": 4292331943,
+     "dark": 4282006074
+    }
+   ]
+  }
+ }
+]

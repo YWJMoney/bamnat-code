@@ -31,6 +31,18 @@ enum class SettingsGo {
     RECIPES,
     /** [STU-10] 1.35 스튜디오 (화면 꾸미기와 합침). */
     STUDIO,
+    /** [RUL-06] 스튜디오 › 규칙·단추. */
+    STUDIO_RULES,
+    /** [LEAVE-14] 1.36 연차 화면 (설정 › 급여와 연차 › 연차). */
+    LEAVE,
+    /** [PRF-05] 1.36 PC 사용성 P8: 내가 보낸 정보·모두 지우기 (설정 › 개인정보에서도). */
+    SENT,
+    /** [MAT-05] 1.36 스튜디오 › 앱 전체 › 글꼴 (PC 확인 4차: 설정 검색 '글꼴'). */
+    STUDIO_FONT,
+    /** PC 확인 5차: 화면마다 글꼴 (달력 › 색·배경) and 날짜 숫자 글꼴 (달력 › 칸 디자인). */
+    STUDIO_SCREEN_FONT, STUDIO_DATE_FONT,
+    /** [MAT-07] PC 확인 (마을 확인 중 사용성 제안): 스튜디오 › 앱 전체 › 움직임 and › 부품 (each part's own 움직임). */
+    STUDIO_MOTION, STUDIO_PARTS,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

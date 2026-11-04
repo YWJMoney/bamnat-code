@@ -12,6 +12,8 @@ import { ADMIN_CSS } from "./admin/style.js";
 import { todayViews } from "./admin/views/today.js";
 import { plazaViews } from "./admin/views/plaza.js";
 import { insightViews } from "./admin/views/insight.js";
+// 1.36 [GRW-07] 할 일함, [GRW-04]~[GRW-06] 스튜디오 요구·기본 도구 후보·손잡이 지도.
+import { workViews } from "./admin/views/work.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -68,7 +70,7 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews} }`;
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -168,6 +170,7 @@ const ADMIN_HTML = `<!doctype html>
 <div id="app"><div class="center"><div class="spinner" role="progressbar" aria-label="불러오는 중"></div></div></div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <dialog id="dialog" aria-modal="true"></dialog>
+<dialog id="relogin" aria-modal="true"></dialog>
 <noscript>이 화면은 자바스크립트가 켜져 있어야 열려요.</noscript>
 </body>
 </html>
@@ -182,6 +185,10 @@ function adminApp(L, BUILD, M) {
   const app = document.getElementById("app");
   const toastBox = document.getElementById("toast");
   const dialog = document.getElementById("dialog");
+  // 1.36 P17: signing in again has its own box, so a step that closes the box it came from never closes this one.
+  const reloginBox = document.getElementById("relogin");
+  /** Steps that met "signed out": sent again once signed in, dropped when the user goes to the sign-in screen. */
+  let reloginWaiters = [];
 
   const P = {
     home: '<path d="M4 11.5 12 4l8 7.5V20h-5.5v-5h-5v5H4z"/>',
@@ -374,7 +381,7 @@ function adminApp(L, BUILD, M) {
     // AM 1.28 [ADMUX-21][ADMUX-24][ADMUX-25] 기능 관리: 상태 거르기, 찾기, 목록·일정, 미리 보기의 휴대폰.
     flagShow: "all", flagQuery: "", flagView: "", flagSim: null,
     // AT 1.29 [ADMCP-02][ADMCP-06] 문의 종류·복사 전만·같은 기기 거르기, the copy box open now, the row a Shift range starts at.
-    inquiryKind: "", inquiryCopied: "", inquirySender: "", copy: null, pickAnchor: null, bulkMore: false,
+    inquiryKind: "", inquiryCopied: "", inquirySender: "", inquiryBilling: "", copy: null, pickAnchor: null, bulkMore: false,
     // AX 1.30 [ADMX-06][ADMX-09][ADMX-03][ADMX-08] 회사 순서·여러 개, 검토 여러 개, 여러 판 같은 항목도 보기, 찾기·이동의 서버 찾기, 주의 필요 수.
     companySort: "", companyPick: null, reviewPick: null, cmpAll: null, alertsN: 0,
   };
@@ -410,7 +417,7 @@ function adminApp(L, BUILD, M) {
   /** Which state each screen's address filters stand for. */
   const BIND = {
     inquiries: { status: "inquiryStatus", who: "inquiryWho", topic: "inquiryTopic", q: "inquiryQuery", sort: "inquirySort",
-      kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */ },
+      kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */, billing: "inquiryBilling" /* 1.36 [INQ-07] */ },
     dev: { status: "devStatus", who: "devWho", q: "devQuery" },
     review: { show: "reviewFilter" },
     community: { show: "postFilter", q: "postQuery" },
@@ -482,6 +489,15 @@ function adminApp(L, BUILD, M) {
       const data = await res.json().catch(() => ({}));
       if (res.status === 401 && data.error === "login" && S.phase === "app") {
         // [ADMUX-01] Signed out under way: sign in again over the screen, so nothing typed is lost.
+        // 1.36 P17 (서버를 새로 띄운 뒤 첫 쓰기에서 로그인 화면으로): a change waits for the sign-in and then goes on by itself.
+        if (method !== "GET" && path !== "/login") {
+          const again = new Promise((resolve, reject) => reloginWaiters.push({
+            go: () => api(path, method, body).then(resolve, reject),
+            stop: () => reject(Object.assign(new Error("login"), { quiet: true, data })),
+          }));
+          openRelogin();
+          return again;
+        }
         openRelogin();
         throw Object.assign(new Error("login"), { quiet: true, data });
       }
@@ -514,18 +530,38 @@ function adminApp(L, BUILD, M) {
     document.getElementById("main")?.setAttribute("aria-busy", String(S.busy > 0));
   }
 
-  /** [ADMUX-01] A short note at the bottom; with [undo], a button that takes the last step back for 8 seconds. */
+  /**
+   * [ADMUX-01] A short note at the bottom; with [undo], a button that takes the last step back.
+   * 1.36 P19 ('되돌리기가 8초뿐이고 작아요'): 15 seconds, held while the pointer or focus is on the note, and a bigger button.
+   */
   function toast(text, undo) {
     toastBox.innerHTML = `<span>${esc(text)}</span>${undo ? '<button class="undo" type="button" data-undo="1">되돌리기</button>' : ""}`;
     toastBox.classList.add("show");
     toastBox.classList.toggle("has-undo", Boolean(undo));
     S.undo = undo ?? null;
     clearTimeout(toastTimer);
+    toastLeft = undo ? 15000 : 3000;
+    toastRun();
+  }
+  let toastLeft = 0;
+  let toastStarted = 0;
+  function toastRun() {
+    clearTimeout(toastTimer);
+    toastStarted = Date.now();
     toastTimer = setTimeout(() => {
       toastBox.classList.remove("show", "has-undo");
       S.undo = null;
-    }, undo ? 8000 : 3000);
+    }, toastLeft);
   }
+  function toastHold() {
+    if (!toastBox.classList.contains("has-undo")) return;
+    clearTimeout(toastTimer);
+    toastLeft = Math.max(1500, toastLeft - (Date.now() - toastStarted));
+  }
+  toastBox.addEventListener("pointerenter", toastHold);
+  toastBox.addEventListener("focusin", toastHold);
+  toastBox.addEventListener("pointerleave", () => { if (toastBox.classList.contains("has-undo")) toastRun(); });
+  toastBox.addEventListener("focusout", () => { if (toastBox.classList.contains("has-undo")) toastRun(); });
 
   function fail(e) {
     if (!e.quiet) toast(e.message === "server" || !ERRORS[e.message] ? L.errorText(e.message) : ERRORS[e.message]);
@@ -615,6 +651,15 @@ function adminApp(L, BUILD, M) {
     try {
       // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
       if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; S.alertsN = d.alerts?.length ?? 0; })));
+      // 1.36 [GRW-07] 할 일함: 상태와 종류로 거른 한 대기열.
+      if (name === "work") jobs.push(api(`/work?state=${S.workState ?? "open"}${S.workGroup ? `&group=${S.workGroup}` : ""}`).then(keep((d) => { S.data.work = d; })));
+      // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구의 칸마다 제 목록.
+      if (name === "growth") {
+        const t = S.growthTab ?? "needs";
+        const src = { needs: "/growth/needs", unsolved: "/growth/needs?show=unsolved", ended: "/growth/needs?show=ended", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`,
+          map: `/growth/map${S.growthVersion ? `?version=${encodeURIComponent(S.growthVersion)}` : ""}` }[t];
+        jobs.push(api(src).then(keep((d) => { S.data.growth = { tab: t, ...d }; })));
+      }
       // The reason words (검토, 토론), the 채택 settings and answer targets, once.
       if (!S.basics && ["review", "community", "adopt", "sla", "versions"].includes(name)) jobs.push(loadBasics());
       if (name === "review") jobs.push(api("/queue").then(keep((d) => { S.data.queue = d; })));
@@ -632,7 +677,12 @@ function adminApp(L, BUILD, M) {
         // An id is one talk: company.setup, opened from the review screen.
         const [company, setup] = (id ?? "").split(".");
         const q = S.postQuery ? `&q=${encodeURIComponent(S.postQuery)}` : "";
-        if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
+        if (!id && S.postFilter === "limits") jobs.push(api("/write-limits").then(keep((d) => { S.data.limits = d; })));
+        // 1.36 [VIL-21] 마을 운영: 유형 광장마다 이번 주 주제.
+        else if (!id && S.postFilter === "village") {
+          jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })));
+        }
+        else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
         else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
       }
       if (name === "rewards" && can("rewards")) {
@@ -657,9 +707,13 @@ function adminApp(L, BUILD, M) {
       if (name === "recipes") {
         // [RCX-08][RCX-15][RCX-04] 1.35 tabs read their own lists.
         const t = S.recipeTab ?? "flagged";
-        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests" }[t] ?? `/recipes?tab=${t}`;
+        // [PRF-06][PRF-10] 1.36 신고된 프로필, 이달의 제작자.
+        const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`, makers: "/recipes/makers/flagged",
+          month: "/recipes/makers/month", fonts: `/recipes/fonts?state=${S.fontState ?? "pending"}` }[t] ?? (t === "one" ? `/recipes?tab=one&code=${encodeURIComponent(S.recipeCode ?? "")}` : `/recipes?tab=${t}`);
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
+        // 1.36 [MKS-01] 출시 대기 묶음.
+        if (t === "waiting") jobs.push(api("/recipes/release").then(keep((d) => { S.data.recipeRelease = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
       }
       // [ADMIN-19] 알림 on this device, now under 관리 › 내 계정·이 기기.
@@ -702,7 +756,7 @@ function adminApp(L, BUILD, M) {
       const q = S.inquiryQuery ? `&q=${encodeURIComponent(S.inquiryQuery)}` : "";
       const after = more && S.data.inquiries?.next ? `&after=${S.data.inquiries.next}` : "";
       // AT 1.29 [ADMCP-02][ADMCP-06] 문제 신고만, 복사 전만, one phone's questions.
-      const more2 = `${S.inquiryKind ? `&kind=${S.inquiryKind}` : ""}${S.inquiryCopied ? `&copied=${S.inquiryCopied}` : ""}${S.inquirySender ? `&sender=${S.inquirySender}` : ""}`;
+      const more2 = `${S.inquiryKind ? `&kind=${S.inquiryKind}` : ""}${S.inquiryCopied ? `&copied=${S.inquiryCopied}` : ""}${S.inquirySender ? `&sender=${S.inquirySender}` : ""}${S.inquiryBilling ? "&billing=1" : ""}`;
       const d = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}${who}${q}${more2}&sort=${S.inquirySort}${after}`);
       if (n !== undefined && !seq.current("load", n)) return;
       S.data.inquiries = more ? { ...d, inquiries: [...S.data.inquiries.inquiries, ...d.inquiries] } : d;
@@ -886,6 +940,11 @@ function adminApp(L, BUILD, M) {
     // AN 1.28 [ADMUX-31] '지금 기다리는 것' above a hub's first tab.
     main.innerHTML = waitingStrip() + view();
     rememberOpened();
+    // 1.36 [VIL-21] On a phone the 보기 row scrolls sideways: the chosen one is kept in sight (마을 운영 sits last).
+    for (const row of main.querySelectorAll(".segmented")) {
+      const on = row.querySelector('[aria-pressed="true"]');
+      if (on && row.scrollWidth > row.clientWidth) row.scrollLeft = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+    }
     for (const id of KEEP) {
       const el = document.getElementById(id);
       if (el && !typed.has(id) && !el.value) el.value = readDraft(id);
@@ -996,6 +1055,9 @@ function adminApp(L, BUILD, M) {
    */
   const VIEWS = {
     home: () => V.homeView(),
+    // 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
+    work: () => V.workView(),
+    growth: () => V.growthView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
     sort: () => sortView(),
@@ -1039,8 +1101,8 @@ function adminApp(L, BUILD, M) {
     const { name, id } = S.route;
     const d = S.data;
     return Boolean({
-      home: d.today, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
-      companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
+      home: d.today, work: d.work, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
+      companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
     }[name]);
@@ -1064,12 +1126,13 @@ function adminApp(L, BUILD, M) {
 
   function communityView() {
     if (S.postFilter === "rates" && !S.route.id) return ratesView();
+    if (S.postFilter === "limits" && !S.route.id) return limitsView();
+    if (S.postFilter === "village" && !S.route.id) return villageView();
     const d = S.data.posts;
     const edit = can("community", "edit");
     const talk = Boolean(S.route.id);
     const head = talk ? `<p class="hint">이 규칙에 남긴 글 전부예요. 가려진 글도 보여요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`
-      : `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+      : `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>
         <div class="toolbar"><input id="search" type="search" placeholder="회사 이름으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="토론 찾기"></div>
         <p class="hint">앱 사용자가 회사 규칙마다 남긴 글이에요. 서로 다른 세 분이 신고하면 개발자가 볼 때까지 가려져요. 다시 보이게 한 글은 신고로 가려지지 않아요.${edit ? "" : " 보기 권한이라 가리거나 지울 수 없어요."}</p>`;
     if (!d) return head + skeleton();
@@ -1087,6 +1150,92 @@ function adminApp(L, BUILD, M) {
     return head + tools + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk, picking)).join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
   }
 
+  /** 커뮤니티의 보기 칸: 신고·가려짐·모든 글·광장·임금표·쓰기 제한·마을 운영 (1.36 [VIL-21]). */
+  function communityTabs() {
+    return [["flagged", "신고됨", S.overview?.flaggedPosts], ["hidden", "가려짐"], ["all", "모든 글"], ["room", "회사·유형 광장"], ["rates", "임금표"],
+      ["limits", "쓰기 제한"], ["village", "마을 운영"]].map(([k, label, n]) => seg("post-filter", k, S.postFilter, label, n)).join("");
+  }
+
+  /**
+   * 1.36 [VIL-21] 마을 운영 (조사 V11·V21): this week's 이야기 주제 for each kind of work's plaza, shown on top of that plaza in the app.
+   * An empty line takes it off; next Monday (KST) every one is gone by itself.
+   */
+  function roomName(room) {
+    return S.data.village?.items?.find((x) => x.room === room)?.name ?? room;
+  }
+
+  function villageView() {
+    const d = S.data.village;
+    const edit = can("community", "edit");
+    const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>
+      <p class="hint">유형 광장 맨 위에 보이는 이번 주 이야기 주제예요. 쓸 거리가 없을 때 문을 열어 줘요(60자까지, 비우면 숨겨요). 월요일(한국 시간)마다 저절로 비어요.
+      신고된 글은 ‘신고됨’, 신고가 쌓인 사람은 ‘쓰기 제한’, 레시피 신고는 레시피 › 검토 대기에서 봐요.</p>`;
+    if (!d) return head + skeleton();
+    const [, m, dd] = d.week.split("-").map(Number);
+    return head + `<h3>이번 주 이야기 주제</h3><p class="meta">${m}월 ${dd}일(월)부터 이번 주</p><div class="grid">${d.items.map((x) => `<article class="card">
+      <div class="head"><h3>${esc(x.name)}</h3>${x.text ? '<span class="pill ok">보이는 중</span>' : '<span class="pill">없음</span>'}</div>
+      <label class="field"><span>이번 주 이야기 주제 (광장 글쓰기)</span><input id="topic-${esc(x.room)}" type="text" maxlength="60" value="${esc(x.text)}"
+        placeholder="예: 야간 끝나고 잠드는 나만의 방법"${edit ? "" : " readonly"}></label>
+      ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">이야기 주제 저장</button>
+        ${x.text ? `<button class="btn ghost" data-act="topic-clear" data-id="${esc(x.room)}">내리기</button>` : ""}</div>` : ""}
+    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit);
+  }
+
+  const STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
+
+  /**
+   * 1.36 [VIL-19] 이달의 주제 공모: this month's theme for each kind of work (makers put their public recipes in from the app), and
+   * last month's entries by likes, where up to three are picked as 이달의 테마. The makers' 프로 보상 goes the 832 way, by hand for now.
+   */
+  function contestsView(edit) {
+    const d = S.data.contests;
+    if (!d) return skeleton(1);
+    const now = d.items.filter((x) => x.month === d.month);
+    const last = d.items.filter((x) => x.month !== d.month && x.theme);
+    const card = (x, current) => `<article class="card">
+      <div class="head"><h3>${esc(STYLE_NAMES[x.style] ?? x.style)}</h3><span class="pill${x.entries.length ? " info" : ""}">작품 ${x.entries.length}</span>
+        ${!current && x.picks.length ? `<span class="pill ok">고름 ${x.picks.length}/3 · 앱에 보여요</span>` : ""}</div>
+      ${current ? `<label class="field"><span>이달의 공모 주제 (공방 작품)</span><input id="contest-${esc(x.style)}" type="text" maxlength="40" value="${esc(x.theme)}"
+        placeholder="예: 야간 근무용 어두운 테마"${edit ? "" : " readonly"}></label>
+        ${edit ? `<div class="actions"><button class="btn primary" data-act="contest-save" data-id="${esc(x.style)}">공모 주제 저장</button></div>` : ""}`
+        : `<p>${esc(x.theme)}</p>`}
+      ${x.entries.length ? `<ul class="plain">${x.entries.slice(0, 10).map((e) => `<li><label><input type="checkbox" data-pick="${esc(x.month)}|${esc(x.style)}" value="${esc(e.code)}"
+        ${x.picks.includes(e.code) ? "checked" : ""}${edit && !current ? "" : " disabled"}> ${esc(e.title)} <span class="meta">좋아요 ${e.likes} · 쓰는 분 ${e.users} · ${esc(e.code)}</span></label></li>`).join("")}</ul>` : '<p class="meta">아직 넣은 작품이 없어요</p>'}
+      ${edit && !current && x.entries.length ? `<div class="actions"><button class="btn primary" data-act="contest-pick" data-id="${esc(x.month)}|${esc(x.style)}">고른 작품을 이달의 테마로 (3개까지)</button></div>` : ""}
+    </article>`;
+    return `<h3>이달의 주제 공모</h3><p class="hint">달마다 유형별 주제를 정하면 앱 마을 › 공방 맨 위에 보이고, 만든 분이 내 공개 작품을 넣어요(한 사람 한 달 3개). 다음 달에 지난 달 작품 중 3개까지 고르면
+      앱에 ‘지난 달 이달의 테마’로 보여요. 고르면 작품 주인에게 프로 한 달(만든 작품 보상, 작품·달마다 한 번, 1년 12달 상한)이 바로 들어가요.</p>
+      <div class="grid">${now.map((x) => card(x, true)).join("")}</div>
+      ${last.length ? `<h3>지난 달 고르기</h3><div class="grid">${last.map((x) => card(x, false)).join("")}</div>` : ""}`;
+  }
+
+  /**
+   * 1.36 [LIM-10] 신고 누적 쓰기 제한: no one has a daily cap; posts or recipes hidden by reports (or here) restrict the writer for a
+   * while, each time more strictly. Who is restricted now or was in 30 days, the rules in words, and 풀기.
+   */
+  function limitsView() {
+    const d = S.data.limits;
+    const edit = can("community", "edit");
+    const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>`;
+    if (!d) return head + skeleton();
+    const r = d.rules;
+    const step = (i) => { const x = r.steps[i - 1]; return x ? (x.perDay ? `${x.days}일 동안 하루 ${x.perDay}번` : `${x.days}일 쓰기 막기`) : ""; };
+    const rules = `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이 ${r.windowDays}일 안에 ${r.strikes}번이면
+      제한이 걸리고, 받을 때마다 더 줄어요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}. 기간이 지나면 저절로 풀리고, ${r.forgetDays}일 동안 조용하면 한 단계 내려가요.
+      가려진 글을 다시 보이게 하면 그 건은 빠져요.</p>`;
+    // 1.36 PC 6차: 풀거나 끝난 제한은 아래 '최근 30일에 끝난 제한'으로 접혀서, 지금 제한 중인 목록이 바로 비어요.
+    const nowItems = d.items.filter((x) => x.now);
+    const ended = d.items.filter((x) => !x.now);
+    const card = (x) => `<article class="card">
+      <div class="head"><h3>사용자 ${esc(x.who.slice(0, 8))} <span class="dept">${x.step}단계</span></h3>${x.now ? `<span class="pill ${x.perDay ? "warn" : "bad"}">${x.perDay ? `하루 ${x.perDay}번` : "쓰기 막힘"}</span>` : '<span class="pill ok">끝남</span>'}</div>
+      <p class="meta">${esc(day(x.since))}부터 ${esc(day(x.until))}까지 · 제한 ${x.times}번째 · 가려진 글 ${x.strikes}건</p>
+      ${edit && x.now ? `<div class="actions"><button class="btn" data-act="limit-lift" data-id="${esc(x.who)}">지금 풀기</button></div>` : ""}
+    </article>`;
+    const list = nowItems.length ? `<div class="grid">${nowItems.map(card).join("")}</div>`
+      : empty("제한 중인 사람이 없어요", "신고로 가려진 글이 쌓인 사람이 생기면 여기에 보여요.");
+    return head + rules + list + (ended.length ? `<details><summary>최근 30일에 끝난 제한 ${ended.length}</summary><div class="grid">${ended.map(card).join("")}</div></details>` : "");
+  }
+
   /**
    * [PLZ-14] 임금표: market rates people sent. 확인 필요 is one far from the adopted ones that enough people
    * agreed to; an admin adopts it or hides it. Taking an adopted one down needs 광장 규칙 내리기.
@@ -1095,8 +1244,7 @@ function adminApp(L, BUILD, M) {
     const d = S.data.rates;
     const edit = can("community", "edit");
     const n = d?.counts ?? {};
-    const head = `<div class="segmented" role="group" aria-label="보기">${seg("post-filter", "flagged", S.postFilter, "신고됨", S.overview?.flaggedPosts)}
-        ${seg("post-filter", "hidden", S.postFilter, "가려짐")}${seg("post-filter", "all", S.postFilter, "모든 글")}${seg("post-filter", "room", S.postFilter, "회사·유형 광장")}${seg("post-filter", "rates", S.postFilter, "임금표")}</div>
+    const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>
       <div class="chips" role="group" aria-label="임금표 상태">${[["review", "확인 필요"], ["pending", "투표 중"], ["adopted", "채택"], ["hidden", "가려짐"]]
         .map(([k, label]) => `<button type="button" class="chip pick" data-act="rate-filter" data-key="${k}" aria-pressed="${S.rateFilter === k}">${label}${n[k] ? ` ${n[k]}` : ""}</button>`).join("")}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="직종으로 찾기" value="${esc(S.postQuery)}" autocomplete="off" enterkeyhint="search" aria-label="임금표 찾기"></div>
@@ -1132,6 +1280,8 @@ function adminApp(L, BUILD, M) {
       <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.room ? ` <span class="dept">${p.room === "style" ? "유형 광장" : "회사 정보 광장"}</span>` : p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
       <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
       <blockquote>${esc(p.body)}</blockquote>
+      ${Array.isArray(p.poll) && p.poll.length ? `<p class="meta">투표 보기: ${p.poll.map((o) => esc(String(o))).join(" · ")}</p>` : ""}
+      ${p.attach ? `<p class="meta">붙인 작품 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(p.attach)}">${esc(p.attach)}</button></p>` : ""}
       ${p.reasons.length ? `<p class="meta">신고 이유: ${p.reasons.map((r) => `${esc(r.text)} ${r.n}`).join(", ")}</p>` : ""}
       ${p.hidden ? `<p class="note warn">${esc(p.hidden.text)}</p>` : ""}
       <div class="actions">
@@ -1148,9 +1298,10 @@ function adminApp(L, BUILD, M) {
     const reasons = Object.entries(S.overview?.hideReasons ?? {}).filter(([key]) => key !== "flags");
     openDialog(`<form data-form="hide-post" data-id="${id}" data-mute="${mute ? 1 : 0}"><h2>${mute ? "30일 동안 쓰기를 막을까요?" : "이 글을 가릴까요?"}</h2>
       <p>${mute ? "이 글은 가려지고, 글쓴이는 30일 동안 어느 토론에도 글을 쓸 수 없어요. " : ""}글쓴이 앱에 이 이유가 보여요.</p>
-      <div class="radios">${reasons.map(([key, text], i) => `<label class="radio"><input type="radio" name="reason" value="${key}"${i === 0 ? " checked" : ""}>
+      <div class="radios" role="radiogroup" aria-label="가리는 이유">${reasons.map(([key, text]) => `<label class="radio"><input type="radio" name="reason" value="${key}" required>
         <span>${esc(text)}</span></label>`).join("")}</div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">${mute ? "막기" : "가리기"}</button></div></form>`);
+      <p class="hint" data-reason-hint>이유를 고르면 ${mute ? "막기" : "가리기"}를 누를 수 있어요.</p>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit" disabled>${mute ? "막기" : "가리기"}</button></div></form>`);
   }
 
   async function moderate(id, body, done, undo) {
@@ -1230,7 +1381,7 @@ function adminApp(L, BUILD, M) {
       <div class="filterbar"><div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"], ["free", "아무도 안 맡은 것"], ["late", "놓친 것(하루 넘음)"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="inquiry-who" data-key="${key}" aria-pressed="${S.inquiryWho === key}">${label}</button>`).join("")}</div>${kindChips()}${topicChips(d)}</div>`;
     if (!d) return head + skeleton();
-    const filtered = S.inquiryQuery || S.inquiryWho || S.inquiryTopic || S.inquiryKind || S.inquiryCopied || S.inquirySender;
+    const filtered = S.inquiryQuery || S.inquiryWho || S.inquiryTopic || S.inquiryKind || S.inquiryCopied || S.inquirySender || S.inquiryBilling;
     if (!d.inquiries.length) {
       return head + freshStrip(d) + empty(S.inquiryQuery ? "찾는 문의가 없어요" : S.inquiryCopied === "no" ? "복사 전인 문의가 없어요. 모두 개발에 넘겼어요" : S.inquiryWho === "late" ? "하루 넘게 기다리는 문의가 없어요. 잘하고 있어요" : S.inquiryWho === "mine" ? "내가 맡은 문의가 없어요" : S.inquiryStatus === "open" ? "답을 기다리는 문의가 없어요" : "목록이 비어 있어요",
         S.inquiryQuery ? "다른 말로 찾아보세요. 보낸 분과 관리자가 쓴 글, 앱 판·기기 이름, 문의 번호를 모두 찾아요." : S.inquiryWho === "mine" ? "문의를 열어 내가 맡기를 누르거나 답하면 여기에 모여요." : "앱에서 문의가 오면 여기와 메뉴에 숫자로 보여요.",
@@ -1260,8 +1411,9 @@ function adminApp(L, BUILD, M) {
     return `<div class="chips" role="group" aria-label="종류와 복사">${kinds.map(([key, label]) =>
       `<button type="button" class="chip pick" data-act="inquiry-kind" data-key="${key}" aria-pressed="${S.inquiryKind === key}">${label}</button>`).join("")}
       <button type="button" class="chip pick" data-act="inquiry-copied" data-key="no" aria-pressed="${S.inquiryCopied === "no"}">복사 전만</button>
+      <button type="button" class="chip pick" data-act="inquiry-billing-only" aria-pressed="${S.inquiryBilling === "1"}" title="전자상거래법에 따라 3년 보관하는 문의(보낸 분이 지운 것 포함)">결제·환불 기록</button>
       ${S.inquirySender ? `<button type="button" class="chip pick" data-act="inquiry-sender" data-key="" aria-pressed="true">같은 기기 #${esc(S.inquirySender)} ✕</button>` : ""}
-      ${S.inquiryKind || S.inquiryCopied || S.inquirySender ? '<button type="button" class="chip pick" data-act="inquiry-clear">조건 지우기</button>' : ""}</div>`;
+      ${S.inquiryKind || S.inquiryCopied || S.inquirySender || S.inquiryBilling ? '<button type="button" class="chip pick" data-act="inquiry-clear">조건 지우기</button>' : ""}</div>`;
   }
 
   /**
@@ -1299,6 +1451,7 @@ function adminApp(L, BUILD, M) {
     if (e.action === "inquiry_status") return `${by}님이 ${e.detail === "closed" ? "닫았어요" : e.detail === "open" ? "다시 열었어요" : `상태를 ${STATUS_NAMES[e.detail] ?? e.detail}(으)로 바꿨어요`}`;
     if (e.action === "inquiry_hide") return `${by}님이 모두의 문의에서 숨겼어요`;
     if (e.action === "inquiry_show") return `${by}님이 다시 보이게 했어요`;
+    if (e.action === "inquiry_billing") return `${by}님이 결제·환불 기록${e.detail === "on" ? "으로 정했어요(3년 보관)" : "에서 뺐어요"}`;
     if (e.action === "dev_link") return `${by}님이 개발사항 "${e.detail}"에 연결했어요`;
     return `${by} · ${ACTION_NAMES[e.action] ?? e.action}`;
   }
@@ -1338,7 +1491,7 @@ function adminApp(L, BUILD, M) {
           <div class="thread">${thread}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
-            <p class="meta">사진은 위치 정보를 지운 채로 받았어요. 문의를 닫고 90일 뒤에 지워져요.</p>` : ""}</div>
+            <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
@@ -1359,6 +1512,7 @@ function adminApp(L, BUILD, M) {
             ${q.status === "closed" ? '<button class="btn" data-act="inquiry-state" data-status="open">다시 열기</button>'
             : '<button class="btn" data-act="inquiry-state" data-status="closed">닫기</button>'}</div></section>` : ""}
         ${copiedCard(q) /* AT 1.29 */}
+        ${billingCard(q, editable) /* 1.36 [INQ-07] */}
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
           ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
         ${q.public ? `<section class="card"><h2>모두의 문의</h2>
@@ -1375,6 +1529,18 @@ function adminApp(L, BUILD, M) {
             <div class="actions"><button class="btn small" type="submit">메모 남기기</button></div></form>` : ""}</section>
         <details class="card"><summary>기록</summary>${timeline(q)}</details>
       </aside></div>`;
+  }
+
+  /**
+   * 1.36 [INQ-07] 결제·환불 기록: the 전자상거래법 keeps a 소비자 불만·분쟁 처리 기록 three years from its last word,
+   * even when the asker deletes it. Set from the words when it came; the admin sets or clears it by hand.
+   */
+  function billingCard(q, editable) {
+    const day = (iso) => (iso ? new Date(iso).toLocaleDateString("ko-KR") : "");
+    return `<section class="card"><h2>결제·환불 기록</h2>
+      <p class="meta">${q.billing ? `법에 따라 ${esc(day(q.billing.keepUntil))}까지 보관해요(마지막 글부터 3년).` : "아니에요. 마지막 글부터 180일 뒤에 지워져요."}
+        ${q.leftByAsker ? " 보낸 분이 앱에서 지웠어요. 앱에는 보이지 않고 답도 닿지 않아요." : ""}</p>
+      ${editable ? `<div class="actions start"><button class="btn" data-act="inquiry-billing" data-on="${q.billing ? "" : "1"}">${q.billing ? "기록에서 빼기" : "결제·환불 기록으로 정하기"}</button></div>` : ""}</section>`;
   }
 
   /**
@@ -2203,15 +2369,27 @@ function adminApp(L, BUILD, M) {
 
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
-  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
-    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "그림 검토"], ["requests", "요청 판"]];
+  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
+    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"], ["fonts", "나눈 글꼴"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
+  /**
+   * PC 확인 보안 6차 (신고 광고·도배 2가 세지 않은 것까지 합한 수): what counted toward hiding a recipe and all that came, with
+   * reasons. "신고 2 (광고·도배 2)" when all counted, "센 신고 1 · 전체 2 (광고·도배 2)" when some went to the operator only.
+   */
+  function recipeFlagCount(flags) {
+    const all = flags.reduce((a, f) => a + f.n, 0);
+    const counted = flags.reduce((a, f) => a + (f.counted ?? f.n), 0);
+    const why = flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ");
+    return `${counted === all ? `신고 ${all}` : `센 신고 ${counted} · 전체 ${all}`} (${why})`;
+  }
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
     field: "현장 단가표 틀", shop: "가게 영업 틀", invest: "투자 원칙·일지 틀", company: "근무 주기·급여 방식",
     bundle: "묶음", layout: "화면 배치", cards: "카드 순서", widget: "위젯 모양", photoLook: "그림 꾸미기", calView: "달력 모양", appFeel: "앱 동작",
     memoLook: "메모장 모양", moneyLook: "가계부 모양", screenLook: "화면 색·배경" };
-  const RECIPE_ACTS = { approve: "올림", return: "돌려줌", hide: "가림", show: "다시 보임", delete: "지움", official: "공식", showcase: "보여주기", auto: "자동 가림" };
+  const RECIPE_ACTS = { approve: "올림", return: "돌려줌", hide: "가림", show: "다시 보임", delete: "지움", official: "공식", showcase: "보여주기", auto: "자동 가림",
+    // 1.36 [MKS-01]
+    waiting: "출시 대기에 넣음", release: "출시 대기에서 공개", schedule: "공개 예약" };
 
   /** What a recipe holds, in words: its pieces and the 받는 사람이 정할 칸 (never run, only read). */
   function recipeParts(body) {
@@ -2221,6 +2399,10 @@ function adminApp(L, BUILD, M) {
     } catch { return ""; }
   }
 
+  // 1.36 장터 네 구간 (앱 마을 › 장터 칩과 같은 이름).
+  const RECIPE_SECTIONS = { theme: "테마", tab: "탭 하나", part: "부품", logic: "규칙·단추" };
+  const RECIPE_TAB_WORDS = { calendar: "달력", memo: "메모", money: "가계부", pay: "근무·급여", app: "앱 전체", widget: "위젯", alarm: "알람" };
+
   function recipesView() {
     const d = S.data.recipes;
     const m = S.data.recipeMonth;
@@ -2229,43 +2411,92 @@ function adminApp(L, BUILD, M) {
     const chips = `<div class="chips" role="group" aria-label="보기">${RECIPE_TABS.map(([k, label]) =>
       `<button type="button" class="chip pick" data-act="recipe-tab" data-key="${k}" aria-pressed="${tab === k}">${esc(label)}</button>`).join("")}</div>`;
     const month = m ? `<p class="hint">${esc(m.month)} · 새 레시피 ${m.made}개 · ${Object.entries(m.actions ?? {}).map(([k, n]) => `${esc(RECIPE_ACTS[k] ?? k)} ${n}`).join(" · ") || "처리 없음"}</p>` : "";
-    if (!d || (d.tab ?? tab) !== tab) return chips + skeleton(2);
+    if (!d || (d.tab ?? tab) !== tab || (tab === "one" && d.code !== S.recipeCode)) return chips + skeleton(2);
     if (tab === "picks") return chips + recipePicksView(d, edit);
     if (tab === "images") return chips + recipeImagesView(d, edit);
+    // 1.36 [GRW-05] 기본 도구 후보·모두의 도구 (문의 › 스튜디오 요구에도 같은 목록).
+    if (tab === "tools") return chips + V.toolsBlock(d, edit);
     if (tab === "requests") return chips + recipeRequestsView(d, edit);
+    if (tab === "makers") return chips + recipeMakersView(d, edit);
+    if (tab === "month") return chips + recipeMonthView(d, edit);
+    if (tab === "fonts") return chips + recipeFontsView(d, edit);
     const help = {
       queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
-      flagged: "신고가 들어온 레시피예요. 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요.",
+      flagged: "신고가 들어온 레시피예요. 다른 회선의 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요. 새 기기(3일 안)의 신고와 같은 회선의 두 번째 신고는 여기에만 보이고 가리기에는 세지 않아요.",
       hidden: "가린 레시피는 90일 뒤 지워져요.",
       visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
       official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
       // [RCX-32]
+      one: `작품 ${S.recipeCode ?? ""} 하나만 보고 있어요. 가리기·지우기도 여기서 바로 할 수 있어요.`,
+      // 1.36 [MKS-01]
+      waiting: "앱 업데이트와 함께 장터에 나올 운영자 작품이에요. 아직 아무에게도 안 보여요. 묶음마다 ‘지금 공개’하거나 공개할 때를 예약해요. ‘이 판부터’를 적은 작품은 공개한 뒤에도 그 판 이상 앱에만 보여서, 업데이트한 분부터 바로 보고 옛 앱에는 안 보여요.",
       showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
     }[tab];
-    const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main">
-        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b> <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
+    const sec = S.recipeSection ?? "all";
+    const secChips = d.items.some((r) => r.section) ? `<div class="chips" role="group" aria-label="구간">${[["all", "모든 구간"], ...Object.entries(RECIPE_SECTIONS)].map(([k, label]) =>
+      `<button type="button" class="chip pick" data-act="recipe-section" data-key="${k}" aria-pressed="${sec === k}">${esc(label)} ${k === "all" ? d.items.length : d.items.filter((r) => r.section === k).length}</button>`).join("")}</div>` : "";
+    const shown = sec === "all" ? d.items : d.items.filter((r) => r.section === sec);
+    const rows = shown.length ? `<ul class="rows">${shown.map((r) => `<li><div class="row"><span class="row-main">
+        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b>${r.section ? ` <span class="pill">${esc(RECIPE_SECTIONS[r.section] ?? r.section)}${r.tabs?.length ? ` · ${r.tabs.map((t) => esc(RECIPE_TAB_WORDS[t] ?? t)).join("·")}` : ""}</span>` : ""} <small>${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
-        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · 신고 ${r.flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ")}` : ""}</small>
-        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc(r.hidden)}</small>` : ""}
+        ${r.parent ? `<small>고친 판 · 원본 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(r.parent)}">${esc(r.parent)}</button></small>` : ""}
+        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
+        ${r.batch || r.releaseAt || r.minApp ? `<small>${[r.batch ? `묶음 ${esc(r.batch)}` : "", r.releaseAt ? `공개 예약 ${esc(new Date(r.releaseAt).toLocaleString("ko-KR"))}` : "", r.minApp ? `앱 판 ${r.minApp} 이상만` : ""].filter(Boolean).join(" · ")}</small>` : ""}
+        ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
+        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림" }[r.hidden] ?? r.hidden)}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
-          ${r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`}
+          ${r.state === "waiting" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="show">이것만 지금 공개</button>`
+            : r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`}
           ${r.official ? "" : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`}
           ${r.state === "visible" && r.scope === "public" ? `<button class="btn small" data-act="recipe-showcase" data-id="${r.code}" data-key="${r.showcase ? "off" : "on"}">${r.showcase ? "보여주기에서 빼기" : "보여주기에 넣기"}</button>` : ""}
           ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
           <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
       : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
-    const upload = edit && (tab === "official" || tab === "showcase") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
+    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) : "";
+    const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
       <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
       <textarea name="recipe" rows="8" required></textarea>
       ${tab === "showcase" ? `<p class="hint">showcase-recipes.json 전체를 붙여 넣으면 30개가 한 번에 올라가요. 하나만 붙여 넣어도 보여주기로 올라가요.</p><input type="hidden" name="showcase" value="on">`
-        : `<label class="switch"><input type="checkbox" name="publicData"><span class="track" aria-hidden="true"></span><span>공공 자료 레시피 (공개 자료 탭)</span></label>`}
+        : tab === "waiting" ? "" : `<label class="switch"><input type="checkbox" name="publicData"><span class="track" aria-hidden="true"></span><span>공공 자료 레시피 (공개 자료 탭)</span></label>`}
+      ${recipeHoldFields(tab === "waiting")}
       <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form>` : "";
     const log = S.recipeLog ? (S.data.recipeLog ? `<h3>처리 기록</h3><ul class="rows">${S.data.recipeLog.items.slice(0, 100).map((a) =>
       `<li><div class="row"><span class="row-main"><b>${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor ?? "")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
       : `<button class="btn" data-act="recipe-log">처리 기록 보기</button>`;
-    return `${chips}${month}<p class="hint">${esc(help)}</p>${rows}${upload}${log}`;
+    // 1.36 [GRW-12] 작품 하나를 연 곳(사진 검토·고친 판)으로 돌아가기.
+    const back = tab === "one" ? `<p><button type="button" class="btn small" data-act="recipe-tab" data-key="${esc(S.recipeBack ?? "flagged")}">← 돌아가기 · ${esc(RECIPE_TABS.find(([k]) => k === (S.recipeBack ?? "flagged"))?.[1] ?? "목록")}</button></p>` : "";
+    const ph = tab === "one" ? S.recipePhoto : null;
+    const photo = ph ? `<div class="card"><div class="row"><span class="row-main">
+        <button type="button" class="linkish" data-act="photo-big" aria-label="사진 크게 보기"><img src="data:image/webp;base64,${esc(ph.data)}" alt="보러 온 사진" width="128" height="128" class="cover-img"></button>
+        <b>보러 온 사진${ph.whyName ? ` <span class="pill ${ph.state === "held" ? "bad" : "warn"}">${esc(ph.whyName)}</span>` : ""}</b>
+        ${ph.done ? `<small>${ph.done === "ok" ? "보이게 했어요" : "가렸어요"}</small>` : ""}</span>
+        ${edit && !ph.done ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="ok">보이기</button>
+          <button class="btn small danger" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="hide">가리기</button></span>` : ""}</div></div>` : "";
+    return `${chips}${month}${back}<p class="hint">${esc(help)}</p>${photo}${tab === "one" ? "" : release}${tab === "one" ? "" : secChips}${rows}${upload}${tab === "one" ? "" : log}`;
+  }
+
+  /** 1.36 [MKS-01] 출시 대기로 넣기: hold, 이 판부터 (versionCode), 묶음 이름, 같은 이름은 새 판으로. */
+  function recipeHoldFields(on) {
+    return `<fieldset class="card"><legend>출시 대기</legend>
+      <label class="switch"><input type="checkbox" name="hold"${on ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>출시 대기로 넣기 (공개 전까지 아무에게도 안 보여요)</span></label>
+      <label>묶음 이름 <input name="batch" maxlength="40" placeholder="예: 1.36 출시 작품" value="${on ? "1.36 출시 작품" : ""}"></label>
+      <label>이 앱 판부터 보이기 (versionCode, 비우면 모든 앱) <input name="minApp" inputmode="numeric" pattern="[0-9]*" maxlength="6"></label>
+      <label class="switch"><input type="checkbox" name="replace"${on ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>같은 이름의 운영자 작품은 새 판으로 고치기 (다시 넣어도 두 개가 되지 않아요)</span></label>
+      <p class="hint">파일 안의 항목에 hold·batch·minApp·replace가 있으면 그것이 먼저예요.</p></fieldset>`;
+  }
+
+  /** 1.36 [MKS-01] 출시 대기 묶음: 몇 개, 예약, 지금 공개. */
+  function recipeReleaseView(d, edit) {
+    if (!d) return skeleton(1);
+    if (!d.items.length) return `<p class="hint">출시 대기 중인 작품이 없어요.</p>`;
+    return `<ul class="rows">${d.items.map((b) => `<li><form data-form="recipe-release" data-key="${esc(b.batch ?? "")}" data-n="${b.n}" class="row">
+      <span class="row-main"><b>${esc(b.batch ?? "묶음 없음")}</b><small>${b.n}개 기다림${b.minApp ? ` · 앱 판 ${b.minApp} 이상만` : ""}${b.releaseAt ? ` · 공개 예약 ${esc(new Date(b.releaseAt).toLocaleString("ko-KR"))}` : " · 예약 없음"}</small>
+      ${edit ? `<label>공개할 때 <input type="datetime-local" name="at"></label>` : ""}</span>
+      ${edit ? `<span class="row-side"><button class="btn small" type="submit" name="do" value="schedule">예약</button>
+        ${b.releaseAt ? `<button class="btn small" type="submit" name="do" value="unschedule">예약 풀기</button>` : ""}
+        <button class="btn small primary" type="submit" name="do" value="now">지금 공개</button></span>` : ""}</form></li>`).join("")}</ul>`;
   }
 
   /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
@@ -2279,14 +2510,87 @@ function adminApp(L, BUILD, M) {
   }
 
   /** [RCX-15] 1.35 그림 표지: shown to others only after a look here. */
+  // 1.36 [GRW-08] 사진 세 겹: 운영자가 보는 것은 새싹 첫 사진·자동 검사에 걸린 것·신고로 먼저 가린 것뿐이에요.
+  const PHOTO_FLAG_NAMES = { nude: "성적인 사진", violence: "폭력·잔인", personal: "개인정보", copy: "남의 저작물", other: "그 밖" };
   function recipeImagesView(d, edit) {
-    if (!d.items.length) return empty("볼 그림이 없어요", "레시피 표지로 올린 그림이 여기 와요. 본 그림만 다른 분께 보여요.");
-    return `<p class="hint">사람 얼굴·개인정보·광고·남의 저작물이 보이면 가려요. 괜찮으면 보이기를 눌러요.</p>
-      <ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
-        <img src="data:image/webp;base64,${esc(i.data)}" alt="레시피 표지 그림" width="128" height="128" class="cover-img">
-        <small>${esc(i.id)} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
+    const c = d.counts ?? {};
+    const rules = d.rules ?? { lookFirst: 3, flagsToHold: 2 };
+    const head = `<p class="hint">세 겹으로 봐요. ① 올릴 때 자동 검사(설정되어 있으면) ② 새싹은 첫 ${rules.lookFirst}장만 여기서 보고, 그 뒤와 이웃·단골은 바로 보여요 ③ 신고 ${rules.flagsToHold}번이면 먼저 가려져 여기로 와요.
+      얼굴·개인정보·성적인 사진·남의 저작물이면 가리기(쓰기 제한 한 번), 괜찮으면 보이기(신고는 비워요).</p>
+      <p class="meta">새싹 첫 사진 ${c.pending ?? 0} · 먼저 가린 것 ${c.held ?? 0}</p>`;
+    if (!d.items.length) return `${head}${empty("볼 사진이 없어요", "새싹의 첫 사진, 자동 검사에 걸린 사진, 신고로 먼저 가린 사진이 여기 와요.")}`;
+    return `${head}<ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
+        <img src="data:image/webp;base64,${esc(i.data)}" alt="올린 사진" width="128" height="128" class="cover-img">
+        <b>${i.whyName ? `<span class="pill ${i.state === "held" ? "bad" : "warn"}">${esc(i.whyName)}</span>` : ""}${i.state === "held" ? ' <span class="pill">다른 분께 가려짐</span>' : ""}</b>
+        <small>${i.uses?.length ? `${i.uses.map((u, k) => `${k ? "" : "작품 "}${esc(u.title)} (<button type="button" class="linkish" data-act="recipe-open" data-id="${esc(u.code)}" data-key="${esc(i.id)}" aria-label="작품 ${esc(u.title)} 열기">${esc(u.code)} 열기</button>)`).join(" · ")}${i.uses.length > 1 ? ` · 같은 사진 ${i.uses.length}곳` : ""}` : "아직 작품에 쓰이지 않음"} · 올린 분 ${esc(i.trustName ?? "새싹")}</small>
+        <small>${i.flags ? `신고 ${i.flags}번 (${Object.entries(i.reasons ?? {}).map(([k, n]) => `${esc(PHOTO_FLAG_NAMES[k] ?? k)} ${n}`).join(", ")}) · ` : ""}자동 검사 ${esc({ pass: "통과", block: "걸림" }[i.checked] ?? (rules.checkOn ? "안 함(늦거나 답이 분명하지 않음)" : "안 함(검사 모델 설정 전)"))} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+
+  /** [PRF-06] 1.36 프로필 신고: 사칭·나쁜 소개. 3건이면 소개가 먼저 가려져요. Who reported is never shown. */
+  function recipeMakersView(d, edit) {
+    if (!d.items.length) return empty("신고된 프로필이 없어요", "앱의 프로필 › ⋮ › 신고하기로 들어온 것이 여기 와요.");
+    const why = { impersonate: "사칭", bio: "나쁜 소개", spam: "광고·도배", other: "그 밖의 것" };
+    return `<p class="hint">소개만 문제면 소개를 가리고, 사칭이면 프로필을 닫아요. 닫힌 프로필은 다른 분이 볼 수도 팔로우할 수도 없고, 작품은 장터에 남아요(작품은 레시피 탭에서 따로 가려요). 문제없으면 신고를 비워요.</p>
+      <ul class="rows">${d.items.map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.face ?? "🙂")} ${esc(m.nick ?? "이름 없음")}</b>
+        <small>${esc(m.maker)} · 신고 ${m.flags}건 · ${Object.entries(m.reasons ?? {}).map(([k, n]) => `${esc(why[k] ?? k)} ${n}`).join(", ")} · ${esc(ago(m.at))}</small>
+        <small>소개: ${m.bio ? esc(m.bio) : "없음"}${m.bioHidden ? ` <span class="pill warn">${m.bioHiddenBy === "operator" ? "운영자가 소개 가림" : "신고로 소개 가림"}</span>` : ""}${m.closed ? ' <span class="pill warn">프로필 닫힘</span>' : ""}</small></span>
+        ${edit ? `<span class="row-side">
+          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.bioHidden ? "bio-show" : "bio-hide"}">${m.bioHidden ? "소개 다시 보이기" : "소개 가리기"}</button>
+          <button class="btn small ${m.closed ? "" : "danger"}" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.closed ? "open" : "close"}">${m.closed ? "프로필 다시 열기" : "프로필 닫기"}</button>
+          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="clear">신고 비우기</button></span>` : ""}</div></li>`).join("")}</ul>`;
+  }
+
+  /** [PRF-10] 1.36 이달의 제작자: up to three maker ids for each kind of work; with none, the most put-on makers of the month show. */
+  function recipeMonthView(d, edit) {
+    const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.maker);
+    return `<p class="hint">${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위(팔로우한 분이 없는 분)에 보여요. 비워 두면 이달에 가장 많이 넣은 작품의 만든 분이 저절로 보여요. 프로필 id(12자)는 레시피 탭의 ‘도우미 배지’ 옆이나 앱의 프로필 링크 끝에 있어요.</p>
+      <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-month" data-key="${k}" class="row">
+        <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음 (저절로)"}</small>
+        ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="프로필 id 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
+        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
+  }
+
+  /**
+   * [MAT-06] 1.36 나눈 글꼴: 신고 셋이면 저절로 내려가요. 라이선스가 맞으면 다시 올리고, 아니면 내린 채로 둬요.
+   * 1.36 [SEC-10] 보안 점검 H3·M7·M8: 나누는 글꼴은 모두 여기서 본 뒤에 다른 분께 가요. 글꼴이 스스로 밝힌 이름·만든 곳·라이선스 글을 함께 보여요.
+   */
+  function recipeFontsView(d, edit) {
+    const state = d.state ?? "pending";
+    const names = { pending: "확인 기다림", reported: "신고로 내려감", hidden: "내린 것", ok: "나누는 중" };
+    const whys = { license: "라이선스가 의심돼요", broken: "글자가 깨져요", bad: "불쾌한 모양" };
+    const sub = `<div class="chips" role="group" aria-label="글꼴 상태">${Object.entries(names).map(([k, label]) =>
+      `<button type="button" class="chip pick" data-act="font-state" data-key="${k}" aria-pressed="${state === k}">${esc(label)} ${d.counts?.[k] ?? 0}</button>`).join("")}</div>`;
+    if (!d.items.length) return sub + empty({ pending: "확인을 기다리는 글꼴이 없어요", reported: "신고로 내려간 글꼴이 없어요" }[state] ?? "글꼴이 없어요", "앱에서 공개 글꼴(OFL 등)이라고 밝히고 레시피와 함께 나눈 글꼴이 여기 보여요.");
+    const says = { ofl: "글꼴 안에 OFL이라고 적혀 있어요", apache: "글꼴 안에 Apache라고 적혀 있어요" };
+    // 1.36 PC 12차 ('신고 0 · 글자가 깨져요 1'로 숫자가 맞지 않음): every report, its reasons in brackets, and how many count toward taking
+    // it down when that differs (새로 깐 휴대폰·같은 회선의 둘째 신고는 내림에 세지 않아요, 보안 점검 M3).
+    const reportLine = (f) => {
+      const all = Object.values(f.whys ?? {}).reduce((a, n) => a + n, 0);
+      const reasons = Object.entries(f.whys ?? {}).map(([k, n]) => `${esc(whys[k] ?? k)} ${n}`).join(" · ");
+      return `신고 ${Math.max(all, f.reports)}${reasons ? `(${reasons})` : ""}${all > f.reports ? ` · 내림에 세는 것 ${f.reports}` : ""}`;
+    };
+    const own = (f) => {
+      const i = f.info ?? {};
+      const bits = [i.family && `이름 ${i.family}`, i.maker && `만든 곳 ${i.maker}`, i.designer && `디자이너 ${i.designer}`, i.vendor && `회사 코드 ${i.vendor}`].filter(Boolean);
+      return `<small>${bits.length ? esc(bits.join(" · ")) : "글꼴 안에 이름 정보가 없어요"}</small>
+        <small>${f.says ? `<span class="pill ok">${esc(says[f.says])}</span>` : '<span class="pill warn">글꼴 안에 OFL·Apache 글이 없어요</span>'}${i.license ? ` ${esc(i.license.slice(0, 160))}` : ""}${i.licenseUrl ? ` · ${esc(i.licenseUrl)}` : ""}</small>
+        ${i.copyright ? `<small>${esc(i.copyright.slice(0, 160))}</small>` : ""}
+        ${like(f)}`;
+    };
+    // 1.36 [SEC-10] M8 (PC 7차): 이미 나누는 글꼴과 같은 글자 모양이거나 같은 이름·저작권이면 나란히 보여요. 크기 차이가 작으면 이름만 바꾼 복사본일 수 있어요.
+    const likeWhy = { glyphs: "글자 모양이 같은", family: "글꼴 이름이 같은", copyright: "저작권 글이 같은" };
+    const bytesDiff = (n) => n === 0 ? "크기 같음" : `${n > 0 ? "+" : "−"}${Math.abs(n) < 1024 ? `${Math.abs(n)}B` : `${(Math.abs(n) / 1024).toFixed(1)}KB`}`;
+    const like = (f) => (f.like ?? []).length ? `<small class="like">${f.like.map((l) =>
+      `<span class="pill ${l.why === "glyphs" ? "ok" : "warn"}">${esc(likeWhy[l.why] ?? "비슷한")} 글꼴을 나누는 중: ${esc(l.name)} · ${esc(bytesDiff(l.diff))}</span>`).join(" ")}</small>` : "";
+    return `${sub}<p class="hint">${state === "pending" ? "다른 분께 가기 전에 보는 글꼴이에요. 글꼴 안의 이름·만든 곳·라이선스 글이 보낸 분이 고른 라이선스와 맞는지 봐요. 맞으면 나누기, 유료 글꼴이거나 알 수 없으면 내리기를 눌러요." : "글꼴 이름으로 찾아 라이선스(OFL·Apache·무료 공개)가 맞는지 봐요. 맞으면 다시 올리기, 상용 글꼴이면 내리기를 눌러요."}</p>
+      <ul class="rows">${d.items.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(f.name)}</b>
+        <small>보낸 분이 고른 것: ${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · ${reportLine(f)} · ${esc(ago(f.at))}</small>
+        ${own(f)}
+        <small class="mono">${esc(f.id)}</small></span>
+        ${edit ? `<span class="row-side">${f.state !== "ok" ? `<button class="btn small primary" data-act="recipe-font" data-id="${f.id}" data-key="ok">${f.state === "pending" ? "나누기" : "다시 올리기"}</button>` : ""}
+          ${f.state !== "hidden" ? `<button class="btn small danger" data-act="recipe-font" data-id="${f.id}" data-key="hide">내리기</button>` : ""}</span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
   /** [RCX-04] 1.35 요청 판: what people asked to be made; hide one that breaks the rules. Who wrote it is never shown. */
@@ -2295,7 +2599,7 @@ function adminApp(L, BUILD, M) {
     const states = { waiting: "기다리는 중", making: "만드는 중", done: "완성" };
     const style = Object.fromEntries(RECIPE_STYLES);
     return `<ul class="rows">${d.items.map((q) => `<li><div class="row"><span class="row-main"><b>${esc(q.body)}</b>
-        <small>${esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
+        <small>${q.style === "ALL" ? "모든 유형" : esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)}${q.askers ? ` · 스튜디오 요구 ${q.askers}명` : ""} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
         ${edit ? `<span class="row-side"><button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button></span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
@@ -2403,9 +2707,40 @@ function adminApp(L, BUILD, M) {
         : empty("자주 쓰는 답이 없어요", "새 답을 넣으면 모든 관리자의 답 칸 아래에 보여요.")}`;
   }
 
+  /**
+   * 1.36 [SEC-11] 서버 상태's Play Integrity part: which way INTEGRITY_MODE is set, today's numbers, and what to do next. require
+   * without a working service account would turn every public write away, so that shows as the thing to fix first.
+   */
+  function integrityPart(g) {
+    if (!g) return "";
+    const MODE = { off: "꺼짐", watch: "지켜보기", require: "막기" };
+    const say = {
+      off: "남에게 보이는 쓰기(공개 올리기·사진·글꼴·신고·초대)에 Play 확인을 묻지 않아요",
+      watch: "Play 확인을 묻기만 하고 막지는 않아요. 아래 숫자로 막았을 때 얼마나 걸릴지 봐요",
+      require: "7일 안에 Play 확인을 받은 휴대폰만 남에게 보이는 쓰기를 할 수 있어요",
+    }[g.mode] ?? "";
+    const broken = g.mode !== "off" && !g.ready;
+    const line = broken
+      ? `${MODE[g.mode]}: PLAY_SERVICE_ACCOUNT가 없거나 Play Integrity를 쓸 수 없어요. ${g.mode === "require" ? "지금 남에게 보이는 쓰기가 모두 막혀요. " : ""}INTEGRITY_MODE를 off로 바꾸거나 서비스 계정을 넣어 주세요`
+      : `${MODE[g.mode] ?? esc(g.mode)}: ${say}`;
+    // Every public write turned away is the one red line on the screen; watch without the account only counts nothing.
+    const tone = broken ? (g.mode === "require" ? "bad" : "todo") : g.mode === "off" ? "off" : "ok";
+    const mark = broken ? "!" : g.mode === "off" ? "–" : "✓";
+    const numbers = g.mode === "off" ? ""
+      : `<p class="meta" data-integrity-numbers>오늘 ${g.mode === "require" ? "확인을 물은 쓰기" : "확인 없이 온 쓰기"} ${g.missToday ?? 0} · 지난 하루 확인에 실패한 휴대폰 ${g.failedDay ?? 0} · 7일 안에 확인된 휴대폰 ${g.provenWeek ?? 0}</p>`;
+    // PC 확인 20ab0254: watch without the account must not suggest require; the account comes first.
+    const next = broken ? "먼저 PLAY_SERVICE_ACCOUNT를 넣고 Play Console › 앱 무결성에서 Google Cloud 프로젝트를 연결해요. 그 전에는 require로 바꾸지 않아요"
+      : { off: "켜려면 Worker › 설정 › 런타임 변수에 INTEGRITY_MODE를 watch로 넣어요. 며칠 숫자를 본 뒤 require로 바꿔요",
+        watch: "실패한 휴대폰이 거의 없으면 INTEGRITY_MODE를 require로 바꿔요",
+        require: "실패한 휴대폰이 갑자기 늘면 INTEGRITY_MODE를 watch로 되돌려요" }[g.mode] ?? "";
+    return `<h3 class="sub" data-integrity="${esc(g.mode)}">무결성 확인 (Play Integrity)</h3>
+        <ul class="checks"><li class="${tone}"><span aria-hidden="true">${mark}</span>${esc(line)}</li></ul>${numbers}
+        <p class="hint">${esc(next)}</p>`;
+  }
+
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
   function serverView() {
-    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) : skeleton(1)}
+    return `<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) + integrityPart(S.server.integrity) : skeleton(1)}
         <p class="meta">회사 ${S.data.today?.companies ?? S.overview?.companies ?? "–"} · 쓰는 규칙 ${S.data.today?.rules ?? S.overview?.rules ?? "–"} · 앱 판 ${esc(BUILD)}</p></section>`;
   }
 
@@ -2705,12 +3040,20 @@ function adminApp(L, BUILD, M) {
     if (S.relogin) return;
     S.relogin = true;
     const owner = S.me?.owner;
-    openDialog(`<form data-form="relogin"><h2>다시 로그인해 주세요</h2><p>로그인이 끝났어요. 적던 글과 화면은 그대로 있어요.</p>
+    reloginBox.innerHTML = (`<form data-form="relogin"><h2>다시 로그인해 주세요</h2><p>로그인이 끝났어요. 적던 글과 화면은 그대로 있어요.</p>
       ${owner ? "" : `<div class="fieldset"><label for="re-email">메일</label><input id="re-email" name="email" type="email" autocomplete="username" value="${esc(S.me?.email ?? "")}" required></div>`}
       <div class="fieldset"><label for="re-pw">${owner ? "최고 관리자 비밀번호" : "비밀번호"}</label>${pwInput("re-pw", "password", "current-password")}</div>
       <div class="fieldset"><label for="re-code">인증 앱 코드(두 번째 확인을 켰을 때만)</label><input id="re-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
       <p class="error" role="alert" id="re-error"></p>
       <div class="actions"><button class="btn" type="button" data-act="relogin-out">로그인 화면으로</button><button class="btn primary" type="submit">로그인</button></div></form>`);
+    if (!reloginBox.open) reloginBox.showModal();
+    reloginBox.querySelector("input:not([type=hidden])")?.focus();
+  }
+
+  function reloginDone(ok) {
+    const waiting = reloginWaiters;
+    reloginWaiters = [];
+    for (const w of waiting) (ok ? w.go : w.stop)();
   }
 
   /** [ADMUX-04] 찾기·이동: screens, saved views, the questions in the list, and a few steps, by typing a few letters. */
@@ -2808,16 +3151,21 @@ function adminApp(L, BUILD, M) {
    * A form being sent is emptied once it went through, with what was kept of it in the browser.
    */
   async function act(work, done, undo) {
+    // 1.36 P18 ('확인이 늦게 떠요'): a step that takes a moment says so at once.
+    const slow = setTimeout(() => toast("처리 중…"), 300);
     try {
       const r = await work();
+      clearTimeout(slow);
       const form = S.submitting;
       if (form?.isConnected && !form.closest("dialog")) {
         for (const id of KEEP) if (form.querySelector(`#${id}`)) writeDraft(id, "");
         form.reset();
       }
       if (done) toast(typeof done === "function" ? done(r) : done, undo ? () => undo(r) : undefined);
+      else if (toastBox.textContent === "처리 중…") { clearTimeout(toastTimer); toastBox.classList.remove("show"); }
       return r;
     } catch (e) {
+      clearTimeout(slow);
       fail(e);
       return null;
     }
@@ -3517,9 +3865,13 @@ function adminApp(L, BUILD, M) {
     "flag-clear": ({ key }) => {
       const r = S.data.flag;
       confirmBox("강제를 풀까요?", `${r?.name ?? key}이(가) 다시 조건대로 켜지고 꺼져요. 지금 조건이면 ${r?.checklist?.every((c) => c.met !== false) ? "켜져요" : "꺼진 채예요"}.`, "풀기", async () => {
-        const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", { force: null }), "강제를 풀었어요");
+        // 1.36 PC 재검토 ('강제 켬 풀기' 뒤에도 '강제로 켰어요'가 남아 다시 누르게 돼요): the answer is drawn at once and the toast
+        // says the state it is in now; the page is read again past any kept copy.
+        const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", { force: null }),
+          (r) => `강제를 풀었어요 · 지금 ${(FLAG_STATE[r?.state] ?? ["", "조건대로"])[1]}`);
         if (d) S.data.flag = d;
         render({ keepScroll: true });
+        etags.clear();
         load({ quiet: true });
       }, "primary");
     },
@@ -3727,6 +4079,9 @@ function adminApp(L, BUILD, M) {
       el.setAttribute("aria-label", show ? "비밀번호 숨기기" : "비밀번호 보기");
     },
     "relogin-out": () => {
+      S.relogin = false;
+      reloginBox.close();
+      reloginDone(false);
       dialog.close();
       signedOut();
     },
@@ -3783,6 +4138,12 @@ function adminApp(L, BUILD, M) {
     "inquiry-kind": ({ key }) => {
       S.inquiryKind = key;
       S.inquiryPick = null;
+      refilter("inquiries");
+    },
+    // 1.36 [INQ-07] Only the 결제·환불 records, open or closed, the ones their askers deleted too.
+    "inquiry-billing-only": () => {
+      S.inquiryBilling = S.inquiryBilling ? "" : "1";
+      if (S.inquiryBilling) S.inquiryStatus = "all";
       refilter("inquiries");
     },
     "inquiry-copied": ({ key }) => {
@@ -3966,7 +4327,49 @@ function adminApp(L, BUILD, M) {
       S.postPick = null;
       S.ratePick = null;
       S.data.rates = null;
+      S.data.limits = null;
+      S.data.village = null;
+      S.data.contests = null;
       refilter("posts");
+    },
+    "limit-lift": ({ id }) => confirmBox("이 사람의 쓰기 제한을 지금 풀까요?", "단계는 그대로 남아서, 다시 제한되면 이번보다 한 단계 더 줄어요.", "풀기", async () => {
+      await act(() => api(`/write-limits/${id}/lift`, "POST", {}), "풀었어요");
+      S.data.limits = null;
+      load();
+    }, "primary"),
+    // 1.36 [VIL-21] 이번 주 주제 저장·내리기 (PC 6ec395bf: 알림에 어떤 주제·어느 광장인지).
+    "topic-save": async ({ id }) => {
+      const text = document.getElementById(`topic-${id}`)?.value?.trim() ?? "";
+      await act(() => api("/village/topics", "POST", { room: id, text }), text ? `이번 주 이야기 주제(${roomName(id)})를 저장했어요. 앱 광장 맨 위에 보여요` : `이번 주 이야기 주제(${roomName(id)})를 내렸어요`);
+      S.data.village = null;
+      load();
+    },
+    "contest-save": async ({ id }) => {
+      const theme = document.getElementById(`contest-${id}`)?.value?.trim() ?? "";
+      await act(() => api("/village/contests", "POST", { style: id, theme }), theme ? `${STYLE_NAMES[id] ?? id} 공모 주제를 저장했어요 (앱 공방 맨 위)` : `${STYLE_NAMES[id] ?? id} 공모 주제를 내렸어요`);
+      S.data.contests = null;
+      load();
+    },
+    "contest-pick": async ({ id }) => {
+      const [month, style] = id.split("|");
+      const codes = [...document.querySelectorAll(`input[data-pick="${id}"]:checked`)].map((el) => el.value);
+      if (codes.length > 3) return toast("3개까지 골라 주세요");
+      // PC 확인 V30: said plainly, with 되돌리기 to the picks before.
+      const before = S.data.contests?.items.find((x) => x.month === month && x.style === style)?.picks ?? [];
+      await act(() => api("/village/contests/pick", "POST", { month, style, codes }),
+        (r) => (codes.length ? `저장했어요 · 고름 ${codes.length}/3, 앱 공방에 보여요${r?.rewarded ? ` · 보상 ${r.rewarded}명` : ""}` : "고른 것을 비웠어요"),
+        async () => {
+          await act(() => api("/village/contests/pick", "POST", { month, style, codes: before }), "되돌렸어요");
+          S.data.contests = null;
+          load();
+        });
+      S.data.contests = null;
+      load();
+    },
+    "topic-clear": async ({ id }) => {
+      await act(() => api("/village/topics", "POST", { room: id, text: "" }), "내렸어요");
+      S.data.village = null;
+      load();
     },
     "rate-filter": ({ key }) => {
       S.rateFilter = key;
@@ -4034,6 +4437,7 @@ function adminApp(L, BUILD, M) {
       S.inquiryKind = "";
       S.inquiryCopied = "";
       S.inquirySender = "";
+      S.inquiryBilling = "";
       refilter("inquiries");
     },
     "inquiry-who": ({ key }) => {
@@ -4140,6 +4544,19 @@ function adminApp(L, BUILD, M) {
       const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "hide", reason }), "숨겼어요. 보낸 분 앱에 이유가 보여요");
       if (q) S.data.inquiry = q;
       load();
+    },
+    "inquiry-billing": async ({ on }) => {
+      const save = async () => {
+        const left = S.data.inquiry?.leftByAsker;
+        const q = await act(() => api(`/inquiries/${S.route.id}/billing`, "POST", { on: on === "1" }),
+          on === "1" ? "결제·환불 기록으로 정했어요. 3년 동안 보관해요" : left ? "기록에서 빼고, 보낸 분이 지운 대로 지웠어요" : "결제·환불 기록에서 뺐어요");
+        if (q?.deleted) return go("inquiries");
+        if (q) S.data.inquiry = q;
+        render({ keepScroll: true });
+      };
+      // 1.36 [INQ-07] Taking one out of the law's three years asks first; putting one in does not.
+      if (on === "1") return save();
+      confirmBox("결제·환불 기록에서 뺄까요?", `결제·구독·환불과 관계없는 문의일 때만 빼 주세요. ${S.data.inquiry?.leftByAsker ? "보낸 분이 앱에서 지운 문의라 빼면 바로 지워져요." : "빼면 마지막 글부터 180일 뒤에 지워져요."} 누가 뺐는지는 활동 기록에 남아요.`, "빼기", save);
     },
     "inquiry-show": async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "show" }), "다시 보이게 했어요. 신고로는 더 가려지지 않아요");
@@ -4363,10 +4780,50 @@ function adminApp(L, BUILD, M) {
       load();
     },
     // [RCP-39]
-    "recipe-tab": ({ key }) => { S.recipeTab = key; S.data.recipes = null; load(); },
+    "recipe-tab": ({ key }) => { S.recipeTab = key; S.recipeSection = "all"; S.data.recipes = null; load(); },
+    "recipe-section": ({ key }) => { S.recipeSection = key; render({ keepScroll: true }); },
+    // PC ce2b7091 사용성 제안: 고친 판에서 원본으로. 지금 목록에 있으면 그 줄로, 없으면 코드를 복사해요.
+    "recipe-find": ({ id }) => {
+      const row = [...document.querySelectorAll("[data-act='recipe-do']")].find((b) => b.dataset.id === id)?.closest("li");
+      if (row) { row.scrollIntoView({ block: "center" }); row.classList.add("flash"); setTimeout(() => row.classList.remove("flash"), 1500); return; }
+      // 1.36 [GRW-12] 목록에 없으면 그 작품 하나를 열어요(전에는 코드만 복사).
+      ACTIONS["recipe-open"]({ id });
+    },
+    // 1.36 [GRW-12] PC 20ab0254 제안: 사진 검토에서 그 사진을 쓴 작품을 바로 열기. 돌아가기는 연 곳으로.
+    // PC 006d0aec 사용성 제안: 보러 온 사진을 눌러 크게.
+    "photo-big": () => {
+      if (!S.recipePhoto) return;
+      openDialog(`<div class="card"><h2>보러 온 사진</h2><img src="data:image/webp;base64,${esc(S.recipePhoto.data)}" alt="보러 온 사진 크게" class="photo-big">
+        <div class="actions"><button class="btn" type="button" data-act="close">닫기</button></div></div>`, "wide");
+    },
+    "recipe-open": ({ id, key }) => {
+      // PC e20cfe53: 사진 검토에서 열면 보러 온 그 사진과 보이기·가리기를 작품 위에 함께.
+      const photo = key && S.data.recipes?.tab === "images" ? S.data.recipes.items.find((i) => i.id === key) : null;
+      S.recipePhoto = photo ? { id: photo.id, data: photo.data, whyName: photo.whyName, state: photo.state } : null;
+      if ((S.recipeTab ?? "flagged") !== "one") S.recipeBack = S.recipeTab ?? "flagged";
+      S.recipeTab = "one"; S.recipeCode = id; S.recipeSection = "all"; S.data.recipes = null; load();
+    },
     "recipe-log": () => { S.recipeLog = true; load(); },
     // [RCX-15][RCX-04][RCX-07] 1.35
-    "recipe-image": async ({ id, key }) => { await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요"); load(); },
+    "recipe-font": async ({ id, key }) => { await act(() => api(`/recipes/fonts/${id}/${key}`, "POST", {}), key === "ok" ? (S.fontState ?? "pending") === "pending" ? "나눴어요" : "다시 올렸어요" : "내렸어요"); load(); },
+    "font-state": ({ key }) => { S.fontState = key; S.data.recipes = null; load(); },
+    "recipe-image": async ({ id, key }) => {
+      await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요");
+      if (S.recipePhoto?.id === id) S.recipePhoto = { ...S.recipePhoto, done: key };
+      load();
+    },
+    "recipe-maker": async ({ id, key }) => {
+      const said = { "bio-hide": "소개를 가렸어요", "bio-show": "소개가 다시 보여요", close: "프로필을 닫았어요", open: "프로필을 다시 열었어요", clear: "신고를 비웠어요" }[key];
+      // 1.36 PC 사용성 P13: 닫기는 확인을 받고, 닫기·가리기는 8초 되돌리기 (같은 자리 단추를 두 번 눌러 도로 닫히던 것).
+      const back = { close: "open", "bio-hide": "bio-show" }[key];
+      const go = async () => {
+        await act(() => api(`/recipes/makers/${id}/${key}`, "POST", {}), said,
+          back ? async () => { await act(() => api(`/recipes/makers/${id}/${back}`, "POST", {}), "되돌렸어요"); load(); } : undefined);
+        load();
+      };
+      if (key === "close") confirmBox("이 프로필을 닫을까요?", "다른 분은 이 프로필을 볼 수도 팔로우할 수도 없게 돼요. 작품은 장터에 남고, 본인에게는 닫혔다고 보여요. 신고 누적 1번으로 세요.", "닫기", go);
+      else await go();
+    },
     "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
     "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {
       await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
@@ -4463,6 +4920,8 @@ function adminApp(L, BUILD, M) {
     S.error = "";
     S.queue = null;
     S.relogin = false;
+    if (reloginBox.open) reloginBox.close();
+    reloginDone(false);
     etags.clear();
     clearInterval(pollTimer);
     if (forget) {
@@ -4531,8 +4990,10 @@ function adminApp(L, BUILD, M) {
       try {
         await api("/login", "POST", body);
         S.relogin = false;
-        dialog.close();
-        toast("다시 로그인했어요");
+        reloginBox.close();
+        const waiting = reloginWaiters.length;
+        reloginDone(true);
+        toast(waiting ? "다시 로그인했어요. 누르신 것을 이어서 했어요" : "다시 로그인했어요");
         load();
       } catch (e) {
         const box = document.getElementById("re-error");
@@ -4596,19 +5057,59 @@ function adminApp(L, BUILD, M) {
       await act(() => api("/recipes/picks", "POST", { style: form.dataset.key, codes }), codes.length ? `${codes.length}개 골랐어요` : "이번 주 고른 것을 비웠어요");
       load();
     },
+    // [PRF-10]
+    "recipe-month": async (form) => {
+      const makers = String(new FormData(form).get("makers") ?? "").toLowerCase().split(/[\s,]+/).filter(Boolean);
+      await act(() => api("/recipes/makers/month", "POST", { style: form.dataset.key, makers }), makers.length ? `${makers.length}명 골랐어요` : "비웠어요. 저절로 보여요");
+      load();
+    },
+    // 1.36 [MKS-01] 출시 대기 묶음: 지금 공개, 예약, 예약 풀기.
+    "recipe-release": async (form, submitter) => {
+      const how = submitter?.value ?? "now";
+      const batch = form.dataset.key;
+      const at = String(new FormData(form).get("at") ?? "");
+      if (how === "schedule" && !at) { toast("공개할 때를 골라 주세요"); return; }
+      const body = { batch, ...(how === "schedule" ? { at: new Date(at).toISOString() } : how === "unschedule" ? { at: null } : {}) };
+      if (how === "now") {
+        // 클라우드 관리자 앱 확인: how many go up, on the box and after.
+        const n = Number(form.dataset.n) || 0;
+        confirmBox(n ? `${batch || "이 묶음"} ${n}개를 지금 장터에 공개할까요?` : "이 묶음을 지금 장터에 공개할까요?", "공개하면 바로 장터 ‘새로’ 맨 위에 보여요. ‘이 판부터’를 적은 작품은 그 판 이상 앱에만 보여요.", "지금 공개", async () => {
+          await act(() => api("/recipes/release", "POST", body), (r) => `${r?.released ?? 0}개를 공개했어요`);
+          S.data.recipes = null; load();
+        });
+        return;
+      }
+      await act(() => api("/recipes/release", "POST", body), how === "schedule" ? "공개를 예약했어요. 그때 저절로 나와요(한 시간 안)" : "예약을 풀었어요");
+      load();
+    },
     "recipe-upload": async (form) => {
       const f = new FormData(form);
       let parsed;
       try { parsed = JSON.parse(String(f.get("recipe") ?? "")); } catch { toast("레시피 글(JSON)을 읽지 못했어요"); return; }
       // One recipe, or docs/recipes/starter-recipes.json whole ([{publicData, recipe}, …]): each goes up on its own.
       const list = Array.isArray(parsed) ? parsed : [{ recipe: parsed, publicData: f.get("publicData") === "on", showcase: f.get("showcase") === "on" }];
+      // 1.36 [MKS-01] 출시 대기: the form's settings unless the file's entry says its own.
+      const minApp = Number(f.get("minApp"));
+      const hold = { hold: f.get("hold") === "on", replace: f.get("replace") === "on",
+        ...(String(f.get("batch") ?? "").trim() ? { batch: String(f.get("batch")).trim() } : {}), ...(Number.isInteger(minApp) && minApp > 0 ? { minApp } : {}) };
       let done = 0;
       const failed = [];
+      // 1.36 클라우드 관리자 앱 확인 (출시 작품 267개를 붙여 넣으면 몇 분 동안 단추만 흐려지고 아무 말이 없어서, 창을 닫으면 반만 들어가요):
+      // the button counts what went up, and leaving the page asks first until the last one is in.
+      const button = form.querySelector('button[type="submit"], button:not([type])');
+      const label = button?.textContent;
+      S.uploading = list.length > 1;
+      let i = 0;
       for (const x of list) {
+        i++;
+        if (button && list.length > 1) button.textContent = `올리는 중 ${i}/${list.length} · 창을 닫지 마세요`;
         // [RCX-32] showcase-recipes.json's own {showcase: true}, or the 보여주기 tab's form.
-        try { await api("/recipes", "POST", { recipe: x.recipe, publicData: x.publicData === true, showcase: x.showcase === true || f.get("showcase") === "on" }); done++; }
+        const own = Object.fromEntries(["hold", "replace", "batch", "minApp", "releaseAt"].filter((k) => x[k] !== undefined).map((k) => [k, x[k]]));
+        try { await api("/recipes", "POST", { recipe: x.recipe, publicData: x.publicData === true, showcase: x.showcase === true || f.get("showcase") === "on", ...hold, ...own }); done++; }
         catch (e) { failed.push(x.recipe?.title ?? "?"); }
       }
+      S.uploading = false;
+      if (button && label != null) button.textContent = label;
       toast(`${done}개 올렸어요${failed.length ? ` · 못 올린 것 ${failed.length}개: ${failed.slice(0, 3).join(", ")}` : ""}`);
       if (done) { form.reset(); S.data.recipes = null; load(); }
     },
@@ -5001,6 +5502,12 @@ function adminApp(L, BUILD, M) {
 
   document.addEventListener("change", (e) => {
     const t = e.target;
+    // PC 확인 보안 11차 (가리기 이유가 첫 칸으로 미리 골라져 있었어요): nothing is picked for the admin; 가리기 waits for a reason.
+    if (t.name === "reason" && t.form?.dataset.form === "hide-post") {
+      t.form.querySelector('button[type="submit"]').disabled = false;
+      t.form.querySelector("[data-reason-hint]")?.remove();
+      return;
+    }
     // [ADMIN-10] Picking 개발사항 for 일괄 복사·처리.
     if (t.dataset?.pick && S.devPick) {
       if (t.checked) S.devPick.add(t.dataset.pick);
@@ -5058,7 +5565,8 @@ function adminApp(L, BUILD, M) {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide,
   };
-  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A) };
+  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A) };
+  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms } });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
 
@@ -5307,17 +5815,26 @@ function adminApp(L, BUILD, M) {
         if (detail) return document.getElementById("reply")?.focus();
         return load();
       case "close":
+        if (S.route.name === "work" && V.workKey("done")) return stop();
         if (detail && editInq && S.data.inquiry?.status !== "closed") return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
       case "reject":
         if (S.route.name === "review") return reviewKey("reject");
         if (detail && S.queue) return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
+      // 1.36 [GRW-07] w 기다림, h 기록 (할 일함).
+      case "wait":
+        if (S.route.name === "work" && V.workKey("wait")) stop();
+        return;
+      case "history":
+        if (S.route.name === "work" && V.workKey("log")) stop();
+        return;
       // AX 1.30 [ADMX-05] n: the next question waiting for an answer.
       case "next":
         stop();
         return nextWaiting();
       case "skip":
+        if (S.route.name === "work" && V.workKey("seeing")) return stop();
         if (S.route.name === "review") return reviewKey(null);
         if (S.queue) return queueNext(true);
         return;
@@ -5381,9 +5898,12 @@ function adminApp(L, BUILD, M) {
     if (history.state?.dialog) history.replaceState(null, "", location.href);
     S.palette = null;
     S.linkMode = "";
+  });
+  reloginBox.addEventListener("close", () => {
     if (S.relogin) {
-      // Closed without signing in: the sign-in screen, since nothing else would work.
+      // Closed without signing in (Esc): the sign-in screen, since nothing else would work.
       S.relogin = false;
+      reloginDone(false);
       signedOut();
     }
   });
@@ -5434,7 +5954,7 @@ function adminApp(L, BUILD, M) {
   });
   window.addEventListener("beforeunload", (e) => {
     // Typed answers are kept in the browser; only settings would be lost.
-    if (S.draft || S.slaDraft) {
+    if (S.draft || S.slaDraft || S.uploading) {
       e.preventDefault();
       e.returnValue = "";
     }

@@ -1,7 +1,10 @@
-import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
+import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
+import { needFromInquiry } from "./growth.js";
+import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
+import { bugFixed } from "./money.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -13,7 +16,7 @@ import { kstDay } from "./usage.js";
 
 export const INQUIRY = {
   // [INQ-01] Since 1.14.1 suggestions, anything else and a company's way the app cannot set come here too.
-  kinds: ["question", "bug", "idea", "company", "other"],
+  kinds: ["question", "bug", "idea", "company", "other", "studio"],
   text: 2000,
   diag: 6000,
   pay: 3000,
@@ -27,7 +30,36 @@ export const INQUIRY = {
   // Each side of a thread; a longer back and forth is better as a new question.
   messages: 40,
   keepMs: 180 * DAY,
+  // 1.36 [INQ-07] A question about paying or a refund is the 소비자 불만·분쟁 처리 기록 the 전자상거래법 시행령
+  // 제6조 keeps for three years: from its last word, and still when the asker deletes it (처리방침 3.10).
+  billingKeepMs: 3 * 366 * DAY,
 };
+
+/**
+ * 1.36 [INQ-07] Words that make a question a 결제·환불 record. Narrower than the 결제 topic below (광고 or 무료
+ * alone is not a dispute about money), and an admin can set or clear it on the question by hand.
+ */
+export const BILLING_RECORD = /결제|환불|청약\s*철회|구독|구매|이용권|주문\s*번호|영수증|요금|해지|돈이\s*(빠져|나갔)|두\s*번\s*(빠져|나갔)/;
+
+/** 1.36 [INQ-07] The questions old enough to go: half a year without a word, three years for a 결제·환불 record. */
+export const expiredInquiries = (now) => ["(billing_at IS NULL AND updated_at < ?) OR updated_at < ?", now - INQUIRY.keepMs, now - INQUIRY.billingKeepMs];
+
+/**
+ * 1.36 [INQ-07] What deleting the questions [where] picks does: an ordinary one goes with everything hung on
+ * it; a 결제·환불 record leaves the asker's app (cut from the phone, off 모두의 문의) and stays with the
+ * developer until its three years are over.
+ */
+export const forgetInquiries = (env, where, ...params) => {
+  // 처리방침 3.10: keeping a deleted 결제·환불 record starts on 2026-12-02 (30 days' notice); before then, deleting deletes.
+  const keep = Date.now() >= BILLING_KEEP_FROM ? 1 : 0;
+  return [
+    stmt(env, `UPDATE inquiries SET device = 'gone' || id, public = 0, status = 'closed' WHERE billing_at IS NOT NULL AND ${keep} = 1 AND (${where})`, ...params),
+    ...dropInquiries(env, `(billing_at IS NULL OR ${keep} = 0) AND (${where})`, ...params),
+  ];
+};
+
+/** 처리방침 3.10's date for 결제·환불 records kept after the asker deletes them: 2026-12-02 00:00 KST. */
+export const BILLING_KEEP_FROM = Date.UTC(2026, 11, 1, 15);
 
 /** What the app may send with a question, as the developer app shows it: label, field, longest. */
 export const INQUIRY_INFO = [
@@ -39,6 +71,8 @@ export const INQUIRY_INFO = [
   ["급여 계산", "pay", INQUIRY.pay],
   // [INQ-01] 회사 방식 알려 주기: the kind's settings in words, never an amount.
   ["회사 설정", "setup", INQUIRY.setup],
+  // 1.36 [GRW-01] 스튜디오 요구: 보낸 분의 근무 유형(SHIFT…), 장터 요청 판의 어느 칸에 올릴지.
+  ["근무 유형", "studio", 12],
 ];
 
 /** [INQ-01] A company's way names the workplace: it stays with the developer, whatever the app asks. */
@@ -61,7 +95,7 @@ export const INQUIRY_TOPICS = [
   ["share", "공유", /공유|링크|상대방|가족|동기화|받은\s*사람|보낸\s*사람/g],
   ["company", "회사 설정", /회사|부서|규칙|투표|토론|채택/g],
   ["backup", "백업·기기 이동", /백업|복원|새\s*(폰|휴대폰|기기)|기기\s*변경|옮기|가져오기|내보내기/g],
-  ["billing", "결제", /결제|구독|프리미엄|환불|구매|광고|유료|무료/g],
+  ["billing", "결제", /결제|구독|프리미엄|환불|구매|광고|유료|무료|보상|이용권/g],
   ["app", "앱 동작", /멈춰|멈춤|멈추|멈췄|꺼져|꺼짐|닫혀|닫힘|닫혔|튕|먹통|굳어|렉|응답\s*없|강제\s*종료|오류|에러|버그|안\s*열|안\s*켜|느려|느림|로딩|하얀\s*화면|검은\s*화면|위젯|워치|잠금\s*화면|배터리|업데이트/g],
 ];
 export const TOPIC_NAMES = Object.fromEntries([...INQUIRY_TOPICS.map(([key, label]) => [key, label]), ["etc", "기타"]]);
@@ -82,10 +116,13 @@ export function triage(kind, text, info) {
   if (kind === "company" || info?.setup) topic = "company";
   else if (info?.pay) topic = "pay";
   // 1.32.1 [STAB-14] (사용자 2026-10-29 "멈출 때마다 알람이라고 뜨는데 실제로는 다른 원인 같아"): a 점검 기록 that starts
-  // with 앱 멈춤 (the app puts it first for a stop's inquiry) is 앱 동작; any other 점검 기록 with no word is still 알람.
+  // with 앱 멈춤 (the app puts it first for a stop's inquiry) is 앱 동작. 1.36 Y12 (PC 재검토): any other 점검 기록 says
+  // nothing of the topic (every form can send it, and it always starts with 알람 상태), so a question with no word stays 기타
+  // instead of 알람 — a settings-search question about 보상 came in as 문제 신고 · 알람.
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
-  else if (best === 0 && info?.diag) topic = "alarm";
-  const urgency = ["idea", "company", "other"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
+  // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
+  if (kind === "studio") topic = "look";
+  const urgency = ["idea", "company", "other", "studio"].includes(kind) ? "low" : URGENT.test(t) ? "urgent" : "normal";
   return { topic, topicName: TOPIC_NAMES[topic], urgency };
 }
 
@@ -122,7 +159,7 @@ export async function inquiries(request, env, path) {
   if (!row || row.device !== dev) return json({ error: "not_found" }, 404);
   if (!m[2] && method === "GET") return json(await inquiryView(env, row));
   if (!m[2] && method === "DELETE") {
-    await batch(env, dropInquiries(env, "id = ?", row.id));
+    await batch(env, forgetInquiries(env, "id = ?", row.id));
     return new Response(null, { status: 204 });
   }
   if (m[2] && method === "POST") {
@@ -134,7 +171,9 @@ export async function inquiries(request, env, path) {
     if (count.n >= INQUIRY.messages) return json({ error: "too_many", field: "text" }, 409);
     await batch(env, [
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", row.id, text, now),
-      stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ? WHERE id = ?", now, row.id),
+      // 1.36 [INQ-07] A thread that turns to paying or a refund becomes a 결제·환불 record from then on.
+      stmt(env, "UPDATE inquiries SET status = 'open', updated_at = ?, billing_at = COALESCE(billing_at, ?) WHERE id = ?", now,
+        BILLING_RECORD.test(text) ? now : null, row.id),
     ]);
     return json(await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", row.id)), 201);
   }
@@ -167,7 +206,7 @@ export async function ask(request, env) {
   const net = await network(request, env, now);
   const dev = await deviceHash(device);
   const limitHit = await overLimit(env, now, [["device", `inquiry|${dev}`, INQUIRY.perDay, DAY],
-    ["network", `inquiry|${net.day}`, INQUIRY.perNetworkDay, DAY]]);
+    ...(await networkCheck(env, dev, net, "inquiry", INQUIRY.perNetworkDay, now))]);
   if (limitHit) return limitHit;
   const photos = await readPhotos(env, body.photos);
   const id = randomId(22);
@@ -176,25 +215,28 @@ export async function ask(request, env) {
     ...photos.list.map((data, i) => stmt(env, "INSERT INTO inquiry_photos (inquiry_id, n, data, bytes, at) VALUES (?, ?, ?, ?, ?)",
       id, i + 1, data.base64, data.bytes, now)),
     // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
-    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?)",
-      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now),
+    stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, billing_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)",
+      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now,
+      BILLING_RECORD.test(text) ? now : null),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
-    // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all.
-    ...dropInquiries(env, "updated_at < ?", now - INQUIRY.keepMs),
+    // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all (결제·환불: 3 years).
+    ...dropInquiries(env, ...expiredInquiries(now)),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
   ]);
   // [ADMIN-19] Admins who asked for it hear of a new question (a bug or a problem counts as urgent); nothing
   // happens without VAPID keys, and a push that fails never fails the question.
   await notifyAdmins(env, ["bug", "problem"].includes(body.kind) ? "urgent" : "inquiry", {
     title: "새 문의",
-    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식" })[body.kind] ?? "문의"} 1건`,
+    body: `${({ bug: "문제 신고", problem: "문제 신고", question: "질문", idea: "건의·제안", company: "회사 방식", studio: "스튜디오 요구" })[body.kind] ?? "문의"} 1건`,
     url: "/admin/#/inquiries",
   }, now);
   // 1.35 [INBOX-02] 자동 대응: answered at once when the owner turned it on for what this one matched (never fails it).
   await autoAnswer(env, id, now);
+  // 1.36 [GRW-01][GRW-02] 스튜디오 요구는 비슷한 요구와 한 묶음으로.
+  const studio = await needFromInquiry(env, id, dev, body.kind, text, info, now);
   const view = await inquiryView(env, await one(env, "SELECT * FROM inquiries WHERE id = ?", id));
   // Photos the server could not take this time (switched off or full): the question went without them.
-  return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}) }, 201);
+  return json({ ...view, ...(photos.skipped ? { photosSkipped: photos.skipped } : {}), ...(studio ? { studio } : {}) }, 201);
 }
 
 /** What the user typed: up to 2000 characters, without an email, phone number or amount. */
@@ -438,7 +480,7 @@ export async function adminInquiries(request, env, url, path, now) {
   // [SRV-06] A photo sent with a question, for an admin who may read questions.
   const photo = path.match(/^\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
   if (photo && method === "GET") return photoFile(env, photo[1], Number(photo[2]));
-  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes|\/typing)?$/);
+  const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes|\/typing|\/billing)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
   if (!row) return json({ error: "not_found" }, 404);
@@ -465,6 +507,17 @@ export async function adminInquiries(request, env, url, path, now) {
     // [ADMIN-12] A note for the other admins: never in the app's view of the question.
     const text = plainText(body.text, DEV.note, "text", true);
     await run(env, "INSERT INTO inquiry_notes (inquiry_id, by, text, at) VALUES (?, ?, ?, ?)", row.id, actorName(env), text, now);
+  } else if (m[2] === "/billing") {
+    // 1.36 [INQ-07] 결제·환불 기록: kept three years from its last word. Set by hand when the words missed it, or
+    // cleared when they matched by chance; the activity log keeps who did which.
+    if (typeof body.on !== "boolean") refuse("on", "on");
+    await audit(env, now, "inquiry_billing", row.id, body.on ? "on" : "off");
+    // Its asker already deleted it, and it is no record the law keeps: it goes now, as they asked.
+    if (!body.on && String(row.device).startsWith("gone")) {
+      await batch(env, dropInquiries(env, "id = ?", row.id));
+      return json({ deleted: true });
+    }
+    await run(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", body.on ? row.billing_at ?? now : null, row.id);
   } else if (m[2] === "/visibility") {
     // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
     if (!row.public) refuse("public", "action");
@@ -514,6 +567,8 @@ export async function replyTo(env, row, body, now, audited = true) {
     stmt(env, "DELETE FROM counters WHERE key LIKE ?", `typing|${row.id}|${env.actor?.id ?? ""}|%`),
   ]);
   if (audited) await audit(env, now, "inquiry_reply", row.id, status);
+  // 1.36 [PUSH-01] the asker's phone hears at once (no words go to Google).
+  await fcmTell(env, [row.id], now);
   return true;
 }
 
@@ -577,7 +632,7 @@ export async function inquiryBulk(request, env, now) {
  * that moment and before a status change or a hide (a question is linked, then closed).
  */
 export function timeline(events, links) {
-  const late = new Set(["inquiry_status", "inquiry_hide", "inquiry_show"]);
+  const late = new Set(["inquiry_status", "inquiry_hide", "inquiry_show", "inquiry_billing"]);
   const out = [];
   const queue = [...links].sort((x, y) => x.at - y.at);
   for (const e of events) {
@@ -596,7 +651,7 @@ export async function adminInquiryView(env, row) {
   const now = Date.now();
   const [events, links, typing] = (await batch(env, [
     stmt(env, `SELECT at, action, detail, actor FROM audit WHERE target = ? AND action IN ('inquiry_assign', 'inquiry_status', 'inquiry_reply',
-      'inquiry_hide', 'inquiry_show') ORDER BY id LIMIT 200`, row.id),
+      'inquiry_hide', 'inquiry_show', 'inquiry_billing') ORDER BY id LIMIT 200`, row.id),
     stmt(env, "SELECT l.at, l.by, d.id, d.title FROM dev_links l JOIN dev_items d ON d.id = l.item_id WHERE l.inquiry_id = ? ORDER BY l.at", row.id),
     stmt(env, "SELECT key FROM counters WHERE key LIKE ? AND expires > ?", `typing|${row.id}|%`, now),
   ])).map((r) => r.results);
@@ -607,6 +662,9 @@ export async function adminInquiryView(env, row) {
     // AT 1.29 [ADMCP-03][ADMCP-06] 복사함, the phone's short mark and how many other questions it sent.
     ...copyFields(row),
     sameSender: (await one(env, "SELECT COUNT(*) AS n FROM inquiries WHERE device = ? AND id != ?", row.device, row.id)).n,
+    // 1.36 [INQ-07] A 결제·환불 record: since when, until when it is kept, and whether the asker deleted it.
+    billing: row.billing_at ? { since: iso(row.billing_at), keepUntil: iso(row.updated_at + INQUIRY.billingKeepMs) } : null,
+    leftByAsker: String(row.device).startsWith("gone"),
   };
   if (view.waitingHours !== null) {
     const last = view.messages[view.messages.length - 1];
@@ -675,6 +733,8 @@ export async function inquiryList(env, params, actorId = "") {
   const kind = INQUIRY.kinds.includes(params.get("kind")) ? params.get("kind") : null;
   const copied = ["no", "yes"].includes(params.get("copied")) ? params.get("copied") : "";
   const sender = /^[0-9a-f]{6}$/.test(params.get("sender") ?? "") ? params.get("sender") : "";
+  // 1.36 [INQ-07] 결제·환불 기록만.
+  const billing = params.get("billing") === "1" ? 1 : 0;
   const now = Date.now();
   const [rows, statusRows, slaRows, typing, fresh] = (await batch(env, [stmt(env, `SELECT i.*,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id) AS count,
@@ -691,7 +751,8 @@ export async function inquiryList(env, params, actorId = "") {
       AND (?7 IS NULL OR i.kind = ?7)
       AND (?8 = '' OR (?8 = 'no' AND i.copied_at IS NULL) OR (?8 = 'yes' AND i.copied_at IS NOT NULL))
       AND (?9 = '' OR substr(i.device, 1, 6) = ?9)
-    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender),
+      AND (?10 = 0 OR i.billing_at IS NOT NULL)
+    ORDER BY i.status = 'open' DESC, i.updated_at DESC LIMIT 1000`, status, q, like, who, actorId, late, kind, copied, sender, billing),
   stmt(env, "SELECT status, COUNT(*) AS n FROM inquiries GROUP BY status"),
   slaQuery(env),
   stmt(env, "SELECT key FROM counters WHERE key LIKE 'typing|%' AND expires > ?", now),
@@ -841,13 +902,19 @@ export async function inquiryCopied(request, env, now) {
     await audit(env, now, "dev_create", title, item.id);
   }
   const found = rows.map((r) => r.id);
-  const marks = found.map(() => "?").join(", ");
-  const stmts = [stmt(env, `UPDATE inquiries SET copied_at = ?, copied_by = ? WHERE id IN (${marks})`, now, name, ...found)];
-  if (body.status === "open" || body.status === "closed") stmts.push(stmt(env, `UPDATE inquiries SET status = ? WHERE id IN (${marks})`, body.status, ...found));
+  // D1 binds at most 100 values in one statement: 100 questions plus the two set values went over, so in groups of 90.
+  const stmts = [];
+  for (let i = 0; i < found.length; i += 90) {
+    const part = found.slice(i, i + 90);
+    const marks = part.map(() => "?").join(", ");
+    stmts.push(stmt(env, `UPDATE inquiries SET copied_at = ?, copied_by = ? WHERE id IN (${marks})`, now, name, ...part));
+    if (body.status === "open" || body.status === "closed") stmts.push(stmt(env, `UPDATE inquiries SET status = ? WHERE id IN (${marks})`, body.status, ...part));
+  }
   // Only the ones nobody holds: copying is no reason to take a question from another admin.
   const free = body.assign === true ? rows.filter((r) => !r.assignee).map((r) => r.id) : [];
-  if (free.length) {
-    stmts.push(stmt(env, `UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id IN (${free.map(() => "?").join(", ")})`, a.id, name, ...free));
+  for (let i = 0; i < free.length; i += 90) {
+    const part = free.slice(i, i + 90);
+    stmts.push(stmt(env, `UPDATE inquiries SET assignee = ?, assignee_name = ? WHERE id IN (${part.map(() => "?").join(", ")})`, a.id, name, ...part));
   }
   await batch(env, stmts);
   let linked = 0;
@@ -1074,6 +1141,8 @@ export async function devUpdate(env, row, body, now) {
   await batch(env, stmts);
   // The activity screen shows the title; the id goes with what changed.
   for (const [action, detail] of notes) await audit(env, now, action, set.title ?? row.title, `${detail} ${row.id}`);
+  // 1.36 841 쓰면 쌓이는 날: 완료 gives the phones that reported it 3 days.
+  if (set.status === "done") await bugFixed(env, row.id, now);
   return true;
 }
 
@@ -1101,6 +1170,7 @@ export async function devBulk(request, env, now) {
       devEvent(env, r.id, now, "status", { status: [r.status, next.status], ...(next.reason ? { reason: next.reason } : {}), bulk: change.length }),
     ]));
     await audit(env, now, "dev_bulk", `${change.length}개`, `${next.status}: ${change.map((r) => r.id).join(" ")}`);
+    if (next.status === "done") for (const r of change) await bugFixed(env, r.id, now);
   }
   return json({ changed: change.length, ids: change.map((r) => r.id) });
 }
@@ -1125,6 +1195,7 @@ export async function devReply(env, row, body, now) {
     devEvent(env, row.id, now, "reply", { count: pick.length, text: cut(text), close: status === "closed" }),
   ]);
   await audit(env, now, "dev_reply", row.title, `${pick.length} ${status} ${row.id}`);
+  await fcmTell(env, pick, now);
   return json({ answered: pick.length, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
 }
 

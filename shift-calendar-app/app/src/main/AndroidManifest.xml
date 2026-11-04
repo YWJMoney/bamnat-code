@@ -106,6 +106,8 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="bamnat" android:host="r" />
+                <!-- [PRF-11] 1.36 a maker's profile page (/m/<id> on the company server) opens 프로필 with bamnat://m/<id>. -->
+                <data android:scheme="bamnat" android:host="m" />
             </intent-filter>
             <intent-filter android:label="@string/open_file_label">
                 <action android:name="android.intent.action.VIEW" />
@@ -190,6 +192,11 @@
             android:name=".money.JobReminderReceiver"
             android:exported="false" />
 
+        <!-- [RUL-04] 1.36 timed rules (근무 시작·끝 전후, 매일 몇 시). -->
+        <receiver
+            android:name=".logic.LogicReceiver"
+            android:exported="false" />
+
         <!-- [SCHED-01] A memo that is a schedule: its notice or its alarm at that minute. -->
         <receiver
             android:name=".memo.MemoScheduleReceiver"
@@ -225,6 +232,11 @@
         <!-- [MON-06] The trial's question, 7 days before it turns paid. -->
         <receiver
             android:name=".tier.TrialNoticeReceiver"
+            android:exported="false" />
+
+        <!-- 1.36 840·841: a yearly renewal or a 1년 이용권 ending, 7 days before. -->
+        <receiver
+            android:name=".tier.EndNoticeReceiver"
             android:exported="false" />
 
         <!-- [SHR-12] The shared link closing soon, and its 늘리기 button. -->
@@ -274,6 +286,13 @@
         <receiver
             android:name=".alarm.WakeCheckReceiver"
             android:exported="false" />
+
+        <!-- 1.36 [SEC-10] 보안 점검 H3: 남이 나눈 글꼴을 먼저 열어 보는 곳. 권한도 앱 파일도 없는 따로 된 프로세스예요. -->
+        <service
+            android:name=".recipe.FontProbeService"
+            android:exported="false"
+            android:isolatedProcess="true"
+            android:process=":fontprobe" />
 
         <!-- [PROV-03] 매일 자동 백업: only the system's job scheduler binds it. -->
         <service
@@ -409,5 +428,16 @@
                 <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
             </intent-filter>
         </activity-alias>
+        <!-- 1.36 [PUSH-01] 문의 답 바로 알림: FCM data messages only. Firebase never starts by itself (no google-services values,
+             auto-init off); PushPhone starts it by hand when the build has the ids and the user has a question. -->
+        <service
+            android:name=".company.PushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
+        <meta-data android:name="firebase_analytics_collection_enabled" android:value="false" />
     </application>
 </manifest>

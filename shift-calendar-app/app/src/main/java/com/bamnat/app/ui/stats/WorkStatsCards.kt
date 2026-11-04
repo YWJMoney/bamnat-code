@@ -6,7 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -97,7 +97,7 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
         val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
         val locked = gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)
         androidx.compose.material3.OutlinedButton(onClick = {
-            if (locked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@OutlinedButton }
+            if (locked && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@OutlinedButton }
             scope.launch {
                 runCatching {
                     val from = today.minusMonths(18).plusDays(1)
@@ -182,7 +182,7 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                 // 1.32 [WTYP-20] The same 거래내역서 as a PDF to print or file (프로).
                 val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
                 TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
-                    if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@TextButton }
+                    if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT) && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@TextButton }
                     scope.launch {
                         runCatching {
                             com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.ClientStatementDoc.doc(statement, sender.trim(), Today.date()),
@@ -212,7 +212,7 @@ fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen
     val rules = calendars.firstOrNull { it.id == calendarId }?.shopMoney ?: ShopMoney()
     // [DAILY-13] Sales from notices that wait for 적기, first.
     PendingSalesCard(calendarId)
-    val split = remember(book, month) { SalesSplit.of(month, book.sales) }
+    val split = remember(book, month) { SalesSplit.creditByDay(book.receivables).let { cr -> SalesSplit.of(month, book.sales) { cr[it] ?: 0 } } }
     // [GUIDE-05] Each card can be turned off for its calendar.
     if (split.total > split.unsplit) FeatureCard("shop.split", calendarId) {
         SectionCard(title = "결제 수단별") {

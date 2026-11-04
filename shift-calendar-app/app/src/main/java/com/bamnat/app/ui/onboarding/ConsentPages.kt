@@ -39,8 +39,8 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material.icons.outlined.DoNotDisturbOn
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.AlertDialog
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface

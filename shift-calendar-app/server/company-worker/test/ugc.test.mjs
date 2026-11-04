@@ -20,6 +20,18 @@ async function talk(call) {
   return { c, g, say, read, flag, news };
 }
 
+test("[SEC-16] 보안 점검 M10: one line counts once a day for one post, however many ids report it", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server({ plaza: true });
+  await signIn(call);
+  const { say } = await talk(call);
+  const post = (await say(2, "평범한 글이에요")).data.id;
+  for (const n of [3, 4, 5]) await call("POST", `/api/posts/${post}/flag`, { device: device(n), reason: "abuse" }, from(3));
+  const row = await DB.prepare("SELECT flags, status FROM posts WHERE id = ?").bind(post).first();
+  assert.deepEqual([row.flags, row.status], [1, "shown"]);
+  assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM post_flags WHERE post_id = ?").bind(post).first()).n, 3);
+});
+
 test("[COMM-11] flaggers hear what became of the post, and its writer hears it too", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const { call } = server({ plaza: true });
@@ -73,8 +85,8 @@ test("[COMM-11] a 개인 정보 flag shows the post as 확인 중, and a writer 
   const posts = (await read(5)).data.posts;
   assert.equal(posts.find((x) => x.id === p).review, true);
   assert.equal(posts.find((x) => x.id !== p).review, undefined);
-  const left = (await read(2)).data.left;
-  assert.equal(left.posts, 19);
+  // 1.36 [LIM-10] Without strikes there is no cap, so nothing is said.
+  assert.equal((await read(2)).data.left, undefined);
   // Without a phone nothing is said about limits.
   assert.equal((await call("GET", `/api/companies/${(await read(2)).data.company.id}/setups/${(await read(2)).data.setup}/posts`)).data.left, undefined);
 });

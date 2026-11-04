@@ -93,6 +93,9 @@ class TierAppTest {
         assertTrue(store.refresh(api, now))
         assertTrue(store.current.billingLive)
         assertFalse("하루 안에는 다시 묻지 않아요", store.refresh(api, now.plusSeconds(3_600)))
+        // 1.36 PC 재검토: an open afresh asks again after 10 minutes, so a switch turned meanwhile comes on the next open.
+        assertFalse(store.due(now.plusSeconds(300), RemoteConfigStore.ON_OPEN))
+        assertTrue(store.due(now.plusSeconds(3_600), RemoteConfigStore.ON_OPEN))
         api.configAnswer = null
         assertFalse(store.refresh(api, now.plusSeconds(90_000)))
         assertTrue("연결이 없으면 마지막 답이 그대로예요", store.current.billingLive)
@@ -117,6 +120,8 @@ class TierAppTest {
                 // [TAX-02] 1.25.0 W (결정 W-D4).
                 "TAX_FORECAST" to Tier.PRO,
                 "THEME_WARDROBE" to Tier.PRO,
+                // [PRF-12] 1.36.
+                "CREATOR_PRO" to Tier.PRO,
                 "TEAM_ROSTER" to Tier.LEADER,
             ),
             Feature.entries.associate { it.name to it.minTier },
@@ -235,6 +240,22 @@ class TierAppTest {
         assertEquals("6시간 안에는 다시 묻지 않아요", emptyList<String>(), api.calls)
     }
 
+    /** PC 확인 7525ccff: a new phone tied to an admin asks for its passes then, so the card shows the link and why it is approved. */
+    @Test fun aNewPhoneJustLinkedAsksForItsPasses() = runBlocking {
+        val c = ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
+        val pass = Passes(null, 0, emptyList(), 0, AdminState("approved", "최고 관리자", owner = true), false, Instant.now())
+        val api = FakeTierApi(passesAnswer = pass)
+        c.tierApi = api
+        c.syncPasses(force = true)
+        assertEquals("다른 까닭이 없으면 묻지 않아요", emptyList<String>(), api.calls)
+        c.syncPasses(force = true, linked = true)
+        assertEquals(listOf("passes"), api.calls)
+        assertEquals(true, c.proStore.current.passes?.admin?.owner)
+        // PC 확인 보안 6차: "최고 관리자 휴대폰이에요", not "최고 관리자 관리자 휴대폰이에요".
+        assertEquals("최고 관리자", com.bamnat.app.ui.pro.adminWhose("최고 관리자"))
+        assertEquals("민지 관리자", com.bamnat.app.ui.pro.adminWhose("민지"))
+    }
+
     // ---- The trial's answer waits until it reaches the server [SRV-07] ----
 
     @Test fun aTrialAnswerGivenOfflineWaitsAndGoesAtTheNextSync() = runBlocking {
@@ -311,6 +332,7 @@ class TierAppTest {
         assertTrue("해지 방법", all.contains("Play 스토어 › 결제 및 정기 결제"))
         assertTrue("청약철회와 그 제한", all.contains("7일 안에는 청약철회") && all.contains("전자상거래법 제17조 제2항"))
         assertTrue("약관 동의", all.contains("이용약관과 개인정보처리방침"))
+        assertTrue("판매자", all.contains("통신판매업 신고 제2026-전남여수-0424호") && all.contains("사업자등록번호 327-25-02565"))
         val noTrial = proDisclosures(listOf(monthly.copy(trial = false)), LocalDate.of(2027, 3, 10)).joinToString("\n")
         assertFalse("체험이 없으면 체험 문장도 없어요", noTrial.contains("무료 체험"))
         assertTrue(NoBilling().plans.value.isEmpty())

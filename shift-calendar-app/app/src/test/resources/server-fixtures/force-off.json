@@ -138,6 +138,8 @@
   "ownerPasses": {
     "until": null,
     "waitingMonths": 0,
+    "waitingDays": 0,
+    "earned": [],
     "items": [],
     "deferred": 0,
     "admin": {
@@ -147,11 +149,14 @@
       "previews": []
     },
     "code": false,
+    "shared": null,
     "checkedAt": "2026-11-12T03:00:00.000Z"
   },
   "memberPasses": {
     "until": null,
     "waitingMonths": 0,
+    "waitingDays": 0,
+    "earned": [],
     "items": [],
     "deferred": 0,
     "admin": {
@@ -161,6 +166,7 @@
       "previews": []
     },
     "code": false,
+    "shared": null,
     "checkedAt": "2026-11-12T03:00:00.000Z"
   }
 }

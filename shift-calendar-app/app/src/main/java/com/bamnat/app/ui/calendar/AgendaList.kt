@@ -23,7 +23,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -89,6 +91,21 @@ internal fun AgendaList(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 24.dp),
                 textAlign = TextAlign.Center,
             )
+            // [TAB-04] PC 확인 38d2d8e7 사용성 제안: an empty month repeated "7일 비어 있어요" five times; it says once how to add instead.
+            focus.addLabel?.let { add ->
+                val day = if (YearMonth.from(today) == m) today else m.atDay(1)
+                // PC 확인 f249a365 사용성 제안: with no days listed there is no date to press, so 다른 날 고르기 sits beside the button.
+                var picking by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+                Row(Modifier.align(Alignment.CenterHorizontally), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.FilledTonalButton(onClick = { onQuickAction(day, QuickAction.Open) },
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text("${Fmt.monthDay(day)} $add") }
+                    androidx.compose.material3.OutlinedButton(onClick = { picking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다른 날 고르기") }
+                }
+                Text("고른 날짜에 바로 적을 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp))
+                if (picking) OtherDayPicker(day, onDismiss = { picking = false }) { picked -> picking = false; onQuickAction(picked, QuickAction.Open) }
+            }
+            return@Column
         }
         for (row in rows) {
             when (row) {
@@ -251,4 +268,21 @@ private fun DayRow(
             }
         }
     }
+}
+
+/** [TAB-04] 다른 날 고르기 on an empty month: a date, then that day opens to write in. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun OtherDayPicker(start: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate) -> Unit) {
+    val state = androidx.compose.material3.rememberDatePickerState(
+        initialSelectedDateMillis = start.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli())
+    com.bamnat.app.ui.components.DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = {
+                state.selectedDateMillis?.let { onPick(java.time.Instant.ofEpochMilli(it).atZone(java.time.ZoneOffset.UTC).toLocalDate()) } ?: onDismiss()
+            }) { Text("이 날 적기") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("닫기") } },
+    ) { androidx.compose.material3.DatePicker(state) }
 }

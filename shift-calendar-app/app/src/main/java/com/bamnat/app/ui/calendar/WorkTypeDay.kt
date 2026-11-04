@@ -10,7 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -128,7 +128,7 @@ private fun SwapRow(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarVi
                             recent.forEach { r -> SuggestionChip(onClick = { text = r }, label = { Text(r) }) }
                         }
                     }
-                    Text("통계에서 이 달의 교환·대근을 모아 볼 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                    Text("근무·급여 탭에서 이 달의 교환·대근을 모아 볼 수 있어요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
                 }
             },

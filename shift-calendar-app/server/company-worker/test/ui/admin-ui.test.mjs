@@ -452,6 +452,34 @@ test("[ADMUX-19] 토론: pick two posts, 가리기 asks once, both are hidden on
   assert.deepEqual(u.errors, []);
 });
 
+test("PC 확인 보안 11차: 글 가리기는 이유를 고르기 전에는 누를 수 없고, 고른 이유로 가려요", async (t) => {
+  offline(t);
+  const s = server({ plaza: true });
+  const { call, env, DB } = s;
+  const a = await call("POST", "/api/reports", report(1), from(1));
+  await call("POST", "/api/posts", { device: device(2), company: a.data.company.id, setup: a.data.setup, body: "가릴 글이에요" }, from(2));
+  const u = await asOwner(env, t);
+  await u.go("#/community?show=all");
+  await u.click('#main [data-act="post-hide"]');
+  const form = u.$('dialog form[data-form="hide-post"]');
+  const radios = [...form.querySelectorAll('input[name="reason"]')];
+  assert.ok(radios.length >= 2);
+  assert.equal(radios.filter((r) => r.checked).length, 0, "미리 골라 두지 않아요");
+  assert.equal(form.querySelector('button[type="submit"]').disabled, true);
+  assert.match(u.text("dialog"), /이유를 고르면 가리기를 누를 수 있어요/);
+  const pick = radios[1];
+  pick.checked = true;
+  pick.dispatchEvent(new u.window.Event("change", { bubbles: true }));
+  assert.equal(form.querySelector('button[type="submit"]').disabled, false);
+  assert.doesNotMatch(u.text("dialog"), /이유를 고르면/);
+  form.requestSubmit();
+  await u.settle(30);
+  const row = DB.db.prepare("SELECT status, hide_reason FROM posts").get();
+  assert.equal(row.status, "hidden");
+  assert.equal(row.hide_reason, pick.value, "고른 이유로 가려요");
+  assert.deepEqual(u.errors, []);
+});
+
 // AE 1.26 시작
 test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", async () => {
   const { call, env, DB } = await world();
@@ -580,9 +608,9 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.equal(t.$("#hubtabs [aria-current]").dataset.tab, "review");
   assert.ok(t.$('.side li[data-hub="plaza"].open .subnav a[data-tab="adopt"]'));
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "plaza");
-  // A hub of one tab has no tab row; 분석 sits under 더 보기 on the phone, which is lit there.
+  // 1.36 [GRW-07] 오늘 has 할 일함 beside it now; 분석 sits under 더 보기 on the phone, which is lit there.
   await t.go("#/home");
-  assert.ok(t.$("#hubtabs").hidden);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "work"]);
   await t.go("#/metrics");
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "more");
   // 민지 answers questions only: 오늘, 문의 (without 답 목표, which is 설정's) and 관리 (내 계정 only).
@@ -590,7 +618,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.deepEqual(sideHubs(u), ["today", "ask", "manage"]);
   assert.deepEqual(bottom(u), ["today", "ask", "manage"], "every hub fits: no 더 보기");
   await u.go("#/inquiries");
-  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "sort", "dev", "templates"]);
+  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "sort", "growth", "dev", "templates"]);
   await u.go("#/account");
   assert.ok(u.$("#hubtabs").hidden, "관리 has one tab for 민지");
   // A tab 민지 cannot use goes to 오늘.
@@ -1519,4 +1547,90 @@ test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 
   assert.match(copied ?? "", /# 밤낮 관리자 앱 → 개발 넘김/);
   assert.ok(t.$('[data-act="sort-handoff"]').disabled, "nothing left to hand over");
   assert.deepEqual(t.errors, []);
+});
+
+test("[SEC-11] 서버 상태 shows Play Integrity: off, and require without a service account as the thing to fix", async () => {
+  // PC 확인 d263030e: /server answered integrity but the screen drew none of it.
+  const off = await signedIn(server().env);
+  await off.go("#/server");
+  assert.ok(off.$('[data-integrity="off"]'), "the part is there when off");
+  assert.match(off.text("#main"), /무결성 확인 \(Play Integrity\)/);
+  assert.match(off.text("#main"), /꺼짐: 남에게 보이는 쓰기/);
+  assert.ok(!off.$("[data-integrity-numbers]"), "no numbers while off");
+
+  const stuck = await signedIn(server({ INTEGRITY_MODE: "require" }).env);
+  await stuck.go("#/server");
+  assert.ok(stuck.$('[data-integrity="require"]'));
+  assert.match(stuck.text("#main"), /지금 남에게 보이는 쓰기가 모두 막혀요/);
+  assert.ok(stuck.$('[data-integrity="require"] + ul.checks li.bad'), "drawn as the thing to fix first");
+  assert.match(stuck.text("[data-integrity-numbers]"), /오늘 확인을 물은 쓰기 0 · 지난 하루 확인에 실패한 휴대폰 0 · 7일 안에 확인된 휴대폰 0/);
+  assert.equal(stuck.$$("#main [style]").length, 0);
+  assert.deepEqual([...off.errors, ...stuck.errors], []);
+});
+
+test("[SEC-10] 마을 장터 › 글꼴: a first font waits with what it says of itself, its words drawn as words, 나누기 lets it go", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { fakeFont } = await import("../font-fixture.mjs");
+  const s = server({ plaza: true });
+  const { call, env } = s;
+  const font = fakeFont({ family: "<b>굵게</b> 손글씨", maker: '"><img src=x onerror=globalThis.__xss=1>' });
+  const id = (await call("POST", "/api/recipes/fonts", { device: device(1), name: "손글씨", license: "ofl", ttf: font.toString("base64") }, from(1))).data.id;
+  const u = await asOwner(env, t);
+  await u.go("#/recipes");
+  await u.click('#main [data-act="recipe-tab"][data-key="fonts"]');
+  await u.idle();
+  assert.match(u.text("#main"), /확인 기다림 1/);
+  assert.match(u.text("#main"), /이름 <b>굵게<\/b> 손글씨/, "the font's own name, as words");
+  assert.match(u.text("#main"), /글꼴 안에 OFL이라고 적혀 있어요/);
+  assert.equal(u.$$("#main b").filter((b) => b.textContent === "굵게").length, 0);
+  assert.equal(u.$$('#main img[src="x"]').length, 0);
+  assert.equal(globalThis.__xss, undefined);
+  await u.click(`#main [data-act="recipe-font"][data-id="${id}"][data-key="ok"]`);
+  await u.settle(20);
+  assert.equal((await call("GET", `/api/recipes/fonts/${id}`)).status, 200, "others get it now");
+  // 1.36 [SEC-10] M8: the same letters sent again under another name wait beside the one already shared.
+  await call("POST", "/api/recipes/fonts", { device: device(2), name: "복사본", license: "ofl", ttf: fakeFont({ family: "새 이름", maker: "x" }).toString("base64") }, from(2));
+  await u.click('#main [data-act="font-state"][data-key="pending"]');
+  await u.settle(20);
+  assert.match(u.text("#main"), /글자 모양이 같은 글꼴을 나누는 중: 손글씨 · [+−]\d+B/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[GRW-12] 작품 열기: from 사진 검토 the recipe opens with the photo and its 보이기·가리기, and 돌아가기 leads back", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const s = server({ plaza: true });
+  const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([30, 0, 0, 0]), Buffer.from("WEBPVP8 "), Buffer.from([10, 0, 0, 0]),
+    Buffer.from([0, 0, 0, 0x9d, 0x01, 0x2a, 64, 0, 64, 0]), Buffer.alloc(16, 7)]).toString("base64");
+  const pic = (await s.call("POST", "/api/recipes/images", { device: device(1), webp }, from(1))).data;
+  assert.equal(pic.state, "pending", "a 새싹's first photo waits for a look");
+  const body = { format: "bamnat-recipe", v: 1, title: "열어 볼 세트", summary: "야간이 잘 보여요", styles: ["SHIFT"],
+    cover: { a: 4282339765, b: 4288423856, dir: 1, emoji: "🌙", image: pic.id },
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
+  const made = await s.call("POST", "/api/recipes", { device: device(1), recipe: body, scope: "public" }, from(1));
+  assert.equal(made.status, 201);
+  const code = made.data.code;
+  const t1 = await signedIn(s.env);
+  await t1.go("#/recipes");
+  await t1.click('[data-act="recipe-tab"][data-key="images"]');
+  await t1.settle(20);
+  await t1.click(`[data-act="recipe-open"][data-id="${code}"]`);
+  await t1.settle(20);
+  assert.match(t1.text("#main"), new RegExp(`작품 ${code} 하나만`));
+  assert.match(t1.text("#main"), /열어 볼 세트/);
+  assert.match(t1.text("#main"), /보러 온 사진/);
+  assert.ok(t1.$(`[data-act="recipe-do"][data-id="${code}"][data-key="hide"]`), "가리기 for the recipe is right there");
+  await t1.click('[data-act="photo-big"]');
+  assert.ok(t1.$("dialog img.photo-big"), "the photo opens big");
+  await t1.click('dialog [data-act="close"]');
+  await t1.click(`[data-act="recipe-image"][data-id="${pic.id}"][data-key="ok"]`);
+  await t1.settle(20);
+  assert.match(t1.text("#main"), /보러 온 사진.*보이게 했어요/);
+  assert.ok(!t1.$(`[data-act="recipe-image"][data-id="${pic.id}"]`), "decided: the buttons go");
+  const back = t1.$('[data-act="recipe-tab"][data-key="images"]:not(.chip)');
+  assert.match(back.textContent, /돌아가기 · 사진 검토/);
+  await t1.click(back);
+  await t1.settle(20);
+  assert.match(t1.text("#main"), /볼 사진이 없어요/);
+  assert.deepEqual(t1.errors, []);
 });

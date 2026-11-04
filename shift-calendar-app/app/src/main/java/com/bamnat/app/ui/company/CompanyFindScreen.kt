@@ -45,7 +45,7 @@ import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Search
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -842,7 +842,7 @@ internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boole
         value = if (c.companyOf(calendar).pay.profile.value == null) null
             else runCatching { payTrial(c, setup.text, setup.id, Today.month(), calendar, setup.payHidden) }.getOrNull()
     }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("급여 계산 방식도 같이 넣을까요?") },
         text = {

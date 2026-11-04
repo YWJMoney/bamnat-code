@@ -35,6 +35,8 @@ object Notifications {
     const val SHARE_CHANNEL_ID = "share_expiry_v1"
     /** [FEAT-18] The lock-screen 오늘 근무 notice: no sound, no badge, shown in full on the lock screen. */
     const val TODAY_CHANNEL_ID = "today_shift_v1"
+    /** [RUL-04] 1.36 수식·규칙: what a rule says (내일 야간 준비 등). */
+    const val RULES_CHANNEL_ID = "rules_v1"
     /** [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 확인 and date notices. */
     const val INVEST_CHANNEL_ID = "invest_alarm_v1"
     /** [MON-06] The one notice before a free trial turns paid. */
@@ -43,6 +45,8 @@ object Notifications {
     const val BACKUP_CHANNEL_ID = "auto_backup_v1"
     /** [COMM-10] 광장 소식, since 1.23 밤낮 소식 [SRV-10]: one bundled notice a day. */
     const val PLAZA_CHANNEL_ID = "plaza_news_v1"
+    /** 1.36 PC 6ec395bf: 내 문의에 온 답은 조용한 밤낮 소식이 아니라 소리 나는 기본 알림으로 (설정 › 알림에서 따로 끌 수 있어요). */
+    const val INQUIRY_CHANNEL_ID = "inquiry_reply_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -62,6 +66,8 @@ object Notifications {
     const val LEAVE_ID = 7201
     const val SHARE_ID = 7202
     const val PRO_ID = 7203
+    /** 840·841: a yearly renewal or a 1년 이용권 ending in 7 days. */
+    const val PRO_END_ID = 7209
     const val BACKUP_ID = 7204
     const val PLAZA_ID = 7205
     /** [J133-24] 문의에 답이 왔어요, at once while a question waits. */
@@ -160,7 +166,17 @@ object Notifications {
             description = "문의 답, 받은 근무표 바뀜, 광장 규칙·신고 결과를 하루에 한 번 모아서 조용히 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza))
+        val rules = NotificationChannel(RULES_CHANNEL_ID, "내 규칙 알림", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "스튜디오나 받은 테마의 규칙이 띄우는 알림이에요(예: 야간 근무 3시간 전 준비). 규칙은 설정 › 알람 › 수식·규칙·버튼에서 하나씩 끌 수 있어요"
+            group = GROUP_DAY
+            // 1.36 [SEC-12] 보안 점검 M5: a rule's words can hold the 가계부's numbers ({원(이달지출)}); the lock screen shows only that one came.
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
+        val inquiry = NotificationChannel(INQUIRY_CHANNEL_ID, "문의 답", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
+            group = GROUP_DAY
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
     }
 

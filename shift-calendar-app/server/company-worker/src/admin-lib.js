@@ -97,6 +97,11 @@ export function adminLib() {
     offline: "인터넷에 연결되지 않았어요",
     ok: "값을 다시 골라 주세요",
     own: "내 항목에는 할 수 없어요",
+    not_yours: "내가 쓴 질문에만 고를 수 있어요",
+    reply: "그 질문의 답글이 아니에요",
+    poll: "투표 보기는 2~4개, 서로 다르게 30자까지예요",
+    choice: "투표 보기를 다시 골라 주세요",
+    attach: "내가 올린 공개 작품만 붙일 수 있어요",
     owner_password: "최고 관리자 비밀번호는 Cloudflare의 ADMIN_PASSWORD에서 바꿔요",
     parent: "답글을 달 글을 다시 골라 주세요",
     password: "비밀번호는 10자 이상이어야 해요",
@@ -281,8 +286,8 @@ export function adminLib() {
 
   /** The six hubs and their tabs (each tab is a route), in the order they show; 1~6 on a keyboard. */
   const HUBS = [
-    { key: "today", label: "오늘", icon: "home", tabs: ["home"] },
-    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "sort", "dev", "templates", "sla"] },
+    { key: "today", label: "오늘", icon: "home", tabs: ["home", "work"] },
+    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "sort", "growth", "dev", "templates", "sla"] },
     { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "recipes", "companies", "shares", "adopt"] },
     { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
     { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
@@ -297,6 +302,10 @@ export function adminLib() {
    */
   const TABS = {
     home: { label: "오늘", old: "홈 받은함 할 일 지금 할 일 inbox home" },
+    // 1.36 [GRW-07] 할 일함: 모든 들어온 일을 상태(새로·보는 중·기다림·끝)와 함께 한 대기열로.
+    work: { label: "할 일함", old: "할 일함 대기열 누락 기한 넘김 다시 열림 상태 work" },
+    // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구 묶음, 기본 도구 후보, 손잡이 지도.
+    growth: { label: "스튜디오 요구", area: "inquiries", old: "스튜디오 요구 자가 발전 기본 도구 후보 모두의 도구 승격 손잡이 지도 출시 노트 growth" },
     inquiries: { label: "문의", area: "inquiries", badge: (o) => o.inquiries ?? 0, strip: "답 대기", old: "문의 inquiries" },
     // 1.35 [INBOX-01] 정리함: the same waiting questions, sorted by the server into piles with their answers written.
     sort: { label: "정리함", area: "inquiries", old: "정리함 문의 정리 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 sort" },
@@ -586,7 +595,7 @@ export function adminLib() {
    * hub, g s the list of where 설정 went); f, n, p and u are new.
    */
   const GO = { b: "home", v: "versions", h: "home", i: "inquiries", d: "dev", r: "review", c: "companies", t: "community", w: "rewards", o: "flags", m: "metrics",
-    a: "admins", l: "audit", s: "settings", f: "flags", n: "notices", p: "adopt", u: "account" };
+    a: "admins", l: "audit", s: "settings", f: "flags", n: "notices", p: "adopt", u: "account", k: "work", e: "growth" };
 
   /**
    * What a key press means, or null: [key] as KeyboardEvent.key, [mods] {ctrl, meta, alt, shift},
@@ -608,6 +617,8 @@ export function adminLib() {
       c: { act: "copy" }, " ": { act: "pick" },
       // AX 1.30 [ADMX-05] n: the next question that waits for an answer, from the list or a question.
       n: { act: "next" },
+      // 1.36 [GRW-07] 할 일함: w 기다림, h 기록 (s 보는 중, e 끝내기는 위).
+      w: { act: "wait" }, h: { act: "history" },
     };
     if (/^[1-9]$/.test(key)) return { act: "template", n: Number(key) };
     return plain[key] ?? null;
@@ -619,10 +630,10 @@ export function adminLib() {
     ["Esc · Backspace", "뒤로"], ["1~6", "허브: 오늘·문의·광장·출시·분석·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
     ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
     ["1~9 (문의 답 칸)", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
-    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g i · g d", "문의·개발사항으로"],
+    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g k · g e", "할 일함·스튜디오 요구로"], ["g i · g d", "문의·개발사항으로"],
     ["g r · g v · g t · g c · g p", "검토·여러 판·토론·회사·채택 규칙으로"], ["g f · g o · g n", "기능 관리·출시·앱 공지로"],
     ["g m · g l", "지표·활동 기록으로"], ["g a · g w · g u · g s", "관리자·보상·내 계정·옮긴 설정 목록으로"],
-    ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["n", "다음 답 대기 문의로"], ["Space (검토)", "검토 줄 펼치기·접기"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
+    ["s · w · e · h (할 일함)", "보는 중 · 기다림 · 끝내기(이유 고르기) · 기록"], ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["n", "다음 답 대기 문의로"], ["Space (검토)", "검토 줄 펼치기·접기"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
   ];
 
   // ---- [ADMUX-04] the command palette ----
@@ -1182,9 +1193,9 @@ export function adminLib() {
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
     post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", reward_auto: "보상 저절로 지급", settings: "채택 설정 바꿈",
-    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음",
+    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", village_topic: "광장 이번 주 주제 바꿈", village_contest: "이달의 주제 공모 바꿈",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
-    inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐",
+    inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈",
     dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
     dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
     dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",

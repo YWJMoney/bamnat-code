@@ -29,6 +29,15 @@ class ConsentStore(context: Context) {
     val sleepDevice: SleepDevice?
         get() = prefs.getString(K_SLEEP_DEVICE, null)?.let { n -> SleepDevice.entries.firstOrNull { it.name == n } }
 
+    /**
+     * 1.36 PC 급여 검토 W4 (교대 첫 설정에서 근무표 넣기 전에 '제대로 쓰는 설정' 목록이 길게 나옴): a new phone answers
+     * "무슨 일 하세요?", does the setup, and sees the recommended-features page after it. True from that first answer until the page
+     * is done; a phone set up before never has it, so [NewConsentPrompt] still serves those.
+     */
+    var afterSetup: Boolean
+        get() = prefs.getBoolean(K_AFTER_SETUP, false)
+        set(v) { prefs.edit().putBoolean(K_AFTER_SETUP, v).apply() }
+
     /** The pages or the prompt are done: [items] were told about, on top of what was before. */
     fun markSeen(items: Collection<ConsentItem>) {
         val all = (_seen.value ?: ConsentPlan.BEFORE_PAGES) + items
@@ -66,6 +75,7 @@ class ConsentStore(context: Context) {
 
     private companion object {
         const val K_SEEN = "consent_seen"
+        const val K_AFTER_SETUP = "consent_after_setup"
         const val K_RECOMMEND_OFFERED = "recommend_offered"
         const val K_SLEEP_DEVICE = "sleep_device"
     }

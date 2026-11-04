@@ -56,7 +56,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
@@ -483,7 +483,7 @@ private fun QuitScreen(calendarId: String, profile: PayProfile?, snapshot: Sched
             DateField("회사에 다닌 마지막 날 (사직서에 적은 날)", lastEmployed, { if (it != null) employedPick = it }, clearable = false)
             if (profile?.hireDate == null) DateField("입사일", hire, { hire = it })
             else Hint("입사일 ${Fmt.fullDate(profile.hireDate!!)} (급여 설정)")
-            Hint("최근 4주 평균 한 주 ${weekly}시간 · 시급 ${Fmt.won(wage)}로 셌어요.")
+            Hint("최근 4주 평균 한 주 ${weekly}시간 · 시급 ${Fmt.won(wage)}으로 셌어요.")
         }
         SectionCard(title = "마지막 주 주휴수당") {
             Text("${Fmt.shortDate(last.weekStart)}~${Fmt.shortDate(last.weekEnd)} · ${com.bamnat.core.hours.HoursFormat.korean(last.minutes.toInt())}" +

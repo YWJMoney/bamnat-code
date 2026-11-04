@@ -43,11 +43,20 @@ class ZFullBackupTest {
         restDayCompared = true, phoneDayView = PhoneDayView.WEEK, showDayCard = true, appLock = true,
         calendarLayout = "cards:a", statsLayout = "stats:b", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
         alarmMission = "math", shiftMissions = mapOf(shiftId to "math"), wakeCheckMinutes = 10, widgetMemo = false,
-        backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", rateHint = false, alarmSuggest = false,
+        backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", rateHint = false, alarmSuggest = false,
         // 1.25 AB.
         alarmButtonAction = "snooze",
         // 1.35 [FREE-03..08] 꾸미기.
         memoLook = "layout=grid", moneyLook = "income=FF2F5BEA", screenLooks = "all:bg=FF102030", payLooks = "SHIFT:accent=FF00857A",
+        // 1.36 [BLU-05] 부품 꾸미기.
+        parts = """[{"fill":4294940928,"id":"cal.cell"}]""",
+        // [RUL-03] 1.36 수식·규칙·버튼.
+        logic = com.bamnat.core.formula.Logic.encode(com.bamnat.core.formula.Logic(rules = listOf(com.bamnat.core.formula.LogicRule("알림", com.bamnat.core.formula.RuleTrigger.OPEN,
+            act = com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.NOTIFY, "안녕"))))),
+        // 1.36 [LAY-01] 꾸밈 층.
+        decor = "[{\"kind\":\"emoji\",\"emoji\":\"💰\",\"at\":\"cal.cell\",\"on\":\"d25\"}]",
+        // 1.36 [MAT-07] 움직임.
+        motion = "tn:fade",
         // 1.26 AD.
         tabOrder = listOf("memos", "calendar"),
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].

@@ -168,9 +168,16 @@ class SettingsFilesBackup(
             Part("pay_way"),
             // 1.32 [WTYP-11] 희망 오프: 고른 날과 신청 마감일.
             Part("wish_off"),
+            // 1.36 [VIL-13] 마을 › 간직한 글: posts kept to read again, only on the phone (the server keeps no list).
+            Part("village_saved"),
             // [FREE-10] 1.35 테마 옷장: 입었던 테마, 내 테마, the look kept aside while a theme is on. The 3일 전 notice said and
             // the 프로 mark are this phone's.
-            Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver")),
+            // [R136-03] 1.36: the day each calendar started on this phone (깐 날 표시), so a restored phone says the same day.
+            Part("calendar_start"),
+            Part("leave_hire"), // [LEAVE-14]
+            Part("pro_trials"), // [MON-13]
+            Part("folded_types"), // 1.36 PC 재검토: 안 쓰는 근무 종류
+            Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays")),
         )
 
         /**
@@ -199,6 +206,26 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // [MAT-05] 1.36 글꼴 고르기의 최근 쓴 글꼴 다섯, 이 휴대폰의 것.
+            "font_recent" to "글꼴 고르기에서 최근 고른 글꼴(다섯 개), 이 휴대폰의 것",
+            "font_waiting" to "테마가 쓰는데 아직 못 받은 나눈 글꼴(운영자 확인 전 등), 앱을 열 때 다시 받아 보려고 2주 동안 적어 둠",
+            "font_standin" to "아직 못 받은 나눈 글꼴 대신 보일 비슷한 앱 글꼴(보낸 분 휴대폰이 고른 것), 이 휴대폰의 것",
+            // PC 재검토 N3 1.36: the look from before a studio wear, for a day's '입히기 전 모양으로'; a restored phone has no such moment.
+            "studio_locks" to "스튜디오에서 잠근 화면(한 색·섞기가 건드리지 않을 탭), 이 휴대폰의 것",
+            "look_undo" to "스튜디오에서 입히기 전 모양(하루 동안만 되돌리기)",
+            "backup_place" to "마지막 백업 파일이 있던 폴더 주소, 이 휴대폰의 저장소 것",
+            "logic_rules" to "규칙을 끈 것·지난 7일 실행 횟수·마지막 되돌리기, 이 휴대폰에서 실행한 만큼(규칙 자체는 설정 logic으로 백업)",
+            // [LAY-09] 1.36 곳 줄 자주 쓰는 6곳: how this phone's hands use the studio.
+            "studio_ui" to "스튜디오에서 자주 연 곳(곳 줄 순서), 이 휴대폰의 것",
+            // PC 확인 11825213 사용성 제안: the 메모 tab opens on the 칸 last looked at.
+            "memo_list" to "메모 탭에서 마지막으로 본 칸(달력 메모·노트 등), 이 휴대폰의 것",
+            // 1.36 [GRW-03][GRW-09] 스튜디오 부탁 풀림을 알린 문의, 작품을 올린 적 있는지(보상 이용권 묻기): this phone's own.
+            "studio_solved" to "스튜디오 부탁이 풀렸다고 이 휴대폰에서 이미 알린 문의",
+            "maker" to "이 휴대폰에서 작품을 올린 적 있는지(만든 분 보상 이용권을 물을지)",
+            // 1.36 [PUSH-01] the FCM token last given to the server: a new phone gets its own.
+            "push_phone" to "문의 답 바로 알림에 서버로 보낸 이 휴대폰의 알림 토큰",
+            // 1.36 [VIL-04][VIL-07] 마을 화면 기억: the part last seen and 오늘의 하나 '오늘은 그만', this phone's own.
+            "village_ui" to "마을에서 마지막에 본 칸과 '오늘의 하나'를 그날 접었는지, 이 휴대폰에서 본 만큼",
             "company:device" to "이 휴대폰의 설치 번호(문의 기록의 열쇠)",
             // [PLAZA-04] 1.25 X (결정 X-D5): the plaza invitation's waits are this phone's, like share_way.
             "company:invite_due" to "광장 올리기 권유를 다시 보일 날, 이 휴대폰에서 본 만큼",
@@ -258,7 +285,7 @@ class SettingsFilesBackup(
             "first_pay_asked" to "광장 판마다 '첫 급여 방식이 되어 주세요'를 이미 보여 준 기록, 이 휴대폰에서만 (J133-94)",
             "inquiry_reply" to "문의 답을 바로 알린 개수, 같은 답을 두 번 알리지 않으려고 (J133-24)",
             // 1.32 [PROX-02]: when this phone was offered a free day on a money day (끄기는 기능 스위치로 백업).
-            "pro_moments" to "급여일·신고 달의 하루 무료 권유를 이 휴대폰에서 본 날과 닫은 날",
+            "pro_moments" to "프로 제안 카드를 이 휴대폰에서 본 날·닫은 날과 앱을 연 날",
             // 1.32 [STAB-08]: a backup saved on another phone does not keep this one's records.
             "recipe_remix_seen" to "내 판마다 고쳐 만든 판을 이 휴대폰에서 본 수, 새로 생긴 것만 점으로 알리려고 (LIN-04)",
             "backup_nudge" to "이 휴대폰에서 마지막으로 백업 파일을 저장한 날과 ‘나중에’를 누른 날",

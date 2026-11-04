@@ -155,6 +155,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .fieldset{margin:0 0 1rem}
 .field{display:flex;gap:.5rem}
 .field input{flex:1;min-width:0}
+.plain{list-style:none;margin:.25rem 0;padding:0;display:grid;gap:.4rem}.plain label{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
 .searchbar{display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap}
 .searchbar input{flex:1 1 12rem;min-width:0}
 
@@ -342,6 +343,10 @@ padding:.75rem;box-shadow:var(--shadow)}
 .checks span{flex:none;display:inline-grid;place-items:center;width:1.4rem;height:1.4rem;border-radius:50%;font-size:.8rem;font-weight:900}
 .checks .ok span{background:var(--ok-bg);color:var(--ok)}
 .checks .todo span{background:var(--warn-bg);color:var(--warn)}
+.checks .off span{background:var(--soft);color:var(--muted)}
+.checks .bad span{background:var(--bad-bg);color:var(--bad)}
+.checks .bad{color:var(--bad);font-weight:700}
+.card h3.sub{margin:.9rem 0 .5rem}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:.35rem .9rem;margin:0;font-size:.88rem}
 .kv dt{color:var(--muted)}
 .kv dd{margin:0;font-weight:600}
@@ -457,7 +462,8 @@ background:var(--info-bg);color:var(--info);font-size:.86rem;font-weight:800;tex
 .banner .btn{min-height:2.25rem}
 .failed{text-align:center;padding:2.5rem 1rem;color:var(--muted)}
 .failed h2{color:var(--fg);font-size:1.06rem;margin:.5rem 0 .25rem}
-.toast .undo{margin-left:.75rem;border:0;background:none;color:var(--accent-soft);font-weight:900;text-decoration:underline;cursor:pointer;pointer-events:auto;min-height:2rem}
+.toast .undo{margin-left:.75rem;border:0;border-radius:var(--r);padding:.45rem .9rem;background:var(--accent-soft);color:var(--fg);font-size:.95rem;font-weight:900;cursor:pointer;pointer-events:auto;min-height:2.75rem}
+.toast.has-undo{font-size:.95rem;padding:.6rem .8rem .6rem 1.1rem;display:flex;align-items:center;gap:.25rem}
 .toast.show.has-undo{pointer-events:auto}
 /* Two panes: on a wide screen the list stays beside the open item. */
 @media (min-width:1024px){.split{display:grid;grid-template-columns:minmax(17rem,24rem) minmax(0,1fr);gap:1rem;align-items:start}
@@ -733,4 +739,23 @@ ul.mini small{color:var(--muted);margin-left:.3rem}
 @media (pointer:coarse){.kbd-hint{display:none}}
 .sort-nudge{display:flex;align-items:center;gap:.6rem;margin:0 0 .9rem;padding:.7rem .9rem;border-radius:var(--r-sm);background:var(--info-bg);color:var(--fg);text-decoration:none;font-size:.88rem}
 .sort-nudge svg{flex:none;width:1.25rem;height:1.25rem}.sort-nudge span{flex:1;min-width:0}.sort-nudge b{color:var(--info);margin-right:.35rem}
+/* 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구 */
+.rows.work .row{align-items:center}.rows.work .pick{flex:none;display:flex;align-items:center;padding-right:.25rem}
+.rows.work .pick input{width:1.25rem;height:1.25rem}
+.rows.work .row-side{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:.35rem;max-width:62%}
+.rows.work .row-main b{display:block}
+button.tile{font:inherit;text-align:left;cursor:pointer;color:inherit}button.tile[aria-pressed=true]{border-color:var(--accent)}
+.rows.needs>li.item{display:block;padding:1rem;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);margin:0 0 .75rem}
+.rows.needs h3{margin:0;font-size:1rem}
+.samples{margin:.5rem 0;padding-left:1.1rem}.samples li{margin:.15rem 0}
+.copy-box{white-space:pre-wrap;background:var(--soft);padding:.75rem;border-radius:var(--r)}
+.rows.work .row-tags,.rows.work .row-acts{display:flex;flex-wrap:wrap;align-items:center;gap:.35rem}
+/* PC 확인 8d290ec3: 휴대폰 폭에서 상태는 두 줄로 다 보이고, 단추는 제목 아래 한 줄에 같은 폭으로. */
+hr.split{border:0;border-top:2px dashed var(--line);margin:1.5rem 0}
+.linkish{background:none;border:0;padding:0;color:var(--accent,#2b6cb0);text-decoration:underline;cursor:pointer;font:inherit}
+li.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
+img.photo-big{display:block;width:100%;max-width:512px;height:auto;margin:0 auto;image-rendering:auto;border-radius:8px}
+@media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}
+.rows.work .row-acts{flex-wrap:nowrap}.rows.work .row-acts .btn{flex:1 1 0;min-width:0;padding-left:.3rem;padding-right:.3rem}
+.segmented.wrap{flex-wrap:wrap;overflow:visible}.segmented.wrap .seg{flex:1 1 30%}}
 `;

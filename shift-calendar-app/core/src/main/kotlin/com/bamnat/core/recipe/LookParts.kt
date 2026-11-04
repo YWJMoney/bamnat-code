@@ -25,6 +25,10 @@ object LookParts {
         data class Keys(override val kind: PieceKind, val keys: Set<String>? = null) : Take
         /** Some screens of 화면 색·배경 ([ScreenLooks] keys); [pay] also takes 급여 모양. */
         data class Screens(val screens: (String) -> Boolean, val pay: Boolean = false) : Take { override val kind = PieceKind.SCREEN_LOOK }
+        /** [BLU-05] 1.36 부품 꾸미기: the blueprint lines of the parts under [roots] (`cal` takes `cal`, `cal.head.title` …). */
+        data class Parts(val roots: Set<String>) : Take { override val kind = PieceKind.PARTS }
+        /** [LAY-01] The 꾸밈 층's items pinned to the places [at] says yes to. */
+        data class Decor(val at: (String) -> Boolean) : Take { override val kind = PieceKind.DECOR }
     }
 
     data class Part(val id: String, val tab: String, val label: String, val takes: List<Take>)
@@ -40,12 +44,16 @@ object LookParts {
         Part("cal.photo", TabOrder.CALENDAR, "달력 그림", listOf(Take.Keys(PieceKind.PHOTO_LOOK, setOf("bg", "dim", "head", "icons")))),
         Part("cal.colors", TabOrder.CALENDAR, "달력 색·배경", listOf(Take.Screens({ it == "calendar" }))),
         Part("cal.cards", TabOrder.CALENDAR, "달력 카드 배치", listOf(Take.Keys(PieceKind.LAYOUT, setOf("calendar")))),
+        // [TAB-07] 1.36 탭 보기, a part a tab.
+        Part("cal.board", TabOrder.CALENDAR, "달력 판", listOf(Take.Keys(PieceKind.TAB_VIEW, setOf("cal")))),
         Part("memo.look", TabOrder.MEMOS, "메모장 모양", listOf(Take.Keys(PieceKind.MEMO_LOOK))),
         Part("memo.colors", TabOrder.MEMOS, "메모 색·배경", listOf(Take.Screens({ it == "memo" }))),
         Part("memo.cards", TabOrder.MEMOS, "메모 카드 배치", listOf(Take.Keys(PieceKind.CARDS, setOf("memo")))),
+        Part("memo.view", TabOrder.MEMOS, "메모장 보기", listOf(Take.Keys(PieceKind.TAB_VIEW, setOf("memo", "memoBy", "memoSort")))),
         Part("money.look", TabOrder.MONEY, "가계부 모양", listOf(Take.Keys(PieceKind.MONEY_LOOK))),
         Part("money.colors", TabOrder.MONEY, "가계부 색·배경", listOf(Take.Screens({ it == "money" }))),
         Part("money.cards", TabOrder.MONEY, "가계부 카드 배치", listOf(Take.Keys(PieceKind.CARDS, setOf("money")))),
+        Part("money.board", TabOrder.MONEY, "가계부 판", listOf(Take.Keys(PieceKind.TAB_VIEW, setOf("money")))),
         Part("stats.pay", TabOrder.STATS, "급여 모양·색", listOf(Take.Screens({ it.startsWith("pay.") }, pay = true))),
         Part("stats.colors", TabOrder.STATS, "통계 색·배경", listOf(Take.Screens({ it == "stats" }))),
         Part("stats.cards", TabOrder.STATS, "통계 카드 배치", listOf(Take.Keys(PieceKind.CARDS, setOf("stats")))),
@@ -54,9 +62,66 @@ object LookParts {
         Part("app.tabs", TabOrder.SETTINGS, "아래 탭 순서", listOf(Take.Keys(PieceKind.LAYOUT, setOf("tabs")))),
         Part("app.corners", TabOrder.SETTINGS, "모서리", listOf(Take.Keys(PieceKind.PHOTO_LOOK, setOf("corners")))),
         Part("widget", WIDGET, "위젯", listOf(Take.Keys(PieceKind.WIDGET), Take.Keys(PieceKind.PHOTO_LOOK, setOf("widget")))),
+        // [RUL-07] 1.36 규칙·단추 하나의 조각으로 담아 두고 얹기 (장터 '규칙·단추' 구간). 얹으면 내 규칙·단추에 더해져요.
+        Part(LOGIC, TabOrder.SETTINGS, "규칙·단추", listOf(Take.Keys(PieceKind.LOGIC))),
+        // [BLU-05] 1.36 부품 꾸미기, one part per screen, so 바꾼 곳·부분만 담기·처음대로 see them like the rest.
+        Part("cal.parts", TabOrder.CALENDAR, "달력 부품", listOf(Take.Parts(setOf("cal")))),
+        Part("memo.parts", TabOrder.MEMOS, "메모 부품", listOf(Take.Parts(setOf("memo")))),
+        Part("money.parts", TabOrder.MONEY, "가계부 부품", listOf(Take.Parts(setOf("money")))),
+        Part("stats.parts", TabOrder.STATS, "급여 부품", listOf(Take.Parts(setOf("pay")))),
+        Part("app.parts", TabOrder.SETTINGS, "앱 전체 부품", listOf(Take.Parts(setOf("app")))),
+        Part("widget.parts", WIDGET, "위젯 부품", listOf(Take.Parts(setOf("widget")))),
+        // [LAY-01] 1.36 꾸밈 층, a part on each tab it is pinned to.
+        Part("cal.decor", TabOrder.CALENDAR, "달력 꾸밈", listOf(Take.Decor { it.startsWith("cal.") || it == "bg.calendar" })),
+        Part("memo.decor", TabOrder.MEMOS, "메모 꾸밈", listOf(Take.Decor { it == "bg.memo" })),
+        Part("money.decor", TabOrder.MONEY, "가계부 꾸밈", listOf(Take.Decor { it == "bg.money" })),
+        Part("stats.decor", TabOrder.STATS, "통계·급여 꾸밈", listOf(Take.Decor { it == "bg.stats" || it == "bg.pay" })),
+        Part("app.decor", TabOrder.SETTINGS, "앱 전체 꾸밈", listOf(Take.Decor { it == com.bamnat.core.recipe.Decor.APP || it == "bg.settings" || it == "bg.plaza" })),
+        Part("widget.decor", WIDGET, "위젯 꾸밈", listOf(Take.Decor { it == com.bamnat.core.recipe.Decor.WIDGET })),
     )
 
-    fun byId(id: String): Part? = ALL.firstOrNull { it.id == id }
+    /** Whether the blueprint part [id] sits under one of [roots]. */
+    fun under(id: String?, roots: Set<String>): Boolean = id != null && roots.any { id == it || id.startsWith("$it.") }
+
+    fun byId(id: String): Part? = ALL.firstOrNull { it.id == id } ?: id.removePrefix(UNIT).takeIf { id.startsWith(UNIT) && it in BlueprintParts.UNITS }?.let(::unit)
+
+    /** [RUL-07] The 규칙·단추 part's id. Not a look: [of] leaves it out (입어 보기 is for looks), 담아 두기 and 얹기 take it by this id. */
+    const val LOGIC = "logic"
+
+    /** [BLU-07] "part:cal.head": one 부품 (a blueprint unit) as a part of its own, to keep, lay on and send alone. */
+    const val UNIT = "part:"
+
+    /** The screen a blueprint unit belongs to. */
+    fun tabOfUnit(unit: String): String = when (unit.substringBefore('.')) {
+        "cal" -> TabOrder.CALENDAR; "memo" -> TabOrder.MEMOS; "money" -> TabOrder.MONEY; "pay" -> TabOrder.STATS; "widget" -> WIDGET; else -> TabOrder.SETTINGS
+    }
+
+    fun unit(unit: String): Part = Part(UNIT + unit, tabOfUnit(unit), "부품 · " + (BlueprintParts.LABELS[unit] ?: unit), listOf(Take.Parts(setOf(unit))))
+
+    /** The 부품 units [r]'s blueprint touches, in the order of [BlueprintParts.UNITS]. */
+    fun units(r: Recipe): List<String> {
+        val ids = (r.pieces.firstOrNull { it.kind == PieceKind.PARTS }?.values?.get("parts") as? List<*>)
+            ?.mapNotNull { (it as? Map<*, *>)?.get("id") as? String }.orEmpty().map(BlueprintParts::unitOf).toSet()
+        return BlueprintParts.UNITS.filter { it in ids }
+    }
+
+    /**
+     * [BLU-07] The part [r] is when it is a 부품 work (장터 '부품' 구간, the server's scope `part`, recipes.js partUnitOf): its only piece is
+     * 부품 꾸미기 with every line in one unit ("part:cal.head"), or one tab's 판 (갈래 E TAB_VIEW: "cal.board", "memo.view", "money.board").
+     * Null for a theme or a tab's looks. The answer is a [byId] id.
+     */
+    fun partUnit(r: Recipe): String? {
+        val p = r.pieces.singleOrNull() ?: return null
+        if (p.kind == PieceKind.LOGIC) return LOGIC
+        if (p.kind == PieceKind.PARTS) return units(r).singleOrNull()?.let { UNIT + it }
+        // 갈래 E's piece, read by its name so this file stands before and after it.
+        if (p.kind.name != "TAB_VIEW") return null
+        val keys = p.values.filterValues { it != null }.keys
+        return VIEW_UNITS.entries.firstOrNull { (_, ks) -> keys.isNotEmpty() && ks.containsAll(keys) }?.key
+    }
+
+    /** 갈래 E's 판 parts by the TAB_VIEW keys each takes. */
+    private val VIEW_UNITS = mapOf("cal.board" to setOf("cal"), "memo.view" to setOf("memo", "memoBy", "memoSort"), "money.board" to setOf("money"))
 
     /** The values [t] takes from [values], or null when it takes nothing there. */
     fun take(t: Take, values: Map<String, Any?>): Map<String, Any?>? = when (t) {
@@ -67,11 +132,16 @@ object LookParts {
             val pay = (values["pay"] as? String)?.takeIf { t.pay && it.isNotEmpty() }
             listOfNotNull(screens?.let { "screens" to it }, pay?.let { "pay" to it }).toMap().takeIf { it.isNotEmpty() }
         }
+        is Take.Parts -> (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()?.filter { under(it["id"] as? String, t.roots) }
+            ?.takeIf { it.isNotEmpty() }?.let { mapOf("parts" to it) }
+        is Take.Decor -> (values["items"] as? List<*>)?.filter { t.at(((it as? Map<*, *>)?.get("at") as? String).orEmpty()) }
+            ?.takeIf { it.isNotEmpty() }?.let { mapOf("items" to it) }
     }
 
     /** The parts [r] has, in the order of [TABS]. */
-    fun of(r: Recipe): List<Part> = ALL.filter { p -> p.takes.any { t -> r.pieces.firstOrNull { it.kind == t.kind }?.let { take(t, it.values) } != null } }
-        .sortedBy { TABS.indexOf(it.tab) }
+    fun of(r: Recipe): List<Part> = (ALL.filter { p -> p.id != LOGIC && p.takes.none { it is Take.Parts } && p.takes.any { t -> r.pieces.firstOrNull { it.kind == t.kind }?.let { take(t, it.values) } != null } } +
+        // [BLU-07] 부품 one by one ('부품 · 달력 머리'), so 담아 두기 and 입어 보기 can take one of them.
+        units(r).map(::unit)).sortedBy { TABS.indexOf(it.tab) }
 
     /** [r] with only the parts [ids] (its other pieces — 알람, 규칙 — are not looks and are left out too). */
     fun pick(r: Recipe, ids: Collection<String>): Recipe {
@@ -88,6 +158,20 @@ object LookParts {
     /** Two parts of one piece together ([ScreenLooks] screens joined, the rest key by key). */
     private fun merge(kind: PieceKind, a: Map<String, Any?>?, b: Map<String, Any?>): Map<String, Any?> {
         if (a == null) return b
+        if (kind == PieceKind.PARTS) {
+            // Line by line: [b]'s line for a part and state takes the place of [a]'s, the others stay.
+            fun lines(m: Map<String, Any?>) = (m["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>().orEmpty()
+            fun key(l: Map<String, Any?>) = listOf(l["id"], l["on"], l["when"])
+            val over = lines(b)
+            val keys = over.map(::key).toSet()
+            return mapOf("parts" to (lines(a).filterNot { key(it) in keys } + over).sortedWith(compareBy({ it["id"] as? String }, { it["on"] as? String ?: "" })))
+        }
+        // [LAY-01] Two parts' decorations together; laid on a base, [b]'s places take the place of [a]'s there.
+        if (kind == PieceKind.DECOR) {
+            val bi = (b["items"] as? List<*>).orEmpty()
+            val places = bi.map { (it as? Map<*, *>)?.get("at") }.toSet()
+            return mapOf("items" to ((a["items"] as? List<*>).orEmpty().filter { (it as? Map<*, *>)?.get("at") !in places } + bi).take(com.bamnat.core.recipe.Decor.MAX))
+        }
         if (kind != PieceKind.SCREEN_LOOK) return a + b
         val screens = listOfNotNull(a["screens"] as? String, b["screens"] as? String).map { ScreenLooks.decode(it) }
             .fold(ScreenLooks()) { acc, s -> s.looks.entries.fold(acc) { x, (k, l) -> x.with(k, l) } }.encode().takeIf { it.isNotEmpty() }
@@ -114,6 +198,22 @@ object LookParts {
     }
 
     /** The parts whose values differ between [a] and [b] (what was made one's own, 직접 바꾼 곳). */
+    /**
+     * [MKX-02] 1.36 기능별 탭: the one tab [r]'s looks change, or null when they change more than one (or the whole app: 앱 전체 색,
+     * 아래 탭, 모서리) — a 테마 — or none.
+     */
+    fun onlyTab(r: Recipe): String? = of(r).map { it.tab }.distinct().singleOrNull()?.takeIf { it != TabOrder.SETTINGS }
+
+    /** [TRY-04] The parts that place things (카드 순서·보이기, 칸 높이, 아래 탭): one frame for both sides of 비교. */
+    val FRAME: List<String> = listOf("cal.cards", "cal.view", "memo.cards", "money.cards", "stats.cards", "app.tabs")
+
+    /**
+     * [TRY-04] 1.36 (사용자 2026-10-31 "서로 다르게 보이는 문제 … 동일하게 움직이게 만들고 달라진 점만 보이게", R-50): [base] laid out as
+     * [over] is — its cards, cell heights and tabs in [over]'s places — so the two sides of 비교 meet on the same day and card and only
+     * the looks differ.
+     */
+    fun frame(base: Recipe, over: Recipe): Recipe = layer(base, pick(over, FRAME))
+
     fun changed(a: Recipe, b: Recipe): List<String> = ALL.filter { p -> pick(a, listOf(p.id)).pieces != pick(b, listOf(p.id)).pieces }.map { it.id }
 
     /**
@@ -122,7 +222,7 @@ object LookParts {
      */
     const val OWN_PARTS = 3
 
-    /** Whether [r] names any picture (배경 사진, 머리 그림, 근무 그림, 위젯 사진). */
+    /** Whether [r] names any picture (배경 사진, 머리 그림, 근무 그림, 위젯 사진, 꾸밈 사진). */
     fun hasPhotos(r: Recipe): Boolean = withoutPhotos(r) != r
 
     /** [THM-03] 사진 빼고 올리기: [r] with every picture left out (each screen keeps its colours); the phone keeps its own. */
@@ -131,11 +231,23 @@ object LookParts {
             PieceKind.SCREEN_LOOK -> {
                 val line = p.values["screens"] as? String
                 if (line == null) p else {
-                    val bare = ScreenLooks(ScreenLooks.decode(line).looks.mapValues { (_, l) -> l.copy(photo = null, dim = null) }).encode()
+                    val bare = ScreenLooks(ScreenLooks.decode(line).looks.mapValues { (_, l) -> l.copy(photo = null, dim = null, adjust = null) }).encode()
                     p.copy(values = if (bare.isEmpty()) p.values - "screens" else p.values + ("screens" to bare)).takeIf { it.values.isNotEmpty() }
                 }
             }
             PieceKind.PHOTO_LOOK -> p.copy(values = p.values - PHOTO_KEYS).takeIf { it.values.isNotEmpty() }
+            // [LAY-10] 꾸밈 사진 stay on the phone too; the shapes, icons and words go.
+            // PC 확인 C7 1.36 (꾸밈이 사진 하나뿐이면 '사진 빼고 올리기'가 안 나옴): a piece of photos alone goes as a whole, not kept by
+            // the "no items" fallback.
+            PieceKind.DECOR -> {
+                val l = p.values["items"] as? List<*>
+                val bare = l?.filterNot { (it as? Map<*, *>)?.containsKey("photo") == true }
+                when {
+                    l == null || bare!!.size == l.size -> p
+                    bare.isEmpty() -> null
+                    else -> p.copy(values = p.values + ("items" to bare))
+                }
+            }
             else -> p
         }
     })

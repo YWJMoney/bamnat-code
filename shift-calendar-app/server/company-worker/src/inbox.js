@@ -1,3 +1,4 @@
+import { fcmTell } from "./fcm.js";
 import { all, audit, batch, can, iso, json, one, randomId, readJson, refuse, run, stmt } from "./index.js";
 import { DEV, INQUIRY, actorName, cut, devEvent, devUpdate, plainText, triage } from "./inquiries.js";
 
@@ -301,6 +302,8 @@ async function inboxAnswer(env, id, text, now, by) {
     now, env.actor?.id ?? null, by, id);
   if (!r.meta.changes) return false;
   await run(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", id, t, by, now);
+  // 1.36 [PUSH-01]
+  await fcmTell(env, [id], now);
   return true;
 }
 
@@ -410,7 +413,12 @@ export async function applyResult(request, env, now) {
   const body = await readJson(request, 64 * 1024);
   const lines = readResult(body.text);
   if (!lines.length) refuse("text", "text");
-  const rows = await all(env, `SELECT * FROM dev_items WHERE deleted_at IS NULL AND id IN (${lines.map(() => "?").join(", ")})`, ...lines.map((l) => l.id));
+  // D1 binds at most 100 values in one query; a long 결과 block is read in groups of 90.
+  const rows = [];
+  for (let i = 0; i < lines.length; i += 90) {
+    const part = lines.slice(i, i + 90).map((l) => l.id);
+    rows.push(...await all(env, `SELECT * FROM dev_items WHERE deleted_at IS NULL AND id IN (${part.map(() => "?").join(", ")})`, ...part));
+  }
   const byId = new Map(rows.map((r) => [r.id, r]));
   const plan = lines.map((l) => ({ ...l, title: byId.get(l.id)?.title ?? null, found: byId.has(l.id),
     problem: !byId.has(l.id) ? "없는 개발사항" : l.status === "rejected" && !l.reason ? "반려 이유가 없어요" : null }));

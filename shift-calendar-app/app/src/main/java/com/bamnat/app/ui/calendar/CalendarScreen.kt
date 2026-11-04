@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.app.ui.decor.decor
+import com.bamnat.app.ui.theme.monthTurn
+import androidx.compose.ui.layout.layout
 import com.bamnat.app.ui.theme.PhotoBackdrop
 import com.bamnat.app.ui.components.labelWidth
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -17,6 +20,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.ui.semantics.heading
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextOverflow
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.schedule.ResolvedDay
@@ -64,8 +68,8 @@ import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import com.bamnat.app.appContainer
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.AlertDialog
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
@@ -87,8 +91,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.CalendarViewMonth
 import androidx.compose.material.icons.outlined.Groups
@@ -407,6 +412,8 @@ fun CalendarScreen(
     LaunchedEffect(vm) { vm.openMemo.collect { onOpenMemo(it) } }
 
     val snap = snapshot
+    // [RUL-05] 1.36 탭 사이 흐름: the days' values formulas read (근무·메모·꼬리표·지출), for 조건부 꾸미기, 단추 and 규칙.
+    val dayFacts = com.bamnat.app.logic.rememberDayFacts(snap, datedMemos, moneyBook, settings.workStyle, today)
     // [SPD-28] 1.31 N5: the month kept from last time, read off the main thread, drawn while the data is read.
     val ctx31 = LocalContext.current
     val firstFrame by androidx.compose.runtime.produceState<FirstFrame.Frame?>(null) {
@@ -458,9 +465,27 @@ fun CalendarScreen(
     val overview = remember(snap, visibleMonth, focus, moneyBook, payRange) {
         com.bamnat.core.work.MonthOverview.of(visibleMonth, focus, snap.resolver, moneyBook.jobs, moneyBook.sales, payRange)
     }
+    // 1.36 U20: what the cards above the month said, on the quick-input sheet's head while they are hidden.
+    val paintSummary = if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS)
+        "${visibleMonth.monthValue}월 근무 ${overview.workDays}일 · ${com.bamnat.core.hours.HoursFormat.korean(overview.workMinutes)}" else null
     // [CAL-35] Last month's figures, for the few words of change under the hours.
+    // [R136-03] 1.36 (리뷰 R-04: 오늘 깐 앱이 '지난달보다 +1일'): the day this phone started, so a month wholly before it,
+    // with nothing written by hand, is not compared as if worked.
+    // The later of the install and this calendar's setup ('이 달력으로 할 수 있는 것' starts on it), so a phone set up again counts too.
+    // [R136-03] 1.36 빌드 7 (시계를 옮기면 '11/11 전은'으로 바뀜): the day is kept once found, so it never moves after.
+    val startDay = remember(activeCalendar.id) {
+        val prefs = context.getSharedPreferences("calendar_start", android.content.Context.MODE_PRIVATE)
+        prefs.getLong(activeCalendar.id, Long.MIN_VALUE).takeIf { it != Long.MIN_VALUE }?.let { java.time.LocalDate.ofEpochDay(it) } ?: run {
+            val installed = context.appContainer.installedAt?.atZone(Today.zone())?.toLocalDate()
+            val setUp = com.bamnat.app.data.GuideStore.get(context).state.value.checklists[activeCalendar.id]?.startedOn
+            listOfNotNull(installed, setUp).maxOrNull()?.also { prefs.edit().putLong(activeCalendar.id, it.toEpochDay()).apply() }
+        }
+    }
     val versus = remember(snap, visibleMonth, focus, overview) {
-        if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS) null
+        val before = visibleMonth.minusMonths(1)
+        val unwritten = startDay != null && before.atEndOfMonth().isBefore(startDay) &&
+            snap.entries.none { YearMonth.from(it.date) == before && it.override != ShiftOverride.None }
+        if (focus != com.bamnat.core.work.CalendarFocus.SHIFTS || unwritten) null
         else overview.versus(com.bamnat.core.work.MonthOverview.of(visibleMonth.minusMonths(1), focus, snap.resolver,
             range = payRange?.let { payProfile?.period?.let { p -> com.bamnat.core.hours.StatsRange.of(com.bamnat.core.hours.StatsRange.Mode.PAY, visibleMonth.minusMonths(1), today, p) } }))
     }
@@ -558,6 +583,8 @@ fun CalendarScreen(
             scope.launch { delay(TIP_DELAY_MILLIS); vm.tip(tip) }
         }
         vm.onDayTapped(date)
+        // [RUL-04] 날짜를 누르면 규칙 (메모 틀 열기·알림 …), never while painting days.
+        if (!painting && mark == null && rangeFrom == null) com.bamnat.app.logic.LogicRunner.onTap(context.appContainer, date, dayFacts)
         val m = YearMonth.from(date)
         if (m != visibleMonth && !weekOnly) slideToMonth(m)
         // [CAL-20] With the day card on, the first tap shows it and the second opens the day.
@@ -988,15 +1015,12 @@ fun CalendarScreen(
         }
         // [CAL-50] 상-4: one card at a time above the month, the rest in one line ("알림 2개 더 보기"), in this order.
         val linePlace = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+        // [LAY-10] PC 확인 C9 1.36: a 꾸밈 사진 waiting for the operator is said here, in one line, not over the month.
+        com.bamnat.app.ui.decor.DecorWaitingLine("bg.calendar", Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
         val guideHere = waiting == null && paint == null && viewingReceived == null && visibleMonth == YearMonth.from(today)
         val askOn = partShown(CalendarPart.ASK)
         // [CAL-01] What keeps an alarm from working, the most serious one, only while one is due within a week.
         val alarmLine: Pair<String, @Composable () -> Unit>? = when {
-            // C 1.32 [STAB-04] Opened safely after stopping in a row: said first, with the way back.
-            safeStart -> "안전 모드로 열었어요" to {
-                AlarmWarningLine("연달아 멈춰서 안전 모드로 열었어요. 달력·알람은 그대로, 위젯·워치·연동은 잠시 쉬어요",
-                    "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace)
-            }
             // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
             alarmsOffUntil != null -> "오늘 알람 끔" to {
                 val text = "오늘 알람 끔 · ${com.bamnat.app.alarm.AlarmsOff.untilText(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(alarmsOffUntil!!))}까지"
@@ -1062,10 +1086,57 @@ fun CalendarScreen(
         // [GUIDE-20] 1.31 P2: the first week's 시작 단계, read again when the settings or the days change.
         val c31 = LocalContext.current.appContainer
         var startHidden by remember { mutableStateOf(false) }
-        val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today) {
-            if (startHidden || viewingReceived != null) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
+        val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today, pendingSetup) {
+            // 1.36 PC C3: from the day after the first setup, so its first day asks one thing only (the pay sheet).
+            // 03df48fb Y7: while '근무 설정을 마저 해 주세요' is up, it is the one card (its 이어서 하기 is the next step).
+            val resuming = pendingSetup?.let { it.later && settings.workStyle == null } == true
+            if (startHidden || resuming || viewingReceived != null || c31.firstSetup.quietToday()) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
+        }
+        // [R136-02] 1.36 (리뷰 R-42: 투자 첫 화면 '입금 적기' 카드 밑에 '할 수 있는 것 1번 원금 입금·출금'): while the empty
+        // calendar's first-step card is up, it is the one guide; '할 수 있는 것' comes once the first record is in.
+        val startCardUp = paint == null && !settings.rosterMonthly && !(pendingSetup?.later == true && settings.workStyle == null) && settings.workStyle.let { style ->
+            when {
+                style?.usesPattern != false -> snap.isEmpty
+                style == com.bamnat.core.work.WorkStyle.HOURLY -> overview.isEmpty && !snap.hasPattern
+                style == com.bamnat.core.work.WorkStyle.INVEST -> investState?.loaded == true && investState.full.isEmpty
+                else -> overview.isEmpty && YearMonth.from(today) == visibleMonth
+            }
+        }
+        // 1.36 U7·U19 (빠른 입력: 첫 칸을 칠하면 위에 카드가 생겨 달력이 밀리고, 다음 누름이 빈 곳에 가요). 745fd183 PC 확인
+        // (높이를 붙잡으니 위가 휑하고 아래 카드가 잘림) and U20: while painting, nothing is above the month; the calendar moves up
+        // once as painting starts and stays put, and the month's count is on the painting sheet's head instead.
+        val holding = paint != null
+        com.bamnat.app.ui.components.HoldHands(holding)
+        // What goes away above the month as painting starts is scrolled off too, so the day under the finger stays put.
+        val aboveHeights = remember { IntArray(2) }
+        LaunchedEffect(holding) {
+            if (holding) {
+                val gone = aboveHeights.sum()
+                if (gone > 0 && pageScroll.value > 0) pageScroll.scrollTo((pageScroll.value - gone).coerceAtLeast(0))
+            }
+        }
+        // C 1.32 [STAB-04] Opened safely after stopping in a row: said first, with the way back.
+        // 1.36 PC A21 (안전 모드 중 글자 크기를 1.3배로 바꾸면 띠가 사라짐): the line stands above the notices, never in them, so no
+        // other card (a '멈춰 있던 적' card, a phone on its side with no card open) folds it into '알림 N개 더 보기'.
+        if (!holding) Column(Modifier.onSizeChanged { aboveHeights[0] = it.height }) {
+        if (safeStart) {
+            // PC 19·20차 사용성 제안 (감겨서 달력이 밀림): a line short enough not to wrap; 알람 점검 says the rest.
+            AlarmWarningLine((if (com.bamnat.app.diag.StartGuard.byHand) "점검용 안전 모드" else "멈춰서 안전 모드") + " · 꾸밈·규칙 쉼",
+                "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace)
         }
         NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
+            // [MAT-06] 1.36 PC 확인 7차: shared fonts a theme was waiting for, come down by themselves (was a toast). PC 8차: first, so it
+            // is the one open (it was folded as '글꼴' under the others); it goes once closed or taken back.
+            if (FontArrivals.fonts.isNotEmpty()) add(Notice("fontArrived", "기다리던 글꼴") { FontArrivedLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
+            // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
+            // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
+            // screen too, for a phone whose notices are off.
+            val lateOwed = remember(moneyBook, today) { moneyBook.owed(today).filter { it.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE } }
+            if (paint == null && viewingReceived == null && lateOwed.isNotEmpty()) add(Notice("owedLate", "약속일 지난 받을 돈") {
+                AlarmWarningLine("약속일 지난 받을 돈 ${lateOwed.size}건 · ${Fmt.won(lateOwed.sumOf { it.left })}", "보기", {
+                    com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.OWED))
+                }, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            })
             // [PRIV-03] 결정 D84: the 3.1 ask comes first while this phone still owes it (testers only).
             if (paint == null && viewingReceived == null && LocalContext.current.appContainer.policyAsks())
                 add(Notice("policy31", "처리방침 3.1") { com.bamnat.app.ui.pro.PolicyConsentNotice() })
@@ -1080,7 +1151,8 @@ fun CalendarScreen(
             if (paint == null && viewingReceived == null) add(Notice("crashAsk", "불편한 점 알려 주기") { com.bamnat.app.ui.grow.CrashAskNotice() })
             // [GUIDE-20] 1.31 P2: in the first week, the 시작 단계 card in place of the question card.
             if (paint == null && startRows != null) add(Notice("start", "시작 단계") {
-                com.bamnat.app.ui.guide.StartStepsCard(startRows, onDismiss = { com.bamnat.app.ui.guide.StartStepsState.dismiss(c31); startHidden = true })
+                com.bamnat.app.ui.guide.StartStepsCard(startRows, onDismiss = { com.bamnat.app.ui.guide.StartStepsState.dismiss(c31); startHidden = true },
+                    onShifts = { vm.setPaint(PaintTool.Pick) })
             })
             // [GUIDE-02][GUIDE-03][EASY-05] The question card first; on a day it was shown the one-line tip waits (질문 우선).
             if (guideHere && askOn && startRows == null) add(Notice("ask", "질문 1개") {
@@ -1090,8 +1162,12 @@ fun CalendarScreen(
                         com.bamnat.core.guide.GuideMoments.of(com.bamnat.app.ui.guide.factsOf(settings.workStyle, Today.dateTime(), snap, moneyBook, payProfile, settings.weekStart))
                     })
             })
-            alarmLine?.let { (label, line) -> add(Notice("alarm", label) { line() }) }
-            if (swapCovers.isNotEmpty()) add(Notice("review", "대근 ${swapCovers.size}일 고치기") {
+            // 1.36 U7: the first day painted brings the next alarm into being; its line waits until quick input closes.
+            if (paint == null) alarmLine?.let { (label, line) -> add(Notice("alarm", label) { line() }) }
+            // 빌드 e382585e (빠른 입력에서 첫 칸을 칠하면 위에 카드가 생겨 달력이 밀려 다음 누름이 다른 칸에): nothing new comes up above the
+            // month while painting; the review waits until quick input closes.
+            if (paint != null) Unit
+            else if (swapCovers.isNotEmpty()) add(Notice("review", "대근 ${swapCovers.size}일 고치기") {
                 ExtraReviewCard(
                     title = "쉬는 날 대근 ${swapCovers.size}일을 고쳐 주세요",
                     message = "근무를 바꿔서 적은 대근은 쉬는 날 근무로 계산되지 않아요. 한 번에 대근으로 고칠 수 있어요.",
@@ -1178,11 +1254,12 @@ fun CalendarScreen(
             // AG 1.27 [INVITE-11] Inviting friends, three days after the install, two weeks apart (결정 AG-D6).
             if (paint == null && viewingReceived == null) add(Notice("inviteNudge", "친구 초대") { com.bamnat.app.ui.pro.InviteNudgeNotice() })
             // 1.32 [PROX-02] A money day's one 하루 무료 권유 (급여일 사흘, 근무표 넣은 날, 신고 달).
-            if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("proMoment", "하루 무료로 열어 보기") {
+            if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("proMoment", "프로 제안") {
                 val payday = payProfile?.period?.let { p ->
                     p.payWeekday == today.dayOfWeek || listOf(YearMonth.from(today), YearMonth.from(today).minusMonths(1)).mapNotNull(p::payDate)
                         .any { !it.isAfter(today) && !it.isBefore(today.minusDays(2)) }
                 } == true
+                com.bamnat.app.ui.pro.ProWelcomeCard()
                 com.bamnat.app.ui.pro.ProMomentNotice(settings.workStyle, payday)
             })
             // 1.32 [STAB-08] 백업한 지 30일, without 매일 자동 백업.
@@ -1193,7 +1270,7 @@ fun CalendarScreen(
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             // [J133-68] 1.33 (중간 빌드 확인: 첫 화면이 시작 단계와 '할 수 있는 것' 카드로 다 덮였어요): while the 시작 단계 card is up it is
             // the one guide on the calendar; '할 수 있는 것' and the day's tip come after it.
-            if (guideHere && startRows == null) add(Notice("guide", "오늘의 팁") {
+            if (guideHere && startRows == null && !startCardUp) add(Notice("guide", "오늘의 팁") {
                 val askStates by context.appContainer.asks.states.collectAsStateWithLifecycle()
                 val tipAllowed = !askOn || com.bamnat.core.profile.AskScheduler.tipAllowed(askStates[activeCalendar.id] ?: com.bamnat.core.profile.AskState(), today)
                 com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
@@ -1207,6 +1284,7 @@ fun CalendarScreen(
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
         })
+        }
         // [CUST-01] The parts under the month, by part; [CVW-06] 1.35 any of them can stand above it too.
         val partBody: @Composable (CalendarPart) -> Unit = { part ->
             when (part) {
@@ -1252,8 +1330,10 @@ fun CalendarScreen(
             }
         }
         // [CUST-01] The parts above the month in the user's order (화면 꾸미기); [CVW-06] the ones moved over it from below too.
-        if (!low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
-            aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
+        if (low || holding) { if (!holding) aboveHeights[1] = 0 } else Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) {
+            calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
+                aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
+            }
         }
         // [CAL-03] One week and the whole day under it, or the month.
         if (weekOnly && !wide) {
@@ -1279,7 +1359,10 @@ fun CalendarScreen(
                         modifier = place.padding(horizontal = 16.dp, vertical = 4.dp),
                         restSigns = restSigns,
                         compact = low,
-                        rangeLabel = payRange?.label(),
+                        // [R136-03] In the month the phone started, the days before it are the 근무표's, and it says so.
+                        rangeLabel = payRange?.label() ?: startDay?.takeIf { YearMonth.from(it) == visibleMonth && it.dayOfMonth > 1 &&
+                            snap.entries.none { e -> e.date.isBefore(it) && e.override != ShiftOverride.None } }
+                            ?.let { "${it.monthValue}/${it.dayOfMonth} 전은 근무표" },
                     )
                 }
             }
@@ -1297,11 +1380,21 @@ fun CalendarScreen(
                 }
             }
             // [CAL-06][CAL-08] The month's shifts at a glance, what the marks mean, and grid or list.
-            val showList = listView && paint == null
+            // [TAB-04] 1.36 달력 판: 월·목록·근무 띠·타임라인. A 목록 kept from before 1.36 (the old switch) still reads as 목록.
+            val savedBoard = remember(settings.tabViews, listView) {
+                com.bamnat.core.layout.TabViews.decode(settings.tabViews).cal.let { if (it == com.bamnat.core.layout.CalendarBoard.MONTH && listView) com.bamnat.core.layout.CalendarBoard.LIST else it }
+            }
+            val board = if (paint == null) savedBoard else com.bamnat.core.layout.CalendarBoard.MONTH
+            val showList = board != com.bamnat.core.layout.CalendarBoard.MONTH
+            val pickBoard: (com.bamnat.core.layout.CalendarBoard) -> Unit = { b ->
+                vm.setListView(b == com.bamnat.core.layout.CalendarBoard.LIST)
+                vm.setBoard(b)
+            }
             val countsPart: @Composable (Modifier) -> Unit = { place ->
-                Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    // The counts take what is left, so the two buttons always sit at the right edge.
-                    // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
+                // [TAB-04] PC 확인 bf62e966: at 1.3× text the '월 ▾' button pushed '휴 10' off the row, so with big text the counts
+                // take a line of their own under the buttons.
+                val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.2f
+                val teamsChip: @Composable () -> Unit = {
                     openTeams?.let { open ->
                         androidx.compose.material3.AssistChip(
                             // [CAL-45] Unfolded, the teams open beside the month; on the cover screen, their own page.
@@ -1311,8 +1404,28 @@ fun CalendarScreen(
                             modifier = Modifier.padding(end = 8.dp).semantics { contentDescription = "모든 조 보기와 대근 찾기" },
                         )
                     }
+                }
+                val switch: @Composable () -> Unit = {
+                    Box {
+                        var boardMenu by remember { mutableStateOf(false) }
+                        CalendarViewSwitch(listView = showList, onListView = { if (paint == null) boardMenu = true }, onLegend = { legendOpen = true }, boardLabel = board.label)
+                        CalendarBoardMenu(boardMenu, board, com.bamnat.core.layout.CalendarBoard.expertFor(settings.workStyle), onPick = pickBoard, onDismiss = { boardMenu = false })
+                    }
+                }
+                // PC 확인 c9a89b20: '타임라인 ▾'·'근무 띠 ▾' are longer than '월 ▾' and cut '휴 10', so other 판 take the line below too.
+                if (bigText || board != com.bamnat.core.layout.CalendarBoard.MONTH) Column(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        teamsChip()
+                        Spacer(Modifier.weight(1f))
+                        switch()
+                    }
+                    if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
+                } else Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // The counts take what is left, so the two buttons always sit at the right edge.
+                    // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
+                    teamsChip()
                     Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
-                    CalendarViewSwitch(listView = showList, onListView = { if (paint == null) vm.setListView(it) }, onLegend = { legendOpen = true })
+                    switch()
                 }
             }
             if (sideways) {
@@ -1322,7 +1435,7 @@ fun CalendarScreen(
                     countsPart(Modifier.weight(0.55f))
                 }
                 computedNote()
-            } else {
+            } else if (paint == null) Column {
                 summaryPart(Modifier)
                 computedNote()
                 countsPart(Modifier)
@@ -1338,6 +1451,7 @@ fun CalendarScreen(
                 // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
                 val stamping = mark != null || (paint != null && paint != PaintTool.Pick)
                 val memoCounts = remember(datedMemos) { datedMemos.groupingBy { it.date!! }.eachCount() }
+                androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.logic.LocalDayFacts provides dayFacts) {
                 HorizontalPager(
                     state = pagerState,
                     // [CAL-08] The list is as tall as its month; the grid is always six weeks.
@@ -1347,9 +1461,24 @@ fun CalendarScreen(
                     key = { it },
                     verticalAlignment = Alignment.Top,
                     // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
-                    userScrollEnabled = !stamping,
+                    // [TAB-04] N1 연간 판 turns by its own year arrows; a sideways swipe would only creep a month along the same year.
+                    userScrollEnabled = !stamping && board != com.bamnat.core.layout.CalendarBoard.YEAR,
                 ) { page ->
-                    if (showList) {
+                    if (board == com.bamnat.core.layout.CalendarBoard.WEEK) {
+                        val titles = remember(datedMemos) {
+                            datedMemos.groupBy { it.date!! }.mapValues { (_, l) -> l.map { m -> m.title.ifBlank { m.preview }.trim().lineSequence().firstOrNull().orEmpty() }.filter { it.isNotBlank() } }
+                        }
+                        WeekCardsMonth(pageToMonth(baseMonth, page), snap, settings.weekStart, today, selected, titles, onDayClick)
+                    } else if (board == com.bamnat.core.layout.CalendarBoard.YEAR) {
+                        val year = pageToMonth(baseMonth, page).year
+                        YearBoard(year, snap, settings.weekStart, today,
+                            onYear = { d -> goToMonth(pageToMonth(baseMonth, page).plusYears(d.toLong())) },
+                            onOpen = { m -> goToMonth(m); pickBoard(com.bamnat.core.layout.CalendarBoard.MONTH) })
+                    } else if (board == com.bamnat.core.layout.CalendarBoard.BAND) {
+                        ShiftBandMonth(pageToMonth(baseMonth, page), snap, settings.weekStart, today, selected, onDayClick)
+                    } else if (board == com.bamnat.core.layout.CalendarBoard.LINE) {
+                        TimelineMonth(pageToMonth(baseMonth, page), snap, today, selected, onDayClick)
+                    } else if (showList) {
                         AgendaList(
                             month = pageToMonth(baseMonth, page),
                             focus = focus,
@@ -1363,6 +1492,10 @@ fun CalendarScreen(
                             onQuickAction = onQuickAction,
                         )
                     } else MonthGrid(
+                        // [MAT-07] 1.36 달 넘김 (밀기·스르륵·책장·다가오기·겹쳐 오기·움직이지 않기).
+                        modifier = Modifier.monthTurn(com.bamnat.app.ui.theme.LocalMotion.current.turn) {
+                            (pagerState.currentPage - page) + pagerState.currentPageOffsetFraction
+                        },
                         month = pageToMonth(baseMonth, page),
                         snapshot = snap,
                         calculator = calculator,
@@ -1397,10 +1530,13 @@ fun CalendarScreen(
                         wishDays = if (stamping || !wishShown) emptySet() else wishOff.days,
                     )
                 }
+                }
                 // B 1.32 [CALX-01] (사용자 2026-10-28 "달 넘길 때 몇 월인지 인지 부족"): while the month turns, the month it lands on
                 // shows big over the grid, then fades; the top bar's small title alone was missed mid-swipe.
                 SwipeMonthBadge(pagerState, baseMonth, Modifier.align(Alignment.TopCenter).padding(top = 4.dp))
             }
+            // [RUL-03] 1.36 단추 on the calendar screen, for the picked day.
+            if (paint == null) com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.CALENDAR, selected)
             // 1.32 [LEDX-23] What the strips under the dates mean, while the heat map is on.
             if (settings.spendHeat && focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null) {
                 com.bamnat.app.ui.money.SpendHeatLegend(Modifier.padding(start = 16.dp, top = 4.dp))
@@ -1408,8 +1544,12 @@ fun CalendarScreen(
             // 1.32 [CALX-06] "이번 급여 기간은 10월 20일에 끝나요 · 5일 남았어요" (or the 주급 week), on this month only.
             if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null && visibleMonth == YearMonth.from(today)) {
                 com.bamnat.core.hours.StatsRange.endsLine(payProfile?.period, today, payProfile?.holidayWeekFrom ?: java.time.DayOfWeek.MONDAY)?.let { line ->
-                    Text(line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp))
+                    // [BLU-05] 1.36 부품 '달력 아래 요약'(cal.foot).
+                    val foot = com.bamnat.app.ui.parts.partStyle("cal.foot")
+                    if (foot.hide != true) com.bamnat.app.ui.parts.PartText(line, foot,
+                        MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp)
+                            .then(com.bamnat.app.ui.parts.PartMods.box(foot, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))))
                 }
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
@@ -1523,7 +1663,7 @@ fun CalendarScreen(
                     if (paint != null) {
                         PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
                             mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { fillMonth(visibleMonth) },
-                            stamp = stamp, stamps = stamps, onStamp = vm::setStamp, large = true,
+                            stamp = stamp, stamps = stamps, onStamp = vm::setStamp, large = true, summary = paintSummary,
                             modifier = Modifier.fillMaxWidth().weight(1f).padding(8.dp))
                     } else detailPart(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp), 16.dp)
                 }
@@ -1584,7 +1724,7 @@ fun CalendarScreen(
             Box(Modifier.align(Alignment.BottomCenter)) {
                 PaintBar(snapshot = snap, tool = paint, last = lastPaint, onTool = vm::setPaint, onUndo = vm::undoLastPaint,
                     mark = mark, onMark = vm::setMark, focus = focus, onTypeMonth = { fillMonth(visibleMonth) },
-                    stamp = stamp, stamps = stamps, onStamp = vm::setStamp)
+                    stamp = stamp, stamps = stamps, onStamp = vm::setStamp, summary = paintSummary)
             }
         }
     }
@@ -1795,11 +1935,21 @@ private fun CalendarHeader(
     val roomy = maxWidth >= HEADER_ICONS_WIDTH
     val wideTitle = maxWidth >= 600.dp
     var menu by remember { mutableStateOf(false) }
+    // [BLU-05] 1.36 부품 꾸미기: 달력 머리, 달 이름, 이동 단추, 오늘 단추.
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    // [FXR-03] With the shown month's day (today in this month, else its first), so 조건부 꾸미기 works on the head too.
+    val headScope = com.bamnat.app.logic.scopeOn(com.bamnat.app.logic.dayOfMonth(month))
+    val headPart = bp.style("cal.head", scope = headScope)
+    val navPart = bp.style("cal.head.nav", scope = headScope)
+    val todayPart = bp.style("cal.head.today", scope = headScope)
+    val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     Row(
-        Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp, top = 8.dp),
+        // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
+        Modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.HEAD).padding(start = 4.dp, end = 4.dp, top = 8.dp)
+            .then(with(com.bamnat.app.ui.parts.PartMods) { box(headPart, MaterialTheme.shapes.medium) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onPrev) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달") }
+        if (navPart.hide != true) IconButton(onClick = onPrev, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달", tint = navTint) }
         // [UX-06] The month and › take only what is left, the month's text shrinking at the largest text
         // sizes, so 오늘 and ⋮ (with 공유) stay on screen instead of being pushed off it.
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
@@ -1821,13 +1971,29 @@ private fun CalendarHeader(
                 }
                 // [J133-22] 1.33 (실사용 테스트 "작은 폰 달력 머리에 '2026년 10월' 글자가 없음"): a small phone shows this year's month
                 // without the year, and the title is never squeezed out by the buttons around it.
-                com.bamnat.app.ui.FitText(monthTitle(month, short = small), titleStyle, if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false))
+                val titlePart = bp.style("cal.head.title", scope = headScope)
+                val titleText = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) }
+                // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
+                val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }
+                com.bamnat.app.ui.FitText(monthTitle(month, short = small, yearInk = yearInk), titleText,
+                    (if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false)).then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            IconButton(onClick = onNext) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달") }
+            if (navPart.hide != true) IconButton(onClick = onNext, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달", tint = navTint) }
         }
-        if (small) IconButton(onClick = onToday, enabled = !atToday) { Icon(Icons.Filled.Today, "오늘") }
-        else TextButton(onClick = onToday, enabled = !atToday) { Text("오늘", maxLines = 1, softWrap = false) }
+        val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
+        if (todayPart.hide == true) Unit
+        else if (small) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
+        // PC 확인 C15 1.36 (사진 위 '오늘' 2.1:1): on this month already the button is off, and its 38% grey vanished on a 꾸밈 사진; there it
+        // keeps most of the ink (still lighter than when it can be pressed).
+        else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod,
+            colors = if (com.bamnat.app.ui.decor.LocalPhotoGround.current == null) androidx.compose.material3.ButtonDefaults.textButtonColors()
+                // PC 확인 C16: the pressable 파랑 too stands on the photo (1.4:1 on a dark one before).
+                else androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = com.bamnat.app.ui.decor.readableOnPhoto(MaterialTheme.colorScheme.primary),
+                    // PC 확인 8d0cddf6 (80%로는 4.45:1·3.86:1): on a photo the off button keeps the full ink, like the month title beside it.
+                    disabledContentColor = MaterialTheme.colorScheme.onSurface)) {
+            Text("오늘", maxLines = 1, softWrap = false, style = with(com.bamnat.app.ui.parts.PartMods) { text(todayPart, androidx.compose.material3.LocalTextStyle.current) })
+        }
         if (roomy) {
             IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
             IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }
@@ -1911,8 +2077,8 @@ private val HEADER_ICONS_WIDTH = 480.dp
 
 /** [CAL-52] 중-4: "2026년 10월" with the year smaller, so the month is what reads first and the line fits a phone. */
 @Composable
-private fun monthTitle(month: YearMonth, short: Boolean = false): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
-    pushStyle(androidx.compose.ui.text.SpanStyle(fontSize = 0.72.em, color = MaterialTheme.colorScheme.onSurfaceVariant))
+private fun monthTitle(month: YearMonth, short: Boolean = false, yearInk: androidx.compose.ui.graphics.Color? = null): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
+    pushStyle(androidx.compose.ui.text.SpanStyle(fontSize = 0.72.em, color = yearInk ?: MaterialTheme.colorScheme.onSurfaceVariant))
     if (!short || month.year != Today.date().year) append(if (short) "${month.year % 100}년 " else "${month.year}년 ")
     pop()
     append("${month.monthValue}월")
@@ -2183,16 +2349,22 @@ private fun AlarmWarningLine(text: String, action: String, onAction: () -> Unit,
         onClick = onAction,
         shape = MaterialTheme.shapes.medium,
         color = cal.warningContainer,
+        // PC 확인 C10 1.36 (어두운 테마에서 짙은 빨강 띠에 짙은 빨강 글자): the words and 켜기 take the ink of the band itself.
+        contentColor = com.bamnat.app.ui.components.contentColorOn(cal.warningContainer),
         modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
     ) {
+        val ink = com.bamnat.app.ui.components.contentColorOn(cal.warningContainer)
+        fun argb(c: androidx.compose.ui.graphics.Color) = c.toArgb().toLong() and 0xFFFFFFFFL
+        val mark = cal.warning.takeIf { com.bamnat.core.layout.Contrast.ratio(argb(it), argb(cal.warningContainer)) >= 3.0 } ?: ink
+        val act = MaterialTheme.colorScheme.primary.takeIf { com.bamnat.core.layout.Contrast.ratio(argb(it), argb(cal.warningContainer)) >= 4.5 } ?: ink
         Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(20.dp))
+            Icon(Icons.Filled.WarningAmber, null, tint = mark, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             // [VIS-04] What stops the alarm is said whole, at any text size.
-            Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            Text(action, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = ink, modifier = Modifier.weight(1f))
+            Text(action, style = MaterialTheme.typography.labelLarge, color = act, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                 modifier = Modifier.padding(start = 8.dp))
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = act, modifier = Modifier.size(18.dp))
         }
     }
 }
@@ -2214,6 +2386,8 @@ private fun PaintBar(
     onStamp: (ExtraChoice?) -> Unit = {},
     /** [CAL-45] Below the hinge of a half-open fold: the chips wrap into a pad of big keys, not one scrolling row. */
     large: Boolean = false,
+    /** 1.36 U20: the month's count, here while nothing is shown above the month. */
+    summary: String? = null,
     modifier: Modifier = Modifier.fillMaxWidth().padding(12.dp),
 ) {
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
@@ -2225,6 +2399,8 @@ private fun PaintBar(
         tonalElevation = 3.dp,
     ) {
         Column(Modifier.padding(vertical = 10.dp)) {
+            summary?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 4.dp)) }
             Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("빠른 입력", style = MaterialTheme.typography.titleSmall)
@@ -2266,7 +2442,7 @@ private fun PaintBar(
                     FilterChip(
                         selected = tool == t && mark == null && stamp == null,
                         onClick = { onTool(if (tool == t) PaintTool.Pick else t) },
-                        label = { Text(type.name) },
+                        label = { Text(type.name, maxLines = 1, softWrap = false) },
                         leadingIcon = { ShiftBadge(type, size = 18.dp, outlined = type.isOff) },
                         modifier = Modifier.then(if (large) Modifier.heightIn(min = 56.dp) else Modifier).semantics { contentDescription = "${type.name} 칠하기" },
                     )
@@ -2282,7 +2458,7 @@ private fun PaintBar(
                 FilterChip(
                     selected = tool == PaintTool.Clear,
                     onClick = { onTool(if (tool == PaintTool.Clear) PaintTool.Pick else PaintTool.Clear) },
-                    label = { Text("근무 주기대로") },
+                    label = { Text("근무 주기대로", maxLines = 1, softWrap = false) }, // 1.36 PC X7: never cut onto two lines
                     leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
                     modifier = Modifier.semantics { contentDescription = "근무 주기대로 되돌리기" },
                 )
@@ -2296,7 +2472,7 @@ private fun PaintBar(
                                 haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
                                 onMark(if (mark == m) null else m)
                             },
-                            label = { Text(m.label) },
+                            label = { Text(m.label, maxLines = 1, softWrap = false) },
                             leadingIcon = {
                                 val leave = m.leave
                                 if (leave != null) com.bamnat.app.ui.components.LeaveMark(leave, size = 18.dp)
@@ -2316,7 +2492,7 @@ private fun PaintBar(
                                 haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.SegmentTick)
                                 onStamp(if (stamp == c) null else c)
                             },
-                            label = { Text(c.label) },
+                            label = { Text(c.label, maxLines = 1, softWrap = false) },
                             leadingIcon = { ExtraKindMark(c.kind, size = 18.dp) },
                             modifier = Modifier.then(if (large) Modifier.heightIn(min = 56.dp) else Modifier).semantics { contentDescription = "${c.name} 넣기" },
                         )
@@ -2369,7 +2545,7 @@ internal fun MonthPickerDialog(
         val state = androidx.compose.material3.rememberDatePickerState(
             initialSelectedDateMillis = selected.atStartOfDay(utc).toInstant().toEpochMilli(),
         )
-        androidx.compose.material3.DatePickerDialog(
+        com.bamnat.app.ui.components.DatePickerDialog(
             onDismissRequest = { pickingDate = false },
             confirmButton = {
                 TextButton(onClick = {
@@ -2694,5 +2870,20 @@ internal fun SwipeMonthBadge(pager: androidx.compose.foundation.pager.PagerState
             Text((if (target.year != com.bamnat.core.time.Today.date().year) "${target.year}년 " else "") + "${target.monthValue}월",
                 style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp))
         }
+    }
+}
+
+/**
+ * 1.36 U7·U19: while [hold], the content keeps the height it was last laid out at (cut to it, or left with room), so what
+ * changes inside does not move what is below it.
+ */
+@Composable
+internal fun Modifier.holdHeight(hold: Boolean): Modifier {
+    val last = androidx.compose.runtime.remember { IntArray(1) { -1 } }
+    return this.then(if (hold) Modifier.clipToBounds() else Modifier).layout { m, c ->
+        val p = m.measure(c)
+        if (!hold || last[0] < 0) last[0] = p.height
+        val h = if (hold) last[0] else p.height
+        layout(p.width, h) { p.place(0, 0) }
     }
 }

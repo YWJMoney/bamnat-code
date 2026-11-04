@@ -1,0 +1,1796 @@
+[
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4278225275,
+    "b": 4279903102,
+    "dir": 2,
+    "emoji": "🩺"
+   },
+   "desc": "1.35 간호 풀세트에 1.36의 '데이터로 움직이는 칸'과 규칙을 더했어요. 이어진 나이트는 칸이 짙어지고, 근무 30분 전 인수인계 메모가 저절로 생겨요.\n누구에게 좋아요: 병동 3교대 간호사\n적용하면 바뀌는 것:\n· D·E·N·Off 글자·색·이모지\n· 근무별 알람 두 번 (나이트는 낮잠 깨우기 포함)\n· SBAR 인수인계·근무 준비물 메모 틀\n· 달력 위 오늘의 흐름, 아래 휴식 점검\n· 통계는 추가 근무·3개월 평균 먼저\n· 위젯에 메모 한 줄, 둥근 모서리\n· 1.36: 이어진 나이트 칸 짙게, #인수인계 날 파란 테두리, 체크 다 하면 초록 고리\n· 1.36: 근무 30분 전 인수인계 메모, 남은 체크 알림\n· 1.36: 나이트 끝 잠자리 알림, 나이트 칸 🌙\n주의할 점: 알람은 더하기만 해요. 근무 이름이 달라도 역할로 맞춰요",
+   "format": "bamnat-recipe",
+   "pieces": [
+    {
+     "items": [
+      {
+       "color": 4293284096,
+       "emoji": "☀️",
+       "label": "D",
+       "name": "데이",
+       "role": "day"
+      },
+      {
+       "color": 4285143962,
+       "emoji": "🌆",
+       "label": "E",
+       "name": "이브닝",
+       "role": "eve"
+      },
+      {
+       "color": 4279903102,
+       "emoji": "🌙",
+       "label": "N",
+       "name": "나이트",
+       "role": "night"
+      },
+      {
+       "color": 4283723386,
+       "emoji": "🛌",
+       "label": "O",
+       "name": "오프",
+       "role": "off"
+      }
+     ],
+     "kind": "shiftLook"
+    },
+    {
+     "byRole": [
+      {
+       "before": [
+        90,
+        60
+       ],
+       "role": "day"
+      },
+      {
+       "before": [
+        90,
+        45
+       ],
+       "role": "eve"
+      },
+      {
+       "before": [
+        240,
+        60
+       ],
+       "role": "night"
+      }
+     ],
+     "gradual": true,
+     "kind": "alarms",
+     "snooze": 5,
+     "vibrate": true
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "S 상황: 지금 상태",
+        "B 배경: 진단·경과",
+        "A 평가: 활력징후·변화",
+        "R 요청: 다음 근무에 할 일",
+        "투약·처치 시각 확인"
+       ],
+       "emoji": "🩺",
+       "title": "SBAR 인수인계"
+      },
+      {
+       "check": [
+        "사원증",
+        "펜·가위",
+        "간식·물",
+        "충전기",
+        "여벌 양말"
+       ],
+       "emoji": "🎒",
+       "title": "근무 준비물"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "tint",
+     "holiday": 4289533015,
+     "kind": "calTheme",
+     "sun": 4291176488,
+     "today": 4278225275
+    },
+    {
+     "calendar": "todayFlow,counts,summary,dayCard,rest,hours,memos",
+     "kind": "layout"
+    },
+    {
+     "kind": "cards",
+     "stats": "tiles,pay,kinds,three,weeks,compare"
+    },
+    {
+     "alpha": 90,
+     "kind": "widget",
+     "memo": true
+    },
+    {
+     "corners": "round",
+     "kind": "photoLook"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\"",
+       "paint": "lg.180.FFE8EAF6,FFFFFFFF"
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\" 그리고 연속근무 >= 3",
+       "paint": "lg.180.FF9FA8DA,FFE8EAF6",
+       "motion": "shimmer"
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"인수인계\")",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4280191205
+      },
+      {
+       "id": "cal.cell",
+       "when": "메모수 > 0 그리고 (체크율 > 0 또는 남은체크 > 0)",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "fx": "만약(체크율 >= 100, \"#43A047\", \"#FFB300\")"
+       }
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "근무 전 인수인계 새로",
+       "on": "start",
+       "min": -30,
+       "do": "newMemo",
+       "arg": "인수인계"
+      },
+      {
+       "name": "인수인계 남은 것",
+       "on": "memo",
+       "when": "꼬리표.포함(\"인수인계\") 그리고 남은체크 > 0",
+       "do": "notify",
+       "arg": "인수인계 {남은체크}개가 남았어요"
+      },
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "🌙",
+       "at": "cal.cell",
+       "on": "role.night",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "SHIFT"
+   ],
+   "summary": "데이·이브·나이트 색, 두 번 알람, SBAR 인계 틀까지",
+   "title": "3교대 간호사 달력",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4279049002,
+    "b": 4281944491,
+    "dir": 2,
+    "emoji": "🦉"
+   },
+   "desc": "1.35 야간 생존 키트가 피로를 눈으로 보여 줘요. 야간이 쌓이면 칸이 짙어지고, 회복할 쉬는 날은 초록으로 바뀌어요.\n누구에게 좋아요: 야간 비중이 큰 교대 근무자\n적용하면 바뀌는 것:\n· 주간·야간·비번·휴무 색과 이모지 (어두운 화면에서도 또렷하게)\n· 야간 4시간 전 낮잠 깨우기, 1시간 전 출근 알람, 끄려면 계산 문제\n· 야간 뒤 회복 루틴 메모 틀\n· 가계부는 근무별 소비를 앞으로\n· 위젯은 어둡게 반쯤 비치게\n· 1.36: 이어진 야간 칸 짙게, 야간 많은 달 별빛, 회복 날 초록\n· 1.36: 야간 끝 잠자리·세 번째 야간 회복 알림, 연속근무 경고\n주의할 점: 미션은 지금 미션이 없을 때만 바뀌어요",
+   "format": "bamnat-recipe",
+   "pieces": [
+    {
+     "items": [
+      {
+       "color": 4293880832,
+       "emoji": "☀️",
+       "label": "주",
+       "name": "주간",
+       "role": "day"
+      },
+      {
+       "color": {
+        "token": "night"
+       },
+       "emoji": "🦉",
+       "label": "야",
+       "name": "야간",
+       "role": "night"
+      },
+      {
+       "color": 4282735204,
+       "emoji": "🛏️",
+       "label": "비",
+       "name": "비번",
+       "role": "off"
+      },
+      {
+       "color": 4281236786,
+       "emoji": "🌿",
+       "label": "휴",
+       "name": "휴무",
+       "role": "off"
+      }
+     ],
+     "kind": "shiftLook"
+    },
+    {
+     "byRole": [
+      {
+       "before": [
+        240,
+        60
+       ],
+       "role": "night"
+      },
+      {
+       "before": [
+        70
+       ],
+       "role": "day"
+      }
+     ],
+     "kind": "alarms",
+     "mission": "math",
+     "snooze": 10
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "퇴근길 선글라스",
+        "가볍게 먹기",
+        "암막 커튼",
+        "4시간 이상 자기",
+        "저녁 햇빛 산책"
+       ],
+       "emoji": "🌅",
+       "title": "야간 뒤 회복"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "dot",
+     "kind": "calTheme",
+     "sat": 4279592384,
+     "sun": 4291176488,
+     "today": {
+      "token": "night"
+     }
+    },
+    {
+     "calendar": "todayFlow,summary,counts,rest,dayCard,memos",
+     "kind": "layout"
+    },
+    {
+     "kind": "cards",
+     "money": "hero,shiftspend,pace,recent,budget",
+     "stats": "tiles,pay,three,trend,weeks"
+    },
+    {
+     "alpha": 60,
+     "kind": "widget",
+     "memo": true,
+     "theme": "dark"
+    },
+    {
+     "corners": "soft",
+     "kind": "photoLook"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\"",
+       "paint": "lg.180.FF283593,FF1A237E"
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무종류 = \"야간\" 그리고 연속근무 >= 3",
+       "paint": "lg.180.FF4A148C,FF283593",
+       "motion": "shimmer"
+      },
+      {
+       "id": "cal.cell.mark",
+       "when": "근무종류 = \"야간\" 그리고 이달야간 >= 8",
+       "tshadow": 6,
+       "tshadowC": 4294964637,
+       "tshadowX": 0,
+       "tshadowY": 0
+      },
+      {
+       "id": "cal.cell",
+       "when": "쉬는날 그리고 이번주야간 >= 3",
+       "fill": 4281236786,
+       "fillA": 55
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "야간 끝 잠자리 알림",
+       "on": "end",
+       "role": "night",
+       "min": 20,
+       "do": "notify",
+       "arg": "야간 {이번주야간}번째 끝. 암막 커튼 치고 푹 자요"
+      },
+      {
+       "name": "야간 세 번째 회복",
+       "on": "end",
+       "role": "night",
+       "when": "이번주야간 >= 3",
+       "do": "notify",
+       "arg": "이번 주 야간 {이번주야간}번째예요. 다음 쉬는 날은 회복이 먼저예요"
+      },
+      {
+       "name": "연속근무 경고",
+       "on": "start",
+       "min": -60,
+       "when": "연속근무 >= 5",
+       "do": "notify",
+       "arg": "{연속근무}일째 이어 일해요. 물과 간식을 챙겨요"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "SHIFT"
+   ],
+   "summary": "밤 근무가 많은 분을 위한 어두운 판과 낮잠 알람",
+   "title": "밤 근무 버티기",
+   "tokens": [
+    {
+     "dark": 4288653530,
+     "light": 4280825235,
+     "name": "night"
+    }
+   ],
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4279592384,
+    "b": 4278234305,
+    "dir": 2,
+    "emoji": "💼"
+   },
+   "desc": "1.35 칼퇴 대시보드에 주 52시간 감시와 금요일 회고가 붙었어요. 52시간을 넘는 주는 날짜에 빨간 밑줄이 그어져요.\n누구에게 좋아요: 평일 9시 출근 직장인\n적용하면 바뀌는 것:\n· 출근 80분·50분 전 알람, 점점 크게\n· 매주 월요일 주간 회의, 하루 마무리 메모 틀\n· 달력 위 오늘의 흐름, 아래 주 근무시간 줄\n· 통계는 주별 시간·3개월 평균 먼저\n· 위젯 반투명과 메모 한 줄\n· 1.36: 주 52시간 넘은 주 빨간 날짜, 공휴일 근무 금색 테두리\n· 1.36: 금요일 17:30 주간 회고 메모, 46시간 넘으면 남은 시간 알림\n주의할 점: 알람은 더하기만 해요",
+   "format": "bamnat-recipe",
+   "pieces": [
+    {
+     "byRole": [
+      {
+       "before": [
+        80,
+        50
+       ],
+       "role": "day"
+      }
+     ],
+     "gradual": true,
+     "kind": "alarms",
+     "snooze": 5
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "지난주 한 일",
+        "이번 주 할 일",
+        "막힌 것",
+        "공유할 것"
+       ],
+       "emoji": "📝",
+       "repeat": "W1",
+       "title": "주간 회의"
+      },
+      {
+       "check": [
+        "내일 할 일 세 개",
+        "답장 못 한 메일",
+        "책상 정리"
+       ],
+       "emoji": "🌇",
+       "title": "하루 마무리"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "tint",
+     "kind": "calTheme",
+     "sat": 4279592384,
+     "sun": 4291176488,
+     "today": 4279592384
+    },
+    {
+     "calendar": "todayFlow,summary,dayCard,hours,memos,counts",
+     "kind": "layout"
+    },
+    {
+     "kind": "cards",
+     "stats": "tiles,weeks,three,pay,trend"
+    },
+    {
+     "alpha": 80,
+     "kind": "widget",
+     "memo": true
+    },
+    {
+     "corners": "soft",
+     "kind": "photoLook"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell.date",
+       "when": "이번주근무시간 > 52",
+       "ink": 4292030255,
+       "deco": "under",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell",
+       "when": "공휴일 그리고 아님 쉬는날",
+       "line": "double",
+       "lineW": 2.5,
+       "lineC": 4294947584
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "금요일 주간 회고",
+       "on": "daily",
+       "at": "17:30",
+       "when": "요일 = \"금\"",
+       "do": "newMemo",
+       "arg": "주간 회고"
+      },
+      {
+       "name": "주 52시간 경고",
+       "on": "end",
+       "when": "이번주근무시간 > 46",
+       "do": "notify",
+       "arg": "이번 주 {이번주근무시간}시간이에요. 52시간까지 {52 - 이번주근무시간}시간 남았어요"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "DAY"
+   ],
+   "summary": "오늘 흐름·회의 틀·52시간 점검을 한 번에",
+   "title": "오늘도 칼퇴",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4281944491,
+    "b": 4286362434,
+    "dir": 2,
+    "emoji": "🏡"
+   },
+   "desc": "1.35 하이브리드 판에서 재택 날이 달력에 🏠로 보이고, 근무 중 물·스트레칭 알림이 더해졌어요.\n누구에게 좋아요: 재택을 섞어 일하는 분\n적용하면 바뀌는 것:\n· 출근·재택·휴무 글자·색·이모지\n· 출근 날만 70분 전 알람\n· 재택 시작·출근 준비 메모 틀\n· 달력은 하루 카드를 위로\n· 1.36: 재택 날 칸 초록빛과 🏠 스티커, 체크 다 한 날 초록 고리\n· 1.36: 근무 2시간째 물, 4시간째 스트레칭 알림\n주의할 점: '재택' 근무가 없으면 그 칸은 넘어가요",
+   "format": "bamnat-recipe",
+   "pieces": [
+    {
+     "items": [
+      {
+       "color": 4281944491,
+       "emoji": "🏢",
+       "label": "출",
+       "name": "출근",
+       "role": "day"
+      },
+      {
+       "color": 4283796271,
+       "emoji": "🏡",
+       "label": "재",
+       "name": "재택",
+       "role": "other"
+      },
+      {
+       "color": 4285887861,
+       "label": "휴",
+       "name": "휴무",
+       "role": "off"
+      }
+     ],
+     "kind": "shiftLook"
+    },
+    {
+     "byRole": [
+      {
+       "before": [
+        70
+       ],
+       "role": "day"
+      }
+     ],
+     "kind": "alarms",
+     "snooze": 5
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "메신저 상태 켜기",
+        "화상 회의 링크 확인",
+        "환기",
+        "점심 시간 정하기"
+       ],
+       "emoji": "💻",
+       "title": "재택 시작"
+      },
+      {
+       "check": [
+        "사원증",
+        "노트북·충전기",
+        "우산"
+       ],
+       "emoji": "🎒",
+       "title": "출근 준비"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "tint",
+     "kind": "calTheme",
+     "sun": 4291176488,
+     "today": 4283796271
+    },
+    {
+     "calendar": "todayFlow,dayCard,summary,memos,hours",
+     "kind": "layout"
+    },
+    {
+     "alpha": 90,
+     "kind": "widget",
+     "memo": true
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "on": "role.other",
+       "fill": 4291356361,
+       "fillA": 45
+      },
+      {
+       "id": "cal.cell",
+       "when": "메모수 > 0 그리고 (체크율 > 0 또는 남은체크 > 0)",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": {
+        "fx": "만약(체크율 >= 100, \"#43A047\", \"#FFB300\")"
+       }
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "근무 중 물 마시기",
+       "on": "start",
+       "min": 120,
+       "do": "notify",
+       "arg": "근무 두 시간째예요. 물 한 잔 마셔요"
+      },
+      {
+       "name": "근무 중 스트레칭",
+       "on": "start",
+       "min": 240,
+       "do": "notify",
+       "arg": "어깨와 허리를 한 번 펴요"
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "🏠",
+       "at": "cal.cell",
+       "on": "role.other",
+       "x": 820,
+       "y": 200,
+       "w": 13,
+       "h": 13
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "DAY"
+   ],
+   "summary": "재택과 출근 날이 한눈에, 날마다 다른 준비",
+   "title": "재택이랑 출근 섞어서",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4279903102,
+    "b": 4282622023,
+    "dir": 2,
+    "emoji": "🏪"
+   },
+   "desc": "1.35 편의점 야간 완전판이 근무 끝마다 출퇴근을 한 줄로 남기고, 주 15시간을 넘긴 주는 날짜가 금빛이에요.\n누구에게 좋아요: 5인 이상 편의점 야간 알바\n적용하면 바뀌는 것:\n· 시급(내가 넣어요), 야간 가산 50%, 주휴수당, 법정 휴게 빼기\n· 야간 글자·색·이모지, 60분·30분 전 알람\n· 야간 인수 체크 메모 틀 (시재·폐기·진열)\n· 달력은 주 근무시간 줄을 위로\n· 통계는 급여 카드와 주별 시간 먼저\n· 1.36: 주 15시간 넘긴 주 금빛 날짜, 일한 시간만큼 진한 칸\n· 1.36: 근무 끝 출퇴근 한 줄, 15시간 넘김 알림\n주의할 점: 5인 미만 매장이면 야간 가산이 없을 수 있어요",
+   "format": "bamnat-recipe",
+   "inputs": [
+    {
+     "default": 10320,
+     "hint": "처음 값은 올해 최저임금이에요. 내 시급으로 바꿔 넣어요",
+     "id": "i1",
+     "kind": "money",
+     "label": "시급",
+     "max": 1000000,
+     "min": 0
+    }
+   ],
+   "pieces": [
+    {
+     "breakPay": "UNPAID",
+     "five": true,
+     "kind": "hourly",
+     "legalBreaks": true,
+     "night": 50,
+     "rounding": "AT_END",
+     "tax": "NONE",
+     "wage": {
+      "input": "i1"
+     },
+     "weeklyPay": true
+    },
+    {
+     "items": [
+      {
+       "color": 4279903102,
+       "emoji": "🌙",
+       "label": "야",
+       "name": "야간",
+       "role": "night"
+      },
+      {
+       "color": 4281236786,
+       "emoji": "🏪",
+       "label": "주",
+       "name": "주간",
+       "role": "day"
+      }
+     ],
+     "kind": "shiftLook"
+    },
+    {
+     "byRole": [
+      {
+       "before": [
+        60,
+        30
+       ],
+       "role": "night"
+      },
+      {
+       "before": [
+        40
+       ],
+       "role": "day"
+      }
+     ],
+     "kind": "alarms",
+     "snooze": 5
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "시재 맞추기",
+        "폐기 상품 정리",
+        "음료 진열",
+        "택배 보관",
+        "다음 근무자 전달"
+       ],
+       "emoji": "🔦",
+       "title": "야간 인수 체크"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "tint",
+     "kind": "calTheme",
+     "sun": 4291176488,
+     "today": 4279903102
+    },
+    {
+     "calendar": "hours,todayFlow,summary,dayCard,memos",
+     "kind": "layout"
+    },
+    {
+     "kind": "cards",
+     "money": "hero,income,recent,budget",
+     "stats": "pay,tiles,weeks,three,trend"
+    },
+    {
+     "alpha": 85,
+     "kind": "widget",
+     "memo": true
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell.date",
+       "when": "이번주근무시간 >= 15 그리고 아님 쉬는날",
+       "ink": 4294551589,
+       "deco": "under",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무시간 > 0",
+       "fill": 4279592384,
+       "fillA": {
+        "fx": "최소(80, 반올림(근무시간 * 6))"
+       }
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "근무 끝 한 줄 기록",
+       "on": "end",
+       "min": 5,
+       "do": "memoLine",
+       "arg": "{근무} {근무시작}~{근무끝} · {근무시간}시간"
+      },
+      {
+       "name": "주 15시간 넘김",
+       "on": "end",
+       "when": "이번주근무시간 >= 15",
+       "do": "notify",
+       "arg": "이번 주 {이번주근무시간}시간 일했어요. 주휴수당 조건(15시간)을 넘겼어요"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "HOURLY"
+   ],
+   "summary": "야간 가산·주휴·휴게까지 맞춘 계산과 인수 체크",
+   "title": "편의점 야간 알바 챙기기",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4281236786,
+    "b": 4294961979,
+    "dir": 2,
+    "emoji": "🗓️"
+   },
+   "desc": "1.35 주휴수당 지킴이가 이제 달력에서 바로 보여요. 15시간을 넘긴 주는 근무 날짜가 금빛, 넘긴 순간 알림이 와요.\n누구에게 좋아요: 주휴수당을 꼭 챙기고 싶은 알바\n적용하면 바뀌는 것:\n· 시급(내가 넣어요), 주휴수당, 주 시작 월요일, 법정 휴게 빼기\n· 달력 맨 위에 이 주 근무시간 줄\n· 통계는 주별 시간·3개월 평균 먼저\n· 매주 일요일 이번 주 시간 확인 메모 틀\n· 1.36: 주 15시간 넘긴 주 금빛 날짜, 일한 시간 농도\n· 1.36: 15시간 넘김 알림, 근무 끝 한 줄 기록\n주의할 점: 근로계약서의 주 시작 요일과 맞춰 보세요",
+   "format": "bamnat-recipe",
+   "inputs": [
+    {
+     "default": 10320,
+     "hint": "처음 값은 올해 최저임금이에요. 내 시급으로 바꿔 넣어요",
+     "id": "i1",
+     "kind": "money",
+     "label": "시급",
+     "max": 1000000,
+     "min": 0
+    }
+   ],
+   "pieces": [
+    {
+     "breakPay": "UNPAID",
+     "kind": "hourly",
+     "legalBreaks": true,
+     "wage": {
+      "input": "i1"
+     },
+     "weekStart": "MONDAY",
+     "weeklyPay": true
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "이번 주 근무시간 보기",
+        "15시간 넘었나",
+        "빠진 근무 적기"
+       ],
+       "emoji": "⏱️",
+       "repeat": "W7",
+       "title": "이번 주 시간 확인"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "tint",
+     "kind": "calTheme",
+     "today": 4281236786
+    },
+    {
+     "calendar": "hours,summary,todayFlow,dayCard,memos",
+     "kind": "layout"
+    },
+    {
+     "kind": "cards",
+     "stats": "weeks,three,pay,tiles"
+    },
+    {
+     "alpha": 90,
+     "kind": "widget"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell.date",
+       "when": "이번주근무시간 >= 15 그리고 아님 쉬는날",
+       "ink": 4294551589,
+       "deco": "under",
+       "weight": 800
+      },
+      {
+       "id": "cal.cell",
+       "when": "근무시간 > 0",
+       "fill": 4294551589,
+       "fillA": {
+        "fx": "최소(80, 반올림(근무시간 * 6))"
+       }
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "주 15시간 넘김",
+       "on": "end",
+       "when": "이번주근무시간 >= 15",
+       "do": "notify",
+       "arg": "이번 주 {이번주근무시간}시간 일했어요. 주휴수당 조건(15시간)을 넘겼어요"
+      },
+      {
+       "name": "근무 끝 한 줄 기록",
+       "on": "end",
+       "min": 5,
+       "do": "memoLine",
+       "arg": "{근무} {근무시작}~{근무끝} · {근무시간}시간"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "HOURLY"
+   ],
+   "summary": "주 15시간을 넘는지 늘 보이게",
+   "title": "주휴수당 꼭 받기",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4286141768,
+    "b": 4294947584,
+    "dir": 2,
+    "emoji": "🛠️"
+   },
+   "desc": "1.35 반장 풀세트에 '일당' 단추와 우천 기록이 붙었어요. 10시간 넘게 일한 날은 굵은 테두리, 돈 들어온 날은 금빛이에요.\n누구에게 좋아요: 인테리어 목수·반장\n적용하면 바뀌는 것:\n· 일당(내가 넣어요), 공수 칩 0.5·1·1.5·2\n· 5시면 1공, 7시면 1.5공, 9시면 2공\n· 작업 분류 6개, 경비 분류 6개\n· 현장 일지·견적 문의 메모 틀\n· 달력은 오늘 일감 카드를 위로, 가계부는 받을 돈 먼저\n· 1.36: 10시간 넘은 날 굵은 테두리, 돈 들어온 날 금빛, #우천 날 회색 점선\n· 1.36: 근무 날 '일당' 단추로 수입 넣기, #우천 메모 한 줄\n주의할 점: 일당은 받는 분마다 달라 비워 두었어요",
+   "format": "bamnat-recipe",
+   "inputs": [
+    {
+     "hint": "내 일당을 적어 주세요",
+     "id": "i1",
+     "kind": "money",
+     "label": "일당",
+     "max": 5000000,
+     "min": 0,
+     "required": true
+    }
+   ],
+   "pieces": [
+    {
+     "chips": [
+      0.5,
+      1,
+      1.5,
+      2
+     ],
+     "costs": [
+      "자재비",
+      "공구",
+      "유류비",
+      "식대",
+      "주차비",
+      "폐기물"
+     ],
+     "dayRate": {
+      "input": "i1"
+     },
+     "ends": [
+      {
+       "end": "17:00",
+       "units": 1
+      },
+      {
+       "end": "19:00",
+       "units": 1.5
+      },
+      {
+       "end": "21:00",
+       "units": 2
+      }
+     ],
+     "kind": "field",
+     "kinds": [
+      "목공",
+      "도장",
+      "타일",
+      "철거",
+      "설비",
+      "마감"
+     ],
+     "mode": "DAY_RATE"
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "오늘 한 공정",
+        "투입 인원",
+        "자재 들어온 것",
+        "내일 할 일",
+        "사진 찍기"
+       ],
+       "emoji": "📒",
+       "title": "현장 일지"
+      },
+      {
+       "check": [
+        "현장 위치",
+        "면적·수량",
+        "일정",
+        "자재 누가",
+        "선금 비율"
+       ],
+       "emoji": "📐",
+       "title": "견적 문의"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "fill",
+     "kind": "calTheme",
+     "sun": 4291176488,
+     "today": 4286141768
+    },
+    {
+     "calendar": "todayWork,summary,dayCard,memos",
+     "kind": "layout"
+    },
+    {
+     "kind": "cards",
+     "money": "owed,work,freelance,hero,recent"
+    },
+    {
+     "alpha": 90,
+     "kind": "widget",
+     "memo": true
+    },
+    {
+     "corners": "square",
+     "kind": "photoLook"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "when": "근무시간 >= 10",
+       "line": "solid",
+       "lineW": 2.5,
+       "lineC": 4294278144
+      },
+      {
+       "id": "cal.cell",
+       "when": "수입 > 0",
+       "paint": "rg.50.40.90.FFFFD54F,00FFFFFF",
+       "motion": "shimmer"
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"우천\")",
+       "line": "dash",
+       "lineW": 2,
+       "lineC": 4286091420
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "label": "일당",
+       "emoji": "💵",
+       "where": "day",
+       "do": "addIncome",
+       "arg": "일당",
+       "amount": {
+        "input": "i1"
+       },
+       "show": "근무시간 > 0"
+      }
+     ],
+     "rules": [
+      {
+       "name": "우천 날 일지",
+       "on": "memo",
+       "when": "꼬리표.포함(\"우천\")",
+       "do": "memoLine",
+       "arg": "우천으로 쉼 · 이달 일한 시간 {이달근무시간}시간"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "FIELD"
+   ],
+   "summary": "공수 칩·끝난 시각·작업·경비에 견적 틀까지",
+   "title": "인테리어 반장님",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4278225275,
+    "b": 4280693304,
+    "dir": 2,
+    "emoji": "🛵"
+   },
+   "desc": "1.35 라이더 대시보드에 달린 시간과 번 돈이 칸 색으로 들어왔어요. 오래 달린 날은 진하게, 돈 들어온 날은 금빛이에요.\n누구에게 좋아요: 배민·쿠팡이츠·요기요 라이더\n적용하면 바뀌는 것:\n· 플랫폼형, 플랫폼 4개, 경비 6개\n· 매달 1일 오토바이 정비 메모 틀, 운행 전 점검 틀\n· 달력은 오늘 일감과 이번 달 요약 먼저\n· 가계부는 일감 돈·이번 달 흐름·3.3% 합계\n· 위젯은 어둡게\n· 1.36: 달린 시간 농도, 돈 들어온 날 금빛, 많이 쓴 날 빨간 금액\n· 1.36: 밤 9시 가계부 알림, 매달 1일 고정비 점검 메모\n주의할 점: 수수료·정산일은 각 앱 기준이에요",
+   "format": "bamnat-recipe",
+   "pieces": [
+    {
+     "chips": [
+      1
+     ],
+     "costs": [
+      "유류비",
+      "보험료",
+      "수리비",
+      "통신비",
+      "장비",
+      "식대"
+     ],
+     "kind": "field",
+     "kinds": [
+      "배민",
+      "쿠팡이츠",
+      "요기요",
+      "지역 대행"
+     ],
+     "mode": "PLATFORM"
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "엔진오일",
+        "타이어 공기압",
+        "브레이크 패드",
+        "체인 장력"
+       ],
+       "emoji": "🔧",
+       "repeat": "M1",
+       "title": "오토바이 정비"
+      },
+      {
+       "check": [
+        "헬멧·장갑",
+        "보조 배터리",
+        "우비",
+        "휴대폰 거치대"
+       ],
+       "emoji": "🪖",
+       "title": "운행 전 점검"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "fill",
+     "kind": "calTheme",
+     "today": 4278225275
+    },
+    {
+     "calendar": "todayWork,summary,dayCard,memos",
+     "kind": "layout"
+    },
+    {
+     "kind": "cards",
+     "money": "work,pace,freelance,hero,recent"
+    },
+    {
+     "alpha": 70,
+     "kind": "widget",
+     "memo": true,
+     "theme": "dark"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "when": "근무시간 > 0",
+       "fill": 4278225275,
+       "fillA": {
+        "fx": "최소(80, 반올림(근무시간 * 6))"
+       }
+      },
+      {
+       "id": "cal.cell",
+       "when": "수입 > 0",
+       "paint": "rg.50.40.90.FFFFD54F,00FFFFFF",
+       "motion": "shimmer"
+      },
+      {
+       "id": "cal.cell.spend",
+       "when": "지출 >= 50000",
+       "ink": 4292030255,
+       "weight": 800
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "밤 9시 가계부 알림",
+       "on": "daily",
+       "at": "21:00",
+       "when": "지출 = 0 그리고 아님 지난날",
+       "do": "notify",
+       "arg": "오늘 쓴 돈을 아직 안 적었어요"
+      },
+      {
+       "name": "매달 1일 고정비 점검",
+       "on": "daily",
+       "at": "09:00",
+       "when": "일 = 1",
+       "do": "newMemo",
+       "arg": "고정비 점검"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "FIELD"
+   ],
+   "summary": "플랫폼별 수입과 차량 경비, 정비 알림까지",
+   "title": "라이더 하루 정리",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4284301367,
+    "b": 4294954112,
+    "dir": 2,
+    "emoji": "☕"
+   },
+   "desc": "1.35 카페 풀세트가 문 열고 닫을 때를 알려 줘요. 매출을 적으면 오늘·이달 매출이 그날 메모에 한 줄로 쌓여요.\n누구에게 좋아요: 혼자 또는 둘이 하는 동네 카페\n적용하면 바뀌는 것:\n· 월요일 쉬는 영업일, 9시~21시\n· 카드 수수료 1.5%, 정산 3일\n· 마감 체크 5개, 경비 분류 6개\n· 오픈 준비·매주 화요일 발주 메모 틀\n· 가계부는 매출 나눠 보기·카드 매출 입금 먼저\n· 1.36: 매출 있는 날 금빛 칸, #단체 주문 날 갈색 칸\n· 1.36: 08:00 오픈·20:30 마감 알림, 매출 한 줄 장부\n주의할 점: 카드 수수료는 내 가맹점 기준으로 고쳐요",
+   "format": "bamnat-recipe",
+   "pieces": [
+    {
+     "cardFee": 1.5,
+     "closes": "21:00",
+     "closing": [
+      "머신 청소",
+      "우유·디저트 정리",
+      "시재 마감",
+      "쓰레기",
+      "문단속"
+     ],
+     "costs": [
+      "원두",
+      "우유",
+      "디저트 재료",
+      "컵·포장",
+      "임대료",
+      "공과금"
+     ],
+     "holidaysClosed": false,
+     "kind": "shop",
+     "open": [
+      "TUESDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY",
+      "SATURDAY",
+      "SUNDAY"
+     ],
+     "opens": "09:00",
+     "settleDays": 3
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "머신 예열",
+        "원두 확인",
+        "디저트 진열",
+        "포스 켜기",
+        "간판 켜기"
+       ],
+       "emoji": "🌅",
+       "title": "오픈 준비"
+      },
+      {
+       "check": [
+        "원두",
+        "우유",
+        "컵·뚜껑",
+        "시럽",
+        "세제"
+       ],
+       "emoji": "📦",
+       "repeat": "W2",
+       "title": "주간 발주"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "fill",
+     "kind": "calTheme",
+     "sat": 4279592384,
+     "sun": 4291176488,
+     "today": 4284301367
+    },
+    {
+     "calendar": "todayWork,summary,dayCard,memos",
+     "kind": "layout"
+    },
+    {
+     "kind": "cards",
+     "money": "hero,salessplit,work,cardbill,budget,upcoming,recent"
+    },
+    {
+     "alpha": 90,
+     "kind": "widget",
+     "memo": true
+    },
+    {
+     "corners": "round",
+     "kind": "photoLook"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "when": "수입 > 0",
+       "paint": "rg.50.40.90.FFFFD54F,00FFFFFF",
+       "motion": "shimmer"
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"단체\")",
+       "fill": 4287458915,
+       "fillA": 35
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "오픈 한 시간 전",
+       "on": "daily",
+       "at": "08:00",
+       "when": "아님 공휴일",
+       "do": "notify",
+       "arg": "곧 오픈이에요. 오픈 준비 목록을 확인해요"
+      },
+      {
+       "name": "마감 30분 전",
+       "on": "daily",
+       "at": "20:30",
+       "when": "아님 공휴일",
+       "do": "notify",
+       "arg": "곧 마감이에요. 마감 체크 목록을 열어요"
+      },
+      {
+       "name": "매출 적으면 한 줄",
+       "on": "money",
+       "when": "수입 > 0",
+       "do": "memoLine",
+       "arg": "오늘 매출 {원(수입)} · 이달 {원(이달수입)}"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "BUSINESS"
+   ],
+   "summary": "영업일·카드 정산·마감·발주를 한 판에",
+   "title": "동네 카페 하루",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4289533015,
+    "b": 4294491088,
+    "dir": 2,
+    "emoji": "💅"
+   },
+   "desc": "1.35 네일·미용숍 판에서 #예약 날이 분홍 테두리로 보이고, 매출 한 줄 장부와 부가세 달 알림이 더해졌어요.\n누구에게 좋아요: 혼자 하는 네일·미용·속눈썹 숍\n적용하면 바뀌는 것:\n· 화요일 쉬는 영업일, 10시~20시\n· 마감 체크 4개, 경비 분류 5개\n· 예약 상담·재료 점검 메모 틀\n· 둥근 모서리, 분홍 계열 달력\n· 1.36: #예약 날 분홍 테두리, 매출 있는 날 금빛\n· 1.36: 매출 한 줄 장부, 1·7월 부가세 신고 알림\n주의할 점: 손님 이름·연락처는 메모에 적지 않는 게 좋아요",
+   "format": "bamnat-recipe",
+   "pieces": [
+    {
+     "closes": "20:00",
+     "closing": [
+      "도구 소독",
+      "수건 세탁",
+      "재료 정리",
+      "시재 마감"
+     ],
+     "costs": [
+      "젤·재료",
+      "소모품",
+      "임대료",
+      "광고비",
+      "교육비"
+     ],
+     "kind": "shop",
+     "open": [
+      "MONDAY",
+      "WEDNESDAY",
+      "THURSDAY",
+      "FRIDAY",
+      "SATURDAY",
+      "SUNDAY"
+     ],
+     "opens": "10:00"
+    },
+    {
+     "items": [
+      {
+       "body": "원하는 디자인:\n지난 시술:\n알레르기·주의:\n걸리는 시간:\n다음 예약 권하기:",
+       "emoji": "💬",
+       "title": "예약 상담"
+      },
+      {
+       "check": [
+        "젤 색 재고",
+        "리무버",
+        "솜·호일",
+        "소독제"
+       ],
+       "emoji": "🧴",
+       "repeat": "W1",
+       "title": "재료 점검"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "tint",
+     "kind": "calTheme",
+     "sat": 4279592384,
+     "sun": 4291176488,
+     "today": 4289533015
+    },
+    {
+     "calendar": "todayWork,summary,memos,dayCard",
+     "kind": "layout"
+    },
+    {
+     "kind": "cards",
+     "money": "hero,salessplit,work,budget,recent"
+    },
+    {
+     "alpha": 90,
+     "kind": "widget",
+     "memo": true
+    },
+    {
+     "corners": "round",
+     "kind": "photoLook"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"예약\")",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4293673082
+      },
+      {
+       "id": "cal.cell",
+       "when": "수입 > 0",
+       "paint": "rg.50.40.90.FFF8BBD0,00FFFFFF",
+       "motion": "shimmer"
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "매출 적으면 한 줄",
+       "on": "money",
+       "when": "수입 > 0",
+       "do": "memoLine",
+       "arg": "오늘 매출 {원(수입)} · 이달 {원(이달수입)}"
+      },
+      {
+       "name": "부가세 신고 달",
+       "on": "daily",
+       "at": "10:00",
+       "when": "중하나(월, 1, 7) 그리고 일 = 15",
+       "do": "notify",
+       "arg": "이달 25일까지 부가세 신고예요. 매출·매입 자료를 모아요"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "BUSINESS"
+   ],
+   "summary": "예약 위주 영업과 상담 틀, 재료 관리",
+   "title": "혼자 하는 네일숍",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4279903102,
+    "b": 4291176488,
+    "dir": 2,
+    "emoji": "📈"
+   },
+   "desc": "1.35 가치투자 판이 매매한 날 저녁에 일지를 권해요. #매매 날은 테두리, 일지를 쓴 날은 초록 칸이에요.\n누구에게 좋아요: 오래 들고 가는 투자를 하고 싶은 분\n적용하면 바뀌는 것:\n· 투자 원칙 5개, 일지 칸 5개\n· 사기 전 점검·분기 실적 확인 메모 틀\n· 달력은 오늘 투자 카드와 메모 먼저\n· 오른 날 빨강, 내린 날 파랑처럼 보이는 칸\n· 1.36: #매매 날 테두리, #일지 쓴 날 초록 칸\n· 1.36: 매매 날 일지 알림, 분기 끝 리밸런싱 메모, 날 화면 '일지' 단추\n주의할 점: 종목을 알려 주는 판이 아니에요. 판단은 본인 몫이에요",
+   "format": "bamnat-recipe",
+   "pieces": [
+    {
+     "journal": [
+      "산 이유",
+      "적정 가치 생각",
+      "판 이유",
+      "감정 점수",
+      "다음에 바꿀 것"
+     ],
+     "kind": "invest",
+     "rules": [
+      {
+       "text": "사업을 한 줄로 설명할 수 있을 때만 산다"
+      },
+      {
+       "text": "세 번에 나눠 산다"
+      },
+      {
+       "text": "한 종목은 전체의 20%까지"
+      },
+      {
+       "text": "산 이유가 사라지면 판다"
+      },
+      {
+       "text": "빚내서 사지 않는다"
+      }
+     ]
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "산 이유를 한 줄로",
+        "비중 20% 넘지 않나",
+        "하루 기다렸나",
+        "팔 기준"
+       ],
+       "emoji": "✅",
+       "title": "사기 전 점검"
+      },
+      {
+       "check": [
+        "매출·이익 흐름",
+        "산 이유 그대로인가",
+        "비중 다시 보기"
+       ],
+       "emoji": "📊",
+       "title": "분기 실적 확인"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "fill",
+     "kind": "calTheme",
+     "sat": 4279592384,
+     "sun": 4291176488,
+     "today": 4279903102
+    },
+    {
+     "calendar": "todayWork,summary,memos,dayCard",
+     "kind": "layout"
+    },
+    {
+     "alpha": 90,
+     "kind": "widget",
+     "memo": true
+    },
+    {
+     "corners": "soft",
+     "kind": "photoLook"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"매매\")",
+       "line": "solid",
+       "lineW": 2,
+       "lineC": 4282735204
+      },
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"일지\")",
+       "fill": 4282622023,
+       "fillA": 30
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "buttons": [
+      {
+       "label": "일지",
+       "emoji": "📓",
+       "where": "day",
+       "do": "newMemo",
+       "arg": "매매 일지"
+      }
+     ],
+     "rules": [
+      {
+       "name": "매매한 날 일지 알림",
+       "on": "daily",
+       "at": "20:30",
+       "when": "꼬리표.포함(\"매매\") 그리고 아님 꼬리표.포함(\"일지\")",
+       "do": "notify",
+       "arg": "오늘 매매가 있었어요. 산 이유와 마음을 일지에 남겨요"
+      },
+      {
+       "name": "분기 끝 리밸런싱",
+       "on": "daily",
+       "at": "10:00",
+       "when": "중하나(월, 3, 6, 9, 12) 그리고 일 = 25",
+       "do": "newMemo",
+       "arg": "리밸런싱 점검"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "INVEST"
+   ],
+   "summary": "원칙 다섯, 일지 칸, 사기 전 점검까지",
+   "title": "가치투자 매일 일지",
+   "v": 1
+  }
+ },
+ {
+  "showcase": true,
+  "recipe": {
+   "cover": {
+    "a": 4281236786,
+    "b": 4289058471,
+    "dir": 2,
+    "emoji": "🌳"
+   },
+   "desc": "1.35 적립식 루틴에 적립일 알림과 분기 점검이 붙었어요. #적립 날은 새싹색 칸으로 쌓여요.\n누구에게 좋아요: 매달 적립하는 분\n적용하면 바뀌는 것:\n· 원칙 4개, 일지 칸 3개\n· 매달 5일 적립 확인 메모 틀\n· 매년 1월 비중 맞추기 메모 틀\n· 위젯은 밝게 반투명\n· 1.36: #적립 날 새싹색 칸\n· 1.36: 매달 적립일 알림, 분기 끝 리밸런싱 메모\n주의할 점: 적립일은 돈 들어오는 날에 맞춰 메모에서 바꿔요",
+   "format": "bamnat-recipe",
+   "pieces": [
+    {
+     "journal": [
+      "이번 달 적립",
+      "비중 확인",
+      "느낀 점"
+     ],
+     "kind": "invest",
+     "rules": [
+      {
+       "text": "매달 같은 날 넣는다"
+      },
+      {
+       "text": "떨어져도 계획대로 넣는다"
+      },
+      {
+       "text": "1년에 한 번 비중을 맞춘다"
+      },
+      {
+       "text": "생활비 석 달치는 따로 둔다"
+      }
+     ]
+    },
+    {
+     "items": [
+      {
+       "check": [
+        "이체 됐나",
+        "비중 확인",
+        "일지 한 줄"
+       ],
+       "emoji": "🌱",
+       "repeat": "M5",
+       "title": "적립 확인"
+      },
+      {
+       "check": [
+        "목표 비중",
+        "지금 비중",
+        "옮길 것",
+        "수수료 확인"
+       ],
+       "emoji": "⚖️",
+       "title": "비중 맞추기"
+      }
+     ],
+     "kind": "memoTpl"
+    },
+    {
+     "cell": "tint",
+     "kind": "calTheme",
+     "today": 4281236786
+    },
+    {
+     "calendar": "summary,todayWork,memos",
+     "kind": "layout"
+    },
+    {
+     "alpha": 85,
+     "kind": "widget",
+     "memo": true,
+     "theme": "light"
+    },
+    {
+     "corners": "round",
+     "kind": "photoLook"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "cal.cell",
+       "when": "꼬리표.포함(\"적립\")",
+       "fill": 4289648001,
+       "fillA": 45
+      }
+     ]
+    },
+    {
+     "kind": "logic",
+     "rules": [
+      {
+       "name": "매달 적립일",
+       "on": "daily",
+       "at": "09:30",
+       "when": "일 = 칸(\"적립일\", 10)",
+       "do": "notify",
+       "arg": "오늘은 적립하는 날이에요. 원칙대로 넣어요"
+      },
+      {
+       "name": "분기 끝 리밸런싱",
+       "on": "daily",
+       "at": "10:00",
+       "when": "중하나(월, 3, 6, 9, 12) 그리고 일 = 25",
+       "do": "newMemo",
+       "arg": "리밸런싱 점검"
+      }
+     ]
+    }
+   ],
+   "styles": [
+    "INVEST"
+   ],
+   "summary": "매달 같은 날 넣고 1년에 한 번 맞추기",
+   "title": "매달 같은 날 적립",
+   "v": 1,
+   "inputs": [
+    {
+     "id": "i1",
+     "label": "적립일",
+     "kind": "number",
+     "min": 1,
+     "max": 28,
+     "hint": "매달 며칠에 넣나요",
+     "default": 10
+    }
+   ]
+  }
+ }
+]

@@ -1,5 +1,7 @@
 package com.bamnat.core.recipe
 
+import com.bamnat.core.work.words
+
 /**
  * [RCP-17][RCP-23] What a piece holds, in one line the user reads (만들기 1단계, 레시피 보기의 조각 목록, 미리 보기): "근무 4개:
  * 주🌞 야🌙 비 휴", "알람 3개 더하기 · 계산 미션". Values the receiver fills in read "받는 사람이 정해요".
@@ -12,6 +14,7 @@ object RecipeDescribe {
     )
     private val MISSIONS = mapOf("none" to "미션 없음", "math" to "계산 미션", "shake" to "흔들기 미션")
     private val CELLS = mapOf("fill" to "칸 채우기", "tint" to "옅게 칠하기", "dot" to "점만")
+    private val MARK_NAMES = mapOf("big" to "큰 표시", "small" to "작은 표시", "line" to "글자 줄", "dot" to "점 표시", "fill" to "근무 색 꽉 채우기", "none" to "표시 없음")
     private val MODES = mapOf("DAY_RATE" to "일당(공수)형", "PER_JOB" to "건별형", "PLATFORM" to "플랫폼형")
     private val BREAKS = mapOf("UNPAID" to "휴게 무급", "PAID" to "휴게 유급", "AS_WORK" to "휴게도 근무시간")
     private val TAXES = mapOf("NONE" to "세금 없이", "WITHHOLDING_3_3" to "3.3% 떼기", "INSURANCE_4" to "4대보험")
@@ -29,7 +32,7 @@ object RecipeDescribe {
     }
 
     /** [p] in one line; [amounts] false writes "정해 둔 금액" for a fixed amount (for text that leaves the phone). */
-    fun line(p: Piece, amounts: Boolean = true): String = when (p.kind) {
+    fun line(p: Piece, amounts: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null): String = when (p.kind) {
         PieceKind.SHIFT_LOOK -> items(p, "items").let { l ->
             "근무 ${l.size}개: " + l.joinToString(" ") { (it["label"] as? String ?: "") + (it["emoji"] as? String ?: "") }
         }
@@ -73,16 +76,17 @@ object RecipeDescribe {
         PieceKind.COMPANY -> "근무 주기와 급여 방식 (회사 설정 파일)"
         PieceKind.BUNDLE -> "레시피 ${items(p, "items").size}개 묶음"
         PieceKind.LAYOUT -> listOfNotNull(
-            texts(p, "tabs").takeIf { it.isNotEmpty() }?.let { t -> "탭 순서 " + t.joinToString("·") { TABS[it] ?: it } },
+            texts(p, "tabs").takeIf { it.isNotEmpty() }?.let { t -> "탭 순서 " + t.joinToString("·") { tabName(it, style) } },
             (p.values["calendar"] as? String)?.let { "달력 화면 카드 ${parts(it)}" },
         ).joinToString(" · ").ifEmpty { "화면 배치" }
         PieceKind.CARDS -> listOfNotNull(
-            (p.values["stats"] as? String)?.let { "통계 카드 ${parts(it)}" },
+            (p.values["stats"] as? String)?.let { "${tabName("stats", style)} 카드 ${parts(it)}" },
             (p.values["money"] as? String)?.let { "가계부 카드 ${parts(it)}" },
             (p.values["memo"] as? String)?.let { "메모 카드 ${parts(it)}" },
         ).joinToString(" · ").ifEmpty { "카드 순서" }
         PieceKind.WIDGET -> listOfNotNull(
-            (p.values["alpha"] as? Number)?.let { "불투명 ${it}%" },
+            // PC 확인 W32 1.36 (칩은 '반쯤 비침'인데 요약은 '불투명 65%'): the chip's own words, with the number.
+            (p.values["alpha"] as? Number)?.toInt()?.let { a -> (mapOf(100 to "불투명", 85 to "조금 비침", 65 to "반쯤 비침", 40 to "많이 비침")[a] ?: "비침") + "(${a}%)" },
             (p.values["theme"] as? String)?.let { mapOf("system" to "휴대폰 화면 따라", "light" to "밝게", "dark" to "어둡게")[it] },
             (p.values["memo"] as? Boolean)?.let { if (it) "메모 한 줄 보임" else "메모 숨김" },
         ).joinToString(" · ").ifEmpty { "위젯 모양" }
@@ -100,7 +104,11 @@ object RecipeDescribe {
             "근무 시간".takeIf { p.values["hours"] == true }, "음력".takeIf { p.values["lunar"] == true }, "그날 쓴 돈".takeIf { p.values["spend"] == true },
             (p.values["order"] as? String)?.takeIf { it.isNotEmpty() }?.let { o -> "순서 " + o.split(',').joinToString("→") { LINE_NAMES[it] ?: it } },
             // [FREE-01][FREE-02]
-            CellLook.decodeAll(p.values["looks"] as? String).size.takeIf { it > 0 }?.let { "칸 모양 ${it}개" },
+            // 1.36 PC 재검토: what the looks draw, not only how many ('근무 색 꽉 채우기' read as nothing).
+            CellLook.decodeAll(p.values["looks"] as? String).takeIf { it.isNotEmpty() }?.let { l ->
+                val marks = l.mapNotNull { MARK_NAMES[it.mark] }.distinct()
+                "칸 모양 ${l.size}개" + (if (marks.isNotEmpty()) " (" + marks.joinToString(", ") + ")" else "")
+            },
             (p.values["pattern"] as? String)?.let { PATTERN_NAMES[CellPattern.decode(it).mode] },
             "오늘 칸 따로".takeIf { p.values["today"] != null },
         ).joinToString(" · ").ifEmpty { "달력 모양" }
@@ -124,6 +132,24 @@ object RecipeDescribe {
             PayLook.decodeAll(p.values["pay"] as? String).size.takeIf { it > 0 }?.let { "급여 모양 ${it}가지 유형" },
             "그림 있음".takeIf { ScreenLooks.decode(p.values["screens"] as? String).images.isNotEmpty() },
         ).joinToString(" · ").ifEmpty { "화면 색·배경" }
+        // [BLU-01] 1.36 부품 꾸미기: which parts, by the names the studio shows.
+        PieceKind.PARTS -> items(p, "parts").map { it["id"] as String }.distinct().let { ids ->
+            "부품 ${ids.size}개 꾸밈: " + ids.take(4).joinToString("·") { BlueprintParts.LABELS[it] ?: it } + (if (ids.size > 4) " 외" else "") +
+                items(p, "parts").count { it["when"] != null }.let { n -> if (n > 0) " · 조건부 꾸미기 ${n}줄" else "" }
+        }
+        // [RUL-03][RUL-04] 1.36 수식·규칙·버튼: how many of each, and that it writes data when it does.
+        PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(p.values).let { l ->
+            listOfNotNull(
+                "단추 ${l.buttons.size}개".takeIf { l.buttons.isNotEmpty() }, "규칙 ${l.rules.size}개".takeIf { l.rules.isNotEmpty() },
+                "메모·가계부를 바꾸는 동작 있음".takeIf { l.writes },
+            ).joinToString(" · ").ifEmpty { "수식·규칙" }
+        }
+        // [TAB-07] 1.36 탭 보기.
+        PieceKind.TAB_VIEW -> listOfNotNull(
+            (p.values["cal"] as? String)?.let { "달력 " + com.bamnat.core.layout.CalendarBoard.of(it).label },
+            (p.values["memo"] as? String)?.let { "메모 " + (com.bamnat.core.memo.MemoView.LABELS[it] ?: it) },
+            (p.values["money"] as? String)?.let { "가계부 " + com.bamnat.core.money.LedgerBoard.of(it).label },
+        ).joinToString(" · ").ifEmpty { "탭 보기" }
         // [CVW-07]
         PieceKind.APP_FEEL -> listOfNotNull(
             (p.values["theme"] as? String)?.let { RecipeWords.PICKS[it] }, "기기 색".takeIf { p.values["dynamic"] == true },
@@ -132,6 +158,11 @@ object RecipeDescribe {
             (p.values["tap"] as? String)?.let { "누르면 " + RecipeWords.PICKS[it] }, (p.values["hold"] as? String)?.let { "길게 누르면 " + RecipeWords.PICKS[it] },
             (p.values["dayOrder"] as? String)?.takeIf { it.isNotEmpty() }?.let { "하루 화면 순서" },
         ).joinToString(" · ").ifEmpty { "앱 동작" }
+        // [LAY-01]
+        PieceKind.DECOR -> Decor.of(p.values).items.let { l ->
+            if (l.isEmpty()) "꾸밈 층" else "꾸밈 ${l.size}개: " + l.groupBy { it.kind }.entries.joinToString(" · ") { (k, v) -> "${k.label} ${v.size}" } +
+                (l.map { Decor.anchorLabel(it.at) }.distinct().takeIf { it.size <= 3 }?.let { " (" + it.joinToString("·") + ")" } ?: "")
+        }
     }
 
     /** [CVW-01] Words for 달력 모양's choices, as the settings and the studio say them. */
@@ -161,13 +192,17 @@ object RecipeDescribe {
 
     /** [FREE-05] The screens a 화면 색·배경 piece can colour. */
     val SCREEN_NAMES = mapOf(
-        "all" to "앱 전체", "calendar" to "달력", "money" to "가계부", "memo" to "메모", "stats" to "통계", "pay" to "급여", "plaza" to "광장",
+        "all" to "앱 전체", "calendar" to "달력", "money" to "가계부", "memo" to "메모", "stats" to "근무·급여", "pay" to "급여", "plaza" to "광장",
         "settings" to "설정", "alarm" to "알람", "guarded" to "결제·약관",
     )
 
     val CORNER_NAMES = mapOf("round" to "모서리 둥글게", "soft" to "모서리 보통", "square" to "모서리 각지게")
 
-    private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "통계", "plaza" to "마을", "settings" to "설정")
+    /** 빌드 e382585e (알바 마치기에 '근무·급여'): the 통계 tab in the words of the kind of work it is shown for. */
+    private fun tabName(t: String, style: com.bamnat.core.work.WorkStyle?): String =
+        if (t == "stats" && style != null) style.words().tab else TABS[t] ?: t
+
+    private val TABS = mapOf("calendar" to "달력", "money" to "가계부", "memos" to "메모", "stats" to "근무·급여", "plaza" to "마을", "settings" to "설정")
 
     /** "보이는 카드 n개, 숨긴 카드 m개" of a layout line. */
     private fun parts(line: String): String {
@@ -189,5 +224,5 @@ object RecipeDescribe {
     }
 
     /** "적용하면 바뀌는 것", written by the app for the 설명 틀 (만들기 4단계). */
-    fun changes(r: Recipe): String = r.pieces.joinToString("\n") { "• ${it.kind.label}: ${line(it, amounts = false)}" }
+    fun changes(r: Recipe, style: com.bamnat.core.work.WorkStyle? = null): String = r.pieces.joinToString("\n") { "• ${it.kind.label}: ${line(it, amounts = false, style = style)}" }
 }

@@ -18,7 +18,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Circle
 import androidx.compose.material.icons.outlined.Lightbulb
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton

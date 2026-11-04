@@ -24,9 +24,14 @@ object OcrModel {
     class NotReady : Exception("글자 인식 준비물을 휴대폰에 받는 중이에요. 잠시 뒤(와이파이에서 1~2분) 다시 해 주세요.")
 
     /** The words of [image], read on the phone. */
-    suspend fun read(context: Context, image: InputImage): Text {
+    /**
+     * 1.36 PC 사진 인식 원인(logcat: "MlKitContext has not been initialized" at InputImage.fromBitmap): the picture is made into
+     * ML Kit's image here, after ML Kit has started, never by the caller before it (1.29 NXT-01 took the start provider out).
+     */
+    suspend fun read(context: Context, bitmap: android.graphics.Bitmap): Text {
         // [NXT-01] 1.29 AU: ML Kit starts here, on the first photo, not at every app start.
         com.bamnat.app.MlKitStart.ensure(context)
+        val image = InputImage.fromBitmap(bitmap, 0)
         val recognizer = TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
         try {
             if (!available(context, recognizer)) throw NotReady()
@@ -66,6 +71,8 @@ object OcrModel {
         TOO_BIG("too_big", "사진이 너무 커서 읽지 못했어요. 화면 캡처나 조금 작은 사진으로 해 주세요."),
         CANT_OPEN("cant_open", "사진 파일을 열 수 없었어요. 갤러리에서 다시 고르거나 새로 찍어 주세요."),
         NETWORK("network", "글자 인식 준비물을 받지 못했어요. 인터넷(와이파이)에 연결한 뒤 다시 해 주세요."),
+        /** 1.36 PC 사진 인식 (깨끗한 명세서도 OTHER): ML Kit itself failed with a code other than UNAVAILABLE. */
+        MODEL("model", "휴대폰의 글자 인식 기능이 오류를 냈어요. ‘Google Play 서비스’를 업데이트하거나 휴대폰을 다시 켠 뒤 해 보세요."),
         OTHER("other", "사진을 읽지 못했어요. 다른 사진으로 해 보거나 글로 붙여 넣어 주세요."),
     }
 
@@ -76,6 +83,12 @@ object OcrModel {
             when (c) {
                 is OutOfMemoryError -> return Why.TOO_BIG
                 is java.io.FileNotFoundException, is SecurityException -> return Why.CANT_OPEN
+                // ImagePrep.load's own words: no picture in the file, or not enough memory for it.
+                is IllegalArgumentException -> when {
+                    c.message?.startsWith("사진을 열지") == true -> return Why.CANT_OPEN
+                    c.message?.startsWith("메모리가 모자라") == true -> return Why.TOO_BIG
+                }
+                is MlKitException -> if (c.errorCode != MlKitException.UNAVAILABLE) return Why.MODEL
                 is com.google.android.gms.common.api.ApiException -> when (c.statusCode) {
                     com.google.android.gms.common.ConnectionResult.SERVICE_VERSION_UPDATE_REQUIRED,
                     com.google.android.gms.common.ConnectionResult.SERVICE_UPDATING -> return Why.PLAY_OLD
@@ -89,6 +102,22 @@ object OcrModel {
             c = c.cause
         }
         return Why.OTHER
+    }
+
+    /**
+     * 1.36 PC 사진 인식: what failed, for the event log and a 문의, with no words of the photo: each class in the cause chain, an ML
+     * Kit or Play services code, e.g. "MlKitException#13 < IllegalStateException". The debug build also writes the stack to logcat.
+     */
+    fun detail(e: Throwable): String {
+        if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.w("BamnatOcr", "read failed", e)
+        val chain = generateSequence(e) { it.cause.takeIf { c -> c !== it } }.take(4).map { c ->
+            c.javaClass.simpleName + when (c) {
+                is MlKitException -> "#${c.errorCode}"
+                is com.google.android.gms.common.api.ApiException -> "#${c.statusCode}"
+                else -> ""
+            }
+        }
+        return chain.joinToString(" < ")
     }
 
     private suspend fun <T> await(task: Task<T>): T = suspendCancellableCoroutine { cont ->

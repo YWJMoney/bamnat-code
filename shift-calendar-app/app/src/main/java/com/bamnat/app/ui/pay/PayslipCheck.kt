@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -42,7 +42,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bamnat.core.pay.PayslipRead
 import com.bamnat.core.pay.SlipLine

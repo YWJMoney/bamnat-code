@@ -6,7 +6,6 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
-import java.time.format.TextStyle
 import java.util.Locale
 
 object Fmt {
@@ -24,12 +23,19 @@ object Fmt {
         return "${if (t.hour < 12) "오전" else "오후"} ${if (h == 0) 12 else h}:${"%02d".format(t.minute)}"
     }
 
-    fun dayOfWeekShort(d: DayOfWeek): String = d.getDisplayName(TextStyle.SHORT, korean)
+    // PC 확인 f6b585f8 (멈춤 2,099ms: 달력 칸마다 dayOfWeekShort): the locale's display names were looked up on the main thread for every
+    // cell, and the first lookup loads the locale data; the seven Korean names are fixed.
+    private val weekdays = arrayOf("월", "화", "수", "목", "금", "토", "일")
+    fun dayOfWeekShort(d: DayOfWeek): String = weekdays[d.value - 1]
 
     fun time(t: LocalTime?): String = t?.let { if (clock12) twelve(it) else it.format(time) } ?: "--:--"
 
     fun timeRange(start: LocalTime, end: LocalTime): String =
         "${time(start)} – ${time(end)}" + if (WorkTime.isOvernight(start, end)) " (다음날)" else ""
+
+    /** PC 확인 Z11 1.36 (위젯 2×1에서 '19:00 – 07:00 (다음…' 잘림): the short form for small places, "19:00–07:00(+1)". */
+    fun timeRangeShort(start: LocalTime, end: LocalTime): String =
+        "${time(start)}–${time(end)}" + if (WorkTime.isOvernight(start, end)) "(+1)" else ""
 
     fun month(m: YearMonth): String = "${m.year}년 ${m.monthValue}월"
 
@@ -78,6 +84,9 @@ object Fmt {
     /** [SETUP-01] "은" or "는" after [word]: 오늘은, 10월 17일은. */
     fun eun(word: String): String = if (batchim(word) != 0) "은" else "는"
 
+    /** 1.36 U14: "과" or "와" after [word]: 야간과, 데이와. */
+    fun wa(word: String): String = if (batchim(word) != 0) "과" else "와"
+
     /** [SETUP-01] "이" or "가" after [word]: 야간이, 데이가. */
     fun iga(word: String): String = if (batchim(word) != 0) "이" else "가"
 
@@ -85,7 +94,8 @@ object Fmt {
 
     /** The final consonant index of [word]'s last sound (0 for none), reading digits and a few letters as Korean says them. */
     private fun batchim(word: String): Int {
-        val c = word.trimEnd().lastOrNull() ?: return 0
+        // 1.36 U14: a name in quotes or brackets ("‘오전 알바’") is read by its last letter.
+        val c = word.trimEnd { it.isWhitespace() || it in "’'\")]}」』>" }.lastOrNull() ?: return 0
         return when {
             c in '가'..'힣' -> (c - '가') % 28
             // 영 일 삼 육 칠 팔 end in a consonant; 이 사 오 구 do not.

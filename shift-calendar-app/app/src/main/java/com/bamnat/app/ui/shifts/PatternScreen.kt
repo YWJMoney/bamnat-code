@@ -29,12 +29,12 @@ import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
+import com.bamnat.app.ui.components.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -128,6 +128,9 @@ fun PatternScreen(
     val history by vm.history.collectAsStateWithLifecycle()
 
     val typesById = remember(types) { types.associateBy { it.id } }
+    // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not offered to put in the order (one already in it still shows there).
+    val folded by vm.folded.collectAsStateWithLifecycle()
+    val choices = remember(types, folded) { types.filter { it.id !in folded } }
     // Steps pointing at a shift type deleted meanwhile become plain days off.
     val clean: (List<Long?>) -> List<Long?> = { steps -> steps.map { id -> id?.takeIf { it in typesById } } }
     val draft: WorkPattern? = when (kind) {
@@ -285,7 +288,7 @@ fun PatternScreen(
                                 rotation.add(id)
                             }
                         }
-                        for (t in types) {
+                        for (t in choices) {
                             OutlinedButton(onClick = { put(t.id) }) {
                                 ShiftBadge(t, outlined = t.isOff)
                                 Spacer(Modifier.width(6.dp))
@@ -369,7 +372,7 @@ fun PatternScreen(
                                     onClick = { weekly[dow.ordinal] = null },
                                     label = { Text("쉼") },
                                 )
-                                for (t in types) {
+                                for (t in choices.filter { it.id != weekly[dow.ordinal] } .let { l -> types.filter { it.id == weekly[dow.ordinal] || it in l } }) {
                                     FilterChip(
                                         selected = weekly[dow.ordinal] == t.id,
                                         onClick = { weekly[dow.ordinal] = t.id },

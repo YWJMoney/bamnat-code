@@ -27,6 +27,18 @@ object RecipeLinks {
     /** What 링크 보내기 sends: the title, the link and the code to type in. */
     fun shareText(title: String, code: String) = "‘$title’ 레시피 · 밤낮 마을 장터\n${web(code)}\n코드: $code"
 
+    /**
+     * [PRF-11] 1.36 프로필 링크: the company server's small public page of a maker (`/m/<id>`, which opens the app with
+     * `bamnat://m/<id>`), and finding the id in a tapped link.
+     */
+    fun profile(maker: String) = com.bamnat.app.BuildConfig.COMPANY_BASE_URL.trimEnd('/') + "/m/" + maker
+    private val MAKER = Regex("""(?:bamnat://m/|/m/)([0-9a-f]{12}|operator)(?![A-Za-z0-9])""")
+    fun findMaker(text: String?): String? = text?.let { MAKER.find(it)?.groupValues?.get(1) }
+    private val _openingMaker = MutableStateFlow<String?>(null)
+    val openingMaker: StateFlow<String?> = _openingMaker.asStateFlow()
+    fun openMaker(id: String?) { if (id != null) _openingMaker.value = id }
+    fun openedMaker() { _openingMaker.value = null }
+
     /** A link tapped outside the app, waiting for the app to open the recipe. */
     private val _opening = MutableStateFlow<String?>(null)
     val opening: StateFlow<String?> = _opening.asStateFlow()
@@ -41,6 +53,9 @@ object RecipeLinks {
 
     /** 고쳐 만들기: the written recipe and its code, handed to 만들기 once (in memory). */
     var remake: Pair<String, String>? = null
+
+    /** PC 확인 V34: the code whose page opens straight on 입어 보기 (오늘의 하나·수상작·넘겨 보기), once (in memory). */
+    @Volatile var tryNext: String? = null
 
     /** [THM-01] The key of one of my themes being sent from 스튜디오: once it is up, it is marked as in 장터 (no days, no ad). */
     var ownTheme: String? = null

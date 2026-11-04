@@ -1,9 +1,22 @@
 # 밤낮 인수인계 (다른 계정에서 이어 가기)
 
-마지막 정리 2026-10-30, 앱 1.35.0(versionCode 48, 워치 100048, DB 24) 기준이에요. 맨 위 0-new항이 지금 판(1.34+1.35.0), 0-a7항이 1.33.0, 0-a6항이 1.32.1, 0-a5항이 1.32.0, 0-a4항이 1.31.0, 0-a3항이 1.30.0, 0-a2항이 1.29.0, 0-a1항이 1.28.0, 0-a항이 1.27.0, 0-b항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
+마지막 정리 2026-11-04, 앱 1.36.1(versionCode 50, 워치 100050) 기준이에요. 맨 위 0-136항이 지금 판(1.36.1), 0-new항이 1.34+1.35.0, 0-a7항이 1.33.0, 0-a6항이 1.32.1, 0-a5항이 1.32.0, 0-a4항이 1.31.0, 0-a3항이 1.30.0, 0-a2항이 1.29.0, 0-a1항이 1.28.0, 0-a항이 1.27.0, 0-b항이 1.26.0, 0항이 1.25.0, 0-00항이 1.24.0, 0-0항이 1.23.0, 0-1항이 1.22.0, 0-2항이 1.21.0, 0-3항이 1.20.0, 0-4항이 1.19.0이고, 1항부터는 1.17.2 때 정리를 이어 고친 것이에요.
 
 이 저장소(`YWJMoney/bamnat-code`)는 2026-10-29부터 비공개예요(처리방침·약관·공개 자료는 공개 저장소 `YWJMoney/-`의 GitHub Pages). 그래도 이 문서에는 비밀값, 서명 키, 사용자 개인 정보를 적지 않아요.
 그런 것은 사용자가 새 프로젝트에 파일로 따로 올려요(7항). 새 계정의 Claude는 이 문서와 그 비공개 메모를 먼저 읽고 시작해요.
+
+## 0-136. 지금 판: 1.36.1 (2026-11-04, 통합 PR #161 브랜치 `claude/project-thread-gmbwd8`)
+
+- **1.36.1 (versionCode 50, 워치 100050)이 출시판이에요(사용자 2026-11-04).** 1.36.0에 광고 하루 두 편 하나만 더했어요(MON-15): 테마 광고(입기·넣기·30일 연장)도 묶음 광고와 같은 두 편에 세요(`FeatureLease.themeAd`), 두 편을 다 본 날은 '밤 12시가 지나면 다시', 횟수는 폰 날짜로 00시에 다시 세고 켜 둔 화면도 00시에 단추가 돌아와요(`FeatureLease.nextChange`, FeatureGate 시계). 도움말 문답 `adCount`. 사용자 결정: 두 편 제한은 유지(없애자는 안을 검토한 뒤 '두 편 유지, 지표 보고 결정'). 약관·처리방침·등록정보·서버는 그대로.
+- **출시 파일·신청**: 프로젝트 `release/1.36.1/`(앱/, `사용자가-해야-할-일.md`, `프로덕션-신청-정답지.md` = 프로덕션 액세스 신청 답과 순서, 출시 노트). PC 확인용 빌드 `release/1.36.1-빌드/bf4203c6/`는 2026-11-04 PC 에뮬레이터 확인을 마쳤어요(1~6·8번 됨, 7번은 잠금 시트·광고 창만, 기록 PC `C:\bamnat\_qa-1.36.1\빌드-bf4203c6-확인.md`). 순서: PC 확인 → 비공개 테스트에 50 → 프로덕션 액세스 신청 → 승인 뒤 프로덕션에 50 → 11-10 스위치(광고는 50이 나간 뒤).
+- 아래 1.36.0 줄은 그대로 맞아요(1.36.1은 그 위에 한 가지를 더한 판).
+
+- **무엇**: 갈래 10개(부품 설계도·탭 자유도·꾸밈 층·수식·규칙·단추·글꼴·채우기·마을·자가 발전·장터 출시 대기·통신판매) + 고침을 합친 판. 설계·갈래별 내용은 `docs/plans/1.37-인계.md`가 정본이에요.
+- **출시 파일**: 프로젝트 `release/1.36.0/`(앱/ AAB·APK·워치 AAB·매핑·`점검.md`, 서버/ 회사·공유·사이트 worker, 장터/ `market-136.json` 339개, `사용자가-해야-할-일.md`, `남은-일.md`, 출시 노트). 크기 예산은 이때 APK·AAB 12.5MB로 다시 정했어요(5항).
+- **장터 출시 작품 339개**: 생성기 `docs/recipes/market-136/make/`. 이름은 사용자 요청(11-04)으로 `make/names.mjs`에서 사람이 지은 듯한 이름으로 바꿔 써요(1.35 이름과 `title_skel`이 겹치면 1.35 작품을 덮어쓰니 피해요). 수식 이름 점검은 `python3 tools/market_names_check.py`.
+- **조건부 꾸미기의 줄·카드 값**: 가계부 한 줄·표 한 줄·메모 카드(글·날짜·표 줄)·급여 날짜 줄은 `logic.scopeFor(date) { TabFacts.money/memo(...) }`로 자기 값(분류·종류·금액·고정·체크율…)을 먼저 읽어요. 가계부 줄은 들어온 돈·나간 돈 상태(on in/out)를 받고, 메모 카드는 투명도(alpha)를 받아요.
+- **PC 확인 방식**: 빌드 zip 하나를 스레드에 붙이고 사용자가 `C:\bamnat\_qa-1.36\`에 풀면 원격 제어 세션에 확인할 것을 보내요. 기록은 PC `C:\bamnat\_qa-1.36\빌드-*-확인.md`.
+- **1.37**: 사용자가 시작하라고 할 때까지 대기(사용자 2026-11-04). 안건은 `docs/plans/1.37-인계.md` 9장.
 
 ## 0-new. 지금 판: 1.34+1.35.0 마을(광장·장터·테마·공방)·완전 자유 꾸미기·스튜디오·테마 (2026-10-29~30)
 
@@ -255,7 +268,7 @@ Phase 2에서 만든 기능을 실사용 수준 넘어 완성한 판이에요. �
 - **결제**: `billing/Billing.kt`(Play Billing 9.1.0, `bamnat_pro`의 `monthly`·`yearly`, 혜택 `trial-1m`, 승인·복원, 결제 없는 기기는 `NoBilling`). 서버 `POST /api/purchases`가 `subscriptionsv2.get`으로 확인해요. 서비스 계정 키(Cloudflare 비밀값 `PLAY_SERVICE_ACCOUNT`)가 없으면 `verified:false`로 답하고 앱은 휴대폰의 Play 상태를 써요. 실시간 개발자 알림(RTDN)은 쓰지 않아요.
 - **무료 체험 전환 동의(전자상거래법 제13조 제6항)**: core `tier/TrialConsent.kt`(끝나기 7일 전부터 묻기, 마지막 날), 앱 `ui/pro/TrialConsentPrompt.kt`와 알림 `tier/TrialNotice.kt`(재부팅·시간 바꿈 뒤 다시 걸기). 답은 휴대폰과 서버 `POST /api/consents`에 남고 서버 크론이 5년 뒤 지워요. 동의가 없으면 서버 크론이 끝나기 24시간 안에 다음 결제를 멈춰요(키가 있을 때).
 - **잠금과 프로 화면**: `ui/pro/ProLock.kt`(자기 숫자로 그린 뒤 12+ 흐림, 아래는 덮개), `ui/pro/ProScreen.kt`(비교표, 가격·갱신·해지·7일 청약철회·약관·처리방침·구매 복원, 보상 이용권 복구 코드, 관리자 연결). 설정 첫 화면에 '프로' 줄.
-- **광고**: `ads/Ads.kt`(UMP 동의 뒤 SDK 시작, 설정 › 개인정보와 권한 › 광고 개인정보 선택), `ui/components/AdSlot.kt`(띠, AppRoot 한 곳에서만), `ads/RewardedAds.kt`(고를 때만, 하루 한 번). 규칙은 core `tier/AdRules.kt`(설치 3일 광고 없음)와 `AdAndLicenseRulesTest`. 광고 단위 ID는 `gradle.properties`의 `bamnat.admobAppId`·`bamnat.admobBanner`·`bamnat.admobRewarded`(공개값, 비면 출시 빌드는 광고 없음, 디버그는 Google 시험 ID). `play-services-ads`는 25.2.0에 묶었어요: 25.3.0부터 Kotlin 2.3 메타데이터라 지금 Kotlin 2.1.21로 빌드가 안 돼요.
+- **광고**: `ads/Ads.kt`(UMP 동의 뒤 SDK 시작, 설정 › 개인정보와 권한 › 광고 개인정보 선택), `ads/RewardedAds.kt`(고를 때만; 띠 광고 `AdSlot`은 1.36 838에서 삭제). 규칙은 core `tier/AdRules.kt`(설치 3일 광고 없음)와 `AdAndLicenseRulesTest`. 광고 단위 ID는 `gradle.properties`의 `bamnat.admobAppId`·`bamnat.admobRewarded`(공개값, 비면 출시 빌드는 광고 없음, 디버그는 Google 시험 ID). `play-services-ads`는 25.2.0에 묶었어요: 25.3.0부터 Kotlin 2.3 메타데이터라 지금 Kotlin 2.1.21로 빌드가 안 돼요.
 - **보상 이용권·관리자 연결**: `tier/ProStore.kt`(이용권·복구 코드·관리자 상태, 백업에는 복구 코드와 감사 안내 본 기록만), `tier/TierApi.kt`. 서버 `GET /api/passes`, `POST /api/passes/code`, `POST /api/passes/claim`, 관리자 앱 › 내 정보 › '내 휴대폰 밤낮 연결'(6자리 코드). 결제·관리자 상태는 Android 자동 백업에서 빼요.
 - **법 문서**: 저장소 맨 위 `privacy/index.html`(처리방침 2.5, 게시 2026-10-22·시행 2026-11-21 예정, 방침 9항의 불리한 변경 30일 고지), `terms/index.html`(이용약관 1.0). 시험 `LegalPagesTest`가 판·필수 문구를 봐요. Play 데이터 보안 답안은 `docs/play-data-safety.md` 1.19.0장.
 - **시험**: core `TierTest`, 앱 `tier/TierAppTest`(가짜 `FakeTierApi`), `rules/AdAndLicenseRulesTest`, `rules/LegalPagesTest`, 화면 사진 375~384, 서버 `test/money.test.mjs`.
@@ -360,7 +373,7 @@ python3 tools/check_tracker.py                             # 추적표 검사
   - 시작 작업: `AppContainer.start()`의 이름 붙은 작업은 **21개까지(새 작업 0)**, 달력이 첫 달을 그리기 전에는 **7개 이하**예요. 나머지는 `afterFirstFrame()`에서 돌아요(`perf/StartupBudgetTest`).
   - 화면 사진 시험: 묶음마다 `screenshots/<묶음>ScreenshotTest.kt`에 `class XScreenshotTest : ScreenshotBase()`를 만들고, `@RunWith(AndroidJUnit4::class) @GraphicsMode(NATIVE) @Config(sdk = [35])`를 붙여요. 번호대는 묶음끼리 겹치지 않게 정해요. 기다림은 `settle()`(조건 대기, 1초 상한)과 `reach()`(글자를 찾을 때까지 5초)에 맡기고 `Thread.sleep`을 새로 쓰지 않아요.
   - 나눠 돌리기: `-Pbamnat.testSet=unit|shots-a|shots-b|api`(CI 네 조각). 안드로이드 8·11·13·15에서 도는 `rules/ApiLevelSmokeTest`·`AlarmMatrixTest`는 `api`에서만 돌아요(여러 판 샌드박스가 한 JVM에 섞이면 다른 시험의 SQLite가 죽어요). 아무 값 없이 돌리면 빠져요, `-Pbamnat.testForks=N`(기본은 코어 절반, 1~3). 느린 시험 표는 `python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest`로 봐요.
-  - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 9.5MB, AAB 11MB(1.30.0부터 Play만 보관하는 `BUNDLE-METADATA/` 이름 지도는 빼고 셈, 그 지도만 14MB)이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
+  - 크기: `python3 tools/app_size.py <apk|aab>`로 봐요. 예산은 APK 12.5MB, AAB 12.5MB(1.36.0 출시 때 다시 정함: 1.36.0 APK 11.73MB·AAB 11.82MB, 예전 9.5·11MB. 1.30.0부터 Play만 보관하는 `BUNDLE-METADATA/` 이름 지도는 빼고 셈, 그 지도만 14MB)이고, 넘으면 출시 빌드가 멈춰요. 글자 인식(ML Kit 한국어)은 앱에 넣지 않고 Google Play 서비스가 처음 쓸 때 내려받아요. 언어는 한국어만 넣어요(`localeFilters`).
   - 린트: 새 오류가 생기면 멈춰요. 예전 것은 `app/lint-baseline.xml`, `wear/lint-baseline.xml`에 있고, 고친 뒤 `:app:updateLintBaseline :wear:updateLintBaseline`으로 줄여요.
   - 백업 파일은 형식 3(zip: `backup.json`, `photos/…`, `sha256.txt`)이에요. 옛 `.json` 백업도 그대로 열려요(`data/BackupArchive.kt`).
 - **품질 규칙 (1.24 통합 직접 테스트)**

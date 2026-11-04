@@ -25,7 +25,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -114,7 +114,9 @@ private fun EmojiCell(e: String, onClick: () -> Unit) {
  * reads as text on the light calendar and what the dark calendar draws in its place ([Contrast.onBlack]), so the maker sees both.
  */
 @Composable
-fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Unit, title: String = "색 고르기") {
+fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Unit, title: String = "색 고르기",
+                      /** PC 확인 P15 1.36 ('오늘 색' 미리 보기가 '토 6'): today's date in the colour's circle, as the calendar draws it. */
+                      today: Boolean = false) {
     val hsv = remember { FloatArray(3).also { android.graphics.Color.colorToHSV(initial.toInt(), it) } }
     var hue by remember { mutableFloatStateOf(hsv[0]) }
     var sat by remember { mutableFloatStateOf(hsv[1]) }
@@ -131,9 +133,11 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ShiftPalette.forEach { c ->
+                    // PC 확인 W33 1.36 (동그라미가 '#2F80ED'처럼 읽힘): said as colour names.
+                    val names = remember { com.bamnat.app.ui.settings.colorNames(ShiftPalette) }
+                    ShiftPalette.forEachIndexed { i, c ->
                         Box(Modifier.size(36.dp).clip(CircleShape).background(c.asColor()).clickable(onClickLabel = "이 색 고르기") { set(c) }
-                            .semantics { contentDescription = hexOf(c) })
+                            .semantics { contentDescription = names[i] })
                     }
                 }
                 // 채도 (left → right) and 밝기 (top → bottom) of the hue below.
@@ -190,11 +194,11 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters))
                 val c = current()
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Preview(c, Color.White, "밝은 달력")
-                    Preview(Contrast.onBlack(c), Color(0xFF121212), "어두운 달력")
+                    Preview(c, Color.White, "밝은 달력", today)
+                    Preview(Contrast.onBlack(c), Color(0xFF121212), "어두운 달력", today)
                 }
                 val ratio = Contrast.ratio(c or 0xFF000000L, 0xFFFFFFFFL)
-                if (ratio < 4.5) Text("밝은 달력에서 글자로 쓰기엔 흐려요 (%.1f:1). 조금 어둡게 하면 잘 보여요".format(ratio),
+                if (ratio < 4.5 && !today) Text("밝은 달력에서 글자로 쓰기엔 흐려요 (%.1f:1). 조금 어둡게 하면 잘 보여요".format(ratio),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
         },
@@ -204,11 +208,13 @@ fun ColorPickerDialog(initial: Long, onPick: (Long) -> Unit, onDismiss: () -> Un
 }
 
 @Composable
-private fun Preview(c: Long, bg: Color, label: String) {
+private fun Preview(c: Long, bg: Color, label: String, today: Boolean = false) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(Modifier.size(width = 96.dp, height = 40.dp).clip(RoundedCornerShape(8.dp)).background(bg)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (today) Box(Modifier.size(30.dp).clip(CircleShape).background(c.asColor()), contentAlignment = Alignment.Center) {
+                Text(com.bamnat.core.time.Today.date().dayOfMonth.toString(), color = contentColorOn(c.asColor()), style = MaterialTheme.typography.labelLarge)
+            } else Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(16.dp).clip(CircleShape).background(c.asColor()))
                 Spacer(Modifier.width(6.dp))
                 Text("토 6", color = c.asColor(), style = MaterialTheme.typography.labelLarge)
@@ -241,6 +247,6 @@ fun ColorSwatch(color: Long, label: String, onPick: (Long) -> Unit, modifier: Mo
         Spacer(Modifier.width(8.dp))
         Text(label, style = MaterialTheme.typography.bodyMedium)
     }
-    if (open) ColorPickerDialog(color, { onPick(it); open = false }, { open = false }, "$label 색")
+    if (open) ColorPickerDialog(color, { onPick(it); open = false }, { open = false }, "$label 색", today = label == "오늘")
 }
 

@@ -130,7 +130,9 @@ class PlazaAIAppTest {
             val seen = b.talk(bDevice, plan.room!!, StylePlaza.ROOM)
             assertEquals(listOf("야간 끝나고 통근버스 몇 시에 와요?"), seen.posts.map { it.body })
             assertEquals("question", seen.posts.single().kind)
-            assertEquals(10, seen.leftPosts)
+            // 1.36 [LIM-10] No daily cap without reports, so nothing to count down.
+            assertEquals(null, seen.leftPosts)
+            assertEquals(null, seen.limit)
             b.post(bDevice, plan.room!!, StylePlaza.ROOM, "6시 40분에 와요", first, "talk", emptyList(), null)
             val back = a.talk(aDevice, plan.room!!, StylePlaza.ROOM).posts
             assertEquals(first, back.last().parent)

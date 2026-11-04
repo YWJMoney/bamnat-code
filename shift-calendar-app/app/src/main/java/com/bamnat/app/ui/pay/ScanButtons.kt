@@ -18,7 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -63,8 +63,10 @@ import kotlinx.coroutines.launch
 /** [J133-07] The cause in words, and its code with the exception's class in the event log (no message, nothing read). */
 private fun ocrFailed(context: android.content.Context, e: Throwable): String {
     val why = com.bamnat.app.pay.OcrModel.why(e)
-    runCatching { context.appContainer.telemetry.event("ocr_fail", "${why.code} ${e.javaClass.simpleName}") }
-    return why.text
+    // 1.36 PC 사진 인식: the whole cause chain and its codes, so an OTHER can be told apart (no words of the photo).
+    val detail = com.bamnat.app.pay.OcrModel.detail(e)
+    runCatching { context.appContainer.telemetry.event("ocr_fail", "${why.code} $detail".take(120)) }
+    return why.text + " (오류: $detail)"
 }
 
 @Composable
@@ -102,7 +104,8 @@ internal fun ScanButtons(
                 val quality = scan.quality
                 val retake = quality?.takeIf { it.retake }?.line
                 straighten = !scanned && scannerReady && quality != null && (quality.retake || quality.issues.any { it in STRAIGHTEN })
-                if (scan.text.isBlank()) error = "글자를 찾지 못했어요. 밝은 곳에서 명세서가 화면에 꽉 차게 다시 찍어 주세요." + (retake?.let { " $it" } ?: "")
+                // W7: which step failed, said plainly: here no letters at all (the amounts are looked for after).
+                if (scan.text.isBlank()) error = "사진에서 글자를 하나도 찾지 못했어요. 밝은 곳에서 명세서가 화면에 꽉 차게 다시 찍어 주세요." + (retake?.let { " $it" } ?: "")
                 else {
                     advice = retake ?: quality?.issues?.firstOrNull { straighten && it in STRAIGHTEN }?.text
                     if (onScan != null) onScan(scan) else onText(scan.text)

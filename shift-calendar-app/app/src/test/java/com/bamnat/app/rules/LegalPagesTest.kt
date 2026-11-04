@@ -397,13 +397,25 @@ class LegalPagesTest {
      * [PRIV-05] 결정 D111 3.9: 3.2~3.8 start on 정식 출시일. Every LEGAL row they named waits for 3.9's date and, on a phone
      * installed before 3.9 was posted, its yes or the latest promised day; the card asks for 3.9, which also counts for 3.1.
      */
+    /** 1.36 [PUSH-01][GRW-10] 사용자 2026-11-01 승인 (YWJMoney/-#7): 알림 토큰과 Firebase 위탁, '없다고 알리기'. */
+    @Test fun policy39TellsTheAnswerSignalAndTheMissWords() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        assertTrue(text.contains("문의 답 바로 알림 (앱 1.36.0부터)") && text.contains("알림 토큰"))
+        assertTrue("Google LLC Firebase 위탁", text.contains("Firebase 클라우드 메시징"))
+        assertTrue("내용 없는 신호", text.contains("문의 글과 답은 Google로 가지 않습니다"))
+        assertTrue(text.contains("없다고 알리기 (앱 1.36.0부터, 선택)") && text.contains("2번 이상 모인 말만"))
+        assertTrue("권한 표", text.contains("<td>클라우드 메시지 받기(Google Play 서비스, 앱 1.36.0부터)</td>"))
+    }
+
     @Test fun policy39BringsThePreLaunchItemsToLaunchDay() {
         val policy = File(site, "privacy/index.html")
         assumeTrue(policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.9")!!
         assertTrue(v.effective == java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 11, 29))
-        assertTrue(text.contains("처리방침 3.9 · 앱 버전 1.35.0 기준 · 게시일 2026년 10월 31일 · 시행일 2026년 11월 10일"))
+        assertTrue(text.contains("처리방침 3.9 · 앱 버전 1.35.0 기준 · 게시일 2026년 11월 1일 · 시행일 2026년 11월 10일"))
         assertTrue("3.9 is the newest version line", text.indexOf("처리방침 3.9 ·") < text.indexOf("처리방침 3.8 ·"))
         assertTrue(text.contains("정식 출시 뒤의 개정은 위 기간을 그대로 지킵니다"))
         assertTrue(text.contains("꾸미기 그림"))
@@ -420,7 +432,25 @@ class LegalPagesTest {
         // 1.35 테마 기간(사용자 2026-10-30): 1-8 보상형 광고로 남의 테마 입기, 약관 1.2 같은 날.
         assertTrue(text.contains("처음 2개는 광고 없이 입고"))
         val terms = File(site, "terms/index.html").readText()
-        assertTrue(terms.contains("이용약관 1.2 · 앱 버전 1.35.0 기준 · 게시일 2026년 10월 31일 · 시행일 2026년 11월 10일"))
+        assertTrue(terms.contains("이용약관 1.2 · 앱 버전 1.35.0 기준 · 게시일 2026년 11월 1일 · 시행일 2026년 11월 10일"))
         assertTrue(terms.contains("테마 옷장(테마 10벌 저장, 광고·기간 없이)"))
+    }
+
+    /** 1.36 842 (수익 2판·3판): no banner, the four bundles' 7 days, the 1년 이용권 and the trial on the yearly plan only, in both pages. */
+    @Test fun the136MoneyWaysAreInThePolicyAndTerms() {
+        val policy = File(site, "privacy/index.html")
+        val termsFile = File(site, "terms/index.html")
+        assumeTrue(policy.exists() && termsFile.exists())
+        val text = policy.readText()
+        val terms = termsFile.readText()
+        assertTrue(text.contains("앱 1.36.0부터 띠 광고는 없고"))
+        assertTrue(text.contains("‘광고 보고 7일 열기’"))
+        assertTrue(text.contains("<b>1년 이용권</b>(자동 결제 없는 Google Play 일회 결제)"))
+        assertTrue(text.contains("<b>보상 장부</b>"))
+        assertTrue(terms.contains("자동 결제가 없는 <b>1년 이용권</b>"))
+        assertTrue(terms.contains("월 요금제 금액의 12배와 견준 비율로만"))
+        assertTrue(terms.contains("연 요금제를 처음 구독하는 Google 계정"))
+        assertFalse("띠 광고 문구가 남지 않아요", terms.contains("광고 띠 하나가 보입니다") || text.contains("띠 광고 하나가 보이고"))
+        assertFalse("평생권은 없어요", text.contains("평생") || terms.contains("평생"))
     }
 }

@@ -15,8 +15,8 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.AlertDialog
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -386,7 +386,7 @@ private fun PayGapCard(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
                     TextButton(onClick = {
-                        if (gate.allows(com.bamnat.app.tier.Feature.PAY_REPORT)) scope.launch {
+                        if (gate.allows(com.bamnat.app.tier.Feature.PAY_REPORT) || com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) scope.launch {
                             val gross = payTotal ?: return@launch
                             val ded = TakeHome.estimate(gross, mode ?: TaxMode.NONE, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
                                 nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).deductions

@@ -10,16 +10,27 @@ plugins {
 }
 
 // [MKT-09] Link sharing server (server/share-worker). Blank hides '링크로 공유'.
-val shareBaseUrl = (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty().trim()
 // [COMM-04] Company rules server (server/company-worker). Blank hides 회사 찾기 and sending setups.
 val companyBaseUrl = (project.findProperty("bamnat.companyBaseUrl") as String?).orEmpty().trim()
+// [SRV-31] 1.36 (빌드 8: 디버그 빌드의 공유 링크가 실제 s.bamnat.app에 올라감): a build whose company server is the PC (plain http)
+// sends links to the PC too, the share Worker run there (server/share-worker `npm run local -- 8790`), never to the real one.
+val companyIsLocal = companyBaseUrl.startsWith("http://")
+val shareBaseUrl = if (companyIsLocal) (project.findProperty("bamnat.localShareUrl") as String?).orEmpty().trim()
+    .ifBlank { runCatching { URI(companyBaseUrl).host }.getOrNull()?.let { "http://$it:8790" }.orEmpty() }
+    else (project.findProperty("bamnat.shareBaseUrl") as String?).orEmpty().trim()
+// [SRV-30] 1.36: the old workers.dev names, tried when the bamnat.app names cannot be reached. Only for a build that talks
+// to bamnat.app: a debug build pointed at the PC (10.0.2.2) never falls back to the real server.
+fun spareFor(base: String, name: String) =
+    (project.findProperty(name) as String?).orEmpty().trim().takeIf { runCatching { URI(base).host }.getOrNull().orEmpty().endsWith("bamnat.app") }.orEmpty()
+val shareFallbackUrl = spareFor(shareBaseUrl, "bamnat.shareFallbackUrl")
+val companyFallbackUrl = spareFor(companyBaseUrl, "bamnat.companyFallbackUrl")
 // [REMOTE-02] Signed data files on GitHub Pages; fetched only when the build has the internet permission.
 val remoteBaseUrl = (project.findProperty("bamnat.remoteBaseUrl") as String?).orEmpty().trim()
 // [MON-07] AdMob ids, public values the owner gives. Blank: no ads in a release build (a debug build
 // uses Google's test units). The app id falls back to Google's sample id so the SDK starts without one.
 fun adProp(name: String) = (project.findProperty(name) as String?).orEmpty().trim()
 val admobAppId = adProp("bamnat.admobAppId").ifBlank { "ca-app-pub-3940256099942544~3347511713" }
-val adUnitsGiven = adProp("bamnat.admobBanner").isNotBlank() || adProp("bamnat.admobRewarded").isNotBlank()
+val adUnitsGiven = adProp("bamnat.admobRewarded").isNotBlank()
 
 // [PERF-03] 324-3 (검토 B5): `-Pbamnat.composeReports` writes which screens Compose can skip and why not, to
 // build/compose-reports (classes.txt, composables.txt). Strong skipping is on (Kotlin 2.1), so no stability file:
@@ -45,12 +56,25 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SHARE_BASE_URL", "\"$shareBaseUrl\"")
         buildConfigField("String", "COMPANY_BASE_URL", "\"$companyBaseUrl\"")
+        buildConfigField("String", "SHARE_FALLBACK_URL", "\"$shareFallbackUrl\"")
+        buildConfigField("String", "COMPANY_FALLBACK_URL", "\"$companyFallbackUrl\"")
         buildConfigField("String", "REMOTE_BASE_URL", "\"${remoteBaseUrl.takeIf { shareBaseUrl.isNotBlank() || companyBaseUrl.isNotBlank() }.orEmpty()}\"")
-        buildConfigField("String", "ADMOB_BANNER", "\"${adProp("bamnat.admobBanner")}\"")
+        // 1.36 [PUSH-01] 문의 답 바로 알림: the Firebase app's public ids (not secrets, the same as a google-services.json carries).
+        // Empty in a build without them: no Firebase starts and the phone checks by itself (15 minutes, then 3 hours).
+        buildConfigField("String", "FCM_APP_ID", "\"${adProp("bamnat.fcmAppId")}\"")
+        buildConfigField("String", "FCM_API_KEY", "\"${adProp("bamnat.fcmApiKey")}\"")
+        buildConfigField("String", "FCM_PROJECT_ID", "\"${adProp("bamnat.fcmProjectId")}\"")
+        buildConfigField("String", "FCM_SENDER_ID", "\"${adProp("bamnat.fcmSenderId")}\"")
         buildConfigField("String", "ADMOB_REWARDED", "\"${adProp("bamnat.admobRewarded")}\"")
+        // 1.36 [SEC-11] Play Integrity: the Google Cloud project number linked in Play Console (앱 무결성), blank for none.
+        buildConfigField("String", "INTEGRITY_PROJECT", "\"${adProp("bamnat.integrityProject")}\"")
         manifestPlaceholders["admobAppId"] = admobAppId
         // [SHR-02] The share server's host, for its /s/ links to open in the app (src/onlineShare).
         manifestPlaceholders["shareHost"] = runCatching { URI(shareBaseUrl).host }.getOrNull() ?: "share.invalid"
+        // [SRV-30] Links made before 1.36 (the old workers.dev name) keep opening in the app.
+        manifestPlaceholders["shareHostOld"] = runCatching { URI(shareFallbackUrl).host }.getOrNull() ?: "share-old.invalid"
+        // The /s/ link's second scheme: https again (no change) except in debug builds, below.
+        manifestPlaceholders["shareSchemeLocal"] = "https"
     }
     // The internet permission comes only with a server, see src/online; with the share server,
     // tapped schedule links open in the app too (src/onlineShare).
@@ -87,6 +111,10 @@ android {
     }
 
     buildTypes {
+        // PC 확인 7525ccff: the local share server's links are http://10.0.2.2:8790/s/<id>; in debug builds they open 받기 too.
+        debug {
+            manifestPlaceholders["shareSchemeLocal"] = "http"
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
@@ -220,6 +248,8 @@ dependencies {
     implementation("com.google.android.gms:play-services-cronet:18.1.1")
     // [MON-03] Play billing 9.1.0 (the Java API, so the Kotlin library stays as it is).
     implementation("com.android.billingclient:billing:9.1.0")
+    // 1.36 [PUSH-01] 문의 답 바로 알림: data messages only ({kind: inquiry}, no words), started by hand only when the ids are set.
+    implementation("com.google.firebase:firebase-messaging:24.1.1")
     // [MON-07] AdMob and Google's consent form (UMP); nothing shows before the 정식 출시 switch.
     // 25.3.0 and later are built with Kotlin 2.3, which this project's Kotlin 2.1 cannot read: raise both together.
     implementation("com.google.android.gms:play-services-ads:25.2.0")
@@ -227,6 +257,8 @@ dependencies {
     // [INVITE-03] 친구 초대: the code an invite link put in Play's install referrer, read once after the first setup.
     // 8 KB, no dependencies; adds one normal permission (BIND_GET_INSTALL_REFERRER_SERVICE, 처리방침 4항).
     implementation("com.android.installreferrer:installreferrer:2.2")
+    // 1.36 [SEC-11] 보안 점검 L4: Play Integrity, asked only when the server wants a verdict (a write others see, once a week).
+    implementation("com.google.android.play:integrity:1.4.0")
     // [NXT-01] 1.29 AU (AO D8): WorkManager came only through the ads SDK (2.7.1, started by androidx.startup at every
     // app start). Named here so BamnatApp can be its Configuration.Provider and WorkManager starts on first use; 2.10
     // also has the Android 14 fixes 2.7 lacks. The app's own jobs stay on JobScheduler (OutboxJob, PlazaNewsJob, AutoBackupJob).
@@ -238,6 +270,7 @@ dependencies {
     testImplementation("androidx.window:window-testing:1.3.0")
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
+    // [MAT-05] 1.36 공개 글꼴: Google Play 서비스 글꼴 제공자로 고를 때 받아요(앱 안에 글꼴 파일 없음, 크기 예산 그대로).
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material3:material3-window-size-class")

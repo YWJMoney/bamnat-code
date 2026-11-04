@@ -81,7 +81,9 @@ class R131AppTest {
         assertTrue(wifi, wifi.contains("같은 와이파이") && wifi.contains("모바일 데이터") && wifi.contains("25분쯤 뒤"))
         assertEquals("1분쯤 뒤", RateLimits.wait(30))
         assertEquals("2시간쯤 뒤", RateLimits.wait(5_000))
-        assertEquals("내일", RateLimits.wait(30_000))
+        val evening = java.time.ZonedDateTime.of(2026, 11, 30, 23, 10, 0, 0, java.time.ZoneId.of("Asia/Seoul"))
+        assertEquals("24시간 창: 밤에 올렸으면 다음 날 아침이 아니라 그 시각", "내일 오후 11시쯤", RateLimits.wait(82_800, evening))
+        assertEquals("내일 오전 8시쯤", RateLimits.wait(30_000, evening))
         assertTrue(RateLimits.text().contains("잠시 뒤 다시 해 주세요."))
         // Any other refusal keeps its old words (and does not call itself).
         assertEquals("인터넷에 연결되지 않았어요. 연결한 뒤 다시 해 주세요", com.bamnat.app.ui.company.companyProblem(CompanyException("offline")))

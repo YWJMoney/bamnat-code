@@ -142,6 +142,24 @@ object ShareLinkPayload {
     fun allowedTtl(days: Int, pro: Boolean): Int = if (pro || days !in PRO_TTL_DAYS) days else FREE_TTL_MAX
 
     /**
+     * 1.36 사용자 결정(2026-10-31, 공유 링크 기간): a 프로 sharer's links stay open for as long as 프로 lasts, so they are kept
+     * a year ahead whenever less than [PRO_RENEW_BELOW_DAYS] is left. Without 프로 a link kept that way closes
+     * [FREE_TTL_MAX] days from now at most, and is kept longer by hand (기간 늘리기) from then. Receivers never need 프로.
+     * The period to send now, or null to leave the end date as it is.
+     */
+    fun keepOpen(link: ShareLinkState, now: java.time.Instant, pro: Boolean): Int? {
+        val left = java.time.Duration.between(now, link.expiresAt).toDays()
+        return when {
+            left < 0 -> null
+            pro -> PRO_KEEP_DAYS.takeIf { left < PRO_RENEW_BELOW_DAYS }
+            link.ttlDays in PRO_TTL_DAYS && left > FREE_TTL_MAX -> FREE_TTL_MAX
+            else -> null
+        }
+    }
+    const val PRO_KEEP_DAYS = 365
+    const val PRO_RENEW_BELOW_DAYS = 180L
+
+    /**
      * [PROV-04] The time zone a calendar feed's times are in, as the server takes it ("Asia/Seoul"); null
      * for one it would refuse ("UTC", "GMT+09:00"), which then reads as Seoul time.
      */
@@ -149,8 +167,12 @@ object ShareLinkPayload {
     private val ZONE = Regex("""[A-Za-z]+(?:/[A-Za-z0-9_+-]+){1,2}""")
 
     /** [SHR-01] The months a link made from [from] covers, for its pay. */
-    fun months(from: LocalDate): List<YearMonth> =
-        generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.atDay(1).isAfter(from.plusDays(DAYS - 1L)) }.toList()
+    fun months(from: LocalDate): List<YearMonth> {
+        val end = from.plusDays(DAYS - 1L)
+        // 빌드 10 (3개월 링크인데 급여 줄이 '1월·2월·3월·4월'): a month the link only touches for its last day or two is left out.
+        return generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.atDay(1).isAfter(end) }
+            .filterIndexed { i, m -> i == 0 || java.time.temporal.ChronoUnit.DAYS.between(m.atDay(1), end) + 1 >= 7 }.toList()
+    }
 
     /** [SHR-01] A day's memos as one line of at most 80 characters, the way the page shows them: each memo's first line only. */
     fun memoLine(memos: List<Memo>): String? {
@@ -616,6 +638,11 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
         // [QA130-01] 1.30 AY: no link made, changed or reported by a Play pre-launch robot; to it, as if offline.
         if (!com.bamnat.app.diag.TestLab.allows(method)) throw IOException("test_lab")
+        // [SRV-30] 1.36: at s.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
+        return com.bamnat.app.company.ServerAddress.call(baseUrl) { at -> requestAt(at, method, path, body, token, etag) }
+    }
+
+    private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?): Reply {
         // [SPD-26][SPD-27] 1.31: as the company server's requests, through Cronet when there and the connection kept for the next.
         val conn = com.bamnat.app.company.NetEngine.open(URL(baseUrl.trimEnd('/') + path))
         var broke = true

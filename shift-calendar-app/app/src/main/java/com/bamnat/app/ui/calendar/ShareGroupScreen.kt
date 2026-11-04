@@ -18,7 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -297,8 +297,12 @@ private fun Board(vm: ShareGroupViewModel, ui: ShareGroupViewModel.Ui, code: Str
             }
         }
         val together = ShareGroupBoard.restTogether(ui.members, from)
-        Text(if (together.isEmpty()) "이번 주에는 모두 같이 쉬는 날이 없어요"
-            else "모두 쉬는 날: " + together.joinToString(", ") { "${it.monthValue}/${it.dayOfMonth}" },
+        // PC 확인 20ab0254 (조원이 나 하나인데 '같이 쉬는 날이 없어요'): alone, it says the others have yet to come in.
+        Text(when {
+            ui.members.size < 2 -> "아직 나 혼자예요. 조원이 모임 코드로 들어오면 모두 쉬는 날을 찾아 드려요"
+            together.isEmpty() -> "이번 주에는 모두 같이 쉬는 날이 없어요"
+            else -> "모두 쉬는 날: " + together.joinToString(", ") { "${it.monthValue}/${it.dayOfMonth}" }
+        },
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

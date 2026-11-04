@@ -23,7 +23,7 @@ import com.bamnat.core.work.WorkStyle
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35])
 class MoneyScreenshotTest : ScreenshotBase() {
-    @Test fun foldedFieldDayShifts() = shoot("77_folded_field_day_shifts_toggle", FOLDED, style(WorkStyle.FIELD) { openDay(dayCell); reveal("근무", exact = true) })
+    @Test fun foldedFieldDayShifts() = shoot("77_folded_field_day_shifts_toggle", FOLDED, style(WorkStyle.FIELD) { openDay(dayCell); reveal("일정", exact = true) })
 
     @Test fun foldedDutyTyping() = shoot("364_folded_duty_typing", FOLDED, dutyTyping())
     @Test fun phoneDutyTypingHugeText() = shoot("365_phone_duty_typing_huge_text", PHONE, 1.5f, dutyTyping())
@@ -112,10 +112,10 @@ class MoneyScreenshotTest : ScreenshotBase() {
     @Test fun calBusinessDay() = shoot("299_folded_business_day", FOLDED, plain(WorkStyle.BUSINESS, moreSales) { openDay(today) })
 
     @Test fun calListField() = shoot("303_folded_field_list_view", FOLDED, plain(WorkStyle.FIELD, moreJobs) {
-        tapText("목록으로 보기", exact = true, scrolls = 0)
+        pickListBoard()
     })
     @Test fun calListBusiness() = shoot("304_unfolded_business_list_view", UNFOLDED, plain(WorkStyle.BUSINESS, moreSales) {
-        tapText("목록으로 보기", exact = true, scrolls = 0)
+        pickListBoard()
     })
 
     @Test fun calLegendField() = shoot("306_folded_legend_field", FOLDED, plain(WorkStyle.FIELD, moreJobs) {

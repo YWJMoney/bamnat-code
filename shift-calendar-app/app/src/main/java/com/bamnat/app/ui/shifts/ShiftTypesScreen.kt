@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.shifts
 
+import com.bamnat.core.work.words
+
 import com.bamnat.app.ui.components.TimeRangeDialog
 import com.bamnat.app.ui.components.TimeRange
 import androidx.compose.runtime.saveable.listSaver
@@ -17,7 +19,7 @@ import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.core.model.AlarmSpec
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.AlarmAdd
@@ -56,7 +58,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -96,7 +98,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -143,7 +145,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { CalendarTitle("근무 종류와 시간", vm) },
+                // 1.36 PC 재검토 (현장은 설정 줄이 '일정 종류'인데 제목은 '근무 종류와 시간'): the same words as the row that opened it.
+                title = { CalendarTitle(vm.workStyle.words().types, vm) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
@@ -156,12 +159,15 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                         alarmEnabled = true, alarms = listOf(AlarmSpec(60)),
                     )
                 },
-                icon = { Icon(Icons.Filled.Add, "근무 추가") },
-                text = { Text("근무 추가") },
+                icon = { Icon(Icons.Filled.Add, "${dayKindNoun(vm.workStyle)} 추가") },
+                text = { Text("${dayKindNoun(vm.workStyle)} 추가") },
             )
         },
     ) { padding ->
         val list = types
+        val folded by vm.folded.collectAsStateWithLifecycle()
+        var foldedOpen by rememberSaveable { mutableStateOf(false) }
+        val shown = list.orEmpty().filter { it.id !in folded }
         if (list == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             return@Scaffold
@@ -174,7 +180,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
             item {
                 // [SETUP-07] What can be done here, said once: tap to change, arrows to reorder.
                 Text(
-                    "달력에 보이는 근무예요. 근무를 누르면 시간과 알람을 고치고, 오른쪽 손잡이를 끌거나 화살표로 달력에 보이는 순서를 바꿔요.",
+                    "달력에 보이는 ${dayKindNoun(vm.workStyle)}${com.bamnat.app.ui.Fmt.ieyo(dayKindNoun(vm.workStyle))}. ${dayKindNoun(vm.workStyle)}${com.bamnat.app.ui.Fmt.obj(dayKindNoun(vm.workStyle))} 누르면 시간과 알람을 고치고, 오른쪽 손잡이를 끌거나 화살표로 달력에 보이는 순서를 바꿔요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
@@ -182,7 +188,8 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                 // [RCP-19] 1.34: these looks (이름·글자·색·이모지) as a 나눔 판 recipe.
                 com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.SHIFT_LOOK)
             }
-            item {
+            // 1.36 PC 재검토 (현장 근무 종류에 병원·공장 3교대 묶음이 보여요): the ready-made sets are 교대 sets, for a 교대 calendar only.
+            if (vm.isShiftCalendar) item {
                 // Ready-made sets for common workplaces [MKT-03].
                 Text("한 번에 추가", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 4.dp))
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
@@ -197,11 +204,11 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                     }
                 }
             }
-            itemsIndexed(list, key = { _, t -> t.id }) { index, type ->
+            itemsIndexed(shown, key = { _, t -> t.id }) { index, type ->
                 ShiftTypeRow(
                     type = type,
                     canMoveUp = index > 0,
-                    canMoveDown = index < list.lastIndex,
+                    canMoveDown = index < shown.lastIndex,
                     onClick = { editing = type },
                     // [SHFT-09] Any kind can go while another is left; the last one cannot.
                     onDelete = if (list.size > 1) ({ deleting = type }) else null,
@@ -210,6 +217,49 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                     modifier = Modifier.animateItem(),
                 )
             }
+            // 1.36 PC 재검토: kinds put away after a change of work (알바 → 현장), folded here; past days keep them.
+            val away = list.filter { it.id in folded }
+            if (away.isNotEmpty() && shown.none { !it.isOff }) item(key = "folded-none") {
+                val n = dayKindNoun(vm.workStyle)
+                Text("쓰는 ${dayKindSubject(vm.workStyle)} 없어요. 아래 ‘$n 추가’로 새 $n${com.bamnat.app.ui.Fmt.obj(n)} 넣거나, 안 쓰는 종류에서 ‘다시 쓰기’를 눌러요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp))
+            }
+            if (away.isNotEmpty()) {
+                item(key = "folded-head") {
+                    Row(
+                        Modifier.fillMaxWidth().clickable { foldedOpen = !foldedOpen }.padding(top = 12.dp, bottom = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text("안 쓰는 종류 ${away.size}개", style = MaterialTheme.typography.labelLarge)
+                            Text(
+                                "하루 시트에서 빠졌어요. 지난 날짜 기록과 급여는 그대로예요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(if (foldedOpen) "접기" else "펼치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                if (foldedOpen) items(away, key = { "folded-${it.id}" }) { type ->
+                    // 1.36 PC 재검토 ('다시 쓰기'가 첫 누름에 반응이 없어요): the whole row takes the tap, and a short line says it moved.
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val revive = {
+                        vm.unfold(type.id)
+                        android.widget.Toast.makeText(context, "‘${type.name}’${com.bamnat.app.ui.Fmt.obj(type.name)} 다시 써요", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "다시 쓰기", onClick = revive).padding(start = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        ShiftBadge(type, size = 20.dp, outlined = true)
+                        Spacer(Modifier.width(8.dp))
+                        Text(type.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        TextButton(onClick = revive) { Text("다시 쓰기") }
+                    }
+                }
+            }
         }
     }
 
@@ -217,6 +267,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
         ShiftTypeEditorDialog(
             initial = type,
             showPremium = vm.isShiftCalendar,
+            noun = dayKindNoun(vm.workStyle),
             onDismiss = { editing = null },
             onSave = {
                 vm.save(it)
@@ -515,6 +566,8 @@ fun ShiftTypeEditorDialog(
     showAlarms: Boolean = true,
     /** [SHFT-01] A shift calendar sets each kind's own premium here. */
     showPremium: Boolean = false,
+    /** 1.36 PC 재검토: "일정" on a 현장 calendar. */
+    noun: String = "근무",
 ) {
     // [CAL-30] I 리뷰 P14: what is being typed survives a fold or a turn of the phone.
     var draft by rememberSaveable(initial, stateSaver = ShiftTypeSaver) { mutableStateOf(initial) }
@@ -547,7 +600,7 @@ fun ShiftTypeEditorDialog(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(if (initial.id == 0L || initial.name.isBlank()) "근무 추가" else "근무 수정") },
+                        title = { Text(if (initial.id == 0L || initial.name.isBlank()) "$noun 추가" else "$noun 수정") },
                         navigationIcon = { IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
                         actions = {
                             TextButton(onClick = { onSave(draft) }, enabled = draft.name.isNotBlank()) { Text("저장") }
@@ -717,7 +770,7 @@ fun ShiftTypeEditorDialog(
                                 })
                             }
                             if (draft.alarmEnabled && !canPost) {
-                                WarningLine("알림이 꺼져 있어 잠금 화면에서 알람을 끌 수 없어요", "허용", askNotifications)
+                                WarningLine("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications)
                             }
                             if (draft.alarmEnabled) {
                                 Spacer(Modifier.height(4.dp))

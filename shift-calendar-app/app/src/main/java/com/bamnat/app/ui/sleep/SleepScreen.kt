@@ -28,7 +28,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.filled.Watch
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
@@ -70,7 +70,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Tune
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Surface
 import com.bamnat.app.ui.settings.InquiryLinks
 import com.bamnat.app.ui.settings.InquiryStart

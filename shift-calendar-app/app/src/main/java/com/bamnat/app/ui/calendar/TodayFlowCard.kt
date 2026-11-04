@@ -32,7 +32,7 @@ import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material.icons.outlined.Weekend
 import androidx.compose.material.icons.outlined.WorkOutline
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton

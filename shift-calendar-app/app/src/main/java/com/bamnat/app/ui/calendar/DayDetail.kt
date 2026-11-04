@@ -52,7 +52,7 @@ import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.MoreTime
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.Work
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -71,6 +71,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import com.bamnat.app.appContainer
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.foundation.combinedClickable
@@ -197,6 +198,8 @@ fun DayPanel(
     Column(modifier) {
         DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp), compact = compact)
         weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
+        // [RUL-03] 1.36 단추 on the day screen (스튜디오·받은 테마).
+        com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.DAY, date, Modifier.padding(bottom = 4.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
         Column(
             (if (scrollGroups) Modifier.weight(1f, fill = false).imePadding().verticalScroll(rememberScrollState()) else Modifier)
@@ -290,7 +293,8 @@ private fun DayGroups(
                     G.WORK -> {
                         val changed = day.source == DaySource.OVERRIDE || day.hasCustomTimes || day.entry?.customBreakMinutes != null
                         DayGroup(
-                            title = "근무", icon = Icons.Outlined.Work,
+                            // 1.36 PC 재검토: a 현장 calendar's day says 일정 (its kinds of day are 일정 종류).
+                            title = com.bamnat.app.ui.shifts.dayKindNoun(style), icon = Icons.Outlined.Work,
                             summary = workSummary(day, snapshot),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
@@ -300,7 +304,7 @@ private fun DayGroups(
                         val names = day.extras.map(ExtraText::name)
                         val review = day.extras.any { it.entry.needsReview }
                         DayGroup(
-                            title = "추가 근무", icon = Icons.Outlined.MoreTime,
+                            title = if (style == com.bamnat.core.work.WorkStyle.FIELD) "일정 더하기" else "추가 근무", icon = Icons.Outlined.MoreTime,
                             summary = when {
                                 review -> "확인이 필요해요 · " + names.joinToString(" · ")
                                 names.isEmpty() -> "없음"
@@ -569,7 +573,10 @@ private fun alarmSummary(day: ResolvedDay, alarms: List<PlannedAlarm>, settings:
 @Composable
 private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, onRestShift: (ShiftType) -> Unit) {
     val style = vm.settings.collectAsStateWithLifecycle().value.workStyle
-    val types = remember(snapshot, style, day.shiftType?.id) { dayTypes(snapshot, style, day.shiftType?.id) }
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val calendar by c.calendars.active.collectAsStateWithLifecycle()
+    val folded = c.foldedTypes.state.collectAsStateWithLifecycle().value[calendar].orEmpty()
+    val types = remember(snapshot, style, day.shiftType?.id, folded) { dayTypes(snapshot, style, day.shiftType?.id, folded) }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (type in types) {
             FilterChip(
@@ -593,6 +600,12 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
                 label = { Text("쉬는 날") },
             )
         }
+    }
+    // 1.36 PC 재검토: every kind of work folded away, said instead of showing them again.
+    if (folded.isNotEmpty() && types.none { !it.isOff }) {
+        val n = com.bamnat.app.ui.shifts.dayKindNoun(style)
+        Text("쓰는 ${com.bamnat.app.ui.shifts.dayKindSubject(style)} 없어요. ${com.bamnat.app.ui.shifts.dayKindsPlace(style)}에서 ‘$n 추가’로 넣거나 안 쓰는 종류를 다시 써요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     // [J133B-03] 1.33 빌드 8 확인 ("11시간 휴식 경고가 월 카드에만, 근무를 넣는 순간에는 없어요"): the rest rules the day and the
     // next day break, said right under the shift just put in, as the month card and the alarm line count them.
@@ -1281,8 +1294,8 @@ private fun SleepSection(
                 )
                 when {
                     open == null -> OutlinedButton(onClick = onAsleep) { Text("잠들었어요") }
-                    stale -> androidx.compose.material3.Button(onClick = { askWake = true }) { Text("깬 시각 적기") }
-                    else -> androidx.compose.material3.Button(onClick = onAwake) { Text("깼어요") }
+                    stale -> com.bamnat.app.ui.components.Button(onClick = { askWake = true }) { Text("깬 시각 적기") }
+                    else -> com.bamnat.app.ui.components.Button(onClick = onAwake) { Text("깼어요") }
                 }
             }
             if (askWake && open != null) {
@@ -1379,7 +1392,16 @@ internal fun quickMemoExample(style: com.bamnat.core.work.WorkStyle?): String = 
  * day its 영업일 use (in its order or put on a day) and its days off, not the 교대 names every new calendar starts with; with
  * nothing used yet, all of them.
  */
-internal fun dayTypes(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?): List<ShiftType> {
+internal fun dayTypes(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?, folded: Set<Long> = emptySet()): List<ShiftType> =
+    // 1.36 PC 재검토: a kind put away ('안 쓰는 종류') is not offered, unless it is this day's or one this kind of work starts with
+    // (after 되돌리기 back to 알바, its own 오전 알바 shows again). All of them folded leaves the days off ([WorkContent] says how to add).
+    dayTypesAll(snapshot, style, current).let { all ->
+        if (folded.isEmpty()) return all
+        val own = com.bamnat.app.data.FoldedTypes.startNames(style)
+        all.filter { it.id !in folded || it.id == current || it.name in own }
+    }
+
+private fun dayTypesAll(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?): List<ShiftType> {
     if (style != com.bamnat.core.work.WorkStyle.BUSINESS) return snapshot.shiftTypes
     val used = buildSet {
         snapshot.patterns.forEach { p ->

@@ -121,6 +121,12 @@ internal const val WATCH_CALENDAR_ROW = "워치에 보낼 달력"
 internal const val BUTTON_ACTION_ROW = "버튼으로 알람 끄기"
 /** [ALRM-21] 1.35: the row in 설정 › 알람 › 울리는 방식. */
 internal const val ALARM_SOON_ROW = "곧 울릴 알람 미리 알리기"
+/** [PRF-05] 1.36 PC 사용성 P8: the row in 설정 › 개인정보. */
+internal const val SENT_ROW = "내가 보낸 정보·모두 지우기"
+
+/** PC e20cfe53: where a search result lives, starting with 설정 once ("설정 › 도움말과 문의", never "설정 › 설정 › …"). */
+internal fun settingsPath(where: String): String =
+    if (where == "설정" || where.startsWith("설정 ›")) where else "설정 › $where"
 
 internal object SettingsIndex {
     private fun row(page: SettingsPage, title: String, vararg keywords: String, row: String = title) =
@@ -180,7 +186,8 @@ internal object SettingsIndex {
         screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
         screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx").takeIf { company }, // [J133-77]
         screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),
-        row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체"),
+        // 1.36 PC Y21: '근무 알람 끄기'·'잠시 끄기' found nothing.
+        row(A, "알람 사용", "알람 끄기", "알람 켜기", "모두 끄기", "알람 전체", "근무 알람 끄기", "근무 알람", "잠시 끄기", "알람 잠시 끄기", "알람 멈추기", "휴가 중 알람", "알람 안 울리게"),
         row(A, "알람음", "알람 소리", "벨소리", "무음", row = "알람음"),
         row(A, "근무마다 다른 소리", "근무별 알람음", "야간 소리"),
         // [SET-05]
@@ -219,7 +226,7 @@ internal object SettingsIndex {
         row(N, "급여 입금 비교", "월급 들어옴", "급여 알림", "입금 비교", "월급날 알림"),
         row(N, "연차 사용 촉진 알림", "연차", "휴가 알림", "연차 소멸 안내", "소멸", "사용 촉진"),
         // [LEAVE-06]
-        screen(P.title, "연차", SettingsGo.PAY, "연차 원장", "남은 연차", "연차 계산", "입사일", "이월", "보상휴가", "연차수당"),
+        screen(P.title, "연차", SettingsGo.LEAVE, "연차 원장", "남은 연차", "연차 계산", "입사일", "이월", "보상휴가", "연차수당"),
         row(N, "잠금 화면 오늘 근무", "잠금 화면", "상시 알림", "오늘 근무 알림"), // [GUIDE-01]
         row(N, "알람 뒤 오늘 카드", "오늘 카드", "알람 끈 뒤", "이번 주 시간", "52시간"), // [ALRM-16] 1.31
         row(N, "밤낮 소식", "광장 소식", "광장 알림", "규칙 바뀜", "채택", "회사 소식", "규칙 제안", "답장 알림", "문의 답", "신고 결과",
@@ -247,6 +254,7 @@ internal object SettingsIndex {
         row(C, "한 주의 시작", "일요일", "월요일", "주 시작"),
         row(C, "날짜 칸 아래", "음력", "근무시간 표시", "날짜 밑"),
         row(C, CAL_THEME_ROW, "달력 테마", "토요일 색", "일요일 색", "공휴일 색", "오늘 색", "칸 색칠", "근무 날 칸", "꾸미기"), // [RCP-09] 1.34
+        row(A, com.bamnat.app.logic.LOGIC_ROW, "규칙", "수식", "조건", "만약", "자동", "단추", "버튼", "이럴 때", "인수인계", "체크 초기화", "메모 틀", "자동 기록"), // [RUL-06] 1.36
         row(C, PHOTO_LOOK_ROW, "사진 꾸미기", "배경 사진", "달력 배경", "머리 그림", "근무 사진", "근무 아이콘", "위젯 사진", "모서리", "버튼 모양", "둥글게", "각지게", "테마 사진"), // [RCX-30] 1.35
         row(C, WIDGET_LOOK_ROW, "위젯 투명도", "위젯 어둡게", "위젯 밝게", "투명 위젯", "위젯 배경", "위젯 꾸미기"), // [RCX-14] 1.35
         row(C, "달력 모양", "칸 높이", "메모 중심", "다이어리", "한눈에", "큰 글씨", "칸에 메모", "메모 여러 줄", "칸 선", "날짜 위치", "근무 색 띠", "줄 순서"), // [CVW-02] 1.35
@@ -256,6 +264,14 @@ internal object SettingsIndex {
         row(C, "메모 보기", "달력 메모", "메모 표시"),
         // U 1.32 [UX132-05][UX132-06] G [WTYP-07]
         row(C, "글자 크기", "글씨", "글씨 크게", "크게", "작게", "노안", "안 보여요", "큰 글씨", "글꼴"),
+        // [MAT-05] 1.36 PC 확인 4차: '글꼴' goes to the studio's font, not only to 글자 크기.
+        screen("스튜디오 › 앱 전체", "앱 전체 글꼴", SettingsGo.STUDIO_FONT, "글꼴", "폰트", "글씨체", "서체", "명조", "바탕체", "손글씨", "내 글꼴", "font"),
+        // PC 확인 5차: the other two fonts come up with it.
+        screen("스튜디오 › 달력 › 색·배경", "화면마다 글꼴", SettingsGo.STUDIO_SCREEN_FONT, "글꼴", "폰트", "글씨체", "서체", "이 화면 글꼴", "화면 글꼴", "font"),
+        screen("스튜디오 › 달력 › 칸 디자인", "날짜 숫자 글꼴", SettingsGo.STUDIO_DATE_FONT, "글꼴", "폰트", "글씨체", "서체", "날짜 글꼴", "숫자 글꼴", "font"),
+        // [MAT-07] PC 확인 (마을 확인 중 '설정 찾기로 꾸밈 효과를 못 찾음'): the studio's 움직임 and each part's own.
+        screen("스튜디오 › 앱 전체", "움직임 효과", SettingsGo.STUDIO_MOTION, "움직임", "효과", "꾸밈 효과", "파티클", "애니메이션", "눈 내리기", "벚꽃", "반짝이", "motion", "animation"),
+        screen("스튜디오 › 앱 전체 › 부품", "부품 움직임", SettingsGo.STUDIO_PARTS, "움직임", "효과", "부품 효과", "애니메이션", "흔들림", "깜빡임", "부품", "animation"),
         row(C, "촘촘하게", "넉넉하게", "간격", "밀도", "한 화면에 많이"),
         row(C, "오전/오후로 보기", "오전", "오후", "12시간", "24시간", "시각 표기"),
         row(C, "날짜 밑에 그날 쓴 돈", "지출 표시", "쓴 돈", "달력에 지출", "하루 지출"), // E 1.32 [LEDX-07]
@@ -280,6 +296,7 @@ internal object SettingsIndex {
         row(D, GROUP_ROW, "모임 코드", "조 근무표", "동료 근무표 모아", "나란히 보기", "팀 근무표").takeIf { share }, // [SHR-14]
         row(D, CUT_ALL_ROW, "링크 지우기", "공유 끊기", "링크 모두 끊기", "공유 그만", "링크 삭제").takeIf { share }, // [SHR-13]
         row(V, "개인정보 처리방침", "개인정보", "처리방침"),
+        row(V, SENT_ROW, "보낸 정보", "모두 지우기", "정보 삭제", "삭제", "탈퇴", "계정 삭제", "내 정보 지우기", "프로필 지우기", "마을 지우기", "거두기").takeIf { board }, // [PRF-05]
         row(V, SUMMARY_ROW, "동의", "권한 요약", "내가 허용한 것", "보내는 것", "권한 한눈에", "동의 내역"), // [ALRM-02]
         screen(A.title, "서버 연결 점검", SettingsGo.DIAGNOSTICS, "서버 연결", "인터넷", "보내지 못함", "연결 확인", "서버 상태"), // [ALRM-02]
         row(V, "앱 잠금", "잠금", "지문", "얼굴", "비밀번호", "PIN", "생체 인증", "숨기기"),
@@ -292,6 +309,8 @@ internal object SettingsIndex {
         // [MON-04][MON-05] 프로 and what paying for it agrees to.
         screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "복구 코드", "관리자 연결", "환불", "해지", "유료"),
         row(V, "이용약관", "약관", "환불 규정", "청약철회", "구독 약관"),
+        row(V, FORGET_ALL_ROW, "모두 지우기", "보낸 정보 지우기", "삭제", "탈퇴", "데이터 지우기", "서버에서 지우기", "문의 지우기"), // 1.36 [INQ-07]
+        row(V, "사업자 정보", "사업자", "통신판매업", "사업자등록번호", "판매자", "대표자", "회사 정보", "주소", "전화번호"), // 1.36 [MON-12]
         // [GUIDE-05] Every switch of a feature that can be off, in one place.
         // [ONBOARD-04][SIMPLE-02] The recommended features on one screen, and where each is turned off.
         screen("설정 › 기능 켜고 끄기", "추천 기능 한 번에 켜기", SettingsGo.RECOMMENDED, "추천", "모두 켜기", "한 번에", "권한 한 번에",
@@ -313,6 +332,8 @@ internal object SettingsIndex {
         row(A, ALARM_SOON_ROW, "곧 알람", "알람 미리", "이번 알람만 끄기", "다음 알람 끄기", "알람 건너뛰기"), // [ALRM-21]
         row(A, BUTTON_ACTION_ROW, "볼륨 버튼", "전원 버튼", "잠금 버튼", "소리 줄이기", "버튼으로 끄기", "알람 끄는 법"), // [ALRM-08]
         // ---- 1.25 묶음 Y [TIER-07] ----
+        // 1.36 PC Y11: '보상' found nothing; the 보상 이용권 and earned days live on the 프로 page.
+        screen("설정 › 프로", "보상 이용권", SettingsGo.PRO, "보상", "이용권", "받은 이용권", "쌓인 날", "쓰면 쌓이는 날", "기다리는 날", "광고 보상", "보상 장부"),
         screen("설정 › 프로", "프로 기능 모아보기", SettingsGo.PRO, "프로 기능", "모아보기", "유료 기능", "프로 표시", "잠긴 기능"),
         // 1.25 Z
         row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]

@@ -4,6 +4,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -31,10 +33,10 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DatePickerDialog
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
@@ -223,7 +225,16 @@ fun EntryDialog(
                     IconButton(onClick = { onDuplicate(initial!!) }) { Icon(Icons.Outlined.ContentCopy, "오늘 날짜로 복사") }
                 }
                 if (!isNew && onDelete != null) {
-                    IconButton(onClick = { onDelete(initial!!) }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
+                    // PC 확인 5c21f3bb (지우기가 확인 없이 바로, 되돌리기 띠는 금방 사라짐): asks first, as a slide to the left does [SWIPE-01].
+                    var askDelete by remember { mutableStateOf(false) }
+                    IconButton(onClick = { askDelete = true }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
+                    if (askDelete) com.bamnat.app.ui.components.AlertDialog(
+                        onDismissRequest = { askDelete = false },
+                        title = { Text("이 기록을 지울까요?") },
+                        text = { Text("‘${initial!!.title}’ ${Fmt.won(initial.amount)}. 지운 뒤 잠깐 나오는 ‘되돌리기’로 살릴 수 있어요.") },
+                        confirmButton = { TextButton(onClick = { askDelete = false; onDelete(initial!!) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
+                        dismissButton = { TextButton(onClick = { askDelete = false }) { Text("취소") } },
+                    )
                 }
                 IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
             }
@@ -410,21 +421,37 @@ fun EntryDialog(
             }
             // The buttons stay in reach above the keyboard.
             HorizontalDivider()
-            Row(
-                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val ready = amount > 0 && splitOk
-                if (isNew && onSaveAndNext != null) {
-                    OutlinedButton(enabled = ready, onClick = {
-                        haptics.performHapticFeedback(HapticFeedbackType.Confirm)
-                        onSaveAndNext(build())
-                    }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("저장하고 하나 더") }
-                }
+            val ready = amount > 0 && splitOk
+            // PC 확인 2b9f19ab: with big letters and the keyboard up, the two stacked buttons covered the 분류 chips; then they sit
+            // side by side again, '저장하고 하나 더' said shorter.
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+            val imeUp = WindowInsets.ime.getBottom(androidx.compose.ui.platform.LocalDensity.current) > 0
+            val short = big && imeUp
+            val next: (@Composable (Modifier) -> Unit)? = if (isNew && onSaveAndNext != null) { m ->
+                OutlinedButton(enabled = ready, onClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.Confirm)
+                    onSaveAndNext(build())
+                }, modifier = m.heightIn(min = 48.dp)) { Text(if (short) "하나 더" else "저장하고 하나 더", maxLines = 1) }
+            } else null
+            val save: @Composable (Modifier) -> Unit = { m ->
                 com.bamnat.app.ui.components.SaveButton(enabled = ready, onClick = {
                     haptics.performHapticFeedback(HapticFeedbackType.Confirm)
                     onSave(build())
-                }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("저장") }
+                }, modifier = m.heightIn(min = 48.dp)) { Text("저장") }
+            }
+            // PC 확인 b4735c07 ("아주 크게"에서 '저장하고 하나 더'가 두 줄로 꺾여요): with big letters the two buttons stack, 저장 first.
+            if (big && !imeUp && next != null) Column(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                save(Modifier.fillMaxWidth())
+                next(Modifier.fillMaxWidth())
+            } else Row(
+                Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically,
+            ) {
+                next?.invoke(Modifier.weight(1f))
+                save(Modifier.weight(1f))
             }
         }
     }

@@ -25,7 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.WarningAmber
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
@@ -90,9 +90,19 @@ private val DarkInk = Color(0xFF151927)
  * [VIS-01] Readable text color on top of [background]: whichever of white and the app's dark ink
  * has the higher contrast (WCAG), so 오후 #F2994A or 대근 #0E9F6E get dark letters, not faint white.
  */
-fun contentColorOn(background: Color): Color =
+fun contentColorOn(background: Color): Color {
+    val argb = background.toArgb()
+    // PC 확인 1.36 (두 폰 '응답 없음'): every day cell asks this for its 근무 배지 on each draw, with a handful of colours;
+    // the answer is kept per colour so a month page does not work out the same contrast forty times.
+    InkCache[argb]?.let { return it }
     // [WEAR-02] The same rule as the widgets and the watch, in core.
-    if (com.bamnat.core.layout.Contrast.inkOn(background.toArgb().toLong() and 0xFFFFFFFFL, DarkInk.toArgb().toLong() and 0xFFFFFFFFL) == com.bamnat.core.layout.Contrast.WHITE) Color.White else DarkInk
+    val ink = if (com.bamnat.core.layout.Contrast.inkOn(argb.toLong() and 0xFFFFFFFFL, DarkInk.toArgb().toLong() and 0xFFFFFFFFL) == com.bamnat.core.layout.Contrast.WHITE) Color.White else DarkInk
+    if (InkCache.size > 512) InkCache.clear()
+    InkCache[argb] = ink
+    return ink
+}
+
+private val InkCache = java.util.concurrent.ConcurrentHashMap<Int, Color>()
 
 /** [DAY-02] Inside the day's groups sections drop their own card, so a group never holds a box in a box. */
 val LocalFlatSections = androidx.compose.runtime.staticCompositionLocalOf { false }
@@ -107,6 +117,9 @@ fun memoBackground(index: Int): Color {
     return if (c == Color.Unspecified) MaterialTheme.colorScheme.surfaceContainerLow else c
 }
 
+/** [BLU-05] 1.36 부품 '근무 표시'(cal.cell.mark)의 모서리: the shape a badge takes inside a cell whose blueprint sets one. */
+val LocalBadgeShape = androidx.compose.runtime.compositionLocalOf<androidx.compose.ui.graphics.Shape?> { null }
+
 /** Rounded pill with the shift's color and label, the core visual of the calendar. */
 @Composable
 fun ShiftBadge(
@@ -117,9 +130,16 @@ fun ShiftBadge(
     outlined: Boolean = false,
     showIcon: Boolean = true,
 ) {
-    val color = type?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.outline
+    // PC 확인 C10 1.36 (아주 어두운 사진 위 '휴' 칩이 회색 바탕에 묻혀요): on a 꾸밈 사진 an outlined badge stands on a ground of its own,
+    // and its line and letters turn to the ink of that ground when their own colour would not show on it.
+    val onPhoto = if (outlined) com.bamnat.app.ui.decor.LocalOnPhoto.current?.copy(alpha = 1f) else null
+    val own = type?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.outline
+    val color = if (onPhoto == null) own else {
+        fun argb(c: Color) = c.toArgb().toLong() and 0xFFFFFFFFL
+        if (com.bamnat.core.layout.Contrast.ratio(argb(own.copy(alpha = 1f)), argb(onPhoto)) >= 3.0) own else contentColorOn(onPhoto)
+    }
     val label = text ?: type?.label ?: "휴"
-    val shape = RoundedCornerShape(size / 3)
+    val shape = LocalBadgeShape.current ?: RoundedCornerShape(size / 3)
     // The icon only goes with the type's own label, not with stand-in text like "휴" [FEAT-01].
     val icon = if (showIcon && (text == null || text == type?.label)) ShiftIcon.of(type?.icon) else null
     // [RCP-08] 1.34: an emoji the user (or a recipe) picked goes where the drawn icon would.
@@ -128,7 +148,7 @@ fun ShiftBadge(
         modifier = modifier
             .clip(shape)
             .then(
-                if (outlined) Modifier.border(1.5.dp, color, shape)
+                if (outlined) Modifier.then(if (onPhoto != null) Modifier.background(onPhoto, shape) else Modifier).border(1.5.dp, color, shape)
                 else Modifier.background(color, shape),
             )
             .widthIn(min = size)

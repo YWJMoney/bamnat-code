@@ -1,0 +1,125 @@
+package com.bamnat.app.ui.components
+
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.AlertDialogDefaults
+import androidx.compose.material3.DatePickerColors
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.PopupProperties
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.dp
+
+/*
+ * 1.36 PC 재검토 (대화 상자에 앱 글자 크기가 안 먹어요): a dialog is a window of its own, and a new window measures with the phone's
+ * density, so the app's 글자 크기 (설정 › 화면과 글자, laid over the phone's in AppTheme) was lost inside every 창. These stand in for
+ * Material's and Compose's with the same arguments and hand the app's density, taken where the dialog is opened, back to what is drawn
+ * in it. The app imports these instead of androidx.compose.material3.AlertDialog / DatePickerDialog / DropdownMenu and
+ * androidx.compose.ui.window.Dialog (AppDialogsTest keeps it that way). A menu is a popup window, the same.
+ */
+
+/** [slot] drawn with [density] (the app's, from outside the dialog's window). */
+private fun keep(density: Density, slot: @Composable () -> Unit): @Composable () -> Unit =
+    { CompositionLocalProvider(LocalDensity provides density, slot) }
+
+@Composable
+fun AlertDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: @Composable (() -> Unit)? = null,
+    icon: @Composable (() -> Unit)? = null,
+    title: @Composable (() -> Unit)? = null,
+    text: @Composable (() -> Unit)? = null,
+    shape: Shape = AlertDialogDefaults.shape,
+    containerColor: Color = AlertDialogDefaults.containerColor,
+    iconContentColor: Color = AlertDialogDefaults.iconContentColor,
+    titleContentColor: Color = AlertDialogDefaults.titleContentColor,
+    textContentColor: Color = AlertDialogDefaults.textContentColor,
+    tonalElevation: Dp = AlertDialogDefaults.TonalElevation,
+    properties: DialogProperties = DialogProperties(),
+) {
+    val d = LocalDensity.current
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismissRequest,
+        confirmButton = keep(d, confirmButton),
+        modifier = modifier,
+        dismissButton = dismissButton?.let { keep(d, it) },
+        icon = icon?.let { keep(d, it) },
+        title = title?.let { keep(d, it) },
+        text = text?.let { keep(d, it) },
+        shape = shape,
+        containerColor = containerColor,
+        iconContentColor = iconContentColor,
+        titleContentColor = titleContentColor,
+        textContentColor = textContentColor,
+        tonalElevation = tonalElevation,
+        properties = properties,
+    )
+}
+
+@Composable
+fun Dialog(onDismissRequest: () -> Unit, properties: DialogProperties = DialogProperties(), content: @Composable () -> Unit) {
+    val d = LocalDensity.current
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismissRequest, properties = properties, content = keep(d, content))
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DatePickerDialog(
+    onDismissRequest: () -> Unit,
+    confirmButton: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+    dismissButton: @Composable (() -> Unit)? = null,
+    shape: Shape = DatePickerDefaults.shape,
+    tonalElevation: Dp = DatePickerDefaults.TonalElevation,
+    colors: DatePickerColors = DatePickerDefaults.colors(),
+    properties: DialogProperties = DialogProperties(usePlatformDefaultWidth = false),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val d = LocalDensity.current
+    androidx.compose.material3.DatePickerDialog(
+        onDismissRequest = onDismissRequest,
+        confirmButton = keep(d, confirmButton),
+        modifier = modifier,
+        dismissButton = dismissButton?.let { keep(d, it) },
+        shape = shape,
+        tonalElevation = tonalElevation,
+        colors = colors,
+        properties = properties,
+    ) { CompositionLocalProvider(LocalDensity provides d) { content() } }
+}
+
+@Composable
+fun DropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    offset: DpOffset = DpOffset(0.dp, 0.dp),
+    scrollState: ScrollState? = null,
+    properties: PopupProperties = PopupProperties(focusable = true),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    // PC 확인 1.36 (두 폰 '응답 없음', 2026-11-03): every calendar cell, list row and chip carries its own menu, and
+    // material3's menu builds a transition state and a scroll state even while closed; a month page of closed menus was
+    // the main thread's work when Android called the app stuck. A menu is built only once it has been opened (and kept
+    // after, so it can still fade out).
+    val opened = remember { BooleanArray(1) }
+    if (expanded) opened[0] = true
+    if (!opened[0]) return
+    val d = LocalDensity.current
+    androidx.compose.material3.DropdownMenu(expanded, onDismissRequest, modifier, offset, scrollState ?: rememberScrollState(), properties) {
+        CompositionLocalProvider(LocalDensity provides d) { content() }
+    }
+}

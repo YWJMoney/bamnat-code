@@ -80,6 +80,11 @@ class PlazaAITest {
         assertEquals("예시상사 정보 광장에 새 글이 3개 올라왔어요.", PlazaNews.line(PlazaNewsItem("room_posts", company = "예시상사", count = 3)))
         assertEquals("참여한 회사 정보 광장에 새 글이 1개 올라왔어요.", PlazaNews.line(PlazaNewsItem("room_posts")))
     }
+
+    @Test fun `answers to my post in a room are one line of 광장 소식 VIL-09`() {
+        assertEquals("교대 광장에 쓴 내 글에 새 답이 2개 달렸어요.", PlazaNews.line(PlazaNewsItem("replies", company = "교대 광장", count = 2)))
+        assertEquals("광장에 쓴 내 글에 새 답이 1개 달렸어요.", PlazaNews.line(PlazaNewsItem("replies", company = "")))
+    }
 }
 
 /** The company file of [PlazaCompareTest], for other tests. */

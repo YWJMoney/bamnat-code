@@ -26,7 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -291,6 +291,8 @@ class MoneyViewModel(
         } ?: entry
         container.appScope.launch {
             money.save(settled)
+            // [RUL-04] 1.36 규칙 '가계부에 적으면'.
+            com.bamnat.app.logic.LogicRunner.onMoneySaved(container, settled.date)
             // [LEDG-18] The other lines from this place can follow in one tap.
             val same = old?.let { money.samePlace(entry, it.category) }.orEmpty()
             if (same.isNotEmpty()) {
@@ -538,7 +540,7 @@ fun MoneyScreen(
         if (noticeTarget != NoticeLinks.Target.TAX) return@LaunchedEffect
         NoticeLinks.consume(NoticeLinks.Target.TAX)
         vm.showPage(MoneyViewModel.Page.SUMMARY)
-        if (gate.allows(com.bamnat.app.tier.Feature.TAX_FORECAST)) { if (taxSide(settings.workStyle) == TaxSide.BUSINESS) bizTax = true else takingHome = true }
+        if (com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.TAX_FORECAST)) { if (taxSide(settings.workStyle) == TaxSide.BUSINESS) bizTax = true else takingHome = true }
     }
     // [TAX-02] 세금·실수령 opened from the help search or the update notice: the summary, where the card is.
     val featureFocus by com.bamnat.app.ui.guide.FeatureLinks.focus.collectAsStateWithLifecycle()
@@ -642,7 +644,7 @@ fun MoneyScreen(
         MoneyPart.OTHER to { com.bamnat.app.ui.guide.FeatureCard("money.otherPlaces", vm.calendarId) { OtherPlacesCard(otherPlaces, book.categoriesOf(MoneyKind.EXPENSE), onPick = { g, c -> vm.recategorize(g.entries, c) }) } },
         MoneyPart.UPCOMING to {
             UpcomingCard(upcoming, book.fixed, leftFixed, onRecord = { vm.recordFixed(it, today) },
-                onEdit = { c -> if (c == null) addingFixed = true else editingFixed = c })
+                onEdit = { c -> if (c == null) addingFixed = true else editingFixed = c }, style = style)
         },
         MoneyPart.REPEAT to { com.bamnat.app.ui.guide.FeatureCard("money.repeat", vm.calendarId) { RepeatSuggestCard(repeats, onAdd = vm::addRepeat, onNo = vm::notRepeating) } },
         MoneyPart.ACCOUNTS to { AccountsCard(book, today, onAdd = { t -> if (t == null) addingAnyAccount = true else addingAccount = t }, onEdit = { editingAccount = it }) },
@@ -703,6 +705,8 @@ fun MoneyScreen(
             }
             // [MCAL-06] Whose money this is, once there are several calendars.
             com.bamnat.app.ui.calendar.CalendarScopeChips(LocalContext.current.appContainer, Modifier.padding(horizontal = 16.dp))
+            // [RUL-03] 1.36 사용자 2026-11-01 "가계부와 연동": 가계부 화면에 놓은 단추.
+            com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.MONEY, com.bamnat.core.time.Today.date(), Modifier.padding(horizontal = 16.dp))
             PrimaryTabRow(selectedTabIndex = page.ordinal, containerColor = MaterialTheme.colorScheme.surface) {
                 MoneyViewModel.Page.entries.forEach { p ->
                     Tab(
@@ -736,7 +740,9 @@ fun MoneyScreen(
                     snapshot = snapshot, onMessage = vm::message)
             }
         }
-        AnimatedVisibility(selection.isEmpty(), enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
+        // PC 4277abca (통계에서 '돈 적기'가 카페 줄 금액·카드 머리를 덮음): 통계 is for reading, so the floating button is not over it;
+        // 돈 적기 stays on 요약 and 내역.
+        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
             ExtendedFloatingActionButton(
                 onClick = { adding = MoneyKind.EXPENSE },

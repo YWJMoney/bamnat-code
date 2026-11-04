@@ -54,9 +54,9 @@ import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material.icons.outlined.QuestionAnswer
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Badge
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.OutlinedButton
@@ -124,23 +124,31 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
 
+/**
+ * [ADMIN-02] How long a question stays, the same in every notice. 1.36 [INQ-07] A question about paying or a
+ * refund is the 소비자 불만·분쟁 처리 기록 the 전자상거래법 keeps three years (처리방침 3.10, server INQUIRY.billingKeepMs).
+ */
+internal const val INQUIRY_KEEP_WORDS =
+    "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        "결제·환불 문의는 전자상거래법에 따라 마지막 글부터 3년 동안 운영자가 보관해요(지우면 앱에서는 바로 사라져요). "
+
 /** [ADMIN-02] What the form and the privacy policy say about a question before it goes. */
 /** [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same. */
 internal const val INQUIRY_PRIVATE_NOTICE =
     "회사 방식은 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 기본급·수당 금액은 적지 말아 주세요. " +
-        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        INQUIRY_KEEP_WORDS +
         "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
 internal const val INQUIRY_SEND_NOTICE =
     "모두의 문의에 올라가요. 앱을 쓰는 다른 분도 적은 글과 개발자 답을 볼 수 있고, 보낸 분이 누구인지는 보이지 않아요. " +
         "3번의 ‘함께 보내는 정보’는 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
-        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        INQUIRY_KEEP_WORDS +
         "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
 /** [INQ-06] 모두의 문의에 올리기 off: the developer only, with the same keeping rules. */
 internal const val INQUIRY_ONLY_DEVELOPER_NOTICE =
     "모두의 문의에 올리지 않고 개발자만 봐요. 3번의 ‘함께 보내는 정보’도 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
-        "보낸 문의는 언제든 지울 수 있고, 180일 동안 새 글이 없으면 저절로 지워져요. " +
+        INQUIRY_KEEP_WORDS +
         "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
 private const val LIST = "list"
@@ -160,7 +168,17 @@ private const val HELP = "help"
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
+fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit, onOpenRecipe: (String) -> Unit = {}) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalOpenRecipe provides onOpenRecipe) { InquiryScreenBody(vm, onBack) }
+}
+
+/** 1.36 [GRW-03] 스튜디오 요구가 풀렸다는 답의 작품 코드를 바로 열어요(PC 확인 8d290ec3 '풀렸어요 · 보러 가기'). */
+private val LocalOpenRecipe = androidx.compose.runtime.staticCompositionLocalOf<(String) -> Unit> { {} }
+private val SOLVED_CODE = Regex("""코드 ([2-9A-HJ-NP-Z]{8})""")
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun InquiryScreenBody(vm: InquiryViewModel, onBack: () -> Unit) {
     val list by vm.list.collectAsStateWithLifecycle()
     val offline by vm.offline.collectAsStateWithLifecycle()
     val unread by vm.unread.collectAsStateWithLifecycle()
@@ -298,7 +316,8 @@ fun InquiryScreen(vm: InquiryViewModel, onBack: () -> Unit) {
     deleting?.let { i ->
         ConfirmDialog(
             title = "이 문의를 지울까요?",
-            message = "보낸 글과 개발자 답이 서버에서 모두 지워져요.",
+            // 1.36 [INQ-07] A 결제·환불 question leaves the app but the law keeps it with the developer.
+            message = "보낸 글과 개발자 답이 앱과 서버에서 지워져요. 결제·환불 문의는 전자상거래법에 따라 앱에서만 사라지고 운영자가 3년 보관해요.",
             confirmLabel = "지우기",
             destructive = true,
             onDismiss = { deleting = null },
@@ -548,7 +567,8 @@ private fun InquiryForm(
             }
         }
         StepTitle("1. 어떤 문의인가요?")
-        InquiryKind.entries.forEach { k ->
+        // 1.36 [GRW-01] 원하는 꾸미기 부탁은 스튜디오에서 열었을 때만 골라요.
+        InquiryKind.entries.filter { it != InquiryKind.STUDIO || kind == InquiryKind.STUDIO }.forEach { k ->
             KindOption(k, selected = kind == k) { kind = k }
         }
 
@@ -573,13 +593,22 @@ private fun InquiryForm(
         val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
     val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
+        var notIt by remember { mutableStateOf(emptySet<String>()) }
+        var helped by remember { mutableStateOf<String?>(null) }
         val tips = remember(body, kind) {
             if (kind == InquiryKind.COMPANY || body.length < 4) emptyList() else HelpFaq.forQuestion(body, topics, limit = 2)
         }
-        if (tips.isNotEmpty()) {
+        if (tips.any { it.id !in notIt }) {
             Text("혹시 이런 내용인가요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite })
-            tips.forEach { t -> FaqCard(t, expanded = openTip == t.id, onToggle = { openTip = if (openTip == t.id) null else t.id }) }
+            // 1.36 PC 제안 ('도움 됐어요/아니에요'): an answer that is not it goes away for this question; one that helped says so.
+            tips.filter { it.id !in notIt }.forEach { t ->
+                FaqCard(t, expanded = openTip == t.id, onToggle = { openTip = if (openTip == t.id) null else t.id })
+                if (openTip == t.id) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { helped = t.id }) { Text(if (helped == t.id) "다행이에요. 그래도 궁금하면 그대로 보내 주세요" else "도움 됐어요") }
+                    if (helped != t.id) TextButton(onClick = { notIt = notIt + t.id; openTip = null }) { Text("이 답은 아니에요") }
+                }
+            }
         }
 
         StepTitle(if (mail) "3. 메일에 함께 적는 정보" else "3. 함께 보내는 정보")
@@ -767,6 +796,7 @@ private fun placeholder(kind: InquiryKind?): String = when (kind) {
     InquiryKind.IDEA -> "예: 달력이 일요일부터 시작하면 좋겠어요"
     InquiryKind.COMPANY -> "예: OO공장 생산2팀이에요. 휴무일 근무는 8시간에 기본급 10%, 8시간 넘으면 0.5 가산이에요"
     InquiryKind.OTHER -> "예: 야간 근무 날 화면이 어두워져서 좋아요"
+    InquiryKind.STUDIO -> "예: 달력 칸마다 그라데이션 배경을 넣고 싶어요"
     else -> "예: 대근을 4시간만 하면 급여에 어떻게 들어가나요?"
 }
 
@@ -802,6 +832,7 @@ private fun InquiryKind.icon(): ImageVector = when (this) {
     InquiryKind.IDEA -> Icons.Outlined.Lightbulb
     InquiryKind.COMPANY -> Icons.Outlined.Apartment
     InquiryKind.OTHER -> Icons.Outlined.ChatBubbleOutline
+    InquiryKind.STUDIO -> Icons.Outlined.ChatBubbleOutline
 }
 
 @Composable
@@ -1143,6 +1174,11 @@ private fun Bubble(text: String, fromDeveloper: Boolean, at: String) {
                     color = if (fromDeveloper) scheme.onPrimaryContainer else scheme.onSurface, modifier = Modifier.padding(12.dp))
             }
         }
+        val code = if (fromDeveloper) SOLVED_CODE.find(text)?.groupValues?.get(1) else null
+        if (code != null) {
+            val open = LocalOpenRecipe.current
+            TextButton(onClick = { open(code) }) { Text("풀렸어요 · 보러 가기") }
+        }
     }
 }
 
@@ -1314,7 +1350,7 @@ private fun HelpSettingRow(e: SettingEntry) {
     ) {
         Column(Modifier.weight(1f)) {
             Text(e.title, style = MaterialTheme.typography.bodyLarge)
-            Text(if (e.where == "설정") "설정" else "설정 › ${e.where}", style = MaterialTheme.typography.bodySmall,
+            Text(settingsPath(e.where), style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -1335,18 +1371,17 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
     SoftCard(Modifier.padding(top = 12.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // [GUIDE-07] Not found: the words go to the developer as 건의·제안, with the kind of work.
+            // PC ce2b7091: 못 찾았을 때 '없다고 알리기'·'의견 보내기'·'그대로 물어볼까요?'가 겹치던 것 → 두 단추.
             if (query.isNotBlank()) {
-                Text("못 찾았나요?", style = MaterialTheme.typography.titleMedium)
-                Text("찾던 말과 지금 달력의 일하는 방식을 담아 의견으로 보내요. 있는 기능이면 어디 있는지 답해 드리고, 없으면 만들 때 참고해요.",
+                Text("‘$query’ 못 찾았나요?", style = MaterialTheme.typography.titleMedium)
+                Text("이름 없이 이 말만 알리거나, 지금 달력의 일하는 방식을 담아 개발자에게 보내요. 있는 기능이면 어디 있는지 답해 드려요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Button(onClick = onIdea, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    Icon(Icons.Outlined.QuestionAnswer, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("못 찾았어요 · 의견 보내기")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SearchMissButton("help", query, Modifier.weight(1f))
+                    Button(onClick = onIdea, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) { Text("개발자에게 보내기") }
                 }
-                HorizontalDivider(Modifier.padding(vertical = 4.dp))
-            }
-            Text(if (query.isBlank()) "찾는 답이 없나요?" else "‘$query’ 그대로 물어볼까요?", style = MaterialTheme.typography.titleMedium)
+            } else {
+            Text("찾는 답이 없나요?", style = MaterialTheme.typography.titleMedium)
             Text(
                 if (vm.online) "개발자가 직접 읽고 답해요. 답이 오면 설정 탭에 표시돼요."
                 else "메일로 물어보면 개발자가 직접 읽고 메일로 답해요.",
@@ -1356,6 +1391,7 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
                 Icon(if (vm.online) Icons.Outlined.QuestionAnswer else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (vm.online) "새 문의 쓰기" else "메일로 문의하기")
+            }
             }
             if (vm.online && !list.isNullOrEmpty()) {
                 Row(

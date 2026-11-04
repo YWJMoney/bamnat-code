@@ -1,0 +1,2587 @@
+[
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "오늘 근무 크게",
+   "summary": "오늘 칸이 크고 굵게, 근무 종류마다 칸 색이 달라요",
+   "desc": "위젯을 흘끗 봐도 오늘 근무가 보이게 오늘 칸을 굵은 큰 글자와 진한 색으로 채웠어요. 주간·저녁·야간·쉬는 날 칸이 저마다 다른 색이에요.\n누구에게 좋아요: 위젯으로 근무를 확인하는 분\n적용하면 바뀌는 것:\n· 오늘 칸 큰 글자\n· 근무 종류별 칸 색\n· 글자 크게\n· 오늘 메모 한 줄\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4280427042,
+     "corner": 18,
+     "text": "l"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4280427042,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4282339765,
+       "ink": 4294967295,
+       "weight": 900,
+       "size": 16
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4294959234,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "fill": 4294945681,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4288653530,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4291356361,
+       "fillA": 35
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4282339765,
+    "b": 4291152617,
+    "dir": 2,
+    "emoji": "📆"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "반투명 위젯",
+   "summary": "반투명 유리판 위젯, 야간 날은 보랏빛",
+   "desc": "배경 화면이 비치는 반투명 유리판이에요. 바탕은 60%만 덮고, 야간 날 칸만 보랏빛으로 물들어요.\n누구에게 좋아요: 배경 화면을 살리고 싶은 분\n적용하면 바뀌는 것:\n· 투명도 60%\n· 둥근 모서리 28\n· 야간 칸 보랏빛\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 60,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4280427042,
+     "corner": 28,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "fillA": 60,
+       "r": 28,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4280427042,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4286470082,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4289961435,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4292932337,
+       "fillA": 35
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "circle",
+       "at": "widget",
+       "x": 880,
+       "y": 120,
+       "w": 90,
+       "h": 90,
+       "fill": 4289961435,
+       "fillA": 20
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293128957,
+    "b": 4289961435,
+    "dir": 2,
+    "emoji": "🫧"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "네온사인 위젯",
+   "summary": "검은 바탕 네온 글자, 오늘은 청록으로 빛나요",
+   "desc": "까만 위젯에 청록·분홍 네온 글자를 얹었어요. 오늘 칸은 청록, 야간 날은 분홍 글자예요.\n누구에게 좋아요: 어두운 배경 화면을 쓰는 분\n적용하면 바뀌는 것:\n· 검은 바탕\n· 오늘 청록\n· 야간 분홍 글자\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4278848018,
+     "ink": 4292933626,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4278848018,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4294918273,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4292933626
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4278248959,
+       "ink": 4278190080,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "ink": 4294918273,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "ink": 4285132974
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278190080,
+    "b": 4278248959,
+    "dir": 2,
+    "emoji": "🌃"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "누런 종이 위젯",
+   "summary": "누런 종이색에 손글씨, 쉬는 날은 연필 밑줄",
+   "desc": "종이 수첩을 붙여 둔 것 같은 위젯이에요. 손글씨 글꼴에 쉬는 날은 연필 밑줄이 그어져요.\n누구에게 좋아요: 아날로그 다이어리 느낌을 좋아하는 분\n적용하면 바뀌는 것:\n· 종이색 바탕\n· 손글씨 글꼴\n· 쉬는 날 밑줄\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294702047,
+     "ink": 4283315246,
+     "corner": 6,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294702047,
+       "fillA": 92,
+       "r": 6,
+       "font": "nanumpen",
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4283315246,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4283315246
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4287458915,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "deco": "under",
+       "ink": 4285353025
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "text": "메모",
+       "at": "widget",
+       "x": 820,
+       "y": 90,
+       "w": 90,
+       "h": 20,
+       "ink": 4287458915,
+       "size": 10,
+       "weight": 700,
+       "font": "nanumpen"
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294965473,
+    "b": 4287458915,
+    "dir": 2,
+    "emoji": "📒"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "딸기우유 위젯",
+   "summary": "근무마다 파스텔 칸, 오늘은 딸기우유 분홍",
+   "desc": "주간 노랑, 저녁 살구, 야간 라벤더, 쉬는 날 민트, 모든 칸이 파스텔이에요. 오늘은 딸기우유 분홍으로 동그랗게.\n누구에게 좋아요: 귀여운 홈 화면을 원하는 분\n적용하면 바뀌는 것:\n· 근무별 파스텔 칸\n· 오늘 분홍\n· 둥근 칸\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294966012,
+     "ink": 4284301367,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294966012,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4284301367,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 14,
+       "ink": 4284301367
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294217649,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4294964637,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "fill": 4294954172,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4291937513,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4289912795,
+       "fillA": 35
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "🎀",
+       "at": "widget",
+       "x": 900,
+       "y": 120,
+       "w": 18,
+       "h": 18
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294491088,
+    "b": 4289915890,
+    "dir": 2,
+    "emoji": "🍬"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "검정에 금색",
+   "summary": "검정 위에 금색 글자, 공휴일은 금 밑줄",
+   "desc": "까만 바탕에 금색 글자를 얹은 고급스러운 위젯이에요. 오늘은 금색 칸, 공휴일은 금 밑줄이에요.\n누구에게 좋아요: 차분하고 고급스러운 화면을 좋아하는 분\n적용하면 바뀌는 것:\n· 검정·금색\n· 오늘 금색 칸\n· 공휴일 금 밑줄\n· 세리프 머리 글자\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4279308561,
+     "ink": 4294305464,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4279308561,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4292128567,
+       "weight": 700,
+       "size": 14,
+       "font": "playfair",
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4294305464
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4292128567,
+       "ink": 4279308561,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "ink": 4287396426
+      },
+      {
+       "id": "widget.cell",
+       "on": "holiday",
+       "ink": 4292128567,
+       "deco": "under",
+       "weight": 700
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279308561,
+    "b": 4292128567,
+    "dir": 2,
+    "emoji": "✨"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "그냥 흑백",
+   "summary": "선 하나 없는 흑백, 쉬는 날만 흐리게",
+   "desc": "아무것도 꾸미지 않은 흑백 위젯이에요. 일하는 날은 진하게, 쉬는 날은 흐리게만 바뀌어요.\n누구에게 좋아요: 깔끔한 홈 화면을 원하는 분\n적용하면 바뀌는 것:\n· 흑백\n· 쉬는 날 흐리게\n· 오늘 검정 칸\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": false,
+     "bg": 4294967295,
+     "ink": 4279308561,
+     "corner": 4,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "fillA": 92,
+       "r": 4,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4279308561,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4279308561
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4279308561,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 45
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294967295,
+    "b": 4278190080,
+    "dir": 2,
+    "emoji": "◻️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "곰돌이 위젯",
+   "summary": "곰돌이 스티커와 쉬는 날 하트",
+   "desc": "위젯 귀퉁이에 곰돌이가 앉아 있고, 쉬는 날 칸은 분홍으로 물들어요. 오늘은 주황이에요.\n누구에게 좋아요: 귀여운 것을 좋아하는 분\n적용하면 바뀌는 것:\n· 곰돌이·별 스티커\n· 쉬는 날 분홍\n· 오늘 주황\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294965488,
+     "ink": 4284301367,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294965488,
+       "fillA": 92,
+       "r": 18,
+       "font": "jua",
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4284301367,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4284301367
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294675456,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4294491088,
+       "fillA": 35
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "🧸",
+       "at": "widget",
+       "x": 920,
+       "y": 140,
+       "w": 22,
+       "h": 22
+      },
+      {
+       "emoji": "⭐",
+       "at": "widget",
+       "x": 80,
+       "y": 900,
+       "w": 14,
+       "h": 14
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294959282,
+    "b": 4294217649,
+    "dir": 2,
+    "emoji": "🧸"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "낮 근무 밤 근무",
+   "summary": "야간 칸은 남색 바탕 흰 글자, 주간은 햇빛 노랑",
+   "desc": "위젯 달력에서 야간 날은 밤하늘 남색 칸에 흰 글자, 주간은 햇빛 노랑이라 이번 달 리듬이 한눈에 보여요.\n누구에게 좋아요: 3교대 근무자\n적용하면 바뀌는 것:\n· 야간 남색 칸\n· 주간 노랑 칸\n· 저녁 주황 칸\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4280427042,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4280427042,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4293212469,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4279903102,
+       "ink": 4294967295
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4294959234
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "fill": 4294945681
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279903102,
+    "b": 4294956367,
+    "dir": 2,
+    "emoji": "🌗"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "이번 주 근무 한눈에",
+   "summary": "머리 띠가 진한 색으로, 오늘은 굵은 테두리 대신 진한 칸",
+   "desc": "위젯 머리를 진한 띠로 채워 '이번 주 근무'가 제목처럼 서고, 아래 칸은 근무 종류마다 연한 색이에요.\n누구에게 좋아요: 주 위젯을 쓰는 분\n적용하면 바뀌는 것:\n· 머리 띠\n· 근무별 연한 칸\n· 오늘 진한 칸\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4280427042,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "fill": 4278221163,
+       "r": 12,
+       "pad": 4,
+       "ink": 4294967295,
+       "weight": 700,
+       "size": 14,
+       "talign": "center"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4278221163,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4289912795,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "fill": 4294959282,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4291152617,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4294309365,
+       "fillA": 35
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278221163,
+    "b": 4289912795,
+    "dir": 2,
+    "emoji": "📊"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "출근·재택·당직 색",
+   "summary": "출근 날 파랑, 재택 날 초록, 당직 날 빨강",
+   "desc": "출근·재택·당직이 위젯에서 색으로 나뉘어요. 이번 주 재택이 며칠인지 위젯만 봐도 알아요.\n누구에게 좋아요: 출근과 재택이 섞인 일근\n적용하면 바뀌는 것:\n· 출근 파랑\n· 재택 초록\n· 당직 빨강 글자\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "DAY"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4280427042,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4280427042,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4279592384,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4287679225,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.other",
+       "fill": 4289058471,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.long",
+       "ink": 4291176488,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 50
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280191205,
+    "b": 4282622023,
+    "dir": 2,
+    "emoji": "💼"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "알바 가는 날만",
+   "summary": "알바 가는 날만 노란 칸, 나머지는 흐리게",
+   "desc": "알바 가는 날만 노란 칸으로 콕 찍히고, 쉬는 날은 흐리게 물러나요. 이번 달 몇 번 가는지 바로 보여요.\n누구에게 좋아요: 주 몇 번 알바하는 분\n적용하면 바뀌는 것:\n· 근무 날 노란 칸\n· 쉬는 날 흐리게\n· 레몬 바탕\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "HOURLY"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294966759,
+     "ink": 4284301367,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294966759,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4284301367,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4284301367
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294551589,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4294963574,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "fill": 4294959234,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4294956367,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 40
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294964637,
+    "b": 4294551589,
+    "dir": 2,
+    "emoji": "🍋"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "일한 날 주황 도장",
+   "summary": "일한 날 칸에 주황 도장, 쉬는 날은 회색",
+   "desc": "현장에 나간 날마다 칸이 안전 주황으로 찍혀요. 이번 달 몇 날 나갔는지 위젯에서 세어 봐요.\n누구에게 좋아요: 일당으로 일하는 현장 근무자\n적용하면 바뀌는 것:\n· 일한 날 주황 칸\n· 쉬는 날 회색\n· 안전모 스티커\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "FIELD"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294965488,
+     "ink": 4282263331,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294965488,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4282263331,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4282263331
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294930176,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4294948685,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.long",
+       "fill": 4294937189,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 45
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "⛑️",
+       "at": "widget",
+       "x": 900,
+       "y": 120,
+       "w": 18,
+       "h": 18
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294930176,
+    "b": 4294959282,
+    "dir": 2,
+    "emoji": "🦺"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "문 연 날 초록",
+   "summary": "문 연 날 초록, 쉬는 날 회색, 오늘은 가게 색",
+   "desc": "가게를 연 날과 쉬는 날이 위젯에서 색으로 나뉘어요. 오늘 칸은 가게 간판처럼 진한 초록이에요.\n누구에게 좋아요: 가게를 하는 분\n적용하면 바뀌는 것:\n· 영업일 초록\n· 휴무 회색\n· 간판 초록 오늘\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "BUSINESS"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294376438,
+     "ink": 4279983648,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294376438,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4279983648,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4279983648
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4281236786,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4291356361,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.long",
+       "fill": 4289058471,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "holiday",
+       "ink": 4291176488,
+       "deco": "under",
+       "weight": 700
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4281236786,
+    "b": 4291356361,
+    "dir": 2,
+    "emoji": "🏪"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "장 쉬는 날 흐리게",
+   "summary": "주말·공휴일(장 쉬는 날)은 흐리게, 평일은 또렷하게",
+   "desc": "장이 열리는 평일은 또렷하게, 주말과 공휴일은 흐리게 보여요. 이번 달 거래할 수 있는 날이 한눈에 들어와요.\n누구에게 좋아요: 장 열리는 날을 챙기는 투자자\n적용하면 바뀌는 것:\n· 주말·공휴일 흐리게\n· 차분한 남색\n· 오늘 진한 칸\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4279509035,
+     "ink": 4292932337,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4279509035,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4292932337,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4292932337
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4280723098,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469,
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205,
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "holiday",
+       "alpha": 40
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4280693304,
+    "b": 4286630852,
+    "dir": 2,
+    "emoji": "📈"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "빨간 날 밑줄",
+   "summary": "공휴일이 빨간 밑줄, 공휴일에 일하면 금색 칸",
+   "desc": "공휴일은 빨간 밑줄로, 공휴일에 근무가 잡힌 날은 금색 칸으로 보여 휴일 근무를 놓치지 않아요.\n누구에게 좋아요: 공휴일 근무가 잦은 분\n적용하면 바뀌는 것:\n· 공휴일 빨간 밑줄\n· 주말 색\n· 오늘 진한 빨강\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4280427042,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4280427042,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4280427042
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4293212469,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4294965473,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "fill": 4294965473,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4294965473,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.long",
+       "fill": 4294965473,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "holiday",
+       "ink": 4293212469,
+       "deco": "under",
+       "weight": 700
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293212469,
+    "b": 4294956367,
+    "dir": 2,
+    "emoji": "🎌"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "바닷가 위젯",
+   "summary": "파도 파랑 바탕, 쉬는 날은 모래색",
+   "desc": "파란 바다 같은 위젯에 쉬는 날은 모래색 칸이 떠 있어요. 오늘은 흰 물거품 칸이에요.\n누구에게 좋아요: 시원한 색을 좋아하는 분\n적용하면 바뀌는 것:\n· 바다 파랑 바탕\n· 쉬는 날 모래색\n· 오늘 흰 칸\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4278278043,
+     "ink": 4292998654,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4278278043,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4292998654,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4292998654
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294967295,
+       "ink": 4278278043,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4294959282,
+       "fillA": 60,
+       "ink": 4283315246
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "emoji": "🐚",
+       "at": "widget",
+       "x": 900,
+       "y": 120,
+       "w": 18,
+       "h": 18
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278351805,
+    "b": 4294959282,
+    "dir": 2,
+    "emoji": "🌊"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "초록 숲 위젯",
+   "summary": "초록 숲 바탕, 일하는 날은 잎 색이 진해져요",
+   "desc": "초록 위젯에 일하는 날은 짙은 잎, 쉬는 날은 연두로 보여요. 오늘은 햇살 노랑이에요.\n누구에게 좋아요: 자연 색을 좋아하는 분\n적용하면 바뀌는 것:\n· 숲 초록 바탕\n· 근무 날 짙은 초록\n· 오늘 햇살 노랑\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294047977,
+     "ink": 4279983648,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294047977,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4279983648,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4279983648
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294688813,
+       "ink": 4279983648,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4289648001,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "fill": 4288466021,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4285046584,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.long",
+       "fill": 4286362434,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4292668872,
+       "fillA": 35
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279983648,
+    "b": 4292668872,
+    "dir": 2,
+    "emoji": "🌲"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "옛날 게임기 위젯",
+   "summary": "픽셀 글꼴과 초록 화면, 야간은 깜빡이는 색",
+   "desc": "옛날 게임기 화면 같은 초록 픽셀 위젯이에요. 야간 날은 밝은 초록, 쉬는 날은 어두운 초록이에요.\n누구에게 좋아요: 레트로 감성을 좋아하는 분\n적용하면 바뀌는 것:\n· 픽셀 글꼴\n· 게임기 초록\n· 야간 밝은 초록\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4279187471,
+     "ink": 4288396303,
+     "corner": 2,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4279187471,
+       "fillA": 92,
+       "r": 2,
+       "font": "vt323",
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4288396303,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 0,
+       "ink": 4288396303
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4288396303,
+       "ink": 4279187471,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "ink": 4292933840,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 50
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4279187471,
+    "b": 4288396303,
+    "dir": 2,
+    "emoji": "👾"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "명조체 위젯",
+   "summary": "명조 머리 글자와 얇은 글자, 주말만 색",
+   "desc": "잡지 같은 명조 머리 글자에 칸 글자는 가늘게, 주말과 공휴일에만 색이 들어가요.\n누구에게 좋아요: 단정한 글꼴을 좋아하는 분\n적용하면 바뀌는 것:\n· 명조 머리\n· 얇은 칸 글자\n· 주말·공휴일 색\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294638327,
+     "ink": 4280693304,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294638327,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4280693304,
+       "weight": 700,
+       "size": 16,
+       "font": "nanummyeongjo",
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4280693304,
+       "weight": 300
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4281812815,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "holiday",
+       "ink": 4291176488,
+       "deco": "under",
+       "weight": 700
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294638330,
+    "b": 4281812815,
+    "dir": 2,
+    "emoji": "🖋️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "글씨 큰 위젯",
+   "summary": "글자 크게, 바탕은 불투명, 오늘은 노란 칸",
+   "desc": "멀리서도 보이도록 글자를 크게 키우고 바탕을 완전히 덮었어요. 오늘은 노란 칸에 검은 글자예요.\n누구에게 좋아요: 작은 글자가 불편한 분\n적용하면 바뀌는 것:\n· 글자 크게\n· 불투명 바탕\n· 오늘 노란 칸\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 100,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294967295,
+     "ink": 4278190080,
+     "corner": 18,
+     "text": "l"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294967295,
+       "fillA": 100,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4278190080,
+       "weight": 700,
+       "size": 18,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4278190080
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294961979,
+       "ink": 4278190080,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "ink": 4281236786
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294961979,
+    "b": 4280361249,
+    "dir": 2,
+    "emoji": "🔍"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "저녁노을 위젯",
+   "summary": "노을 주황 바탕, 저녁 근무 날은 보랏빛",
+   "desc": "해 질 녘 하늘 같은 주황 위젯이에요. 저녁 근무 날은 보랏빛, 야간은 남색으로 저물어요.\n누구에게 좋아요: 따뜻한 색을 좋아하는 분\n적용하면 바뀌는 것:\n· 노을 바탕\n· 저녁 보라\n· 야간 남색\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294964192,
+     "ink": 4283315246,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294964192,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4283315246,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4283315246
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4294930499,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "fill": 4291728344,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "fill": 4288653530,
+       "fillA": 35
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "fill": 4294954112,
+       "fillA": 35
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "circle",
+       "at": "widget",
+       "x": 900,
+       "y": 900,
+       "w": 120,
+       "h": 120,
+       "fill": 4294930499,
+       "fillA": 18
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294930499,
+    "b": 4286470082,
+    "dir": 2,
+    "emoji": "🌇"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "연보라 위젯",
+   "summary": "연보라 바탕, 쉬는 날 민트, 오늘 진보라",
+   "desc": "연보라 위젯에 쉬는 날은 민트 칸, 오늘은 진보라 칸이에요.\n적용하면 바뀌는 것:\n· 연보라 바탕\n· 쉬는 날 민트\n· 오늘 진보라\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294374140,
+     "ink": 4283045004,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294374140,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4283045004,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4283045004
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4286470082,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4289912795,
+       "fillA": 35
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4293781494,
+    "b": 4286470082,
+    "dir": 2,
+    "emoji": "💜"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "타자기 위젯",
+   "summary": "고정폭 글자 흑백 위젯, 일하는 날만 굵게",
+   "desc": "고정폭 글자의 흑백 위젯이에요. 일하는 날만 굵고, 쉬는 날은 흐려요.\n적용하면 바뀌는 것:\n· 고정폭 글자\n· 근무 날 굵게\n· 쉬는 날 흐리게\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294638330,
+     "ink": 4280361249,
+     "corner": 6,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294638330,
+       "fillA": 92,
+       "r": 6,
+       "font": "jetbrainsmono",
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4280361249,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4280361249
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4280361249,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.day",
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.eve",
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.long",
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 45
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294638330,
+    "b": 4280361249,
+    "dir": 2,
+    "emoji": "⌨️"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "제주 귤 위젯",
+   "summary": "주황 귤색 바탕, 오늘 초록 잎 칸",
+   "desc": "귤색 위젯에 오늘 칸은 초록 잎색이에요. 쉬는 날은 연한 노랑이에요.\n적용하면 바뀌는 것:\n· 귤색 바탕\n· 오늘 초록\n· 쉬는 날 노랑\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "light",
+     "memo": true,
+     "bg": 4294964192,
+     "ink": 4283315246,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4294964192,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4283315246,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4283315246
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4282622023,
+       "ink": 4294967295,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "fill": 4294964637,
+       "fillA": 35
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4294948685,
+    "b": 4284922730,
+    "dir": 2,
+    "emoji": "🍊"
+   }
+  }
+ },
+ {
+  "recipe": {
+   "format": "bamnat-recipe",
+   "v": 1,
+   "title": "별 뜬 밤하늘",
+   "summary": "짙은 남색 바탕, 야간 날 노란 별빛 글자",
+   "desc": "짙은 남색 위젯에 야간 날은 노란 별빛 글자, 오늘은 하늘색 칸이에요.\n적용하면 바뀌는 것:\n· 남색 바탕\n· 야간 별빛 글자\n· 오늘 하늘색\n주의할 점: 홈 화면 위젯 모양만 바뀌어요. 위젯은 다음에 새로 그려질 때(자정, 근무를 바꿀 때) 바뀌어요",
+   "styles": [
+    "SHIFT",
+    "DAY",
+    "HOURLY",
+    "FIELD",
+    "BUSINESS",
+    "INVEST"
+   ],
+   "pieces": [
+    {
+     "kind": "widget",
+     "alpha": 92,
+     "theme": "dark",
+     "memo": true,
+     "bg": 4278915110,
+     "ink": 4293454582,
+     "corner": 18,
+     "text": "m"
+    },
+    {
+     "kind": "parts",
+     "parts": [
+      {
+       "id": "widget",
+       "fill": 4278915110,
+       "fillA": 92,
+       "r": 18,
+       "pad": 8
+      },
+      {
+       "id": "widget.head",
+       "ink": 4293454582,
+       "weight": 700,
+       "size": 14,
+       "talign": "start"
+      },
+      {
+       "id": "widget.cell",
+       "r": 8,
+       "ink": 4293454582
+      },
+      {
+       "id": "widget.cell",
+       "on": "today",
+       "fill": 4286698746,
+       "ink": 4278915110,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "sun",
+       "ink": 4293212469
+      },
+      {
+       "id": "widget.cell",
+       "on": "sat",
+       "ink": 4280191205
+      },
+      {
+       "id": "widget.cell",
+       "on": "dim",
+       "alpha": 40
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.night",
+       "ink": 4294964637,
+       "weight": 800
+      },
+      {
+       "id": "widget.cell",
+       "on": "role.off",
+       "alpha": 50
+      }
+     ]
+    }
+   ],
+   "cover": {
+    "a": 4278915110,
+    "b": 4294964637,
+    "dir": 2,
+    "emoji": "🌌"
+   }
+  }
+ }
+]

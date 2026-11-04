@@ -36,7 +36,8 @@ import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.ArrowDropDown
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -153,6 +154,8 @@ internal fun MonthSummaryBar(
     val spoken = figures.joinToString(", ") { f -> "${f.label} ${f.value}" + f.notes.joinToString("") { " $it" } } + (versus?.let { ", $it" } ?: "")
     val target = when (overview.focus) {
         CalendarFocus.SHIFTS -> "근무·급여 열기"
+        // [R136-17] 1.36 (리뷰 R-34): a shop's and field work's tab is 장부.
+        CalendarFocus.JOBS, CalendarFocus.SALES -> "장부 탭 열기"
         else -> "가계부 탭 열기"
     }
     Surface(
@@ -266,10 +269,23 @@ private fun FigureColumn(f: Figure, modifier: Modifier) {
  * or as a list.
  */
 @Composable
-internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit, onLegend: () -> Unit, modifier: Modifier = Modifier) {
+internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit, onLegend: () -> Unit, modifier: Modifier = Modifier, boardLabel: String? = null) {
     val haptics = LocalHapticFeedback.current
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onLegend) { Icon(Icons.Outlined.Info, "달력 표시 안내", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (boardLabel != null) {
+            // [TAB-04] PC 확인 bad7d860 사용성 제안: an icon alone did not say it opens 판 고르기, so the button reads "월 ▾".
+            androidx.compose.material3.FilledTonalButton(
+                onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onListView(!listView) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 10.dp, end = 6.dp),
+                modifier = Modifier.heightIn(min = 40.dp).semantics { contentDescription = "달력 판 고르기, 지금 $boardLabel" },
+            ) {
+                Icon(if (listView) Icons.AutoMirrored.Filled.ViewList else Icons.Filled.CalendarMonth, null, Modifier.size(18.dp))
+                Text(boardLabel, style = MaterialTheme.typography.labelLarge, maxLines = 1, modifier = Modifier.padding(start = 4.dp))
+                Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp))
+            }
+            return@Row
+        }
         // [CAL-08] One button that shows the other view, so the month's shift counts keep their room beside it.
         FilledTonalIconButton(
             onClick = { haptics.performHapticFeedback(HapticFeedbackType.SegmentTick); onListView(!listView) },

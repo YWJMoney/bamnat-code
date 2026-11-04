@@ -14,6 +14,14 @@ import java.time.Instant
 class SettingsSearchTest {
     private fun first(query: String) = SettingsIndex.search(query).firstOrNull()?.title
 
+    /** PC e20cfe53: "설정 › 설정 › 도움말과 문의" was shown; every place starts with 설정 once. */
+    @Test fun aPlaceStartsWithSettingsOnce() {
+        assertEquals("설정", settingsPath("설정"))
+        assertEquals("설정 › 도움말과 문의", settingsPath("설정 › 도움말과 문의"))
+        assertEquals("설정 › 알림", settingsPath("알림"))
+        SettingsIndex.search("문의").forEach { assertFalse(it.where, settingsPath(it.where).startsWith("설정 › 설정")) }
+    }
+
     @Test fun everydayWordsFindTheSetting() {
         assertEquals("알람음", first("알람 소리"))
         assertEquals("테마", first("다크 모드"))
@@ -23,6 +31,21 @@ class SettingsSearchTest {
         assertEquals("날짜 칸 아래", first("음력"))
         assertEquals("다시 울림 간격", first("스누즈"))
         assertEquals("워치·휴대폰 수면 기록 함께 보기", first("갤럭시 워치"))
+    }
+
+    /** [MAT-05] PC 확인 4·5차: 글꼴 finds the studio's three fonts, 앱 전체 first. */
+    @Test fun fontFindsTheStudiosFonts() {
+        val titles = SettingsIndex.search("글꼴").map { it.title }
+        assertEquals("앱 전체 글꼴", titles.first())
+        assertTrue(titles.toString(), titles.containsAll(listOf("화면마다 글꼴", "날짜 숫자 글꼴")))
+    }
+
+    @Test fun motionFindsTheStudiosMotion() {
+        for (q in listOf("움직임", "파티클", "애니메이션", "효과")) {
+            val titles = SettingsIndex.search(q).map { it.title }
+            assertTrue("$q: $titles", "움직임 효과" in titles)
+        }
+        assertTrue(SettingsIndex.search("애니메이션").map { it.title }.contains("부품 움직임"))
     }
 
     @Test fun endingsAreDropped() {

@@ -36,6 +36,8 @@ class FirstSetup(
     /** [CALI-05] A coworkers' setup from the server is in use now: counted on the server for that calendar. */
     private val used: (CompanyScope, AppliedSetup) -> Unit = { _, _ -> },
     private val today: () -> LocalDate = Today::date,
+    /** 1.36 PC C3: where the day of the first setup is kept (null in tests that do not ask). */
+    private val prefs: android.content.SharedPreferences? = null,
 ) {
     private val lock = Mutex()
 
@@ -58,9 +60,16 @@ class FirstSetup(
         keepCompany(company(), marked, used)
         settings.update { it.copy(workStyle = style, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }
         drafts.clear()
+        prefs?.edit()?.putString(DAY_KEY, today().toString())?.apply()
         _saved.value = saved
         saved
     }
+
+    /**
+     * 1.36 PC C3 (첫 설정 끝에 알림 허용 창 → 급여 시트 → 길잡이 시트 → 시작 단계 카드 → 친구 초대 카드가 연달아): on the day of the first
+     * setup only its own pay sheet asks; the others wait for the next day.
+     */
+    fun quietToday(): Boolean = prefs?.getString(DAY_KEY, null) == today().toString()
 
     /** A save the app was closed in the middle of is finished, never asked again. */
     suspend fun finishInterrupted() {
@@ -124,3 +133,5 @@ class FirstSetup(
         }
     }
 }
+
+private const val DAY_KEY = "first_setup_day"

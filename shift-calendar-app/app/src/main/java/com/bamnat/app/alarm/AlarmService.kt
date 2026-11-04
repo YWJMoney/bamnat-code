@@ -209,6 +209,10 @@ class AlarmService : Service() {
         inCallNow = callActive()
         _inCall.value = inCallNow
         startInForeground(ring)
+        // [ALRM-25] 1.36 (F-106, 빌드 7: 알림을 끈 폰은 소리만 나고 화면이 없었어요): with no notice to carry the full-screen
+        // screen, the screen itself, where Android lets it open (the app in front, or the alarm's own start); elsewhere the
+        // app's banner opens it.
+        if (!inCallNow && (!Notifications.canPost(this) || !Notifications.canUseFullScreen(this))) bringScreen()
 
         val settings = BootAlarms.ringSettings(this)
         // [WEAR-06] 1.31 N2: the watch rings too, or first. A mission alarm always rings on the phone (the watch can't do the mission).
@@ -628,6 +632,19 @@ class AlarmService : Service() {
             private set
         @Volatile var screenHiddenAt = 0L
             private set
+
+        @Volatile private var openedFor: Pair<Long, Boolean>? = null
+
+        /**
+         * [ALRM-25] True the first time the app asks to open the ringing screen for [ring] while it is not on screen; the
+         * banner's 끄기 and 다시 울림 stay for every later time.
+         */
+        fun openScreenOnce(ring: RingRequest): Boolean {
+            val key = ring.triggerAtMillis to ring.isSnooze
+            if (openedFor == key || screenShownAt != 0L && screenHiddenAt < screenShownAt) return false
+            openedFor = key
+            return true
+        }
 
         fun screenShown(now: Long = Today.millis()) { screenShownAt = now }
         fun screenHidden(now: Long = Today.millis()) { screenHiddenAt = now }

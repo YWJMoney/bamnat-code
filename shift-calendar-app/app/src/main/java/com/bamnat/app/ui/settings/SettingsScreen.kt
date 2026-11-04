@@ -68,6 +68,7 @@ import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.PersonAdd
 import androidx.compose.material.icons.outlined.PrivacyTip
+import androidx.compose.material.icons.outlined.Rule
 import androidx.compose.material.icons.outlined.SettingsBackupRestore
 import androidx.compose.material.icons.outlined.WorkOutline
 import androidx.compose.material.icons.outlined.WorkspacePremium
@@ -195,6 +196,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val adPrivacy: StateFlow<Boolean> = container.ads.privacyOptions
     fun showAdPrivacy(activity: android.app.Activity) = container.ads.showPrivacyOptions(activity)
 
+    /** 1.36 [INQ-07] 이 휴대폰이 보낸 정보 모두 지우기, where the privacy policy says it is. */
+    fun forgetEverythingSent(done: (String) -> Unit) {
+        viewModelScope.launch {
+            val counts = com.bamnat.app.ui.company.forgetEverythingSent(container)
+            done(counts?.words() ?: "인터넷에 연결한 뒤 다시 해 주세요")
+        }
+    }
+
     /** [MEMO-02] 메모 공유: 달력마다 따로, or calendars grouped to see each other's memos. */
     val memoSharing: StateFlow<com.bamnat.core.memo.MemoSharing> = container.memoSharing.state
     fun setMemoSharing(sharing: com.bamnat.core.memo.MemoSharing) = container.memoSharing.set(sharing)
@@ -261,6 +270,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     fun setAlarmsEnabled(on: Boolean) {
         update { it.copy(alarmsEnabled = on) }
+        // PC 확인 f6b585f8 (꺼 둔 알람이 다시 예약됐는데 누가 켰는지 기록이 없었어요): every turn of the master switch says where.
+        container.telemetry.event("alarms_switch", (if (on) "on" else "off") + " settings")
         if (!on) container.alarmScheduler.cancelSnooze()
     }
 
@@ -710,6 +721,9 @@ private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Comp
         TextButton(
             onClick = { InquiryLinks.ask(InquiryStart(about = "설정 > ${page.title}", help = true)) },
             modifier = Modifier.align(Alignment.CenterHorizontally),
+            // PC 확인 8d0cddf6 (사진 바탕의 설정 맨 아래 파랑이 보라 위에서 안 보여요): on a photo it takes the readable ink.
+            colors = if (com.bamnat.app.ui.decor.LocalPhotoGround.current == null) androidx.compose.material3.ButtonDefaults.textButtonColors()
+                else androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = com.bamnat.app.ui.decor.readableOnPhoto(MaterialTheme.colorScheme.primary)),
         ) {
             Icon(Icons.AutoMirrored.Outlined.HelpOutline, null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
@@ -772,8 +786,11 @@ private fun SettingsHub(
         Spacer(Modifier.size(4.dp))
         Shortcuts(onFound, work.workStyle)
         Spacer(Modifier.size(4.dp))
+        // 1.36 PC 재검토: the count of 근무 leaves the kinds put away out ('근무 3가지 · 안 쓰는 종류 3개').
+        val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
+        val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.titleFor(work.workStyle), summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle), selected == p,
+            GroupRow(p.icon, p.titleFor(work.workStyle), summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
         // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
@@ -887,7 +904,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
         ) {
             Column(Modifier.weight(1f)) {
                 Text(e.title, style = MaterialTheme.typography.bodyLarge)
-                Text(if (e.where == "설정") "설정" else "설정 › ${whereFor(e.where, screenStyle)}", style = MaterialTheme.typography.bodySmall,
+                Text(settingsPath(whereFor(e.where, screenStyle)), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -937,6 +954,8 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
             TextButton(onClick = { InquiryLinks.ask(InquiryStart(help = true, text = query)) }) { Text(if (nothing) "기능 찾기" else "도움말") }
         }
     }
+    // 1.36 누락 점검 N13: 아무것도 없으면 그 말을 이름 없이 알릴 수 있어요.
+    if (nothing) SearchMissRow("settings", query, Modifier.padding(start = 4.dp, top = 4.dp))
 }
 
 /** [UX-04] What people open most, one tap from the top: work, pay, sharing, the alarm's sound, a backup. */
@@ -968,6 +987,8 @@ private val SHORTCUTS = listOf(
     Triple("근무표 공유", "근무표 공유", Icons.Outlined.Share),
     Triple("알람음", "알람 소리", Icons.Outlined.MusicNote),
     Triple("백업 저장", "백업", Icons.Outlined.SettingsBackupRestore),
+    // [RUL-06] 1.36 PC 1차 확인: 규칙은 설정 › 알람 맨 아래에만 있어 찾기 어려웠어요.
+    Triple(com.bamnat.app.logic.LOGIC_ROW, "규칙·단추", Icons.Outlined.Rule),
 )
 
 /**
@@ -998,13 +1019,14 @@ internal const val HELP_TITLE = "자주 묻는 질문"
 
 /** How each group stands now, in a few words. */
 private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapshot?, hasPay: Boolean, notificationsOk: Boolean,
-                    style: com.bamnat.core.work.WorkStyle? = s.workStyle): String = when (page) {
+                    style: com.bamnat.core.work.WorkStyle? = s.workStyle, folded: Set<Long> = emptySet()): String = when (page) {
     // [J133-77] The kinds of day in the work's own word: 근무 for wages, 일정 for jobs, 영업 for a shop; none for trades.
     SettingsPage.WORK -> listOfNotNull(
         s.workStyle?.label ?: "일하는 방식 정하기",
-        snapshot?.shiftTypes?.count { !it.isOff }?.takeIf { it > 0 && style != com.bamnat.core.work.WorkStyle.INVEST }?.let {
+        snapshot?.shiftTypes?.count { !it.isOff && it.id !in folded }?.takeIf { it > 0 && style != com.bamnat.core.work.WorkStyle.INVEST }?.let {
             when (style) { com.bamnat.core.work.WorkStyle.FIELD -> "일정 종류 ${it}가지"; com.bamnat.core.work.WorkStyle.BUSINESS -> "영업시간 종류 ${it}개"; else -> "근무 ${it}가지" }
         },
+        snapshot?.shiftTypes?.count { !it.isOff && it.id in folded }?.takeIf { it > 0 }?.let { "안 쓰는 종류 ${it}개" },
     ).joinToString(" · ")
     SettingsPage.ALARM -> if (s.alarmsEnabled) "켜짐 · 다시 울림 ${s.snoozeMinutes}분 · ${s.ringMinutes}분 뒤 꺼짐" else "모두 꺼짐"
     // [SET-02] Notices first (or that they are off), then sleep, in one line.
@@ -1186,7 +1208,7 @@ private fun alarmFixes(
     val pkg = Uri.parse("package:${context.packageName}")
     val canPost = Notifications.canPost(context)
     return buildList {
-        if (!canPost) add(AlarmFix("알림이 꺼져 있어 잠금 화면에서 알람을 끌 수 없어요", "허용", askNotifications))
+        if (!canPost) add(AlarmFix("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications))
         else if (!Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
             add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
         }
@@ -1217,18 +1239,43 @@ internal class SettingsFiles(
     val shareCompany: () -> Unit,
 )
 
+/**
+ * PC 확인 d263030e (백업 파일 고르기에서 카드 그림을 누르면 Google 지갑이 열려요): the file picker is Android's, and it lists other
+ * apps that hand out files. 파일 불러오기 now opens where the last backup was saved, so the backup is there without going
+ * through that list. Only the saved file's address is kept, on this phone.
+ */
+internal object BackupPlace {
+    private const val PREFS = "backup_place"
+    private const val KEY = "last"
+
+    fun remember(context: Context, uri: Uri) {
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, uri.toString()).apply() }
+    }
+
+    fun last(context: Context): Uri? =
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)?.let(Uri::parse) }.getOrNull()
+
+    class Open : ActivityResultContracts.OpenDocument() {
+        override fun createIntent(context: Context, input: Array<String>): Intent =
+            super.createIntent(context, input).apply { last(context)?.let { putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, it) } }
+    }
+}
+
 @Composable
 private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     val context = LocalContext.current
     // Survives the app being closed behind the file picker, unlike the password itself.
     var sealedExport by rememberSaveable { mutableStateOf(false) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.FILE_MIME)) { uri ->
-        if (uri != null) vm.exportTo(context, uri, sealedExport)
+        if (uri != null) {
+            BackupPlace.remember(context, uri)
+            vm.exportTo(context, uri, sealedExport)
+        }
     }
     val icsLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/calendar")) { uri ->
         if (uri != null) vm.exportIcs(context, uri)
     }
-    val openLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val openLauncher = rememberLauncherForActivityResult(remember { BackupPlace.Open() }) { uri ->
         if (uri != null) vm.readFile(context, uri)
     }
     // [CAL-47] A file opened from a messenger after the setup: read here, as 파일 불러오기 does.

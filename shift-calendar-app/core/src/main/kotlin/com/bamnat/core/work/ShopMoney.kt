@@ -30,22 +30,32 @@ data class ShopMoney(
     val feeLabel: String get() = (cardFeeBp / 100.0).let { if (it == it.toLong().toDouble()) "${it.toLong()}%" else "%.2f".format(it).trimEnd('0') + "%" }
 }
 
-/** [SHOP-01] A month's sales by how they were paid. Days written only as a total count as 나누지 않음. */
-data class SalesSplit(val card: Long, val cash: Long, val transfer: Long, val delivery: Long, val unsplit: Long) {
-    val total: Long get() = card + cash + transfer + delivery + unsplit
+/**
+ * [SHOP-01] A month's sales by how they were paid. Days written only as a total count as 나누지 않음; 1.36 실사용 S20:
+ * the part of a day's sales written as 외상 in 하루 마감 shows as 외상.
+ */
+data class SalesSplit(val card: Long, val cash: Long, val transfer: Long, val delivery: Long, val unsplit: Long, val credit: Long = 0) {
+    val total: Long get() = card + cash + transfer + delivery + credit + unsplit
     /** The parts with their names, largest first, leaving out empty ones. */
     val parts: List<Pair<String, Long>> get() =
-        listOf("카드" to card, "현금" to cash, "계좌이체" to transfer, "배달앱" to delivery, "나누지 않음" to unsplit)
+        listOf("카드" to card, "현금" to cash, "계좌이체" to transfer, "배달앱" to delivery, "외상" to credit, "나누지 않음" to unsplit)
             .filter { it.second > 0 }.sortedByDescending { it.second }
 
     companion object {
-        fun of(month: YearMonth, sales: List<DailySales>): SalesSplit {
+        /** [creditOn]: what of a day's sales was written as 외상 (its 외상·미수 매출 받을 돈). */
+        fun of(month: YearMonth, sales: List<DailySales>, creditOn: (LocalDate) -> Long = { 0 }): SalesSplit {
             val days = sales.filter { YearMonth.from(it.date) == month }
+            fun rest(d: DailySales) = (d.sales - d.byMethod).coerceAtLeast(0)
+            fun credit(d: DailySales) = creditOn(d.date).coerceIn(0, rest(d))
             return SalesSplit(
                 card = days.sumOf { it.card }, cash = days.sumOf { it.cash }, transfer = days.sumOf { it.transfer }, delivery = days.sumOf { it.delivery },
-                unsplit = days.sumOf { (it.sales - it.byMethod).coerceAtLeast(0) },
+                unsplit = days.sumOf { rest(it) - credit(it) }, credit = days.sumOf(::credit),
             )
         }
+
+        /** 1.36: each day's 외상 from the 받을 돈 written for that day's sales. */
+        fun creditByDay(receivables: List<com.bamnat.core.money.Receivable>): Map<LocalDate, Long> =
+            receivables.filter { it.kind == com.bamnat.core.money.ReceivableKind.SALE }.groupBy { it.date }.mapValues { (_, l) -> l.sumOf { it.amount } }
     }
 }
 

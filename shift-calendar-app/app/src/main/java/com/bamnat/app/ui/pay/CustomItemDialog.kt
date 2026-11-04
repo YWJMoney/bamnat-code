@@ -40,7 +40,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Today
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -70,7 +70,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
+import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
@@ -911,7 +911,7 @@ private fun EffectBar(
                     val each = if (per && effect.times > 0 && !closed && draft.amount != null) (abs(gap).toDouble() / effect.times / 10).roundToLong() * 10 else null
                     if (each != null && each > 0 && draft.kind != ItemKind.PREMIUM) {
                         TextButton(onClick = { draft.amount = each }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("차이에 맞춰 1번에 ${won(each)}로 넣기")
+                            Text("차이에 맞춰 1번에 ${won(each)}으로 넣기")
                         }
                     }
                 }

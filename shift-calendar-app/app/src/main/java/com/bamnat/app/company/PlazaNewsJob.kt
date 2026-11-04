@@ -101,45 +101,71 @@ class PlazaNewsJob : JobService() {
             c.telemetry.event(DiagEvents.ALIVE)
             calendarPermission(c)
             if (!c.settingsRepository.current.plazaNews) return
-            runCatching { recipeNews(c) }
+            // 1.36 [VIL-05] 마을 V5 소식 하나로: 밤낮 소식 and 마을 장터 소식 in one notice, held through sleep and work.
+            val recipeLines = runCatching { c.recipes.newsLines() }.getOrDefault(emptyList())
             val changes = runCatching { receivedChanges(c) }.getOrDefault(emptyList())
             val digest = runCatching { digest(c) }.getOrNull()
-            val text = BamnatNews.text(digest?.plaza.orEmpty(), digest?.answers ?: 0, digest?.notices.orEmpty(), changes) ?: return
+            val text = BamnatNews.text(digest?.plaza.orEmpty(), digest?.answers ?: 0, digest?.notices.orEmpty(), changes)
+            if (text == null && recipeLines.isEmpty()) return
             val target = when {
-                text.onlyAnswers -> NoticeLinks.Target.INQUIRY
+                text == null -> NoticeLinks.Target.PLAZA
+                text.onlyAnswers && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
                 digest?.plaza.isNullOrEmpty() && changes.isNotEmpty() -> NoticeLinks.Target.TODAY
-                digest?.plaza.isNullOrEmpty() && (digest?.answers ?: 0) > 0 -> NoticeLinks.Target.INQUIRY
+                digest?.plaza.isNullOrEmpty() && (digest?.answers ?: 0) > 0 && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
                 else -> NoticeLinks.Target.PLAZA
             }
-            val n = NotificationCompat.Builder(c.appContext, Notifications.PLAZA_CHANNEL_ID)
+            val title = when {
+                text == null -> "마을 장터 소식"
+                recipeLines.isEmpty() -> text.title
+                else -> "밤낮·마을 소식"
+            }
+            val lines = (text?.lines.orEmpty() + recipeLines).take(MAX_LINES)
+            val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            // What waits is the notice as written now (the server's news is read once), added to any still waiting.
+            val held = heldOf(prefs)
+            val all = Held(title.takeIf { held == null } ?: "밤낮·마을 소식", ((held?.lines ?: emptyList()) + lines).distinct().take(MAX_LINES),
+                if (held != null && held.target != target) NoticeLinks.Target.PLAZA else target)
+            keep(prefs, all)
+            if (com.bamnat.app.sleep.QuietHold.holdIfAsleep(c.appContext, com.bamnat.app.sleep.QuietHold.Source.VILLAGE, Today.dateTime())) return
+            postHeld(c.appContext)
+        }
+
+        /** 1.36 [VIL-05] One 소식 notice at most: what [check] wrote, posted now or when the user is off work and awake. */
+        private data class Held(val title: String, val lines: List<String>, val target: NoticeLinks.Target)
+        private const val K_HELD = "held"
+        private const val MAX_LINES = 7
+
+        private fun heldOf(prefs: android.content.SharedPreferences): Held? = prefs.getString(K_HELD, null)?.let { raw ->
+            runCatching {
+                val o = JSONObject(raw)
+                Held(o.getString("title"), o.getJSONArray("lines").let { a -> List(a.length()) { a.getString(it) } },
+                    NoticeLinks.Target.valueOf(o.getString("target")))
+            }.getOrNull()
+        }
+
+        private fun keep(prefs: android.content.SharedPreferences, h: Held) {
+            prefs.edit().putString(K_HELD, JSONObject().put("title", h.title).put("lines", org.json.JSONArray(h.lines)).put("target", h.target.name).toString()).apply()
+        }
+
+        /** Posts the 소식 waiting, if any (from [check] at once, or from [com.bamnat.app.sleep.QuietHold] after work or sleep). */
+        fun postHeld(context: Context) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val h = heldOf(prefs) ?: return
+            prefs.edit().remove(K_HELD).apply()
+            if (h.lines.isEmpty()) return
+            val n = NotificationCompat.Builder(context, Notifications.PLAZA_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(text.title)
-                .setContentText(text.lines.first())
-                .setStyle(NotificationCompat.InboxStyle().also { s -> text.lines.forEach(s::addLine) })
-                .setContentIntent(Notifications.open(c.appContext, target, 2203))
+                .setContentTitle(h.title)
+                .setContentText(h.lines.first())
+                .setStyle(NotificationCompat.InboxStyle().also { s -> h.lines.forEach(s::addLine) })
+                .setContentIntent(Notifications.open(context, h.target, 2203))
                 .setAutoCancel(true)
                 .build()
-            Notifications.post(c.appContext, Notifications.PLAZA_ID, n)
+            Notifications.post(context, Notifications.PLAZA_ID, n)
             // [OBS-01] 기록 지점 10.
-            c.journal.note(com.bamnat.core.journal.JournalKind.NEWS)
+            context.appContainer.journal.note(com.bamnat.core.journal.JournalKind.NEWS)
         }
 
-        /** [RCX-02][RCX-07][RCX-10] 1.35 나눔 판 소식 in a notice of its own (새 판, 팔로우한 분의 새 레시피, 만든 분의 답). */
-        private suspend fun recipeNews(c: AppContainer) {
-            val lines = c.recipes.newsLines()
-            if (lines.isEmpty()) return
-            val n = NotificationCompat.Builder(c.appContext, Notifications.PLAZA_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("마을 장터 소식")
-                .setContentText(lines.first())
-                .setStyle(NotificationCompat.InboxStyle().also { s -> lines.forEach(s::addLine) })
-                .setContentIntent(Notifications.open(c.appContext, NoticeLinks.Target.PLAZA, 2204))
-                .setAutoCancel(true)
-                .build()
-            Notifications.post(c.appContext, RECIPE_NEWS_ID, n)
-        }
-
-        private const val RECIPE_NEWS_ID = 4405
 
         /** What came from the server: the plaza part (empty when it is not asked), answers and notice titles. */
         data class Digest(val plaza: List<PlazaNewsItem>, val answers: Int, val notices: List<String>)

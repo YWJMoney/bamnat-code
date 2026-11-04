@@ -185,6 +185,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private val _listView = MutableStateFlow(runCatching { viewPrefs.getBoolean(K_LIST, false) }.getOrDefault(false))
     val listView: StateFlow<Boolean> = _listView.asStateFlow()
 
+    /** [TAB-04] 1.36 달력 판, kept with the other tabs' views ([com.bamnat.core.layout.TabViews]). */
+    fun setBoard(board: com.bamnat.core.layout.CalendarBoard) = container.settingsRepository.update {
+        it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(cal = board).encode())
+    }
+
     fun setListView(on: Boolean) {
         _listView.value = on
         viewPrefs.edit().putBoolean(K_LIST, on).apply()
@@ -656,6 +661,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         val tool = _paint.value as? PaintTool.Shift ?: return false
         val snap = snapshot.value ?: return false
         val type = snap.typesById[tool.shiftTypeId] ?: return false
+        // 1.36 실사용 S13 (요일이 그때그때 다른 알바가 칠할 때마다 '대근으로 넣을까요?'): with no roster or fixed days, a painted day
+        // is simply a day worked, never a 대근 (which could add holiday premiums).
+        if (!snap.hasPattern) return false
         val (off, work) = dates.distinct().partition { offDayFor(snap.resolver.resolve(it), type) }
         if (off.isEmpty()) return false
         val ask = CoverAsk(type, off, work)
@@ -1360,7 +1368,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [CUST-01] 화면 꾸미기 changes the app's own settings, not the calendar's view of them. */
     fun updateSettings(change: (com.bamnat.app.data.AppSettings) -> com.bamnat.app.data.AppSettings) = container.settingsRepository.update(change)
 
-    fun setAlarmsEnabled(on: Boolean) = container.settingsRepository.update { it.copy(alarmsEnabled = on) }
+    fun setAlarmsEnabled(on: Boolean) {
+        container.settingsRepository.update { it.copy(alarmsEnabled = on) }
+        // PC 확인 f6b585f8: where the master switch was turned, for 알람 점검.
+        container.telemetry.event("alarms_switch", (if (on) "on" else "off") + " calendar")
+    }
 
     /** [DAY-04] The day view's groups in the user's order; empty goes back to the default. */
     fun setDayGroupOrder(order: List<String>) = container.settingsRepository.update { it.copy(dayGroupOrder = order) }
@@ -1402,6 +1414,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.appScope.launch {
             val before = if (entry.id == 0L) null else money.book.first().entries.firstOrNull { it.id == entry.id }
             val saved = money.save(entry)
+            // [RUL-04] 1.36 규칙 '가계부에 적으면'.
+            com.bamnat.app.logic.LogicRunner.onMoneySaved(container, saved.date)
             // [LEDG-18] When the category changed, offer the other lines from this place instead.
             val same = before?.let { money.samePlace(saved, it.category) }.orEmpty()
             if (same.isNotEmpty()) {

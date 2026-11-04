@@ -6,10 +6,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.AlertDialog
+import com.bamnat.app.ui.components.Button
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -59,8 +62,9 @@ private fun TextSizePreview(step: Int) {
             Column(Modifier.padding(12.dp)) {
                 Text("미리 보기 · ${TextSize.LABELS[step.coerceIn(0, TextSize.LABELS.lastIndex)]}", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("10월 28일 (수) · 주간", style = MaterialTheme.typography.titleSmall)
-                Text("09:00 – 18:00 · 이번 달 예상 급여 2,840,000원", style = MaterialTheme.typography.bodySmall)
+                // [R136-17] 1.36: the same for every kind of work (no 주간 or 예상 급여 for a shop or an investor).
+                Text("10월 28일 (수) · 달력", style = MaterialTheme.typography.titleSmall)
+                Text("09:00 – 18:00 · 메모 2개 · 이번 달 2,840,000원", style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -77,14 +81,35 @@ private fun scaleOf(chosen: Int, step: Int): Float {
 @Composable
 internal fun TextSizeRow(step: Int, onPick: (Int) -> Unit) {
     var pending by androidx.compose.runtime.saveable.rememberSaveable(step) { androidx.compose.runtime.mutableIntStateOf(step) }
+    // 1.36 PC 재검토: the size before the last 이 크기로, for 되돌리기 right there (until this screen is left).
+    var before by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<Int?>(null) }
+    fun label(i: Int) = TextSize.LABELS[i.coerceIn(0, TextSize.LABELS.lastIndex)]
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("글자 크기", style = MaterialTheme.typography.titleSmall)
-        Text("${TextSize.LABELS[step.coerceIn(0, TextSize.LABELS.lastIndex)]} · 휴대폰 글꼴 크기와 함께 적용돼요. 화면 배치는 글자에 맞춰 바뀌어요",
+        Text("${label(step)} · 휴대폰 글꼴 크기와 함께 적용돼요. 화면 배치는 글자에 맞춰 바뀌어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextSizePicker(step, { pending = it }, selected = pending)
+        // 1.36 PC 재검토·PC 확인 b4735c07 (고르면 미리 보기만 바뀌고 적용된 줄 알았어요): the button right under the chips, full width,
+        // saying which size; the whole app still changes only on it ([J133-23]: a tap on a chip does not make the screen jump).
+        // PC 확인 2b9f19ab: the button came under the tab bar at the bottom; it is scrolled into sight as it appears.
+        val bring = androidx.compose.runtime.remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+        androidx.compose.runtime.LaunchedEffect(pending) {
+            if (pending != step) { kotlinx.coroutines.delay(150); runCatching { bring.bringIntoView() } }
+        }
+        val back = before?.takeIf { it != step }
+        if (pending != step) {
+            Button(onClick = { before = step; onPick(pending) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).bringIntoViewRequester(bring)) {
+                // PC 확인 c085c16a: '보통'으로, '크게'로 (the particle after the word's last letter).
+                Text("‘${label(pending)}’${com.bamnat.app.ui.Fmt.ro(label(pending))} 앱 전체 바꾸기")
+            }
+        } else if (back != null) {
+            androidx.compose.material3.OutlinedButton(onClick = { before = null; onPick(back) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("되돌리기 · 전 크기 ‘${label(back)}’${com.bamnat.app.ui.Fmt.ro(label(back))}")
+            }
+        } else Text("칩을 누르면 아래 미리 보기만 바뀌어요. 마음에 들면 나오는 단추로 앱 전체에 적용해요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val scale = scaleOf(step, pending)
         CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, scale)) { TextSizePreview(pending) }
-        if (pending != step) Button(onClick = { onPick(pending) }) { Text("이 크기로") }
     }
 }
 

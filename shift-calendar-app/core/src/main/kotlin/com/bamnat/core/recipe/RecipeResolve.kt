@@ -30,7 +30,24 @@ object RecipeResolve {
         }
     }
 
-    fun piece(r: Recipe, p: Piece, answers: Map<String, Any>): Map<String, Any?> = resolve(r, p.values, answers) as Map<String, Any?>
+    @Suppress("UNCHECKED_CAST")
+    fun piece(r: Recipe, p: Piece, answers: Map<String, Any>): Map<String, Any?> {
+        val out = resolve(r, p.values, answers) as Map<String, Any?>
+        if (p.kind != PieceKind.PARTS) return out
+        // [BLU-12] 1.36 토큰의 어두운 화면 색: a part line (with no state of its own) that takes a token gets an `on: dark` line with the
+        // token's dark colour, so the phone's dark screens keep the maker's dark colours. A dark line the maker wrote wins.
+        val raw = (p.values["parts"] as? List<Map<String, Any?>>).orEmpty()
+        val lines = (out["parts"] as? List<Map<String, Any?>>).orEmpty().toMutableList()
+        for (l in raw) {
+            if (l["on"] != null) continue
+            val dark = l.entries.mapNotNull { (k, v) -> (v as? Ref.Token)?.let { t -> r.token(t.name)?.takeIf { it.dark != it.light }?.let { k to it.dark } } }.toMap()
+            if (dark.isEmpty()) continue
+            val id = l["id"]
+            val at = lines.indexOfFirst { it["id"] == id && it["on"] == "dark" }
+            if (at >= 0) lines[at] = dark + lines[at] else lines += mapOf("id" to id, "on" to "dark") + dark
+        }
+        return if (lines.size == (out["parts"] as? List<*>)?.size && lines == out["parts"]) out else out + ("parts" to lines.take(BlueprintParts.MAX_LINES))
+    }
 
     private fun resolve(r: Recipe, v: Any?, answers: Map<String, Any>): Any? = when (v) {
         is Ref.Input -> answers[v.id]
@@ -53,6 +70,15 @@ object RecipeResolve {
             }
         }
         walk(p.values)
-        return ids.mapNotNull { r.input(it) }
+        // [FXR-04] And those its formulas read by name (칸("목표")).
+        val named = com.bamnat.core.formula.FormulaInputs.labelsIn(p.values)
+        return ids.mapNotNull { r.input(it) } + r.inputs.filter { it.id !in ids && it.label in named }
     }
+
+    /**
+     * [FXR-01] 1.36 받는 칸을 수식이 읽기: [r]'s answers by the input's name, as a formula's `칸("이름")` reads them: [given] (by id) where
+     * the receiver filled one, else the maker's default. A field left empty is left out, so `칸("이름", 기본값)` falls back to its own.
+     */
+    fun byLabel(r: Recipe, given: Map<String, Any?>): Map<String, Any> =
+        answers(r, given).mapNotNull { (id, v) -> r.input(id)?.let { it.label to v } }.toMap()
 }

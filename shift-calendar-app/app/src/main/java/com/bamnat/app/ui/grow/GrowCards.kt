@@ -152,14 +152,20 @@ fun CrashAskNotice(modifier: Modifier = Modifier) {
         val (crashAt, stuckAt) = withContext(Dispatchers.IO) {
             val crash = CrashLog.notes(context).firstOrNull()?.name?.removePrefix("crash-")?.removeSuffix(".txt")?.toLongOrNull() ?: 0L
             val lines = com.bamnat.app.diag.Trail.lines(context)
-            val stuck = (com.bamnat.core.diag.StopTrail.stuckEnds(lines) + lines.filter { it.kind == com.bamnat.core.diag.StopTrail.Kind.NO_DRAW })
-                .maxOfOrNull { it.atMillis } ?: 0L
+            // 1.36 PC C22·A21 (큰 글자로 처음 열 때, 안전 모드 중 글자 크기를 바꿀 때 '앱이 멈춰 있던 적이 있어요'): a slow drawing
+            // right after the app starts or the screen is made again at a new size is kept in 진단, not asked about.
+            val stuck = com.bamnat.core.diag.StopTrail.askAboutStuckAt(lines)
             crash to stuck
         }
         frozen = stuckAt > crashAt
         last = maxOf(crashAt, stuckAt)
     }
-    if (!GrowNudges.crash(grow, last, Today.millis())) return
+    // 1.36 PC C22 ('다시 열면 또 떠요'): a note is asked about on one opening only; seen once, the next opening shows it no more.
+    var answered by remember { mutableStateOf(false) }
+    val due = remember(last) { last > 0 && GrowNudges.crash(grow, last, Today.millis()) }
+    val folded = com.bamnat.app.ui.calendar.LocalNoticeFolded.current
+    LaunchedEffect(due, folded) { if (due && !folded) c.grow.crashSeen(last) }
+    if (!due || answered) return
     SoftCard(modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(if (frozen) "앱이 멈춰 있던 적이 있어요" else "앱이 갑자기 닫혔어요", style = MaterialTheme.typography.titleMedium)
@@ -169,10 +175,10 @@ fun CrashAskNotice(modifier: Modifier = Modifier) {
             @OptIn(ExperimentalLayoutApi::class)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilledTonalButton(onClick = {
-                    c.grow.crashSeen(last)
+                    answered = true
                     GrowAsk.feedback(if (frozen) STOP_ABOUT else "앱이 갑자기 닫힘", kind = InquiryKind.BUG, withCheck = true)
                 }) { Text("멈춤 기록과 함께 알려 주기") }
-                TextButton(onClick = { c.grow.crashSeen(last) }) { Text("괜찮아요") }
+                TextButton(onClick = { answered = true }) { Text("괜찮아요") }
             }
         }
     }

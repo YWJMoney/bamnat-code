@@ -609,3 +609,14 @@ test("[SHR-20] 1.33: a link says who it is for, and only a coworker's carries th
   assert.equal(got.schedule.audience, "coworker");
   assert.equal(got.schedule.setup, setup);
 });
+
+test("app-ads.txt names the AdMob publisher and robots.txt lets crawlers read only it", async () => {
+  const env = { SHARES: memoryKv() };
+  const ads = await call(env, "GET", "/app-ads.txt");
+  assert.equal(ads.status, 200);
+  assert.equal(await ads.text(), "google.com, pub-4920911396563628, DIRECT, f08c47fec0942fa0\n");
+  const robots = await (await call(env, "GET", "/robots.txt")).text();
+  assert.match(robots, /Allow: \/app-ads\.txt\nDisallow: \//);
+  const replaced = await call({ SHARES: memoryKv(), APP_ADS_TXT: "google.com, pub-1, DIRECT, f08c47fec0942fa0" }, "GET", "/app-ads.txt");
+  assert.equal(await replaced.text(), "google.com, pub-1, DIRECT, f08c47fec0942fa0\n");
+});

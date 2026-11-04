@@ -56,8 +56,11 @@ sealed interface Field {
     /** A list of days of the week (MONDAY..SUNDAY), each once. */
     data class Days(override val key: String, override val optional: Boolean = true) : Field
 
-    /** A list of objects of [fields], at most [max]. */
-    data class Items(override val key: String, val max: Int, val fields: List<Field>, val min: Int = 0, override val optional: Boolean = false) : Field
+    /** A list of objects of [fields], at most [max]; [check] looks at the whole cleaned list (null passes, else the refusal's code). */
+    data class Items(
+        override val key: String, val max: Int, val fields: List<Field>, val min: Int = 0, override val optional: Boolean = false,
+        val check: ((List<Map<String, Any?>>) -> String?)? = null,
+    ) : Field
 }
 
 /** The kinds of piece, each with the kinds of work it fits and the screen it comes from. */
@@ -239,6 +242,11 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Num("alpha", 30.0, 100.0, optional = true),
             Field.Pick("theme", listOf("system", "light", "dark"), optional = true),
             Field.Flag("memo"),
+            // [STU-38] 1.36 위젯 꾸미기 넓히기.
+            Field.Color("bg", optional = true),
+            Field.Color("ink", optional = true),
+            Field.Num("corner", 0.0, 28.0, optional = true),
+            Field.Pick("text", WidgetLook.TEXTS, optional = true),
         ),
     ),
 
@@ -259,6 +267,9 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
                 "icons", 6, optional = true,
                 fields = listOf(Field.Pick("role", ShiftRole.KEYS), Field.Text("image", 16, min = 16, guard = false, check = PhotoLook::idProblem)),
             ),
+            // [MAT-03][MAT-04] 1.36 그림 조정 (배경·머리 그림) and 틀 모양 (근무 그림·머리 그림).
+            Field.Text("adjust", 60, optional = true, guard = false, check = PhotoAdjust::problem),
+            Field.Text("frame", 30, optional = true, guard = false, check = PhotoFrame::problem),
         ),
     ),
 
@@ -281,7 +292,7 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Flag("spend"),
             Field.Text("order", 80, optional = true, guard = false, check = CalendarView::orderProblem),
             // [FREE-01][FREE-02] 1.35 칸 디자이너: the cells' own looks, how they take turns, today's own.
-            Field.Text("looks", 760, optional = true, guard = false, check = CellLook::looksProblem),
+            Field.Text("looks", 2400, optional = true, guard = false, check = CellLook::looksProblem),
             Field.Text("pattern", 80, optional = true, guard = false, check = CellPattern::problem),
             Field.Num("today", 0.0, 5.0, optional = true),
         ),
@@ -307,6 +318,8 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Flag("flow"),
             Field.Flag("rest"),
             Field.Flag("payPeriod"),
+            // [MAT-07] 1.36 움직임.
+            Field.Text("motion", 60, optional = true, guard = false, check = Motion::problem),
         ),
     ),
 
@@ -322,7 +335,8 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Num("lines", 1.0, MemoLook.MAX_LINES.toDouble(), optional = true),
             Field.Pick("title", MemoLook.TITLES, optional = true),
             Field.Flag("bold"),
-            Field.Pick("font", MemoLook.FONTS, optional = true),
+            // [MAT-05] 1.36 any font of [FontCatalog] (the four of 1.35 among them) or the user's own.
+            Field.Text("font", 40, optional = true, guard = false, check = FontCatalog::idProblem),
             Field.Flag("date"),
             Field.Color("bg", optional = true),
         ),
@@ -348,8 +362,76 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
     SCREEN_LOOK(
         "screenLook", "화면 색·배경", WorkStyle.entries.toSet(),
         listOf(
-            Field.Text("screens", 1600, optional = true, guard = false, check = ScreenLooks::problem),
+            Field.Text("screens", 4000, optional = true, guard = false, check = ScreenLooks::problem),
             Field.Text("pay", 400, optional = true, guard = false, check = PayLook::problem),
+        ),
+    ),
+
+    /** [BLU-01] 1.36 부품 꾸미기: every part of a screen with the same style and layout fields (docs/blueprint-format.md). */
+    PARTS("parts", "부품 꾸미기", WorkStyle.entries.toSet(), BlueprintParts.FIELDS),
+
+
+    /**
+     * [RUL-03][RUL-04] 1.36 883·884 수식·규칙·버튼 (사용자 2026-11-01 "수식을 넣어서 보다 뛰어난 상호작용, 조건부도(다중 조건식도)"): buttons
+     * that do one safe thing, and rules 언제 → 조건(수식) → 무엇을. Formulas are values the app runs ([com.bamnat.core.formula.Formula]);
+     * only the safe verbs ([com.bamnat.core.formula.LogicVerb]) exist.
+     */
+    LOGIC(
+        "logic", "수식·규칙·버튼", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Items(
+                "buttons", com.bamnat.core.formula.Logic.MAX_BUTTONS, optional = true,
+                fields = listOf(
+                    // 누락 점검 N8: what a 꾸밈 항목 tap names (LogicButton.ID; server the same).
+                    Field.Text("id", 12, optional = true, guard = false, check = { s -> if (com.bamnat.core.formula.LogicButton.ID.matches(s)) null else "id" }),
+                    Field.Text("label", 16, min = 1),
+                    Field.Emoji("emoji", input = false),
+                    Field.Pick("where", com.bamnat.core.formula.ButtonPlace.KEYS),
+                    Field.Pick("do", com.bamnat.core.formula.LogicVerb.KEYS),
+                    Field.Text("arg", 120, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
+                    Field.Money("amount", optional = true),
+                    Field.Text("show", com.bamnat.core.formula.Formula.MAX_LEN, optional = true, guard = false, check = com.bamnat.core.formula.Logic::formulaProblem),
+                ),
+            ),
+            Field.Items(
+                "rules", com.bamnat.core.formula.Logic.MAX_RULES, optional = true,
+                fields = listOf(
+                    Field.Text("name", 20, min = 1),
+                    Field.Pick("on", com.bamnat.core.formula.RuleTrigger.KEYS),
+                    Field.Num("min", -720.0, 720.0, optional = true),
+                    Field.Clock("at", optional = true, input = false),
+                    Field.Pick("role", ShiftRole.KEYS, optional = true),
+                    Field.Text("when", com.bamnat.core.formula.Formula.MAX_LEN, optional = true, guard = false, check = com.bamnat.core.formula.Logic::formulaProblem),
+                    Field.Pick("do", com.bamnat.core.formula.LogicVerb.KEYS),
+                    Field.Text("arg", 120, optional = true, guard = false, check = com.bamnat.core.formula.Logic::textProblem),
+                    Field.Money("amount", optional = true),
+                ),
+            ),
+        ),
+    ),
+
+    /**
+     * [LAY-01] 1.36 꾸밈 층: shapes, icons, emoji and text boxes placed freely over the screens' backgrounds, the calendar's top, its
+     * weekday line, its day cells (pinned to days or kinds of work too) and the widgets ([Decor]). Only values, drawn by the app.
+     */
+    DECOR(
+        "decor", "꾸밈 층", WorkStyle.entries.toSet(),
+        listOf(Field.Items("items", Decor.MAX, fields = Decor.FIELDS, min = 1)),
+    ),
+
+    /**
+     * [TAB-07] 1.36 탭 보기 (사용자 2026-11-01 "탭마다 엄청난 자유도"): the board the calendar is laid on (월·목록·근무 띠·타임라인), how the
+     * 메모장 shows its memos (목록·보드·표·갤러리, the board's 묶음 and the order) and the 가계부's board (목록·달력·분류 보드·표). Only how
+     * records are shown; never a record ([com.bamnat.core.layout.TabViews]).
+     */
+    TAB_VIEW(
+        "tabView", "탭 보기", WorkStyle.entries.toSet(),
+        listOf(
+            Field.Pick("cal", com.bamnat.core.layout.CalendarBoard.KEYS, optional = true),
+            Field.Pick("memo", com.bamnat.core.memo.MemoView.VIEWS, optional = true),
+            Field.Text("memoBy", 22, optional = true, guard = false, check = { if (com.bamnat.core.memo.MemoView.validBy(it)) null else "memoBy" }),
+            Field.Text("memoSort", 23, optional = true, guard = false, check = { if (com.bamnat.core.memo.MemoView.validSort(it)) null else "memoSort" }),
+            Field.Pick("money", com.bamnat.core.money.LedgerBoard.KEYS, optional = true),
         ),
     );
 
@@ -546,18 +628,35 @@ object CompanyPiece {
  * [RCX-14] 1.35 위젯 모양, as the settings keep it ("alpha=80;theme=dark"): how opaque the widgets' background is (30..100 %) and
  * whether it follows the phone's light or dark screen. Empty is the app's own (100 %, following the phone).
  */
-data class WidgetLook(val alpha: Int = 100, val theme: String = "system") {
+data class WidgetLook(
+    val alpha: Int = 100,
+    val theme: String = "system",
+    /** [STU-38] 1.36 위젯 꾸미기 넓히기: the background's own colour (null: the theme's), the text's, the corners (0..28 dp) and the text size. */
+    val bg: Long? = null,
+    val ink: Long? = null,
+    val corner: Int? = null,
+    val text: String? = null,
+) {
     val isDefault: Boolean get() = this == WidgetLook()
 
-    fun encode(): String = if (isDefault) "" else "alpha=$alpha;theme=$theme"
+    fun encode(): String = if (isDefault) "" else (listOf("alpha=$alpha", "theme=$theme") + listOfNotNull(
+        bg?.let { "bg=" + hex(it) }, ink?.let { "ink=" + hex(it) }, corner?.let { "corner=$it" }, text?.let { "text=$it" },
+    )).joinToString(";")
+
+    /** [STU-38] How much bigger or smaller the widget's text is drawn. */
+    val textScale: Float get() = when (text) { "s" -> 0.88f; "l" -> 1.15f; else -> 1f }
 
     companion object {
         val THEMES = listOf("system", "light", "dark")
+        val TEXTS = listOf("s", "m", "l")
+        private fun hex(c: Long) = (c and 0xFFFFFFFFL).toString(16).uppercase().padStart(8, '0')
+        private fun color(v: String?): Long? = v?.takeIf { Regex("^[0-9A-Fa-f]{8}$").matches(it) }?.toLongOrNull(16)?.let { it or 0xFF000000L }
 
         fun decode(s: String): WidgetLook {
             if (s.isBlank()) return WidgetLook()
             val m = s.split(';').mapNotNull { kv -> kv.split('=', limit = 2).takeIf { it.size == 2 }?.let { it[0] to it[1] } }.toMap()
-            return WidgetLook(m["alpha"]?.toIntOrNull()?.coerceIn(30, 100) ?: 100, m["theme"]?.takeIf { it in THEMES } ?: "system")
+            return WidgetLook(m["alpha"]?.toIntOrNull()?.coerceIn(30, 100) ?: 100, m["theme"]?.takeIf { it in THEMES } ?: "system",
+                color(m["bg"]), color(m["ink"]), m["corner"]?.toIntOrNull()?.takeIf { it in 0..28 }, m["text"]?.takeIf { it in TEXTS })
         }
     }
 }
@@ -574,6 +673,10 @@ data class PhotoLook(
     val widget: String? = null,
     val corners: String? = null,
     val icons: Map<Long, String> = emptyMap(),
+    /** [MAT-03] 1.36 배경·머리 그림 조정. */
+    val adjust: PhotoAdjust = PhotoAdjust(),
+    /** [MAT-04] 1.36 근무 그림·머리 그림의 틀 모양 ([PhotoFrame]); null is the app's own (둥근 네모). */
+    val frame: String? = null,
 ) {
     val isDefault: Boolean get() = this == PhotoLook()
 
@@ -582,7 +685,7 @@ data class PhotoLook(
 
     fun encode(): String = if (isDefault) "" else listOfNotNull(
         bg?.let { "bg=$it" }, "dim=$dim".takeIf { dim != DIM }, head?.let { "head=$it" }, widget?.let { "widget=$it" },
-        corners?.let { "corners=$it" },
+        corners?.let { "corners=$it" }, adjust.takeIf { !it.isDefault }?.let { "adjust=" + it.encode() }, frame?.let { "frame=$it" },
     ).plus(icons.entries.sortedBy { it.key }.map { (t, id) -> "icon.$t=$id" }).joinToString(";")
 
     companion object {
@@ -603,6 +706,7 @@ data class PhotoLook(
                 head = one["head"]?.takeIf(::isId), widget = one["widget"]?.takeIf(::isId),
                 corners = one["corners"]?.takeIf { it in CORNERS },
                 icons = m.mapNotNull { (k, v) -> k.removePrefix("icon.").takeIf { k.startsWith("icon.") }?.toLongOrNull()?.takeIf { isId(v) }?.let { it to v } }.toMap(),
+                adjust = PhotoAdjust.decode(one["adjust"]), frame = one["frame"]?.takeIf { it.isNotEmpty() && PhotoFrame.problem(it) == null },
             )
         }
     }

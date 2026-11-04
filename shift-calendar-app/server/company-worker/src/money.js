@@ -1,6 +1,7 @@
 import { FLAG_KEYS, configFlags, configPolicy, flagDef, flagStore, legacyFlags, recordLaunch, serverEval } from "./flags.js";
 import { OWNER, Refuse, all, allow, answer, audit, batch, deviceHash, deviceId, given, iso, item, json, network, one, overLimit, randomId, readJson, refuse, run, salt, sha256, stmt, tooMany } from "./index.js";
 import { DAY, HOUR } from "./units.js";
+import { integrityGate } from "./integrity.js";
 import { kstDay, noticeRows, noticeView } from "./usage.js";
 // ---- 정식 출시, 프로 이용권, 관리자 휴대폰, 구매 확인 [MON-02][MON-03][MON-06][MON-08][MON-09][MON-10] ----
 
@@ -15,6 +16,10 @@ export const MONEY = {
   linkMs: 10 * 60 * 1000,
   linkCodesPerHour: 10,
   linkTriesPerHour: 10,
+  // 1.36 [SEC-03] Wrong codes from everywhere together in one code's ten minutes: past this, every live code is spent and
+  // tries rest until the window ends. With a 6-digit code, a guessing run spread over many networks then wins at most
+  // 30 in a million, and the owner sees it in the log (link_guess) and makes a new code.
+  linkWrongPerWindow: 30,
   phonesPerAdmin: 2,
   // [MON-08] A recovery code moves passes to a new phone once.
   codesPerDay: 10,
@@ -98,26 +103,81 @@ export function stack(rows, launchedAt) {
   return { until: given.length ? until : null, waiting: 0, items: given };
 }
 
+// ---- 1.36 841 쓰면 쌓이는 날 (수익설계 2판 B안: 광고 없는 보상, 월 14일까지, 나눔 대상 아님) ----
+
+export const EARNED = {
+  /** A bug report whose 개발사항 is marked 완료 in the admin app. */
+  bugDays: 3,
+  /** At most this many earned days a month (KST) per phone. */
+  monthCap: 14,
+  words: { bug: "문제 신고가 고쳐져서" },
+};
+
+/** The first moment of [now]'s month in Korea. */
+export function kstMonthStart(now) {
+  const [y, m] = kstDay(now).split("-").map(Number);
+  return Date.UTC(y, m - 1, 1) - 9 * HOUR;
+}
+
+/** Earned days stacked after [until] (the months' end), each from when it was given or the launch, whichever is last. */
+export function stackDays(until, rows, launchedAt) {
+  const days = rows.reduce((n, r) => n + r.days, 0);
+  if (!launchedAt) return { until, waiting: days };
+  let end = until ?? 0;
+  for (const r of rows) end = Math.max(end, r.given_at, launchedAt) + r.days * DAY;
+  return { until: rows.length ? end : until, waiting: 0 };
+}
+
+/** Gives [days] once for [source], within the month's cap; the days actually given (0 when none). */
+export async function giveDays(env, kind, source, dev, days, now) {
+  const got = await one(env, "SELECT COALESCE(SUM(days), 0) AS n FROM day_rewards WHERE device = ? AND given_at >= ?", dev, kstMonthStart(now));
+  const give = Math.min(days, EARNED.monthCap - (got?.n ?? 0));
+  if (give <= 0) return 0;
+  const r = await run(env, "INSERT OR IGNORE INTO day_rewards (source, device, kind, days, given_at) VALUES (?, ?, ?, ?, ?)", source, dev, kind, give, now);
+  return r.meta.changes ? give : 0;
+}
+
+/** A 개발사항 just marked 완료: every phone that reported it as a problem gets [EARNED.bugDays], once per item. */
+export async function bugFixed(env, itemId, now) {
+  const rows = await all(env, `SELECT DISTINCT i.device AS device FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id
+    WHERE l.item_id = ? AND i.kind IN ('bug', 'problem')`, itemId);
+  let phones = 0;
+  for (const r of rows) if (await giveDays(env, "bug", `bug:${itemId}:${r.device}`, r.device, EARNED.bugDays, now)) phones++;
+  if (phones) await audit(env, now, "earned_days", `${phones}대`, `bug ${itemId}`);
+  return phones;
+}
+
 export async function installOf(request) {
   const id = deviceId(request.headers.get("x-device"));
   if (!id) throw new Refuse("device", "device");
   return deviceHash(id);
 }
 
+/** 1.36 [GRW-09] '이달의 주제에 뽑힘 (2026-11:CODE)' → the first words, with the recipe's title the grant wrote after '· '. */
+function makerWhat(memo) {
+  return String(memo).split(" (")[0].slice(0, 40);
+}
+
 /** [MON-08][MON-09] What this install has: its passes, its admin link and whether it holds a recovery code. */
 export async function passes(env, dev, now) {
   const [rows, link, code, s] = await Promise.all([
-    all(env, "SELECT months, status, paid_at, deferred, rule_id FROM rewards WHERE device = ?", dev),
+    all(env, "SELECT months, status, paid_at, deferred, rule_id, memo FROM rewards WHERE device = ?", dev),
     one(env, "SELECT status, admin_name, admin, previews FROM admin_devices WHERE device = ?", dev),
     one(env, "SELECT created_at FROM pass_codes WHERE device = ?", dev),
     launchState(env),
   ]);
   if (link) await run(env, "UPDATE admin_devices SET seen_at = ? WHERE device = ?", now, dev);
   const p = stack(rows, s.launchedAt);
+  // 1.36 841 쓰면 쌓이는 날: days earned (a bug report fixed, …) go after the months, from the launch.
+  const earned = await all(env, "SELECT kind, days, given_at FROM day_rewards WHERE device = ? ORDER BY given_at", dev);
+  const d = stackDays(p.until, earned, s.launchedAt);
   return {
-    until: p.until ? iso(p.until) : null,
+    until: d.until ? iso(d.until) : null,
     waitingMonths: p.waiting,
-    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id) })),
+    waitingDays: d.waiting,
+    earned: earned.map((r) => ({ days: r.days, at: iso(r.given_at), why: EARNED.words[r.kind] ?? "쓰면 쌓이는 날" })),
+    // 1.36 [GRW-09] 만든 분 보상은 무엇 때문인지까지("이달의 주제에 뽑힘 · 테마 이름").
+    items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id), ...(r.rule_id === "maker" && r.memo ? { what: makerWhat(r.memo) } : {}) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
     // S 1.32 [SECX-01] previews: the flags the developer app turned on for this phone only (approved phones only).
@@ -125,8 +185,89 @@ export async function passes(env, dev, now) {
     admin: link ? { status: link.status, name: link.admin_name, owner: link.admin === OWNER.id,
       previews: link.status === "approved" ? previewKeys(link.previews) : [] } : null,
     code: Boolean(code),
+    // 1.36 [PSH-01] 프로 나눔 1인: the 프로 a buyer gave this phone, until their subscription ends.
+    shared: await sharedUntil(env, dev, now),
     checkedAt: iso(now),
   };
+}
+
+// ---- 1.36 [PSH-01] 프로 나눔 1인 (사용자 결정 2026-10-31) ----
+// Someone who bought 프로 on Play (not a trial, pass, thank-you or admin phone) gives it to one person of their choosing
+// for as long as they keep it: a one-time code they send to that person, who puts it in their app. A new person
+// takes the place of the one before; the buyer or the person can end it. Only the two installs' hashes are kept.
+
+export const PRO_SHARE = { codeMs: 7 * DAY, codesPerDay: 10, claimsPerHour: 10 };
+
+/** When the install's own bought 프로 ends (a cancelled one still runs to its end), or null. */
+export async function boughtUntil(env, dev, now) {
+  const row = await one(env, `SELECT MAX(expiry) AS until FROM subs WHERE device = ? AND trial = 0
+    AND state IN ('ACTIVE', 'GRACE', 'CANCELED') AND expiry > ?`, dev, now);
+  // 1.36 841: a 1년 이용권 is bought 프로 too (프로 나눔 1인). Passes stack: each adds a year from its purchase or the end before.
+  const passes = await all(env, "SELECT purchased_at FROM year_passes WHERE device = ? AND state = 'ACTIVE' ORDER BY purchased_at", dev);
+  let passEnd = null;
+  for (const p of passes) passEnd = Math.max(passEnd ?? p.purchased_at, p.purchased_at) + 365 * DAY;
+  const best = Math.max(row?.until ?? 0, passEnd && passEnd > now ? passEnd : 0);
+  return best || null;
+}
+
+/** The 프로 given to this install, as { until }, or null. */
+export async function sharedUntil(env, dev, now) {
+  const row = await one(env, "SELECT owner FROM pro_shares WHERE guest = ?", dev);
+  if (!row) return null;
+  const until = await boughtUntil(env, row.owner, now);
+  return until ? { until: iso(until) } : null;
+}
+
+async function shareView(env, dev, now) {
+  const [until, row] = await Promise.all([boughtUntil(env, dev, now), one(env, "SELECT code, code_at, guest, guest_at FROM pro_shares WHERE owner = ?", dev)]);
+  const codeOpen = row?.code && now - row.code_at < PRO_SHARE.codeMs;
+  return {
+    can: Boolean(until), until: until ? iso(until) : null,
+    code: codeOpen ? row.code : null, codeUntil: codeOpen ? iso(row.code_at + PRO_SHARE.codeMs) : null,
+    given: Boolean(row?.guest), givenAt: row?.guest ? iso(row.guest_at) : null,
+    shared: await sharedUntil(env, dev, now),
+  };
+}
+
+export async function proShare(request, env, dev, now, path) {
+  const method = request.method;
+  if (path === "/api/passes/share" && method === "GET") return json(await shareView(env, dev, now));
+  if (path === "/api/passes/share" && method === "POST") {
+    if (!(await boughtUntil(env, dev, now))) refuse("not_bought", "subscription");
+    { const limitHit = await overLimit(env, now, [["device", `proshare|${dev}`, PRO_SHARE.codesPerDay, DAY]]); if (limitHit) return limitHit; }
+    let code = inviteCode();
+    for (let i = 0; i < 3 && (await one(env, "SELECT 1 AS x FROM pro_shares WHERE code = ?", code)); i++) code = inviteCode();
+    await run(env, `INSERT INTO pro_shares (owner, code, code_at) VALUES (?, ?, ?)
+      ON CONFLICT (owner) DO UPDATE SET code = excluded.code, code_at = excluded.code_at`, dev, code, now);
+    await audit(env, now, "pro_share_code", "", dev.slice(0, 8));
+    return json(await shareView(env, dev, now), 201);
+  }
+  if (path === "/api/passes/share/claim" && method === "POST") {
+    const body = await readJson(request, 1024);
+    const code = inviteCodeOf(body.code);
+    if (!code) refuse("code", "code");
+    { const limitHit = await overLimit(env, now, [["device", `proshareclaim|${dev}`, PRO_SHARE.claimsPerHour, HOUR]]); if (limitHit) return limitHit; }
+    const row = await one(env, "SELECT owner, code_at FROM pro_shares WHERE code = ?", code);
+    if (!row || now - row.code_at >= PRO_SHARE.codeMs) refuse("code", "code");
+    if (row.owner === dev) refuse("self", "code");
+    if (!(await boughtUntil(env, row.owner, now))) refuse("giver_ended", "code");
+    // One person per buyer, one buyer per person: the one before (theirs or this phone's old giver) is let go.
+    await batch(env, [
+      stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL WHERE guest = ?", dev),
+      stmt(env, "UPDATE pro_shares SET guest = ?, guest_at = ?, code = NULL, code_at = NULL WHERE owner = ?", dev, now, row.owner),
+    ]);
+    await audit(env, now, "pro_share_claim", "", row.owner.slice(0, 8));
+    return json(await shareView(env, dev, now));
+  }
+  if (path === "/api/passes/share" && method === "DELETE") {
+    // The buyer takes it back (and any code not used), or the person gives it back.
+    await batch(env, [
+      stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL, code = NULL, code_at = NULL WHERE owner = ?", dev),
+      stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL WHERE guest = ?", dev),
+    ]);
+    return json(await shareView(env, dev, now));
+  }
+  refuse("method", "method");
 }
 
 export const passCode = () => randomId(16).toUpperCase().replace(/(.{4})(?=.)/g, "$1-");
@@ -138,6 +279,7 @@ export async function money(request, env, path) {
   const now = Date.now();
   const dev = await installOf(request);
   if (path === "/api/passes" && method === "GET") return json(await passes(env, dev, now));
+  if (path === "/api/passes/share" || path === "/api/passes/share/claim") return proShare(request, env, dev, now, path);
   if (path === "/api/passes/code" && method === "POST") {
     { const limitHit = await overLimit(env, now, [["device", `passcode|${dev}`, MONEY.codesPerDay, DAY]]); if (limitHit) return limitHit; }
     // A new code replaces the old one; it is shown once and kept only as a hash.
@@ -160,6 +302,7 @@ export async function money(request, env, path) {
       // The passes move; the old phone keeps nothing and the code is spent.
       await batch(env, [
         stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
+        stmt(env, "UPDATE day_rewards SET device = ? WHERE device = ?", dev, row.device),
         stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
         // [INVITE-02] The invite code moves with them, so links already sent count here.
         stmt(env, "UPDATE OR IGNORE invite_codes SET device = ? WHERE device = ?", dev, row.device),
@@ -263,7 +406,8 @@ export function playIntent(code, store = storeLink(code)) {
 }
 
 /** Why a reward was given, as the app names it. */
-export const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId ? "rule" : "idea");
+// 1.36 [GRW-09] "maker": 만든 분 보상(이달의 주제·모두의 도구·기본 도구).
+export const rewardWhy = (ruleId) => (ruleId === "invite" ? "invite" : ruleId === "rate" ? "rate" : ruleId === "maker" ? "maker" : ruleId ? "rule" : "idea");
 
 /** Whole days from one Korean date ("2026-10-25") to another. */
 export const dayGap = (from, to) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
@@ -418,6 +562,8 @@ export async function invites(request, env, path, url) {
     if (!["referrer", "typed"].includes(body.source)) refuse("source", "source");
     const mark = await phoneMark(env, body.phone);
     if (!mark) refuse("phone", "phone");
+    // 1.36 [SEC-11] A friend counts toward 프로 months only from Play's app on a real phone (off until INTEGRITY_MODE is set).
+    { const gate = await integrityGate({ one, allow, json }, env, dev, now); if (gate) return gate; }
     const set = await inviteSettings(env);
     const before = await one(env, "SELECT status, reason FROM invite_uses WHERE invitee = ?", dev);
     if (before) return json({ status: before.status, reason: before.reason || null, days: set.days, daysLeft: null });
@@ -533,8 +679,19 @@ export async function linkPhone(request, env, dev, now) {
     return tooMany("device", HOUR);
   }
   if (typeof body.code !== "string" || !/^\d{6}$/.test(body.code)) refuse("code", "code");
+  // 1.36 [SEC-03] A guessing run spread over many networks: all wrong tries of the window count together.
+  const window = Math.floor(now / MONEY.linkMs);
+  const wrongKey = `linkwrong|${window}`;
+  const wrong = await one(env, "SELECT count FROM counters WHERE key = ? AND expires > ?", wrongKey, now);
+  if ((wrong?.count ?? 0) >= MONEY.linkWrongPerWindow) return tooMany("network", (window + 1) * MONEY.linkMs - now);
   const row = await one(env, "SELECT * FROM link_codes WHERE code = ? AND expires > ?", body.code, now);
-  if (!row) return json({ error: "code", field: "code" }, 404);
+  if (!row) {
+    if (!(await allow(env, wrongKey, MONEY.linkWrongPerWindow - 1, MONEY.linkMs, now))) {
+      await run(env, "DELETE FROM link_codes");
+      await audit(env, now, "link_guess", "", String(MONEY.linkWrongPerWindow));
+    }
+    return json({ error: "code", field: "code" }, 404);
+  }
   const owner = row.admin === OWNER.id;
   if (!owner && !(await one(env, "SELECT 1 FROM admins WHERE id = ? AND status = 'active'", row.admin))) {
     await run(env, "DELETE FROM link_codes WHERE code = ?", body.code);
@@ -550,7 +707,8 @@ export async function linkPhone(request, env, dev, now) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, `d${randomId(15)}`, dev, row.admin, row.admin_name, status, now, owner ? now : null, now),
   ]);
   await audit(env, now, "device_link", row.admin_name, status);
-  return json({ status, name: row.admin_name }, 201);
+  // PC 확인 7525ccff: the phone says why it was approved at once (the owner's own code), as /api/passes does with admin.owner.
+  return json({ status, name: row.admin_name, owner }, 201);
 }
 
 export async function phoneList(env) {
@@ -709,6 +867,7 @@ export async function purchase(request, env, dev, now) {
   if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
   if (typeof body.token !== "string" || body.token.length < 10 || body.token.length > 1000) refuse("token", "token");
   if (!playReady(env)) return json({ verified: false });
+  if (body.product === PASS_PRODUCT) return yearPass(env, dev, body.token, now);
   const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(body.token)}`), body.product);
   const hash = (await sha256(`sub|${body.token}`)).slice(0, 40);
   // [SRV-07] A token already tied to another install stays with it while that install still checks in: a
@@ -732,6 +891,44 @@ export async function purchase(request, env, dev, now) {
     verified: true, state: s.state, expiry: s.expiry ? iso(s.expiry) : null, trial: s.trial, autoRenew: s.autoRenew,
     acknowledged: s.acknowledged, consentAt: row.consent_at ? iso(row.consent_at) : null, stoppedAt: row.stopped_at ? iso(row.stopped_at) : null,
   });
+}
+
+/** 1.36 841 1년 이용권: a one-time product, no automatic payment. */
+export const PASS_PRODUCT = "bamnat_pro_pass_1y";
+const PASS_DAYS = 365;
+
+/** products.get read the way the app needs it: purchaseState 0 bought, 1 cancelled (refunded), 2 pending. */
+export function readPass(p) {
+  const at = Number(p.purchaseTimeMillis);
+  return {
+    state: p.purchaseState === 0 ? "ACTIVE" : p.purchaseState === 2 ? "PENDING" : "EXPIRED",
+    purchasedAt: Number.isFinite(at) ? at : null,
+    orderId: typeof p.orderId === "string" ? p.orderId.slice(0, 80) : "",
+    acknowledged: p.acknowledgementState === 1,
+  };
+}
+
+/**
+ * 1.36 841: the 1년 이용권 as Play says, kept by its token's hash with the phone that showed it (the same rule as a subscription:
+ * a token tied to another phone that still checks in stays there). The app stacks the year itself; a refund says EXPIRED.
+ */
+async function yearPass(env, dev, token, now) {
+  const p = readPass(await playCall(env, "GET", `/purchases/products/${PASS_PRODUCT}/tokens/${encodeURIComponent(token)}`));
+  const hash = (await sha256(`pass|${token}`)).slice(0, 40);
+  const bound = await one(env, "SELECT device, checked_at FROM year_passes WHERE hash = ?", hash);
+  if (bound && bound.device !== dev) {
+    if (now - bound.checked_at < REBIND_AFTER) {
+      await audit(env, now, "purchase_rebind_refused", PASS_PRODUCT, hash.slice(0, 8));
+      return json({ verified: false });
+    }
+    await audit(env, now, "purchase_rebind", PASS_PRODUCT, hash.slice(0, 8));
+  }
+  if (!p.purchasedAt) return json({ verified: false });
+  await run(env, `INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, checked_at = excluded.checked_at`,
+  hash, dev, p.orderId, p.state, p.purchasedAt, now, now);
+  return json({ verified: true, state: p.state, purchasedAt: iso(p.purchasedAt), expiry: iso(p.purchasedAt + PASS_DAYS * DAY),
+    trial: false, autoRenew: false, acknowledged: p.acknowledged });
 }
 
 /**

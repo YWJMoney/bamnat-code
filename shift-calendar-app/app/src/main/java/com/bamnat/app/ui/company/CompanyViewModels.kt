@@ -602,6 +602,8 @@ class TalkHolder(
         val refreshing: Boolean = false,
         /** [J133-55] The kind of post the writing starts on: "proposal" after 달라요. */
         val startKind: String? = null,
+        /** 1.36 [VIL-06] PC 확인: the post to scroll to and mark, opened from 마을에서 찾기 or 간직한 글 · 내 글. */
+        val focus: String? = null,
     ) {
         val room: Boolean get() = setup == com.bamnat.core.plaza.StylePlaza.ROOM
     }
@@ -623,12 +625,12 @@ class TalkHolder(
      * [SPD-13] 1.30 AP1: the talk kept on the phone ([com.bamnat.app.company.PageCache]; a room's also from its company's page)
      * shows at once, without a spinner, while it is read again.
      */
-    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null, kind: String? = null) {
+    fun show(company: String, setup: String, title: String, hint: String? = null, note: String? = null, kind: String? = null, focus: String? = null) {
         val kept = c.companySearch.cache.talk(company, setup)?.value
         changed = false
         last = kept
         com.bamnat.app.company.NetTimings.cached(kept != null)
-        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null, startKind = kind)
+        _open.value = Open(company, setup, title, talk = kept, hint = hint, note = note, refreshing = kept != null, startKind = kind, focus = focus)
         reload()
     }
 
@@ -681,9 +683,14 @@ class TalkHolder(
         setupText: String? = null,
         /** [J133-83] The user's own proposal this one is sent in place of: taken down once this one is in. */
         replacing: String? = null,
+        /** 1.36 [VIL-10] A question's choices to vote on (none: no poll). */
+        poll: List<String> = emptyList(),
+        /** 1.36 [VIL-16] A 자랑's recipe of mine, as (code, title). */
+        attach: Pair<String, String>? = null,
         done: (String?) -> Unit,
     ) {
         val o = _open.value ?: return done(null)
+        poll.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
         CompanyText.personal(text)?.let { return done(talkProblem(it)) }
         change.flatMap { listOf(it.now, it.want, it.why) }.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
         // [COMM-13] 같은 글 되풀이 is held back here, before the server's own limits.
@@ -692,7 +699,9 @@ class TalkHolder(
         if (replacing == null && !com.bamnat.core.plaza.RepeatGuard.allowed(sentHere, talkKey, text, now)) return done(com.bamnat.core.plaza.RepeatGuard.WHY)
         // [SPD-16] 1.30 AP1: the post shows in the talk at once ("나 (보내는 중)") and the server's talk takes its place after.
         val pending = com.bamnat.app.company.TalkPost("local-${now.toEpochMilli()}", 0, null, false, text.trim(), now, mine = true, nick = SENDING,
-            parent = parent, kind = kind, change = change)
+            parent = parent, kind = kind, change = change,
+            poll = poll.takeIf { it.size >= 2 }?.let { com.bamnat.app.company.Poll(it, it.map { 0 }) },
+            attach = attach.takeIf { kind == "show" && parent == null })
         _open.value?.takeIf { it.company == o.company && it.setup == o.setup && it.talk != null }?.let { cur ->
             _open.value = cur.copy(talk = cur.talk!!.copy(posts = cur.talk.posts + pending))
         }
@@ -701,7 +710,9 @@ class TalkHolder(
                 // [PLAZA-02] 다른 점 말하기 sends the company's setup as edited, not this phone's own.
                 val setup = if (kind != "proposal") null
                 else setupText?.let { org.json.JSONObject(it) } ?: if (withSetup) c.companyOf(calendar).share.exportForServer() else null
-                if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
+                if (attach != null && parent == null && kind == "show") c.companyApi.postShow(c.companyStore.device, o.company, o.setup, text, attach.first)
+                else if (poll.size >= 2 && parent == null && kind == "question") c.companyApi.postPoll(c.companyStore.device, o.company, o.setup, text, poll)
+                else if (parent == null && kind == "talk") c.companyApi.post(c.companyStore.device, o.company, o.setup, text)
                 else c.companyApi.post(c.companyStore.device, o.company, o.setup, text, parent, kind, change, setup)
                 c.telemetry.event("company_post", if (kind == "proposal") "proposal" else if (parent != null) "reply" else "sent")
                 // [FIN130-06] A proposal is a version of the company's page: the page kept on the phone is read again next time.
@@ -719,6 +730,52 @@ class TalkHolder(
             }
             done(error)
             if (error == null) reload()
+        }
+    }
+
+    /** 1.36 [VIL-16] My recipes that can go on a 자랑: up and public, as (code, title); empty without 장터. */
+    suspend fun showable(): List<Pair<String, String>> =
+        if (!c.recipeApi.enabled || !c.recipes.on.value) emptyList()
+        else runCatching { c.recipeApi.mine(c.companyStore.device).items }.getOrDefault(emptyList())
+            .filter { (_, st) -> st.first == "visible" && st.second == "public" }.map { (r, _) -> r.code to r.title }
+
+    /** 1.36 [VIL-10] One choice on a poll ([choice] null takes it back); the counts come back with it. */
+    fun pollVote(post: String, choice: Int?, done: (String?) -> Unit = {}) {
+        val o = _open.value ?: return
+        scope.launch {
+            val error = try {
+                val v = c.companyApi.pollVote(c.companyStore.device, post, choice)
+                val now = _open.value
+                if (now?.setup == o.setup && now.talk != null) {
+                    _open.value = now.copy(talk = now.talk.copy(posts = now.talk.posts.map { if (it.id == post) it.copy(poll = v) else it }))
+                }
+                changed = true
+                null
+            } catch (e: CompanyException) {
+                companyProblem(e)
+            }
+            done(error)
+        }
+    }
+
+    /** 1.36 [VIL-09] 도움 됐어요 on a reply under my question; the same again takes it back. */
+    fun answer(question: String, reply: String, done: (String?) -> Unit = {}) {
+        val o = _open.value ?: return
+        val q = o.talk?.posts?.firstOrNull { it.id == question } ?: return
+        val next = if (q.answer == reply) null else reply
+        scope.launch {
+            val error = try {
+                val a = c.companyApi.postAnswer(c.companyStore.device, question, next)
+                val now = _open.value
+                if (now?.setup == o.setup && now.talk != null) {
+                    _open.value = now.copy(talk = now.talk.copy(posts = now.talk.posts.map { if (it.id == question) it.copy(answer = a) else it }))
+                }
+                changed = true
+                null
+            } catch (e: CompanyException) {
+                companyProblem(e)
+            }
+            done(error)
         }
     }
 
@@ -1033,7 +1090,9 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
     data class State(val board: com.bamnat.app.company.RateBoard? = null, val loading: Boolean = true, val error: String? = null)
 
     val enabled: Boolean = c.companyApi.enabled
-    private val _filter = MutableStateFlow(Filter())
+    // 1.36 PC 재검토 (교대 사용자에게도 '건설 일용직·기능공'이 먼저): the board opens on the user's own kind of work.
+    private val _filter = MutableStateFlow(Filter(job = jobOfStyle(
+        c.calendars.styleOf(com.bamnat.app.data.PersonalCalendar.MAIN, c.settingsRepository.current.workStyle)) ?: "construction"))
     val filter: StateFlow<Filter> = _filter.asStateFlow()
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -1234,6 +1293,27 @@ class CompanyReportViewModel(
 
     /** [J133-93] The calendar's kind of work, for the 광장 job when the pay setup names none. */
     fun styleOf(): com.bamnat.core.work.WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    /**
+     * [PRF-01] 1.36 PC 사용성 P1: what of 마을 this phone has up (작품·모음·프로필·팔로잉), said in the 모두 지우기 question
+     * with its numbers. Null while asking or with nothing up.
+     */
+    private val _village = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val village: kotlinx.coroutines.flow.StateFlow<String?> = _village
+    fun loadVillage() {
+        if (!c.recipeApi.enabled) return
+        viewModelScope.launch {
+            val dev = c.companyStore.device
+            val id = runCatching { c.recipeApi.makerMe(dev) }.getOrNull() ?: return@launch
+            val p = runCatching { c.recipeApi.maker(dev, id) }.getOrNull() ?: return@launch
+            _village.value = listOfNotNull(
+                "올린 작품 ${p.recipes.size}개".takeIf { p.recipes.isNotEmpty() }, "모음 ${p.sets.size}개".takeIf { p.sets.isNotEmpty() },
+                "프로필".takeIf { p.recipes.isNotEmpty() || p.face != null || p.bio != null }, "팔로잉 ${p.followingCount}명".takeIf { p.followingCount > 0 },
+            ).joinToString(", ").ifEmpty { null }
+        }
+    }
+
+    /** [J133-71] Work with a company: 내 설정 나누기 is offered only then. */
+    val companyFits: Boolean get() = c.companyFits(calendar)
 
     sealed interface Sending {
         data object Idle : Sending
@@ -1433,22 +1513,37 @@ class CompanyReportViewModel(
     /** [INQ-05] I28: as [forgetAll], with what was deleted in words. */
     fun forgetAllSaying(done: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull()
-            val ok = counts != null
-            if (ok) {
-                // [CALI-08] The server forgot everything this phone sent, from every calendar.
-                c.forgetSentEverywhere()
-                // [SPD-13] and 내 활동 kept on the phone with it.
-                c.companySearch.cache.forgetActivity()
-                _statuses.value = emptyMap()
-                // [ADMIN-02] The server deleted this phone's questions with the rest.
-                c.inquiryStore.update(emptyList())
-                c.inquiryStore.asked = false
-            }
-            done(ok, counts?.words())
+            val counts = forgetEverythingSent(c)
+            if (counts != null) _statuses.value = emptyMap()
+            done(counts != null, counts?.words())
         }
     }
 }
+
+/**
+ * [INQ-05] 이 휴대폰이 보낸 정보 모두 지우기, from 보낸 설정 and (1.36 [INQ-07]) from 설정 › 개인정보·앱 정보:
+ * the server forgets what this phone sent and the phone forgets its copies. Null when the server could not be reached.
+ */
+suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.ForgetCounts? {
+    val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull() ?: return null
+    // [CALI-08] The server forgot everything this phone sent, from every calendar.
+    c.forgetSentEverywhere()
+    // [SPD-13] and 내 활동 kept on the phone with it.
+    c.companySearch.cache.forgetActivity()
+    // [ADMIN-02] The server deleted this phone's questions with the rest (a 결제·환불 one stays with the developer).
+    c.inquiryStore.update(emptyList())
+    c.inquiryStore.asked = false
+    // [PRF-05] 1.36 마을 프로필·차단도 서버에서 지워졌어요: 이 폰의 차단 사본과 '내 프로필' 표시도 함께.
+    c.recipes.setBlocked(emptySet())
+    c.recipes.hasProfile(false)
+    c.recipes.peopleChanged()
+    return counts
+}
+
+/** [INQ-05] What 모두 지우기 asks before it goes; 1.36 [INQ-07] says what the law keeps. */
+const val FORGET_ALL_WORDS = "보낸 설정, 맞았어요·달라요, 토론 글과 신고, 받기로 한 보상, 앱 문의, 마을에 올린 레시피·프로필·모음·팔로우·차단까지 서버에서 모두 지워요. " +
+    "이 휴대폰에서 쓰는 설정과 넣은 레시피는 그대로예요. 결제·환불 문의는 전자상거래법에 따라 앱에서만 사라지고 운영자가 3년 보관해요."
+
 
 /**
  * [COMM-02][COMM-03] The small asks around a company setup, on the pay screen and in settings:

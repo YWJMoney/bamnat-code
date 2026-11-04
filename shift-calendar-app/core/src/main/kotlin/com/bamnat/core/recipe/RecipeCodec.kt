@@ -106,9 +106,11 @@ object RecipeCodec {
             )
         } ?: Cover()
         val parent = (m["parent"] as? String)?.also { if (!CODE.matches(it)) throw RecipeException("parent", "parent") }
-        // An input no field uses is dropped, so a receiver is never asked for something that changes nothing.
+        // An input no field uses is dropped, so a receiver is never asked for something that changes nothing. [FXR-04] A formula's
+        // 칸("이름") is a use too (by the input's name), or an input read only by formulas would go on upload and never reach them.
         val used = HashSet<String>().also { u -> pieces.forEach { collectInputs(it.values, u) } }
-        return Recipe(title, summary, desc, styles, cover, tokens, inputs.filter { it.id in used }, pieces, parent)
+        val named = LinkedHashSet<String>().also { n -> pieces.forEach { com.bamnat.core.formula.FormulaInputs.labelsIn(it.values, n) } }
+        return Recipe(title, summary, desc, styles, cover, tokens, inputs.filter { it.id in used || it.label in named }, pieces, parent)
     }
 
     private class Ctx(val inputs: Map<String, Input>, val tokens: Set<String>)
@@ -222,6 +224,7 @@ object RecipeCodec {
                 }.distinct().sortedBy { PieceKind.DAYS.indexOf(it) }
                 is Field.Items -> (v as? List<Any?> ?: throw RecipeException("list", p)).also { if (it.size > f.max || it.size < f.min) throw RecipeException("list", p) }
                     .mapIndexed { i, item -> fields(f.fields, item as? Map<String, Any?> ?: throw RecipeException("list", "$p.$i"), "$p.$i", ctx) }
+                    .also { list -> f.check?.invoke(list)?.let { throw RecipeException(it, p) } }
                     .takeUnless { it.isEmpty() && f.optional }
             }
             if (value != null) out[f.key] = value
@@ -233,6 +236,14 @@ object RecipeCodec {
     private fun ref(f: Field, v: Any?, path: String, ctx: Ctx): Ref? {
         val m = v as? Map<*, *> ?: return null
         if (m.size != 1) throw RecipeException("ref", path)
+        // [RUL-02] A formula, only where a part's style takes one (부품 꾸미기); checked as every formula field is.
+        (m["fx"] as? String)?.let { src ->
+            if (BlueprintParts.STYLE_FIELDS.none { it === f }) throw RecipeException("ref", path)
+            val t = src.trim()
+            if (t.isEmpty() || t.length > com.bamnat.core.formula.Formula.MAX_LEN) throw RecipeException("text", path)
+            com.bamnat.core.formula.Logic.formulaProblem(t)?.let { throw RecipeException(it, path) }
+            return Ref.Formula(t)
+        }
         (m["token"] as? String)?.let { name ->
             if (f !is Field.Color || name !in ctx.tokens) throw RecipeException("ref", path)
             return Ref.Token(name)
@@ -306,6 +317,7 @@ object RecipeCodec {
             is String -> str(b, v)
             is Ref.Input -> put(b, mapOf("input" to v.id))
             is Ref.Token -> put(b, mapOf("token" to v.name))
+            is Ref.Formula -> put(b, mapOf("fx" to v.src))
             is Map<*, *> -> {
                 b.append('{')
                 v.entries.filter { it.value != null }.sortedBy { it.key as String }.forEachIndexed { i, (k, x) ->

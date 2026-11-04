@@ -231,7 +231,8 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     fun send(kind: InquiryKind, text: String, diag: String?, pay: String?, photos: List<ByteArray> = emptyList(), public: Boolean = true,
         done: (Inquiry?, String?) -> Unit) {
         val requestId = InquiryClient.newRequestId()
-        val full = info.copy(diag = diag, pay = pay, photos = photos, public = public)
+        val full = info.copy(diag = diag, pay = pay, photos = photos, public = public,
+            studio = if (kind == InquiryKind.STUDIO) c.settingsRepository.current.workStyle?.name else null)
         act({ sent, why -> done(sent, why) }, queueOn = { e ->
             if (!e.retryable) return@act false
             val queued = c.inquiryStore.queue(com.bamnat.app.company.QueuedInquiry(requestId, kind, text.trim(), full.copy(photos = emptyList()),

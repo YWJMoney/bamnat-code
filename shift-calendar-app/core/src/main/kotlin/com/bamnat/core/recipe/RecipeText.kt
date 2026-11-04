@@ -96,6 +96,12 @@ object RecipeText {
         return PERSONAL.firstOrNull { (_, re) -> re.containsMatchIn(t) }?.first
     }
 
+    /** [RUL-01] As [problem] but without [skip] (a formula may compare amounts: 지출 > 50000). */
+    fun problemExcept(text: String, skip: String): String? {
+        val t = RecipePlatform.nfkc(text).replace('。', '.')
+        return PERSONAL.firstOrNull { (code, re) -> code != skip && re.containsMatchIn(t) }?.first
+    }
+
     /** [RCP-15] What 투자 광장 never takes (결정 AI-D8): 리딩방, promised returns, 종목 추천 — the server's INVEST_ADVICE. */
     private val INVEST_ADVICE = Regex(
         "리딩\\s*방|리딩해|수익\\s*(보장|확정)|원금\\s*보장|무조건\\s*(올라|오릅|상승|수익)|(카톡|카카오톡|텔레그램|오픈\\s*채팅|단톡)\\s*방?\\s*(으로|에|들어|입장|초대)|" +
@@ -116,6 +122,8 @@ object RecipeText {
         // F-99: say which part, so the ✕ can be fixed (a bare "넣을 수 없는 내용" left no way out).
         "parent" -> "원래 판 표시가 맞지 않아요. 스튜디오에서 올리기를 다시 눌러 주세요"
         "cover" -> "표지를 다시 골라 주세요"
+        // [BLU-07] PC 5차: a 꾸밈 newer than the server (부품 꾸미기 before the server knows it) is dropped there, leaving nothing.
+        "pieces" -> "서버가 아직 모르는 새 꾸밈이라 올라가지 않았어요. 서버가 새 판이 되면 다시 올려 주세요. 그동안은 스튜디오의 ‘저장’으로 내 휴대폰에 둘 수 있어요"
         else -> "넣을 수 없는 내용이 있어요"
     }
 
@@ -155,6 +163,30 @@ object RecipeText {
     val emojiGroups: List<String> by lazy { emoji.map { it.group }.distinct() }
 
     /** Emoji whose 한국어 검색어 or 초성 hold every word of [q]; the emoji itself matches too. */
+    /**
+     * [LAY-02] PC 확인 C4 1.36 ('돈'을 찾으면 👌·💇가 섞여 나와요): emoji by how well their words fit — the name starting with [q] first
+     * (💰 돈주머니), then a word that is [q] (👌 돈), then a word starting with it. A word that only holds it in the middle (💇 머리 정돈) is
+     * left out unless nothing better is there.
+     */
+    fun findEmoji(q: String, limit: Int = 120): List<EmojiEntry> {
+        val w = q.trim()
+        if (w.isEmpty()) return emptyList()
+        val loose = searchEmoji(w, 400)
+        fun rank(e: EmojiEntry): Int {
+            val tokens = e.words.split(' ').filter { it.isNotEmpty() }
+            return when {
+                e.emoji == w -> 0
+                tokens.firstOrNull()?.startsWith(w, ignoreCase = true) == true -> 0
+                tokens.any { it.equals(w, ignoreCase = true) } -> 1
+                tokens.any { it.startsWith(w, ignoreCase = true) } -> 2
+                else -> 3
+            }
+        }
+        val ranked = loose.map { it to rank(it) }
+        val good = ranked.filter { it.second < 3 }
+        return (good.ifEmpty { ranked }).sortedBy { it.second }.map { it.first }.take(limit)
+    }
+
     fun searchEmoji(q: String, limit: Int = 120): List<EmojiEntry> {
         val words = q.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
         if (words.isEmpty()) return emptyList()

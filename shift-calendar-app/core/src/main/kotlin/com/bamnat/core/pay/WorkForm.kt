@@ -19,7 +19,7 @@ enum class WorkForm(val label: String, val detail: String, val occupation: Occup
     ON_CALL("당직이 있는 근무", "평일 근무에 당직이 끼어요", Occupation.CUSTOM, WageType.MONTHLY, true),
     DAY_ON_DAY_OFF("24시간 맞교대·격일", "하루 일하고 하루 쉬어요(경비·시설·소방)", Occupation.SECURITY, WageType.MONTHLY, true),
     PUBLIC("공무원 교대", "공무원 수당 규정으로 받아요(경찰·소방·현업)", Occupation.PUBLIC, WageType.MONTHLY, true),
-    OFFICE("주5일 낮 근무", "월~금 정해진 시간에 일해요", Occupation.CUSTOM, WageType.MONTHLY, false),
+    OFFICE("주5일 낮 근무", "월~금 정해진 시간에 일해요 (사무·영업직, 포괄임금도 마지막 장에서 넣어요)", Occupation.CUSTOM, WageType.MONTHLY, false),
     PART_TIME("시급 파트타임", "일한 시간만큼 시급으로 받아요", Occupation.PART_TIME, WageType.HOURLY, false),
     DAILY("일당", "하루 일하면 정해진 금액을 받아요", Occupation.CUSTOM, WageType.DAILY, false),
     ;

@@ -215,6 +215,8 @@ class AWScreenshotTest : ScreenshotBase() {
                 rules = RuleTarget(emptyList(), emptyList(), true, PROFILE, SNAPSHOT) { changes, _ -> applied = changes }) {}
         }
         settle()
+        // 1.36 W9: the other ways are under '다른 방법'.
+        tapText("다른 방법:")
         tapText("사진 없이 칸으로 적기", exact = true)
         reveal("회사 규칙 칸으로 적기", exact = true)
         addCell()

@@ -17,7 +17,6 @@ class FitTableTest {
         FitSurface.CALENDAR_PARTS to "counts", FitSurface.CALENDAR_PARTS to "hours", FitSurface.CALENDAR_PARTS to "rest",
         FitSurface.CALENDAR_PARTS to "todayFlow",
         FitSurface.CALENDAR_TOOLS to "pattern", FitSurface.CALENDAR_TOOLS to "teams", FitSurface.CALENDAR_TOOLS to "typeMonth",
-        FitSurface.CALENDAR_TOOLS to "receive",
     ) + FitTable.of(FitSurface.STATS_PARTS).map { it.surface to it.id }
 
     @Test fun investAndShopCalendarsShowNoShiftParts() {
@@ -50,7 +49,8 @@ class FitTableTest {
             WorkStyle.SHIFT to "edit,teams,typeMonth,share,year,receive,pattern,newCalendar,customize,viewSettings,help",
             WorkStyle.DAY to "edit,share,year,receive,pattern,newCalendar,customize,viewSettings,help",
             WorkStyle.HOURLY to "edit,typeMonth,share,year,receive,newCalendar,customize,viewSettings,help",
-            WorkStyle.INVEST to "edit,share,year,newCalendar,customize,viewSettings,help",
+            // [FIT-05] 1.36: 가족·연인 근무표는 투자·가게 달력도 받아요.
+            WorkStyle.INVEST to "edit,share,year,receive,newCalendar,customize,viewSettings,help",
         )
         for ((style, list) in tools) assertEquals("$style", list, FitTable.shown(FitSurface.CALENDAR_TOOLS, style).joinToString(","))
         // A main calendar from before kinds of work were asked is a shift calendar.

@@ -51,14 +51,15 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.PushPin
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import android.widget.Toast
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.DatePicker
-import androidx.compose.material3.DatePickerDialog
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DatePickerDialog
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -140,6 +141,14 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var showDatePicker by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
+    var savingTemplate by remember { mutableStateOf(false) }
+    var toLedger by remember { mutableStateOf(false) }
+    if (toLedger) MemoToLedgerDialog(memo) { toLedger = false }
+    if (savingTemplate) SaveTemplateDialog(memo, onSave = { name, asked, picks ->
+        val why = vm.saveAsTemplate(name, asked, picks)
+        Toast.makeText(context, why ?: "‘${name.ifBlank { "새 틀" }}’ 틀로 저장했어요. 새 메모를 열면 ‘틀에서 시작’에 있어요", Toast.LENGTH_LONG).show()
+        if (why == null) savingTemplate = false
+    }, onDismiss = { savingTemplate = false })
     var copying by remember { mutableStateOf(false) }
     if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" }, shareText(memo)) { copying = false }
     val bodyTools = remember { MemoBodyTools() }
@@ -200,10 +209,14 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                             DropdownMenuItem(
                                 text = { Text("이 메모를 틀로 저장") },
                                 leadingIcon = { Icon(Icons.Filled.Checklist, null) },
-                                onClick = {
-                                    menu = false
-                                    if (vm.saveAsTemplate()) Toast.makeText(context, "틀로 저장했어요. 새 메모에서 '틀에서 시작'을 누르세요", Toast.LENGTH_LONG).show()
-                                },
+                                // [TAB-03] PC 확인 bad7d860 "눌러도 반응이 없어요": a dialog asks the name and which 칸 to ask each time.
+                                onClick = { menu = false; savingTemplate = true },
+                                enabled = !memo.isBlank,
+                            )
+                            DropdownMenuItem(
+                                text = { Text("가계부에 넣기") },
+                                leadingIcon = { Icon(Icons.Outlined.AccountBalanceWallet, null) },
+                                onClick = { menu = false; toLedger = true },
                                 enabled = !memo.isBlank,
                             )
                             DropdownMenuItem(
@@ -278,12 +291,22 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val date = memo.date
+                // [RCP-11] 1.34: a memo not written yet can start from a 틀. [TAB-03] PC 확인 bf62e966: first in the row while the memo
+                // is empty (at the end it took a swipe to find).
+                if (memo.isBlank && templates.isNotEmpty()) AssistChip(
+                    onClick = { pickTemplate = true },
+                    label = { Text("틀에서 시작") },
+                    leadingIcon = { Icon(Icons.Filled.Checklist, null, Modifier.size(18.dp)) },
+                )
                 // [J133-20] 1.33 (실사용 테스트 "알람 맞추기 칩이 옆으로 밀려 안 보여요"): first in the row, in sight on a narrow phone.
                 ScheduleChip(
                     reminder = memo.reminder,
                     onOpen = { answering = null; scheduling = true },
                     onClear = { vm.setReminder(null) },
                 )
+                // [TAB-03] 1.36 메모 → 가계부: a 금액 칸 offers one line, written only after the user checks it. Second in the row
+                // (PC 확인 bad7d860: last, it sat past the screen's edge and was not found).
+                MemoToLedgerChip(memo)
                 AssistChip(
                     onClick = { showDatePicker = true },
                     label = { Text(if (date != null) Fmt.fullDate(date) else "날짜 붙이기") },
@@ -299,12 +322,6 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 if (date != null) MemoRepeatChip(date, memo.repeat, vm::setRepeat)
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
-                // [RCP-11] 1.34: a memo not written yet can start from a 틀.
-                if (memo.isBlank && templates.isNotEmpty()) AssistChip(
-                    onClick = { pickTemplate = true },
-                    label = { Text("틀에서 시작") },
-                    leadingIcon = { Icon(Icons.Filled.Checklist, null, Modifier.size(18.dp)) },
-                )
             }
             // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
             lastSame?.let { (label, memos) ->
@@ -400,6 +417,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 )
             }
             if (!memo.isChecklist) MemoBodyToolbar(bodyTools)
+            // [RUL-05] 1.36 사용자 "메모장 및 모든 곳에서": {근무}·{이번주야간} 같은 수식이 있으면 그날 값으로 어떻게 읽히는지.
+            com.bamnat.app.logic.MemoFormulaPreview(memo, Modifier.padding(horizontal = 20.dp))
             val chars = if (memo.isChecklist) memo.checklist.sumOf { it.text.length } else memo.body.length
             Text(
                 "${chars}자" + if (memo.isChecklist) " · 완료 ${memo.checkedCount}/${memo.itemCount}" else "",
@@ -787,7 +806,7 @@ private const val JUMP_SHOWN_MILLIS = 2_000L
 /** [MEMO-06] 1.27 AK: the memos of the last day with the same shift, to read while writing today's. */
 @Composable
 private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> Unit) {
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("지난 $label 메모") },
         text = {
@@ -814,12 +833,12 @@ private fun MemoTemplateDialog(
     // 1.35 자유도 점검: 지우기 asks first, like every other 지우기 (RCX-26).
     var removing by remember { mutableStateOf<com.bamnat.core.memo.MemoTemplate?>(null) }
     removing?.let { t ->
-        androidx.compose.material3.AlertDialog(onDismissRequest = { removing = null }, title = { Text("이 틀을 지울까요?") },
+        com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { removing = null }, title = { Text("이 틀을 지울까요?") },
             text = { Text("‘${t.title}’ 틀만 지워요. 이 틀로 쓴 메모는 그대로예요" + if (t.from != null) ". 장터에서 받은 틀은 레시피를 다시 넣으면 돌아와요" else "") },
             confirmButton = { TextButton(onClick = { removing = null; onRemove(t.id) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
             dismissButton = { TextButton(onClick = { removing = null }) { Text("닫기") } })
     }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("틀에서 시작") },
         text = {
@@ -854,7 +873,7 @@ private fun MemoTemplateDialog(
 @Composable
 internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Map<String, String>) -> Unit, onDismiss: () -> Unit) {
     val answers = remember(t.id) { androidx.compose.runtime.mutableStateMapOf<String, String>() }
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(listOfNotNull(t.emoji, t.title).joinToString(" ")) },
         text = {
@@ -881,9 +900,29 @@ internal fun TemplateAskDialog(t: com.bamnat.core.memo.MemoTemplate, onDone: (Ma
                                 a.choices.forEach { c -> com.bamnat.app.ui.components.FilterChip(selected = v == c, onClick = { answers[key] = if (v == c) "" else c }, label = { Text(c) }) }
                             }
                         }
-                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[key] = (if (a.type == "num") numberOnly(it) else it).take(100) }, label = { Text(a.label) },
+                        // [TAB-03] 1.36 체크: 예 or 아니오.
+                        "check" -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(a.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            for (c in listOf("예", "아니오")) com.bamnat.app.ui.components.FilterChip(selected = v == c, onClick = { answers[key] = if (v == c) "" else c }, label = { Text(c) })
+                        }
+                        // [TAB-03] 날짜: 오늘·내일 one tap, or typed as 11월 3일 / 2026-11-03.
+                        "date" -> Column {
+                            androidx.compose.material3.OutlinedTextField(v, { answers[key] = it.take(20) }, label = { Text(a.label) }, placeholder = { Text("11월 3일") },
+                                singleLine = true, modifier = Modifier.fillMaxWidth())
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                val today = com.bamnat.core.time.Today.date()
+                                for ((n, d) in listOf("오늘" to today, "내일" to today.plusDays(1))) {
+                                    val s = "${d.monthValue}월 ${d.dayOfMonth}일"
+                                    com.bamnat.app.ui.components.FilterChip(selected = v == s, onClick = { answers[key] = s }, label = { Text(n) })
+                                }
+                            }
+                        }
+                        else -> androidx.compose.material3.OutlinedTextField(v, { answers[key] = (if (a.type == "num" || a.type == "money") numberOnly(it) else it).take(100) }, label = { Text(a.label) },
                             singleLine = true, modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = if (a.type == "num") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                            suffix = if (a.type == "money") ({ Text("원") }) else null,
+                            placeholder = if (a.type == "time") ({ Text("22:30") }) else null,
+                            keyboardOptions = if (a.type == "num" || a.type == "money") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal)
+                                else if (a.type == "time") androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
                                 else androidx.compose.foundation.text.KeyboardOptions.Default)
                     }
                 }

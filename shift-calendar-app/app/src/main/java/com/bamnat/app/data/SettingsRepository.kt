@@ -206,10 +206,16 @@ data class AppSettings(
     val moneyLayout: String = "",
     /** [DAILY-15] 화면 꾸미기 of the 메모 page. */
     val memoLayout: String = "",
+    /** [TAB-02][TAB-04][TAB-06] 1.36 탭 보기 ([com.bamnat.core.layout.TabViews.encode]): 달력 판, 메모장 보기, 가계부 판; empty is the app's own. In the backup. */
+    val tabViews: String = "",
     /** [RCP-09] 1.34 달력 테마 ([com.bamnat.core.recipe.CalendarTheme.encode]); empty is the app's own look. In the backup. */
     val calTheme: String = "",
     /** [RCX-14] 1.35 위젯 모양 ([com.bamnat.core.recipe.WidgetLook.encode]); empty is the app's own look. In the backup. */
     val widgetLook: String = "",
+    /** [STU-40] 1.36 내 색 모음: colours pinned in the studio, first in every colour line ("FF112233,FF445566", at most 12). In the backup. */
+    val myColors: String = "",
+    /** [STU-37] 1.36 근무에 따라 바뀌는 모양 ([com.bamnat.core.recipe.ShiftLooks.encode]); empty is off. In the backup. */
+    val shiftLooks: String = "",
     /** [RCX-30] 1.35 그림 꾸미기 ([com.bamnat.core.recipe.PhotoLook.encode]); empty is the app's own look. In the backup (the pictures are not). */
     val photoLook: String = "",
     /** [CVW-01] 1.35 달력 모양 ([com.bamnat.core.recipe.CalendarView.encode]); empty is the app's own cells. In the backup. */
@@ -220,12 +226,20 @@ data class AppSettings(
     val longPress: String = "menu",
     /** [FREE-04] 1.35 메모장 모양 ([com.bamnat.core.recipe.MemoLook.encode]); empty is the app's own list. In the backup. */
     val memoLook: String = "",
+    /** [RUL-03][RUL-04] 1.36 수식·규칙·버튼 ([com.bamnat.core.formula.Logic.encode]); empty for none. */
+    val logic: String = "",
+    /** [LAY-01] 1.36 꾸밈 층 ([com.bamnat.core.recipe.Decor.encode], the piece's items as JSON); empty is none. In the backup. */
+    val decor: String = "",
     /** [FREE-06] 1.35 가계부 모양 ([com.bamnat.core.recipe.MoneyLook.encode]). In the backup. */
     val moneyLook: String = "",
     /** [FREE-05] 1.35 화면 색·배경 by screen ([com.bamnat.core.recipe.ScreenLooks.encode]). In the backup (the pictures are not). */
     val screenLooks: String = "",
     /** [FREE-07] 1.35 급여 모양 by kind of work ([com.bamnat.core.recipe.PayLook.encodeAll]). In the backup. */
     val payLooks: String = "",
+    /** [BLU-05] 1.36 부품 꾸미기: the blueprint's lines (core Blueprint.encode), drawn over the older looks; "" for none. */
+    val parts: String = "",
+    /** [MAT-07] 1.36 움직임 ([com.bamnat.core.recipe.Motion.encode]). In the backup. */
+    val motion: String = "",
     /** [DAILY-16] The 지역 시세 line on the pay screen, worked out on the phone only; off from that line. */
     val rateHint: Boolean = true,
     /** [DAILY-17] The second 리뷰 moment (first 급여 리포트) came, and when any review was last asked (epoch day, 0 for never). */
@@ -386,15 +400,22 @@ class SettingsRepository(context: Context) {
             moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
             calTheme = prefs.getString(K_CAL_THEME, null) ?: d.calTheme,
             widgetLook = prefs.getString(K_WIDGET_LOOK, null) ?: d.widgetLook,
+            myColors = prefs.getString(K_MY_COLORS, null) ?: d.myColors,
+            shiftLooks = prefs.getString(K_SHIFT_LOOKS, null) ?: d.shiftLooks,
             photoLook = prefs.getString(K_PHOTO_LOOK, null) ?: d.photoLook,
             calView = prefs.getString(K_CAL_VIEW, null) ?: d.calView,
             accentColor = prefs.getLong(K_ACCENT, d.accentColor),
             longPress = prefs.getString(K_LONG_PRESS, null) ?: d.longPress,
             memoLook = prefs.getString(K_MEMO_LOOK, null) ?: d.memoLook,
+            logic = prefs.getString(K_LOGIC, null) ?: d.logic,
+            decor = prefs.getString(K_DECOR, null) ?: d.decor,
             moneyLook = prefs.getString(K_MONEY_LOOK, null) ?: d.moneyLook,
             screenLooks = prefs.getString(K_SCREEN_LOOKS, null) ?: d.screenLooks,
             payLooks = prefs.getString(K_PAY_LOOKS, null) ?: d.payLooks,
+            parts = prefs.getString(K_PARTS, null) ?: d.parts,
+            motion = prefs.getString(K_MOTION, null) ?: d.motion,
             memoLayout = prefs.getString(K_MEMO_LAYOUT, null) ?: d.memoLayout,
+            tabViews = prefs.getString(K_TAB_VIEWS, null) ?: d.tabViews,
             rateHint = prefs.getBoolean(K_RATE_HINT, d.rateHint),
             payReviewDue = prefs.getBoolean(K_PAY_REVIEW_DUE, false),
             payReviewAsked = prefs.getBoolean(K_PAY_REVIEW_ASKED, false),
@@ -487,15 +508,22 @@ class SettingsRepository(context: Context) {
             .putString(K_MONEY_LAYOUT, s.moneyLayout)
             .putString(K_CAL_THEME, s.calTheme)
             .putString(K_WIDGET_LOOK, s.widgetLook)
+            .putString(K_MY_COLORS, s.myColors)
+            .putString(K_SHIFT_LOOKS, s.shiftLooks)
             .putString(K_PHOTO_LOOK, s.photoLook)
             .putString(K_CAL_VIEW, s.calView)
             .putLong(K_ACCENT, s.accentColor)
             .putString(K_LONG_PRESS, s.longPress)
             .putString(K_MEMO_LOOK, s.memoLook)
+            .putString(K_LOGIC, s.logic)
+            .putString(K_DECOR, s.decor)
             .putString(K_MONEY_LOOK, s.moneyLook)
             .putString(K_SCREEN_LOOKS, s.screenLooks)
             .putString(K_PAY_LOOKS, s.payLooks)
+            .putString(K_PARTS, s.parts)
+            .putString(K_MOTION, s.motion)
             .putString(K_MEMO_LAYOUT, s.memoLayout)
+            .putString(K_TAB_VIEWS, s.tabViews)
             .putBoolean(K_RATE_HINT, s.rateHint)
             .putBoolean(K_PAY_REVIEW_DUE, s.payReviewDue)
             .putBoolean(K_PAY_REVIEW_ASKED, s.payReviewAsked)
@@ -537,17 +565,24 @@ class SettingsRepository(context: Context) {
         const val K_WIDGET_MEMO = "widget_memo"
         const val K_CAL_THEME = "cal_theme"
         const val K_WIDGET_LOOK = "widget_look"
+        const val K_MY_COLORS = "my_colors"
+        const val K_SHIFT_LOOKS = "shift_looks"
         const val K_PHOTO_LOOK = "photo_look"
         const val K_CAL_VIEW = "cal_view"
         const val K_ACCENT = "accent_color"
         const val K_LONG_PRESS = "long_press"
         const val K_MEMO_LOOK = "memo_look"
+        const val K_LOGIC = "logic"
+        const val K_DECOR = "decor"
         const val K_MONEY_LOOK = "money_look"
         const val K_SCREEN_LOOKS = "screen_looks"
         const val K_PAY_LOOKS = "pay_looks"
+        const val K_PARTS = "parts"
+        const val K_MOTION = "motion"
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
         const val K_MEMO_LAYOUT = "memo_layout"
+        const val K_TAB_VIEWS = "tab_views"
         const val K_RATE_HINT = "rate_hint"
         const val K_PAY_REVIEW_DUE = "pay_review_due"
         const val K_PAY_REVIEW_ASKED = "pay_review_asked"

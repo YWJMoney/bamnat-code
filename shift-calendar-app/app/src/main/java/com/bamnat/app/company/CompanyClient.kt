@@ -264,15 +264,81 @@ data class TalkPost(
     val author: String? = null,
     /** [COMM-11] I2: flagged for 개인 정보 once and being checked; shown dimmed with 확인 중. */
     val review: Boolean = false,
+    /** 1.36 [V3] 마을 이름 하나: in a kind of work's 광장, the writer's 프로필 (null without one, and never in a company's). */
+    val maker: String? = null,
+    /** 1.36 [VIL-09] On a question: the reply its writer chose as 도움 됐어요. */
+    val answer: String? = null,
+    /** 1.36 [VIL-10] On a question: its choices to vote on, with the counts and this phone's choice. */
+    val poll: Poll? = null,
+    /** 1.36 [VIL-16] On a 자랑: the writer's own public recipe, as (code, title). */
+    val attach: Pair<String, String>? = null,
+    /** PC 확인 V27: that recipe's look as the server sent it (lookOf), kept as written; null without one. */
+    val attachLook: String? = null,
 )
+
+/** 1.36 [VIL-10] 마을 V10 투표 글: 2~4 choices, how many picked each, and which one this phone picked (null: none yet). */
+data class Poll(val options: List<String>, val counts: List<Int>, val mine: Int? = null) {
+    val total: Int get() = counts.sum()
+    /** The share of [i] in whole percent, 0 before anyone voted. */
+    fun percent(i: Int): Int = if (total == 0) 0 else Math.round(counts.getOrElse(i) { 0 } * 100f / total)
+}
 
 /**
  * [PLZ-04] [past]: an older version's talk, read only since a newer version took its place.
  * [COMM-09] [hiddenByYou]: posts left out because the user chose not to see their writers.
  */
-/** [COMM-11] [leftPosts]: how many more posts this phone may write today; null when the server did not say. */
+/**
+ * [COMM-11] [leftPosts]: how many more posts this phone may write today; null when there is no cap. 1.36 [LIM-10] there is a cap
+ * only while reports restrict this install ([limit]).
+ */
 data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val past: Boolean = false, val hiddenByYou: Int = 0,
-    val leftPosts: Int? = null)
+    val leftPosts: Int? = null, val limit: WriteLimit? = null,
+    /** 1.36 [VIL-11] 이번 주 이야기 주제 the operator set for a kind of work's plaza. */
+    val topic: String? = null)
+
+/**
+ * 1.36 [LIM-10] 신고 누적 쓰기 제한: nobody has a daily cap; posts hidden by reports restrict an install until [until] to [perDay]
+ * writes a day of each kind. The line under a write box, said only then.
+ */
+data class WriteLimit(val until: Instant, val perDay: Int, val by: String? = null, val n: Int = 0, val kinds: List<String> = emptyList()) {
+    fun line(left: Int?): String {
+        val day = until.atZone(com.bamnat.core.time.Today.zone()).toLocalDate()
+        val head = "${cause()} ${day.monthValue}월 ${day.dayOfMonth}일까지 하루 ${perDay}번만 쓸 수 있어요"
+        return when {
+            left == null -> head
+            left > 0 -> "$head · 오늘 ${left}번 더"
+            else -> "$head. 오늘은 다 썼어요"
+        }
+    }
+
+    /**
+     * PC 확인 보안 6차 (운영자가 가렸는데 '신고가 쌓여'): why, as the server says who hid what ([by] "operator", "reports" or "both";
+     * [n] how many; [kinds] post, talk, recipe, set, bio, profile). Before it said, reports.
+     */
+    fun cause(): String {
+        val what = when {
+            kinds.isNotEmpty() && kinds.all { it == "recipe" || it == "set" } -> "작품"
+            kinds.isNotEmpty() && kinds.all { it == "post" || it == "talk" } -> "글"
+            kinds.isNotEmpty() && kinds.all { it == "bio" || it == "profile" } -> "프로필"
+            else -> "글·작품"
+        }
+        val count = if (n > 0 && what != "프로필") " ${n}개" else ""
+        return when (by) {
+            "operator" -> if (what == "프로필") "운영자가 프로필을 가려" else "운영자가 $what$count${com.bamnat.app.ui.Fmt.obj(what + count)} 가려"
+            "both" -> "신고와 운영자 확인으로 $what$count${com.bamnat.app.ui.Fmt.iga(what + count)} 가려져"
+            else -> "신고가 쌓여"
+        }
+    }
+
+    companion object {
+        fun of(o: JSONObject?): WriteLimit? = o?.optJSONObject("limit")?.let { l ->
+            runCatching {
+                WriteLimit(Instant.parse(l.getString("until")), l.getInt("perDay"), l.optString("by").takeIf { it.isNotEmpty() }, l.optInt("n"),
+                    l.optJSONArray("kinds")?.let { a -> List(a.length()) { a.optString(it) } }.orEmpty())
+            }.getOrNull()
+        }
+    }
+}
 
 data class PostVote(val agree: Int, val disagree: Int, val trust: Int, val myVote: Boolean?)
 
@@ -368,6 +434,22 @@ object Plaza {
     )
 
     fun job(key: String): String = JOBS[key] ?: ""
+
+    /**
+     * PC 확인 V41: [JOBS] with the ones a kind of work most often is first (일근 starts at 공무원·제조, not 교대 근무); the same
+     * keys, only the order changes.
+     */
+    fun jobsFor(style: com.bamnat.core.work.WorkStyle?): List<Pair<String, String>> {
+        val first = when (style) {
+            com.bamnat.core.work.WorkStyle.DAY -> listOf("public", "factory", "care", "security", "transport", "nurse")
+            com.bamnat.core.work.WorkStyle.HOURLY -> listOf("hourly", "shop", "care")
+            com.bamnat.core.work.WorkStyle.FIELD -> listOf("construction", "field", "transport")
+            com.bamnat.core.work.WorkStyle.BUSINESS -> listOf("shop", "hourly")
+            else -> emptyList()
+        }
+        val all = JOBS.entries.map { it.key to it.value }
+        return first.mapNotNull { k -> JOBS[k]?.let { k to it } } + all.filter { it.first !in first }
+    }
     fun region(key: String): String = REGIONS[key] ?: "전국"
     fun unit(key: String): String = RATE_UNITS[key]?.name ?: key
 }
@@ -508,6 +590,24 @@ interface CompanyApi {
         if (parent == null && kind == "talk") post(device, company, setup, body) else throw CompanyException("offline")
     /** [PLZ-01] 맞아요 (true), 달라요 (false) or taking it back (null) on someone's post. */
     suspend fun postVote(device: String, id: String, ok: Boolean?): PostVote = throw CompanyException("offline")
+    /** 1.36 [VIL-09] 도움 됐어요: the writer of question [id] picks [reply] (null takes it back). */
+    suspend fun postAnswer(device: String, id: String, reply: String?): String? = throw CompanyException("offline")
+    /** 1.36 [VIL-10] One choice on poll [id] ([choice] null takes it back); the poll as it stands comes back. */
+    suspend fun pollVote(device: String, id: String, choice: Int?): Poll = throw CompanyException("offline")
+    /** 1.36 [VIL-06] 마을 검색: the kinds of work's plazas' posts and the requests with [q]. */
+    suspend fun villageSearch(q: String): VillageFound = VillageFound(emptyList(), emptyList())
+    /** 1.36 [VIL-19] 이달의 주제 공모 for a kind of work ([style] the recipes' key, SHIFT…). */
+    suspend fun contest(device: String, style: String): Contest? = null
+    /** 1.36 [VIL-19] Puts one of my public recipes in this month's contest, or takes it out. */
+    suspend fun enterContest(device: String, style: String, code: String, on: Boolean): Unit = throw CompanyException("offline")
+    /** 1.36 [VIL-13] My newest posts and replies in the plazas. */
+    suspend fun myPosts(device: String): List<MyPost> = throw CompanyException("offline")
+    /** 1.36 [VIL-16] A 자랑 with one of my public recipes ([code]) on it. */
+    suspend fun postShow(device: String, company: String, setup: String, body: String, code: String): String =
+        throw CompanyException("offline")
+    /** 1.36 [VIL-10] A question with [poll] choices to vote on. */
+    suspend fun postPoll(device: String, company: String, setup: String, body: String, poll: List<String>): String =
+        throw CompanyException("offline")
     /** [PLZ-08] This phone uses (applied) a rule set, or stopped; how many use it comes back. */
     suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = 0
     /** [PLAZA-07] The same for one calendar: using a company's setup joins the company for it. */
@@ -745,6 +845,42 @@ class CompanyClient(
         vote(request("POST", "/api/posts/$id/vote", JSONObject().put("device", device).put("ok", ok ?: JSONObject.NULL)))
     }
 
+    override suspend fun villageSearch(q: String): VillageFound = serverCall {
+        villageFoundOf(exchange("GET", "/api/village/search?q=" + java.net.URLEncoder.encode(q, "UTF-8"),
+            headers = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty()).json)
+    }
+
+    override suspend fun contest(device: String, style: String): Contest? = serverCall {
+        contestOf(exchange("GET", "/api/village/contest?style=$style", device = device).json)
+    }
+
+    override suspend fun enterContest(device: String, style: String, code: String, on: Boolean) = serverCall {
+        request("POST", "/api/village/contest/enter", JSONObject().put("device", device).put("style", style).put("code", code).put("on", on))
+        Unit
+    }
+
+    override suspend fun myPosts(device: String): List<MyPost> = serverCall {
+        myPostsOf(exchange("GET", "/api/posts/mine", device = device).json)
+    }
+
+    override suspend fun pollVote(device: String, id: String, choice: Int?): Poll = serverCall {
+        pollOf(request("POST", "/api/posts/$id/poll", JSONObject().put("device", device).put("choice", choice ?: JSONObject.NULL)).getJSONObject("poll"))
+    }
+
+    override suspend fun postShow(device: String, company: String, setup: String, body: String, code: String): String = serverCall {
+        request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim())
+            .put("kind", "show").put("attach", code)).getString("id")
+    }
+
+    override suspend fun postPoll(device: String, company: String, setup: String, body: String, poll: List<String>): String = serverCall {
+        request("POST", "/api/posts", JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim())
+            .put("kind", "question").put("poll", JSONArray(poll.map { it.trim() }))).getString("id")
+    }
+
+    override suspend fun postAnswer(device: String, id: String, reply: String?): String? = serverCall {
+        request("POST", "/api/posts/$id/answer", JSONObject().put("device", device).put("reply", reply ?: JSONObject.NULL)).optStringOrNull("answer")
+    }
+
     override suspend fun use(device: String, company: String, setup: String, on: Boolean): Int = use(device, company, setup, on, "")
 
     override suspend fun use(device: String, company: String, setup: String, on: Boolean, cal: String): Int = serverCall {
@@ -881,7 +1017,8 @@ class CompanyClient(
 
     override suspend fun forgetMineCounts(device: String): ForgetCounts = serverCall {
         val o = request("DELETE", "/api/mine", device = device)
-        ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"))
+        ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"), inquiriesKept = o.optInt("inquiriesKept"),
+            recipes = o.optInt("recipes"), profile = o.optInt("profile") > 0, follows = o.optInt("follows"), sets = o.optInt("sets"))
     }
 
     /** 맞았어요 ([ok]) or 달라요 with what was wrong: order, time, pay (1.27 AH-D9), or wrong, old or name. */
@@ -986,14 +1123,21 @@ internal fun onceRequest(
  * page in place of JSON, a missing field) is [CompanyException] "bad_response", never a crash.
  */
 /** [INQ-05] What `DELETE /api/mine` took away, kind by kind. */
-data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int = 0, val inquiries: Int = 0) {
+data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int = 0, val inquiries: Int = 0,
+    /** 1.36 [INQ-07] Of [inquiries], the 결제·환불 ones gone from the phone that the law keeps with the developer. */
+    val inquiriesKept: Int = 0,
+    /** [PRF-01] 1.36 마을: 올린 작품, 프로필, 팔로우, 모음. */
+    val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0) {
     /** "보낸 규칙 2·토론 글 3·문의 1을 지웠어요", or that there was nothing to delete. */
     fun words(): String {
         val parts = listOfNotNull(
             "보낸 규칙 $reports".takeIf { reports > 0 }, "맞았어요·달라요 $votes".takeIf { votes > 0 },
             "토론 글 $posts".takeIf { posts > 0 }, "문의 $inquiries".takeIf { inquiries > 0 },
+            "작품 ${recipes}개".takeIf { recipes > 0 }, "모음 ${sets}개".takeIf { sets > 0 }, "프로필".takeIf { profile },
+            "팔로우 $follows".takeIf { follows > 0 },
         )
-        return if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요"
+        val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
+        return if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept
     }
 }
 
@@ -1122,6 +1266,13 @@ internal fun boardOf(o: JSONObject): Board = Board(
 )
 
 /** [COMM-06] The talk on a rule set, or a room's (자유 토의). */
+/** 1.36 [VIL-10] A poll as the server (and [PageCache]) writes it. */
+internal fun pollOf(o: JSONObject): Poll {
+    val options = (0 until (o.optJSONArray("options")?.length() ?: 0)).map { o.getJSONArray("options").getString(it) }
+    val counts = options.indices.map { o.optJSONArray("counts")?.optInt(it) ?: 0 }
+    return Poll(options, counts, if (o.has("mine") && !o.isNull("mine")) o.getInt("mine") else null)
+}
+
 internal fun talkOf(o: JSONObject): Talk = Talk(
     posts = o.optJSONArray("posts").objects().map { p ->
         TalkPost(
@@ -1138,12 +1289,19 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             },
             author = p.optStringOrNull("author")?.takeIf { com.bamnat.core.plaza.HideList.MARK.matches(it) },
             review = p.optBoolean("review"),
+            maker = p.optStringOrNull("maker")?.takeIf { Regex("[0-9a-f]{12}").matches(it) },
+            answer = p.optStringOrNull("answer"),
+            poll = p.optJSONObject("poll")?.let(::pollOf)?.takeIf { it.options.size >= 2 },
+            attach = p.optJSONObject("attach")?.let { a -> a.optString("code").takeIf { it.isNotEmpty() }?.let { it to a.optString("title") } },
+            attachLook = p.optJSONObject("attach")?.optJSONObject("look")?.toString(),
         )
     },
     mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),
     past = o.optBoolean("past"),
     hiddenByYou = o.optInt("hiddenByYou"),
     leftPosts = o.optJSONObject("left")?.takeIf { it.has("posts") }?.optInt("posts"),
+    limit = WriteLimit.of(o),
+    topic = o.optStringOrNull("topic"),
 )
 
 internal fun termsOf(o: JSONObject) =
@@ -1261,10 +1419,36 @@ internal fun serverExchange(
 ): Answer {
     // [QA130-01] 1.30 AY: a Play pre-launch robot (Firebase Test Lab) reads but never writes; to it, as if offline.
     if (!com.bamnat.app.diag.TestLab.allows(method)) throw CompanyException("offline")
+    // [SRV-30] 1.36: at api.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
+    val once = {
+        try {
+            ServerAddress.call(baseUrl) { at -> exchangeOnce(at, method, path, body, device, headers, session) }
+        } catch (e: CompanyException) {
+            throw e // the server's own answer (refused, not found …), never 'offline'
+        } catch (e: IOException) {
+            throw CompanyException("offline")
+        }
+    }
+    return try {
+        once()
+    } catch (e: CompanyException) {
+        // 1.36 [SEC-11] The server wants Play's verdict first: asked once, then the same request once more.
+        val dev = device ?: body?.optString("device")?.takeIf { it.isNotEmpty() }
+        if (e.code != "integrity" || dev == null || path == "/api/integrity" || !IntegrityProof.prove(baseUrl, dev)) throw e
+        once()
+    }
+}
+
+/** One try of [serverExchange] at one address; a failure before reaching the server comes out as it is, for [ServerAddress]. */
+private fun exchangeOnce(
+    baseUrl: String, method: String, path: String, body: JSONObject?, device: String?, headers: Map<String, String>,
+    session: ServerSession?,
+): Answer {
     val conn = try {
         // [SPD-26] 1.31 I2: through Cronet (HTTP/3·HTTP/2) when Google Play services has it, otherwise as before.
         NetEngine.open(URL(baseUrl.trimEnd('/') + path))
     } catch (e: IOException) {
+        if (ServerAddress.neverArrived(e)) throw e
         throw CompanyException("offline")
     }
     val started = System.nanoTime()
@@ -1306,6 +1490,7 @@ internal fun serverExchange(
     } catch (e: IOException) {
         // [SPD-27] Only a connection that broke is closed; one read to its end stays open for the next request.
         conn.disconnect()
+        if (ServerAddress.neverArrived(e)) throw e
         throw CompanyException("offline")
     } catch (e: RuntimeException) {
         conn.disconnect()

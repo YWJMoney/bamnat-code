@@ -1,10 +1,19 @@
 package com.bamnat.app.ui.studio
 
+import com.bamnat.app.ui.decor.nextPinned
+import com.bamnat.app.ui.decor.decor
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.material.icons.filled.History
+import androidx.compose.foundation.gestures.transformable
+import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,10 +38,11 @@ import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Compare
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.AlertDialog
+import androidx.compose.material3.RadioButton
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.DropdownMenu
+import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -52,6 +62,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -62,8 +73,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import com.bamnat.app.ui.parts.partPicking
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -72,6 +87,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.calendar.CalendarPart
@@ -123,6 +139,16 @@ import kotlinx.coroutines.launch
 /** [STU-11] The parts of the app the studio changes, each with the example tab it shows and the tools it has. */
 private enum class Area(val label: String, val target: FreeTarget?, val tab: String) {
     CALENDAR("달력", FreeTarget.CALENDAR, TabOrder.CALENDAR),
+    /**
+     * [STU-21] 1.36 레시피 만들기 합침: 근무 색·알람 묶음·메모 틀·규칙 — what goes with the look when it is sent. [STU-25] 빌드 7: second
+     * in the row (it was eleventh, three swipes away).
+     */
+    FEATURES("기능", null, TabOrder.CALENDAR),
+    /**
+     * [RUL-06] 1.36 규칙·단추 (사용자 2026-11-01 "수식·조건으로 모든 곳을 이어 직접"): 규칙, 단추, 조건부 꾸미기 in one place. PC D8: third in
+     * the row, next to 기능 (맨 끝이라 스튜디오 안에서 못 찾고 설정 › 스튜디오에서 열기로 들어갔어요).
+     */
+    RULES("규칙·단추", null, TabOrder.CALENDAR),
     MONEY("가계부", FreeTarget.MONEY, TabOrder.MONEY),
     MEMO("메모", FreeTarget.MEMO, TabOrder.MEMOS),
     STATS("통계", FreeTarget.STATS, TabOrder.STATS),
@@ -131,7 +157,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     SETTINGS("설정", FreeTarget.SETTINGS, TabOrder.SETTINGS),
     WIDGET("위젯", null, TabOrder.SETTINGS),
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
-    GUARDED("결제·처리방침", FreeTarget.GUARDED, TabOrder.SETTINGS),
+    // 사용자 2026-11-01 ("스튜디오에 결제 처리방침이 왜 있어"): 결제·처리방침·동의 화면은 꾸미지 않아요 — 늘 앱 기본 모양 ([ScreenSkin]).
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
     ;
 
@@ -143,20 +169,43 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     }
 
     val tools: List<Tool> get() = when (this) {
-        CALENDAR -> listOf(Tool.CELL, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS, Tool.BOX)
-        MEMO -> listOf(Tool.MEMO_LOOK, Tool.COLORS, Tool.CARDS, Tool.BOX)
-        MONEY -> listOf(Tool.MONEY_LOOK, Tool.COLORS, Tool.CARDS, Tool.BOX)
-        STATS -> listOf(Tool.COLORS, Tool.CARDS, Tool.BOX)
-        PAY -> listOf(Tool.PAY_LOOK, Tool.COLORS, Tool.BOX)
-        PLAZA -> listOf(Tool.COLORS, Tool.BOX)
-        SETTINGS -> listOf(Tool.COLORS, Tool.TABS, Tool.CORNERS, Tool.BOX)
-        WIDGET -> listOf(Tool.WIDGET, Tool.BOX)
-        ALARM, GUARDED -> listOf(Tool.COLORS)
-        ALL -> listOf(Tool.COLORS, Tool.CORNERS, Tool.TABS, Tool.BOX)
+        CALENDAR -> listOf(Tool.CELL, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.PATTERN, Tool.VIEW, Tool.DAYS, Tool.PHOTO, Tool.COLORS, Tool.CARDS)
+        MEMO -> listOf(Tool.MEMO_LOOK, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        MONEY -> listOf(Tool.MONEY_LOOK, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.COLORS, Tool.CARDS)
+        STATS -> listOf(Tool.COLORS, Tool.DECOR, Tool.BOX, Tool.CARDS)
+        PAY -> listOf(Tool.PAY_LOOK, Tool.PARTS, Tool.COLORS, Tool.DECOR, Tool.BOX)
+        PLAZA -> listOf(Tool.COLORS, Tool.DECOR, Tool.BOX)
+        SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.TABS, Tool.CORNERS)
+        WIDGET -> listOf(Tool.WIDGET, Tool.PARTS, Tool.DECOR, Tool.BOX)
+        ALARM -> listOf(Tool.COLORS)
+        // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
+        // [STU-37] 근무에 따라 바뀌는 모양 second.
+        // [RUL-06] 한 색, 근무에 따라, 부품, 규칙·단추 first.
+        ALL -> listOf(Tool.SEED, Tool.SHIFT, Tool.PARTS, Tool.LOGIC, Tool.COLORS, Tool.DECOR, Tool.FONT, Tool.MOTION, Tool.BOX, Tool.CORNERS, Tool.TABS)
+        FEATURES -> listOf(Tool.FEATURE)
+        // PC D4: 장터에서 담은 규칙·단추를 여기 보관함에서 얹어요.
+        RULES -> listOf(Tool.RULES, Tool.BUTTONS, Tool.COND, Tool.BOX)
+    }
+
+    /** [LAY-04] Where this area's 꾸밈 층 can stand. */
+    val decorPlaces: List<String> get() = when (this) {
+        CALENDAR -> listOf("bg.calendar", com.bamnat.core.recipe.Decor.HEAD, com.bamnat.core.recipe.Decor.WEEK, com.bamnat.core.recipe.Decor.CELL)
+        MEMO -> listOf("bg.memo"); MONEY -> listOf("bg.money"); STATS -> listOf("bg.stats"); PAY -> listOf("bg.pay")
+        PLAZA -> listOf("bg.plaza"); SETTINGS -> listOf("bg.settings"); WIDGET -> listOf(com.bamnat.core.recipe.Decor.WIDGET)
+        else -> listOf(com.bamnat.core.recipe.Decor.APP)
+    }
+
+    /** 사용자 2026-11-01: the 장터 구간 that holds this area's looks — a 기능별 탭 where there is one, else 테마. */
+    val marketKind: String get() = com.bamnat.app.recipe.RecipeClient.let { r ->
+        when (this) {
+            CALENDAR -> r.SCOPE_TAB + "calendar"; MONEY -> r.SCOPE_TAB + "money"; MEMO -> r.SCOPE_TAB + "memo"
+            STATS, PAY -> r.SCOPE_TAB + "pay"; WIDGET -> r.SCOPE_TAB + "widget"; ALARM -> r.SCOPE_TAB + "alarm"; FEATURES -> r.SCOPE_TAB
+            else -> r.SCOPE_THEME
+        }
     }
 
     /** Screens drawn only in 자세히 (the example app has no page of their own). */
-    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, GUARDED, WIDGET)
+    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, WIDGET)
 
     companion object {
         fun of(tab: String): Area = when (tab) {
@@ -169,10 +218,22 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
 private enum class Tool(val label: String) {
     CELL("칸 디자인"), PATTERN("패턴"), VIEW("칸 높이·줄"), DAYS("오늘·주말 색"), PHOTO("그림"), COLORS("색·배경"), CARDS("카드 배치"),
     MEMO_LOOK("메모장 모양"), MONEY_LOOK("가계부 모양"), PAY_LOOK("급여 모양"), TABS("아래 탭"), CORNERS("모서리"), WIDGET("위젯 모양"),
-    BOX("보관함"),
+    BOX("보관함"), FEATURE("켜고 고치기"), SEED("한 색"), SHIFT("근무에 따라"),
+    /** [BLU-06] 1.36 부품 하나하나 꾸미기. */
+    PARTS("부품"),
+    /** [RUL-06] 1.36 수식·규칙·버튼: 단추와 "이럴 때 이렇게" 규칙. */
+    LOGIC("규칙·단추"), RULES("규칙"), BUTTONS("단추"), COND("조건부 꾸미기"),
+    /** [LAY-04] 1.36 꾸밈 층: 도형·스티커·글상자·아이콘을 마음대로 놓아요. */
+    DECOR("꾸밈 층"),
+    // [MAT-05][MAT-07] 1.36 글꼴(앱 전체), 움직임.
+    FONT("글꼴"), MOTION("움직임"),
 }
 
-private enum class Dock(val label: String, val scale: Float) { BIG("크게", 0.62f), SMALL("작게", 0.42f), FOLDED("접기", 0f) }
+/** [STU-24] 1.36 미리 보기 크기: the handle under it sets any size between these (사용자 2026-10-31 "크게작게 접기가 너무 불편"). */
+private const val SCALE_MIN = 0.3f
+private const val SCALE_MAX = 0.8f
+private const val SCALE_BIG = 0.62f
+private const val SCALE_SMALL = 0.38f
 
 /**
  * [STU-10][STU-11] 1.35 스튜디오 (사용자 2026-10-30 21:39 "인터랙션이 뛰어나야하고 좀더 밀도있게"): one screen for every look. On top the
@@ -182,17 +243,46 @@ private enum class Dock(val label: String, val scale: Float) { BIG("크게", 0.6
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String, String>) -> Unit) {
+fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Unit = {}, onMarket: ((String) -> Unit)? = null) {
     com.bamnat.app.ui.theme.BarIcons(light = MaterialTheme.colorScheme.surface.luminance() > 0.5f)
     val c = LocalContext.current.appContainer
     val s by vm.state.collectAsStateWithLifecycle()
     val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
+    val studioFacts = com.bamnat.app.logic.rememberAppDayFacts()
+    // PC D10: rules put in from the market (or switched in 설정) while the studio was behind show here too.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.syncLogic() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var area by rememberSaveable { mutableStateOf(Area.CALENDAR) }
-    var tool by rememberSaveable { mutableStateOf(Tool.CELL) }
-    var dock by rememberSaveable { mutableStateOf(Dock.BIG) }
+    var area by rememberSaveable { mutableStateOf(vm.startArea?.let { a -> Area.entries.firstOrNull { it.name == a } } ?: Area.ALL) }
+    var tool by rememberSaveable { mutableStateOf(Tool.SEED) }
+    var partNow by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    var partPick by remember { mutableStateOf<Pair<String, String?>?>(null) }
+    // [LAY-09] 고급 보기 for the whole studio (부품 숫자 칸·여러 부품·색 변수, 꾸밈 층 숫자 칸, 층 나무), and the item the 층 나무 opens.
+    var studioAdvanced by rememberSaveable { mutableStateOf(false) }
+    var partsTogether by remember { mutableIntStateOf(1) }
+    var decorFocus by remember { mutableStateOf<Int?>(null) }
+    // [LAY-09] 곳 줄: the six most used, kept on the phone, and '더 보기'.
+    val studioCtx = LocalContext.current
+    val studioPrefs = remember { studioCtx.getSharedPreferences("studio_ui", android.content.Context.MODE_PRIVATE) }
+    var areaUses by remember { mutableStateOf(AreaRank.decode(studioPrefs.getString("areaUses", null))) }
+    var allAreas by rememberSaveable { mutableStateOf(false) }
+    var scale by rememberSaveable { mutableStateOf(SCALE_BIG) }
+    var history by remember { mutableStateOf(false) }
+    var changes by remember { mutableStateOf(false) }
+    var publishing by remember { mutableStateOf<Triple<String, String, String?>?>(null) }
+    // PC 확인 보안 7차 (두 번째 올리기에 지난 끝 화면이 먼저 나와요): each 올리기 is a new round, not the last one's screen.
+    var publishRound by remember { mutableStateOf(0) }
+    var preparing by remember { mutableStateOf(false) }
+    var uploadWhat by remember { mutableStateOf<List<String>?>(null) }
+    // PC 006d0aec: what went up from here (body → the answer), so 올리기 with nothing changed says so at once, before '무엇을 올릴까요'.
+    var sentBodies by remember { mutableStateOf(mapOf<String, com.bamnat.app.recipe.Sent>()) }
+    var noChange by remember { mutableStateOf<com.bamnat.app.recipe.Sent?>(null) }
+    var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
+    // 1.36 (사용자 2026-10-31 "화면 터치하면 전 모습, 떼면 후 모습"): a finger held on the example shows the look one step back.
+    var peeking by remember { mutableStateOf(false) }
+    var peekMarks by remember { mutableStateOf(0) }
+    var halfAt by remember { mutableStateOf(0.5f) }
     var half by rememberSaveable { mutableStateOf(false) }
     var payStyle by rememberSaveable { mutableStateOf(vm.style ?: WorkStyle.SHIFT) }
     var lookIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -200,7 +290,30 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
     var saving by remember { mutableStateOf(false) }
     var startAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
     var inkAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // 1.36 [GRW-01] 원하는 꾸미기가 없을 때 스튜디오를 떠나지 않고 그 자리에서 부탁해요.
+    var wish by remember { mutableStateOf(false) }
     val snack = remember { SnackbarHostState() }
+    val resumable by vm.resumable.collectAsStateWithLifecycle()
+    var resumeShut by rememberSaveable { mutableStateOf(false) }
+    var feelOpen by remember { mutableStateOf(false) }
+    LaunchedEffect(vm.askFeel) { if (vm.askFeel) { vm.askFeel = false; feelOpen = true } }
+    LaunchedEffect(vm.openFont) {
+        when (vm.openFont) {
+            StudioViewModel.START_FONT -> { area = Area.ALL; tool = Tool.FONT }
+            StudioViewModel.START_MOTION -> { area = Area.ALL; tool = Tool.MOTION }
+            StudioViewModel.START_PARTS -> { area = Area.ALL; tool = Tool.PARTS }
+            StudioViewModel.START_SCREEN_FONT -> { com.bamnat.app.ui.settings.FontRowFocus.label = "이 화면 글꼴"; area = Area.CALENDAR; tool = Tool.COLORS }
+            StudioViewModel.START_DATE_FONT -> { com.bamnat.app.ui.settings.FontRowFocus.pinned = "날짜 글꼴"; area = Area.CALENDAR; tool = Tool.CELL }
+        }
+        vm.openFont = null
+    }
+    val shotLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
+    // [STU-41] The example as a picture, taken as 올리기 opens.
+    fun takeShot() { scope.launch { StudioShot.last = runCatching { shotLayer.toImageBitmap().asAndroidBitmap() }.getOrNull() } }
+    // [STU-36] 미리 보기 조건.
+    var seeDark by rememberSaveable { mutableStateOf(false) }
+    var seeBig by rememberSaveable { mutableStateOf(false) }
+    var seeCvd by rememberSaveable { mutableStateOf(false) }
 
     val d = s.draft
     val looks = remember(d.screenLooks) { ScreenLooks.decode(d.screenLooks) }
@@ -208,10 +321,49 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
     val memoLook = remember(d.memoLook) { MemoLook.decode(d.memoLook) }
     val moneyLook = remember(d.moneyLook) { MoneyLook.decode(d.moneyLook) }
     val payLooks = remember(d.payLooks) { PayLook.decodeAll(d.payLooks) }
-    val now = remember(s.pieces) { Recipe("초안", styles = WorkStyle.entries.toSet(), pieces = s.pieces) }
+    // [LAY-04] 1.36 꾸밈 층 being made.
+    val decor = remember(d.decor) { com.bamnat.core.recipe.Decor.decode(d.decor) }
+    // [STU-21] The example draws the 기능 that show (근무 색, 메모 틀, 투자 일지) along with the look.
+    val now = remember(s.pieces, s.extras) { vm.shown(s) }
     val before = remember(s.basePieces) { Recipe("처음", styles = WorkStyle.entries.toSet(), pieces = s.basePieces) }
+    // [BLU-06] The bar counts what the 바꾼 곳 sheet lists (PC 3차: 막대는 1개인데 시트는 2줄).
+    val changedCount = remember(before, now) { LookParts.changed(before, now).size }
     val diff = remember(s.draft, s.base) { c.recipes.pieces.lookDiff(s.draft, s.base) }
-    fun pick(a: Area) { area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true }
+    fun pick(a: Area) {
+        area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true
+        areaUses = AreaRank.used(areaUses, a.name)
+        runCatching { studioPrefs.edit().putString("areaUses", AreaRank.encode(areaUses)).apply() }
+    }
+    // PC 확인 1.36 (처음 모양으로 시작하면 달력 › 칸 디자인이 열려 안내가 말한 ‘한 색’이 안 보임): a plain start opens 앱 전체 › 한 색 once.
+    val plainStart = diff == 0 && s.origin is StudioViewModel.Origin.Plain && s.extras.isEmpty()
+    fun openSeed() { pick(Area.ALL); tool = Tool.SEED }
+    var plainOpened by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(plainStart) { if (plainStart && !plainOpened) { plainOpened = true; openSeed() } }
+    // [STU-20] The 기록 목록 says where each change was made.
+    vm.where = "${area.labelFor(vm.style)} · ${(if (tool in area.tools) tool else area.tools.first()).label}"
+    // [STU-23] 눌러서 고치기: a tap on a part of the example opens its tool, and says so.
+    fun picked(region: String) {
+        val (a, t) = when (region) {
+            "cells" -> Area.CALENDAR to Tool.CELL
+            "days" -> Area.FEATURES to Tool.FEATURE
+            "cards" -> (if (area.tools.contains(Tool.CARDS)) area else Area.of(area.tab)) to Tool.CARDS
+            "memo" -> Area.MEMO to Tool.MEMO_LOOK
+            "money" -> Area.MONEY to Tool.MONEY_LOOK
+            else -> area to Tool.COLORS
+        }
+        area = a; tool = if (t in a.tools) t else a.tools.first()
+        if (scale > SCALE_SMALL) scale = SCALE_SMALL
+        openedLine = "‘${a.labelFor(vm.style)} · ${tool.label}’을 열었어요. 바꾸면 위에 바로 보여요"
+    }
+    // U18 1.36 (빌드 확인: 도구를 고르면 고칠 곳이 미리 보기 아래로 밀려 안 보임): any other tool picked makes the example smaller once, as a
+    // tap on the example does, so the tool's controls come up into view; 크게 on the handle brings it back.
+    val firstTool = remember { tool }
+    var toolSeen by remember { mutableStateOf(firstTool) }
+    LaunchedEffect(tool) {
+        // PC 확인 C6 1.36 (미리 보기가 커서 꾸밈 층 칸이 좁아요): 꾸밈 층 has its own board, so the example folds away for it.
+        if (tool == Tool.DECOR && tool != toolSeen) { toolSeen = tool; scale = 0f }
+        else if (tool != toolSeen) { toolSeen = tool; if (scale > SCALE_SMALL) scale = SCALE_SMALL }
+    }
     // Ask first when the draft has things the phone does not.
     fun guarded(then: () -> Unit) { if (s.changed) startAsk = then else then() }
     // [STU-12] 조합 자동 점검 before it goes anywhere.
@@ -219,17 +371,33 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
 
     LaunchedEffect(s.said) {
         val said = s.said ?: return@LaunchedEffect
-        val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear) "되돌리기" else null, duration = SnackbarDuration.Long)
-        if (r == SnackbarResult.ActionPerformed) vm.undoWear() else vm.said()
+        // 1.36 (사용자 2026-10-31): 얹기 too can be taken back from here, the same step as 되돌리기 above.
+        val r = snack.showSnackbar(said, actionLabel = if (s.canUndoWear || s.canUndoLayer || s.unlaid != null) "되돌리기" else null, duration = SnackbarDuration.Long)
+        // PC 14차: 빼기 too is taken back from the line (laid on again).
+        if (r == SnackbarResult.ActionPerformed) { val back = s.unlaid; if (back != null) { vm.said(); vm.layer(back) } else if (s.canUndoLayer) vm.undoLayer() else vm.undoWear() } else vm.said()
     }
-    androidx.activity.compose.BackHandler(enabled = s.changed) { leaving = true }
+    // PC 제안 1.36 (장터에서 담고 돌아와도 보관함에 들어온 줄 모름): what came into 보관함 while away is said, with 보기 to it.
+    LaunchedEffect(kept) {
+        val ids = kept.map { it.id }.toSet()
+        val before = vm.seenKept
+        vm.seenKept = ids
+        val n = before?.let { (ids - it).size } ?: 0
+        if (n > 0 && snack.showSnackbar("보관함에 새로 들어왔어요 · ${n}개", actionLabel = "보기", duration = SnackbarDuration.Long) == SnackbarResult.ActionPerformed) {
+            if (Tool.BOX !in area.tools) pick(Area.CALENDAR)
+            tool = Tool.BOX
+        }
+    }
+    // 1.36 U3: saved or sent since the last change, it leaves without asking.
+    androidx.activity.compose.BackHandler(enabled = s.changed && !s.kept) { leaving = true }
 
-    CompositionLocalProvider(LocalColorMemory provides ColorMemory(s.recent, vm::usedColor)) {
+    // [STU-40] 내 색 모음 lives in the settings (kept across studios and in the backup).
+    val pinned by vm.myColors.collectAsStateWithLifecycle()
+    CompositionLocalProvider(LocalColorMemory provides ColorMemory(s.recent, vm::usedColor, pinned, vm::pinColor)) {
         Scaffold(
             snackbarHost = { SnackbarHost(snack) },
             topBar = {
                 TopAppBar(
-                    navigationIcon = { IconButton(onClick = { if (s.changed) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                    navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                     title = {
                         var menu by remember { mutableStateOf(false) }
                         Column(Modifier.clickable(onClickLabel = "시작할 모양 바꾸기") { menu = true }) {
@@ -239,10 +407,22 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                                     modifier = Modifier.weight(1f, fill = false))
                                 Icon(Icons.Filled.ArrowDropDown, null)
                             }
+                            // PC 확인 W7 1.36: nothing changed (되돌리기 to the end), or back on the start's own 느낌, and it goes.
+                            vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
+                                vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }?.let {
+                                Text("지금: ${it.second}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
                         DropdownMenu(menu, { menu = false }) {
                             DropdownMenuItem({ Text("지금 내 모양에서") }, onClick = { menu = false; guarded { vm.startMine() } })
                             DropdownMenuItem({ Text("처음 모양에서") }, onClick = { menu = false; guarded { vm.startPlain() } })
+                            // [STU-35] 느낌 세 번 고르기로 시작안 넷.
+                            DropdownMenuItem({ Text("느낌으로 새로 만들기") }, onClick = { menu = false; feelOpen = true })
+                            // [STU-34] 자동 저장된 만들던 것.
+                            resumable?.let { r ->
+                                DropdownMenuItem({ Text("이어서 하기 · ${draftName(r.body)}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                    onClick = { menu = false; guarded { vm.resume(r.id) } })
+                            }
                             val themes = vm.kept()
                             if (themes.isNotEmpty()) HorizontalDivider()
                             themes.take(12).forEach { w ->
@@ -254,6 +434,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                     actions = {
                         IconButton(onClick = vm::undo, enabled = s.past.isNotEmpty()) { Icon(Icons.AutoMirrored.Filled.Undo, "되돌리기") }
                         IconButton(onClick = vm::redo, enabled = s.future.isNotEmpty()) { Icon(Icons.AutoMirrored.Filled.Redo, "다시 하기") }
+                        // [STU-20] 기록 목록: every change in a line, back to any of them.
+                        IconButton(onClick = { history = true }, enabled = s.past.isNotEmpty() || s.future.isNotEmpty()) {
+                            Icon(Icons.Filled.History, "바꾼 기록")
+                        }
                         // 비교: held down, the look it started from.
                         // [STU-10] Held: the look before; a tap (and TalkBack's double tap) puts the two side by side instead.
                         Box(Modifier.size(48.dp).semantics {
@@ -271,15 +455,42 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                 Surface(tonalElevation = 3.dp) {
                     Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(when {
-                            s.wornNow && diff == 0 -> "✓ 지금 내 앱에 입힌 모양이에요. 더 고치면 다시 입혀요"
-                            diff == 0 -> "바꾼 곳 없음 · 입히기 전까지 내 앱은 그대로예요"
-                            else -> "바꾼 곳 ${diff}개 · 입히기 전까지 내 앱은 그대로예요"
-                        } + (s.sources.values.firstOrNull()?.let { " · ‘$it’ 조각 사용" } ?: ""),
-                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.fillMaxWidth().clickable(enabled = diff > 0 || s.extras.isNotEmpty(), onClickLabel = "바꾼 곳 보기") { changes = true },
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(when {
+                                s.wornNow && diff == 0 -> "✓ 지금 내 앱에 입힌 모양이에요. 더 고치면 다시 입혀요"
+                                // 마을 PC 제안 1.36 (처음 모양으로 열려도 무엇을 하는 곳인지 말이 없음): a start in this kind of work's words.
+                                diff == 0 && s.origin is StudioViewModel.Origin.Plain && s.extras.isEmpty() ->
+                                    "${vm.style?.let { com.bamnat.core.recipe.RecipeDescribe.short(it) + " " }.orEmpty()}첫 작품을 만들어요 · ‘한 색’에서 색 하나부터 골라 보세요"
+                                diff == 0 -> "바꾼 곳 없음 · 입히기 전까지 내 앱은 그대로예요"
+                                else -> "바꾼 곳 ${maxOf(changedCount, 1)}곳 · 입히기 전까지 내 앱은 그대로예요"
+                            } + (if (s.extras.isNotEmpty()) " · 기능 ${s.extras.size}개" else "") + (s.sources.values.distinct().takeIf { it.isNotEmpty() }?.let { v -> " · " + v.joinToString("·") { "‘$it’" } + " 조각 사용" } ?: ""),
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            if (diff > 0 || s.extras.isNotEmpty()) Text("보기 ›", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            // PC 13차 사용성 제안 (얹은 뒤 '…조각 사용'만 있고 빼는 곳이 안 보임): the last one laid on, taken off right here.
+                            s.layered.lastOrNull()?.let { k -> TextButton(onClick = { vm.unlayer(k) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("얹은 것 빼기") } }
+                            if (plainStart && !(area == Area.ALL && tool == Tool.SEED)) TextButton(onClick = { openSeed() }) { Text("한 색 열기") }
+                        }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedButton(onClick = { checked { saving = true } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("저장") }
-                            OutlinedButton(onClick = { checked { onUpload(vm.upload()) } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("올리기") }
+                            // PC 재검토 C11 (저장·올리기·입히기가 같은 무게): 내 앱에 입히기 is the one big button; 저장 and 올리기 are lighter.
+                            TextButton(onClick = { checked { saving = true } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("저장") }
+                            // [STU-21] 1.36 올리기 stays in the studio: 받는 분이 넣을 값 · 이름 · 설명 · 마치기 over it, back here with 스튜디오로.
+                            // PC 확인 W37 1.36 (올리기를 눌러도 몇 초 아무 표시가 없어 여러 번 누름): 준비 중 at once, one tap only.
+                            TextButton(onClick = { checked {
+                                preparing = true
+                                // [STU-26] Changes on one tab only: ask whether that tab goes up alone (a 기능별 탭) or the whole theme.
+                                val tabs = vm.changedTabs()
+                                takeShot()
+                                if (tabs.isNotEmpty()) { uploadWhat = tabs; preparing = false }
+                                else scope.launch {
+                                    val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
+                                    // PC 006d0aec: nothing changed since it last went up from here: said at once.
+                                    val same = sentBodies[body]
+                                    if (same != null) { noChange = same; preparing = false }
+                                    else { publishRound++; publishing = Triple(body, parent, vm.nextOf()) }
+                                }
+                            } }, enabled = !preparing && publishing == null,
+                                modifier = Modifier.heightIn(min = 48.dp)) { Text(if (preparing) "준비 중…" else "올리기") }
                             Box(Modifier.weight(1f)) {
                                 WearButton(vm, s.busy) { go -> checked(go) }
                             }
@@ -291,26 +502,63 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
             Column(Modifier.fillMaxSize().padding(padding)) {
                 // The example: 앱 화면 or 자세히, its size, and 반반 비교.
                 Column(Modifier.fillMaxWidth().animateContentSize().padding(horizontal = 12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(selected = !detail, onClick = { detail = false }, label = { Text("앱 화면") }, enabled = !area.detailOnly)
-                        Spacer(Modifier.width(6.dp))
                         FilterChip(selected = detail, onClick = { detail = true }, label = { Text("자세히") })
-                        Spacer(Modifier.weight(1f))
-                        Dock.entries.forEach { k ->
-                            TextButton(onClick = { dock = k }) {
-                                Text(k.label, fontWeight = if (k == dock) FontWeight.Bold else FontWeight.Normal,
-                                    color = if (k == dock) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                        // PC 확인 L2·L4: the locked screens, named over the example; a tap shows that screen up close.
+                        // PC 확인 1.36 (첫 잠금·마지막 풀기 때 아래 칩 줄이 아래위로 뜀): in this row, not a line of their own.
+                        vm.locked.forEach { tab ->
+                            androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)); detail = true
+                                // PC 제안 1.36 (잠금 표시인지 보기 칩인지 헷갈림): it says it is locked, and where to unlock it.
+                                // PC 제안 1.36: 풀기 right on it.
+                                scope.launch {
+                                    val name = lockName(tab, vm.style)
+                                    if (snack.showSnackbar(name + com.bamnat.app.ui.Fmt.eun(name) + " 잠겨 있어요", actionLabel = "풀기") == SnackbarResult.ActionPerformed) {
+                                        vm.locked = vm.locked - tab
+                                    }
+                                }
+                            }, label = { Text("🔒 " + lockName(tab, vm.style)) })
                         }
+                        // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.
+                        Box(Modifier.size(1.dp, 24.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                        // PC 7차 사용성 제안 (큰 글자는 미리 보기가 작아 보기 어려움): 큰 글자 on makes the example as large as it goes.
+                        ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it; if (it) scale = SCALE_MAX }, { seeCvd = it })
                     }
-                    if (dock != Dock.FOLDED) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    if (s.previewMode != com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) Text("미리 보기: ${s.previewMode.label} 모양이에요",
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    // [STU-24] Two fingers on the example make it bigger or smaller too.
+                    val zoom = androidx.compose.foundation.gestures.rememberTransformableState { z, _, _ ->
+                        scale = (scale * z).coerceIn(SCALE_MIN, SCALE_MAX)
+                    }
+                    // [BLU-09] 1.36 누락 점검 N4: with 부품 open, a tap on the example opens the part tapped (again: the part around it).
+                    val spotsOn = (if (tool in area.tools) tool else area.tools.first()) == Tool.PARTS && !half && !comparing
+                    val spots = remember { com.bamnat.app.ui.parts.PartSpots() }
+                    if (scale > 0f) Box(Modifier.fillMaxWidth()
+                        // [STU-41] What the example shows is kept as a picture, for 올리기's 표지.
+                        .drawWithContent { shotLayer.record { this@drawWithContent.drawContent() }; drawLayer(shotLayer) }
+                        .holdToPeek(enabled = s.prevPieces != null) { peeking = it; if (!it) peekMarks = 0 }
+                        .transformable(zoom, canPan = { false })
+                        .partPicking(if (spotsOn) spots else null, partNow?.first) { id ->
+                            partPick = id to null
+                            openedLine = "‘${com.bamnat.core.recipe.BlueprintParts.LABELS[id] ?: id}’ 부품을 열었어요. 같은 곳을 한 번 더 누르면 그 바깥 부품이에요"
+                        }, contentAlignment = Alignment.Center) {
+                        CompositionLocalProvider(com.bamnat.app.ui.recipe.LocalMockPick provides ::picked,
+                            com.bamnat.app.ui.parts.LocalPartSpots provides (if (spotsOn) spots else null)) {
+                        Conditioned(seeDark, seeBig, seeCvd, c.settingsRepository.current.accentColor) {
                         if (!detail && !area.detailOnly) {
-                            val shown = if (comparing) before else now
-                            if (half && !comparing) CompareCanvas(now, before, vm.style, area.tab, { pick(Area.of(it)) }, dock.scale, 0.5f) { tool = area.tools.first() }
-                            else ScaledPhone(shown, vm.style, area.tab, { pick(Area.of(it)) }, dock.scale, onPick = { tool = area.tools.first() })
+                            // [TRY-04] 누르고 있으면 전 모양 too: in the draft's places, so only the looks change under the finger.
+                            val prev = remember(s.prevPieces, s.past) { vm.previous(s) }
+                            val shown = if (comparing) remember(before, now) { LookParts.frame(before, now) } else now
+                            if (half && !comparing) CompareCanvas(before, now, vm.style, area.tab, { pick(Area.of(it)) }, scale, halfAt, onPick = { picked("colors") },
+                                onSplit = { halfAt = it })
+                            // U15: the step before in the same places and days, what changed ringed (nothing dimmed: it is a quick look).
+                            else if (peeking && !comparing && prev != null) CompareCanvas(prev, now, vm.style, area.tab, { pick(Area.of(it)) }, scale, 0f,
+                                onPick = { picked("colors") }, onChanged = { peekMarks = it }, peek = true)
+                            else ScaledPhone(shown, vm.style, area.tab, { pick(Area.of(it)) }, scale, onPick = { picked("colors") })
                         } else {
                             val sl = if (comparing) remember(s.base.screenLooks) { ScreenLooks.decode(s.base.screenLooks) } else looks
-                            Box(Modifier.fillMaxWidth().heightIn(max = if (dock == Dock.BIG) 360.dp else 180.dp).clip(RoundedCornerShape(12.dp))
+                            Box(Modifier.fillMaxWidth().heightIn(max = (scale * 580).dp).clip(RoundedCornerShape(12.dp))
                                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)).verticalScroll(rememberScrollState())) {
                                 CompositionLocalProvider(
                                     LocalScreenLooks provides sl,
@@ -318,21 +566,63 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                                     LocalMemoLook provides memoLook,
                                     LocalMoneyLook provides moneyLook,
                                     com.bamnat.app.ui.theme.LocalPayLooks provides payLooks,
+                                    // [BLU-06] the draft's parts in 자세히 too.
+                                    com.bamnat.app.ui.parts.LocalBlueprint provides (MaterialTheme.colorScheme.background.luminance() < 0.5f).let { dark ->
+                                        remember(d.parts, dark) { com.bamnat.core.recipe.Blueprint.decode(d.parts).forDark(dark) } },
+                                    com.bamnat.app.ui.decor.LocalDecor provides decor,
+                                    com.bamnat.app.ui.parts.LocalBlueprintRaw provides remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) },
+                                    // [RUL-02] the phone's own days, so 조건부 꾸미기 shows on the weeks below.
+                                    com.bamnat.app.logic.LocalDayFacts provides studioFacts,
                                 ) {
                                     val t = area.target ?: FreeTarget.ALL
                                     ScreenSkin(t.keyFor(payStyle), Modifier.fillMaxWidth()) {
                                         when (area) {
-                                            Area.CALENDAR -> CellWeeks(view, rows = if (dock == Dock.BIG) 3 else 1) { i -> lookIndex = i; tool = Tool.CELL }
+                                            Area.CALENDAR -> {
+                                                // [STU-25] 1.36 빌드 7: the phone's own weeks, as the example phone above shows them.
+                                                // [LAY-03] PC 확인 C1: from the week of a day the 꾸밈 층 is pinned to, when it is past these weeks.
+                                                val now = remember { com.bamnat.core.time.Today.date() }
+                                                val pinnedDay = remember(decor, now) { decor.nextPinned(now)?.takeIf { it.toEpochDay() - now.minusDays((now.dayOfWeek.value % 7).toLong()).toEpochDay() >= 21 } }
+                                                val my = com.bamnat.app.ui.recipe.rememberMyWeeks(emptyList(), weeks = 3, from = pinnedDay)
+                                                CellWeeks(view, rows = if (scale >= 0.5f) 3 else 1, onCell = { i -> lookIndex = i; tool = Tool.CELL },
+                                                    start = my?.first, todayDate = my?.today, days = my?.days,
+                                                    todayColor = com.bamnat.core.recipe.CalendarTheme.decode(d.calTheme).today?.let { androidx.compose.ui.graphics.Color(it.toInt()) })
+                                            }
                                             Area.MEMO -> com.bamnat.app.ui.memo.MemoLookSample(memoLook) { tool = Tool.MEMO_LOOK }
                                             Area.MONEY -> MoneySample(moneyLook) { tool = Tool.MONEY_LOOK }
                                             Area.PAY -> PaySample(payLooks[payStyle] ?: PayLook(), payStyle) { tool = Tool.PAY_LOOK }
                                             Area.ALARM -> AlarmSample { tool = Tool.COLORS }
-                                            Area.WIDGET -> WidgetSample(WidgetLook.decode(d.widgetLook))
+                                            Area.WIDGET -> WidgetSample(WidgetLook.decode(d.widgetLook), vm.style)
                                             else -> ScreenSample(t) { tool = Tool.COLORS }
                                         }
                                     }
                                 }
                             }
+                        }
+                        }
+                        }
+                    }
+                    PreviewHandle(scale) { scale = it }
+                    openedLine?.let { line ->
+                        LaunchedEffect(line) { kotlinx.coroutines.delay(3500); openedLine = null }
+                        Text(line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.align(Alignment.CenterHorizontally).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+                    }
+                    if (peeking && !comparing) Text("바로 전 모양이에요" + (if (peekMarks > 0) " · 바뀐 곳 ${peekMarks}곳 테두리" else "") + ". 손을 떼면 지금 모양이에요", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary, modifier = Modifier.align(Alignment.CenterHorizontally))
+                    // PC 확인 1.36 (한 색 '밝은 화면'인데 어두운 화면 미리 보기가 밝은 채): a look with its own light colours stays light on a
+                    // dark phone too (ScreenSkin), so the example is right; it says why, and where the dark one is.
+                    if (seeDark && looks.of(com.bamnat.core.recipe.ScreenLooks.ALL).bg?.let { com.bamnat.core.recipe.Palette.luminance(it) >= 0.5 } == true)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("색을 정해 둔 테마라 휴대폰이 어두워도 이렇게 밝게 보여요. 어둡게 하려면 한 색에서 ‘어두운 화면’을 골라요",
+                                style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                            if (!(area == Area.ALL && tool == Tool.SEED)) TextButton(onClick = { openSeed() }) { Text("한 색 열기") }
+                        }
+                    // [STU-36] With a condition on, what does not read is said under the example.
+                    if (seeDark || seeBig || seeCvd) vm.hardToRead().takeIf { it.isNotEmpty() }?.let { bad ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("글자가 잘 안 보일 수 있는 화면 ${bad.size}곳", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.weight(1f))
+                            TextButton(onClick = { vm.fixInk() }) { Text("글자색 고치기") }
                         }
                     }
                     if (comparing) Text("고치기 전 모양이에요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
@@ -340,14 +630,32 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                     else if (half && !detail) Text("왼쪽이 지금 고친 모양, 오른쪽이 고치기 전이에요", style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.align(Alignment.CenterHorizontally))
                 }
+                // [STU-34] 만들던 것 이어서 하기: offered once on a fresh start, until anything is changed or it is shut.
+                resumable?.takeIf { !resumeShut && s.past.isEmpty() && s.draftId == 0L }?.let { r ->
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                        Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(draftName(r.body).let { n -> "만들던 ‘$n’${com.bamnat.app.ui.Fmt.iga("$n’")} 남아 있어요" } + " · ${ago(r.updatedAt)}",
+                                style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            TextButton(onClick = { vm.resume(r.id) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("이어서 하기") }
+                            TextButton(onClick = { resumeShut = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+                        }
+                    }
+                }
                 // Where, then which tool.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Area.entries.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
+                    // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
+                    val fitting = Area.entries.filter { it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST) || area == Area.PAY }
+                    val shown = if (allAreas) fitting.map { it.name } else AreaRank.shown(fitting.map { it.name }, areaUses, area.name)
+                    (listOf(Area.ALL) + fitting.filter { it != Area.ALL }).filter { it.name in shown }.forEach { a -> FilterChip(selected = a == area, onClick = { pick(a) }, label = { Text(a.labelFor(vm.style)) }) }
+                    if (shown.size < fitting.size || allAreas) FilterChip(selected = false, onClick = { allAreas = !allAreas },
+                        label = { Text(if (allAreas) "접기" else "더 보기 ${fitting.size - shown.size}") })
+                    FilterChip(selected = studioAdvanced, onClick = { studioAdvanced = !studioAdvanced }, label = { Text("고급 보기") })
                 }
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    area.tools.forEach { t ->
+                    area.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.forEach { t ->
                         TextButton(onClick = { tool = t }, modifier = Modifier.heightIn(min = 44.dp)) {
                             Text(t.label + if (t == Tool.BOX) " ${kept.size}" else "", fontWeight = if (t == tool) FontWeight.Bold else FontWeight.Normal,
                                 color = if (t == tool) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
@@ -355,11 +663,54 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                     }
                 }
                 HorizontalDivider()
-                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
+                // [BLU-06] Which part the tools below change, kept in sight while they scroll (PC 1차 사용성 제안).
+                if ((if (tool in area.tools) tool else area.tools.first()) == Tool.PARTS) partNow?.let { (pid, pon) ->
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(if (partsTogether > 1) "${partsTogether}곳 함께 고치는 중" else "${partWords(pid, null)} 고치는 중", style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                modifier = Modifier.weight(1f).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+                            // PC 4차 사용성 제안: the state changes from here too, when the chips have scrolled away.
+                            val states = statesFor(pid)
+                            if (states.isNotEmpty()) Box {
+                                var open by remember { mutableStateOf(false) }
+                                TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("${stateWord(pid, pon)} ▾") }
+                                com.bamnat.app.ui.components.DropdownMenu(open, { open = false }) {
+                                    (listOf<String?>(null) + states).forEach { st ->
+                                        androidx.compose.material3.DropdownMenuItem(text = { Text(stateWord(pid, st)) },
+                                            onClick = { open = false; partPick = pid to st })
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // B 11차 PC 제안 (미리 보기가 화면 2/3라 편집 목록이 3~4줄만 보임): scrolling the controls down makes the example small
+                // once, as picking a tool does; a double tap or 크게 on the example brings it back.
+                // PC c6a6e361 (판을 맨 위로 다시 올려도 미리 보기가 처음 크기로 안 돌아옴): back at the top of the controls, the example
+                // goes back to the size it had before the scroll made it small, unless the user sized it by hand in between.
+                val toolScroll = rememberScrollState()
+                val shrunkFrom = remember { floatArrayOf(-1f) }
+                LaunchedEffect(toolScroll) {
+                    androidx.compose.runtime.snapshotFlow { when { toolScroll.value > 48 -> 1; toolScroll.value == 0 -> -1; else -> 0 } }.collect { at ->
+                        if (at == 1 && scale > SCALE_SMALL) { shrunkFrom[0] = scale; scale = SCALE_SMALL }
+                        else if (at == -1 && shrunkFrom[0] > 0f) { if (scale == SCALE_SMALL) scale = shrunkFrom[0]; shrunkFrom[0] = -1f }
+                    }
+                }
+                Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(toolScroll).padding(horizontal = 16.dp, vertical = 10.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     area.target?.takeIf { it.restricted }?.let { Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     val t = if (tool in area.tools) tool else area.tools.first()
                     val key = (area.target ?: FreeTarget.ALL).keyFor(payStyle)
+                    if (studioAdvanced) {
+                        val partIds = if (Tool.PARTS in area.tools) partsGroupOf(area.name).let { g ->
+                            com.bamnat.core.recipe.BlueprintParts.IDS.filter { it == g || it.startsWith("$g.") || (g == "app" && it.startsWith("app")) }
+                        } else emptyList()
+                        val bp = remember(d.parts) { com.bamnat.core.recipe.Blueprint.decode(d.parts) }
+                        LayerTree(treeRows(partIds, bp, decor, if (Tool.DECOR in area.tools) area.decorPlaces else emptyList()),
+                            onPart = { p -> tool = Tool.PARTS; partPick = p to null },
+                            onDecor = { i -> tool = Tool.DECOR; decorFocus = i })
+                    }
                     fun saveView(v: CalendarView) = vm.change { with(CalendarViewSettings) { it.withView(v) } }
                     when (t) {
                         Tool.CELL -> CellDesigner(view, lookIndex, { lookIndex = it }, ::saveView)
@@ -367,9 +718,18 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                         Tool.VIEW -> com.bamnat.app.ui.calendar.CalendarViewEditor(view, ::saveView, sample = {})
                         Tool.DAYS -> com.bamnat.app.ui.settings.CalendarThemeRows(d.calTheme) { v -> vm.change { it.copy(calTheme = v) } }
                         Tool.PHOTO -> com.bamnat.app.ui.settings.PhotoLookRows(d.photoLook) { v -> vm.change { it.copy(photoLook = v) } }
-                        Tool.COLORS -> ScreenLookEditor(area.target ?: FreeTarget.ALL, looks.looks[key] ?: ScreenLook(), looks.of(key)) { l ->
-                            vm.change { it.copy(screenLooks = ScreenLooks.decode(it.screenLooks).with(key, l).encode()) }
+                        Tool.COLORS -> {
+                            ScreenLookEditor(area.target ?: FreeTarget.ALL, looks.looks[key] ?: ScreenLook(), looks.of(key)) { l ->
+                                vm.change { it.copy(screenLooks = ScreenLooks.decode(it.screenLooks).with(key, l).encode()) }
+                            }
+                            // [STU-33] 스타일 복사: this screen's colours to every screen, copy and paste, back to '앱 전체'.
+                            ScreenCopyRow(vm, d, key) { pick(Area.ALL); tool = Tool.SEED }
                         }
+                        Tool.SEED -> SeedTool(vm, d)
+                        Tool.PARTS -> PartsTool(partsGroupOf(area.name), d.parts, focus = partPick?.first, focusOn = partPick?.second, onFocus = { pid, pon -> partNow = pid to pon; partPick = null },
+                            onUploadPart = { unit -> vm.uploadPart(unit)?.let { body -> publishRound++; publishing = Triple(body, "", null) } }, advanced = studioAdvanced,
+                            onTogether = { partsTogether = it }) { v -> vm.change { it.copy(parts = v) } }
+                        Tool.SHIFT -> ShiftLooksTool(vm, d, s.previewMode)
                         Tool.CARDS -> CardsTool(area, vm.style, d) { f -> vm.change(f) }
                         Tool.MEMO_LOOK -> MemoLookEditor(memoLook) { l -> vm.change { it.copy(memoLook = l.encode()) } }
                         Tool.MONEY_LOOK -> MoneyLookEditor(moneyLook) { l -> vm.change { it.copy(moneyLook = l.encode()) } }
@@ -387,11 +747,70 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                             vm.change { it.copy(photoLook = PhotoLook.decode(it.photoLook).copy(corners = k).encode()) }
                         }
                         Tool.WIDGET -> WidgetTool(WidgetLook.decode(d.widgetLook)) { w -> vm.change { it.copy(widgetLook = w.encode()) } }
-                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) })
+                        Tool.BOX -> BoxTool(kept, area, onLay = vm::layer, onForget = { c.wardrobe.forgetKept(it.id) }, laid = s.layered.map { it.id }.toSet(), onTakeOff = vm::unlayer,
+                            onMarket = onMarket?.let { go -> { go(area.marketKind) } }, style = vm.style)
+                        Tool.FEATURE -> {
+                            // [RUL-06] PC 1차 확인: '규칙·단추'를 못 찾았어요.
+                            OutlinedButton(onClick = { pick(Area.RULES) }, modifier = Modifier.fillMaxWidth()) { Text("＋ 이럴 때 이렇게: 규칙·단추 만들기") }
+                            FeaturesTool(vm, s.extras)
+                        }
+                        Tool.LOGIC, Tool.RULES, Tool.BUTTONS -> {
+                            // PC D10: 규칙·단추는 고치면 바로 휴대폰에 저장돼요 (설정과 같은 목록).
+                            Text("규칙·단추는 고치면 바로 저장돼요. 입히지 않아도 돼요", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            com.bamnat.app.logic.LogicEditor(com.bamnat.core.formula.Logic.decode(d.logic), { l -> vm.changeLogic(l) }, show = when (t) { Tool.RULES -> com.bamnat.app.logic.LogicShow.RULES; Tool.BUTTONS -> com.bamnat.app.logic.LogicShow.BUTTONS; else -> com.bamnat.app.logic.LogicShow.ALL },
+                                usedInParts = { f -> com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.any { it["when"] == f } },
+                                onOpenParts = { area = Area.RULES; tool = Tool.COND })
+                            // [RUL-07] 규칙·단추만 따로 장터에 올려요(테마 없이). 받는 사람은 보관함에서 얹어요.
+                            if (!com.bamnat.core.formula.Logic.decode(d.logic).isEmpty) {
+                                OutlinedButton(onClick = { vm.uploadLogic()?.let { body -> publishing = Triple(body, "", null) } },
+                                    modifier = Modifier.fillMaxWidth()) { Text("규칙·단추만 장터에 올리기") }
+                            }
+                        }
+                        Tool.COND -> {
+                            Text("조건이 맞는 날의 칸만 다르게 꾸며요. 예: 야간이고 메모에 #인수인계가 있으면 테두리 빨강",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            PartsTool("cal", d.parts, focus = "cal.cell", onChange = { v -> vm.change { it.copy(parts = v) } },
+                                conditionFirst = true, rulesUsing = { f -> com.bamnat.core.formula.Logic.decode(d.logic).rules.filter { it.cond == f }.map { it.name } },
+                                onOpenRules = { area = Area.RULES; tool = Tool.RULES })
+                        }
+                        Tool.DECOR -> com.bamnat.app.ui.decor.DecorTool(decor, area.decorPlaces, { label, nd ->
+                            if (label == null) vm.change { it.copy(decor = nd.encode()) } else vm.changeMerged(label) { it.copy(decor = nd.encode()) }
+                        }, vm::undo, advancedIn = studioAdvanced, onAdvanced = { studioAdvanced = it }, focus = decorFocus, onFocused = { decorFocus = null },
+                            buttons = remember(d) { com.bamnat.app.ui.decor.DecorTap.buttons(d) })
+                        // [MAT-05] 1.36 앱 전체 글꼴: every screen's text, 화면마다 따로는 ‘색·배경’에서.
+                        Tool.FONT -> {
+                            val all = looks.looks[ScreenLooks.ALL] ?: ScreenLook()
+                            com.bamnat.app.ui.settings.FontRow("앱 전체 글꼴", all.font) { f ->
+                                vm.change { it.copy(screenLooks = ScreenLooks.decode(it.screenLooks).with(ScreenLooks.ALL, all.copy(font = f)).encode()) }
+                            }
+                            Text("화면마다 다른 글꼴은 각 화면의 ‘색·배경’에서, 날짜 숫자 글꼴은 달력 ‘칸 디자인’에서 골라요",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        // [MAT-07] 1.36 움직임.
+                        Tool.MOTION -> com.bamnat.app.ui.settings.MotionEditor(com.bamnat.core.recipe.Motion.decode(d.motion)) { m ->
+                            vm.change { it.copy(motion = m.encode()) }
+                        }
                     }
+                    TextButton(onClick = { wish = true }) { Text("원하는 꾸미기가 없나요? 부탁하기") }
                     Spacer(Modifier.height(24.dp))
                 }
             }
+        }
+    }
+
+    if (wish) StudioWish(where = "${area.label} › ${tool.label}", style = vm.style, onDismiss = { wish = false }) { sent ->
+        wish = false
+        val gathered = sent?.takeIf { it.studioGoal > 0 }?.let { q ->
+            if (q.studioAskers >= q.studioGoal) "같은 부탁이 ${q.studioAskers}명 모였어요. 장터 '만들어 주세요'에 올라가요"
+            else "같은 부탁 ${q.studioAskers}/${q.studioGoal}명 모였어요. ${q.studioGoal}명이 되면 장터 '만들어 주세요'에 올라가고, 모이지 않아도 운영자가 함께 봐요"
+        }
+        scope.launch {
+            snack.showSnackbar(when {
+                sent == null -> "보내지 못했어요. 인터넷을 확인하고 다시 눌러 주세요"
+                gathered != null -> "보냈어요. $gathered. 풀리면 알림과 '내 문의'로 알려 드려요"
+                else -> "보냈어요. 같은 부탁이 모이면 장터 '만들어 주세요'에 올라가고, 풀리면 알려 드려요"
+            })
         }
     }
 
@@ -406,7 +825,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
                     Text("내 앱에 입히고 나가기")
                 }
                 TextButton(onClick = { leaving = false; saving = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 테마로 저장하고 나가기") }
-                TextButton(onClick = { leaving = false; onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("버리고 나가기") }
+                TextButton(onClick = { leaving = false; onBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 앱엔 안 입히고 나가기") }
                 TextButton(onClick = { leaving = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("계속 꾸미기") }
             }
         },
@@ -429,13 +848,154 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onUpload: (Pair<String
             dismissButton = { TextButton(onClick = { inkAsk = null; go() }) { Text("그대로 계속") } },
         )
     }
+    // [STU-37] Leaving the 근무에 따라 tool draws the example as usual again.
+    LaunchedEffect(tool, area) { if ((tool != Tool.SHIFT || area != Area.ALL) && s.previewMode != com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) vm.previewAs(com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL) }
+    if (feelOpen) FeelStartDialog(onDismiss = { feelOpen = false }) { scheme, cell, feel ->
+        feelOpen = false
+        guarded { vm.seedFeel = feel.variant to feel.dark; vm.startFeel("‘${feel.label}’ 느낌") { feelDraft(it, scheme, cell) }
+            vm.feelNow = null; vm.feelStart = vm.state.value.origin.title to feel.variant; pick(Area.ALL) }
+    }
+    if (history) HistorySheet(s, onBack = { i -> vm.backTo(i) }, onDismiss = { history = false })
+    if (changes) ChangesSheet(vm, s, before, now, onGo = { a -> pick(Area.valueOf(a)); changes = false }, onDismiss = { changes = false })
+    uploadWhat?.let { tabs ->
+        // 사용자 2026-11-01: 테마 (모든 곳을 한 벌로) or any one tab changed, alone, as a 기능별 탭 — one tab changed starts on that tab.
+        val single = vm.changedTab()
+        var choice by remember(tabs) { mutableStateOf(single) }
+        AlertDialog(
+            onDismissRequest = { uploadWhat = null },
+            title = { Text("무엇을 올릴까요?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (tabs + listOf<String?>(null)).forEach { v ->
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { choice = v }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = choice == v, onClick = { choice = v })
+                            Column {
+                                Text(if (v == null) "테마 전체" else "${com.bamnat.app.ui.recipe.tabName(v)} 탭만", style = MaterialTheme.typography.bodyLarge)
+                                Text(if (v != null) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
+                                    (if (s.extras.isNotEmpty()) ". 기능 ${s.extras.size}개는 빠져요" else "")
+                                    // PC 확인 1.36 (한 화면만 바꾸고 테마 전체로 올리면 장터 어디에도 안 보임): one screen changed is one tab in 장터, said.
+                                    else if (single != null && s.extras.isEmpty()) "한 화면(${com.bamnat.app.ui.recipe.tabName(single)})만 바꿔서 장터에서는 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.tabName(single)}’에 올라가요"
+                                    else "장터 ‘테마’에 올라가요. 모든 화면의 모양" + (if (s.extras.isNotEmpty()) "과 기능 ${s.extras.size}개가" else "이") + " 함께 가요",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                    // PC 확인 1.36 (3초 뒤 안내가 한 번도 안 보임: 올리기 화면을 그리는 동안은 화면이 멈춰 있음): said at once with 준비 중.
+                    if (preparing) Text("처음엔 몇 초 걸릴 수 있어요. 잠시만 기다려 주세요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            // PC 확인 W37 1.36 (고르기 창 '다음' 뒤 8초 동안 아무 표시 없음): 준비 중 with a spinner, and this window stays until 올리기 is up.
+            confirmButton = { TextButton(onClick = {
+                preparing = true
+                scope.launch {
+                    val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload(choice) }
+                    publishRound++
+                    publishing = Triple(body, parent, if (choice != null) null else vm.nextOf())
+                }
+            }, enabled = !preparing) {
+                if (preparing) { androidx.compose.material3.CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp); Spacer(Modifier.width(8.dp)) }
+                Text(if (preparing) "준비 중…" else "다음")
+            } },
+            dismissButton = { TextButton(onClick = { uploadWhat = null }, enabled = !preparing) { Text("닫기") } },
+        )
+    }
+    publishing?.let { (body, parent, own) ->
+        val up = com.bamnat.app.ui.appViewModel(key = "studio-up-${body.hashCode()}-$own-$publishRound") {
+            com.bamnat.app.ui.recipe.RecipeMakeViewModel(it, com.bamnat.app.data.PersonalCalendar.MAIN, vm.state.value.draftId, body, parent.takeIf { own == null }, null, own)
+        }
+        // PC e20cfe53: 바뀐 것 없이 다시 올리기를 누르면 지난 '올렸어요' 끝 화면 대신, 바뀐 곳이 없다고 말하고 지난번 올린 것을 열어요.
+        val already = remember(publishing) { up.state.value.sent }
+        if (already != null) {
+            NoChangeDialog(already, onOpen = { publishing = null; onOpen(already.code) }, onDismiss = { publishing = null })
+            return@let
+        }
+        // [STU-21] 올리기 over the studio (레시피 만들기 steps 2–5): 스튜디오로 or closing comes back with the draft as it was.
+        com.bamnat.app.ui.components.Dialog(onDismissRequest = { publishing = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            Surface(Modifier.fillMaxSize()) {
+                // W37: once 올리기 is drawn, the 무엇을 올릴까요 window and 준비 중 go.
+                LaunchedEffect(Unit) { uploadWhat = null; preparing = false }
+                // 빌드 751b88f6 PC 확인 (올린 뒤 나가도 '바꾼 것을 어떻게 할까요?'): once it is up, what was changed counts as kept,
+                // whether 레시피 보기 or 뒤로 follows.
+                val upState by up.state.collectAsState()
+                LaunchedEffect(upState.sent != null) { upState.sent?.let { sent -> vm.markKept(); sentBodies = sentBodies + (body to sent) } }
+                com.bamnat.app.ui.recipe.RecipeMakeScreen(up, onBack = { publishing = null }, onOpen = { code -> publishing = null; vm.markKept(); onOpen(code) }, finishOnly = true)
+            }
+        }
+    }
+    noChange?.let { sent -> NoChangeDialog(sent, onOpen = { noChange = null; onOpen(sent.code) }, onDismiss = { noChange = null }) }
     if (saving) SaveDialog(vm, s, onDismiss = { saving = false }) { name, toPlaza ->
         saving = false
         scope.launch { vm.save(name, toPlaza).join(); if (leaving) onBack() }
     }
 }
 
+/** PC e20cfe53·006d0aec: 올리기 with nothing changed since the last time it went up. */
+@Composable
+private fun NoChangeDialog(sent: com.bamnat.app.recipe.Sent, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("바뀐 곳이 없어요") },
+        text = { Text("지난번에 올린 그대로예요 (코드 ${sent.code} · ${sent.version}판). 스튜디오에서 고친 뒤 올리면 새로 올라가요",
+            style = MaterialTheme.typography.bodyMedium) },
+        confirmButton = { TextButton(onClick = onOpen) { Text("지난번 올린 것 보기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("스튜디오로") } },
+    )
+}
+
 /** 내 앱에 입히기: an ad first when the look keeps someone else's days ([StudioViewModel.needsAd]). */
+/**
+ * 1.36 [GRW-01] 스튜디오 요구: 보는 칸·도구를 앞에 붙여 개발자에게 보내요(공개 안 함). 서버가 같은 부탁끼리 묶고, 3명이 모이면 장터
+ * '만들어 주세요'에, 풀리거나 기본 도구가 되면 문의 답으로 알려 줘요. 고치던 꾸미기는 그대로예요.
+ */
+@Composable
+private fun StudioWish(where: String, style: WorkStyle?, onDismiss: () -> Unit, onSent: (com.bamnat.app.company.Inquiry?) -> Unit) {
+    val c = LocalContext.current.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var text by rememberSaveable { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    val tools by androidx.compose.runtime.produceState(emptyList<com.bamnat.app.recipe.CommonTool>()) {
+        value = runCatching { c.recipeApi.tools(style) }.getOrDefault(emptyList())
+    }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = { Text("원하는 꾸미기 부탁하기") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("[$where]에서 무엇을 하고 싶은지 적어 주세요. 같은 부탁이 모이면 다른 분이 만들어 주거나 기본 도구가 돼요",
+                    style = MaterialTheme.typography.bodySmall)
+                OutlinedTextField(value = text, onValueChange = { text = it.take(500) }, minLines = 3, modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("예: 야간 근무 칸에 달 모양을 넣고 싶어요") })
+                if (tools.isNotEmpty()) {
+                    Text("먼저 모두의 도구를 살펴보세요", style = MaterialTheme.typography.labelLarge)
+                    tools.take(3).forEach { t -> Text("• ${t.title} · ${t.users}명이 써요", style = MaterialTheme.typography.bodySmall) }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = !busy && text.isNotBlank(), onClick = {
+                busy = true
+                scope.launch {
+                    val sent = runCatching {
+                        c.inquiryApi.send(c.companyStore.device, com.bamnat.app.company.InquiryKind.STUDIO, "[스튜디오 › $where] ${text.trim()}",
+                            com.bamnat.app.ui.company.deviceInquiryInfo().copy(studio = style?.name, public = false))
+                    }.getOrNull()
+                    if (sent != null) {
+                        // PC 확인 8d290ec3: 답(풀림·기본 도구·거절)이 오면 알림과 '내 문의'에 보이게, 다른 문의처럼 표시해요.
+                        c.inquiryStore.asked = true
+                        c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
+                        com.bamnat.app.company.InquiryReplyJob.schedule(c.appContext)
+                    }
+                    busy = false
+                    onSent(sent)
+                }
+            }) { Text(if (busy) "보내는 중" else "보내기") }
+        },
+        dismissButton = { TextButton(enabled = !busy, onClick = onDismiss) { Text("닫기") } },
+    )
+}
+
 @Composable
 private fun WearButton(vm: StudioViewModel, busy: Boolean, check: (() -> Unit) -> Unit) {
     val c = LocalContext.current.appContainer
@@ -459,13 +1019,18 @@ private fun SaveDialog(vm: StudioViewModel, s: StudioViewModel.State, onDismiss:
     var name by remember { mutableStateOf(own?.title ?: "내 테마 ${vm.mineCount() + 1}") }
     var toPlaza by remember { mutableStateOf(true) }
     val ownMake = remember { vm.ownMake() }
+    val mixed = remember { vm.mixedSources() }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("내 테마로 저장") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(name, { name = it.take(30) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                if (!ownMake) Text("다른 분의 테마에서 직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어요. 그 테마의 조합으로 보관함에 담기고, 입힐 때는 그 테마처럼 30일이에요",
+                // [THM-08] 1.36 섞은 테마.
+                if (!ownMake && mixed.size >= 2) Text("${mixed.joinToString("·") { "‘$it’" }}의 조각을 섞었어요. 내 테마에 내 이름으로 담기고 출처도 함께 적혀요. " +
+                    "직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어 입을 때는 30일 규칙이고(프로는 광고 없이), 장터에는 수정판으로만 올라가요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                else if (!ownMake) Text("다른 분의 테마에서 직접 바꾼 곳이 ${LookParts.OWN_PARTS}곳보다 적어요. 그 테마의 조합으로 보관함에 담기고, 입힐 때는 그 테마처럼 30일이에요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
                 else if (vm.inPlaza() && name == own?.title) Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(toPlaza, { toPlaza = it })
@@ -510,22 +1075,171 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
             FilterChip(selected = w.alpha == a, onClick = { onChange(w.copy(alpha = a)) }, label = { Text(label) })
         }
     }
+    // [STU-38] 1.36 위젯 꾸미기 넓히기: 바탕색·글자색·모서리·글자 크기.
+    com.bamnat.app.ui.settings.ColorPick("바탕색", w.bg) { onChange(w.copy(bg = it)) }
+    com.bamnat.app.ui.settings.ColorPick("글자색", w.ink) { onChange(w.copy(ink = it)) }
+    val wi = w.ink
+    val wb = w.bg
+    if (wi != null && wb != null && com.bamnat.core.recipe.Palette.inkOn(wi, wb) != wi) Text("고른 글자색은 바탕에서 잘 안 보여서 검정이나 흰색으로 보여요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+    Text("모서리", style = MaterialTheme.typography.labelLarge)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(null to "처음대로", 4 to "각지게", 12 to "조금 둥글게", 28 to "아주 둥글게").forEach { (r, label) ->
+            FilterChip(selected = w.corner == r, onClick = { onChange(w.copy(corner = r)) }, label = { Text(label) })
+        }
+    }
+    // PC 확인 1.36 (각지게가 홈 화면에서는 둥근 그대로): from Android 12 many home screens round every widget to their own corners.
+    if (android.os.Build.VERSION.SDK_INT >= 31) Text("안드로이드 12부터는 홈 화면이 위젯 모서리를 직접 둥글게 하기도 해요. 그런 휴대폰에서는 ‘각지게’가 덜 각져 보여요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("글자 크기", style = MaterialTheme.typography.labelLarge)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf(null to "보통", "s" to "작게", "l" to "크게").forEach { (t, label) ->
+            FilterChip(selected = w.text == t, onClick = { onChange(w.copy(text = t)) }, label = { Text(label) })
+        }
+    }
     Text("위젯 사진은 ‘달력 › 그림’에서 골라요. 위젯에 메모를 보일지는 설정 › 화면과 글자에 있어요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // PC 확인 Z11 1.36 (홈 화면에 위젯을 놓기 어려움): 홈 화면에 놓기 asks the launcher to place one, where it can.
+    val context = LocalContext.current
+    val wm = remember { android.appwidget.AppWidgetManager.getInstance(context) }
+    if (runCatching { wm.isRequestPinAppWidgetSupported }.getOrDefault(false)) {
+        var placed by remember { mutableStateOf(false) }
+        Text("홈 화면에 놓기", style = MaterialTheme.typography.labelLarge)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // PC 확인 W3 1.36: each chip says how big the widget is.
+            listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘 · 2×1", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주 · 4×1",
+                com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1").forEach { (cls, label) ->
+                androidx.compose.material3.AssistChip(onClick = {
+                    if (runCatching { wm.requestPinAppWidget(android.content.ComponentName(context, cls), null, null) }.getOrDefault(false)) placed = true
+                }, label = { Text(label) })
+            }
+        }
+        // PC 확인 W2 1.36 (놓은 위젯이 홈 둘째 쪽에 들어가 안 보여요): say where it may have gone.
+        if (placed) Text("휴대폰이 묻는 창에서 ‘추가’를 누르면 홈 화면에 놓여요. 첫 화면에 자리가 없으면 다음 쪽에 들어가요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    }
 }
 
-/** The widget's example: today's day on its plate, light or dark and as see-through as chosen. */
+/**
+ * The widget's example: today's day on its plate, light or dark and as see-through as chosen, and [BLU-10] the 위젯 parts as the home
+ * screen draws them (판 전체 `widget`, 머리 `widget.head`, 칸 `widget.cell`; a tap on one opens it in 부품).
+ * [LAY-12] 1.36 위젯 편집 화면 (누락 점검 N2, 제안 26): the three widgets the home screen has — 오늘 (today and tomorrow), 주 (this week's
+ * seven days) and 달 (the month) — each picked above the example, so a part's look is seen where it matters: the 머리 is the date line,
+ * '이번 주 근무' and the month's name; a 칸 is a line, a day and a date cell, with its states (오늘·토·일·공휴일·다른 달).
+ */
 @Composable
-private fun WidgetSample(w: WidgetLook) {
-    val dark = when (w.theme) { "dark" -> true; "light" -> false; else -> androidx.compose.foundation.isSystemInDarkTheme() }
-    val plate = (if (dark) androidx.compose.ui.graphics.Color(0xFF1E1F24) else androidx.compose.ui.graphics.Color.White).copy(alpha = w.alpha / 100f)
-    val ink = if (dark) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFF1B1B1B)
-    Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),
-        contentAlignment = Alignment.Center) {
-        Column(Modifier.clip(RoundedCornerShape(18.dp)).background(plate).padding(horizontal = 20.dp, vertical = 14.dp)) {
-            Text("오늘 · 주간 07:00", color = ink, style = MaterialTheme.typography.titleMedium)
-            Text("내일 · 야간 22:00", color = ink.copy(alpha = 0.75f), style = MaterialTheme.typography.bodyMedium)
+internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val whole = if (bp.touches("widget")) bp.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
+    val bg = whole.fill?.let { it or 0xFF000000L } ?: w.bg
+    val dark = bg?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
+        ?: when (w.theme) { "dark" -> true; "light" -> false; else -> androidx.compose.foundation.isSystemInDarkTheme() }
+    val ground = bg ?: if (dark) 0xFF1E1F24L else 0xFFFFFFFFL
+    val alpha = whole.fillA?.takeIf { whole.fill != null }?.let { it / 100f } ?: (w.alpha / 100f)
+    val plate = androidx.compose.ui.graphics.Color(ground.toInt()).copy(alpha = alpha)
+    // [STU-38] The chosen text colour where it reads on the plate, else black or white, as the widget draws it.
+    val ink = androidx.compose.ui.graphics.Color(com.bamnat.core.recipe.Palette.inkOn(whole.ink ?: w.ink ?: if (dark) 0xFFFFFFFFL else 0xFF1B1B1BL, ground).toInt())
+    val scale = w.textScale
+    val face = com.bamnat.core.recipe.PartStyle(font = whole.font, italic = whole.italic, deco = whole.deco)
+    var kind by rememberSaveable { mutableStateOf(WidgetKind.TODAY) }
+    val day0 = com.bamnat.core.time.Today.date()
+    fun holiday(d: java.time.LocalDate) = com.bamnat.core.holiday.KoreanHolidays.isHoliday(d)
+    @Composable
+    fun Head(text: String) {
+        val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { holiday(day0) }))
+        if (head.hide != true) com.bamnat.app.ui.parts.PartText(text, face.over(head),
+            MaterialTheme.typography.labelMedium.copy(color = ink.copy(alpha = 0.8f), fontSize = (12 * scale).sp),
+            Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(6.dp))))
+    }
+    @Composable
+    fun Cell(text: String, d: java.time.LocalDate, inMonth: Boolean, big: Boolean, size: Int, modifier: Modifier, center: Boolean = false) {
+        val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, holiday(d), inMonth, d == day0, false))
+        if (cell.hide == true) { Box(modifier); return }
+        val base = (if (big) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
+        com.bamnat.app.ui.parts.PartText(text, face.over(cell.copy(size = cell.size?.let { if (big) it * 1.3 else it })),
+            base.copy(color = if (big || d == day0) ink else ink.copy(alpha = if (inMonth) 0.75f else 0.4f), fontSize = (size * scale).sp,
+                textAlign = if (center) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Unspecified),
+            modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), RoundedCornerShape(6.dp))))
+    }
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            WidgetKind.entries.forEach { k -> FilterChip(selected = k == kind, onClick = { kind = k }, label = { Text(k.label) }) }
         }
+        Box(Modifier.fillMaxWidth().background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF7FA7D9), androidx.compose.ui.graphics.Color(0xFFE7B5C4)))).padding(20.dp),
+            contentAlignment = Alignment.Center) {
+            // [LAY-07] 위젯 꾸밈 drawn on the plate as the home screen draws it.
+            Column(Modifier.fillMaxWidth()
+                .then(com.bamnat.app.ui.parts.partSpotModifier("widget")).clip(RoundedCornerShape((whole.r ?: w.corner ?: 20).dp)).background(plate)
+                .decor(com.bamnat.core.recipe.Decor.WIDGET)
+                .padding(horizontal = (whole.padH ?: 20).dp, vertical = (whole.padV ?: 14).dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                when (kind) {
+                    WidgetKind.TODAY -> {
+                        // PC 확인 W1 1.36 (예시 근무가 내 근무와 달라요): my own today and tomorrow, the example only before any work is set.
+                        // PC 확인 5c21f3bb: the example before any work is set fits the kind of work (투자 had '주간 07:00').
+                        val (today, tomorrow) = rememberTwoDays() ?: when (style) {
+                            WorkStyle.INVEST -> "오늘 · 장 열림 09:00" to "내일 · 장 열림 09:00"
+                            WorkStyle.BUSINESS -> "오늘 · 영업 10:00" to "내일 · 휴무"
+                            WorkStyle.FIELD -> "오늘 · 현장 08:00" to "내일 · 일감 없음"
+                            WorkStyle.HOURLY -> "오늘 · 알바 18:00" to "내일 · 쉬는 날"
+                            WorkStyle.DAY -> "오늘 · 근무 09:00" to "내일 · 근무 09:00"
+                            else -> "오늘 · 주간 07:00" to "내일 · 야간 22:00"
+                        }
+                        Head("${day0.monthValue}월 ${day0.dayOfMonth}일")
+                        Cell(today, day0, true, true, 16, Modifier.fillMaxWidth())
+                        Cell(tomorrow, day0.plusDays(1), true, false, 14, Modifier.fillMaxWidth())
+                    }
+                    WidgetKind.WEEK -> {
+                        Head("이번 주 근무")
+                        val mon = day0.minusDays((day0.dayOfWeek.value - 1).toLong())
+                        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                            (0 until 7).forEach { i ->
+                                val d = mon.plusDays(i.toLong())
+                                Cell("${"월화수목금토일"[i]}\n${d.dayOfMonth}\n${WEEK_SAMPLE[i]}", d, true, false, 11, Modifier.weight(1f), center = true)
+                            }
+                        }
+                    }
+                    WidgetKind.MONTH -> {
+                        Head("${day0.monthValue}월")
+                        val first = day0.withDayOfMonth(1)
+                        val start = first.minusDays((first.dayOfWeek.value % 7).toLong())
+                        val rows = (first.dayOfWeek.value % 7 + day0.lengthOfMonth() + 6) / 7
+                        (0 until rows).forEach { r ->
+                            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                (0 until 7).forEach { c ->
+                                    val d = start.plusDays((r * 7 + c).toLong())
+                                    Cell("${d.dayOfMonth}", d, d.month == day0.month, false, 11, Modifier.weight(1f), center = true)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** [LAY-12] The home screen's widgets, as the studio's widget example shows them. */
+private enum class WidgetKind(val label: String) { TODAY("오늘 위젯"), WEEK("주 위젯"), MONTH("달 위젯") }
+
+private val WEEK_SAMPLE = listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "주간")
+
+/** "오늘 · 야간 19:00" and "내일 · 휴무" from my own calendar, or null while nothing is set for either day. */
+@Composable
+private fun rememberTwoDays(): Pair<String, String>? {
+    val c = LocalContext.current.appContainer
+    val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
+    val snap by snapFlow.collectAsStateWithLifecycle(null)
+    return remember(snap) {
+        val sn = snap ?: return@remember null
+        val day = com.bamnat.core.time.Today.date()
+        val two = sn.resolver.resolveRange(day, day.plusDays(1))
+        if (two.none { it.shiftType != null }) return@remember null
+        fun line(label: String, i: Int): String {
+            val t = two.getOrNull(i)?.shiftType ?: return "$label · 근무 없음"
+            val at = t.start?.takeUnless { t.isOff }?.let { " %02d:%02d".format(it.hour, it.minute) }.orEmpty()
+            return "$label · ${t.name.trim()}$at"
+        }
+        line("오늘", 0) to line("내일", 1)
     }
 }
 
@@ -534,28 +1248,272 @@ private fun WidgetSample(w: WidgetLook) {
  * says whose it is; a look with it keeps that theme's days and ad.
  */
 @Composable
-private fun BoxTool(kept: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: Area, onLay: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit,
-                    onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit) {
+private fun BoxTool(kept0: List<com.bamnat.app.recipe.ThemeWardrobe.Kept>, area: Area, onLay: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit,
+                    onForget: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit, laid: Set<Long> = emptySet(),
+                    onTakeOff: (com.bamnat.app.recipe.ThemeWardrobe.Kept) -> Unit = {}, onMarket: (() -> Unit)? = null, style: WorkStyle? = null) {
+    // 사용자 2026-11-01 ("다른 분이 만든 것을 해당 카테고리에 맞게 찾아서 스튜디오에서 사용"): 장터 opens on this area's 구간 (기능별 탭 › 가계부 …);
+    // what is 담아 두기'd there comes back here, in 보관함, to lay on.
+    if (onMarket != null) OutlinedButton(onClick = onMarket, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Text(if (area.marketKind.startsWith(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB) && area.marketKind != com.bamnat.app.recipe.RecipeClient.SCOPE_TAB)
+            "장터 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.marketTabLabel(area.marketKind.removePrefix(com.bamnat.app.recipe.RecipeClient.SCOPE_TAB), style)}’에서 찾기"
+        else if (area.marketKind == com.bamnat.app.recipe.RecipeClient.SCOPE_THEME) "장터 ‘테마’에서 찾기" else "장터 ‘기능별 탭’에서 찾기")
+    }
+    // 1.36 U2 (얹으면 순서와 높이가 바뀌어 다음 얹기가 이미 얹은 걸 다시 눌러요): the newest first, always in the same places.
+    val kept = remember(kept0) { kept0.sortedByDescending { it.id } }
     if (kept.isEmpty()) {
         Text("아직 담아 둔 조각이 없어요. 장터에서 테마를 입어 볼 때 마음에 드는 부분을 ‘담아 두기’하면 여기서 꺼내 내 모양에 얹어요",
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
-    val here = kept.filter { k -> k.parts.isEmpty() || k.parts.any { LookParts.byId(it)?.tab == area.tab } }
-    val list = here + (kept - here.toSet())
-    Text("누르면 지금 모양에 얹어요. 얹은 뒤에도 되돌리기로 뺄 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    list.forEach { k ->
+    val here = if (area == Area.RULES) kept.filter { k -> LookParts.LOGIC in k.parts }
+        else kept.filter { k -> k.parts.isEmpty() || k.parts.any { LookParts.byId(it)?.tab == area.tab } }
+    val rest = kept - here.toSet()
+    Text("누르면 지금 모양에 얹어요. 얹은 조각은 ‘빼기’로 다시 빼요. 미리 보기를 누르고 있으면 바로 전 모양이에요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // [STU-27] 1.36 빌드 8 (S32: 메모 조각이 달력 영역에서 안 보이는 줄 앎): every piece shows in every area, this area's first, under a title.
+    val list = buildList {
+        if (here.isNotEmpty()) { add(null to "이 영역(${area.label}) 조각"); here.forEach { add(it to "") } }
+        if (rest.isNotEmpty()) { add(null to "다른 영역 조각 · 얹으면 그 화면이 바뀌어요"); rest.forEach { add(it to "") } }
+    }
+    list.forEach { (k0, head) ->
+        if (k0 == null) { Text(head, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp)); return@forEach }
+        val k = k0
+        val on = k.id in laid
         Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.clickable(onClickLabel = "얹기") { onLay(k) }.padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
+            Row(Modifier.clickable(onClickLabel = if (on) "빼기" else "얹기") { if (on) onTakeOff(k) else onLay(k) }.padding(start = 14.dp, top = 8.dp, bottom = 8.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(k.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(partsLine(k.parts) + " · " + if (k.own) "내 것" else "출처 ‘${k.fromTitle}’", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    Text((if (on) "✓ 얹음 · " else "") + partsLine(k.parts) + " · " + if (k.own) "내 것" else "출처 ‘${k.fromTitle}’", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, minLines = 2)
                 }
-                TextButton(onClick = { onLay(k) }) { Text("얹기") }
+                // 1.36 U1·U2: a part laid on says so and takes off with 빼기, in the same place as 얹기.
+                if (on) TextButton(onClick = { onTakeOff(k) }) { Text("빼기") } else TextButton(onClick = { onLay(k) }) { Text("얹기") }
                 TextButton(onClick = { onForget(k) }) { Text("버리기") }
             }
         }
     }
+}
+
+
+/**
+ * [STU-24] 1.36 미리 보기 손잡이 (사용자 2026-10-31 "크게작게 접기가 너무 불편"): one bar under the example — drag down to make it
+ * bigger, up to make it smaller (past the smallest it folds away); two taps go between big and small; folded, a tap brings it back.
+ */
+@Composable
+private fun PreviewHandle(scale: Float, onScale: (Float) -> Unit) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    var drag by remember { mutableStateOf(scale) }
+    Box(Modifier.fillMaxWidth().height(28.dp)
+        .pointerInput(Unit) {
+            detectTapGestures(
+                onDoubleTap = { onScale(if (scale >= (SCALE_BIG + SCALE_SMALL) / 2) SCALE_SMALL else SCALE_BIG) },
+                onTap = { if (scale == 0f) onScale(SCALE_SMALL) },
+            )
+        }
+        .draggable(androidx.compose.foundation.gestures.rememberDraggableState { dy ->
+            drag = (drag + with(density) { dy.toDp().value } / 700f).coerceIn(0.15f, SCALE_MAX)
+            onScale(if (drag < SCALE_MIN) 0f else drag)
+        }, androidx.compose.foundation.gestures.Orientation.Vertical, onDragStarted = { drag = if (scale == 0f) 0.2f else scale })
+        .semantics {
+            contentDescription = if (scale == 0f) "접힌 예시. 누르면 펼쳐요" else "예시 크기 손잡이. 아래로 끌면 커지고 위로 밀면 작아져요"
+            customActions = listOf(
+                androidx.compose.ui.semantics.CustomAccessibilityAction("크게") { onScale(SCALE_BIG); true },
+                androidx.compose.ui.semantics.CustomAccessibilityAction("작게") { onScale(SCALE_SMALL); true },
+                androidx.compose.ui.semantics.CustomAccessibilityAction("접기") { onScale(0f); true },
+            )
+        },
+        contentAlignment = Alignment.Center) {
+        if (scale == 0f) Text("예시 펼치기 ⌄", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        else Box(Modifier.size(width = 44.dp, height = 5.dp).clip(RoundedCornerShape(3.dp)).background(MaterialTheme.colorScheme.outline))
+    }
+}
+
+/**
+ * [STU-21] 1.36 기능 (레시피 만들기의 좋은 기능을 스튜디오로): each 기능 this kind of work has, turned on from the phone's own (or
+ * example values) and changed in place. 근무 색·이모지와 메모 틀 show on the example at once; all of them go up with 올리기, with
+ * amounts left for the one who takes it to fill in.
+ */
+@Composable
+private fun FeaturesTool(vm: StudioViewModel, extras: Map<com.bamnat.core.recipe.PieceKind, Map<String, Any?>>) {
+    Text("켜면 지금 내 설정에서 시작해요. 올리기에 함께 나가고, 금액은 받는 분이 직접 넣어요. 내 앱에 입히기는 모양만 바꿔요",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    vm.features.forEach { k ->
+        val v = extras[k]
+        com.bamnat.app.ui.recipe.StudioCard(k.label, if (v == null) "꺼져 있어요" else if (k == com.bamnat.core.recipe.PieceKind.COMPANY) "내 회사 설정이 그대로 나가요" else "켜져 있어요. 아래에서 바로 고쳐요",
+            trailing = {
+                androidx.compose.material3.Switch(v != null, { on -> if (on) vm.starter(k) else vm.setExtra(k, null, "${k.label} 끔") },
+                    modifier = Modifier.semantics { contentDescription = "${k.label} 함께 올리기" })
+            }) {
+            if (v != null && k != com.bamnat.core.recipe.PieceKind.COMPANY) com.bamnat.app.ui.recipe.FieldsForm(k.fields.filter { com.bamnat.app.ui.recipe.studioField(it) }, v, k) { key, x ->
+                vm.setExtraValue(k, key, x)
+            }
+        }
+    }
+}
+
+/** [STU-20] 기록 목록: what was changed, newest first; a tap goes back to just before it (다시 하기 brings the rest back). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun HistorySheet(s: StudioViewModel.State, onBack: (Int) -> Unit, onDismiss: () -> Unit) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("바꾼 기록", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            Text("누르면 그 고침 바로 전으로 돌아가요. 다시 하기로 되살릴 수 있어요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("● 지금", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+            s.past.withIndex().reversed().forEach { (i, step) ->
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "이 고침 전으로") { onBack(i); onDismiss() },
+                    verticalAlignment = Alignment.CenterVertically) {
+                    Text("${i + 1}.", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(36.dp))
+                    Text(step.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text("이 전으로", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            if (s.past.isEmpty()) Text("아직 바꾼 것이 없어요", style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+/**
+ * [STU-22] 바꾼 곳 보기: what differs from where it started, by screen, each with 보기 (that screen's tools) and 처음대로 (that screen
+ * only, one step of 되돌리기); the 기능 going with it too.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChangesSheet(vm: StudioViewModel, s: StudioViewModel.State, before: Recipe, now: Recipe, onGo: (String) -> Unit, onDismiss: () -> Unit) {
+    val parts = remember(before, now) { LookParts.changed(before, now).mapNotNull { LookParts.byId(it) } }
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("바꾼 곳", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            parts.groupBy { it.tab }.forEach { (tab, list) ->
+                // PC 제안 1.36: a locked tab that looks as it started is one line, 🔒 잠가서 그대로.
+                if (vm.lockedSame(tab)) {
+                    Text("🔒 ${LookParts.tabLabel(tab)} · 잠가서 그대로", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp))
+                    return@forEach
+                }
+                val area = when (tab) {
+                    TabOrder.MONEY -> Area.MONEY; TabOrder.MEMOS -> Area.MEMO; TabOrder.STATS -> if (list.any { it.id == "stats.pay" }) Area.PAY else Area.STATS
+                    TabOrder.PLAZA -> Area.PLAZA; TabOrder.SETTINGS -> Area.ALL; LookParts.WIDGET -> Area.WIDGET; else -> Area.CALENDAR
+                }
+                Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(LookParts.tabLabel(tab), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                            TextButton(onClick = { onGo(area.name) }) { Text("보기") }
+                            TextButton(onClick = { vm.resetFields("${LookParts.tabLabel(tab)} 처음대로") { d, b -> resetTab(tab, d, b) } }) { Text("처음대로") }
+                        }
+                        Text(list.joinToString(" · ") { p -> p.label + (partsDetail(p, before, now)?.let { " ($it)" } ?: "") },
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+            if (s.extras.isNotEmpty()) {
+                Text("함께 올릴 기능", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 6.dp))
+                s.extras.keys.forEach { k ->
+                    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(k.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { onGo(Area.FEATURES.name) }) { Text("보기") }
+                        TextButton(onClick = { vm.setExtra(k, null, "${k.label} 끔") }) { Text("빼기") }
+                    }
+                }
+            }
+            if (parts.isEmpty() && s.extras.isEmpty()) Text("처음 모양과 같아요", style = MaterialTheme.typography.bodyMedium)
+            // [STU-39] 잠그기, where every screen's changes are listed; under the list, so what changed comes first (PC 2차 사용성 제안).
+            LockChips(vm)
+        }
+    }
+}
+
+/** [BLU-06] Which 부품 a screen's 부품 part changed and how: "달력 머리 · 둥글기, 근무 표시 · 선" (PC 3차 사용성 제안). */
+private fun partsDetail(p: LookParts.Part, before: Recipe, now: Recipe): String? {
+    val roots = p.takes.filterIsInstance<LookParts.Take.Parts>().flatMap { it.roots }.toSet().takeIf { it.isNotEmpty() } ?: return null
+    fun lines(r: Recipe) = (r.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.PARTS }?.values?.get("parts") as? List<*>)
+        ?.filterIsInstance<Map<String, Any?>>()?.filter { LookParts.under(it["id"] as? String, roots) }.orEmpty()
+    fun key(l: Map<String, Any?>) = listOf(l["id"], l["on"], l["when"])
+    val was = lines(before).associateBy(::key)
+    val is_ = lines(now).associateBy(::key)
+    val words = mapOf("fill" to "채우기", "paint" to "채우기", "line" to "선", "lineW" to "선", "lineC" to "선", "r" to "둥글기", "rTL" to "둥글기", "rTR" to "둥글기",
+        "rBR" to "둥글기", "rBL" to "둥글기", "shadow" to "그림자", "pad" to "여백", "out" to "여백", "font" to "글꼴", "size" to "글자 크기", "weight" to "굵기",
+        "ink" to "글자 색", "alpha" to "보이는 정도", "hide" to "숨기기", "order" to "순서", "dir" to "배치", "gap" to "간격",
+        "tshadow" to "글자 그림자", "tshadowC" to "글자 그림자", "tshadowX" to "글자 그림자", "tshadowY" to "글자 그림자", "deco" to "밑줄")
+    return (was.keys + is_.keys).distinct().mapNotNull { k ->
+        val a = was[k].orEmpty(); val b = is_[k].orEmpty()
+        val fields = (a.keys + b.keys).filter { it != "id" && it != "on" && it != "when" && a[it] != b[it] }.map { words[it] ?: "모양" }.distinct()
+        if (fields.isEmpty()) null else (com.bamnat.core.recipe.BlueprintParts.LABELS[k[0] as String] ?: k[0]).toString() + " · " + fields.joinToString("·")
+    }.distinct().take(4).joinToString(", ").takeIf { it.isNotEmpty() }
+}
+
+/** [STU-22] One screen's look back to where it started: its settings and its 화면 색·배경, the rest of the draft as it is. */
+private fun resetTab(tab: String, d: com.bamnat.app.data.AppSettings, b: com.bamnat.app.data.AppSettings): com.bamnat.app.data.AppSettings {
+    fun screens(keys: (String) -> Boolean): String {
+        val now = ScreenLooks.decode(d.screenLooks)
+        val was = ScreenLooks.decode(b.screenLooks)
+        val keep = now.looks.filterKeys { !keys(it) } + was.looks.filterKeys(keys)
+        return ScreenLooks(keep).encode()
+    }
+    // [BLU-05] That screen's 부품 lines back to where they started, the other screens' parts as they are.
+    fun parts(vararg roots: String): String {
+        val r = roots.toSet()
+        val keep = com.bamnat.core.recipe.Blueprint.decode(d.parts).lines.filterNot { LookParts.under(it["id"] as? String, r) } +
+            com.bamnat.core.recipe.Blueprint.decode(b.parts).lines.filter { LookParts.under(it["id"] as? String, r) }
+        return if (keep.isEmpty()) "" else com.bamnat.core.recipe.Blueprint(keep).encode()
+    }
+    return when (tab) {
+        TabOrder.CALENDAR -> d.copy(calView = b.calView, calTheme = b.calTheme, calendarLayout = b.calendarLayout, photoLook = b.photoLook,
+            screenLooks = screens { it == "calendar" }, parts = parts("cal"))
+        TabOrder.MEMOS -> d.copy(memoLook = b.memoLook, memoLayout = b.memoLayout, screenLooks = screens { it == "memo" }, parts = parts("memo"))
+        TabOrder.MONEY -> d.copy(moneyLook = b.moneyLook, moneyLayout = b.moneyLayout, screenLooks = screens { it == "money" }, parts = parts("money"))
+        TabOrder.STATS -> d.copy(statsLayout = b.statsLayout, payLooks = b.payLooks, screenLooks = screens { it == "stats" || it.startsWith("pay.") }, parts = parts("pay"))
+        TabOrder.PLAZA -> d.copy(screenLooks = screens { it == ScreenLooks.PLAZA })
+        LookParts.WIDGET -> d.copy(widgetLook = b.widgetLook, parts = parts("widget"))
+        else -> d.copy(tabOrder = b.tabOrder, screenLooks = screens { it in setOf(ScreenLooks.ALL, "settings", ScreenLooks.ALARM, ScreenLooks.GUARDED) }, parts = parts("app"))
+    }
+}
+
+/**
+ * 1.36 (사용자 2026-10-31): a finger held still on the example for a moment reports true until it lifts, and that touch then
+ * opens nothing (a quick tap still picks the part, a pinch still zooms).
+ */
+private fun Modifier.holdToPeek(enabled: Boolean, onPeek: (Boolean) -> Unit): Modifier = if (!enabled) this else pointerInput(Unit) {
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+        var moved = false
+        val lifted = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                if (e.changes.size > 1 || e.changes.any { (it.position - down.position).getDistance() > viewConfiguration.touchSlop }) { moved = true; return@withTimeoutOrNull true }
+                if (e.changes.all { !it.pressed }) return@withTimeoutOrNull true
+            }
+            @Suppress("UNREACHABLE_CODE") true
+        } != null
+        if (lifted || moved) return@awaitEachGesture
+        onPeek(true)
+        try {
+            while (true) {
+                val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                e.changes.forEach { it.consume() }
+                if (e.changes.all { !it.pressed }) break
+            }
+        } finally { onPeek(false) }
+    }
+}
+
+/** [STU-34] A kept draft's name, from its body. */
+internal fun draftName(body: String): String =
+    runCatching { org.json.JSONObject(body).optString("title") }.getOrNull()?.ifBlank { null } ?: "꾸미던 모양"
+
+/** [STU-34] How long ago, in words: 방금, N분 전, N시간 전, N일 전. */
+internal fun ago(millis: Long, now: Long = com.bamnat.core.time.Today.millis()): String {
+    val m = ((now - millis) / 60_000L).coerceAtLeast(0)
+    return when { m < 1 -> "방금"; m < 60 -> "${m}분 전"; m < 60 * 24 -> "${m / 60}시간 전"; else -> "${m / (60 * 24)}일 전" }
+}
+
+/** [STU-41] 1.36 장터 표지 자동: the studio's example as a picture when 올리기 opened, offered as the 표지 there. */
+object StudioShot {
+    @Volatile var last: android.graphics.Bitmap? = null
 }

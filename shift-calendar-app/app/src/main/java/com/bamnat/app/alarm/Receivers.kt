@@ -149,6 +149,8 @@ class SystemEventReceiver : BroadcastReceiver() {
                 // [INV-08] The investor's alarms too.
                 com.bamnat.app.invest.InvestNotices.reschedule(context, com.bamnat.app.invest.InvestNotices.plansNow(container))
                 com.bamnat.app.invest.InvestMonthNotice.schedule(context, container.investCalendars().isNotEmpty())
+                // [RUL-04] 1.36 규칙: a reboot or a new clock; what came meanwhile is run or said as missed.
+                runCatching { com.bamnat.app.logic.LogicRunner.fire(container) }
                 // 1.32 [WTYP-16] 퇴근 시각 알림.
                 LeaveTimeNotice.reschedule(context)
                 // 1.32 [WTYP-11][WTYP-29] 희망 오프 마감, 코인 12월 31일.
@@ -156,6 +158,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
                 // [MON-06] The trial's question before it turns paid.
                 com.bamnat.app.tier.TrialNotice.reschedule(context, container.proStore.current)
+                com.bamnat.app.tier.EndNotice.reschedule(context, container.proStore.current)
                 // [SLP-15] What waited while the user slept: its alarm did not survive the reboot either.
                 com.bamnat.app.sleep.QuietHold.release(context)
                 // A new date or time zone changes what "today" is on the widgets.

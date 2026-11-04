@@ -16,7 +16,9 @@ import zipfile
 # 1.30.0: an AAB is measured without BUNDLE-METADATA. That folder is the R8 name map and build notes Play keeps
 # for crash reports; it never reaches a phone, and the map alone grew past the old 23.5 MB budget while the APK
 # stayed inside. Without it the 1.30.0 AAB is 9.31 MB, so its budget is 11 MB.
-BUDGETS = {".apk": 9_500_000, ".aab": 11_000_000}
+# 1.36.0 (2026-11-04, 출시 때 다시 정함 — 1.37-인계 278줄): 1.35.0 APK 10.35MB에서 이미 넘었고, 1.36(스튜디오·장터·FCM)으로
+# APK 11.73MB, AAB 11.82MB가 됐어요. 늘어난 몫은 거의 dex라 지금 크기 + 약 7%로 잡고, 1.37에서 줄일 곳을 찾아요.
+BUDGETS = {".apk": 12_500_000, ".aab": 12_500_000}
 NOT_SHIPPED = "BUNDLE-METADATA/"
 
 

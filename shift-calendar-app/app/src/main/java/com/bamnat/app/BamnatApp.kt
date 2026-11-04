@@ -37,7 +37,7 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
 
     /**
      * [NXT-01] Built when WorkManager first starts. [NXT-11] Its JobScheduler ids are kept to a range of their own, away
-     * from the app's own jobs (AutoBackupJob 4401, PlazaNewsJob 4402, OutboxJob 4403·4404), so neither replaces the other.
+     * from the app's own jobs (AutoBackupJob 4401, PlazaNewsJob 4402, OutboxJob 4403·4404, InquiryReplyJob 4405), so neither replaces the other.
      */
     override val workManagerConfiguration: androidx.work.Configuration
         get() = androidx.work.Configuration.Builder()
@@ -48,11 +48,18 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
     override fun onCreate() {
         StartupTrace.begin()
         super.onCreate()
+        // 1.36 [SEC-10] The font look's isolated process starts nothing of the app's (it may not read the app's files).
+        if (com.bamnat.app.recipe.FontProbe.inProbe()) return
         CrashLog.install(this)
         // 1.32.1 [STAB-10] 멈춤 관찰 기록: the screen, the memory and how the app ended last time.
         com.bamnat.app.diag.Trail.install(this)
         // [QA130-01] Only the context; whether this is a Play pre-launch robot is read at the first server request.
         com.bamnat.app.diag.TestLab.attach(this)
+        // [LAY-04][RUL-03] 1.36 꾸밈 층의 누르기는 규칙·단추의 단추를 눌러요 (갈래 C와 D를 잇는 곳).
+        com.bamnat.app.ui.decor.DecorTap.buttons = { s -> com.bamnat.core.formula.Logic.decode(s.logic).buttons.map { it.id to "${it.emoji} ${it.label}" } }
+        com.bamnat.app.ui.decor.DecorTap.press = { c, id, date -> com.bamnat.app.logic.LogicRunner.press(c, id, date) }
+        // 1.36 [SEC-11] Play Integrity: nothing is asked here; the engine runs only when the server wants a verdict.
+        com.bamnat.app.company.IntegrityProof.engine = { nonce -> playIntegrityToken(nonce) }
         watchMainThread()
         channelsOnce()
         // While locked the database and settings cannot be opened; alarms ring from BootAlarms then,
@@ -63,6 +70,15 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         if (!BootAlarms.isLocked(this)) com.bamnat.app.diag.StartGuard.begin(this)
         if (!BootAlarms.isLocked(this)) building = Thread({ container }, "bamnat-container").apply { start() }
         StartupTrace.mark(StartupTrace.Step.APP)
+    }
+
+    /** 1.36 [SEC-11] A Play Integrity token for [nonce], on the caller's (network) thread; null when Play cannot give one. */
+    private fun playIntegrityToken(nonce: String): String? {
+        if (isRobolectric) return null
+        val request = com.google.android.play.core.integrity.IntegrityTokenRequest.builder().setNonce(nonce)
+            .apply { BuildConfig.INTEGRITY_PROJECT.toLongOrNull()?.let { setCloudProjectNumber(it) } }.build()
+        val task = com.google.android.play.core.integrity.IntegrityManagerFactory.create(this).requestIntegrityToken(request)
+        return com.google.android.gms.tasks.Tasks.await(task, 20, java.util.concurrent.TimeUnit.SECONDS).token()
     }
 
     /**

@@ -365,6 +365,14 @@ internal object HelpFaq {
             listOf("테마", "꾸미기", "화면 꾸미기", "칸 색", "배경", "입어 보기", "벗기", "다크", "공방", "스튜디오"),
             listOf("마을", "테마"),
         ),
+        // [STU-30..41] 1.36 스튜디오 극상.
+        HelpTopic(
+            "studioMax", "마을", "색 하나로 앱 전체를 꾸미거나, 야간 근무 날만 어둡게 바꿀 수 있나요?",
+            "공방 › 스튜디오 › 앱 전체 › 한 색에서 색 하나(사진에서 뽑아도 돼요)를 고르면 바탕·카드·글자·강조·오늘 색이 맞춰지고, 섞어 보기로 다른 조합을 봐요. " +
+                "‘근무에 따라’에서 야간·쉬는 날 모양을 정하고, 잠그기로 그대로 둘 탭을 골라요. 꾸미던 모양은 저절로 남아요.",
+            listOf("한 색", "색 하나", "사진 색", "섞어 보기", "근무에 따라", "야간 모양", "쉬는 날 모양", "잠그기", "내 색", "이어서 하기", "위젯 색", "위젯 모서리"),
+            listOf("마을", "공방", "스튜디오"),
+        ),
         HelpTopic(
             "recipeMake", "마을", "내 설정을 다른 분께 나누고 싶어요",
             "마을 › 공방의 ‘스튜디오에서 만들기’나 근무 종류·달력 색 화면의 ‘이 설정 나누기’를 누르세요. 나눌 조각을 고르면 금액·이름처럼 내 것인 값은 받는 분이 넣는 칸으로 바뀌어요. " +
@@ -385,11 +393,28 @@ internal object HelpFaq {
         HelpTopic(
             "recipeCommunity", "마을", "원하는 레시피가 없어요. 만든 분을 따라갈 수도 있나요?",
             "마을 › 공방의 ‘이런 거 있었으면’에 바라는 걸 적으면 다른 분이 ‘만들게요’를 누르고 완성해 드려요. 금액·연락처·링크는 적을 수 없어요. " +
-                "레시피 아래 ‘만든 분 페이지’에서 그분의 다른 레시피와 배지를 보고, 팔로우하면 새 레시피와 내 질문의 답을 알려 드려요. " +
+                "레시피 아래 ‘○○ 프로필’을 누르면 그분이 공개한 테마·기능별 탭·모음을 보고 팔로우할 수 있어요. " +
                 "요청 판과 팔로우·답 알림은 설정 › 장터·내 레시피에서 따로 끌 수 있어요.",
             listOf("요청", "부탁", "만든 사람", "제작자", "팔로우", "배지", "답 알림", "요청 판"),
             listOf("장터"),
             "장터·내 레시피 열기" to HelpAction.Go(SettingsGo.RECIPES),
+        ),
+        // [PRF-01][PRF-05] 1.36 창작자 프로필.
+        HelpTopic(
+            "creatorProfile", "마을", "내 프로필과 팔로잉은 어디서 보나요? 차단·지우기는요?",
+            "팔로우한 분은 마을 › 광장·장터 맨 위 얼굴 줄에 모이고, 새 작품이 오면 얼굴에 테두리가 생겨요. 맨 앞 내 얼굴은 내 프로필(최근 알림, 소개, 대표 작품, 작품 통계)이에요. " +
+                "분마다 알림만 끄거나 차단할 수 있고(프로필 ⋮), 차단은 사람들 › 차단에서 풀어요. 모두 지우려면 설정 › 개인정보 › 내가 보낸 정보·모두 지우기예요.",
+            listOf("프로필", "팔로워", "팔로잉", "차단", "모음", "소개", "탈퇴", "삭제", "모두 지우기"),
+            listOf("장터"),
+            "내가 보낸 정보 열기" to HelpAction.Go(SettingsGo.SENT),
+        ),
+        // 1.36 [V20] 보이는 믿음 단계.
+        HelpTopic(
+            "trustSteps", "마을", "새싹·이웃·단골은 뭐예요?",
+            "처음 3일은 새싹이라 내가 누른 좋아요가 반만 세져요. 3일이 지나면 이웃, 가려진 글 없이 14일을 쓰면 단골이에요. " +
+                "신고로 가려진 글이 쌓이면 잠시 하루에 쓸 수 있는 수가 줄고, 기간이 지나면 저절로 풀려요. 내 단계와 남은 날은 내 프로필에서 봐요.",
+            listOf("새싹", "이웃", "단골", "단계", "등급", "믿음", "쓰기 제한", "제한"),
+            listOf("장터"),
         ),
         HelpTopic(
             "recipeLook", "마을", "화면 배치·여러 설정을 한 번에 나누고 싶어요",
@@ -648,7 +673,7 @@ internal object HelpFaq {
         // AI 1.27 시작 (계획/1.27-AI-개발계획.md 441·443·444)
         HelpTopic(
             "plazaInfo", "광장", "회사 정보 광장은 누가 보나요? 무엇을 적을 수 있나요?",
-            "그 회사 설정을 쓰거나 보낸 분만 읽고 써요. ‘참여자 번호’나 별명으로 보이고 하루 10개까지 써요. 금액·연락처는 적을 수 없고, 욕설·광고는 신고로 가려져요. " +
+            "그 회사 설정을 쓰거나 보낸 분만 읽고 써요. ‘참여자 번호’로만 보이고(마을 이름은 회사 쪽에 보이지 않아요) 하루 10개까지 써요. 금액·연락처는 적을 수 없고, 욕설·광고는 신고로 가려져요. " +
                 "현장·가게·알바·투자는 각자 광장이 있고, 투자 이야기에는 종목 추천·리딩 글을 올릴 수 없어요.",
             listOf("정보 광장", "자유 토의", "익명", "참여자", "글쓰기", "현장 광장", "가게 광장", "알바 광장", "투자 이야기", "종목 추천"),
             listOf("광장", "회사 규칙 광장"),
@@ -671,9 +696,19 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "proSheet", "프로", "프로 기능을 누르면 나오는 세 가지는 무엇인가요?",
-            "프로가 아닐 때 프로 기능을 누르면 프로(무료 체험), ‘광고 보고 오늘 하루 열기’(하루 한 번, 밤 12시까지), ‘친구 초대로 프로 이용권 받기’를 함께 보여요. " +
-                "정식 출시 전에는 모두 무료라 나오지 않아요.",
-            listOf("광고 보기", "하루 열기", "프로 이용권", "잠김", "자물쇠", "친구 초대"),
+            "프로가 아닐 때 프로 기능을 누르면 프로(무료 체험), ‘광고 보고 7일 열기’, ‘친구 초대로 프로 이용권 받기’를 함께 보여요. " +
+                "급여·돈 통계·인쇄·알람 미션은 묶음마다 처음 쓰는 날부터 7일 무료이고, 그 뒤에는 광고 한 편으로 7일씩 열려요(하루 두 편까지). " +
+                "광고가 안 와도 그냥 열리고, 기간이 끝나도 만든 결과는 그대로예요. 정식 출시 전에는 모두 무료라 나오지 않아요.",
+            listOf("광고 보기", "7일 열기", "묶음", "프로 이용권", "잠김", "자물쇠", "친구 초대"),
+            listOf("설정 › 프로"),
+            "프로 보기" to HelpAction.Go(SettingsGo.PRO),
+        ),
+        // 1.36.1 [MON-15] (사용자 2026-11-04 "광고 제한에 걸리면 기능도 다음날 사용가능하게, 대신 횟수 초기화는 00시 기준").
+        HelpTopic(
+            "adCount", "프로", "광고는 하루에 몇 편까지 볼 수 있나요?",
+            "묶음 광고와 테마 광고를 합쳐 하루 두 편까지예요. 횟수는 폰 시계로 밤 12시에 다시 세요. 두 편을 다 본 날은 " +
+                "‘밤 12시가 지나면 다시 열 수 있어요’가 나오고, 그날 창을 닫아도 광고 단추가 숨지 않아요. 프로는 광고 없이 바로 써요.",
+            listOf("광고 두 편", "하루 두 편", "광고 횟수", "광고 몇 번", "광고 제한", "광고 다 봤어요"),
             listOf("설정 › 프로"),
             "프로 보기" to HelpAction.Go(SettingsGo.PRO),
         ),
@@ -847,6 +882,15 @@ internal object HelpFaq {
             listOf("현금영수증", "현금 매출", "카드 수수료", "수수료율", "영세 가맹점", "입금 대조", "하루 마감"),
             listOf("매출·영업", "장부"),
         ),
+        // 1.36 PC 재검토 (주휴수당을 물으면 '급여가 명세서와 달라요'만 나와요).
+        HelpTopic(
+            "holidayPay", "급여", "주휴수당이 안 들어가거나 적게 나와요",
+            "주휴수당은 한 주에 15시간 이상 일하고 정한 날을 다 나오면 붙고, 주 근무시간 ÷ 40 × 8시간(최대 8시간)이에요. 급여 계산의 규칙에서 ‘주휴수당’이 켜져 있는지 보세요. " +
+                "시급으로 받으면 출근·시급의 ‘이번 달 주마다 주휴’에서 주마다 들어갔는지, 결근으로 빠졌는지 보여요. 대타 시간은 정해진 근무가 아니라 넣지 않아요.",
+            listOf("주휴수당", "주휴", "15시간", "개근", "결근", "안 들어", "빠졌", "적게"),
+            listOf("급여", "출근·시급"),
+            "급여 계산 열기" to HelpAction.Go(SettingsGo.PAY),
+        ),
         HelpTopic(
             "hourlyCover", "알바", "대타 시간이 주휴에 안 들어가요",
             "대타는 정해진 근무(소정근로)가 아니라서 주휴 15시간에 넣지 않아요. 출근·시급 › 주휴수당 아래에 이번 달 대타가 몇 번이었는지 보여요. 휴게 포함 시급과 ‘알바 두 곳까지 무료’도 그 아래에 있어요.",
@@ -923,7 +967,7 @@ internal object HelpFaq {
     /** [INQ-05] I11: the answers each of the server's topics ([com.bamnat.core.ops.InquiryTopics]) starts with. */
     private val BY_TOPIC = mapOf(
         "alarm" to listOf("alarm", "sound", "wake", "alarmButtons", "alarmLock"),
-        "pay" to listOf("pay", "takeHome", "extra", "leave", "publicPay"),
+        "pay" to listOf("pay", "holidayPay", "takeHome", "extra", "leave", "publicPay"),
         "look" to listOf("freeLook", "recipe", "look"),
         "schedule" to listOf("pattern", "oneday", "calendars", "restRules", "import", "publicCycles"),
         "share" to listOf("share", "receive"),
@@ -939,8 +983,28 @@ internal object HelpFaq {
     fun forQuestion(text: String, topics: List<HelpTopic> = topics(), limit: Int = 2): List<HelpTopic> {
         val key = com.bamnat.core.ops.InquiryTopics.of(text)
         val ids = BY_TOPIC[key].orEmpty()
-        val first = search(text, topics.filter { it.id in ids }, limit).ifEmpty { topics.filter { it.id in ids }.take(1) }
-        return (first + search(text, topics, limit)).distinctBy { it.id }.take(limit)
+        // 1.36 PC Y20 (쓴 글과 상관없는 '교대 순서를 바꾸고 싶어요'): only answers the words match; the topic's first answer is no
+        // longer put in when none of its answers does.
+        val first = search(text, topics.filter { it.id in ids }, limit)
+        // 1.36 PC Y22 ('달력 말고 다른 화면…'이 아직 떠요): under a question being written only an answer two of its words meet.
+        // 1.36 PC 재검토: the one most of its words meet first (the topic's own answers win a tie).
+        return (first + search(text, topics, limit + 2)).distinctBy { it.id }.map { it to overlap(text, it) }.filter { it.second >= 2 }
+            .sortedByDescending { it.second }.map { it.first }.take(limit)
+    }
+
+    /** Words nearly every question says, whatever it is about. */
+    private val COMMON = listOf("화면", "이상", "가끔", "계속", "자꾸", "그냥", "너무", "진짜", "정말", "어떻게", "안돼", "안되", "해요",
+        "있어요", "없어요", "밤낮", "문제", "좀", "제가", "저는", "이거", "그거", "어디", "언제", "왜")
+
+    /**
+     * How many of [text]'s words (two letters or more) the answer's question or keywords hold. 1.36 PC 재검토 ('알람이 안 울려서
+     * 늦었어요'에 알람 답이 없어요): a word of three letters or more also meets by its first two ('울려서' → '안 울려').
+     */
+    private fun overlap(text: String, t: HelpTopic): Int {
+        val hay = (listOf(t.question) + t.keywords).map(SearchText::norm).filter { it.isNotEmpty() }
+        // 1.36 PC Y22 again ('앱이 이상해요 화면이 가끔 멈춰요' → 뒤로 가기 답): words almost every question has do not count.
+        return SearchText.words(text).map(SearchText::norm).filter { it.length >= 2 && COMMON.none { c -> it.startsWith(c) } }.distinct()
+            .count { w -> hay.any { h -> w in h || (h.length >= 2 && h in w) || (w.length >= 3 && w.take(2) in h) } }
     }
 
     /** The answers that fit [query], best first. */

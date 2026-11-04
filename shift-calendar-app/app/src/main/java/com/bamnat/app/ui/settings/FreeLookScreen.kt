@@ -1,10 +1,17 @@
 package com.bamnat.app.ui.settings
 
+import com.bamnat.app.ui.parts.fillColor
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.input.pointer.pointerInput
+import com.bamnat.app.ui.theme.fillWith
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,8 +34,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.AlertDialog
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -56,6 +63,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.bamnat.app.ui.decor.decor
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -137,24 +145,37 @@ private val SAMPLE_CELLS = listOf(
  * the pattern; a tap on a cell opens its look ([onCell] gets the look's index).
  */
 @Composable
-internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?) {
+internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
+                       /**
+                        * [TRY-04] 1.36 (빌드 6 확인: 칸 디자인을 넣으면 예시가 가짜 달력으로 바뀌어 전·후가 다른 달력): the phone's own days from
+                        * [start] with [todayDate], drawn in the looks, instead of the made-up weeks.
+                        */
+                       start: LocalDate? = null, todayDate: LocalDate? = null, days: List<com.bamnat.app.ui.calendar.SampleDay>? = null,
+                       /** PC 확인 W38 1.36 (오늘 색을 바꿔도 예시의 오늘 동그라미가 파랑): the 오늘 colour being made, null for the app's own. */
+                       todayColor: Color? = null) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
-    val first = LocalDate.of(2026, 11, 2)
-    val today = first.plusDays(2)
+    val first = start ?: LocalDate.of(2026, 11, 2)
+    val today = todayDate ?: first.plusDays(2)
     val shown = if (view.isDefault) view.copy(size = "normal") else view
     val height = when (shown.size) { "short" -> 52.dp; "tall" -> 86.dp; "huge" -> 118.dp; else -> 64.dp }
+    val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().padding(4.dp)) {
-        Row(Modifier.fillMaxWidth()) {
-            listOf("월", "화", "수", "목", "금", "토", "일").forEachIndexed { i, d ->
-                Text(d, Modifier.weight(1f), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    color = when (i) { 5 -> cal.saturday; 6 -> cal.sunday; else -> scheme.onSurfaceVariant })
+        Row(Modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.WEEK).then(com.bamnat.app.ui.parts.partSpotModifier("cal.week")).then(com.bamnat.app.ui.parts.PartMods.box(blueprint.style("cal.week"), RoundedCornerShape(0.dp)))) {
+            (0 until 7).map { first.plusDays(it.toLong()).dayOfWeek }.forEach { w ->
+                val wd = blueprint.style("cal.week.day", setOfNotNull("sat".takeIf { w == java.time.DayOfWeek.SATURDAY }, "sun".takeIf { w == java.time.DayOfWeek.SUNDAY }))
+                Text(listOf("월", "화", "수", "목", "금", "토", "일")[w.value - 1], Modifier.weight(1f).then(com.bamnat.app.ui.parts.partSpotModifier("cal.week.day")), fontSize = 11.sp, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    style = com.bamnat.app.ui.parts.PartMods.text(wd.copy(ink = null), androidx.compose.material3.LocalTextStyle.current),
+                    color = wd.ink?.let { Color(it.toInt()) } ?: when (w) { java.time.DayOfWeek.SATURDAY -> cal.saturday; java.time.DayOfWeek.SUNDAY -> cal.sunday; else -> scheme.onSurfaceVariant })
             }
         }
+        // PC 11차 (예시 눌러 열기가 숫자와 칸만 오감): the weeks as 칸 판, so a tap again goes on 숫자 → 칸 → 칸 판 → 달력.
+        Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("cal.grid"))) {
         for (r in 0 until rows) Row(Modifier.fillMaxWidth().height(height)) {
             for (c in 0 until 7) {
                 val date = first.plusDays((r * 7 + c).toLong())
-                val s = SAMPLE_CELLS[(r * 3 + c) % SAMPLE_CELLS.size]
+                val s = days?.getOrNull(r * 7 + c)?.let { d -> SampleCell(d.label, d.color, d.role ?: if (d.off) "off" else "day", d.memos.firstOrNull(), d.hours, d.off) }
+                    ?: SAMPLE_CELLS[(r * 3 + c) % SAMPLE_CELLS.size]
                 val isToday = date == today
                 val look = shown.lookFor(date.toEpochDay(), date.dayOfWeek.value, s.role, isToday)
                 val index = if (shown.looks.isEmpty()) 0 else shown.todayLook?.takeIf { isToday && it in shown.looks.indices }
@@ -164,15 +185,28 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?) 
                 val tint = com.bamnat.app.ui.calendar.cellTint(look, color.takeIf { !s.off }, own, null)
                 val shape = com.bamnat.app.ui.calendar.cellShape(shown, look)
                 val number = when (date.dayOfWeek) { java.time.DayOfWeek.SUNDAY -> cal.sunday; java.time.DayOfWeek.SATURDAY -> cal.saturday; else -> scheme.onSurface }
+                // [BLU-05] 1.36 부품 꾸미기 in the example too, by the same states as the phone's cells.
+                val states = com.bamnat.app.ui.parts.dayStates(s.role, date.dayOfWeek, com.bamnat.core.holiday.KoreanHolidays.nameOf(date) != null, true, isToday, false)
+                // [FXR-03] With the day's values (the studio's own book), so a condition shows in the example as on the phone.
+                val sampleScope = if (blueprint.hasFormulas) com.bamnat.app.logic.LocalDayFacts.current?.scope(date) else null
+                val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else blueprint.style("cal.cell", states, sampleScope)
+                val parts = if (blueprint.isEmpty) null else com.bamnat.app.ui.parts.CellParts.of(blueprint, states, sampleScope)
+                val pShape = com.bamnat.app.ui.parts.PartMods.shapeOf(cellPart, shape)
                 Box(
                     Modifier.weight(1f).fillMaxSize()
-                        .cellEdge(shown, look, shape, scheme.outlineVariant)
-                        .clip(shape).background(tint ?: Color.Transparent)
+                        .then(com.bamnat.app.ui.parts.partSpotModifier("cal.cell"))
+                        .cellEdge(shown, look, pShape, scheme.outlineVariant)
+                        .clip(pShape).fillWith(look?.fill, alpha = com.bamnat.app.ui.calendar.cellFillAlpha(look), animate = isToday)
+                        .background(tint ?: Color.Transparent)
+                        .then(com.bamnat.app.ui.parts.PartMods.box(cellPart.copy(pad = null, padX = null, padY = null, out = null, shadow = null), pShape))
+                        // [LAY-03] The 꾸밈 층 on the example cells too.
+                        .decor(com.bamnat.core.recipe.Decor.CELL, remember(date, s.role, isToday) { com.bamnat.app.ui.decor.decorDay(date, s.role, isToday) })
                         .then(if (onCell == null) Modifier else Modifier.clickable(onClickLabel = "이 칸의 모양 고치기") { onCell(index) }),
                 ) {
                     com.bamnat.app.ui.calendar.CustomCellBody(
-                        view = shown, cellLook = look, filled = tint?.takeIf { look?.mark == "fill" || look?.bg != null }, date = date, isToday = isToday,
-                        numberColor = number, dateSize = 13.sp, footerSize = 9.sp, todayColor = null, holidayName = null, hasMemo = s.memo != null,
+                        parts = parts,
+                        view = shown, cellLook = look, filled = tint?.takeIf { look?.mark == "fill" || look?.bg != null } ?: com.bamnat.app.ui.calendar.cellFillGround(look), date = date, isToday = isToday,
+                        numberColor = number, dateSize = 13.sp, footerSize = 9.sp, todayColor = todayColor, holidayName = null, hasMemo = s.memo != null,
                         alarmOff = false, marks = emptyList(), barColor = color.takeIf { !s.off },
                         dayMark = { size ->
                             Box(Modifier.size(size).background(if (s.off) Color.Transparent else color, RoundedCornerShape(4.dp))
@@ -186,6 +220,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?) 
                     )
                 }
             }
+        }
         }
         if (onCell != null && shown.looks.size > 1) Text("칸을 누르면 그 칸의 모양을 고쳐요", fontSize = 11.sp, color = scheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
@@ -209,6 +244,27 @@ private val CELL_PRESETS: List<Pair<String, CalendarView.() -> CalendarView>> = 
 @Composable
 internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit, onChange: (CalendarView) -> Unit) {
     var removing by remember { mutableStateOf(false) }
+    // [MAT-05] PC 확인 8~10차 (설정 검색 › 날짜 숫자 글꼴로 오면 줄이 칸 디자인 아래쪽, 단추 띠에 붙음): scrolling the editor to a row
+    // far down was not reliable here, so the row asked for comes first, until closed.
+    // PC 확인 11차: read as state (the editor can be on screen before the search's ask arrives), let go when the editor leaves.
+    val searched = FontRowFocus.pinned == "날짜 글꼴"
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { if (FontRowFocus.pinned == "날짜 글꼴") FontRowFocus.pinned = null } }
+    if (searched) {
+        val looks0 = view.looks.ifEmpty { listOf(CellLook()) }
+        val i0 = index.coerceIn(0, looks0.lastIndex)
+        Surface(color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f), shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("찾은 칸 · 날짜 글꼴", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { FontRowFocus.pinned = null }) { Text("닫기") }
+                }
+                FontRow("날짜 글꼴", looks0[i0].dateFont, numbersOnly = true, focusNow = true) { f ->
+                    onChange(view.copy(looks = looks0.toMutableList().also { it[i0] = looks0[i0].copy(dateFont = f) }))
+                }
+                Text("아래 ‘날짜’ 묶음에도 같은 줄이 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
     Text("칸 하나를 꾸미면 달력 전체에 들어가요. 모양을 여러 개 만들어 패턴으로 번갈아 쓸 수도 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("바로 시작하기", style = MaterialTheme.typography.labelLarge)
@@ -226,6 +282,13 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
     val l = looks[i]
     fun set(n: CellLook) = onChange(view.copy(looks = looks.toMutableList().also { it[i] = n }))
 
+    // [MAT-01] PC 확인 1차 ("칸 디자인을 끝까지 내려도 칸 채우기를 찾지 못함"): 칸 채우기 is the first line, open, not inside a fold.
+    // 근무 색은 그 위에 옅게 겹쳐요.
+    FillEditor("칸 채우기", l.fill, base = l.bg?.toLongOrNull(16) ?: 0xFFFFF4CC) { f ->
+        set(l.copy(fill = f, bg = if (f != null && l.bg != CellLook.SHIFT) null else l.bg))
+    }
+    if (l.fill != null && l.bg == null) LabeledSlider("채우기 진하기", (l.bgAlpha ?: 100).toFloat(), 10f..100f, "%") { set(l.copy(bgAlpha = it.toInt())) }
+
     Group("칸 배경") {
         Chips(listOf(null to "처음대로", CellLook.SHIFT to "근무 색", "own" to "내 색", CellLook.NONE to "없음"),
             when (l.bg) { null -> null; CellLook.SHIFT, CellLook.NONE -> l.bg; else -> "own" }) { v ->
@@ -241,6 +304,12 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
     Group("테두리·모서리") {
         Chips(listOf(null to "처음대로", "none" to "없음", "thin" to "가늘게", "thick" to "굵게", "dash" to "점선"), l.border) { set(l.copy(border = it)) }
         if (l.border != null && l.border != "none") ColorPick("테두리 색", l.borderColor) { set(l.copy(borderColor = it)) }
+        // [MAT-02] 1.36 테두리 두께 0.5~4dp와 진하기.
+        if (l.border != null && l.border != "none") {
+            MatSlider("테두리 두께", (l.borderWidth ?: if (l.border == "thick") 20 else 8) / 10f, 0.5f..4f, "", steps = 34,
+                shown = { "%.1fdp".format(it) }) { set(l.copy(borderWidth = (it * 10).toInt().coerceIn(5, 40))) }
+            MatSlider("테두리 진하기", (l.borderAlpha ?: 100).toFloat(), 0f..100f, "%") { set(l.copy(borderAlpha = it.toInt())) }
+        }
         LabeledSlider("모서리", (l.corner ?: 10).toFloat(), 0f..16f, "dp") { set(l.copy(corner = it.toInt())) }
     }
     Group("날짜") {
@@ -251,6 +320,8 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
         Chips(listOf(null to "모양 없음", "circle" to "동그라미", "square" to "네모"), l.dateShape?.takeIf { it != "none" }) { set(l.copy(dateShape = it)) }
         if (l.dateShape != null && l.dateShape != "none") ColorPick("날짜 바탕", l.dateFill) { set(l.copy(dateFill = it)) }
         ColorPick("평일 날짜 색", l.dateColor) { set(l.copy(dateColor = it)) }
+        // [MAT-05] 1.36 날짜 글꼴 (숫자·영문 전용 글꼴도 날짜에 잘 어울려요).
+        FontRow("날짜 글꼴", l.dateFont, numbersOnly = true) { set(l.copy(dateFont = it)) }
         Text("토·일·공휴일 색은 ‘오늘·주말 색’에서 바꿔요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     Group("근무 표시") {
@@ -368,7 +439,8 @@ internal fun MemoLookEditor(l: MemoLook, onChange: (MemoLook) -> Unit) {
         LabeledSlider("미리 보이는 줄", (l.lines ?: 8).toFloat(), 1f..MemoLook.MAX_LINES.toFloat(), "줄") { onChange(l.copy(lines = it.toInt())) }
         Chips(listOf(null to "제목 보통", "s" to "작게", "l" to "크게"), l.title?.takeIf { it != "m" }) { onChange(l.copy(title = it)) }
         Chips(listOf(null to "굵기 처음대로", true to "제목 굵게", false to "제목 얇게"), l.bold) { onChange(l.copy(bold = it)) }
-        Chips(listOf(null to "기본 글꼴", "serif" to "명조", "mono" to "고정폭", "hand" to "손글씨 느낌"), l.font?.takeIf { it != "sans" }) { onChange(l.copy(font = it)) }
+        // [MAT-05] 1.36 글꼴 모음 전체와 내 글꼴.
+        FontRow("메모 글꼴", l.font) { onChange(l.copy(font = it)) }
         Chips(listOf(null to "날짜 보이기", false to "날짜 숨기기"), l.date?.takeIf { !it }) { onChange(l.copy(date = it)) }
     }
     Group("메모장 바탕") {
@@ -401,21 +473,34 @@ internal fun moneySummary(l: MoneyLook): String = if (l.isDefault) "처음대로
     mapOf("s" to "금액 작게", "l" to "금액 크게")[l.amount], "수입·지출 색".takeIf { l.income != null || l.expense != null },
 ).joinToString(" · ").ifEmpty { "바꿈" }
 
-/** A money list's example: a day's line and three records, by the real colours and sizes. */
+/** A money list's example: a day's line and three records, by the real colours and sizes and the 가계부 parts (BLU-05·BLU-09). */
 @Composable
 internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
     val (income, expense) = com.bamnat.app.ui.money.moneyInks()
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "가계부 모양 고치기", onClick = onTap)) {
         val band = look.dayHead == "band"
-        Row(Modifier.fillMaxWidth().background(if (band) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface)
-            .padding(horizontal = 16.dp, vertical = 8.dp)) {
-            Text("11월 4일 (수)", style = if (look.dayHead == "big") MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelLarge,
-                color = if (band) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+        // [FXR-03] The example's day is today, with today's values for 조건부 꾸미기.
+        val todayScope = com.bamnat.app.logic.scopeOn(com.bamnat.core.time.Today.date())
+        val day = bp.style("money.day", scope = todayScope)
+        val dayShape = com.bamnat.app.ui.parts.PartMods.shapeOf(day, RoundedCornerShape(0.dp))
+        Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("money.day"))
+            .then(com.bamnat.app.ui.parts.PartMods.box(day.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), dayShape))
+            .background(day.fillColor ?: if (band) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, dayShape)
+            .padding(horizontal = (day.padH ?: 16).dp, vertical = (day.padV ?: 8).dp)) {
+            Text("11월 4일 (수)", modifier = Modifier.weight(1f),
+                style = com.bamnat.app.ui.parts.PartMods.text(day, (if (look.dayHead == "big") MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelLarge)
+                    .copy(color = if (band) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary)))
             Text("-13,500원", style = MaterialTheme.typography.labelMedium, color = expense)
         }
         listOf(Triple("🍚", "점심", -9_000L), Triple("☕", "커피", -4_500L), Triple("💼", "월급", 3_120_000L)).forEach { (emoji, title, amount) ->
             val (minH, padV) = when (look.rows) { "compact" -> 48.dp to 4.dp; "roomy" -> 76.dp to 12.dp; else -> 64.dp to 8.dp }
-            Row(Modifier.fillMaxWidth().heightIn(min = minH).background(MaterialTheme.colorScheme.surface).padding(horizontal = 16.dp, vertical = padV),
+            val row = bp.style("money.row", setOf(if (amount < 0) "out" else "in"), todayScope)
+            val amountPart = bp.style("money.amount", setOf(if (amount < 0) "out" else "in"), todayScope)
+            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("money.row")).heightIn(min = row.h?.dp ?: minH)
+                .background(MaterialTheme.colorScheme.surface)
+                .then(com.bamnat.app.ui.parts.PartMods.box(row.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
+                .padding(horizontal = row.padH?.dp ?: 16.dp, vertical = row.padV?.dp ?: padV),
                 verticalAlignment = Alignment.CenterVertically) {
                 val ink = if (amount < 0) expense else income
                 when (look.mark) {
@@ -425,11 +510,15 @@ internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(title, style = MaterialTheme.typography.bodyLarge)
+                    Text(title, style = com.bamnat.app.ui.parts.PartMods.text(row, MaterialTheme.typography.bodyLarge))
                     Text("체크카드", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text((if (amount < 0) "-" else "+") + "%,d원".format(kotlin.math.abs(amount)), color = ink, fontWeight = FontWeight.Bold,
-                    style = when (look.amount) { "s" -> MaterialTheme.typography.bodyMedium; "l" -> MaterialTheme.typography.titleLarge; else -> MaterialTheme.typography.titleSmall })
+                Text((if (amount < 0) "-" else "+") + "%,d원".format(kotlin.math.abs(amount)),
+                    color = amountPart.ink?.let { Color(it.toInt()) } ?: ink, fontWeight = amountPart.weight?.let { FontWeight(it) } ?: FontWeight.Bold,
+                    modifier = Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("money.amount"))
+                        .then(com.bamnat.app.ui.parts.PartMods.box(amountPart.copy(ink = null), RoundedCornerShape(4.dp))),
+                    style = com.bamnat.app.ui.parts.PartMods.text(amountPart.copy(ink = null),
+                        when (look.amount) { "s" -> MaterialTheme.typography.bodyMedium; "l" -> MaterialTheme.typography.titleLarge; else -> MaterialTheme.typography.titleSmall }))
             }
         }
     }
@@ -455,22 +544,39 @@ internal fun paySummary(l: PayLook?): String = if (l == null || l.isDefault) "�
     mapOf("compact" to "촘촘히", "roomy" to "넉넉히")[l.rows], "풀이 펼침".takeIf { l.open == true }, "날짜별 숨김".takeIf { l.days == false },
 ).joinToString(" · ").ifEmpty { "바꿈" }
 
-/** The pay screen's example: its total card and three lines, by the look of [style]. */
+/** The pay screen's example: its head, its total card and three lines, by the look of [style] and the 급여 parts (BLU-11). */
 @Composable
 internal fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
+    val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "급여 모양 고치기", onClick = onTap).padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val fill = look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
-        val on = if (look.plus != null) contentColorOn(fill) else MaterialTheme.colorScheme.onPrimaryContainer
-        Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(fill).padding(16.dp)) {
+        val todayScope = com.bamnat.app.logic.scopeOn(com.bamnat.core.time.Today.date())
+        val head = bp.style("pay.head", scope = todayScope)
+        if (head.hide != true) Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.head"))
+            .then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp))), verticalAlignment = Alignment.CenterVertically) {
+            com.bamnat.app.ui.parts.PartText("${style.label.substringBefore(' ')} · 월급", head, MaterialTheme.typography.titleMedium, Modifier.weight(1f))
+            Text("‹ 11월 ›", style = MaterialTheme.typography.titleSmall)
+        }
+        val total = bp.style("pay.total", scope = todayScope)
+        val fill = total.fillColor ?: look.plus?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primaryContainer
+        val on = total.ink?.let { Color(it.toInt()) } ?: if (look.plus != null || total.fillColor != null) contentColorOn(fill.copy(alpha = 1f)) else MaterialTheme.colorScheme.onPrimaryContainer
+        val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(total, MaterialTheme.shapes.large)
+        Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.total"))
+            .then(com.bamnat.app.ui.parts.PartMods.box(total.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), shape))
+            .clip(shape).then(if (total.paint != null) Modifier else Modifier.background(fill)).padding(horizontal = (total.padH ?: 16).dp, vertical = (total.padV ?: 16).dp)) {
             Text("11월 예상 급여 (세전) · ${style.label.substringBefore(' ')}", style = MaterialTheme.typography.labelLarge, color = on)
             Text("3,120,000원", color = on, fontWeight = FontWeight.Bold,
-                style = when (look.total) { "m" -> MaterialTheme.typography.headlineMedium; "xl" -> MaterialTheme.typography.displayMedium; else -> MaterialTheme.typography.displaySmall })
+                style = com.bamnat.app.ui.parts.PartMods.text(total.copy(ink = null),
+                    when (look.total) { "m" -> MaterialTheme.typography.headlineMedium; "xl" -> MaterialTheme.typography.displayMedium; else -> MaterialTheme.typography.displaySmall }))
         }
         listOf("기본급" to 2_397_500L, "야간근로수당" to 691_778L, "결근 공제" to -96_000L).forEach { (name, v) ->
-            Row(Modifier.fillMaxWidth().padding(vertical = when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp })) {
-                Text(name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-                Text("%,d원".format(v), style = MaterialTheme.typography.titleSmall,
-                    color = look.minus?.takeIf { v < 0 }?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.onSurface)
+            val row = bp.style("pay.row", setOf(if (v < 0) "out" else "in"), todayScope)
+            val rowShape = com.bamnat.app.ui.parts.PartMods.shapeOf(row, MaterialTheme.shapes.small)
+            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.row"))
+                .then(com.bamnat.app.ui.parts.PartMods.box(row.copy(pad = null, padX = null, padY = null), rowShape))
+                .padding(horizontal = (row.padH ?: 0).dp, vertical = row.padV?.dp ?: when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp })) {
+                Text(name, Modifier.weight(1f), style = com.bamnat.app.ui.parts.PartMods.text(row, MaterialTheme.typography.bodyLarge))
+                Text("%,d원".format(v), style = com.bamnat.app.ui.parts.PartMods.text(row.copy(ink = null), MaterialTheme.typography.titleSmall),
+                    color = row.ink?.let { Color(it.toInt()) } ?: look.minus?.takeIf { v < 0 }?.let { Color((it or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.onSurface)
             }
         }
     }
@@ -485,7 +591,10 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
     val pick = rememberPhotoPicker(LookImages.Slot.BG, onPicked = { id -> problem = null; onChange(l.copy(photo = id)) }, onProblem = { problem = it })
     val picture = rememberLookPicture(l.photo)
     if (target != FreeTarget.ALL) Text("비워 둔 것은 ‘앱 전체’를 따라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    ColorPick("배경색", l.bg) { onChange(l.copy(bg = it)) }
+    // PC 확인 W45 1.36 (색·배경에 바탕색 칸이 없음 — '배경색'으로 따로 불려 못 찾음): one word, 바탕색, as 한 색 and 위젯 say it.
+    ColorPick("바탕색", l.bg) { onChange(l.copy(bg = it)) }
+    // [MAT-01] 1.36 배경 채우기 (사진이 있으면 사진 밑에 깔려요).
+    FillEditor("배경 채우기", l.fill, base = shown.bg ?: 0xFFF7F8FCL) { onChange(l.copy(fill = it)) }
     Group("배경 사진") {
         problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -496,6 +605,10 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
             if (l.photo != null) TextButton(onClick = { onChange(l.copy(photo = null)) }) { Text("없애기") }
         }
         if (l.photo != null || shown.photo != null) LabeledSlider("사진 위 흐리게", (l.dim ?: 30).toFloat(), 20f..80f, "%") { onChange(l.copy(dim = it.toInt())) }
+        // [MAT-03] 1.36 사진 조정·블렌드.
+        if (l.photo != null || shown.photo != null) PhotoAdjustEditor(l.adjust ?: shown.adjust ?: com.bamnat.core.recipe.PhotoAdjust()) {
+            onChange(l.copy(adjust = it.takeIf { a -> !a.isDefault }))
+        }
     }
     if (target == FreeTarget.PLAZA) {
         Group("이모티콘") {
@@ -506,6 +619,8 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
     }
     ColorPick("카드 색", l.card) { onChange(l.copy(card = it)) }
     ColorPick("글자색", l.ink) { onChange(l.copy(ink = it)) }
+    // [MAT-05] 1.36 이 화면 글꼴 (비워 두면 ‘앱 전체’ 글꼴).
+    FontRow(if (target == FreeTarget.ALL) "앱 전체 글꼴" else "이 화면 글꼴", l.font) { onChange(l.copy(font = it)) }
     val ground = (shown.bg ?: 0xFFF7F8FCL)
     if (shown.ink != null && Palette.inkOn(shown.ink, ground, shown.card ?: ground) != shown.ink) {
         Text("고른 글자색은 바탕에서 잘 안 보여서 검정이나 흰색으로 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
@@ -516,7 +631,7 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
 }
 
 internal fun colorSummary(l: ScreenLook?): String = if (l == null || l.isDefault) "처음대로" else listOfNotNull(
-    "배경색".takeIf { l.bg != null }, "배경 사진".takeIf { l.photo != null }, "카드 색".takeIf { l.card != null }, "글자색".takeIf { l.ink != null },
+    "바탕색".takeIf { l.bg != null }, "배경 채우기".takeIf { l.fill != null }, "글꼴".takeIf { l.font != null }, "배경 사진".takeIf { l.photo != null }, "카드 색".takeIf { l.card != null }, "글자색".takeIf { l.ink != null },
     "강조색".takeIf { l.accent != null }, l.emoji,
 ).joinToString(" · ")
 
@@ -557,7 +672,7 @@ internal fun AlarmSample(onTap: () -> Unit) {
 // ---- 작은 조각 ----
 
 @Composable
-private fun Group(title: String, content: @Composable () -> Unit) {
+internal fun Group(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         content()
@@ -566,32 +681,93 @@ private fun Group(title: String, content: @Composable () -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun <T> Chips(options: List<Pair<T, String>>, value: T, onPick: (T) -> Unit) {
+internal fun <T> Chips(options: List<Pair<T, String>>, value: T, onPick: (T) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         options.forEach { (v, label) -> FilterChip(selected = v == value, onClick = { onPick(v) }, label = { Text(label) }) }
     }
 }
 
 @Composable
-private fun LabeledSlider(label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String, onDone: (Float) -> Unit) {
+internal fun LabeledSlider(
+    label: String, value: Float, range: ClosedFloatingPointRange<Float>, unit: String,
+    /** [BLU-06] Set when nothing is chosen yet: shown in place of the number ("처음대로 · 지금 8dp"); −/+ start from [value]. */
+    unset: String? = null,
+    /** How far one press of −/+ goes (보이는 정도 5%씩, PC 3차). Held, it keeps going and is kept once when the finger lifts. */
+    step: Int = 1,
+    onDone: (Float) -> Unit,
+) {
     var v by remember(value) { mutableFloatStateOf(value) }
+    var moved by remember(value, unset) { mutableStateOf(false) }
+    val showUnset = unset != null && !moved
+    fun nudge(by: Int) { moved = true; v = ((Math.round(v / step) + by) * step).toFloat().coerceIn(range) }
     Column {
-        Text("$label ${v.toInt()}$unit", style = MaterialTheme.typography.bodyMedium)
-        Slider(v, { v = it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
+        // [BLU-06] 1.36 −/+ for a value hard to hit with a finger on the slider (PC 1차 사용성 제안 '둥글기 −/+').
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (showUnset) "$label · $unset" else "$label ${v.toInt()}$unit", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            StepButton("−", "$label ${step}씩 줄이기", v > range.start, { nudge(-1) }) { onDone(v) }
+            StepButton("+", "$label ${step}씩 늘리기", v < range.endInclusive, { nudge(1) }) { onDone(v) }
+        }
+        Slider(v, { moved = true; v = if (unit == "%") (Math.round(it / 5f) * 5f).coerceIn(range) else it }, valueRange = range, onValueChangeFinished = { onDone(v) }, modifier = Modifier.semantics { contentDescription = label })
     }
 }
 
+/** − or +: a tap moves one step; held, it repeats faster until the finger lifts, and [onRelease] keeps the value once (one 되돌리기). */
+@Composable
+private fun StepButton(text: String, description: String, enabled: Boolean, onStep: () -> Unit, onRelease: () -> Unit) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val step by androidx.compose.runtime.rememberUpdatedState(onStep)
+    val release by androidx.compose.runtime.rememberUpdatedState(onRelease)
+    Box(
+        Modifier.size(48.dp).clip(CircleShape)
+            .semantics {
+                contentDescription = description
+                role = androidx.compose.ui.semantics.Role.Button
+                if (!enabled) disabled()
+                onClick { if (enabled) { step(); release() }; enabled }
+            }
+            .pointerInput(enabled) {
+                if (!enabled) return@pointerInput
+                detectTapGestures(onPress = {
+                    step()
+                    val held = scope.launch {
+                        // About 8 in the first second and 30 by the third (PC 4차: 2.5초에 40은 너무 빠름, PC 7차: 첫 1초에 4는 너무 느림).
+                        kotlinx.coroutines.delay(300)
+                        var n = 0
+                        while (true) { step(); n++; kotlinx.coroutines.delay(if (n < 6) 110L else maxOf(80L, 110L - (n - 6) * 10L)) }
+                    }
+                    tryAwaitRelease()
+                    held.cancel()
+                    release()
+                })
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.titleMedium,
+            color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
+    }
+}
+
+/** How many of [SWATCHES] are the light ones (the top row). */
+private const val LIGHT_SWATCHES = 10
+
 private val SWATCHES: List<Long> = listOf(
     0xFFFFFFFF, 0xFFF7F8FC, 0xFFFFF8E1, 0xFFFFF4CC, 0xFFFFE2CC, 0xFFFFDDE4, 0xFFE6DDFF, 0xFFD9E7FF, 0xFFCFF3EA, 0xFFE8F5D0,
-    0xFFF2994A, 0xFFE5484D, 0xFFE84393, 0xFF9B51E0, 0xFF2F5BEA, 0xFF00A3C4, 0xFF00857A, 0xFF27AE60, 0xFF8E9AAF, 0xFF4A5068,
-    0xFF1B1B1B, 0xFF0F1220, 0xFF1E335C, 0xFF16443B, 0xFF4D2230,
+    // PC 제안 1.36: the deep row by kind of colour, each kind light to dark, 검정 last.
+    0xFFF2994A, 0xFFE5484D, 0xFF4D2230, 0xFFE84393, 0xFF9B51E0, 0xFF2F5BEA, 0xFF8E9AAF, 0xFF4A5068, 0xFF1E335C, 0xFF0F1220,
+    0xFF00A3C4, 0xFF00857A, 0xFF16443B, 0xFF27AE60, 0xFF1B1B1B,
 )
 
 /**
  * 1.35 [STU-12] Colours used lately in this 스튜디오 (사용자 실사용 "색 동그라미가 줄줄이"): offered first in every colour line, so a
  * look stays in a few colours without hunting. The studio provides it; elsewhere nothing is kept.
  */
-class ColorMemory(val recent: List<Long> = emptyList(), val used: (Long) -> Unit = {})
+class ColorMemory(
+    val recent: List<Long> = emptyList(),
+    val used: (Long) -> Unit = {},
+    /** [STU-40] 1.36 내 색 모음: colours pinned for good (settings), first in every line; [pin] adds or takes one away. */
+    val pinned: List<Long> = emptyList(),
+    val pin: ((Long) -> Unit)? = null,
+)
 val LocalColorMemory = androidx.compose.runtime.staticCompositionLocalOf { ColorMemory() }
 
 /**
@@ -605,27 +781,63 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
     fun pick(c: Long?) { c?.let(memory.used); onPick(c) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            // PC 확인 1.36 (색·배경의 바탕색 줄에 이름표가 안 보임): the colour's name as a heading, like 배경 사진 above the rows.
+            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
             Text(value?.let { colorName(it) } ?: "처음대로", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // [STU-40] ★ keeps this colour in 내 색 (or lets it go).
+            if (value != null && memory.pin != null) TextButton(onClick = { memory.pin.invoke(value) }) {
+                Text(if (value in memory.pinned) "★ 내 색" else "☆ 내 색에")
+            }
             if (allowNone && value != null) TextButton(onClick = { onPick(null) }) { Text("처음대로") }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
+        // PC 제안 1.36 (25개가 한 줄이라 넘기기 힘듦): two rows that scroll together — 최근·밝은 색 위, 진한·어두운 색 아래.
+        val recent = (memory.pinned + memory.recent.filter { it !in memory.pinned }.take(6)).filter { it !in SWATCHES }.distinct()
+        val row = recent + SWATCHES
+        val names = remember(row) { colorNames(row) }
+        @Composable fun Dot(i: Int) {
+            val c = row[i]
+            val on = value == c
+            Box(
+                Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
+                    .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                    .clickable { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
+            )
+        }
+        val split = recent.size + LIGHT_SWATCHES
+        // PC 제안 1.36: on a new phone, where the colours used will gather.
+        if (recent.isEmpty() && memory.pin != null) Text("쓴 색과 ★ 내 색은 줄 맨 앞에 모여요", style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // that slides the row on.
+        val swatchScroll = rememberScrollState()
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        Box {
+        Row(Modifier.fillMaxWidth().horizontalScroll(swatchScroll).padding(end = if (swatchScroll.canScrollForward) 36.dp else 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
-            val recent = memory.recent.filter { it !in SWATCHES }.take(6)
-            (recent + SWATCHES).forEachIndexed { i, c ->
-                if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
-                val on = value == c
-                Box(
-                    Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
-                        .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                        .clickable { pick(c) }.semantics { contentDescription = "$label ${colorName(c)}" + if (i < recent.size) " (최근)" else ""; selected = on },
-                )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    for (i in 0 until split) {
+                        if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                        Dot(i)
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { for (i in split until row.size) Dot(i) }
             }
+        }
+        if (swatchScroll.canScrollForward) {
+            val bg = MaterialTheme.colorScheme.surface
+            Box(
+                Modifier.align(Alignment.CenterEnd).size(44.dp, 36.dp)
+                    .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(bg.copy(alpha = 0f), bg, bg)))
+                    .clickable(onClickLabel = "색 더 보기") { scope.launch { swatchScroll.animateScrollBy(240f) } },
+                contentAlignment = Alignment.CenterEnd,
+            ) { Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp)) }
+        }
         }
     }
     if (custom) CustomColorDialog(value ?: 0xFF2F5BEA, onDismiss = { custom = false }) { custom = false; pick(it) }
@@ -666,15 +878,35 @@ private fun CustomColorDialog(start: Long, onDismiss: () -> Unit, onDone: (Long)
 
 private fun hex(c: Long) = (c and 0xFFFFFFFFL).toString(16).uppercase().padStart(8, '0')
 
+/** PC 확인 W33 1.36 (흰색 둘, 연한 파랑 둘): each colour of a row said in words, a number added where two read the same. */
+internal fun colorNames(cs: List<Long>): List<String> {
+    val names = cs.map(::colorName)
+    val seen = mutableMapOf<String, Int>()
+    fun light(c: Long): Float { val a = FloatArray(3); android.graphics.Color.colorToHSV(c.toInt(), a); return a[2] * (1f - a[1] / 2f) }
+    return names.mapIndexed { i, n ->
+        val same = names.indices.filter { names[it] == n }
+        // PC 제안 1.36: colours that read alike are told apart in words by how light they are (two: 더 밝은·더 짙은; three: 밝은·중간·짙은).
+        val rank = same.sortedByDescending { light(cs[it]) }.indexOf(i)
+        when {
+            same.size < 2 -> n
+            same.size == 2 -> (if (rank == 0) "더 밝은 " else "더 짙은 ") + n
+            same.size == 3 -> listOf("밝은 ", "중간 ", "짙은 ")[rank] + n
+            else -> "$n ${seen.merge(n, 1, Int::plus)}"
+        }
+    }
+}
+
 /** A colour said in words for 화면 읽기: light or dark and its kind. */
-private fun colorName(c: Long): String {
+internal fun colorName(c: Long): String {
     val a = FloatArray(3)
     android.graphics.Color.colorToHSV(c.toInt(), a)
-    val tone = when { a[2] < 0.25f -> "어두운"; a[1] < 0.12f && a[2] > 0.9f -> "흰"; a[1] < 0.25f -> "연한"; else -> "" }
-    val kind = when {
-        a[1] < 0.12f -> if (a[2] > 0.9f) "색" else "회색"
-        a[0] < 20 || a[0] >= 340 -> "빨강"; a[0] < 45 -> "주황"; a[0] < 70 -> "노랑"; a[0] < 160 -> "초록"; a[0] < 200 -> "청록"
-        a[0] < 260 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍"
-    }
-    return listOf(tone, kind).filter { it.isNotEmpty() }.joinToString(" ")
+    // PC 확인 W33 1.36 (흰 동그라미 셋이 모두 '흰 색'): greys by how light, near-whites by their hint of colour.
+    if (a[1] < 0.04f) return when { a[2] > 0.97f -> "흰색"; a[2] > 0.85f -> "밝은 회색"; a[2] > 0.6f -> "회색"; a[2] > 0.25f -> "진한 회색"; else -> "검정" }
+    val hue = when { a[0] < 20 || a[0] >= 340 -> "빨강"; a[0] < 45 -> "주황"; a[0] < 70 -> "노랑"; a[0] < 160 -> "초록"; a[0] < 200 -> "청록"
+        a[0] < 245 -> "파랑"; a[0] < 300 -> "보라"; else -> "분홍" }
+    if (a[1] < 0.12f) return if (a[2] > 0.85f) "아주 연한 $hue" else "회색빛 $hue"
+    // PC 확인 1.36 (연한 파랑이 셋: 하늘색·연보라·회청색): a dull one is 회색빛, not 연한.
+    // PC 확인 1.36 ('어두운 파랑'이 '짙은 파랑'과 헷갈림): the darkest say 아주 짙은, above the 밝은·짙은 of a group.
+    val tone = when { a[2] < 0.25f -> "아주 짙은"; a[1] < 0.25f && a[2] < 0.8f -> "회색빛"; a[1] < 0.25f -> "연한"; else -> "" }
+    return listOf(tone, hue).filter { it.isNotEmpty() }.joinToString(" ")
 }

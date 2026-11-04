@@ -29,6 +29,14 @@ data class CellLook(
     val markPlace: String? = null,
     /** Inside room, 0..8 dp. */
     val pad: Int? = null,
+    /** [MAT-01] 1.36 칸 채우기: a gradient, pattern, texture, glass or shader under the cell; over [bg] when both are there. */
+    val fill: Fill? = null,
+    /** [MAT-02] 1.36 테두리 두께 in tenths of a dp (5..40, 0.5~4dp); null keeps [border]'s own (thin 1dp, thick 2dp). */
+    val borderWidth: Int? = null,
+    /** [MAT-02] 테두리 진하기 0..100 %. */
+    val borderAlpha: Int? = null,
+    /** [MAT-05] 1.36 날짜 글꼴: a [FontCatalog] id or the user's own. */
+    val dateFont: String? = null,
 ) {
     val isDefault: Boolean get() = this == CellLook()
 
@@ -36,7 +44,8 @@ data class CellLook(
         bg?.let { "bg:$it" }, bgAlpha?.let { "ba:$it" }, border?.let { "bd:$it" }, borderColor?.let { "bc:" + hex(it) },
         corner?.let { "cr:$it" }, datePlace?.let { "dp:$it" }, dateSize?.let { "ds:$it" }, dateBold?.let { "dw:" + if (it) "b" else "n" },
         dateShape?.let { "dsh:$it" }, dateFill?.let { "df:" + hex(it) }, dateColor?.let { "dc:" + hex(it) }, mark?.let { "mk:$it" },
-        markPlace?.let { "mp:$it" }, pad?.let { "pd:$it" },
+        markPlace?.let { "mp:$it" }, pad?.let { "pd:$it" }, fill?.let { "fl:" + it.encode() }, borderWidth?.let { "bw:$it" },
+        borderAlpha?.let { "bo:$it" }, dateFont?.let { "ff:$it" },
     ).joinToString("|")
 
     companion object {
@@ -66,7 +75,8 @@ data class CellLook(
                 corner = int(m["cr"], 0, 16), datePlace = m["dp"]?.takeIf { it in DATE_PLACES }, dateSize = m["ds"]?.takeIf { it in DATE_SIZES },
                 dateBold = when (m["dw"]) { "b" -> true; "n" -> false; else -> null }, dateShape = m["dsh"]?.takeIf { it in DATE_SHAPES },
                 dateFill = color(m["df"]), dateColor = color(m["dc"]), mark = m["mk"]?.takeIf { it in MARKS },
-                markPlace = m["mp"]?.takeIf { it in MARK_PLACES }, pad = int(m["pd"], 0, 8),
+                markPlace = m["mp"]?.takeIf { it in MARK_PLACES }, pad = int(m["pd"], 0, 8), fill = Fill.decode(m["fl"]),
+                borderWidth = int(m["bw"], 5, 40), borderAlpha = int(m["bo"], 0, 100), dateFont = m["ff"]?.takeIf { FontCatalog.idProblem(it) == null },
             )
         }
 
@@ -81,6 +91,11 @@ data class CellLook(
                 "mk:(big|small|line|dot|fill|none)|mp:(side|below|bottom)|pd:[0-8])$",
         )
 
+        /** [MAT-01][MAT-02][MAT-05] 1.36 parts: 채우기, 테두리 두께·진하기, 날짜 글꼴. */
+        private val EXTRA = Regex("^(bw:([5-9]|[1-3][0-9]|40)|bo:(100|[1-9]?[0-9]))$")
+        private fun extraOk(p: String): Boolean = EXTRA.matches(p) ||
+            p.startsWith("fl:") && Fill.problem(p.substring(3)) == null || p.startsWith("ff:") && FontCatalog.idProblem(p.substring(3)) == null
+
         /** A recipe's looks are each part known, each key once, at most [MAX] looks; null passes, else the refusal's code. */
         fun looksProblem(s: String): String? {
             if (s.isEmpty()) return null
@@ -89,7 +104,7 @@ data class CellLook(
             for (l in looks) {
                 if (l.isEmpty()) continue
                 val parts = l.split('|')
-                if (!parts.all { PART.matches(it) }) return "looks"
+                if (!parts.all { PART.matches(it) || extraOk(it) }) return "looks"
                 val keys = parts.map { it.substringBefore(':') }
                 if (keys.size != keys.distinct().size) return "looks"
             }
@@ -205,7 +220,7 @@ data class MemoLook(
                 layout = m["layout"]?.takeIf { it in LAYOUTS }, card = m["card"]?.takeIf { it in CARDS }, cardColor = color("cardColor"),
                 border = m["border"]?.takeIf { it in BORDERS }, corner = m["corner"]?.toIntOrNull()?.coerceIn(0, 24),
                 lines = m["lines"]?.toIntOrNull()?.coerceIn(1, MAX_LINES), title = m["title"]?.takeIf { it in TITLES }, bold = flag("bold"),
-                font = m["font"]?.takeIf { it in FONTS }, date = flag("date"), bg = color("bg"),
+                font = m["font"]?.takeIf { FontCatalog.idProblem(it) == null }, date = flag("date"), bg = color("bg"),
             )
         }
     }
@@ -268,18 +283,30 @@ data class ScreenLook(
     val ink: Long? = null,
     val accent: Long? = null,
     val emoji: String? = null,
+    /** [MAT-01] 1.36 배경 채우기: a gradient, pattern, texture or shader as the page, under the picture; [bg] stays its plain colour. */
+    val fill: Fill? = null,
+    /** [MAT-03] 1.36 배경 사진 조정·블렌드. */
+    val adjust: PhotoAdjust? = null,
+    /** [MAT-05] 1.36 이 화면 글꼴: a [FontCatalog] id or the user's own; the screen's text is drawn in it. */
+    val font: String? = null,
 ) {
     val isDefault: Boolean get() = this == ScreenLook()
+
+    /** The colour the page reads as: [bg], else what [fill] comes to (for text that must stand 4.5:1 on it). */
+    val ground: Long? get() = bg ?: fill?.average?.let { it or 0xFF000000L }
 
     fun encode(): String = listOfNotNull(
         bg?.let { "bg:" + hex(it) }, photo?.let { "ph:$it" }, dim?.let { "dm:$it" }, card?.let { "cd:" + hex(it) }, ink?.let { "ik:" + hex(it) },
         accent?.let { "ac:" + hex(it) }, emoji?.let { "em:" + it.codePoints().toArray().joinToString("+") { cp -> cp.toString(16) } },
+        fill?.let { "fl:" + it.encode() }, adjust?.takeIf { !it.isDefault }?.let { "pa:" + it.encode() }, font?.let { "ft:$it" },
     ).joinToString("|")
 
     /** This look over [base] (the whole app's): what this one leaves out is the base's. */
     fun over(base: ScreenLook): ScreenLook = ScreenLook(
         bg ?: base.bg, if (bg != null && photo == null) null else photo ?: base.photo, dim ?: base.dim, card ?: base.card, ink ?: base.ink,
         accent ?: base.accent, emoji ?: base.emoji,
+        // A screen's own plain colour hides the whole app's fill, as it hides its picture.
+        fill = if (bg != null && fill == null) null else fill ?: base.fill, adjust = adjust ?: base.adjust, font = font ?: base.font,
     )
 
     companion object {
@@ -296,8 +323,15 @@ data class ScreenLook(
                     runCatching { e.split('+').map { it.toInt(16) }.let { cps -> String(cps.toIntArray(), 0, cps.size) } }.getOrNull()
                         ?.let { RecipeText.oneEmoji(it) }
                 },
+                fill = Fill.decode(m["fl"]), adjust = m["pa"]?.let { PhotoAdjust.decode(it) }?.takeIf { !it.isDefault },
+                font = m["ft"]?.takeIf { FontCatalog.idProblem(it) == null },
             )
         }
+
+        /** [MAT-01][MAT-03][MAT-05] 1.36 parts: 배경 채우기, 사진 조정, 글꼴. */
+        fun partOk(p: String): Boolean = PART.matches(p) || p.startsWith("fl:") && Fill.problem(p.substring(3)) == null ||
+            p.startsWith("pa:") && p.length > 3 && PhotoAdjust.problem(p.substring(3)) == null ||
+            p.startsWith("ft:") && FontCatalog.idProblem(p.substring(3)) == null
 
         val PART = Regex("^(bg:[0-9A-F]{8}|ph:[0-9a-f]{16}|dm:([0-7]?[0-9]|80)|cd:[0-9A-F]{8}|ik:[0-9A-F]{8}|ac:[0-9A-F]{8}|em:[0-9a-f]{2,6}(\\+[0-9a-f]{2,6}){0,7})$")
     }
@@ -355,7 +389,7 @@ data class ScreenLooks(val looks: Map<String, ScreenLook> = emptyMap()) {
             if (keys.any { !KEY.matches(it) } || keys.size != keys.distinct().size) return "screens"
             for (e in entries) {
                 val parts = e.substringAfter('~').split('|').filter { it.isNotEmpty() }
-                if (!parts.all { ScreenLook.PART.matches(it) }) return "screens"
+                if (!parts.all { ScreenLook.partOk(it) }) return "screens"
                 if (parts.map { it.substringBefore(':') }.let { it.size != it.distinct().size }) return "screens"
             }
             return null
