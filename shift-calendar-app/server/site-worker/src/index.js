@@ -10,6 +10,12 @@ const HOME = "https://bamnat.app";
 /** privacy.html at the Pages root is another app's policy, not 밤낮's. */
 const ELSEWHERE = { "/privacy.html": "/privacy/" };
 
+/**
+ * AdMob reads bamnat.app/app-ads.txt. The share server writes that line (APP_ADS_LINE); a custom domain may win over the
+ * share server's bamnat.app/app-ads.txt route, so this Worker passes the request on to it rather than to Pages (404 there).
+ */
+const ADS = "https://s.bamnat.app/app-ads.txt";
+
 export default {
   async fetch(request) {
     const url = new URL(request.url);
@@ -18,6 +24,10 @@ export default {
       return new Response("허용되지 않은 요청이에요.", { status: 405, headers: { allow: "GET, HEAD" } });
     }
     if (ELSEWHERE[url.pathname]) return Response.redirect(HOME + ELSEWHERE[url.pathname], 301);
+    if (url.pathname === "/app-ads.txt") {
+      const ads = await fetch(ADS, { method: request.method, redirect: "manual", cf: { cacheEverything: true, cacheTtl: 300 } });
+      return new Response(ads.body, { status: ads.status, headers: { "content-type": "text/plain; charset=utf-8", "x-content-type-options": "nosniff" } });
+    }
     const upstream = await fetch(ORIGIN + url.pathname + url.search, {
       method: request.method,
       redirect: "manual",

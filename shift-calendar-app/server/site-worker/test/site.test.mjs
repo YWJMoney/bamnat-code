@@ -29,3 +29,10 @@ test("www goes to bamnat.app; another app's policy and writes are not passed on"
   assert.equal(other.headers.get("location"), "https://bamnat.app/privacy/");
   assert.equal((await site.fetch(new Request("https://bamnat.app/", { method: "POST", body: "x" }))).status, 405);
 });
+
+test("app-ads.txt comes from the share server, not Pages", async () => {
+  const ads = await site.fetch(new Request("https://bamnat.app/app-ads.txt"));
+  assert.equal(ads.status, 200);
+  assert.equal(seen.at(-1)[0], "https://s.bamnat.app/app-ads.txt");
+  assert.match(ads.headers.get("content-type"), /text\/plain/);
+});
