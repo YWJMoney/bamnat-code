@@ -47,4 +47,14 @@ class TabFactsTest {
         assertEquals(0xFFFFB300L, card(true).lineC)
         assertEquals(null, card(false).lineC)
     }
+    @Test fun aBigSpendPaintsItsTableRow() {
+        val bp = com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(listOf(
+            mapOf("id" to "money.table.row", "when" to "종류 = \"지출\" 그리고 금액 >= 50000", "fill" to 0xFFFFEBEEL),
+            mapOf("id" to "memo.card", "when" to "체크율 >= 100", "alpha" to 55.0),
+        )))
+        fun row(n: Long) = TabFacts.money(MoneyEntry(date = LocalDate.of(2026, 11, 2), kind = MoneyKind.EXPENSE, amount = n, category = "식비"))
+            .let { bp.style("money.table.row", emptySet(), com.bamnat.core.formula.FormulaScope.of(it.values, it.inputs)) }
+        assertEquals(0xFFFFEBEEL, row(82_000).fill)
+        assertEquals(null, row(8_000).fill)
+    }
 }

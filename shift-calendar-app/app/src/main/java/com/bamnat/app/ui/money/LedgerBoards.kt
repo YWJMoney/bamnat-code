@@ -153,7 +153,6 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
     // [TAB-07] 부품 money.table · money.table.row. PC 확인 b81b643f: the date wrapped to two lines with the right side empty, so the
     // date is short ("11/12", one line) and 내용 takes the room that is left.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-    val rowPart = bp.style("money.table.row")
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.table"), RoundedCornerShape(10.dp)))) {
     val fixed = 64.dp + 84.dp + 104.dp
     val widths = mapOf("date" to 64.dp, "category" to 84.dp, "what" to maxOf(120.dp, maxWidth - fixed), "amount" to 104.dp)
@@ -172,7 +171,7 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
         }
         for (e in rows.take(MAX_TABLE_ROWS)) {
             val (amount, color) = signedText(e)
-            Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }?.let { bp.style("money.table.row", scope = it) } ?: rowPart, RoundedCornerShape(0.dp))).clickable { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }.let { bp.style("money.table.row", tableStates(e), it) }, RoundedCornerShape(0.dp))).clickable { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${e.date.monthValue}/${e.date.dayOfMonth}", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
                     modifier = Modifier.width(widths["date"]!!).padding(horizontal = 8.dp).semantics { contentDescription = Fmt.monthDay(e.date) })
                 Text(e.category, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(widths["category"]!!).padding(horizontal = 8.dp))
@@ -190,3 +189,6 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
 }
 
 private const val MAX_TABLE_ROWS = 300
+
+/** A table line's 들어온 돈·나간 돈, as the list's line takes them (on "in"/"out"). */
+private fun tableStates(e: MoneyEntry): Set<String> = setOfNotNull(when (e.kind) { MoneyKind.INCOME -> "in"; MoneyKind.EXPENSE -> "out"; else -> null })

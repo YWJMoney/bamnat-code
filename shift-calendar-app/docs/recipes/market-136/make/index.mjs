@@ -64,6 +64,20 @@ for (const [name, list] of Object.entries(files)) {
 }
 if (missing.size) throw new Error(`보여주기 제목이 없어요: ${[...missing].join(", ")}`);
 
+// 사람이 지은 듯한 이름 (names.mjs, 사용자 2026-11-04): 작품 줄의 처음 이름을 마지막에 바꿔 써요.
+const { RENAME } = await import("./names.mjs");
+const named = new Set();
+for (const [name, list] of Object.entries(files)) {
+  files[name] = list.map((w) => {
+    const to = RENAME.get(w.recipe.title);
+    if (!to) throw new Error(`새 이름이 없어요: ${w.recipe.title}`);
+    if (named.has(to)) throw new Error(`새 이름이 겹쳐요: ${to}`);
+    named.add(to);
+    return { ...w, recipe: { ...w.recipe, title: to } };
+  });
+}
+if (named.size !== RENAME.size) throw new Error(`쓰지 않은 이름이 있어요: ${RENAME.size - named.size}개`);
+
 for (const f of readdirSync(OUT).filter((x) => x.endsWith(".json"))) unlinkSync(join(OUT, f));
 let n = 0;
 const problems = [];

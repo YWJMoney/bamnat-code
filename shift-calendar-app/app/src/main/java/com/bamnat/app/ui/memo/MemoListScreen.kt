@@ -685,7 +685,9 @@ internal fun MemoCard(
         else -> BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (look.border == "thin") 1f else 0.5f))
     }
     val ink = if (cardPart.ink != null) Color(cardPart.ink!!.toInt()) else if (cardColor.alpha > 0.5f && cardColor != Color.Unspecified && look.card == "one") com.bamnat.app.ui.components.contentColorOn(cardColor) else androidx.compose.ui.graphics.Color.Unspecified
-    Box(Modifier.then(if (look.layout == "sticky") Modifier.graphicsLayer { rotationZ = if (memo.id % 2 == 0L) -1.2f else 1.2f } else Modifier)) {
+    // PC d0799995 (체크 진행 카드): the part's 투명도 (alpha), so '체크율 >= 100이면 흐리게' lets a finished card step back.
+    Box(Modifier.then(if (look.layout == "sticky") Modifier.graphicsLayer { rotationZ = if (memo.id % 2 == 0L) -1.2f else 1.2f } else Modifier)
+        .then(cardPart.alpha?.let { a -> Modifier.graphicsLayer { alpha = a.coerceIn(0, 100) / 100f } } ?: Modifier)) {
         Surface(
             shape = shape,
             color = cardColor,

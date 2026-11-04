@@ -613,8 +613,10 @@ private fun LedgerRow(
             // [FXR-03] With the record's day, so 조건부 꾸미기 (만약 지출 > 50000 …) works on the line as it does in the month's cells.
             // PC 4277abca: and the line's own 분류·종류·금액, so '분류 = "식비"' colours that line.
             val dayScope = com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }
-            val rowPart = bp.style("money.row", scope = dayScope)
-            val amountPart = bp.style("money.amount", setOfNotNull(when (e.kind) { MoneyKind.INCOME -> "in"; MoneyKind.EXPENSE -> "out"; else -> null }), dayScope)
+            // PC d0799995 (수입 금빛 줄): the line takes 들어온 돈·나간 돈 (on "in"/"out") as its 금액 does, so a 수입 line's own fill shows.
+            val inOut = setOfNotNull(when (e.kind) { MoneyKind.INCOME -> "in"; MoneyKind.EXPENSE -> "out"; else -> null })
+            val rowPart = bp.style("money.row", inOut, dayScope)
+            val amountPart = bp.style("money.amount", inOut, dayScope)
             Row(Modifier.heightIn(min = rowPart.h?.dp ?: minH).then(com.bamnat.app.ui.parts.PartMods.box(rowPart.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
                 .padding(horizontal = rowPart.padH?.dp ?: 16.dp, vertical = rowPart.padV?.dp ?: padV), verticalAlignment = Alignment.CenterVertically) {
                 if (selecting) {

@@ -495,7 +495,7 @@ internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
         }
         listOf(Triple("🍚", "점심", -9_000L), Triple("☕", "커피", -4_500L), Triple("💼", "월급", 3_120_000L)).forEach { (emoji, title, amount) ->
             val (minH, padV) = when (look.rows) { "compact" -> 48.dp to 4.dp; "roomy" -> 76.dp to 12.dp; else -> 64.dp to 8.dp }
-            val row = bp.style("money.row", scope = todayScope)
+            val row = bp.style("money.row", setOf(if (amount < 0) "out" else "in"), todayScope)
             val amountPart = bp.style("money.amount", setOf(if (amount < 0) "out" else "in"), todayScope)
             Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("money.row")).heightIn(min = row.h?.dp ?: minH)
                 .background(MaterialTheme.colorScheme.surface)
