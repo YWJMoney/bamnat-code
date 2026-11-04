@@ -107,9 +107,13 @@ class PlazaNewsJob : JobService() {
             val digest = runCatching { digest(c) }.getOrNull()
             val text = BamnatNews.text(digest?.plaza.orEmpty(), digest?.answers ?: 0, digest?.notices.orEmpty(), changes)
             if (text == null && recipeLines.isEmpty()) return
+            val plaza = digest?.plaza.orEmpty()
             val target = when {
-                text == null -> NoticeLinks.Target.PLAZA
+                // [TOWN-01] 1.37: only 장터 news opens 장터; only answers to my posts open those posts.
+                text == null -> NoticeLinks.Target.MARKET
                 text.onlyAnswers && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
+                plaza.isNotEmpty() && plaza.all { it.kind == "replies" } && changes.isEmpty() && (digest?.answers ?: 0) == 0 &&
+                    digest?.notices.isNullOrEmpty() && recipeLines.isEmpty() -> NoticeLinks.Target.VILLAGE_POSTS
                 digest?.plaza.isNullOrEmpty() && changes.isNotEmpty() -> NoticeLinks.Target.TODAY
                 digest?.plaza.isNullOrEmpty() && (digest?.answers ?: 0) > 0 && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
                 else -> NoticeLinks.Target.PLAZA

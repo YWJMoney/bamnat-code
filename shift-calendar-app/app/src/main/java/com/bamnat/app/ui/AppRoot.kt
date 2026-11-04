@@ -250,7 +250,9 @@ private object Routes {
         "recipe_make?calendar=$calendar&draft=$draft&kind=$kind&code=$code"
     const val RECIPE_MINE = "recipe_mine"
     /** 1.36 [VIL-13] 간직한 글 · 내 글. */
-    const val VILLAGE_POSTS = "village_posts"
+    const val VILLAGE_POSTS = "village_posts?tab={tab}"
+    /** [TOWN-01] 1.37: 간직한 글 · 내 글, on 내 글 ([mine]) from a 새 답 line or notice. */
+    fun villagePosts(mine: Boolean = false) = "village_posts?tab=${if (mine) 1 else 0}"
     /** 1.36 [VIL-06] 마을에서 찾기. */
     const val VILLAGE_SEARCH = "village_search"
     /** 1.36 [VIL-17] 장터 넘겨 보기. */
@@ -508,7 +510,16 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.PLAZA -> { nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target) }
+            // [TOWN-01] 1.37: a 소식 opens 마을 on the part it speaks of, not on the part last seen (장터·테마·공방 hid the answer).
+            NoticeLinks.Target.PLAZA -> {
+                com.bamnat.app.ui.hub.HubLinks.open(com.bamnat.app.ui.hub.HubSection.TALK)
+                nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
+            }
+            NoticeLinks.Target.MARKET -> {
+                com.bamnat.app.ui.hub.HubLinks.open(com.bamnat.app.ui.hub.HubSection.SHARE)
+                nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
+            }
+            NoticeLinks.Target.VILLAGE_POSTS -> { nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
@@ -1601,7 +1612,7 @@ private fun AppNavHost(
                 },
                 onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
                 onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
-                onPosts = { nav.navigate(Routes.VILLAGE_POSTS) { launchSingleTop = true } },
+                onPosts = { nav.navigate(Routes.villagePosts()) { launchSingleTop = true } },
                 onSearch = { nav.navigate(Routes.VILLAGE_SEARCH) { launchSingleTop = true } },
                 onSwipe = { nav.navigate(Routes.VILLAGE_SWIPE) { launchSingleTop = true } },
                 onRequests = { nav.navigate(Routes.recipeRequests(recipeCal)) { launchSingleTop = true } },
@@ -1751,8 +1762,8 @@ private fun AppNavHost(
                 onPlaza = { nav.navigate(Routes.stylePlaza()) { launchSingleTop = true } },
                 onRequests = { nav.navigate(Routes.recipeRequests()) { launchSingleTop = true } })
         }
-        composable(Routes.VILLAGE_POSTS) {
-            com.bamnat.app.ui.village.MyVillagePostsScreen(container, onBack = { nav.popFrom(Routes.VILLAGE_POSTS) },
+        composable(Routes.VILLAGE_POSTS, arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 })) { entry ->
+            com.bamnat.app.ui.village.MyVillagePostsScreen(container, startTab = entry.arguments?.getInt("tab") ?: 0, onBack = { nav.popFrom(Routes.VILLAGE_POSTS) },
                 onPlaza = { nav.navigate(Routes.stylePlaza()) { launchSingleTop = true } })
         }
         composable(Routes.RECIPE_MINE) {
@@ -2216,8 +2227,13 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
     val member by company.store.member.collectAsStateWithLifecycle()
     // 사용자 2026-11-03 (마을 스크롤): in 마을 the 팔로잉 줄·오늘의 하나 are the first rows of 광장's own list, scrolled with it.
     val hubHead = if (inHub) com.bamnat.app.ui.hub.LocalHubHeader.current else null
+    val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
+    val plan = remember(member, style) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
     val chips: @Composable () -> Unit = {
         hubHead?.invoke()
+        // [TOWN-02] 1.37: answers to my posts in any plaza, first thing in 마을 › 광장 (the room on screen says its own).
+        if (inHub) com.bamnat.app.ui.village.NewAnswersLine(container, except = plan.room.takeIf { container.companyApi.enabled },
+            onOpen = { nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true } })
         com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
             Modifier.padding(horizontal = 16.dp))
         // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).
@@ -2230,8 +2246,6 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
             onRequests = { nav.navigate(Routes.recipeRequests(calendar)) { launchSingleTop = true } },
         )
     }
-    val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
-    val plan = remember(member, style) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
     CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
     if (container.companyApi.enabled && plan.room != null) {
         val home = appViewModel(key = "plaza-home-$calendar-${plan.room}") { com.bamnat.app.ui.company.PlazaHomeViewModel(it, calendar) }

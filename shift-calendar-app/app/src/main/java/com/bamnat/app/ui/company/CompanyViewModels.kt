@@ -641,6 +641,19 @@ class TalkHolder(
     /** [SRV-04] The developer paused writing in the plaza: the talk is read only for now. */
     val writePaused: Boolean get() = c.flags.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
 
+    /** [TOWN-03] For a card in the sheet that asks the server itself (마을 이름). */
+    val container: AppContainer get() = c
+
+    /**
+     * [TOWN-05] 1.37: on a company's rule talk, what the votes do, with the adoption terms the app last read (the same as
+     * 규칙 광장's 투표 중 line; a proposal is adopted like any rule, server `postVote`).
+     */
+    fun voteLine(): String {
+        val t = c.termsNow()
+        return "글마다 맞아요·달라요로 알려 주세요. ‘고치자는 제안’은 맞아요가 ${t?.agree ?: 75}% 이상이고 ${t?.threshold ?: 3}점이 모이면 " +
+            "다음 버전으로 채택돼요. 다니는 회사일 때만 눌러 주세요."
+    }
+
     /** [COMM-09] 이 사람 글 안 보기: the writer's posts in every talk go, on this phone only. */
     fun hide(p: com.bamnat.app.company.TalkPost) {
         val mark = p.author ?: return

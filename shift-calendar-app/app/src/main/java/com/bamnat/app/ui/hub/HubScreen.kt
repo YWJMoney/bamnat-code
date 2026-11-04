@@ -60,6 +60,17 @@ enum class HubSection(val label: String, val line: String) {
     MAKE("공방", "스튜디오 하나에서 꾸미고, 기능까지 묶어 올려요. 내 것은 여기 한곳에"),
 }
 
+/**
+ * [TOWN-01] 1.37: the part 마을 opens on next, set by a 소식 notice (광장 for answers and plaza news, 장터 for new works), taken
+ * once. Without it 마을 opens on the part last seen, and a reply notice could land on 테마.
+ */
+object HubLinks {
+    private val _next = kotlinx.coroutines.flow.MutableStateFlow<HubSection?>(null)
+    val next: kotlinx.coroutines.flow.StateFlow<HubSection?> = _next
+    fun open(section: HubSection) { _next.value = section }
+    fun take(): HubSection? = _next.value.also { _next.value = null }
+}
+
 /** 장터 in 마을: the rows that open its list (팔로잉 줄, 오늘의 하나, 넘겨 보기), scrolled with it; null on a 장터 of its own. */
 val LocalHubHeader = androidx.compose.runtime.staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
 
@@ -109,6 +120,9 @@ fun HubScreen(
     var section by rememberSaveable { mutableStateOf(prefs.getString("section", null)?.let { n -> HubSection.entries.firstOrNull { it.name == n } } ?: firstSection(style)) }
     androidx.compose.runtime.LaunchedEffect(section) { prefs.edit().putString("section", section.name).apply() }
     var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
+    // [TOWN-01] A 소식 notice says which part to open on.
+    val asked by HubLinks.next.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(asked) { HubLinks.take()?.let { s -> if (s == HubSection.SHARE) shareKind = null; section = s } }
     var reselect by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.surface) {

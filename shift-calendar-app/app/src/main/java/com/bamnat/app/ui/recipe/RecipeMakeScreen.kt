@@ -43,6 +43,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.foundation.selection.toggleable
+import com.bamnat.app.appContainer
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedCard
@@ -558,10 +560,18 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     s.step == 3 && s.recipe.title.isBlank() -> "이름을 넣으면 다음으로 가요"
                     // PC 확인 V36 1.36 (4/4의 빨간 줄이 아래 단추 줄에 가려짐): what holds 올리기 back also sits here, always in sight.
                     s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
-                    s.step == 5 && s.scope != "private" && !s.agreed -> "위 확인 스위치를 켜야 올라가요"
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
                     color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary) }
+                // [TOWN-04] 1.37 (후보 3, PC 확인: 확인 스위치가 '올리기'와 떨어져 있어 찾기 어려워요): the check is in the bar itself, right above
+                // 올리기, so it is in sight with the button whatever the page shows.
+                if (s.step == 5 && s.scope != "private") Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .toggleable(s.agreed, role = Role.Switch, onValueChange = vm::agree), verticalAlignment = Alignment.CenterVertically) {
+                    Switch(s.agreed, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("값만 나누고 개인 정보는 넣지 않았어요. 신고가 쌓이면 가려질 수 있어요 (처리방침 3.8)", style = MaterialTheme.typography.bodySmall,
+                        color = if (s.agreed) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (s.step > 1) OutlinedButton(onClick = { vm.go(s.step - 1) }, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(if (finishOnly && s.step == 2) "스튜디오로" else "이전")
@@ -944,12 +954,9 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
             modifier = Modifier.weight(1f))
         TextButton(onClick = { vm.recheckPublish() }) { Text("다시 확인") }
     }
-    // 1.36 U4: the check sits right above the button, so turning it on moves nothing.
-    if (s.scope != "private") Row(verticalAlignment = Alignment.CenterVertically) {
-        Switch(s.agreed, vm::agree)
-        Spacer(Modifier.width(8.dp))
-        Text("값만 나누고 개인 정보는 넣지 않았어요. 신고가 쌓이면 가려질 수 있어요 (처리방침 3.8)", style = MaterialTheme.typography.bodySmall)
-    }
+    // [TOWN-03] 1.37: before the first upload, the 마을 이름 the work will go up under (팔로잉 줄·프로필).
+    if (s.scope != "private") com.bamnat.app.ui.village.VillageNameCard(androidx.compose.ui.platform.LocalContext.current.appContainer, unnamed = "이름 없는 분")
+    // [TOWN-04] The check itself is in the bottom bar, right above 올리기.
     // PC 확인 W31 1.36 (경고나 꺼진 스위치로 막히면 올리기를 눌러도 반응이 없어 보임): what holds it back, in red right above the
     // button, with the one tap that clears it.
     val blocking = lines.filter { it.level == RecipeLint.Level.ERROR }

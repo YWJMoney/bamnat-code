@@ -449,10 +449,14 @@ fun TalkSheet(holder: TalkHolder) {
             // 1.36 [VIL-11] 이번 주 이야기 주제.
             o.talk?.topic?.let { Text("이번 주 주제 · $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 4.dp)) }
+            // [TOWN-05] 1.37 (후보 26, PC 확인: 회사 토론에서 투표가 무엇을 하는지 몰라요): what 맞아요·달라요 do on a company's rule talk.
+            if (!o.room) Text(holder.voteLine(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp))
             Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(vertical = 8.dp)) {
                 Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(6.dp))
-                Text("다른 분께는 ‘참여자 번호’로만 보여요. 이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요.",
+                Text((if (styleRoom) "다른 분께는 마을 이름(없으면 ‘참여자 번호’)으로 보여요. " else "다른 분께는 ‘참여자 번호’로만 보여요. ") +
+                    "이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 RulesLink()
             }
@@ -590,6 +594,9 @@ fun TalkSheet(holder: TalkHolder) {
                 // PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked
                 // when the box is first tapped, before anything is written; 보내기 still asks if they were put off (나중에).
                 var rulesAsked by remember { mutableStateOf(false) }
+                // [TOWN-03] 1.37: in a kind of work's 광장, once the box is tapped, the 마을 이름 the post would go up under.
+                if (styleRoom && rulesAsked) com.bamnat.app.ui.village.VillageNameCard(holder.container, unnamed = "참여자 번호",
+                    modifier = Modifier.padding(top = 8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
