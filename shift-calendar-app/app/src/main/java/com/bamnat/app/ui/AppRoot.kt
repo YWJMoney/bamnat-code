@@ -791,6 +791,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // [RUL-03][RUL-04] 1.36 what a button or rule did, with 되돌리기 when it wrote.
     com.bamnat.app.logic.LogicMessageHost(container, snackbar)
+    // [DRW-03] 1.37 넣었어요 · 되돌리기: a theme put on or off, a tab taken off, a rule switched on.
+    PutOnNoticeHost(container, snackbar)
 
     // [UNDO-01][UNDO-02][UNDO-03] A kind of work changed, records cleared or a calendar removed: 되돌리기 at
     // once, wherever it was done, and 설정 › 데이터 › 최근 지운 기록 for 7 days after.
@@ -1611,6 +1613,8 @@ private fun AppNavHost(
                 onMaker = { id -> nav.navigate(Routes.recipeMaker(id)) { launchSingleTop = true } },
                 onPeople = { nav.navigate(Routes.recipePeople()) { launchSingleTop = true } },
                 onRecipe = { code -> nav.navigate(Routes.recipe(code)) { launchSingleTop = true } },
+                // [DRW-02] 1.37 내 서랍 › 장터 올리기: one of my themes to finish in 올리기 (이름·설명·확인).
+                onUpload = { nav.navigate(Routes.recipeMake()) { launchSingleTop = true } },
             )
         }
         composable(Routes.STUDIO, arguments = listOf(navArgument("start") { type = NavType.StringType; defaultValue = "mine" })) { entry ->

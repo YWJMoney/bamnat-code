@@ -223,7 +223,7 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(vm.state.value.appliedAt != null)
         // PC 확인 보안 7차 (넣었는데 쓰는 분 0명): this phone is one of them now (the count read again, or this phone's share added).
         assertEquals(120 + 1, vm.state.value.doc!!.item.users + vm.state.value.usersPlus)
-        // The 적용했어요 line with its own 되돌리기 goes after its ten seconds; then back to the top, where the line sits.
+        // The 넣었어요 line with its own 되돌리기 goes after its ten seconds; then back to the top, where the line sits.
         compose.mainClock.advanceTimeBy(12_000)
         settle()
         repeat(6) { scrollDown(400) }
@@ -241,7 +241,7 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == api.code(0) })
     }
 
-    /** PC 확인 8773e3ae: the same from the 적용했어요 line's own 되돌리기. */
+    /** PC 확인 8773e3ae: the same from the 넣었어요 line's own 되돌리기. */
     @Test fun takingItBackFromTheSnackbar() = shoot("1342d_rcp_detail_undone_snack", PHONE) {
         val api = starters()
         style(WorkStyle.SHIFT)
@@ -252,7 +252,7 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         tapText("넣기", exact = true)
         settle()
-        assertTrue(appears("적용했어요", exact = false))
+        assertTrue(appears("넣었어요", exact = false))
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
         settle()

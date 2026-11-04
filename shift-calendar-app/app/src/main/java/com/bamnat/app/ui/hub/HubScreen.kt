@@ -56,7 +56,8 @@ enum class HubSection(val label: String, val line: String) {
     TALK("광장", "같은 일을 하는 분들과 이야기하고, 회사 규칙과 시세를 나눠요"),
     // 1.35 (사용자 2026-10-30 21:37 "장터를 2번째로 옮기고 테마를 3번째로"): 고르고 받기는 장터, 입고 간직하기는 테마, 만들기는 공방.
     SHARE("장터", "테마·알람·메모 틀·급여 규칙·화면 배치를 받아 쓰고 좋아요·댓글을 남겨요"),
-    THEMES("테마", "내가 입은 테마와 간직한 테마예요. 기록은 그대로예요"),
+    // [DRW-01] 1.37 (사용자 2026-11-04 "테마 탭은 개인 보관함"): 내 서랍.
+    THEMES("테마", "내 서랍이에요. 입은 테마, 만든 것, 받은 것, 담아 둔 조각을 한곳에서 꺼내 써요"),
     MAKE("공방", "스튜디오 하나에서 꾸미고, 기능까지 묶어 올려요. 내 것은 여기 한곳에"),
 }
 
@@ -103,6 +104,8 @@ fun HubScreen(
     onSearch: (() -> Unit)? = null,
     /** [VIL-17] 장터 넘겨 보기. */
     onSwipe: (() -> Unit)? = null,
+    /** [DRW-02] 1.37 내 서랍 › 장터에 올리기 (만들기's 올리기, with the theme handed over). */
+    onUpload: () -> Unit = {},
 ) {
     // [VIL-07] 1.36 마을 V7: 마을 opens on the part last seen; the first time on the one that fits the kind of work (자영업·투자 have a quiet 광장).
     val prefs = remember { c.appContext.getSharedPreferences(HUB_PREFS, android.content.Context.MODE_PRIVATE) }
@@ -162,7 +165,7 @@ fun HubScreen(
                 ) { share(shareKind) }
                 HubSection.THEMES -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
                     Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE },
-                        onKept = { id -> onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_KEPT + id) })
+                        onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload)
                 }
                 HubSection.MAKE -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
                     Make(c, style, onStudio, onMake, onMine, onRequests, onCode, onPosts, onRecipe)
@@ -256,11 +259,12 @@ private fun Page(scroll: androidx.compose.foundation.ScrollState = rememberScrol
     }
 }
 
-/** [HUB-02] 테마: the user's own page (지금 입은 테마, 내 테마, 입었던 테마); new themes are found in 장터, made in 공방. */
+/** [HUB-02][DRW-01] 테마 = 내 서랍: the user's own page; new themes are found in 장터, made in 공방. */
 @Composable
-private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, onKept: (Long) -> Unit) = Page {
+private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, onStudio: (String) -> Unit, onRecipe: (String) -> Unit,
+                   onUpload: () -> Unit) = Page {
     Text(HubSection.THEMES.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    com.bamnat.app.ui.recipe.ThemePicker(style, onFind = onFind, onFix = onLook, onUseKept = onKept)
+    com.bamnat.app.ui.recipe.ThemeDrawer(style, onFind = onFind, onFix = onLook, onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload)
 }
 
 /** [HUB-03] 공방: the studio, my recipes and what others wish for, in one place. */
@@ -345,7 +349,7 @@ private fun MakeBody(c: AppContainer, style: WorkStyle?, onStudio: (String) -> U
                     label = { Text((if (w.own) "🎨 " else "") + w.title, maxLines = 1) })
             }
         }
-        if (kept.isNotEmpty()) Text("보관함에 조각 ${kept.size}개가 있어요. 마을 › 테마나 스튜디오의 ‘보관함’에서 얹어 섞어요", style = MaterialTheme.typography.bodySmall,
+        if (kept.isNotEmpty()) Text("서랍에 조각 ${kept.size}개가 있어요. 마을 › 테마(내 서랍)나 스튜디오의 ‘보관함’에서 얹어 섞어요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     // [R136-13] 1.36 (리뷰 R-23·M6): 내 것 in one place — 올린 것·받은 것·만들던 것 — and 코드로 받기 only here.

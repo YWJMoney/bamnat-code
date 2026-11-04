@@ -332,7 +332,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 message = when {
                     laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
                     id == null -> "바뀐 것이 없어요"
-                    else -> "적용했어요. 7일 안에 되돌릴 수 있어요"
+                    else -> "넣었어요. 7일 안에 되돌릴 수 있어요"
                 })
             // PC 확인 C10 1.36 (넣은 직후 상세는 다시 열어야 문구가 바뀌어요): what each piece does now, said again at once.
             preview()

@@ -72,7 +72,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         if (looks.pieces.isEmpty()) return false
         beforeWear()
         val picks = looks.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
-        c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
+        lastApplied = c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
         afterWear(looks, code, own, ver)
         // [MKX-02] The tabs laid on stay over the new theme.
         reOverlay()
@@ -436,6 +436,65 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         return true
     }
 
+    // ---- [DRW-03] 1.37 넣었어요 · 되돌리기 (후보 1, 사용자 2026-11-04 묶음 C) ----
+
+    /** The 받은 레시피 row the last [wear] wrote (its looks), so 되돌리기 marks it taken back too. */
+    @Volatile private var lastApplied: Long? = null
+
+    /** What the phone wore just before a 입기·벗기·빼기: its look and this wardrobe's own record of it. */
+    class Mark internal constructor(val look: Map<String, String>, val saved: Map<String, String?>)
+
+    /** Taken right before a change that 넣었어요 · 되돌리기 offers to take back. */
+    fun mark(): Mark {
+        lastApplied = null
+        return Mark(c.recipes.pieces.lookSnapshot(), UNDO_KEYS.associateWith { prefs.getString(it, null) })
+    }
+
+    /**
+     * 되돌리기: the look and the theme worn (its days, 입었던 테마, the tabs laid on) back to [m]. A free wear already used stays used, so
+     * 입기 → 되돌리기 → 입기 does not hand out free ones. A 받은 레시피 row the 입기 wrote is marked taken back.
+     */
+    suspend fun undoTo(m: Mark) {
+        lastApplied?.let { id -> runCatching { c.recipes.undo(id) } }
+        lastApplied = null
+        val used = _lease.value.freeUsed
+        val e = prefs.edit()
+        m.saved.forEach { (k, v) -> if (v == null) e.remove(k) else e.putString(k, v) }
+        e.apply()
+        val back = ThemeLease.decode(m.saved[K_LEASE])
+        save(back.copy(freeUsed = maxOf(back.freeUsed, used)))
+        _overlays.value = readOverlays()
+        c.recipes.pieces.restoreLook(m.look)
+        refreshWidgets()
+    }
+
+    // ---- [DRW-02] 1.37 내 서랍의 묶음 (사용자 2026-11-04 "폴더") ----
+
+    private val _folders = MutableStateFlow(readFolders())
+    /** The 묶음 name of each thing in 내 서랍, by its [com.bamnat.app.recipe.DrawerItem.key]. */
+    val folders: StateFlow<Map<String, String>> = _folders.asStateFlow()
+
+    private fun readFolders(): Map<String, String> = runCatching {
+        val o = JSONObject(prefs.getString(K_FOLDERS, "{}") ?: "{}")
+        o.keys().asSequence().associateWith { o.getString(it) }
+    }.getOrDefault(emptyMap())
+
+    /** Puts [key] in the 묶음 [name] (blank takes it out of any). */
+    fun setFolder(key: String, name: String?) {
+        val n = name?.trim()?.take(FOLDER_NAME).orEmpty()
+        val next = if (n.isEmpty()) _folders.value - key else _folders.value + (key to n)
+        prefs.edit().putString(K_FOLDERS, JSONObject(next).toString()).apply()
+        _folders.value = next
+    }
+
+    /** A 묶음 renamed ([to] blank lets every thing in it out). */
+    fun renameFolder(from: String, to: String) {
+        val n = to.trim().take(FOLDER_NAME)
+        val next = _folders.value.mapNotNull { (k, v) -> if (v != from) k to v else if (n.isEmpty()) null else k to n }.toMap()
+        prefs.edit().putString(K_FOLDERS, JSONObject(next).toString()).apply()
+        _folders.value = next
+    }
+
     companion object {
         const val FREE_OUTFITS = 1
         const val PRO_OUTFITS = 10
@@ -454,6 +513,10 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_KEEP_OVERLAYS = "keep_overlays"
         private const val K_SKIP = "skip_ver"
         private const val K_PREV_VER = "prev_ver"
+        private const val K_FOLDERS = "folders"
+        const val FOLDER_NAME = 12
+        /** What [mark] keeps of this wardrobe: the theme worn and what 벗기 and 되돌리기 need of it. */
+        private val UNDO_KEYS = listOf(K_LEASE, K_MINE, K_WORN_LOOK, K_PREV, K_OVERLAYS)
     }
 }
 

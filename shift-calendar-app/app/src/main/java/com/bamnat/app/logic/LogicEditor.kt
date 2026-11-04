@@ -599,6 +599,10 @@ fun LogicEditor(
         androidx.compose.runtime.LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(30_000); bump++ } }
     }
     val store = remember { LogicStore(c.appContext) }
+    // [DRW-03] 1.37 넣었어요 · 되돌리기: a rule switched on says so, with 되돌리기 (off again), as a theme put on does.
+    fun saidOn(r: LogicRule) = com.bamnat.app.ui.PutOnNotice.say("‘${r.name}’ 규칙을 켰어요. ${nextLine(r, facts) ?: "조건이 맞으면 저절로 해요"}".trim()) {
+        store.setOff(r.key, true); bump++; LogicRunner.schedule(c); true
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (show != LogicShow.RULES) {
         Text("단추", style = MaterialTheme.typography.titleSmall)
@@ -640,7 +644,7 @@ fun LogicEditor(
             // PC D10: rules made before names were kept apart show which is which.
             val nth = logic.rules.take(i).count { it.name == r.name }
             LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}: ${r.say()}", note,
-                if (phone) on else null, { v -> if (v && came) askOn = r else { store.setOff(r.key, !v); bump++; LogicRunner.schedule(c) } },
+                if (phone) on else null, { v -> if (v && came) askOn = r else { store.setOff(r.key, !v); bump++; LogicRunner.schedule(c); if (v) saidOn(r) } },
                 onEdit = if (readOnly) onOpen else ({ editRule = i }), onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
                 action = when {
                     phone && !on && came -> "켜기" to { askOn = r }
@@ -662,7 +666,7 @@ fun LogicEditor(
             AlertDialog(onDismissRequest = { askOn = null },
                 title = { Text("받은 규칙을 켤까요?") },
                 text = { Text("‘${r.name}’${com.bamnat.app.ui.Fmt.eun(r.name)} ${r.sayWhen()} ${r.act.say()}를 해요. 메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요.") },
-                confirmButton = { TextButton(onClick = { store.setOff(r.key, false); askOn = null; bump++; LogicRunner.schedule(c) }) { Text("켜기") } },
+                confirmButton = { TextButton(onClick = { store.setOff(r.key, false); askOn = null; bump++; LogicRunner.schedule(c); saidOn(r) }) { Text("켜기") } },
                 dismissButton = { TextButton(onClick = { askOn = null }) { Text("그대로 두기") } })
         }
         // 1.36 [SEC-12] 보안 점검 M4 '규칙이 쓴 것': what rules and buttons wrote in 7 days, in a line each, and all of it taken back at once.
