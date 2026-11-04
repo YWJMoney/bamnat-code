@@ -185,7 +185,7 @@ internal fun PartsTool(
             }
             cond = next
         }, com.bamnat.app.logic.LocalDayFacts.current?.scope(com.bamnat.core.time.Today.date()) ?: com.bamnat.core.formula.FormulaNames.SAMPLE,
-            empty = "조건을 골라 주세요")
+            empty = "조건을 골라 주세요", lead = condLead(id), start = condStart(id))
         if (now.isBlank() || com.bamnat.core.formula.Logic.formulaProblem(now) != null) Text("조건을 다 고르면 아래에서 그때의 모습을 꾸며요",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // [RUL-06] 이 조건을 쓰는 곳: the same formula in 규칙, to go there and back.
@@ -530,4 +530,16 @@ private fun PartNumber(label: String, value: Double?, range: ClosedFloatingPoint
     }, label = { Text(label) }, placeholder = { Text("처음대로") }, singleLine = true,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
         modifier = Modifier.width(150.dp))
+}
+
+/** PC 확인 1.37 A9: a 메모 part's condition starts from the memo's own values (고정·체크), a 가계부 line's from its own and the money. */
+internal fun condLead(id: String): List<com.bamnat.core.formula.FormulaName.Group> = when {
+    id.startsWith("memo") -> listOf(com.bamnat.core.formula.FormulaName.Group.ROW, com.bamnat.core.formula.FormulaName.Group.MEMO)
+    id.startsWith("money") -> listOf(com.bamnat.core.formula.FormulaName.Group.ROW, com.bamnat.core.formula.FormulaName.Group.MONEY)
+    else -> emptyList()
+}
+
+internal fun condStart(id: String): com.bamnat.core.formula.FormulaName? = when {
+    id.startsWith("memo") -> com.bamnat.core.formula.FormulaName.PINNED
+    else -> condLead(id).firstOrNull()?.let { g -> com.bamnat.core.formula.FormulaName.entries.firstOrNull { it.group == g } }
 }

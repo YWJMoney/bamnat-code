@@ -247,13 +247,14 @@ internal fun PartBar(
     val hidden = line["hide"] == true
     BarSurface {
         Trail(StudioEdit.trail(sel).map { it to (BlueprintParts.LABELS[it] ?: it) }, onSel)
-        com.bamnat.app.ui.components.FoldRow("studio.partbar", what = "꾸미기 도구") {
+        com.bamnat.app.ui.components.FoldRow("studio.partbar", what = "꾸미기 도구", over = true) {
             // 언제 고치나: 언제나, the part's own states, its conditions.
             val states = statesFor(sel)
             val conds = remember(parts, sel, on) { StudioEdit.conditions(parts, sel, on) }
             if (states.isNotEmpty() || BlueprintParts.dated(sel)) Box {
                 var open by remember { mutableStateOf(false) }
-                FilterChip(selected = on != null || whenF != null, onClick = { open = true },
+                val hold = com.bamnat.app.ui.components.LocalFoldHold.current
+                FilterChip(selected = on != null || whenF != null, onClick = { hold(); open = true },
                     label = { Text("언제: " + listOfNotNull(on?.let { stateWord(sel, it) }, whenF?.let { w ->
                         "만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(12) }).ifEmpty { listOf("언제나") }.joinToString(" · ") + " ▾",
                         maxLines = 1) })
@@ -277,7 +278,8 @@ internal fun PartBar(
             FilterChip(selected = false, onClick = onMore, label = { Text("더 보기 ›") })
         }
         quick?.let { q ->
-            Column(Modifier.fillMaxWidth().heightIn(max = 210.dp).verticalScroll(rememberScrollState()).animateContentSize()) {
+            // PC 확인 1.37 A9 (도구를 열면 예시가 33~49%로 줄어요): the quick tool takes less of the height; the rest scrolls inside it.
+            Column(Modifier.fillMaxWidth().heightIn(max = 168.dp).verticalScroll(rememberScrollState()).animateContentSize()) {
                 QuickEditor(q, sel, line) { kv -> set(q.label, kv) }
             }
         }
@@ -345,7 +347,7 @@ internal fun CardBar(
     BarSurface {
         // PC 확인 1.37 A1: 고르기 끝 and the page's name both let the card go (Trail gives null for them).
         Trail(listOf("" to page, "card" to label)) { onSel(null) }
-        com.bamnat.app.ui.components.FoldRow("studio.cardbar", what = "카드 도구") {
+        com.bamnat.app.ui.components.FoldRow("studio.cardbar", what = "카드 도구", over = true) {
             FilterChip(selected = false, onClick = { onMove(-1) }, enabled = canUp, label = { Text("▲ 위로") })
             FilterChip(selected = false, onClick = { onMove(1) }, enabled = canDown, label = { Text("▼ 아래로") })
             if (above != null && onAcross != null) FilterChip(selected = false, onClick = onAcross,

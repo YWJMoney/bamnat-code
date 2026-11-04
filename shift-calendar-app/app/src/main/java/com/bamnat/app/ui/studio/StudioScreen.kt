@@ -564,6 +564,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // [STU-40] 내 색 모음 lives in the settings (kept across studios and in the backup).
     val pinned by vm.myColors.collectAsStateWithLifecycle()
     CompositionLocalProvider(LocalColorMemory provides ColorMemory(s.recent, vm::usedColor, pinned, vm::pinColor)) {
+        val foldHost = remember { com.bamnat.app.ui.components.FoldHost() }
+        CompositionLocalProvider(com.bamnat.app.ui.components.LocalFoldHost provides foldHost) {
         Scaffold(
             snackbarHost = { SnackbarHost(snack) },
             topBar = {
@@ -670,7 +672,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 }
             },
         ) { padding ->
-            BoxWithConstraints(Modifier.fillMaxSize().padding(padding)) {
+            BoxWithConstraints(Modifier.fillMaxSize().padding(padding).then(com.bamnat.app.ui.components.foldHostBox(foldHost))) {
             val totalH = maxHeight
             Column(Modifier.fillMaxSize()) {
                 // [CNV-04] 1.37 위 고정 상황 도구 줄: the screen's tools with nothing picked, the picked part's (or card's) tools with one.
@@ -691,11 +693,12 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         onHide = { vm.change { cards.show(it, cid, false).sameLinesAs(s.base) }; selectPart(null) },
                         onLook = { selectPart("app.card") })
                 } else ScreenBar {
-                    com.bamnat.app.ui.components.FoldRow("studio.top", what = "화면 줄") {
+                    com.bamnat.app.ui.components.FoldRow("studio.top", what = "화면 줄", over = true) {
                         // 화면 고르기: the screens of the app (영역 칩 12개 → 하나).
                         Box {
                             var open by remember { mutableStateOf(false) }
-                            FilterChip(selected = true, onClick = { open = true }, label = { Text("화면: ${area.labelFor(vm.style)} ▾") })
+                            val hold = com.bamnat.app.ui.components.LocalFoldHold.current
+                            FilterChip(selected = true, onClick = { hold(); open = true }, label = { Text("화면: ${area.labelFor(vm.style)} ▾") })
                             DropdownMenu(open, { open = false }) {
                                 // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
                                 Area.entries.filter { it.target != null && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) }
@@ -722,7 +725,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         // [STU-36] 어두운 화면·큰 글자·색약 눈으로 보기.
                         ConditionChips(seeDark, seeBig, seeCvd, { seeDark = it }, { seeBig = it }, { seeCvd = it })
                     }
-                    com.bamnat.app.ui.components.FoldRow("studio.tools", what = "도구 줄") {
+                    com.bamnat.app.ui.components.FoldRow("studio.tools", what = "도구 줄", over = true) {
                         // [CNV-07] 숨긴 카드 다시 넣기 (빈 판에서 카드 넣기도 여기서).
                         val toAdd = rememberCardsToAdd(area.tab, vm.style, d)
                         if (!detail && toAdd.page !== PageCards.NONE)
@@ -735,14 +738,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         if (area != Area.ALL) Box {
                             var open by remember { mutableStateOf(false) }
-                            FilterChip(selected = false, onClick = { open = true }, label = { Text("앱 전체 ▾") })
+                            val hold = com.bamnat.app.ui.components.LocalFoldHold.current
+                            FilterChip(selected = false, onClick = { hold(); open = true }, label = { Text("앱 전체 ▾") })
                             DropdownMenu(open, { open = false }) {
                                 Area.ALL.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.forEach { t ->
                                     DropdownMenuItem({ Text(t.label) }, onClick = { open = false; openTool(Area.ALL, t) })
                                 }
                             }
                         }
-                        FilterChip(selected = panel && panelMode == PanelMode.LAYERS, onClick = { openPanel(PanelMode.LAYERS) }, label = { Text("층") })
+                        FilterChip(selected = panel && panelMode == PanelMode.LAYERS, onClick = { openPanel(PanelMode.LAYERS) }, label = { Text("부품 목록") })
                         FilterChip(selected = studioAdvanced, onClick = { studioAdvanced = !studioAdvanced }, label = { Text("고급 보기") })
                     }
                 }
@@ -756,6 +760,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 androidx.compose.runtime.SideEffect { zoom.cover = coverPx }
                 // [CNV-04] A part picked while the 판 is open (or the 판 opened over one) is brought into the part left in view.
                 LaunchedEffect(sel, panel, panelBig) { if (panel) sel?.let { id -> spots.boxes(id).firstOrNull()?.let { zoom.reveal(it) } } }
+                // PC 확인 1.37 A9 (색 도구를 열면 고른 부품이 가려짐): a quick tool opened in the bar above brings the part into the view left.
+                LaunchedEffect(quick) { if (quick != null) { kotlinx.coroutines.delay(180); sel?.let { id -> spots.boxes(id).firstOrNull()?.let { zoom.reveal(it) } } } }
                 Column(Modifier.fillMaxSize()) {
                 Box(Modifier.fillMaxWidth().weight(1f).background(MaterialTheme.colorScheme.surfaceContainerLowest)) {
                     ZoomCanvas(zoom, Modifier.fillMaxSize(), picking = Modifier
@@ -1047,7 +1053,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 }
                 }
             }
+            com.bamnat.app.ui.components.FoldOverlay(foldHost)
             }
+        }
         }
     }
 

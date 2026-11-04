@@ -90,8 +90,26 @@ class CnvScreenshotTest : ScreenshotBase() {
         tapText("도구")
         tapText("카드 배치", exact = true)
         assertTrue("a row that does not fit offers 펼치기", appears("펼치기 ▾", exact = true))
-        tapText("펼치기 ▾", exact = true)
+        // PC 확인 1.37 A9: the bar's row opens over the example (nothing below moves), and a tap on an item does it and folds the row.
+        tapText("도구 줄 모두 펼쳐 보기", exact = true)
         assertTrue("open, it folds again", appears("접기 ▴", exact = true))
-        assertTrue("kept open", app.getSharedPreferences("fold_rows", android.content.Context.MODE_PRIVATE).all.values.any { it == true })
+        tapText("부품 목록", exact = true)
+        assertTrue("folded after the tap", gone("접기 ▴", exact = true))
+        assertTrue("and the tap did its work", appears("이름을 누르면 화면에서 그 부품을 골라요"))
     } }
+
+    /** PC 확인 1.37 A9: the open row lies over the example (picture only). */
+    @Test fun theOpenRowLiesOverTheExample() { shift(); shoot("1506_cnv_fold_over", PHONE) {
+        tapText("도구")
+        tapText("카드 배치", exact = true)
+        tapText("도구 줄 모두 펼쳐 보기", exact = true)
+        assertTrue(appears("접기 ▴", exact = true))
+    } }
+
+    /** PC 확인 1.37 A9: a memo part's condition starts from the memo's own values, not 근무. */
+    @Test fun aMemoConditionStartsFromTheMemo() {
+        org.junit.Assert.assertEquals(com.bamnat.core.formula.FormulaName.PINNED, com.bamnat.app.ui.studio.condStart("memo.card.title"))
+        org.junit.Assert.assertEquals(com.bamnat.core.formula.FormulaName.Group.ROW, com.bamnat.app.ui.studio.condLead("memo.card.title").first())
+        org.junit.Assert.assertTrue(com.bamnat.app.ui.studio.condLead("cal.cell.date").isEmpty())
+    }
 }

@@ -384,17 +384,22 @@ internal fun valuesOf(v: com.bamnat.core.recipe.CalendarView, keep: Map<String, 
 internal class MyWeeks(val first: java.time.LocalDate, val today: java.time.LocalDate, val days: List<com.bamnat.app.ui.calendar.SampleDay>)
 
 @Composable
-internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from: java.time.LocalDate? = null): MyWeeks? {
+internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from: java.time.LocalDate? = null,
+    /** PC 확인 1.37 A9 (현장 일감 3건인데 입어 보기·스튜디오 달력이 예시): a kind of work written day by day has no 근무표, so its month is
+     *  my own dates and holidays, the days blank, never the example. */
+    blankOk: Boolean = false): MyWeeks? {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
     val today = remember { com.bamnat.core.time.Today.date() }
     // [LAY-03] From the week of [from] (a day the 꾸밈 층 is pinned to) when it is given, else this week.
     val first = remember(today, from) { (from ?: today).let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } }
-    val real = remember(snap, days, first, weeks) {
+    val real = remember(snap, days, first, weeks, blankOk) {
         val s = snap ?: return@remember null
         val resolved = s.resolver.resolveRange(first, first.plusDays(weeks * 7L - 1))
-        if (resolved.none { it.shiftType != null }) return@remember null
+        if (resolved.none { it.shiftType != null }) return@remember if (!blankOk) null else resolved.map { r ->
+            com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = true, blank = true)
+        }
         resolved.map { r ->
             val t = r.shiftType
             val role = t?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key }
@@ -430,7 +435,7 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
     val monthStart = remember(now) { now.withDayOfMonth(1) }
     val weeksN = remember(now) { ((monthStart.dayOfWeek.value % 7) + now.lengthOfMonth() + 6) / 7 }
     val whole = pinned == null
-    val mine = rememberMyWeeks(ownDays, weeks = if (whole) weeksN else 2, from = pinned ?: monthStart).takeIf { realOn }
+    val mine = rememberMyWeeks(ownDays, weeks = if (whole) weeksN else 2, from = pinned ?: monthStart, blankOk = style != null && !style.usesPattern && style != WorkStyle.HOURLY).takeIf { realOn }
     val rows = if (mine != null && whole) weeksN else 2
     val n = rows * 7
     val exFirst = pinned?.let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } ?: EXAMPLE_FIRST
