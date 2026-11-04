@@ -639,8 +639,11 @@ class PayViewModel(
     }
 
     /** [PAYS-02] Keeps the matched settings and the check; one tap on 되돌리기 brings the old ones back. */
-    fun applyMatch(match: PayslipMatch, keep: Set<String> = match.changes.map { it.key }.toSet()) = update("명세서에 맞춰 바꿨어요") { p ->
-        val v = match.picked(p, keep, Today.millis())
+    fun applyMatch(match: PayslipMatch, keep: Set<String> = match.changes.map { it.key }.toSet(), extra: List<PayItem> = emptyList()) =
+        update("명세서에 맞춰 바꿨어요") { p ->
+        val picked = match.picked(p, keep, Today.millis())
+        // PC a34f53b0: allowances only the payslip had, picked to add; the month was not matched with them, so not marked checked.
+        val v = if (extra.isEmpty()) picked else picked.copy(items = picked.items + extra, verified = p.verified)
         v.copy(rules = v.rules.copy(extraNames = p.rules.extraNames))
     }
 }

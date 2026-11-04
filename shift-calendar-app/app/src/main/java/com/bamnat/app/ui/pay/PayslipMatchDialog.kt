@@ -183,6 +183,18 @@ fun PayslipMatchDialog(
     // [PAYIN-03] PC 3e347ec6: each change is the user's to take or leave (a way of counting is not swept in with the amounts).
     // PC 6da49f0b: a way of counting (시간·연장·휴일) starts unticked; the user ticks it only when the company really does so.
     var keep by remember(match) { mutableStateOf(match?.let { m -> m.changes.map { it.key }.filterNot(m::isWayChange).toSet() }.orEmpty()) }
+    // PC a34f53b0 (명세서에 식대가 있고 앱에 없을 때 '바뀌는 것'에 더하기 줄이 없어, 고른 것만 바꾸기가 아무것도 안 바꿈): the
+    // payslip's allowances the setup lacks are 더하기 lines to pick too, ticked to begin with.
+    var adds by remember(match) { mutableStateOf(match?.unmatched?.keys?.toSet().orEmpty()) }
+    fun newItems(names: List<Pair<String, Long>>): List<PayItem> {
+        // From the setup's first month, as a monthly allowance counts in every month ([PAYIN-03] never from a mid-month day).
+        val from = (profile.base.entries.map { it.from } + chosen.atDay(1)).min()
+        return names.mapIndexed { i, (name, amount) ->
+            PayItem("item-${System.currentTimeMillis()}-$i", name,  // real clock: an id, not a time
+                ValueTimeline(listOf(DatedValue(from, amount))), Cadence.MONTHLY,
+                ordinary = com.bamnat.core.pay.OrdinaryGuess.of(name, Cadence.MONTHLY) ?: true)
+        }
+    }
     var failed by remember { mutableStateOf(false) }
     // Payslip allowances the user chose to add; ids stay the same when the match runs again.
     val added = remember { mutableStateListOf<PayItem>() }
@@ -282,13 +294,23 @@ fun PayslipMatchDialog(
                             ) { Text("맞춰 보기") }
                             MatchStage.RESULT -> if (m != null) {
                                 OutlinedButton(onClick = { stage = MatchStage.AMOUNTS }, modifier = Modifier.heightIn(min = 52.dp)) { Text("다시 넣기") }
+                                val nothingThere = m.changes.isEmpty() && m.unmatched.isEmpty() && added.isEmpty() && addedRules.isEmpty()
+                                // PC a34f53b0: with nothing ticked the button says so and only closes.
+                                val nothingPicked = !nothingThere && keep.isEmpty() && adds.isEmpty() && added.isEmpty() && addedRules.isEmpty()
                                 Button(
-                                    onClick = { vm.applyMatch(m, keep); stage = MatchStage.DONE },
+                                    onClick = {
+                                        if (nothingPicked) onDismiss()
+                                        else {
+                                            vm.applyMatch(m, keep, newItems(m.unmatched.filterKeys { it in adds }.toList()))
+                                            stage = MatchStage.DONE
+                                        }
+                                    },
                                     modifier = Modifier.weight(1f).heightIn(min = 52.dp),
                                 ) {
                                     Text(when {
-                                        m.changes.isEmpty() && added.isEmpty() && addedRules.isEmpty() -> "확인했어요"
-                                        keep.size < m.changes.size -> "고른 것만 바꾸기"
+                                        nothingThere -> "확인했어요"
+                                        nothingPicked -> "바꾸지 않고 닫기"
+                                        keep.size < m.changes.size || adds.size < m.unmatched.size -> "고른 것만 바꾸기"
                                         else -> "이 설정으로 바꾸기"
                                     })
                                 }
@@ -318,15 +340,10 @@ fun PayslipMatchDialog(
                                 MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed, filled) { scanning = true }
                                 MatchStage.WORKING -> Working()
                                 MatchStage.RESULT -> match?.let { m ->
-                                    ResultStage(m, added, addedRules, keep, { k -> keep = if (k in keep) keep - k else keep + k }, onMakeGap = { makingFor = m },
+                                    ResultStage(m, added, addedRules, keep, { k -> keep = if (k in keep) keep - k else keep + k },
+                                        adds, { n -> adds = if (n in adds) adds - n else adds + n }, onMakeGap = { makingFor = m },
                                         audit = { SlipAuditCard(m, form.payslip(profile), form.read, snapshot) }) { names ->
-                                        val from = profile.period.start(chosen)
-                                        names.forEachIndexed { i, (name, amount) ->
-                                            added += PayItem(
-                                                "item-${System.currentTimeMillis()}-$i", name,  // real clock: an id, not a time
-                                                ValueTimeline(listOf(DatedValue(from, amount))), Cadence.MONTHLY, ordinary = true,
-                                            )
-                                        }
+                                        added += newItems(names)
                                         startMatch()
                                     }
                                 }
@@ -516,6 +533,8 @@ private fun ResultStage(
     addedRules: List<CustomRule>,
     keep: Set<String>,
     onToggle: (String) -> Unit,
+    adds: Set<String>,
+    onToggleAdd: (String) -> Unit,
     onMakeGap: () -> Unit,
     audit: @Composable () -> Unit = {},
     onAdd: (List<Pair<String, Long>>) -> Unit,
@@ -551,18 +570,19 @@ private fun ResultStage(
         }
     }
 
-    if (m.changes.isNotEmpty() || added.isNotEmpty() || addedRules.isNotEmpty()) {
+    if (m.changes.isNotEmpty() || m.unmatched.isNotEmpty() || added.isNotEmpty() || addedRules.isNotEmpty()) {
         SectionCard(title = "바뀌는 것") {
             val (amounts, ways) = m.changes.partition { !m.isWayChange(it.key) }
-            if (m.changes.isNotEmpty()) Text("바꿀 것만 골라 주세요. 빼면 지금 설정 그대로예요.",
+            if (m.changes.isNotEmpty() || m.unmatched.isNotEmpty()) Text("바꿀 것만 골라 주세요. 빼면 지금 설정 그대로예요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             amounts.forEach { c -> PickRow(c.label, "${c.from} → ${c.to}", c.key in keep) { onToggle(c.key) } }
+            m.unmatched.forEach { (name, amount) -> PickRow("‘$name’ 더하기", "명세서에만 있는 수당 · 매달 ${won(amount)}", name in adds) { onToggleAdd(name) } }
             if (ways.isNotEmpty()) {
                 Text("계산 방식 (회사가 정말 이렇게 계산하는지 알 때만)", style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 8.dp))
                 ways.forEach { c -> PickRow(c.label, "${c.from} → ${c.to}", c.key in keep) { onToggle(c.key) } }
             }
-            if (keep.size < m.changes.size) Text("다 고르지 않으면 이 달 계산이 명세서와 다를 수 있어요.",
+            if (keep.size < m.changes.size || adds.size < m.unmatched.size) Text("다 고르지 않으면 이 달 계산이 명세서와 다를 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
             added.forEach { a ->
                 val now = m.profile.items.firstOrNull { it.id == a.id } ?: a
@@ -578,26 +598,9 @@ private fun ResultStage(
     // [PAYS-08] What is left of the gap points at the line the app does not have, and makes it in one go.
     if (!m.matched) GapCard(m.gap, onMakeGap)
 
-    if (m.unmatched.isNotEmpty()) {
-        val pick = remember(m) { mutableStateMapOf<String, Boolean>().apply { m.unmatched.keys.forEach { put(it, true) } } }
-        SectionCard(title = "앱에 없는 수당") {
-            Text("명세서에는 있는데 앱에는 없는 수당이에요. 매달 받는 수당으로 넣고 다시 맞춰 볼게요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            m.unmatched.forEach { (name, amount) ->
-                Row(
-                    Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { pick[name] = !(pick[name] ?: true) },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Checkbox(checked = pick[name] ?: true, onCheckedChange = null, modifier = Modifier.padding(12.dp))
-                    Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                    Text(won(amount), style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-            val chosen = m.unmatched.filterKeys { pick[it] ?: true }.toList()
-            OutlinedButton(onClick = { onAdd(chosen) }, enabled = chosen.isNotEmpty(), modifier = Modifier.fillMaxWidth()) {
-                Text("수당으로 넣고 다시 맞춰 보기")
-            }
-        }
+    // The payslip-only allowances are picked in '바뀌는 것'; adding them first shows how close the month then comes.
+    if (adds.isNotEmpty()) OutlinedButton(onClick = { onAdd(m.unmatched.filterKeys { it in adds }.toList()) }, modifier = Modifier.fillMaxWidth()) {
+        Text("고른 수당을 넣고 다시 맞춰 보기")
     }
 
     val hints = m.hints.filterNot { it.key.startsWith("unmatched:") }
