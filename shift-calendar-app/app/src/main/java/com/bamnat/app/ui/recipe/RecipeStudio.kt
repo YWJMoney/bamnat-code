@@ -548,13 +548,20 @@ private fun MockCard(title: String, what: String, bars: Boolean = false, spot: S
 private fun MockParts(line: String?, parts: List<Triple<String, String, String>>, bars: Boolean = false, fits: (String) -> Boolean = { true }, page: String? = null) {
     val placed = PageLayout.decode(line).arrange(parts) { it.first }.filter { it.shown && fits(it.part.first) }
     // [CNV-12] My own numbers where the card has them (this month's money, work days and hours); the example elsewhere.
+    val realOn = com.bamnat.app.ui.studio.LocalRealLook.current
     val myMoney = if (page == TabOrder.MONEY) com.bamnat.app.ui.studio.rememberMyMoney() else null
     val myWork = if (page == TabOrder.STATS) rememberMonthWork()?.takeIf { it.first > 0 } else null
     placed.forEach { (p, _, _) -> MockCard(p.second, p.third, bars && p.first in setOf("weeks", "trend", "year", "three"),
         spot = page?.let { com.bamnat.app.ui.studio.StudioEdit.cardId(it, p.first) },
-        body = myMoney?.let { com.bamnat.app.ui.studio.myMoneyBody(p.first, it) }
-            ?: myWork?.takeIf { p.first == "tiles" }?.let { (d, h) -> com.bamnat.app.ui.studio.StudioExamples.Body(listOf("근무한 날" to "${d}일", "근무 시간" to "${h}h")) }
-            ?: page?.let { com.bamnat.app.ui.studio.StudioExamples.body(it, p.first) }) }
+        // PC 확인 1.37 A7 (내 합계 옆에 예시 숫자 '세전 3,120,000원'): with my own numbers on the page, a card that has none of them says
+        // what it is for instead of made-up numbers that read as mine.
+        // Example numbers only on the 올리기 표지 (or a 가계부·통계 page whose kind I have nothing of yet: then words, not numbers).
+        body = when {
+            myMoney != null -> com.bamnat.app.ui.studio.myMoneyBody(p.first, myMoney)
+            myWork != null -> myWork.takeIf { p.first == "tiles" }?.let { (d, h) -> com.bamnat.app.ui.studio.StudioExamples.Body(listOf("근무한 날" to "${d}일", "근무 시간" to "${h}h")) }
+            realOn -> null
+            else -> page?.let { com.bamnat.app.ui.studio.StudioExamples.body(it, p.first) }
+        }) }
 }
 
 @Suppress("UNCHECKED_CAST")
