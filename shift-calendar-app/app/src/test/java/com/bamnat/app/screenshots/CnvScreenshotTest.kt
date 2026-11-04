@@ -40,4 +40,16 @@ class CnvScreenshotTest : ScreenshotBase() {
         assertTrue("화면: 달력 ▾ again", appears("화면: 달력 ▾", exact = true))
         org.junit.Assert.assertEquals("no card hidden by the move", before, chips.firstOrNull { shows(it, exact = true) })
     } }
+
+    /** PC 확인 1.37 A2: 메모 › 카드 배치 › 뒤로 다음 달력 › 도구 › 카드 배치가 ‘화면: 메모’로 열렸어요. */
+    @Test fun eachPageOpensItsOwnScreen() { shift(); shoot("1502_cnv_page_own_screen", PHONE) {
+        tab(2, wide = false)
+        tapText("카드 배치", exact = true)
+        assertTrue(appears("화면: 메모 ▾", exact = true))
+        back()
+        tab(0, wide = false)
+        tapText("도구")
+        tapText("카드 배치", exact = true)
+        assertTrue("달력, not 메모", appears("화면: 달력 ▾", exact = true))
+    } }
 }

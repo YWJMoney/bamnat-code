@@ -295,6 +295,22 @@ private fun rememberCardsToAdd(tab: String, style: WorkStyle?, d: AppSettings): 
     return CardsToAdd(page, hidden, fit)
 }
 
+/**
+ * [CNV-06] PC 확인 1.37 A2 (내렸다 올려 그대로인데 ‘바꾼 곳 1곳’): a page's line that puts the cards as [base] has them is [base]'s own
+ * words again, so a card moved and moved back is no change.
+ */
+internal fun AppSettings.sameLinesAs(base: AppSettings): AppSettings {
+    fun <T> same(a: String, b: String, all: List<T>, id: (T) -> String): Boolean = a == b ||
+        com.bamnat.core.layout.PageLayout.decode(a).arrange(all, id).map { it.part to it.shown } ==
+            com.bamnat.core.layout.PageLayout.decode(b).arrange(all, id).map { it.part to it.shown }
+    return copy(
+        calendarLayout = if (same(calendarLayout, base.calendarLayout, CalendarPart.entries.toList()) { it.id }) base.calendarLayout else calendarLayout,
+        moneyLayout = if (same(moneyLayout, base.moneyLayout, MoneyPart.entries.toList()) { it.id }) base.moneyLayout else moneyLayout,
+        memoLayout = if (same(memoLayout, base.memoLayout, MemoPart.entries.toList()) { it.id }) base.memoLayout else memoLayout,
+        statsLayout = if (same(statsLayout, base.statsLayout, StatsPart.entries.toList()) { it.id }) base.statsLayout else statsLayout,
+    )
+}
+
 /** [FIT-02] What [tab]'s cards hide for a kind of work (null for a page without such cards). */
 internal fun fitSurface(tab: String): FitSurface? = when (tab) {
     TabOrder.CALENDAR -> FitSurface.CALENDAR_PARTS
@@ -326,6 +342,13 @@ internal fun pageCards(tab: String, style: WorkStyle?, added: Set<String> = empt
                         if (n == x) break
                         x = n
                         if (aboveIn(x, p) != up) break
+                    }
+                    // Above the month 요약 is drawn before 근무 횟수 whatever the order, so it goes back to its own place there
+                    // (PC 확인 1.37 A2: 내렸다 올리면 그대로 보이는데 ‘바꾼 곳 1곳’).
+                    if (!up && p == CalendarPart.SUMMARY) {
+                        val order = x.calendarParts().map { it.part }
+                        val i = order.indexOf(p)
+                        if (i > 0 && order[i - 1] == CalendarPart.COUNTS) x = x.withPartMoved(p, -1) { q -> fits(q) }
                     }
                     x
                 }
@@ -652,9 +675,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     val cards = remember(page, d, vm.style) { pageCards(page, vm.style) }
                     CardBar(cards.label(cid), cards.pageName, onSel = { selectPart(it) },
                         canUp = cards.canMove(d, cid, -1), canDown = cards.canMove(d, cid, 1),
-                        onMove = { by -> vm.change { cards.move(it, cid, by) } },
-                        above = cards.above(d, cid), onAcross = cards.across?.let { go -> { vm.change { go(it, cid) } } },
-                        onHide = { vm.change { cards.show(it, cid, false) }; selectPart(null) },
+                        onMove = { by -> vm.change { cards.move(it, cid, by).sameLinesAs(s.base) } },
+                        above = cards.above(d, cid), onAcross = cards.across?.let { go -> { vm.change { go(it, cid).sameLinesAs(s.base) } } },
+                        onHide = { vm.change { cards.show(it, cid, false).sameLinesAs(s.base) }; selectPart(null) },
                         onLook = { selectPart("app.card") })
                 } else ScreenBar {
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
@@ -863,7 +886,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     toAdd.hidden.forEach { cid ->
                                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                                             Text(toAdd.page.label(cid), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                                            TextButton(onClick = { vm.change { toAdd.page.show(it, cid, true) }; selectPart(StudioEdit.cardId(area.tab, cid)) },
+                                            TextButton(onClick = { vm.change { toAdd.page.show(it, cid, true).sameLinesAs(s.base) }; selectPart(StudioEdit.cardId(area.tab, cid)) },
                                                 modifier = Modifier.heightIn(min = 48.dp)) { Text("넣기") }
                                         }
                                     }

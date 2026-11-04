@@ -75,6 +75,9 @@ class StudioCanvasTest {
         assertTrue(dayShown(d))
         assertTrue(dayShown(under))
         assertTrue(dayShown(up))
+        // PC 확인 1.37 A2: and back where it was is no change (the base's own line again).
+        assertEquals(d, up.sameLinesAs(d))
+        assertNotEquals(d, under.sameLinesAs(d))
         // Hidden and put back from ‘카드 넣기’.
         val gone = cards.show(d, CalendarPart.COUNTS.id, false)
         assertTrue(CalendarPart.COUNTS.id in cards.hidden(gone))
