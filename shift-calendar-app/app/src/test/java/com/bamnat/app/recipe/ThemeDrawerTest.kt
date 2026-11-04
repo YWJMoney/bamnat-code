@@ -120,4 +120,19 @@ class ThemeDrawerTest {
         assertTrue((c.wardrobe.placed.value["own:출근용"] ?: 0) >= (c.wardrobe.placed.value[code] ?: 0))
         c.wardrobe.takeOff()
     }
+
+    /** PC 08a6f771: 스튜디오에서 조각을 섞어 입힌 ‘조합 · …’은 그 조각이 나온 테마 자리를 차지하지 않고, 받은 레시피 줄도 그 코드로 남기지 않아요. */
+    @Test fun aMixKeepsTheThemeItCameFrom() = runBlocking {
+        val theme = BuiltInThemes.of(WorkStyle.SHIFT).first()
+        val code = "ABCD2345"
+        assertTrue(c.wardrobe.wear(theme, code, own = false))
+        val mix = theme.copy(title = ThemeWardrobe.MIX + "지금 내 모양")
+        assertTrue(c.wardrobe.wear(mix, code, own = false))
+        val l = c.wardrobe.lease.value
+        assertEquals(mix.title, l.worn?.title)
+        assertEquals(theme.title, l.history.first { it.key == code }.title)
+        assertTrue(l.history.none { ThemeWardrobe.isMix(it.title) })
+        assertTrue(c.recipes.inUse().none { it.title == mix.title && it.code.isNotEmpty() })
+        c.wardrobe.takeOff()
+    }
 }

@@ -72,7 +72,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         if (looks.pieces.isEmpty()) return false
         beforeWear()
         val picks = looks.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
-        lastApplied = c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
+        // A mix made in the studio is mine to look at: no 받은 레시피 row under the code its parts came from (no 새 판 알림 for it).
+        lastApplied = c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") && !isMix(r.title) }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
         afterWear(looks, code, own, ver, whole)
         // [MKX-02] The tabs laid on stay over the new theme.
         reOverlay()
@@ -97,7 +98,13 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val only = looks.copy(pieces = looks.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
         val next = l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own, shared, if (ver > 0) ver else was?.ver ?: 0, was?.bare == true),
             Today.date().toEpochDay(), free)
-        save(if (whole == null) next else keepWhole(l, next, whole))
+        save(when {
+            whole != null -> keepWhole(l, next, whole)
+            // 1.37 PC (스튜디오에서 입힌 섞은 모양이 서랍에서 그 테마 자리를 차지해요): the theme its parts came from stays in 입었던 테마.
+            isMix(looks.title) -> next.copy(history = (l.history.filter { it.key == next.worn?.key && !isMix(it.title) } + next.history.filter { it.key != next.worn?.key && !isMix(it.title) })
+                .take(ThemeLease.HISTORY))
+            else -> next
+        })
         next.worn?.let { stamp(it.key) }
         refreshWidgets()
     }
@@ -232,7 +239,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val from = code
         val k = Kept(Today.millis(), com.bamnat.core.recipe.LookParts.title(r.title, ids), from, r.title.take(30),
             RecipeCodec.write(only.copy(title = r.title.take(30).ifBlank { "조각" })), ids)
-        writeKept(listOf(k) + _kept.value)
+        // PC 08a6f771 (같은 조각을 다시 담으면 같은 칸이 늘어요): the same parts from the same theme are one 조각, the newer.
+        writeKept(listOf(k) + _kept.value.filter { it.from != k.from || it.fromTitle != k.fromTitle || it.parts.toSet() != k.parts.toSet() })
         return true
     }
 
@@ -402,9 +410,11 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
      */
     suspend fun newerWorn(): Int? {
         val w = _lease.value.worn ?: return null
-        if (w.own || w.code.isEmpty() || w.code.startsWith("builtin:") || !c.recipeApi.enabled) return null
+        // 1.37 PC (스튜디오에서 조각을 얹어 입히면 ‘조합 · …’에 '만든 분이 1판을 올렸어요'): a mix of parts is not that theme's 판, and a
+        // theme worn without its 판 known (0) is at least the first.
+        if (w.own || isMix(w.title) || w.code.isEmpty() || w.code.startsWith("builtin:") || !c.recipeApi.enabled) return null
         val v = runCatching { c.recipeApi.versions(listOf(w.code)) }.getOrNull()?.get(w.code) ?: return null
-        return v.takeIf { it > w.ver && prefs.getString(K_SKIP, null) != "${w.code}|$it" }
+        return v.takeIf { it > maxOf(w.ver, 1) && prefs.getString(K_SKIP, null) != "${w.code}|$it" }
     }
 
     /** 지금 그대로: this 판 is not asked about again (a later one is). */
@@ -544,6 +554,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     companion object {
+        /** The name the studio gives a look made of other themes' parts ("조합 · <내 모양>"). */
+        const val MIX = "조합 · "
+        fun isMix(title: String) = title.startsWith(MIX)
         const val FREE_OUTFITS = 1
         const val PRO_OUTFITS = 10
         /** [TRY-03] 조각 보관함: free 20, 프로 200. */

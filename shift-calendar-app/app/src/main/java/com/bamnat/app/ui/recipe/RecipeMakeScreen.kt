@@ -100,7 +100,7 @@ import kotlinx.coroutines.launch
 
 /**
  * [RCP-17..20] 만들기 5단계: 고르기 → 받는 사람이 정할 칸 → 꾸미기 → 설명 → 검사하고 올리기. Every step is kept on the phone
- * (만들던 레시피), so closing the screen loses nothing. [from] is a recipe to 고쳐 만들기 (its code becomes the parent); [kind] a
+ * (만들던 레시피), so closing the screen loses nothing. [from] is a recipe to 고쳐 만들기 (its code becomes the parent); [startKind] a
  * piece to start with (설정 화면의 '이 설정 나누기').
  */
 class RecipeMakeViewModel(
@@ -109,7 +109,8 @@ class RecipeMakeViewModel(
     draftId: Long = 0,
     from: String? = null,
     parent: String? = null,
-    kind: PieceKind? = null,
+    /** The piece '이 설정 나누기' started from: chosen, and 내 설정에서 더하기 open on it. */
+    val startKind: PieceKind? = null,
     /** The user's own recipe this becomes a new version of. */
     private val code: String? = null,
 ) : ViewModel() {
@@ -202,10 +203,12 @@ class RecipeMakeViewModel(
             }
             // [RCX-31] A draft from before kept 최저임금 with its amount in the hint, which the amount check then refused.
             val r = (start ?: blank()).let { d -> d.copy(inputs = d.inputs.map { i -> if (i.hint.contains("최저임금") && i.hint.any(Char::isDigit)) i.copy(hint = WAGE_HINT) else i }) }
-            val chosen = if (start != null) r.pieces.map { it.kind }.toSet() else setOfNotNull(kind)
+            val chosen = if (start != null) r.pieces.map { it.kind }.toSet() else setOfNotNull(startKind)
+            // 1.37 PC (이 설정 나누기로 오면 이름 칸이 비어 있어요): a name to start from, as the studio gives.
+            val named = if (start == null && startKind != null && r.title.isBlank()) r.copy(title = "내 ${startKind.label}".take(24)) else r
             // A recipe already shown keeps what was changed in it meanwhile (받는 분 값, 이름).
             _state.value = if (early != null) _state.value.copy(mine = mine)
-                else _state.value.copy(recipe = if (start != null) r else withPieces(r, chosen, mine), chosen = chosen, mine = mine, ready = true)
+                else _state.value.copy(recipe = if (start != null) r else withPieces(named, chosen, mine), chosen = chosen, mine = mine, ready = true)
             val put = runCatching { c.recipes.inUse().map { it.code to it.title } }.getOrDefault(emptyList())
             val mineUp = runCatching { c.recipeApi.mine(c.companyStore.device).items.map { it.first.code to it.first.title } }.getOrDefault(emptyList())
             _state.value = _state.value.copy(bundleChoices = (mineUp + put).filter { it.first != code }.distinctBy { it.first }.take(20))
@@ -617,7 +620,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     1 -> {
                         RecipeStudio(s, vm, tab, { tab = it }, onMockShown = { mockShown = it },
                             onEdit = { top -> scope.launch { scroll.animateScrollTo((scroll.value + top - boxTop - 8f).toInt().coerceAtLeast(0)) } })
-                        var more by rememberSaveable { mutableStateOf(false) }
+                        // 1.37 PC (이 설정 나누기로 오면 골라진 것이 접힌 칸 안에만 있어요): open on what it was started from.
+                        var more by rememberSaveable { mutableStateOf(vm.startKind != null) }
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {

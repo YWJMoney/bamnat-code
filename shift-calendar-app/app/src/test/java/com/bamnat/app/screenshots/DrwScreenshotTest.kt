@@ -70,7 +70,7 @@ class DrwScreenshotTest : ScreenshotBase() {
         assertTrue(appears(themes[1].title))
         assertTrue(appears("전체 4", exact = true))
         assertTrue(appears("내가 만든 것 1", exact = true))
-        assertTrue(appears("입었던 것 2", exact = true))
+        assertTrue(appears("입어 본 것 2", exact = true))
         assertTrue(appears("입는 중 · 남의 테마"))
         assertTrue(appears("담아 둔 조각 1", exact = true))
         assertTrue(appears("📁 겨울", exact = true))

@@ -7,7 +7,7 @@ package com.bamnat.app.recipe
 enum class DrawerKind(val label: String, val short: String) {
     MINE("내가 만든 것", "내 것"),
     GOT("받은 것", "받음"),
-    WORN("입었던 것", "입었던"),
+    WORN("입어 본 것", "입어 봄"),
     PART("담아 둔 조각", "조각"),
 }
 

@@ -324,13 +324,16 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             // Once a phone [SEC-15], as a theme put on is (the studio thread's own fix sent it at every 얹기).
             if (laid) c.recipes.countUse(code)
             val plus = if (!counted && c.recipes.countedHere(code)) 1 else 0
-            if (id != null && looks.isNotEmpty() && tab == null) runCatching {
+            // 1.37 PC (같은 모양이면 '바뀐 것이 없어요'만 뜨고 입은 테마로 안 잡혀요): the look is already that theme's, so it is worn all the same.
+            val sameLook = id == null && looks.isNotEmpty() && tab == null
+            if ((id != null || sameLook) && looks.isNotEmpty() && tab == null) runCatching {
                 c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
                 undoable = undoableNow(), laidAt = laidHere().maxOfOrNull { it.at }, usersPlus = _state.value.usersPlus + plus,
                 message = when {
                     laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
+                    sameLook -> "이미 같은 모양이라 바뀐 곳은 없어요. ‘${doc.item.title}’${com.bamnat.app.ui.Fmt.obj(doc.item.title)} 입은 테마로 잡았어요"
                     id == null -> "바뀐 것이 없어요"
                     else -> "넣었어요. 7일 안에 되돌릴 수 있어요"
                 })

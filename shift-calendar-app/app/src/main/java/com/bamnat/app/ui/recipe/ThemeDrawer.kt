@@ -128,7 +128,8 @@ fun ThemeDrawer(
             leadingIcon = { Icon(Icons.Filled.Search, null) },
             trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Clear, "찾기 지우기") } }) else null)
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Drawer.counts(items).forEach { (k, n) ->
+            // PC 08a6f771: the numbers follow what 찾기 and the 묶음 leave.
+            Drawer.counts(Drawer.shown(items, null, folder, query, sort)).forEach { (k, n) ->
                 if (k == null || n > 0 || kind == k) FilterChip(kind == k, { kind = k }, label = { Text("${k?.label ?: "전체"} $n") })
             }
         }
@@ -144,7 +145,7 @@ fun ThemeDrawer(
         // PC 3차 (묶음을 풀면 걸러 놓은 빈 화면이 남아요): a 묶음 gone (or the last one) lets its filter go too.
         if (folder != null && (names.isEmpty() || folder != Drawer.NO_FOLDER && folder !in names)) folder = null
         val f = folder
-        if (f != null && f != Drawer.NO_FOLDER) FolderRename(f)
+        if (f != null && f != Drawer.NO_FOLDER) FolderRename(f) { folder = it }
     }
 
     val shown = Drawer.shown(items, kind, folder, query, sort)
@@ -234,18 +235,25 @@ private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: Li
     // PC 확인 e34fae4e (테마를 입었는데 서랍이 비었다고 해요): the theme worn now is in the drawer too, first, marked 입는 중.
     val worn = lease.worn
     // PC 3차: a theme worn in part stays itself in the drawer (입는 중 · 일부), not a new ‘… 일부’.
-    val whole = worn?.let { w -> lease.history.firstOrNull { it.key == w.key } ?: lease.history.firstOrNull { it.own && w.own && it.title == w.title.removeSuffix(" 일부") } }
-    (listOfNotNull(worn?.takeIf { whole == null }) + lease.history).forEach { w ->
-        val now = w.key == (whole ?: worn)?.key
-        val words = listOfNotNull(w.mixedFrom.takeIf { it.isNotBlank() }, "장터".takeIf { w.free }, "입는 중".takeIf { now }).joinToString(" ")
-        out += DrawerItem("theme:${w.key}", if (w.own) DrawerKind.MINE else DrawerKind.WORN, w.title, if (now) Long.MAX_VALUE else placed[w.key] ?: (w.from * DAY),
-            words = words) to Held.Theme(w, now, part = now && worn != null && worn.body != w.body)
+    // PC 08a6f771: a mix made in the studio (‘조합 · …’) is mine, on its own, and the theme its parts came from stays as it was.
+    val mix = worn?.takeIf { ThemeWardrobe.isMix(it.title) }
+    val whole = if (mix != null) null else worn?.let { w ->
+        lease.history.firstOrNull { it.key == w.key } ?: lease.history.firstOrNull { it.own && w.own && it.title == w.title.removeSuffix(" 일부") } }
+    (listOfNotNull(worn?.takeIf { whole == null }) + lease.history.filter { !ThemeWardrobe.isMix(it.title) }).forEach { w ->
+        val isMix = mix != null && w === mix
+        val now = if (mix != null) isMix else w.key == (whole ?: worn)?.key
+        val words = listOfNotNull(w.mixedFrom.takeIf { it.isNotBlank() }, "장터".takeIf { w.free }, "입는 중".takeIf { now }, "섞음".takeIf { isMix }).joinToString(" ")
+        out += DrawerItem(if (isMix) "theme:mix:${w.key}" else "theme:${w.key}", if (w.own || isMix) DrawerKind.MINE else DrawerKind.WORN, w.title,
+            if (now) Long.MAX_VALUE else placed[w.key] ?: (w.from * DAY),
+            words = words) to Held.Theme(w, now, part = !isMix && now && worn != null && worn.body != w.body)
     }
-    // PC 3차 (빈 ✏ 카드): a draft with nothing in it yet is not shown.
-    drafts.mapNotNull { d -> runCatching { RecipeCodec.read(d.body) }.getOrNull()?.takeIf { it.pieces.isNotEmpty() }?.let { d to it } }.forEach { (d, r) ->
+    // PC 3차 (빈 ✏ 카드): a draft with nothing in it yet is not shown. PC 08a6f771: one 만들기 left half way (규칙 하나, 이름 없음) is
+    // read leniently, as 만들기 itself reads it; the same draft kept twice (나갈 때마다 하나씩) shows once, the newest.
+    drafts.sortedByDescending { it.updatedAt }.distinctBy { it.body }.mapNotNull { d -> draftKinds(d.body)?.let { d to it } }.forEach { (d, kinds) ->
         // A draft with no name yet says what it holds (규칙·단추 …), not 꾸미던 모양 for everything.
-        val what = r.pieces.filter { it.kind !in BuiltInThemes.LOOK_KINDS }.map { it.kind.label }.distinct().take(2).joinToString("·")
-        val title = r.title.ifBlank { if (what.isEmpty()) "꾸미던 모양" else "만들던 $what" }
+        val what = kinds.filter { it !in BuiltInThemes.LOOK_KINDS }.map { it.label }.distinct().take(2).joinToString("·")
+        val name = runCatching { org.json.JSONObject(d.body).optString("title") }.getOrNull().orEmpty()
+        val title = name.ifBlank { if (what.isEmpty()) "꾸미던 모양" else "만들던 $what" }
         out += DrawerItem("draft:${d.id}", DrawerKind.MINE, title, d.updatedAt, words = "만들던 $what") to Held.Draft(d)
     }
     // 받은 것: recipes from 장터 still on (the newest put-on of each); one that was only a theme's (or a tab's) looks shows as that already.
@@ -265,6 +273,16 @@ private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: Li
         out += DrawerItem("tab:${o.tab}", DrawerKind.GOT, o.title, o.at, words = "얹은 탭 ${com.bamnat.core.recipe.LookParts.tabLabel(o.tab)}") to Held.Laid(o)
     }
     return out
+}
+
+/** The kinds of piece a draft holds (null when it holds none), read as loosely as 만들기 reads its drafts. */
+private fun draftKinds(body: String): List<PieceKind>? {
+    val kinds = runCatching { RecipeCodec.read(body).pieces.map { it.kind } }.getOrNull()
+        ?: runCatching {
+            val a = org.json.JSONObject(body).optJSONArray("pieces") ?: org.json.JSONArray()
+            (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.optString("kind")?.let(PieceKind::of) }
+        }.getOrNull()
+    return kinds?.takeIf { it.isNotEmpty() }
 }
 
 /** Two to four a row by the width, each drawn as itself where it has a look. */
@@ -323,7 +341,7 @@ private fun emojiOf(k: PieceKind): String = when {
 /** One short line on where it stands. */
 private fun status(h: Held?): String? = when (h) {
     is Held.Theme -> (if (h.part) "일부 입는 중 · " else if (h.now) "입는 중 · " else "") +
-        when { h.w.free -> "내 것 · 장터에 있음"; h.w.own && h.w.mixedFrom.isNotBlank() -> "내 것 · 섞음"; h.w.own -> "내 것 · 나만"; h.now -> "남의 테마"; else -> "입었던" }
+        when { ThemeWardrobe.isMix(h.w.title) -> "내가 섞은 것"; h.w.free -> "내 것 · 장터에 있음"; h.w.own && h.w.mixedFrom.isNotBlank() -> "내 것 · 섞음"; h.w.own -> "내 것 · 나만"; h.now -> "남의 테마"; else -> "입었던" }
     is Held.Draft -> if (h.d.step >= 2) "만들던 · 올리던 중" else "만들던 · ${com.bamnat.app.ui.studio.ago(h.d.updatedAt)}"
     is Held.Got -> "받음 · " + h.e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.take(2).joinToString("·")
     is Held.Part -> if (h.k.own) "조각 · 내 것" else "조각 · ‘${h.k.fromTitle}’에서"
@@ -351,7 +369,8 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
             .putExtra(android.content.Intent.EXTRA_TEXT, RecipeLinks.shareText(title, code))
         runCatching { context.startActivity(android.content.Intent.createChooser(send, "링크 나누기")) }
     }
-    AppSheet(onDismissRequest = onDismiss) {
+    // PC 08a6f771 (시트가 반만 열려 아래 단추가 가려요): opened all the way.
+    AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Thumb(h, 72.dp)
@@ -393,7 +412,8 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                         Act("링크 나누기") { share(w.title, code) }
                     }
                     Act(if (i.folder == null) "묶음에 넣기" else "묶음 바꾸기") { filing = true }
-                    Act(if (w.own) "지우기" else "서랍에서 빼기") {
+                    // A mix worn now lives only while it is worn (벗기 is on the card above); its key is the theme its parts came from.
+                    if (!ThemeWardrobe.isMix(w.title)) Act(if (w.own) "지우기" else "서랍에서 빼기") {
                         asking = Triple(if (w.own) "내 테마를 지울까요?" else "입었던 것에서 뺄까요?",
                             "‘${w.title}’${Fmt.obj(w.title)} 서랍에서 빼요. 지금 입은 모양은 그대로예요" + if (w.own && w.shared.isNotEmpty()) ". 장터에 올린 것은 장터에 그대로 있어요" else "") {
                             c.wardrobe.removeKept(w.key); c.wardrobe.setFolder(i.key, null); onDismiss()
@@ -503,7 +523,7 @@ private fun FolderPick(i: DrawerItem, onDone: () -> Unit) {
 
 /** The 묶음 on show, renamed (or let go: what is in it stays in the drawer). */
 @Composable
-private fun FolderRename(f: String) {
+private fun FolderRename(f: String, onRenamed: (String?) -> Unit) {
     val c = LocalContext.current.appContainer
     var editing by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -520,10 +540,11 @@ private fun FolderRename(f: String) {
                 Text("묶음을 풀어도 안에 있던 것은 서랍에 그대로 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(onClick = { c.wardrobe.renameFolder(f, name); editing = false }, enabled = name.isNotBlank()) { Text("바꾸기") } },
+        // PC 08a6f771 (이름을 바꾸면 거르기가 풀려요): the filter goes on with the new name.
+        confirmButton = { TextButton(onClick = { c.wardrobe.renameFolder(f, name); onRenamed(name.trim().take(ThemeWardrobe.FOLDER_NAME)); editing = false }, enabled = name.isNotBlank()) { Text("바꾸기") } },
         dismissButton = {
             Row {
-                TextButton(onClick = { c.wardrobe.renameFolder(f, ""); editing = false }) { Text("묶음 풀기") }
+                TextButton(onClick = { c.wardrobe.renameFolder(f, ""); onRenamed(null); editing = false }) { Text("묶음 풀기") }
                 TextButton(onClick = { editing = false }) { Text("닫기") }
             }
         },

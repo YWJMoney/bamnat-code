@@ -294,8 +294,10 @@ fun TryOnScreen(
     var keptLine by remember(r) { mutableStateOf<String?>(null) }
     val boxSize = c.wardrobe.kept.collectAsStateWithLifecycle().value.size
     fun keep(ids: Set<String>) {
-        keptLine = if (onKeep?.invoke(ids) == true) (if (onToStudio != null) "✓ 스튜디오 보관함에 넣었어요 (${boxSize + 1}개)"
-            else "✓ 보관함에 담았어요 (${boxSize + 1}개). 마을 › 테마와 스튜디오의 보관함에서 꺼내 써요")
+        // PC 08a6f771 ("2개 담아 두기" 뒤 "(1개)"): the parts picked go in as one 조각; the count is of 조각 in the box.
+        val what = if (ids.size > 1) "고른 ${ids.size}곳을 조각 하나로" else "조각을"
+        keptLine = if (onKeep?.invoke(ids) == true) (if (onToStudio != null) "✓ $what 스튜디오 보관함에 넣었어요 (보관함 ${c.wardrobe.kept.value.size}개)"
+            else "✓ $what 담았어요 (보관함 ${c.wardrobe.kept.value.size}개). 마을 › 테마(내 서랍)와 스튜디오의 보관함에서 꺼내 써요")
             else "보관함이 꽉 찼거나 담을 부분이 없어요 (${c.wardrobe.partsLimit()}개까지)"
     }
     val mine by produceState(Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = emptyList()), c) {

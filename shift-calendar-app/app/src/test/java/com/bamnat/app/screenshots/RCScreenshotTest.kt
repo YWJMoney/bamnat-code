@@ -369,8 +369,8 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         tapText("내 달력에 넣기", exact = false)
         settle()
-        // [MKX-02] Where it is undone: 내 것 › 받은 레시피, or 마을 › 테마 for a tab laid on the theme.
-        assertTrue(appears("마을 › 공방 › 내 것 › 받은 레시피에서 되돌", exact = false) || appears("마을 › 테마에서", exact = false))
+        // [MKX-02][DRW-01] Where it is undone: 내 서랍의 받은 것, or 마을 › 테마 for a tab laid on the theme.
+        assertTrue(appears("마을 › 테마(내 서랍)의 받은 것에서 되돌", exact = false) || appears("마을 › 테마에서", exact = false))
     }
 
     /** PC 확인 보안 7차 ("글자 주→주, 색 바뀜"): the put-on question says only what changes. */
