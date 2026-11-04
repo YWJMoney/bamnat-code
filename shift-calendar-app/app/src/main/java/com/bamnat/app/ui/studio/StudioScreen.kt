@@ -721,7 +721,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         if (!detail && toAdd.page !== PageCards.NONE)
                             FilterChip(selected = panel && panelMode == PanelMode.CARDS, onClick = { openPanel(PanelMode.CARDS) },
                                 label = { Text("＋ 카드 넣기" + if (toAdd.hidden.isEmpty()) "" else " ${toAdd.hidden.size}") })
-                        area.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.forEach { t ->
+                        // PC 확인 1.37 A5 (앱 전체에서 보관함이 화면 밖): with something kept, 보관함 comes first.
+                        area.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.sortedBy { if (it == Tool.BOX && kept.isNotEmpty()) 0 else 1 }.forEach { t ->
                             FilterChip(selected = panel && panelMode == PanelMode.TOOL && t == tool, onClick = { openTool(area, t) },
                                 label = { Text(t.label + if (t == Tool.BOX) " ${kept.size}" else "") })
                         }
