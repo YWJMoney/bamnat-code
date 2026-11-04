@@ -83,7 +83,7 @@ object RestCheck {
                 gap < minRest ->
                     issues += Issue(b.date, Kind.SHORT_REST, "${a.name}(${end} 끝) 뒤 $rest ${b.name}", RestRules.Sources.REST,
                         pattern = if (a.evening && b.day && nextDay) "E-D(이브데이)" else null)
-                nextDay && b.from.toLocalTime() < a.from.toLocalTime() && gap < AFTER_NIGHT_MINUTES ->
+                rules.rotationOrder && nextDay && b.from.toLocalTime() < a.from.toLocalTime() && gap < AFTER_NIGHT_MINUTES ->
                     issues += Issue(b.date, Kind.BACKWARD, "${a.name} 다음 날 ${b.name} (시작이 앞당겨지는 순서)", RestRules.Sources.ORDER,
                         pattern = if (a.evening && b.day) "E-D(이브데이)" else null)
             }

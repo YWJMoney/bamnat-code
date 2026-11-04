@@ -615,7 +615,8 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             val until = day.date.plusDays(1)
             val days = generateSequence(com.bamnat.core.schedule.RestCheck.lookbackFrom(day.date, settings.rules)) { it.plusDays(1) }
                 .takeWhile { !it.isAfter(until) }.map(snapshot.resolver::resolve).toList()
-            (com.bamnat.core.schedule.RestNudge.on(days, day.date, settings.rules) + com.bamnat.core.schedule.RestNudge.on(days, until, settings.rules))
+            val rules = settings.rules.forStyle(style)
+            (com.bamnat.core.schedule.RestNudge.on(days, day.date, rules) + com.bamnat.core.schedule.RestNudge.on(days, until, rules))
                 .distinctBy { it.kind to it.date }
         }.getOrNull()?.takeIf { it.isNotEmpty() }
     }

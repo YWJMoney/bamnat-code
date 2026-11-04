@@ -351,11 +351,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         val profile = payProfile
         val exception = profile?.rules?.hoursException ?: com.bamnat.core.hours.HoursException.NONE
         if (profile?.fiveOrMoreEmployees != false) {
-            val legalHours = when {
-                exception != com.bamnat.core.hours.HoursException.NONE -> exception.weeklyHours
-                profile?.flexPeriod != null && profile.scheduleIsRegular -> 64
-                else -> 52
-            }
+            val legalHours = legalWeekHours(profile)
             val overLegal = legalHours?.let { h -> summary.weeks.filter { it.totalMinutes > h * 60 } }.orEmpty()
             if (legalHours != null && overLegal.isNotEmpty()) {
                 WarningBanner(
@@ -433,14 +429,18 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
 
                 }
                 StatsPart.WEEKS -> {
-                SectionCard(title = "주별 근무시간 (주 ${settings.weeklyLimitHours}시간 기준)") {
+                // PC f42b2eba (근무·급여 한 화면에 주 52시간과 64시간 기준이 섞여 보임): the weeks are read against the same week limit as
+                // the warning above and the 이번 주 bar: the law's for this setup (52, 64 under 탄력적 근로시간제, the exception's),
+                // and the user's own 한 주 근무 경고 only where the law sets none (5인 미만, no pay setup on a non-wage calendar).
+                val weekLimit = (if (style?.usesPayEngine != false) legalWeekHours(payProfile) else null) ?: settings.weeklyLimitHours
+                SectionCard(title = "주별 근무시간 (주 ${weekLimit}시간 기준)") {
                     val maxHours = maxOf(
-                        settings.weeklyLimitHours.toDouble(),
+                        weekLimit.toDouble(),
                         summary.weeks.maxOfOrNull { it.totalMinutes / 60.0 } ?: 0.0,
                     )
                     summary.weeks.forEachIndexed { i, week ->
                         // [DAILY-07] A week's bar opens that week on the calendar, its Monday chosen.
-                        WeekRow(week, settings.weeklyLimitHours, maxHours) {
+                        WeekRow(week, weekLimit, maxHours) {
                             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DAY, vm.calendarId, week.start.toString())
                         }
                         if (i != summary.weeks.lastIndex) Spacer(Modifier.height(10.dp))
@@ -521,7 +521,7 @@ private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen
             Text(
                 HoursFormat.korean(week.totalMinutes),
                 style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
-                color = if (week.overLimit) cal.warning else MaterialTheme.colorScheme.onSurface,
+                color = if (week.totalMinutes > limitHours * 60) cal.warning else MaterialTheme.colorScheme.onSurface,
             )
         }
         Spacer(Modifier.height(4.dp))
@@ -912,5 +912,19 @@ private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfi
                 scope.launch { com.bamnat.app.tax.TaxWay.pick(context.appContainer, vm.calendarId, m) }
             }
         }
+    }
+}
+
+/**
+ * The week's legal limit for [profile] (근로기준법 제53조): the 52시간 exception's own, 64 under 탄력적 근로시간제, else 52; null when
+ * the law sets none (5인 미만, or an exception with no weekly cap). One value for every week line on the screen.
+ */
+internal fun legalWeekHours(profile: com.bamnat.core.pay.PayProfile?): Int? {
+    if (profile?.fiveOrMoreEmployees == false) return null
+    val exception = profile?.rules?.hoursException ?: com.bamnat.core.hours.HoursException.NONE
+    return when {
+        exception != com.bamnat.core.hours.HoursException.NONE -> exception.weeklyHours
+        profile?.flexPeriod != null && profile.scheduleIsRegular -> 64
+        else -> 52
     }
 }

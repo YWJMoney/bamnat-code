@@ -259,7 +259,8 @@ private fun DayFirstCard(
         // 1.32 [WTYP-26] (조사 4·8장) 이번 주 52시간 and, for 공무원, 이번 달 시간외 57시간: bars on the first card.
         if (YearMonth.from(today) == month) {
             val week = remember(snapshot, today) { com.bamnat.core.hours.WorkHoursCalculator(snapshot.resolver, java.time.DayOfWeek.MONDAY).week(today) }
-            HoursBar("이번 주 근무", week.totalMinutes, com.bamnat.core.hours.HourLimits().legalWeeklyHours)
+            // PC f42b2eba: the same limit as the 주별 근무시간 lines on this screen.
+            legalWeekHours(profile)?.let { HoursBar("이번 주 근무", week.totalMinutes, it) }
         }
         com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)?.let { cap ->
             HoursBar("${month.monthValue}월 시간외", summary.extraMinutes, cap)

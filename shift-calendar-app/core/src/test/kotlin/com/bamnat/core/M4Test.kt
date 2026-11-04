@@ -26,6 +26,18 @@ class M4Test {
         return (0L until 14L).map { r.resolve(monday.plusDays(it)) }
     }
 
+    /** PC f42b2eba: an 알바's evening then the next day's afternoon (14 hours off) is no 역순환; only a rotating roster is told. */
+    @Test
+    fun `역순환은 교대 달력에서만`() {
+        val d = Fixtures.day.id; val e = Fixtures.evening.id; val o = Fixtures.off.id
+        val list = days(listOf(e, d, o, o, o, o, o, o, o, o, o, o, o, o))
+        fun backward(style: com.bamnat.core.work.WorkStyle?) =
+            RestCheck.check(list, com.bamnat.core.schedule.RestRules().forStyle(style)).any { it.kind == RestCheck.Kind.BACKWARD }
+        assertTrue(backward(com.bamnat.core.work.WorkStyle.SHIFT))
+        assertTrue(!backward(com.bamnat.core.work.WorkStyle.HOURLY))
+        assertTrue(!backward(com.bamnat.core.work.WorkStyle.DAY))
+    }
+
     @Test
     fun `night then day within a day, short rest, backward rotation and night streaks`() {
         val n = Fixtures.night.id; val d = Fixtures.day.id; val e = Fixtures.evening.id; val o = Fixtures.off.id
