@@ -83,6 +83,8 @@ data class AppFeature(
     val under: String? = null,
     val moment: Moment? = null,
     val tip: String? = null,
+    /** 1.38 갈래6: the server switch ([com.bamnat.core.flags.FlagCatalog]) the feature waits for; help and search leave it out until on. */
+    val flag: String? = null,
 ) {
     /** For this kind of work; a main calendar from before kinds of work were asked is a shift calendar. */
     fun fits(style: WorkStyle?): Boolean = styles.isEmpty() || (style ?: WorkStyle.SHIFT) in styles
@@ -112,10 +114,16 @@ object FeatureRegistry {
 
     private fun f(
         id: String, req: String, name: String, what: String, styles: Set<WorkStyle>, where: String, route: FeatureRoute,
-        vararg keywords: String, off: Off? = null, under: String? = null, moment: Moment? = null, tip: String? = null,
-    ) = AppFeature(id, req, name, what, styles, where, route, keywords.toList(), off, under, moment, tip)
+        vararg keywords: String, off: Off? = null, under: String? = null, moment: Moment? = null, tip: String? = null, flag: String? = null,
+    ) = AppFeature(id, req, name, what, styles, where, route, keywords.toList(), off, under, moment, tip, flag)
 
     private fun at(place: Place, focus: String? = null) = FeatureRoute(place, focus)
+
+    /** 1.38 갈래6: whether a server switch is on; the app sets it to its flags once they are read (off until then). */
+    @Volatile var flagOn: (String) -> Boolean = { false }
+
+    /** [all] without the features still waiting for their switch: what help and search offer. */
+    val shown: List<AppFeature> get() = all.filter { f -> f.flag == null || runCatching { flagOn(f.flag) }.getOrDefault(false) }
 
     val all: List<AppFeature> = listOf(
         // The guide itself [GUIDE-02][GUIDE-03].
@@ -148,6 +156,10 @@ object FeatureRegistry {
             ALL, "달력 › 공유 (좁은 화면은 ⋮ › 근무표 공유)", at(Place.SHARE), "공유", "링크", "카톡", "가족", "동료", "보내기"),
         f("share.receive", "UX-03", "동료 근무표 받기", "받은 링크를 넣고 내 달력과 바꿔 보며 같이 쉬는 날을 찾아요",
             ALL, "달력 › ⋮ › 동료 근무표 받기", at(Place.RECEIVE), "받은 링크", "바꿔 보기", "같이 쉬는 날", "남편", "아내"),
+        // 1.37 [SHR-31][SHR-32], told from 처리방침 3.11's date (11월 10일, the `share.look` row) — 1.38 갈래6 (공유 남은 일).
+        f("share.look", "SHR-31", "링크에 테마·근무 설정 담기", "근무표 링크에 내 테마와 근무 이름·색·알람 시각을 함께 담아요. 받는 분은 입어 보고 골라 넣어요",
+            ALL, "달력 › 공유 › 링크 › 내 테마·근무 설정", at(Place.SHARE), "테마 보내기", "테마 공유", "설정 보내기", "근무 설정 공유", "똑같이 꾸미기",
+            flag = "share.look"),
         // [PROV-04][FEAT-15][PROV-05] 프로, 1.20.0.
         f("share.moreLinks", "PROV-04", "공유 링크 여러 개", "달력마다 링크를 5개까지 따로 만들어 보낼 것과 기간을 다르게 하고, 180일·1년도 골라요",
             ALL, "달력 › 공유 › 링크 › + 새 링크", at(Place.SHARE), "링크 여러 개", "링크 추가", "1년 링크", "180일", "기간 늘리기"),

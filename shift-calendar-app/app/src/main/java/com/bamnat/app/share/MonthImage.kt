@@ -23,18 +23,59 @@ import java.util.Locale
 
 /**
  * A month of shifts drawn as one picture for family and coworkers [FEAT-06, MKT-09]. No server and
- * no account: the image goes through the phone's share sheet. Memos are never included.
+ * no account: the image goes through the phone's share sheet.
+ * 1.38 [EASE-28] (오늘근무 분석 P10, 공개 관찰): what else goes on the picture is the sharer's pick in [Look], and the
+ * private part (메모 글) starts off every time; 메모 그림(앞 이모지), 공휴일 이름, 근무 이름표 start on.
  */
 object MonthImage {
+    /** 1.38 [EASE-28] What the picture carries besides the shifts. */
+    data class Look(
+        /** 메모 첫 줄: off by default, a memo is personal. */
+        val memos: Boolean = false,
+        /** 메모 그림: only the emoji a memo starts with (🎂, ✈️), never its words. */
+        val stickers: Boolean = true,
+        /** 공휴일 이름 under the day, where no memo line is shown. */
+        val holidays: Boolean = true,
+        /** 근무 이름표: the colours and times under the month. */
+        val legend: Boolean = true,
+        /** Whose 근무표 ("민지의 근무표"); blank keeps the plain title. */
+        val name: String = "",
+    )
+
+    /** A day's extras from the memos: the first line ([memo]) and a leading emoji ([sticker]). */
+    data class DayNote(val memo: String? = null, val sticker: String? = null)
+
+    /** 1.38 [EASE-28] The emoji a memo starts with ("🎂 엄마 생일" → 🎂), or null; the words stay on the phone. */
+    fun stickerOf(text: String): String? {
+        val t = text.trimStart()
+        if (t.isEmpty()) return null
+        val it = java.text.BreakIterator.getCharacterInstance(Locale.KOREAN).apply { setText(t) }
+        val end = it.next().takeIf { e -> e > 0 } ?: return null
+        val first = t.substring(0, end)
+        val cp = first.codePointAt(0)
+        val type = Character.getType(cp)
+        val emoji = type == Character.OTHER_SYMBOL.toInt() || type == Character.SURROGATE.toInt() || cp in 0x1F000..0x1FAFF || cp in 0x2600..0x27BF
+        return first.takeIf { emoji }
+    }
+
+    /** 1.38 [EASE-28] The month's memos as the picture can use them: first line and leading emoji, by date. */
+    fun notes(memos: List<com.bamnat.core.memo.Memo>, month: YearMonth): Map<java.time.LocalDate, DayNote> =
+        memos.filter { m -> m.date?.let { YearMonth.from(it) == month } == true && !m.inTrash && !m.isBlank }
+            .groupBy { it.date!! }
+            .mapValues { (_, list) ->
+                val lines = list.map { m -> (m.title.ifBlank { m.body.lineSequence().firstOrNull { l -> l.isNotBlank() } ?: m.checklist.firstOrNull()?.text.orEmpty() }).trim() }
+                DayNote(memo = lines.firstOrNull { it.isNotEmpty() }, sticker = lines.firstNotNullOfOrNull { stickerOf(it) })
+            }
     private const val WIDTH = 1080
     private const val PAD = 48f
     private const val HEADER = 190f
     private const val WEEKDAYS = 70f
     private const val CELL_H = 170f
 
-    fun render(snapshot: ScheduleSnapshot, month: YearMonth, weekStart: DayOfWeek): Bitmap {
+    fun render(snapshot: ScheduleSnapshot, month: YearMonth, weekStart: DayOfWeek,
+               look: Look = Look(), notes: Map<java.time.LocalDate, DayNote> = emptyMap()): Bitmap {
         val weeks = CalendarGrid.monthWeeks(month, weekStart)
-        val used = weeks.flatten().filter { YearMonth.from(it) == month }
+        val used = if (!look.legend) emptyList() else weeks.flatten().filter { YearMonth.from(it) == month }
             .flatMap { d -> snapshot.resolver.resolve(d).let { listOfNotNull(it.shiftType) + it.extras.mapNotNull { e -> e.covered } } }.distinctBy { it.id }
         val legendRows = (used.size + 1) / 2
         val height = (HEADER + WEEKDAYS + weeks.size * CELL_H + 40f + legendRows * 64f + 80f).toInt()
@@ -45,7 +86,8 @@ object MonthImage {
         val bold = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
 
         text.textSize = 64f; text.typeface = bold
-        c.drawText("${month.year}년 ${month.monthValue}월 근무표", PAD, 110f, text)
+        val whose = look.name.trim().takeIf { it.isNotEmpty() }?.let { "${it.take(12)}의 " }.orEmpty()
+        c.drawText("$whose${month.year}년 ${month.monthValue}월 근무표", PAD, 110f, text)
         text.textSize = 32f; text.typeface = Typeface.DEFAULT; text.color = 0xFF6B7280.toInt()
         c.drawText("밤낮 교대 달력", PAD, 160f, text)
 
@@ -70,6 +112,16 @@ object MonthImage {
                 text.textSize = 34f; text.typeface = bold; text.textAlign = Paint.Align.LEFT
                 text.color = colorFor(date.dayOfWeek, holiday)
                 c.drawText(date.dayOfMonth.toString(), left + 12f, top + 44f, text)
+                val note = notes[date]
+                // 1.38 [EASE-28] 메모 그림 beside the date; the words stay off unless 메모 is ticked.
+                val sticker = note?.sticker?.takeIf { look.stickers }
+                if (sticker != null) {
+                    text.textSize = 30f; text.typeface = Typeface.DEFAULT; text.textAlign = Paint.Align.LEFT
+                    c.drawText(sticker, left + 16f + text.measureText(date.dayOfMonth.toString()) * 1.25f, top + 42f, text)
+                }
+                // A line at the foot of the cell: the memo when ticked, else the holiday's name.
+                val foot = note?.memo?.takeIf { look.memos }?.let { it to 0xFF374151.toInt() }
+                    ?: KoreanHolidays.nameOf(date)?.takeIf { look.holidays }?.let { it to LightCalendarColors.sunday.toArgb() }
                 val leave = day.leave
                 // [EXTRA-01] The kinds of extra work, in the first kind's colour; else a part-day leave.
                 val mark = day.extraMarks().ifEmpty { null } ?: leave?.takeIf { !it.isFullDay }?.short
@@ -78,7 +130,11 @@ object MonthImage {
                     text.color = day.extras.firstOrNull()?.kind?.colorArgb?.let { (it or 0xFF000000).toInt() } ?: 0xFF7048E8.toInt()
                     c.drawText(mark, left + cellW - 12f, top + 42f, text)
                 }
-                val box = RectF(left + 8f, top + 62f, left + cellW - 8f, top + CELL_H - 14f)
+                val box = RectF(left + 8f, top + 62f, left + cellW - 8f, top + CELL_H - if (foot != null) 44f else 14f)
+                if (foot != null) {
+                    text.textSize = 22f; text.typeface = Typeface.DEFAULT; text.textAlign = Paint.Align.CENTER; text.color = foot.second
+                    c.drawText(fit(foot.first, text, cellW - 12f), left + cellW / 2, top + CELL_H - 14f, text)
+                }
                 val second = day.coveredShift
                 if (second != null && leave?.isFullDay != true) {
                     // [FEAT-02] A shift and the shift a 대근 covered split the box.
@@ -130,6 +186,14 @@ object MonthImage {
         return bmp
     }
 
+    /** Cuts [s] with … so it fits [width] at [paint]'s size. */
+    private fun fit(s: String, paint: Paint, width: Float): String {
+        if (paint.measureText(s) <= width) return s
+        var n = s.length
+        while (n > 1 && paint.measureText(s.take(n) + "…") > width) n--
+        return s.take(n) + "…"
+    }
+
     private fun colorFor(d: DayOfWeek, holiday: Boolean): Int = when {
         holiday || d == DayOfWeek.SUNDAY -> LightCalendarColors.sunday.toArgb()
         d == DayOfWeek.SATURDAY -> LightCalendarColors.saturday.toArgb()
@@ -140,13 +204,14 @@ object MonthImage {
     private fun inkOn(argb: Long): Int = contentColorOn(Color((argb or 0xFF000000).toInt())).toArgb()
 
     /** Writes the image to the share cache and opens the share sheet. */
-    suspend fun share(context: Context, snapshot: ScheduleSnapshot, month: YearMonth, weekStart: DayOfWeek) {
+    suspend fun share(context: Context, snapshot: ScheduleSnapshot, month: YearMonth, weekStart: DayOfWeek,
+                      look: Look = Look(), notes: Map<java.time.LocalDate, DayNote> = emptyMap()) {
         // Drawing and compressing a full-size image off the main thread keeps the tap from stuttering.
         val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             val dir = File(context.cacheDir, "share").apply { mkdirs() }
             dir.listFiles()?.forEach { it.delete() }
             val file = File(dir, "bamnat-$month.png")
-            val bmp = render(snapshot, month, weekStart)
+            val bmp = render(snapshot, month, weekStart, look, notes)
             file.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
             bmp.recycle()
             file

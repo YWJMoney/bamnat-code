@@ -463,6 +463,8 @@ private fun NoticesPage(
             warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(todayShiftNotice = on) }
         }
+        // 1.38 [EASE-29] What the lock screen will say, with my today and tomorrow.
+        LockNoticePreview()
         // 1.32 [WTYP-16] 사무직(일반 근무) 달력의 퇴근 시각에 지금 퇴근 버튼.
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.DAY) SwitchRow(LEAVE_TIME_ROW, "근무가 끝나는 시각에 소리 없이 알려 주고, 더 일하고 나갈 때 ‘지금 퇴근’을 누르면 잔업을 그 시각까지 적어요",
             settings.leaveTimeNotice, warning = warning(settings.leaveTimeNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
@@ -687,6 +689,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }, listOf(MemoView.PLAIN to "기본", MemoView.BELOW to "달력 아래 목록", MemoView.CELLS to "날짜 밑 메모"), memo) { m ->
             vm.update { it.copy(calendarMemos = m != MemoView.PLAIN, memoInCells = m == MemoView.CELLS) }
         }
+        // 1.38 [EASE-29] The widgets with my own days, above the rows that change them.
+        WidgetPreviewStrip(key = settings.widgetMemo to settings.widgetLook)
         // [DAILY-01] On by default; a home screen is seen by others, so it turns off here.
         val widgetContext = LocalContext.current
         SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요. 홈 화면을 남이 볼 수 있으면 끄세요"

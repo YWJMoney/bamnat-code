@@ -304,6 +304,15 @@ object WhatsNew {
     )
 
     /** The releases after [seenCode] up to [currentCode], newest first; none for a fresh install (seenCode 0). */
+    /**
+     * 1.38 갈래6 (공유 남은 일: 새로 생긴 것 줄, 11월 10일 켤 때): what a server switch brings when it turns on, told once then and
+     * not at the update (the feature was not there yet). Keyed by the switch ([com.bamnat.core.flags.FlagCatalog]).
+     */
+    val switched: List<Pair<String, Line>> = listOf(
+        // 1.37 [SHR-31][SHR-32] from 처리방침 3.11 (11월 10일).
+        "share.look" to Line("근무표 링크에 내 테마와 근무 설정도 함께 담아 보내요. 받은 분은 입어 보고 마음에 드는 것만 골라 넣어요", "share.look"),
+    )
+
     fun since(seenCode: Int, currentCode: Int): List<Release> =
         if (seenCode <= 0) emptyList() else releases.filter { it.versionCode in (seenCode + 1)..currentCode }.sortedByDescending { it.versionCode }
 }

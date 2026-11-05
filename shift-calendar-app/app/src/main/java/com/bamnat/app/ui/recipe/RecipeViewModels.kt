@@ -62,7 +62,9 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         /** PC D10 (사용성 중): with a word to find, how many the other halves have ("규칙·단추에 1개"), so a search is not lost in the half open. */
         val elsewhere: Map<String, String> = emptyMap(),
         /** PC 확인 38d63451: while this half is empty, how many the other half (테마 ↔ 기능별 탭) has for the same kind of work. */
-        val other: Int = 0)
+        val other: Int = 0,
+        /** 1.38 (장터 그림 LOW): when the list shown was read, so an offline list says how old it is. */
+        val loadedAt: Long = 0L)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -126,7 +128,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
                     c.recipeApi.list(if (s.allStyles) null else style, "hot", "", 0, otherKind).items
                         .count { RecipeClient.fits(it, otherKind) && !c.recipes.hides(it) }
                 }.getOrDefault(0)
-                _state.value.copy(items = items, next = page.next, loading = false, elsewhere = other, other = otherCount)
+                _state.value.copy(items = items, next = page.next, loading = false, elsewhere = other, other = otherCount, loadedAt = System.currentTimeMillis())
             } catch (e: Exception) {
                 _state.value.copy(loading = false, error = RecipeClient.problem(e))
             }

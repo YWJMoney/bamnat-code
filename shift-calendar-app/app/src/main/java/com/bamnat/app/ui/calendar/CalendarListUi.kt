@@ -180,6 +180,12 @@ fun CalendarIdentityBar(
     modifier: Modifier = Modifier,
     /** [UX-03] Shares the user's own calendar on screen; null hides it (someone else's calendar). */
     onShare: (() -> Unit)? = null,
+    /**
+     * 1.38 [EASE-30] (오늘근무 분석 P10·R10: 그룹 공유는 로그인 없이는 못 써요, 공개 관찰): while no other calendar sits beside
+     * this one, the room the faces would take says 같이 보기, so sending one's shifts to family and taking theirs in is seen
+     * on the first calendar, both without an account. Null hides it.
+     */
+    onTogether: (() -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
     // Two faces beside 공유 on a cover screen or with large text, three where there is room.
@@ -243,6 +249,18 @@ fun CalendarIdentityBar(
             }
             if (faces.size > count) {
                 TextButton(onClick = onOpenSwitcher) { Text("+${faces.size - count}", maxLines = 1, softWrap = false) }
+            }
+            if (faces.isEmpty() && onTogether != null && !small) {
+                Surface(
+                    onClick = onTogether, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = "가족·연인과 근무 같이 보기" },
+                ) {
+                    Row(Modifier.padding(start = 10.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (room >= 2) "같이 보기" else "같이", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+                    }
+                }
             }
             onShare?.let {
                 if (small) androidx.compose.material3.FilledTonalIconButton(onClick = it) { Icon(Icons.Filled.Share, shareName, Modifier.size(20.dp)) }

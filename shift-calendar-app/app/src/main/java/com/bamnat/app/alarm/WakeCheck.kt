@@ -57,6 +57,8 @@ object WakeCheck {
             .setContentIntent(intent(context, ACTION_AWAKE, REQ_AWAKE))
             .setAutoCancel(true)
             .setTimeoutAfter(ANSWER_SECONDS * 1_000L)
+            // 1.38 같은 구조: alone, never bundled with 소식.
+            .setGroup(Notifications.GROUP_STATUS + "_wake").setGroupSummary(true)
             .build()
         Notifications.post(context, Notifications.WAKE_CHECK_ID, notification)
     }

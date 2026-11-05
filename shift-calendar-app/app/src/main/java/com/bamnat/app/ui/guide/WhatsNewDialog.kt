@@ -32,12 +32,32 @@ fun WhatsNewDialog(
     onDismiss: () -> Unit,
     recommendOff: Int = 0,
     onRecommend: () -> Unit = {},
+    /** 1.38 [EASE-32] What this update fixed from the user's own questions, one short line each. */
+    thanks: List<String> = emptyList(),
+    onOpenAsks: () -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("${releases.first().versionName}에서 새로 생긴 것") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // 1.38 [EASE-32] Said first: the user asked, and this version is the answer.
+                if (thanks.isNotEmpty()) {
+                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer) {
+                        Column(Modifier.fillMaxWidth().padding(start = 12.dp, top = 10.dp, end = 4.dp, bottom = 2.dp)) {
+                            Text("보내 주신 의견으로 고쳤어요", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            thanks.take(3).forEach { t ->
+                                Text("• ‘$t’", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.padding(top = 2.dp, end = 8.dp))
+                            }
+                            if (thanks.size > 3) Text("그리고 ${thanks.size - 3}개 더", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("알려 주셔서 고마워요. 이번 판에 들어 있어요.", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.padding(top = 4.dp))
+                            TextButton(onClick = onOpenAsks, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 문의 보기") }
+                        }
+                    }
+                }
                 // [ONBOARD-04] Once, for a phone set up before: the recommended features it has off.
                 if (recommendOff > 0) {
                     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer) {

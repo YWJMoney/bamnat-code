@@ -33,9 +33,15 @@ export const DESK = {
   news: 80,
   /** 넘김 기록을 몇 개까지 보여 줄지. */
   handoffLog: 10,
+  /** 1.38 [DESK-09] Claude 열쇠로 보낸 답: 이만큼 '보류 중'으로 두었다가 가요(그 사이 취소·고치기), 하루 이만큼까지. */
+  hold: 10 * 60 * 1000,
+  claudeAnswersDay: 30,
 };
 
 export const DESK_SCHEMA = [
+  // 1.38 [DESK-09] 열쇠로 보낸 답의 10분 보류: 그동안은 문의 대화에 없고(앱에 안 보여요), 시간이 되면 답으로 들어가요.
+  `CREATE TABLE IF NOT EXISTS held_replies (id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL, text TEXT NOT NULL, by TEXT NOT NULL,
+    actor_id TEXT, close INTEGER NOT NULL DEFAULT 0, template INTEGER, at INTEGER NOT NULL, until INTEGER NOT NULL)`,
   // 1.37 [ADM2-10] 넘김 묶음: 'Claude에게 넘기기'를 복사한 때(cut)와 그 글에 든 문의·개발사항, 결과를 반영한 때와 요약.
   `CREATE TABLE IF NOT EXISTS handoffs (id TEXT PRIMARY KEY, at INTEGER NOT NULL, cut INTEGER NOT NULL, by TEXT NOT NULL,
     asks TEXT NOT NULL DEFAULT '[]', items TEXT NOT NULL DEFAULT '[]', result_at INTEGER, result TEXT NOT NULL DEFAULT '')`,

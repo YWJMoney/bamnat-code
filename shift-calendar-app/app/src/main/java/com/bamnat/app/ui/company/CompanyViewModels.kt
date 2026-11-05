@@ -1125,7 +1125,7 @@ class ActivityHolder(
                 null
             } catch (e: CompanyException) {
                 when (e.code) {
-                    "taken" -> "다른 분이 쓰는 별명이에요"
+                    "taken" -> com.bamnat.app.ui.village.VillageName.TAKEN
                     "nick" -> "쓸 수 없는 별명이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
                     else -> talkProblem(e)
                 }

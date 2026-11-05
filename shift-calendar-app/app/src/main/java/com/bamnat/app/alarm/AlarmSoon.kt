@@ -127,6 +127,8 @@ object AlarmSoon {
             .setContentText("다음 알람은 그대로 울려요")
             .addAction(action(context, "다시 켜기", ACTION_UNSKIP, REQ_UNSKIP, at))
             .setTimeoutAfter((at - Today.millis()).coerceAtLeast(1_000L))
+            // 1.38 같은 구조: alone, like '오늘 남은 알람을 껐어요', never bundled with 소식.
+            .setGroup(Notifications.GROUP_STATUS + "_soon").setGroupSummary(true)
             .build()
         Notifications.post(context, NOTICE_ID, notification)
     }

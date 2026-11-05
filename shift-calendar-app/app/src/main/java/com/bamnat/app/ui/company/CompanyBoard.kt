@@ -60,6 +60,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
+import com.bamnat.app.ui.components.keepSheetOnScroll
 import androidx.compose.runtime.Composable
 import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.runtime.LaunchedEffect
@@ -464,7 +465,8 @@ fun TalkSheet(holder: TalkHolder) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 RulesLink()
             }
-            Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // 1.38 PC 9차 LOW (자유 토의 시트를 아래로 쓸면 닫혀요): reading up to the first post stops there; the sheet closes from its title.
+            Column(Modifier.weight(1f, fill = false).keepSheetOnScroll().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 val talk = o.talk
                 // [SPD-13] The talk kept on the phone is on screen while it is read again.
                 if (talk != null && o.refreshing) RefreshLine(refreshing = true, stale = false, onRetry = holder::reload)

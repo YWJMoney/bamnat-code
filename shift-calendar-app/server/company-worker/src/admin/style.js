@@ -291,6 +291,7 @@ a.tile:hover{border-color:var(--accent)}
 .bubble{max-width:min(85%,36rem);padding:.65rem .85rem;border-radius:1.1rem;white-space:pre-wrap;font-size:.94rem;line-height:1.55}
 .bubble.user{align-self:flex-start;background:var(--soft);border-bottom-left-radius:.35rem}
 .bubble.admin{align-self:flex-end;background:var(--accent);color:var(--on-accent);border-bottom-right-radius:.35rem}
+.bubble.admin.held{opacity:.7;outline:2px dashed var(--accent);outline-offset:2px}
 .bubble-meta{font-size:.72rem;color:var(--muted);margin:-.3rem .35rem 0}
 .bubble-meta.admin{align-self:flex-end}
 .composer{position:sticky;bottom:calc(4.4rem + env(safe-area-inset-bottom));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);

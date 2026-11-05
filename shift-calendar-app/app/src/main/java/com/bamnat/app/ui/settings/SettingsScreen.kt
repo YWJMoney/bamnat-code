@@ -937,7 +937,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
     // [J133-79] Only what this calendar's kind of work has: a shop typing 근태 is not shown the 일근 근태 엑셀.
     val features = remember(query, hiddenKinds, screenStyle) {
         com.bamnat.app.ui.guide.FeatureSearch.search(query, style = screenStyle, limit = 3, hidden = hiddenKinds,
-            features = com.bamnat.core.guide.FeatureRegistry.all.filter { screenStyle == null || it.fits(screenStyle) })
+            features = com.bamnat.core.guide.FeatureRegistry.shown.filter { screenStyle == null || it.fits(screenStyle) })
     }
     if (features.isNotEmpty()) {
         Text("기능 ${features.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,

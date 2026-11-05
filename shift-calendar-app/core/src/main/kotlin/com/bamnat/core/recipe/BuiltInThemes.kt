@@ -115,6 +115,22 @@ object BuiltInThemes {
         else -> f.pattern
     }
 
+    /**
+     * 1.38 (장터 그림 LOW, PC 확인: 자영업 테마 넷이 모두 초록): a 가게·투자 month is nearly all one kind of day (영업, 매매), so cells
+     * coloured by the day's kind came out the same colour in every theme. For them the theme's own accent tints those cells instead.
+     */
+    private fun cellsFor(f: Family, s: WorkStyle): List<String> {
+        if (s != WorkStyle.BUSINESS && s != WorkStyle.INVEST) return f.cells
+        val tint = "bg:%08X".format(f.accent)
+        return f.cells.map { c ->
+            when {
+                "mk:fill" in c -> c.replace("mk:fill", "$tint|mk:dot|mp:bottom").replace(Regex("ba:\\d+"), "ba:28")
+                "bg:shift" in c -> c.replace("bg:shift", tint)
+                else -> c
+            }
+        }
+    }
+
     private fun theme(f: Family, s: WorkStyle): Recipe {
         val screens = ScreenLooks()
             .with(ScreenLooks.ALL, ScreenLook(bg = f.bg, card = f.card, ink = f.ink, accent = f.accent))
@@ -124,7 +140,7 @@ object BuiltInThemes {
         val pieces = listOf(
             Piece(PieceKind.SCREEN_LOOK, mapOf("screens" to screens.encode(), "pay" to PayLook.encodeAll(mapOf(s to f.pay)))),
             Piece(PieceKind.CAL_VIEW, listOfNotNull(
-                "looks" to f.cells.joinToString("/"), "pattern" to pattern, f.todayLook?.let { "today" to it.toLong() },
+                "looks" to cellsFor(f, s).joinToString("/"), "pattern" to pattern, f.todayLook?.let { "today" to it.toLong() },
                 "size" to (if (s == WorkStyle.SHIFT) "tall" else f.size),
             ).toMap()),
             Piece(PieceKind.CAL_THEME, mapOf("today" to f.today, "sat" to f.sat, "sun" to f.sun)),
@@ -191,7 +207,11 @@ object BuiltInThemes {
     val experts: List<Recipe> by lazy { WorkStyle.entries.map { expert(it) } }
 
     /** Every theme: each kind of work's 전문 달력 first, then eight more. */
-    val all: List<Recipe> by lazy { WorkStyle.entries.flatMap { s -> listOf(expert(s)) + families.map { theme(it, s) } } }
+    // 1.38 (장터 그림 LOW, PC 확인: '가게 전문 달력'과 '벚꽃 파스텔 가게'가 거의 같아 보여요): the family the 전문 달력 is drawn in goes
+    // last, so the first few a phone is offered (처음이라면 이런 테마부터) all look different.
+    val all: List<Recipe> by lazy {
+        WorkStyle.entries.flatMap { s -> listOf(expert(s)) + families.sortedBy { it.name == expertOf(s).family }.map { theme(it, s) } }
+    }
 
     /** The themes for [style] (all of them for no kind of work). */
     fun of(style: WorkStyle?): List<Recipe> = if (style == null) all.filter { it.styles == setOf(WorkStyle.SHIFT) } else all.filter { style in it.styles }

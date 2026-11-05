@@ -1461,6 +1461,10 @@ function adminApp(L, BUILD, M) {
     if (e.action === "inquiry_show") return `${by}님이 다시 보이게 했어요`;
     if (e.action === "inquiry_billing") return `${by}님이 결제·환불 기록${e.detail === "on" ? "으로 정했어요(3년 보관)" : "에서 뺐어요"}`;
     if (e.action === "dev_link") return `${by}님이 개발사항 "${e.detail}"에 연결했어요`;
+    // 1.38 [DESK-09] Claude 답 10분 보류.
+    if (e.action === "inquiry_reply_held") return `${by}가 답을 썼어요(${e.detail || "10분 보류"} 뒤 보내요)`;
+    if (e.action === "inquiry_reply_sent") return `보류한 ${by} 답이 보내졌어요`;
+    if (e.action === "inquiry_reply_cancel") return `${by} 답을 보내기 전에 취소했어요`;
     return `${by} · ${ACTION_NAMES[e.action] ?? e.action}`;
   }
 
@@ -1496,7 +1500,9 @@ function adminApp(L, BUILD, M) {
         <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span>
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
-          <div class="thread">${thread}</div>
+          <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
+            <span class="bubble-meta admin">${esc(h.by)} · <b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
+            <button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>` : ""}</span>`).join("")}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
@@ -1687,6 +1693,7 @@ function adminApp(L, BUILD, M) {
       <div class="sort-answer">${title}${reply}
       <div class="actions"><button class="btn small primary" data-act="sort-do" data-key="${k}" data-id="${x.id}">${esc(k === "new" && x.group.length > 1 ? `${x.group.length}건 개발사항으로 넘기기` : PILE_DO[k])}</button>
         ${k === "new" ? `<button class="btn small" data-act="sort-reply-only" data-id="${x.id}">답만 보내기</button>` : ""}
+        ${k === "faq" && m?.type === "template" && can("inquiries", "edit") ? `<button class="btn small" data-act="template-edit" data-id="${m.id}" title="이 답을 마을 밤낮 Q&A에 공개해요">마을 Q&A로 올리기</button>` : ""}
         <button class="btn small ghost" data-act="sort-skip" data-id="${x.id}">빼 두기</button></div></div></li>`;
   }
 
@@ -1908,6 +1915,8 @@ function adminApp(L, BUILD, M) {
       <div class="fieldset"><label for="tpl-topic">주제(이 주제의 문의에서 먼저 보여요)</label><div class="field"><select id="tpl-topic" name="topic"><option value="">모든 문의</option>
         ${Object.entries(names).map(([k, label]) => `<option value="${k}"${topic === k ? " selected" : ""}>${esc(label)}</option>`).join("")}</select></div></div>
       <div class="fieldset"><label for="tpl-text">내용</label><textarea id="tpl-text" name="text" maxlength="2000" required>${esc(typed)}</textarea></div>
+      <div class="fieldset"><label for="tpl-q">마을 밤낮 Q&A에 공개할 묻는 말(비우면 공개 안 함)</label><input id="tpl-q" name="publicQ" maxlength="80" placeholder="예: 위젯 날짜가 안 바뀌어요" value="${esc(t?.publicQ ?? "")}">
+        <small class="hint">적으면 이 답이 앱 마을 › 광장 위 '밤낮 Q&A'에 누구나 보게 올라가요. {앱버전}은 '최신 버전'으로 바뀌어요. 한 사람에게만 맞는 말은 빼 주세요.</small></div>
       <div class="actions"><button class="btn" type="button" data-act="${t ? "templates" : "close"}">${t ? "목록으로" : "닫기"}</button><button class="btn primary" type="submit">${t ? "저장" : "넣기"}</button></div></form>`, "wide");
   }
 
@@ -2730,10 +2739,12 @@ function adminApp(L, BUILD, M) {
     if (!list) return skeleton(2);
     const names = S.topicNames ?? {};
     const edit = can("inquiries", "edit");
-    return `<div class="toolbar"><p class="hint">모든 관리자가 같이 써요. 문의의 답 칸 아래에서 누르면 들어가고, {앱버전}·{주제}·{오늘}은 그 문의에 맞게 채워져요. 주제가 맞는 답과 많이 쓴 답이 앞에 와요.</p>
+    const shown = list.filter((x) => x.publicQ).length;
+    return `<div class="toolbar"><p class="hint">모든 관리자가 같이 써요. 문의의 답 칸 아래에서 누르면 들어가고, {앱버전}·{주제}·{오늘}은 그 문의에 맞게 채워져요. 주제가 맞는 답과 많이 쓴 답이 앞에 와요.
+        '묻는 말'을 적은 답은 앱 마을의 밤낮 Q&A에 공개돼요(지금 ${shown}개).</p>
         ${edit ? `<button class="btn primary" data-act="templates">${icon(P.plus)}새 답</button>` : ""}</div>
-      ${list.length ? `<ul class="rows">${list.map((x) => `<li class="item"><div class="row-main"><b>${esc(x.label)}${x.topic ? ` <span class="pill">${esc(names[x.topic] ?? x.topic)}</span>` : ""}</b>
-        <small>${esc(x.text.slice(0, 120))}</small><small>${x.by ? `${esc(x.by)} · ` : ""}${x.uses ?? 0}번 씀</small></div>
+      ${list.length ? `<ul class="rows">${list.map((x) => `<li class="item"><div class="row-main"><b>${esc(x.label)}${x.topic ? ` <span class="pill">${esc(names[x.topic] ?? x.topic)}</span>` : ""}${x.publicQ ? ' <span class="pill ok">마을 공개</span>' : ""}</b>
+        ${x.publicQ ? `<small>묻는 말: ${esc(x.publicQ)}</small>` : ""}<small>${esc(x.text.slice(0, 120))}</small><small>${x.by ? `${esc(x.by)} · ` : ""}${x.uses ?? 0}번 씀</small></div>
         <div class="actions"><button type="button" class="btn small" data-act="template-copy" data-id="${x.id}">${icon(P.copy)}복사</button>
         ${edit ? `<button type="button" class="btn small" data-act="template-edit" data-id="${x.id}">고치기</button>
         <button type="button" class="btn small danger" data-act="template-remove" data-id="${x.id}">지우기</button>` : ""}</div></li>`).join("")}</ul>`
@@ -4031,6 +4042,19 @@ function adminApp(L, BUILD, M) {
       const x = S.data.sort?.piles[key]?.find((i) => i.id === id);
       if (x) sortApply([sortAction(key, x)], "처리했어요");
     },
+    // 1.38 [DESK-09] Claude 답 보류 중: 보내기 전에 취소하거나 글을 고쳐요.
+    "held-cancel": ({ id }) => confirmBox("이 답을 보내지 않을까요?", "보낸 분께 가지 않고, 기록에 취소로 남아요.", "보내지 않기", async () => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요");
+      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
+    }),
+    "held-edit": async ({ id }) => {
+      const h = (S.data.inquiry?.held ?? []).find((x) => String(x.id) === String(id));
+      if (!h) return;
+      const text = window.prompt("보낼 답을 고쳐요 (보내는 때는 그대로예요)", h.text);
+      if (text === null || !text.trim() || text.trim() === h.text) return;
+      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { text }), "고쳤어요");
+      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
+    },
     "sort-reply-only": ({ id }) => {
       const x = S.data.sort?.piles.new.find((i) => i.id === id);
       const text = document.getElementById(`sort-reply-${id}`)?.value?.trim();
@@ -4326,7 +4350,11 @@ function adminApp(L, BUILD, M) {
       if (d) S.data.push = d;
       render({ keepScroll: true });
     },
-    "template-edit": ({ id }) => openTemplates(id),
+    "template-edit": async ({ id }) => {
+      // 1.38 [EASE-31] 정리함 '자주 쓰는 답으로 충분' 카드에서도 열려요: 목록을 아직 안 읽었으면 먼저 읽어요.
+      if (!(S.templates ?? []).some((x) => String(x.id) === String(id))) await loadTemplates();
+      openTemplates(id);
+    },
     "login-mode": ({ key }) => {
       // [ADMUX-03] The sign-in screen opens on the way chosen last time.
       S.prefs.loginMode = key;
@@ -5235,7 +5263,7 @@ function adminApp(L, BUILD, M) {
     },
     "template-add": async (form) => {
       const id = form.dataset.id;
-      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value };
+      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value, publicQ: form.elements.publicQ?.value ?? "" };
       const r = await act(() => api(id ? `/templates/${id}` : "/templates", "POST", body), id ? "고쳤어요" : "넣었어요. 답 칸 아래에서 바로 써요");
       if (!r) return;
       S.templates = r.templates;

@@ -1261,6 +1261,16 @@ export function withNewMakers(list, isNew, block = 10) {
   return out;
 }
 
+/** 1.38 장터 검색: a kind of work's everyday names → its style key. */
+export const STYLE_WORDS = { 교대: "SHIFT", 교대근무: "SHIFT", 일근: "DAY", 일근직: "DAY", 알바: "HOURLY", 아르바이트: "HOURLY",
+  현장: "FIELD", 자영업: "BUSINESS", 가게: "BUSINESS", 사장님: "BUSINESS", 투자: "INVEST" };
+
+/** A search box's words: split on spaces, empty ones dropped, at most 4 (a whole sentence would be 30 LIKEs). */
+export function searchWords(q) {
+  const words = String(q ?? "").trim().split(/\s+/).filter(Boolean);
+  return words.length ? words.slice(0, 4) : [];
+}
+
 async function recipeList(d, env, url) {
   const style = url.searchParams.get("style");
   const sort = SORTS.includes(url.searchParams.get("sort")) ? url.searchParams.get("sort") : "hot";
@@ -1281,9 +1291,15 @@ async function recipeList(d, env, url) {
   // [RCX-32] 보여주기: the operator's showcases, newest first.
   if (sort === "showcase") where.push("r.showcase = 1");
   if (q) {
-    where.push("(r.title LIKE ? OR r.summary LIKE ? OR r.cover LIKE ? OR r.title_skel LIKE ?)");
-    const like = `%${q.replace(/[%_]/g, "")}%`;
-    args.push(like, like, like, `%${nameSkeleton(q)}%`);
+    // 1.38 (장터 그림 LOW, PC 확인: '교대 가계부'가 안 나와요): each word on its own (all must match, at most 4), and a kind of work's
+    // name also finds the works made for that kind of work, so '교대 가계부' is a 가계부 for 교대 and not the one phrase.
+    for (const w of searchWords(q)) {
+      const like = `%${w.replace(/[%_]/g, "")}%`;
+      const st = STYLE_WORDS[w];
+      where.push(`(r.title LIKE ? OR r.summary LIKE ? OR r.cover LIKE ? OR r.title_skel LIKE ?${st ? " OR (',' || r.styles || ',') LIKE ?" : ""})`);
+      args.push(like, like, like, `%${nameSkeleton(w)}%`);
+      if (st) args.push(`%,${st},%`);
+    }
   }
   // 좋은 순 and 요즘 뜨는 are worked out here from the counts (a few hundred rows a plaza); 새로 is by time.
   const rows0 = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE ${where.join(" AND ")}

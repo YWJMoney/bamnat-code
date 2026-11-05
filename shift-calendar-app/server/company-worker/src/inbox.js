@@ -1,6 +1,6 @@
 import { fcmTell } from "./fcm.js";
 import { all, audit, batch, can, iso, json, one, randomId, readJson, refuse, run, stmt } from "./index.js";
-import { DEV, INQUIRY, actorName, cut, devEvent, devUpdate, plainText, triage } from "./inquiries.js";
+import { DEV, INQUIRY, actorName, cut, devEvent, devUpdate, holdReply, plainText, triage } from "./inquiries.js";
 // 1.37 [ADM2-02] 나간 판: 반영 판이 Play에 나간 판 이하일 때만 '이미 고침'.
 import { DESK, isOut, laterText, markTold, shippedVersion } from "./desk.js";
 
@@ -323,6 +323,8 @@ async function link(env, item, id, now, by) {
 /** An answer on question [id] by [by], the question then 답함 (taken by whoever answered when nobody held it). */
 export async function inboxAnswer(env, id, text, now, by) {
   const t = plainText(text, INQUIRY.text, "text", true);
+  // 1.38 [DESK-09] Claude 열쇠의 답은 10분 보류.
+  if (env.actor?.key) return (await one(env, "SELECT id FROM inquiries WHERE id = ?", id)) ? holdReply(env, { id }, t, {}, now) : false;
   const r = await run(env, "UPDATE inquiries SET status = 'answered', updated_at = ?, assignee = COALESCE(assignee, ?), assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?",
     now, env.actor?.id ?? null, by, id);
   if (!r.meta.changes) return false;

@@ -132,8 +132,13 @@ test("[V3] 마을 이름 하나: 유형별 광장에는 마을 이름과 프로�
   const me = (await call("POST", "/api/recipes/makers/me", { device: device(1), face: "🦉" }, from(1))).data.maker;
   assert.equal((await write(1, "style-shift", "야간 끝나고 잠 어떻게 자요?")).status, 201);
   assert.equal((await write(2, "style-shift", "암막 커튼 추천해요")).status, 201);
+  assert.equal((await write(4, "style-shift", "이름 없이 물어봐요")).status, 201);
   const posts = (await call("GET", "/api/companies/style-shift/setups/room/posts", undefined, as(3))).data.posts;
-  assert.deepEqual(posts.map((p) => [p.nick, p.maker ?? null]), [["야간요정", me], ["새벽감자", null]]);
+  // 1.38 PC 11차 LOW: 새벽감자 has no works but a 마을 이름, so a 프로필 (to follow) is made; a writer with no name stays without.
+  assert.deepEqual(posts.map((p) => [p.nick ?? null, p.maker === undefined ? null : p.maker === me ? "me" : "made"]),
+    [["야간요정", "me"], ["새벽감자", "made"], [null, null]]);
+  const made = posts[1].maker;
+  assert.equal((await call("GET", "/api/companies/style-shift/setups/room/posts", undefined, as(5))).data.posts[1].maker, made, "made once, the same after");
   // A hidden 프로필 is not led to; the name stays.
   await call("POST", "/api/recipes/makers/me", { device: device(1), hidden: true }, from(1));
   const again = (await call("GET", "/api/companies/style-shift/setups/room/posts", undefined, as(3))).data.posts;

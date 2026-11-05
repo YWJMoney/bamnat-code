@@ -712,7 +712,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
         // [J133-53] A phone with no setup yet (reinstalled, data cleared) has nothing new to compare against.
         val fresh = info == null || info.firstInstallTime == info.lastUpdateTime || !container.settingsRepository.current.setupDone
-        mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
+        val store = com.bamnat.app.data.GuideStore.get(ctx)
+        val updates = store.whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh)
+        // 1.38 갈래6: what a server switch turned on since (공유 테마, 11월 10일), told once, on top of an update's lines if any.
+        val switched = store.switchedNew({ container.flags.on(it) }, fresh)
+        mutableStateOf(when {
+            switched.isEmpty() -> updates
+            updates.isEmpty() -> listOf(com.bamnat.core.guide.WhatsNew.Release(com.bamnat.app.BuildConfig.VERSION_CODE, "밤낮", switched))
+            else -> listOf(updates.first().copy(lines = switched + updates.first().lines)) + updates.drop(1)
+        })
     }
     // [ONBOARD-04] A phone set up before 1.22 keeps its own values; the update notice offers the rest once.
     val recommendOff = remember {
@@ -729,9 +737,20 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         NoticeLinks.consume(NoticeLinks.Target.WHATS_NEW)
         whatsNew.value = com.bamnat.core.guide.WhatsNew.releases.filter { it.versionCode <= com.bamnat.app.BuildConfig.VERSION_CODE }.take(1)
     }
+    // 1.38 [EASE-32] The user's own questions this version fixed, read once the update notice is up (never before: no
+    // call for a phone that never asked).
+    val fixedForMe by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>(), whatsNew.value.isNotEmpty()) {
+        if (whatsNew.value.isEmpty() || !container.inquiryStore.asked) return@produceState
+        value = runCatching {
+            container.inquiryStore.fixedNow(container.inquiryApi.mine(container.companyStore.device), com.bamnat.app.BuildConfig.VERSION_NAME)
+        }.getOrDefault(emptyList())
+    }
     if (whatsNew.value.isNotEmpty()) {
         val closeNew = {
+            container.inquiryStore.markThanked(fixedForMe.map { it.first })
             com.bamnat.app.data.GuideStore.get(container.appContext).whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
+            com.bamnat.app.data.GuideStore.get(container.appContext).switchedSeen(
+                com.bamnat.core.guide.WhatsNew.switched.filter { (_, line) -> whatsNew.value.any { line in it.lines } }.map { it.first })
             if (recommendOff > 0) container.consentStore.markRecommendOffered()
             whatsNew.value = emptyList()
         }
@@ -742,6 +761,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
             onAsk = { closeNew(); com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "업데이트")) },
             onDismiss = closeNew,
+            thanks = fixedForMe.map { it.second },
+            onOpenAsks = { closeNew(); SettingsLinks.go(SettingsGo.INQUIRY) },
         )
     } else {
         // [MON-06][MON-10] One at a time, after what the update brought.
@@ -2321,6 +2342,8 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
         // [TOWN-02] 1.37: answers to my posts in any plaza, first thing in 마을 › 광장 (the room on screen says its own).
         if (inHub) com.bamnat.app.ui.village.NewAnswersLine(container, except = plan.room.takeIf { container.companyApi.enabled },
             onOpen = { nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true } })
+        // 1.38 [EASE-31] 밤낮 Q&A: the developer's answers to what is asked often.
+        if (inHub) com.bamnat.app.ui.village.PublicQaLine(container, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
             Modifier.padding(horizontal = 16.dp))
         // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).

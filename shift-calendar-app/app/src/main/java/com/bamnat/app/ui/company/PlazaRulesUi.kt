@@ -199,6 +199,15 @@ fun PlazaPhoneSettings() {
             Spacer(Modifier.width(12.dp))
             Switch(checked = settings.plazaNews, onCheckedChange = null)
         }
+        // 1.38 PC 10차 LOW (앱 안 소식 스위치와 휴대폰 알림 설정 중 어디서 꺼야 하는지 몰라요): what each one does, and the way to the other.
+        val ctx = LocalContext.current
+        Text(if (settings.plazaNews) "위 스위치를 끄면 소식을 아예 묻지 않아요. 휴대폰 알림 설정에서 ‘밤낮 소식’만 끄면 알림창에는 안 뜨고, 마을 탭의 점과 마을 맨 위 줄로만 보여요."
+            else "꺼 두면 소식을 묻지 않아요. 새 답과 새 작품은 마을에 들어가면 보여요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (settings.plazaNews && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            TextButton(onClick = { com.bamnat.app.ui.components.SystemSettings.channel(ctx, com.bamnat.app.alarm.Notifications.PLAZA_CHANNEL_ID) },
+                modifier = Modifier.heightIn(min = 48.dp)) { Text("휴대폰 알림 설정에서 ‘밤낮 소식’ 보기") }
+        }
         val openBlocked = LocalOpenBlocked.current
         Text("가린 사람 ${hidden.writers.size}", style = MaterialTheme.typography.titleSmall)
         Text(if (hidden.writers.isEmpty()) "토론 글의 ⋮ > 이 사람 글 안 보기로 가린 분은 장터·프로필에서 차단한 분과 한 목록에 모여요. 가린 분은 이 휴대폰에만 남아요."

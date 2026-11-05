@@ -78,7 +78,7 @@ test("[ADM2-01][ADM2-05] 흐름: each stage's count, the oldest wait, 막힘, an
 });
 
 test("[ADM2-03] Claude 운영 열쇠: the owner makes it once, it reads and answers inquiries, and nothing else", async () => {
-  const { call } = server();
+  const { call, env } = server();
   const owner = await signIn(call);
   const made = (await call("POST", "/api/admin/keys", { label: "Claude 프로젝트" }, owner)).data;
   assert.match(made.key, /^bko_[A-Za-z0-9]{40}$/);
@@ -97,6 +97,10 @@ test("[ADM2-03] Claude 운영 열쇠: the owner makes it once, it reads and answ
   assert.equal(one.context["알람 점검"], undefined);
   assert.equal(one.context["앱"], "1.36.1 (50)");
   assert.equal((await call("POST", `/api/admin/inquiries/${q}/reply`, { text: "확인 중이에요" }, claude)).status, 200);
+  // 1.38 [DESK-09] 10분 보류 뒤에 가요.
+  assert.notEqual((await asker(call, q, 1)).messages.at(-1).text, "확인 중이에요");
+  const { releaseHeld } = await import("../src/inquiries.js");
+  assert.equal(await releaseHeld(env, Date.now() + 10 * 60 * 1000), 1);
   assert.equal((await asker(call, q, 1)).messages.at(-1).text, "확인 중이에요");
   const audit = (await call("GET", "/api/admin/audit", undefined, owner)).data;
   assert.ok(JSON.stringify(audit).includes("Claude"));
