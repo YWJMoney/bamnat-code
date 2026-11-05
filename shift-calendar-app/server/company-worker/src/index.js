@@ -75,7 +75,7 @@ import { PG_HELD, PG_REASONS, pgShown, pgGuard, pgChanges } from "./plaza-guard.
 import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
-import { inboxRoute } from "./inbox.js";
+import { inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, INQUIRY, INQUIRY_TOPICS, SLA, SLA_SQL, actorName, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
@@ -90,6 +90,8 @@ import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.j
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
+// 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
+import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -745,6 +747,8 @@ const SCHEMA = [
   ...PHOTO_SCHEMA,
   // 1.36 [GRW-07] 할 일함 상태와 기록 (work.js).
   ...WORK_SCHEMA,
+  // 1.37 [ADM2-03] Claude 운영 열쇠 (desk.js).
+  ...DESK_SCHEMA,
   // 1.36 [PUSH-01] 문의 답 바로 알리기 (fcm.js).
   ...FCM_SCHEMA,
 ];
@@ -822,6 +826,7 @@ const COLUMNS = [
   // 1.34 [RCP-35] 나눔 판의 이야기.
   ...RECIPE_COLUMNS,
   ...COMMUNITY_COLUMNS,
+  ...DESK_COLUMNS,
   ...WRITE_LIMITS_COLUMNS,
   ...GROWTH_COLUMNS,
   ...PHOTO_COLUMNS,
@@ -913,8 +918,12 @@ function ready(env) {
   if (!done) {
     done = env.DB.prepare("SELECT value FROM settings WHERE key = 'schema'").first("value").catch(() => null).then(async (made) => {
       if (made === SCHEMA_VERSION) return;
-      await batch(env, SCHEMA.map((sql) => env.DB.prepare(sql)));
-      for (const sql of COLUMNS) {
+      // 1.37 hotfix: an ALTER TABLE in SCHEMA (recipe-fonts' info·glyphs·fallback) fails as "duplicate column" on a database that
+      // already has it, and that failed the whole batch, so every request was a 500 after any later schema change. ALTERs run
+      // with the columns below, where a column already there is skipped.
+      const alter = (sql) => /^\s*ALTER\s+TABLE/i.test(sql);
+      await batch(env, SCHEMA.filter((sql) => !alter(sql)).map((sql) => env.DB.prepare(sql)));
+      for (const sql of [...SCHEMA.filter(alter), ...COLUMNS]) {
         try {
           await env.DB.prepare(sql).run();
         } catch (e) {
@@ -4408,6 +4417,9 @@ function areaFor(path) {
   if (path === "/search") return null;
   // 1.36 [GRW-07] 할 일함: each part reads only the areas the admin has (work.js).
   if (path === "/work" || path.startsWith("/work/")) return null;
+  // 1.37 [ADM2] 흐름과 장부는 문의를 맡은 사람이, 나간 판 저장은 개발사항 처리를 가진 사람이, 운영 열쇠는 주인만(아래 기본값).
+  if (path === "/flow" || path === "/desk") return "inquiries";
+  if (path === "/desk/ship") return "devStatus";
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";
   if (path === "/dev" || path.startsWith("/dev/")) return "dev";
@@ -4448,7 +4460,10 @@ export async function admin(request, env, url) {
   if (path === "/join/info" && method === "POST") return inviteInfo(request, env, url, now);
   if (path === "/join/code" && method === "POST") return joinCode(request, env, now);
   if (path === "/join" && method === "POST") return join(request, env, now);
-  const session = await signedIn(request, env, now);
+  // 1.37 [ADM2-03] Claude 운영 열쇠: Authorization: Bearer bko_… 은 쿠키 대신 열쇠로, 정해진 길만.
+  const keyed = await keySession(request, env, path, method, now);
+  if (keyed instanceof Response) return keyed;
+  const session = keyed ? { token: null, actor: keyed.actor } : await signedIn(request, env, now);
   // [ADMUX-11] Opening the app asks this first: signed out is an answer, not a 401 in the browser's console.
   if (path === "/session" && method === "GET") return json({ signedIn: Boolean(session) }, 200, { "cache-control": "no-store" });
   if (!session) return json({ error: "login" }, 401);
@@ -4463,6 +4478,8 @@ export async function admin(request, env, url) {
       ? new Response(null, { status: 304, headers })
       : new Response(body, { status: 200, headers });
   }
+  // 1.37 [ADM2-03] 열쇠로 읽는 문의 하나에는 알람 점검 기록을 빼요.
+  if (keyed && method === "GET" && res.status === 200 && /^\/inquiries\/[A-Za-z0-9]{22}$/.test(path)) res = json(keyView(await res.json()));
   if (session.renewed && !res.headers.has("set-cookie")) {
     res = new Response(res.body, res);
     res.headers.set("set-cookie", session.renewed);
@@ -4587,6 +4604,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
       if (request.method === "POST") await audit(env, now, path.startsWith("/village/contests") ? "village_contest" : "village_topic", path);
       return v;
     }
+  }
+  // 1.37 [ADM2] 흐름·장부·나간 판·운영 열쇠.
+  if (path === "/flow" || path === "/desk" || path.startsWith("/desk/") || path === "/keys" || path.startsWith("/keys/")) {
+    const d = await deskRoute(request, env, path, method, now, (e, id, text, at) => inboxAnswer(e, id, text, at, actorName(e)));
+    if (d) return d;
   }
   // 1.36 [GRW-07] 할 일함.
   if (path === "/work" || path.startsWith("/work/")) {

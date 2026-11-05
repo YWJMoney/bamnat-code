@@ -14,6 +14,8 @@ import { plazaViews } from "./admin/views/plaza.js";
 import { insightViews } from "./admin/views/insight.js";
 // 1.36 [GRW-07] 할 일함, [GRW-04]~[GRW-06] 스튜디오 요구·기본 도구 후보·손잡이 지도.
 import { workViews } from "./admin/views/work.js";
+// 1.37 [ADM2-01][ADM2-03] 흐름(관제)과 Claude 운영 열쇠.
+import { flowViews } from "./admin/views/flow.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -70,7 +72,7 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews} }`;
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -651,6 +653,9 @@ function adminApp(L, BUILD, M) {
     try {
       // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
       if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; S.alertsN = d.alerts?.length ?? 0; })));
+      // 1.37 [ADM2-01] 흐름과 [ADM2-03] 운영 열쇠.
+      if (name === "flow") jobs.push(api("/flow").then(keep((d) => { S.data.flow = d; })));
+      if (name === "keys") jobs.push(api("/keys").then(keep((d) => { S.data.keys = d; })));
       // 1.36 [GRW-07] 할 일함: 상태와 종류로 거른 한 대기열.
       if (name === "work") jobs.push(api(`/work?state=${S.workState ?? "open"}${S.workGroup ? `&group=${S.workGroup}` : ""}`).then(keep((d) => { S.data.work = d; })));
       // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구의 칸마다 제 목록.
@@ -1057,6 +1062,9 @@ function adminApp(L, BUILD, M) {
     home: () => V.homeView(),
     // 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
     work: () => V.workView(),
+    // 1.37 [ADM2-01] 흐름, [ADM2-03] 운영 열쇠.
+    flow: () => V.flowView(),
+    keys: () => V.keysView(),
     growth: () => V.growthView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
@@ -1101,7 +1109,7 @@ function adminApp(L, BUILD, M) {
     const { name, id } = S.route;
     const d = S.data;
     return Boolean({
-      home: d.today, work: d.work, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
+      home: d.today, work: d.work, flow: d.flow, keys: d.keys, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
@@ -1651,7 +1659,7 @@ function adminApp(L, BUILD, M) {
     const body = d.total ? order.filter((k) => d.piles[k].length).map((k) => pileSection(k, d.piles[k])).join("")
       : empty("정리할 문의가 없어요", "답을 기다리는 문의가 모두 개발사항에 묶였거나 답했어요.");
     // A phone shows the piles first and 자동 대응·넘기기 under them (CSS order); the strip's last card leads there.
-    const n = S.data.handoff?.items?.length ?? 0;
+    const n = (S.data.handoff?.items?.length ?? 0) + (S.data.handoff?.asks ?? 0);
     const go = `<a role="listitem" class="pile-card handoff-chip${n ? " warn" : " zero"}" href="#sort-tools" data-act="sort-jump" data-key="tools">
         <span class="pile-n">${n}</span><span class="pile-name">Claude에게 넘길 것</span></a>`;
     return `<div class="sort-view"><p class="hint">답을 기다리는 문의 ${d.total}건을 서버가 미리 나눠 두었어요. 카드마다 보낼 답이 적혀 있어요. 고쳐서 보내도 되고, ‘빼 두기’를 누르면 정리함에서만 빠져요.</p>
@@ -1704,18 +1712,27 @@ function adminApp(L, BUILD, M) {
   function handoffCard() {
     const h = S.data.handoff;
     const n = h?.items?.length ?? 0;
+    // 1.37 [ADM2-08] 넘길 글에는 답을 기다리는 문의도 함께 가요.
+    const asks = h?.asks ?? 0;
     const res = S.sortResult;
-    const lines = res ? `<ul class="mini">${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(DEV_NAMES[l.status] ?? l.status)}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
-        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}</li>`).join("")}</ul>
+    const ASK_DO = { reply: "답", link: "개발사항에 묶고 답", dev: "새 개발사항", skip: "빼 두기" };
+    const askRows = (res?.asks ?? []).map((a) => `<li>${a.ids.length > 1 ? `문의 ${a.ids.length}건` : "문의"} · ${esc(ASK_DO[a.do] ?? a.do)}${a.item ? ` ${esc(a.item)}` : ""}${a.title ? ` ‘${esc(a.title)}’` : ""}
+        <small>${esc(a.previews.filter(Boolean).join(" / "))}</small>${a.text ? `<small class="answer">답: ${esc(a.text)}</small>` : ""}${a.problem ? ` <span class="pill bad">${esc(a.problem)}</span>` : ""}</li>`).join("");
+    const what = (l) => l.status ? DEV_NAMES[l.status] ?? l.status : l.note ? "개발 기록" : l.shipReply ? "출시 답" : l.news ? "공지 한 줄" : "개발 기록";
+    const batchRow = res?.batch?.id ? `<li class="batch">넘김 묶음 ${esc(res.batch.id)}${res.batch.at ? ` <small>${esc(moment(res.batch.at))}에 넘긴 것의 결과예요</small>` : res.batch.known ? "" : ' <span class="pill warn">기록에 없는 묶음</span>'}</li>` : "";
+    const lines = res ? `<ul class="mini">${batchRow}${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(what(l))}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
+        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.note ? `<small class="answer">기록: ${esc(l.note)}</small>` : ""}${l.text ? `<small class="answer">답: ${esc(l.text)}</small>` : ""}${l.shipReply ? `<small class="answer">출시 답: ${esc(l.shipReply)}</small>` : ""}${l.news ? `<small class="answer">공지: ${esc(l.news)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}${(l.warn ?? []).map((w) => ` <span class="pill warn">${esc(w)}</span>`).join("")}</li>`).join("")}${askRows}</ul>
       <label class="switch"><input type="checkbox" id="sort-notify" checked><span class="track" aria-hidden="true"></span><span>완료·반려된 개발사항의 문의에도 답 보내기</span></label>
-      <div class="actions"><button class="btn small primary" data-act="sort-result-go"${res.lines.some((l) => !l.problem) ? "" : " disabled"}>반영하기</button>
+      <div class="actions"><button class="btn small primary" data-act="sort-result-go"${[...res.lines, ...(res.asks ?? [])].some((l) => !l.problem) ? "" : " disabled"}>반영하기</button>
         <button class="btn small ghost" data-act="sort-result-clear">다시 붙여 넣기</button></div>` : "";
     return `<div class="card handoff-card"><b>Claude에게 넘기기</b>
-      <small>${h ? (n ? `아직 넘기지 않은 개발사항 ${n}개 (문의 ${h.items.reduce((a, i) => a + i.asks, 0)}건). 복사해서 Claude에게 붙여 넣으면 다음 개발에 들어가요.` : "새로 넘길 개발사항이 없어요.") : "불러오는 중이에요"}</small>
-      <div class="actions"><button class="btn small primary" data-act="sort-handoff"${n ? "" : " disabled"}>${icon(P.copy)}넘길 글 복사 (${n})</button>
+      <small>${h ? (n || asks ? `지난 넘김 뒤 새로 들어온 문의 ${h.fresh ?? asks}건${h.again ? `, 전에 넘겼는데 아직 답이 없는 문의 ${h.again}건` : ""}과 새 개발사항 ${n}개를 한 묶음으로 복사해요. 프로젝트 채팅에 붙여 넣으면 Claude가 답과 개발을 하고 결과를 줘요.` : "넘길 문의와 개발사항이 없어요.") : "불러오는 중이에요"}</small>
+      <div class="actions"><button class="btn small primary" data-act="sort-handoff"${n || asks ? "" : " disabled"}>${icon(P.copy)}넘길 글 복사 (문의 ${asks} · 개발 ${n})</button>
         <button class="btn small" data-act="sort-handoff-all">진행 중인 것 모두 복사</button></div>
+      ${h?.log?.length ? `<details class="handoff-log"><summary>넘김 기록 (${h.log.length})</summary><ul class="mini">${h.log.map((b) => `<li><b>${esc(b.id)}</b> · ${esc(moment(new Date(b.at).toISOString()))} · ${esc(b.by)}
+          <small>문의 ${b.asks}건 · 개발사항 ${b.items}개</small>${b.resultAt ? `<small class="answer">결과 반영 ${esc(moment(b.resultAt))}${b.result ? ` · 답 ${b.result.answered ?? 0} · 개발 상태 ${b.result.changed ?? 0} · 새 개발사항 ${b.result.created ?? 0}${b.result.prepared ? ` · 출시 안내 ${b.result.prepared}` : ""}` : ""}</small>` : ' <span class="pill warn">결과 기다리는 중</span>'}</li>`).join("")}</ul></details>` : ""}
       <details${res ? " open" : ""}><summary>개발 결과 붙여 넣기</summary>
-        <p class="hint">Claude가 개발을 마치고 준 ‘결과’ 줄(예: d0123… 완료 1.36.0)을 붙여 넣어요. 먼저 무엇이 바뀌는지 보여 드려요.</p>
+        <p class="hint">Claude가 준 ‘결과’ 덩어리를 통째로 붙여 넣어요. 문의 답, 개발사항 묶기·만들기, 개발 상태와 개발 기록, 묶인 문의 답이 한 번에 처리돼요. 먼저 무엇이 바뀌는지 보여 드려요.</p>
         ${res ? lines : `<textarea id="sort-result" rows="4" placeholder="d0123456789abcde 완료 1.36.0"></textarea>
         <div class="actions"><button class="btn small" data-act="sort-result-check">무엇이 바뀌는지 보기</button></div>`}</details></div>`;
   }
@@ -1792,6 +1809,12 @@ function adminApp(L, BUILD, M) {
           <p class="hint">완료한 항목이 나간 앱 버전(예: 1.18.0). 연결된 문의를 보낸 분 앱에 '반영됨 1.18.0'으로 보여요.</p>
           <div class="actions start"><input id="dev-release" name="v" inputmode="decimal" pattern="\\d{1,2}\\.\\d{1,2}\\.\\d{1,3}" placeholder="1.18.0" value="${esc(d.releasedIn ?? "")}">
           <button class="btn small" type="submit">저장</button></div></form></section>` : ""}
+      ${edit && d.status !== "rejected" ? `<form class="card mini" data-form="dev-ship-note" data-since="${d.updatedAt}"><div class="card-head"><h2>출시 안내 미리 쓰기</h2>
+          <span class="pill ${d.shipReply && d.news ? "ok" : "warn"}">${d.shipReply && d.news ? "준비됨" : "비어 있음"}</span></div>
+        <p class="hint">나간 판을 저장하는 날 쓰여요. 출시 답은 연결된 문의에 자동으로 가고, 공지 한 줄은 앱의 ‘업데이트 소식’ 공지에 실려요.</p>
+        <label for="dev-ship-reply">출시 답</label><textarea id="dev-ship-reply" name="shipReply" maxlength="1000" placeholder="기다려 주셔서 고마워요. 말씀해 주신 … 를 고친 업데이트가 나왔어요.">${esc(d.shipReply ?? "")}</textarea>
+        <label for="dev-news">공지 한 줄</label><input id="dev-news" name="news" maxlength="80" placeholder="잠금 화면에서도 알람 소리가 제대로 나요" value="${esc(d.news ?? "")}">
+        <div class="actions"><button class="btn small" type="submit">저장</button></div></form>` : ""}
       <section class="card"><div class="card-head"><h2>연결된 문의</h2><span class="pill">${d.links}</span></div>
         ${d.inquiries.length ? `<ul class="rows">${d.inquiries.map((q) => `<li class="item"><a class="row-main" href="${href("inquiries", q.id)}">
             <b>${esc(KIND_NAMES[q.kind] ?? "문의")} <span class="pill ${q.status === "open" ? "warn" : q.status === "answered" ? "ok" : ""}">${STATUS_NAMES[q.status] ?? q.status}</span></b>
@@ -1814,7 +1837,8 @@ function adminApp(L, BUILD, M) {
     const was = (a, b) => `<span class="was">${esc(a || "없음")}</span> → ${esc(b || "없음")}`;
     const what = {
       create: () => "만들었어요",
-      edit: () => [x.title ? `제목: ${L.wordDiff(x.title[0] ?? "", x.title[1] ?? "")}` : "", x.body ? `내용을 고쳤어요<details><summary>바뀐 곳</summary><blockquote class="wdiff">${L.wordDiff(x.body[0] ?? "", x.body[1] ?? "")}</blockquote></details>` : ""].filter(Boolean).join("<br>"),
+      edit: () => [x.title ? `제목: ${L.wordDiff(x.title[0] ?? "", x.title[1] ?? "")}` : "", x.shipReply ? `출시 답을 적었어요<blockquote>${esc(x.shipReply[1] || "(지움)")}</blockquote>` : "",
+        x.news ? `공지 한 줄: ${was(x.news[0], x.news[1])}` : "", x.body ? `내용을 고쳤어요<details><summary>바뀐 곳</summary><blockquote class="wdiff">${L.wordDiff(x.body[0] ?? "", x.body[1] ?? "")}</blockquote></details>` : ""].filter(Boolean).join("<br>"),
       status: () => `처리: ${was(DEV_NAMES[x.status?.[0]], DEV_NAMES[x.status?.[1]])}${x.bulk > 1 ? ` <span class="meta">(${x.bulk}개 한 번에)</span>` : ""}${x.reason ? `<blockquote>${esc(x.reason)}</blockquote>` : ""}`,
       assign: () => `맡은 사람: ${was(x.assignee?.[0], x.assignee?.[1])}`,
       note: () => `<blockquote>${esc(x.text)}</blockquote>`,
@@ -4026,9 +4050,11 @@ function adminApp(L, BUILD, M) {
     },
     "sort-handoff": async (_, __, all = false) => {
       const h = all ? await act(() => api("/inquiries/handoff?all=1")) : S.data.handoff;
-      if (!h?.items?.length) return toast("넘길 개발사항이 없어요");
+      if (!h?.items?.length && !h?.asks) return toast("넘길 문의와 개발사항이 없어요");
       if (!(await toClipboard(h.text))) return toast("복사하지 못했어요. 다시 해 주세요");
-      await act(() => api("/inquiries/handoff/mark", "POST", { ids: h.items.map((i) => i.id) }), `개발사항 ${h.items.length}개를 복사했어요. Claude에게 붙여 넣어 주세요`);
+      // 1.37 [ADM2-10] 복사한 그대로가 넘김 묶음 하나로 남아요(담은 문의·개발사항, 넘긴 때).
+      await act(() => api("/inquiries/handoff/mark", "POST", { ids: h.items.map((i) => i.id), asks: h.askIds ?? [], ...(h.batch ? { batch: h.batch, cut: h.cut } : {}) }),
+        `묶음 ${h.batch ?? ""} · 문의 ${h.asks ?? 0}건 · 개발사항 ${h.items.length}개를 복사했어요. Claude에게 붙여 넣어 주세요`);
       S.data.handoff = null; load();
     },
     "sort-handoff-all": (a, el) => ACTIONS["sort-handoff"](a, el, true),
@@ -4043,7 +4069,8 @@ function adminApp(L, BUILD, M) {
       const res = S.sortResult;
       if (!res) return;
       const notify = document.getElementById("sort-notify")?.checked === true;
-      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => `개발사항 ${r.changed}개 반영${r.answered ? ` · 문의 ${r.answered}건에 답` : ""}`);
+      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => [r.batch?.id && `묶음 ${r.batch.id}`, r.changed && `개발사항 ${r.changed}개 반영`, r.noted && `개발 기록 ${r.noted}줄`, r.prepared && `출시 안내 ${r.prepared}개`, r.created?.length && `새 개발사항 ${r.created.length}개`, r.answered && `문의 ${r.answered}건에 답`,
+        r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || "바뀐 것이 없어요");
       if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
     },
     ...FLAG_ACTIONS,
@@ -5267,6 +5294,9 @@ function adminApp(L, BUILD, M) {
       const v = form.elements.v.value.trim();
       await devSave({ releasedIn: v || null, since: S.data.dev.updatedAt }, v ? `${v}에 반영으로 적었어요` : "반영 버전을 지웠어요");
     },
+    "dev-ship-note": async (form) => {
+      await devSave({ shipReply: form.elements.shipReply.value, news: form.elements.news.value, since: S.data.dev.updatedAt }, "출시 안내를 저장했어요");
+    },
     "dev-note": async (form) => {
       const r = await act(() => api(`/dev/${S.route.id}/notes`, "POST", { text: form.elements.text.value }), "메모를 남겼어요");
       if (r) {
@@ -5565,8 +5595,8 @@ function adminApp(L, BUILD, M) {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide,
   };
-  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A) };
-  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms } });
+  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A), ...M.flow(A) };
+  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions, ...M.flow(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms, ...M.flow(A).forms } });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
 
