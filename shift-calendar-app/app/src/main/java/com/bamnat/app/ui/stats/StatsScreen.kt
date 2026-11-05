@@ -286,7 +286,19 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
             // PC 8eae2521 (현장: 시간 카드를 더해도 아무것도 안 보임): an hour card the user added says where its hours come from.
             else if (listOf(StatsPart.WEEKS, StatsPart.THREE, StatsPart.TREND, StatsPart.KINDS).any(::shown)) SectionCard(title = StatsPart.WEEKS.textFor(style).first) {
-                Text(when (style) {
+                // PC ef116bf4 (현장: 08:00–16:00 일감을 넣어도 시간이 안 나옴): a field calendar's weeks come from its jobs' times.
+                val jobWeeks = if (style == WorkStyle.FIELD && money != null)
+                    remember(money.jobs, month) { com.bamnat.core.money.JobHours.weeks(money.jobs, month, DayOfWeek.MONDAY) } else emptyList()
+                if (jobWeeks.any { it.minutes > 0 }) {
+                    jobWeeks.forEach { w ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Text("${w.from.monthValue}/${w.from.dayOfMonth}~${w.to.monthValue}/${w.to.dayOfMonth}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            Text(HoursFormat.korean(w.minutes), style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    Text("일감의 시작·끝 시각으로 셌어요. 시각이 없는 일감과 취소한 일감은 빠져요. 참고용이에요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else Text(when (style) {
                     WorkStyle.FIELD -> "일감을 적을 때 시작·끝 시각을 넣으면 주마다 일한 시간이 여기 보여요. 시각이 없는 일감은 세지 않아요."
                     WorkStyle.BUSINESS -> "영업일·정기휴무에서 영업시간을 정하면 주마다 영업한 시간이 여기 보여요."
                     else -> "일한 시각이 있는 기록이 생기면 주마다 일한 시간이 여기 보여요."
@@ -486,7 +498,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                         )
                     }
                     Text(
-                        "주 근무시간은 월요일부터 일요일까지 세요(달력이 일요일부터 보여도 같아요). 달에 걸친 주도 7일 전체를 셉니다.",
+                        (if (employee) "주 근무시간은" else "주마다 일한 시간은") + " 월요일부터 일요일까지 세요(달력이 일요일부터 보여도 같아요). 달에 걸친 주도 7일 전체를 셉니다.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 12.dp),

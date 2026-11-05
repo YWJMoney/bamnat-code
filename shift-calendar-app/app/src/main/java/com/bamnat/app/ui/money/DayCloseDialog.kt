@@ -109,7 +109,8 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                     com.bamnat.app.ui.components.FilterChip(selected = hasCash && receipt.toAmount() == cash.toAmount(), enabled = hasCash,
                         onClick = { receipt = cash }, label = { Text("전부 발행") })
                 }
-                Box(Modifier.fillMaxWidth().heightIn(min = 56.dp), contentAlignment = Alignment.CenterStart) {
+                // PC ef116bf4: 64dp, the field's own height (56dp left a 21px step when it turned into the sum).
+                Box(Modifier.fillMaxWidth().heightIn(min = 64.dp), contentAlignment = Alignment.CenterStart) {
                     if (parts == 0L) AmountField("매출 합계", total, { total = it })
                     // 1.36 실사용 S20 (나눠 적으면 '매출 합계' 칸이 사라져 저장 전 합계가 안 보여요): the sum stays in the same place.
                     else Text("매출 합계 ${Fmt.won(parts + earlierCredit)}" + if (earlierCredit > 0) " (외상 ${Fmt.won(earlierCredit)} 포함)" else "",

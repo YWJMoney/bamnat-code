@@ -118,7 +118,7 @@ internal fun WorkTypeMoreCards(
     takeHome: suspend (Long, YearMonth) -> com.bamnat.core.tax.TaxLearner.Forecast? = { _, _ -> null },
 ) {
     // [GUIDE-05] Each card can be turned off for its calendar.
-    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) {
+    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId, name = if (style == WorkStyle.HOURLY) "급여날 비교" else null) {
         PayGapCard(calendarId, month, payTotal, profile, book, style, nonTaxable, onOpenPay, onAddPay, takeHome)
     }
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
