@@ -230,7 +230,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
             }
             // [CUST-01] 화면 꾸미기: the cards' order and which show.
-            IconButton(onClick = { editing = true }) { Icon(Icons.Outlined.Dashboard, "카드 배치") }
+            IconButton(onClick = { com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_STATS) }) { Icon(Icons.Outlined.Dashboard, "카드 배치") }
             com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
         }
         if (editing) StatsEditSheet(settings, vm::updateSettings, onDismiss = { editing = false }, style = style, calendar = vm.calendarId)

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -434,7 +435,7 @@ private fun DayGroups(
                         title = "기록", icon = Icons.Outlined.History,
                         summary = if (changes.isEmpty()) "바꾼 내용 있음" else "바꾼 기록 ${changes.size}건",
                         open = groups.isOpen(key, false), onToggle = { groups.toggle(key, false) },
-                    ) { RecordContent(day, changes, vm) }
+                    ) { RecordContent(day, changes, vm, snapshot.backWord.takeIf { it != "지우기" } ?: "처음대로") }
                 }
             }
         }
@@ -529,8 +530,13 @@ private fun DayGroup(
                 }
             }
             trailing?.invoke()
+            // 1.37 시간 바퀴 PC LOW: a switch right beside the arrow was easy to hit for the other; a gap and a line keep them apart.
+            if (trailing != null && onToggle != null) {
+                Spacer(Modifier.width(12.dp))
+                androidx.compose.material3.VerticalDivider(Modifier.height(28.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            }
             if (onToggle != null) {
-                Icon(Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.padding(start = 4.dp).rotate(turn),
+                Icon(Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.padding(start = if (trailing != null) 12.dp else 4.dp).rotate(turn),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -553,7 +559,7 @@ private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot): String {
             "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""
         }
         day.hasCustomTimes -> "$name$time · 이 날만 시간 바꿈"
-        day.source == DaySource.PATTERN -> "$name$time · 근무 주기대로"
+        day.source == DaySource.PATTERN -> "$name$time · ${snapshot.backWord}"
         else -> "$name$time"
     }
 }
@@ -636,7 +642,7 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             TextButton(onClick = { vm.assign(day.date, ShiftOverride.None) }) {
                 Icon(Icons.Filled.Autorenew, contentDescription = null, Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(if (snapshot.hasPattern) "근무 주기대로" else "지우기")
+                Text(snapshot.backWord)
             }
         }
     }
@@ -1163,19 +1169,19 @@ private fun DayPayContent(insight: DayInsight, wageType: WageType?, hasProfile: 
 
 /** [MKT-08][DAY-03] What was changed and when; putting the day back to the pattern asks first. */
 @Composable
-private fun RecordContent(day: ResolvedDay, changes: List<com.bamnat.app.data.DayChange>, vm: CalendarViewModel) {
+private fun RecordContent(day: ResolvedDay, changes: List<com.bamnat.app.data.DayChange>, vm: CalendarViewModel, back: String = "근무 주기대로") {
     var confirm by remember { mutableStateOf(false) }
     if (changes.isNotEmpty()) ChangeHistory(changes)
     if (day.entry != null) {
         TextButton(onClick = { confirm = true }) {
             Icon(Icons.Filled.RestartAlt, contentDescription = null)
             Spacer(Modifier.width(6.dp))
-            Text("이 날을 근무 주기대로 되돌리기")
+            Text("이 날을 $back 되돌리기")
         }
     }
     if (confirm) {
         ConfirmDialog(
-            title = "이 날을 근무 주기대로 되돌릴까요?",
+            title = "이 날을 $back 되돌릴까요?",
             message = "근무 변경, 시간, 추가 근무·휴가, 알람 설정이 지워져요. 메모와 가계부는 남아요.",
             confirmLabel = "되돌리기",
             destructive = true,

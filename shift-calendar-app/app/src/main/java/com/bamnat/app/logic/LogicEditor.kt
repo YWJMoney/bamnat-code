@@ -84,7 +84,10 @@ import java.time.LocalDate
  * itself, with names to tap in (자동 완성), the place of a mistake underlined and said, and what it gives on a real day.
  */
 @Composable
-fun ConditionEditor(value: String, onChange: (String) -> Unit, scope: FormulaScope, modifier: Modifier = Modifier, empty: String = "언제나") {
+fun ConditionEditor(value: String, onChange: (String) -> Unit, scope: FormulaScope, modifier: Modifier = Modifier, empty: String = "언제나",
+    /** PC 확인 1.37 A9 (메모 제목의 조건이 '근무가…'로 시작): the values of the thing being dressed first (그 메모의 고정·체크…), [lead]'s
+     *  first name for a new row; 한 장·한 줄 values are offered only when ROW is in [lead]. */
+    lead: List<FormulaName.Group> = emptyList(), start: FormulaName? = null) {
     val easy = remember(value) { EasyWhen.read(value) }
     // 누락 점검 N7: 쉬운 보기 · 블록 · 수식으로, 세 가지가 같은 값. 표로 못 나타내는 수식은 블록으로 먼저 열어요.
     var view by remember { mutableIntStateOf(if (easy != null) 0 else if (FormulaBlocks.read(value) != null) 1 else 2) }
@@ -105,14 +108,14 @@ fun ConditionEditor(value: String, onChange: (String) -> Unit, scope: FormulaSco
             if (easy == null && value.isNotBlank()) Text("이 수식은 표로 나타낼 수 없어 블록이나 수식으로 보여요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            EasyTable(easy, { onChange(it.toFormula().let { f -> if (it.conds.isEmpty()) "" else f }) }, empty)
+            EasyTable(easy, { onChange(it.toFormula().let { f -> if (it.conds.isEmpty()) "" else f }) }, empty, lead, start)
             PreviewLine(value, scope)
         }
     }
 }
 
 @Composable
-private fun EasyTable(w: EasyWhen, onChange: (EasyWhen) -> Unit, empty: String) {
+private fun EasyTable(w: EasyWhen, onChange: (EasyWhen) -> Unit, empty: String, lead: List<FormulaName.Group> = emptyList(), start: FormulaName? = null) {
     if (w.conds.isEmpty()) Text(empty, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     w.conds.forEachIndexed { i, c ->
         if (i > 0) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -120,22 +123,26 @@ private fun EasyTable(w: EasyWhen, onChange: (EasyWhen) -> Unit, empty: String) 
             FilterChip(selected = w.any, onClick = { onChange(w.copy(any = true)) }, label = { Text("또는") })
         }
         CondRow(c, { n -> onChange(w.copy(conds = w.conds.toMutableList().also { it[i] = n })) },
-            { onChange(w.copy(conds = w.conds.filterIndexed { j, _ -> j != i })) })
+            { onChange(w.copy(conds = w.conds.filterIndexed { j, _ -> j != i })) }, lead)
     }
-    TextButton(onClick = { onChange(w.copy(conds = w.conds + EasyCond(FormulaName.SHIFT.ko, EasyCond.Op.IS, ""))) }) {
+    TextButton(onClick = {
+        val first = start ?: lead.firstOrNull()?.let { g -> FormulaName.entries.firstOrNull { it.group == g } }
+        val add = first?.let { EasyCond(it.ko, EasyCond.Op.forType(it.type).first(), "") } ?: EasyCond(FormulaName.SHIFT.ko, EasyCond.Op.IS, "")
+        onChange(w.copy(conds = w.conds + add))
+    }) {
         Text(if (w.conds.isEmpty()) "+ 조건 넣기" else "+ 조건 더하기")
     }
 }
 
 /** One row: [값 고르기] [어떻게] [무엇]. The value list follows the name (근무종류 → 주간·야간…, 요일 → 월~일). */
 @Composable
-private fun CondRow(c: EasyCond, onChange: (EasyCond) -> Unit, onRemove: () -> Unit) {
+private fun CondRow(c: EasyCond, onChange: (EasyCond) -> Unit, onRemove: () -> Unit, lead: List<FormulaName.Group> = emptyList()) {
     val name = FormulaNames.of(c.name)
     val type = name?.type ?: FormulaName.Type.TEXT
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                NamePicker(c.name) { n ->
+                NamePicker(c.name, lead) { n ->
                     val t = FormulaNames.of(n)?.type ?: FormulaName.Type.TEXT
                     onChange(EasyCond(n, EasyCond.Op.forType(t).first(), ""))
                 }
@@ -166,11 +173,11 @@ internal val CHOICES: Map<String, List<String>> = mapOf(
 )
 
 @Composable
-private fun NamePicker(current: String, onPick: (String) -> Unit) {
+private fun NamePicker(current: String, lead: List<FormulaName.Group> = emptyList(), onPick: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     OutlinedButton(onClick = { open = true }) { Text(current) }
     DropdownMenu(open, { open = false }) {
-        FormulaName.Group.entries.filter { it != FormulaName.Group.ROW }.forEach { g ->
+        (lead + FormulaName.Group.entries.filter { it != FormulaName.Group.ROW && it !in lead }).forEach { g ->
             Text(g.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
             FormulaName.entries.filter { it.group == g }.forEach { n ->

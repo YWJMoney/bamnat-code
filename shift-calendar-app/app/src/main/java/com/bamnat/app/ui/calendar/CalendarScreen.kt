@@ -305,7 +305,7 @@ fun CalendarScreen(
     // [CUST-01] 화면 꾸미기 opened from the help search or the update notice.
     val featureFocus by com.bamnat.app.ui.guide.FeatureLinks.focus.collectAsStateWithLifecycle()
     LaunchedEffect(featureFocus) {
-        if (featureFocus == "customize" && com.bamnat.app.ui.guide.FeatureLinks.take("customize")) editingLayout = true
+        if (featureFocus == "customize" && com.bamnat.app.ui.guide.FeatureLinks.take("customize")) com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_CALENDAR)
     }
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
@@ -963,7 +963,8 @@ fun CalendarScreen(
             onReceive = if (received.enabled) ({ adding = "" }) else null,
             // [CALS-01] The calendar on screen is changed from its own page: name, kind of work, settings.
             onEditCalendar = if (viewingReceived == null) ({ onEditCalendar(activeCalendar.id) }) else null,
-            onCustomize = if (viewingReceived == null) ({ editingLayout = true }) else null,
+            // [CNV-08] 1.37 카드 배치 is the studio's 달력 화면 now (사용자 2026-11-04 "스튜디오랑 겹치고").
+            onCustomize = if (viewingReceived == null) ({ com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_CALENDAR) }) else null,
             calendarName = activeCalendar.name,
             calendarId = activeCalendar.id,
             onOpenTeams = openTeams,
@@ -1343,7 +1344,8 @@ fun CalendarScreen(
         }
         // [CUST-01] The parts above the month in the user's order (화면 꾸미기); [CVW-06] the ones moved over it from below too.
         if (low || holding) { if (!holding) aboveHeights[1] = 0 } else Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) {
-            calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
+            // [CNV-06] 요약·횟수 줄 above the month stay just over it (below).
+            calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { placed ->
                 aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
             }
         }
@@ -1352,8 +1354,9 @@ fun CalendarScreen(
             weekPart()
         } else {
             // [CAL-06] The month in the kind of work's own three figures; [CAL-51] one line on a low screen.
-            val summaryPart: @Composable (Modifier) -> Unit = { place ->
-                if (!partShown(CalendarPart.SUMMARY)) Unit
+            // [CNV-06] 1.37: drawn over the month (summaryPart) or, moved, under it (summaryBelow).
+            val summaryAt: @Composable (Modifier, Boolean) -> Unit = { place, below ->
+                if (!partShown(CalendarPart.SUMMARY) || isAbove(CalendarPart.SUMMARY) == below) Unit
                 else if (focus == com.bamnat.core.work.CalendarFocus.INVEST && investVm != null) {
                     // [INV-06] The month in the investor's own figures.
                     com.bamnat.app.ui.invest.InvestMonthBar(investVm, visibleMonth, onOpen = onOpenStats, modifier = place.padding(horizontal = 16.dp, vertical = 4.dp))
@@ -1378,6 +1381,8 @@ fun CalendarScreen(
                     )
                 }
             }
+            val summaryPart: @Composable (Modifier) -> Unit = { summaryAt(it, false) }
+            val summaryBelow: @Composable (Modifier) -> Unit = { summaryAt(it, true) }
             // [CAL-31] I 리뷰 N10: past the checked table the red days are worked out, without 임시공휴일 or 선거일.
             val computedNote: @Composable () -> Unit = {
                 if (com.bamnat.core.holiday.KoreanHolidays.isComputed(visibleMonth.year) &&
@@ -1431,12 +1436,12 @@ fun CalendarScreen(
                         Spacer(Modifier.weight(1f))
                         switch()
                     }
-                    if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
+                    if (partShown(CalendarPart.COUNTS) && isAbove(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
                 } else Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     // The counts take what is left, so the two buttons always sit at the right edge.
                     // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
                     teamsChip()
-                    Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
+                    Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS) && isAbove(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
                     switch()
                 }
             }
@@ -1570,7 +1575,12 @@ fun CalendarScreen(
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
             // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
             if (settled) calendarParts.filter { !isAbove(it.part) && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
-                aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
+                when (placed.part) {
+                    // [CNV-06] 1.37 요약·횟수 줄 moved under the month.
+                    CalendarPart.SUMMARY -> Box(Modifier.fillMaxWidth()) { summaryBelow(Modifier) }
+                    CalendarPart.COUNTS -> MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                    else -> aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
+                }
             }
         }
     }
@@ -1857,7 +1867,7 @@ private fun DaySheet(snackbar: SnackbarHostState, onDismiss: () -> Unit, content
     // [STAB-01] A message still showing here when the sheet closes is closed with it: otherwise it waits for
     // a host that is gone, and every later message (되돌리기 and the rest) stops appearing.
     DisposableEffect(snackbar) { onDispose { snackbar.currentSnackbarData?.dismiss() } }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state, holdHeight = true) {
         // [UX-13] 1.25 Z (U13): scrolling the day up to its top no longer goes on to close it.
         Box(Modifier.fillMaxWidth().sheetScrollGuard()) {
             content()
@@ -2468,7 +2478,9 @@ private fun PaintBar(
                         modifier = Modifier.semantics { contentDescription = "쉬는 날 칠하기" },
                     )
                 }
-                FilterChip(
+                // 1.37 시간 바퀴 PC LOW: a weekday calendar (일근·요일 근무) has no cycle to go back to; 되돌리기 and the
+                // day sheet's '평소대로' undo a painted day there.
+                if (!snapshot.weekdayOnly) FilterChip(
                     selected = tool == PaintTool.Clear,
                     onClick = { onTool(if (tool == PaintTool.Clear) PaintTool.Pick else PaintTool.Clear) },
                     label = { Text("근무 주기대로", maxLines = 1, softWrap = false) }, // 1.36 PC X7: never cut onto two lines
@@ -2900,3 +2912,15 @@ internal fun Modifier.holdHeight(hold: Boolean): Modifier {
         layout(p.width, h) { p.place(0, 0) }
     }
 }
+
+/** 1.37 시간 바퀴 PC LOW: every pattern is a week (일근·요일 근무), so there is no '근무 주기' to speak of. */
+internal val ScheduleSnapshot.weekdayOnly: Boolean
+    get() = patterns.isNotEmpty() && patterns.all { it is com.bamnat.core.model.WorkPattern.Weekly }
+
+/** What putting a painted day back is called: the cycle for shift work, the usual weekdays for 일근, 지우기 without a pattern. */
+internal val ScheduleSnapshot.backWord: String
+    get() = when {
+        !hasPattern -> "지우기"
+        weekdayOnly -> "평소대로"
+        else -> "근무 주기대로"
+    }

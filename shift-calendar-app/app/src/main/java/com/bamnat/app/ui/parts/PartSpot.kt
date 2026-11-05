@@ -53,6 +53,8 @@ class PartSpots {
     fun boxes(id: String?): List<Rect> = if (id == null) emptyList() else spots.values.filter { it.first == id }.map { it.second }
 
     private fun depth(id: String): Int {
+        // [CNV-06] 1.37 a page's card (card:<tab>:<id>) before the 카드 part it is drawn with, so the first tap is that card.
+        if (id.startsWith("card:")) return 3
         var d = 0
         var p: String? = id
         while (p != null) { d++; p = BlueprintParts.parentOf(p).takeIf { it != p } }
@@ -107,11 +109,13 @@ fun Modifier.partPicking(spots: PartSpots?, picked: String?, onPick: (String) ->
             val w = 2.dp.toPx()
             val boxes = spots.boxes(picked)
             val hit = tapped?.let { t -> boxes.filter { it.contains(t) }.minByOrNull { it.width * it.height } }
+            // PC 확인 1.37 A1 (점선이 숫자 위에 겹침): the ring a little outside the part, so it never covers what is drawn in it.
+            val gap = 2.dp.toPx()
             boxes.forEach { r ->
                 val strong = hit == null || r == hit
                 val sw = if (strong) w else w / 2
-                drawRoundRect(Color(0xFFE91E63).copy(alpha = if (strong) 1f else 0.3f), Offset(r.left - o.x - sw / 2, r.top - o.y - sw / 2),
-                    androidx.compose.ui.geometry.Size(r.width + sw, r.height + sw), CornerRadius(3.dp.toPx()),
+                drawRoundRect(Color(0xFFE91E63).copy(alpha = if (strong) 1f else 0.3f), Offset(r.left - o.x - sw / 2 - gap, r.top - o.y - sw / 2 - gap),
+                    androidx.compose.ui.geometry.Size(r.width + sw + gap * 2, r.height + sw + gap * 2), CornerRadius(3.dp.toPx()),
                     style = Stroke(sw, pathEffect = PathEffect.dashPathEffect(floatArrayOf(w * 3, w * 2))))
             }
         }

@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 
@@ -217,7 +218,13 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
                     k.changed && !k.done && s.pieces.isNotEmpty() -> {
                         val r = (s.meta ?: recipe("")).copy(title = draftTitle(s), parent = null,
                             pieces = (s.pieces + s.extras.map { (kind, v) -> Piece(kind, v) }).sortedBy { it.kind.ordinal })
-                        val id = runCatching { c.recipes.saveDraft(s.draftId, RecipeCodec.write(r), 1, s.ownCode, "public") }.getOrNull() ?: return@collect
+                        val body = RecipeCodec.write(r)
+                        // 내 서랍 (PR #170): each '안 입히고 나가기' with the same look left one more '지금 모양에서 꾸미던 것'. A new studio
+                        // whose draft is the same as one kept already takes that one instead of adding another.
+                        val same = if (s.draftId != 0L) null else runCatching {
+                            c.recipes.drafts.first().firstOrNull { it.step <= 1 && it.body == body }
+                        }.getOrNull()
+                        val id = same?.id ?: runCatching { c.recipes.saveDraft(s.draftId, body, 1, s.ownCode, "public") }.getOrNull() ?: return@collect
                         if (_state.value.draftId != id) _state.value = _state.value.copy(draftId = id)
                     }
                 }
@@ -863,6 +870,43 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val title = (l.rules.firstOrNull()?.name ?: l.buttons.first().label).take(20) + " 규칙·단추"
         return RecipeCodec.write(recipe("").copy(title = title.take(30), summary = "규칙 ${l.rules.size}개 · 단추 ${l.buttons.size}개", styles = WorkStyle.entries.toSet(),
             pieces = listOf(com.bamnat.core.recipe.Piece(com.bamnat.core.recipe.PieceKind.LOGIC, l.toValues())), cover = coverOf(_state.value.draft)))
+    }
+
+    /**
+     * [CNV-10] 1.37 내 틀 (사용자 2026-11-04 "사용자가 틀을 만들 수 있게"): the draft's screen structure without its colours: each page's
+     * cards in order and hidden ones, and the parts made one by one. What 내 틀로 담기 keeps and 틀 올리기 sends.
+     */
+    fun frameIds(): List<String> {
+        val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = _state.value.pieces)
+        return com.bamnat.core.recipe.LookParts.of(draft).map { it.id }
+            .filter { it.endsWith(".cards") || it.startsWith(com.bamnat.core.recipe.LookParts.UNIT) }
+    }
+
+    /** [CNV-10] 내 틀로 담기: the frame into 보관함 as mine (no 장터 source), to lay on any theme later. */
+    fun keepFrame(name: String): Boolean {
+        val ids = frameIds()
+        if (ids.isEmpty()) {
+            _state.value = _state.value.copy(said = "아직 옮기거나 숨긴 카드가 없어 틀로 담을 것이 없어요")
+            return false
+        }
+        val title = name.ifBlank { "내 틀" }.take(24)
+        val ok = c.wardrobe.keep(recipe(title), "", ids)
+        _state.value = _state.value.copy(said = if (ok) "‘$title’ 틀을 보관함에 담았어요. 스튜디오 ‘보관함’에서 어느 테마에든 얹어요"
+            else "보관함이 꽉 찼어요 (${c.wardrobe.partsLimit()}개)")
+        return ok
+    }
+
+    /** [CNV-10] 틀 올리기: the frame alone as a 장터 work (its cover in the draft's colours). */
+    fun frameBody(name: String): String? {
+        val ids = frameIds()
+        if (ids.isEmpty()) return null
+        val s = _state.value
+        val only = com.bamnat.core.recipe.LookParts.pick(Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces), ids)
+        if (only.pieces.isEmpty()) return null
+        com.bamnat.app.recipe.RecipeLinks.ownTheme = null
+        val title = name.ifBlank { "내 틀" }.take(24)
+        return RecipeCodec.write(recipe("").copy(title = title, summary = "카드 자리와 부품만 담은 틀이에요. 색은 지금 테마 그대로예요",
+            styles = WorkStyle.entries.toSet(), pieces = only.pieces, cover = coverOf(s.draft)))
     }
 
     fun uploadPart(unit: String): String? {

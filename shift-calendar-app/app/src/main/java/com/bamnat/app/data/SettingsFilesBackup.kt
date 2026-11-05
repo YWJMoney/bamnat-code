@@ -206,6 +206,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // [CNV-13] 1.37 펼쳐 보기: which sliding rows were opened, a matter of this screen's width.
+            "fold_rows" to "꾸미기 줄을 펼쳐 둘지 접어 둘지(줄마다), 이 휴대폰 화면에 맞춘 것",
             // [MAT-05] 1.36 글꼴 고르기의 최근 쓴 글꼴 다섯, 이 휴대폰의 것.
             "font_recent" to "글꼴 고르기에서 최근 고른 글꼴(다섯 개), 이 휴대폰의 것",
             "font_waiting" to "테마가 쓰는데 아직 못 받은 나눈 글꼴(운영자 확인 전 등), 앱을 열 때 다시 받아 보려고 2주 동안 적어 둠",

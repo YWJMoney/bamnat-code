@@ -247,7 +247,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("꾸밈 층: 도형·아이콘·이모지·글상자를 마음대로 놓아요. 날짜와 근무는 가리지 않아요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.app.ui.components.FoldRow("decor.1") {
             places.forEach { a ->
                 val n = items.count { it.at == a }
                 FilterChip(selected = a == place, onClick = { place = a; picked = emptySet() },
@@ -258,8 +258,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
             onPick = { i -> picked = when { i == null -> if (many) picked else emptySet(); many -> if (i in picked) picked - i else picked + i; else -> setOf(i) }
                 if (i != null) pane = Pane.EDIT },
             onMove = { label, next -> onChange(label, Decor(next)) })
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically) {
+        com.bamnat.app.ui.components.FoldRow("decor.2", what = "보기 도구") {
             FilterChip(selected = magnet, onClick = { magnet = !magnet }, label = { Text("🧲 자석") })
             FilterChip(selected = loupe, onClick = { loupe = !loupe }, label = { Text("🔍 돋보기") })
             FilterChip(selected = many, onClick = { many = !many; if (!many && picked.size > 1) picked = setOf(picked.first()) }, label = { Text("여러 개 고르기") })
@@ -551,7 +550,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
     var q by rememberSaveable { mutableStateOf("") }
     var words by rememberSaveable { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.app.ui.components.FoldRow("decor.3") {
             DecorKind.entries.forEach { k -> FilterChip(selected = k == kind, onClick = { kind = k }, label = { Text(k.label) }) }
         }
         if (kind != DecorKind.TEXT && kind != DecorKind.PHOTO) OutlinedTextField(q, { q = it.take(20) }, Modifier.fillMaxWidth(), singleLine = true,
@@ -678,7 +677,7 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
                     Modifier.fillMaxWidth(), singleLine = true, label = { Text("글") }, isError = problem != null,
                     supportingText = problem?.let { p -> { Text(RecipeText.problemText(p)) } })
                 SliderRow("글자 크기", first.size.toFloat(), 6f..48f, "sp") { v -> all("꾸밈 글자 크기") { it.copy(size = (v * 2).roundToInt() / 2.0) } }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                com.bamnat.app.ui.components.FoldRow("decor.4") {
                     FilterChip(selected = first.weight >= 700, onClick = { all(null) { it.copy(weight = if (first.weight >= 700) 400 else 700) } }, label = { Text("굵게") })
                     FilterChip(selected = first.italic, onClick = { all(null) { it.copy(italic = !first.italic) } }, label = { Text("기울임") })
                     listOf(null to "기본", "serif" to "명조", "hand" to "손글씨", "round" to "둥근", "mono" to "고정폭").forEach { (id, name) ->
@@ -704,7 +703,7 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
         }
         if (first.kind != DecorKind.EMOJI) {
             Text("선", style = MaterialTheme.typography.labelLarge)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+            com.bamnat.app.ui.components.FoldRow("decor.5") {
                 listOf(null to "없음", "solid" to "실선", "dash" to "끊은 선", "dot" to "점선", "double" to "겹선").forEach { (id, name) ->
                     FilterChip(selected = first.line == id, onClick = { all(null) { it.copy(line = id, lineW = if (id != null && it.lineW == 0.0) 1.0 else it.lineW) } },
                         label = { Text(name) })
@@ -719,7 +718,7 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
         SliderRow("그림자", first.shadow.toFloat(), 0f..24f, "dp") { v -> all("꾸밈 그림자") { it.copy(shadow = v.roundToInt()) } }
         // PC 확인 C5 1.36 사용성 제안 (배경 사진이 칸 뒤에만 깔려 칸 사이로 조금만 보여요): a screen's background picks 칸 뒤 or 칸 위(흐리게)
         // in one tap — over the cells at a third, so the dates still read.
-        if (place == Decor.APP || place.startsWith("bg.")) Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+        if (place == Decor.APP || place.startsWith("bg.")) com.bamnat.app.ui.components.FoldRow("decor.6") {
             FilterChip(selected = !first.over, onClick = { all(null) { it.copy(over = false, alpha = if (it.over && it.alpha == 35) 100 else it.alpha) } }, label = { Text("칸·글 뒤") })
             FilterChip(selected = first.over && first.alpha <= 40, onClick = { all(null) { it.copy(over = true, alpha = minOf(it.alpha, 35)) } }, label = { Text("칸 위에 흐리게") })
         }
@@ -736,7 +735,7 @@ private fun ItemEditor(items: List<DecorItem>, picked: Set<Int>, place: String, 
         if (buttons.isEmpty()) Text(if (first.tap != null) "‘${first.tap}’ 단추를 눌러요. 이 테마에 그 단추가 없으면 그림으로만 보여요"
             else "규칙에서 단추를 만들면, 이 꾸밈을 눌러 그 단추를 누를 수 있어요", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        else Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+        else com.bamnat.app.ui.components.FoldRow("decor.7") {
             FilterChip(selected = first.tap == null, onClick = { all(null) { it.copy(tap = null) } }, label = { Text("그림만") })
             buttons.forEach { (id, words) -> FilterChip(selected = first.tap == id, onClick = { all(null) { it.copy(tap = id) } }, label = { Text(words) }) }
         }

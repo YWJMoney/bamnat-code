@@ -176,7 +176,7 @@ fun MemoListScreen(
                     onShare = if (state.manyCalendars) ({ sharing = true }) else null,
                 )
             } else {
-                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash, onArrange = { arranging = true })
+                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash, onArrange = { com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MEMO) })
             }
             for (p in parts) {
                 if (!p.shown) continue
@@ -975,8 +975,10 @@ private const val MAX_SHIFT_CHIPS = 6
  * anywhere is [onTap] (the look's editor).
  */
 @Composable
-fun MemoLookSample(look: com.bamnat.core.recipe.MemoLook, onTap: () -> Unit) {
-    val memos = listOf(
+fun MemoLookSample(look: com.bamnat.core.recipe.MemoLook,
+    /** [CNV-12] My own memos to draw in the look (the example ones when null). */
+    mine: List<Memo>? = null, onTap: () -> Unit) {
+    val memos = mine ?: listOf(
         Memo(id = 1, title = "장보기", isChecklist = true, colorIndex = 1,
             checklist = listOf(com.bamnat.core.memo.ChecklistItem("우유"), com.bamnat.core.memo.ChecklistItem("달걀", checked = true), com.bamnat.core.memo.ChecklistItem("두부"))),
         Memo(id = 2, title = "인수인계", body = "3층 장비 점검 끝\n다음 근무자에게 열쇠 전달", colorIndex = 0),

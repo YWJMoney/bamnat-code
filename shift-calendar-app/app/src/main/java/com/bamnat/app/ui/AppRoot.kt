@@ -2122,6 +2122,10 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.STUDIO_DATE_FONT -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_DATE_FONT)
     SettingsGo.STUDIO_MOTION -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_MOTION)
     SettingsGo.STUDIO_PARTS -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_PARTS)
+    SettingsGo.STUDIO_CALENDAR -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "CALENDAR")
+    SettingsGo.STUDIO_MONEY -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MONEY")
+    SettingsGo.STUDIO_MEMO -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MEMO")
+    SettingsGo.STUDIO_STATS -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "STATS")
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SENT -> Routes.companySent()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
