@@ -49,6 +49,7 @@
 | | `cal.cell.memo` · `cal.cell.money` · `cal.cell.hours` · `cal.cell.spend` · `cal.cell.lunar` · `cal.cell.holiday` | 칸 속 줄: 메모, 번 돈, 근무 시간, 쓴 돈, 음력, 공휴일 이름 |
 | | `cal.foot` | 달력 아래 요약 |
 | 메모장 | `memo.head` · `memo.tags` · `memo.card` · `memo.card.title` · `memo.card.body` · `memo.card.date` | 머리, 꼬리표 줄, 카드와 카드 속 제목·내용·날짜 |
+| 메모 쓰기 (1.38) | `memo.page` · `memo.page.rule` · `memo.photo` | 메모 쓰기 종이(바탕 색·글자), 종이 줄(색·굵기·실선/점선/점, 선을 켜면 종이를 안 고른 메모도 줄 노트), 메모 속 사진(모서리·테두리·그림자·틀) [MPH-06] |
 | 가계부 | `money.head` · `money.day` · `money.row` · `money.amount` | 머리, 날짜 머리, 한 줄, 금액(`on: in`·`out`) |
 | 급여 | `pay.head` · `pay.total` · `pay.row` | 머리, 합계, 한 줄 |
 | 위젯 | `widget` · `widget.head` · `widget.cell` | 위젯 바탕, 머리, 칸 |

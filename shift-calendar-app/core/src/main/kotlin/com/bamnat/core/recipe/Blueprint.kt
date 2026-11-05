@@ -25,6 +25,8 @@ object BlueprintParts {
         "memo.prop", "memo.board", "memo.board.col", "memo.board.head", "memo.table", "memo.table.head", "memo.table.row",
         // [TAB-02] 누락 점검 N9: 메모장 달력 보기.
         "memo.cal", "memo.cal.cell",
+        // [MPH-06] 1.38 메모 쓰기 화면: 종이, 종이 줄, 메모 사진.
+        "memo.page", "memo.page.rule", "memo.photo",
         "money.head", "money.day", "money.row", "money.amount",
         // [TAB-06] 1.36 가계부 판: 달력, 분류 보드, 표.
         "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
@@ -45,6 +47,7 @@ object BlueprintParts {
         "cal.band" to "근무 띠 판", "cal.band.slot" to "근무 띠 하루", "cal.line" to "타임라인 판", "cal.line.row" to "타임라인 하루 줄", "cal.line.bar" to "타임라인 근무 막대",
         "cal.weekly" to "주 판", "cal.weekly.day" to "주 판 하루", "cal.year" to "연간 판", "cal.year.month" to "연간 판 한 달",
         "memo.cal" to "메모 달력", "memo.cal.cell" to "메모 달력 칸",
+        "memo.page" to "메모 쓰기 종이", "memo.page.rule" to "메모 종이 줄", "memo.photo" to "메모 사진",
         "memo.prop" to "메모 속성", "memo.board" to "메모 보드", "memo.board.col" to "보드 칸", "memo.board.head" to "보드 칸 머리",
         "memo.table" to "메모 표", "memo.table.head" to "표 머리줄", "memo.table.row" to "표 한 줄",
         "money.cal" to "가계부 달력", "money.cal.cell" to "가계부 달력 칸", "money.board" to "분류 보드", "money.board.col" to "분류 칸",

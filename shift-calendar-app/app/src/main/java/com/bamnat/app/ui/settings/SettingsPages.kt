@@ -838,7 +838,7 @@ private fun BackupPhotosRow(vm: SettingsViewModel) {
     val about = size?.takeIf { !it.isEmpty }?.let { "지금 ${it.count}장 · ${photoMegabytes(it.bytes)}. " }.orEmpty()
     SwitchRow(
         "사진도 백업",
-        about + if (settings.backupPhotos) "영수증·계약서 사진이 백업 파일에 들어가 새 휴대폰에서도 보여요. 끄면 사진은 이 휴대폰에만 남아요"
+        about + if (settings.backupPhotos) "영수증·계약서·메모 사진이 백업 파일에 들어가 새 휴대폰에서도 보여요. 끄면 사진은 이 휴대폰에만 남아요"
         else "꺼져 있어요. 사진은 이 휴대폰에만 있어서 휴대폰을 바꾸면 옮겨지지 않아요",
         settings.backupPhotos,
     ) { on -> vm.update { it.copy(backupPhotos = on) } }

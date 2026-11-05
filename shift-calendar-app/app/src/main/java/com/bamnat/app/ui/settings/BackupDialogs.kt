@@ -55,7 +55,7 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
                 )
                 photos?.takeIf { !it.isEmpty }?.let { p ->
                     Text(
-                        "영수증·계약서 사진 ${p.count}장(${photoMegabytes(p.bytes)})이 같이 들어가요. 사진에는 개인 정보가 있을 수 있어 암호를 거는 게 좋아요.",
+                        "영수증·계약서·메모 사진 ${p.count}장(${photoMegabytes(p.bytes)})이 같이 들어가요. 사진에는 개인 정보가 있을 수 있어 암호를 거는 게 좋아요.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                     )

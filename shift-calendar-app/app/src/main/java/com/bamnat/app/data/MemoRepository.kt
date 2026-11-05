@@ -216,6 +216,9 @@ class MemoRepository(
 
     suspend fun emptyTrash() = dao.emptyTrash()
 
+    /** [MPH-03] 1.38 Every photo the memos put in their bodies, the trash's too (what 메모 사진 정리 keeps). */
+    suspend fun photoNames(): Set<String> = dao.getAll().flatMapTo(HashSet()) { com.bamnat.core.memo.MemoPhotos.names(it.body) }
+
     /** Removes memos that have been in the trash longer than [TRASH_DAYS] days. */
     suspend fun purgeOldTrash() = dao.purgeTrash(clock() - TRASH_DAYS * DAY_MILLIS)
 

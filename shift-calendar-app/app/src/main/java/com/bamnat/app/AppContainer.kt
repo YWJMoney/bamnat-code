@@ -215,7 +215,7 @@ class AppContainer(context: Context) {
         setupDrafts = { setupDrafts },
         teams = teams, pro = { proStore }, dutyCodes = { dutyCodes },
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
-        photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
+        photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext), com.bamnat.app.ui.memo.MemoPhotoFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
         staging = java.io.File(appContext.cacheDir, "backup-in"), profiles = { profiles },
         settingsFiles = {
             com.bamnat.app.data.SettingsFilesBackup(appContext, { calendars.calendars.value.map { it.id } }) {
@@ -776,6 +776,8 @@ class AppContainer(context: Context) {
             // [SETUP-01] A first setup the app was closed in the middle of saving is finished first.
             runCatching { firstSetup.finishInterrupted() }
             memoRepository.purgeOldTrash()
+            // [MPH-03] 1.38 메모 사진 no memo (nor the trash) points at any more go, a day after they were put in.
+            runCatching { com.bamnat.app.ui.memo.MemoPhotoFiles.sweep(appContext, memoRepository.photoNames()) }
             // [UNDO-01] What was cleared or removed more than 7 days ago goes for good.
             runCatching { recordsTrash.purge() }
             moneyRepository.purgeCaptures()

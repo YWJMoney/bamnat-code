@@ -26,6 +26,8 @@ object BackupArchive {
     const val SUMS = "sha256.txt"
     const val RECEIPTS = "photos/receipts/"
     const val CONTRACTS = "photos/contracts/"
+    /** [MPH-03] 1.38 메모 사진. */
+    const val MEMOS = "photos/memos/"
 
     /** A JSON larger than this is not a backup (the biggest seen is a few MB). */
     private const val MAX_JSON = 64L * 1024 * 1024
@@ -136,6 +138,7 @@ object BackupArchive {
     /** "photos/receipts/a.jpg" or "photos/contracts/<id>/a.jpg", with names a folder can hold. */
     fun isPhoto(name: String): Boolean = when {
         name.startsWith(RECEIPTS) -> safe(name.removePrefix(RECEIPTS))
+        name.startsWith(MEMOS) -> safe(name.removePrefix(MEMOS))
         name.startsWith(CONTRACTS) -> name.removePrefix(CONTRACTS).split('/').let { it.size == 2 && it.all(::safe) }
         else -> false
     }

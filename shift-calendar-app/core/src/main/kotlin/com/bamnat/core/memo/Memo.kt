@@ -52,19 +52,25 @@ data class Memo(
 
     val inTrash: Boolean get() = deletedAtMillis != null
 
+    /** [MPH-04] 1.38 The body's words, without the photo lines ([MemoPhotos]): what a preview, a search or a share shows. */
+    val text: String get() = MemoPhotos.plain(body)
+
+    /** [MPH-04] The photos in the body, by file name. */
+    val photos: List<String> get() = MemoPhotos.names(body)
+
     /** Calendar memos belong to a date; general memos do not. */
     val isCalendarMemo: Boolean get() = date != null
 
     /** #tags written anywhere in the memo, without the '#', in order of first use. */
     val tags: List<String>
-        get() = (sequenceOf(title, body) + checklist.asSequence().map { it.text })
+        get() = (sequenceOf(title, text) + checklist.asSequence().map { it.text })
             .flatMap { TAG.findAll(it).map { m -> m.groupValues[1] } }
             .distinct()
             .toList()
 
     /** Letters in the text, used for the word count in the editor. */
     val characterCount: Int
-        get() = title.length + body.length + checklist.sumOf { it.text.length }
+        get() = title.length + text.length + checklist.sumOf { it.text.length }
 
     val isBlank: Boolean
         get() = title.isBlank() && body.isBlank() && checklist.none { it.text.isNotBlank() }
@@ -74,7 +80,8 @@ data class Memo(
         get() = when {
             isChecklist -> checklist.filter { it.text.isNotBlank() }
                 .joinToString(" · ") { (if (it.checked) "✓ " else "") + it.text }
-            else -> body.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }.orEmpty()
+            else -> text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
+                ?: if (MemoPhotos.has(body)) "사진 ${MemoPhotos.count(body)}장" else ""
         }
 
     val checkedCount: Int get() = checklist.count { it.checked && it.text.isNotBlank() }
@@ -86,7 +93,7 @@ data class Memo(
         if (words.isEmpty()) return true
         return words.all { w ->
             title.contains(w, ignoreCase = true) ||
-                body.contains(w, ignoreCase = true) ||
+                text.contains(w, ignoreCase = true) ||
                 checklist.any { it.text.contains(w, ignoreCase = true) }
         }
     }

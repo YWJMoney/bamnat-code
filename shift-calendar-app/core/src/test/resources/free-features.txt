@@ -97,6 +97,9 @@ leave.promotionLog
 lock.today
 memo.lastShift
 memo.repeat
+memo.photo
+memo.paper
+memo.board
 memo.search
 memo.sharing
 memo.shiftRemind

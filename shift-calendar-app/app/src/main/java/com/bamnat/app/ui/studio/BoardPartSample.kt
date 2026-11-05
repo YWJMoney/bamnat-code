@@ -45,6 +45,8 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
         id.startsWith("cal.weekly") -> "weekly"
         id.startsWith("cal.year") -> "year"
         id.startsWith("memo.cal") -> "memoCal"
+        // [MPH-06] 1.38 메모 쓰기 종이·종이 줄·메모 사진.
+        id.startsWith("memo.page") || id == "memo.photo" -> "memoPage"
         id == "memo.prop" || id.startsWith("memo.board") -> "memoBoard"
         id.startsWith("memo.table") -> "memoTable"
         id.startsWith("money.cal") -> "moneyCal"
@@ -67,6 +69,7 @@ internal fun BoardPartSample(id: String, bp: Blueprint) {
                 "weekly" -> WeeklySample()
                 "year" -> YearSample()
                 "memoCal" -> MemoCalSample()
+                "memoPage" -> com.bamnat.app.ui.memo.MemoPageSample()
                 "memoBoard" -> MemoBoardSample()
                 "memoTable" -> MemoTableSample()
                 "moneyCal" -> MoneyCalSample()
