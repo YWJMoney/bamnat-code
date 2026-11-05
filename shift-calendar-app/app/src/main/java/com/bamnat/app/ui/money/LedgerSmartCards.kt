@@ -69,7 +69,8 @@ internal fun SubscriptionsCard(entries: List<MoneyEntry>, today: LocalDate, look
                     Text(s.place, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                     Text("${Fmt.won(s.monthly)}/월", style = MaterialTheme.typography.bodyMedium)
                 }
-                val notes = listOfNotNull("${s.months}달째", s.raised?.let { "${Fmt.won(it)} 올랐어요" })
+                // 1.37 PC 7차: '써요'를 누른 구독은 단추가 사라지고 줄만 남아 헷갈렸어요. 쓰기로 한 것을 말해요.
+                val notes = listOfNotNull("${s.months}달째", s.raised?.let { "${Fmt.won(it)} 올랐어요" }, "계속 써요".takeIf { !s.stale && s.months >= 3 })
                 Text(notes.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
                     color = if (s.raised != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                 if (s.stale) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {

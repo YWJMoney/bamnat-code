@@ -121,7 +121,7 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
  */
 @Composable
 fun IncomeTaxCard(book: MoneyBook, year: Int) {
-    val note = remember(book, year) { com.bamnat.core.money.IncomeTaxNote.of(year, book.jobs, book.sales, book.entries) }
+    val note = remember(book, year) { com.bamnat.core.money.IncomeTaxNote.of(year, book.jobs, book.sales, book.entries, com.bamnat.core.time.Today.date()) }
     if (note.isEmpty) return
     SectionCard(title = "${year}년 종합소득세 참고") {
         YearLine("수입" + (if (note.jobs > 0) " (일감 ${note.jobs}건)" else "") + (if (note.salesDays > 0) " (매출 ${note.salesDays}일)" else ""), Fmt.won(note.income))

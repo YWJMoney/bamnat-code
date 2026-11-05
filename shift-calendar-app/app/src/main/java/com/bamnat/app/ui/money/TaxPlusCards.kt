@@ -129,7 +129,11 @@ internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today:
             runCatching { TaxPlus.byShift(book.entries, today.minusDays(89), today, TaxPlus.dayLabel(snapshot.resolver::resolve)) }.getOrDefault(emptyList())
         }
     }
-    if (rows.size < 2) return
+    // 1.37 PC 7차: 근무 리듬처럼 지출을 적은 날이 두 주는 돼야 근무별로 비교해요(사흘치로 비교하던 것).
+    val spendDays = remember(book, today) {
+        book.entries.filter { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE && !it.date.isBefore(today.minusDays(89)) && !it.date.isAfter(today) }.map { it.date }.distinct().size
+    }
+    if (rows.size < 2 || spendDays < com.bamnat.core.money.ShiftRhythm.MIN_SPEND_DAYS) return
     // 1.37 [LEDH-10] 근무별 소비는 밤낮의 얼굴이라 기본 카드는 무료예요(상세 기간·분류별은 통계의 7일권).
     SectionCard(title = "근무별 소비 (90일)") {
         run {
