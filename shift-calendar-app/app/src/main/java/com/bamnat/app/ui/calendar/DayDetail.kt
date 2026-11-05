@@ -4,6 +4,7 @@ import com.bamnat.app.data.rules
 import com.bamnat.app.ui.components.labelWidth
 import com.bamnat.app.ui.components.TimeRange
 import com.bamnat.app.ui.components.TimeRangeDialog
+import com.bamnat.app.ui.components.TimeRangePart
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -695,6 +696,8 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
                 if (day.leaveShrunk) "연차 ${HoursFormat.korean(day.leaveMinutes)}은 저장한 뒤 다시 빼요" else null,
             ).joinToString(" · ").ifEmpty { null },
             confirmLabel = "저장",
+            // [TIME-03] Open on the time the user tapped (PC a9bcce14: '끝' opened on 시작).
+            startOn = if (it == "end") TimeRangePart.END else TimeRangePart.START,
             onDismiss = { editing = null },
             onConfirm = {
                 editing = null
