@@ -37,6 +37,13 @@ data class AppSettings(
     val showHoursInCells: Boolean = true,
     /** Lunar dates in calendar cells and the day header [FEAT-05]. */
     val showLunar: Boolean = false,
+    /**
+     * [CYC-04] 1.38: the 업종 묶음 whose law-named days (소방의 날…) the calendar shows ([com.bamnat.core.plaza.IndustryGroups]);
+     * set when a public cycle of that 업종 is put on the calendar, or picked in 설정 › 달력. Empty: none.
+     */
+    val orgDayGroup: String = "",
+    /** [CYC-04] Off hides those days without forgetting the group. */
+    val orgDaysOn: Boolean = true,
     /** [OPS-20] A happy moment happened (first pattern saved); ask for a review once. */
     val reviewDue: Boolean = false,
     val reviewAsked: Boolean = false,
@@ -349,6 +356,8 @@ class SettingsRepository(context: Context) {
             dynamicColor = prefs.getBoolean(K_DYNAMIC, d.dynamicColor),
             showHoursInCells = prefs.getBoolean(K_CELL_HOURS, d.showHoursInCells),
             showLunar = prefs.getBoolean(K_LUNAR, d.showLunar),
+            orgDayGroup = prefs.getString(K_ORG_GROUP, null) ?: d.orgDayGroup,
+            orgDaysOn = prefs.getBoolean(K_ORG_ON, d.orgDaysOn),
             reviewDue = prefs.getBoolean(K_REVIEW_DUE, false),
             reviewAsked = prefs.getBoolean(K_REVIEW_ASKED, false),
             defaultAlarmSound = prefs.getString(K_SOUND, null),
@@ -469,6 +478,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_DYNAMIC, s.dynamicColor)
             .putBoolean(K_CELL_HOURS, s.showHoursInCells)
             .putBoolean(K_LUNAR, s.showLunar)
+            .putString(K_ORG_GROUP, s.orgDayGroup)
+            .putBoolean(K_ORG_ON, s.orgDaysOn)
             .putBoolean(K_REVIEW_DUE, s.reviewDue)
             .putBoolean(K_REVIEW_ASKED, s.reviewAsked)
             .putString(K_SOUND, s.defaultAlarmSound)
@@ -644,6 +655,8 @@ class SettingsRepository(context: Context) {
         const val K_DYNAMIC = "dynamic_color"
         const val K_CELL_HOURS = "cell_hours"
         const val K_LUNAR = "lunar"
+        const val K_ORG_GROUP = "org_day_group"
+        const val K_ORG_ON = "org_days_on"
         const val K_REVIEW_DUE = "review_due"
         const val K_REVIEW_ASKED = "review_asked"
         const val K_SOUND = "default_sound"

@@ -50,6 +50,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Alarm
@@ -229,7 +231,9 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
             if (away.isNotEmpty()) {
                 item(key = "folded-head") {
                     Row(
-                        Modifier.fillMaxWidth().clickable { foldedOpen = !foldedOpen }.padding(top = 12.dp, bottom = 4.dp),
+                        // 1.37 PC MED-2 사용성 제안 ('안 쓰는 종류 3개'를 펼칠 길이 안 보임): the whole line is the button, at least 48dp, with its arrow.
+                        Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 56.dp)
+                            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClickLabel = if (foldedOpen) "접기" else "펼쳐 보기") { foldedOpen = !foldedOpen },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f)) {
@@ -240,7 +244,10 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
-                        Text(if (foldedOpen) "접기" else "펼치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        Text(if (foldedOpen) "접기" else "펼쳐 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        androidx.compose.material3.Icon(
+                            if (foldedOpen) androidx.compose.material.icons.Icons.Filled.KeyboardArrowUp else androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown,
+                            null, tint = MaterialTheme.colorScheme.primary)
                     }
                 }
                 if (foldedOpen) items(away, key = { "folded-${it.id}" }) { type ->

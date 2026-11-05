@@ -105,17 +105,19 @@ class PlazaNewsJob : JobService() {
             val recipeLines = runCatching { c.recipes.newsLines() }.getOrDefault(emptyList())
             val changes = runCatching { receivedChanges(c) }.getOrDefault(emptyList())
             val digest = runCatching { digest(c) }.getOrNull()
-            val text = BamnatNews.text(digest?.plaza.orEmpty(), digest?.answers ?: 0, digest?.notices.orEmpty(), changes)
+            // 1.38 PC 9차 LOW (알림은 '새 답 2개', 내 글 화면은 '1개'): the server counts a day's answers, the screen what this phone has
+            // not seen; the notice now says the screen's number, and no line when they were all read already.
+            val plaza = sameAnswerCount(c, digest?.plaza.orEmpty())
+            val text = BamnatNews.text(plaza, digest?.answers ?: 0, digest?.notices.orEmpty(), changes)
             if (text == null && recipeLines.isEmpty()) return
-            val plaza = digest?.plaza.orEmpty()
             val target = when {
                 // [TOWN-01] 1.37: only 장터 news opens 장터; only answers to my posts open those posts.
                 text == null -> NoticeLinks.Target.MARKET
                 text.onlyAnswers && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
                 plaza.isNotEmpty() && plaza.all { it.kind == "replies" } && changes.isEmpty() && (digest?.answers ?: 0) == 0 &&
                     digest?.notices.isNullOrEmpty() && recipeLines.isEmpty() -> NoticeLinks.Target.VILLAGE_POSTS
-                digest?.plaza.isNullOrEmpty() && changes.isNotEmpty() -> NoticeLinks.Target.TODAY
-                digest?.plaza.isNullOrEmpty() && (digest?.answers ?: 0) > 0 && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
+                plaza.isEmpty() && changes.isNotEmpty() -> NoticeLinks.Target.TODAY
+                plaza.isEmpty() && (digest?.answers ?: 0) > 0 && recipeLines.isEmpty() -> NoticeLinks.Target.INQUIRY
                 else -> NoticeLinks.Target.PLAZA
             }
             val title = when {
@@ -132,6 +134,16 @@ class PlazaNewsJob : JobService() {
             keep(prefs, all)
             if (com.bamnat.app.sleep.QuietHold.holdIfAsleep(c.appContext, com.bamnat.app.sleep.QuietHold.Source.VILLAGE, Today.dateTime())) return
             postHeld(c.appContext)
+        }
+
+        /** 1.38: the 새 답 lines as one, counted as 마을 › 내 글 counts them (unseen on this phone); the server's lines if that cannot be read. */
+        private suspend fun sameAnswerCount(c: AppContainer, items: List<com.bamnat.core.plaza.PlazaNewsItem>): List<com.bamnat.core.plaza.PlazaNewsItem> {
+            val replies = items.filter { it.kind == "replies" }
+            if (replies.isEmpty()) return items
+            val fresh = runCatching { VillageReplies.fresh(c.appContext, c.companyApi.myPosts(c.companyStore.device)).values.sum() }.getOrNull()
+                ?: return items
+            val rest = items.filter { it.kind != "replies" }
+            return if (fresh <= 0) rest else rest + replies.first().copy(count = fresh, company = replies.singleOrNull()?.company)
         }
 
         /** 1.36 [VIL-05] One 소식 notice at most: what [check] wrote, posted now or when the user is off work and awake. */

@@ -3,6 +3,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, report, device, from, signIn, ORIGIN, adminHome } from "./helpers.mjs";
+import { MONEY } from "../src/money.js";
 import worker, { addMonths, stack, readSub, stopUnconsentedTrials, recheckLapsed } from "../src/index.js";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
@@ -58,7 +59,7 @@ test("every app reads the switch; only the owner turns it", async (t) => {
   const { call } = server();
   const before = (await call("GET", "/api/config")).data;
   const { flags, policy, serverTime, ...old } = before;
-  assert.deepEqual(old, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, notices: [], off: [] });
+  assert.deepEqual(old, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, workPlans: MONEY.workPlans, notices: [], off: [] });
   assert.equal(serverTime, "2026-11-20T01:00:00.000Z");
   assert.ok(flags.billing && policy.some((p) => p.version === "3.1"));
 
@@ -276,7 +277,7 @@ test("a trial nobody said 'keep' to is stopped in the last two hours before it t
   const { call, env } = server({ PLAY_SERVICE_ACCOUNT: account });
 
   const a = await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-trial-a" }, phone(1));
-  assert.deepEqual(a.data, { verified: true, state: "ACTIVE", expiry: "2026-12-31T15:30:00.000Z", trial: true, autoRenew: true,
+  assert.deepEqual(a.data, { verified: true, state: "ACTIVE", expiry: "2026-12-31T15:30:00.000Z", trial: true, autoRenew: true, basePlan: "monthly",
     acknowledged: true, consentAt: null, stoppedAt: null });
   await call("POST", "/api/purchases", { product: "bamnat_pro", token: "token-trial-b" }, phone(2));
   // Phone 2 says keep, with the price and date it was shown.
@@ -434,4 +435,28 @@ test("a 1년 이용권 is checked with Play's products.get and counts as bought 
   // The buyer may make the one-person share code; the refunded phone may not.
   assert.equal((await call("POST", "/api/passes/share", {}, phone(1))).status < 400, true);
   assert.equal((await call("POST", "/api/passes/share", {}, phone(2))).data.error, "not_bought");
+});
+
+// 1.38 Phase 3 요금: a 팀·직원 요금제 band's 1년 이용권 is checked the same way under its own product; other names are refused.
+test("a work plan's 1년 이용권 is checked under its own product", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2027-01-10T00:00:00Z") });
+  const { account } = await serviceAccount();
+  const real = globalThis.fetch;
+  const asked = [];
+  globalThis.fetch = async (url) => {
+    if (String(url) === "https://oauth2.googleapis.com/token") return Response.json({ access_token: "play-token", expires_in: 3600 });
+    const m = String(url).match(/\/purchases\/products\/([a-z0-9_]+)\/tokens\/([^/:]+)$/);
+    if (!m) return new Response("", { status: 404 });
+    asked.push(m[1]);
+    return Response.json({ purchaseState: 0, purchaseTimeMillis: String(Date.parse("2027-01-01T00:00:00Z")), orderId: "GPA.9", acknowledgementState: 1 });
+  };
+  t.after(() => { globalThis.fetch = real; });
+  const { call } = server({ PLAY_SERVICE_ACCOUNT: account });
+  const res = await call("POST", "/api/purchases", { product: "bamnat_team_pass_15", token: "team-pass-token" }, phone(1));
+  assert.equal(res.data.verified, true);
+  assert.equal(res.data.expiry, "2028-01-01T00:00:00.000Z");
+  assert.deepEqual(asked, ["bamnat_team_pass_15"]);
+  // The config carries the bands the app shows.
+  assert.equal(MONEY.workPlans.team[0].cap, 15);
+  assert.equal(MONEY.workPlans.staff.at(-1).monthly, 49900);
 });

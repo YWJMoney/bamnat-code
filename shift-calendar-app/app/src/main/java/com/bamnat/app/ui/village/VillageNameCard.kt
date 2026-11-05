@@ -37,6 +37,12 @@ import kotlinx.coroutines.launch
  * a kind of work's 광장 — instead of only in 프로필 고치기. Asked once: '이대로 둘게요' is kept on this phone.
  */
 object VillageName {
+    /**
+     * 1.38 PC 9차 LOW (새로 깐 폰은 예전 마을 이름을 되찾을 길이 없어요): a name is this phone's, so on a new phone the old one reads as taken;
+     * the words say how to free it, everywhere a name can be refused.
+     */
+    const val TAKEN = "다른 분이 쓰는 이름이에요. 예전 폰에서 쓰던 이름이면 그 폰의 마을 › 프로필 고치기에서 이름을 지운 뒤 여기서 다시 넣어 주세요. 예전 폰이 없으면 이름 끝에 숫자나 글자를 더해 주세요"
+
     private const val PREFS = "village_ui"
     private const val K_SKIP = "name_skip"
 
@@ -71,7 +77,7 @@ object VillageName {
             null
         } catch (e: CompanyException) {
             when (e.code) {
-                "taken" -> "다른 분이 쓰는 이름이에요"
+                "taken" -> VillageName.TAKEN
                 "nick" -> "쓸 수 없는 이름이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
                 "offline", "network" -> "인터넷이 없거나 서버가 바빠요. 잠시 뒤 다시 정해 주세요"
                 else -> "지금은 이름을 정하지 못했어요. 마을 › 내 프로필 › 프로필 고치기에서도 정할 수 있어요"

@@ -166,7 +166,9 @@ fun PatternScreen(
     val moved = remember(existing, draft, entries, today) {
         if (existing != null && draft != null) PatternTimeline.recordedDaysMoved(existing, draft, entries, today) else emptyList()
     }
-    val valid = draft != null && works && (endDate == null || !endDate!!.isBefore(today))
+    // 1.37 PC LOW (출근 요일 화면을 다시 열면 바꾼 것이 없어도 '저장'이 켜져 있어요): nothing to save until something changed.
+    val changed = existing == null || draft == null || !samePlan(existing, draft)
+    val valid = draft != null && works && (endDate == null || !endDate!!.isBefore(today)) && changed
     val save: () -> Unit = {
         if (draft != null) {
             // With a pattern already in place, ask whether this is a team change and from when.
@@ -176,11 +178,24 @@ fun PatternScreen(
         }
     }
 
+    // 1.37 PC LOW (근무 주기 '취소' 뒤 '뒤로'면 묻지 않고 버림): like 영업일 and 근무 수정, a changed order is not dropped silently.
+    var leaving by remember { mutableStateOf(false) }
+    val unsaved = existing != null && valid && !askWhen
+    val leave = { if (unsaved) leaving = true else onBack() }
+    androidx.activity.compose.BackHandler(enabled = unsaved) { leaving = true }
+    if (leaving) com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { leaving = false },
+        title = { Text("바꾼 근무 주기를 저장할까요?") },
+        text = { Text("저장하지 않고 나가면 이번에 바꾼 순서가 사라지고 달력은 그대로예요.") },
+        confirmButton = { TextButton(onClick = { leaving = false; save() }) { Text("저장") } },
+        dismissButton = { TextButton(onClick = { leaving = false; onBack() }) { Text("저장 안 함") } },
+    )
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { CalendarTitle(if (setup) "1/2 근무 주기" else "근무 주기", vm) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                navigationIcon = { IconButton(onClick = leave) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     TextButton(onClick = save, enabled = valid) { Text(if (setup && existing == null) "다음" else "저장") }
                 },
@@ -375,7 +390,12 @@ fun PatternScreen(
                 }
             } else {
                 SectionCard(title = "요일별 근무") {
-                    for (dow in DayOfWeek.entries) {
+                    // 1.37 PC MED-2 사용성 제안 (알바 출근 요일 칩이 빽빽하고 '저녁 알바'가 옆으로 밀려 안 보임): 알바 with two kinds or more
+                    // sees each kind's seven days at once, as in the first setup.
+                    val byType = types.filter { t -> !t.isOff && (t in choices || weekly.any { it == t.id }) }
+                    if (vm.style == com.bamnat.core.work.WorkStyle.HOURLY && byType.size >= 2) {
+                        WeekByType(byType, weekly.toList(), onSet = { i, id -> weekly[i] = id })
+                    } else for (dow in DayOfWeek.entries) {
                         val cal = LocalCalendarColors.current
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                             Text(
@@ -562,6 +582,16 @@ private const val MAX_STEPS = 62
  * no "언제부터" question whose first button would undo it (ux-review 1 P9). With past days the same change is a
  * team change (4조 2교대 moving teams), so it is asked and the past keeps the old team.
  */
+/** [SETUP-16] The draft says what [existing] says already: the same days (and, for a rotation, the same step on the same day). */
+internal fun samePlan(existing: WorkPattern, draft: WorkPattern): Boolean = when {
+    existing is WorkPattern.Rotation && draft is WorkPattern.Rotation ->
+        existing.steps == draft.steps && existing.endDate == draft.endDate && existing.anchorDate == draft.anchorDate
+    existing is WorkPattern.Weekly && draft is WorkPattern.Weekly ->
+        existing.steps == draft.steps && existing.endDate == draft.endDate && existing.holidaysOff == draft.holidaysOff &&
+            existing.altSaturday == draft.altSaturday
+    else -> false
+}
+
 internal fun savesWithoutAsking(existing: WorkPattern, draft: WorkPattern, today: LocalDate): Boolean =
     existing is WorkPattern.Rotation && draft is WorkPattern.Rotation && existing.steps == draft.steps &&
         existing.endDate == draft.endDate && !existing.startDate.isBefore(today)

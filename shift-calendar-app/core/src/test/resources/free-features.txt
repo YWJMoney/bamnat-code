@@ -257,3 +257,4 @@ money.dayClose
 money.found
 money.whatIf
 money.quickAdd
+share.look

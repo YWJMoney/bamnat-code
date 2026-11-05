@@ -95,10 +95,9 @@ class AGScreenshotTest : ScreenshotBase() {
         waitFor(400)
         tapText("4조 2교대 · 주주휴휴야야휴휴")
         tapText("이 순서로 설정 이어가기")
-        tapText("네, 시간이 맞아요")
-        tapText("다음", exact = true)
+        tapText("네, 맞아요", exact = true)
         tapText("야간", exact = true); tapText("둘째 날")
-        tapText("회사 근무표와 같아요"); tapText("다음", exact = true)
+        tapText("회사 근무표와 같아요")
         reveal("친구 초대 링크로 오셨어요")
     }
 

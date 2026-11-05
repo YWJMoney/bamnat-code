@@ -165,7 +165,13 @@ interface InquiryApi {
 
     /** 1.36 [PUSH-01] This phone's FCM token for 문의 답 바로 알림, or null to forget it. True when the server can send now. */
     suspend fun pushPhone(device: String, token: String?): Boolean = false
+
+    /** 1.38 [EASE-31] 밤낮 Q&A: the developer's answers to what is asked often, picked to show in 마을. Empty without a server. */
+    suspend fun qa(): List<PublicQa> = emptyList()
 }
+
+/** 1.38 [EASE-31] One 밤낮 Q&A: the question as the developer put it, and the answer for everyone. */
+data class PublicQa(val id: Long, val question: String, val answer: String, val topicName: String)
 
 class InquiryClient(
     private val baseUrl: String = BuildConfig.COMPANY_BASE_URL,
@@ -192,6 +198,14 @@ class InquiryClient(
             body.put("photos", org.json.JSONArray(info.photos.take(InquiryPhotos.MAX).map { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }))
         }
         inquiry(onceRequest(baseUrl, "/api/inquiries", body, requestId = requestId))
+    }
+
+    override suspend fun qa(): List<PublicQa> = serverCall {
+        serverRequest(baseUrl, "GET", "/api/qa").optJSONArray("items").objects().mapNotNull {
+            val q = it.optString("q").trim()
+            val a = it.optString("a").trim()
+            if (q.isEmpty() || a.isEmpty()) null else PublicQa(it.optLong("id"), q, a, it.optString("topicName"))
+        }
     }
 
     override suspend fun mine(device: String): List<Inquiry> = serverCall {
@@ -333,6 +347,23 @@ class InquiryStore(context: Context) {
 
     fun seen(id: String): Int = prefs.getInt("seen_$id", 0)
 
+    /** 1.38 [EASE-32] Questions already thanked for in 새로 생긴 것 ("보내 주신 의견으로 고쳤어요"), so each is said once. */
+    fun thanked(id: String): Boolean = id in prefs.getStringSet("thanked", emptySet()).orEmpty()
+
+    fun markThanked(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        prefs.edit().putStringSet("thanked", prefs.getStringSet("thanked", emptySet()).orEmpty() + ids).apply()
+    }
+
+    /**
+     * 1.38 [EASE-32] (오늘근무 분석 P13·P14, R9 응대): the user's own questions whose fix is in the version now installed:
+     * 반영 at [version] or before, not thanked for yet. Each as (id, a short line of what was asked).
+     */
+    fun fixedNow(list: List<Inquiry>, version: String): List<Pair<String, String>> = list
+        .filter { it.stage == "released" && it.version != null && compareVersion(it.version, version) <= 0 && !thanked(it.id) }
+        .map { i -> i.id to (i.messages.firstOrNull { !it.fromDeveloper }?.text.orEmpty().lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim()
+            .let { if (it.length > 40) it.take(39) + "…" else it }.ifEmpty { "보내 주신 의견" }) }
+
     /** After fetching: counts answers the user has not opened yet. */
     fun update(list: List<Inquiry>) {
         val n = list.sumOf { (it.answers - seen(it.id)).coerceAtLeast(0) }
@@ -453,4 +484,15 @@ data class QueuedInquiry(
             )
         }.getOrNull()
     }
+}
+
+/** 1.38 [EASE-32] "1.38.0" against "1.37.2": numbers part by part; letters after a number are ignored. */
+internal fun compareVersion(a: String, b: String): Int {
+    fun parts(v: String) = v.split('.').map { p -> p.takeWhile { it.isDigit() }.toIntOrNull() ?: 0 }
+    val x = parts(a); val y = parts(b)
+    for (i in 0 until maxOf(x.size, y.size)) {
+        val d = (x.getOrNull(i) ?: 0).compareTo(y.getOrNull(i) ?: 0)
+        if (d != 0) return d
+    }
+    return 0
 }

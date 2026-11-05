@@ -95,6 +95,14 @@ class RecordsTrash(
     /** Newest first. */
     val entries: StateFlow<List<Entry>> = _entries.asStateFlow()
 
+    /**
+     * 1.37 PC LOW (일근으로 바꾼 첫날 '잘 시간' 경고): the day calendar [calendarId]'s kind of work last changed, while that change is
+     * still listed; the work before it was another job's for 오늘의 흐름.
+     */
+    fun styleChangedOn(calendarId: String): java.time.LocalDate? =
+        _entries.value.firstOrNull { (it.kind == Kind.STYLE || it.kind == Kind.STYLE_CLEARED) && it.calendarId == calendarId }
+            ?.let { java.time.Instant.ofEpochMilli(it.at).atZone(Today.zone()).toLocalDate() }
+
     private val _offers = MutableSharedFlow<Offer>(extraBufferCapacity = 4)
     val offers: SharedFlow<Offer> = _offers.asSharedFlow()
 

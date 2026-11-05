@@ -260,7 +260,8 @@ private fun DayGroups(
     val moneyFirst = style != null && !style.usesPayEngine
     val focus = com.bamnat.core.work.CalendarFocus.of(style)
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
-    var restShift by remember(date) { mutableStateOf<ShiftType?>(null) }
+    // [EASE-10] The kinds of work are open in the header above; here only when the header has none (a 현장·가게 day asked for them).
+    val headChips = shiftChipsInHead(day, snapshot, style)
 
     // [DAY-04] The user's own order, else the one that fits the work style.
     val order = remember(settings.dayGroupOrder, moneyFirst) { G.order(settings.dayGroupOrder, moneyFirst) }
@@ -300,7 +301,7 @@ private fun DayGroups(
                             summary = workSummary(day, snapshot),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
-                        ) { WorkContent(day, snapshot, vm, onRestShift = { restShift = it }) }
+                        ) { WorkContent(day, snapshot, vm, showChips = !headChips) }
                     }
                     G.EXTRA -> {
                         val names = day.extras.map(ExtraText::name)
@@ -432,6 +433,9 @@ private fun DayGroups(
                         val flow = remember(snapshot, settings, log, now, date == today) {
                             if (date == today && settings.sleepTips) vm.todayFlow(snapshot, settings, log, now) else null
                         }
+                        // 1.38 [HLTH-01] 계획 대 실제, only while health.compare is on (Phase 3, 꺼진 채).
+                        val flagsNow by vm.flagStates.collectAsStateWithLifecycle()
+                        val compare = remember(snapshot, settings, log, date, flagsNow) { vm.planVsActual(snapshot, date, settings, log) }
                         DayGroup(
                             title = "몸", icon = Icons.Outlined.Bedtime,
                             summary = rest.firstOrNull()?.kind?.label ?: flow?.line ?: tipSummary(tips, date) ?: "수면 기록",
@@ -441,7 +445,7 @@ private fun DayGroups(
                             if (rest.isNotEmpty()) RestWarning(rest)
                             if (settings.sleepTips) {
                                 SleepSection(date = date, today = today, now = now, flow = flow, tips = tips, log = log,
-                                    targetMinutes = settings.sleepTargetMinutes, health = health,
+                                    targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare,
                                     onAsleep = vm::fellAsleep, onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
                             }
                         }
@@ -488,16 +492,6 @@ private fun DayGroups(
         )
     }
 
-    restShift?.let { type ->
-        RestDayShiftDialog(
-            date = date,
-            type = type,
-            hourly = style == com.bamnat.core.work.WorkStyle.HOURLY,
-            onCover = { restShift = null; vm.coverInstead(date, type, snapshot) },
-            onRoster = { restShift = null; vm.assign(date, ShiftOverride.Shift(type.id)) },
-            onDismiss = { restShift = null },
-        )
-    }
 }
 
 /**
@@ -593,23 +587,19 @@ private fun alarmSummary(day: ResolvedDay, alarms: List<PlannedAlarm>, settings:
 /** [DAY-02] The shift (one choice), back to the pattern when changed, and the day's own times. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, onRestShift: (ShiftType) -> Unit) {
+private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, showChips: Boolean = true) {
     val style = vm.settings.collectAsStateWithLifecycle().value.workStyle
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val calendar by c.calendars.active.collectAsStateWithLifecycle()
     val folded = c.foldedTypes.state.collectAsStateWithLifecycle().value[calendar].orEmpty()
     val types = remember(snapshot, style, day.shiftType?.id, folded) { dayTypes(snapshot, style, day.shiftType?.id, folded) }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    if (showChips) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (type in types) {
             FilterChip(
                 selected = day.shiftType?.id == type.id,
                 onClick = {
-                    when {
-                        day.shiftType?.id == type.id -> Unit
-                        // [EXTRA-01] A shift on a day the roster gives off is usually a 대근: ask which.
-                        vm.isRosterRestDay(day, type) -> onRestShift(type)
-                        else -> vm.assign(day.date, ShiftOverride.Shift(type.id))
-                    }
+                    // [EASE-11] 1.38: no window first. The day changes at once; on a day the roster gives off the bar offers 대근.
+                    if (day.shiftType?.id != type.id) vm.assignQuick(day, ShiftOverride.Shift(type.id), snapshot)
                 },
                 label = { Text(type.name) },
                 leadingIcon = { ShiftBadge(type, size = 18.dp, outlined = type.isOff) },
@@ -618,7 +608,7 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
         if (snapshot.shiftTypes.none { it.isOff }) {
             FilterChip(
                 selected = !day.isWorkDay && day.shiftType == null,
-                onClick = { vm.assign(day.date, ShiftOverride.Off) },
+                onClick = { vm.assignQuick(day, ShiftOverride.Off, snapshot) },
                 label = { Text("쉬는 날") },
             )
         }
@@ -698,6 +688,11 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
             dialogTitle = "휴게 시간",
         )
     }
+    // [EASE-26] 조퇴·연장: the day's end earlier or later by a tap, the start kept.
+    MinuteNudges("근무 끝", lead = "끝", steps = END_STEPS, onNudge = { d ->
+        com.bamnat.core.schedule.MinuteNudge.end(plannedStart, plannedEnd, day.plannedBreakMinutes, d)
+            ?.let { vm.setDayTimes(day.date, plannedStart, it, day.plannedBreakMinutes, day.shiftType) }
+    })
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
             "근무 ${HoursFormat.korean(day.scheduledMinutes)}" + if (hasCustom) " · 이 날만 바꿨어요" else "",
@@ -747,27 +742,6 @@ internal fun TimeBox(label: String, time: LocalTime, onClick: () -> Unit, modifi
  * [EXTRA-01] A working shift chosen on a day the roster gives off. Work on a day off is a 대근 (or
  * 특근) paid as work on a day off; changing the roster means the company moved the day off.
  */
-@Composable
-private fun RestDayShiftDialog(date: LocalDate, type: ShiftType, onCover: () -> Unit, onRoster: () -> Unit, onDismiss: () -> Unit,
-    /** [J133B-01] 1.33 빌드 8 확인 ("같은 일을 대타·대근·잔업 세 이름으로 불러요"): an 알바 calendar says 대타 and 근무지, as its day sheet does. */
-    hourly: Boolean = false) {
-    val span = if (type.start != null && type.end != null) " ${ExtraText.span(type.start!!, type.end!!)}" else ""
-    val cover = if (hourly) "대타" else "대근"
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("원래 쉬는 날이에요") },
-        text = {
-            Text(
-                "${Fmt.monthDay(date)}에 쉬는 날인데 ${type.name} 근무를 했다면 ${cover}로 넣어 주세요. 근무표는 그대로 두고 " +
-                    "${type.name}$span 시간이 추가 근무로 들어가 급여가 맞게 계산돼요.\n\n" +
-                    "${if (hourly) "근무지가" else "회사가"} 근무표 자체를 바꿨다면 ‘근무표 변경’을 고르세요.",
-            )
-        },
-        confirmButton = { TextButton(onClick = onCover) { Text("${cover}로 넣기") } },
-        dismissButton = { TextButton(onClick = onRoster) { Text("근무표 변경") } },
-    )
-}
-
 /**
  * 연차·반차·반반차 [FEAT-10]. Partial leave comes off the end of the shift, or off its start for 오전 반차;
  * the pay screen and the day's pay follow at once.
@@ -1085,8 +1059,10 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
     }
     deleting?.let { m ->
         ConfirmDialog(
-            title = "이 메모를 지울까요?",
-            message = "휴지통으로 옮겨요. 메모 탭의 휴지통에서 되살릴 수 있어요.",
+            title = com.bamnat.app.ui.memo.memoDeleteTitle(m, "이 메모를 지울까요?"),
+            message = com.bamnat.app.ui.memo.memoDeleteMessage(m, "휴지통으로 옮겨요. 메모 탭의 휴지통에서 되살릴 수 있어요.") { id ->
+                snapshot?.typesById?.get(id)?.name
+            },
             confirmLabel = "지우기",
             destructive = true,
             onDismiss = { deleting = null },
@@ -1273,6 +1249,7 @@ private fun SleepSection(
     log: List<com.bamnat.core.sleep.SleepEntry>,
     targetMinutes: Int,
     health: com.bamnat.app.sleep.HealthSleep.State,
+    compare: List<com.bamnat.core.sleep.PlanVsActual.Night> = emptyList(),
     onAsleep: () -> Unit,
     onAwake: () -> Unit,
     onWokeAt: (java.time.LocalDateTime) -> Unit,
@@ -1300,6 +1277,15 @@ private fun SleepSection(
                     Text("${tip.text} · ${tip.basis.label}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        }
+        // 1.38 [HLTH-01][P3-04] What the night was against its plan: "계획만큼" or how much less, never a diagnosis.
+        for (n in compare) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Text("${n.kind.label} · ${n.verdict.label}", style = MaterialTheme.typography.bodyMedium,
+                    color = if (n.verdict == com.bamnat.core.sleep.PlanVsActual.Verdict.SHORT) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                Text(n.line + if (n.measured) " · 워치·휴대폰이 잰 잠" else "", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (tips.isNotEmpty()) {
@@ -1417,6 +1403,16 @@ internal fun quickMemoExample(style: com.bamnat.core.work.WorkStyle?): String = 
  * day its 영업일 use (in its order or put on a day) and its days off, not the 교대 names every new calendar starts with; with
  * nothing used yet, all of them.
  */
+/**
+ * [EASE-10] Whether the day's header shows the kinds of work as chips: always for shifts and weekday work; on a 현장·가게·투자
+ * calendar only once it or the day has work in it (as [DayGroups] shows its 근무 group).
+ */
+internal fun shiftChipsInHead(day: ResolvedDay, snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?): Boolean {
+    val moneyFirst = style != null && !style.usesPayEngine
+    return !moneyFirst || snapshot.hasPattern || day.shiftType != null || day.hasCustomTimes || day.extras.isNotEmpty() ||
+        day.leave != null || day.source == DaySource.OVERRIDE
+}
+
 internal fun dayTypes(snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, current: Long?, folded: Set<Long> = emptySet()): List<ShiftType> =
     // 1.36 PC 재검토: a kind put away ('안 쓰는 종류') is not offered, unless it is this day's or one this kind of work starts with
     // (after 되돌리기 back to 알바, its own 오전 알바 shows again). All of them folded leaves the days off ([WorkContent] says how to add).

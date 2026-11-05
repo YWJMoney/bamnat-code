@@ -242,7 +242,10 @@ class FlagEvalTest {
                 else if (f.key == FlagCatalog.STATS_LOOKUP) "1.31.0" /* 1.31 N4 */
                 else if (f.key == FlagCatalog.DIAG_OBSERVE) "1.32.1" /* 1.32.1 STAB-10 */
                 else if (f.key == FlagCatalog.SHARE_SETUP) "1.33.0" /* 1.33 SHR-20 */
-                else if (f.key == FlagCatalog.SHARE_LOOK) "1.37.0" /* 1.37 SHR-31 */ else "1.28.0"))
+                else if (f.key == FlagCatalog.SHARE_LOOK) "1.37.0" /* 1.37 SHR-31 */
+                else if (f.group == FlagGroup.PHASE3) "1.38.0" /* 1.38 P3-01 */ else "1.28.0"))
+            // 1.38 사용자 C안: a Phase 3 row opens on 정식 출시일 (the launch policy's day), never earlier.
+            if (f.group == FlagGroup.PHASE3) assertTrue(f.key, !f.default && f.conditions.any { it == Condition.Date(policy = com.bamnat.core.ops.PolicyConsent.LAUNCH_VERSION) })
             if (f.risk == Risk.LEGAL) assertTrue("${f.key}: a LEGAL row rests on a policy date", f.conditions.any { it is Condition.Date && it.policy != null })
         }
         ServerSwitch.entries.forEach { assertEquals(it, FlagCatalog.switchOf(FlagCatalog.switchKey(it))) }

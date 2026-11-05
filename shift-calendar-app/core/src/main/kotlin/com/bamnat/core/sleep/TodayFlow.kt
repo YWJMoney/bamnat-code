@@ -105,11 +105,23 @@ object TodayFlow {
         rules: com.bamnat.core.schedule.RestRules? = null,
         /** [SLP-16] How long the user's own sleeps after night work have been, from [SleepInsights.afterNightAverage]. */
         afterNightMinutes: Long? = null,
+        /**
+         * 1.37 PC LOW (일근으로 바꾼 첫날 '잘 시간' 카드가 교대 시절 야간 기록 때문에 경고): the day the kind of work last changed.
+         * The work before it was another job's, so neither the sleep after it nor the rest between counts.
+         */
+        since: LocalDate? = null,
     ): Card {
         val today = now.toLocalDate()
         val end = now.plusHours(SPAN_HOURS)
         val t = Words(today)
-        val plan = SleepSchedule.of(resolver, today.minusDays(1), today.plusDays(2), alarmsOn, targetMinutes, commuteMinutes)
+        val plan = if (since == null || !since.isAfter(today.minusDays(1))) {
+            SleepSchedule.of(resolver, today.minusDays(1), today.plusDays(2), alarmsOn, targetMinutes, commuteMinutes)
+        } else {
+            // Changed today: the plan starts on the day itself, with nothing of the night before.
+            val dates = generateSequence(minOf(since, today)) { it.plusDays(1) }.takeWhile { !it.isAfter(today.plusDays(3)) }.toList()
+            SleepSchedule.of(dates.map(resolver::resolve), if (alarmsOn) dates.flatMap { AlarmPlanner.alarmsOn(resolver, it) } else emptyList(),
+                targetMinutes, commuteMinutes)
+        }
         val work = plan.work
         val next = work.firstOrNull { it.from.isAfter(now) }
             ?: (4L..LOOKAHEAD_DAYS).firstNotNullOfOrNull { SleepSchedule.work(resolver.resolve(today.plusDays(it))).firstOrNull() }
@@ -255,9 +267,10 @@ object TodayFlow {
 
         val restSign = if (!restCheck) null else {
             val nextDate = next?.date?.takeIf { !it.isAfter(today.plusDays(1)) }
-            (if (rules == null) RestCheck.check((-RestCheck.NIGHT_STREAK.toLong()..2L).map { resolver.resolve(today.plusDays(it)) }, strictRest)
+            (if (rules == null) RestCheck.check((-RestCheck.NIGHT_STREAK.toLong()..2L).map { today.plusDays(it) }
+                .filter { since == null || !it.isBefore(since) }.map(resolver::resolve), strictRest)
             else RestCheck.check(generateSequence(RestCheck.lookbackFrom(today, rules)) { it.plusDays(1) }.takeWhile { !it.isAfter(today.plusDays(2)) }
-                .map(resolver::resolve).toList(), rules))
+                .filter { since == null || !it.isBefore(since) }.map(resolver::resolve).toList(), rules))
                 .filter { it.date == today || it.date == nextDate }
                 .firstOrNull { !(pick.saysShort && (it.kind == RestCheck.Kind.SHORT_REST || it.kind == RestCheck.Kind.AFTER_NIGHT)) }
                 ?.let { (if (it.date == today) "" else "${t.day(it.date)}· ") + it.text }

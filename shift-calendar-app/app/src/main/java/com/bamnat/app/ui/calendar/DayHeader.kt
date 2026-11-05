@@ -122,7 +122,7 @@ internal fun whenText(alarm: PlannedAlarm, date: LocalDate): String =
     (if (alarm.triggerAt.toLocalDate().isBefore(date)) "전날 " else "") + Fmt.time(alarm.triggerAt.toLocalTime())
 
 /** [DAY-01] One fact about the day in the header: 알람 끔, 직접 바꿈, 메모 2 … */
-private data class DayToken(val text: String, val tone: Tone) {
+private data class DayToken(val text: String, val tone: Tone, val said: String? = null, val struck: Boolean = false) {
     enum class Tone { PLAIN, ACCENT, WARNING, ERROR }
 }
 
@@ -245,6 +245,11 @@ fun DayHeader(
         // chips come right under the date, where nothing above them changes height; the day's facts follow.
         // With very large text on a small phone the head is taller than the sheet's top; there the facts stay first so they are not cut.
         val chipsFirst = onOpen == null && LocalDensity.current.fontScale < 1.5f
+        // [EASE-10] 1.38 (오늘근무 비교: 근무 바꾸기 2번): the kinds of work open first (주간·야간·휴무…), one tap changes the day; the
+        // 대근·비상소집·돈 chips are the row under it. Both rows are one line that scrolls sideways, so their height never
+        // changes from day to day and the rows stay where the finger expects them (A17).
+        val headChips = shiftChipsInHead(day, snapshot, settings.workStyle)
+        if (chipsFirst && headChips) ShiftChips(day, snapshot, vm, settings, Modifier.padding(bottom = 4.dp), endSpace = 12.dp)
         if (chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(bottom = 6.dp), endSpace = 12.dp)
         AnimatedContent(
             targetState = day,
@@ -259,7 +264,11 @@ fun DayHeader(
             DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp))
         }
         // Under the calendar the folded FAB sits over the row's end, so the last chip can scroll out from under it.
-        if (!chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(top = 6.dp), endSpace = 76.dp)
+        if (!chipsFirst && headChips) ShiftChips(day, snapshot, vm, settings, Modifier.padding(top = 6.dp), endSpace = 12.dp)
+        if (!chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(top = if (headChips) 4.dp else 6.dp), endSpace = 76.dp)
+        // [EASE-26] The extra work just put in, made longer or shorter right here (잔업 1시간 30분: 날짜 · 잔업 · −30분).
+        // [EASE-26] Under the calendar only: the opened day has the same ± in its 추가 근무 piece, so its head stays short.
+        if (onOpen != null && day.extras.isNotEmpty()) ExtraNudgeLine(day, vm, Modifier.padding(start = 12.dp, top = 4.dp))
     }
 }
 
@@ -276,11 +285,14 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
     val sales = dayBook.sales?.takeIf { it.sales != 0L || it.costs != 0L }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         val holiday = KoreanHolidays.nameOf(day.date)
-        if (settings.showLunar || holiday != null) {
+        // [CYC-04] 1.38 업종 기념일, in the accent colour (not a day off).
+        val orgDay = orgDayName(orgGroupOf(settings), day.date, holiday)
+        if (settings.showLunar || holiday != null || orgDay != null) {
             Row {
                 if (holiday != null) Text(holiday, style = MaterialTheme.typography.labelLarge, color = cal.sunday)
+                if (orgDay != null) Text(orgDay, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 if (settings.showLunar) {
-                    if (holiday != null) Spacer(Modifier.width(8.dp))
+                    if (holiday != null || orgDay != null) Spacer(Modifier.width(8.dp))
                     Text(KoreanLunar.fromSolar(day.date).label, style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -306,6 +318,11 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
                 Spacer(Modifier.width(8.dp))
                 Text(focus.emptyDay(day.isWorkDay), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+        // [EASE-12] A day changed from its order says what it was: "원래 야간 → 주간", with 되돌리기 right there.
+        if (hasShift && day.source == DaySource.OVERRIDE && snapshot.hasPattern) {
+            val was = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
+            ChangedLine(was, day.shiftType, onBack = { vm.assign(day.date, com.bamnat.core.model.ShiftOverride.None) })
         }
         for (e in day.extras.take(MAX_EXTRA_LINES)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -336,6 +353,81 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
 }
 
 private const val MAX_EXTRA_LINES = 3
+
+/** [EASE-26] "잔업 2시간  −30분 +10분 +30분 +1시간": the last extra work of the day, its length changed with a tap. */
+@Composable
+private fun ExtraNudgeLine(day: ResolvedDay, vm: CalendarViewModel, modifier: Modifier = Modifier) {
+    val i = day.extras.lastIndex
+    val e = day.extras[i]
+    val style = vm.settings.collectAsStateWithLifecycle().value.workStyle
+    // [J133-27] A weekday worker's own word, as the chip says it.
+    val name = ExtraText.name(e).let { if (style == com.bamnat.core.work.WorkStyle.DAY && e.kind.id == com.bamnat.core.model.ExtraKind.OVERTIME_ID) it.replace("잔업", "야근") else it }
+    MinuteNudges(name, lead = name, modifier = modifier, onNudge = { d ->
+        vm.updateExtra(day.date, i, com.bamnat.core.schedule.MinuteNudge.extra(e.entry, e.start, e.end, d, com.bamnat.app.data.ScheduleRepository.MAX_EXTRA_MINUTES))
+    })
+}
+
+/** [EASE-12] "원래 [야] 야간 → [주] 주간 · 되돌리기": the same meaning as the changed day's mark on the calendar. */
+@Composable
+private fun ChangedLine(was: com.bamnat.core.model.ShiftType?, now: com.bamnat.core.model.ShiftType?, onBack: () -> Unit) {
+    val ink = MaterialTheme.colorScheme.tertiary
+    val wasName = was?.name ?: "쉬는 날"
+    val nowName = now?.name ?: "쉬는 날"
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics(mergeDescendants = true) {
+        contentDescription = "원래 $wasName, 지금 $nowName"
+    }) {
+        Spacer(Modifier.width(2.dp))
+        Text("원래", style = MaterialTheme.typography.bodyMedium, color = ink)
+        Spacer(Modifier.width(6.dp))
+        ShiftBadge(was, size = 16.dp, text = was?.label ?: "휴", outlined = was == null || was.isOff)
+        Spacer(Modifier.width(4.dp))
+        Text(wasName, style = MaterialTheme.typography.bodyMedium, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false))
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = ink, modifier = Modifier.size(18.dp))
+        ShiftBadge(now, size = 16.dp, text = now?.label ?: "휴", outlined = now == null || now.isOff)
+        Spacer(Modifier.width(4.dp))
+        Text(nowName, style = MaterialTheme.typography.bodyMedium, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false))
+        Spacer(Modifier.weight(0.01f))
+        TextButton(onClick = onBack, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)) {
+            Text("되돌리기", style = MaterialTheme.typography.labelLarge)
+        }
+    }
+}
+
+/**
+ * [EASE-10][EASE-11] The day's kinds of work, open in one line: a tap puts it on the day at once (no window first). On a day
+ * the roster gives off, the bar says so and offers 대근 ([CalendarViewModel.assignQuick]); 되돌리기 is on the day's line.
+ */
+@Composable
+private fun ShiftChips(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier, endSpace: Dp) {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val calendar by c.calendars.active.collectAsStateWithLifecycle()
+    val folded = c.foldedTypes.state.collectAsStateWithLifecycle().value[calendar].orEmpty()
+    val style = settings.workStyle
+    val types = remember(snapshot, style, day.shiftType?.id, folded) { dayTypes(snapshot, style, day.shiftType?.id, folded) }
+    if (types.isEmpty()) return
+    val fullLeave = day.leave?.isFullDay == true
+    ChipRow(modifier, start = 12.dp, end = endSpace) {
+        for (t in types) item(key = "shift-${t.id}") {
+            val on = !fullLeave && day.shiftType?.id == t.id
+            FilterChip(
+                selected = on,
+                onClick = { if (day.shiftType?.id != t.id) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Shift(t.id), snapshot) },
+                label = { ChipText(t.name) },
+                leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = t.isOff) },
+                modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 지금 근무" else "${t.name}로 바꾸기" },
+            )
+        }
+        if (snapshot.shiftTypes.none { it.isOff }) item(key = "shift-off") {
+            FilterChip(
+                selected = !day.isWorkDay && day.shiftType == null && !fullLeave,
+                onClick = { if (day.isWorkDay || day.shiftType != null) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Off, snapshot) },
+                label = { ChipText("쉬는 날") },
+            )
+        }
+    }
+}
 private const val MAX_JOB_LINES = 3
 
 /** [CAL-05] "09:00–17:00 욕실 타일 시공 · 3일 중 2일째", with what it pays or what is still owed. */
@@ -396,13 +488,16 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     return buildList {
         // [CAL-13] An added calendar kept from ringing says so on each of its days.
         if (alarms.isNotEmpty() && !calendarAlarms) add(DayToken("이 달력 알람 꺼짐", DayToken.Tone.PLAIN))
-        else if (alarms.isNotEmpty() && (day.alarmSkipped || !settings.alarmsEnabled)) add(DayToken("알람 끔", DayToken.Tone.ERROR))
         else if (alarms.isNotEmpty()) {
+            // 1.37 시간 바퀴 PC LOW: turned off, the token keeps its words (struck through) so the rows under it do not jump.
             val first = alarms.first()
-            add(DayToken("알람 ${whenText(first, day.date)}" + if (alarms.size > 1) " 외 ${alarms.size - 1}" else "", DayToken.Tone.PLAIN))
+            val text = "알람 ${whenText(first, day.date)}" + if (alarms.size > 1) " 외 ${alarms.size - 1}" else ""
+            val off = day.alarmSkipped || !settings.alarmsEnabled
+            add(if (off) DayToken(text, DayToken.Tone.ERROR, said = "$text 꺼짐", struck = true) else DayToken(text, DayToken.Tone.PLAIN))
         }
         if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.WARNING))
-        if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) add(DayToken("직접 바꿈", DayToken.Tone.ACCENT))
+        // [EASE-12] A changed shift has its own line ("원래 → 새 근무"); the token stays for changed times.
+        if (day.source == DaySource.OVERRIDE && !snapshot.hasPattern || day.hasCustomTimes) add(DayToken(if (day.source == DaySource.OVERRIDE) "직접 바꿈" else "이 날만 시간 바꿈", DayToken.Tone.ACCENT))
         // [NOTE-06] The first memo's title, cut to one line, and how many more there are.
         dayMemos.firstOrNull()?.let { first ->
             val title = first.title.ifBlank { first.preview }.lineSequence().firstOrNull().orEmpty().trim()
@@ -430,7 +525,9 @@ private fun Token(t: DayToken) {
         style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
         color = fg,
         maxLines = 1,
-        modifier = Modifier.clip(MaterialTheme.shapes.small).background(bg).padding(horizontal = 8.dp, vertical = 3.dp),
+        textDecoration = if (t.struck) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+        modifier = Modifier.clip(MaterialTheme.shapes.small).background(bg).padding(horizontal = 8.dp, vertical = 3.dp)
+            .then(if (t.said != null) Modifier.semantics { contentDescription = t.said } else Modifier),
     )
 }
 

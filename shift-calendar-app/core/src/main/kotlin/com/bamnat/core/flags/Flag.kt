@@ -45,6 +45,8 @@ enum class FlagGroup(val key: String, val words: String) {
     SERVER("server", "서버 기능"),
     STATS("stats", "사용 통계"),
     FREE("free", "무료로 연 프로 기능"),
+    /** 1.38 [P3-01] Phase 3 rows, off until a 관문·파일럿. */
+    PHASE3("phase3", "Phase 3(꺼진 채·파일럿)"),
 }
 
 /** [FLAG-04] LEGAL rows (payments, ads, new data sent) read the date the server confirmed and keep their policy check. */

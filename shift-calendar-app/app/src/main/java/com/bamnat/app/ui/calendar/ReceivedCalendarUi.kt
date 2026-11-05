@@ -624,6 +624,19 @@ fun ReceivedCalendarView(
             Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp))
+            // 1.38 갈래6 (공유 남은 일: 받은 달력에서 테마 다시 입어 보기): the 테마·근무 설정 a link brought were offered only once,
+            // before keeping it. Kept, one quiet line opens the same card again (입어 보기 still changes nothing until 입기).
+            if (schedule.look != null || schedule.kit != null) {
+                var again by rememberSaveable(cal.id) { mutableStateOf(false) }
+                if (again) SharedLookCards(schedule, cal.id)
+                else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(if (schedule.look != null) "함께 온 테마${if (schedule.kit != null) "·근무 설정" else ""}" else "함께 온 근무 설정",
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { again = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text(if (schedule.look != null) "다시 입어 보기" else "다시 보기")
+                    }
+                }
+            }
             ReportLink(vm, cal.id)
         }
     }

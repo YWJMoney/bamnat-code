@@ -44,7 +44,7 @@ object ProductIds {
     /** 1.36 841 1년 이용권: a one-time product, no automatic payment. */
     const val PASS_1Y = com.bamnat.core.tier.YearPass.PRODUCT
     /** Play's own page for the user's subscriptions, where they cancel [MON-05]. */
-    fun manageUrl(packageName: String) = "https://play.google.com/store/account/subscriptions?sku=$PRO&package=$packageName"
+    fun manageUrl(packageName: String, sku: String = PRO) = "https://play.google.com/store/account/subscriptions?sku=$sku&package=$packageName"
 }
 
 /**
@@ -84,7 +84,32 @@ interface Billing {
     val pass: StateFlow<PassOffer?> get() = NO_PASS
     /** 841: Play's purchase sheet for the 1년 이용권; false when it could not. */
     fun buyPass(activity: Activity): Boolean = false
+    /** 1.38 Phase 3 요금: the 팀·직원 요금제 offers Play has now (empty before the products are on Play). */
+    val work: StateFlow<List<WorkOffer>> get() = NO_WORK
+    /**
+     * 1.38 Phase 3 요금: Play's sheet for [offer]. A band of the same kind already subscribed is changed in place with Play's own proration
+     * (a bigger band charges the difference now, a smaller one takes effect with the time left), so nobody pays twice.
+     */
+    fun buyWork(activity: Activity, offer: WorkOffer): Boolean = false
 }
+
+/**
+ * 1.38 Phase 3 요금: one way to pay for a band of a 팀·직원 요금제 as Play offers it now. [yearly] carries the month's free trial when
+ * Play has it for this account; [pass] is the band's 1년 이용권 (one payment, no automatic payment).
+ */
+data class WorkOffer(
+    val kind: com.bamnat.core.tier.WorkPlanKind,
+    val cap: Int,
+    val way: Way,
+    val price: String,
+    val priceMicros: Long,
+    val trial: Boolean = false,
+    val offerToken: String = "",
+) {
+    enum class Way { MONTHLY, YEARLY, PASS }
+}
+
+private val NO_WORK: StateFlow<List<WorkOffer>> = MutableStateFlow(emptyList())
 
 /** No Play here (a test, a phone without the Play Store): no plans, nothing to buy. */
 class NoBilling(plans: List<Plan> = emptyList()) : Billing {
@@ -102,6 +127,11 @@ class NoBilling(plans: List<Plan> = emptyList()) : Billing {
  * it is [BillingState.UNAVAILABLE] like [NoBilling].
  */
 class DeferredBilling(private val scope: CoroutineScope, private val make: () -> Billing) : Billing {
+    private val _work = MutableStateFlow<List<WorkOffer>>(emptyList())
+    override val work: StateFlow<List<WorkOffer>> = _work.asStateFlow()
+    // 1.38 검토: the 1년 이용권 was never passed on from the real billing, so the 프로 화면 never showed it (841, GROW-04).
+    private val _pass = MutableStateFlow<PassOffer?>(null)
+    override val pass: StateFlow<PassOffer?> = _pass.asStateFlow()
     private val _plans = MutableStateFlow<List<Plan>>(emptyList())
     override val plans: StateFlow<List<Plan>> = _plans.asStateFlow()
     private val _state = MutableStateFlow(BillingState.UNKNOWN)
@@ -118,6 +148,8 @@ class DeferredBilling(private val scope: CoroutineScope, private val make: () ->
             val real = runCatching(make).getOrElse { NoBilling() }
             launch { real.plans.collect { _plans.value = it } }
             launch { real.state.collect { _state.value = it } }
+            launch { real.pass.collect { _pass.value = it } }
+            launch { real.work.collect { _work.value = it } }
             made.complete(real)
         }
     }
@@ -132,6 +164,18 @@ class DeferredBilling(private val scope: CoroutineScope, private val make: () ->
         start()
         // Plans to pick come only from a refresh, so the real billing is there by then.
         return if (made.isCompleted) made.getCompleted().buy(activity, plan) else false
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    override fun buyPass(activity: Activity): Boolean {
+        start()
+        return if (made.isCompleted) made.getCompleted().buyPass(activity) else false
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    override fun buyWork(activity: Activity, offer: WorkOffer): Boolean {
+        start()
+        return if (made.isCompleted) made.getCompleted().buyWork(activity, offer) else false
     }
 }
 
@@ -150,6 +194,8 @@ class PlayBilling(
     private val clock: () -> Instant = Today::instant,
     /** [STAT-04] A purchase made just now in the app: true for a free trial, false for a paid start. */
     private val onBought: (trial: Boolean) -> Unit = {},
+    /** 1.38 Phase 3 요금: the bands the server set, for the 1년 이용권 products to ask Play about. */
+    private val workPlans: () -> com.bamnat.core.tier.WorkPlanTable = { com.bamnat.core.tier.WorkPlanTable.DEFAULT },
 ) : Billing, PurchasesUpdatedListener {
     private val client: BillingClient = BillingClient.newBuilder(context.applicationContext)
         .setListener(this)
@@ -164,6 +210,13 @@ class PlayBilling(
     private var passDetails: ProductDetails? = null
     private val _pass = MutableStateFlow<PassOffer?>(null)
     override val pass: StateFlow<PassOffer?> = _pass.asStateFlow()
+    private val _work = MutableStateFlow<List<WorkOffer>>(emptyList())
+    override val work: StateFlow<List<WorkOffer>> = _work.asStateFlow()
+    /** 1.38 Phase 3 요금: Play's details of the two subscriptions and the bands' 1년 이용권, by product. */
+    @Volatile private var workDetails: Map<String, ProductDetails> = emptyMap()
+    /** The token of each 팀·직원 요금제 this account holds, so a band change replaces it instead of adding a second one. */
+    @Volatile private var workTokens: Map<String, String> = emptyMap()
+    @Volatile private var buyingWork: WorkOffer? = null
     private val lock = Mutex()
     /** The plan being bought: Play's purchase says neither the base plan nor whether it began with the trial. */
     @Volatile private var buying: Plan? = null
@@ -176,10 +229,17 @@ class PlayBilling(
         _state.value = BillingState.READY
         loadPlans()
         loadPass()
+        loadWork()
         val (ok, purchases) = queryPurchases()
-        if (ok) take(purchases, fromQuery = true)
+        if (ok) {
+            take(purchases, fromQuery = true)
+            takeWork(purchases, fromQuery = true)
+        }
         val (passOk, passPurchases) = queryPurchases(BillingClient.ProductType.INAPP)
-        if (passOk) takePasses(passPurchases, bought = false)
+        if (passOk) {
+            takePasses(passPurchases, bought = false)
+            takeWorkPasses(passPurchases)
+        }
     }
 
     override fun buyPass(activity: Activity): Boolean {
@@ -259,7 +319,10 @@ class PlayBilling(
             BillingClient.BillingResponseCode.OK -> scope.launch {
                 lock.withLock {
                     val all = purchases.orEmpty()
-                    if (all.any { ProductIds.PASS_1Y in it.products }) takePasses(all, bought = true) else take(all, fromQuery = false)
+                    val work = all.filter { p -> p.products.any { com.bamnat.core.tier.WorkPlanKind.ofProduct(it) != null } }
+                    val rest = all - work.toSet()
+                    if (work.isNotEmpty()) { takeWork(work, fromQuery = false); takeWorkPasses(work, bought = true) }
+                    if (rest.any { ProductIds.PASS_1Y in it.products }) takePasses(rest, bought = true) else if (rest.isNotEmpty()) take(rest, fromQuery = false)
                 }
             }
             BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> scope.launch { refresh() }
@@ -346,6 +409,109 @@ class PlayBilling(
         if (bought != null) runCatching { onBought(record.trial) }
     }
 
+    /** 1.38 Phase 3 요금: the two subscriptions (월·연 base plan per band) and each band's 1년 이용권, as Play has them now. */
+    private suspend fun loadWork() {
+        val table = workPlans()
+        val subs = com.bamnat.core.tier.WorkPlanKind.entries.map { it.product to BillingClient.ProductType.SUBS }
+        val passes = com.bamnat.core.tier.WorkPlanKind.entries.flatMap { k -> table.bands(k).map { k.passProduct(it.cap) to BillingClient.ProductType.INAPP } }
+        val found = HashMap<String, ProductDetails>()
+        for ((type, list) in (subs + passes).groupBy({ it.second }, { it.first })) {
+            val params = QueryProductDetailsParams.newBuilder().setProductList(list.map {
+                QueryProductDetailsParams.Product.newBuilder().setProductId(it).setProductType(type).build()
+            }).build()
+            val got = suspendCancellableCoroutine<List<ProductDetails>> { cont ->
+                client.queryProductDetailsAsync(params) { result, l ->
+                    if (cont.isActive) cont.resume(if (result.responseCode == BillingClient.BillingResponseCode.OK) l.productDetailsList else emptyList())
+                }
+            }
+            got.forEach { found[it.productId] = it }
+        }
+        workDetails = found
+        _work.value = workOffersOf(found.values, table)
+    }
+
+    override fun buyWork(activity: Activity, offer: WorkOffer): Boolean {
+        val productId = if (offer.way == WorkOffer.Way.PASS) offer.kind.passProduct(offer.cap) else offer.kind.product
+        val d = workDetails[productId] ?: return false
+        buyingWork = offer
+        val item = BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(d)
+        if (offer.way != WorkOffer.Way.PASS) item.setOfferToken(offer.offerToken)
+        val builder = BillingFlowParams.newBuilder().setProductDetailsParamsList(listOf(item.build()))
+        // A band of the same kind is held: Play changes it in place and works out the money (계획 8장 "Play의 비례 계산").
+        val old = workTokens[offer.kind.product]
+        val held = store.current.work[offer.kind.product]
+        if (offer.way != WorkOffer.Way.PASS && old != null) {
+            val oldCap = workPlans().capOf(offer.kind, held?.basePlan) ?: 0
+            val mode = if (offer.cap > oldCap) BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.CHARGE_PRORATED_PRICE
+                else BillingFlowParams.SubscriptionUpdateParams.ReplacementMode.WITH_TIME_PRORATION
+            builder.setSubscriptionUpdateParams(BillingFlowParams.SubscriptionUpdateParams.newBuilder()
+                .setOldPurchaseToken(old).setSubscriptionReplacementMode(mode).build())
+        }
+        val result = client.launchBillingFlow(activity, builder.build())
+        log("billing_work_open ${result.responseCode}")
+        return result.responseCode == BillingClient.BillingResponseCode.OK
+    }
+
+    /** 1.38 Phase 3 요금: each 팀·직원 요금제 subscription Play reports, kept by product (one per kind; a band change replaces it). */
+    private suspend fun takeWork(purchases: List<Purchase>, fromQuery: Boolean) {
+        val tokens = HashMap(workTokens)
+        for (kind in com.bamnat.core.tier.WorkPlanKind.entries) {
+            val p = purchases.firstOrNull { kind.product in it.products && it.purchaseState == Purchase.PurchaseState.PURCHASED }
+            if (p == null) {
+                if (fromQuery && purchases.none { kind.product in it.products }) { store.setWork(kind.product, null); tokens.remove(kind.product) }
+                continue
+            }
+            tokens[kind.product] = p.purchaseToken
+            if (!p.isAcknowledged) acknowledge(p)
+            val now = clock()
+            val before = store.current.work[kind.product]?.takeIf { it.purchasedAt.toEpochMilli() == p.purchaseTime }
+            val bought = buyingWork?.takeIf { !fromQuery && it.kind == kind && it.way != WorkOffer.Way.PASS }?.also { buyingWork = null }
+            val boughtPlan = bought?.let { if (it.way == WorkOffer.Way.YEARLY) "c${it.cap}-yearly" else "c${it.cap}-monthly" }
+            var record = SubRecord(
+                product = kind.product, basePlan = boughtPlan ?: before?.basePlan, state = PlaySub.State.ACTIVE,
+                expiry = maxOf(before?.expiry ?: now, now.plus(SubRecord.PHONE_HOLD)), trial = bought?.trial ?: before?.trial ?: false,
+                autoRenew = p.isAutoRenewing, purchasedAt = Instant.ofEpochMilli(p.purchaseTime), verified = false, checkedAt = now,
+                consentAt = before?.consentAt, stoppedAt = before?.stoppedAt,
+            )
+            val checked = try {
+                api().let { a -> if (a.enabled) a.purchase(device(), kind.product, p.purchaseToken) else null }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+            if (checked?.verified == true) {
+                record = record.copy(state = checked.state ?: record.state, expiry = checked.expiry ?: record.expiry, trial = checked.trial,
+                    autoRenew = checked.autoRenew, verified = true, consentAt = checked.consentAt ?: record.consentAt, stoppedAt = checked.stoppedAt,
+                    basePlan = checked.basePlan ?: record.basePlan)
+            }
+            store.setWork(kind.product, record)
+            if (bought != null) runCatching { onBought(record.trial) }
+        }
+        workTokens = tokens
+    }
+
+    /** 1.38 Phase 3 요금: a band's 1년 이용권, kept by order like 841 and used up from 30 days before its end so it can be bought again. */
+    private suspend fun takeWorkPasses(purchases: List<Purchase>, bought: Boolean = false) {
+        for (p in purchases.filter { it.purchaseState == Purchase.PurchaseState.PURCHASED }) {
+            val product = p.products.firstOrNull { id -> com.bamnat.core.tier.WorkPlanKind.ofProduct(id) != null && id != com.bamnat.core.tier.WorkPlanKind.ofProduct(id)?.product } ?: continue
+            if (!p.isAcknowledged) acknowledge(p)
+            val order = p.orderId ?: p.purchaseToken.takeLast(24)
+            store.addWorkPass(order, product, Instant.ofEpochMilli(p.purchaseTime))
+            try {
+                val checked = api().let { a -> if (a.enabled) a.purchase(device(), product, p.purchaseToken) else null }
+                if (checked?.verified == true && checked.state == PlaySub.State.EXPIRED) { store.removeWorkPass(order); continue }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("billing_work_pass_check_failed")
+            }
+            val mine = store.current.workPasses.values.filter { it.first == product }.map { it.second }
+            if (com.bamnat.core.tier.YearPass.rebuy(com.bamnat.core.tier.WorkPlanRules.passUntil(mine), clock())) consume(p)
+        }
+        if (bought) runCatching { onBought(false) }
+    }
+
     private suspend fun acknowledge(p: Purchase) {
         val params = AcknowledgePurchaseParams.newBuilder().setPurchaseToken(p.purchaseToken).build()
         suspendCancellableCoroutine { cont ->
@@ -357,6 +523,28 @@ class PlayBilling(
     }
 
     companion object {
+        /**
+         * 1.38 Phase 3 요금: the offers of the two subscriptions and the bands' passes. A base plan that is not one of the table's bands
+         * (`c<cap>-monthly`, `c<cap>-yearly`) is left out; the free month only ever rides the yearly one (계획 8장).
+         */
+        fun workOffersOf(details: Collection<ProductDetails>, table: com.bamnat.core.tier.WorkPlanTable): List<WorkOffer> = details.flatMap { d ->
+            val kind = com.bamnat.core.tier.WorkPlanKind.ofProduct(d.productId) ?: return@flatMap emptyList()
+            if (d.productId != kind.product) {
+                val cap = table.capOf(kind, d.productId) ?: return@flatMap emptyList()
+                val o = d.oneTimePurchaseOfferDetails ?: return@flatMap emptyList()
+                return@flatMap listOf(WorkOffer(kind, cap, WorkOffer.Way.PASS, o.formattedPrice, o.priceAmountMicros))
+            }
+            d.subscriptionOfferDetails.orEmpty().groupBy { it.basePlanId }.mapNotNull { (base, list) ->
+                val cap = table.capOf(kind, base) ?: return@mapNotNull null
+                val yearly = base.endsWith("-yearly")
+                val baseOffer = list.firstOrNull { it.offerId == null } ?: return@mapNotNull null
+                val recurring = baseOffer.pricingPhases.pricingPhaseList.lastOrNull() ?: return@mapNotNull null
+                val trialOffer = list.firstOrNull { o -> yearly && o.offerId != null && o.pricingPhases.pricingPhaseList.any { it.priceAmountMicros == 0L } }
+                WorkOffer(kind, cap, if (yearly) WorkOffer.Way.YEARLY else WorkOffer.Way.MONTHLY, recurring.formattedPrice, recurring.priceAmountMicros,
+                    trial = trialOffer != null, offerToken = (trialOffer ?: baseOffer).offerToken)
+            }
+        }.sortedWith(compareBy({ it.kind }, { it.cap }, { it.way }))
+
         /**
          * One plan per base plan: its recurring price, and the free trial when Play offers it to this
          * account (Play leaves out offers the account is not eligible for).

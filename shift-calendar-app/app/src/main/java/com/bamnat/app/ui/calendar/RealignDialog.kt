@@ -58,9 +58,10 @@ internal fun RealignDialog(
     val original = remember(rotation, date) { rotation.stepIndexOn(date) }
     var step by rememberSaveable(date) { mutableIntStateOf(original) }
     val handChanged = remember(snap, date) { PatternTimeline.handChangedFrom(snap.entries, date, date.plusDays(AHEAD_DAYS)) }
-    // Kept as the days left out, so a fold keeps the ticks.
-    var keep by rememberSaveable(date) { mutableStateOf(listOf<Long>()) }
-    val clear = handChanged.filter { it.toEpochDay() !in keep }
+    // The days the user ticked to go back to the order. None by default: a day set by hand stays as it is unless the user
+    // says otherwise (1.38 PC 확인, 9b028f4c: 밀기 뒤 직접 바꾼 휴무·야간이 사라졌어요). Kept as epoch days so a fold keeps the ticks.
+    var picked by rememberSaveable(date) { mutableStateOf(listOf<Long>()) }
+    val clear = handChanged.filter { it.toEpochDay() in picked }
     val push = PatternTimeline.pushOf(rotation, date, step)
 
     AlertDialog(
@@ -113,16 +114,17 @@ internal fun RealignDialog(
                     }
                 }
                 if (handChanged.isNotEmpty()) {
-                    Text("직접 바꾼 날이 있어요. 근무 주기대로 돌릴 날을 고르세요.", style = MaterialTheme.typography.titleSmall)
+                    Text("직접 바꾼 날이 있어요", style = MaterialTheme.typography.titleSmall)
+                    Text("그 날짜 그대로 둬요. 순서대로 돌릴 날만 고르세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     for (d in handChanged) {
                         val day = snap.resolver.resolve(d)
-                        val on = d.toEpochDay() !in keep
+                        val on = d.toEpochDay() in picked
                         Row(
                             Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
                                 .toggleable(value = on, role = Role.Checkbox) {
-                                    keep = if (it) keep - d.toEpochDay() else keep + d.toEpochDay()
+                                    picked = if (it) picked + d.toEpochDay() else picked - d.toEpochDay()
                                 },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {

@@ -22,6 +22,9 @@ object CycleOrders {
             Candidate("DDNNOO", "주주야야휴휴"),
             Candidate("DNO", "주야휴"),
             Candidate("DDNNBO", "주주야야비휴"),
+            // [CYC-08] 1.38 상황실·소방 변형(일반 사실): 주야비, 그리고 주간 1주 뒤 야·비 2주(서울소방 21일 주기, 공개 표 c062).
+            Candidate("DNB", "주야비 · 3일"),
+            Candidate("DDDDDOONBNBNBNBNBNBNB", "주간 1주 + 야·비 2주 · 21일"),
         ),
         "4조3교대" to listOf(
             Candidate("DDEENNOO", "6근2휴 · 주주오오야야휴휴"),
@@ -33,7 +36,11 @@ object CycleOrders {
             Candidate("DDDDDOOEEEEEOONNNNNOO", "주 단위 · 주간→오후→야간"),
             Candidate("NNNNNOODDDDDOOEEEEEOO", "주 단위 · 야간→주간→오후"),
         ),
-        "5조3교대" to listOf(Candidate("DDEENNOOOO", "주주오오야야휴휴휴휴")),
+        "5조3교대" to listOf(
+            Candidate("DDEENNOOOO", "주주오오야야휴휴휴휴"),
+            // [CYC-08] SR 역무가 2020년까지 쓴 5조3교대(서울신문 2020-04-22).
+            Candidate("DDNBO", "주주야비휴 · 5일"),
+        ),
         "6조3교대" to listOf(Candidate("DDEENNOOOO", "주주오오야야휴휴휴휴")),
         "2조2교대" to listOf(
             Candidate("DDDDDOONNNNNOO", "1주씩 주간·야간"),
@@ -41,7 +48,9 @@ object CycleOrders {
             Candidate("DN", "하루씩 주간·야간"),
         ),
         "주야교대" to listOf(Candidate("DDDDDOONNNNNOO", "1주씩 주간·야간"), Candidate("DDDDOOOONNNNOOOO", "주4·휴4·야4·휴4")),
-        "3조1교대" to listOf(Candidate("XBO", "당비비 · 당번·비번·휴무"), Candidate("XB", "당비 · 격일")),
+        "3조1교대" to listOf(Candidate("XBO", "당비비(당비휴) · 당번·비번·휴무"), Candidate("XB", "당비 · 격일")),
+        // [CYC-08] 1.38 상황실 변형: 당번 뒤 사흘(당비비비), 또는 당번 앞에 주간 하루(주당비휴).
+        "4조1교대" to listOf(Candidate("XBOO", "당비비비 · 당번 뒤 사흘"), Candidate("DXBO", "주당비휴 · 4일"), Candidate("XBO", "당비비(당비휴) · 3일")),
         "격일제" to listOf(Candidate("XB", "당비 · 24시간 격일"), Candidate("DO", "근무·휴무 격일")),
         "4부제" to listOf(Candidate("DNBO", "주야비휴")),
         "주간연속2교대" to listOf(Candidate("DDDDDOOEEEEEOO", "1주씩 1조·2조")),

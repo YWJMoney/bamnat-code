@@ -3,6 +3,7 @@ package com.bamnat.app.ui.setup
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -107,7 +108,19 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
                 vm.clearToday()
             })
     } else {
-        TodayPicker(d, date, today, onAnswer = { step -> vm.answerToday(date, step) }, onClear = vm::clearToday)
+        // [CYC-06] 1.38: a public row that names its teams and their days asks "몇 조예요?" first; the order must be the row's own.
+        val teams = remember(source, d.rotation) {
+            source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.id?.let(com.bamnat.core.plaza.PublicCycles::byId)
+                ?.takeIf { vm.sourceOrder(d) == d.rotation }
+                ?.let { com.bamnat.core.setup.TeamAnchors.pickable(it.teams, d.rotation.size) }.orEmpty()
+        }
+        var teamUnknown by rememberSaveable(source?.id) { mutableStateOf(false) }
+        if (teams.isNotEmpty() && !teamUnknown) {
+            TeamPick(teams, d.anchor, onPick = vm::answerAnchor, onUnknown = { teamUnknown = true; vm.clearToday() })
+        } else {
+            TodayPicker(d, date, today, onAnswer = { step -> vm.answerToday(date, step) }, onClear = vm::clearToday,
+                onAsking = vm::todayAsking)
+        }
     }
     // [SETUP-14] A way out for someone who cannot tell (a roster that does not repeat, or a new job): paint the
     // month on the calendar instead, keeping the shifts already set up (I 리뷰 I14).
@@ -165,6 +178,22 @@ private fun EarlyHoursNote(todayBased: Boolean, today: LocalDate, onToday: () ->
     }
 }
 
+/** [CYC-06] "몇 조예요?": the teams of a public row, each with the day it starts the cycle; or today's shift instead. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TeamPick(teams: List<Pair<String, LocalDate>>, anchor: LocalDate?, onPick: (LocalDate) -> Unit, onUnknown: () -> Unit) {
+    FollowTitle("몇 조예요?")
+    Text("공개 자료에 조마다 시작하는 날이 있어요. 조를 고르면 오늘 근무를 따로 묻지 않아요.", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        teams.forEach { (name, day) ->
+            FilterChip(selected = anchor == day, onClick = { onPick(day) }, label = { Text(name, style = MaterialTheme.typography.titleSmall) },
+                modifier = Modifier.heightIn(min = 48.dp))
+        }
+    }
+    TextButton(onClick = onUnknown) { Text("조를 몰라요 · 오늘 근무로 답할게요") }
+}
+
 /** [SETUP-02] A coworker's file says which 조 its order is: the same 조 lines up as it is. */
 @Composable
 private fun TeamQuestion(
@@ -207,7 +236,9 @@ private fun TeamQuestion(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TodayPicker(d: SetupDraft, date: LocalDate, today: LocalDate, onAnswer: (Int) -> Unit, onClear: () -> Unit) {
+private fun TodayPicker(d: SetupDraft, date: LocalDate, today: LocalDate, onAnswer: (Int) -> Unit, onClear: () -> Unit,
+                        /** [EASE-08] What the bottom button waits for while a second question is open; null once answered. */
+                        onAsking: (String?) -> Unit = {}) {
     val steps = d.rotation
     val types = remember(d.types) { d.types.associateBy { it.id } }
     val answered = stepOn(d, date)
@@ -228,9 +259,22 @@ private fun TodayPicker(d: SetupDraft, date: LocalDate, today: LocalDate, onAnsw
             }
         }
     }
-    val pick = picked ?: return
-    val follow = remember(steps, pick) { TodayQuestion.followUp(steps, pick.id, d::isOff) } ?: return
+    val pick = picked
+    val follow = remember(steps, pick) { pick?.let { TodayQuestion.followUp(steps, it.id, d::isOff) } }
+    // [EASE-08] 1.38 (오늘근무 분석: 야간을 고르면 '며칠째' 질문이 화면 밖에 생겨 다음 단추가 왜 흐린지 몰라 헛누름): the question
+    // scrolls into sight and the button says what it waits for.
+    val waiting = if (pick != null && follow != null && answered == null) when (follow) {
+        is FollowUp.RunDay -> "${nameOf(pick.id, types)} 며칠째인지 위에서 골라 주세요"
+        is FollowUp.NextWork -> "다음 출근이 언제인지 위에서 골라 주세요"
+        is FollowUp.Upcoming -> "다음 날부터 어떻게 되는지 위에서 골라 주세요"
+    } else null
+    androidx.compose.runtime.LaunchedEffect(waiting) { onAsking(waiting) }
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { onAsking(null) } }
+    if (pick == null || follow == null) return
     val name = nameOf(pick.id, types)
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    androidx.compose.runtime.LaunchedEffect(follow) { kotlinx.coroutines.delay(120); runCatching { bring.bringIntoView() } }
+    Column(Modifier.bringIntoViewRequester(bring), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     when (follow) {
         is FollowUp.RunDay -> {
             FollowTitle("$name 며칠째${if (date == today) "예요" else "였어요"}?")
@@ -268,6 +312,7 @@ private fun TodayPicker(d: SetupDraft, date: LocalDate, today: LocalDate, onAnsw
                 )
             }
         }
+    }
     }
 }
 

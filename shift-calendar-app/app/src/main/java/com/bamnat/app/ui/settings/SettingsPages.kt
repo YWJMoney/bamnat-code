@@ -175,6 +175,7 @@ private fun WorkPage(
             com.bamnat.core.guide.RuleCards.Where.SHIFT_TYPES -> onOpenShiftTypes()
             com.bamnat.core.guide.RuleCards.Where.PAY -> SettingsLinks.go(SettingsGo.PAY_ITEMS)
             com.bamnat.core.guide.RuleCards.Where.STUDIO -> SettingsLinks.go(SettingsGo.STUDIO_RULES)
+            com.bamnat.core.guide.RuleCards.Where.MEMOS -> com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.MEMOS)
         }
     }
     WorkTools(work.workStyle)
@@ -525,6 +526,8 @@ private fun NoticesPage(
             warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(todayShiftNotice = on) }
         }
+        // 1.38 [EASE-29] What the lock screen will say, with my today and tomorrow.
+        LockNoticePreview()
         // 1.32 [WTYP-16] 사무직(일반 근무) 달력의 퇴근 시각에 지금 퇴근 버튼.
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.DAY) SwitchRow(LEAVE_TIME_ROW, "근무가 끝나는 시각에 소리 없이 알려 주고, 더 일하고 나갈 때 ‘지금 퇴근’을 누르면 잔업을 그 시각까지 적어요",
             settings.leaveTimeNotice, warning = warning(settings.leaveTimeNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
@@ -716,6 +719,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)", CellLine.BOTH to "둘 다 (8h·8.24)"), line) { l ->
             vm.update { it.copy(showHoursInCells = l == CellLine.HOURS || l == CellLine.BOTH, showLunar = l == CellLine.LUNAR || l == CellLine.BOTH) }
         }
+        // [CYC-04] 1.38 업종 기념일.
+        OrgDayRows(settings.orgDayGroup, settings.orgDaysOn) { g, on -> vm.update { it.copy(orgDayGroup = g, orgDaysOn = on) } }
         // [CVW-02] 1.35 달력 모양: cells, marks, memo lines and their order.
         HorizontalDivider()
         com.bamnat.app.ui.calendar.CalendarViewEditor(com.bamnat.core.recipe.CalendarView.decode(settings.calView), { v ->
@@ -749,6 +754,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }, listOf(MemoView.PLAIN to "기본", MemoView.BELOW to "달력 아래 목록", MemoView.CELLS to "날짜 밑 메모"), memo) { m ->
             vm.update { it.copy(calendarMemos = m != MemoView.PLAIN, memoInCells = m == MemoView.CELLS) }
         }
+        // 1.38 [EASE-29] The widgets with my own days, above the rows that change them.
+        WidgetPreviewStrip(key = settings.widgetMemo to settings.widgetLook)
         // [DAILY-01] On by default; a home screen is seen by others, so it turns off here.
         val widgetContext = LocalContext.current
         SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요. 홈 화면을 남이 볼 수 있으면 끄세요"
@@ -879,6 +886,11 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
     }
     SectionCard(title = "다른 캘린더 앱과") {
+        // [GROW-05] 1.38 다른 앱에서 옮기기: the two ways that read only what is on the phone — a screenshot, the phone's calendar.
+        var moving by remember { mutableStateOf(false) }
+        NavRow("다른 앱에서 옮기기", "쓰던 근무 앱의 한 달 화면 캡처나 휴대폰 캘린더에서 근무를 옮겨 와요") { moving = true }
+        if (moving) MoveFromOtherApp(onDismiss = { moving = false })
+        HorizontalDivider()
         // [IMPORT-01]
         NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 근무와 메모로 옮겨요") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
@@ -1341,4 +1353,29 @@ private fun AccentRow(accent: Long, onPick: (Long) -> Unit) {
         )
     }
     if (picking) com.bamnat.app.ui.recipe.ColorPickerDialog(if (accent == 0L) 0xFF2F5BEAL else accent, { c -> onPick(c); picking = false }, { picking = false }, "앱 강조색")
+}
+
+/**
+ * [GROW-05] 1.38 다른 앱에서 옮기기: a screenshot of the month view of the app used before (read on the phone like a 근무표 사진,
+ * a month calendar's 7 columns too) or the phone's own calendar. Never another app's files or servers.
+ */
+@Composable
+internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
+    com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("다른 앱에서 옮기기") },
+        text = {
+            androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
+                NavRow("한 달 화면 캡처로", "쓰던 근무 앱의 달력 화면을 캡처해 고르면 근무를 읽어 칠해요. 틀린 칸만 고쳐요") {
+                    onDismiss(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER)
+                }
+                NavRow("휴대폰 캘린더에서", "근무를 구글·삼성 캘린더에 넣어 두었다면 그 일정을 근무로 옮겨요") {
+                    onDismiss(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
+                }
+                Text("사진과 일정은 휴대폰 안에서만 읽어요. 다른 앱의 파일이나 서버는 쓰지 않아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }

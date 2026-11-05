@@ -132,6 +132,10 @@ fun CompanyFindScreen(
     val query by vm.query.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     // [NAV-02][PLAZA-03] Back first clears the search, as 메모·설정 do (1.25 Z), and only then leaves the screen.
     androidx.activity.compose.BackHandler(enabled = query.isNotEmpty()) { vm.query.value = "" }
+    // 012815b6 PC 1차: a search closed without clearing it (swiped away) opens again with that name for a while; one cleared
+    // with 뒤로 first does not ([PublicBrowse]).
+    LaunchedEffect(vm) { if (vm.query.value.isBlank()) PublicBrowse.recentQuery().takeIf { it.isNotBlank() }?.let { vm.query.value = it } }
+    androidx.compose.runtime.DisposableEffect(vm) { onDispose { PublicBrowse.keep(vm.query.value) } }
     val result by vm.result.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
     val focusRequester = remember { FocusRequester() }

@@ -112,6 +112,9 @@ object AlarmsOff {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )).setAuthenticationRequired(false).build())
             .setTimeoutAfter((until - Today.millis()).coerceAtLeast(1_000L))
+            // 1.38 PC 11차 LOW (장터 소식이 '오늘 남은 알람을 껐어요'와 한 묶음): its own group, as 오늘 근무 and 소식 have [TOWN-08],
+            // so Android does not bundle it with them.
+            .setGroup(Notifications.GROUP_STATUS).setGroupSummary(true)
             .build()
         Notifications.post(context, NOTICE_ID, notification)
     }

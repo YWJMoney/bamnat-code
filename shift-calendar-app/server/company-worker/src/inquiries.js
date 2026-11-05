@@ -2,7 +2,7 @@ import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
 // 1.37 [ADM2-02] 나간 판.
-import { isOut, shippedVersion } from "./desk.js";
+import { DESK, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
 import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
@@ -485,6 +485,15 @@ export async function adminInquiries(request, env, url, path, now) {
   // [SRV-06] A photo sent with a question, for an admin who may read questions.
   const photo = path.match(/^\/inquiries\/([A-Za-z0-9]{22})\/photos\/([12])$/);
   if (photo && method === "GET") return photoFile(env, photo[1], Number(photo[2]));
+  // 1.38 [DESK-09] 보류 중인 Claude 답 취소·고치기.
+  const held = path.match(/^\/inquiries\/([A-Za-z0-9]{22})\/held\/(\d{1,9})$/);
+  if (held && method === "POST") {
+    const body = await readJson(request, INQUIRY.bytes);
+    const gone = await heldChange(env, held[1], Number(held[2]), body, now);
+    if (gone) return gone;
+    const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", held[1]);
+    return row ? json(await adminInquiryView(env, row)) : json({ error: "not_found" }, 404);
+  }
   const m = path.match(/^\/inquiries\/([A-Za-z0-9]{22})(\/reply|\/status|\/visibility|\/assign|\/notes|\/typing|\/billing)?$/);
   if (!m) return json({ error: "not_found" }, 404);
   const row = await one(env, "SELECT * FROM inquiries WHERE id = ?", m[1]);
@@ -558,6 +567,8 @@ export const mayAssign = (actor, row, to) => to !== null || !row.assignee || row
 export async function replyTo(env, row, body, now, audited = true) {
   if (typeof body.text !== "string" || !body.text.trim() || [...body.text.trim()].length > INQUIRY.text) refuse("text", "text");
   const text = body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim();
+  // 1.38 [DESK-09] Claude 열쇠의 답은 바로 가지 않고 10분 '보류 중'이에요(운영 장부 설계 5-4). 사람이 그 사이 취소·고쳐요.
+  if (env.actor?.key) return holdReply(env, row, text, body, now);
   const status = body.close === true ? "closed" : "answered";
   const again = await one(env, `SELECT id FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ? AND by = ? AND at > ?
     ORDER BY id DESC LIMIT 1`, row.id, text, actorName(env), now - 60 * 1000);
@@ -575,6 +586,66 @@ export async function replyTo(env, row, body, now, audited = true) {
   // 1.36 [PUSH-01] the asker's phone hears at once (no words go to Google).
   await fcmTell(env, [row.id], now);
   return true;
+}
+
+/**
+ * 1.38 [DESK-09] A key's answer waits [DESK.hold] in held_replies: not in the thread, so the app sees nothing and no
+ * notice goes. A day holds at most [DESK.claudeAnswersDay] (KST day); past it the key is told to stop and report.
+ */
+export async function holdReply(env, row, text, body, now) {
+  const again = await one(env, "SELECT id FROM held_replies WHERE inquiry_id = ? AND text = ?", row.id, text);
+  if (again) return false;
+  const since = Date.parse(`${kstDay(now)}T00:00:00+09:00`);
+  const n = (await one(env, "SELECT COUNT(*) AS n FROM held_replies WHERE at >= ?", since)).n
+    + (await one(env, "SELECT COUNT(*) AS n FROM audit WHERE action = 'inquiry_reply_sent' AND at >= ?", since)).n;
+  if (n >= DESK.claudeAnswersDay) throw new Refuse("answer_limit", "text", 429);
+  await run(env, "INSERT INTO held_replies (inquiry_id, text, by, actor_id, close, template, at, until) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", row.id, text,
+    actorName(env), env.actor?.id ?? null, body.close === true ? 1 : 0, Number.isInteger(body.template) ? body.template : null, now, now + DESK.hold);
+  await audit(env, now, "inquiry_reply_held", row.id, `${Math.round(DESK.hold / 60000)}분 보류`);
+  return true;
+}
+
+/** 1.38 [DESK-09] The answers held for [id], for the admin view: each with when it goes. */
+export async function heldOf(env, id) {
+  const rows = await all(env, "SELECT id, text, by, close, until FROM held_replies WHERE inquiry_id = ? ORDER BY id", id).catch(() => []);
+  return rows.map((r) => ({ id: r.id, text: r.text, by: r.by, close: r.close === 1, until: iso(r.until) }));
+}
+
+/** 1.38 [DESK-09] Held answers whose time came go into their threads as answers, and the askers hear at once. */
+export async function releaseHeld(env, now) {
+  const rows = await all(env, "SELECT * FROM held_replies WHERE until <= ? ORDER BY id LIMIT 50", now).catch(() => []);
+  const told = [];
+  for (const h of rows) {
+    const row = await one(env, "SELECT id FROM inquiries WHERE id = ?", h.inquiry_id);
+    const out = [stmt(env, "DELETE FROM held_replies WHERE id = ?", h.id)];
+    if (row) {
+      out.push(stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, ?, ?)", h.inquiry_id, h.text, h.by, now),
+        stmt(env, `UPDATE inquiries SET status = ?, updated_at = ?, assignee = COALESCE(assignee, ?),
+          assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?`, h.close ? "closed" : "answered", now, h.actor_id, h.by, h.inquiry_id),
+        ...(h.template ? [stmt(env, "UPDATE reply_templates SET uses = uses + 1 WHERE id = ?", h.template)] : []),
+        stmt(env, "INSERT INTO audit (at, action, target, detail, actor, actor_id) VALUES (?, 'inquiry_reply_sent', ?, '', ?, ?)", now, h.inquiry_id, h.by, h.actor_id ?? ""));
+      told.push(h.inquiry_id);
+    }
+    await batch(env, out);
+  }
+  if (told.length) await fcmTell(env, [...new Set(told)], now);
+  return told.length;
+}
+
+/** 1.38 [DESK-09] A person (never the key) takes a held answer back, or changes its words; its time stays. */
+export async function heldChange(env, inquiryId, heldId, body, now) {
+  if (env.actor?.key) throw new Refuse("no_permission", "held", 403);
+  const h = await one(env, "SELECT * FROM held_replies WHERE id = ? AND inquiry_id = ?", heldId, inquiryId);
+  if (!h) return json({ error: "gone" }, 404);
+  if (body.cancel === true) {
+    await run(env, "DELETE FROM held_replies WHERE id = ?", h.id);
+    await audit(env, now, "inquiry_reply_cancel", inquiryId, h.by);
+  } else {
+    if (typeof body.text !== "string" || !body.text.trim() || [...body.text.trim()].length > INQUIRY.text) refuse("text", "text");
+    await run(env, "UPDATE held_replies SET text = ? WHERE id = ?", body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim(), h.id);
+    await audit(env, now, "inquiry_reply_edit", inquiryId, h.by);
+  }
+  return null;
 }
 
 /** [ADMIN-16] What can be done to many questions at once, and what it needs besides 문의 고치기. */
@@ -656,12 +727,14 @@ export async function adminInquiryView(env, row) {
   const now = Date.now();
   const [events, links, typing] = (await batch(env, [
     stmt(env, `SELECT at, action, detail, actor FROM audit WHERE target = ? AND action IN ('inquiry_assign', 'inquiry_status', 'inquiry_reply',
-      'inquiry_hide', 'inquiry_show', 'inquiry_billing') ORDER BY id LIMIT 200`, row.id),
+      'inquiry_hide', 'inquiry_show', 'inquiry_billing', 'inquiry_reply_held', 'inquiry_reply_sent', 'inquiry_reply_cancel') ORDER BY id LIMIT 200`, row.id),
     stmt(env, "SELECT l.at, l.by, d.id, d.title FROM dev_links l JOIN dev_items d ON d.id = l.item_id WHERE l.inquiry_id = ? ORDER BY l.at", row.id),
     stmt(env, "SELECT key FROM counters WHERE key LIKE ? AND expires > ?", `typing|${row.id}|%`, now),
   ])).map((r) => r.results);
   const out = {
     ...view,
+    // 1.38 [DESK-09] Claude 답 중 아직 가지 않은 것.
+    held: await heldOf(env, row.id),
     events: timeline(events, links),
     typing: typingByInquiry(typing, env.actor?.id ?? "")[row.id] ?? [],
     // AT 1.29 [ADMCP-03][ADMCP-06] 복사함, the phone's short mark and how many other questions it sent.
@@ -1199,6 +1272,13 @@ export async function devReply(env, row, body, now) {
   const linked = (await all(env, "SELECT l.inquiry_id AS id FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ?", row.id)).map((r) => r.id);
   const pick = Array.isArray(body.ids) ? linked.filter((id) => body.ids.includes(id)) : linked;
   if (!pick.length) refuse("ids", "ids");
+  // 1.38 [DESK-09] Claude 열쇠로는 문의마다 10분 보류(바로 가지 않아요).
+  if (env.actor?.key) {
+    let held = 0;
+    for (const id of pick) if (await holdReply(env, { id }, text, { close: body.close === true }, now)) held++;
+    await run(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, row.id);
+    return json({ answered: 0, held, item: await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)) });
+  }
   const status = body.close === true ? "closed" : "answered";
   await batch(env, [
     ...pick.flatMap((id) => [
@@ -1303,8 +1383,44 @@ export async function templates(env, now) {
   if (first.meta.changes) {
     await batch(env, DEFAULT_TEMPLATES.map(([label, text]) => stmt(env, "INSERT INTO reply_templates (label, text, by, at) VALUES (?, ?, '', ?)", label, text, now)));
   }
-  const rows = await all(env, "SELECT id, label, text, by, topic, uses FROM reply_templates ORDER BY id");
-  return { templates: rows.map((r) => ({ id: r.id, label: r.label, text: r.text, by: r.by, topic: r.topic ?? "", uses: r.uses ?? 0 })), topicNames: TOPIC_NAMES };
+  const rows = await all(env, "SELECT id, label, text, by, topic, uses, public_q FROM reply_templates ORDER BY id");
+  return { templates: rows.map((r) => ({ id: r.id, label: r.label, text: r.text, by: r.by, topic: r.topic ?? "", uses: r.uses ?? 0,
+    publicQ: r.public_q ?? "" })), topicNames: TOPIC_NAMES };
+}
+
+// ---- 1.38 [EASE-31] 밤낮 Q&A: 자주 쓰는 답 중 관리자가 고른 것을 마을에 공개 (오늘근무 분석 P13, 공개 관찰) ----
+//
+// 자주 쓰는 답은 한 사람에게 보내는 말이라, 공개하려면 관리자가 '묻는 말'(public_q)을 적어요. 그 칸이 차 있는 답만 공개되고, 답 글의
+// {앱버전}·{주제}·{오늘}은 누구에게나 맞는 말로 바꿔요. 문의 글이나 보낸 분은 나가지 않아요(관리자가 쓴 답만).
+
+
+export const QA = { question: 80, max: 40, cacheSeconds: 600 };
+
+/** 공개 답 글: 한 사람에게 쓴 채움 말을 모두에게 맞는 말로. */
+export function publicAnswer(text, topicName) {
+  return String(text ?? "")
+    .replaceAll("{앱버전}", "최신 버전")
+    .replaceAll("{주제}", topicName || "이 내용")
+    .replaceAll("{오늘}", "오늘")
+    .trim();
+}
+
+/** GET /api/qa: 공개로 고른 자주 쓰는 답, 많이 쓴 것부터. */
+export async function publicQa(env) {
+  const rows = await all(env, `SELECT id, text, topic, uses, public_q, at FROM reply_templates WHERE public_q != '' ORDER BY uses DESC, id LIMIT ${QA.max}`)
+    .catch(() => []);
+  return {
+    items: rows.map((r) => ({
+      id: r.id, q: r.public_q, a: publicAnswer(r.text, TOPIC_NAMES[r.topic] ?? ""), topic: r.topic ?? "",
+      topicName: TOPIC_NAMES[r.topic] ?? "", uses: r.uses ?? 0, updatedAt: iso(r.at),
+    })),
+  };
+}
+
+/** 1.38 [EASE-31] 공개 Q&A의 묻는 말: 비우면 공개하지 않아요. */
+export function qaQuestion(v) {
+  if (v === undefined || v === null) return "";
+  return plainText(v, QA.question, "publicQ", false);
 }
 
 /** [ADMIN-16] A saved answer's topic: one of the question topics, or '' for any question. */
@@ -1323,8 +1439,9 @@ export async function templateRoute(request, env, path, now) {
     const label = plainText(body.label, 20, "label", true);
     const text = plainText(body.text, INQUIRY.text, "text", true);
     const topic = templateTopic(body.topic);
+    const publicQ = qaQuestion(body.publicQ);
     if ((await one(env, "SELECT COUNT(*) AS n FROM reply_templates")).n >= 40) return json({ error: "too_many" }, 409);
-    await run(env, "INSERT INTO reply_templates (label, text, by, at, topic) VALUES (?, ?, ?, ?, ?)", label, text, actorName(env), now, topic);
+    await run(env, "INSERT INTO reply_templates (label, text, by, at, topic, public_q) VALUES (?, ?, ?, ?, ?, ?)", label, text, actorName(env), now, topic, publicQ);
     await audit(env, now, "template_add", label);
     return json(await templates(env, now), 201);
   }
@@ -1336,9 +1453,10 @@ export async function templateRoute(request, env, path, now) {
     const body = await readJson(request, 8 * 1024);
     const label = plainText(body.label, 20, "label", true);
     const text = plainText(body.text, INQUIRY.text, "text", true);
-    await run(env, "UPDATE reply_templates SET label = ?, text = ?, topic = ?, by = ?, at = ? WHERE id = ?", label, text, templateTopic(body.topic),
-      actorName(env), now, Number(edit[1]));
-    await audit(env, now, "template_edit", label, row.label === label ? "" : `${row.label} → ${label}`);
+    const publicQ = qaQuestion(body.publicQ);
+    await run(env, "UPDATE reply_templates SET label = ?, text = ?, topic = ?, by = ?, at = ?, public_q = ? WHERE id = ?", label, text, templateTopic(body.topic),
+      actorName(env), now, publicQ, Number(edit[1]));
+    await audit(env, now, "template_edit", label, row.label === label ? (publicQ ? "공개 Q&A" : "") : `${row.label} → ${label}`);
     return json(await templates(env, now));
   }
   const m = path.match(/^\/templates\/(\d{1,9})\/remove$/);

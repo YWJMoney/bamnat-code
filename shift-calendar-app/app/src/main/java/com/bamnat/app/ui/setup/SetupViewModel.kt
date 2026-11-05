@@ -180,9 +180,11 @@ class SetupViewModel(
     }
 
     fun fix(step: SetupStep) {
-        if (step !in current.steps) return
+        // [EASE-07] The order is on the times' screen and the alarm on the last one now.
+        val screen = current.screenOf(step)
+        if (screen !in current.steps || screen == SetupStep.SUMMARY && current.step == SetupStep.SUMMARY) return
         _fixing.value = true
-        update { it.copy(step = step) }
+        update { it.copy(step = screen) }
     }
 
     /**
@@ -369,6 +371,8 @@ class SetupViewModel(
      * the 근무형태 key for a first provider's row.
      */
     fun pickPublic(cycle: PublicCycle, codes: String) {
+        // [CYC-04] 1.38 업종 기념일.
+        com.bamnat.app.ui.calendar.rememberOrgGroup(c.settingsRepository, cycle)
         val text = PublicCycleFiles.text(cycle, codes)
         val roster = if (current.style == WorkStyle.SHIFT) cycle.roster else null
         useShared(SetupSource(SetupSource.Kind.PUBLIC, text, id = cycle.id, name = cycle.company, dept = cycle.formKey), text, roster)
@@ -425,7 +429,12 @@ class SetupViewModel(
         // The same answer again keeps the times already changed.
         if (current.bundle == key && current.types.isNotEmpty()) return update { it.copy(step = it.next() ?: SetupStep.SUMMARY) }
         val shifts = ShiftBundles.byKey(key)?.shifts ?: ShiftBundles.custom
-        val d = current.withShifts(ShiftBundles.byKey(key)?.key ?: SetupDraft.CUSTOM, shifts)
+        val d = current.withShifts(ShiftBundles.byKey(key)?.key ?: SetupDraft.CUSTOM, shifts).let { d ->
+            // [EASE-07] 1.38: the bundle's most usual order is picked already on the times' screen (one tap less); today's month
+            // preview and '회사 근무표와 같아요' come before anything is saved.
+            val first = if (d.usesRotation) presets(d).firstOrNull() else null
+            if (first != null) d.copy(rotation = PatternPresets.toSteps(first, d.roles)) else d
+        }
         _fixing.value = false
         c.telemetry.event("setup_bundle", key)
         store.save(d.copy(step = d.next() ?: SetupStep.SUMMARY))
@@ -606,6 +615,52 @@ class SetupViewModel(
         com.bamnat.app.ui.imports.RosterReader.photo(context, uri, it, today) { n, m -> _rosterStep.value = n to m }
     }
 
+    /**
+     * [EASE-16] 1.38 "근무표 사진으로 한 번에" on the company page: without kinds of work yet the roster template's (데이·이브닝·나이트·
+     * 오프, 병원 간호) are taken, the setup goes on to its times, and the photo is read meanwhile; the painting step shows it.
+     */
+    fun rosterPhotoFirst(context: Context, uri: Uri) {
+        if (current.types.isEmpty()) templates.firstOrNull { it.roster }?.let(::pickTemplate)
+        readRosterPhoto(context, uri)
+    }
+
+    private val _captureReading = MutableStateFlow(false)
+    /** [GROW-05] A screenshot of another app's month being read for its order. */
+    val captureReading: StateFlow<Boolean> = _captureReading.asStateFlow()
+
+    /**
+     * [GROW-05] 1.38 다른 앱에서 옮기기: a screenshot of the month view of the app used before (or any month calendar with the
+     * work on it) read on the phone, and the order it repeats put in as the setup's order with today's place in it. Only
+     * the picture is read: no other app's files or servers. Says why when the picture shows no order.
+     */
+    fun orderFromCapture(context: Context, uri: Uri) {
+        if (_captureReading.value) return
+        _captureReading.value = true
+        viewModelScope.launch {
+            val r = runCatching { com.bamnat.app.ui.imports.RosterReader.photo(context, uri, rosterCodes(), today) }.getOrNull()
+            _captureReading.value = false
+            val row = r?.rows?.maxByOrNull { it.cells.size }
+            val days = row?.cells.orEmpty().mapNotNull { (d, cell) ->
+                when (cell) {
+                    is com.bamnat.core.imports.DutyCell.Shift -> d to cell.shiftTypeId.takeIf { id -> current.types.firstOrNull { it.id == id }?.isOff != true }
+                    com.bamnat.core.imports.DutyCell.Off -> d to null
+                    else -> null
+                }
+            }.toMap()
+            val order = com.bamnat.core.imports.CalendarShot.order(days)
+            val month = r?.month ?: java.time.YearMonth.from(today)
+            if (order == null) {
+                _message.value = if (row == null) "캡처에서 달력의 날짜와 근무를 찾지 못했어요. 한 달이 다 나온 화면을 캡처해 주세요."
+                    else "캡처에서 되풀이되는 순서를 찾지 못했어요. 매달 근무표가 바뀐다면 ‘잘 모르겠어요’에서 칠해 주세요."
+                return@launch
+            }
+            setRotation(order.steps)
+            // The 1st of the captured month is step 0: today's place follows, asked once more on the next step.
+            answerToday(month.atDay(1), 0)
+            _message.value = "캡처에서 ${order.steps.size}일 순서를 찾았어요. 맞는지 아래 달력으로 확인해 주세요."
+        }
+    }
+
     /** 1.36 PC W10: 취소 on the reading card; nothing is changed. */
     fun cancelRosterRead() {
         rosterJob?.cancel()
@@ -691,6 +746,14 @@ class SetupViewModel(
     }
 
     fun clearToday() = update { it.copy(anchor = null, todayConfirmed = false) }
+
+    /** [CYC-06] "몇 조예요?" answered: the day that team starts the cycle. */
+    fun answerAnchor(date: LocalDate) = update { it.copy(anchor = date, todayConfirmed = false) }
+
+    private val _todayAsk = MutableStateFlow<String?>(null)
+    /** [EASE-08] What the today question still waits for (a second question open), said by the bottom button. */
+    val todayAsk: StateFlow<String?> = _todayAsk.asStateFlow()
+    fun todayAsking(line: String?) { _todayAsk.value = line }
 
     /** "회사 근무표와 같아요". */
     fun confirmToday() {

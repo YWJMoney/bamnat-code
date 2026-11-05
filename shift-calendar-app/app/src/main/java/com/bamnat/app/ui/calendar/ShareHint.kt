@@ -6,11 +6,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -87,6 +89,40 @@ internal fun ShareHintCard(onShare: () -> Unit, onClose: () -> Unit, modifier: M
                     Text("동료·가족에게 이미지나 링크로 보내요. 링크는 앱이 없어도 열려요.", style = MaterialTheme.typography.bodySmall)
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "공유 안내 닫기") }
+            }
+        }
+    }
+}
+
+/**
+ * 1.38 [EASE-30] 같이 보기: the two ways a couple or a family sees each other's shifts, side by side, both without an
+ * account (a link opens in any browser; one taken in sits beside the user's own calendar with 같이 쉬는 날).
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun TogetherSheet(onSend: () -> Unit, onTake: (() -> Unit)?, onDismiss: () -> Unit) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
+            verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
+            Text("가족·연인과 근무 같이 보기", style = MaterialTheme.typography.titleLarge)
+            Text("가입이나 로그인 없이 링크 하나로 돼요. 받은 근무는 내 달력 옆에 두고, 같이 쉬는 날이 바로 보여요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TogetherRow(Icons.Outlined.Share, "내 근무 보내기", "링크는 앱이 없어도 브라우저로 열려요. 메모·급여는 빼고 보내요", onSend)
+            if (onTake != null) TogetherRow(Icons.Outlined.CalendarMonth, "상대 근무 받아 보기",
+                "받은 링크를 붙여 넣으면 내 달력과 바꿔 가며 봐요", onTake)
+        }
+    }
+}
+
+@Composable
+private fun TogetherRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, hint: String, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, Modifier.size(24.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

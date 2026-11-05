@@ -12,6 +12,24 @@ export const MONEY = {
   adQuietDays: 3,
   // [MON-06] Days before a trial ends that the app asks for consent (결정 D17: day 23 of 30).
   trialAskDays: 7,
+  // 1.38 Phase 3 요금 (사용자 2026-11-05 20:22, 계획 8장): 팀·직원 요금제 bands with the prices the app shows before Play says its own
+  // (Play Console is the real price), and the free taste. The app has the same defaults and keeps them on an odd answer.
+  workPlans: {
+    team: [
+      { cap: 15, monthly: 7900, yearly: 47000, pass: 54000 },
+      { cap: 30, monthly: 9900, yearly: 59000, pass: 68000 },
+      { cap: 50, monthly: 14900, yearly: 89000, pass: 102000 },
+      { cap: 100, monthly: 19900, yearly: 119000, pass: 137000 },
+    ],
+    staff: [
+      { cap: 5, monthly: 9900, yearly: 59000, pass: 68000 },
+      { cap: 10, monthly: 14900, yearly: 89000, pass: 102000 },
+      { cap: 20, monthly: 24900, yearly: 149000, pass: 171000 },
+      { cap: 50, monthly: 49900, yearly: 299000, pass: 344000 },
+    ],
+    freeStaff: 3,
+    freeTeamMonths: 1,
+  },
   // [MON-09] A code from the developer app ties a phone to an admin for ten minutes, once; two phones each.
   linkMs: 10 * 60 * 1000,
   linkCodesPerHour: 10,
@@ -66,6 +84,7 @@ export async function config(env) {
   return {
     v: 1, billingLive: s.billingLive, launchedAt: launchedAt ? iso(launchedAt) : null, thanksMonths: s.thanksMonths,
     freeFeatures: s.freeFeatures, adQuietDays: MONEY.adQuietDays, trialAskDays: MONEY.trialAskDays,
+    workPlans: MONEY.workPlans,
     // [SRV-04] 공지 running now (the app picks the ones for its version) and what is switched off.
     notices: notices.filter((n) => n.from <= now && now < n.until).map(noticeView), off: s.off,
     flags: configFlags(s.store, now), policy: configPolicy(s.store), serverTime: iso(now),
@@ -867,7 +886,7 @@ export async function purchase(request, env, dev, now) {
   if (typeof body.product !== "string" || !PRODUCT.test(body.product)) refuse("product", "product");
   if (typeof body.token !== "string" || body.token.length < 10 || body.token.length > 1000) refuse("token", "token");
   if (!playReady(env)) return json({ verified: false });
-  if (body.product === PASS_PRODUCT) return yearPass(env, dev, body.token, now);
+  if (body.product === PASS_PRODUCT || WORK_PASS.test(body.product)) return yearPass(env, dev, body.token, now, body.product);
   const s = readSub(await playCall(env, "GET", `/purchases/subscriptionsv2/tokens/${encodeURIComponent(body.token)}`), body.product);
   const hash = (await sha256(`sub|${body.token}`)).slice(0, 40);
   // [SRV-07] A token already tied to another install stays with it while that install still checks in: a
@@ -888,13 +907,15 @@ export async function purchase(request, env, dev, now) {
   hash, dev, body.token, body.product, s.basePlan, s.state, s.expiry, s.trial ? 1 : 0, s.autoRenew ? 1 : 0, now, now);
   const row = await one(env, "SELECT consent_at, stopped_at FROM subs WHERE hash = ?", hash);
   return json({
-    verified: true, state: s.state, expiry: s.expiry ? iso(s.expiry) : null, trial: s.trial, autoRenew: s.autoRenew,
+    verified: true, state: s.state, expiry: s.expiry ? iso(s.expiry) : null, trial: s.trial, autoRenew: s.autoRenew, basePlan: s.basePlan || null,
     acknowledged: s.acknowledged, consentAt: row.consent_at ? iso(row.consent_at) : null, stoppedAt: row.stopped_at ? iso(row.stopped_at) : null,
   });
 }
 
 /** 1.36 841 1년 이용권: a one-time product, no automatic payment. */
 export const PASS_PRODUCT = "bamnat_pro_pass_1y";
+/** 1.38 Phase 3 요금: a 팀·직원 요금제 band's 1년 이용권 (bamnat_team_pass_15, bamnat_staff_pass_5 …), checked the same way. */
+export const WORK_PASS = /^bamnat_(team|staff)_pass_[0-9]{1,4}$/;
 const PASS_DAYS = 365;
 
 /** products.get read the way the app needs it: purchaseState 0 bought, 1 cancelled (refunded), 2 pending. */
@@ -912,16 +933,16 @@ export function readPass(p) {
  * 1.36 841: the 1년 이용권 as Play says, kept by its token's hash with the phone that showed it (the same rule as a subscription:
  * a token tied to another phone that still checks in stays there). The app stacks the year itself; a refund says EXPIRED.
  */
-async function yearPass(env, dev, token, now) {
-  const p = readPass(await playCall(env, "GET", `/purchases/products/${PASS_PRODUCT}/tokens/${encodeURIComponent(token)}`));
+async function yearPass(env, dev, token, now, product = PASS_PRODUCT) {
+  const p = readPass(await playCall(env, "GET", `/purchases/products/${product}/tokens/${encodeURIComponent(token)}`));
   const hash = (await sha256(`pass|${token}`)).slice(0, 40);
   const bound = await one(env, "SELECT device, checked_at FROM year_passes WHERE hash = ?", hash);
   if (bound && bound.device !== dev) {
     if (now - bound.checked_at < REBIND_AFTER) {
-      await audit(env, now, "purchase_rebind_refused", PASS_PRODUCT, hash.slice(0, 8));
+      await audit(env, now, "purchase_rebind_refused", product, hash.slice(0, 8));
       return json({ verified: false });
     }
-    await audit(env, now, "purchase_rebind", PASS_PRODUCT, hash.slice(0, 8));
+    await audit(env, now, "purchase_rebind", product, hash.slice(0, 8));
   }
   if (!p.purchasedAt) return json({ verified: false });
   await run(env, `INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)

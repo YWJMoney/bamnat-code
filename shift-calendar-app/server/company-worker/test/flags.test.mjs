@@ -15,7 +15,8 @@ const L = adminLib();
 /** 통합계획 2-1: the keys the app's core FlagCatalog has too, stats.more the integrator added, and photo.wrong (AQ 1.29). */
 const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "type.field", "type.business", "type.invest", "leave.hourly",
   "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more", "photo.wrong" /* AQ 1.29 */, "stats.lookup" /* 1.31 */, "diag.observe" /* 1.32.1 */, "share.setup" /* 1.33 */, "share.look" /* 1.37 SHR-31 */,
-  "plaza.fixed_amount" /* BC 1.30 결정 D102 */, "recipe.browse", "recipe.publish", "recipe.vote", "recipe.talk" /* 1.34 RCP-37 */];
+  "plaza.fixed_amount" /* BC 1.30 결정 D102 */, "recipe.browse", "recipe.publish", "recipe.vote", "recipe.talk" /* 1.34 RCP-37 */,
+  "team.leader", "boss.payroll", "health.compare" /* 1.38 Phase 3, on from 정식 출시일 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
   takedown: "edit", ops: "edit", metrics: "view", shares: "edit", audit: "view", flags: "edit", flagOff: "none" };
@@ -59,6 +60,7 @@ test("[FLAG-22] /api/config: 1.27 apps read the same fields; 1.28 apps read flag
   assert.deepEqual([cfg.freeFeatures, cfg.off, cfg.launchedAt], [[], [], null]);
   assert.equal(cfg.serverTime, new Date(NOW).toISOString());
   // Only what the server overrides: the flags waiting on a confirmation (unconfirmed yet), nothing for the rest.
+  // 1.38 Phase 3 rows open on the launch policy's day (사용자 C안), so they wait on no confirmation here.
   assert.deepEqual(Object.keys(cfg.flags).sort(), ["ads", "billing"]);
   assert.deepEqual(cfg.flags.billing, { force: null, why: "", conditions: null, until: null, minApp: null, maxApp: null, confirmed: {} });
   assert.deepEqual(cfg.policy.find((p) => p.version === "3.2"), { version: "3.2", posted: "2026-10-28", effective: "2026-11-27", heldUntil: null });

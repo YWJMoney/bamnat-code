@@ -73,6 +73,7 @@ object RestCheck {
                     RestRules.Sources.REST)
                 continue
             }
+            if (!rules.sameDayRest && a.date == b.date) continue
             val rest = if (gap == 0L) "쉬지 않고 바로" else "${hours(gap)} 쉬고"
             val end = "%02d:%02d".format(a.to.hour, a.to.minute)
             val nextDay = b.date == a.date.plusDays(1)

@@ -54,10 +54,10 @@ class ACScreenshotTest : ScreenshotBase() {
 
     /** Today is the second night of 주주휴휴야야휴휴, then the rest of the first setup as it stands. */
     private fun Screen.finishSetup() {
-        tapText("네, 시간이 맞아요")
-        tapText("다음", exact = true)
+        // [EASE-07] Times and order on one screen; the alarm is a card on the summary.
+        tapText("네, 맞아요", exact = true)
         tapText("야간", exact = true); tapText("둘째 날")
-        tapText("회사 근무표와 같아요"); tapText("다음", exact = true)
+        tapText("회사 근무표와 같아요")
         tapText("저장하고 달력 보기")
     }
 
@@ -91,8 +91,8 @@ class ACScreenshotTest : ScreenshotBase() {
         tapText("4조 2교대 · 주주휴휴야야휴휴")
         assertTrue(appears("이 순서가 맞나요?", exact = true))
         tapText("이 순서로 설정 이어가기")
-        // On to the times: the row's shifts are in the draft.
-        assertTrue(appears("근무 시간이 맞나요?", exact = true))
+        // On to the times: the row's shifts and its order on one screen [EASE-07].
+        assertTrue(appears("근무 순서와 시간이 맞나요?", exact = true))
         finishSetup()
         val p = pattern()
         assertEquals(8, p.steps.size)

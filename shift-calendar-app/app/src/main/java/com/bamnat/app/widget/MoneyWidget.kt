@@ -123,7 +123,7 @@ class MoneyWidgetReceiver : GlanceAppWidgetReceiver() {
 }
 
 @Composable
-private fun MoneyContent(line: MoneyWidget.Line) {
+internal fun MoneyContent(line: MoneyWidget.Line) {
     val short = LocalSize.current.height < 90.dp
     fun won(v: Long) = if (line.hidden) Fmt.MASK + "원" else Fmt.won(v)
     val main = line.perDay?.let { won(it) } ?: "통장 잔액이나 예산을 적으면 보여요"

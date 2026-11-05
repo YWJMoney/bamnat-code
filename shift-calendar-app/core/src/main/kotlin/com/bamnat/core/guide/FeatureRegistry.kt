@@ -11,7 +11,7 @@ import com.bamnat.core.work.words
 enum class Place {
     CALENDAR, TODAY, MONEY, AUTO_RECORD, MEMOS, STATS,
     PAY, PATTERN, SHIFT_TYPES, EXTRA_KINDS, WORK_STYLE, CALENDARS, CALENDAR_EDIT, SHOP_DAYS, COMBINED, OWED,
-    SLEEP, DUTY_ROSTER, HEALTH_REPORT, TEAMS, YEAR, ATTENDANCE_IMPORT, COMMUTE, CALENDAR_IMPORT, SHARE, RECEIVE,
+    SLEEP, DUTY_ROSTER, HEALTH_REPORT, TEAMS, LEADER_TEAMS, YEAR, ATTENDANCE_IMPORT, COMMUTE, CALENDAR_IMPORT, SHARE, RECEIVE,
     DIAGNOSTICS, INQUIRY, FEATURES, PRO,
     /** [ONBOARD-04] 추천 기능 한 번에 켜기. */
     RECOMMENDED,
@@ -83,6 +83,8 @@ data class AppFeature(
     val under: String? = null,
     val moment: Moment? = null,
     val tip: String? = null,
+    /** 1.38: the 기능 깃발 the feature waits on ([com.bamnat.core.flags.FlagCatalog] key); while it is off the guide and search leave it out. */
+    val flag: String? = null,
 ) {
     /** For this kind of work; a main calendar from before kinds of work were asked is a shift calendar. */
     fun fits(style: WorkStyle?): Boolean = styles.isEmpty() || (style ?: WorkStyle.SHIFT) in styles
@@ -112,12 +114,30 @@ object FeatureRegistry {
 
     private fun f(
         id: String, req: String, name: String, what: String, styles: Set<WorkStyle>, where: String, route: FeatureRoute,
-        vararg keywords: String, off: Off? = null, under: String? = null, moment: Moment? = null, tip: String? = null,
-    ) = AppFeature(id, req, name, what, styles, where, route, keywords.toList(), off, under, moment, tip)
+        vararg keywords: String, off: Off? = null, under: String? = null, moment: Moment? = null, tip: String? = null, flag: String? = null,
+    ) = AppFeature(id, req, name, what, styles, where, route, keywords.toList(), off, under, moment, tip, flag)
 
     private fun at(place: Place, focus: String? = null) = FeatureRoute(place, focus)
 
-    val all: List<AppFeature> = listOf(
+    /**
+     * 1.38 Phase 3: whether a 깃발 is on this phone now, set by the app ([com.bamnat.core.flags.FlagCatalog] key). A feature resting
+     * on a flag that is off is left out of [all] (기능 찾기, 안내, 모아보기), so nobody is sent to a button that is not there yet.
+     * Until the app sets it, every such feature is left out.
+     */
+    @Volatile var flagOn: ((String) -> Boolean)? = null
+
+    /** 1.38 갈래6: what help and 설정 검색 offer, the same as [all] (features waiting for their 깃발 left out). */
+    val shown: List<AppFeature> get() = all
+
+    /** Every feature, also the ones waiting on a flag: for [get] and for tests. */
+    val everything: List<AppFeature> get() = EVERYTHING
+
+    val all: List<AppFeature> get() {
+        val on = flagOn
+        return EVERYTHING.filter { f -> f.flag == null || (on != null && on(f.flag)) }
+    }
+
+    private val EVERYTHING: List<AppFeature> = listOf(
         // The guide itself [GUIDE-02][GUIDE-03].
         f("guide.checklist", "GUIDE-02", "이 달력으로 할 수 있는 것", "새 달력이나 일하는 방식을 바꾼 달력에서 처음 며칠 쓸 만한 기능을 골라 보여 줘요",
             ALL, "달력 맨 위 카드", at(Place.FEATURES), "처음", "시작", "체크리스트", "안내 카드", "할 수 있는 것", off = Off.APP),
@@ -148,6 +168,10 @@ object FeatureRegistry {
             ALL, "달력 › 공유 (좁은 화면은 ⋮ › 근무표 공유)", at(Place.SHARE), "공유", "링크", "카톡", "가족", "동료", "보내기"),
         f("share.receive", "UX-03", "동료 근무표 받기", "받은 링크를 넣고 내 달력과 바꿔 보며 같이 쉬는 날을 찾아요",
             ALL, "달력 › ⋮ › 동료 근무표 받기", at(Place.RECEIVE), "받은 링크", "바꿔 보기", "같이 쉬는 날", "남편", "아내"),
+        // 1.37 [SHR-31][SHR-32], told from the launch date (the `share.look` row) — 1.38 갈래6 (공유 남은 일).
+        f("share.look", "SHR-31", "링크에 테마·근무 설정 담기", "근무표 링크에 내 테마와 근무 이름·색·알람 시각을 함께 담아요. 받는 분은 입어 보고 골라 넣어요",
+            ALL, "달력 › 공유 › 링크 › 내 테마·근무 설정", at(Place.SHARE), "테마 보내기", "테마 공유", "설정 보내기", "근무 설정 공유", "똑같이 꾸미기",
+            flag = "share.look"),
         // [PROV-04][FEAT-15][PROV-05] 프로, 1.20.0.
         f("share.moreLinks", "PROV-04", "공유 링크 여러 개", "달력마다 링크를 5개까지 따로 만들어 보낼 것과 기간을 다르게 하고, 180일·1년도 골라요",
             ALL, "달력 › 공유 › 링크 › + 새 링크", at(Place.SHARE), "링크 여러 개", "링크 추가", "1년 링크", "180일", "기간 늘리기"),
@@ -825,9 +849,22 @@ object FeatureRegistry {
         f("recipe.creatorPro", "PRF-12", "창작자 프로필 꾸미기", "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프를 써요",
             ALL, "마을 › 맨 위 내 얼굴 › 내 프로필 › 프로필 고치기", at(Place.RECIPES), "표지 그림", "대표 작품", "작품 통계", "창작자", "내 프로필",
             under = "recipe.maker"),
+        // 1.38 Phase 3 (정식 출시일에 켜짐, 사용자 C안).
+        f("team.leader", "TEAM-09", "내가 짜는 팀 근무표", "팀원 이름을 붙여 넣고 팀원×날짜 표를 칠해 확정하면, 팀원마다 자기 근무만 담긴 링크를 보내요",
+            setOf(SHIFT), "달력 › 모든 조 › 내 팀 짜기", at(Place.LEADER_TEAMS), "팀 근무표", "근무표 짜기", "듀티 짜기", "수간호사", "책임간호사", "조장", "팀장",
+            "희망 휴무", "자동 채우기", "공정성", flag = "team.leader"),
+        f("team.more", "GROW-06", "팀 요금제", "첫 달 확정까지는 무료예요. 그 뒤로 팀 인원 구간(15·30·50·100명)으로 매달 확정하고 팀을 여러 개 둬요. 개인 프로 기능도 들어 있어요",
+            setOf(SHIFT), "달력 › 모든 조 › 내 팀 짜기 › 확정", at(Place.LEADER_TEAMS), "팀 요금제", "팀 여러 개", "리더 요금", "팀 결제",
+            under = "team.leader", flag = "team.leader"),
+        f("boss.payroll", "BOSS-01", "사장님 급여 대장", "직원마다 평소 근무에서 달라진 날만 고치면 주휴·연장·야간까지 계산하고, 임금명세서와 임금대장을 만들어요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장", at(Place.MONEY), "급여 대장", "임금대장", "임금명세서", "명세서 보내기", "알바 급여", "직원 급여",
+            "주휴수당 계산", flag = "boss.payroll"),
+        f("boss.staff", "GROW-06", "직원 요금제", "직원 3명까지는 무료예요. 넷째부터 인원 구간(5·10·20·50명)으로 급여 대장과 명세서를 써요. 개인 프로 기능도 들어 있어요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 더하기", at(Place.MONEY), "직원 요금제", "직원 추가", "직원 4명", "사장님 결제",
+            under = "boss.payroll", flag = "boss.payroll"),
     )
 
-    private val byId: Map<String, AppFeature> = all.associateBy { it.id }
+    private val byId: Map<String, AppFeature> = EVERYTHING.associateBy { it.id }
 
     fun get(id: String): AppFeature? = byId[id]
 
