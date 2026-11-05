@@ -34,6 +34,20 @@ enum class HoursException(val label: String, val weeklyHours: Int?, val averageH
         const val REST_MINUTES = 11 * 60
 
         fun of(name: String?): HoursException = entries.firstOrNull { it.name == name } ?: NONE
+
+        /**
+         * PC 736fb7a6 (탄력제를 두 곳에서 물어 서로 달라도 저장됨): 탄력적 근로시간제 is asked once, as the pay setup's
+         * [com.bamnat.core.pay.FlexPeriod]; the week's limit follows it (2주 → [FLEX_2W], 1·3개월 → [FLEX_3M]), and no 탄력제
+         * leaves a 탄력 limit no more. The other systems stay as [current] says.
+         */
+        fun forFlex(flex: com.bamnat.core.pay.FlexPeriod?, current: HoursException): HoursException = when (flex) {
+            null -> if (current == FLEX_2W || current == FLEX_3M) NONE else current
+            com.bamnat.core.pay.FlexPeriod.TWO_WEEKS -> FLEX_2W
+            else -> FLEX_3M
+        }
+
+        /** The systems picked in their own row; 탄력 comes from the 탄력적 근로시간제 question ([forFlex]). */
+        val OTHERS: List<HoursException> get() = entries.filter { it != FLEX_2W && it != FLEX_3M }
     }
 }
 

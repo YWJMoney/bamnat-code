@@ -99,8 +99,31 @@ fun CompanyRulesEditor(
     onOpenKinds: () -> Unit,
     /** Opened for one value (설정 찾기 '월급날', the 근무시간 chip): scrolled to it and lit for a moment. */
     focus: PayFocus? = null,
+    /** PC 736fb7a6 (규칙을 바꾸고 뒤로 가면 말없이 버려짐): the screen's ← or back, counted; with changes it asks first. */
+    leaveAsk: Int = 0,
+    /** PC 736fb7a6 (알바 화면에 '회사 규칙'·'월급'): 알바 reads 근무지 and 급여날. */
+    style: com.bamnat.core.work.WorkStyle? = null,
 ) {
+    val hourly = style == com.bamnat.core.work.WorkStyle.HOURLY
+    fun say(t: String) = if (!hourly) t else t.replace("회사", "근무지").replace("월급날", "급여날").replace("월급이에요", "주급 아니에요")
     var draft by remember { mutableStateOf(saved) }
+    var asking by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(leaveAsk) {
+        if (leaveAsk == 0) return@LaunchedEffect
+        if (draft != saved) asking = true else onClose()
+    }
+    if (asking) com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { asking = false },
+        title = { Text("바꾼 규칙을 저장할까요?") },
+        text = { Text("저장하지 않고 나가면 이번에 바꾼 것은 사라져요.") },
+        confirmButton = { TextButton(onClick = { asking = false; vm.update { draft }; onClose() }) { Text("저장하고 나가기") } },
+        dismissButton = {
+            Row {
+                TextButton(onClick = { asking = false; onClose() }) { Text("버리고 나가기") }
+                TextButton(onClick = { asking = false }) { Text("계속 고치기") }
+            }
+        },
+    )
     val scroll = rememberScrollState()
     var periodY by remember { mutableStateOf<Int?>(null) }
     var hoursY by remember { mutableStateOf<Int?>(null) }
@@ -122,6 +145,8 @@ fun CompanyRulesEditor(
     val rules = draft.rules
     // [PAYS-01] A choice made here settles that question's 확인 필요.
     fun setRules(r: CompanyRules, vararg settled: String) { draft = draft.copy(rules = r, estimatedFields = draft.estimatedFields - settled.toSet()) }
+    // PC 736fb7a6: one 탄력제 answer; the week's limit (근로시간 제도) follows it.
+    fun PayProfile.flexSynced() = copy(rules = rules.copy(hoursException = com.bamnat.core.hours.HoursException.forFlex(flexPeriod, rules.hoursException)))
     fun PayProfile.settled(vararg keys: String) = copy(estimatedFields = estimatedFields - keys.toSet() -
         // [PAYS-17] 시수 said here too.
         (if (com.bamnat.core.pay.Unknowns.MONTHLY_HOURS in keys) setOf(com.bamnat.core.pay.RuleOnlyNeeds.HOURS_UNSET) else emptySet()))
@@ -180,31 +205,31 @@ fun CompanyRulesEditor(
             Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp, vertical = 12.dp).widthIn(max = 720.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("취업규칙·근로계약서·급여명세서를 보고 회사 방식에 맞춰 주세요. 고르지 않은 것은 법정 기준으로 계산해요.",
+            Text(say("취업규칙·근로계약서·급여명세서를 보고 회사 방식에 맞춰 주세요. 고르지 않은 것은 법정 기준으로 계산해요."),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             SectionCard(title = "기본", modifier = Modifier.onGloballyPositioned { hoursY = it.positionInParent().y.toInt() }.litWhen(PayFocus.HOURS)) {
-                Toggle("5인 이상 사업장", "아니면 법정 가산이 없어요. 회사가 주는 가산은 아래에서 따로 넣어요", draft.fiveOrMoreEmployees) {
+                Toggle("5인 이상 사업장", say("아니면 법정 가산이 없어요. 회사가 주는 가산은 아래에서 따로 넣어요"), draft.fiveOrMoreEmployees) {
                     draft = draft.copy(fiveOrMoreEmployees = it).settled(Unknowns.FIVE_OR_MORE)
                 }
                 if (!draft.fiveOrMoreEmployees) {
                     // [EXTRA-02] 근로기준법 시행령 제7조 별표 1: these do not apply under five employees.
                     Hint("5인 미만 사업장은 연장·야간·휴일 가산, 주 40시간·52시간, 연차가 법으로 정해져 있지 않아요(근로기준법 시행령 제7조 별표 1). " +
-                        "회사가 주는 가산이 있으면 아래 가산율에서 골라 주세요.")
+                        say("회사가 주는 가산이 있으면 아래 가산율에서 골라 주세요."))
                 }
                 if (SetupQuestion.SUPERVISORY in askedKinds || rules.supervisoryApproved) {
                     // [PAYS-03] 근로기준법 제63조 제3호: hours, breaks and holidays do not apply once approved.
                     Toggle("감시·단속 근로 승인", "경비·시설처럼 대기가 많은 일로 고용노동부 승인을 받았으면 켜요. 연장·휴일 가산과 주휴가 없고 야간 가산은 받아요(근로기준법 제63조)",
                         rules.supervisoryApproved) { setRules(rules.copy(supervisoryApproved = it), Unknowns.SUPERVISORY) }
                 }
-                Toggle("근무표 시간은 모두 기본 근무", "12시간 교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 켜 주세요. 잔업으로 적은 시간만 연장이 돼요. 탄력적 근로시간제(주 64시간까지)도 켜고 단위를 골라요",
+                Toggle("근무표 시간은 모두 기본 근무", "12시간 교대처럼 근무표대로 일한 시간이 기본급에 들어 있으면 켜 주세요. 잔업으로 적은 시간만 연장이 돼요. 탄력적 근로시간제도 켜고 단위를 골라요(2주 단위는 주 60시간, 1·3개월 단위는 주 64시간까지)",
                     draft.scheduleIsRegular) {
-                    draft = draft.copy(scheduleIsRegular = it, flexPeriod = if (it) draft.flexPeriod else null).settled(Unknowns.SCHEDULE_IS_REGULAR)
+                    draft = draft.copy(scheduleIsRegular = it, flexPeriod = if (it) draft.flexPeriod else null).flexSynced().settled(Unknowns.SCHEDULE_IS_REGULAR)
                 }
                 if (draft.scheduleIsRegular) {
                     // PC 02d6dabf (켜면 연장 두 줄이 말없이 사라짐): what went with them, said where they were.
                     Hint("‘하루 8시간·주 40시간 넘으면 연장’은 쓰지 않아요. 근무표 시간은 기본 근무로, 잔업으로 적은 시간만 연장으로 세요. 끄면 다시 나와요.")
-                    FlexPicker(draft.flexPeriod, { draft = draft.copy(flexPeriod = it).settled(Unknowns.SCHEDULE_IS_REGULAR) },
+                    FlexPicker(draft.flexPeriod, { draft = draft.copy(flexPeriod = it).flexSynced().settled(Unknowns.SCHEDULE_IS_REGULAR) },
                         start = draft.flexStart, onStart = { draft = draft.copy(flexStart = it) })
                 }
                 if (!draft.scheduleIsRegular) {
@@ -218,12 +243,23 @@ fun CompanyRulesEditor(
                 // PC 02d6dabf (회사 규칙 어디에서도 '주 52시간 예외'를 못 찾음, '회사마다 다른 계산' 접힌 칸 안에 있었음): with 5인 이상 and
                 // 탄력제 in 기본, where the week's limit is decided.
                 Label("근로시간 제도 (주 52시간 예외)")
+                val flex = draft.flexPeriod
+                if (flex != null) {
+                    // PC 736fb7a6: 탄력제 is the answer above; here it is said, not asked again.
+                    val ex = com.bamnat.core.hours.HoursException.forFlex(flex, rules.hoursException)
+                    Text("탄력적 근로시간제 ${flex.label.substringBefore(" (")} · 한 주 ${ex.weeklyHours}시간까지 (위에서 골랐어요)",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    com.bamnat.core.hours.HoursException.entries.forEach { e ->
-                        FilterChip(selected = rules.hoursException == e, onClick = { setRules(rules.copy(hoursException = e)) }, label = { Text(e.label) })
+                    com.bamnat.core.hours.HoursException.OTHERS.forEach { e ->
+                        FilterChip(selected = flex == null && rules.hoursException == e, onClick = {
+                            // Another system instead of 탄력제: the 탄력 answer above goes back to 없거나 몰라요.
+                            draft = draft.copy(flexPeriod = null, rules = draft.rules.copy(hoursException = e))
+                        }, label = { Text(if (flex != null && e == com.bamnat.core.hours.HoursException.NONE) "탄력제 아님 (주 52시간)" else e.label) })
                     }
                 }
-                Hint(rules.hoursException.note + " 근무시간 화면의 한도 경고가 이 기준으로 바뀌어요.")
+                Hint(rules.hoursException.note + " 근무시간 화면의 한도 경고가 이 기준으로 바뀌어요." +
+                    if (rules.hoursException.weeklyHours == null) " 한 주씩 정한 한도가 없어서, 주별 막대는 설정 › 근무시간 경고의 값으로 보여 줘요." else "")
                 if (SetupQuestion.BREAK_PAY in askedKinds || rules.breakPay != BreakPay.UNPAID) {
                     // [PAYS-03] 근로기준법 제54조: a break is free time; 대기 under direction is work (제50조 제3항).
                     Label("휴게 시간")
@@ -268,7 +304,7 @@ fun CompanyRulesEditor(
             }
 
             // [PAYX-15] The days a month's pay covers and the pay day, e.g. 전월 21일~20일, 25일 지급.
-            SectionCard(title = "정산 기간과 월급날", modifier = Modifier
+            SectionCard(title = say("정산 기간과 월급날"), modifier = Modifier
                 .onGloballyPositioned { periodY = it.positionInParent().y.toInt() }.litWhen(PayFocus.PERIOD)) {
                 val period = draft.period
                 Label("근무를 며칠까지 모아 그 달 급여로 계산하나요?")
@@ -291,7 +327,7 @@ fun CompanyRulesEditor(
                     }
                 }
                 Hint("${month.monthValue}월 급여는 ${period.label(month)} 근무로 계산해요.")
-                Label("월급날")
+                Label(say("월급날"))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = period.payDay == null, onClick = { draft = draft.copy(period = period.copy(payDay = null)) },
                         label = { Text("안 정함") })
@@ -317,7 +353,7 @@ fun CompanyRulesEditor(
                 Label("주급이면 받는 요일")
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = period.payWeekday == null, onClick = { draft = draft.copy(period = period.copy(payWeekday = null)) },
-                        label = { Text("월급이에요") })
+                        label = { Text(say("월급이에요")) })
                     java.time.DayOfWeek.entries.forEach { d ->
                         FilterChip(selected = period.payWeekday == d, onClick = { draft = draft.copy(period = period.copy(payWeekday = d)) },
                             label = { Text(com.bamnat.core.hours.StatsRange.dayName(d).take(1)) })
@@ -335,14 +371,14 @@ fun CompanyRulesEditor(
                 PremiumRow("휴일 8시간까지", rules.holidayPremiumWithin8h, 0.5, listOf(0.5, 1.0, 1.5)) { setRules(rules.copy(holidayPremiumWithin8h = it)) }
                 PremiumRow("휴일 8시간 넘는 부분", rules.holidayPremiumOver8h, 1.0, listOf(1.0, 1.5, 2.0)) { setRules(rules.copy(holidayPremiumOver8h = it)) }
                 Hint("예: 연장 가산 50%면 연장 1시간에 통상시급의 150%를 받아요." +
-                    if (!draft.fiveOrMoreEmployees) " 5인 미만이라 법정 가산은 0%예요. 회사가 주는 가산을 골라 주세요." else "")
+                    if (!draft.fiveOrMoreEmployees) say(" 5인 미만이라 법정 가산은 0%예요. 회사가 주는 가산을 골라 주세요.") else "")
             }
 
             FoldSection(title = "야간 시간") {
                 // [PAYX-12] Every shift on the calendar, base shifts included, earns the night premium in this window.
                 NightWindowPicker(rules) { s, e -> setRules(rules.copy(nightStart = s, nightEnd = e)) }
                 Hint("달력의 근무는 기본 근무로 계산해도 이 시간에 걸친 부분은 야간 가산을 받아요. 법은 22~06시예요(근로기준법 제56조 제3항). " +
-                    "회사 야간 시간이 이 시간을 덜 덮으면 아래에 알려 드려요.")
+                    say("회사 야간 시간이 이 시간을 덜 덮으면 아래에 알려 드려요."))
             }
 
             // [PAYS-03] Allowances paid instead of a premium: a 야간수당 or a 고정 연장수당 that holds the premiums.
@@ -397,12 +433,12 @@ fun CompanyRulesEditor(
                     // [HOLI-01] One choice for 빨간날 work in place of the switch and the chips it used to take.
                     Label("빨간날(공휴일)에 일하면")
                     HolidayWorkPicker(rules, snapshot.shiftTypes, onChange = { setRules(it, Unknowns.PUBLIC_HOLIDAYS) })
-                    Toggle("공휴일 연차는 연차 일수에서 안 빠짐", "공휴일 근무일에 쉬어도 연차가 줄지 않는 회사라면 켜 주세요", rules.holidayLeaveFree) {
+                    Toggle("공휴일 연차는 연차 일수에서 안 빠짐", say("공휴일 근무일에 쉬어도 연차가 줄지 않는 회사라면 켜 주세요"), rules.holidayLeaveFree) {
                         setRules(rules.copy(holidayLeaveFree = it))
                     }
                 } else {
                     // [PAYS-03] 제55조 제2항 applies from five employees; below that it is the company's choice.
-                    Toggle("공휴일을 유급휴일로 줘요", "5명 미만 회사는 공휴일이 법으로 정해져 있지 않아요. 쉬어도 그날 급여가 나오면 켜 주세요", rules.holidaysUnderFive) {
+                    Toggle("공휴일을 유급휴일로 줘요", say("5명 미만 회사는 공휴일이 법으로 정해져 있지 않아요. 쉬어도 그날 급여가 나오면 켜 주세요"), rules.holidaysUnderFive) {
                         setRules(rules.copy(holidaysUnderFive = it), Unknowns.PUBLIC_HOLIDAYS)
                     }
                 }
@@ -421,10 +457,10 @@ fun CompanyRulesEditor(
                         if (rules.extraRule(id) == null) Hint("‘${kinds.name(id)}’ 급여 방식이 법대로라 공휴일도 법정대로 계산해요. 아래에서 방식을 정해 주세요.")
                     }
                     // [PAYX-14] Overnight shifts across a holiday: by the clock unless the company says otherwise.
-                    Toggle("밤샘 근무는 시작한 날로 휴일 판단", "끄면 공휴일 0시~24시에 일한 시간만 휴일근로예요. 회사가 근무 시작일로 정하면 켜 주세요", rules.holidayByShiftStart) {
+                    Toggle("밤샘 근무는 시작한 날로 휴일 판단", say("끄면 공휴일 0시~24시에 일한 시간만 휴일근로예요. 회사가 근무 시작일로 정하면 켜 주세요"), rules.holidayByShiftStart) {
                         setRules(rules.copy(holidayByShiftStart = it))
                     }
-                    Toggle("공휴일 연차는 연차 일수에서 안 빠짐", "공휴일 근무일에 쉬어도 연차가 줄지 않는 회사라면 켜 주세요", rules.holidayLeaveFree) {
+                    Toggle("공휴일 연차는 연차 일수에서 안 빠짐", say("공휴일 근무일에 쉬어도 연차가 줄지 않는 회사라면 켜 주세요"), rules.holidayLeaveFree) {
                         setRules(rules.copy(holidayLeaveFree = it))
                     }
                 }
@@ -455,13 +491,13 @@ fun CompanyRulesEditor(
                 OutlinedButton(onClick = { if (draft != saved) vm.update { draft }; onOpenKinds() }, modifier = Modifier.padding(top = 4.dp)) {
                     Text("종류·시간·가산 정하기")
                 }
-                Hint("대근 8시간에 기본급 10% + 야간 가산 50%처럼 회사 방식이 있으면 종류마다 체크해요." + if (draft != saved) " 여기서 바꾼 내용은 저장하고 넘어가요." else "")
+                Hint(say("대근 8시간에 기본급 10% + 야간 가산 50%처럼 회사 방식이 있으면 종류마다 체크해요.") + if (draft != saved) " 여기서 바꾼 내용은 저장하고 넘어가요." else "")
             }
 
             // [PAYS-06] Anything the choices above cannot say, in the company's own words; the total above follows each one.
             // [RULE-ED-05] 1.30 AW (사용자 "사진 촬영 금지 회사… 칸 추가 방식으로"): the company's own allowances and rules as the same 칸 as
             // the photo's result, each opened where it is; '칸 더하기' starts from the usual allowances. Words and photos stay under it.
-            FoldSection(title = "우리 회사 항목") {
+            FoldSection(title = say("우리 회사 항목")) {
                 Hint("수당·더 받는 근무·빠지는 돈을 칸으로 하나씩 더해요. 사진이 없어도 돼요. 위에 있는 가산율이나 대근 방식도 칸으로 담으면 알아서 맞춰 넣어요.")
                 val shiftNames = remember(snapshot.shiftTypes) { snapshot.shiftTypes.associate { it.id to it.name } }
                 val own = remember(draft.items, draft.customRules, shiftNames) { com.bamnat.core.pay.RuleSheet.of(draft, shiftNames) }
@@ -520,7 +556,7 @@ fun CompanyRulesEditor(
                 }
             }
             // [PAYX-24][PAYX-27][PAYX-29][PAYX-33] Company ways the law leaves open, each with what it changes.
-            FoldSection(title = "회사마다 다른 계산") {
+            FoldSection(title = say("회사마다 다른 계산")) {
                 if (draft.wageType == WageType.MONTHLY) {
                     Label("입사·퇴사 달 기본급 일할")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -543,7 +579,7 @@ fun CompanyRulesEditor(
                     com.bamnat.core.pay.WonRounding.AT_END_UP -> "시급을 소수점까지 그대로 들고 가서 줄마다 원 미만을 올려요. 명세서 수당이 1원씩 많으면 이 방식이에요."
                     // [HOURLY-03] 1.30
                     com.bamnat.core.pay.WonRounding.AT_END_DOWN -> "시급을 소수점까지 그대로 들고 가서 줄마다 원 미만을 버려요. 명세서 수당이 1원씩 적으면 이 방식이에요."
-                    else -> "시급을 먼저 원 단위로 반올림하고 곱해요. 법 기준은 없어 회사마다 달라요."
+                    else -> say("시급을 먼저 원 단위로 반올림하고 곱해요. 법 기준은 없어 회사마다 달라요.")
                 })
                 // [PHOTO-11] 1.29: the 통상시급 taken from a payslip, shown so it can be let go.
                 draft.ordinaryHourly?.let { h ->
@@ -640,11 +676,11 @@ fun CompanyRulesEditor(
                             Text("${policy.fiscalStartMonth}월 1일", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(horizontal = 8.dp))
                             OutlinedButton(onClick = { setRules(rules.copy(leave = policy.copy(fiscalStartMonth = policy.fiscalStartMonth % 12 + 1))) }) { Text("+") }
                         }
-                        Hint("회계연도 기준은 법이 아니라 회사 편의예요. 입사일 기준보다 적으면 안 되고, 그만둘 때 입사일 기준으로 다시 따져요(고용노동부 해석, 원문 확인 필요).")
+                        Hint(say("회계연도 기준은 법이 아니라 회사 편의예요. 입사일 기준보다 적으면 안 되고, 그만둘 때 입사일 기준으로 다시 따져요(고용노동부 해석, 원문 확인 필요)."))
                     }
                 }
                 Hint("1년 이상 다니면 15일, 그 뒤 2년마다 1일씩 늘어 최대 25일이에요. 1년 안 됐으면 한 달 개근마다 1일(최대 11일)이에요. " +
-                    "근로기준법 제60조 · 5인 미만 사업장은 해당 없음. 회사가 준 날·이월·조정은 급여 화면의 연차 카드에서 넣어요.")
+                    say("근로기준법 제60조 · 5인 미만 사업장은 해당 없음. 회사가 준 날·이월·조정은 급여 화면의 연차 카드에서 넣어요."))
             }
             Spacer(Modifier.padding(bottom = 16.dp))
         }

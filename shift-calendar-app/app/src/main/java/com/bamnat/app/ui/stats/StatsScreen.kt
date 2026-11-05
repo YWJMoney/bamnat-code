@@ -150,6 +150,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
     // 탄력적 근로시간제, the exception's), else the user's own 한 주 근무 경고 (no setup yet, 5인 미만, a non-wage calendar).
     val employee = style?.usesPayEngine != false
     val weekLimit = (if (employee) payProfile?.let(::legalWeekHours) else null) ?: settings.limits.weeklyLimitHours
+    // PC 736fb7a6 (선택적·감시단속은 '한도 없음'인데 '주 64시간 기준'): no weekly limit in law; the user's own warning shows instead.
+    val noWeekLaw = employee && payProfile?.fiveOrMoreEmployees == true && legalWeekHours(payProfile) == null
     val calc = remember(snap, settings.limits, weekLimit) {
         WorkHoursCalculator(snap.resolver, DayOfWeek.MONDAY, settings.limits.copy(legalWeeklyHours = weekLimit))
     }
@@ -278,7 +280,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         // [SHOP-09][SHOP-10][SHOP-11] 직원 인건비, 날씨별 매출, 간이과세 기준.
         if (money != null && style == WorkStyle.BUSINESS) com.bamnat.app.ui.work.ShopToolCards(vm.calendarId, money, month)
         if (!hasHours) {
-            Text("달력에 근무 시간을 넣으면 주별 근무시간과 3개월 평균도 여기서 볼 수 있어요.",
+            // 1.37 PC 736fb7a6 (현장: '근무 시간을 넣으면…'은 갈 곳이 없는 안내): only a calendar with wages is told to put hours in.
+            if (style?.usesPayEngine != false) Text("달력에 근무 시간을 넣으면 주별 근무시간과 3개월 평균도 여기서 볼 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
             return@Column
@@ -436,7 +439,11 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
 
                 }
                 StatsPart.WEEKS -> {
-                SectionCard(title = if (employee) "주별 근무시간 (주 ${weekLimit}시간 기준)" else "주별 일한 시간") {
+                SectionCard(title = when {
+                    !employee -> "주별 일한 시간"
+                    noWeekLaw -> "주별 근무시간 (법정 한 주 한도 없음 · 경고 ${weekLimit}시간)"
+                    else -> "주별 근무시간 (주 ${weekLimit}시간 기준)"
+                }) {
                     val maxHours = maxOf(
                         weekLimit.toDouble(),
                         summary.weeks.maxOfOrNull { it.totalMinutes / 60.0 } ?: 0.0,
@@ -487,7 +494,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 }
                 StatsPart.COMPARE -> CompareCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate)
                 StatsPart.YEAR -> YearWorkCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate,
-                    onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.TOOLS.key) } })
+                    onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.REPORT.key) } })
                 else -> Unit
             }
         }
@@ -641,7 +648,7 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, st
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = "급여 고치기" }) {
             com.bamnat.app.ui.pay.PayFocus.CHIPS.forEach { f ->
-                androidx.compose.material3.AssistChip(onClick = { onFocus(f.key) }, label = { Text(f.label) },
+                androidx.compose.material3.AssistChip(onClick = { onFocus(f.key) }, label = { Text(f.labelFor(style)) },
                     leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(16.dp)) })
             }
         }
@@ -824,6 +831,25 @@ internal enum class StatsPart(val id: String, val label: String, val what: Strin
     ;
 }
 
+/**
+ * 1.37 PC 736fb7a6 (자영업·현장·투자의 카드 배치에 '주별 근무시간', '52시간 기준', '잔업·특근·대근'): the names a calendar without
+ * wages sees, with no labor-law hours and no pay words.
+ */
+internal fun StatsPart.textFor(style: WorkStyle?): Pair<String, String> {
+    if (style?.usesPayEngine != false) return label to what
+    val tab = style.words().tab
+    return when (this) {
+        StatsPart.TILES -> label to "이번 달 일한 시간과 날"
+        StatsPart.PAY -> "수입 카드" to "이번 달 수입"
+        StatsPart.KINDS -> "더 일한 것 종류별" to "종류마다 횟수와 시간"
+        StatsPart.THREE -> label to "3개월 주평균 (참고용)"
+        StatsPart.WEEKS -> "주별 일한 시간" to "이번 달 주마다(월~일) 일한 시간 막대"
+        StatsPart.TREND -> label to "달마다 일한 시간 흐름"
+        StatsPart.COMPARE -> label to "일한 시간을 지난달·작년 같은 달과"
+        StatsPart.YEAR -> "올해 $tab" to "달마다 일한 시간과 한 해 합계"
+    }
+}
+
 internal fun statsParts(layout: String) = com.bamnat.core.layout.PageLayout.decode(layout).arrange(StatsPart.entries.toList()) { it.id }
 
 @Composable
@@ -839,16 +865,16 @@ private fun StatsEditSheet(
     fun write(next: List<com.bamnat.core.layout.PageLayout.Placed<StatsPart>>) =
         update { it.copy(statsLayout = com.bamnat.core.layout.PageLayout.of(next) { p -> p.id }.encode()) }
     val rows = { movable: Boolean ->
-        placed.filter { it.part.movable == movable && fits(it.part) }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
+        placed.filter { it.part.movable == movable && fits(it.part) }.map { it.part.textFor(style).let { (l, w) -> com.bamnat.app.ui.components.EditRow(it.part.id, l, w, it.shown, movable, it.isNew) } }
     }
     com.bamnat.app.ui.components.PageEditSheet(
-        title = "근무·급여 카드 배치",
+        title = "${style.words().tab} 카드 배치",
         groups = listOf(
             com.bamnat.app.ui.components.EditGroup("위쪽 (이번 달)", rows(false)),
             com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
         ),
         middle = "일하는 방식 카드", // [SET-05]
-        others = com.bamnat.app.ui.guide.fitOthers(surface, style, added) { id -> StatsPart.entries.firstOrNull { it.id == id }?.let { it.label to it.what } },
+        others = com.bamnat.app.ui.guide.fitOthers(surface, style, added) { id -> StatsPart.entries.firstOrNull { it.id == id }?.textFor(style) },
         onAdd = { id, on -> com.bamnat.app.ui.guide.setFitAdded(context, calendar, surface, id, on) },
         onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },
         onMove = { id, by ->
@@ -926,9 +952,8 @@ private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfi
 internal fun legalWeekHours(profile: com.bamnat.core.pay.PayProfile?): Int? {
     if (profile?.fiveOrMoreEmployees == false) return null
     val exception = profile?.rules?.hoursException ?: com.bamnat.core.hours.HoursException.NONE
-    return when {
-        exception != com.bamnat.core.hours.HoursException.NONE -> exception.weeklyHours
-        profile?.flexPeriod != null && profile.scheduleIsRegular -> 64
-        else -> 52
-    }
+    // PC 736fb7a6: 탄력제 is the pay setup's one answer (2주 60, 1·3개월 64); a stale 탄력 limit without it counts no more.
+    val synced = com.bamnat.core.hours.HoursException.forFlex(profile?.flexPeriod?.takeIf { profile.scheduleIsRegular }, exception)
+    return synced.weeklyHours
+
 }

@@ -58,8 +58,10 @@ fun AmountField(
     textStyle: androidx.compose.ui.text.TextStyle? = null,
     /** [SHOP-03] 0 is an answer here (센 현금 0원), not an empty field. */
     allowZero: Boolean = false,
+    enabled: Boolean = true,
 ) {
     OutlinedTextField(
+        enabled = enabled,
         value = digits,
         onValueChange = { v -> onChange(amountInput(v, allowZero)) },
         label = { Text(label) },

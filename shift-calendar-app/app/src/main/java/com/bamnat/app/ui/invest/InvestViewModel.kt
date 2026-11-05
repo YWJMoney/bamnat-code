@@ -201,6 +201,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
 
     // [INV-03][INV-20] Trades: saved, copied, changed and deleted with 되돌리기.
     fun saveTrade(t: Trade, before: Trade?) = viewModelScope.launch {
+        guideUsed("invest.trade")
         val account = homeAccount(t.accountId, before != null)
         val id = repo.saveTrade(t.copy(accountId = account))
         changed()
@@ -391,6 +392,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
     // [INV-02][INV-09] 입금·출금, 배당·이자, 기타 비용.
     fun saveCash(c: CashFlow, before: CashFlow?) = viewModelScope.launch {
         // [INV-05] 원금 as it will be, from the rows before this save (the state may or may not hold it yet).
+        if (c.kind == CashKind.DEPOSIT || c.kind == CashKind.WITHDRAW) guideUsed("invest.deposit")
         val principal = state.value.full.cash.sumOf { it.principalWon } - (before?.principalWon ?: 0) + c.principalWon
         val account = homeAccount(c.accountId, before != null)
         val id = repo.saveCash(c.copy(accountId = account))
@@ -408,6 +410,12 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         say("${c.kind.label} 기록을 지웠어요") { repo.saveCash(c) }
     }
 
+    /**
+     * 1.37 PC 736fb7a6 (투자: 입금을 적어도 '할 수 있는 것 0/6'): a record written ticks its line on the calendar's checklist,
+     * as 일감·매출 do.
+     */
+    private fun guideUsed(id: String) = runCatching { com.bamnat.app.data.GuideStore.get(container.appContext).used(id) }
+
     // [INV-02] Accounts.
     fun saveAccount(a: InvestAccount) = viewModelScope.launch {
         val sort = if (a.id == 0L) (state.value.full.accounts.maxOfOrNull { it.sortOrder } ?: 0) + 1 else a.sortOrder
@@ -424,6 +432,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
     /** [INV-04][INV-19] Prices typed at once, with the dollar's rate. */
     fun saveQuotes(quotes: List<Quote>, removed: List<String>, usdKrw: Double?) = viewModelScope.launch {
         repo.saveQuotes(quotes, removed)
+        guideUsed("invest.quotes")
         if (usdKrw != null && usdKrw > 0) repo.saveSettings { it.copy(usdKrw = usdKrw) }
         changed()
         say("현재가를 바꿨어요. 평가손익과 수익률도 다시 계산했어요")
@@ -432,6 +441,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
     // [INV-07] The day's journal.
     fun saveJournal(j: JournalEntry) = viewModelScope.launch {
         repo.saveJournal(j)
+        if (!j.isEmpty) guideUsed("invest.journal")
         say(if (j.isEmpty) "일지를 비웠어요" else "${j.date.monthValue}월 ${j.date.dayOfMonth}일 일지를 적었어요")
     }
 
@@ -446,6 +456,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
     // [INV-08] Alarms and 정기 매수.
     fun saveAlarm(a: InvestAlarm) = viewModelScope.launch {
         repo.saveAlarm(a)
+        guideUsed("invest.alarms")
         say(if (a.enabled) "‘${a.title}’ ${com.bamnat.core.invest.InvestAlarms.describe(a)}에 알려 드려요" else "‘${a.title}’ 알람을 껐어요")
     }
 

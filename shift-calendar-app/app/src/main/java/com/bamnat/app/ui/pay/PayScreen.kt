@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.theme.CalendarColors
 import com.bamnat.app.ui.theme.LocalCalendarColors
@@ -192,6 +194,7 @@ fun PayScreen(
     var detailedFrom by remember { mutableStateOf<DetailedStart?>(null) }
     /** 1.36 PC X4: the ← and back while 자세히 고치기 is open, handed to it so it can ask before leaving. */
     var wizardLeave by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var rulesLeave by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var plazaAsk by rememberSaveable { mutableStateOf(false) }
     // [PAYIN-05][PAYIN-06] 1.37 B5·B6·B7: what a save did, the 7 days of changes, starting over.
     val note by vm.note.collectAsStateWithLifecycle()
@@ -206,7 +209,7 @@ fun PayScreen(
         when {
             detailedFrom != null -> wizardLeave++
             editingSetup -> editingSetup = false
-            else -> closeRules()
+            else -> rulesLeave++
         }
     }
     // [PAYX-22] A change that moves a month matched with a payslip.
@@ -246,7 +249,7 @@ fun PayScreen(
                         when {
                             detailedFrom != null -> wizardLeave++
                             editingSetup -> editingSetup = false
-                            editingRules -> closeRules()
+                            editingRules -> rulesLeave++
                             else -> onBack()
                         }
                     }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") }
@@ -330,7 +333,7 @@ fun PayScreen(
                 }
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
-                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = ::closeRules, onOpenKinds = onOpenExtraKinds, focus = rulesFocus)
+                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { rulesLeave = 0; closeRules() }, onOpenKinds = onOpenExtraKinds, focus = rulesFocus, leaveAsk = rulesLeave, style = workStyle)
                 }
                 // [FREE-07] 1.35 급여 모양 of this kind of work; the figures and their 예상·추정 marks show whatever it says.
                 else -> androidx.compose.runtime.CompositionLocalProvider(LocalPayLook provides
@@ -441,14 +444,21 @@ private fun PayResult(
         onFocusUsed()
         when (focus) {
             PayFocus.BASE -> editTarget = ValueTarget.Base
-            PayFocus.HOURS, PayFocus.PERIOD -> onEditRulesAt(focus)
-            PayFocus.RULES -> onEditRules()
+            // PC 736fb7a6: the 회사 규칙 chip too, so saving goes back to 근무·급여.
+            PayFocus.HOURS, PayFocus.PERIOD, PayFocus.RULES -> onEditRulesAt(focus)
             else -> Unit
         }
     }
 
+    val resultScroll = rememberScrollState()
+    var reportY by remember { mutableStateOf<Int?>(null) }
+    // PC 736fb7a6 (리포트 단추로 가면 리포트 카드가 도구 맨 아래): opened for the report, scrolled to it.
+    androidx.compose.runtime.LaunchedEffect(focus, reportY) {
+        val y = reportY
+        if (focus == PayFocus.REPORT && y != null) resultScroll.animateScrollTo(y)
+    }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxSize().verticalScroll(resultScroll).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
     ) {
         // [VIS-05] With large text the month's arrows took the row and the job's name stood one letter a line:
@@ -646,7 +656,9 @@ private fun PayResult(
         }
 
         // [PROV-01] The month or its year as a PDF or CSV (프로).
-        PayReportCard(vm, profile, snapshot, shown, closed = closedSnap != null, gate = gate, onEditSetup = onEditSetup)
+        androidx.compose.foundation.layout.Box(Modifier.onGloballyPositioned { reportY = it.positionInParent().y.toInt() }) {
+            PayReportCard(vm, profile, snapshot, shown, closed = closedSnap != null, gate = gate, onEditSetup = onEditSetup)
+        }
         } // TOOLS
 
         if (payTab == PayTab.RESULT) {

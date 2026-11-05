@@ -748,7 +748,13 @@ fun CalendarScreen(
     val fabJump = with(density) { 8.dp.toPx() }
     val fabTarget: () -> Float = {
         if (!docking || gridBottom.isNaN() || fabAreaBottom.isNaN()) 0f
-        else (gridBottom + dockGap - (fabAreaBottom - fabLift)).coerceIn(0f, fabLift)
+        else {
+            // 1.37 PC 736fb7a6 (첫 근무를 칠하면 위에 카드가 생겨 달력이 내려가고, '빠른 입력'이 화면 아래로 숨어 끝까지 내려야 보임):
+            // it rides under the month only when the whole month shows at the page's top. A longer page keeps it in its usual
+            // place all the way, so it never hides below the edge and does not jump while scrolling.
+            val ride = gridBottom + dockGap - (fabAreaBottom - fabLift)
+            if (ride + pageScroll.value >= fabLift - 1f) 0f else ride.coerceIn(0f, fabLift)
+        }
     }
     val fabDrop = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(docking, fabLift) {
