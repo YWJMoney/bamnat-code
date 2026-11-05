@@ -546,6 +546,7 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
         when (val s = if (shared != null) com.bamnat.app.IncomingRoster.take() else null) {
             is com.bamnat.app.IncomingRoster.Shared.Photo -> vm.readRosterPhoto(context, s.uri)
             is com.bamnat.app.IncomingRoster.Shared.Text -> vm.readRosterText(s.text)
+            is com.bamnat.app.IncomingRoster.Shared.File -> vm.readRosterFile(context, s.uri)
             null -> Unit
         }
     }
@@ -556,8 +557,8 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
             label = { Text("사진으로") }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)) })
         // [READ-15] 1.27: straightened by Google's scanner on the phone.
         com.bamnat.app.imports.ScannerButton(onImage = { vm.readRosterPhoto(context, it) }, onError = { vm.say(it) }, enabled = !reading)
-        FilterChip(selected = false, enabled = !reading, onClick = { files.launch(com.bamnat.app.ui.imports.SheetFiles.TYPES) },
-            label = { Text("엑셀·CSV") }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
+        FilterChip(selected = false, enabled = !reading, onClick = { files.launch(com.bamnat.app.ui.imports.SheetFiles.ROSTER_TYPES) },
+            label = { Text("엑셀·PDF") }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
         FilterChip(selected = roster == null, onClick = vm::clearRoster, label = { Text("직접 칠하기") }, leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(18.dp)) })
     }
     // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): at once a card that says it is reading, how far, for how long, with 취소;

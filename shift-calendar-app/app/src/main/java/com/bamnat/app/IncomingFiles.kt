@@ -52,6 +52,8 @@ object IncomingRoster {
     sealed interface Shared {
         data class Photo(val uri: Uri) : Shared
         data class Text(val text: String) : Shared
+        /** [READ-30] 1.38: a roster file shared from 카카오톡·메일 (PDF, 엑셀, CSV), read by [com.bamnat.app.imports.AnyFile]. */
+        data class File(val uri: Uri) : Shared
     }
 
     private val _shared = MutableStateFlow<Shared?>(null)
@@ -76,10 +78,17 @@ object IncomingRoster {
         val type = intent.type.orEmpty()
         return when {
             type.startsWith("image/") -> IncomingFiles.uriOf(intent)?.let { Shared.Photo(it) }
+            type in FILE_TYPES -> IncomingFiles.uriOf(intent)?.let { Shared.File(it) }
             type.startsWith("text/plain") -> intent.getStringExtra(Intent.EXTRA_TEXT)?.takeIf { it.isNotBlank() }?.take(MAX_TEXT)?.let { Shared.Text(it) }
             else -> null
         }
     }
+
+    /** [READ-30] The file types a roster is shared in (the manifest's roster filter lists the same). */
+    val FILE_TYPES = setOf(
+        "application/pdf", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel",
+        "application/vnd.oasis.opendocument.spreadsheet", "text/csv", "text/comma-separated-values",
+    )
 
     /** A month's roster is a few kilobytes; a long message is cut, never kept whole. */
     private const val MAX_TEXT = 20_000

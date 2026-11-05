@@ -346,6 +346,7 @@ class DutyRosterViewModel(
     fun receive(shared: IncomingRoster.Shared) = when (shared) {
         is IncomingRoster.Shared.Photo -> readPhoto(shared.uri)
         is IncomingRoster.Shared.Text -> readText(shared.text)
+        is IncomingRoster.Shared.File -> readFile(shared.uri)
     }
 
     /**
@@ -559,8 +560,8 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                     enabled = !ui.reading, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)); Text(" 사진으로", maxLines = 1)
                 }
-                OutlinedButton(onClick = { files.launch(SheetFiles.TYPES) }, enabled = !ui.reading, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Icon(Icons.Filled.Description, null, Modifier.size(18.dp)); Text(" 엑셀·CSV", maxLines = 1)
+                OutlinedButton(onClick = { files.launch(SheetFiles.ROSTER_TYPES) }, enabled = !ui.reading, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Icon(Icons.Filled.Description, null, Modifier.size(18.dp)); Text(" 엑셀·PDF", maxLines = 1)
                 }
                 TextButton(onClick = { others = !others }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (others) "다른 방법 접기" else "다른 방법", maxLines = 1) }
             }
