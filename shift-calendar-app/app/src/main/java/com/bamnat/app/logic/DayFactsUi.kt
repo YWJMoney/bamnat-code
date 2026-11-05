@@ -46,7 +46,12 @@ fun WorkStyle.formulaWord(): String = when (this) {
  * [FXR-01][FXR-02] What formulas read besides the calendar, memos and money: the answers to the 받는 칸 of the recipes in use (by
  * name, for `칸("이름")`) and the calendar's pay, for 이달급여·그날급여.
  */
-class FormulaExtras(val inputs: Map<String, Any?> = emptyMap(), val pay: PaySource? = null)
+class FormulaExtras(
+    val inputs: Map<String, Any?> = emptyMap(),
+    val pay: PaySource? = null,
+    /** 1.37 [LEDH-19] 모으기 봉투 and what went into them, for 봉투모은돈·봉투진행. */
+    val envelopes: Pair<List<com.bamnat.core.money.Envelope>, List<com.bamnat.core.money.EnvelopeMove>> = emptyList<com.bamnat.core.money.Envelope>() to emptyList(),
+)
 
 /** [FXR-02] The calendar's pay as the pay screen works it out: its setup, its settings (근무 종류 이름·주휴) and the closed months. */
 data class PaySource(
@@ -77,6 +82,23 @@ class PayFacts(private val pay: PaySource, private val snap: ScheduleSnapshot) {
     fun month(m: YearMonth, closedToo: Boolean = true): Long? = (if (closedToo) pay.closed[m]?.total else null) ?: month(m)?.total
 
     fun day(d: LocalDate): Long? = month(payMonth(d))?.let { it.day(d)?.amount ?: 0L }
+
+    /** 1.37 [LEDH-19] Take-home pay days from last month to [months] ahead, as the 앞으로의 돈 card counts them. */
+    fun payDays(today: LocalDate, months: Int = 4): List<com.bamnat.core.money.PayDay> =
+        (-1..months).map { YearMonth.from(today).plusMonths(it.toLong()) }.mapNotNull { m ->
+            val gross = month(m)?.total?.takeIf { it > 0 } ?: return@mapNotNull null
+            val date = pay.profile.period.payDate(m)
+            com.bamnat.core.money.PayDay(date ?: m.atEndOfMonth(), com.bamnat.core.pay.PayIncome.net(pay.profile, m, gross), "${m.monthValue}월 급여", dateGuessed = date == null)
+        }
+
+    /** 1.37 [LEDH-19] Take-home per hour of the latest month whose work is done (10시간 넘게 일한 달). */
+    fun hourly(today: LocalDate): Long? = (1..3).map { YearMonth.from(today).minusMonths(it.toLong() - 1) }
+        .filter { pay.profile.period.end(it).isBefore(today) }
+        .firstNotNullOfOrNull { m ->
+            val p = month(m) ?: return@firstNotNullOfOrNull null
+            val mins = p.minutes.sumOf { it.total.worked }
+            if (mins < 600) null else com.bamnat.core.money.WorkTime.hourly(com.bamnat.core.pay.PayIncome.net(pay.profile, m, p.total), mins)
+        }
 }
 
 /** A book of day values over [snap], [memos] and [money]; built again only when one of them changes. */
@@ -127,6 +149,12 @@ fun dayFactsOf(
         now = { com.bamnat.core.time.Today.time().format(HM) },
         inputs = extras.inputs,
         payMonth = { d -> pay?.payMonth(d) ?: YearMonth.from(d) },
+        moneyFacts = {
+            val w = style?.formulaWord().orEmpty()
+            val payDays = if (style?.usesPayEngine == false) emptyList() else pay?.payDays(today).orEmpty()
+            val hourly = if (style == WorkStyle.INVEST) null else pay?.hourly(today)
+            com.bamnat.core.formula.MoneyFacts.of(money, today, w, payDays, hourly, extras.envelopes.first, extras.envelopes.second)
+        },
     )
 }
 
@@ -134,9 +162,10 @@ fun dayFactsOf(
 fun AppContainer.formulaExtras(cal: String): Flow<FormulaExtras> {
     val s = scopeOf(cal)
     // PC 확인 5c21f3bb: a tab laid on (얹은 탭) keeps its 받는 칸 too; a recipe put on later says them again over it.
-    return combine(recipes.formulaInputs(cal), wardrobe.overlays, s.pay.profile, s.pay.closed, s.settings) { inputs, laid, profile, closed, settings ->
+    val base = combine(recipes.formulaInputs(cal), wardrobe.overlays, s.pay.profile, s.pay.closed, s.settings) { inputs, laid, profile, closed, settings ->
         FormulaExtras(com.bamnat.app.recipe.overlayInputs(laid) + inputs, profile?.let { PaySource(it, settings, closed) })
     }
+    return combine(base, s.money.envelopes) { e, env -> FormulaExtras(e.inputs, e.pay, env) }
 }
 
 /**

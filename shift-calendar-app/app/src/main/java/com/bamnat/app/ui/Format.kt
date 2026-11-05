@@ -18,6 +18,18 @@ object Fmt {
      */
     @Volatile var clock12: Boolean = false
 
+    /**
+     * 1.37 [LEDH-22] 금액 가리기: every amount Fmt writes shows as dots, for opening the app on a bus or at work. Set from
+     * the settings with [clock12]; the eye on 가계부 turns it on and off, and the widgets follow.
+     */
+    // 1.37 PC 5차: a plain field did not redraw what was already on screen (예산 22,000/500,000, 봉투, 최근 기록 stayed),
+    // so a screen only changed where it read 가리기 itself. As Compose state every amount Fmt wrote redraws.
+    private val maskedState = androidx.compose.runtime.mutableStateOf(false)
+    var masked: Boolean
+        get() = maskedState.value
+        set(v) { if (maskedState.value != v) maskedState.value = v }
+    const val MASK = "•••••"
+
     private fun twelve(t: LocalTime): String {
         val h = t.hour % 12
         return "${if (t.hour < 12) "오전" else "오후"} ${if (h == 0) 12 else h}:${"%02d".format(t.minute)}"
@@ -54,11 +66,22 @@ object Fmt {
 
     private val wonFormat = java.text.NumberFormat.getIntegerInstance(korean)
 
+    /**
+     * 1.37 PC 4차 (금액 가리기에서 '하루 1,545원 더 써요'가 그대로 보였어요): a sentence made outside Fmt (core) with its amounts
+     * hidden the same way, "하루 •••••원 더 써요"; as it is when 가리기 is off.
+     */
+    fun hide(text: String): String = if (!masked) text else wonInText.replace(text, MASK + "원")
+    /** 1.37 PC 6차: also short amounts in 만·억·천 ("365.7만", "−37.1만"), for cells that hold only money. */
+    fun hideShort(text: String): String = if (!masked) text else shortInText.replace(hide(text), "•••")
+    private val shortInText = Regex("""[-+−]?\d[\d,.]*\s*(?:억|만|천)(?:\s*\d[\d,.]*\s*(?:만|천))?\s*원?""")
+    private val wonInText = Regex("""[-+−]?\d[\d,.]*\s*(?:억\s*)?(?:\d[\d,.]*\s*)?(?:만|천)?\s*원""")
+
     /** "1,250,000원" */
-    fun won(amount: Long): String = wonFormat.format(amount) + "원"
+    fun won(amount: Long): String = if (masked) MASK + "원" else wonFormat.format(amount) + "원"
 
     /** Amounts for a calendar cell: "125만", "8천", "500" [WORK-02]. */
     fun wonShort(amount: Long): String {
+        if (masked) return "•••"
         val a = kotlin.math.abs(amount)
         val sign = if (amount < 0) "-" else ""
         return sign + when {

@@ -110,7 +110,8 @@ import com.bamnat.core.pay.WageType
 import java.time.YearMonth
 import com.bamnat.core.time.Today
 
-internal fun won(v: Long): String = "%,d원".format(v)
+/** 1.37 PC 5차: through Fmt, so 금액 가리기 hides 세전·세후·세금·실수령 too. */
+internal fun won(v: Long): String = com.bamnat.app.ui.Fmt.won(v)
 
 /** [FREE-07] 1.35 급여 모양 of the pay on screen. */
 internal val LocalPayLook = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.PayLook() }

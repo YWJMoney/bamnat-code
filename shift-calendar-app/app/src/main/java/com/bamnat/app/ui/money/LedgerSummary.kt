@@ -96,10 +96,12 @@ import com.bamnat.core.time.Today
  * still to leave, over the days left) and where the month is heading.
  */
 @Composable
-fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: () -> Unit) {
+fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: () -> Unit, aheadSaysToday: Boolean = false) {
     val cal = LocalCalendarColors.current
     val current = YearMonth.from(today) == m.month
-    SectionCard(title = "${m.month.monthValue}월 남은 돈") {
+    // 1.37 PC 확인 6a4efc92: '11월 남은 돈 0원'이 통장 잔액으로 본 '오늘 쓸 돈'과 나란히 있어 헷갈렸어요. 이 카드는 가계부에 적은
+    // 수입에서 지출을 뺀 것이라 그대로 이름을 붙여요.
+    SectionCard(title = "${m.month.monthValue}월 수입 − 지출") {
         // 1.36 PC C13: the big figure is what is left now; the pay still to come is a line under it.
         FitText(Fmt.won(m.leftNow), MaterialTheme.typography.displaySmall, if (m.leftNow < 0) cal.expense else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Bold)
@@ -111,7 +113,7 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("들어온 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FitText("+" + Fmt.won(m.received), MaterialTheme.typography.titleMedium, cal.income, fontWeight = FontWeight.Bold)
+                FitText((if (m.received > 0) "+" else "") + Fmt.won(m.received), MaterialTheme.typography.titleMedium, cal.income, fontWeight = FontWeight.Bold)
             }
             // [J133-02] 1.33 (보고서 A10): the pay estimate is money still to come, not money that came in.
             m.payExpected?.let { expected ->
@@ -122,8 +124,13 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
             }
             Column(Modifier.weight(1f)) {
                 Text("나간 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FitText("-" + Fmt.won(m.spent), MaterialTheme.typography.titleMedium, cal.expense, fontWeight = FontWeight.Bold)
+                FitText((if (m.spent > 0) "-" else "") + Fmt.won(m.spent), MaterialTheme.typography.titleMedium, cal.expense, fontWeight = FontWeight.Bold)
             }
+        }
+        // 1.37 PC 실사용(자영업 S5-16): '나간 돈 −0원'인데 경비 30만이 있어 헷갈렸어요. 가게 경비는 가게 순수익(들어온 돈)에서 빠져요.
+        if (m.salesCosts > 0) {
+            Text("가게 경비 ${Fmt.won(m.salesCosts)}은 나간 돈이 아니라 들어온 돈의 가게 순수익(매출 − 경비)에서 뺐어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
         // [RECV-04] Work written down but not paid yet stays out of 들어온 돈 and shows here instead.
         if (m.jobOwed > 0) {
@@ -141,7 +148,12 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
             return@SectionCard
         }
         val left = status.todayLeft
-        if (current && left != null) {
+        // fc374a23 PC 확인 (같은 화면에 '오늘 쓸 수 있는 돈'이 두 숫자): when 앞으로의 돈 says today's money from the accounts, this card
+        // keeps the budget's share as a quiet line under its own name, not a second 오늘 쓸 돈.
+        if (current && left != null && aheadSaysToday) {
+            Text("예산으로는 하루 ${Fmt.won(status.perDay ?: 0)} · 남은 ${status.daysLeft}일. 오늘 쓸 돈은 ‘앞으로의 돈’이 통장으로 셈해요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+        } else if (current && left != null) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.weight(1f)) {
                     Text("오늘 쓸 수 있는 돈", style = MaterialTheme.typography.labelLarge)
@@ -194,6 +206,9 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
             Text("${Fmt.won(b.spent)} / ${Fmt.won(b.budget)}", style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // 1.37 [LEDH-34] What came over from last month, inside the budget shown.
+        if (b.carried != 0L) Text(if (b.carried > 0) "지난달 남은 ${Fmt.won(b.carried)} 더함" else "지난달 넘긴 ${Fmt.won(-b.carried)} 뺌",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(6.dp))
         LedgerTrack(b.fraction, color, marker = elapsed, height = if (whole) 10.dp else 8.dp)
         Spacer(Modifier.height(4.dp))
@@ -214,7 +229,8 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
 fun BudgetCard(status: BudgetStatus, today: LocalDate, onEdit: () -> Unit) {
     if (status.categories.isEmpty()) return
     val current = YearMonth.from(today) == status.month
-    SectionCard(title = "분류별 예산", trailing = { TextButton(onClick = onEdit) { Text("고치기") } }) {
+    // 1.37 [LEDH-06] Counted over 급여일 주기, it says which days.
+    SectionCard(title = if (status.isCycle) "분류별 예산 (${status.from.monthValue}/${status.from.dayOfMonth}~${status.to.monthValue}/${status.to.dayOfMonth})" else "분류별 예산", trailing = { TextButton(onClick = onEdit) { Text("고치기") } }) {
         if (status.over.isNotEmpty()) {
             Text("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", style = MaterialTheme.typography.bodySmall,
                 color = LocalCalendarColors.current.warning, modifier = Modifier.padding(bottom = 4.dp))
@@ -229,7 +245,15 @@ fun BudgetCard(status: BudgetStatus, today: LocalDate, onEdit: () -> Unit) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BudgetEditor(book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) -> Unit, onDismiss: () -> Unit) {
+fun BudgetEditor(
+    book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) -> Unit, onDismiss: () -> Unit,
+    /** 1.37 [LEDH-06] 월급날 기준 on or off; null when no pay day is set, so the choice is not offered. */
+    byPayCycle: Boolean? = null, onPayCycle: (Boolean) -> Unit = {},
+    /** 1.37 PC 4차: a 월급 user with no pay day yet is told where the switch comes from. */
+    payDayHint: Boolean = false,
+    /** 1.37 [LEDH-34] 예산 넘김: the categories that carry, and how to change them (saved at once, like 월급날 기준). */
+    rolling: Set<String> = emptySet(), onRolling: (Set<String>) -> Unit = {}, canRoll: Boolean = true,
+) {
     val categories = remember(book) { book.categoriesOf(MoneyKind.EXPENSE) }
     val values = remember {
         mutableStateMapOf<String, String>().apply { book.budgets.forEach { put(it.category, amountDigits(it.amount)) } }
@@ -241,7 +265,11 @@ fun BudgetEditor(book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) 
         months.flatMap { it.expenseByCategory }.groupBy { it.category }.mapValues { (_, l) -> l.sumOf { it.amount } / counted }
     }
     val sum = categories.sumOf { values[it]?.toAmount() ?: 0 }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
+    // 1.37 PC 4차: 뒤로 가기로 적은 예산이 말없이 사라졌어요. 바뀐 게 있으면 먼저 물어요.
+    val initial = remember { values.toMap() }
+    val unsaved = values.filterValues { it.isNotEmpty() } != initial.filterValues { it.isNotEmpty() }
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = unsaved, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("예산 정하기", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -249,6 +277,20 @@ fun BudgetEditor(book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) 
                 Text("매달 같은 예산으로 계산해요. 비워 두면 예산이 없어요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 AmountField("한 달 전체 예산", values[MoneyBudget.TOTAL].orEmpty(), { values[MoneyBudget.TOTAL] = it })
+                // 1.37 [LEDH-06] 급여일 주기: the budget runs from pay day to the day before the next.
+                byPayCycle?.let { on ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.weight(1f)) {
+                            Text("월급날 기준으로 보기", style = MaterialTheme.typography.bodyLarge)
+                            Text("예산과 하루 쓸 돈을 1일~말일 대신 월급날~다음 월급날 전날로 계산해요.", style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        androidx.compose.material3.Switch(checked = on, onCheckedChange = onPayCycle,
+                            modifier = Modifier.semantics { contentDescription = "월급날 기준으로 보기" })
+                    }
+                }
+                if (byPayCycle == null && payDayHint) Text("월급날을 정하면 여기서 '월급날 기준으로 보기'를 켤 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (values[MoneyBudget.TOTAL].isNullOrEmpty() && sum > 0) {
                     Text("전체를 비우면 분류별 예산의 합 ${Fmt.won(sum)}이 한 달 예산이 돼요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -276,6 +318,21 @@ fun BudgetEditor(book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) 
                         Spacer(Modifier.width(8.dp))
                         AmountField("예산", values[c].orEmpty(), { values[c] = it },
                             Modifier.widthIn(max = 168.dp).semantics { contentDescription = "$c 예산" })
+                    }
+                }
+                // 1.37 [LEDH-34] 예산 넘김: what a category's budget left over this month is added to next month's (and what it went
+                // over is taken off), one month at a time.
+                val budgeted = categories.filter { (values[it]?.toAmount() ?: 0) > 0 }
+                // bc7e2d43 PC 확인: 투자 달력에는 예산 넘김이 안 보여요.
+                if (canRoll && budgeted.isNotEmpty()) {
+                    Text("남은 예산 다음 달로 넘기기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+                    Text("고른 분류는 이번 달에 남은 만큼 다음 달 예산이 늘고, 넘긴 만큼 줄어요. 한 달씩만 넘어가요.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        budgeted.forEach { c ->
+                            com.bamnat.app.ui.components.FilterChip(selected = c in rolling, onClick = { onRolling(if (c in rolling) rolling - c else rolling + c) },
+                                label = { Text(c) })
+                        }
                     }
                 }
                 Spacer(Modifier.height(4.dp))
@@ -358,6 +415,40 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
                 Text(Fmt.won(kept.sumOf { balances[it.id] ?: it.opening }), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), fontWeight = FontWeight.Bold)
             }
         }
+        // 1.37 [LEDH-26] 순자산 한 장: 가진 돈 − 남은 카드값, and a year of month-ends as one thin line.
+        val year = remember(book, today) { com.bamnat.core.money.NetWorth.year(book.accounts, book.entries, today) }
+        year.lastOrNull()?.let { now ->
+            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+            Row {
+                Text("순자산", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text(Fmt.won(now.net), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), fontWeight = FontWeight.Bold,
+                    color = if (now.net < 0) cal.expense else MaterialTheme.colorScheme.onSurface)
+            }
+            // Only the months the book was in use: before the first line the past is not known.
+            // PC 확인 (통장을 오늘 처음 만들었는데 '9월 말보다 +0원'과 석 달 선): counted from the first line on an account, not any line.
+            val first = book.entries.filter { it.accountId != null || it.toAccountId != null }.minOfOrNull { it.date }
+            val known = year.filter { first != null && !it.date.isBefore(first) }
+            val start = known.firstOrNull()?.takeIf { it != now }
+            Text(
+                (if (now.owe > 0) "가진 돈 ${Fmt.won(now.have)} − 남은 카드값 ${Fmt.won(now.owe)}" else "가진 돈 ${Fmt.won(now.have)}") +
+                    (start?.let { s -> val d = now.net - s.net; " · ${s.date.monthValue}월 말보다 " + (if (d >= 0) "+" else "−") + Fmt.won(kotlin.math.abs(d)) } ?: ""),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (known.size >= 3) {
+                val line = MaterialTheme.colorScheme.primary
+                val values = known.map { it.net }
+                androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(36.dp).padding(top = 6.dp)
+                    .semantics { contentDescription = "순자산 ${known.size}달 흐름" }) {
+                    val lo = values.min().toFloat(); val hi = values.max().toFloat()
+                    val span = (hi - lo).takeIf { it > 0f } ?: 1f
+                    val step = size.width / (values.size - 1)
+                    for (i in 1 until values.size) {
+                        drawLine(line, androidx.compose.ui.geometry.Offset((i - 1) * step, size.height - (values[i - 1] - lo) / span * size.height),
+                            androidx.compose.ui.geometry.Offset(i * step, size.height - (values[i] - lo) / span * size.height), strokeWidth = 2.dp.toPx())
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -387,7 +478,10 @@ fun AccountEditor(
     var remind by rememberSaveable { mutableStateOf(initial?.remind ?: true) }
     val banks = book.activeAccounts.filter { it.keepsBalance && it.id != initial?.id }
     val card = kind == AccountType.CREDIT || kind == AccountType.CHECK
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 확인 6a4efc92: 끌어서 닫을 때 적은 것을 묻기 (같은 구조의 돈 시트 모두).
+    val typed = name.trim() != initial?.name.orEmpty() || last4 != initial?.last4.orEmpty() || opening != amountDigits(initial?.opening ?: 0) ||
+        (initial != null && (kind != initial.type || payDay != (initial.payDay ?: 14) || payFrom != initial.payFromId))
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = typed, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle(if (initial == null) "결제수단 추가" else "결제수단 고치기", onDismiss) {
                 if (initial != null) IconButton(onClick = { onRemove(initial) }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
@@ -404,7 +498,14 @@ fun AccountEditor(
                 OutlinedTextField(value = name, onValueChange = { name = it.take(MoneyAccount.MAX_NAME) }, singleLine = true,
                     label = { Text(when (kind) { AccountType.CREDIT, AccountType.CHECK -> "카드 이름 (예: 신한 Deep)"; AccountType.BANK -> "통장 이름 (예: 월급 통장)"
                         AccountType.CASH -> "이름 (예: 지갑)"; AccountType.PAY -> "이름 (예: 카카오페이)"; AccountType.OTHER -> "이름" }) },
-                    modifier = Modifier.fillMaxWidth())
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth())
+                // PC 확인 (이름을 친 뒤 자판이 오르면 '지금 들어 있는 돈' 칸이 밀려 이름 칸을 누르게 됨): the balance comes right under the
+                // name, and the keyboard's 다음 goes to it.
+                if (!card) {
+                    AmountField(if (initial == null) "지금 들어 있는 돈" else "처음 들어 있던 돈 (적기 시작할 때)", opening, { opening = it })
+                    Text("이후 이 계좌로 적은 수입·지출·이체로 잔액을 계산해요.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (card) {
                     OutlinedTextField(value = last4, onValueChange = { v -> last4 = v.filter(Char::isDigit).take(4) }, singleLine = true,
                         label = { Text("카드 끝 4자리 (선택)") }, supportingText = { Text("이 카드의 결제 알림은 이 달력에만 알아서 적어요") },
@@ -432,11 +533,6 @@ fun AccountEditor(
                         FilterChip(selected = payFrom == null, onClick = { payFrom = null }, label = { Text("안 고름") })
                         banks.forEach { b -> FilterChip(selected = payFrom == b.id, onClick = { payFrom = b.id }, label = { Text(b.label) }) }
                     }
-                }
-                if (!card) {
-                    AmountField(if (initial == null) "지금 들어 있는 돈" else "처음 들어 있던 돈", opening, { opening = it })
-                    Text("이후 이 계좌로 적은 수입·지출·이체로 잔액을 계산해요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (kind == AccountType.CREDIT) {
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { remind = !remind }, verticalAlignment = Alignment.CenterVertically) {
@@ -500,7 +596,10 @@ fun CategoryEditor(
     }
     var renaming by remember { mutableStateOf<Int?>(null) }
     var adding by remember { mutableStateOf("") }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 4차: 예산 창과 같은 구조라 같이, 뒤로 가기 전에 바꾼 것을 버릴지 물어요.
+    val start = remember(kind) { rows.toList() }
+    // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = rows.toList() != start || adding.isNotBlank(), closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("분류 편집", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),

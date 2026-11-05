@@ -240,8 +240,14 @@ class MigrationAllVersionsTest(private val from: Int) {
             "tax_settings" to mapOf("key" to "biz.vat", "value" to "SIMPLE"),
             // [RCP-17][RCP-25] Version 24's 나눔 판 tables, likewise new.
             "applied_recipes" to mapOf("id" to 1, "code" to "ABCD2345", "version" to 1, "hash" to "00", "title" to "야간 파랑", "calendarId" to "main",
-                "body" to "{}", "inputs" to "{}", "pieces" to "shiftLook", "before" to "{}", "appliedAt" to 1, "undoneAt" to null, "replacedAt" to null, "keptSent" to 0),
+                "body" to "{}", "inputs" to "{}", "pieces" to "shiftLook", "before" to "{}", "appliedAt" to 1, "undoneAt" to null,
+                // A record restored from a backup comes back as replaced (1.35 [J135-21]), so the round trip from version 24 on keeps it so.
+                "replacedAt" to 1, "keptSent" to 0),
             "recipe_drafts" to mapOf("id" to 1, "body" to "{}", "step" to 2, "code" to null, "scope" to "public", "updatedAt" to 1),
+            // 1.37 [LEDH-11][LEDH-13] Version 25's 봉투 tables, likewise new.
+            "envelopes" to mapOf("id" to 1, "name" to "여행", "target" to 1200000L, "dueEpochDay" to 20500L, "kind" to 0, "sharePercent" to 10,
+                "emoji" to "✈️", "sortOrder" to 0, "closed" to 0, "createdEpochDay" to 20396L),
+            "envelope_moves" to mapOf("id" to 1, "envelopeId" to 1, "epochDay" to 20396L, "amount" to 100000L, "note" to "넣기", "entryId" to null),
         )
 
         /**

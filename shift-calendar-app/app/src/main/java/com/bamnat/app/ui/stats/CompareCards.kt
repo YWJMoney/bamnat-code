@@ -83,10 +83,10 @@ private fun CompareTable(now: MonthCompare.Side, before: MonthCompare.Side, befo
         MonthCompare.rows(now, before).forEach { r ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text(r.label, Modifier.weight(1.3f), style = MaterialTheme.typography.bodyMedium)
-                Text(r.now, Modifier.weight(1.15f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End)
-                Text(r.before, Modifier.weight(1.25f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End,
+                Text(com.bamnat.app.ui.Fmt.hideShort(r.now), Modifier.weight(1.15f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End)
+                Text(com.bamnat.app.ui.Fmt.hideShort(r.before), Modifier.weight(1.25f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(r.change, Modifier.weight(1.45f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End,
+                Text(com.bamnat.app.ui.Fmt.hideShort(r.change), Modifier.weight(1.45f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), textAlign = TextAlign.End,
                     fontWeight = FontWeight.SemiBold,
                     // [A11Y-03] The theme's orange and blue words, which keep 4.5:1 in light and dark (the old fixed ones did not).
                     color = when (r.more) { true -> cal.holidayWork; false -> cal.saturday; null -> MaterialTheme.colorScheme.onSurfaceVariant })
@@ -123,7 +123,7 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
                     Text(HoursFormat.korean(s.worked), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), color = color)
                     Text(s.night?.let { "야간 " + HoursFormat.korean(it) } ?: "${s.workDays}일", Modifier.weight(1f),
                         style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    s.pay?.let { Text(MonthCompare.man(it), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), color = color, textAlign = TextAlign.End) }
+                    s.pay?.let { Text(com.bamnat.app.ui.Fmt.hideShort(MonthCompare.man(it)), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), color = color, textAlign = TextAlign.End) }
                 }
             }
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
@@ -132,7 +132,7 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
                 Text(HoursFormat.korean(y.worked), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
                 Text(y.night?.let { "야간 " + HoursFormat.korean(it) } ?: "${y.workDays}일", Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                y.pay?.let { Text(MonthCompare.man(it), style = MaterialTheme.typography.titleSmall.merge(NumberStyle)) }
+                y.pay?.let { Text(com.bamnat.app.ui.Fmt.hideShort(MonthCompare.man(it)), style = MaterialTheme.typography.titleSmall.merge(NumberStyle)) }
             }
             // PC e1ca9e5b·02d6dabf: the report is the pay screen's (도구), not this tab's; a link goes there.
             Text("근무표대로 앞으로의 달도 셌어요. 급여 리포트(PDF·CSV)는 급여 계산 › 도구에서 만들어요.",

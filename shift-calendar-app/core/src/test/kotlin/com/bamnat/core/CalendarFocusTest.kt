@@ -86,13 +86,21 @@ class CalendarFocusTest {
             Job(date = LocalDate.of(2026, 10, 12), title = "수전", amount = 150_000, balancePaid = true),
             Job(date = LocalDate.of(2026, 9, 29), endDate = LocalDate.of(2026, 10, 1), title = "도배", amount = 500_000),
         )
-        val o = MonthOverview.of(october, CalendarFocus.JOBS, ScheduleResolver(Fixtures.all, null, emptyList()), jobs = jobs)
+        val o = MonthOverview.of(october, CalendarFocus.JOBS, ScheduleResolver(Fixtures.all, null, emptyList()), jobs = jobs,
+            today = LocalDate.of(2026, 11, 5))
         // The September job is that month's money but runs on 10/1 too.
         assertEquals(2, o.jobs)
         assertEquals(1 + 1 + 2, o.jobDays)
         assertEquals(1_150_000, o.jobEarned)
         assertEquals(450_000, o.jobReceived)
         assertEquals(700_000, o.jobOwed)
+        // 1.37 PC: on 10/20 the 욕실 job is still to come: not 번 돈 yet, said as 할 일.
+        val mid = MonthOverview.of(october, CalendarFocus.JOBS, ScheduleResolver(Fixtures.all, null, emptyList()), jobs = jobs,
+            today = LocalDate.of(2026, 10, 20))
+        assertEquals(150_000, mid.jobEarned)
+        assertEquals(1_000_000, mid.jobAhead)
+        assertEquals(0, mid.jobOwed)
+        assertEquals(450_000, mid.jobReceived)
     }
 
     @Test
@@ -136,6 +144,21 @@ class CalendarFocusTest {
         assertTrue(shifts.any { it is AgendaRow.Gap && it.from == LocalDate.of(2026, 10, 10) && it.days == 2 })
         // 22 weekdays and 개천절 on a Saturday.
         assertEquals(22 + 1, shifts.count { it is AgendaRow.Day })
+    }
+
+    @Test
+    fun `a shop's closed days fold apart from open days with no sales`() {
+        // 1.37 PC 4차: 정기휴무 is '쉬는 날', not '1일 매출 없음'.
+        val rows = MonthAgenda.of(october, CalendarFocus.SALES, ScheduleResolver(Fixtures.all, weekdays, emptyList()), weekStart = DayOfWeek.MONDAY)
+        val weekend = rows.filterIsInstance<AgendaRow.Gap>().first { it.from == LocalDate.of(2026, 10, 10) }
+        assertTrue(weekend.closed)
+        assertEquals(2, weekend.days)
+        assertEquals("2일 쉬어요", CalendarFocus.SALES.gap(weekend.days, weekend.closed))
+        // Open days with no sales keep their own row (to write sales on); only closed days fold.
+        assertTrue(rows.filterIsInstance<AgendaRow.Gap>().all { it.closed })
+        assertEquals("쉬는 날", CalendarFocus.SALES.gap(1, true))
+        assertEquals("매출 없음", CalendarFocus.SALES.gap(1, false))
+        assertEquals("3일 비어 있어요", CalendarFocus.JOBS.gap(3, true))
     }
 
     @Test

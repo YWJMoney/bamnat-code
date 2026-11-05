@@ -28,9 +28,13 @@ data class MonthOverview(
     val jobs: Int = 0,
     /** Days of this month a job runs on. */
     val jobDays: Int = 0,
-    /** What this month's jobs pay (after 3.3% when withheld). */
+    /** What this month's jobs pay (after 3.3% when withheld): only the ones done (1.37: 끝난 일감만). */
     val jobEarned: Long = 0,
     val jobReceived: Long = 0,
+    /** 1.37 PC: this month's jobs not done yet (오늘 이후·가계약), said apart from 번 돈. */
+    val jobAhead: Long = 0,
+    /** Done jobs not yet paid. */
+    val jobOwed: Long = 0,
     val sales: Long = 0,
     val salesCosts: Long = 0,
     /** Days the shop wrote sales on. */
@@ -38,8 +42,6 @@ data class MonthOverview(
     val bestDay: LocalDate? = null,
     val bestSales: Long = 0,
 ) {
-    /** This month's jobs not yet paid. */
-    val jobOwed: Long get() = (jobEarned - jobReceived).coerceAtLeast(0)
     val salesNet: Long get() = sales - salesCosts
     /** Average sales on a day the shop wrote down. */
     val salesPerDay: Long get() = if (openDays == 0) 0 else sales / openDays
@@ -75,6 +77,8 @@ data class MonthOverview(
             sales: List<DailySales> = emptyList(),
             /** 1.32 [CALX-06] The days the shift figures count (a 급여 기간 when 통계 counts by it); jobs and sales stay the month. */
             range: com.bamnat.core.hours.StatsRange.Range? = null,
+            /** 1.37 PC (현장 '번 돈'에 아직 안 한 일감까지 들어감): a job counts as earned once done or past. */
+            today: LocalDate = com.bamnat.core.time.Today.date(),
         ): MonthOverview {
             val first = month.atDay(1)
             val last = month.atEndOfMonth()
@@ -100,8 +104,10 @@ data class MonthOverview(
                 holidayWorkDays = working.count { KoreanHolidays.isHoliday(it.date) },
                 jobs = started.size,
                 jobDays = jobDays,
-                jobEarned = started.sumOf { it.payable },
+                jobEarned = started.filter { it.isDone(today) }.sumOf { it.payable },
                 jobReceived = started.sumOf { it.received },
+                jobAhead = started.filterNot { it.isDone(today) }.sumOf { it.payable },
+                jobOwed = started.filter { it.isDone(today) }.sumOf { it.unpaid },
                 sales = shop.sumOf { it.sales },
                 salesCosts = shop.sumOf { it.costs },
                 openDays = open.size,

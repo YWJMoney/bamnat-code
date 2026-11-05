@@ -423,6 +423,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // PC 006d0aec: what went up from here (body → the answer), so 올리기 with nothing changed says so at once, before '무엇을 올릴까요'.
     var sentBodies by remember { mutableStateOf(mapOf<String, com.bamnat.app.recipe.Sent>()) }
     var noChange by remember { mutableStateOf<com.bamnat.app.recipe.Sent?>(null) }
+    var nothingToSend by remember { mutableStateOf(false) }
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
@@ -659,12 +660,16 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 // [STU-26] Changes on one tab only: ask whether that tab goes up alone (a 기능별 탭) or the whole theme.
                                 val tabs = vm.changedTabs()
                                 takeShot()
-                                if (tabs.isNotEmpty()) { uploadWhat = tabs; preparing = false }
+                                // fc374a23 PC 확인: 기능을 담았으면 '기능만'도 고를 수 있게 늘 물어요.
+                                if (tabs.isNotEmpty() || s.extras.isNotEmpty()) { uploadWhat = tabs; preparing = false }
                                 else scope.launch {
                                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
                                     // PC 006d0aec: nothing changed since it last went up from here: said at once.
                                     val same = sentBodies[body]
-                                    if (same != null) { noChange = same; preparing = false }
+                                    // bc7e2d43 PC 확인 LOW-6 (기능 0개·모양 그대로인데 빈 레시피가 올라감): nothing to send, said.
+                                    val empty = body.contains("\"pieces\":[]")
+                                    if (empty) { nothingToSend = true; preparing = false }
+                                    else if (same != null) { noChange = same; preparing = false }
                                     else { publishRound++; publishing = Triple(body, parent, vm.nextOf()) }
                                 }
                             } }, enabled = !preparing && publishing == null,
@@ -1134,18 +1139,22 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     uploadWhat?.let { tabs ->
         // 사용자 2026-11-01: 테마 (모든 곳을 한 벌로) or any one tab changed, alone, as a 기능별 탭 — one tab changed starts on that tab.
         val single = vm.changedTab()
-        var choice by remember(tabs) { mutableStateOf(single) }
+        val featuresOnly = StudioViewModel.FEATURES_ONLY
+        // A 기능 with no look changed starts on 기능만, so a 가계부 틀 goes to 장터 '기능별 › 가계부', not under 테마.
+        var choice by remember(tabs) { mutableStateOf(single ?: featuresOnly.takeIf { tabs.isEmpty() && s.extras.isNotEmpty() }) }
         AlertDialog(
             onDismissRequest = { uploadWhat = null },
             title = { Text("무엇을 올릴까요?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    (tabs + listOf<String?>(null)).forEach { v ->
+                    (tabs + listOfNotNull(featuresOnly.takeIf { s.extras.isNotEmpty() }) + listOf<String?>(null)).forEach { v ->
                         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { choice = v }, verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = choice == v, onClick = { choice = v })
                             Column {
-                                Text(if (v == null) "테마 전체" else "${com.bamnat.app.ui.recipe.tabName(v)} 탭만", style = MaterialTheme.typography.bodyLarge)
-                                Text(if (v != null) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
+                                Text(when (v) { null -> "테마 전체"; featuresOnly -> "기능만 (" + s.extras.keys.sortedBy { it.ordinal }.joinToString(", ") { it.label } + ")"
+                                    else -> "${com.bamnat.app.ui.recipe.tabName(v)} 탭만" }, style = MaterialTheme.typography.bodyLarge)
+                                Text(if (v == featuresOnly) "장터 ‘기능별’에 올라가요. 모양은 빠지고 기능 ${s.extras.size}개만 가요"
+                                    else if (v != null) "장터 ‘기능별 탭’에 올라가요. 받는 분은 지금 테마 위에 이 탭만 얹어요" +
                                     (if (s.extras.isNotEmpty()) ". 기능 ${s.extras.size}개는 빠져요" else "")
                                     // PC 확인 1.36 (한 화면만 바꾸고 테마 전체로 올리면 장터 어디에도 안 보임): one screen changed is one tab in 장터, said.
                                     else if (single != null && s.extras.isEmpty()) "한 화면(${com.bamnat.app.ui.recipe.tabName(single)})만 바꿔서 장터에서는 ‘기능별 탭 › ${com.bamnat.app.ui.recipe.tabName(single)}’에 올라가요"
@@ -1198,6 +1207,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             }
         }
     }
+    if (nothingToSend) AlertDialog(onDismissRequest = { nothingToSend = false }, title = { Text("올릴 것이 없어요") },
+        text = { Text("모양을 바꾸거나 기능(가계부 틀 등)을 켠 뒤 올려 주세요.") },
+        confirmButton = { TextButton(onClick = { nothingToSend = false }) { Text("확인") } })
     noChange?.let { sent -> NoChangeDialog(sent, onOpen = { noChange = null; onOpen(sent.code) }, onDismiss = { noChange = null }) }
     if (saving) SaveDialog(vm, s, onDismiss = { saving = false }) { name, toPlaza ->
         saving = false

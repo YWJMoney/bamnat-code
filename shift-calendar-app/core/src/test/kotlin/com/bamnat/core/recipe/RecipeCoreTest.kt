@@ -37,6 +37,36 @@ class RecipeCoreTest {
         assertTrue(kept.inputs.isEmpty())
     }
 
+    /** fc374a23 PC 확인: 가계부 틀's 예산·봉투 목표 inside lists become the receiver's fields too, by the item's name. */
+    @Test fun amountsInListsBecomeTheReceiversFields() {
+        val ledger = Recipe(
+            title = "자취 첫 달", styles = setOf(WorkStyle.SHIFT),
+            pieces = listOf(Piece(PieceKind.LEDGER, mapOf(
+                "costs" to listOf("야식", "식비"), "incomes" to listOf("급여"),
+                "budgets" to listOf(mapOf("category" to "식비", "amount" to 300_000L)),
+                "envelopes" to listOf(mapOf("name" to "여행", "target" to 1_000_000L, "emoji" to "✈️")),
+            ))),
+        )
+        assertEquals(listOf("식비 예산", "여행 목표"), InputExtract.found(ledger).map { it.label })
+        val r = InputExtract.extract(ledger)
+        assertEquals(listOf("식비 예산", "여행 목표"), r.inputs.map { it.label })
+        assertFalse(r.inputs.any { it.required })
+        assertTrue(InputExtract.found(r).isEmpty())
+        val text = RecipeCodec.write(r)
+        assertFalse(text, text.contains("\"amount\":300000") || text.contains("\"target\":1000000"))
+        // It reads back (the codec takes an input inside a list), and an empty answer leaves the amount out.
+        val back = RecipeCodec.read(text)
+        assertEquals(2, back.inputs.size)
+        @Suppress("UNCHECKED_CAST")
+        val budgets = RecipeResolve.piece(back, back.pieces[0], emptyMap())["budgets"] as List<Map<String, Any?>>
+        assertEquals(mapOf("category" to "식비"), budgets.single())
+        assertEquals("ledger.budgets.0.amount", InputExtract.keyOf(r, "i1"))
+        val kept = InputExtract.keep(r, "i1", 300_000L)
+        @Suppress("UNCHECKED_CAST")
+        assertEquals(300_000L, (kept.pieces[0].values["budgets"] as List<Map<String, Any?>>)[0]["amount"])
+        assertEquals(listOf("여행 목표"), InputExtract.extract(ledger, keep = setOf("ledger.budgets.0.amount")).inputs.map { it.label })
+    }
+
     @Test fun theLintSaysWhatToFix() {
         val r = hourly(12_000L).copy(title = "밤낮 공식 알바")
         val lines = RecipeLint.check(r)

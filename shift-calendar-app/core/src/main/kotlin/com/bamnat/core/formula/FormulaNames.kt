@@ -50,6 +50,13 @@ enum class FormulaName(
     SPEND_KINDS("지출분류", "spendKinds", Group.MONEY, Type.LIST, "그날 쓴 돈의 분류", listOf("식비")),
     MONTH_SPEND("이달지출", "monthSpend", Group.MONEY, Type.NUM, "그달 쓴 돈(그날까지)", 640000),
     MONTH_INCOME("이달수입", "monthIncome", Group.MONEY, Type.NUM, "그달 들어온 돈(그날까지)", 0),
+    // 1.37 [LEDH-19] 가계부 새 카드가 아는 것.
+    SPEND_TODAY("오늘쓸돈", "spendToday", Group.MONEY, Type.NUM, "다음 월급날(현장·가게는 다음 입금)까지 오늘 쓸 수 있는 돈(급여·통장 설정 전에는 비어 있어요)", 32000, listOf("하루쓸돈")),
+    DAYS_TO_PAY("월급까지", "daysToPay", Group.MONEY, Type.NUM, "오늘에서 다음 월급날(다음 입금)까지 며칠(급여 설정 전에는 비어 있어요)", 12, listOf("입금까지")),
+    BALANCE_AHEAD("예상잔액", "balanceAhead", Group.MONEY, Type.NUM, "그날 통장 잔액 예측(오늘부터 90일, 지난날은 없음)", 820000),
+    ENVELOPE_SAVED("봉투모은돈", "envelopeSaved", Group.MONEY, Type.NUM, "모으기 봉투에 넣은 돈 합계", 300000),
+    ENVELOPE_RATE("봉투진행", "envelopeRate", Group.MONEY, Type.NUM, "모으기 봉투를 채운 비율(0~100, 봉투 모두 합쳐)", 25),
+    SPEND_HOURS("지출근무시간", "spendHours", Group.MONEY, Type.NUM, "그날 쓴 돈이 근무 몇 시간어치인지(내 실수령 시급; 급여 설정 전에는 비어 있어요)", 6.5),
 
     MONTH_PAY("이달급여", "monthPay", Group.PAY, Type.NUM, "그달 예상 급여(세전)", 3120000),
     HOUR_PAY("그날급여", "dayPay", Group.PAY, Type.NUM, "그날 일로 번 돈(예상)", 135000),
@@ -104,7 +111,9 @@ object FormulaNames {
     /** The nearest main name or function to a mistyped [word] (one letter off, or it starts the same), or null. */
     fun near(word: String): String? {
         val all = FormulaName.entries.map { it.ko } + Fn.entries.map { it.ko }
-        return all.firstOrNull { dist(it, word) <= 1 } ?: all.firstOrNull { word.length >= 2 && it.startsWith(word.take(2)) }
+        // 1.37 PC 6차: '월급' gave '월' (one letter off); a name that starts with what was typed comes first ('월급까지').
+        return all.firstOrNull { word.length >= 2 && it.startsWith(word) }
+            ?: all.firstOrNull { it.length >= 2 && dist(it, word) <= 1 } ?: all.firstOrNull { word.length >= 2 && it.startsWith(word.take(2)) }
     }
 
     private fun dist(a: String, b: String): Int {

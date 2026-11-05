@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -666,7 +667,7 @@ private fun repeatLabel(r: String) = when {
 /** The pieces a tab's screen shows, in the order they are edited there. */
 private fun piecesOn(tab: String): List<PieceKind> = when (tab) {
     TabOrder.CALENDAR -> listOf(PieceKind.SHIFT_LOOK, PieceKind.CAL_THEME, PieceKind.ALARMS)
-    TabOrder.MONEY -> listOf(PieceKind.MONEY_LOOK, PieceKind.SHOP, PieceKind.FIELD_SHEET)
+    TabOrder.MONEY -> listOf(PieceKind.MONEY_LOOK, PieceKind.LEDGER, PieceKind.SHOP, PieceKind.FIELD_SHEET)
     TabOrder.MEMOS -> listOf(PieceKind.MEMO_LOOK, PieceKind.MEMO_TEMPLATES, PieceKind.INVEST)
     TabOrder.STATS -> listOf(PieceKind.HOURLY_RULES)
     // [FREE-05] 화면 색·배경 comes from 설정 › 화면 꾸미기 (the colours and pictures are made there, with the example on top).
@@ -811,7 +812,10 @@ internal fun FieldsForm(fields: List<Field>, values: Map<String, Any?>, kind: Pi
             is Field.Text -> OutlinedTextField((v as? String).orEmpty(), { t -> onChange(f.key, t.take(f.max).ifEmpty { if (f.optional) null else t }) },
                 label = { Text(label) }, singleLine = !f.lines, minLines = if (f.lines) 3 else 1, modifier = Modifier.fillMaxWidth())
             is Field.Num -> NumberRow(label, (v as? Number)?.toDouble(), f.decimals, f.lo, f.hi) { d -> onChange(f.key, d?.let { if (f.decimals == 0) it.toLong() else it }) }
-            is Field.Money -> Text(if (v is Ref.Input || v == null) "$label: 받는 분이 직접 넣어요" else "$label: 모두에게 같은 금액",
+            // bc7e2d43 PC 확인 LOW-5 ('모두에게 같은 금액'이라 적혔는데 올리기 1/4에서는 받는 칸): an amount here is mine for now; on
+            // upload it becomes the receiver's field first, and 1/4 is where it can be kept the same for everyone.
+            is Field.Money -> Text(if (v is Ref.Input || v == null) "$label: 받는 분이 직접 넣어요"
+                else "$label: 지금 ${com.bamnat.app.ui.Fmt.won((v as? Number)?.toLong() ?: 0)} · 올리면 받는 분이 정하는 칸이 돼요(올리기 1/4에서 바꿔요)",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             is Field.Color -> ColorSwatch((v as? Long) ?: 0xFF5C6BC0L, label + if (v is Ref) " (테마·받는 분 색)" else "", { c -> onChange(f.key, c) })
             is Field.Emoji -> {
@@ -870,13 +874,22 @@ private fun fmt(d: Double) = if (d == d.toLong().toDouble()) d.toLong().toString
 @Composable
 private fun TextsEditor(label: String, list: List<String>, max: Int, itemMax: Int, onChange: (List<String>) -> Unit) {
     Text(label, style = MaterialTheme.typography.labelLarge)
+    // fc374a23 PC 확인 (새 분류 이름을 치는 동안 키보드가 '더하기'를 가림): typing in a row keeps 더하기 in sight above the keyboard,
+    // and the keyboard's 다음 on the last row adds the next one.
+    val addSeen = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     list.forEachIndexed { i, t ->
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(t, { s -> onChange(list.toMutableList().apply { set(i, s.take(itemMax)) }) }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(t, { s -> onChange(list.toMutableList().apply { set(i, s.take(itemMax)) }) }, singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onNext = {
+                    if (i == list.lastIndex && t.isNotBlank() && list.size < max) onChange(list + "") else defaultKeyboardAction(androidx.compose.ui.text.input.ImeAction.Next)
+                }),
+                modifier = Modifier.weight(1f).onFocusEvent { e -> if (e.isFocused) scope.launch { kotlinx.coroutines.delay(300); addSeen.bringIntoView() } })
             IconButton(onClick = { onChange(list.toMutableList().apply { removeAt(i) }) }) { Icon(Icons.Filled.Close, "$label ${i + 1}번 빼기") }
         }
     }
-    if (list.size < max) TextButton(onClick = { onChange(list + "") }) { Icon(Icons.Filled.Add, null); Text(" 더하기") }
+    if (list.size < max) TextButton(onClick = { onChange(list + "") }, modifier = Modifier.bringIntoViewRequester(addSeen)) { Icon(Icons.Filled.Add, null); Text(" 더하기") }
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -887,7 +900,7 @@ private fun ItemsEditor(label: String, f: Field.Items, list: List<Map<String, An
         OutlinedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(((item["name"] ?: item["title"] ?: item["text"] ?: item["role"]?.let { PICK_LABELS[it] }) as? String) ?: "${i + 1}번",
+                    Text(((item["name"] ?: item["title"] ?: item["text"] ?: item["category"] ?: item["role"]?.let { PICK_LABELS[it] }) as? String) ?: "${i + 1}번",
                         style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (list.size > f.min) IconButton(onClick = { onChange(list.toMutableList().apply { removeAt(i) }) }) { Icon(Icons.Filled.Close, "${i + 1}번 빼기") }
                 }
@@ -953,6 +966,9 @@ internal object StudioStarters {
             com.bamnat.core.recipe.Decor.CELL, on = "d25", x = 820, y = 180, w = 12, h = 12, fill = 0xFFFFB300))).values()
         // [TAB-07] 1.36 탭 보기: a 근무 띠 calendar and a 보드 메모장 to start from.
         PieceKind.TAB_VIEW -> mapOf("cal" to "rota", "memo" to "board", "memoBy" to "tag", "money" to "board")
+        // 1.37 [LEDH-18] 가계부 틀: a 야간 근무자's start.
+        PieceKind.LEDGER -> mapOf("costs" to listOf("야식", "편의점", "택시"), "budgets" to listOf(mapOf("category" to "야식", "amount" to 100_000L)),
+            "envelopes" to listOf(mapOf("name" to "비상금", "target" to 1_000_000L, "emoji" to "🛟")))
     }
 }
 

@@ -507,6 +507,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)
             // [TAX-02] Likewise, to open 세금·실수령.
             NoticeLinks.Target.TAX -> nav.navigateTopLevel(TopLevel.MONEY.route)
+            // 1.37 [LEDH-14] The 돈 적기 widget and tile: the money tab opens its add sheet itself.
+            NoticeLinks.Target.MONEY_ADD -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
             // [RUL-03] 메모 틀 열기 from a button or rule: a new memo on that day, started from the template.
             NoticeLinks.Target.LOGIC_MEMO -> {
@@ -1264,7 +1266,8 @@ private fun AppNavHost(
             // [MCAL-06] The money of the calendar on the calendar tab, a view of its own per calendar.
             val calendar by container.calendars.active.collectAsStateWithLifecycle()
             val vm = appViewModel(key = "money_$calendar") { MoneyViewModel(it, calendar) }
-            MoneyScreen(vm = vm, wide = wide, snackbar = snackbar, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } })
+            MoneyScreen(vm = vm, wide = wide, snackbar = snackbar, onOpenPay = { nav.navigate(Routes.pay(vm.calendarId)) { launchSingleTop = true } },
+                onOpenPayDay = { nav.navigate(Routes.pay(vm.calendarId, focus = com.bamnat.app.ui.pay.PayFocus.PERIOD.key)) { launchSingleTop = true } })
         }
         composable(Routes.WORK_STYLE, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN

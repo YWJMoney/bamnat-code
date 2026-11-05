@@ -27,7 +27,8 @@ object WidgetRefresher {
         // [STAB-01] Every edit asks for this; with no widget on the home screen there is nothing to draw or wake for.
         val placed = runCatching {
             val manager = GlanceAppWidgetManager(app)
-            listOf(TodayWidget::class.java, WeekWidget::class.java, MonthWidget::class.java, TeamsWidget::class.java, CountdownWidget::class.java)
+            listOf(TodayWidget::class.java, WeekWidget::class.java, MonthWidget::class.java, TeamsWidget::class.java, CountdownWidget::class.java,
+                MoneyWidget::class.java)
                 .any { manager.getGlanceIds(it).isNotEmpty() }
         }.getOrDefault(true)
         if (!placed) {
@@ -42,6 +43,7 @@ object WidgetRefresher {
             MonthWidget().updateAll(app)
             TeamsWidget().updateAll(app)
             CountdownWidget().updateAll(app)
+            MoneyWidget.redraw(app)
         }
         val data = runCatching { WidgetData.load(app) }.getOrNull()
         // [WIDG-05] A countdown on the home screen moves on every 15 minutes; the others wait for the next change.

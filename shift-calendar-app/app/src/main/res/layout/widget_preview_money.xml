@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1.37 [LEDH-14] What the 오늘 쓸 돈 widget looks like, for the phone's widget list (Android 12+). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="12dp" android:background="@drawable/widget_preview_bg">
+<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="예시 · 오늘 쓸 돈" android:textSize="11sp" android:textColor="#616161" />
+<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="23,000원" android:textSize="16sp" android:textColor="#212121" android:textStyle="bold" />
+<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="＋ 돈 적기" android:textSize="12sp" android:textColor="#3F51B5" />
+</LinearLayout>

@@ -85,6 +85,8 @@ object NoticeLinks {
         STOP_REPORT,
         /** [RUL-03] 1.36 a button or rule's 메모 틀 열기: a new memo on the day in [payload] from [com.bamnat.app.logic.LogicLinks.template]. */
         LOGIC_MEMO,
+        /** 1.37 [LEDH-14] 가계부 with 돈 적기 open, from the 돈 적기 widget and the quick settings tile. */
+        MONEY_ADD,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

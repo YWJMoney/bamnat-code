@@ -215,7 +215,12 @@ fun EntryDialog(
         )
     }
 
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 확인 6a4efc92 (높음): 시트 안에서 위로 가려고 아래로 끌면 시트가 닫히고 금액·날짜·카드가 말없이 사라졌어요. 적은 것이
+    // 있으면 끌기·뒤로·바깥 누르기는 먼저 물어요 (FormSheet와 같은 방식). 제목 줄의 닫기는 그대로 바로 닫아요.
+    val typed = if (initial == null) amount > 0 || place.isNotBlank() || memo.isNotBlank() || tagsText.isNotBlank()
+    else amount != abs(initial.amount) || kind != initial.kind || category != initial.category || day != initial.date.toString() ||
+        account != initial.accountId || place.trim() != initial.merchant.ifBlank { initial.note }.trim() || memo.trim() != initial.memo.trim()
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = typed, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             // Title row: what this is, and the line's own actions while editing.
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -273,10 +278,52 @@ fun EntryDialog(
                         scanNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
                     }
                 }
+                // 1.37 [LEDH-28] 한 줄로 적기: "점심 9천 카드" fills the amount, place, day, category and card it names.
+                if (isNew && kind != MoneyKind.TRANSFER) {
+                    var lineOpen by rememberSaveable { mutableStateOf(false) }
+                    var line by rememberSaveable { mutableStateOf("") }
+                    var lineNote by remember { mutableStateOf<String?>(null) }
+                    if (!lineOpen) AssistChip(onClick = { lineOpen = true }, label = { Text("한 줄로 적기") })
+                    else {
+                        fun fill() {
+                            val all = ledger.categoriesOf(MoneyKind.EXPENSE) + ledger.categoriesOf(MoneyKind.INCOME)
+                            val d = com.bamnat.core.money.QuickLine.parse(line, all, ledger.accounts)
+                            if (d == null) { lineNote = "금액이나 쓴 곳을 적어 주세요"; return }
+                            if (d.kind != kind) {
+                                kind = d.kind
+                                val list = ledger.categoriesOf(kind)
+                                if (category !in list) category = Ledger.lastCategory(entries, kind)?.takeIf { it in list } ?: list.first()
+                            }
+                            d.amount?.let { digits = amountDigits(it) }
+                            d.category?.takeIf { it in ledger.categoriesOf(kind) }?.let { category = it; categoryTouched = true }
+                            if (d.place.isNotBlank()) place = d.place
+                            day = com.bamnat.core.time.Today.date().minusDays(d.daysAgo.toLong()).toString()
+                            com.bamnat.core.money.QuickLine.account(d, ledger.accounts, entries)?.let { account = it; accountTouched = true }
+                            // PC 확인 (조사 '점심로·1일 전로'): what was filled is listed, then said, with no particle glued to it.
+                            lineNote = "채웠어요: " + listOfNotNull(d.amount?.let { Fmt.won(it) }, d.place.takeIf { it.isNotBlank() },
+                                if (d.daysAgo == 1) "어제" else if (d.daysAgo > 1) "${d.daysAgo}일 전" else null).joinToString(" · ") + ". 아래에서 고칠 수 있어요"
+                            line = ""
+                        }
+                        OutlinedTextField(
+                            value = line, onValueChange = { line = it.take(60); lineNote = null }, singleLine = true,
+                            label = { Text("한 줄로 적기") }, placeholder = { Text("예: 점심 9천 카드, 어제 택시 12,500") },
+                            trailingIcon = { TextButton(onClick = { fill() }, enabled = line.isNotBlank()) { Text("채우기") } },
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { fill() }),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        lineNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+                    }
+                }
                 AmountField(
                     if (cancel) "돌려받은 금액" else "금액", digits, { digits = it }, Modifier.focusRequester(amountFocus),
                     textStyle = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
                 )
+                // 1.37 [LEDH-07] 근무 시간 환산: "근무 6시간이에요", for spending of 5만 원 and more (설정 › 가계부에서 끔).
+                if (kind == MoneyKind.EXPENSE && !cancel) LocalWorkTime.current?.let { say -> say.words(amount)?.let { w ->
+                    Text("$w${Fmt.ieyo(w)}" + (say.basis()?.let { " ($it)" } ?: ""), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } }
                 val quick = remember(kind) { frequent(kind) }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     quick.forEach { a -> FilterChip(selected = amount == a, onClick = { digits = amountDigits(a) }, label = { Text(Fmt.won(a)) }) }
@@ -320,8 +367,15 @@ fun EntryDialog(
                     }
                 }
                 FieldTitle("분류")
+                // 1.37 [LEDH-35] 추천 분류 3개: the three used most in the last 60 days come first, so the long list is seldom read.
+                val top = remember(entries, kind, categories) {
+                    val since = com.bamnat.core.time.Today.date().minusDays(60)
+                    entries.filter { it.kind == kind && !it.date.isBefore(since) && it.category in categories }
+                        .groupingBy { it.category }.eachCount().entries.sortedByDescending { it.value }.take(3).map { it.key }
+                        .takeIf { categories.size > 6 && it.size >= 2 }.orEmpty()
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    categories.forEach { c ->
+                    (top + categories.filter { it !in top }).forEach { c ->
                         FilterChip(
                             selected = category == c, onClick = { category = c; categoryTouched = true },
                             label = { Text(c) },
@@ -337,8 +391,26 @@ fun EntryDialog(
                     FieldTitle(if (kind == MoneyKind.TRANSFER) "어디서" else if (kind == MoneyKind.INCOME) "들어온 곳" else "결제수단")
                     AccountChips(accounts, account) { account = it; accountTouched = true }
                     if (kind == MoneyKind.TRANSFER) {
+                        // fc374a23 PC 확인 (카드값 이체 때 '어디로'가 비어 순자산이 그냥 줄어요): 카드값 goes to a card by itself —
+                        // the one most used. Another one can still be picked.
+                        androidx.compose.runtime.LaunchedEffect(category, account) {
+                            if (toAccount == null && category == "카드값") {
+                                val credit = com.bamnat.core.money.AccountType.CREDIT
+                                // PC 확인 46200ae4 (카드로 쓴 뒤 첫 카드값 이체에 카드가 '어디서'에 들어감): a card picked as 어디서
+                                // (the last account used) is where the money goes; 어디서 becomes the bank most used.
+                                val from = accounts.firstOrNull { it.id == account }
+                                if (from?.type == credit) {
+                                    toAccount = from.id
+                                    account = from.payFromId ?: accounts.filter { it.type != credit && it.type != com.bamnat.core.money.AccountType.CHECK }
+                                        .maxByOrNull { a -> entries.count { it.accountId == a.id } }?.id
+                                } else toAccount = accounts.filter { it.id != account && it.type == credit }
+                                    .maxByOrNull { a -> entries.count { it.accountId == a.id } }?.id
+                            }
+                        }
                         FieldTitle("어디로")
                         AccountChips(accounts.filter { it.id != account }, toAccount) { toAccount = it }
+                        if (toAccount == null) Text("어디로를 고르면 통장·카드 잔액과 순자산이 맞게 바뀌어요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 if (credit) {

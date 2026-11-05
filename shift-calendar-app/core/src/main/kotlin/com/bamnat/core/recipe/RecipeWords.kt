@@ -33,6 +33,9 @@ object RecipeWords {
     /** [FREE-04] A key's words where a piece means something else by it than the rest ("piece.key"). */
     val KIND_KEYS = mapOf(
         "memoLook.title" to "제목 크기", "memoLook.date" to "날짜 보이기", "memoLook.bg" to "화면 배경색", "calView.today" to "오늘 칸 모양",
+        // fc374a23 PC 확인 (가계부 틀 편집 칸 머리가 incomes·budgets·category 같은 영어로 나옴).
+        "ledger.costs" to "지출 분류", "ledger.incomes" to "수입 분류", "ledger.budgets" to "분류별 예산", "ledger.category" to "분류",
+        "ledger.amount" to "한 달 예산", "ledger.envelopes" to "모으기 봉투", "ledger.target" to "목표 금액", "ledger.share" to "수입에서 떼는 몫(%)",
     )
 
     val PICKS = mapOf(

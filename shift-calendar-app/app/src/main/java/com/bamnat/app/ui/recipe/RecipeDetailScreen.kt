@@ -237,6 +237,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         s.applying -> "넣는 중…"
                         logicOnly -> listOfNotNull(inside.rules.size.takeIf { it > 0 }?.let { "규칙 ${it}개" }, inside.buttons.size.takeIf { it > 0 }?.let { "단추 ${it}개" })
                             .joinToString("·") + " 넣기"
+                        // bc7e2d43 PC 확인 LOW-1 (받은 뒤에도 넣기 단추가 그대로): once in, it says it goes in again.
+                        s.appliedAt != null -> "고른 ${chosen}개 다시 넣기"
                         else -> "고른 ${chosen}개 내 달력에 넣기"
                     })
                 }

@@ -56,7 +56,7 @@ internal fun NetSummaryLine(line: TaxPlus.NetLine?, gate: Gate) {
     val locked = line.estimated && gate.locked(Feature.TAX_FORECAST)
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).let { if (locked) it.clickable { if (!com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) openPro(Feature.TAX_FORECAST) } else it },
         verticalAlignment = Alignment.CenterVertically) {
-        Text(if (locked) listOfNotNull(line.gross?.let { "세전 ${Fmt.won(it)}" }, "세후 예상은 프로").joinToString(" · ") else TaxPlus.netText(line),
+        Text(if (locked) listOfNotNull(line.gross?.let { "세전 ${Fmt.won(it)}" }, "세후 예상은 프로").joinToString(" · ") else Fmt.hide(TaxPlus.netText(line)),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
         if (locked) ProPill(locked = true)
     }
@@ -111,6 +111,7 @@ internal fun CardBillCard(book: MoneyBook, today: LocalDate, gate: Gate) {
             }
             if (pro && r.open && r.projected > r.now) Muted("이대로 쓰면 ${Fmt.won(r.projected)}쯤 나가요")
             if (r.installments > 0) Muted("이 중 할부 ${Fmt.won(r.installments)}")
+            if (r.paid > 0) Muted("미리 갚은 ${Fmt.won(r.paid)}을 뺐어요")
         }
         if (pro) Muted("합계 ${Fmt.won(rows.sumOf { it.projected })} (마감일까지 지금 속도로 어림)")
         else TextButton(onClick = { openPro(Feature.MONEY_STATS) }) { Text("이대로면 얼마 나갈지 보기 (프로)") }
@@ -129,11 +130,16 @@ internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today:
             runCatching { TaxPlus.byShift(book.entries, today.minusDays(89), today, TaxPlus.dayLabel(snapshot.resolver::resolve)) }.getOrDefault(emptyList())
         }
     }
-    if (rows.size < 2) return
-    SectionCard(title = "근무별 소비 (90일)", trailing = { if (gate.locked(Feature.MONEY_STATS)) ProPill(locked = true) }) {
-        com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) {
+    // 1.37 PC 7차: 근무 리듬처럼 지출을 적은 날이 두 주는 돼야 근무별로 비교해요(사흘치로 비교하던 것).
+    val spendDays = remember(book, today) {
+        book.entries.filter { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE && !it.date.isBefore(today.minusDays(89)) && !it.date.isAfter(today) }.map { it.date }.distinct().size
+    }
+    if (rows.size < 2 || spendDays < com.bamnat.core.money.ShiftRhythm.MIN_SPEND_DAYS) return
+    // 1.37 [LEDH-10] 근무별 소비는 밤낮의 얼굴이라 기본 카드는 무료예요(상세 기간·분류별은 통계의 7일권).
+    SectionCard(title = "근무별 소비 (90일)") {
+        run {
             Column {
-                TaxPlus.shiftWords(rows)?.let { Text(it, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp)) }
+                TaxPlus.shiftWords(rows)?.let { Text(Fmt.hide(it), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp)) }
                 val top = rows.maxOf { it.perDay }.coerceAtLeast(1)
                 rows.take(6).forEach { r ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {

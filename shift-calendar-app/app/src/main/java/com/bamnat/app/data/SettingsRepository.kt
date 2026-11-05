@@ -179,6 +179,14 @@ data class AppSettings(
     val calendarOnly: Boolean = false,
     /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. */
     val statsByPayPeriod: Boolean = false,
+    /** 1.37 [LEDH-06] 가계부 예산·하루 쓸 돈을 월급날~다음 월급날 전날로 봄 (급여일 주기); off is 1일~말일. In the backup. */
+    val moneyByPayCycle: Boolean = false,
+    /** 1.37 [LEDH-07] 근무 시간 환산: spending of this many won or more says the work it took; 0 is off (결정 4: 5만 원). In the backup. */
+    val workTimeFrom: Long = com.bamnat.core.money.WorkTime.DEFAULT_FROM,
+    /** 1.37 [LEDH-09] 퇴근 시각 하루 마감: the 가계부's look 30 minutes after work ends (else 21:00). Off by default. In the backup. */
+    val dayCloseNotice: Boolean = false,
+    /** 1.37 [LEDH-22] 금액 가리기: amounts show as dots across the app and the widgets. Kept on this phone only (not in the backup). */
+    val hideAmounts: Boolean = false,
     /** [LOCK-01] 앱 잠금: the phone's own lock before the app shows, on opening and after a minute away. */
     val appLock: Boolean = false,
     /** [CUST-01] 화면 꾸미기: the calendar page's parts in the user's order, "hours,-todayFlow" ([com.bamnat.core.layout.PageLayout]). */
@@ -211,6 +219,10 @@ data class AppSettings(
     val backupPhotos: Boolean = true,
     /** [DAILY-15] 화면 꾸미기 of the 돈 page, as [calendarLayout]. */
     val moneyLayout: String = "",
+    /** 1.37 [LEDH-20] 가계부 요약의 '점검' 묶음이 펼쳐져 있는지. */
+    val moneyCheckOpen: Boolean = false,
+    /** 1.37 [LEDH-34] 예산 넘김: the categories whose budget left over (or gone over) carries to the next month, tab-separated. */
+    val budgetRollover: String = "",
     /** [DAILY-15] 화면 꾸미기 of the 메모 page. */
     val memoLayout: String = "",
     /** [TAB-02][TAB-04][TAB-06] 1.36 탭 보기 ([com.bamnat.core.layout.TabViews.encode]): 달력 판, 메모장 보기, 가계부 판; empty is the app's own. In the backup. */
@@ -396,6 +408,10 @@ class SettingsRepository(context: Context) {
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
             statsByPayPeriod = prefs.getBoolean(K_STATS_PERIOD, d.statsByPayPeriod),
+            moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
+            workTimeFrom = prefs.getLong(K_WORK_TIME, d.workTimeFrom),
+            dayCloseNotice = prefs.getBoolean(K_DAY_CLOSE, d.dayCloseNotice),
+            hideAmounts = prefs.getBoolean(K_HIDE_AMOUNTS, d.hideAmounts),
             appLock = prefs.getBoolean(K_APP_LOCK, d.appLock),
             calendarLayout = prefs.getString(K_CALENDAR_LAYOUT, null) ?: d.calendarLayout,
             statsLayout = prefs.getString(K_STATS_LAYOUT, null) ?: d.statsLayout,
@@ -411,6 +427,8 @@ class SettingsRepository(context: Context) {
             widgetMemo = prefs.getBoolean(K_WIDGET_MEMO, d.widgetMemo),
             backupPhotos = prefs.getBoolean(K_BACKUP_PHOTOS, d.backupPhotos),
             moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
+            moneyCheckOpen = prefs.getBoolean(K_MONEY_CHECK_OPEN, d.moneyCheckOpen),
+            budgetRollover = prefs.getString(K_BUDGET_ROLLOVER, null) ?: d.budgetRollover,
             calTheme = prefs.getString(K_CAL_THEME, null) ?: d.calTheme,
             widgetLook = prefs.getString(K_WIDGET_LOOK, null) ?: d.widgetLook,
             myColors = prefs.getString(K_MY_COLORS, null) ?: d.myColors,
@@ -507,6 +525,10 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
             .putBoolean(K_STATS_PERIOD, s.statsByPayPeriod)
+            .putBoolean(K_MONEY_CYCLE, s.moneyByPayCycle)
+            .putLong(K_WORK_TIME, s.workTimeFrom)
+            .putBoolean(K_DAY_CLOSE, s.dayCloseNotice)
+            .putBoolean(K_HIDE_AMOUNTS, s.hideAmounts)
             .putBoolean(K_APP_LOCK, s.appLock)
             .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
             .putString(K_STATS_LAYOUT, s.statsLayout)
@@ -520,6 +542,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_WIDGET_MEMO, s.widgetMemo)
             .putBoolean(K_BACKUP_PHOTOS, s.backupPhotos)
             .putString(K_MONEY_LAYOUT, s.moneyLayout)
+            .putBoolean(K_MONEY_CHECK_OPEN, s.moneyCheckOpen)
+            .putString(K_BUDGET_ROLLOVER, s.budgetRollover)
             .putString(K_CAL_THEME, s.calTheme)
             .putString(K_WIDGET_LOOK, s.widgetLook)
             .putString(K_MY_COLORS, s.myColors)
@@ -595,6 +619,12 @@ class SettingsRepository(context: Context) {
         const val K_MOTION = "motion"
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
+        const val K_MONEY_CHECK_OPEN = "money_check_open"
+        const val K_BUDGET_ROLLOVER = "budget_rollover"
+        const val K_MONEY_CYCLE = "money_pay_cycle"
+        const val K_WORK_TIME = "work_time_from"
+        const val K_DAY_CLOSE = "day_close_notice"
+        const val K_HIDE_AMOUNTS = "hide_amounts"
         const val K_MEMO_LAYOUT = "memo_layout"
         const val K_TAB_VIEWS = "tab_views"
         const val K_RATE_HINT = "rate_hint"

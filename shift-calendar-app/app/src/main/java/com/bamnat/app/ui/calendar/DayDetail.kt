@@ -396,10 +396,25 @@ private fun DayGroups(
                             open = groups.isOpen(key, moneyFirst), onToggle = { groups.toggle(key, moneyFirst) },
                         ) {
                             if (!moneyFirst) DayPayContent(insight, profile?.wageType, profile != null, onOpenPay)
+                            // 1.37 [LEDH-04] 이날 일하면? (교대·일근·알바, 급여 설정이 있을 때).
+                            if (!moneyFirst && style?.usesPayEngine == true) profile?.let { p ->
+                                val cal by vm.activeCalendar.collectAsStateWithLifecycle()
+                                com.bamnat.app.ui.money.DayWhatIfSection(date, snapshot, p, cal.id)
+                            }
                             val memoText = remember(memos) {
                                 memos.joinToString("\n") { m -> (listOf(m.title, m.body) + m.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n") }
                             }
-                            DayMoneySections(date, style, dayBook, vm, memoText)
+                            // 1.37 [LEDH-30] 근무에서 바로 적기: what was spent twice or more on the last 90 days' days of this shift.
+                            val habits by androidx.compose.runtime.produceState<Pair<String, List<com.bamnat.core.money.MoneyEntry>>?>(null, book, snapshot, date, style) {
+                                value = if (style?.usesPayEngine != true) null else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                    runCatching {
+                                        val t = snapshot.resolver.resolve(date).shiftType?.takeIf { !it.isOff } ?: return@runCatching null
+                                        val days = (1L..90L).map { date.minusDays(it) }.filter { snapshot.resolver.resolve(it).shiftType?.id == t.id }.toSet()
+                                        com.bamnat.core.money.LedgerSmarts.dayHabits(book.entries, days).takeIf { it.isNotEmpty() }?.let { t.name to it }
+                                    }.getOrNull()
+                                }
+                            }
+                            DayMoneySections(date, style, dayBook, vm, memoText, habits)
                         }
                     }
                     G.BODY -> {

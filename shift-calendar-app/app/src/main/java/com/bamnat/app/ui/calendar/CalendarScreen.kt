@@ -2750,7 +2750,7 @@ private fun MonthRestCard(
             }
             if (count > 0 || overtime != null) {
                 val parts = listOfNotNull(
-                    count.takeIf { it > 0 }?.let { com.bamnat.core.pay.NightSummary.line(it, nights?.nightPay) },
+                    count.takeIf { it > 0 }?.let { com.bamnat.app.ui.Fmt.hide(com.bamnat.core.pay.NightSummary.line(it, nights?.nightPay)) },
                     overtime?.let { "이달 시간외 ${it.text}" },
                 )
                 Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,

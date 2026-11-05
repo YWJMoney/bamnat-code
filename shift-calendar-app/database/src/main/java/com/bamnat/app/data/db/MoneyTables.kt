@@ -105,6 +105,32 @@ data class MoneyBudgetEntity(
     val amount: Long,
 )
 
+/** 1.37 [LEDH-11][LEDH-13] 모으기·세금 봉투. Version 25. */
+@Entity(tableName = "envelopes")
+data class EnvelopeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val target: Long,
+    val dueEpochDay: Long?,
+    val kind: Int,
+    val sharePercent: Int,
+    val emoji: String,
+    val sortOrder: Int,
+    val closed: Boolean,
+    val createdEpochDay: Long?,
+)
+
+/** 1.37 [LEDH-11] Money put in or taken out of an envelope. Version 25. */
+@Entity(tableName = "envelope_moves", indices = [Index("envelopeId")])
+data class EnvelopeMoveEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val envelopeId: Long,
+    val epochDay: Long,
+    val amount: Long,
+    val note: String,
+    val entryId: Long?,
+)
+
 /** [LEDG-14] Categories the user added, hid or moved, per kind of line. Version 15. */
 @Entity(tableName = "money_categories", primaryKeys = ["kind", "name"])
 data class MoneyCategoryEntity(
@@ -298,6 +324,40 @@ interface MoneyDao {
     @Query("UPDATE fixed_costs SET accountId = NULL WHERE accountId = :id")
     suspend fun unlinkFixedFromAccount(id: Long)
 
+    // 1.37 [LEDH-11] 봉투.
+    @Query("SELECT * FROM envelopes ORDER BY sortOrder, id")
+    fun observeEnvelopes(): Flow<List<EnvelopeEntity>>
+
+    @Query("SELECT * FROM envelopes ORDER BY sortOrder, id")
+    suspend fun allEnvelopes(): List<EnvelopeEntity>
+
+    @Upsert
+    suspend fun upsertEnvelope(e: EnvelopeEntity): Long
+
+    @Query("DELETE FROM envelopes WHERE id = :id")
+    suspend fun deleteEnvelope(id: Long)
+
+    @Query("SELECT * FROM envelope_moves ORDER BY epochDay, id")
+    fun observeEnvelopeMoves(): Flow<List<EnvelopeMoveEntity>>
+
+    @Query("SELECT * FROM envelope_moves ORDER BY epochDay, id")
+    suspend fun allEnvelopeMoves(): List<EnvelopeMoveEntity>
+
+    @Insert
+    suspend fun insertEnvelopeMove(e: EnvelopeMoveEntity): Long
+
+    @Query("DELETE FROM envelope_moves WHERE id = :id")
+    suspend fun deleteEnvelopeMove(id: Long)
+
+    @Query("DELETE FROM envelope_moves WHERE envelopeId = :envelopeId")
+    suspend fun deleteMovesOf(envelopeId: Long)
+
+    @Query("DELETE FROM envelopes")
+    suspend fun clearEnvelopes()
+
+    @Query("DELETE FROM envelope_moves")
+    suspend fun clearEnvelopeMoves()
+
     // [LEDG-06] Budgets.
     @Query("SELECT * FROM money_budgets")
     fun observeBudgets(): Flow<List<MoneyBudgetEntity>>
@@ -452,3 +512,17 @@ fun DailySales.toEntity() = DailySalesEntity(
     card = card, cash = cash, transfer = transfer, delivery = delivery, cashCounted = cashCounted, cardSettled = cardSettled,
     cashReceipt = cashReceipt.coerceAtLeast(0), costsProven = costsProven.coerceIn(0, costs.coerceAtLeast(0)),
 )
+
+fun EnvelopeEntity.toModel() = com.bamnat.core.money.Envelope(
+    id = id, name = name, target = target, due = dueEpochDay?.let(LocalDate::ofEpochDay), kind = com.bamnat.core.money.EnvelopeKind.fromCode(kind),
+    sharePercent = sharePercent, emoji = emoji, order = sortOrder, closed = closed, created = createdEpochDay?.let(LocalDate::ofEpochDay),
+)
+
+fun com.bamnat.core.money.Envelope.toEntity() = EnvelopeEntity(
+    id, name.take(com.bamnat.core.money.Envelope.MAX_NAME), target.coerceAtLeast(0), due?.toEpochDay(), kind.code,
+    sharePercent.coerceIn(0, 100), emoji, order, closed, created?.toEpochDay(),
+)
+
+fun EnvelopeMoveEntity.toModel() = com.bamnat.core.money.EnvelopeMove(id, envelopeId, LocalDate.ofEpochDay(epochDay), amount, note, entryId)
+
+fun com.bamnat.core.money.EnvelopeMove.toEntity() = EnvelopeMoveEntity(id, envelopeId, date.toEpochDay(), amount, note, entryId)

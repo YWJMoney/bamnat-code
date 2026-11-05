@@ -240,6 +240,7 @@ fun moneyInks(): Pair<Color, Color> {
  * "64.2만", "123만", "4.5천". (The calendar's [Fmt.wonShort] cuts 15,000 to "1만", too far off here.)
  */
 fun wonBrief(amount: Long): String {
+    if (com.bamnat.app.ui.Fmt.masked) return "•••" // 1.37 PC 5차: 통계의 만 단위도 가려요.
     val a = abs(amount)
     val sign = if (amount < 0) "-" else ""
     fun tenths(t: Long, unit: String) = "${t / 10}" + (if (t % 10 != 0L) ".${t % 10}" else "") + unit

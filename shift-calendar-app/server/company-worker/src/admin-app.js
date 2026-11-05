@@ -2410,7 +2410,16 @@ function adminApp(L, BUILD, M) {
   const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
     field: "현장 단가표 틀", shop: "가게 영업 틀", invest: "투자 원칙·일지 틀", company: "근무 주기·급여 방식",
     bundle: "묶음", layout: "화면 배치", cards: "카드 순서", widget: "위젯 모양", photoLook: "그림 꾸미기", calView: "달력 모양", appFeel: "앱 동작",
-    memoLook: "메모장 모양", moneyLook: "가계부 모양", screenLook: "화면 색·배경" };
+    memoLook: "메모장 모양", moneyLook: "가계부 모양", screenLook: "화면 색·배경", ledger: "가계부 틀", parts: "부품 꾸미기", logic: "규칙·단추",
+    decor: "꾸밈 조각", tabView: "탭 보기" };
+  /** 1.37 PC 확인 (관리자 본문이 JSON이라 읽기 어려움): a 가계부 틀 said as the app's preview says it. */
+  function ledgerWords(p) {
+    const n = (v) => (Array.isArray(v) ? v.length : 0);
+    const yours = (list, key) => (list ?? []).filter((x) => x?.[key]?.input).length;
+    return [n(p.costs) && `지출 분류 ${n(p.costs)}개`, n(p.incomes) && `수입 분류 ${n(p.incomes)}개`,
+      n(p.budgets) && `예산 ${n(p.budgets)}개${yours(p.budgets, "amount") ? `(받는 분이 넣음 ${yours(p.budgets, "amount")})` : ""}`,
+      n(p.envelopes) && `빈 봉투 ${n(p.envelopes)}개`].filter(Boolean).join(", ");
+  }
   const RECIPE_ACTS = { approve: "올림", return: "돌려줌", hide: "가림", show: "다시 보임", delete: "지움", official: "공식", showcase: "보여주기", auto: "자동 가림",
     // 1.36 [MKS-01]
     waiting: "출시 대기에 넣음", release: "출시 대기에서 공개", schedule: "공개 예약" };
@@ -2419,7 +2428,7 @@ function adminApp(L, BUILD, M) {
   function recipeParts(body) {
     try {
       const r = JSON.parse(body);
-      return `${(r.pieces ?? []).map((p) => esc(RECIPE_PIECES[p.kind] ?? p.kind)).join(" · ")}${r.inputs?.length ? ` · 정할 칸 ${r.inputs.length}개` : ""}`;
+      return `${(r.pieces ?? []).map((p) => esc((RECIPE_PIECES[p.kind] ?? p.kind) + (p.kind === "ledger" && ledgerWords(p) ? ` (${ledgerWords(p)})` : ""))).join(" · ")}${r.inputs?.length ? ` · 정할 칸 ${r.inputs.length}개` : ""}`;
     } catch { return ""; }
   }
 

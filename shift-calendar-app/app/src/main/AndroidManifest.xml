@@ -219,6 +219,11 @@
             android:name=".alarm.LeaveTimeReceiver"
             android:exported="false" />
 
+        <!-- 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림. -->
+        <receiver
+            android:name=".money.DayCloseReceiver"
+            android:exported="false" />
+
         <!-- 1.32 [WTYP-11][WTYP-29] 희망 오프 신청 마감, 코인 12월 31일 시가 기록. -->
         <receiver
             android:name=".calendar.DateNoticeReceiver"
@@ -293,6 +298,18 @@
             android:exported="false"
             android:isolatedProcess="true"
             android:process=":fontprobe" />
+
+        <!-- 1.37 [LEDH-14] 빠른 설정의 '돈 적기' 타일: only the system's quick settings binds it. -->
+        <service
+            android:name=".money.MoneyAddTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_money_add"
+            android:label="@string/tile_money_add"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
 
         <!-- [PROV-03] 매일 자동 백업: only the system's job scheduler binds it. -->
         <service
@@ -390,6 +407,19 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_countdown_info" />
+        </receiver>
+
+        <!-- 1.37 [LEDH-14] 오늘 쓸 돈 + 돈 적기. -->
+        <receiver
+            android:name=".widget.MoneyWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_money_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_money_info" />
         </receiver>
 
         <!-- [DAILY-03] 오늘 모든 조. -->

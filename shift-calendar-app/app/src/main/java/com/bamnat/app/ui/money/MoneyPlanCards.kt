@@ -579,7 +579,10 @@ fun FixedCostDialog(
     val accounts = ledger.activeAccounts
     val chosenCategory = category.takeIf { it in categories } ?: categories.first()
 
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 확인 6a4efc92: 끌어서 닫을 때 적은 것을 묻기 (같은 구조의 돈 시트 모두).
+    val typed = name.trim() != initial?.name.orEmpty() || digits != amountDigits(initial?.amount ?: 0) ||
+        (initial != null && (day != initial.day || repeat != initial.repeat || category != initial.category || account != initial.accountId))
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = typed, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(if (initial == null) "반복 추가" else "반복 고치기", style = MaterialTheme.typography.titleLarge,

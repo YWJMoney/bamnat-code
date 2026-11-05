@@ -948,6 +948,13 @@ class AppContainer(context: Context) {
             // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
             // [SLP-15] So does the 나갈 돈·받을 돈 switch.
             keep("money") {
+                // 1.37 [LEDH-14] The 오늘 쓸 돈 widget follows 내 달력's money book and 금액 가리기; only it is redrawn (one job with
+                // the reminders, inside the start's budget [PERF-10]).
+                launch {
+                    combine(calendars.money(com.bamnat.app.data.PersonalCalendar.MAIN).book, settingsRepository.settings.map { it.hideAmounts }.distinctUntilChanged()) { b, h -> b to h }
+                        .drop(1).debounce(800)
+                        .collect { com.bamnat.app.widget.MoneyWidget.redraw(appContext) }
+                }
                 val on = settingsRepository.settings.map { it.moneyNotices }.distinctUntilChanged()
                 // [MCAL-06] A job booked on any calendar is told about.
                 combine(calendars.everyMoney, on) { book, _ -> book }.debounce(500)
@@ -971,8 +978,12 @@ class AppContainer(context: Context) {
             // of them), and 퇴근 시각 알림, which follows the roster and its switch.
             keep("datenotices") {
                 launch { com.bamnat.app.calendar.DateNoticeAlarm.follow(this@AppContainer) }
-                combine(scheduleRepository.snapshot, settingsRepository.settings.map { it.leaveTimeNotice to it.workStyle }.distinctUntilChanged()) { _, _ -> Unit }
-                    .debounce(500).collect { com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext) }
+                // 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림 follows the same roster and its own switch, in the same job (시작 예산).
+                combine(scheduleRepository.snapshot, settingsRepository.settings.map { Triple(it.leaveTimeNotice, it.dayCloseNotice, it.workStyle) }.distinctUntilChanged()) { _, _ -> Unit }
+                    .debounce(500).collect {
+                        com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext)
+                        com.bamnat.app.money.DayCloseNotice.reschedule(appContext)
+                    }
             }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
             keep("leave") {

@@ -66,7 +66,9 @@ fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = Today.
         }
     }
     val year = month.year
-    val monthDays = remember(book, month) { FieldYear.workedDays(book.jobs, month.atDay(1), month.atEndOfMonth()) }
+    // 1.37 PC 6차: 이번 달은 앞으로 할 날까지 세고 올해는 오늘까지 세어 달(4일)이 해(2일)보다 컸어요. 둘 다 오늘까지.
+    val monthEnd = if (YearMonth.from(today) == month) today else month.atEndOfMonth()
+    val monthDays = remember(book, month, monthEnd) { FieldYear.workedDays(book.jobs, month.atDay(1), monthEnd) }
     val yearEnd = if (year == today.year) today else LocalDate.of(year, 12, 31)
     val yearDays = remember(book, year, yearEnd) { FieldYear.workedDays(book.jobs, LocalDate.of(year, 1, 1), yearEnd) }
     // [GUIDE-05] 출역일 and the year's totals go off together, for this calendar.
@@ -82,7 +84,7 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
     val year = month.year
     SectionCard(title = "출역일") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("${month.monthValue}월", "${monthDays}일", Modifier.weight(1f))
+            StatTile("${month.monthValue}월", "${monthDays}일", Modifier.weight(1f), caption = if (YearMonth.from(today) == month) "오늘까지" else null)
             StatTile("${year}년", "${yearDays}일", Modifier.weight(1f), caption = if (year == today.year) "오늘까지" else null)
         }
         if (!dayLabor) return@SectionCard
@@ -119,7 +121,7 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
  */
 @Composable
 fun IncomeTaxCard(book: MoneyBook, year: Int) {
-    val note = remember(book, year) { com.bamnat.core.money.IncomeTaxNote.of(year, book.jobs, book.sales, book.entries) }
+    val note = remember(book, year) { com.bamnat.core.money.IncomeTaxNote.of(year, book.jobs, book.sales, book.entries, com.bamnat.core.time.Today.date()) }
     if (note.isEmpty) return
     SectionCard(title = "${year}년 종합소득세 참고") {
         YearLine("수입" + (if (note.jobs > 0) " (일감 ${note.jobs}건)" else "") + (if (note.salesDays > 0) " (매출 ${note.salesDays}일)" else ""), Fmt.won(note.income))

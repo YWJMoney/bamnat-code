@@ -27,6 +27,7 @@ internal fun PayProfile.baseHourly(base: Long): Long = when (wageType) {
 
 /** "312만" for won amounts in a range, to one decimal under 100만: "8.3만". */
 internal fun manwon(v: Long): String {
+    if (com.bamnat.app.ui.Fmt.masked) return "•••"
     val m = v / 10_000.0
     return when {
         kotlin.math.abs(m) >= 100 -> "%,d만".format(m.roundToLong())

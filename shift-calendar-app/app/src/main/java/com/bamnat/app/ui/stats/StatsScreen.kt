@@ -646,7 +646,7 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, st
                     color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(
                     when {
-                        total != null -> "%,d원".format(total)
+                        total != null -> Fmt.won(total)
                         hasProfile -> "계산하는 중이에요"
                         else -> "근무표로 급여 계산하기"
                     },
@@ -695,23 +695,27 @@ private fun TileGrid(tiles: List<@Composable (Modifier) -> Unit>, columns: Int) 
  */
 @Composable
 private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
-    val m = remember(book, month) { book.month(month) }
+    // 1.37 PC 6차: 달력 요약과 같은 규칙, 끝났거나 마지막 날이 지난 일감만 번 돈·받을 돈·3.3%·거래처·6달 막대에.
+    val today = remember { com.bamnat.core.time.Today.date() }
+    val m = remember(book, month) { book.month(month, today = today) }
     val days = remember(book, month) {
         book.jobs.filter { YearMonth.from(it.date) == month && !it.cancelled }
             .flatMap { j -> (0 until j.days).map { j.date.plusDays(it.toLong()) } }
             .filter { YearMonth.from(it) == month }.distinct().size
     }
-    val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm).jobEarned } } }
+    val trend = remember(book, month) { (5 downTo 0).map { month.minusMonths(it.toLong()).let { mm -> mm to book.month(mm, today = today).jobEarned } } }
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         // [J133-77] '0일 일해요' read oddly: the days only once there are some.
         { md -> StatTile("${month.monthValue}월 일감", "${m.jobCount}건", md, caption = if (days > 0) "${days}일 일해요" else "아직 없어요") },
-        { md -> StatTile("번 돈", Fmt.won(m.jobEarned), md, caption = m.jobReceived.takeIf { it > 0 }?.let { "받음 ${wonBrief(it)}" }) },
+        // 1.37 PC (달력 요약과 같이): 번 돈은 끝난 일감만, 아직 할 일감은 '할 일'로 따로.
+        { md -> StatTile("번 돈", Fmt.won(m.jobEarned), md, caption = listOfNotNull(m.jobReceived.takeIf { it > 0 }?.let { "받음 ${wonBrief(it)}" },
+            m.jobAhead.takeIf { it > 0 }?.let { "할 일 ${wonBrief(it)}" }).joinToString(" · ").ifEmpty { null }) },
         { md -> StatTile("받을 돈", Fmt.won(m.jobOwed), md, warning = m.jobOwed > 0) },
         { md -> StatTile("남은 돈", Fmt.won(m.jobProfit), md, caption = m.jobCosts.takeIf { it > 0 }?.let { "경비 ${wonBrief(it)}" }) },
     )
     TileGrid(tiles, columns)
     // [TYPE-07] Who the month's work came from and who still owes.
-    val clients = remember(book, month) { WorkStats.clients(month, book.jobs) }
+    val clients = remember(book, month) { WorkStats.clients(month, book.jobs, today) }
     // [FLD-05] A client's row opens 거래내역서 보내기.
     var statement by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
     statement?.let { StatementDialog(it, month, book.jobs) { statement = null } }

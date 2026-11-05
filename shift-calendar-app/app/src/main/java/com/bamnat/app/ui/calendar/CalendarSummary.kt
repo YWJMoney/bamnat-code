@@ -138,7 +138,9 @@ internal fun MonthSummaryBar(
         )
         CalendarFocus.JOBS -> listOf(
             Figure("${month}월 일감", "${overview.jobs}건", overview.jobDays.takeIf { it > 0 }?.let { "${it}일 일해요" }),
-            Figure("번 돈", Fmt.wonShort(overview.jobEarned), overview.jobReceived.takeIf { it > 0 }?.let { "받음 ${Fmt.wonShort(it)}" }, cal.income),
+            // 1.37 PC: 번 돈은 끝난 일감만, 아직 할 일감은 따로.
+            Figure("번 돈", Fmt.wonShort(overview.jobEarned), listOfNotNull(overview.jobReceived.takeIf { it > 0 }?.let { "받음 ${Fmt.wonShort(it)}" },
+                overview.jobAhead.takeIf { it > 0 }?.let { "할 일 ${Fmt.wonShort(it)}" }), cal.income),
             Figure("받을 돈", Fmt.wonShort(overview.jobOwed), null, if (overview.jobOwed > 0) cal.warning else null),
         )
         CalendarFocus.SALES -> listOf(

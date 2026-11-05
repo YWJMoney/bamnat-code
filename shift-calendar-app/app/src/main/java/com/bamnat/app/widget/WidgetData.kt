@@ -146,6 +146,7 @@ class WidgetData(
             // [WIDG-01][WIDG-05] Yesterday's night to a week ahead: what is going on now and what comes next.
             val soon = snapshot.resolver.resolveRange(today.minusDays(1), today.plusDays(7))
             com.bamnat.app.ui.Fmt.clock12 = settings.clock12 // G 1.32 [WTYP-07]
+            com.bamnat.app.ui.Fmt.masked = settings.hideAmounts // 1.37 [LEDH-22]
             return WidgetData(
                 today = now.toLocalDate(),
                 weekStart = settings.weekStart,

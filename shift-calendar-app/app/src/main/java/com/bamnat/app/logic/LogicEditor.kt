@@ -238,6 +238,10 @@ fun FormulaField(value: String, onChange: (String) -> Unit, scope: FormulaScope,
             }, label = { Text(o) })
         }
     }
+    // 1.37 PC 5차: 치는 중에 나오는 이름 칩에 설명이 없었어요(‘급여 설정 전에는 비어 있어요’도 못 찾음). 고를 이름의 설명을 한 줄씩.
+    offers.mapNotNull { o -> FormulaNames.of(o.trim().trimEnd('('))?.let { "${it.ko}: ${it.help}" } }.take(3).forEach {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     if (inputs) InputValuesLine(value, scope)
     if (!text) PreviewLine(value, scope)
 }
@@ -312,10 +316,14 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
             LogicVerb.SCREENS.forEach { (k, label) -> FilterChip(selected = act.arg == k, onClick = { onChange(act.copy(arg = k)) }, label = { Text(label) }) }
         }
         LogicVerb.MEMO_LINE -> FormulaField(act.arg, { onChange(act.copy(arg = it.take(120))) }, scope, text = true, label = "더할 줄 (예: 야간 {이번주야간}번째 · 이달 지출 {원(이달지출)})")
-        LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(act.arg, { onChange(act.copy(arg = it.take(20))) }, Modifier.weight(1f), singleLine = true, label = { Text("분류") })
+        // 1.37 PC 4차: 반 폭 칸의 긴 이름표가 두 줄↔한 줄로 바뀌며 칸이 움직여 금액이 이름 칸에 들어갔어요("Trip10000").
+        // 두 칸을 한 줄씩, 이름표는 짧게.
+        LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME, LogicVerb.ENVELOPE -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(act.arg, { onChange(act.copy(arg = it.take(20))) }, Modifier.fillMaxWidth(), singleLine = true,
+                label = { Text(if (act.verb == LogicVerb.ENVELOPE) "봉투 이름" else "분류") },
+                placeholder = if (act.verb == LogicVerb.ENVELOPE) ({ Text("비우면 맨 위 봉투") }) else null)
             OutlinedTextField(act.amount?.toString() ?: "", { s -> onChange(act.copy(amount = s.filter(Char::isDigit).take(9).toLongOrNull())) },
-                Modifier.weight(1f), singleLine = true, label = { Text("금액(원)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                Modifier.fillMaxWidth(), singleLine = true, label = { Text("금액(원)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }
     }
     if (act.verb.writes) Text("⚠ 메모나 가계부를 바꾸는 동작이에요. 할 때마다 바로 되돌리기가 나와요", style = MaterialTheme.typography.bodySmall,
@@ -339,14 +347,15 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
         if (askedSame != null && askedSame != r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) else r.at).key) askedSame = null
         if (tried != null && askedSame == null) tried = ruleProblem(r)
     }
+    // 1.37 PC 4차: 뒤로 가기로 만들던 규칙이 말없이 사라졌어요. 바꾼 게 있으면 먼저 물어요.
+    val first = remember { r }
+    var asking by remember { mutableStateOf(false) }
+    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (r != first) asking = true else onDismiss() },
         title = { Text(if (start == null) "규칙 만들기" else "규칙 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // PC D10 (낮): '7시'를 넣는 즉시 요약은 07:00으로.
-                Text(r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) ?: r.at else r.at).say(), style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary)
                 OutlinedTextField(r.name, { r = r.copy(name = it.take(20)) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("이름") })
                 Text("언제", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -379,6 +388,9 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 Text("조건 (이럴 때만)", style = MaterialTheme.typography.labelLarge)
                 ConditionEditor(r.cond, { r = r.copy(cond = it) }, scope, empty = "조건 없이 언제나")
                 ActEditor(r.act, { r = r.copy(act = it) }, scope)
+                // PC D10 (낮): '7시'를 넣는 즉시 요약은 07:00으로. 1.37 PC 4차: 요약이 위에서 늘면 아래 칸이 밀려 맨 아래로 옮겼어요.
+                Text(r.copy(at = if (r.on == RuleTrigger.DAILY) timeOf(r.at.orEmpty()) ?: r.at else r.at).say(), style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
         confirmButton = {
@@ -407,12 +419,15 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
 fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton) -> Unit, onDismiss: () -> Unit) {
     var b by remember { mutableStateOf(start ?: LogicButton("인수인계", "📝", ButtonPlace.DAY, LogicAct(LogicVerb.MEMO_TEMPLATE))) }
     var conditional by remember { mutableStateOf(b.show.isNotEmpty()) }
+    // 1.37 PC 4차: 규칙 창과 같은 구조라 같이 (뒤로 가기 전에 묻기, 요약은 맨 아래).
+    val first = remember { b }
+    var asking by remember { mutableStateOf(false) }
+    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (b != first) asking = true else onDismiss() },
         title = { Text(if (start == null) "단추 만들기" else "단추 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(b.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(b.emoji.orEmpty(), { b = b.copy(emoji = it.take(4).ifBlank { null }) }, Modifier.width(80.dp), singleLine = true, label = { Text("그림") })
                     OutlinedTextField(b.label, { b = b.copy(label = it.take(16)) }, Modifier.weight(1f), singleLine = true, label = { Text("단추 글") })
@@ -444,6 +459,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                     }
                 }
                 ActEditor(b.act, { b = b.copy(act = it) }, scope)
+                Text(b.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
         confirmButton = {
@@ -453,6 +469,16 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
+
+/** 1.37 PC 4차: 만들던 규칙·단추를 뒤로 가기로 닫을 때 한 번 물어요. */
+@Composable
+private fun DiscardAsk(onKeep: () -> Unit, onDiscard: () -> Unit) = AlertDialog(
+    onDismissRequest = onKeep,
+    title = { Text("적은 내용을 버릴까요?") },
+    text = { Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
+    confirmButton = { TextButton(onClick = onDiscard) { Text("버리기") } },
+    dismissButton = { TextButton(onClick = onKeep) { Text("계속 적기") } },
+)
 
 /** Which half of the editor a studio tool shows. */
 enum class LogicShow { ALL, RULES, BUTTONS }
@@ -491,7 +517,7 @@ internal fun nextLine(r: LogicRule, facts: com.bamnat.core.formula.DayFactsBook?
     return "다음: ${at.monthValue}/${at.dayOfMonth}($wd) ${"%02d:%02d".format(at.hour, at.minute)}"
 }
 
-private val MONEY_VERBS = setOf(LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME)
+private val MONEY_VERBS = setOf(LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME, LogicVerb.ENVELOPE)
 
 /** The 1.36 build 3 fixed 알림 글, read as untouched so an old draft also follows. */
 private const val OLD_NOTIFY = "{근무시작}에 야간 근무예요"
@@ -529,6 +555,7 @@ internal fun ruleName(r: LogicRule, taken: Set<String>): String {
 private val VERB_SHORT = mapOf(
     LogicVerb.NOTIFY to "알림", LogicVerb.MEMO_TEMPLATE to "메모 틀", LogicVerb.SCREEN to "화면 열기", LogicVerb.NEW_MEMO to "메모",
     LogicVerb.CHECK_RESET to "체크 비우기", LogicVerb.ADD_MONEY to "지출 넣기", LogicVerb.MEMO_LINE to "메모 한 줄", LogicVerb.ADD_INCOME to "수입 넣기",
+    LogicVerb.ENVELOPE to "봉투 넣기",
 )
 
 /** PC D14: said once when a rule puts more than 100만 원 in the 가계부 each time it runs. */

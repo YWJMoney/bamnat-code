@@ -90,6 +90,26 @@ class TaxPlusTest {
         assertTrue(nov.projected >= nov.now)
     }
 
+    /** fc374a23 PC 확인: paid to the card (early, in parts) comes off 다음 카드값; the old bill's payment stays on the old bill. */
+    @Test fun paidToTheCardComesOffTheBill() {
+        val card = MoneyAccount(1, "신용", AccountType.CREDIT, payDay = 14)
+        val today = LocalDate.of(2026, 11, 20)
+        val e = listOf(
+            MoneyEntry(date = LocalDate.of(2026, 10, 5), kind = MoneyKind.EXPENSE, amount = 50_000, category = "식비", accountId = 1),
+            MoneyEntry(date = LocalDate.of(2026, 11, 3), kind = MoneyKind.EXPENSE, amount = 80_000, category = "식비", accountId = 1),
+            // The October bill (paid 11/14), on time.
+            MoneyEntry(date = LocalDate.of(2026, 11, 14), kind = MoneyKind.TRANSFER, amount = 50_000, category = "카드값", accountId = 2, toAccountId = 1),
+            // Part of November's bill, early.
+            MoneyEntry(date = LocalDate.of(2026, 11, 18), kind = MoneyKind.TRANSFER, amount = 30_000, category = "카드값", accountId = 2, toAccountId = 1),
+        )
+        val dec = TaxPlus.cardForecast(listOf(card), e, today).single { it.payDate == LocalDate.of(2026, 12, 14) }
+        assertEquals(50_000L, dec.now)
+        assertEquals(30_000L, dec.paid)
+        val all = e + MoneyEntry(date = LocalDate.of(2026, 11, 19), kind = MoneyKind.TRANSFER, amount = 50_000, category = "카드값", accountId = 2, toAccountId = 1)
+        assertTrue(TaxPlus.cardForecast(listOf(card), all, today).none { it.payDate == LocalDate.of(2026, 12, 14) && !it.open })
+        assertEquals(0L, TaxPlus.cardForecast(listOf(card), all, today).firstOrNull { it.payDate == LocalDate.of(2026, 12, 14) }?.now ?: 0L)
+    }
+
     @Test fun spendingByShift() {
         val from = LocalDate.of(2026, 10, 1); val to = LocalDate.of(2026, 10, 12)
         val e = (1..12).map { MoneyEntry(date = LocalDate.of(2026, 10, it), kind = MoneyKind.EXPENSE, amount = if (it % 2 == 0) 30_000 else 10_000, category = "식비") }

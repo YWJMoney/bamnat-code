@@ -129,4 +129,10 @@ internal object Josa {
         if (c !in '가'..'힣') return "가"
         return if ((c - '가') % 28 != 0) "이" else "가"
     }
+
+    private fun batchim(w: String): Boolean = w.lastOrNull()?.let { it in '가'..'힣' && (it - '가') % 28 != 0 } == true
+    /** "월급이라" / "야간이라" vs "근무종류라": '…(이)라는'. */
+    fun irang(w: String): String = if (batchim(w)) "이라" else "라"
+    /** 을/를. */
+    fun eulreul(w: String): String = if (batchim(w)) "을" else "를"
 }

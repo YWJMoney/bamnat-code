@@ -173,6 +173,32 @@ object CardCycle {
     fun current(card: MoneyAccount, today: LocalDate, entries: List<MoneyEntry>, accounts: List<MoneyAccount>): Bill =
         bill(card, billMonth(card, today), entries, accounts)
 
+    /**
+     * fc374a23 PC 확인 (카드값을 갚은 뒤에도 '다음 카드값'이 그대로): what is still owed on each bill of [months] after what was paid
+     * to the card (a transfer to it, or its 카드값 line) up to [today]. Each payment goes to the oldest bill not yet paid off whose
+     * days have begun, the rest to the next one, so paying early or in parts counts too.
+     */
+    fun left(card: MoneyAccount, months: List<YearMonth>, entries: List<MoneyEntry>, accounts: List<MoneyAccount>, today: LocalDate): Map<YearMonth, Long> {
+        val sorted = months.sorted()
+        val owed = sorted.associateWith { bill(card, it, entries, accounts).amount }.toMutableMap()
+        val pays = entries.filter { e ->
+            e.kind == MoneyKind.TRANSFER && !e.date.isAfter(today) && e.amount > 0 && (e.toAccountId == card.id || (e.source == MoneySource.FIXED && e.merchant == card.name))
+        }.sortedBy { it.date }
+        for (p in pays) {
+            var money = p.amount
+            for (m in sorted) {
+                if (money <= 0) break
+                if (period(card, m).first.isAfter(p.date)) break
+                val due = owed.getValue(m)
+                if (due <= 0) continue
+                val take = minOf(due, money)
+                owed[m] = due - take
+                money -= take
+            }
+        }
+        return owed
+    }
+
     /** Whether the bill of [payMonth] was paid: a transfer to the card, or its 카드값 line, within two weeks of the day. */
     fun paid(card: MoneyAccount, payMonth: YearMonth, entries: List<MoneyEntry>): Boolean {
         val day = payDate(card, payMonth)
@@ -184,3 +210,37 @@ object CardCycle {
 
     private const val PAID_WINDOW_DAYS = 14L
 }
+
+/**
+ * 1.37 [LEDH-26] 순자산 한 장: what the accounts that hold money have, less what the credit cards still owe (spent on the card and not
+ * yet paid to it), on any day; and the last twelve month-ends, for one line over the year.
+ */
+object NetWorth {
+    data class Point(val date: LocalDate, val have: Long, val owe: Long) {
+        val net: Long get() = have - owe
+    }
+
+    fun on(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, date: LocalDate): Point {
+        val until = entries.filter { !it.date.isAfter(date) }
+        val have = MoneyAccounts.balances(accounts, until).values.sum()
+        val credit = accounts.filter { it.isCredit }.map { it.id }.toSet()
+        var owe = 0L
+        for (e in until) {
+            val on = MoneyAccounts.of(e, accounts)
+            when {
+                e.kind == MoneyKind.EXPENSE && on in credit -> owe += e.amount
+                e.kind == MoneyKind.INCOME && on in credit -> owe -= e.amount
+                e.kind == MoneyKind.TRANSFER && e.toAccountId in credit -> owe -= e.amount
+            }
+        }
+        return Point(date, have, owe.coerceAtLeast(0))
+    }
+
+    /** Today and the last [months] month-ends before it, oldest first; empty with no account that holds money. */
+    fun year(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, today: LocalDate, months: Int = 12): List<Point> {
+        if (accounts.none { it.keepsBalance && !it.hidden }) return emptyList()
+        val ends = (months downTo 1).map { java.time.YearMonth.from(today).minusMonths(it.toLong()).atEndOfMonth() }
+        return (ends + today).map { on(accounts, entries, it) }
+    }
+}
+

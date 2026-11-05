@@ -184,6 +184,8 @@ fun LedgerListPane(
 ) {
     val filter = remember(view, month) { view.applied(month) }
     val shown = remember(book, filter, view.sort) { Ledger.search(book.entries, filter, view.sort, book.accounts) }
+    // 1.37 [LEDH-36] 평소보다 큰 지출, marked quietly on its line.
+    val bigOnes = remember(book.entries) { com.bamnat.core.money.LedgerSmarts.unusual(book.entries, com.bamnat.core.time.Today.date()) }
     val totals = remember(shown, filter) { Ledger.totals(shown, filter) }
     val byDate = view.sort == LedgerSort.NEWEST || view.sort == LedgerSort.OLDEST
     val days = remember(shown, byDate) { if (byDate) Ledger.days(shown) else emptyList() }
@@ -261,7 +263,7 @@ fun LedgerListPane(
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     }
                     items(lines, key = { it.id }) { e ->
-                        LedgerRow(e, book, selecting, e.id in selection, actions,
+                        LedgerRow(e, book, selecting, e.id in selection, actions, big = e.id in bigOnes,
                             onToggle = { onSelection(if (e.id in selection) selection - e.id else selection + e.id) },
                             modifier = Modifier.animateItem())
                     }
@@ -269,14 +271,14 @@ fun LedgerListPane(
                     days.forEach { d ->
                         stickyHeader(key = "d${d.date}") { DayHeader(d.date, d.expense, d.income) }
                         items(d.entries, key = { it.id }) { e ->
-                            LedgerRow(e, book, selecting, e.id in selection, actions,
+                            LedgerRow(e, book, selecting, e.id in selection, actions, big = e.id in bigOnes,
                                 onToggle = { onSelection(if (e.id in selection) selection - e.id else selection + e.id) },
                                 modifier = Modifier.animateItem())
                         }
                     }
                 } else {
                     items(shown, key = { it.id }) { e ->
-                        LedgerRow(e, book, selecting, e.id in selection, actions, showDate = true,
+                        LedgerRow(e, book, selecting, e.id in selection, actions, showDate = true, big = e.id in bigOnes,
                             onToggle = { onSelection(if (e.id in selection) selection - e.id else selection + e.id) },
                             modifier = Modifier.animateItem())
                     }
@@ -436,7 +438,9 @@ private fun TotalsStrip(t: LedgerTotals, partsOnly: Boolean) {
                     FitText(out, MaterialTheme.typography.titleSmall, cal.expense)
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("들어온 돈", style = MaterialTheme.typography.labelSmall, color = labelInk)
+                    // fc374a23 PC 확인 (내역과 요약의 '들어온 돈'이 달라요): this is the sum of the lines written here; 요약's 들어온 돈 also
+                    // counts paid 일감, 가게 순수익 and the pay estimate, so this one is named for what it adds up.
+                    Text("적은 수입", style = MaterialTheme.typography.labelSmall, color = labelInk)
                     FitText(ins, MaterialTheme.typography.titleSmall, cal.income)
                 }
             }
@@ -444,7 +448,7 @@ private fun TotalsStrip(t: LedgerTotals, partsOnly: Boolean) {
             // [LEDG-15] At very large text each total gets the whole width, so no amount is cut.
             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text("${t.count}건", style = MaterialTheme.typography.labelLarge)
-                listOf(Triple("나간 돈", out, cal.expense), Triple("들어온 돈", ins, cal.income)).forEach { (label, amount, color) ->
+                listOf(Triple("나간 돈", out, cal.expense), Triple("적은 수입", ins, cal.income)).forEach { (label, amount, color) ->
                     Row(Modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
                         Text(label, style = MaterialTheme.typography.labelMedium, color = labelInk,
                             modifier = Modifier.padding(end = 8.dp))
@@ -520,6 +524,8 @@ private fun LedgerRow(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
     showDate: Boolean = false,
+    /** 1.37 [LEDH-36] Much more than this category usually is. */
+    big: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
     // [SWIPE-01] A slide to the left never removes the line by itself: it springs back and asks first,
@@ -585,6 +591,7 @@ private fun LedgerRow(
             when (e.source) {
                 MoneySource.NOTIFICATION -> "알림"; MoneySource.PASTE -> "문자"; MoneySource.MEMO -> "메모"; MoneySource.FIXED -> "반복"; MoneySource.MANUAL -> null
             },
+            "평소보다 큼".takeIf { big },
         ).joinToString(" · ")
         val said = listOf(e.title, signedWon(e).replace("-", "마이너스 "), caption).joinToString(", ")
         Surface(
@@ -656,6 +663,10 @@ private fun LedgerRow(
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         e.kind == MoneyKind.TRANSFER -> Text("이체", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         e.amount < 0 -> Text("취소", style = MaterialTheme.typography.labelSmall, color = cal.income)
+                        // 1.37 [LEDH-07] 근무 시간 환산, for spending of 5만 원 and more.
+                        e.kind == MoneyKind.EXPENSE -> LocalWorkTime.current?.words(e.amount)?.let {
+                            Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        }
                     }
                 }
             }
