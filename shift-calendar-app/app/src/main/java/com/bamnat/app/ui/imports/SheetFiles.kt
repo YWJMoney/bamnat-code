@@ -12,7 +12,12 @@ internal object SheetFiles {
     val TYPES = arrayOf(
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv", "text/comma-separated-values",
         "text/plain", "application/vnd.ms-excel", "application/octet-stream",
+        // [READ-30] 1.38: OpenDocument (LibreOffice·한셀) and the HTML a 근태 system saves as .xls.
+        "application/vnd.oasis.opendocument.spreadsheet", "text/html",
     )
+
+    /** [READ-30] A roster: any table, a PDF or a picture ([com.bamnat.app.imports.AnyFile]). */
+    val ROSTER_TYPES = com.bamnat.app.imports.AnyFile.MIME_TYPES
 
     /** The file's name and rows; throws [Sheets.SheetException] for one too big or unreadable. */
     suspend fun read(context: Context, uri: Uri): Pair<String, List<List<String>>> = withContext(Dispatchers.IO) {

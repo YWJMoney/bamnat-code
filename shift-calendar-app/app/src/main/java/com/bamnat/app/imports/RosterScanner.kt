@@ -71,7 +71,11 @@ object RosterScanner {
             val words = f(uri)
             return@withContext Scan(words, DutyRoster.analyse(words, codes), fakeImage?.invoke(), 1f)
         }
-        val photo = ImagePrep.load(context, uri)
+        scanPicture(context, ImagePrep.load(context, uri), codes, progress)
+    }
+
+    /** [READ-32] 1.38: a picture already in memory (a scanned PDF's page, [AnyFile.render]) read as a photo is. */
+    suspend fun scanPicture(context: Context, photo: Bitmap, codes: DutyCodes, progress: (Int, Int) -> Unit = { _, _ -> }): Scan = withContext(Dispatchers.Default) {
         progress(1, 0)
         val first = words(OcrModel.read(context, photo))
         val firstRead = DutyRoster.analyse(first, codes)
