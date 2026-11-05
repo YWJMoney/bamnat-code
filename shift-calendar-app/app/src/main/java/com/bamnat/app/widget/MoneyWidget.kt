@@ -111,7 +111,7 @@ class MoneyWidget : GlanceAppWidget() {
             if (!placed) return
             runCatching {
                 val ids = GlanceAppWidgetManager(context).getGlanceIds(MoneyWidget::class.java)
-                val now = System.currentTimeMillis()
+                val now = Today.millis()
                 ids.forEach { id -> androidx.glance.appwidget.state.updateAppWidgetState(context, id) { it[STAMP] = now }; MoneyWidget().update(context, id) }
             }
         }

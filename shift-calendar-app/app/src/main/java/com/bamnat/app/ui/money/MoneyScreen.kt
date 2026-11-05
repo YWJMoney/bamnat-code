@@ -1030,8 +1030,7 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
                 }
             }
             // [TAX-01] 결정 W-D1: the pay that came is an observation beside the estimate, never added on top.
-            // 25f2364b PC 확인 (수입 내역의 실수령 예상과 세전·실수령 칩이 세금·실수령 카드와 겹쳐요): with that card on, it says them.
-            if (m.payObserved && !taxSays) m.payEstimate?.let { est ->
+            if (m.payObserved) m.payEstimate?.let { est ->
                 val d = m.payRecorded - est
                 Line("  ${if (net) "실수령" else "세전"} 예상 ${Fmt.won(est)}" + when {
                     d == 0L -> " · 같아요"
@@ -1040,6 +1039,7 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
                 }, "", muted = true)
             }
             // [LEDG-29] 세전 of the month's work, or the 실수령 that lands on the pay day (통장에 찍히는 돈).
+            // 25f2364b PC 확인 (세전·실수령 칩이 세금·실수령 카드와 겹쳐요): with that card on, the choice is in it.
             if (hasProfile && !taxSays && (m.payRecorded == 0L || m.payObserved)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !net, onClick = { onTakeHome(false) }, label = { Text("그달 일한 세전") })
                 FilterChip(selected = net, onClick = { onTakeHome(true) }, label = { Text("지급일 실수령") })
