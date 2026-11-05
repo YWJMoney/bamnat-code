@@ -137,6 +137,7 @@ import com.bamnat.core.work.WorkStyle
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.ui.calendar.calendarParts
 import com.bamnat.app.ui.calendar.withPartMoved
+import com.bamnat.app.ui.calendar.withPartHome
 import com.bamnat.app.ui.calendar.withPartShown
 import com.bamnat.core.recipe.BlueprintParts
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -305,8 +306,11 @@ internal fun AppSettings.sameLinesAs(base: AppSettings): AppSettings {
     fun <T> same(a: String, b: String, all: List<T>, id: (T) -> String): Boolean = a == b ||
         com.bamnat.core.layout.PageLayout.decode(a).arrange(all, id).map { it.part to it.shown } ==
             com.bamnat.core.layout.PageLayout.decode(b).arrange(all, id).map { it.part to it.shown }
+    // [EASE-01] The calendar's line with no order of its own is the month-first one (CALENDAR_FIRST), as the calendar shows it.
+    val sameCalendar = calendarLayout == base.calendarLayout ||
+        calendarParts().map { it.part to it.shown } == base.calendarParts().map { it.part to it.shown }
     return copy(
-        calendarLayout = if (same(calendarLayout, base.calendarLayout, CalendarPart.entries.toList()) { it.id }) base.calendarLayout else calendarLayout,
+        calendarLayout = if (sameCalendar) base.calendarLayout else calendarLayout,
         moneyLayout = if (same(moneyLayout, base.moneyLayout, MoneyPart.entries.toList()) { it.id }) base.moneyLayout else moneyLayout,
         memoLayout = if (same(memoLayout, base.memoLayout, MemoPart.entries.toList()) { it.id }) base.memoLayout else memoLayout,
         statsLayout = if (same(statsLayout, base.statsLayout, StatsPart.entries.toList()) { it.id }) base.statsLayout else statsLayout,
@@ -352,6 +356,9 @@ internal fun pageCards(tab: String, style: WorkStyle?, added: Set<String> = empt
                         val i = order.indexOf(p)
                         if (i > 0 && order[i - 1] == CalendarPart.COUNTS) x = x.withPartMoved(p, -1) { q -> fits(q) }
                     }
+                    // [EASE-01] Back on the side the month-first line has it: at its own place there.
+                    val home = com.bamnat.app.ui.calendar.calendarAbove(com.bamnat.app.ui.calendar.CALENDAR_FIRST)(p)
+                    if (aboveIn(x, p) == home) x = x.withPartHome(p)
                     x
                 }
             })
@@ -384,8 +391,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // PC D10: rules put in from the market (or switched in 설정) while the studio was behind show here too.
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.syncLogic() }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var area by rememberSaveable { mutableStateOf(vm.startArea?.let { a -> Area.entries.firstOrNull { it.name == a } } ?: Area.ALL) }
-    var tool by rememberSaveable { mutableStateOf(Tool.SEED) }
+    // 1.38 PC 19차 LOW (다시 열면 화면 고르기가 늘 '앱 전체'): with nothing asked for, the studio opens on the screen picked last.
+    val studioPrefsEarly = LocalContext.current.let { ctx -> remember { ctx.getSharedPreferences("studio_ui", android.content.Context.MODE_PRIVATE) } }
+    var area by rememberSaveable { mutableStateOf(vm.startArea?.let { a -> Area.entries.firstOrNull { it.name == a } }
+        ?: studioPrefsEarly.getString("lastArea", null)?.let { a -> Area.entries.firstOrNull { it.name == a } } ?: Area.ALL) }
+    var tool by rememberSaveable { mutableStateOf(if (Tool.SEED in area.tools || area == Area.ALL) Tool.SEED else area.tools.first()) }
     var partPick by remember { mutableStateOf<Pair<String, String?>?>(null) }
     // [LAY-09] 고급 보기 for the whole studio (부품 숫자 칸·여러 부품·색 변수, 꾸밈 층 숫자 칸, 층 나무), and the item the 층 나무 opens.
     var studioAdvanced by rememberSaveable { mutableStateOf(false) }
@@ -489,7 +499,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         area = a; tool = a.tools.first(); lookIndex = 0; if (a.detailOnly) detail = true
         sel = null; quick = null; if (panelMode != PanelMode.TOOL) panel = false
         areaUses = AreaRank.used(areaUses, a.name)
-        runCatching { studioPrefs.edit().putString("areaUses", AreaRank.encode(areaUses)).apply() }
+        runCatching { studioPrefs.edit().putString("areaUses", AreaRank.encode(areaUses)).putString("lastArea", a.name).apply() }
     }
     // [CNV-04] A tool of an area in the 더 보기 판, the example staying in view above it.
     fun openTool(a: Area, t: Tool) {
@@ -845,7 +855,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         }
                     }
-                    if (sel == null && !hintSeen) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+                    // PC 확인 1.37 A18: over a 판 opened big the hint would hide the strip of example left.
+                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
                     ZoomControls(zoom, onFocus = sel?.let { id -> { spots.boxes(id).firstOrNull()?.let { zoom.focus(it) }; Unit } },
                         modifier = (if (zoom.controlsOpen) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp + if (panel) panelH else 0.dp)
                             else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)))

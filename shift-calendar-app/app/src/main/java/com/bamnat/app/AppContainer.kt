@@ -97,8 +97,13 @@ class AppContainer(context: Context) {
     /** [MEMO-01] Memos stay with the calendar they were written on, unless calendars share them. */
     val memoRepository = MemoRepository(database, sharing = kotlinx.coroutines.flow.combine(memoSharing.state, calendars.calendars) { s, list ->
         s.cleaned(list.map { it.id })
+    }, shiftsOf = { id ->
+        // [EASE-22] 근무마다 메모 follow the calendar's own days (one shared reading per calendar).
+        calendars.repository(id).live.map { s -> com.bamnat.core.memo.MemoRepeat.ShiftOf { d -> s.resolver.shiftIdOn(d) } }
     })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
+    /** 1.38 [P3-01] Phase 3: 리더 팀 근무표와 사업장 급여 대장 (DB 27), used only while their flags are on. */
+    val phaseThree = com.bamnat.app.data.PhaseThreeStore(database).also { it.prefsOf = { appContext.getSharedPreferences("work_plans", android.content.Context.MODE_PRIVATE) } }
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
     val consentStore by lazy { com.bamnat.app.data.ConsentStore(appContext) }
     /** [ALRM-04] 증명 사진's reference fingerprints. */
@@ -192,7 +197,7 @@ class AppContainer(context: Context) {
     val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository, listOf(usageStats))
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry, ringSettings = { ringSettings() },
-        soonMinutes = { settingsRepository.current.alarmSoonMinutes })
+        soonMinutes = { settingsRepository.current.alarmSoonMinutes }, guard = { settingsRepository.current.alarmGuard })
     /** How alarms ring now; [PROV-06][PROV-07] the mission and the wake check only with 프로. */
     fun ringSettings(): com.bamnat.app.alarm.BootAlarms.RingSettings =
         com.bamnat.app.alarm.BootAlarms.RingSettings.of(settingsRepository.current, sureAlarm())
@@ -505,6 +510,8 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.StartupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_MORE) }
         // [STAT-08] 1.31 N4: lookup times from 처리방침 3.5's date on (the `stats.lookup` row turns on by itself that day).
         com.bamnat.app.diag.LookupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LOOKUP) }
+        // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
+        com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }
 
     /** [FLAG-07] This phone as the dark-merge rows read it; nothing of it is sent. */
@@ -559,7 +566,8 @@ class AppContainer(context: Context) {
     private val playBilling by lazy {
         com.bamnat.app.billing.PlayBilling(appContext, proStore, api = { tierApi },
             device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } },
-            onBought = { trial -> proMoments.welcome(true); telemetry.event(if (trial) com.bamnat.core.stats.UsageEvent.TRIAL_START.key else com.bamnat.core.stats.UsageEvent.SUBSCRIBE.key) })
+            onBought = { trial -> proMoments.welcome(true); telemetry.event(if (trial) com.bamnat.core.stats.UsageEvent.TRIAL_START.key else com.bamnat.core.stats.UsageEvent.SUBSCRIBE.key) },
+            workPlans = { remoteConfig.current.workPlans })
     }
     // AE 1.26 [INVITE-02][INVITE-03] 친구 초대: built on first use; screenshots and tests put fakes in place of the
     // server, Play's referrer and the phone mark.
@@ -979,10 +987,13 @@ class AppContainer(context: Context) {
             keep("datenotices") {
                 launch { com.bamnat.app.calendar.DateNoticeAlarm.follow(this@AppContainer) }
                 // 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림 follows the same roster and its own switch, in the same job (시작 예산).
-                combine(scheduleRepository.snapshot, settingsRepository.settings.map { Triple(it.leaveTimeNotice, it.dayCloseNotice, it.workStyle) }.distinctUntilChanged()) { _, _ -> Unit }
+                combine(scheduleRepository.snapshot, settingsRepository.settings.map { listOf(it.leaveTimeNotice, it.dayCloseNotice, it.workStyle,
+                    it.shiftPreviewNotice, it.shiftPreviewHour) }.distinctUntilChanged()) { _, _ -> Unit }
                     .debounce(500).collect {
                         com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext)
                         com.bamnat.app.money.DayCloseNotice.reschedule(appContext)
+                        // 1.38 [LEDH-24] 근무 전 한 줄 예고, in the same job (시작 예산).
+                        com.bamnat.app.money.ShiftPreviewNotice.reschedule(appContext)
                     }
             }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.

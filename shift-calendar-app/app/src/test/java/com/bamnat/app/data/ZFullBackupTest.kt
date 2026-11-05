@@ -32,8 +32,8 @@ class ZFullBackupTest {
     /** Every field that travels set away from its default. */
     private fun sample(s: AppSettings, shiftId: Long) = s.copy(
         weekStart = DayOfWeek.MONDAY, weeklyLimitHours = 60, averageLimitHours = 48, themeMode = ThemeMode.DARK,
-        dynamicColor = true, showHoursInCells = false, showLunar = true, vibrate = false, gradualVolume = false,
-        snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
+        dynamicColor = true, showHoursInCells = false, showLunar = true, orgDayGroup = "fire", orgDaysOn = false, vibrate = false, gradualVolume = false,
+        snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, alarmGuard = false, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
         plazaNews = false, plazaHidden = com.bamnat.core.plaza.HideList().hide("w".repeat(64), "글쓴이", 1_000L).encode(), plazaRulesAgreed = 2,
         workStyle = WorkStyle.SHIFT, rosterMonthly = true,
         // 1.37 [SETUP-16] 첫 설정을 미뤄 둔 채 백업.
@@ -65,7 +65,7 @@ class ZFullBackupTest {
         usageStatsLookup = true, afterAlarmCard = false, watchAlarm = AppSettings.WATCH_ALARM_WATCH, watchCalendar = "side-job",
         // 1.32 [CALX-03][CALX-04][CALX-05][LEDX-07][PAYA-05][UX132-05][UX132-06].
         tapSelectFirst = true, textAsked = true, compact = false, textStep = 3, clock12 = true, spendInCells = true, spendHeat = true, backupNudge = false,
-        payDepositNotice = false, calendarOnly = true, statsByPayPeriod = true, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true,
+        payDepositNotice = false, calendarOnly = true, statsByPayPeriod = true, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true, shiftPreviewNotice = !s.shiftPreviewNotice, shiftPreviewHour = 7, moneyChallenge = "NO_SPEND|20000",
         // 1.32 조사 대조 [WTYP-12][WTYP-16].
         stretchLimitHours = 24, leaveTimeNotice = true,
     )

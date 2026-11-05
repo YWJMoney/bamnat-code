@@ -677,15 +677,29 @@ private fun TimeCellPicker(start: java.time.LocalTime?, onDismiss: () -> Unit, o
  * are counted under it, so none seems lost. Parts memo.cal · memo.cal.cell.
  */
 @Composable
-internal fun MemoCalendarView(memos: List<Memo>, weekStart: java.time.DayOfWeek, today: LocalDate, actions: CardActions) {
-    val byDay = remember(memos) { MemoView.byDay(memos) }
-    val undated = remember(memos, byDay) { memos.size - byDay.values.sumOf { it.size } }
+internal fun MemoCalendarView(
+    memos: List<Memo>,
+    weekStart: java.time.DayOfWeek,
+    today: LocalDate,
+    actions: CardActions,
+    /** [EASE-24] 1.38: the day's kind of shift, a small badge in each cell and in the picked day's line. */
+    shiftOn: (LocalDate) -> com.bamnat.core.model.ShiftType? = { null },
+    /** [EASE-22] A 근무마다 memo is laid on each day of its shift in the month on screen. */
+    shiftsOf: (Memo) -> com.bamnat.core.memo.MemoRepeat.ShiftOf? = { null },
+) {
     var month by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(java.time.YearMonth.from(today).toString()) }
     val ym = java.time.YearMonth.parse(month)
     var picked by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     val first = ym.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
     val weeks = ((java.time.temporal.ChronoUnit.DAYS.between(first, ym.atEndOfMonth()) / 7) + 1).toInt()
+    val byDay = remember(memos, month, shiftsOf) {
+        val shiftly = memos.filter { com.bamnat.core.memo.MemoRepeat.kindOf(it.repeat) == com.bamnat.core.memo.MemoRepeat.Kind.SHIFT && shiftsOf(it) != null }
+        val laid = com.bamnat.core.memo.MemoRepeat.expand(shiftly, first, first.plusDays(weeks * 7L - 1), shiftsOf)
+        val rest = MemoView.byDay(memos - shiftly.toSet())
+        (rest.keys + laid.mapNotNull { it.date }).associateWith { d -> rest[d].orEmpty() + laid.filter { it.date == d } }
+    }
+    val undated = remember(memos) { memos.count { MemoView.dayOf(it) == null } }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = PaddingValues(bottom = 160.dp)) {
         item(key = "head") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -724,14 +738,19 @@ internal fun MemoCalendarView(memos: List<Memo>, weekStart: java.time.DayOfWeek,
                                 .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal.cell", states, com.bamnat.app.logic.scopeOn(date)), RoundedCornerShape(8.dp)))
                                 .clickable { picked = if (isPicked) null else date.toString() }
                                 .semantics(mergeDescendants = true) {
-                                    contentDescription = Fmt.monthDay(date) + if (list.isEmpty()) " 메모 없음" else " 메모 ${list.size}개: " + list.joinToString(", ") { it.title.ifBlank { it.preview } }
+                                    contentDescription = Fmt.monthDay(date) + (shiftOn(date)?.let { " ${it.name}" } ?: "") + if (list.isEmpty()) " 메모 없음" else " 메모 ${list.size}개: " + list.joinToString(", ") { it.title.ifBlank { it.preview } }
                                     selected = isPicked
                                 }
                                 .padding(3.dp),
                         ) {
-                            Text("${date.dayOfMonth}", style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (date == today) FontWeight.Bold else null,
-                                color = if (inMonth) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${date.dayOfMonth}", style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (date == today) FontWeight.Bold else null,
+                                    color = if (inMonth) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.weight(1f))
+                                // [EASE-24] The day's shift beside the date, as on the calendar tab.
+                                shiftOn(date)?.let { t -> com.bamnat.app.ui.components.ShiftBadge(t, size = 14.dp, outlined = t.isOff, showIcon = false) }
+                            }
                             for (m in list.take(2)) Text(m.title.ifBlank { m.preview }.ifBlank { "(빈 메모)" }, style = MaterialTheme.typography.labelSmall, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.fillMaxWidth().background(memoBackground(m.colorIndex).copy(alpha = 0.6f), RoundedCornerShape(3.dp)).padding(horizontal = 2.dp))
@@ -745,7 +764,7 @@ internal fun MemoCalendarView(memos: List<Memo>, weekStart: java.time.DayOfWeek,
         if (day != null) {
             val list = byDay[day].orEmpty()
             item(key = "day") {
-                Text(Fmt.monthDay(day) + if (list.isEmpty()) " · 메모 없음" else " · 메모 ${list.size}개", style = MaterialTheme.typography.titleSmall,
+                Text(Fmt.monthDay(day) + (shiftOn(day)?.let { " · ${it.name}" } ?: "") + if (list.isEmpty()) " · 메모 없음" else " · 메모 ${list.size}개", style = MaterialTheme.typography.titleSmall,
                     modifier = Modifier.padding(top = 12.dp, bottom = 4.dp).semantics { heading() })
             }
             items(list, key = { "d-${it.id}" }) { m ->
@@ -785,7 +804,9 @@ private fun trim(d: Double): String = if (d == Math.floor(d)) "%,d".format(d.toL
 /** [TAB-02] 갤러리: two big cards a row, the title large and the 칸 under it, for 레시피·여행·독서 같은 모음. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-internal fun MemoGalleryView(memos: List<Memo>, view: MemoView, actions: CardActions, selection: Set<Long>) {
+internal fun MemoGalleryView(memos: List<Memo>, view: MemoView, actions: CardActions, selection: Set<Long>,
+    /** [EASE-24] 1.38: a dated card says that day's shift next to its date. */
+    shiftOn: (LocalDate) -> com.bamnat.core.model.ShiftType? = { null }) {
     val ordered = remember(memos, view) { view.sorted(memos) }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(160.dp),
@@ -810,7 +831,7 @@ internal fun MemoGalleryView(memos: List<Memo>, view: MemoView, actions: CardAct
                     }
                     Text(if (emoji) title.drop(lead.length).trim() else title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     PropPills(memo, max = 4)
-                    memo.date?.let { Text(Fmt.monthDay(it), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    memo.date?.let { Text(Fmt.monthDay(it) + (shiftOn(it)?.let { t -> " · ${t.name}" } ?: ""), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
             }
         }

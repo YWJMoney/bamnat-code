@@ -381,7 +381,17 @@ fun RecipeListScreen(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            state.error?.let { e -> item { Text(e, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(8.dp)) } }
+            // 1.38 (장터 그림 LOW, PC 제안): offline with a list already shown, one quiet line says when it was read, with 다시 시도;
+            // with nothing shown, the problem and 다시 시도 (before, a red line and no way to try again but leaving).
+            state.error?.let { e -> item(key = "error") {
+                if (state.items.isNotEmpty() && state.loadedAt > 0L) com.bamnat.app.ui.company.RefreshLine(refreshing = false, stale = true,
+                    onRetry = { vm.load() }, seenAt = java.time.Instant.ofEpochMilli(state.loadedAt).atZone(com.bamnat.core.time.Today.zone())
+                        .toLocalTime().let { "%d:%02d".format(it.hour, it.minute) })
+                else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
+                    Text(e, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { vm.load() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 시도") }
+                }
+            } }
             if (!state.loading && state.error == null && state.items.isEmpty()) item {
                 // [R136-05] 1.36 (리뷰 R-11, 관리자 개발사항 d8quAdDH7r3QKNMp): an empty list could only be read again by closing the
                 // app; 다시 불러오기 asks again (a list the server just filled shows within its minute of cache).

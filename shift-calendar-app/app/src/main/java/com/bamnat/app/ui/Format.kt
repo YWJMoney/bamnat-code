@@ -129,6 +129,9 @@ object Fmt {
         }
     }
 
+    /** "시작 30분 전", "시작 7시간 뒤", "시작 시각": [offset] always said from the start. */
+    fun startOffset(minutes: Int): String = offset(minutes).let { if (it.startsWith("시작")) it else "시작 $it" }
+
     fun offset(minutes: Int): String = when {
         minutes == 0 -> "시작 시각"
         // [EASE-18] An alarm after the start: "시작 7시간 뒤".

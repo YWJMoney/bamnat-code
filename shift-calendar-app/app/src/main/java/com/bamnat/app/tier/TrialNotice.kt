@@ -24,7 +24,7 @@ object TrialNotice {
 
     fun reschedule(context: Context, state: ProState, zone: ZoneId = Today.zone(), now: Instant = Today.instant()) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
-        val sub = state.sub
+        val sub = state.askSub
         val end = sub?.trialEnd(zone)
         val stage = TrialConsent.stage(sub?.play(), end, state.consentAt, now)
         if (sub == null || end == null || stage == TrialConsent.Stage.NONE || stage == TrialConsent.Stage.DONE ||
@@ -59,7 +59,7 @@ class TrialNoticeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val c = context.appContainer
         val state = c.proStore.current
-        val sub = state.sub ?: return
+        val sub = state.askSub ?: return
         val end = sub.trialEnd(Today.zone())
         val stage = TrialConsent.stage(sub.play(), end, state.consentAt, Today.instant())
         if (stage != TrialConsent.Stage.ASK && stage != TrialConsent.Stage.LAST_DAY) return

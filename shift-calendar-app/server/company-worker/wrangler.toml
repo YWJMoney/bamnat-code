@@ -12,7 +12,8 @@ mode = "smart"
 
 # Clears network hashes, spent limits and old questions on time even when nobody sends anything.
 [triggers]
-crons = ["17 * * * *"]
+# 1.38 [DESK-09] */5: 보류가 끝난 Claude 답 보내기만.
+crons = ["17 * * * *", "*/5 * * * *"]
 
 [[d1_databases]]
 binding = "DB"

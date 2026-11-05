@@ -120,6 +120,16 @@ fun GuardedSheet(
         if (v == androidx.compose.material3.SheetValue.Hidden && keep) { asking = true; false } else true
     })
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // 1.38 (1.37 PC LOW 621c55f4, 아래로 쓸면 적던 금액이 사라져요): a fast fling can still carry the sheet to Hidden past the check above
+    // (the drag settles before confirmValueChange is asked again). If the sheet ever ends up hidden with something typed, it comes
+    // back up and asks, rather than staying open unseen and losing what was typed when it is opened next.
+    androidx.compose.runtime.LaunchedEffect(state) {
+        var opened = false
+        androidx.compose.runtime.snapshotFlow { state.currentValue }.collect { v ->
+            if (v != androidx.compose.material3.SheetValue.Hidden) opened = true
+            else if (opened && keep) { asking = true; runCatching { state.show() } }
+        }
+    }
     AppSheet(
         // 뒤로 hides the sheet without the swipe's check, so it comes back up and asks (as FormSheet does).
         onDismissRequest = { if (!keep) onDismissRequest() else { asking = true; scope.launch { state.show() } } },

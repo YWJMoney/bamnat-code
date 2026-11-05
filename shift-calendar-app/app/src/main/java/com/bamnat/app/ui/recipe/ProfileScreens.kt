@@ -117,7 +117,7 @@ import kotlinx.coroutines.launch
 internal fun profileProblem(e: Throwable): String = when ((e as? com.bamnat.app.company.CompanyException)?.code) {
     "not_found" -> "볼 수 없는 프로필이에요"
     "nick_length" -> "이름은 2~12자로 정해 주세요"
-    "taken" -> "이미 다른 분이 쓰는 이름이에요"
+    "taken" -> com.bamnat.app.ui.village.VillageName.TAKEN
     "nick" -> "쓸 수 없는 이름이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
     "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as com.bamnat.app.company.CompanyException).retryAfter ?: 86_400).let { w ->
         "오늘은 여기까지 할 수 있어요. ${w.removeSuffix(" 뒤")}${if (w.endsWith("뒤")) " 뒤에" else "에"} 다시 해 주세요"

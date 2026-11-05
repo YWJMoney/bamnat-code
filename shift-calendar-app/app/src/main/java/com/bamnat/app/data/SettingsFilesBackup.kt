@@ -207,6 +207,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 1.38 [EASE-29] 홈 화면 위젯 목록에 내 근무 그림을 올린 날: 이 휴대폰의 런처 일이라 옮기지 않아요.
+            "widget_previews" to "홈 화면 위젯 목록에 내 근무 그림을 올린 날(하루 한 번), 이 휴대폰의 것",
             // [CNV-13] 1.37 펼쳐 보기: which sliding rows were opened, a matter of this screen's width.
             "fold_rows" to "꾸미기 줄을 펼쳐 둘지 접어 둘지(줄마다), 이 휴대폰 화면에 맞춘 것",
             // [MAT-05] 1.36 글꼴 고르기의 최근 쓴 글꼴 다섯, 이 휴대폰의 것.
@@ -248,6 +250,7 @@ class SettingsFilesBackup(
             "device" to "동의 기록은 새 휴대폰에서 다시 물어요",
             "usage_stats" to "사용 통계는 이 휴대폰에서 동의한 만큼만",
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
+            "alarm_guard" to "알람 지킴이가 오늘 알린 문제(하루 한 번 알리기 위한 표시)일 뿐이에요", // [ALRM-27]
             "boot_alarms" to "알람 예약 상태는 설정에서 다시 만들어요",
             "alarms_off" to "‘오늘 남은 알람 모두 끄기’는 이 휴대폰의 오늘 하루 것",
             // [ALRM-21] 1.35.
@@ -293,6 +296,10 @@ class SettingsFilesBackup(
             // 1.32 [STAB-08]: a backup saved on another phone does not keep this one's records.
             "recipe_remix_seen" to "내 판마다 고쳐 만든 판을 이 휴대폰에서 본 수, 새로 생긴 것만 점으로 알리려고 (LIN-04)",
             "backup_nudge" to "이 휴대폰에서 마지막으로 백업 파일을 저장한 날과 ‘나중에’를 누른 날",
+            // 1.38 갈래8 [LEDH-24][LEDH-29][LEDH-14]: what this phone already showed or took in (the switches are in settings).
+            "bamnat_money_first_fill" to "가계부 ‘첫날 채우기’ 카드를 넘긴 것, 이 휴대폰에서 본 만큼",
+            "bamnat_shift_preview" to "근무 전 한 줄 예고를 마지막으로 알린 날, 같은 날 두 번 알리지 않으려고",
+            "bamnat_watch_money" to "워치에서 적은 돈 최근 50건의 번호, 같은 것을 두 번 적지 않으려고",
         )
     }
 }

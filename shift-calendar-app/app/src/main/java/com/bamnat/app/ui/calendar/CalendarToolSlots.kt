@@ -11,6 +11,8 @@ internal object CalendarToolSlots {
     const val EDIT = "edit"
     const val TEAMS = "teams"
     const val TYPE_MONTH = "typeMonth"
+    /** [EASE-25] 오늘부터 하루 밀기 (and 순서 다시 맞추기, the same window). */
+    const val PUSH = "push"
     const val SHARE = "share"
     const val YEAR = "year"
     const val RECEIVE = "receive"
@@ -28,6 +30,9 @@ internal object CalendarToolSlots {
             add(Slot(EDIT, "달력 고치기", enabled = received == null, note = received))
             if (fit.teams) add(Slot(TEAMS, "모든 조 보기", enabled = fit.teamsReady && received == null,
                 note = received ?: "근무 순서를 정하면 써요".takeIf { !fit.teamsReady }))
+            // [EASE-25] 1.38: a shift worker's order slipped by a day, put right from the tools as well as a day's long press.
+            if (fit.teams) add(Slot(PUSH, "오늘부터 하루 밀기", enabled = fit.pushReady && received == null,
+                note = received ?: "근무 순서를 정하면 써요".takeIf { !fit.pushReady }))
             add(Slot(TYPE_MONTH, "이번 달 전부 넣기", enabled = received == null && fit.hasShiftTypes,
                 note = received ?: "근무 종류를 먼저 만들어요".takeIf { !fit.hasShiftTypes }))
             add(Slot(SHARE, "근무표 공유"))
@@ -49,4 +54,6 @@ internal data class ToolFit(
     val viewingReceived: Boolean = false,
     val hasShiftTypes: Boolean = true,
     val teamsReady: Boolean = true,
+    /** [EASE-25] Today is under a rotating order, which a day can be pushed in. */
+    val pushReady: Boolean = true,
 )

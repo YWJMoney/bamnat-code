@@ -57,4 +57,20 @@ class AlarmTrustTest {
         assertEquals("오늘", whenText(today, today))
         assertEquals("11월 8일 (일)", whenText(today.plusDays(3), today))
     }
+
+    /** PC 267560dd: the words the build got wrong or left unclear. */
+    @Test
+    fun pcWordsRead() {
+        assertEquals("시작 23시간 50분 뒤", com.bamnat.app.ui.Fmt.startOffset(-(23 * 60 + 50)))
+        assertEquals("시작 30분 전", com.bamnat.app.ui.Fmt.startOffset(30))
+        assertEquals("로", com.bamnat.app.ui.Fmt.ro("시작 23시간 50분 뒤"))
+        val test = RingRequest(AlarmScheduler.TEST_NAME, today, LocalTime.of(14, 8), 0, null, 0L, label = AlarmScheduler.TEST_NAME)
+        assertEquals("소리와 화면이 잘 나오는지 보는 알람이에요", AlarmService.describe(test))
+        // A nap alarm the day after a 야간 says the shift began yesterday.
+        val nap = RingRequest("야간", today, LocalTime.of(19, 0), -(19 * 60), null,
+            today.plusDays(1).atTime(14, 0).atZone(com.bamnat.core.time.Today.zone()).toInstant().toEpochMilli())
+        assertEquals("어제 19:00에 시작한 근무 · 시작 19시간 뒤 알람", AlarmService.describe(nap))
+        assertEquals("오늘 남은 알람 모두 끄기", allOffLabel(false))
+        assertTrue(allOffLabel(true).startsWith("한 번 더 누르면"))
+    }
 }

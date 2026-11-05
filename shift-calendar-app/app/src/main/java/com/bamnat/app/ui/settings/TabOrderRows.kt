@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.settings
 
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -82,7 +84,8 @@ internal fun TabOrderDialog(settings: AppSettings, onChange: (List<String>) -> U
                 )
                 tabs.forEachIndexed { i, tab ->
                     if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
-                    TabOrderLine(i, tabs.size, tab, tab.labelFor(settings.workStyle), onUp = { move(tab.route, -1) }, onDown = { move(tab.route, 1) })
+                    TabOrderLine(i, tabs.size, tab, tab.labelFor(settings.workStyle), onUp = { move(tab.route, -1) }, onDown = { move(tab.route, 1) },
+                        onFirst = { move(tab.route, -i) })
                 }
             }
         },
@@ -98,7 +101,7 @@ internal fun TabOrderDialog(settings: AppSettings, onChange: (List<String>) -> U
 }
 
 @Composable
-private fun TabOrderLine(index: Int, count: Int, tab: TopLevel, label: String, onUp: () -> Unit, onDown: () -> Unit) {
+private fun TabOrderLine(index: Int, count: Int, tab: TopLevel, label: String, onUp: () -> Unit, onDown: () -> Unit, onFirst: () -> Unit) {
     val first = index == 0
     val last = index == count - 1
     Row(
@@ -108,6 +111,7 @@ private fun TabOrderLine(index: Int, count: Int, tab: TopLevel, label: String, o
             // One stop for TalkBack: "1, 메모, 첫 화면", with 위로·아래로 as actions.
             .semantics(mergeDescendants = true) {
                 customActions = listOfNotNull(
+                    CustomAccessibilityAction("첫 화면으로") { onFirst(); true }.takeIf { index > 1 },
                     CustomAccessibilityAction("위로") { onUp(); true }.takeIf { !first },
                     CustomAccessibilityAction("아래로") { onDown(); true }.takeIf { !last },
                 )
@@ -125,6 +129,10 @@ private fun TabOrderLine(index: Int, count: Int, tab: TopLevel, label: String, o
                     Text("첫 화면", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                 }
+            } else if (index > 1) {
+                // 1.38 PC 확인(e6dc244a) 제안: the 5th tab first in one tap, not four ups.
+                Text("첫 화면으로", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.clip(MaterialTheme.shapes.small).clickable(onClick = onFirst).padding(vertical = 4.dp))
             }
         }
         IconButton(onClick = onUp, enabled = !first) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "$label 위로") }

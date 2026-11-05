@@ -53,6 +53,9 @@ sealed interface SettingsLink {
     data class Go(val go: SettingsGo) : SettingsLink
     /** U 1.32 [UX132-04] 🔍 on any tab: settings opens on its search, the field ready to type. */
     data object Search : SettingsLink
+    /** 1.38 PC 확인(e6dc244a, 1.36.1 LOW): the 설정 tab tapped, again or from another tab, opens the first screen of settings,
+     *  not the group (화면과 글자 …) left open there. */
+    data object Home : SettingsLink
 }
 
 /**
@@ -70,6 +73,11 @@ object SettingsLinks {
 
     fun search() {
         _target.value = SettingsLink.Search
+    }
+
+    /** The 설정 tab tapped: the first screen of settings, scrolled to the top. */
+    fun home() {
+        _target.value = SettingsLink.Home
     }
 
     fun go(go: SettingsGo) {

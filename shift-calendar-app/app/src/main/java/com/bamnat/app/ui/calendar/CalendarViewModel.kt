@@ -443,13 +443,27 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         SleepPlan.tips(SleepSchedule.of(snapshot.resolver, date, date.plusDays(1), settings.alarmsEnabled && calendarAlarmsOn.value,
             settings.sleepTargetMinutes, settings.commuteMinutes), date)
 
+    /** 1.38 [P3-01] The flag book as it stands, so a Phase 3 row turned on shows without reopening the day. */
+    val flagStates: StateFlow<Map<String, com.bamnat.core.flags.FlagState>> = container.flags.byKey
+
+    /**
+     * 1.38 [HLTH-01][P3-04] 계획 대 실제: the sleeps planned around [date]'s work against the log, while `health.compare` is on.
+     * Worked out here each time and never stored (Phase 3 설계 2-3).
+     */
+    fun planVsActual(snapshot: ScheduleSnapshot, date: LocalDate, settings: AppSettings, log: List<SleepEntry>): List<com.bamnat.core.sleep.PlanVsActual.Night> {
+        if (!container.flags.on(com.bamnat.core.flags.FlagCatalog.HEALTH_COMPARE) || date.isAfter(Today.date())) return emptyList()
+        return com.bamnat.core.sleep.PlanVsActual.forDay(com.bamnat.core.sleep.PlanVsActual.nights(log, snapshot.resolver, date, date,
+            settings.alarmsEnabled && calendarAlarmsOn.value, settings.sleepTargetMinutes, settings.commuteMinutes), date)
+    }
+
     /** [SLP-14] 오늘의 흐름 at [now]. */
     fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
         // [CAL-13] An added calendar kept from ringing shows no alarm in the day's flow.
         TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled && calendarAlarmsOn.value, log, settings.sleepTargetMinutes, settings.commuteMinutes,
             settings.restCheck, settings.strictRest, rules = rulesFor(snapshot, now.toLocalDate(), settings.rules),
             // [SLP-16] The way-home card speaks from the user's own sleeps after night work.
-            afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()))
+            afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()),
+            since = container.recordsTrash.styleChangedOn(activeCalendar.value.id))
 
     /** [SLP-14] The two numbers the sleep times rest on, changed from the card's ⓘ. */
     fun setSleepNumbers(targetMinutes: Int, commuteMinutes: Int) {
@@ -506,12 +520,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [FEAT-17] Memos that belong to a date, for the list under the calendar and memo-first cells. */
-    val datedMemos: StateFlow<List<Memo>> = combine(container.calendars.active.flatMapLatest { memoRepo.memosFor(it) }, // [MEMO-01]
-        container.shownMonth.month) { list, month ->
+    val datedMemos: StateFlow<List<Memo>> = combine(container.calendars.active.flatMapLatest { cal ->
+        // [MEMO-01] [EASE-22] with the schedule each 근무마다 memo goes by, so it moves when its shift does.
+        memoRepo.memosFor(cal).flatMapLatest { list -> memoRepo.shiftLookup(list, cal).map { list to it } }
+    }, container.shownMonth.month) { (list, shifts), month ->
         // [NOTE-05] A repeating memo is on each day it comes back on. [SPD-25] 1.31 R5: only around the month on screen (the
         // pager's months either side and one more), not four years, and off the main thread.
         val (from, to) = com.bamnat.app.data.MemoRepository.shownWindow(month)
-        com.bamnat.core.memo.MemoRepeat.expand(list, from, to)
+        com.bamnat.core.memo.MemoRepeat.expand(list, from, to, shifts)
             .filter { it.date != null && !it.inTrash && !it.isBlank }.sortedWith(compareBy({ it.date }, { -it.updatedAtMillis }))
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -723,6 +739,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             container.calendars.activeSnapshot.first { s -> dates.any { s.resolver.entryOn(it) != was[it] } }
         } ?: return ""
         val days = dates.mapNotNull { com.bamnat.core.alarm.AlarmPlanner.restDay(before.resolver, after.resolver, it) }
+            // 1.37 시간 바퀴 PC LOW: a changed day put back to its own day off (the pattern's 휴무) is not asked again: the
+            // alarms were the changed shift's, and nothing set by hand is left to ring.
+            .filterNot { d ->
+                val old = was[d.date]
+                val now = after.resolver.entryOn(d.date)
+                d.left.isEmpty() && old != null && old.override != ShiftOverride.None &&
+                    (now?.override ?: ShiftOverride.None) == ShiftOverride.None && now?.leave == old.leave
+            }
         // 1.35 [J135-10] (사용자 '물어보고 끄기'): asked for every such day, also when only the shift's own alarms stopped, so
         // nobody misses a wake-up they still wanted. Closing the ask changes nothing more.
         // [J135-13] The change's message says nothing of alarms while the ask is open: the answer says it.
@@ -951,9 +975,21 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val beforePatterns = snap.patterns
             schedule.changePatternFrom(PatternTimeline.realign(rotation, date, step), date)
             val beforeDays = if (clear.isEmpty()) emptyMap() else schedule.updateDays(clear) { it.copy(override = ShiftOverride.None) }
-            val cleared = if (clear.isEmpty()) "" else " · 직접 바꾼 ${clear.size}일은 근무 주기대로"
+            // On its own line and short, so the end is never cut (1.38 PC 확인: "직접 바…").
+            val cleared = if (clear.isEmpty()) "" else "\n직접 바꾼 ${clear.size}일은 순서대로"
+            // [EASE-25] A push or pull by a day says what moved where, in one line ("6일 야간은 7일로").
+            val push = PatternTimeline.pushOf(rotation, date, step)
+            val said = when (push) {
+                0 -> null
+                1, -1 -> {
+                    val name = rotation.steps[rotation.stepIndexOn(date)]?.let { snap.typesById[it]?.name } ?: "쉬는 날"
+                    val to = date.plusDays(push.toLong())
+                    "${Fmt.monthDay(date)}부터 하루 ${if (push > 0) "밀었어요" else "당겼어요"} · ${date.dayOfMonth}일 $name → ${to.dayOfMonth}일"
+                }
+                else -> "${Fmt.monthDay(date)}부터 ${kotlin.math.abs(push)}일 ${if (push > 0) "밀었어요" else "당겼어요"}"
+            }
             _messages.emit(
-                UndoMessage("${Fmt.monthDay(date)}부터 ${step + 1}번째 날로 다시 맞췄어요$cleared") {
+                UndoMessage((said ?: "${Fmt.monthDay(date)}부터 ${step + 1}번째 날로 다시 맞췄어요") + cleared) {
                     schedule.restorePatterns(beforePatterns)
                     beforeDays.forEach { (d, e) -> schedule.restoreDay(d, e) }
                 },

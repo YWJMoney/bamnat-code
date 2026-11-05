@@ -227,6 +227,8 @@ export function adminLib() {
     companies: { q: "", sort: "" /* AX 1.30 [ADMX-06] */ },
     metrics: { days: "28", from: "", to: "" },
     inbox: { view: "all" },
+    // 1.38 [DESK-02] 운영 장부.
+    desk: { view: "today", group: "", v: "", q: "" },
     versions: { show: "conflict" },
     audit: { actor: "", kind: "", from: "", to: "" },
     ops: { month: "" },
@@ -286,8 +288,8 @@ export function adminLib() {
 
   /** The six hubs and their tabs (each tab is a route), in the order they show; 1~6 on a keyboard. */
   const HUBS = [
-    { key: "today", label: "오늘", icon: "home", tabs: ["home", "flow", "work"] },
-    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "sort", "growth", "dev", "templates", "sla"] },
+    { key: "today", label: "오늘", icon: "home", tabs: ["home", "flow", "desk"] },
+    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "growth", "dev", "templates", "sla"] },
     { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "recipes", "companies", "shares", "adopt"] },
     { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
     { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
@@ -305,12 +307,12 @@ export function adminLib() {
     // 1.36 [GRW-07] 할 일함: 모든 들어온 일을 상태(새로·보는 중·기다림·끝)와 함께 한 대기열로.
     // 1.37 [ADM2-01] 흐름: 문의에서 출시까지 단계마다 건수·막힘·다음 할 일, 운영 숫자, 나간 판.
     flow: { label: "흐름", area: "inquiries", old: "흐름 관제 파이프라인 단계 막힘 나간 판 출시 운영 장부 Claude 처리해 지표 첫 답 flow desk" },
-    work: { label: "할 일함", old: "할 일함 대기열 누락 기한 넘김 다시 열림 상태 work" },
+    // 1.38 [DESK-02][DESK-03] 운영 장부: 할 일함과 정리함을 하나로. 모든 들어온 일이 한 줄씩(번호·겹침·묶음·단계·답·담당·기한·기록).
+    desk: { label: "운영 장부", old: "운영 장부 체크시트 할 일함 정리함 대기열 누락 기한 넘김 다시 열림 상태 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 붙여 넣기 Claude 차례 최고 관리자 확인 CSV work sort desk ledger" },
     // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구 묶음, 기본 도구 후보, 손잡이 지도.
     growth: { label: "스튜디오 요구", area: "inquiries", old: "스튜디오 요구 자가 발전 기본 도구 후보 모두의 도구 승격 손잡이 지도 출시 노트 growth" },
     inquiries: { label: "문의", area: "inquiries", badge: (o) => o.inquiries ?? 0, strip: "답 대기", old: "문의 inquiries" },
-    // 1.35 [INBOX-01] 정리함: the same waiting questions, sorted by the server into piles with their answers written.
-    sort: { label: "정리함", area: "inquiries", old: "정리함 문의 정리 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 sort" },
+    // 1.35 [INBOX-01] 정리함은 1.38 [DESK-03]부터 운영 장부 안이에요(옛 주소 #/sort는 장부로).
     // [ADMIN-10] 접수 waits for whoever may set 개발중·완료·반려; for the rest it is not a count to clear.
     dev: { label: "개발사항", area: "dev", badge: (o, me) => (can(me, "devStatus", "edit") ? o.devTodo ?? 0 : 0), strip: "개발사항 접수", old: "dev" },
     templates: { label: "자주 쓰는 답", area: "inquiries", old: "답 관리 템플릿 templates" },
@@ -410,6 +412,9 @@ export function adminLib() {
   function redirect(route) {
     const p = route.params ?? {};
     if (route.name === "inbox") return { name: "home", id: null, params: { view: p.view ?? "all" } };
+    // 1.38 [DESK-03] 할 일함·정리함은 운영 장부 하나로: 할 일함은 열린 것 모두, 정리함은 답을 기다리는 문의(Claude 차례·문의 종류).
+    if (route.name === "work") return { name: "desk", id: null, params: { view: "open" } };
+    if (route.name === "sort") return { name: "desk", id: null, params: { view: "claude", group: "ask" } };
     if (route.name === "ops") return p.month ? { name: "chores", id: null, params: { month: p.month } } : { name: "flags", id: null, params: {} };
     return route;
   }
@@ -599,7 +604,7 @@ export function adminLib() {
    * hub, g s the list of where 설정 went); f, n, p and u are new.
    */
   const GO = { b: "home", v: "versions", h: "home", i: "inquiries", d: "dev", r: "review", c: "companies", t: "community", w: "rewards", o: "flags", m: "metrics",
-    a: "admins", l: "audit", s: "settings", f: "flags", n: "notices", p: "adopt", u: "account", k: "work", e: "growth" };
+    a: "admins", l: "audit", s: "settings", f: "flags", n: "notices", p: "adopt", u: "account", k: "desk", e: "growth" };
 
   /**
    * What a key press means, or null: [key] as KeyboardEvent.key, [mods] {ctrl, meta, alt, shift},
@@ -1294,6 +1299,53 @@ export function adminLib() {
   }
   // ---- AX 1.30 끝 ----
 
+  // ---- 1.38 [CYC-03] 근무표 제보 → 공개 근무주기 표 한 줄 ----
+
+  /**
+   * [CYC-03] A 제보 group of 검토 (its company, 부서 and the setup in words, describe()) as one line of
+   * tools/data/company-cycles.csv: the order in codes after "순서:" (D 주간 · E 오후 · N 야간 · X 당번 · B 비번 · O 쉼), the
+   * shifts' times, the 근무형태 worked out from the order (조 = 주기 일수 × 교대 수 ÷ 근무 일수), and 신뢰도 '밤낮 제보'. 업종
+   * is left for the admin to fill in. No name, no pay: only what the 근무·순서 lines say. Null when the setup has no order.
+   */
+  function cycleCsvRow(g, now = new Date()) {
+    const line = (label) => (g.lines ?? []).find(([l]) => l === label || l.startsWith(label + " "))?.[1] ?? "";
+    const shifts = line("근무").split(" · ").map((t) => {
+      const m = t.match(/^(.+?)(?:\(쉬는 날\)| (\d{1,2}:\d{2})~(\d{1,2}:\d{2}))/);
+      return m ? { name: m[1].trim(), off: !m[2], start: m[2], end: m[3] } : { name: t.trim(), off: true };
+    });
+    const steps = line("순서").replace(/빈 날/g, "빈날").split(" ").filter(Boolean);
+    if (!steps.length) return null;
+    const byName = (n) => shifts.find((s) => s.name === n);
+    const codeOf = (n) => {
+      const s = byName(n);
+      if (n === "빈날" || !s || s.off) return /^비/.test(n) ? "B" : "O";
+      const span = s.start && s.end ? ((+s.end.slice(0, 2) * 60 + +s.end.slice(-2)) - (+s.start.slice(0, 2) * 60 + +s.start.slice(-2)) + 1440) % 1440 : 0;
+      if (/^당/.test(n) || (s.start && (span === 0 || span >= 1200))) return "X";
+      if (/^(주|데이|오전|D)/i.test(n)) return "D";
+      if (/^(오후|이브|E)/i.test(n)) return "E";
+      if (/^(야|나이트|N)/i.test(n)) return "N";
+      const h = +(s.start ?? "09").slice(0, 2);
+      return h >= 4 && h <= 11 ? "D" : h >= 12 && h <= 17 ? "E" : "N";
+    };
+    const codes = steps.map(codeOf).join("");
+    const kinds = [...new Set(codes.replace(/[BO]/g, ""))];
+    const work = codes.replace(/[BO]/g, "").length;
+    const teams = work ? (codes.length * kinds.length) / work : 0;
+    const shiftsPerDay = kinds.includes("X") ? 1 : kinds.length;
+    const form = Number.isInteger(teams) && teams >= 2 && teams <= 6 ? (kinds.includes("X") && teams === 2 ? "격일제" : `${teams}조${shiftsPerDay}교대`) : "그 밖의 교대";
+    const label = { D: "주", E: "오후", N: "야", X: "당" };
+    const time = kinds.map((k) => {
+      const s = shifts.find((x) => !x.off && codeOf(x.name) === k);
+      return s?.start ? `${label[k]} ${s.start}-${s.end}` : "";
+    }).filter(Boolean).join(" / ");
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const site = g.dept || "현장";
+    const company = g.company?.name ?? "";
+    const cell = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    return [`${company} [${site}] · (업종)`, company, "(업종)", site, form, `순서:${codes}`, time, `${ym} 밤낮 제보`, "밤낮 제보 (관리자 확인)", "", "", ""]
+      .map(cell).join(",");
+  }
+
   return {
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
@@ -1306,5 +1358,7 @@ export function adminLib() {
     inquiryCopyText, copyDevItem, copyTitle, sameGroups, kstTime, COPY_KINDS,
     // AX 1.30 [ADMX-01][ADMX-02][ADMX-03][ADMX-07]
     ACTION_NAMES, actionName, change, spark, tokenHtml, compareRows, trendTone,
+    // 1.38 [CYC-03]
+    cycleCsvRow,
   };
 }

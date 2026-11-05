@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.calendar
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -40,6 +41,10 @@ import java.time.LocalDate
  * [SCHED-03] I 리뷰 I5·G P26: "이 날부터 순서 다시 맞추기" from a day's long-press menu. The user says which step of
  * the order [date] is; the order restarts there and every day before stays. The days set by hand in the next
  * [AHEAD_DAYS] days are listed, ticked, because they were usually the workaround for the order being off.
+ *
+ * [EASE-25] 1.38 "오늘부터 하루 밀기" (오늘근무 분석 P7): 하루 밀기·하루 당기기 first, in the same window as the step chips (one
+ * menu, not two), with the week ahead as it is now and as it will be, so the result is seen before it is saved; the
+ * snackbar after says it in one line with 되돌리기.
  */
 @Composable
 internal fun RealignDialog(
@@ -50,18 +55,38 @@ internal fun RealignDialog(
     onPause: ((days: Int) -> Unit)? = null,
 ) {
     val rotation = snap.resolver.patternOn(date) as? WorkPattern.Rotation ?: return
-    var step by rememberSaveable(date) { mutableIntStateOf(rotation.stepIndexOn(date)) }
+    val original = remember(rotation, date) { rotation.stepIndexOn(date) }
+    var step by rememberSaveable(date) { mutableIntStateOf(original) }
     val handChanged = remember(snap, date) { PatternTimeline.handChangedFrom(snap.entries, date, date.plusDays(AHEAD_DAYS)) }
-    // Kept as the days left out, so a fold keeps the ticks.
-    var keep by rememberSaveable(date) { mutableStateOf(listOf<Long>()) }
-    val clear = handChanged.filter { it.toEpochDay() !in keep }
+    // The days the user ticked to go back to the order. None by default: a day set by hand stays as it is unless the user
+    // says otherwise (1.38 PC 확인, 9b028f4c: 밀기 뒤 직접 바꾼 휴무·야간이 사라졌어요). Kept as epoch days so a fold keeps the ticks.
+    var picked by rememberSaveable(date) { mutableStateOf(listOf<Long>()) }
+    val clear = handChanged.filter { it.toEpochDay() in picked }
+    val push = PatternTimeline.pushOf(rotation, date, step)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("${Fmt.monthDay(date)}부터 다시 맞추기") },
+        title = { Text("${Fmt.monthDay(date)}부터 순서 밀기·맞추기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("${Fmt.dayTitle(date)}은 순서의 몇 번째 날인가요? 그 전날까지는 그대로 남아요.", style = MaterialTheme.typography.bodyMedium)
+                // [EASE-25] The two most common fixes, a tap each; tapped again they go a day further.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.OutlinedButton(onClick = { step = Math.floorMod(step + 1, rotation.steps.size) },
+                        modifier = Modifier.weight(1f)) { Text("‹ 하루 당기기", maxLines = 1) }
+                    androidx.compose.material3.FilledTonalButton(onClick = { step = Math.floorMod(step - 1, rotation.steps.size) },
+                        modifier = Modifier.weight(1f)) { Text("하루 밀기 ›", maxLines = 1) }
+                }
+                WeekAhead(date, snap, rotation, original, step, clear)
+                Text(
+                    when {
+                        push == 0 -> "그 전날까지는 그대로 남아요."
+                        push > 0 -> "${Fmt.monthDay(date)}부터 ${push}일 밀려요. 그 전날까지는 그대로 남아요."
+                        else -> "${Fmt.monthDay(date)}부터 ${-push}일 당겨져요. 그 전날까지는 그대로 남아요."
+                    },
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text("${Fmt.dayTitle(date)}은 순서의 몇 번째 날인가요?", style = MaterialTheme.typography.titleSmall)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     rotation.steps.forEachIndexed { i, id ->
                         val type = id?.let { snap.typesById[it] }
@@ -89,16 +114,17 @@ internal fun RealignDialog(
                     }
                 }
                 if (handChanged.isNotEmpty()) {
-                    Text("직접 바꾼 날이 있어요. 근무 주기대로 돌릴 날을 고르세요.", style = MaterialTheme.typography.titleSmall)
+                    Text("직접 바꾼 날이 있어요", style = MaterialTheme.typography.titleSmall)
+                    Text("그 날짜 그대로 둬요. 순서대로 돌릴 날만 고르세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     for (d in handChanged) {
                         val day = snap.resolver.resolve(d)
-                        val on = d.toEpochDay() !in keep
+                        val on = d.toEpochDay() in picked
                         Row(
                             Modifier
                                 .fillMaxWidth()
                                 .heightIn(min = 48.dp)
                                 .toggleable(value = on, role = Role.Checkbox) {
-                                    keep = if (it) keep - d.toEpochDay() else keep + d.toEpochDay()
+                                    picked = if (it) picked + d.toEpochDay() else picked - d.toEpochDay()
                                 },
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -110,10 +136,50 @@ internal fun RealignDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(step, clear) }) { Text("다시 맞추기") } },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(step, clear) }, enabled = push != 0 || clear.isNotEmpty() || step != original) {
+                Text(when { push > 0 -> "밀기"; push < 0 -> "당기기"; else -> "다시 맞추기" })
+            }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
+
+/**
+ * [EASE-25] The [WEEK] days from [date] as they are now and as they will be with [step] on [date]: a day set by hand keeps its
+ * own shift unless it is in [clear]. Each day is a badge under its date, as on the calendar.
+ */
+@Composable
+private fun WeekAhead(date: LocalDate, snap: ScheduleSnapshot, rotation: WorkPattern.Rotation, original: Int, step: Int, clear: List<LocalDate>) {
+    val n = rotation.steps.size
+    fun pattern(i: Int, s: Int) = rotation.steps[Math.floorMod(s + i, n)]?.let { snap.typesById[it] }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("", Modifier.width(44.dp))
+            for (i in 0 until WEEK) {
+                val d = date.plusDays(i.toLong())
+                Text("${d.dayOfMonth}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.weight(1f))
+            }
+        }
+        for ((label, s) in listOf("지금" to original, "바꾸면" to step)) {
+            val after = label != "지금"
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(label, style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(44.dp))
+                for (i in 0 until WEEK) {
+                    val d = date.plusDays(i.toLong())
+                    val byHand = snap.resolver.resolve(d).takeIf { it.source == com.bamnat.core.schedule.DaySource.OVERRIDE }
+                    val type = if (byHand != null && (!after || d !in clear)) byHand.shiftType else pattern(i, s)
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        ShiftBadge(type, size = 24.dp, text = type?.label ?: "휴", outlined = type == null || type.isOff)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private const val WEEK = 7
 
 /** How far ahead hand-set days are offered for clearing: two months of shifts. */
 private const val AHEAD_DAYS = 62L

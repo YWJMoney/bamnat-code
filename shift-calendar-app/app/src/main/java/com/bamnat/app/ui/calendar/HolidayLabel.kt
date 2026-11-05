@@ -42,7 +42,9 @@ internal fun HolidayLabel(name: String, fontSize: TextUnit, color: Color, lineHe
             } else {
                 val last = labels.last()
                 val scaled = fontSize.value * width / widthOf(last, fontSize).coerceAtLeast(1)
-                last to maxOf(scaled, 8f).sp
+                // 1.38 R 760·767 (달력이 먼저 오며 작은 폰 큰 글자에서 ‘대체휴일’이 ‘대…’로 잘림): the floor is 8 on the screen, not 8 times the
+                // text size, so the short name fits a 320dp cell at 200%; the whole name is read out with the day.
+                last to maxOf(scaled, 8f / density.fontScale).sp
             }
         }
         Text(

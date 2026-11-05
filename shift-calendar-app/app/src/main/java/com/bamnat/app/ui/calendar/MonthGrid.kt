@@ -587,6 +587,8 @@ private fun DayCell(
     val date = day.date
     val type = day.shiftType
     val holidayName = KoreanHolidays.nameOf(date)
+    // [CYC-04] 1.38: the day the law names for the user's work (소방의 날…), not red and never over a red day.
+    val orgDay = orgDayName(LocalOrgDayGroup.current, date, holidayName)
     // [BLU-05] 1.36 부품 꾸미기: the cell's states (근무 종류·토·일·공휴일·다른 달·오늘·고름) and its parts, over the looks above.
     val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
     val partStates = remember(blueprint, day.shiftType, day.coveredShift, date, holidayName, inMonth, isToday, isSelected) {
@@ -635,6 +637,7 @@ private fun DayCell(
         append(Fmt.dayTitle(date))
         if (isToday) append(", 오늘")
         holidayName?.let { append(", ").append(it) }
+        orgDay?.let { append(", ").append(it) }
         // [CAL-05] A field or shop day without work is not a day off: it says what the day has, or that it is empty.
         val shiftWords = when {
             day.isWorkDay -> (type?.name ?: "근무") + " " + HoursFormat.korean(day.scheduledMinutes)
@@ -753,9 +756,16 @@ private fun DayCell(
                 LeaveMark(fullLeave, size = size)
             } else if (covered != null && day.isWorkDay && type != null) {
                 // [FEAT-02][EXTRA-01] The day's shift and the shift covered on top, labels only so both fit a folded cell.
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
-                    ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                // 1.38 R 760 (달력이 먼저 오며 320dp에서 보이게 된 칸: 두 칩이 칸보다 넓어 '야'가 눌림): where two do not fit, the covered
+                // shift's badge with the day's own shift as a dot of its colour beside it (both are read out with the day).
+                BoxWithConstraints {
+                    if (maxWidth >= size * 0.82f * 2 + 22.dp) Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
+                        ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                    } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                        ColorDot(type.colorArgb.asColor(), size = 6.dp)
+                        ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                    }
                 }
             } else if (covered != null) {
                 // [EXTRA-01] A 대근 on a day off: the covered shift's badge.
@@ -863,6 +873,10 @@ private fun DayCell(
                 if (holidayName != null && memoText == null) {
                     // [CAL-52] Hangul stands taller than the digits beside it: a little smaller, it fits the same line.
                     HolidayLabel(holidayName, footerSize * HOLIDAY_SCALE, cal.sunday, footerSize * HOLIDAY_SCALE * FOOTER_LINE, Modifier.weight(1f, fill = false))
+                } else if (orgDay != null && memoText == null && investText == null && unitsText == null && moneyText == null &&
+                    spendText == null && extraMinutes <= 0) {
+                    // [CYC-04] Where the line would only say hours or the lunar date: the day's name, in the plain accent colour.
+                    HolidayLabel(orgDay, footerSize * HOLIDAY_SCALE, scheme.primary, footerSize * HOLIDAY_SCALE * FOOTER_LINE, Modifier.weight(1f, fill = false))
                 } else Text(
                     footer,
                     fontSize = footerSize,
@@ -935,7 +949,7 @@ private fun DayCell(
             // [SCHED-03] I 리뷰 I5: the order drifted (a team moved a day) — restart it from here.
             if (usesShifts && snapshot.resolver.patternOn(date) is WorkPattern.Rotation) {
                 DropdownMenuItem(
-                    text = { Text("이 날부터 순서 다시 맞추기") },
+                    text = { Text("이 날부터 하루 밀기·순서 맞추기") }, // [EASE-25]
                     leadingIcon = { Icon(Icons.Filled.Autorenew, null) },
                     onClick = { menu = false; onQuickAction(QuickAction.Realign) },
                 )

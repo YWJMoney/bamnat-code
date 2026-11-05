@@ -154,6 +154,7 @@ class SystemEventReceiver : BroadcastReceiver() {
                 // 1.32 [WTYP-16] 퇴근 시각 알림.
                 LeaveTimeNotice.reschedule(context)
                 com.bamnat.app.money.DayCloseNotice.reschedule(context)
+                com.bamnat.app.money.ShiftPreviewNotice.reschedule(context)
                 // 1.32 [WTYP-11][WTYP-29] 희망 오프 마감, 코인 12월 31일.
                 com.bamnat.app.calendar.DateNoticeAlarm.reschedule(context, com.bamnat.app.calendar.DateNoticeAlarm.gather(container))
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
@@ -185,9 +186,10 @@ class AlarmActionReceiver : BroadcastReceiver() {
             AlarmsOff.ACTION_ON -> AlarmsOff.turnOn(context)
             // [ALRM-21] 곧 알람이 울려요 and its buttons.
             AlarmSoon.ACTION_SOON -> AlarmSoon.onSoon(context, intent)
+            AlarmGuard.ACTION_GUARD -> AlarmGuard.onGuard(context, intent) // [ALRM-27]
             AlarmSoon.ACTION_SKIP -> AlarmSoon.skip(context, AlarmSoon.at(intent))
             AlarmSoon.ACTION_KEEP -> Notifications.cancel(context, AlarmSoon.NOTICE_ID)
-            AlarmSoon.ACTION_UNSKIP -> AlarmSoon.unskip(context)
+            AlarmSoon.ACTION_UNSKIP -> AlarmSoon.unskip(context, AlarmSoon.at(intent)) // [ALRM-26] that one
             ACTION_CANCEL_SNOOZE -> if (BootAlarms.isLocked(context)) {
                 // [REL-10] Still locked after a reboot: the snooze lives only in the device-protected copy.
                 context.getSystemService(android.app.AlarmManager::class.java)?.cancel(AlarmScheduler.snoozeIntent(context, null))

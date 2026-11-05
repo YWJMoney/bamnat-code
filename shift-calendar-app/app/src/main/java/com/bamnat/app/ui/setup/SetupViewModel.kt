@@ -180,9 +180,11 @@ class SetupViewModel(
     }
 
     fun fix(step: SetupStep) {
-        if (step !in current.steps) return
+        // [EASE-07] The order is on the times' screen and the alarm on the last one now.
+        val screen = current.screenOf(step)
+        if (screen !in current.steps || screen == SetupStep.SUMMARY && current.step == SetupStep.SUMMARY) return
         _fixing.value = true
-        update { it.copy(step = step) }
+        update { it.copy(step = screen) }
     }
 
     /**
@@ -369,6 +371,8 @@ class SetupViewModel(
      * the 근무형태 key for a first provider's row.
      */
     fun pickPublic(cycle: PublicCycle, codes: String) {
+        // [CYC-04] 1.38 업종 기념일.
+        com.bamnat.app.ui.calendar.rememberOrgGroup(c.settingsRepository, cycle)
         val text = PublicCycleFiles.text(cycle, codes)
         val roster = if (current.style == WorkStyle.SHIFT) cycle.roster else null
         useShared(SetupSource(SetupSource.Kind.PUBLIC, text, id = cycle.id, name = cycle.company, dept = cycle.formKey), text, roster)
@@ -425,7 +429,12 @@ class SetupViewModel(
         // The same answer again keeps the times already changed.
         if (current.bundle == key && current.types.isNotEmpty()) return update { it.copy(step = it.next() ?: SetupStep.SUMMARY) }
         val shifts = ShiftBundles.byKey(key)?.shifts ?: ShiftBundles.custom
-        val d = current.withShifts(ShiftBundles.byKey(key)?.key ?: SetupDraft.CUSTOM, shifts)
+        val d = current.withShifts(ShiftBundles.byKey(key)?.key ?: SetupDraft.CUSTOM, shifts).let { d ->
+            // [EASE-07] 1.38: the bundle's most usual order is picked already on the times' screen (one tap less); today's month
+            // preview and '회사 근무표와 같아요' come before anything is saved.
+            val first = if (d.usesRotation) presets(d).firstOrNull() else null
+            if (first != null) d.copy(rotation = PatternPresets.toSteps(first, d.roles)) else d
+        }
         _fixing.value = false
         c.telemetry.event("setup_bundle", key)
         store.save(d.copy(step = d.next() ?: SetupStep.SUMMARY))
@@ -737,6 +746,14 @@ class SetupViewModel(
     }
 
     fun clearToday() = update { it.copy(anchor = null, todayConfirmed = false) }
+
+    /** [CYC-06] "몇 조예요?" answered: the day that team starts the cycle. */
+    fun answerAnchor(date: LocalDate) = update { it.copy(anchor = date, todayConfirmed = false) }
+
+    private val _todayAsk = MutableStateFlow<String?>(null)
+    /** [EASE-08] What the today question still waits for (a second question open), said by the bottom button. */
+    val todayAsk: StateFlow<String?> = _todayAsk.asStateFlow()
+    fun todayAsking(line: String?) { _todayAsk.value = line }
 
     /** "회사 근무표와 같아요". */
     fun confirmToday() {

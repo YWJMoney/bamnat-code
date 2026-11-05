@@ -152,7 +152,7 @@ object DayNotices {
     }
 
     internal fun hm(x: LocalDateTime) = "%02d:%02d".format(x.hour, x.minute)
-    internal fun span(a: LocalDateTime, b: LocalDateTime) = "${hm(a)}–${hm(b)}"
+    internal fun span(a: LocalDateTime, b: LocalDateTime) = "${hm(a)}~${hm(b)}"
     internal fun hours(m: Long): String = when {
         m < 60 -> "${m}분"
         m % 60 == 0L -> "${m / 60}시간"

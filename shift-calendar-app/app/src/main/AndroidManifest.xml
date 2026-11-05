@@ -219,6 +219,11 @@
             android:name=".alarm.LeaveTimeReceiver"
             android:exported="false" />
 
+        <!-- 1.38 [LEDH-24] 근무 전 한 줄 예고. -->
+        <receiver
+            android:name=".money.ShiftPreviewReceiver"
+            android:exported="false" />
+
         <!-- 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림. -->
         <receiver
             android:name=".money.DayCloseReceiver"

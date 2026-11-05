@@ -257,9 +257,12 @@ class BackupManager(
     /** The backup as one JSON text, without the photos (those go in the file of [exportFile]). */
     suspend fun export(): String = db.withTransaction { exportNow().toString(1) }
 
+    /** 1.38 [P3-01] The backup as it goes in a file sealed with a password: [export] plus the 사업장·직원 rows ([PhaseThreeBackup]). */
+    suspend fun exportSealed(): String = db.withTransaction { exportNow(sealed = true).toString(1) }
+
     /** [REL-15] The backup and the photo files that go with it, read in one transaction. */
-    private suspend fun exportWithPhotos(): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
-        val root = exportNow()
+    private suspend fun exportWithPhotos(sealed: Boolean = false): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
+        val root = exportNow(sealed)
         // [BACK-01] The photos the records point at, unless the user keeps them on the phone only.
         val files = if (settings.current.backupPhotos) photos?.let { p -> photoNames(root).let { (r, c) -> p.files(r, c) } }.orEmpty() else emptyList()
         root.toString(1) to files
@@ -270,7 +273,8 @@ class BackupManager(
      * when there is one. Photos stream from their files; [out] stays open.
      */
     suspend fun exportFile(out: java.io.OutputStream, password: CharArray? = null) {
-        val (json, files) = exportWithPhotos()
+        // 1.38 [P3-01] Only a file sealed with a password carries the 사업장·직원 rows.
+        val (json, files) = exportWithPhotos(sealed = password != null)
         if (password == null) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackupArchive.write(out, json, files) }
             return
@@ -286,7 +290,7 @@ class BackupManager(
 
     /** [PROV-03][REL-15] [exportFile] with a key kept by 자동 백업; the file opens with the password the key came from. */
     suspend fun exportFileWithKey(out: java.io.OutputStream, key: ByteArray, salt: ByteArray, iterations: Int) {
-        val (json, files) = exportWithPhotos()
+        val (json, files) = exportWithPhotos(sealed = true)
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeSealed(out, json, files, key, salt, iterations) }
     }
 
@@ -443,7 +447,7 @@ class BackupManager(
         }
     }
 
-    private suspend fun exportNow(): JSONObject {
+    private suspend fun exportNow(sealed: Boolean = false): JSONObject {
         val root = JSONObject()
             .put("app", APP_ID)
             .put("format", FORMAT_VERSION)
@@ -498,6 +502,9 @@ class BackupManager(
         // [FIT-02] Parts and tools added to a calendar they do not suit.
         guide?.let { root.put("featuresAdded", it.exportAdded()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
+        // 1.38 [P3-01] 리더 팀 근무표 always; 사업장·직원 only in a sealed file.
+        PhaseThreeBackup.putTeams(db, root)
+        if (sealed) PhaseThreeBackup.putWorkplaces(db, root)
         dutyCodes()?.let { d -> root.put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
         shareLinks?.let { root.put("shareLinks", it.export()) }
@@ -511,13 +518,16 @@ class BackupManager(
                 .put("weekStart", s.weekStart.name).put("weeklyLimit", s.weeklyLimitHours)
                 .put("averageLimit", s.averageLimitHours).put("theme", s.themeMode.name)
                 .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar)
+                .put("orgDayGroup", s.orgDayGroup).put("orgDaysOn", s.orgDaysOn)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
-                .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmsOn", s.alarmsEnabled)
+                .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmGuard", s.alarmGuard).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("setupLater", s.setupLater).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
                 .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsByPayPeriod).put("appLock", s.appLock)
                 // 1.37 [LEDH-06][LEDH-07] 근무가 보이는 가계부.
                 .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
+                // 1.38 [LEDH-24]
+                .put("shiftPreview", s.shiftPreviewNotice).put("shiftPreviewHour", s.shiftPreviewHour).put("moneyChallenge", s.moneyChallenge)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
@@ -917,8 +927,12 @@ class BackupManager(
             val back = added.map { it.cal.id }.toSet()
             calendars.calendars.value.filter { !it.isMain && it.id !in back }.forEach { cal -> runCatching { recordsTrash()?.beforeDelete(cal.id) } }
         }
+        // 1.38 [P3-01] Read before anything changes; a backup without them leaves the phone's own.
+        val leaderTeams = PhaseThreeBackup.readTeams(root)
+        val workplaces = PhaseThreeBackup.readWorkplaces(root)
         writing.set(true)
         db.withTransaction {
+            PhaseThreeBackup.write(db, leaderTeams, workplaces)
             writeMoney(db, money)
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
             sleep?.let { list -> db.sleepDao().clear(); list.forEach { db.sleepDao().insert(it) } }
@@ -997,12 +1011,15 @@ class BackupManager(
                     dynamicColor = o.optBoolean("dynamicColor", s.dynamicColor),
                     showHoursInCells = o.optBoolean("cellHours", s.showHoursInCells),
                     showLunar = o.optBoolean("lunar", s.showLunar),
+                    orgDayGroup = o.optString("orgDayGroup", s.orgDayGroup),
+                    orgDaysOn = o.optBoolean("orgDaysOn", s.orgDaysOn),
                     // Sound files from another phone usually do not exist here.
                     vibrate = o.optBoolean("vibrate", s.vibrate),
                     gradualVolume = o.optBoolean("gradual", s.gradualVolume),
                     snoozeMinutes = o.optInt("snooze", s.snoozeMinutes).coerceIn(1, 60),
                     ringMinutes = o.optInt("ring", s.ringMinutes).coerceIn(1, 60),
                     alarmSoonMinutes = o.optInt("alarmSoon", s.alarmSoonMinutes).coerceIn(0, 30),
+                    alarmGuard = o.optBoolean("alarmGuard", s.alarmGuard), // [ALRM-27]
                     alarmsEnabled = o.optBoolean("alarmsOn", s.alarmsEnabled),
                     // [SETUP-01] A backup from before the question with a pattern in it is shift work, as on the phone.
                     workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle
@@ -1033,6 +1050,9 @@ class BackupManager(
                     moneyByPayCycle = o.optBoolean("moneyPayCycle", s.moneyByPayCycle),
                     workTimeFrom = o.optLong("workTimeFrom", s.workTimeFrom).coerceAtLeast(0),
                     dayCloseNotice = o.optBoolean("dayCloseNotice", s.dayCloseNotice),
+                    shiftPreviewNotice = o.optBoolean("shiftPreview", s.shiftPreviewNotice),
+                    shiftPreviewHour = o.optInt("shiftPreviewHour", s.shiftPreviewHour).coerceIn(0, 23),
+                    moneyChallenge = o.optString("moneyChallenge", s.moneyChallenge).takeIf { it.isEmpty() || com.bamnat.core.money.Challenges.decode(it) != null }.orEmpty(),
                     appLock = o.optBoolean("appLock", false),
                     calendarLayout = o.optString("calendarLayout", s.calendarLayout),
                     statsLayout = o.optString("statsLayout", s.statsLayout),

@@ -2,6 +2,10 @@ package com.bamnat.app.ui.settings
 
 import com.bamnat.app.data.rules
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
@@ -163,8 +167,67 @@ private fun WorkPage(
         }
     }
     Note("일하는 방식을 바꿔도 적어 둔 기록은 그대로 남아요.")
+    // [EASE-27] Every rule of this calendar as a sentence card, with where to change it.
+    val rules by vm.ruleCards.collectAsStateWithLifecycle()
+    RuleCardsSection(rules) { where ->
+        when (where) {
+            com.bamnat.core.guide.RuleCards.Where.PATTERN -> onOpenPattern()
+            com.bamnat.core.guide.RuleCards.Where.SHIFT_TYPES -> onOpenShiftTypes()
+            com.bamnat.core.guide.RuleCards.Where.PAY -> SettingsLinks.go(SettingsGo.PAY_ITEMS)
+            com.bamnat.core.guide.RuleCards.Where.STUDIO -> SettingsLinks.go(SettingsGo.STUDIO_RULES)
+            com.bamnat.core.guide.RuleCards.Where.MEMOS -> com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.MEMOS)
+        }
+    }
     WorkTools(work.workStyle)
 }
+
+internal const val RULE_CARDS_ROW = "내 규칙 한눈에"
+
+/**
+ * [EASE-27] 1.38 "규칙을 문장형 카드로": 내 규칙 한눈에. Each rule as "만약 ○○이면" over "→ △△", grouped (근무 · 알람 · 수당 · 이럴 때
+ * 이렇게); a rule that is off is dimmed and says so. '고치기' opens the screen the rule lives on. The first [RULES_FOLDED]
+ * show; the rest open with '모두 보기'.
+ */
+@Composable
+private fun RuleCardsSection(cards: List<com.bamnat.core.guide.RuleCards.Card>, onEdit: (com.bamnat.core.guide.RuleCards.Where) -> Unit) {
+    if (cards.isEmpty()) return
+    var all by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val shown = if (all) cards else cards.take(RULES_FOLDED)
+    SectionCard(title = RULE_CARDS_ROW, modifier = Modifier.focusMark(RULE_CARDS_ROW)) {
+        Text("근무·알람·수당이 언제 어떻게 바뀌는지 한 줄씩 모았어요. 고치기를 누르면 그 규칙이 있는 화면이 열려요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        var group: com.bamnat.core.guide.RuleCards.Group? = null
+        for (c in shown) {
+            if (c.group != group) {
+                group = c.group
+                Text(c.group.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp).semantics { heading() })
+            }
+            androidx.compose.material3.Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)
+                    .then(if (c.on) Modifier else Modifier.alpha(0.6f)),
+            ) {
+                Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = c.sentence + if (c.on) "" else ", 꺼져 있음" }) {
+                        Text("만약 ${c.cond}", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                        Text("→ ${c.result}" + if (c.on) "" else " · 꺼짐", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    androidx.compose.material3.TextButton(onClick = { onEdit(c.where) }) { Text("고치기") }
+                }
+            }
+        }
+        if (cards.size > RULES_FOLDED) {
+            androidx.compose.material3.TextButton(onClick = { all = !all }, modifier = Modifier.padding(start = 4.dp)) {
+                Text(if (all) "접기" else "${cards.size - RULES_FOLDED}개 더 보기")
+            }
+        }
+    }
+}
+
+private const val RULES_FOLDED = 6
 
 /** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Tools of the calendar's own kind of work, for the calendar picked above. */
 @Composable
@@ -463,6 +526,8 @@ private fun NoticesPage(
             warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(todayShiftNotice = on) }
         }
+        // 1.38 [EASE-29] What the lock screen will say, with my today and tomorrow.
+        LockNoticePreview()
         // 1.32 [WTYP-16] 사무직(일반 근무) 달력의 퇴근 시각에 지금 퇴근 버튼.
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.DAY) SwitchRow(LEAVE_TIME_ROW, "근무가 끝나는 시각에 소리 없이 알려 주고, 더 일하고 나갈 때 ‘지금 퇴근’을 누르면 잔업을 그 시각까지 적어요",
             settings.leaveTimeNotice, warning = warning(settings.leaveTimeNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
@@ -474,6 +539,18 @@ private fun NoticesPage(
                 settings.dayCloseNotice, warning = warning(settings.dayCloseNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
                 set(on) { it.copy(dayCloseNotice = on) }
             }
+        // 1.38 [LEDH-24] 근무 전 한 줄 예고: 근무표가 있는 유형만.
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT || settings.workStyle == com.bamnat.core.work.WorkStyle.DAY ||
+            settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) {
+            SwitchRow(SHIFT_PREVIEW_ROW, "근무 날에 어느 분류에 평소보다 뚜렷이 더 쓰면, 그 근무 전날 저녁에 한 줄로 알려 줘요. 일주일에 한 번까지예요",
+                settings.shiftPreviewNotice, warning = warning(settings.shiftPreviewNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
+                set(on) { it.copy(shiftPreviewNotice = on) }
+            }
+            if (settings.shiftPreviewNotice) com.bamnat.app.ui.components.StepperRow("예고 시각 (전날)") {
+                com.bamnat.app.ui.components.CountStepper(settings.shiftPreviewHour, { h -> set(true) { it.copy(shiftPreviewHour = h) } },
+                    name = "예고 시각", range = 6..23, format = { "${it}시" })
+            }
+        }
         // [ALRM-16] 1.31 N3
         SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
             settings.afterAlarmCard, warning = warning(settings.afterAlarmCard, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
@@ -654,6 +731,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)", CellLine.BOTH to "둘 다 (8h·8.24)"), line) { l ->
             vm.update { it.copy(showHoursInCells = l == CellLine.HOURS || l == CellLine.BOTH, showLunar = l == CellLine.LUNAR || l == CellLine.BOTH) }
         }
+        // [CYC-04] 1.38 업종 기념일.
+        OrgDayRows(settings.orgDayGroup, settings.orgDaysOn) { g, on -> vm.update { it.copy(orgDayGroup = g, orgDaysOn = on) } }
         // [CVW-02] 1.35 달력 모양: cells, marks, memo lines and their order.
         HorizontalDivider()
         com.bamnat.app.ui.calendar.CalendarViewEditor(com.bamnat.core.recipe.CalendarView.decode(settings.calView), { v ->
@@ -687,6 +766,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }, listOf(MemoView.PLAIN to "기본", MemoView.BELOW to "달력 아래 목록", MemoView.CELLS to "날짜 밑 메모"), memo) { m ->
             vm.update { it.copy(calendarMemos = m != MemoView.PLAIN, memoInCells = m == MemoView.CELLS) }
         }
+        // 1.38 [EASE-29] The widgets with my own days, above the rows that change them.
+        WidgetPreviewStrip(key = settings.widgetMemo to settings.widgetLook)
         // [DAILY-01] On by default; a home screen is seen by others, so it turns off here.
         val widgetContext = LocalContext.current
         SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요. 홈 화면을 남이 볼 수 있으면 끄세요"
@@ -1233,6 +1314,7 @@ internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
 internal const val DAY_CLOSE_ROW = "퇴근 뒤 가계부 정리 알림"
+internal const val SHIFT_PREVIEW_ROW = "근무 전 한 줄 예고"
 
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"

@@ -11,7 +11,7 @@ import com.bamnat.core.work.words
 enum class Place {
     CALENDAR, TODAY, MONEY, AUTO_RECORD, MEMOS, STATS,
     PAY, PATTERN, SHIFT_TYPES, EXTRA_KINDS, WORK_STYLE, CALENDARS, CALENDAR_EDIT, SHOP_DAYS, COMBINED, OWED,
-    SLEEP, DUTY_ROSTER, HEALTH_REPORT, TEAMS, YEAR, ATTENDANCE_IMPORT, COMMUTE, CALENDAR_IMPORT, SHARE, RECEIVE,
+    SLEEP, DUTY_ROSTER, HEALTH_REPORT, TEAMS, LEADER_TEAMS, YEAR, ATTENDANCE_IMPORT, COMMUTE, CALENDAR_IMPORT, SHARE, RECEIVE,
     DIAGNOSTICS, INQUIRY, FEATURES, PRO,
     /** [ONBOARD-04] 추천 기능 한 번에 켜기. */
     RECOMMENDED,
@@ -83,6 +83,8 @@ data class AppFeature(
     val under: String? = null,
     val moment: Moment? = null,
     val tip: String? = null,
+    /** 1.38: the 기능 깃발 the feature waits on ([com.bamnat.core.flags.FlagCatalog] key); while it is off the guide and search leave it out. */
+    val flag: String? = null,
 ) {
     /** For this kind of work; a main calendar from before kinds of work were asked is a shift calendar. */
     fun fits(style: WorkStyle?): Boolean = styles.isEmpty() || (style ?: WorkStyle.SHIFT) in styles
@@ -112,12 +114,30 @@ object FeatureRegistry {
 
     private fun f(
         id: String, req: String, name: String, what: String, styles: Set<WorkStyle>, where: String, route: FeatureRoute,
-        vararg keywords: String, off: Off? = null, under: String? = null, moment: Moment? = null, tip: String? = null,
-    ) = AppFeature(id, req, name, what, styles, where, route, keywords.toList(), off, under, moment, tip)
+        vararg keywords: String, off: Off? = null, under: String? = null, moment: Moment? = null, tip: String? = null, flag: String? = null,
+    ) = AppFeature(id, req, name, what, styles, where, route, keywords.toList(), off, under, moment, tip, flag)
 
     private fun at(place: Place, focus: String? = null) = FeatureRoute(place, focus)
 
-    val all: List<AppFeature> = listOf(
+    /**
+     * 1.38 Phase 3: whether a 깃발 is on this phone now, set by the app ([com.bamnat.core.flags.FlagCatalog] key). A feature resting
+     * on a flag that is off is left out of [all] (기능 찾기, 안내, 모아보기), so nobody is sent to a button that is not there yet.
+     * Until the app sets it, every such feature is left out.
+     */
+    @Volatile var flagOn: ((String) -> Boolean)? = null
+
+    /** 1.38 갈래6: what help and 설정 검색 offer, the same as [all] (features waiting for their 깃발 left out). */
+    val shown: List<AppFeature> get() = all
+
+    /** Every feature, also the ones waiting on a flag: for [get] and for tests. */
+    val everything: List<AppFeature> get() = EVERYTHING
+
+    val all: List<AppFeature> get() {
+        val on = flagOn
+        return EVERYTHING.filter { f -> f.flag == null || (on != null && on(f.flag)) }
+    }
+
+    private val EVERYTHING: List<AppFeature> = listOf(
         // The guide itself [GUIDE-02][GUIDE-03].
         f("guide.checklist", "GUIDE-02", "이 달력으로 할 수 있는 것", "새 달력이나 일하는 방식을 바꾼 달력에서 처음 며칠 쓸 만한 기능을 골라 보여 줘요",
             ALL, "달력 맨 위 카드", at(Place.FEATURES), "처음", "시작", "체크리스트", "안내 카드", "할 수 있는 것", off = Off.APP),
@@ -148,6 +168,10 @@ object FeatureRegistry {
             ALL, "달력 › 공유 (좁은 화면은 ⋮ › 근무표 공유)", at(Place.SHARE), "공유", "링크", "카톡", "가족", "동료", "보내기"),
         f("share.receive", "UX-03", "동료 근무표 받기", "받은 링크를 넣고 내 달력과 바꿔 보며 같이 쉬는 날을 찾아요",
             ALL, "달력 › ⋮ › 동료 근무표 받기", at(Place.RECEIVE), "받은 링크", "바꿔 보기", "같이 쉬는 날", "남편", "아내"),
+        // 1.37 [SHR-31][SHR-32], told from the launch date (the `share.look` row) — 1.38 갈래6 (공유 남은 일).
+        f("share.look", "SHR-31", "링크에 테마·근무 설정 담기", "근무표 링크에 내 테마와 근무 이름·색·알람 시각을 함께 담아요. 받는 분은 입어 보고 골라 넣어요",
+            ALL, "달력 › 공유 › 링크 › 내 테마·근무 설정", at(Place.SHARE), "테마 보내기", "테마 공유", "설정 보내기", "근무 설정 공유", "똑같이 꾸미기",
+            flag = "share.look"),
         // [PROV-04][FEAT-15][PROV-05] 프로, 1.20.0.
         f("share.moreLinks", "PROV-04", "공유 링크 여러 개", "달력마다 링크를 5개까지 따로 만들어 보낼 것과 기간을 다르게 하고, 180일·1년도 골라요",
             ALL, "달력 › 공유 › 링크 › + 새 링크", at(Place.SHARE), "링크 여러 개", "링크 추가", "1년 링크", "180일", "기간 늘리기"),
@@ -408,8 +432,8 @@ object FeatureRegistry {
             ALL, "통계 탭 › 전체", at(Place.STATS), "전체", "모든 달력 통계", "총수입"),
         f("memo.sharing", "MEMO-02", "메모 공유", "메모를 달력마다 따로 두거나, 몇 달력끼리 함께 봐요",
             ALL, "설정 › 화면과 글자 › 메모 공유", at(Place.SETTINGS_CALENDAR, "메모 공유"), "공용 메모장", "메모 같이", "달력별 메모"),
-        f("memo.repeat", "NOTE-05", "반복 메모", "매달 25일, 매주 화요일처럼 돌아오는 메모를 적어요",
-            ALL, "메모 › 메모 쓰기 › 반복", at(Place.MEMOS), "반복", "매달", "매주", "정기"),
+        f("memo.repeat", "NOTE-05", "반복 메모", "매달 25일, 매주 화요일, 야간마다처럼 돌아오는 메모를 적어요. 근무마다 메모는 근무가 바뀌거나 밀리면 따라가요",
+            ALL, "메모 › 메모 쓰기 › 반복", at(Place.MEMOS), "반복", "매달", "매주", "정기", "근무마다", "야간마다", "도시락", "출입증"),
         f("trash.records", "UNDO-01", "최근 지운 기록", "일하는 방식을 바꾸거나 지운 기록·달력을 7일 동안 되돌려요",
             ALL, "설정 › 데이터 › 최근 지운 기록", at(Place.SETTINGS_DATA, "최근 지운 기록"), "되돌리기", "휴지통", "복구", "실수로 지움"),
         f("data.backup", "REL-04", "백업 저장", "근무·메모·돈 기록을 파일로 만들어 새 휴대폰으로 옮겨요",
@@ -463,8 +487,8 @@ object FeatureRegistry {
         f("data.openFile", "CAL-47", "받은 파일 바로 열기", "카톡·파일 앱에서 받은 백업이나 회사 근무표 파일을 누르면 밤낮이 열려 읽어요",
             ALL, "파일 앱·메신저 › 파일 누르기 › 밤낮으로 열기", at(Place.SETTINGS_DATA, "파일 불러오기"), "파일 열기", "카톡 파일", "백업 열기", "공유 받기",
             under = "data.backup"),
-        f("pattern.realign", "SCHED-03", "이 날부터 순서 다시 맞추기", "순서가 어긋난 날을 길게 눌러 그날이 몇 번째인지 고르면 그날부터 다시 돌고, 지난 날은 그대로 남아요",
-            setOf(SHIFT, HOURLY), "달력 › 날짜 길게 누르기 › 이 날부터 순서 다시 맞추기", at(Place.CALENDAR), "순서 어긋남", "다시 맞추기", "밀림", "근무 주기",
+        f("pattern.realign", "SCHED-03", "이 날부터 하루 밀기·순서 맞추기", "근무가 하루 밀렸으면 ‘하루 밀기’ 한 번, 아니면 그날이 몇 번째인지 골라요. 바뀔 한 주를 미리 보고, 지난 날은 그대로 남아요",
+            setOf(SHIFT, HOURLY), "달력 › 날짜 길게 누르기 › 이 날부터 하루 밀기·순서 맞추기 (달력 › 도구 › 오늘부터 하루 밀기)", at(Place.CALENDAR), "순서 어긋남", "다시 맞추기", "밀림", "하루 밀기", "당기기", "근무 주기",
             under = "shift.pattern"),
         f("pattern.weeklyOptions", "SCHED-04", "공휴일 쉬기·격주 토요일", "요일마다 정한 근무에서 공휴일은 쉬고, 토요일은 격주로만 일하게 정해요",
             setOf(DAY, HOURLY, FIELD), "설정 › 내 근무 › 근무 주기 › 요일마다", at(Place.PATTERN), "공휴일", "격주 토요일", "격주 근무", "빨간 날"),
@@ -674,10 +698,21 @@ object FeatureRegistry {
             ALL, "가계부 › 요약 › 모으기 봉투", at(Place.MONEY), "저축 목표", "목표", "봉투", "모으기", "비상금", "세금 봉투", "월급 나누기", off = Off.ELSEWHERE),
         f("money.found", "LEDH-17", "찾아 준 돈", "올해 원래 결제에 이어 붙인 결제 취소·부분취소를 모아 '되찾은 돈'으로 보여 주고, 석 달 넘게 매달 나가는 구독과 값이 오른 구독을 한곳에 모아요",
             ALL, "가계부 › 요약 › 찾아 준 돈", at(Place.MONEY), "찾아 준 돈", "환불 모음", "되찾은 돈", "구독 해지", "아낀 돈", off = Off.ELSEWHERE),
+        // 1.38 [LEDH-25][LEDH-27]
+        f("money.debt", "LEDH-25", "빚 갚기", "결제수단에 '대출·빌린 돈'을 더하면 남은 원금, 다 갚는 달, 남은 이자와 매달 더 갚으면 몇 달 당기고 이자가 얼마 주는지 보여 줘요. '이번 달 갚기'는 이자와 원금을 나눠 적어요",
+            ALL, "가계부 › 요약 › 결제수단·계좌 › 추가 › 대출·빌린 돈", at(Place.MONEY), "대출", "빚", "빌린 돈", "상환", "이자", "완납", "학자금", "전세 대출"),
+        f("money.cardPerf", "LEDH-27", "카드 실적 게이지", "카드마다 전월 실적 구간(예 30만·50만)을 적으면 이번 달 얼마 더 쓰면 다음 구간인지 막대로 보여 줘요. 실적에서 빠지는 분류도 고를 수 있어요",
+            ALL, "가계부 › 요약 › 결제수단·계좌 › 카드 누르기 › 전월 실적 구간", at(Place.MONEY), "카드 실적", "전월 실적", "실적 구간", "혜택 구간", "카드 혜택"),
+        f("money.firstFill", "LEDH-29", "지난 문자로 첫날 채우기", "가계부가 거의 비었을 때 카드·은행 결제 문자를 여러 개 골라 한 번에 붙여 넣으면 지난 한 달이 바로 채워져요. 문자를 직접 읽지 않아요",
+            ALL, "가계부 › 요약 › 첫날부터 채워진 가계부 / ⋮ › 결제 문자 붙여넣기", at(Place.MONEY), "문자 가져오기", "지난 문자", "한 번에 채우기", "처음 시작", "문자 여러 개"),
+        f("money.shiftPreview", "LEDH-24", "근무 전 한 줄 예고", "야간처럼 어느 근무 날에 한 분류(배달·카페 등)에 평소보다 뚜렷이 더 쓰면, 그 근무 전날 저녁에 소리 없이 한 줄로 알려 줘요. 일주일에 한 번까지, 시각을 고를 수 있어요",
+            setOf(SHIFT, DAY, HOURLY), "설정 › 알림과 잠 › 근무 전 한 줄 예고", at(Place.SETTINGS_NOTICES, "근무 전 한 줄 예고"), "근무 전 알림", "야간 전날", "배달 줄이기", "도시락", "소비 예고", off = Off.ELSEWHERE),
+        f("money.challenge", "LEDH-31", "혼자 하는 도전", "무지출 날·배달 줄이기 주간·야간 도시락 주간·봉투 채우기 30일 중 하나를 고르면 하루마다 도장과 연속 기록을 보여 줘요. 보상은 없고 휴대폰 안에서만 세요",
+            ALL, "가계부 › ⋮ › 도전 시작하기", at(Place.MONEY), "챌린지", "무지출", "배달 줄이기", "도시락", "절약 도전", "도장"),
         f("money.whatIf", "LEDH-04", "이날 일하면?", "날짜 창의 돈에서 쉬는 날은 대근하면, 일하는 날은 연차·쉬는 날로 바꾸면 이달 급여(세후)가 얼마나 바뀌는지와 봉투를 얼마나 채우는지 보여 줘요. 저장하지 않아요",
             setOf(SHIFT, DAY, HOURLY), "달력 › 날짜 › 돈 › 이날 일하면?", at(Place.CALENDAR), "대근하면", "시뮬레이터", "연차 쓰면", "만약에", "더 일하면", off = Off.CALENDAR),
-        f("money.quickAdd", "LEDH-14", "오늘 쓸 돈 위젯·돈 적기 타일", "홈 화면 위젯에 오늘 쓸 수 있는 돈과 오늘 쓴 돈이 보이고, 누르면 바로 돈 적기가 열려요. 휴대폰 빠른 설정 편집에서 '돈 적기' 타일을 길게 눌러 끌어 놓으면 어느 화면에서든 한 번에 적어요",
-            setOf(SHIFT, DAY, HOURLY, FIELD, SHOP), "홈 화면 › 위젯 › 밤낮 오늘 쓸 돈 / 빠른 설정 › 편집 › 돈 적기를 길게 눌러 끌어 놓기", at(Place.FEATURES), "위젯", "타일", "빠른 설정", "돈 적기", "오늘 쓸 돈", "빨리 적기"),
+        f("money.quickAdd", "LEDH-14", "오늘 쓸 돈 위젯·돈 적기 타일", "홈 화면 위젯에 오늘 쓸 수 있는 돈과 오늘 쓴 돈이 보이고, 누르면 바로 돈 적기가 열려요. 휴대폰 빠른 설정 편집에서 '돈 적기' 타일을 길게 눌러 끌어 놓으면 어느 화면에서든 한 번에 적어요. 워치 앱의 '돈 적기'로 금액과 분류만 눌러 적을 수도 있어요",
+            setOf(SHIFT, DAY, HOURLY, FIELD, SHOP), "홈 화면 › 위젯 › 밤낮 오늘 쓸 돈 / 빠른 설정 › 편집 › 돈 적기를 길게 눌러 끌어 놓기", at(Place.FEATURES), "위젯", "타일", "빠른 설정", "돈 적기", "오늘 쓸 돈", "빨리 적기", "워치", "갤럭시 워치"),
         f("money.hide", "LEDH-22", "금액 가리기", "가계부 위 눈 단추(또는 ⋮ › 금액 가리기)를 누르면 앱과 위젯의 금액이 모두 점으로 가려져요. 버스·회사에서 열 때 좋아요",
             ALL, "가계부 › 눈 단추", at(Place.MONEY), "금액 숨기기", "금액 가리기", "잔액 숨김", "남이 볼 때", "프라이버시"),
         f("money.payCycle", "LEDH-06", "월급날 기준 예산", "예산과 하루 쓸 돈을 1일~말일 대신 월급날부터 다음 월급날 전날까지로 셈해요",
@@ -825,9 +860,22 @@ object FeatureRegistry {
         f("recipe.creatorPro", "PRF-12", "창작자 프로필 꾸미기", "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프를 써요",
             ALL, "마을 › 맨 위 내 얼굴 › 내 프로필 › 프로필 고치기", at(Place.RECIPES), "표지 그림", "대표 작품", "작품 통계", "창작자", "내 프로필",
             under = "recipe.maker"),
+        // 1.38 Phase 3 (정식 출시일에 켜짐, 사용자 C안).
+        f("team.leader", "TEAM-09", "내가 짜는 팀 근무표", "팀원 이름을 붙여 넣고 팀원×날짜 표를 칠해 확정하면, 팀원마다 자기 근무만 담긴 링크를 보내요",
+            setOf(SHIFT), "달력 › 모든 조 › 내 팀 짜기", at(Place.LEADER_TEAMS), "팀 근무표", "근무표 짜기", "듀티 짜기", "수간호사", "책임간호사", "조장", "팀장",
+            "희망 휴무", "자동 채우기", "공정성", flag = "team.leader"),
+        f("team.more", "GROW-06", "팀 요금제", "첫 달 확정까지는 무료예요. 그 뒤로 팀 인원 구간(15·30·50·100명)으로 매달 확정하고 팀을 여러 개 둬요. 개인 프로 기능도 들어 있어요",
+            setOf(SHIFT), "달력 › 모든 조 › 내 팀 짜기 › 확정", at(Place.LEADER_TEAMS), "팀 요금제", "팀 여러 개", "리더 요금", "팀 결제",
+            under = "team.leader", flag = "team.leader"),
+        f("boss.payroll", "BOSS-01", "사장님 급여 대장", "직원마다 평소 근무에서 달라진 날만 고치면 주휴·연장·야간까지 계산하고, 임금명세서와 임금대장을 만들어요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장", at(Place.MONEY), "급여 대장", "임금대장", "임금명세서", "명세서 보내기", "알바 급여", "직원 급여",
+            "주휴수당 계산", flag = "boss.payroll"),
+        f("boss.staff", "GROW-06", "직원 요금제", "직원 3명까지는 무료예요. 넷째부터 인원 구간(5·10·20·50명)으로 급여 대장과 명세서를 써요. 개인 프로 기능도 들어 있어요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 더하기", at(Place.MONEY), "직원 요금제", "직원 추가", "직원 4명", "사장님 결제",
+            under = "boss.payroll", flag = "boss.payroll"),
     )
 
-    private val byId: Map<String, AppFeature> = all.associateBy { it.id }
+    private val byId: Map<String, AppFeature> = EVERYTHING.associateBy { it.id }
 
     fun get(id: String): AppFeature? = byId[id]
 

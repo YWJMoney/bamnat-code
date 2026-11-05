@@ -30,6 +30,8 @@ object TakeHome {
     data class Shares(
         val pension: Double, val health: Double, val careOfHealth: Double, val baseMin: Long, val baseMax: Long,
         val employment: Double = EMPLOYMENT_RATE,
+        /** [P3-ACC] 장기요양 ÷ 건강 as an exact ratio (공단 산정식); [careOfHealth] is the same, rounded for display. */
+        val careRatio: WonCut.Ratio = WonCut.Ratio.of(careOfHealth),
     )
 
     /** [REMOTE-02] From [RateTable.current], so a signed rates file (e.g. the 2027 장기요양 rate) changes it. */
@@ -38,10 +40,11 @@ object TakeHome {
         val known = RateTable.current.filter { !it.effectiveFrom.isAfter(date) && it.longTermCareRate != null && it.healthRate != null }
             .maxByOrNull { it.effectiveFrom }
         val care = known?.let { it.longTermCareRate!! / it.healthRate!! } ?: CARE_OF_HEALTH
+        val careRatio = known?.let { WonCut.Ratio.of(it.longTermCareRate!!, it.healthRate!!) } ?: WonCut.Ratio.of(CARE_OF_HEALTH)
         val base = RateTable.pensionBases.filter { !it.from.isAfter(date) }.maxByOrNull { it.from }
         return Shares(
             (r.pensionRate ?: PENSION_RATE * 2) / 2, (r.healthRate ?: HEALTH_RATE * 2) / 2, care,
-            base?.min ?: PENSION_BASE_MIN, base?.max ?: PENSION_BASE_MAX, r.unemploymentRate / 2,
+            base?.min ?: PENSION_BASE_MIN, base?.max ?: PENSION_BASE_MAX, r.unemploymentRate / 2, careRatio,
         )
     }
 
@@ -65,10 +68,10 @@ object TakeHome {
             TaxMode.WITHHOLDING_3_3 -> listOf("원천징수 3.3%" to Withholding.of(g))
             TaxMode.INSURANCE_4 -> {
                 val taxable = g - free
-                val pension = if (taxable == 0L) 0L else cut10((taxable / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax) * sh.pension)
-                val health = cut10(taxable * sh.health)
-                val care = cut10(health * sh.careOfHealth)
-                val employment = cut10(taxable * sh.employment)
+                val pension = if (taxable == 0L) 0L else WonCut.cut10((taxable / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax), sh.pension)
+                val health = WonCut.cut10(taxable, sh.health)
+                val care = WonCut.cut10(health, sh.careRatio)
+                val employment = WonCut.cut10(taxable, sh.employment)
                 val table = WithholdingTable.on(on ?: TABLE_DAY) ?: WithholdingTable.on(TABLE_DAY)
                 val tax = table?.tax(taxable, dependents, children) ?: incomeTax(taxable, dependents, pension)
                 listOf(
@@ -77,7 +80,7 @@ object TakeHome {
                     "장기요양" to care,
                     "고용보험" to employment,
                     TAX_LABEL to tax,
-                    LOCAL_TAX_LABEL to cut10(tax * 0.1),
+                    LOCAL_TAX_LABEL to tax / 100 * 10,
                 ).filter { it.second > 0 }
             }
         }
@@ -225,5 +228,4 @@ object TakeHome {
     }
 
     private fun cut10(v: Double): Long = (v.toLong() / 10) * 10
-    private fun cut10(v: Long): Long = v / 10 * 10
 }

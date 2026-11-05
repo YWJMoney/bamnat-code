@@ -68,17 +68,16 @@ class SetupFlowTest {
         assertEquals(SetupStep.BUNDLE, draft.step)
         vm.pickBundle(ShiftBundles.TWO)
         assertEquals(SetupStep.TIMES, draft.step)
-        vm.confirmTimes()
-        assertEquals(SetupStep.ORDER, draft.step)
+        // [EASE-07] The order is on the times' screen, the most usual one already picked.
+        assertTrue(draft.rotation.isNotEmpty())
         vm.pickPreset(vm.presets(draft).first { it.codes == "DDOONNOO" })
-        vm.next()
+        vm.confirmTimes()
         assertEquals(SetupStep.TODAY, draft.step)
         val night = draft.types.first { it.name == "야간" }.id
         val follow = TodayQuestion.followUp(draft.rotation, night, draft::isOff) as FollowUp.RunDay
         vm.answerToday(today, follow.steps[1])
         vm.confirmToday()
-        assertEquals(SetupStep.ALARM, draft.step)
-        vm.next()
+        // [EASE-07] The alarm is a card on the summary, not a step of its own.
         assertEquals(SetupStep.SUMMARY, draft.step)
     }
 
@@ -140,8 +139,9 @@ class SetupFlowTest {
         val vm = vm()
         vm.pickStyle(WorkStyle.HOURLY)
         assertEquals(SetupStep.TIMES, draft.step)
+        // [EASE-07] The days are on the times' screen: with none picked it stays there.
         vm.confirmTimes()
-        assertEquals(SetupStep.ORDER, draft.step)
+        assertEquals(SetupStep.TIMES, draft.step)
         vm.later()
         val s = c.settingsRepository.current
         assertEquals(WorkStyle.HOURLY, s.workStyle)
@@ -153,12 +153,10 @@ class SetupFlowTest {
         // 1.37 PC f42b2eba MED-b: only the 알바 shifts, no 교대 first ones left beside them ('근무 6가지').
         assertEquals(listOf("오전 알바", "오후 알바", "저녁 알바"), c.scheduleRepository.shiftTypes.first().map { it.name })
 
-        // 이어서 하기 → 요일 → 알람 → 저장.
+        // 이어서 하기 → 시간과 요일 → 저장.
         c.setupDrafts.save(draft.copy(later = false))
         vm.setNoFixedDays(true)
-        vm.next()
-        assertEquals(SetupStep.ALARM, draft.step)
-        vm.next()
+        vm.confirmTimes()
         assertEquals(SetupStep.SUMMARY, draft.step)
         vm.save()
         waitFor("the save") { !c.settingsRepository.current.setupLater && c.setupDrafts.draft.value == null && c.firstSetup.saved.value != null }
@@ -289,8 +287,7 @@ class SetupFlowTest {
         vm.paint(listOf(today.plusDays(2)))
         // No order and no today question for a roster.
         vm.next()
-        assertEquals(SetupStep.ALARM, draft.step)
-        vm.next()
+        assertEquals(SetupStep.SUMMARY, draft.step)
         vm.save()
         waitFor("the save") { c.settingsRepository.current.workStyle != null && c.setupDrafts.draft.value == null }
         assertTrue(c.settingsRepository.current.rosterMonthly)
@@ -331,16 +328,14 @@ class SetupFlowTest {
         assertEquals(SetupSource.Kind.TEMPLATE, draft.source?.kind)
         val names = draft.types.associate { it.id to it.name }
         assertEquals(listOf("주간", "주간", "야간", "야간", "휴무", "휴무", "휴무", "휴무"), draft.rotation.map { names[it] })
-        vm.confirmTimes()
-        // A template's order is only the usual one: shown, already chosen, to be confirmed.
-        assertEquals(SetupStep.ORDER, draft.step)
+        // A template's order is only the usual one: shown on the times' screen, already chosen, to be confirmed.
         assertEquals(draft.rotation, vm.sourceOrder(draft))
         vm.pickPreset(vm.presets(draft).first { it.codes == "DDOONNOO" })
-        vm.next()
+        vm.confirmTimes()
         assertEquals(SetupStep.TODAY, draft.step)
         vm.answerToday(today, 0)
         vm.confirmToday()
-        vm.next()
+        assertEquals(SetupStep.SUMMARY, draft.step)
         vm.save()
         waitFor("the save") { c.settingsRepository.current.workStyle != null && c.setupDrafts.draft.value == null }
         assertEquals("주간", c.scheduleRepository.snapshot.first().resolver.resolve(today).shiftType?.name)
@@ -371,8 +366,6 @@ class SetupFlowTest {
         assertEquals(SetupStep.TIMES, draft.step)
         assertEquals("A조", draft.source?.team)
         vm.confirmTimes()
-        assertEquals(SetupStep.ORDER, draft.step)
-        vm.next()
         assertEquals(SetupStep.TODAY, draft.step)
         // Same 조: the coworker's start date as it is; today is the first night.
         vm.sameTeam()
@@ -383,7 +376,7 @@ class SetupFlowTest {
         vm.answerToday(today, 0)
         assertEquals(today, draft.anchor)
         vm.confirmToday()
-        assertEquals(SetupStep.ALARM, draft.step)
+        assertEquals(SetupStep.SUMMARY, draft.step)
     }
 
     @Test fun aCoworkersFileInSettingsStartsFromTheSendersRow() = runBlocking {
@@ -425,15 +418,15 @@ class SetupFlowTest {
     @Test fun fixingAnAnswerGoesBackToTheSummary() {
         val vm = vm()
         twoShiftToSummary(vm)
+        // [EASE-07] The alarm is answered on the summary itself.
         vm.fix(SetupStep.ALARM)
-        assertEquals(SetupStep.ALARM, draft.step)
-        vm.setAlarm(30)
-        vm.next()
         assertEquals(SetupStep.SUMMARY, draft.step)
-        // A new order needs today again before the summary.
+        vm.setAlarm(30)
+        // A new order (on the times' screen) needs today again before the summary.
         vm.fix(SetupStep.ORDER)
+        assertEquals(SetupStep.TIMES, draft.step)
         vm.pickPreset(vm.presets(draft).first { it.codes == "DDNNOOOO" })
-        vm.next()
+        vm.confirmTimes()
         assertEquals(SetupStep.TODAY, draft.step)
         vm.answerToday(today, 0)
         vm.confirmToday()

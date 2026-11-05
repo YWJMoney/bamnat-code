@@ -341,6 +341,12 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                         LegendRow("추가 근무", "잔업·특근·대근은 모서리 표시, 시간은 +2h처럼") { ExtraKindMark(k, size = 18.dp) }
                     }
                     LegendRow("부업 일감", "가계부 탭에서 적은 일감이 있는 날 · 빨강은 받을 돈이 남은 일감") { CornerMark(Corner.Job(false)) }
+                    // [EASE-04] 1.38: every mark the cells can show is said here (오늘근무 분석: 뜻 모를 표시가 없게).
+                    LegendRow("시간 글자", "8h는 그날 근무 시간(설정에서 켜요), 주황 +2h는 추가 근무") {
+                        Text("+2h", color = cal.holidayWork, fontWeight = FontWeight.Bold, style = NumberStyle)
+                    }
+                    LegendRow("출퇴근 기록", "모서리 표시: 지각·조퇴는 주황, 결근은 빨강") { AttendanceMark(com.bamnat.core.model.Attendance.ABSENT) }
+                    LegendRow("주휴 ✓", "알바: 주 15시간 넘고 결근 없는 주의 마지막 날") { HolidayWeekCheck() }
                     LegendRow("주 시간 넘음", "왼쪽 빨간 막대: 그 주 근무가 한도를 넘었어요") {
                         Box(Modifier.size(width = 4.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(cal.warning))
                     }
@@ -376,7 +382,9 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                 LegendRow("알람 끔", "이 날은 알람이 울리지 않아요") { Icon(Icons.Filled.AlarmOff, null, tint = cal.alarmOff, modifier = Modifier.size(18.dp)) }
                 LegendRow("직접 바꿈", "패턴과 다르게 바꾼 날") { Box(Modifier.size(7.dp).clip(CircleShape).background(cal.changed)) }
             }
-            LegendRow("메모", "메모가 있는 날") { ColorDot(cal.memoDot, size = 7.dp) }
+            LegendRow("메모", "메모가 있는 날 · 설정에서 켜면 칸 아래에 메모 첫 글자") { ColorDot(cal.memoDot, size = 7.dp) }
+            LegendRow("쓴 돈", "칸 아래 빨간 숫자: 그날 가계부에 적은 지출 (켜 둔 경우)") { Text("3만", color = cal.expense, fontWeight = FontWeight.Bold, style = NumberStyle) }
+            LegendRow("음력", "날짜 밑 작은 글자 (켜 둔 경우)") { Text("9.15", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant) }
             Text(
                 when {
                     focus == CalendarFocus.JOBS && !shifts -> "날짜를 길게 누르면 그날 일감이나 메모를 바로 적을 수 있어요. 목록으로 보면 한 달 일감이 차례로 보여요."

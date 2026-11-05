@@ -136,6 +136,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -225,6 +227,31 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val workSettings: StateFlow<AppSettings> = kotlinx.coroutines.flow.combine(container.settingsRepository.settings, container.calendars.activeCalendar) { s, cal ->
         com.bamnat.app.data.CalendarScope.run { s.forCalendar(cal) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current)
+    /**
+     * [EASE-27] 1.38 내 규칙 한눈에: the calendar picked's order, alarms, pay rules it made and the 이럴 때 이렇게 rules, each as a
+     * "만약 ○○이면 → △△" card.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val ruleCards: StateFlow<List<com.bamnat.core.guide.RuleCards.Card>> = kotlinx.coroutines.flow.combine(
+        container.calendars.active.flatMapLatest { id ->
+            kotlinx.coroutines.flow.combine(
+                container.calendars.repository(id).live,
+                container.calendars.pay(id).profile,
+                // The repeating memos of this calendar; a 근무마다 memo only where it goes by this calendar's kinds of day.
+                container.memoRepository.memosFor(id).map { list ->
+                    list.filter { m ->
+                        m.repeat.isNotEmpty() && (com.bamnat.core.memo.MemoRepeat.shiftIdOf(m.repeat) == null ||
+                            com.bamnat.app.data.MemoRepository.calendarOf(m, id) == id)
+                    }
+                },
+            ) { s, p, m -> Triple(s, p, m) }
+        },
+        container.settingsRepository.settings,
+    ) { (s, p, m), st ->
+        com.bamnat.core.guide.RuleCards.of(s.patterns, s.shiftTypes, com.bamnat.core.time.Today.date(), p?.customRules.orEmpty(),
+            com.bamnat.core.formula.Logic.decode(st.logic), alarmsOn = st.alarmsEnabled, memos = m)
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
     fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()
@@ -601,6 +628,11 @@ fun SettingsScreen(
             page = null; focus = null
             searchAsked++
         }
+        if (link == SettingsLink.Home) {
+            SettingsLinks.consume(link!!)
+            page = null; focus = null; query = ""
+            hubScroll.scrollTo(0)
+        }
     }
     LaunchedEffect(searchAsked) { if (searchAsked > 0) { kotlinx.coroutines.delay(150); runCatching { searchFocus.requestFocus() } } }
     LaunchedEffect(link) {
@@ -937,7 +969,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
     // [J133-79] Only what this calendar's kind of work has: a shop typing 근태 is not shown the 일근 근태 엑셀.
     val features = remember(query, hiddenKinds, screenStyle) {
         com.bamnat.app.ui.guide.FeatureSearch.search(query, style = screenStyle, limit = 3, hidden = hiddenKinds,
-            features = com.bamnat.core.guide.FeatureRegistry.all.filter { screenStyle == null || it.fits(screenStyle) })
+            features = com.bamnat.core.guide.FeatureRegistry.shown.filter { screenStyle == null || it.fits(screenStyle) })
     }
     if (features.isNotEmpty()) {
         Text("기능 ${features.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1291,7 +1323,8 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
                 askingPassword = false
                 vm.prepareExport(password)
                 sealedExport = password != null
-                exportLauncher.launch("밤낮-백업-${Today.date()}.${BackupManager.EXTENSION}")
+                // 1.38 PC 확인(e6dc244a) 제안: two backups on one day get names of their own (밤낮-백업-2026-11-05-1930).
+                exportLauncher.launch("밤낮-백업-${Today.date()}-${java.time.LocalTime.now().let { "%02d%02d".format(it.hour, it.minute) }}.${BackupManager.EXTENSION}")
             },
         )
     }

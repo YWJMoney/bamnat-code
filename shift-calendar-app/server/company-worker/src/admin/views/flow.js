@@ -47,9 +47,9 @@ export function flowViews(A) {
       ? [["문의가 들어와요", "앱에서 보낸 문의·버그·제안이 '새 문의'에 쌓여요. 아무것도 안 해도 돼요."],
         ["Claude에게 \"처리해\"", "프로젝트 채팅에 한 마디. Claude가 운영 열쇠로 이 장부를 직접 읽고, 답할 것은 답하고 개발할 것은 개발사항으로 만들어 개발까지 이어 가요."],
         ["Play에 올리면 '나간 판' 저장", "출시한 판을 여기 저장(또는 Claude에게 \"1.37.0 나갔어\")하면 고친 문의마다 업데이트 안내가 한꺼번에 가요."]]
-      : [["정리함에서 나누기", "'새 문의'를 정리함에서 답하거나 개발사항으로 넘겨요."],
-        ["Claude에게 넘기기", "정리함 › 'Claude에게 넘기기'로 복사해 프로젝트 채팅에 붙여 넣어요. Claude가 개발하고 결과 줄(d… 완료 1.37.0)을 줘요."],
-        ["결과 붙여 넣기 · 나간 판 저장", "결과 줄을 정리함 › '개발 결과 붙여 넣기'에, Play에 올린 뒤 나간 판을 여기 저장해요. 운영 열쇠를 만들면 이 복사·붙여 넣기가 없어져요."]];
+      : [["운영 장부에서 나누기", "'새 문의'를 운영 장부에서 답하거나 개발사항으로 넘겨요. 줄마다 겹침 후보와 보낼 답이 적혀 있어요."],
+        ["Claude에게 넘기기", "운영 장부 › 'Claude에게 넘기기'로 복사해 프로젝트 채팅에 붙여 넣어요. Claude가 개발하고 결과 줄(d… 완료 1.37.0)을 줘요."],
+        ["결과 붙여 넣기 · 나간 판 저장", "결과 줄을 운영 장부 › '개발 결과 붙여 넣기'에, Play에 올린 뒤 나간 판을 여기 저장해요. 운영 열쇠를 만들면 이 복사·붙여 넣기가 없어져요."]];
     const setup = [];
     if (!d.shipped) setup.push(`<li><b>나간 판을 적어 주세요.</b> 지금 Play에 나가 있는 판(예: 1.36.1)을 저장해야 출시 전 '반영'·'업데이트하세요' 답이 나가지 않아요. <button class="btn small" type="button" data-act="flow-ship">나간 판 저장</button></li>`);
     if (!keyOn && S.me?.owner) setup.push(`<li><b>Claude 운영 열쇠를 만들어요.</b> 한 번 넣어 두면 "처리해" 한 마디로 Claude가 직접 처리해요. <a class="btn small" href="${href("keys")}">Claude 열쇠</a></li>`);
@@ -74,7 +74,9 @@ export function flowViews(A) {
     const kpi = (k, v, desc, tone = "") => `<div class="tile kpi${tone ? ` ${tone}` : ""}"><span class="k">${esc(k)}</span><span class="v">${v}</span><span class="d">${esc(desc)}</span></div>`;
     const kpis = `<div class="tiles core">${kpi("첫 답까지", num(m.firstAnswerHours, "시간"), "30일 중앙값")}
       ${kpi("답 목표 지킴", num(m.slaKept, "%"), "문의 종류별 목표 안에 첫 답", m.slaKept !== null && m.slaKept < 80 ? "hot" : "")}
-      ${kpi("도움이 됐어요", num(m.helpful, "%"), "답을 평가한 분 중")}${kpi("개발 걸린 날", num(m.devDays, "일"), "접수부터 완료까지 중앙값(60일)")}</div>`;
+      ${kpi("도움이 됐어요", num(m.helpful, "%"), "답을 평가한 분 중")}${kpi("개발 걸린 날", num(m.devDays, "일"), "접수부터 완료까지 중앙값(60일)")}
+      ${kpi("고친 판이 닿기까지", num(m.fixDays ?? null, "일"), `문의부터 '고친 판 나왔어요' 안내까지 중앙값(60일${m.fixedTold ? `, ${m.fixedTold}건` : ""})`)}
+      ${kpi("밀린 건수", num(m.backlog ?? null, "건"), m.backlogStuck ? `그중 막힌 단계 ${m.backlogStuck}건` : "모든 단계를 더한 수", m.backlogStuck ? "hot" : "")}</div>`;
     const trend = `<section class="card"><div class="card-head"><h2>8주 추이</h2><span class="meta">30일 들어옴 ${m.inMonth} · 답함 ${m.answeredMonth}</span></div>${weekChart(m.weeks)}
       <details class="data-table"><summary>숫자로 보기</summary><table><thead><tr><th scope="col">주 시작</th><th scope="col">들어옴</th><th scope="col">첫 답</th></tr></thead>
       <tbody>${m.weeks.map((w) => `<tr><td>${esc(w.from.slice(0, 10))}</td><td>${w.in}</td><td>${w.out}</td></tr>`).join("")}</tbody></table></details></section>`;

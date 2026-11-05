@@ -117,7 +117,7 @@ test("[ADMUX-01] every screen opens without an error and without a style attribu
   const { env } = await world();
   const t = await signedIn(env);
   // AN 1.28: the six hubs' tabs, and the 1.27 addresses that now lead to them (inbox, ops, settings).
-  for (const s of ["home", "inquiries", "sort", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
+  for (const s of ["home", "desk", "inquiries", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
     "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "inbox", "ops", "settings", "more"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
@@ -608,9 +608,9 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.equal(t.$("#hubtabs [aria-current]").dataset.tab, "review");
   assert.ok(t.$('.side li[data-hub="plaza"].open .subnav a[data-tab="adopt"]'));
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "plaza");
-  // 1.36 [GRW-07] 오늘 has 할 일함 beside it now; 분석 sits under 더 보기 on the phone, which is lit there.
+  // 1.38 [DESK-03] 오늘 has 운영 장부 (할 일함·정리함 in one) beside it now; 분석 sits under 더 보기 on the phone, which is lit there.
   await t.go("#/home");
-  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "flow", "work"]);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "flow", "desk"]);
   await t.go("#/metrics");
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "more");
   // 민지 answers questions only: 오늘, 문의 (without 답 목표, which is 설정's) and 관리 (내 계정 only).
@@ -618,7 +618,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.deepEqual(sideHubs(u), ["today", "ask", "manage"]);
   assert.deepEqual(bottom(u), ["today", "ask", "manage"], "every hub fits: no 더 보기");
   await u.go("#/inquiries");
-  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "sort", "growth", "dev", "templates"]);
+  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "growth", "dev", "templates"]);
   await u.go("#/account");
   assert.ok(u.$("#hubtabs").hidden, "관리 has one tab for 민지");
   // A tab 민지 cannot use goes to 오늘.
@@ -756,7 +756,7 @@ test("[ADMUX-36] 1~6 open the hubs, [ and ] the tabs, and the palette knows the 
   await t.key("2");
   assert.equal(t.window.location.hash, "#/inquiries");
   await t.key("]");
-  assert.equal(t.window.location.hash, "#/sort", "정리함 sits next to 문의");
+  assert.equal(t.window.location.hash, "#/growth", "스튜디오 요구 sits next to 문의 (정리함 is in 운영 장부 now)");
   await t.key("[");
   await t.key("[");
   assert.equal(t.window.location.hash, "#/sla", "round to the hub's last tab");
@@ -768,7 +768,8 @@ test("[ADMUX-36] 1~6 open the hubs, [ and ] the tabs, and the palette knows the 
   await t.key("g");
   await t.key("b");
   assert.equal(t.window.location.hash, "#/home");
-  for (const [word, to] of [["받은함", "#/home"], ["운영", "#/flags"], ["친구 초대", "#/rewards"]]) {
+  // 1.38 [DESK-03] '운영'은 이제 운영 장부가 먼저예요(이름이 맞아서). 옛 운영 메뉴는 '기능 스위치'로, 할 일함·정리함은 장부로.
+  for (const [word, to] of [["받은함", "#/home"], ["운영", "#/desk"], ["기능 스위치", "#/flags"], ["친구 초대", "#/rewards"], ["할 일함", "#/desk"], ["정리함", "#/desk"]]) {
     await t.key("k", { ctrlKey: true });
     await t.type("#pal", word);
     t.$("#pal").dispatchEvent(new t.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
@@ -1520,38 +1521,60 @@ test("[ADMX-15] back to the tab while typing an answer: the menu numbers come ag
   assert.deepEqual(t.errors, []);
 });
 
-test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 넘길 글 is copied and marked", async () => {
+test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a line opens in place with its answer, 넘길 글 is copied, 끝내기 asks why, 기록 undoes", async () => {
   const { call, env } = await world();
   const t = await signedIn(env);
   await t.go("#/sort");
-  const piles = t.$$("#main section.pile").map((s) => s.id);
-  assert.ok(piles.includes("pile-new"), "the three new questions wait in 새 문제·개선");
+  assert.equal(t.window.location.hash, "#/desk?view=claude&group=ask", "정리함 lives in 운영 장부 now");
+  assert.ok(t.$$("#main .rows.ledger > li").length >= 1, "the waiting questions are lines");
+  assert.match(t.text("#main .rows.ledger"), /K-\d{4}/, "every line has its number");
+  assert.ok(t.$("#main .lg-head"), "a head row for the columns");
   assert.ok(t.$("#sort-tools .handoff-card"), "Claude에게 넘기기 is there");
-  // A card's answer can be changed before it goes; what goes is what the box says.
-  const card = t.$('#pile-new [data-act="sort-reply-only"]');
-  const id = card.dataset.id;
-  t.$(`#sort-reply-${id}`).value = "확인했어요. 고마워요.";
-  await t.click(card);
-  await t.settle(20);
-  assert.ok(!t.$(`#sort-reply-${id}`), "an answered question leaves 정리함");
+  // A line's answer can be changed before it goes; what goes is what the box says.
+  const reply = t.$('#main [data-act="ledger-reply"]');
+  const key = reply.dataset.key;
+  const id = key.split(":")[1];
+  t.$(`#lg-reply-${id}`).value = "확인했어요. 고마워요.";
+  await t.click(reply);
+  await t.idle();
+  assert.ok(!t.$(`#main li[data-key="${key}"]`), "an answered question leaves Claude 차례");
   const asked = (await call("GET", `/api/admin/inquiries/${id}`, undefined, await signIn(call))).data;
   assert.equal(asked.messages.at(-1).text, "확인했어요. 고마워요.");
-  // 넘기기: a 개발사항 made from a card shows up to copy; copying marks it handed.
-  const next = t.$('#pile-new [data-act="sort-do"]');
-  await t.click(next);
-  await t.settle(20);
+  // 넘기기: a 개발사항 made from a line shows up to copy; copying marks it handed.
+  await t.click('#main [data-act="ledger-sort"]');
+  await t.idle();
   let copied = null;
   t.window.navigator.clipboard.writeText = async (x) => { copied = x; };
   await t.click('[data-act="sort-handoff"]');
-  await t.settle(20);
-  // 1.37 [ADM2-08] The text carries the waiting questions too, so the button stays for them; the 개발사항 are marked.
+  await t.idle();
   assert.match(copied ?? "", /# 밤낮 관리자 앱 → Claude/);
-  assert.match(copied ?? "", /## 새로 들어온 문의/);
   assert.match(t.$('[data-act="sort-handoff"]').textContent, /개발 0/);
-  // 1.37 [ADM2-10] The copy is kept as a 넘김 묶음; the question still waiting is now '전에 넘김'.
   assert.match(t.text(".handoff-log"), /넘김 기록 \(1\)/);
-  assert.match(t.text(".handoff-log"), /결과 기다리는 중/);
-  assert.match(t.text(".handoff-card"), /전에 넘겼는데 아직 답이 없는 문의 1건/);
+  // 열린 것 모두: the 개발사항 is a line too, handed to Claude now.
+  await t.click('[data-act="ledger-view"][data-key="open"]');
+  await t.idle();
+  assert.match(t.text("#main .rows.ledger"), /Claude에게 넘김/);
+  // 끝내기 asks why; with a reason the line goes to 닫힘, and 기록 can undo it.
+  const first = t.$("#main .rows.ledger > li").dataset.key;
+  await t.click(`#main li[data-key="${first}"] [data-act="ledger-done"]`);
+  assert.match(t.text("dialog"), /끝낸 이유를 꼭/);
+  t.$('dialog input[name="reason"][value="duplicate"]').checked = true;
+  await t.click('dialog form[data-form="ledger-done"] button[type="submit"]');
+  await t.idle();
+  assert.ok(!t.$(`#main li[data-key="${first}"]`), "it left 열린 것");
+  await t.click('[data-act="ledger-view"][data-key="closed"]');
+  await t.idle();
+  assert.match(t.text(`#main li[data-key="${first}"]`), /끝 · 중복/);
+  await t.click(`#main li[data-key="${first}"] [data-act="ledger-log"]`);
+  await t.idle();
+  assert.match(t.text("dialog"), /마지막 바꿈/);
+  await t.click('dialog [data-act="ledger-undo"]');
+  await t.idle();
+  assert.ok(!t.$(`#main li[data-key="${first}"]`), "undone: back among the open lines");
+  // 보기·찾기 keep to the address.
+  await t.go("#/desk?view=all&q=K-0001");
+  assert.equal(t.$("#search").value, "K-0001");
+  assert.equal(t.$$("#main .rows.ledger > li").length, 1);
   assert.deepEqual(t.errors, []);
 });
 

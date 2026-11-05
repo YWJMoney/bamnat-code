@@ -123,8 +123,8 @@ object RuleImport {
         val number = m.groupValues[1].replace(",", "").toDouble()
         val unit = m.groupValues[2].replace(" ", "")
         return when {
-            unit.startsWith("만") -> (number * 10_000).toLong()
-            unit == "천" -> (number * 1_000).toLong()
+            unit.startsWith("만") -> Math.round(number * 10_000) // [P3-ACC] "1.13만" × 10,000 is 11,299.99… as a Double; truncating lost 1원
+            unit == "천" -> Math.round(number * 1_000)
             else -> number.toLong()
         }
     }

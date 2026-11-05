@@ -39,6 +39,8 @@ enum class ProReason(val words: String) {
     PASS("보상 이용권으로 프로를 써요"),
     /** 1.36 841: the 1년 이용권 bought on Play, no automatic payment. */
     PASS_1Y("1년 이용권으로 프로를 써요 · 자동 결제 없음"),
+    /** 1.38 Phase 3 요금: 팀 요금제·직원 요금제는 개인 프로 기능을 포함해요. */
+    WORK_PLAN("팀·직원 요금제에 든 프로 기능을 써요"),
     THANKS("테스트에 참여해 주셔서 드린 프로 기간이에요"),
     DAY_PASS("광고를 보고 오늘 하루 프로 기능을 열었어요"),
     /** 1.36 [PSH-01] 프로 나눔 1인. */
@@ -66,6 +68,8 @@ data class ProSources(
     val sharedUntil: Instant? = null,
     /** 1.36 841: the end of the 1년 이용권 bought (stacked, [YearPass.until]). */
     val yearPassUntil: Instant? = null,
+    /** 1.38 Phase 3 요금: the end of a live 팀·직원 요금제 (subscription or 1년 이용권), which includes 프로. */
+    val workUntil: Instant? = null,
 )
 
 data class Access(val pro: Boolean, val reason: ProReason, val until: Instant? = null)
@@ -89,6 +93,7 @@ object ProAccess {
             }
             return Access(true, reason, sub.expiry)
         }
+        s.workUntil?.takeIf { now < it }?.let { return Access(true, ProReason.WORK_PLAN, it) }
         s.admin?.takeIf { it.approved && Duration.between(it.checkedAt, now) < ADMIN_CHECK }?.let { return Access(true, ProReason.ADMIN) }
         s.yearPassUntil?.takeIf { now < it }?.let { return Access(true, ProReason.PASS_1Y, it) }
         s.passUntil?.takeIf { now < it }?.let { return Access(true, ProReason.PASS, it) }

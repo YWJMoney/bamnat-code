@@ -37,6 +37,27 @@ class RestRulesTest {
         assertTrue(issues.toString(), issues.any { "겹쳐요" in it.text })
     }
 
+    /** 1.37 PC MED (알바 쉬는 시간 경고): 오전 · 저녁 two jobs on one day are not a short rest for 알바; the night to the next morning still is. */
+    @Test fun hourlyTwoJobsOnADayAreNotShortRest() {
+        val tue = monday.plusDays(1)
+        val entries = listOf(
+            com.bamnat.core.model.DayEntry(monday, extras = listOf(
+                com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.SPECIAL_ID, java.time.LocalTime.of(9, 0), java.time.LocalTime.of(13, 0)),
+                com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.SPECIAL_ID, java.time.LocalTime.of(18, 0), java.time.LocalTime.of(23, 0)),
+            )),
+            com.bamnat.core.model.DayEntry(tue, extras = listOf(
+                com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.SPECIAL_ID, java.time.LocalTime.of(6, 0), java.time.LocalTime.of(10, 0)),
+            )),
+        )
+        val r = ScheduleResolver(Fixtures.all, WorkPattern.Rotation(monday, listOf(o.id)), entries)
+        val days = listOf(r.resolve(monday), r.resolve(tue))
+        val shift = RestCheck.check(days, RestRules().forStyle(com.bamnat.core.work.WorkStyle.SHIFT)).filter { it.kind == Kind.SHORT_REST }
+        val hourly = RestCheck.check(days, RestRules().forStyle(com.bamnat.core.work.WorkStyle.HOURLY)).filter { it.kind == Kind.SHORT_REST }
+        assertTrue(shift.toString(), shift.any { it.date == monday })
+        assertTrue(hourly.toString(), hourly.none { it.date == monday })
+        assertTrue(hourly.toString(), hourly.any { it.date == tue })
+    }
+
     @Test fun encodeDecodeAndOldStrict() {
         val r = RestRules(on = false, minRestHours = 12, offsAfterNights = 1, maxNightsInRow = 4, maxWorkDaysInRow = 5, maxNightsPerMonth = 14)
         assertEquals(r, RestRules.decode(r.encode()))

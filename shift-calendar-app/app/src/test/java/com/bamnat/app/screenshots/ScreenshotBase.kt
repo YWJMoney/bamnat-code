@@ -106,6 +106,8 @@ abstract class ScreenshotBase {
     fun seed() = runBlocking<Unit> {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
+        // A search one shot left open must not open the next shot's 회사 찾기 with its name and chips.
+        com.bamnat.app.ui.company.PublicBrowse.reset()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
@@ -830,8 +832,9 @@ abstract class ScreenshotBase {
         { it.copy(period = com.bamnat.core.pay.PayPeriod(endDay = 20, payDay = 25), rules = it.rules.copy(holidayByShiftStart = true)) }
     /** 4조 2교대 from its template, the user's own 주주휴휴야야휴휴, today the second night. */
     internal fun Screen.setupToToday() {
-        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("네, 시간이 맞아요")
-        tapText("4조 2교대 8일 (주휴야휴)"); tapText("다음", exact = true)
+        // [EASE-07] The order is picked on the times' screen (the template's usual one is in already).
+        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("순서가 달라요 · 다른 순서 고르기")
+        tapText("4조 2교대 8일 (주휴야휴)"); tapText("네, 맞아요", exact = true)
         tapText("야간", exact = true); tapText("둘째 날")
     }
 

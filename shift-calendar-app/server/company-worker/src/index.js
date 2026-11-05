@@ -76,7 +76,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
 import { inboxAnswer, inboxRoute } from "./inbox.js";
-import { DEV, INQUIRY, INQUIRY_TOPICS, SLA, SLA_SQL, actorName, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
+import { DEV, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
@@ -92,6 +92,7 @@ import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
+import { LEDGER_SCHEMA, ledgerRoute } from "./ledger.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -232,11 +233,17 @@ export default {
   // time even when nobody sends anything.
   async scheduled(event, env, ctx) {
     if (!env.DB) return;
+    // 1.38 [DESK-09] 5분마다: 보류가 끝난 Claude 답만 보내요(나머지 정리는 매시 17분 그대로).
+    if (event?.cron === "*/5 * * * *") {
+      ctx.waitUntil(ready(env).then(() => releaseHeld(env, Date.now())));
+      return;
+    }
     ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now()))
       .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env))
       // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
       .then(() => flagTick(env, Date.now())).then(() => alertTick(env, Date.now())).then(() => digestTick(env, Date.now())) // R131 1.31 [ADMX-14]
       .then(() => growthTick(env, Date.now())) // 1.36 [GRW-02][GRW-03][GRW-05]
+      .then(() => releaseHeld(env, Date.now())) // 1.38 [DESK-09]
       .finally(badgesChanged)); // AX 1.30 [ADMX-10]
   },
 };
@@ -496,6 +503,11 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/push/phone") { const r = await fcmRoute(request, env, path); if (r) return r; }
   // 1.36 누락 점검 N13: 찾아도 없던 말 ('없다고 알리기').
   if (path === "/api/growth/miss") { const r = await growthRoute(request, env, path, url); if (r) return r; }
+  // 1.38 [EASE-31] 밤낮 Q&A (마을): 관리자가 공개로 고른 자주 쓰는 답.
+  if (path === "/api/qa" && method === "GET") {
+    await ready(env);
+    return json(await publicQa(env), 200, { "cache-control": `public, max-age=${QA.cacheSeconds}` });
+  }
   if (path === "/api/inquiries" || path.startsWith("/api/inquiries/")) return inquiries(request, env, path);
   if (path === "/api/config" && method === "GET") return json(await config(env));
   // 1.36 [SEC-11] An install shows Play's verdict once a week (integrity.js).
@@ -749,6 +761,8 @@ const SCHEMA = [
   ...WORK_SCHEMA,
   // 1.37 [ADM2-03] Claude 운영 열쇠 (desk.js).
   ...DESK_SCHEMA,
+  // 1.38 [DESK-02] 운영 장부 줄 번호와 요약 (ledger.js).
+  ...LEDGER_SCHEMA,
   // 1.36 [PUSH-01] 문의 답 바로 알리기 (fcm.js).
   ...FCM_SCHEMA,
 ];
@@ -827,6 +841,10 @@ const COLUMNS = [
   ...RECIPE_COLUMNS,
   ...COMMUNITY_COLUMNS,
   ...DESK_COLUMNS,
+  // 1.38 [EASE-31] 밤낮 Q&A.
+  // 1.38 [EASE-31] 자주 쓰는 답의 '마을에 공개할 묻는 말' (inquiries.js QA). Written here, not imported: index.js runs this list
+  // while inquiries.js may still be loading (a test that imports it first).
+  "ALTER TABLE reply_templates ADD COLUMN public_q TEXT NOT NULL DEFAULT ''",
   ...WRITE_LIMITS_COLUMNS,
   ...GROWTH_COLUMNS,
   ...PHOTO_COLUMNS,
@@ -3651,8 +3669,22 @@ async function talkData(request, env, companyId, grp, known = null) {
   const myVotes = new Map(myVoteRows.map((v) => [v.post_id, v.ok === 1]));
   const nicks = new Map(nickRows.map((n) => [n.device, n.nick]));
   // 1.36 [V3] In a kind of work's 광장, a writer with a 프로필 (not hidden or closed) leads to it.
-  const makers = new Map(style ? (await all(env, `SELECT device, maker FROM recipe_makers WHERE hidden = 0 AND closed = 0 AND device IN
-    (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp)).map((m) => [m.device, m.maker]) : []);
+  // 1.38 PC 11차 LOW (작품이 없는 분은 팔로우할 길이 없어요): a writer who chose a 마을 이름 has the 프로필 that name already stands for,
+  // works or not, so it is made here the first time (an empty page with 팔로우; a hidden or closed one stays out). A writer without a
+  // name stays 참여자 N with no way to their other posts.
+  const makerRows = style ? await all(env, `SELECT device, maker, hidden, closed FROM recipe_makers WHERE device IN
+    (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp) : [];
+  if (style) {
+    const known = new Set(makerRows.map((m) => m.device));
+    const named = [...new Set(rows.map((p) => p.device))].filter((dv) => !known.has(dv) && nicks.has(dv)).slice(0, 40);
+    if (named.length) {
+      const now = Date.now();
+      const made = await Promise.all(named.map(async (dv) => ({ device: dv, maker: await makerId(dv), hidden: 0, closed: 0 })));
+      await batch(env, made.map((m) => stmt(env, "INSERT OR IGNORE INTO recipe_makers (device, maker, at) VALUES (?, ?, ?)", m.device, m.maker, now)));
+      makerRows.push(...made);
+    }
+  }
+  const makers = new Map(makerRows.filter((m) => !m.hidden && !m.closed).map((m) => [m.device, m.maker]));
   const review = new Set(reviewRows.map((r) => r.post_id));
   const proposals = new Map(proposalRows.map((r) => [r.id, r]));
   // [PLZ-02] Where each proposal's setup stands, every one in one round.
@@ -4417,6 +4449,8 @@ function areaFor(path) {
   if (path === "/search") return null;
   // 1.36 [GRW-07] 할 일함: each part reads only the areas the admin has (work.js).
   if (path === "/work" || path.startsWith("/work/")) return null;
+  // 1.38 [DESK-02] 운영 장부도 할 일함처럼 칸마다 그 권한으로만 읽어요(ledger.js).
+  if (path === "/ledger" || path === "/ledger.csv" || path.startsWith("/ledger/")) return null;
   // 1.37 [ADM2] 흐름과 장부는 문의를 맡은 사람이, 나간 판 저장은 개발사항 처리를 가진 사람이, 운영 열쇠는 주인만(아래 기본값).
   if (path === "/flow" || path === "/desk") return "inquiries";
   if (path === "/desk/ship") return "devStatus";
@@ -4609,6 +4643,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/flow" || path === "/desk" || path.startsWith("/desk/") || path === "/keys" || path.startsWith("/keys/")) {
     const d = await deskRoute(request, env, path, method, now, (e, id, text, at) => inboxAnswer(e, id, text, at, actorName(e)));
     if (d) return d;
+  }
+  // 1.38 [DESK-02][DESK-03] 운영 장부: 정리함·할 일함을 하나로.
+  if (path === "/ledger" || path === "/ledger.csv" || path.startsWith("/ledger/")) {
+    const l = await ledgerRoute(request, env, url, path, now);
+    if (l) return l;
   }
   // 1.36 [GRW-07] 할 일함.
   if (path === "/work" || path.startsWith("/work/")) {

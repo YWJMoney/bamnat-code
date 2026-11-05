@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AssistChip
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -66,21 +67,56 @@ internal fun MemoBodyToolbar(tools: MemoBodyTools) {
     }
 }
 
-/** [NOTE-05] The chip of a dated memo that makes it come back every week, month or year. */
+/**
+ * [NOTE-05] The chip that makes a memo come back every week, month or year. [EASE-22] 1.38: or on every day of a kind of
+ * shift ("야간마다"), the memo's own day's kind first, following the shift when it moves. [EASE-23] Shown on a memo with no date
+ * too: picking a repeat gives it the day to start from, rather than asking for a date first.
+ */
 @Composable
-internal fun MemoRepeatChip(date: LocalDate, repeat: String, onChange: (MemoRepeat.Kind) -> Unit) {
+internal fun MemoRepeatChip(
+    date: LocalDate?,
+    repeat: String,
+    onChange: (MemoRepeat.Kind) -> Unit,
+    shiftTypes: List<com.bamnat.core.model.ShiftType> = emptyList(),
+    dayShiftId: Long? = null,
+    onShift: (Long) -> Unit = {},
+) {
     var open by remember { mutableStateOf(false) }
+    val names = remember(shiftTypes) { shiftTypes.associate { it.id to it.name } }
     Box {
         AssistChip(
             onClick = { open = true },
-            label = { Text(MemoRepeat.label(repeat).ifEmpty { "반복 없음" }, maxLines = 1) },
+            label = { Text(MemoRepeat.label(repeat) { names[it] }.ifEmpty { "반복 없음" }, maxLines = 1) },
             leadingIcon = { Icon(Icons.Filled.Repeat, null, Modifier.size(18.dp)) },
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            MemoRepeat.Kind.entries.forEach { kind ->
-                val text = if (kind == MemoRepeat.Kind.NONE) "반복 없음" else MemoRepeat.label(MemoRepeat.code(kind, date))
+            val from = date ?: com.bamnat.core.time.Today.date()
+            listOf(MemoRepeat.Kind.NONE, MemoRepeat.Kind.WEEK, MemoRepeat.Kind.MONTH, MemoRepeat.Kind.YEAR).forEach { kind ->
+                val text = if (kind == MemoRepeat.Kind.NONE) "반복 없음" else MemoRepeat.label(MemoRepeat.code(kind, from))
                 DropdownMenuItem(text = { Text(text) }, onClick = { open = false; onChange(kind) })
+            }
+            // [EASE-22] 근무마다: the day's own kind first, then the calendar's order.
+            val ordered = shiftTypes.sortedBy { if (it.id == dayShiftId) -1 else 0 }
+            if (ordered.isNotEmpty()) androidx.compose.material3.HorizontalDivider()
+            ordered.forEach { t ->
+                DropdownMenuItem(
+                    text = { Text("${t.name}마다") },
+                    leadingIcon = { com.bamnat.app.ui.components.ShiftBadge(t, size = 20.dp, outlined = t.isOff) },
+                    trailingIcon = { if (MemoRepeat.shiftIdOf(repeat) == t.id) Icon(Icons.Filled.Check, null) },
+                    onClick = { open = false; onShift(t.id) },
+                )
             }
         }
     }
 }
+
+/**
+ * 1.38 PC 확인(9b028f4c): a repeating memo is one memo, so deleting it takes it off every day it repeats on. The confirm says
+ * so ("‘야간마다’ 반복 메모라서 …") instead of reading like this day alone. [base] is what the dialog says otherwise.
+ */
+internal fun memoDeleteTitle(memo: com.bamnat.core.memo.Memo, plain: String): String =
+    if (memo.repeat.isEmpty()) plain else "반복 메모를 지울까요?"
+
+internal fun memoDeleteMessage(memo: com.bamnat.core.memo.Memo, base: String, shiftName: (Long) -> String?): String =
+    if (memo.repeat.isEmpty()) base
+    else "‘${com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName)}’ 반복 메모라서 이 날만이 아니라 반복되는 모든 날에서 사라져요. $base"
