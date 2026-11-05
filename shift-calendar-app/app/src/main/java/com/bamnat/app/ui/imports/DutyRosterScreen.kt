@@ -249,8 +249,22 @@ class DutyRosterViewModel(
         change(u, u.edits + (day to cell), (next ?: (day + 1)).coerceAtMost(u.month.lengthOfMonth()), cell ?: u.lastKey)
     }
 
-    /** [ROST-08] 한 칸 비우기: this day stays as the calendar has it, and on to the next. */
-    fun skip() = put(null)
+    /**
+     * [EASE-13] ✕ 지우기 (PC 3db30e1e: the old '비우기' did this, and read as 건너뛰기): what was typed or read on this day is
+     * taken away, so the day stays as the calendar has it, and on to the next. The same key as [com.bamnat.core.imports.PaintPad.erase].
+     */
+    fun erase() = put(null)
+
+    /**
+     * [EASE-13] » 건너뛰기: on to the next day (the next one to look at, while some are left), this day as it is; a doubtful
+     * day skipped stays doubtful. The same key as [com.bamnat.core.imports.PaintPad.skip].
+     */
+    fun skip() = _ui.update { u ->
+        val day = u.cursor
+        val doubt = u.doubtful - day
+        val next = doubt.filter { it > day }.minOrNull() ?: if (u.row != null && day in u.doubtful) doubt.minOrNull() else null
+        u.copy(cursor = (next ?: (day + 1)).coerceAtMost(u.month.lengthOfMonth()))
+    }
 
     fun tap(day: Int) = _ui.update { it.copy(cursor = day.coerceIn(1, it.month.lengthOfMonth())) }
 
@@ -760,8 +774,13 @@ private fun Keypad(
                 TextButton(onClick = vm::undo, enabled = ui.history.isNotEmpty()) {
                     Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp)); Text(" 되돌리기", maxLines = 1)
                 }
-                // 1.38 PC LOW ('비우기'인데 칸은 그대로 두고 다음 칸으로 가요): 건너뛰기 with » (EASE-13 키패드와 같은 말), not ⌫.
-                TextButton(onClick = vm::skip) { Icon(Icons.Filled.SkipNext, null, Modifier.size(18.dp)); Text(" 건너뛰기", maxLines = 1) }
+                // [EASE-13] The same two keys as the keypad sheet (and the team roster's, P3-02): ✕ takes the day away, » leaves it.
+                TextButton(onClick = vm::erase, modifier = Modifier.semantics { contentDescription = "${ui.month.monthValue}월 ${ui.cursor}일 넣은 것 지우기" }) {
+                    Text("✕ 지우기", maxLines = 1)
+                }
+                TextButton(onClick = vm::skip, modifier = Modifier.semantics { contentDescription = "${ui.cursor}일 건너뛰기" }) {
+                    Text("» 건너뛰기", maxLines = 1)
+                }
                 TextButton(onClick = { vm.repeatOrder() }, enabled = vm.canRepeat(ui)) {
                     Icon(Icons.Filled.Repeat, null, Modifier.size(18.dp)); Text(" 이 순서 반복", maxLines = 1)
                 }
