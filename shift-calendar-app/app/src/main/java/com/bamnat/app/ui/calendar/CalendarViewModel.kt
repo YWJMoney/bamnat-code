@@ -1015,7 +1015,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [EASE-11] What a shift on a day off is called here: 대타 on an 알바 calendar, else 대근 ([J133B-01]). */
-    private fun coverWord(): String = if (container.settingsRepository.current.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"
+    internal fun coverWord(): String = if (container.settingsRepository.current.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"
 
     /** [EXTRA-01] True when [type] would turn a day the roster gives off into a working day: likely a 대근. */
     fun isRosterRestDay(day: ResolvedDay, type: ShiftType): Boolean =
@@ -1139,6 +1139,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [EXTRA-01] The roster stays a day off and the shift goes in as a 대근 of its hours, said back with undo. */
+    /**
+     * [EASE-11] PC 3db30e1e: the day off made [type] by hand becomes a 대근 instead: back to the roster's day off, and the hours
+     * as extra work. One 되돌리기 takes both back.
+     */
+    fun coverFromChange(date: LocalDate, type: ShiftType, snapshot: ScheduleSnapshot) = gate(WriteKind.SHIFT) {
+        viewModelScope.launch {
+            val schedule = this@CalendarViewModel.schedule
+            val before = changeShift(date) { ShiftOverride.None }
+            schedule.addExtra(date, ExtraText.cover(coverKind(snapshot, type), type))
+            val word = coverWord()
+            _messages.emit(UndoMessage("${Fmt.monthDay(date)}은 근무표대로 쉬는 날, ${type.name}${Fmt.ro(type.name)} $word${Fmt.ro(word)} 넣었어요") { schedule.restoreDay(date, before) })
+        }
+    }
+
     fun coverInstead(date: LocalDate, type: ShiftType, snapshot: ScheduleSnapshot) = gate(WriteKind.SHIFT) {
         val kind = coverKind(snapshot, type)
         addExtra(date, ExtraText.cover(kind, type), ExtraText.coverName(kind, type))

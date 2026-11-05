@@ -319,7 +319,11 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
         // [EASE-12] A day changed from its order says what it was: "원래 야간 → 주간", with 되돌리기 right there.
         if (hasShift && day.source == DaySource.OVERRIDE && snapshot.hasPattern) {
             val was = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
-            ChangedLine(was, day.shiftType, onBack = { vm.assign(day.date, com.bamnat.core.model.ShiftOverride.None) })
+            val now = day.shiftType
+            // [EASE-11] PC 3db30e1e: a day off made a working day keeps '대근으로' here too, after the bar is gone.
+            val cover = now?.takeIf { (was == null || was.isOff) && it.hasTimes && !it.isOff }
+            ChangedLine(was, now, onBack = { vm.assign(day.date, com.bamnat.core.model.ShiftOverride.None) },
+                coverWord = cover?.let { vm.coverWord() }, onCover = { cover?.let { vm.coverFromChange(day.date, it, snapshot) } })
         }
         for (e in day.extras.take(MAX_EXTRA_LINES)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -366,7 +370,7 @@ private fun ExtraNudgeLine(day: ResolvedDay, vm: CalendarViewModel, modifier: Mo
 
 /** [EASE-12] "원래 [야] 야간 → [주] 주간 · 되돌리기": the same meaning as the changed day's mark on the calendar. */
 @Composable
-private fun ChangedLine(was: com.bamnat.core.model.ShiftType?, now: com.bamnat.core.model.ShiftType?, onBack: () -> Unit) {
+private fun ChangedLine(was: com.bamnat.core.model.ShiftType?, now: com.bamnat.core.model.ShiftType?, onBack: () -> Unit, coverWord: String? = null, onCover: () -> Unit = {}) {
     val ink = MaterialTheme.colorScheme.tertiary
     val wasName = was?.name ?: "쉬는 날"
     val nowName = now?.name ?: "쉬는 날"
@@ -386,6 +390,10 @@ private fun ChangedLine(was: com.bamnat.core.model.ShiftType?, now: com.bamnat.c
         Text(nowName, style = MaterialTheme.typography.bodyMedium, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f, fill = false))
         Spacer(Modifier.weight(0.01f))
+        if (coverWord != null) TextButton(onClick = onCover, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
+            modifier = Modifier.semantics { contentDescription = "근무표는 쉬는 날 그대로, ${nowName}을 ${coverWord}${Fmt.ro(coverWord)} 넣기" }) {
+            Text("$coverWord${Fmt.ro(coverWord)}", style = MaterialTheme.typography.labelLarge)
+        }
         TextButton(onClick = onBack, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)) {
             Text("되돌리기", style = MaterialTheme.typography.labelLarge)
         }
@@ -413,7 +421,7 @@ private fun ShiftChips(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calenda
                 onClick = { if (day.shiftType?.id != t.id) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Shift(t.id), snapshot) },
                 label = { ChipText(t.name) },
                 leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = t.isOff) },
-                modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 지금 근무" else "${t.name}로 바꾸기" },
+                modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 지금 근무" else "${t.name}${Fmt.ro(t.name)} 바꾸기" },
             )
         }
         if (snapshot.shiftTypes.none { it.isOff }) item(key = "shift-off") {
