@@ -14,7 +14,7 @@ const L = adminLib();
 
 /** 통합계획 2-1: the keys the app's core FlagCatalog has too, stats.more the integrator added, and photo.wrong (AQ 1.29). */
 const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "type.field", "type.business", "type.invest", "leave.hourly",
-  "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more", "photo.wrong" /* AQ 1.29 */, "stats.lookup" /* 1.31 */, "diag.observe" /* 1.32.1 */, "share.setup" /* 1.33 */,
+  "plaza.write", "company.report", "inquiry.photos", "share.create", "usage.stats", "plaza.news", "stats.more", "photo.wrong" /* AQ 1.29 */, "stats.lookup" /* 1.31 */, "diag.observe" /* 1.32.1 */, "share.setup" /* 1.33 */, "share.look" /* 1.37 SHR-31 */,
   "plaza.fixed_amount" /* BC 1.30 결정 D102 */, "recipe.browse", "recipe.publish", "recipe.vote", "recipe.talk" /* 1.34 RCP-37 */];
 
 const MANAGER = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "edit", rewards: "edit", settings: "edit", community: "edit",
@@ -152,6 +152,8 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   const owner = await signIn(call);
   // [PRIV-05] 3.9 shares 11-10 with 3.1: move it later here so only 결제·광고 speak.
   await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
+  // 1.37 3.11 (share.look) also starts on 11-10: move it later too.
+  await call("POST", "/api/admin/policy", { version: "3.11", posted: "2026-11-04", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
   const b = await browser(1);
   assert.equal((await call("POST", "/api/admin/me/push", { subscription: b.subscription, kinds: ["flags"] }, owner)).data.ready, true);
   const sent = [];
@@ -383,4 +385,14 @@ test("[FLAG-21] the shared evaluator: order of the steps, a legal flag forced on
   // The editor's language round trips and says the first mistake.
   assert.match(L.parseConditions("date >= 2026-11-10\nweather sunny").error, /2째 줄/);
   assert.deepEqual(L.parseConditions("date >= policy 3.1\nconsent ads?").list, [{ type: "date", policy: "3.1" }, { type: "consent", key: "ads", unknownMeets: true }]);
+});
+
+test("a database made by an older server takes the new tables: the ALTERs in SCHEMA no longer fail it (1.37 hotfix, from 4c06d827)", async () => {
+  const { env, DB, call } = server();
+  assert.equal((await call("GET", "/api/config")).status, 200);
+  // As if this database was made by the server before this one: a different schema version, all columns already there.
+  await DB.prepare("UPDATE settings SET value = 'older' WHERE key = 'schema'").run();
+  // A new key, as a freshly started copy of the worker has: the schema step runs again on the same database.
+  const res = await worker.fetch(new Request("https://company.example/api/config"), { ...env, DB_ROOT: {} });
+  assert.equal(res.status, 200);
 });

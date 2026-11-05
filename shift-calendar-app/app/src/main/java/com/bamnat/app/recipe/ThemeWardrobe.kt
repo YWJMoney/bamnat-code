@@ -151,6 +151,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     suspend fun wearAgain(w: ThemeLease.Wear): Boolean = runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { wear(it, w.code, w.own, w.ver) } ?: false
 
     /** The look on the phone now as a theme of mine (its looks only). */
+    /** 1.37 PC 3차: the name of the theme worn now, so a link calls the look by it; null when the user's own look is on. */
+    fun wornTitle(): String? = _lease.value.worn?.let { w -> runCatching { RecipeCodec.read(w.body).title }.getOrNull() }?.trim()?.takeIf { it.isNotEmpty() }
+
     suspend fun myLookRecipe(title: String): Recipe {
         val pieces = BuiltInThemes.LOOK_KINDS.mapNotNull { k ->
             runCatching { c.recipes.pieces.current(k, emptyMap(), PersonalCalendar.MAIN) }.getOrNull()?.takeIf { it.isNotEmpty() }
@@ -437,6 +440,12 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     companion object {
+        /**
+         * 1.37 [SHR-31] The code of a theme that came in a 근무표 링크 (+ the link's id). It starts with `builtin:` so every place that
+         * leaves 장터 out for a built-in theme (쓰는 분 세기, 새 판 찾기, 고쳐 만들기의 원작) leaves it out too; its days and ad follow
+         * someone else's theme, as a built-in one's do.
+         */
+        const val LINK = "builtin:link:"
         const val FREE_OUTFITS = 1
         const val PRO_OUTFITS = 10
         /** [TRY-03] 조각 보관함: free 20, 프로 200. */

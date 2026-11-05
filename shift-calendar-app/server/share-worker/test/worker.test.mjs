@@ -610,6 +610,42 @@ test("[SHR-20] 1.33: a link says who it is for, and only a coworker's carries th
   assert.equal(got.schedule.setup, setup);
 });
 
+test("[SHR-31][SHR-32] 1.37: a link may carry the sharer's 테마 and 근무 설정, never a pay part", async () => {
+  const look = JSON.stringify({ format: "bamnat-recipe", v: 1, title: "민지의 테마", styles: ["SHIFT"],
+    pieces: [{ kind: "calTheme", today: 4283215696 }, { kind: "layout", tabs: ["calendar"] }] });
+  const cycle = JSON.stringify({ format: "bamnat-company", company: "", shiftTypes: [] });
+  const kit = JSON.stringify({ format: "bamnat-recipe", v: 1, title: "민지의 근무 설정", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [] }, { kind: "alarms", byRole: [] }, { kind: "company", setup: cycle }] });
+  const ok = validate({ ...sample, audience: "friend", look, kit });
+  assert.equal(ok.schedule.look, look);
+  assert.equal(ok.schedule.kit, kit);
+  // Only looks in a 테마, only 근무 꾸미기·알람·근무 주기 in 근무 설정, each once.
+  const withRules = JSON.stringify({ format: "bamnat-recipe", pieces: [{ kind: "hourly", wage: 10030 }] });
+  assert.equal(validate({ ...sample, look: withRules }).error, "look");
+  assert.equal(validate({ ...sample, kit: withRules }).error, "kit");
+  assert.equal(validate({ ...sample, kit: look }).error, "kit");
+  const twice = JSON.stringify({ format: "bamnat-recipe", pieces: [{ kind: "alarms" }, { kind: "alarms" }] });
+  assert.equal(validate({ ...sample, kit: twice }).error, "kit");
+  // A 근무 주기 with its pay part never rides along.
+  const paid = JSON.stringify({ format: "bamnat-company", shiftTypes: [], pay: { items: [] } });
+  const kitPaid = JSON.stringify({ format: "bamnat-recipe", pieces: [{ kind: "company", setup: paid }] });
+  assert.equal(validate({ ...sample, kit: kitPaid }).error, "kit");
+  assert.equal(validate({ ...sample, look: "{not json" }).error, "look");
+  assert.equal(validate({ ...sample, look: JSON.stringify({ format: "backup", pieces: [] }) }).error, "look");
+  assert.equal(validate({ ...sample, look: "x".repeat(LIMITS.look + 1) }).error, "look");
+  // The page names what came and never shows it.
+  const html = renderSchedule(ok.schedule, new Date(Date.now() + 86400000).toISOString());
+  assert.match(html, /테마와 근무 설정도 함께 보냈어요/);
+  assert.ok(!html.includes("민지의 테마"));
+  // The app gets both back; a link without them has neither.
+  const env = { SHARES: memoryKv() };
+  const made = await (await call(env, "POST", "/api/share", { ...sample, look, kit })).json();
+  const got = await (await call(env, "GET", `/api/share/${made.id}`)).json();
+  assert.equal(got.schedule.look, look);
+  assert.equal(got.schedule.kit, kit);
+  assert.equal(validate(sample).schedule.look, undefined);
+});
+
 test("app-ads.txt names the AdMob publisher and robots.txt lets crawlers read only it", async () => {
   const env = { SHARES: memoryKv() };
   const ads = await call(env, "GET", "/app-ads.txt");

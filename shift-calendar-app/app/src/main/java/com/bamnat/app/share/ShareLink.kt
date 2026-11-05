@@ -56,6 +56,10 @@ data class ShareOptions(
     val audience: ShareAudience? = null,
     /** [SHR-20] A coworker's link also carries the company setup (no amounts), from 처리방침 3.7's date. */
     val setup: Boolean = false,
+    /** 1.37 [SHR-31] The sharer's 테마 (looks only, no photos), for the receiver to try on; from 처리방침 3.11 (`share.look`). */
+    val look: Boolean = false,
+    /** 1.37 [SHR-32] The sharer's 근무 설정 (근무 꾸미기·알람 시각 틀·근무 주기), never 급여 규칙 or an amount; from 3.11. */
+    val kit: Boolean = false,
 ) {
     /** The server's names for the ticked parts, in its order. */
     val shows: List<String>
@@ -72,8 +76,8 @@ data class ShareOptions(
     val sendsSetup: Boolean get() = setup && audience == ShareAudience.COWORKER
 
     companion object {
-        fun of(shows: Collection<String>, audience: ShareAudience? = null, setup: Boolean = false) =
-            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows, audience, setup)
+        fun of(shows: Collection<String>, audience: ShareAudience? = null, setup: Boolean = false, look: Boolean = false, kit: Boolean = false) =
+            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows, audience, setup, look, kit)
 
         /**
          * [SHR-20] 1.33 (계획 690~694): what each way sends at first. 동료: the 연장·휴무일 근무 and the company setup, never
@@ -191,6 +195,10 @@ object ShareLinkPayload {
     const val MEMO_CHARS = 80
     /** [SHR-20] The share server's limit for a setup file. */
     const val SETUP_CHARS = 24 * 1024
+    /** 1.37 [SHR-31] The share server's limit for a link's 테마 (a recipe of looks, [com.bamnat.core.recipe.RecipeCodec.MAX_BYTES] at most). */
+    const val LOOK_CHARS = com.bamnat.core.recipe.ShareKit.LOOK_CHARS
+    /** 1.37 [SHR-32] The share server's limit for a link's 근무 설정 (a recipe of 근무 꾸미기·알람·근무 주기). */
+    const val KIT_CHARS = com.bamnat.core.recipe.ShareKit.KIT_CHARS
     /** Up to "0.75일 무급 휴가", as the server takes it. */
     const val LEAVE_CHARS = 12
 
@@ -249,6 +257,10 @@ object ShareLinkPayload {
         feed: java.time.ZoneId? = null,
         /** [SHR-20] The company setup file (no amounts) for a coworker's link; sent only with [ShareOptions.sendsSetup]. */
         setup: String? = null,
+        /** 1.37 [SHR-31] The 테마 as a recipe's text ([ShareContent.lookFile]); sent only with [ShareOptions.look]. */
+        look: String? = null,
+        /** 1.37 [SHR-32] The 근무 설정 as a recipe's text ([ShareContent.kitFile]); sent only with [ShareOptions.kit]. */
+        kit: String? = null,
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -323,6 +335,9 @@ object ShareLinkPayload {
             // [SHR-20] A server from before 1.33 ignores both and keeps the link as it was.
             options.audience?.let { put("audience", it.key) }
             if (options.sendsSetup && setup != null && setup.length <= SETUP_CHARS) put("setup", setup)
+            // 1.37 [SHR-31][SHR-32] A server from before 1.37 refuses neither: it drops what it does not know.
+            if (options.look && look != null && look.length <= LOOK_CHARS) put("look", look)
+            if (options.kit && kit != null && kit.length <= KIT_CHARS) put("kit", kit)
             if (options.pay && pay.isNotEmpty()) put("payKind", payKind.key)
             if (options.pay && pay.isNotEmpty()) put("pay", JSONArray().apply {
                 pay.take(6).forEach { p ->
@@ -483,10 +498,11 @@ class ShareLinkStore(
 
     /** [SHR-01] What the sharer ticked last time, used again for the next link and for 고치기. */
     fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty(),
-        ShareAudience.of(prefs.getString("audience", null)), prefs.getBoolean("setup", false))
+        ShareAudience.of(prefs.getString("audience", null)), prefs.getBoolean("setup", false), prefs.getBoolean("look", false), prefs.getBoolean("kit", false))
 
     fun saveOptions(o: ShareOptions) {
-        if (!retired) prefs.edit().putStringSet("shows", o.shows.toSet()).putString("audience", o.audience?.key).putBoolean("setup", o.setup).apply()
+        if (!retired) prefs.edit().putStringSet("shows", o.shows.toSet()).putString("audience", o.audience?.key).putBoolean("setup", o.setup)
+            .putBoolean("look", o.look).putBoolean("kit", o.kit).apply()
     }
 
     /**

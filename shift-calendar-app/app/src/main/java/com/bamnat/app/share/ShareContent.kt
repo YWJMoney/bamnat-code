@@ -6,6 +6,7 @@ import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.pay.named
 import com.bamnat.core.memo.MemoSharing
 import com.bamnat.core.pay.PayCalculator
+import com.bamnat.core.recipe.ShareKit
 import com.bamnat.core.work.MoneyShare
 import com.bamnat.core.work.MoneyShareFigures
 import kotlinx.coroutines.Dispatchers
@@ -31,7 +32,10 @@ object ShareContent {
             val jobs = if (options.jobs) jobs(c, from, calendar) else emptyMap()
             val zone = Today.zone().takeIf { feed && c.featureGate.allows(com.bamnat.app.tier.Feature.ICS_FEED) }
             val setup = if (options.sendsSetup && setupInLink(c, calendar)) setupFile(c, calendar) else null
-            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup)
+            val open = lookInLink(c)
+            val look = if (options.look && open) lookFile(c, title) else null
+            val kit = if (options.kit && open) kitFile(c, calendar, title, withCycle = setup == null) else null
+            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit)
         }
 
     /**
@@ -40,6 +44,39 @@ object ShareContent {
      */
     fun setupInLink(c: AppContainer, calendar: String = PersonalCalendar.MAIN): Boolean =
         c.companyFits(calendar, needsServer = false) && runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_SETUP) }.getOrDefault(false)
+
+    /** 1.37 [SHR-31][SHR-32] A link may carry the 테마 and the 근무 설정 from 처리방침 3.11's date (`share.look`, LEGAL). */
+    fun lookInLink(c: AppContainer): Boolean =
+        runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK) }.getOrDefault(false)
+
+    /**
+     * 1.37 [SHR-31] The look on the phone as a theme (looks only, [com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS]), without its
+     * pictures ([com.bamnat.core.recipe.LookParts.withoutPhotos]: family photos stay on this phone); null when the look is the app's own
+     * or too big for a link.
+     */
+    suspend fun lookFile(c: AppContainer, title: String): String? = runCatching {
+        // PC 3차: with no theme worn it is the sender's own look, not a 테마; a worn theme keeps its name.
+        val name = c.wardrobe.wornTitle()?.take(30)
+            ?: title.trim().take(20).let { if (it.isEmpty()) "보낸 분의 달력 모양" else "${it} 님의 달력 모양" }
+        val r = com.bamnat.core.recipe.LookParts.withoutPhotos(c.wardrobe.myLookRecipe(name))
+        ShareKit.lookText(r)
+    }.getOrNull()
+
+    /**
+     * 1.37 [SHR-32] The calendar's 근무 설정 as a recipe ([ShareKit.KINDS]): 근무 이름·글자·색, the alarms before each kind of shift and,
+     * for the main calendar of 교대·일근 [withCycle], the 근무 주기 (shifts, times and order) with no pay part at all. Never 급여 규칙,
+     * 기본급, an amount, a memo or a photo. Null when there is nothing to send.
+     */
+    suspend fun kitFile(c: AppContainer, calendar: String, title: String, withCycle: Boolean = true): String? = runCatching {
+        val style = c.scopeOf(calendar).currentSettings().workStyle
+        val pieces = ShareKit.kindsFor(style, calendar == PersonalCalendar.MAIN && withCycle).mapNotNull { k ->
+            val values = if (k == com.bamnat.core.recipe.PieceKind.COMPANY) mapOf("setup" to c.companyShare.exportForServer(cycleOnly = true).toString())
+                else c.recipes.pieces.export(k, calendar)
+            values?.filterValues { it != null }?.takeIf { it.isNotEmpty() }?.let { com.bamnat.core.recipe.Piece(k, it) }
+        }
+        val name = title.trim().take(20).let { if (it.isEmpty()) "보낸 분의 근무 설정" else "${it}의 근무 설정" }
+        ShareKit.kitText(com.bamnat.core.recipe.Recipe(name, "근무 설정", "", style?.let { setOf(it) } ?: com.bamnat.core.work.WorkStyle.entries.toSet(), pieces = pieces))
+    }.getOrNull()
 
     /** [SHR-20] The calendar's company setup as a coworker's file has it, without amounts (회사 공통 정액 as the 광장 has it). */
     suspend fun setupFile(c: AppContainer, calendar: String = PersonalCalendar.MAIN): String? {

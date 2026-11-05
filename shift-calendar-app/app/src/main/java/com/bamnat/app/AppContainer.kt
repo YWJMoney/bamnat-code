@@ -452,7 +452,8 @@ class AppContainer(context: Context) {
         val calendar = remoteConfig.current.calendar
         val installed = installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate()
         val today = com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)
-        return listOf(com.bamnat.core.ops.PolicyConsent.VERSION, com.bamnat.core.ops.PolicyConsent.LAUNCH_VERSION)
+        // 1.37: 3.11 (테마·근무 설정 in a link) too; one yes to it counts for 3.9 and 3.1.
+        return listOf(com.bamnat.core.ops.PolicyConsent.ASK_VERSION, com.bamnat.core.ops.PolicyConsent.VERSION, com.bamnat.core.ops.PolicyConsent.LAUNCH_VERSION)
             .any { calendar.holds(it, installed, remoteConfig.agreed.value, today) == true }
     }
     /**

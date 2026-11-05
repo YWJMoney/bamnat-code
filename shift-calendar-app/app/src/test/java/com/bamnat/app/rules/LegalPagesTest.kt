@@ -436,6 +436,29 @@ class LegalPagesTest {
         assertTrue(terms.contains("테마 옷장(테마 10벌 저장, 광고·기간 없이)"))
     }
 
+    /**
+     * 1.37 [SHR-31][SHR-32] 3.11 (사용자 2026-11-04 "11월10일로 맞춰서"): a 근무표 링크's 내 테마·근무 설정 start on 정식 출시일 like
+     * 3.9's items; a phone installed before 3.11 was posted keeps 12-04 without its yes. The card asks for 3.11, which counts for 3.9 and 3.1.
+     */
+    @Test fun policy311NamesTheThemeAndSettingsInALink() {
+        val policy = File(site, "privacy/index.html")
+        assumeTrue(policy.exists())
+        val text = policy.readText()
+        val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.11")!!
+        assertTrue(v.effective == java.time.LocalDate.of(2026, 11, 10) && v.holdEnds == java.time.LocalDate.of(2026, 12, 4))
+        assertTrue(text.contains("처리방침 3.11 · 앱 버전 1.37.0 기준 · 게시일 2026년 11월 4일 · 시행일 2026년 11월 10일"))
+        assertTrue("3.11 is the newest version line", text.indexOf("처리방침 3.11 ·") < text.indexOf("처리방침 3.10 ·"))
+        assertTrue(text.contains("이용자가 ‘내 테마’를 고른 링크만") && text.contains("이용자가 ‘근무 설정’을 고른 링크만"))
+        assertTrue(text.contains("공유 서버는 급여 부분이 든 근무 설정을 받지 않음"))
+        val flag = com.bamnat.core.flags.FlagCatalog.of(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK)!!
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Date && it.policy == "3.11" })
+        assertTrue(flag.conditions.any { it is com.bamnat.core.flags.Condition.Policy && it.version == "3.11" })
+        assertFalse(flag.default)
+        assertEquals("3.11", com.bamnat.core.ops.PolicyConsent.ASK_VERSION)
+        assertTrue(com.bamnat.core.flags.PolicyCalendar.agreedAtLeast(setOf("3.11"), "3.9"))
+        assertTrue(com.bamnat.core.flags.PolicyCalendar.agreedAtLeast(setOf("3.11"), "3.1"))
+    }
+
     /** 1.36 842 (수익 2판·3판): no banner, the four bundles' 7 days, the 1년 이용권 and the trial on the yearly plan only, in both pages. */
     @Test fun the136MoneyWaysAreInThePolicyAndTerms() {
         val policy = File(site, "privacy/index.html")
