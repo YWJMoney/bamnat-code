@@ -325,10 +325,18 @@ private class WheelFling(
  * [TIME-03] "끝 18:30 → 07:30으로 바뀌어요" when [now] differs from [was], null when it is the same. [part] names
  * which time ("시작", "끝"), or null for a window with one time.
  */
-internal fun timeChangeNote(part: String?, was: LocalTime, now: LocalTime): String? {
-    if (was.hour == now.hour && was.minute == now.minute) return null
+internal fun timeChangeNote(part: String?, was: LocalTime, now: LocalTime): String? =
+    timeChangeNote(listOf(Triple(part, was, now)))
+
+/**
+ * [TIME-03] Several times in one line, so two changes do not push the wheels down: "시작 07:00 → 08:00 · 끝 18:30 →
+ * 19:00으로 바뀌어요". Only the changed ones; null when none changed.
+ */
+internal fun timeChangeNote(changes: List<Triple<String?, LocalTime, LocalTime>>): String? {
     val clock = { t: LocalTime -> "%02d:%02d".format(t.hour, t.minute) }
-    return (part?.let { "$it " } ?: "") + "${clock(was)} → ${clock(now)}으로 바뀌어요"
+    val changed = changes.filter { (_, was, now) -> was.hour != now.hour || was.minute != now.minute }
+    if (changed.isEmpty()) return null
+    return changed.joinToString(" · ") { (part, was, now) -> (part?.let { "$it " } ?: "") + "${clock(was)} → ${clock(now)}" } + "으로 바뀌어요"
 }
 
 /**
@@ -343,6 +351,7 @@ internal fun TimeChangeLine(text: String?, modifier: Modifier = Modifier) {
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
         textAlign = TextAlign.Center,
-        modifier = modifier.fillMaxWidth().padding(vertical = 2.dp),
+        // The held empty line is not read out, so TalkBack does not stop on a blank (PC 6ed1650c).
+        modifier = modifier.fillMaxWidth().padding(vertical = 2.dp).then(if (text == null) Modifier.clearAndSetSemantics {} else Modifier),
     )
 }

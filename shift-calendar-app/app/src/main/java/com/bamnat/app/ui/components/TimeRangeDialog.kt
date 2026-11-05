@@ -31,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.FitText
@@ -132,11 +134,11 @@ fun TimeRangeDialog(
                 // [TIME-03] Which times 완료 will change, so a wheel turned by a stray flick shows before it is kept
                 // (the shift editor keeps what the window returns when the user goes back).
                 // The line keeps its place when nothing changed, so the wheels do not jump (PC a9bcce14).
-                val changes = listOfNotNull(
-                    timeChangeNote("시작", initial.start, range.start),
-                    timeChangeNote("끝", initial.end, range.end),
+                // Both changes share one line, so changing start and end does not push the wheels down either.
+                TimeChangeLine(
+                    timeChangeNote(listOf(Triple("시작", initial.start, range.start), Triple("끝", initial.end, range.end))),
+                    Modifier.padding(bottom = 4.dp),
                 )
-                TimeChangeLine(changes.joinToString("\n").ifEmpty { null }, Modifier.padding(bottom = 4.dp))
                 if (part == TimeRangePart.BREAK) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         MinutesStepper(minutes = breakMin, onChange = { breakMin = it }, step = 10, max = maxBreakMinutes, dialogTitle = "휴게 시간")
@@ -206,7 +208,9 @@ private fun PartTab(name: String, value: String, selected: Boolean, modifier: Mo
         modifier = modifier
             .heightIn(min = 56.dp)
             .clip(MaterialTheme.shapes.medium)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick)
+            // [TIME-03] Said out loud too (PC 6ed1650c found no selected state on the tabs).
+            .semantics { stateDescription = if (selected) "선택됨" else "선택 안 됨" },
     ) {
         Column(Modifier.padding(horizontal = 6.dp, vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             FitText(name, style = MaterialTheme.typography.labelMedium)
