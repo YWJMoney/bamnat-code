@@ -49,7 +49,7 @@ test("[FLAG-34] the server's flag book is core's: same rows, words, conditions, 
   assert.equal(FLAG_CATALOG, CORE_FLAGS, "index.js serves the generated book itself");
   for (const f of CORE_FLAGS) {
     assert.deepEqual(L.checkConditions(f.conditions).list, f.conditions, `${f.key}: conditions as the editor writes them back`);
-    assert.ok(["money", "type", "law", "server", "stats"].includes(f.group), `${f.key} group`);
+    assert.ok(["money", "type", "law", "server", "stats", "phase3"].includes(f.group), `${f.key} group`);
   }
   // The developer app's evaluator names conditions the way the phone's 진단 screen does.
   assert.deepEqual(L.CONSENT_NAMES, CORE_NAMES.consent);

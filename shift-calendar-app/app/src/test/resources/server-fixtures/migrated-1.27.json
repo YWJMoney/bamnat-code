@@ -33,6 +33,33 @@
         "maxApp": null,
         "confirmed": {}
       },
+      "team.leader": {
+        "force": null,
+        "why": "",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {}
+      },
+      "boss.payroll": {
+        "force": null,
+        "why": "",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {}
+      },
+      "health.compare": {
+        "force": null,
+        "why": "",
+        "conditions": null,
+        "until": null,
+        "minApp": null,
+        "maxApp": null,
+        "confirmed": {}
+      },
       "plaza.write": {
         "force": "off",
         "why": "",
