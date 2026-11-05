@@ -257,9 +257,12 @@ class BackupManager(
     /** The backup as one JSON text, without the photos (those go in the file of [exportFile]). */
     suspend fun export(): String = db.withTransaction { exportNow().toString(1) }
 
+    /** 1.38 [P3-01] The backup as it goes in a file sealed with a password: [export] plus the 사업장·직원 rows ([PhaseThreeBackup]). */
+    suspend fun exportSealed(): String = db.withTransaction { exportNow(sealed = true).toString(1) }
+
     /** [REL-15] The backup and the photo files that go with it, read in one transaction. */
-    private suspend fun exportWithPhotos(): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
-        val root = exportNow()
+    private suspend fun exportWithPhotos(sealed: Boolean = false): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
+        val root = exportNow(sealed)
         // [BACK-01] The photos the records point at, unless the user keeps them on the phone only.
         val files = if (settings.current.backupPhotos) photos?.let { p -> photoNames(root).let { (r, c) -> p.files(r, c) } }.orEmpty() else emptyList()
         root.toString(1) to files
@@ -270,7 +273,8 @@ class BackupManager(
      * when there is one. Photos stream from their files; [out] stays open.
      */
     suspend fun exportFile(out: java.io.OutputStream, password: CharArray? = null) {
-        val (json, files) = exportWithPhotos()
+        // 1.38 [P3-01] Only a file sealed with a password carries the 사업장·직원 rows.
+        val (json, files) = exportWithPhotos(sealed = password != null)
         if (password == null) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { BackupArchive.write(out, json, files) }
             return
@@ -286,7 +290,7 @@ class BackupManager(
 
     /** [PROV-03][REL-15] [exportFile] with a key kept by 자동 백업; the file opens with the password the key came from. */
     suspend fun exportFileWithKey(out: java.io.OutputStream, key: ByteArray, salt: ByteArray, iterations: Int) {
-        val (json, files) = exportWithPhotos()
+        val (json, files) = exportWithPhotos(sealed = true)
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { writeSealed(out, json, files, key, salt, iterations) }
     }
 
@@ -443,7 +447,7 @@ class BackupManager(
         }
     }
 
-    private suspend fun exportNow(): JSONObject {
+    private suspend fun exportNow(sealed: Boolean = false): JSONObject {
         val root = JSONObject()
             .put("app", APP_ID)
             .put("format", FORMAT_VERSION)
@@ -498,6 +502,9 @@ class BackupManager(
         // [FIT-02] Parts and tools added to a calendar they do not suit.
         guide?.let { root.put("featuresAdded", it.exportAdded()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
+        // 1.38 [P3-01] 리더 팀 근무표 always; 사업장·직원 only in a sealed file.
+        PhaseThreeBackup.putTeams(db, root)
+        if (sealed) PhaseThreeBackup.putWorkplaces(db, root)
         dutyCodes()?.let { d -> root.put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }
         shareLinks?.let { root.put("shareLinks", it.export()) }
@@ -917,8 +924,12 @@ class BackupManager(
             val back = added.map { it.cal.id }.toSet()
             calendars.calendars.value.filter { !it.isMain && it.id !in back }.forEach { cal -> runCatching { recordsTrash()?.beforeDelete(cal.id) } }
         }
+        // 1.38 [P3-01] Read before anything changes; a backup without them leaves the phone's own.
+        val leaderTeams = PhaseThreeBackup.readTeams(root)
+        val workplaces = PhaseThreeBackup.readWorkplaces(root)
         writing.set(true)
         db.withTransaction {
+            PhaseThreeBackup.write(db, leaderTeams, workplaces)
             writeMoney(db, money)
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
             sleep?.let { list -> db.sleepDao().clear(); list.forEach { db.sleepDao().insert(it) } }

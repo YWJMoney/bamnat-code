@@ -432,6 +432,9 @@ private fun DayGroups(
                         val flow = remember(snapshot, settings, log, now, date == today) {
                             if (date == today && settings.sleepTips) vm.todayFlow(snapshot, settings, log, now) else null
                         }
+                        // 1.38 [HLTH-01] 계획 대 실제, only while health.compare is on (Phase 3, 꺼진 채).
+                        val flagsNow by vm.flagStates.collectAsStateWithLifecycle()
+                        val compare = remember(snapshot, settings, log, date, flagsNow) { vm.planVsActual(snapshot, date, settings, log) }
                         DayGroup(
                             title = "몸", icon = Icons.Outlined.Bedtime,
                             summary = rest.firstOrNull()?.kind?.label ?: flow?.line ?: tipSummary(tips, date) ?: "수면 기록",
@@ -441,7 +444,7 @@ private fun DayGroups(
                             if (rest.isNotEmpty()) RestWarning(rest)
                             if (settings.sleepTips) {
                                 SleepSection(date = date, today = today, now = now, flow = flow, tips = tips, log = log,
-                                    targetMinutes = settings.sleepTargetMinutes, health = health,
+                                    targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare,
                                     onAsleep = vm::fellAsleep, onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
                             }
                         }
@@ -1273,6 +1276,7 @@ private fun SleepSection(
     log: List<com.bamnat.core.sleep.SleepEntry>,
     targetMinutes: Int,
     health: com.bamnat.app.sleep.HealthSleep.State,
+    compare: List<com.bamnat.core.sleep.PlanVsActual.Night> = emptyList(),
     onAsleep: () -> Unit,
     onAwake: () -> Unit,
     onWokeAt: (java.time.LocalDateTime) -> Unit,
@@ -1300,6 +1304,15 @@ private fun SleepSection(
                     Text("${tip.text} · ${tip.basis.label}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        }
+        // 1.38 [HLTH-01][P3-04] What the night was against its plan: "계획만큼" or how much less, never a diagnosis.
+        for (n in compare) {
+            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                Text("${n.kind.label} · ${n.verdict.label}", style = MaterialTheme.typography.bodyMedium,
+                    color = if (n.verdict == com.bamnat.core.sleep.PlanVsActual.Verdict.SHORT) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                Text(n.line + if (n.measured) " · 워치·휴대폰이 잰 잠" else "", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (tips.isNotEmpty()) {

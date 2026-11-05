@@ -28,8 +28,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AppliedRecipeEntity::class, RecipeDraftEntity::class,
         // 1.37 [LEDH-11][LEDH-13] Version 25: 모으기·세금 봉투.
         EnvelopeEntity::class, EnvelopeMoveEntity::class,
+        // 1.38 [P3-01] Version 27: Phase 3 리더 팀 근무표와 사장님 급여 대장 (꺼진 채).
+        TeamEntity::class, TeamMemberEntity::class, TeamCellEntity::class, TeamMonthEntity::class,
+        WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
     ],
-    version = 26,
+    version = 27,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -48,6 +51,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun leaveNoticeDao(): LeaveNoticeDao
     abstract fun taxDao(): TaxDao
     abstract fun recipeDao(): RecipeDao
+    abstract fun teamDao(): TeamDao
+    abstract fun payrollDao(): PayrollDao
 
     companion object {
         /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
@@ -66,8 +71,42 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
-                MIGRATION_25_26,
+                MIGRATION_25_26, MIGRATION_26_27,
             )
+
+        /**
+         * 1.38 [P3-01] Version 27 (Phase 3 설계 1-3): 팀(team·team_member·team_cell·team_month)과 사업장(workplace·staff·staff_work·
+         * payroll_month·payroll_line), new tables only.
+         */
+        val MIGRATION_26_27 = object : Migration(26, 27) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `leaderName` TEXT NOT NULL, " +
+                    "`shifts` TEXT NOT NULL, `need` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `archived` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team_member` (`id` TEXT NOT NULL, `teamId` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                    "`role` TEXT NOT NULL, `skill` TEXT NOT NULL, `colorArgb` INTEGER, `sort` INTEGER NOT NULL, `linkId` TEXT, `linkToken` TEXT, " +
+                    "`active` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_team_member_teamId` ON `team_member` (`teamId`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team_cell` (`teamId` TEXT NOT NULL, `memberId` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, " +
+                    "`shiftId` INTEGER NOT NULL, `source` TEXT NOT NULL, `locked` INTEGER NOT NULL, PRIMARY KEY(`memberId`, `epochDay`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_team_cell_teamId_epochDay` ON `team_cell` (`teamId`, `epochDay`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team_month` (`teamId` TEXT NOT NULL, `month` TEXT NOT NULL, `state` TEXT NOT NULL, " +
+                    "`version` INTEGER NOT NULL, `confirmedAt` INTEGER, `confirmed` TEXT NOT NULL, PRIMARY KEY(`teamId`, `month`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `workplace` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `fivePlus` INTEGER, `payday` INTEGER, " +
+                    "`legalBreaks` INTEGER NOT NULL, `weekStart` INTEGER NOT NULL, `teamId` TEXT, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `staff` (`id` TEXT NOT NULL, `workplaceId` TEXT NOT NULL, `name` TEXT NOT NULL, `form` TEXT NOT NULL, " +
+                    "`base` INTEGER NOT NULL, `allowances` TEXT NOT NULL, `hiredOn` INTEGER, `leftOn` INTEGER, `birth` INTEGER, `job` TEXT NOT NULL, " +
+                    "`insurance` TEXT NOT NULL, `weeklyHolidayPay` INTEGER NOT NULL, `weekly` TEXT NOT NULL, `memberId` TEXT, `sort` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`id`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_staff_workplaceId` ON `staff` (`workplaceId`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `staff_work` (`staffId` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, `kind` TEXT NOT NULL, " +
+                    "`startMinute` INTEGER, `endMinute` INTEGER, PRIMARY KEY(`staffId`, `epochDay`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `payroll_month` (`workplaceId` TEXT NOT NULL, `month` TEXT NOT NULL, `state` TEXT NOT NULL, " +
+                    "`rateVersion` TEXT NOT NULL, `closedAt` INTEGER, PRIMARY KEY(`workplaceId`, `month`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `payroll_line` (`workplaceId` TEXT NOT NULL, `month` TEXT NOT NULL, `staffId` TEXT NOT NULL, " +
+                    "`gross` INTEGER NOT NULL, `items` TEXT NOT NULL, `method` TEXT NOT NULL, `deduct` TEXT NOT NULL, `net` INTEGER, `paidAt` INTEGER, " +
+                    "`slipSentAt` INTEGER, PRIMARY KEY(`workplaceId`, `month`, `staffId`))")
+            }
+        }
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
         val MIGRATION_1_2 = object : Migration(1, 2) {

@@ -112,7 +112,9 @@ import com.bamnat.core.time.Today
 class SleepViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
 
-    data class State(val log: List<SleepEntry>, val report: SleepInsights.Report, val today: LocalDate)
+    /** 1.38 [HLTH-01] [compare]: the last 4 weeks of 계획 대 실제, null while `health.compare` is off (Phase 3, 꺼진 채). */
+    data class State(val log: List<SleepEntry>, val report: SleepInsights.Report, val today: LocalDate,
+        val compare: com.bamnat.core.sleep.PlanVsActual.Summary? = null)
 
     val state: StateFlow<State?> = combine(
         container.sleepRepository.recent(days = SleepInsights.WINDOW_DAYS + SleepDebt.WINDOW_DAYS),
@@ -120,10 +122,14 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         // [SRCH-13] 1.29 AS: the shared reading (live), not a whole-history read of its own.
         container.scheduleRepository.live,
         settings,
-    ) { manual, measured, snapshot, s ->
+        container.flags.byKey,
+    ) { manual, measured, snapshot, s, flags ->
         val log = SleepMerge.merge(manual, measured)
         val today = Today.date()
-        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes), today)
+        val compare = if (flags[com.bamnat.core.flags.FlagCatalog.HEALTH_COMPARE]?.on != true) null else com.bamnat.core.sleep.PlanVsActual.summary(
+            com.bamnat.core.sleep.PlanVsActual.nights(log, snapshot.resolver, today.minusDays(com.bamnat.core.sleep.PlanVsActual.WINDOW_DAYS - 1), today,
+                s.alarmsEnabled, s.sleepTargetMinutes, s.commuteMinutes))
+        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes), today, compare)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val health = container.healthSleep.state
@@ -230,6 +236,7 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
             WeekTiles(r, target)
             if (r.findings.isNotEmpty()) Findings(r.findings)
             Groups(r, target)
+            s.compare?.let { PlanCompare(it) }
         }
         val history: @Composable ColumnScope.() -> Unit = {
             Bars(s.log, s.today, target)
@@ -264,6 +271,30 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
             editing = null
             vm.edit(e, start, end)
         }
+    }
+}
+
+/**
+ * 1.38 [HLTH-01][P3-04] 계획 대 실제 (Phase 3 M23): the last 4 weeks' planned sleeps against what was recorded, newest first.
+ * "견주기" only: no 예측, no 진단 (설계 2-3 위험). Shown while `health.compare` is on.
+ */
+@Composable
+private fun PlanCompare(sum: com.bamnat.core.sleep.PlanVsActual.Summary) {
+    SectionCard(title = "근무에 맞춘 계획과 실제 잠") {
+        Text(sum.headline ?: "계획한 잠을 ${com.bamnat.core.sleep.PlanVsActual.MIN_FOR_SUMMARY}번 넘게 기록하면 4주 평균을 보여 줘요",
+            style = MaterialTheme.typography.titleSmall)
+        sum.afterNightDiff?.takeIf { sum.enough }?.let { d ->
+            Text(if (d < 0) "야간 뒤 잠은 계획보다 평균 ${SleepInsights.hours(-d)} 적어요" else "야간 뒤 잠은 계획만큼이에요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        val recent = sum.nights.filter { it.verdict != com.bamnat.core.sleep.PlanVsActual.Verdict.NO_RECORD }.sortedByDescending { it.planFrom }.take(6)
+        for (n in recent) {
+            Text("${Fmt.monthDay(n.date)} ${n.kind.label} · ${n.verdict.label}", style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 6.dp))
+            Text(n.line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text("근무와 알람으로 잡은 계획 잠과 워치·휴대폰이 잰 잠(또는 적은 잠)을 휴대폰 안에서 견줘요. 저장하거나 보내지 않아요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
     }
 }
 

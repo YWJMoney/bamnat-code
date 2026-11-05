@@ -99,6 +99,8 @@ class AppContainer(context: Context) {
         s.cleaned(list.map { it.id })
     })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
+    /** 1.38 [P3-01] Phase 3: 리더 팀 근무표와 사업장 급여 대장 (DB 27), used only while their flags are on. */
+    val phaseThree = com.bamnat.app.data.PhaseThreeStore(database)
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
     val consentStore by lazy { com.bamnat.app.data.ConsentStore(appContext) }
     /** [ALRM-04] 증명 사진's reference fingerprints. */

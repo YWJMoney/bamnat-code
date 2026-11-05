@@ -435,6 +435,43 @@ class MigrationTest {
     }
 
     /**
+     * 1.38 [P3-01] A version 25 phone goes up through 26 (가계부) to 27 (Phase 3) with its data as it was, and the new 팀·사업장
+     * tables start empty and take rows: a team with its cells and a 사업장 with a staff member and a changed day.
+     */
+    @Test
+    fun version25GoesUpThrough26To27() = runBlocking {
+        val name = "migration-25-27.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 25)
+        sql.execSQL("INSERT INTO money_accounts (id, name, type, last4, payDay, closeDay, payFromId, opening, color, sortOrder, hidden, remind) " +
+            "VALUES (1, '신한 Deep', 'CREDIT', '1234', 14, NULL, NULL, 0, 0, 0, 0, 1)")
+        sql.version = 25
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            assertEquals(27, db.openHelper.writableDatabase.version)
+            assertEquals("신한 Deep", db.moneyDao().allAccounts().single().name)
+            assertTrue(db.teamDao().teams().isEmpty() && db.payrollDao().workplaces().isEmpty())
+            db.teamDao().upsertTeam(TeamEntity("t", "7병동 A팀", "", "[]", "", 1, false))
+            db.teamDao().upsertMembers(listOf(TeamMemberEntity("m", "t", "민지", "책임", "CHARGE", null, 0, null, null, true)))
+            db.teamDao().replaceMonth("t", 20759, 20788, listOf(TeamCellEntity("t", "m", 20760, 1, "MANUAL", false)))
+            assertEquals(1L, db.teamDao().cells("t", 20759, 20788).single().shiftId)
+            db.payrollDao().upsertWorkplace(WorkplaceEntity("p", "우리 카페", true, 10, true, 1, null, 1))
+            db.payrollDao().upsertStaff(StaffEntity("s", "p", "준호", "HOUR", 10_320, "[]", null, null, null, "", "{}", true, "{}", null, 0))
+            db.payrollDao().upsertWork(StaffWorkEntity("s", 20760, "ABSENT", null, null))
+            assertEquals("ABSENT", db.payrollDao().work().single().kind)
+            db.payrollDao().deleteStaff("s")
+            assertTrue(db.payrollDao().work().isEmpty())
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /**
      * 1.38 [LEDH-25][LEDH-27] A version 25 account comes through version 26 (and on, through 1.38 Phase 3's 27) as it was:
      * 이자 없음, 매달 갚는 돈 없음, 실적 구간 없음. A loan and a card's 실적 구간 then save and read back.
      */
