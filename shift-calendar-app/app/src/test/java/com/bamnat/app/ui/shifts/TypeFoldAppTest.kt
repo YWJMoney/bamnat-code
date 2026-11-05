@@ -244,12 +244,21 @@ class TypeFoldAppTest {
         repo.changePatternFrom(com.bamnat.core.model.WorkPattern.Weekly(today.plusDays(1),
             java.time.DayOfWeek.entries.associateWith { d -> day.takeIf { d.value >= 6 } }), today.plusDays(1))
         val hourly = repo.patterns.first()
+        repo.addHourlyTypes()
         TypeFoldAsk.asking.value = null
         TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.HOURLY, WorkStyle.DAY)
         assertEquals("월~금이 돌아와요", dayWork, repo.patterns.first())
+        // 1.37 PC 62a56fdb: the 알바 kinds' 접어 두기 does not stop the 월~금 that just came back.
+        val ask = TypeFoldAsk.asking.value!!
+        assertTrue(ask.resumed)
+        org.junit.Assert.assertFalse(TypeFoldAsk.stops(ask, repo.patterns.first(), today))
         TypeFoldAsk.asking.value = null
         TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.DAY, WorkStyle.HOURLY)
         assertEquals("토·일이 돌아와요", hourly.last(), repo.patterns.first().last())
+        org.junit.Assert.assertFalse(TypeFoldAsk.asking.value?.let { TypeFoldAsk.stops(it, repo.patterns.first(), today) } ?: false)
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.HOURLY, WorkStyle.DAY)
+        assertEquals("두 번째도 월~금이 돌아와요", dayWork.last(), repo.patterns.first().last())
         TypeFoldAsk.asking.value = null
         WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
         repo.clearPattern()

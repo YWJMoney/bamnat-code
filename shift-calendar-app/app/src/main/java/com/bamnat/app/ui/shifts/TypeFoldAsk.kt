@@ -27,7 +27,16 @@ object TypeFoldAsk {
     data class Ask(
         val calendar: String, val types: List<ShiftType>, val from: WorkStyle, val to: WorkStyle,
         val adds: List<ShiftType> = emptyList(), val empty: Boolean = false,
+        /** The new work's own stopped schedule just came back: what goes on after today is its, not the old work's. */
+        val resumed: Boolean = false,
     )
+
+    /**
+     * Whether 접어 두기 of [a] also stops the schedule going on after today. 1.37 PC 62a56fdb (일근 → 알바 → 일근에서 월~금이 안
+     * 돌아옴): the 일근 월~금 brought back is days of the week like an 알바's, and 접어 두기 of the 알바 kinds stopped it again.
+     */
+    fun stops(a: Ask, patterns: List<com.bamnat.core.model.WorkPattern>, today: java.time.LocalDate): Boolean =
+        !a.resumed && stopsCycle(a.from, a.to) && ownSchedule(a.from, going(patterns, today))
 
     /** 1.36 PC 재검토 (접었는데 남는 근무가 없으면 다 보여서 접힌 모습을 못 봐요): the 근무 a kind of work starts with, to put in. */
     fun startTypes(style: WorkStyle): List<ShiftType> = when (style) {
@@ -100,9 +109,10 @@ object TypeFoldAsk {
      * [SETUP-16] 1.37 PC b98f9d1e: back to work with a cycle (교대·일근·알바), the one [stopCycle] stopped comes back as it was, when
      * nothing was changed in it since. The days between went on being the other work's (written by hand, they stay as written).
      */
-    suspend fun resume(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle) {
+    /** Brings [to]'s stopped schedule back; true when it did. */
+    suspend fun resume(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle): Boolean {
         // 1.37 PC 0068727b: only the kind of work it was stopped from takes it back (교대's 주간·야간 are not an 알바's days).
-        val stopped = c.foldedTypes.stopped(calendar, to) ?: return
+        val stopped = c.foldedTypes.stopped(calendar, to) ?: return false
         c.foldedTypes.stop(calendar, to, null)
         val repo = c.calendars.repository(calendar)
         val now = repo.patterns.first()
@@ -111,12 +121,13 @@ object TypeFoldAsk {
         // 1.37 PC 978d10f1 MED-2 (일근 → 알바 → 일근에서 월~금이 안 돌아옴): the 알바's own days saved meanwhile are days of the week
         // too, but the 알바's, not set again by hand for 일근; only a schedule of another kind than the work left counts as by hand.
         val sameKind = fromOwn && (from == WorkStyle.SHIFT) == (to == WorkStyle.SHIFT)
-        if (!sameKind && madeByHand(now, stopped)) return
+        if (!sameKind && madeByHand(now, stopped)) return false
         // 1.37 PC 67d13335: the schedule it replaces is kept for its own kind of work too (일근's 월~금 back when 일근 comes back).
         if (fromOwn && c.foldedTypes.stopped(calendar, from!!) == null) {
             c.foldedTypes.stop(calendar, from, com.bamnat.app.data.FoldedTypes.StoppedCycle(today, now, from))
         }
         repo.restorePatterns(stopped.was)
+        return true
     }
 
     /**
@@ -137,7 +148,7 @@ object TypeFoldAsk {
     /** Asks when the change from [from] to [to] left kinds of day the old one started with. */
     suspend fun after(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle) {
         if (from == to) return
-        runCatching { resume(c, calendar, from, to) }
+        val resumed = runCatching { resume(c, calendar, from, to) }.getOrDefault(false)
         val types = c.calendars.repository(calendar).shiftTypes.first()
         // Back to a kind of work: what it starts with comes out of '안 쓰는 종류' by itself.
         val own = com.bamnat.app.data.FoldedTypes.startNames(to)
@@ -150,7 +161,7 @@ object TypeFoldAsk {
         if (left.isEmpty()) return
         val rest = types.filter { !it.isOff && it.id !in folded && it !in left }
         val adds = if (rest.isNotEmpty()) emptyList() else startTypes(to).filter { t -> types.none { it.name == t.name } }
-        asking.value = Ask(calendar, left, from, to, adds, empty = rest.isEmpty() && adds.isEmpty())
+        asking.value = Ask(calendar, left, from, to, adds, empty = rest.isEmpty() && adds.isEmpty(), resumed = resumed)
     }
 }
 
@@ -161,8 +172,7 @@ fun TypeFoldHost(c: AppContainer) {
     val patterns by androidx.compose.runtime.produceState<List<com.bamnat.core.model.WorkPattern>>(emptyList(), a) {
         value = c.calendars.repository(a.calendar).patterns.first()
     }
-    val stops = TypeFoldAsk.stopsCycle(a.from, a.to) &&
-        TypeFoldAsk.ownSchedule(a.from, TypeFoldAsk.going(patterns, com.bamnat.core.time.Today.date()))
+    val stops = TypeFoldAsk.stops(a, patterns, com.bamnat.core.time.Today.date())
     val names = a.types.joinToString("·") { it.name }
     AlertDialog(
         onDismissRequest = { TypeFoldAsk.asking.value = null },
