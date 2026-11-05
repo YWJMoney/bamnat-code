@@ -16,6 +16,7 @@ import { insightViews } from "./admin/views/insight.js";
 import { workViews } from "./admin/views/work.js";
 // 1.37 [ADM2-01][ADM2-03] 흐름(관제)과 Claude 운영 열쇠.
 import { flowViews } from "./admin/views/flow.js";
+import { ledgerViews } from "./admin/views/ledger.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -72,7 +73,7 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews} }`;
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews}, ledger: ${ledgerViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -368,6 +369,7 @@ function adminApp(L, BUILD, M) {
     metricFrom: "", metricTo: "", inboxView: "all", versionShow: "conflict", postPick: null, ratePick: null,
     reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged", rateFilter: "review",
     // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
+    deskView: "today", deskGroup: "", deskV: "", deskQuery: "", ledgerPick: null,
     inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devPick: null, templates: null,
     // [ADMIN-16] 문의 찾기·정렬, 여러 개 고르기. [ADMIN-17] 활동 기록 거르기. 토론·보상 찾기.
     inquiryQuery: "", inquirySort: "default", inquiryPick: null, postQuery: "", rewardQuery: "",
@@ -431,6 +433,8 @@ function adminApp(L, BUILD, M) {
     home: { view: "inboxView" },
     versions: { show: "versionShow" },
     flags: { show: "flagShow", q: "flagQuery", view: "flagView" },
+    // 1.38 [DESK-02] 운영 장부의 보기·종류·판·찾기.
+    desk: { view: "deskView", group: "deskGroup", v: "deskV", q: "deskQuery" },
   };
   function paramsOf(name) {
     if (name === "audit") return { ...S.audit };
@@ -657,7 +661,12 @@ function adminApp(L, BUILD, M) {
       if (name === "flow") jobs.push(api("/flow").then(keep((d) => { S.data.flow = d; })));
       if (name === "keys") jobs.push(api("/keys").then(keep((d) => { S.data.keys = d; })));
       // 1.36 [GRW-07] 할 일함: 상태와 종류로 거른 한 대기열.
-      if (name === "work") jobs.push(api(`/work?state=${S.workState ?? "open"}${S.workGroup ? `&group=${S.workGroup}` : ""}`).then(keep((d) => { S.data.work = d; })));
+      // 1.38 [DESK-02][DESK-03] 운영 장부: 보기·종류·판·찾기로 거른 줄, 그리고 정리함에 있던 넘길 글(넘기기 칸).
+      if (name === "desk") {
+        const p = new URLSearchParams({ view: S.deskView || "today", ...(S.deskGroup ? { group: S.deskGroup } : {}), ...(S.deskV ? { v: S.deskV } : {}), ...(S.deskQuery ? { q: S.deskQuery } : {}) });
+        jobs.push(api(`/ledger?${p}`).then(keep((d) => { S.data.ledger = d; S.data.sort = { auto: d.auto ?? { fixed: false, known: false } }; })));
+        if (can("inquiries")) jobs.push(api("/inquiries/handoff").then(keep((d) => { S.data.handoff = d; })));
+      }
       // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구의 칸마다 제 목록.
       if (name === "growth") {
         const t = S.growthTab ?? "needs";
@@ -672,7 +681,6 @@ function adminApp(L, BUILD, M) {
       if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then(keep((d) => { S.data.inquiry = d; })));
       if (name === "dev" && !id) jobs.push(loadDev(n));
       // 1.35 [INBOX-01][INBOX-05] 정리함 and what is ready to go to Claude.
-      if (name === "sort") jobs.push(api("/inquiries/sort").then(keep((d) => { S.data.sort = d; })), api("/inquiries/handoff").then(keep((d) => { S.data.handoff = d; })));
       if (name === "dev" && id) jobs.push(api(`/dev/${id}`).then(keep((d) => { S.data.dev = d; })));
       // [ADMUX-30] 문의 › 자주 쓰는 답, a screen of its own now.
       if (name === "templates") jobs.push(loadTemplates({ strict: true }));
@@ -1060,15 +1068,14 @@ function adminApp(L, BUILD, M) {
    */
   const VIEWS = {
     home: () => V.homeView(),
-    // 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
-    work: () => V.workView(),
+    // 1.38 [DESK-02][DESK-03] 운영 장부(정리함·할 일함을 하나로), [GRW-04] 스튜디오 요구.
+    desk: () => V.ledgerView(),
     // 1.37 [ADM2-01] 흐름, [ADM2-03] 운영 열쇠.
     flow: () => V.flowView(),
     keys: () => V.keysView(),
     growth: () => V.growthView(),
     inquiries: (id) => (id ? inquiryView() : inquiriesView()),
     dev: (id) => (id ? devView() : devListView()),
-    sort: () => sortView(),
     templates: () => templatesView(),
     sla: () => slaView(),
     review: () => V.reviewView(),
@@ -1109,7 +1116,7 @@ function adminApp(L, BUILD, M) {
     const { name, id } = S.route;
     const d = S.data;
     return Boolean({
-      home: d.today, work: d.work, flow: d.flow, keys: d.keys, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, sort: d.sort, templates: S.templates,
+      home: d.today, desk: d.ledger, flow: d.flow, keys: d.keys, growth: d.growth, review: d.queue, inquiries: id ? d.inquiry?.id === id : d.inquiries, dev: id ? d.dev?.id === id : d.devList, templates: S.templates,
       companies: id ? d.company?.id === id : d.list, community: d.posts || d.rates || d.limits || d.village, rewards: d.rewards || d.inviteSettings, admins: d.admins, audit: d.audit,
       notices: d.notices, chores: d.ops, flags: id ? d.flag?.key === id : d.flags, metrics: d.metrics, gates: d.gates, versions: d.versions, shares: d.shares, recipes: d.recipes,
       server: S.server, adopt: S.basics, sla: S.basics, types: d.types, effects: d.effects, settings: true, account: true, more: true,
@@ -1627,86 +1634,12 @@ function adminApp(L, BUILD, M) {
 
   // ---- 개발사항 [ADMIN-10][ADMIN-11] ----
 
-  // ---- 1.35 문의 정리함 [INBOX-01]~[INBOX-07] (사용자 2026-10-30 "올인원 관리 체계") ----
+  // ---- 1.35 문의 정리함 [INBOX-01]~[INBOX-07] (사용자 2026-10-30 "올인원 관리 체계"), 1.38 [DESK-03]부터 운영 장부 안 ----
   // Every waiting question already sorted by the server into what it is (이미 고침, 개발 목록에 있음, 전에 답한 것과 같음, 자주
   // 쓰는 답, 새 문제 …) with its answer written; one tap does a card, one tap does a whole pile. Above it, 자동 대응 (owner)
   // and Claude에게 넘기기: the 개발사항 not handed over yet as one text, and 개발 결과 붙여 넣기 for what comes back.
 
-  const PILE_HELP = {
-    fixed: ["이미 고친 문제예요", "고친 버전보다 오래된 앱에서 온 문의예요. 업데이트 안내로 답해요."],
-    known: ["개발 목록에 있는 내용이에요", "같은 개발사항에 묶고, 진행 중이라고 답해요. 고치면 한 번에 알려요."],
-    again: ["고친 뒤 다시 생겼어요", "고친 버전 이후의 앱에서 온 문의예요. 개발사항을 다시 접수해요."],
-    declined: ["반려한 요청과 같아요", "반려 이유로 답해요."],
-    answered: ["전에 답한 문의와 같아요", "그때 보낸 답을 다시 보내요. 고쳐서 보내도 돼요."],
-    faq: ["자주 쓰는 답으로 충분해요", "저장해 둔 답을 보내요."],
-    new: ["새 문제·개선이에요", "비슷한 문의끼리 묶었어요. 개발사항으로 넘기면 다음 개발에 들어가요."],
-  };
-  const PILE_DO = { fixed: "답 보내기", known: "묶고 답하기", again: "다시 접수하고 답하기", declined: "답 보내기", answered: "이 답 보내기", faq: "이 답 보내기", new: "개발사항으로 넘기기" };
-  const PILE_TONE = { fixed: "good", known: "info", again: "bad", declined: "", answered: "info", faq: "info", new: "warn" };
-
-  function sortView() {
-    const d = S.data.sort;
-    if (!d) return skeleton(3);
-    const owner = S.me?.owner;
-    const order = ["new", "again", "fixed", "known", "answered", "faq", "declined"];
-    const strip = `<div class="pile-strip" role="list">${order.map((k) => d.counts[k] ? `<a role="listitem" class="pile-card ${PILE_TONE[k]}" href="#pile-${k}" data-act="sort-jump" data-key="${k}">
-        <span class="pile-n">${d.counts[k]}</span><span class="pile-name">${esc(d.names[k])}</span></a>`
-      : `<span role="listitem" class="pile-card zero"><span class="pile-n">0</span><span class="pile-name">${esc(d.names[k])}</span></span>`).join("")}</div>`;
-    const auto = `<div class="card auto-card"><div class="auto-head"><b>자동 대응</b>
-        <small>${owner ? "켜 두면 문의가 들어오는 순간 서버가 묶고 답해요. 답에는 ‘자동 정리’가 이름으로 붙어요." : "최고 관리자가 켜고 꺼요."}</small></div>
-      ${["fixed", "known"].map((k) => `<label class="switch"><input type="checkbox" data-act="sort-auto" data-key="${k}"${d.auto[k] ? " checked" : ""}${owner ? "" : " disabled"}>
-        <span class="track" aria-hidden="true"></span><span>${esc(d.names[k])}</span></label>`).join("")}</div>`;
-    const body = d.total ? order.filter((k) => d.piles[k].length).map((k) => pileSection(k, d.piles[k])).join("")
-      : empty("정리할 문의가 없어요", "답을 기다리는 문의가 모두 개발사항에 묶였거나 답했어요.");
-    // A phone shows the piles first and 자동 대응·넘기기 under them (CSS order); the strip's last card leads there.
-    const n = (S.data.handoff?.items?.length ?? 0) + (S.data.handoff?.asks ?? 0);
-    const go = `<a role="listitem" class="pile-card handoff-chip${n ? " warn" : " zero"}" href="#sort-tools" data-act="sort-jump" data-key="tools">
-        <span class="pile-n">${n}</span><span class="pile-name">Claude에게 넘길 것</span></a>`;
-    return `<div class="sort-view"><p class="hint">답을 기다리는 문의 ${d.total}건을 서버가 미리 나눠 두었어요. 카드마다 보낼 답이 적혀 있어요. 고쳐서 보내도 되고, ‘빼 두기’를 누르면 정리함에서만 빠져요.</p>
-      ${strip.replace("</div>", `${go}</div>`)}<div class="sort-top" id="sort-tools">${auto}${handoffCard()}</div>${body}</div>`;
-  }
-
-  function pileSection(k, items) {
-    const [title, help] = PILE_HELP[k];
-    const all = k === "new" || items.length < 2 ? "" : `<button class="btn small primary" data-act="sort-pile" data-key="${k}">${items.length}건 모두 ${esc(PILE_DO[k])}</button>`;
-    return `<section class="pile" id="pile-${k}" aria-labelledby="pile-${k}-h"><div class="pile-head"><div><h3 id="pile-${k}-h">${esc(title)} <span class="pill ${PILE_TONE[k]}">${k === "new" ? items.reduce((n, g) => n + g.group.length, 0) : items.length}</span></h3>
-        <small>${esc(help)}</small></div>${all}</div><ul class="rows">${items.map((x) => sortCard(k, x)).join("")}</ul></section>`;
-  }
-
-  function sortCard(k, x) {
-    const m = x.match;
-    const meta = [esc(KIND_NAMES[x.kind] ?? x.kind), esc(x.topicName ?? ""), x.app ? `앱 ${esc(String(x.app).split(" ")[0])}` : "", esc(ago(x.at)), x.same ? `나도 그래요 ${x.same}` : ""]
-      .filter(Boolean).join(" · ");
-    const matched = m ? `<small class="match">≈ ${m.type === "dev" ? `<a href="${href("dev", m.id)}">개발사항 ‘${esc(m.title)}’</a> · ${esc(DEV_NAMES[m.status] ?? "")}${m.releasedIn ? ` ${esc(m.releasedIn)}` : ""}`
-      : m.type === "inquiry" ? `<a href="${href("inquiries", m.id)}">전에 답한 문의 ‘${esc(m.title)}’</a>` : `자주 쓰는 답 ‘${esc(m.title)}’`} · 비슷함 ${Math.round(m.score * 100)}%</small>` : "";
-    const others = k === "new" && x.others?.length ? `<details><summary>같은 내용 ${x.others.length}건 더</summary><ul class="mini">${x.others.map((o) =>
-      `<li><a href="${href("inquiries", o.id)}">${esc(o.preview)}</a> <small>${esc(o.app ? String(o.app).split(" ")[0] : "")}</small></li>`).join("")}</ul></details>` : "";
-    const title = k === "new" ? `<label class="sort-field"><span>개발사항 제목</span><input id="sort-title-${x.id}" value="${esc(x.title)}" maxlength="100"></label>` : "";
-    const reply = `<label class="sort-field"><span>${k === "new" ? "함께 보낼 답 (비우면 답 없이 넘겨요)" : "보낼 답"}</span><textarea id="sort-reply-${x.id}" rows="3">${esc(x.reply ?? "")}</textarea></label>`;
-    return `<li class="sort-card"><div class="sort-ask"><b><a href="${href("inquiries", x.id)}">${esc(x.preview)}</a></b><small>${meta}</small>${matched}${others}</div>
-      <div class="sort-answer">${title}${reply}
-      <div class="actions"><button class="btn small primary" data-act="sort-do" data-key="${k}" data-id="${x.id}">${esc(k === "new" && x.group.length > 1 ? `${x.group.length}건 개발사항으로 넘기기` : PILE_DO[k])}</button>
-        ${k === "new" ? `<button class="btn small" data-act="sort-reply-only" data-id="${x.id}">답만 보내기</button>` : ""}
-        <button class="btn small ghost" data-act="sort-skip" data-id="${x.id}">빼 두기</button></div></div></li>`;
-  }
-
-  /** The action of one card as the server takes it (sortApply). */
-  function sortAction(k, x) {
-    const text = document.getElementById(`sort-reply-${x.id}`)?.value?.trim() ?? x.reply;
-    if (k === "new") {
-      const title = document.getElementById(`sort-title-${x.id}`)?.value?.trim() || x.title;
-      return { do: "dev", ids: x.group, title, body: [x.preview, ...(x.others ?? []).map((o) => o.preview)].map((t) => `- ${t}`).join("\n").slice(0, 4000), ...(text ? { text } : {}) };
-    }
-    if (k === "known") return { do: "reply", id: x.id, item: x.match.id, text };
-    if (k === "again") return { do: "reopen", id: x.id, item: x.match.id, text };
-    return { do: "reply", id: x.id, text };
-  }
-
-  async function sortApply(actions, done) {
-    const r = await act(() => api("/inquiries/sort/apply", "POST", { actions }), (r) => [r.replied && `답 ${r.replied}건`, r.linked && `묶음 ${r.linked}건`,
-      r.created?.length && `개발사항 ${r.created.length}개`, r.reopened && `다시 접수 ${r.reopened}개`, r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || done);
-    if (r) { S.data.sort = null; S.data.handoff = null; render({ keepScroll: true }); load(); }
-  }
+  // 1.38 [DESK-03] 정리함의 일곱 묶음과 카드는 운영 장부(src/admin/views/ledger.js)의 줄로 들어갔어요. 여기엔 넘기기·결과 붙여 넣기 칸만 남아요.
 
   /** [INBOX-05][INBOX-06] Claude에게 넘기기 and 개발 결과 붙여 넣기. */
   function handoffCard() {
@@ -4026,30 +3959,10 @@ function adminApp(L, BUILD, M) {
   // ---- AM 1.28 기능 관리 끝 ----
 
   const ACTIONS = {
-    // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함.
-    "sort-do": ({ key, id }) => {
-      const x = S.data.sort?.piles[key]?.find((i) => i.id === id);
-      if (x) sortApply([sortAction(key, x)], "처리했어요");
-    },
-    "sort-reply-only": ({ id }) => {
-      const x = S.data.sort?.piles.new.find((i) => i.id === id);
-      const text = document.getElementById(`sort-reply-${id}`)?.value?.trim();
-      if (!x || !text) return toast("보낼 답을 적어 주세요");
-      sortApply([{ do: "reply", id, text }], "답했어요");
-    },
+    // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: 1.38 [DESK-03] 카드 처리는 운영 장부 줄(ledger-sort·ledger-skip)로, 넘기기·자동 대응은 여기 그대로.
     // The hash is the app's route, so a pile is reached by scrolling to it, not by its address.
     // 1.35 [ADMHE-01] A phone's list toolbar: search and 큐 모드 in one line, the rest behind 정렬·더.
     "tools-toggle": () => { S.toolsOpen = !S.toolsOpen; render({ keepScroll: true }); },
-    "sort-jump": ({ key }) => document.getElementById(key === "tools" ? "sort-tools" : `pile-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" }),
-    "sort-skip": ({ id }) => sortApply([{ do: "skip", id }], "정리함에서 뺐어요"),
-    "sort-pile": ({ key }) => {
-      const items = S.data.sort?.piles[key] ?? [];
-      if (!items.length) return;
-      // Read the cards now: what the admin changed in them is what goes, not what the server first wrote.
-      const actions = items.map((x) => sortAction(key, x));
-      confirmBox(`${items.length}건 모두 ${PILE_DO[key]}`, "카드마다 적힌 답이 그대로 가요. 보낸 답은 되돌릴 수 없어요.", PILE_DO[key],
-        () => sortApply(actions, "처리했어요"), "primary");
-    },
     "sort-auto": async ({ key }, el) => {
       // The click is default-prevented, so the box springs back: the state is drawn again from the answer.
       const on = el.checked;
@@ -5594,6 +5507,8 @@ function adminApp(L, BUILD, M) {
     rewards: () => ["rewardQuery", "rewards", () => load({ quiet: true })],
     // AM 1.28 [ADMUX-21] 기능 관리 finds in the list it has.
     flags: () => ["flagQuery", "flags", async () => {}],
+    // 1.38 [DESK-02] 운영 장부: 번호·글·개발사항으로.
+    desk: () => ["deskQuery", "ledger", () => load({ quiet: true })],
   };
 
   /**
@@ -5602,12 +5517,15 @@ function adminApp(L, BUILD, M) {
    */
   const A = {
     S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
-    confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide,
+    confirmBox, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
-  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A), ...M.flow(A) };
-  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions, ...M.flow(A).actions }, forms: { ...M.plaza(A).forms, ...M.work(A).forms, ...M.flow(A).forms } });
+  const V = { ...M.today(A), ...M.plaza(A), ...M.insight(A), ...M.work(A), ...M.flow(A), ...M.ledger(A) };
+  Object.assign(V, { actions: { ...M.plaza(A).actions, ...M.work(A).actions, ...M.flow(A).actions, ...M.ledger(A).actions },
+    forms: { ...M.plaza(A).forms, ...M.work(A).forms, ...M.flow(A).forms, ...M.ledger(A).forms } });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
+  // 1.38 [DESK-02] 장부의 판 고르기(select)는 바꿀 때만.
+  CHANGES["ledger-v"] = (t) => V.actions["ledger-v"]({}, t);
 
   // toggle does not bubble, so it is caught on the way down.
   document.addEventListener("toggle", (e) => {
@@ -5854,7 +5772,7 @@ function adminApp(L, BUILD, M) {
         if (detail) return document.getElementById("reply")?.focus();
         return load();
       case "close":
-        if (S.route.name === "work" && V.workKey("done")) return stop();
+        if (S.route.name === "desk" && V.ledgerKey("done")) return stop();
         if (detail && editInq && S.data.inquiry?.status !== "closed") return ACTIONS["inquiry-state"]({ status: "closed" });
         return;
       case "reject":
@@ -5863,17 +5781,17 @@ function adminApp(L, BUILD, M) {
         return;
       // 1.36 [GRW-07] w 기다림, h 기록 (할 일함).
       case "wait":
-        if (S.route.name === "work" && V.workKey("wait")) stop();
+        if (S.route.name === "desk" && V.ledgerKey("wait")) stop();
         return;
       case "history":
-        if (S.route.name === "work" && V.workKey("log")) stop();
+        if (S.route.name === "desk" && V.ledgerKey("log")) stop();
         return;
       // AX 1.30 [ADMX-05] n: the next question waiting for an answer.
       case "next":
         stop();
         return nextWaiting();
       case "skip":
-        if (S.route.name === "work" && V.workKey("seeing")) return stop();
+        if (S.route.name === "desk" && V.ledgerKey("seeing")) return stop();
         if (S.route.name === "review") return reviewKey(null);
         if (S.queue) return queueNext(true);
         return;

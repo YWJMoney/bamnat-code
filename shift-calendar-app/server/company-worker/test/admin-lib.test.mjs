@@ -67,7 +67,8 @@ test("[ADMUX-30] six hubs: every pre-1.28 screen has a place, and an admin sees 
   assert.deepEqual(L.HUBS.map((h) => h.label), ["오늘", "문의", "광장", "출시", "분석", "관리"]);
   // 1.28 통합계획 2-2, plus 기능별 효과 (AN-D2); 1.36 [GRW-07] 할 일함, [GRW-04] 스튜디오 요구.
   // 1.37 [ADM2-01] 흐름, [ADM2-03] Claude 열쇠.
-  assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home", "flow", "work"], ["inquiries", "sort", "growth", "dev", "templates", "sla"], ["review", "versions", "community", "recipes", "companies", "shares", "adopt"],
+  // 1.38 [DESK-03] 할 일함·정리함은 운영 장부(desk) 하나로.
+  assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home", "flow", "desk"], ["inquiries", "growth", "dev", "templates", "sla"], ["review", "versions", "community", "recipes", "companies", "shares", "adopt"],
     ["flags", "types", "notices", "chores", "gates"], ["metrics", "effects", "audit"], ["admins", "keys", "rewards", "server", "account"]]);
   const tabs = L.HUBS.flatMap((h) => h.tabs);
   assert.equal(new Set(tabs).size, tabs.length, "each tab once");
@@ -77,7 +78,10 @@ test("[ADMUX-30] six hubs: every pre-1.28 screen has a place, and an admin sees 
     assert.ok(L.hubOf(old), `${old} has a hub`);
   }
   assert.deepEqual(L.visibleHubs(OWNER).map((h) => h.key), ["today", "ask", "plaza", "release", "insight", "manage"]);
-  assert.deepEqual(L.visibleHubs(ASKER).map((h) => [h.key, h.tabs]), [["today", ["home", "flow", "work"]], ["ask", ["inquiries", "sort", "growth", "templates"]], ["manage", ["account"]]]);
+  assert.deepEqual(L.visibleHubs(ASKER).map((h) => [h.key, h.tabs]), [["today", ["home", "flow", "desk"]], ["ask", ["inquiries", "growth", "templates"]], ["manage", ["account"]]]);
+  // 1.38 [DESK-03] 옛 주소: 할 일함은 열린 것 모두, 정리함은 Claude 차례의 문의로.
+  assert.equal(L.migrateHash("#/work"), "#/desk?view=open");
+  assert.equal(L.migrateHash("#/sort"), "#/desk?view=claude&group=ask");
   assert.deepEqual(L.visibleHubs(PLAZA).map((h) => h.key), ["today", "plaza", "manage"]);
   assert.deepEqual(L.visibleHubs(PLAZA).find((h) => h.key === "plaza").tabs, ["review", "versions", "community", "recipes", "companies"]);
   // 1.28 통합: 기능 관리·근무 유형 follow the flags area (the server gives it to 1.27 운영 보기 admins, SINCE.flags), so

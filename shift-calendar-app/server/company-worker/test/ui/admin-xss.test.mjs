@@ -100,7 +100,7 @@ test("[SEC-09] L3: words phones send show as words on every screen, never as mar
   const inquiry = (await call("GET", "/api/admin/inquiries", undefined, admin)).data.items?.[0]?.id;
 
   const u = await tab(env);
-  const screens = ["home", "inquiries", "sort", "growth", "dev", "templates", "sla", "review", "versions", "community", "recipes", "companies", "shares",
+  const screens = ["home", "desk", "inquiries", "growth", "dev", "templates", "sla", "review", "versions", "community", "recipes", "companies", "shares",
     "adopt", "flags", "types", "notices", "chores", "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "more",
     "community?show=all", `companies/${a.data.company.id}`, ...(inquiry ? [`inquiries/${inquiry}`] : [])];
   let seen = 0;
