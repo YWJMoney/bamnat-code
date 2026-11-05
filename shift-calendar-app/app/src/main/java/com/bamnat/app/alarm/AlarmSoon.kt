@@ -155,7 +155,7 @@ object AlarmSoon {
         }
     }
 
-    private fun action(context: Context, title: String, action: String, requestCode: Int, at: Long) =
+    internal fun action(context: Context, title: String, action: String, requestCode: Int, at: Long) =
         NotificationCompat.Action.Builder(0, title, PendingIntent.getBroadcast(
             context, requestCode,
             Intent(context, AlarmActionReceiver::class.java).setAction(action).putExtra(EXTRA_AT, at),

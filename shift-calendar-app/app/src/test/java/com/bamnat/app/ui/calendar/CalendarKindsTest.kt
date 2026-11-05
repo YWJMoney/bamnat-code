@@ -91,6 +91,26 @@ class CalendarKindsTest {
         vm.closeRestAlarms()
     }
 
+    /** [ALRM-29] A day off whose alarms were turned off, made a working day: its shift's alarm is turned on again and said. */
+    @Test fun aDayOffMadeWorkTurnsItsAlarmBackOn() {
+        val vm = CalendarViewModel(c)
+        val msgs = messagesOf(vm)
+        val day = LocalDate.of(2026, 11, 10)
+        val id = runBlocking {
+            val t = c.scheduleRepository.shiftTypes.first().first { it.id == dayShiftId() }
+            c.scheduleRepository.saveShiftType(t.copy(alarmEnabled = true, alarms = listOf(com.bamnat.core.model.AlarmSpec(60))))
+            c.settingsRepository.update { it.copy(alarmsEnabled = true) }
+            c.scheduleRepository.setOverride(day, ShiftOverride.Off)
+            c.scheduleRepository.updateDays(listOf(day)) { it.copy(alarmSkipped = true) }
+            t.id
+        }
+        settle()
+        vm.assign(day, ShiftOverride.Shift(id))
+        settle()
+        assertFalse("turned on again", stored(day)?.alarmSkipped == true)
+        assertTrue(msgs.last().message, msgs.last().message.contains("꺼 뒀던") && msgs.last().message.endsWith("알람을 켰어요"))
+    }
+
     @Test fun leaveIsPaintedOnWorkingDaysOnlyAndUndoTakesBackOnlyTheLeave() {
         val vm = CalendarViewModel(c)
         val work = LocalDate.of(2026, 11, 2)

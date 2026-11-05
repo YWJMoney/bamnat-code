@@ -212,4 +212,36 @@ class AlarmPlannerTest {
         assertEquals(8 * 60, com.bamnat.core.alarm.AlarmOffsets.offsetFor(s, LocalTime.of(14, 0), 0))
         assertNull(com.bamnat.core.alarm.AlarmOffsets.offsetFor(LocalTime.of(9, 0), LocalTime.of(9, 0), 1))
     }
+
+    /** [ALRM-29] A day off made a working day rings its shift's alarms (turned off ones are noticed), a moved shift moves them. */
+    @Test
+    fun workDaySaysWhatRingsNow() {
+        val off = start.plusDays(4) // 휴
+        val before = resolver()
+        val worked = AlarmPlanner.workDay(before, resolver(listOf(DayEntry(off, override = ShiftOverride.Shift(day.id)))), off)!!
+        assertTrue(worked.was.isEmpty())
+        assertEquals(listOf(LocalDateTime.of(2026, 10, 5, 8, 0)), worked.now.map { it.triggerAt })
+        assertFalse(worked.wasWork)
+        assertFalse(worked.skipped)
+        // Its alarms were turned off while it was a day off: still seen, marked turned off.
+        val skippedOff = resolver(listOf(DayEntry(off, alarmSkipped = true)))
+        val woke = AlarmPlanner.workDay(skippedOff, resolver(listOf(DayEntry(off, override = ShiftOverride.Shift(day.id), alarmSkipped = true))), off)!!
+        assertTrue(woke.skipped)
+        assertFalse(woke.wasWork)
+        // 주간 → 야간 on a working day: the alarm moves.
+        val moved = AlarmPlanner.workDay(before, resolver(listOf(DayEntry(start, override = ShiftOverride.Shift(night.id)))), start)!!
+        assertTrue(moved.wasWork)
+        assertEquals(LocalDateTime.of(2026, 10, 1, 8, 0), moved.was.single().triggerAt)
+        // Nothing changed, or still a day off: nothing to say.
+        assertNull(AlarmPlanner.workDay(before, before, start))
+        assertNull(AlarmPlanner.workDay(before, before, off))
+    }
+
+    /** [ALRM-29] Two days without an alarm before it make the first alarm after a break. */
+    @Test
+    fun firstAlarmAfterTwoQuietDaysIsABreak() {
+        // 10/4 야간 20:30, then 10/5·10/6 off: 10/7 08:00 comes after a break; 10/2 08:00 does not.
+        assertTrue(AlarmPlanner.afterBreak(resolver(), LocalDateTime.of(2026, 10, 7, 8, 0)))
+        assertFalse(AlarmPlanner.afterBreak(resolver(), LocalDateTime.of(2026, 10, 2, 8, 0)))
+    }
 }

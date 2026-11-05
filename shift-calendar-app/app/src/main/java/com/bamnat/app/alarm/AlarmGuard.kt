@@ -101,5 +101,63 @@ object AlarmGuard {
 
     internal fun title(time: String) = "$time 알람이 제대로 안 울릴 수 있어요"
 
+    // [ALRM-29] 1.38 (사용자 2026-11-05 '달력 상호작용을 키우자'): the first alarm after a break (휴가, 연휴: two days without one)
+    // is said the evening before, "내일부터 다시 근무예요 · 05:30 주간 근무 알람이 켜져 있어요", with 이번만 끄기 right there for
+    // a break that got longer. Under the same 알람 지킴이 switch.
+    const val ACTION_BACK = "com.bamnat.app.alarm.BACK_TO_WORK"
+    const val BACK_NOTICE_ID = 7012
+    private const val REQ_BACK = 2313
+    private const val REQ_BACK_SKIP = 2314
+    private const val EXTRA_TEXT = "text"
+
+    private fun backIntent(context: Context, at: Long, text: String?): PendingIntent = PendingIntent.getBroadcast(
+        context, REQ_BACK,
+        Intent(context, AlarmActionReceiver::class.java).setAction(ACTION_BACK).putExtra(EXTRA_AT, at).putExtra(EXTRA_TEXT, text),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
+
+    /** When to say it for an alarm at [trigger]: ten hours before, moved to 21:00 the evening before when that is the night. */
+    internal fun backAt(trigger: java.time.LocalDateTime): java.time.LocalDateTime {
+        val at = trigger.minusHours(10)
+        return if (at.hour >= 23 || at.hour < 7) (if (at.hour >= 23) at.toLocalDate() else at.toLocalDate().minusDays(1)).atTime(21, 0) else at
+    }
+
+    /** Registers the evening-before word for the alarm at [triggerAt] that ends a break; null takes it away. */
+    fun scheduleBack(context: Context, triggerAt: Long?, text: String?) {
+        val am = context.getSystemService(AlarmManager::class.java) ?: return
+        if (triggerAt == null) { am.cancel(backIntent(context, 0L, null)); return }
+        val at = backAt(AlarmScheduler.millisToLocal(triggerAt)).atZone(Today.zone()).toInstant().toEpochMilli()
+        if (at < Today.millis() + 60_000L) { am.cancel(backIntent(context, 0L, null)); return }
+        runCatching { am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, backIntent(context, triggerAt, text)) }
+    }
+
+    /** "내일부터 다시 근무예요" or "오늘 다시 근무예요", from where [now] is. */
+    internal fun backTitle(alarm: java.time.LocalDate, now: java.time.LocalDate) =
+        if (alarm == now) "오늘 다시 근무예요" else "내일부터 다시 근무예요"
+
+    fun onBack(context: Context, intent: Intent) {
+        if (BootAlarms.isLocked(context)) return
+        val at = intent.getLongExtra(EXTRA_AT, 0L)
+        if (at <= Today.millis()) return
+        val c = context.appContainer
+        if (!c.settingsRepository.current.alarmGuard || AlarmsOff.isOff(context) || AlarmSoon.isSkipped(context, at)) return
+        val local = AlarmScheduler.millisToLocal(at)
+        val text = intent.getStringExtra(EXTRA_TEXT)?.takeIf { it.isNotBlank() } ?: "${Fmt.time(local.toLocalTime())} 알람"
+        c.telemetry.event("alarm_back_to_work")
+        val n = NotificationCompat.Builder(context, Notifications.DAY_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setSilent(true)
+            .setContentTitle(backTitle(local.toLocalDate(), Today.date()))
+            .setContentText("$text${Fmt.iga(text)} 켜져 있어요")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$text${Fmt.iga(text)} 켜져 있어요. 쉬는 날이 늘었다면 이번만 끌 수 있어요.\n$OFF_HINT"))
+            .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, REQ_BACK + 10))
+            .addAction(AlarmSoon.action(context, "이번만 끄기", AlarmSoon.ACTION_SKIP, REQ_BACK_SKIP, at))
+            .setAutoCancel(true)
+            .setTimeoutAfter((at - Today.millis()).coerceAtLeast(1_000L))
+            .build()
+        Notifications.post(context, BACK_NOTICE_ID, n)
+    }
+
     const val OFF_HINT = "알리지 않으려면 설정 › 알람 › 다음 알람 › 알람 지킴이"
 }
