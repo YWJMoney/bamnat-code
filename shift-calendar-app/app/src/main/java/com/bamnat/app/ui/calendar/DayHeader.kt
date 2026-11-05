@@ -241,6 +241,11 @@ fun DayHeader(
                 IconButton(onClick = onOpen) { Icon(Icons.Filled.ExpandLess, "하루 자세히 보기") }
             }
         }
+        // PC 확인 1.37 A16 (그날 근무·추가 근무 줄의 높이가 날마다 달라 칩 줄이 128px씩 움직여 '대근'이 잘못 눌림): in the day sheet the
+        // chips come right under the date, where nothing above them changes height; the day's facts follow.
+        // With very large text on a small phone the head is taller than the sheet's top; there the facts stay first so they are not cut.
+        val chipsFirst = onOpen == null && LocalDensity.current.fontScale < 1.5f
+        if (chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(bottom = 6.dp), endSpace = 12.dp)
         AnimatedContent(
             targetState = day,
             contentKey = { it.date },
@@ -254,7 +259,7 @@ fun DayHeader(
             DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp))
         }
         // Under the calendar the folded FAB sits over the row's end, so the last chip can scroll out from under it.
-        QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(top = 6.dp), endSpace = if (onOpen != null) 76.dp else 12.dp)
+        if (!chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(top = 6.dp), endSpace = 76.dp)
     }
 }
 
