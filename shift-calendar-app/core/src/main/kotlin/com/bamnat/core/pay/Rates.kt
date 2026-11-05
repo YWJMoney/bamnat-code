@@ -59,14 +59,14 @@ object RateTable {
             pensionRate = 0.095, healthRate = 0.0719, longTermCareRate = 0.009448,
         ),
         // [PAY-03] Checked 2026-10-15: 최저임금 고용노동부 고시 2026-08-05 (10,700원), 국민연금법 개정
-        // (2027년 1천분의 100), 건강보험정책심의위원회 2026-09-08 (7.19% 동결). 장기요양보험료율은
-        // 아직 결정 전이라 비워 둠; 결정되면 채운다.
+        // (2027년 1천분의 100), 건강보험정책심의위원회 2026-09-08 (7.19% 동결). [P3-ACC] 2026-11-05: 장기요양보험료율은
+        // 2026-10-30 제5차 장기요양위원회 의결로 소득 대비 0.9994% (건강보험료 대비 13.90%).
         Rates(
             effectiveFrom = LocalDate.of(2027, 1, 1),
             version = "2027.1",
             source = "근로기준법 제50·53·56조, 2027년 최저임금 고시(시급 10,700원)",
             minimumHourlyWage = 10_700,
-            pensionRate = 0.10, healthRate = 0.0719, longTermCareRate = null,
+            pensionRate = 0.10, healthRate = 0.0719, longTermCareRate = 0.009994,
         ),
     )
 
@@ -77,7 +77,7 @@ object RateTable {
     )
 
     /** [REMOTE-02] The `version` of `remote/v1/rates.json` that holds exactly [builtIn]; a download must be newer. */
-    const val BUILT_IN_VERSION = 2026102201L
+    const val BUILT_IN_VERSION = 2026110501L
 
     private class Table(val rates: List<Rates>, val bases: List<PensionBase>, val version: Long)
 
