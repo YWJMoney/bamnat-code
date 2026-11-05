@@ -354,7 +354,7 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
         days.forEachIndexed { i, d -> Text("${d["label"]} ${counts?.getOrNull(i) ?: if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
             color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
     }
-    Box(Modifier.mockPick("cells")) { MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]), ownDays.orEmpty()) }
+    Box(Modifier.mockPick("cells")) { MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]), ownDays.orEmpty(), style) }
     placed.filter { !above(it.part) }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
 }
 
@@ -408,7 +408,9 @@ internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from
 @Composable
 private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, view: com.bamnat.core.recipe.CalendarView,
                       /** The recipe's own 근무 모양 (none: my calendar keeps its own colours, not the example's). */
-                      ownDays: List<Map<String, Any?>> = days) {
+                      ownDays: List<Map<String, Any?>> = days,
+                      /** PC 확인 7b219467: whose example memos (알바 '대타 부탁', 현장 '자재 챙기기' …). */
+                      style: WorkStyle? = null) {
     // [R136-07] 1.36 (리뷰 R-16·R-21, 후보 1 '내 달력으로 입어 보기'): this week and the next of the phone's own calendar, each day in
     // the recipe's look for its kind of day (the same name, then the same role) or its own; the real holidays and today. Memos stay
     // off the picture. A calendar with no kinds of day yet keeps the example.
@@ -427,7 +429,15 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(d), off = true, blank = true) } }
     val start0 = if (blank != null) first.minusDays((first.dayOfWeek.value % 7).toLong()) else first
     val real = mine?.days ?: blank
-    val memos = listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("인수인계"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
+    // PC 확인 7b219467 (알바·현장 예시에 '월급날'·'인수인계'): the example's memos in each kind of work's own words.
+    val memos = when (style) {
+        WorkStyle.HOURLY -> listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("대타 부탁"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("알바비 들어오는 날"))
+        WorkStyle.FIELD -> listOf(listOf("자재 챙기기", "택배 오는 날"), emptyList(), listOf("현장 이동"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("일당 받는 날"))
+        WorkStyle.BUSINESS -> listOf(listOf("재료 주문", "택배 오는 날"), emptyList(), listOf("단골 예약"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("카드 정산일"))
+        WorkStyle.INVEST -> listOf(listOf("실적 발표", "택배 오는 날"), emptyList(), listOf("매매 일지"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("배당 들어오는 날"))
+        WorkStyle.DAY -> listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("주간 회의"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
+        else -> listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("인수인계"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
+    }
     val sample = real ?: (0 until 14).map { i ->
         val d = days[(i / 2) % days.size]
         com.bamnat.app.ui.calendar.SampleDay(((d["emoji"] as? String) ?: d["label"]?.toString()).orEmpty(), (d["color"] as? Long) ?: 0xFF757575L,

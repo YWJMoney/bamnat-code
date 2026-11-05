@@ -92,11 +92,31 @@ internal object MarketShots {
         recipes.get(k)?.let { return it }
         if (k in failed) return null
         val got = gate.withPermit {
-            recipes.get(k) ?: withContext(Dispatchers.IO) { runCatching { c.recipeApi.show(item.code, null, null).recipe() }.getOrNull() }
+            recipes.get(k) ?: withContext(Dispatchers.IO) {
+                runCatching { c.recipeApi.show(item.code, null, null) }.getOrNull()?.let { doc -> runCatching { doc.recipe() }.getOrNull() ?: known(doc.body) }
+            }
         }
         if (got == null) failed.add(k) else recipes.put(k, got)
         return got
     }
+
+    /** Whether this card's work could not be had (offline, gone): it keeps its small picture for good. */
+    fun gaveUp(item: RecipeItem): Boolean = key(item) in failed
+
+    /**
+     * PC 확인 7b219467 MED-1 (가계부 틀이 든 작품은 그림이 끝내 안 나옴): a work made by a newer app carries a kind of piece this app does
+     * not know, and the whole work is refused. For the picture only (never to put in), the pieces this app knows are drawn and the
+     * rest left out, so a newer work still shows what this app can show of it.
+     */
+    internal fun known(body: String): Recipe? = runCatching {
+        val o = org.json.JSONObject(body)
+        val keys = PieceKind.entries.map { it.key }.toSet()
+        val all = o.optJSONArray("pieces") ?: return null
+        val kept = org.json.JSONArray()
+        for (i in 0 until all.length()) all.optJSONObject(i)?.takeIf { it.optString("kind") in keys }?.let(kept::put)
+        if (kept.length() == 0 || kept.length() == all.length()) return null
+        com.bamnat.core.recipe.RecipeCodec.read(o.put("pieces", kept).toString())
+    }.getOrNull()
 
     /** What a card shows: the tab the work changes, or one of the pictures that are not a tab. */
     sealed interface Face {
@@ -155,7 +175,7 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
     var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
     val recipe by produceState<Recipe?>(null, key) { if (picture == null) value = MarketShots.recipe(c, item) }
     // Said once for the card: the real look once it is drawn, the small picture while it comes.
-    val said = if (picture != null || recipe != null) "작품 모습" else "작품 모습 불러오는 중"
+    val said = if (picture != null || recipe != null) "작품 모습" else if (MarketShots.gaveUp(item)) "작품 작은 그림" else "작품 모습 불러오는 중"
     Box(modifier.size(width, height).clip(RoundedCornerShape(width / 10)).clearAndSetSemantics {
         contentDescription = said
     }, contentAlignment = Alignment.Center) {
