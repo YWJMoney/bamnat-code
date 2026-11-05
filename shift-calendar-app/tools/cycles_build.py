@@ -31,7 +31,7 @@ import sys
 APP = pathlib.Path(__file__).resolve().parent.parent
 SRC = APP / "tools" / "data" / "company-cycles.csv"
 OUT = APP.parent / "remote" / "v1" / "cycles.json"
-VERSION = 2026110601
+VERSION = 2026110602
 ISSUED = "2026-11-06"
 MIN_APP = 37
 
@@ -245,6 +245,11 @@ def shifts_of(row, codes):
     m = re.search(r"(\d{2}):(\d{2})\s*교대", t)
     if m:
         usual["X"] = (m.group(1) + ":" + m.group(2), m.group(1) + ":" + m.group(2))
+    # A 2교대 source that gives one shift's hours (야간 17:00-익일 08:00) leaves the other the rest of the day (주간 08-17),
+    # not the usual 07-19 that would cross it.
+    if sorted(work) == ["D", "N"] and len(out) == 1:
+        (k, (s, e, _)), = out.items()
+        out["N" if k == "D" else "D"] = (e, s, True)
     for c in work:
         if c not in out:
             s, e = usual[c]

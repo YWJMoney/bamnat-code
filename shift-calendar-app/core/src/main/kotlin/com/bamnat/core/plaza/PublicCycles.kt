@@ -240,8 +240,20 @@ object PublicCycles {
 
     private val SPOKEN = mapOf('주' to 'D', '오' to 'E', '야' to 'N', '당' to 'X', '비' to 'B', '휴' to 'O')
 
-    /** [codes] is [want] started on another day (주야비휴 = 야비휴주). */
-    fun sameRotation(codes: String, want: String): Boolean = codes.length == want.length && want in codes + codes
+    /**
+     * [codes] is [want] started on another day (주야비휴 = 야비휴주). A 비번 comes only right after a 당번·야간, so a 비 after
+     * a 비 is a day off as said: "당비비" (what 소방 says) is the table's 당·비·휴, and "당비비비" its 당·비·휴·휴.
+     */
+    fun sameRotation(codes: String, want: String): Boolean {
+        if (codes.length != want.length) return false
+        val a = offAfterOff(codes)
+        val b = offAfterOff(want)
+        return b in a + a
+    }
+
+    /** Each B whose day before (round the cycle) is also a B reads as O. */
+    private fun offAfterOff(codes: String): String =
+        String(CharArray(codes.length) { i -> if (codes[i] == 'B' && codes[(i - 1 + codes.length) % codes.length] == 'B') 'O' else codes[i] })
 
     /** [CYC-10] How old the row's 시점 is in years by [today], when it says a year; null otherwise. */
     fun yearsOld(c: PublicCycle, today: java.time.LocalDate): Int? =

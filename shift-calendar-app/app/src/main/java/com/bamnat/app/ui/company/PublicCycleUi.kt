@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -78,11 +79,21 @@ internal fun span(start: LocalTime, end: LocalTime): String {
     return "${t(start)}~${t(end)}"
 }
 
-/** "주간 07~19 · 야간 19~07" with "(흔한 시간)" when the source gave only a length. */
+/**
+ * "주간 07~19 · 야간 19~07" with "(흔한 시간)" when the source gave only a length. When it gave some shifts' hours and not
+ * the others' (상대지구대: 야간 17~08 only), the source's come first and only the rest say they are filled in
+ * (012815b6 PC 1차: "주간 07~19·야간 17~08 (흔한 시간)" read as if the 야간 were made up too).
+ */
 internal fun shiftsLine(c: PublicCycle, codes: String = c.codes): String {
     val shifts = if (codes.isEmpty()) c.shifts else c.shiftsFor(codes)
     if (shifts.isEmpty()) return "근무 시간은 공개 자료에 없어요"
-    return shifts.joinToString(" · ") { "${it.name} ${span(it.start, it.end)}" } + if (shifts.any { it.usual }) " (흔한 시간)" else ""
+    fun line(list: List<com.bamnat.core.plaza.CycleShift>) = list.joinToString(" · ") { "${it.name} ${span(it.start, it.end)}" }
+    val (filled, given) = shifts.partition { it.usual }
+    return when {
+        filled.isEmpty() -> line(given)
+        given.isEmpty() -> line(filled) + " (흔한 시간)"
+        else -> line(given) + " · " + line(filled) + " (" + filled.joinToString("·") { it.name } + ": 출처에 없어 채운 시간)"
+    }
 }
 
 /**
@@ -110,6 +121,23 @@ fun PublicSourceLine(c: PublicCycle, modifier: Modifier = Modifier, link: Boolea
             }
         }
     }
+}
+
+/**
+ * 012815b6 PC 1차 ("창을 아래로 쓸면 친 글자와 고른 칩이 사라져요"): what was being looked for in the public rows, kept while
+ * the app runs, so a search closed by mistake opens where it was. The name lives in [CompanyFindViewModel]'s query.
+ */
+internal object PublicBrowse {
+    var form: String? = null
+    var group: String? = null
+    var query: String = ""
+    var at: Long = 0L
+
+    /** The name typed last, if the search was left a short while ago. */
+    fun recentQuery(now: Long = System.currentTimeMillis()): String = if (now - at <= KEEP_MS) query else ""
+    fun keep(q: String, now: Long = System.currentTimeMillis()) { query = q; at = now }
+    fun reset() { form = null; group = null; query = ""; at = 0L }
+    private const val KEEP_MS = 10 * 60 * 1000L
 }
 
 /** [CYC-10] A source this many years old or more is marked as old. */
@@ -163,9 +191,14 @@ fun PublicCycleSection(
     /** [CYC-09] '우리 회사 근무표 올리기' at the end of the list. */
     upload: Boolean = true,
 ) {
-    var form by rememberSaveable { mutableStateOf<String?>(null) }
-    // [CYC-09] 1.38: an 업종 묶음 (소방, 병원·요양…) in place of the 70 raw 업종 words.
-    var group by rememberSaveable { mutableStateOf<String?>(null) }
+    // [CYC-09] 1.38: an 업종 묶음 (소방, 병원·요양…) in place of the 70 raw 업종 words. 012815b6 PC 1차: the chip picked stays
+    // when the search is closed and opened again ([PublicBrowse]), as the name typed does.
+    var form by rememberSaveable { mutableStateOf(PublicBrowse.form) }
+    var group by rememberSaveable { mutableStateOf(PublicBrowse.group) }
+    LaunchedEffect(form, group) { PublicBrowse.form = form; PublicBrowse.group = group }
+    // 012815b6 PC 1차: with a chip picked the 25 chips fold to that one, so its rows come right under it.
+    var allChips by rememberSaveable { mutableStateOf(false) }
+    val folded = !allChips && (form != null || group != null)
     var more by rememberSaveable(query) { mutableStateOf(false) }
     var open by remember { mutableStateOf<PublicCycle?>(null) }
     var uploading by rememberSaveable { mutableStateOf(false) }
@@ -176,17 +209,31 @@ fun PublicCycleSection(
             // [CYC-10] 1.38 순서로 찾기.
             Text("회사 이름 대신 ‘주야비휴’, ‘당비비’처럼 근무 순서를 써도 찾아요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                PublicCycles.forms.take(6).forEach { (key, name) ->
-                    FilterChip(selected = form == key, onClick = { form = if (form == key) null else key; group = null }, label = { Text(name) })
-                }
-            }
-            Text("업종으로 찾기", style = MaterialTheme.typography.titleSmall)
             val groups = remember { com.bamnat.core.plaza.IndustryGroups.counts(PublicCycles.all) }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                groups.forEach { (g, n) ->
-                    FilterChip(selected = group == g.key, onClick = { group = if (group == g.key) null else g.key; form = null },
-                        label = { Text("${g.name} $n") })
+            val pickForm = { key: String -> form = if (form == key) null else key; group = null; allChips = false }
+            val pickGroup = { key: String -> group = if (group == key) null else key; form = null; allChips = false }
+            if (folded) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically) {
+                    PublicCycles.forms.firstOrNull { it.first == form }?.let { (key, name) ->
+                        FilterChip(selected = true, onClick = { pickForm(key) }, label = { Text(name) })
+                    }
+                    groups.firstOrNull { it.first.key == group }?.let { (g, n) ->
+                        FilterChip(selected = true, onClick = { pickGroup(g.key) }, label = { Text("${g.name} $n") })
+                    }
+                    TextButton(onClick = { allChips = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다른 근무형태·업종 보기") }
+                }
+            } else {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    PublicCycles.forms.take(6).forEach { (key, name) ->
+                        FilterChip(selected = form == key, onClick = { pickForm(key) }, label = { Text(name) })
+                    }
+                }
+                Text("업종으로 찾기", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    groups.forEach { (g, n) ->
+                        FilterChip(selected = group == g.key, onClick = { pickGroup(g.key) }, label = { Text("${g.name} $n") })
+                    }
                 }
             }
             // [CYC-09] One line on how the picked 업종's work usually goes.
