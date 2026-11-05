@@ -238,7 +238,7 @@ object FlagCatalog {
     val SHARE_LOOK_FLAG = Flag(
         SHARE_LOOK, "링크에 테마·근무 설정 담기",
         what = "근무표 링크를 만들 때 ‘내 테마’와 ‘근무 설정’을 고르면 링크에 함께 담아요. 테마는 달력·메모·가계부의 모양(사진은 빼요), 근무 설정은 근무 이름·색·글자, 근무 전 알람 시각, 근무 주기예요. 급여 규칙·기본급·금액·메모·사진은 담지 않아요. 받는 분은 밤낮 앱에서 입어 보고 고른 것만 넣어요.",
-        whyOff = "정식 출시일(처리방침 3.11의 시행일)부터 저절로 켜져요. 3.11 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 12-04부터예요. 그 전에는 공유 창에 날짜만 알려 주고 링크에는 담지 않아요.",
+        whyOff = "처리방침 3.11의 시행일부터 저절로 켜져요. 3.11은 1.38 배포 때 게시하고 그날을 관리자 앱 일정에 넣어요(그 전까지는 먼 날이라 꺼져 있어요). 3.11 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 그보다 늦게예요. 그 전에는 공유 창에 날짜가 정해지면 알려 주고 링크에는 담지 않아요.",
         basis = Basis(policy = "3.11 1항", requirement = "SHR-31", note = "1.37 묶음 E 달력 공유에 테마·설정"),
         conditions = listOf(Condition.Date(policy = SHARE_LOOK_POLICY), Condition.Policy(SHARE_LOOK_POLICY)),
         default = false, risk = Risk.LEGAL, since = "1.37.0", group = FlagGroup.LAW,

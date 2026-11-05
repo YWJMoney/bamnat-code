@@ -46,7 +46,7 @@
       {
         "version": "3.1",
         "posted": "2026-10-27",
-        "effective": "2026-11-10",
+        "effective": "2026-11-12",
         "heldUntil": "2026-11-24"
       },
       {
@@ -94,14 +94,14 @@
       {
         "version": "3.9",
         "posted": "2026-10-31",
-        "effective": "2026-11-10",
+        "effective": "2026-11-12",
         "heldUntil": "2026-11-29"
       },
       {
         "version": "3.11",
         "posted": "2026-11-04",
-        "effective": "2026-11-10",
-        "heldUntil": "2026-12-04"
+        "effective": "2027-12-31",
+        "heldUntil": null
       }
     ],
     "serverTime": "2026-10-26T01:00:00.000Z"

@@ -684,7 +684,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
                 if (p.following) OutlinedButton(onClick = onFollowMenu, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text(if (p.quiet) "팔로잉 ✓ · 알림 꺼짐" else "팔로잉 ✓")
                 } else Button(onClick = { vm.follow(true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("팔로우") }
-            } else Text("팔로우는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall)
+            } else Text("팔로우는 정식 출시일부터 돼요", style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -939,7 +939,7 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
                 } else TextButton(onClick = onPro) { Text("프로 꾸미기 알아보기") }
                 if (p.coverPending != null) Text("올린 그림은 운영자가 본 뒤 다른 분께 보여요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (!vm.canWrite) Text("소개는 정식 출시일(11월 10일 예정)부터 저장돼요", style = MaterialTheme.typography.bodySmall)
+                if (!vm.canWrite) Text("소개는 정식 출시일부터 저장돼요", style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {

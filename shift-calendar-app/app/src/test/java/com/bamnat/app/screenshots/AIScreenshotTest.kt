@@ -271,9 +271,11 @@ class AIScreenshotTest : ScreenshotBase() {
         settle()
         tapText("같은 회사 분들께 하고 싶은 말을 적어 주세요", exact = true)
         settle()
-        assertTrue("글 칸을 처음 누르면 규칙부터", appears("동의하고 쓰기", exact = true))
-        tapText("동의하고 쓰기", exact = true, scrolls = 0)
+        // 1.37 TOWN-12: the rules come as a card above the box (not a window over it), with its own 동의해요.
+        assertTrue("글 칸을 처음 누르면 규칙부터", appears("처음 쓰기 전에 광장 운영 규칙에 동의해 주세요", exact = true))
+        tapText("동의해요", exact = true, scrolls = 0)
         settle()
+        assertTrue("동의하면 카드가 닫혀요", gone("처음 쓰기 전에 광장 운영 규칙에 동의해 주세요", exact = true))
         typeInto("같은 회사 분들께 하고 싶은 말을 적어 주세요", "첫 글이에요")
         tapText("보내기", exact = true)
         settle()

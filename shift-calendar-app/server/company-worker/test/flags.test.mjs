@@ -146,13 +146,13 @@ async function browser(n = 1) {
 }
 
 test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins hear of it; at midnight it turns on, the launch is written once", async (t) => {
-  const eve = Date.parse("2026-11-09T14:00:00Z"); // 11월 9일 23시(한국)
+  const eve = Date.parse("2026-11-11T14:00:00Z"); // 11월 11일 23시(한국)
   t.mock.timers.enable({ apis: ["Date"], now: eve });
   const { call, env } = server(await vapidKeys());
   const owner = await signIn(call);
-  // [PRIV-05] 3.9 shares 11-10 with 3.1: move it later here so only 결제·광고 speak.
+  // [PRIV-05] 3.9 shares 11-12 with 3.1: move it later here so only 결제·광고 speak.
   await call("POST", "/api/admin/policy", { version: "3.9", posted: "2026-10-31", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
-  // 1.37 3.11 (share.look) also starts on 11-10: move it later too.
+  // 1.37 3.11 (share.look) also starts on 11-12: move it later too.
   await call("POST", "/api/admin/policy", { version: "3.11", posted: "2026-11-04", effective: "2026-12-20", heldUntil: "2026-12-20", why: "시험" }, owner);
   const b = await browser(1);
   assert.equal((await call("POST", "/api/admin/me/push", { subscription: b.subscription, kinds: ["flags"] }, owner)).data.ready, true);
@@ -169,7 +169,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   assert.deepEqual((await titles()).sort(), ["내일 결제(프로 구독)이(가) 저절로 켜져요", "내일 광고(보상형)이(가) 저절로 켜져요"]);
   let list = (await call("GET", "/api/admin/flags", undefined, owner)).data;
   const billing = list.flags.find((f) => f.key === "billing");
-  assert.deepEqual([billing.state, billing.next, billing.daysLeft], ["waiting", "2026-11-10", 1]);
+  assert.deepEqual([billing.state, billing.next, billing.daysLeft], ["waiting", "2026-11-12", 1]);
   await cron(env, eve);
   assert.deepEqual(await titles(), [], "told once");
   assert.equal((await call("GET", "/api/config")).data.billingLive, false);
@@ -180,7 +180,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   assert.deepEqual((await titles()).sort(), ["결제(프로 구독)이(가) 켜졌어요", "광고(보상형)이(가) 켜졌어요"]);
   const cfg = (await call("GET", "/api/config")).data;
   assert.equal(cfg.billingLive, true);
-  assert.equal(cfg.launchedAt, "2026-11-09T15:00:00.000Z");
+  assert.equal(cfg.launchedAt, "2026-11-11T15:00:00.000Z");
   const home = (await adminHome(call, owner)).data;
   assert.deepEqual(home.flagAlerts.map((a) => a.key).sort(), ["ads", "billing"]);
   t.mock.timers.tick(DAY + 1000);
@@ -190,7 +190,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   await call("POST", "/api/admin/flags/billing/force", { force: "off", why: "결제 오류" }, owner);
   assert.equal((await call("GET", "/api/config")).data.billingLive, false);
   await call("POST", "/api/admin/flags/billing/force", { force: null }, owner);
-  assert.equal((await call("GET", "/api/config")).data.launchedAt, "2026-11-09T15:00:00.000Z");
+  assert.equal((await call("GET", "/api/config")).data.launchedAt, "2026-11-11T15:00:00.000Z");
   const log = (await call("GET", "/api/admin/audit", undefined, owner)).data.entries.map((e) => e.action);
   assert.equal(log.filter((a) => a === "launch_recorded").length, 1);
   assert.ok(log.includes("flag_auto_on"));
@@ -198,7 +198,7 @@ test("[FLAG-25][FLAG-28] the day before a legal flag turns on by itself admins h
   const detail = (await call("GET", "/api/admin/flags/billing", undefined, owner)).data;
   const off = detail.history.find((h) => h.action === "flag_force_off");
   assert.deepEqual([off.before, off.after.force, off.why, off.actor], [null, "off", "결제 오류", "최고 관리자"]);
-  assert.equal(detail.launchedAt, Date.parse("2026-11-09T15:00:00Z"));
+  assert.equal(detail.launchedAt, Date.parse("2026-11-11T15:00:00Z"));
   list = (await call("GET", "/api/admin/flags", undefined, owner)).data;
   assert.equal(list.flags.find((f) => f.key === "billing").state, "on");
 });

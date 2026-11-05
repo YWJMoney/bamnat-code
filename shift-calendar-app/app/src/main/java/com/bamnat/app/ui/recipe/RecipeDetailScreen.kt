@@ -331,7 +331,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // For anyone else it sits with the 계보; the maker of the original sees it first, above 넣기 (1.35 자유도 점검).
                 s.parentDoc?.takeIf { !it.mine }?.let { pd -> DiffSection(pd, s.diff, onOpen) { } }
                 HorizontalDivider()
-                if (vm.canTalk) TalkSection(s, vm) else Text("이야기는 정식 출시일(11월 10일 예정)부터 열려요", style = MaterialTheme.typography.bodySmall)
+                if (vm.canTalk) TalkSection(s, vm) else Text("이야기는 정식 출시일부터 열려요", style = MaterialTheme.typography.bodySmall)
                 Spacer(Modifier.height(32.dp))
             }
         }
@@ -433,7 +433,7 @@ private fun VoteRow(s: RecipeDetailViewModel.State, vm: RecipeDetailViewModel, o
             Icon(if (v.myVote == -1) Icons.Filled.ThumbDown else Icons.Outlined.ThumbDown, null); Spacer(Modifier.width(6.dp)); Text("안좋아요 ${v.dislikes}")
         }
     }
-    if (!vm.canVote) Text("좋아요·안좋아요는 정식 출시일(11월 10일 예정)부터 누를 수 있어요", style = MaterialTheme.typography.bodySmall,
+    if (!vm.canVote) Text("좋아요·안좋아요는 정식 출시일부터 누를 수 있어요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
