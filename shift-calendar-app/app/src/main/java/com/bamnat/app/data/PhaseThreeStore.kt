@@ -72,7 +72,19 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
     suspend fun saveMembers(list: List<TeamMember>) = teams.upsertMembers(list.map { it.toEntity() })
 
-    suspend fun removeMember(id: String) = db.withTransaction { teams.deleteMemberCells(id); teams.deleteMember(id) }
+    suspend fun removeMember(id: String) = db.withTransaction { teams.deleteMemberCells(id); teams.deleteMemberWishes(id); teams.deleteMember(id) }
+
+    /** [TEAM-19] The month's 희망 휴무. */
+    fun wishes(teamId: String, month: YearMonth): Flow<List<com.bamnat.core.team.TeamWish>> =
+        teams.observeWishes(teamId, month.atDay(1).toEpochDay(), month.atEndOfMonth().toEpochDay()).map { l ->
+            l.mapNotNull { e -> runCatching { com.bamnat.core.team.TeamWish(e.memberId, LocalDate.ofEpochDay(e.epochDay), com.bamnat.core.team.WishKind.valueOf(e.kind)) }.getOrNull() }
+        }
+
+    /** [TEAM-19] Wishes in: one a member and day, the newest wins. [via] is LEADER or TEXT. */
+    suspend fun addWishes(teamId: String, list: List<com.bamnat.core.team.TeamWish>, via: String) =
+        teams.upsertWishes(list.map { com.bamnat.app.data.db.TeamWishEntity(teamId, it.memberId, it.date.toEpochDay(), it.kind.name, clock(), via) })
+
+    suspend fun removeWish(memberId: String, date: LocalDate) = teams.deleteWish(memberId, date.toEpochDay())
 
     suspend fun deleteTeam(id: String) = teams.deleteTeam(id)
 

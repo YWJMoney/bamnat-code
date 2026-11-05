@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 27,
-    "identityHash": "42f8688f10c7d30e7d2c763280baeeb5",
+    "identityHash": "30704ad42f923126b6bdf3d9dbfc2ed8",
     "entities": [
       {
         "tableName": "shift_types",
@@ -2840,6 +2840,67 @@
         }
       },
       {
+        "tableName": "team_wish",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`teamId` TEXT NOT NULL, `memberId` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, `kind` TEXT NOT NULL, `receivedAt` INTEGER NOT NULL, `via` TEXT NOT NULL, PRIMARY KEY(`memberId`, `epochDay`))",
+        "fields": [
+          {
+            "fieldPath": "teamId",
+            "columnName": "teamId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "memberId",
+            "columnName": "memberId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "epochDay",
+            "columnName": "epochDay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "receivedAt",
+            "columnName": "receivedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "via",
+            "columnName": "via",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "memberId",
+            "epochDay"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_team_wish_teamId_epochDay",
+            "unique": false,
+            "columnNames": [
+              "teamId",
+              "epochDay"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_team_wish_teamId_epochDay` ON `${TABLE_NAME}` (`teamId`, `epochDay`)"
+          }
+        ]
+      },
+      {
         "tableName": "workplace",
         "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `fivePlus` INTEGER, `payday` INTEGER, `legalBreaks` INTEGER NOT NULL, `weekStart` INTEGER NOT NULL, `teamId` TEXT, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
@@ -3162,7 +3223,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '42f8688f10c7d30e7d2c763280baeeb5')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '30704ad42f923126b6bdf3d9dbfc2ed8')"
     ]
   }
 }

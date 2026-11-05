@@ -35,7 +35,9 @@ object PhaseThreeBackup {
             .put("cells", JSONArray().apply { d.allCells().sortedWith(compareBy({ it.memberId }, { it.epochDay })).forEach {
                 put(JSONArray().put(it.teamId).put(it.memberId).put(it.epochDay).put(it.shiftId).put(it.source).put(it.locked)) } })
             .put("months", JSONArray().apply { d.months().forEach { put(JSONObject().put("team", it.teamId).put("month", it.month).put("state", it.state)
-                .put("version", it.version).putOpt("confirmedAt", it.confirmedAt).put("confirmed", it.confirmed)) } }))
+                .put("version", it.version).putOpt("confirmedAt", it.confirmedAt).put("confirmed", it.confirmed)) } })
+            .put("wishes", JSONArray().apply { d.wishes().sortedWith(compareBy({ it.memberId }, { it.epochDay })).forEach {
+                put(JSONArray().put(it.teamId).put(it.memberId).put(it.epochDay).put(it.kind).put(it.receivedAt).put(it.via)) } }))
     }
 
     suspend fun putWorkplaces(db: AppDatabase, into: JSONObject) {
@@ -59,7 +61,8 @@ object PhaseThreeBackup {
     }
 
     /** The rows a backup's [TEAMS] holds, read before anything on the phone changes; null when it has none. */
-    class Teams(val teams: List<TeamEntity>, val members: List<TeamMemberEntity>, val cells: List<TeamCellEntity>, val months: List<TeamMonthEntity>)
+    class Teams(val teams: List<TeamEntity>, val members: List<TeamMemberEntity>, val cells: List<TeamCellEntity>, val months: List<TeamMonthEntity>,
+                val wishes: List<com.bamnat.app.data.db.TeamWishEntity> = emptyList())
 
     fun readTeams(root: JSONObject): Teams? {
         val o = root.optJSONObject(TEAMS) ?: return null
@@ -71,6 +74,8 @@ object PhaseThreeBackup {
             o.optJSONArray("cells").arrays().map { TeamCellEntity(it.getString(0), it.getString(1), it.getLong(2), it.getLong(3), it.optString(4, "MANUAL"), it.optBoolean(5)) },
             o.optJSONArray("months").objs().map { TeamMonthEntity(it.getString("team"), it.getString("month"), it.optString("state", "DRAFT"), it.optInt("version"),
                 it.longOrNull("confirmedAt"), it.optString("confirmed")) },
+            o.optJSONArray("wishes").arrays().map { com.bamnat.app.data.db.TeamWishEntity(it.getString(0), it.getString(1), it.getLong(2), it.optString(3, "OFF"),
+                it.optLong(4), it.optString(5, "LEADER")) },
         )
     }
 
@@ -94,7 +99,7 @@ object PhaseThreeBackup {
     }
 
     suspend fun write(db: AppDatabase, teams: Teams?, places: Places?) {
-        teams?.let { db.teamDao().replaceAll(it.teams, it.members, it.cells, it.months) }
+        teams?.let { db.teamDao().replaceAll(it.teams, it.members, it.cells, it.months, it.wishes) }
         places?.let { db.payrollDao().replaceAll(it.places, it.staff, it.work, it.months, it.lines) }
     }
 

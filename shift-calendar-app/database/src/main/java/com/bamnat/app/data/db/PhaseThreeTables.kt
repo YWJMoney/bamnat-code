@@ -67,6 +67,19 @@ data class TeamMonthEntity(
 )
 
 /** [BOSS-01] 사업장 (설계 1-3 `workplace`): kept out of a backup that has no password. */
+/** 1.38 [TEAM-19] 희망 휴무 (설계 1-3 `team_wish`): what a member asked for a day, typed by the leader or pasted from a member's line. */
+@Entity(tableName = "team_wish", primaryKeys = ["memberId", "epochDay"], indices = [Index(value = ["teamId", "epochDay"])])
+data class TeamWishEntity(
+    val teamId: String,
+    val memberId: String,
+    val epochDay: Long,
+    /** OFF, WORK or AVOID_NIGHT. */
+    val kind: String,
+    val receivedAt: Long,
+    /** How it came: LEADER (typed), TEXT (a pasted line). */
+    val via: String,
+)
+
 @Entity(tableName = "workplace")
 data class WorkplaceEntity(
     @PrimaryKey val id: String,
@@ -189,7 +202,7 @@ interface TeamDao {
 
     @Transaction
     suspend fun deleteTeam(id: String) {
-        deleteTeamCells(id); deleteTeamMembers(id); deleteTeamMonths(id); deleteTeamRow(id)
+        deleteTeamCells(id); deleteTeamWishes(id); deleteTeamMembers(id); deleteTeamMonths(id); deleteTeamRow(id)
     }
 
     @Query("DELETE FROM team_cell WHERE teamId = :id") suspend fun deleteTeamCells(id: String)
@@ -197,10 +210,21 @@ interface TeamDao {
     @Query("DELETE FROM team_month WHERE teamId = :id") suspend fun deleteTeamMonths(id: String)
     @Query("DELETE FROM team WHERE id = :id") suspend fun deleteTeamRow(id: String)
 
+    @Query("SELECT * FROM team_wish WHERE teamId = :teamId AND epochDay BETWEEN :from AND :to")
+    fun observeWishes(teamId: String, from: Long, to: Long): Flow<List<TeamWishEntity>>
+
+    @Query("SELECT * FROM team_wish") suspend fun wishes(): List<TeamWishEntity>
+    @Upsert suspend fun upsertWishes(list: List<TeamWishEntity>)
+    @Query("DELETE FROM team_wish WHERE memberId = :memberId AND epochDay = :epochDay") suspend fun deleteWish(memberId: String, epochDay: Long)
+    @Query("DELETE FROM team_wish WHERE teamId = :id") suspend fun deleteTeamWishes(id: String)
+    @Query("DELETE FROM team_wish WHERE memberId = :id") suspend fun deleteMemberWishes(id: String)
+
     /** Backup: every team row goes back in one step. */
     @Transaction
-    suspend fun replaceAll(teams: List<TeamEntity>, members: List<TeamMemberEntity>, cells: List<TeamCellEntity>, months: List<TeamMonthEntity>) {
-        wipeCells(); wipeMembers(); wipeMonths(); wipeTeams()
+    suspend fun replaceAll(teams: List<TeamEntity>, members: List<TeamMemberEntity>, cells: List<TeamCellEntity>, months: List<TeamMonthEntity>,
+                           wishes: List<TeamWishEntity> = emptyList()) {
+        wipeCells(); wipeMembers(); wipeMonths(); wipeWishes(); wipeTeams()
+        if (wishes.isNotEmpty()) upsertWishes(wishes)
         teams.forEach { upsertTeam(it) }
         if (members.isNotEmpty()) upsertMembers(members)
         if (cells.isNotEmpty()) upsertCells(cells)
@@ -210,6 +234,7 @@ interface TeamDao {
     @Query("DELETE FROM team_cell") suspend fun wipeCells()
     @Query("DELETE FROM team_member") suspend fun wipeMembers()
     @Query("DELETE FROM team_month") suspend fun wipeMonths()
+    @Query("DELETE FROM team_wish") suspend fun wipeWishes()
     @Query("DELETE FROM team") suspend fun wipeTeams()
 }
 

@@ -29,7 +29,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 1.37 [LEDH-11][LEDH-13] Version 25: 모으기·세금 봉투.
         EnvelopeEntity::class, EnvelopeMoveEntity::class,
         // 1.38 [P3-01] Version 27: Phase 3 리더 팀 근무표와 사장님 급여 대장 (꺼진 채).
-        TeamEntity::class, TeamMemberEntity::class, TeamCellEntity::class, TeamMonthEntity::class,
+        TeamEntity::class, TeamMemberEntity::class, TeamCellEntity::class, TeamMonthEntity::class, TeamWishEntity::class,
         WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
     ],
     version = 27,
@@ -75,7 +75,7 @@ abstract class AppDatabase : RoomDatabase() {
             )
 
         /**
-         * 1.38 [P3-01] Version 27 (Phase 3 설계 1-3): 팀(team·team_member·team_cell·team_month)과 사업장(workplace·staff·staff_work·
+         * 1.38 [P3-01] Version 27 (Phase 3 설계 1-3): 팀(team·team_member·team_cell·team_month·team_wish)과 사업장(workplace·staff·staff_work·
          * payroll_month·payroll_line), new tables only.
          */
         val MIGRATION_26_27 = object : Migration(26, 27) {
@@ -91,6 +91,9 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_team_cell_teamId_epochDay` ON `team_cell` (`teamId`, `epochDay`)")
                 db.execSQL("CREATE TABLE IF NOT EXISTS `team_month` (`teamId` TEXT NOT NULL, `month` TEXT NOT NULL, `state` TEXT NOT NULL, " +
                     "`version` INTEGER NOT NULL, `confirmedAt` INTEGER, `confirmed` TEXT NOT NULL, PRIMARY KEY(`teamId`, `month`))")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `team_wish` (`teamId` TEXT NOT NULL, `memberId` TEXT NOT NULL, `epochDay` INTEGER NOT NULL, " +
+                    "`kind` TEXT NOT NULL, `receivedAt` INTEGER NOT NULL, `via` TEXT NOT NULL, PRIMARY KEY(`memberId`, `epochDay`))")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_team_wish_teamId_epochDay` ON `team_wish` (`teamId`, `epochDay`)")
                 db.execSQL("CREATE TABLE IF NOT EXISTS `workplace` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `fivePlus` INTEGER, `payday` INTEGER, " +
                     "`legalBreaks` INTEGER NOT NULL, `weekStart` INTEGER NOT NULL, `teamId` TEXT, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
                 db.execSQL("CREATE TABLE IF NOT EXISTS `staff` (`id` TEXT NOT NULL, `workplaceId` TEXT NOT NULL, `name` TEXT NOT NULL, `form` TEXT NOT NULL, " +

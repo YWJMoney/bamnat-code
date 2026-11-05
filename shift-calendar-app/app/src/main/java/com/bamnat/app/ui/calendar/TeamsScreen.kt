@@ -172,7 +172,7 @@ private enum class TeamsView(val label: String) { WEEK("2주"), MONTH("한 달")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Unit, startDay: LocalDate? = null) {
+fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Unit, startDay: LocalDate? = null, onOpenLeader: (() -> Unit)? = null) {
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val rosters by vm.rosters.collectAsStateWithLifecycle()
     val rests by vm.rest.collectAsStateWithLifecycle()
@@ -187,6 +187,8 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
             title = { Text("모든 조") },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             actions = {
+                // 1.38 [P3-02] The leader's own team roster, once `team.leader` is on.
+                if (onOpenLeader != null) TextButton(onClick = onOpenLeader) { Text("내 팀 짜기") }
                 if (snapshot?.let { rotationOf(it, today) } != null) {
                     TextButton(onClick = { editing = true }) {
                         Icon(Icons.Outlined.Tune, null, Modifier.padding(end = 4.dp)); Text("조 설정")

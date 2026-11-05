@@ -294,6 +294,8 @@ private object Routes {
     fun dutyRoster(month: java.time.YearMonth) = "duty_roster_month/$month"
     const val HEALTH_REPORT = "health_report"
     const val TEAMS = "teams"
+    /** 1.38 [P3-02] 리더 팀 근무표 (team.leader). */
+    const val LEADER_TEAMS = "leaderTeams"
     const val YEAR = "year"
     const val ATTENDANCE_IMPORT = "attendance_import"
     const val COMMUTE = "commute"
@@ -1919,8 +1921,15 @@ private fun AppNavHost(
             val vm = appViewModel(key = "teams_$calendar") { com.bamnat.app.ui.calendar.TeamsViewModel(it, calendar) }
             // [CREW-04] Opened from a day's 대근 찾기, the finder starts on that day.
             val startDay = remember { NoticeLinks.payload.value?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } }
+            val flagRows by container.flags.byKey.collectAsStateWithLifecycle()
+            val leader = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
             com.bamnat.app.ui.calendar.TeamsScreen(vm = vm, onBack = { nav.popFrom(Routes.TEAMS) },
-                onOpenPattern = { nav.openPattern(container, calendar) }, startDay = startDay)
+                onOpenPattern = { nav.openPattern(container, calendar) }, startDay = startDay,
+                onOpenLeader = if (leader) ({ nav.navigate(Routes.LEADER_TEAMS) { launchSingleTop = true } }) else null)
+        }
+        composable(Routes.LEADER_TEAMS) {
+            val calendar = remember { container.calendars.active.value }
+            com.bamnat.app.ui.team.LeaderTeamScreen(calendar, onBack = { nav.popFrom(Routes.LEADER_TEAMS) })
         }
         composable(Routes.YEAR) {
             val calendar = remember { container.calendars.active.value }
