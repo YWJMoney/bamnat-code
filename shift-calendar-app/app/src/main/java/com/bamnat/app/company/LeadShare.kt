@@ -152,6 +152,9 @@ class LeadShare(private val c: AppContainer) {
             runCatching { api.use(scope.store.device, page.id, same.id, true, scope.serverCal) }
             // [CALI-02] The calendar it went into uses it (before 1.30 only the main one remembered it).
             scope.store.setApplied(AppliedSetup(page.id, page.name, same.dept, same.id, same.version, same.adopted, Today.instant(), vote = true))
+            // [SETUP-16] 1.37 PC 0068727b (근무 시간을 바꾼 뒤 묻는 창에 바뀐 내용이 없음): what the plaza has now is the base later changes
+            // are said against ("주간 19:00 → 18:30").
+            scope.autoShare.rebase()
             return Step.Agreed(pick, if (same.dept.isEmpty()) page.name else "${page.name} · ${same.dept}", page.id)
         }
         val here = leads.filter { CompanyText.norm(it.dept) == CompanyText.norm(dept) }
@@ -174,6 +177,7 @@ class LeadShare(private val c: AppContainer) {
         // The calendar uses what it shared: later changes go to the same company (AF) and the plaza invite stops.
         store.setApplied(AppliedSetup(status.companyId, status.company, status.dept, status.setup, null, false, Today.instant()))
         store.updatePublicUse { it.copy(sentId = status.id, companyId = status.companyId) }
+        scope.autoShare.rebase()
         c.telemetry.event("lead_share", if (dept.isEmpty()) "sent" else "site")
         return status
     }

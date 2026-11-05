@@ -121,7 +121,17 @@ private fun WorkPage(
         // [WORK-01] Changing the kind of work keeps every record; it only changes what screens show.
         NavRow("일하는 방식", work.workStyle?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onOpenWorkStyle)
         HorizontalDivider()
-        NavRow(words.pattern, words.patternHint, onOpenPattern)
+        // [SETUP-16] 1.37 PC 0068727b (7일로 바꾼 뒤에도 '주주휴휴야야휴휴처럼…' 고정 예시): the order in use now, when there is one.
+        val cycleLine = snapshot?.let { s ->
+            val today = com.bamnat.core.time.Today.date()
+            (com.bamnat.core.schedule.PatternTimeline.current(s.patterns, today) as? com.bamnat.core.model.WorkPattern.Rotation)
+                ?.takeIf { it.endDate?.isBefore(today) != true }?.let { r ->
+                    val byId = s.shiftTypes.associateBy { it.id }
+                    val order = r.steps.joinToString("") { id -> byId[id]?.takeIf { !it.isOff }?.name?.take(1) ?: "휴" }
+                    (if (order.length > 16) order.take(16) + "…" else order) + " · ${r.steps.size}일마다 돌아요"
+                }
+        }
+        NavRow(words.pattern, cycleLine ?: words.patternHint, onOpenPattern)
         HorizontalDivider()
         // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not in the line, and the line says how many are put away.
         val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
