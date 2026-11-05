@@ -298,6 +298,8 @@ fun PayScreen(
                     val emptied = history.firstOrNull()?.takeIf { profile == null && it.why == com.bamnat.app.pay.PayStore.RESTART && it.before != null }
                     Column(Modifier.fillMaxSize()) {
                     emptied?.let { c -> RestoreBand(c, onRestore = { vm.restore(c) }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
+                    // [EASE-03] 1.38: the company's pay from the first setup is asked here, not over the first calendar.
+                    if (profile == null && detailed == null) com.bamnat.app.ui.setup.CompanyPayWaiting(vm.calendarId, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     Box(Modifier.weight(1f)) {
                     if (detailed == null) PayQuickSetup(
                         initial = profile,

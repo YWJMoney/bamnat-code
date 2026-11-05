@@ -756,9 +756,16 @@ private fun DayCell(
                 LeaveMark(fullLeave, size = size)
             } else if (covered != null && day.isWorkDay && type != null) {
                 // [FEAT-02][EXTRA-01] The day's shift and the shift covered on top, labels only so both fit a folded cell.
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
-                    ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                // 1.38 R 760 (달력이 먼저 오며 320dp에서 보이게 된 칸: 두 칩이 칸보다 넓어 '야'가 눌림): where two do not fit, the covered
+                // shift's badge with the day's own shift as a dot of its colour beside it (both are read out with the day).
+                BoxWithConstraints {
+                    if (maxWidth >= size * 0.82f * 2 + 22.dp) Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        ShiftBadge(type = type, size = size * 0.82f, outlined = type.isOff, showIcon = false)
+                        ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                    } else Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(1.dp)) {
+                        ColorDot(type.colorArgb.asColor(), size = 6.dp)
+                        ShiftBadge(type = covered, size = size * 0.82f, showIcon = false)
+                    }
                 }
             } else if (covered != null) {
                 // [EXTRA-01] A 대근 on a day off: the covered shift's badge.

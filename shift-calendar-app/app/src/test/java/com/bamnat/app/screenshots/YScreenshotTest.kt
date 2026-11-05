@@ -115,7 +115,8 @@ class YScreenshotTest : ScreenshotBase() {
         assertTrue(appears("어떤 일을 하고 계신가요?"))
         typeInto("하는 일", "간호샤")
         tapText("간호사 · 교대 근무 · 근무표가 매달 나와요", exact = true)
-        tapText(LATER)
+        // [EASE-05] No page between the job and the setup.
+        assertTrue(gone(LATER))
         val d = c.setupDrafts.draft.value
         assertEquals(WorkStyle.SHIFT, d?.style)
         assertTrue(d!!.rosterMonthly)
@@ -131,7 +132,7 @@ class YScreenshotTest : ScreenshotBase() {
     @Test fun aChipPicksTheJob() = shoot("898_y_job_chip", PHONE_393, firstScreen {
         tapText("편의점 알바", exact = true)
         tapText("편의점 알바 · 아르바이트 · 시급", exact = true)
-        tapText(LATER)
+        assertTrue(gone(LATER))
         assertEquals(WorkStyle.HOURLY, c.setupDrafts.draft.value?.style)
     })
 

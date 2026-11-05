@@ -171,7 +171,8 @@ fun SetupHost(
         }
     }
     val inviteDays by inviteContainer.invites.store.state.collectAsStateWithLifecycle()
-    val primary = primaryFor(d, vm, onLongShifts = { longShifts = it }).let { p ->
+    val todayAsk by vm.todayAsk.collectAsStateWithLifecycle()
+    val primary = primaryFor(d, vm, onLongShifts = { longShifts = it }, todayAsk = todayAsk).let { p ->
         val code = inviteCode
         if (p == null || !atSummary || code == null) p
         else p.copy(
@@ -349,13 +350,18 @@ fun SetupHost(
 
 /** What the bottom button does on each step; none where tapping an answer moves on by itself. */
 @Composable
-private fun primaryFor(d: SetupDraft, vm: SetupViewModel, onLongShifts: (List<ShiftType>) -> Unit): Primary? = when (d.step) {
+private fun primaryFor(d: SetupDraft, vm: SetupViewModel, onLongShifts: (List<ShiftType>) -> Unit, todayAsk: String? = null): Primary? = when (d.step) {
     SetupStep.STYLE, SetupStep.BUNDLE -> null
     SetupStep.COMPANY -> Primary(if (d.source != null) "다음" else "건너뛰고 직접 정할게요", onClick = vm::next)
     SetupStep.TIMES -> Primary(
-        "네, 시간이 맞아요",
-        enabled = d.workTypes.isNotEmpty() && d.timeProblems().isEmpty(),
-        hint = if (d.workTypes.isEmpty()) "근무를 하나 이상 넣어 주세요" else d.timeProblems().firstOrNull(),
+        // [EASE-07] The order is on this screen too: one yes for both.
+        if (d.orderWithTimes) "네, 맞아요" else "네, 시간이 맞아요",
+        enabled = d.workTypes.isNotEmpty() && d.timeProblems().isEmpty() && (!d.orderWithTimes || d.orderReady),
+        hint = when {
+            d.workTypes.isEmpty() -> "근무를 하나 이상 넣어 주세요"
+            d.orderWithTimes && !d.orderReady -> orderHint(d)
+            else -> d.timeProblems().firstOrNull()
+        },
     ) {
         // A 24-hour 당번 is meant to be long; anything else that long is asked once more.
         val long = d.longShifts().filter { d.roles[it.id] != ShiftRole.DUTY }
@@ -369,7 +375,8 @@ private fun primaryFor(d: SetupDraft, vm: SetupViewModel, onLongShifts: (List<Sh
     SetupStep.TODAY -> Primary(
         "회사 근무표와 같아요",
         enabled = d.anchor != null,
-        hint = if (d.anchor == null) "오늘 근무를 고르면 달력을 미리 보여 드려요" else null,
+        // [EASE-08] Why it is not on yet, when a second question is open.
+        hint = if (d.anchor == null) todayAsk ?: "오늘 근무를 고르면 달력을 미리 보여 드려요" else null,
         onClick = vm::confirmToday,
     )
     SetupStep.ALARM -> Primary("다음", onClick = vm::next)
@@ -377,7 +384,7 @@ private fun primaryFor(d: SetupDraft, vm: SetupViewModel, onLongShifts: (List<Sh
 }
 
 private fun orderHint(d: SetupDraft): String? = when {
-    d.canLeave(SetupStep.ORDER) -> null
+    d.orderReady -> null
     d.usesRotation -> "순서에 근무가 하루 이상 있어야 해요"
     else -> "일하는 요일을 하루 이상 골라 주세요"
 }
@@ -441,7 +448,7 @@ private val SetupStep.title: String
         SetupStep.STYLE -> "근무 형태"
         SetupStep.COMPANY -> "회사"
         SetupStep.BUNDLE -> "근무 종류"
-        SetupStep.TIMES -> "근무 시간"
+        SetupStep.TIMES -> "근무 시간과 순서"
         SetupStep.ORDER -> "근무 순서"
         SetupStep.TODAY -> "오늘 근무"
         SetupStep.ALARM -> "알람"

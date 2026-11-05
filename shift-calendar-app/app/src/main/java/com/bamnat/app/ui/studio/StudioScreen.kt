@@ -137,6 +137,7 @@ import com.bamnat.core.work.WorkStyle
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.ui.calendar.calendarParts
 import com.bamnat.app.ui.calendar.withPartMoved
+import com.bamnat.app.ui.calendar.withPartHome
 import com.bamnat.app.ui.calendar.withPartShown
 import com.bamnat.core.recipe.BlueprintParts
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -305,8 +306,11 @@ internal fun AppSettings.sameLinesAs(base: AppSettings): AppSettings {
     fun <T> same(a: String, b: String, all: List<T>, id: (T) -> String): Boolean = a == b ||
         com.bamnat.core.layout.PageLayout.decode(a).arrange(all, id).map { it.part to it.shown } ==
             com.bamnat.core.layout.PageLayout.decode(b).arrange(all, id).map { it.part to it.shown }
+    // [EASE-01] The calendar's line with no order of its own is the month-first one (CALENDAR_FIRST), as the calendar shows it.
+    val sameCalendar = calendarLayout == base.calendarLayout ||
+        calendarParts().map { it.part to it.shown } == base.calendarParts().map { it.part to it.shown }
     return copy(
-        calendarLayout = if (same(calendarLayout, base.calendarLayout, CalendarPart.entries.toList()) { it.id }) base.calendarLayout else calendarLayout,
+        calendarLayout = if (sameCalendar) base.calendarLayout else calendarLayout,
         moneyLayout = if (same(moneyLayout, base.moneyLayout, MoneyPart.entries.toList()) { it.id }) base.moneyLayout else moneyLayout,
         memoLayout = if (same(memoLayout, base.memoLayout, MemoPart.entries.toList()) { it.id }) base.memoLayout else memoLayout,
         statsLayout = if (same(statsLayout, base.statsLayout, StatsPart.entries.toList()) { it.id }) base.statsLayout else statsLayout,
@@ -352,6 +356,9 @@ internal fun pageCards(tab: String, style: WorkStyle?, added: Set<String> = empt
                         val i = order.indexOf(p)
                         if (i > 0 && order[i - 1] == CalendarPart.COUNTS) x = x.withPartMoved(p, -1) { q -> fits(q) }
                     }
+                    // [EASE-01] Back on the side the month-first line has it: at its own place there.
+                    val home = com.bamnat.app.ui.calendar.calendarAbove(com.bamnat.app.ui.calendar.CALENDAR_FIRST)(p)
+                    if (aboveIn(x, p) == home) x = x.withPartHome(p)
                     x
                 }
             })

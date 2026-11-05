@@ -433,8 +433,15 @@ fun CalendarScreen(
     }
     val pendingSetup by vm.setupDraft.collectAsStateWithLifecycle()
     // [WEEK-01] Hours always count Monday to Sunday, the week the law means; 한 주의 시작 only moves the grid.
-    val calculator = remember(snap, settings.limits) {
-        WorkHoursCalculator(snap.resolver, java.time.DayOfWeek.MONDAY, settings.limits)
+    // 1.37 PC MED (알바 52/64시간 섞임; 통계 화면은 PC f42b2eba에서 맞춤): the calendar's week lines say one limit too, as 근무·급여 does:
+    // the law's for the pay setup (52, or the exception's), else the user's own 한 주 근무 경고.
+    val limits = remember(settings.limits, payProfile, settings.workStyle) {
+        val week = (if (settings.workStyle?.usesPayEngine != false) payProfile?.let { com.bamnat.app.ui.stats.legalWeekHours(it) } else null)
+            ?: settings.limits.weeklyLimitHours
+        settings.limits.copy(legalWeeklyHours = week, weeklyLimitHours = week)
+    }
+    val calculator = remember(snap, limits) {
+        WorkHoursCalculator(snap.resolver, java.time.DayOfWeek.MONDAY, limits)
     }
     // [CAL-24] A calendar of 교대 근무 whose order repeats can be split into teams: 모든 조 is on the month itself.
     val openTeams: (() -> Unit)? = remember(snap, settings.workStyle, viewingReceived, today) {
@@ -843,9 +850,9 @@ fun CalendarScreen(
         if (received.enabled) adding = ""
     }
     // [CAL-01] The picked day's week over the hour limit, said in one line under the calendar.
-    val weekNote = remember(calculator, selected, settings.weeklyLimitHours, settings.stretchLimitHours, settings.workStyle, snap) {
+    val weekNote = remember(calculator, selected, limits, settings.stretchLimitHours, settings.workStyle, snap) {
         val week = calculator.week(selected).takeIf { it.overLimit }?.let {
-            "이 주 ${HoursFormat.korean(it.totalMinutes)} · ${settings.limits.weeklyLimitHours}시간 넘음"
+            "이 주 ${HoursFormat.korean(it.totalMinutes)} · ${limits.weeklyLimitHours}시간 넘음"
         }
         // 1.32 [WTYP-12] 연속 근무 경고: a stretch that starts on the picked day and runs past the limit.
         val stretch = if (settings.workStyle == com.bamnat.core.work.WorkStyle.BUSINESS) null else com.bamnat.core.hours.Stretches.over(com.bamnat.core.hours.Stretches.of(selected, selected, snap.resolver::resolve), settings.stretchLimitHours)
@@ -999,9 +1006,11 @@ fun CalendarScreen(
         } else {
             identityBar()
             // [CAL-50] The hint points at 공유 above it; it waits for a day with nothing else to say.
-            // 1.38 [EASE-30][EASE-03] Not while 같이 보기 already points at the same thing in the bar above.
+            // 1.38 [EASE-30][EASE-03] Not while 같이 보기 already points at the same thing in the bar above, nor on the first
+            // setup's day, whose calendar has nothing over it.
             val togetherShown = shareLinks && viewingReceived == null && !linkMade && calendarRows.size <= 1
-            if (!shareHintDone && !linkMade && !togetherShown && !snap.isEmpty && paint == null && pendingSetup?.later != true && notices.count == 0) {
+            if (!shareHintDone && !linkMade && !togetherShown && !snap.isEmpty && paint == null && pendingSetup?.later != true && notices.count == 0 &&
+                !LocalContext.current.appContainer.firstSetup.quietToday()) {
                 ShareHintCard(
                     onShare = shareCalendar,
                     onClose = { hints.markDone(HintStore.SHARE); shareHintDone = true },
@@ -1186,7 +1195,8 @@ fun CalendarScreen(
                     onShifts = { vm.setPaint(PaintTool.Pick) })
             })
             // [GUIDE-02][GUIDE-03][EASY-05] The question card first; on a day it was shown the one-line tip waits (질문 우선).
-            if (guideHere && askOn && startRows == null) add(Notice("ask", "질문 1개") {
+            // [EASE-03] 1.38: the question card waits for the day after the first setup too (its 시작 단계 waits already).
+            if (guideHere && askOn && startRows == null && !c31.firstSetup.quietToday()) add(Notice("ask", "질문 1개") {
                 com.bamnat.app.ui.guide.AskArea(context.appContainer, activeCalendar.id, settings.workStyle,
                     com.bamnat.core.profile.AskPlace.Home, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), today = today,
                     moments = remember(snap, moneyBook, payProfile, settings.workStyle, today) {
@@ -1301,12 +1311,7 @@ fun CalendarScreen(
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
             // [J133-68] 1.33 (중간 빌드 확인: 첫 화면이 시작 단계와 '할 수 있는 것' 카드로 다 덮였어요): while the 시작 단계 card is up it is
             // the one guide on the calendar; '할 수 있는 것' and the day's tip come after it.
-            if (guideHere && startRows == null && !startCardUp) add(Notice("guide", "오늘의 팁") {
-                val askStates by context.appContainer.asks.states.collectAsStateWithLifecycle()
-                val tipAllowed = !askOn || com.bamnat.core.profile.AskScheduler.tipAllowed(askStates[activeCalendar.id] ?: com.bamnat.core.profile.AskState(), today)
-                com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
-                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp), trades = investState?.full?.trades?.size ?: 0, tipAllowed = tipAllowed)
-            })
+            // [EASE-01] 1.38: '할 수 있는 것'·오늘의 팁 is under the month now (guidePart), so the month opens at the top.
             if (guideHere && partShown(CalendarPart.JOURNAL)) add(Notice("journal", "밤낮이 한 일") {
                 com.bamnat.app.ui.guide.JournalHomeLine(Modifier.padding(horizontal = 16.dp), today = today)
             })
@@ -1315,6 +1320,15 @@ fun CalendarScreen(
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
         })
+        }
+        // [EASE-01] 1.38 (오늘근무 분석: 달력이 위로): '할 수 있는 것'·오늘의 팁 under the month, never on the first setup's day (EASE-03).
+        val guidePart: @Composable () -> Unit = {
+            if (guideHere && startRows == null && !startCardUp && !c31.firstSetup.quietToday()) {
+                val askStates by context.appContainer.asks.states.collectAsStateWithLifecycle()
+                val tipAllowed = !askOn || com.bamnat.core.profile.AskScheduler.tipAllowed(askStates[activeCalendar.id] ?: com.bamnat.core.profile.AskState(), today)
+                com.bamnat.app.ui.guide.GuideArea(activeCalendar.id, settings.workStyle, snap, moneyBook, payProfile, settings.weekStart,
+                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp), trades = investState?.full?.trades?.size ?: 0, tipAllowed = tipAllowed)
+            }
         }
         // [CUST-01] The parts under the month, by part; [CVW-06] 1.35 any of them can stand above it too.
         val partBody: @Composable (CalendarPart) -> Unit = { part ->
@@ -1339,7 +1353,7 @@ fun CalendarScreen(
                 CalendarPart.HOURS -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
                     HoursLine(
                         calculator = calculator,
-                        limits = settings.limits,
+                        limits = limits,
                         selected = selected,
                         month = visibleMonth,
                         onOpenStats = onOpenStats,
@@ -1553,7 +1567,7 @@ fun CalendarScreen(
                         spendHeat = settings.spendHeat && !stamping,
                         memoTexts = memoTexts,
                         onPaint = if (stamping) paintDays else null,
-                        weeklyLimitHours = settings.weeklyLimitHours,
+                        weeklyLimitHours = limits.weeklyLimitHours,
                         focus = focus,
                         onLongPress = if (stamping) startRange else null,
                         rangeFrom = rangeFrom,
@@ -1596,6 +1610,7 @@ fun CalendarScreen(
             Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp))
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
             // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
+            if (settled) guidePart()
             if (settled) calendarParts.filter { !isAbove(it.part) && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
                 when (placed.part) {
                     // [CNV-06] 1.37 요약·횟수 줄 moved under the month.

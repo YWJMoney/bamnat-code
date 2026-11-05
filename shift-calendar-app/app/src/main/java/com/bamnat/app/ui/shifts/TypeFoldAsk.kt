@@ -145,8 +145,41 @@ object TypeFoldAsk {
 
     val done = MutableStateFlow<Done?>(null)
 
+    /**
+     * 1.37 PC MED-2 사용성 제안 (유형 바꾸기 확인 창이 두 번: 기록 유지 → 접어 둘까요): the records question already answered whether
+     * to put the old 근무 away ([foldable] named them there), so [after] does it without a second dialog. Read once.
+     */
+    val preanswer = MutableStateFlow<Boolean?>(null)
+
+    /** The old kind of work's 근무 that [after] would offer to put away, for the records question to name. */
+    suspend fun foldable(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle): List<ShiftType> {
+        if (from == null || from == to) return emptyList()
+        val old = com.bamnat.app.data.FoldedTypes.startNames(from) - com.bamnat.app.data.FoldedTypes.startNames(to)
+        if (old.isEmpty()) return emptyList()
+        val folded = c.foldedTypes.of(calendar)
+        return c.calendars.repository(calendar).shiftTypes.first().filter { !it.isOff && it.name in old && it.id !in folded }
+    }
+
+    /** 접어 두기 of [a]: the 근무 put away, the old schedule stopped when [stops], the new work's own 근무 put in; said in [done]. */
+    fun fold(c: AppContainer, a: Ask, patterns: List<com.bamnat.core.model.WorkPattern>) {
+        val ids = a.types.map { it.id }
+        c.foldedTypes.fold(a.calendar, ids)
+        val was = patterns.takeIf { stops(a, it, com.bamnat.core.time.Today.date()) }
+        if (was != null) c.appScope.launch { stopCycle(c, a.calendar, was, a.from) }
+        if (a.adds.isNotEmpty()) c.appScope.launch {
+            val repo = c.calendars.repository(a.calendar)
+            val have = repo.shiftTypes.first()
+            val next = (have.maxOfOrNull { it.sortOrder } ?: -1) + 1
+            a.adds.filter { t -> have.none { it.name == t.name } }.forEachIndexed { i, t -> repo.saveShiftType(t.copy(id = 0, sortOrder = next + i)) }
+        }
+        // Said before the question closes, so the kind-of-work line waiting for it says both (AppRoot).
+        done.value = Done(a.calendar, ids, "${a.from.label} 근무 종류 ${ids.size}개를 접었어요" + if (was != null) " · 근무 주기는 오늘까지예요" else "", was, a.from)
+    }
+
     /** Asks when the change from [from] to [to] left kinds of day the old one started with. */
     suspend fun after(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle) {
+        val pre = preanswer.value
+        preanswer.value = null
         if (from == to) return
         val resumed = runCatching { resume(c, calendar, from, to) }.getOrDefault(false)
         val types = c.calendars.repository(calendar).shiftTypes.first()
@@ -161,7 +194,12 @@ object TypeFoldAsk {
         if (left.isEmpty()) return
         val rest = types.filter { !it.isOff && it.id !in folded && it !in left }
         val adds = if (rest.isNotEmpty()) emptyList() else startTypes(to).filter { t -> types.none { it.name == t.name } }
-        asking.value = Ask(calendar, left, from, to, adds, empty = rest.isEmpty() && adds.isEmpty(), resumed = resumed)
+        val ask = Ask(calendar, left, from, to, adds, empty = rest.isEmpty() && adds.isEmpty(), resumed = resumed)
+        when (pre) {
+            null -> asking.value = ask
+            true -> fold(c, ask, c.calendars.repository(calendar).patterns.first())
+            false -> Unit
+        }
     }
 }
 
@@ -187,19 +225,7 @@ fun TypeFoldHost(c: AppContainer) {
         },
         confirmButton = {
             TextButton(onClick = {
-                val ids = a.types.map { it.id }
-                c.foldedTypes.fold(a.calendar, ids)
-                val was = patterns.takeIf { stops }
-                if (was != null) c.appScope.launch { TypeFoldAsk.stopCycle(c, a.calendar, was, a.from) }
-                if (a.adds.isNotEmpty()) c.appScope.launch {
-                    val repo = c.calendars.repository(a.calendar)
-                    val have = repo.shiftTypes.first()
-                    val next = (have.maxOfOrNull { it.sortOrder } ?: -1) + 1
-                    a.adds.filter { t -> have.none { it.name == t.name } }.forEachIndexed { i, t -> repo.saveShiftType(t.copy(id = 0, sortOrder = next + i)) }
-                }
-                // Said before the question closes, so the kind-of-work line waiting for it says both (AppRoot).
-                TypeFoldAsk.done.value = TypeFoldAsk.Done(a.calendar, ids,
-                    "${a.from.label} 근무 종류 ${ids.size}개를 접었어요" + if (was != null) " · 근무 주기는 오늘까지예요" else "", was, a.from)
+                TypeFoldAsk.fold(c, a, patterns)
                 TypeFoldAsk.asking.value = null
             }) { Text("접어 두기") }
         },
