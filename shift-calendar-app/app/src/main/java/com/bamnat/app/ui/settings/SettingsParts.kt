@@ -304,7 +304,7 @@ internal fun OrgDayRows(group: String, on: Boolean, onChange: (group: String, on
         horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp),
     ) {
         com.bamnat.core.plaza.IndustryGroups.WITH_DAYS.forEach { g ->
-            androidx.compose.material3.FilterChip(
+            com.bamnat.app.ui.components.FilterChip(
                 selected = g.key == picked?.key,
                 onClick = { if (g.key == picked?.key) onChange("", on) else onChange(g.key, true) },
                 label = { androidx.compose.material3.Text(g.name) },

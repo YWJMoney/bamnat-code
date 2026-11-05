@@ -98,6 +98,10 @@ fun PublicSourceLine(c: PublicCycle, modifier: Modifier = Modifier, link: Boolea
         StatusChip(PublicCycles.BADGE, Tone.QUIET)
         StatusChip("신뢰도 ${c.trustLine}", if (c.weak) Tone.WAIT else Tone.QUIET)
         if (c.asOf.isNotEmpty()) Text("시점 ${c.asOf}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // [CYC-10] 1.38: an old source says so, so no one takes a 2004 article for today's way.
+        PublicCycles.yearsOld(c, com.bamnat.core.time.Today.date())?.takeIf { it >= OLD_YEARS }?.let { y ->
+            StatusChip("${y}년 전 자료 · 지금과 다를 수 있어요", Tone.WAIT)
+        }
         if (link && c.source.isNotEmpty()) {
             TextButton(onClick = { runCatching { uri.openUri(c.source) } }, modifier = Modifier.heightIn(min = 48.dp)) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, null, Modifier.size(16.dp))
@@ -107,6 +111,9 @@ fun PublicSourceLine(c: PublicCycle, modifier: Modifier = Modifier, link: Boolea
         }
     }
 }
+
+/** [CYC-10] A source this many years old or more is marked as old. */
+private const val OLD_YEARS = 5
 
 /** [SPAT-02] One public row in a list: company · 사업장, the form and order, the shifts, and where it comes from. */
 @Composable
@@ -166,6 +173,9 @@ fun PublicCycleSection(
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (browse && query.trim().length < 2) {
             Text("근무형태로 찾기", style = MaterialTheme.typography.titleSmall)
+            // [CYC-10] 1.38 순서로 찾기.
+            Text("회사 이름 대신 ‘주야비휴’, ‘당비비’처럼 근무 순서를 써도 찾아요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 PublicCycles.forms.take(6).forEach { (key, name) ->
                     FilterChip(selected = form == key, onClick = { form = if (form == key) null else key; group = null }, label = { Text(name) })
@@ -623,7 +633,7 @@ internal fun UploadCycleDialog(initial: String, onDismiss: () -> Unit, onNext: (
     var name by rememberSaveable { mutableStateOf(initial) }
     var form by rememberSaveable { mutableStateOf<String?>(null) }
     val ok = PublicCycles.norm(name).length >= 2 && form != null
-    androidx.compose.material3.AlertDialog(
+    com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("우리 회사 근무표 올리기") },
         text = {

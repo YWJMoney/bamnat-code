@@ -162,6 +162,21 @@ class PublicCyclesTest {
         assertTrue(com.bamnat.core.plaza.IndustryGroups.ALL.all { it.note.isNotBlank() })
     }
 
+    @Test fun theOrderAsSaidFindsItsRows() {
+        // [CYC-10] 순서로 찾기: any day first, spaces and · ignored; a name is not an order.
+        val dnbo = PublicCycles.search("주야비휴")
+        assertTrue(dnbo.size >= 5)
+        assertTrue(dnbo.all { it.codes.length == 4 && PublicCycles.sameRotation(it.codes, "DNBO") })
+        assertEquals(dnbo.toSet(), PublicCycles.search("야 비 휴 주").toSet())
+        assertEquals(dnbo.toSet(), PublicCycles.search("주·야·비·휴").toSet())
+        assertTrue(PublicCycles.search("당비휴").any { it.industry == "공항 검역" })
+        assertEquals(null, PublicCycles.orderCodes("휴휴"))
+        assertEquals(null, PublicCycles.orderCodes("포스코"))
+        assertEquals("포스코", PublicCycles.search("ㅍㅅㅋ").first().company)
+        // An old source is marked by its year.
+        assertEquals(22, PublicCycles.yearsOld(all.first { it.company == "대구 법인택시" }, LocalDate.of(2026, 11, 6)))
+    }
+
     @Test fun controlRoomVariantsAreAmongTheCandidates() {
         // [CYC-08] 상황실·소방 변형: 4조1교대 당비비비·주당비휴, 3조2교대 주야비, 5조3교대 주주야비휴.
         val duty = PublicCycles.provided("어느 상황실", "4조1교대")
