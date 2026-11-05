@@ -1718,8 +1718,8 @@ function adminApp(L, BUILD, M) {
     const ASK_DO = { reply: "답", link: "개발사항에 묶고 답", dev: "새 개발사항", skip: "빼 두기" };
     const askRows = (res?.asks ?? []).map((a) => `<li>${a.ids.length > 1 ? `문의 ${a.ids.length}건` : "문의"} · ${esc(ASK_DO[a.do] ?? a.do)}${a.item ? ` ${esc(a.item)}` : ""}${a.title ? ` ‘${esc(a.title)}’` : ""}
         <small>${esc(a.previews.filter(Boolean).join(" / "))}</small>${a.text ? `<small class="answer">답: ${esc(a.text)}</small>` : ""}${a.problem ? ` <span class="pill bad">${esc(a.problem)}</span>` : ""}</li>`).join("");
-    const lines = res ? `<ul class="mini">${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(DEV_NAMES[l.status] ?? l.status)}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
-        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.text ? `<small class="answer">답: ${esc(l.text)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}</li>`).join("")}${askRows}</ul>
+    const lines = res ? `<ul class="mini">${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(l.status ? DEV_NAMES[l.status] ?? l.status : "개발 기록")}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
+        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.note ? `<small class="answer">기록: ${esc(l.note)}</small>` : ""}${l.text ? `<small class="answer">답: ${esc(l.text)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}</li>`).join("")}${askRows}</ul>
       <label class="switch"><input type="checkbox" id="sort-notify" checked><span class="track" aria-hidden="true"></span><span>완료·반려된 개발사항의 문의에도 답 보내기</span></label>
       <div class="actions"><button class="btn small primary" data-act="sort-result-go"${[...res.lines, ...(res.asks ?? [])].some((l) => !l.problem) ? "" : " disabled"}>반영하기</button>
         <button class="btn small ghost" data-act="sort-result-clear">다시 붙여 넣기</button></div>` : "";
@@ -1728,7 +1728,7 @@ function adminApp(L, BUILD, M) {
       <div class="actions"><button class="btn small primary" data-act="sort-handoff"${n || asks ? "" : " disabled"}>${icon(P.copy)}넘길 글 복사 (문의 ${asks} · 개발 ${n})</button>
         <button class="btn small" data-act="sort-handoff-all">진행 중인 것 모두 복사</button></div>
       <details${res ? " open" : ""}><summary>개발 결과 붙여 넣기</summary>
-        <p class="hint">Claude가 준 ‘결과’ 덩어리를 통째로 붙여 넣어요. 문의 답, 개발사항 묶기·만들기, 개발 상태와 묶인 문의 답이 한 번에 처리돼요. 먼저 무엇이 바뀌는지 보여 드려요.</p>
+        <p class="hint">Claude가 준 ‘결과’ 덩어리를 통째로 붙여 넣어요. 문의 답, 개발사항 묶기·만들기, 개발 상태와 개발 기록, 묶인 문의 답이 한 번에 처리돼요. 먼저 무엇이 바뀌는지 보여 드려요.</p>
         ${res ? lines : `<textarea id="sort-result" rows="4" placeholder="d0123456789abcde 완료 1.36.0"></textarea>
         <div class="actions"><button class="btn small" data-act="sort-result-check">무엇이 바뀌는지 보기</button></div>`}</details></div>`;
   }
@@ -4057,7 +4057,7 @@ function adminApp(L, BUILD, M) {
       const res = S.sortResult;
       if (!res) return;
       const notify = document.getElementById("sort-notify")?.checked === true;
-      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => [r.changed && `개발사항 ${r.changed}개 반영`, r.created?.length && `새 개발사항 ${r.created.length}개`, r.answered && `문의 ${r.answered}건에 답`,
+      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => [r.changed && `개발사항 ${r.changed}개 반영`, r.noted && `개발 기록 ${r.noted}줄`, r.created?.length && `새 개발사항 ${r.created.length}개`, r.answered && `문의 ${r.answered}건에 답`,
         r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || "바뀐 것이 없어요");
       if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
     },

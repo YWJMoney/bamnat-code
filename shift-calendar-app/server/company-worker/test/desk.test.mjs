@@ -179,3 +179,38 @@ test("[ADM2-08] 복사 두 번으로 끝: 넘길 글에 문의가 있고, 결과
   assert.equal(again.asks, 0);
   assert.equal(again.items.length, 0);
 });
+
+test("[ADM2-09] 개발 기록: 결과의 기록 줄이 개발사항에 남고, 다음 넘길 글의 ‘개발 기록’에 판·나감·반려 이유·기록과 함께 실려요", async () => {
+  const { call } = server();
+  const admin = await signIn(call);
+  assert.equal((await call("POST", "/api/admin/desk/ship", { version: "1.36.1" }, admin)).status, 200);
+  const a = (await call("POST", "/api/admin/dev", { title: "잠금 화면 알람 소리", body: "잠금 화면에서 소리가 안 나요" }, admin)).data.id;
+  const b = (await call("POST", "/api/admin/dev", { title: "위젯 글자 크기" }, admin)).data.id;
+  const c = (await call("POST", "/api/admin/dev", { title: "달력 첫 화면에 날씨" }, admin)).data.id;
+  const block = [
+    `${a} 완료 1.37.0 | 기록: PR #171 커밋 abc1234, AlarmService 소리 채널 고침 | 답: 1.37.0에 들어가요.`,
+    `${b} 기록 PR #170\\n위젯 글자 크기 설정 추가, 에뮬레이터 확인`,
+    `${b} 완료 1.36.1`,
+    `${c} 반려 날씨는 개인정보 처리방침 범위 밖이에요`,
+    `${c} 기록`,
+  ].join("\n");
+  const dry = (await call("POST", "/api/admin/inquiries/handoff/result", { text: block, dry: true }, admin)).data;
+  assert.equal(dry.lines[0].note, "PR #171 커밋 abc1234, AlarmService 소리 채널 고침");
+  assert.equal(dry.lines[0].text, "1.37.0에 들어가요.");
+  assert.equal(dry.lines[1].status, null);
+  assert.equal(dry.lines[1].note, "PR #170\n위젯 글자 크기 설정 추가, 에뮬레이터 확인");
+  assert.equal(dry.lines.at(-1).problem, "기록이 비어 있어요");
+  const r = (await call("POST", "/api/admin/inquiries/handoff/result", { text: block }, admin)).data;
+  assert.equal(r.noted, 2);
+  assert.equal(r.changed, 3);
+  const item = (await call("GET", `/api/admin/dev/${a}`, undefined, admin)).data;
+  assert.ok(JSON.stringify(item).includes("AlarmService 소리 채널 고침"));
+  const h = (await call("GET", "/api/admin/inquiries/handoff", undefined, admin)).data;
+  assert.match(h.text, /## 개발 기록 \(지난 개발사항 3개/);
+  assert.ok(h.text.includes(`${a} · 잠금 화면 알람 소리 · 완료 1.37.0 (아직 안 나감)`));
+  assert.ok(h.text.includes(`${b} · 위젯 글자 크기 · 완료 1.36.1 (나감)`));
+  assert.ok(h.text.includes(`${c} · 달력 첫 화면에 날씨 · 반려: 날씨는 개인정보 처리방침 범위 밖이에요`));
+  assert.match(h.text, /기록: \d{4}-\d\d-\d\d .+: PR #171 커밋 abc1234/);
+  assert.match(h.text, /내용: 잠금 화면에서 소리가 안 나요/);
+  assert.match(h.text, /기록 무엇을 어디서 어떻게 고쳤는지/);
+});
