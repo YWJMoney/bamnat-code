@@ -218,7 +218,12 @@ fun PatternScreen(
             Text(
                 // [SETUP-09] What each choice means, with an example, instead of 교대 순환·요일 고정.
                 if (kind == PatternKind.ROTATION) "교대 근무예요. 주주야야비휴처럼 정한 순서가 며칠마다 다시 돌아요."
-                else "월~금 주간처럼 요일마다 근무가 같아요. 상근직·파트타임이 주로 골라요.",
+                // 1.37 PC 978d10f1 LOW-3: the example in the user's own work (일근 has its own 일근 now).
+                else when (vm.style) {
+                    com.bamnat.core.work.WorkStyle.HOURLY -> "토·일 오전처럼 요일마다 근무가 같아요. 일하는 요일만 골라요."
+                    com.bamnat.core.work.WorkStyle.DAY -> "월~금 일근처럼 요일마다 근무가 같아요."
+                    else -> "월~금 일근처럼 요일마다 근무가 같아요. 상근직·파트타임이 주로 골라요."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

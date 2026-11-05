@@ -228,4 +228,30 @@ class TypeFoldAppTest {
         val day = PatternDraft().apply { initFrom(null, today, 7L) }
         assertEquals(listOf(7L, 7L, 7L, 7L, 7L, null, null), day.weekly.toList())
     }
+
+    /** 1.37 PC 978d10f1 MED-2: 일근 → 알바 (토·일 saved from tomorrow) → 일근 brings 월~금 back, and 알바 gets its 토·일 back after. */
+    @Test fun dayWorkComesBackAfterHourlyDays() = runBlocking {
+        val c = app.container
+        val repo = c.calendars.repository(PersonalCalendar.MAIN)
+        repo.ensureDefaults()
+        WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
+        val today = com.bamnat.core.time.Today.date()
+        val day = repo.shiftTypes.first().first { !it.isOff }.id
+        repo.restorePatterns(listOf(com.bamnat.core.model.WorkPattern.Weekly(today.minusDays(30),
+            java.time.DayOfWeek.entries.associateWith { d -> day.takeIf { d.value <= 5 } })))
+        val dayWork = repo.patterns.first()
+        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, dayWork, WorkStyle.DAY)
+        repo.changePatternFrom(com.bamnat.core.model.WorkPattern.Weekly(today.plusDays(1),
+            java.time.DayOfWeek.entries.associateWith { d -> day.takeIf { d.value >= 6 } }), today.plusDays(1))
+        val hourly = repo.patterns.first()
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.HOURLY, WorkStyle.DAY)
+        assertEquals("월~금이 돌아와요", dayWork, repo.patterns.first())
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.DAY, WorkStyle.HOURLY)
+        assertEquals("토·일이 돌아와요", hourly.last(), repo.patterns.first().last())
+        TypeFoldAsk.asking.value = null
+        WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
+        repo.clearPattern()
+    }
 }

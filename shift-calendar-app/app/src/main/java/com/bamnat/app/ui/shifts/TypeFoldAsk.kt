@@ -106,10 +106,14 @@ object TypeFoldAsk {
         c.foldedTypes.stop(calendar, to, null)
         val repo = c.calendars.repository(calendar)
         val now = repo.patterns.first()
-        if (madeByHand(now, stopped)) return
-        // 1.37 PC 67d13335: the schedule it replaces is kept for its own kind of work too (일근's 월~금 back when 일근 comes back).
         val today = com.bamnat.core.time.Today.date()
-        if (from != null && from != to && ownSchedule(from, going(now, today)) && c.foldedTypes.stopped(calendar, from) == null) {
+        val fromOwn = from != null && from != to && ownSchedule(from, going(now, today))
+        // 1.37 PC 978d10f1 MED-2 (일근 → 알바 → 일근에서 월~금이 안 돌아옴): the 알바's own days saved meanwhile are days of the week
+        // too, but the 알바's, not set again by hand for 일근; only a schedule of another kind than the work left counts as by hand.
+        val sameKind = fromOwn && (from == WorkStyle.SHIFT) == (to == WorkStyle.SHIFT)
+        if (!sameKind && madeByHand(now, stopped)) return
+        // 1.37 PC 67d13335: the schedule it replaces is kept for its own kind of work too (일근's 월~금 back when 일근 comes back).
+        if (fromOwn && c.foldedTypes.stopped(calendar, from!!) == null) {
             c.foldedTypes.stop(calendar, from, com.bamnat.app.data.FoldedTypes.StoppedCycle(today, now, from))
         }
         repo.restorePatterns(stopped.was)

@@ -54,8 +54,13 @@ class ShiftsViewModel(
     fun fold(id: Long) = container.foldedTypes.fold(calendarId, listOf(id))
 
     /** Null until loaded; [PatternState.pattern] is null when there is no pattern. */
+    // 1.37 PC 978d10f1 MED-1 (알바 토·일을 '내일'부터 저장한 뒤 다시 열면 빈칸): the schedule going on after today, one saved from
+    // tomorrow too, before the one today is the last day of.
     val pattern: StateFlow<PatternState?> =
-        active.flatMapLatest { it.pattern }.map { PatternState(it) }
+        active.flatMapLatest { it.patterns }.map { all ->
+            val today = Today.date()
+            PatternState(TypeFoldAsk.going(all, today) ?: com.bamnat.core.schedule.PatternTimeline.current(all, today))
+        }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings

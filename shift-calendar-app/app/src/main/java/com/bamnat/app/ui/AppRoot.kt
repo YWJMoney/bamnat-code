@@ -1073,7 +1073,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 private val PAY_ASKS = setOf("pay.calc", "pay.report", "pay.gap", "pay.whatIf", "pay.compLeave", "hourly.takeHome", "hourly.weeks", "leave.ledger")
 
 /** [UNDO-01] A kind-of-work change's own extras, for its 되돌리기: the 시급 types it added and the next step it opened (a route pattern). */
-internal class StyleExtras(val entryId: String, val calendar: String, val addedTypes: List<Long>, val opened: String?)
+internal class StyleExtras(
+    val entryId: String, val calendar: String, val addedTypes: List<Long>, val opened: String?,
+    /** The change, so 되돌리기 puts the new work's own kinds of day away again (1.37 PC 978d10f1 LOW-4: 일근 stayed under 교대). */
+    val from: WorkStyle? = null, val to: WorkStyle? = null,
+)
 
 /** [UNDO-01] Adds what [style] brings to calendar [calendar] (시급 types for hourly work); the ids added, for 되돌리기. */
 internal suspend fun addStyleTypes(container: AppContainer, calendar: String, style: WorkStyle): List<Long> {
@@ -1092,6 +1096,13 @@ internal suspend fun undoOffer(container: AppContainer, entryId: String, extras:
     if (ok && extras != null && extras.entryId == entryId) {
         val schedule = container.calendars.repository(extras.calendar)
         extras.addedTypes.forEach { schedule.deleteShiftType(it) }
+        val from = extras.from
+        val to = extras.to
+        if (from != null && to != null && from != to) {
+            val names = com.bamnat.app.data.FoldedTypes.startNames(to) - com.bamnat.app.data.FoldedTypes.startNames(from)
+            val left = schedule.shiftTypes.first().filter { !it.isOff && it.name in names && it.id !in extras.addedTypes }
+            if (left.isNotEmpty()) container.foldedTypes.fold(extras.calendar, left.map { it.id })
+        }
     }
     return ok
 }
@@ -1286,12 +1297,15 @@ private fun AppNavHost(
                     val added = if (style != before || style == WorkStyle.HOURLY) addStyleTypes(container, calendar, style) else emptyList()
                     // 1.36 PC 재검토: the old kind of work's 근무 종류 are offered once to be put away (never deleted).
                     com.bamnat.app.ui.shifts.TypeFoldAsk.after(container, calendar, before, style)
+                    // 1.37 PC 978d10f1 LOW-1 (일근으로 돌아올 때마다 '1/2 근무 주기'가 열림): the next step looks at the schedule after
+                    // a stopped one came back by itself.
+                    val patternsNow = schedule.patterns.first()
                     // Shifts, days and hours are then asked by the setup, not by the pattern or pay screen. 현장·자영업·투자 have
                     // nothing more to ask: the setup's own watch saves it ([com.bamnat.app.data.SetupLater]) and the screens below follow.
                     if (setupWaits && style != before && with(com.bamnat.app.data.SetupLater) { style.asksMore }) {
                         nav.popFrom(Routes.WORK_STYLE)
                         container.setupDrafts.save(com.bamnat.app.data.SetupLater.fresh(style, company = container.setupDrafts.draft.value?.companyName.orEmpty()))
-                        if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, null)
+                        if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, null, before, style)
                         return@launch
                     }
                     var opened: String? = null
@@ -1301,8 +1315,8 @@ private fun AppNavHost(
                     }
                     when {
                         style == before -> nav.popFrom(Routes.WORK_STYLE)
-                        style == WorkStyle.SHIFT && patterns.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay, calendar = calendar), Routes.PATTERN)
-                        style == WorkStyle.DAY && patterns.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay, calendar = calendar), Routes.PATTERN)
+                        style == WorkStyle.SHIFT && patternsNow.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay, calendar = calendar), Routes.PATTERN)
+                        style == WorkStyle.DAY && patternsNow.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay, calendar = calendar), Routes.PATTERN)
                         style == WorkStyle.HOURLY && !pay -> go(Routes.pay(calendar), Routes.PAY)
                         // [TYPE-03] A shop sets its hours and regular days off next.
                         style == WorkStyle.BUSINESS -> go(Routes.shopDays(calendar), Routes.SHOP_DAYS)
@@ -1312,7 +1326,7 @@ private fun AppNavHost(
                         }
                     }
                     // [UNDO-01] What 되돌리기 takes back besides the trash entry: the types added and the step opened.
-                    if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, opened)
+                    if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, opened, before, style)
                   } finally { styleBusy = false }
                 }
             }
