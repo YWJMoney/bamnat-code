@@ -671,13 +671,13 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
             } else Text(it, style = MaterialTheme.typography.bodyLarge)
         }
             ?: if (mine) Text("한 줄 소개를 적어 보세요 (프로필 고치기)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) else Unit
-        // 숫자 줄: 테마 · 기능별 탭 · 팔로워 · 팔로잉 · 쓰는 분
+        // 숫자 줄: 테마 · 기능별 탭 · 팔로워 · 팔로잉 · 넣은 분
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Count(p.themes.size, "테마")
             Count(p.tabRecipes.size, "기능별 탭")
             Count(p.followers, "팔로워", if (mine) ({ onPeople("followers") }) else null)
             Count(p.followingCount, "팔로잉", if (mine) ({ onPeople("following") }) else null)
-            Count(p.users, "쓰는 분")
+            Count(p.users, "넣은 분")
         }
         if (!p.mine) {
             if (vm.canFollow) {
@@ -1315,7 +1315,7 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit
             val st = s.stats
             if (st == null) { Text(s.error ?: "불러오는 중이에요"); if (s.error != null) TextButton(onClick = vm::load) { Text("다시 해 보기") }; return@Column }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Count(st.week, "이번 주 넣은 수"); Count(st.users, "쓰는 분 모두"); Count(st.likes, "좋아요 모두")
+                Count(st.week, "이번 주 넣은 수"); Count(st.users, "넣은 분 모두"); Count(st.likes, "좋아요 모두")
             }
             Text("누가 썼는지는 서버도 몰라요. 작품과 날마다의 수만 세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (st.items.isEmpty()) Text("장터에 공개로 올린 작품이 생기면 여기 보여요")

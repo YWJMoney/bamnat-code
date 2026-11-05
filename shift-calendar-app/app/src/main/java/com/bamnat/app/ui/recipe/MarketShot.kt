@@ -38,7 +38,8 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -94,6 +95,8 @@ internal object MarketShots {
      */
     val drawing = kotlinx.coroutines.sync.Mutex()
     const val HOLD = 1500L
+    /** How long a card must have stood still on the screen (the list not moving) before it is drawn. */
+    const val STILL = 200L
 
     fun shot(key: String): ImageBitmap? = shots.get(key)
     fun keep(key: String, b: ImageBitmap) { shots.put(key, b) }
@@ -209,11 +212,17 @@ private fun ShotFrame(
 ) {
     // MED-2: this card's turn to be drawn live: it is on the screen (not only composed ahead of it), has stayed a moment, and no other is drawing.
     var turn by remember(key) { mutableStateOf(false) }
-    var placed by remember(key) { mutableStateOf(false) }
+    // PC 확인 f020cead MED (끊김이 3차보다 나빠짐: 이제 모든 카드가 그려지니 스크롤 중에도 그림): a card is drawn only once the list
+    // has stood still under it, so nothing heavy is drawn while a finger or a fling moves the list. Kept outside Compose state so moving
+    // never recomposes the card.
+    val still = remember(key) { StillWatch() }
     val now by androidx.compose.runtime.rememberUpdatedState(picture)
     if (picture == null && recipe != null) LaunchedEffect(key) {
-        androidx.compose.runtime.snapshotFlow { placed }.first { it }
-        kotlinx.coroutines.delay(150)
+        while (true) {
+            val was = still.where
+            kotlinx.coroutines.delay(MarketShots.STILL)
+            if (was != null && was == still.where) break
+        }
         MarketShots.drawing.lock()
         try {
             turn = true
@@ -221,7 +230,7 @@ private fun ShotFrame(
         } finally { MarketShots.drawing.unlock() }
     }
     val said = if (picture != null || recipe != null) "작품 모습" else if (gaveUp) "작품 작은 그림" else "작품 모습 불러오는 중"
-    Box(modifier.size(width, height).clip(RoundedCornerShape(width / 10)).onPlaced { placed = true }.clearAndSetSemantics {
+    Box(modifier.size(width, height).clip(RoundedCornerShape(width / 10)).onGloballyPositioned { still.at(it.positionInWindow()) }.clearAndSetSemantics {
         contentDescription = said
     }, contentAlignment = Alignment.Center) {
         val p = picture
@@ -367,6 +376,9 @@ private fun sample(text: String): String = text.replace(Regex("\\{[^}]{1,20}\\}"
     val name = m.value.trim('{', '}')
     when {
         // PC 확인 edb46c62 LOW: '오늘 매출 3, 목표를 넘었어요' — money blanks are written {원(…)}.
+        // PC 확인 f020cead LOW: '큰 지출 38,500원 · 이달 쓴 돈 38,500원' — a month's sum is bigger than one day's.
+        name.startsWith("원(이달") && "지출" in name -> "1,284,000원"
+        name.startsWith("원(이달") -> "3,120,000원"
         name.startsWith("원(") && "지출" in name -> "38,500원"
         name.startsWith("원(") || "돈" in name || "급여" in name || "금액" in name || "매출" in name -> "120,000원"
         name == "근무시작" -> "07:00"
@@ -386,4 +398,11 @@ private fun sample(text: String): String = text.replace(Regex("\\{[^}]{1,20}\\}"
         "이름" in name || "근무" == name -> "주간"
         else -> "3"
     }
+}
+
+/** Where a card was last placed on the screen (null until it is, so a card composed ahead of the screen is never drawn). */
+private class StillWatch {
+    var where: androidx.compose.ui.geometry.Offset? = null
+        private set
+    fun at(o: androidx.compose.ui.geometry.Offset) { where = o }
 }
