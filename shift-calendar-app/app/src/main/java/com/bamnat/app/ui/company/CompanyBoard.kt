@@ -602,8 +602,11 @@ fun TalkSheet(holder: TalkHolder) {
                 // PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked
                 // when the box is first tapped, before anything is written; 보내기 still asks if they were put off (나중에).
                 var rulesAsked by remember { mutableStateOf(false) }
-                // [TOWN-03] 1.37: in a kind of work's 광장, once the box is tapped, the 마을 이름 the post would go up under.
-                if (styleRoom && rulesAsked) com.bamnat.app.ui.village.VillageNameCard(holder.container, unnamed = "참여자 번호",
+                // [TOWN-12] PC 확인 a6cab3c8: the rules as a card above the box (the window took the words being written and closed
+                // on a tap outside); the 마을 이름 card [TOWN-03] only once they are agreed, so the two never come one after the other.
+                var rulesOk by remember { mutableStateOf(rules.isAgreed) }
+                if (rulesAsked && !rulesOk) PlazaRulesCard(rules, onAgreed = { rulesOk = true }, modifier = Modifier.padding(top = 8.dp))
+                else if (styleRoom && rulesAsked) com.bamnat.app.ui.village.VillageNameCard(holder.container, unnamed = "참여자 번호",
                     modifier = Modifier.padding(top = 8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
@@ -620,7 +623,7 @@ fun TalkSheet(holder: TalkHolder) {
                         }) },
                         maxLines = 4,
                         shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) { rulesAsked = true; rules.ensure { } } },
+                        modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) rulesAsked = true },
                     )
                     IconButton(
                         onClick = {
@@ -637,6 +640,7 @@ fun TalkSheet(holder: TalkHolder) {
                             } else if (pollDraft.isNotEmpty() && kind == "question" && (poll.size < 2 || poll.toSet().size != poll.size)) {
                                 error = "투표 보기를 서로 다르게 두 개 이상 적어 주세요"
                             } else rules.ensure {
+                                rulesOk = true
                                 busy = true
                                 holder.send(body, parent = parent, kind = sentKind, change = if (proposing) lines else emptyList(), withSetup = withIt, poll = poll,
                                     attach = attach.takeIf { styleRoom && kind == "show" && replyTo == null }) { e ->

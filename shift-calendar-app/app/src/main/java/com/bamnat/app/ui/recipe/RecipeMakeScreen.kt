@@ -562,6 +562,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // 1.35 실사용 점검: say why 다음 does not go on.
+                val barHeld by vm.publishRow.collectAsStateWithLifecycle()
                 when {
                     !s.ready -> null
                     s.step < 5 && s.recipe.pieces.isEmpty() -> "예시 앱에서 하나 이상 바꾸거나 켜면 다음으로 가요"
@@ -570,6 +571,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     // [TOWN-09] PC 확인 73f69cbd (바꾼 것 없이 새 판으로 올리기를 누르면 아무 반응이 없어요): the server's refusal is shown in the
                     // body above, often out of sight; it is said here by the button too.
                     s.step == 5 && s.error != null && !s.sending -> s.error
+                    // PC 확인 a6cab3c8 (올리기가 닫혀 있을 때 회색 단추 위에 까닭이 없어요): said by the button too.
+                    s.step == 5 && !vm.canPublish -> "올리기가 아직 닫혀 있어요 · " + (vm.publishHeld(barHeld) ?: "정식 출시일(11월 10일 예정)부터 열려요")
                     s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,

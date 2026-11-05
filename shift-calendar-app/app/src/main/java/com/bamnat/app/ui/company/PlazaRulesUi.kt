@@ -52,6 +52,12 @@ class PlazaRulesGate internal constructor(private val agreed: () -> Boolean, pri
         if (agreed()) then() else waiting = then
     }
 
+    /** Whether the rules in force are agreed on this phone. */
+    val isAgreed: Boolean get() = agreed()
+
+    /** [TOWN-12] Agreed from the card above the box, nothing waiting to be sent. */
+    fun agreeNow() { agree() }
+
     internal fun accept() {
         agree()
         waiting?.invoke()
@@ -102,6 +108,33 @@ private fun PlazaRulesDialog(gate: PlazaRulesGate) {
         confirmButton = { TextButton(onClick = gate::accept) { Text("동의하고 쓰기") } },
         dismissButton = { TextButton(onClick = { gate.waiting = null }) { Text("나중에") } },
     )
+}
+
+/**
+ * [TOWN-12] PC 확인 a6cab3c8 (답글 칸을 누르면 규칙 창이 먼저 떠서 쓰던 글이 사라지고, 바깥을 누르면 동의 없이 닫혀요): the rules
+ * as a card above the box, not a window over it. Writing goes on underneath; 동의 is a button of its own, and nothing closes it
+ * without one. 보내기 still asks in the window when it was never agreed.
+ */
+@Composable
+fun PlazaRulesCard(gate: PlazaRulesGate, onAgreed: () -> Unit, modifier: Modifier = Modifier) {
+    val context = LocalContext.current
+    val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed)
+    SoftCard(modifier.fillMaxWidth(), highlighted = true) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(if (changed.isEmpty()) "처음 쓰기 전에 광장 운영 규칙에 동의해 주세요" else "운영 규칙이 바뀌었어요 (${changed.size}줄). 다시 동의해 주세요",
+                style = MaterialTheme.typography.titleSmall)
+            Text(PlazaRules.LINES.take(3).mapIndexed { i, l -> "${i + 1}. $l" }.joinToString("\n") + if (PlazaRules.LINES.size > 3) "\n…" else "",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 6)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, PlazaRules.URL, "광장 운영 규칙") },
+                    modifier = Modifier.heightIn(min = 48.dp)) { Text("전체 보기") }
+                Spacer(Modifier.weight(1f))
+                androidx.compose.material3.FilledTonalButton(onClick = { gate.agreeNow(); onAgreed() }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("동의해요")
+                }
+            }
+        }
+    }
 }
 
 /** 1.36 PC 재검토 (마을에서 운영 규칙 여는 곳을 못 찾았어요): under every writing guide, the rules in the app's own page. */
