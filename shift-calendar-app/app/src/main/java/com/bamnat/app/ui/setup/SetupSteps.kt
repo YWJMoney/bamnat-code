@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.EditCalendar
@@ -184,6 +185,8 @@ internal fun CompanyStep(
             else -> "공개 자료에 회사 근무주기가 있으면 그대로 가져와요. 회사 이름은 몰라도 괜찮아요."
         },
     )
+    // [EASE-16] 1.38: a roster that comes every month (간호) is read from its photo, the biggest way in on this page.
+    if (d.style == WorkStyle.SHIFT && d.rosterMonthly && d.source == null) RosterPhotoFirst(vm)
     // Typed here and sent on: the draft would put the cursor back on every letter.
     var name by rememberSaveable { mutableStateOf(d.companyName) }
     val focus = LocalFocusManager.current
@@ -238,6 +241,33 @@ internal fun CompanyStep(
         ChoiceCard(title = t.name, subtitle = t.summary, selected = false, onClick = { vm.pickTemplate(t) })
     }
     FileCard("동료가 보낸 회사 설정 파일이 있어요", "근무 시간과 순서를 그대로 가져와요", onOpenFile)
+}
+
+/**
+ * [EASE-16] "근무표 사진으로 한 번에": the month's roster photo picked here, read on the phone while the times are checked, and
+ * waiting on the painting step. Without a company the usual 3교대 (데이·이브닝·나이트·오프) is the start; codes the roster
+ * has besides are asked there one at a time.
+ */
+@Composable
+private fun RosterPhotoFirst(vm: SetupViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) vm.rosterPhotoFirst(context, uri)
+    }
+    androidx.compose.material3.ElevatedCard(
+        onClick = { picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = androidx.compose.material3.CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.PhotoCamera, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+                Text("근무표 사진으로 한 번에", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text("이번 달 근무표 사진 한 장이면 달력이 다 차요. 틀린 칸만 눌러 고쳐요. 사진은 휴대폰 안에서만 읽어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+    }
 }
 
 /** Where the shifts came from, with a way back to choosing. */

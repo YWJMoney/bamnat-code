@@ -274,6 +274,8 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                     dialogTitle = "휴게 시간",
                 )
             }
+            // [EASE-26] The end a little later or earlier with a tap.
+            MinuteNudges(extra.kind.name, onNudge = { d -> update(com.bamnat.core.schedule.MinuteNudge.extra(e, from, to, d, ScheduleRepository.MAX_EXTRA_MINUTES)) })
             Text(
                 "일한 시간 ${HoursFormat.korean(extra.minutes)}" + if (WorkTime.isOvernight(from, to)) " · 끝은 다음 날" else "",
                 style = MaterialTheme.typography.bodySmall,
@@ -297,6 +299,8 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                     dialogTitle = "${extra.kind.name} 시간",
                 )
             }
+            // [EASE-26] 10분·30분·1시간 more, or 30분 less, with a tap.
+            MinuteNudges(extra.kind.name, onNudge = { d -> update(com.bamnat.core.schedule.MinuteNudge.extra(e, null, null, d, ScheduleRepository.MAX_EXTRA_MINUTES)) })
             // Clock times make night minutes exact; the start follows the shift when there is one.
             TextButton(onClick = {
                 val start = from ?: LocalTime.of(9, 0)

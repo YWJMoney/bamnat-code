@@ -353,6 +353,9 @@ object DutyRoster {
             .sortedWith(compareByDescending<RosterRow> { it.cells.size - it.unknown }.thenBy { it.unknown })
             .distinctBy { it.label to it.cells }
         rows = tidy(rows)
+        // [GROW-05] 1.38: a month calendar's picture (다른 앱 화면 캡처) is one line of the user's own; its weeks are not
+        // several people's lines.
+        if (hint == null) CalendarShot.read(clean, codes)?.let { shot -> if (rows.none { it.cells.size > shot.cells.size }) rows = listOf(shot) }
         hint?.myRow?.let(nearest)?.let { mine ->
             // [READ-04] The user's own line: that one only, read even when short, in order from the 1st when no row of days is known.
             rows = rows.filter { it.line == mine }.ifEmpty {

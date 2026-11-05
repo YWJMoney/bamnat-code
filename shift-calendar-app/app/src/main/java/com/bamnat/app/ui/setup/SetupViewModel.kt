@@ -608,6 +608,52 @@ class SetupViewModel(
         com.bamnat.app.ui.imports.RosterReader.photo(context, uri, it, today) { n, m -> _rosterStep.value = n to m }
     }
 
+    /**
+     * [EASE-16] 1.38 "근무표 사진으로 한 번에" on the company page: without kinds of work yet the roster template's (데이·이브닝·나이트·
+     * 오프, 병원 간호) are taken, the setup goes on to its times, and the photo is read meanwhile; the painting step shows it.
+     */
+    fun rosterPhotoFirst(context: Context, uri: Uri) {
+        if (current.types.isEmpty()) templates.firstOrNull { it.roster }?.let(::pickTemplate)
+        readRosterPhoto(context, uri)
+    }
+
+    private val _captureReading = MutableStateFlow(false)
+    /** [GROW-05] A screenshot of another app's month being read for its order. */
+    val captureReading: StateFlow<Boolean> = _captureReading.asStateFlow()
+
+    /**
+     * [GROW-05] 1.38 다른 앱에서 옮기기: a screenshot of the month view of the app used before (or any month calendar with the
+     * work on it) read on the phone, and the order it repeats put in as the setup's order with today's place in it. Only
+     * the picture is read: no other app's files or servers. Says why when the picture shows no order.
+     */
+    fun orderFromCapture(context: Context, uri: Uri) {
+        if (_captureReading.value) return
+        _captureReading.value = true
+        viewModelScope.launch {
+            val r = runCatching { com.bamnat.app.ui.imports.RosterReader.photo(context, uri, rosterCodes(), today) }.getOrNull()
+            _captureReading.value = false
+            val row = r?.rows?.maxByOrNull { it.cells.size }
+            val days = row?.cells.orEmpty().mapNotNull { (d, cell) ->
+                when (cell) {
+                    is com.bamnat.core.imports.DutyCell.Shift -> d to cell.shiftTypeId.takeIf { id -> current.types.firstOrNull { it.id == id }?.isOff != true }
+                    com.bamnat.core.imports.DutyCell.Off -> d to null
+                    else -> null
+                }
+            }.toMap()
+            val order = com.bamnat.core.imports.CalendarShot.order(days)
+            val month = r?.month ?: java.time.YearMonth.from(today)
+            if (order == null) {
+                _message.value = if (row == null) "캡처에서 달력의 날짜와 근무를 찾지 못했어요. 한 달이 다 나온 화면을 캡처해 주세요."
+                    else "캡처에서 되풀이되는 순서를 찾지 못했어요. 매달 근무표가 바뀐다면 ‘잘 모르겠어요’에서 칠해 주세요."
+                return@launch
+            }
+            setRotation(order.steps)
+            // The 1st of the captured month is step 0: today's place follows, asked once more on the next step.
+            answerToday(month.atDay(1), 0)
+            _message.value = "캡처에서 ${order.steps.size}일 순서를 찾았어요. 맞는지 아래 달력으로 확인해 주세요."
+        }
+    }
+
     /** 1.36 PC W10: 취소 on the reading card; nothing is changed. */
     fun cancelRosterRead() {
         rosterJob?.cancel()

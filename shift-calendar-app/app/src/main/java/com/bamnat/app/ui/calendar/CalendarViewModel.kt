@@ -1025,7 +1025,12 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val cover = type?.takeIf { isRosterRestDay(day, it) }?.let { coverKind(snapshot, it) }
             _messages.emit(
                 when {
-                    cover != null -> UndoMessage("원래 쉬는 날이에요. 쉬는 날 일했다면 대근으로 넣어 주세요", "대근으로") {
+                    // [EASE-11] 1.38: the day changed at once (no window); the bar asks whether it was a 대근, and the day's own
+                    // line ("원래 휴무 → 주간 · 되돌리기") takes it back. 대근 keeps the roster and pays the hours as extra work.
+                    cover != null -> UndoMessage(
+                        "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요. 쉬는 날 더 일했다면 ${coverWord()}${Fmt.ro(coverWord())} 칠까요?$alarms",
+                        "${coverWord()}${Fmt.ro(coverWord())}", long = true,
+                    ) {
                         schedule.restoreDay(date, before)
                         schedule.addExtra(date, ExtraText.cover(cover, type))
                     }
@@ -1035,6 +1040,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             )
         }
     }
+
+    /** [EASE-11] What a shift on a day off is called here: 대타 on an 알바 calendar, else 대근 ([J133B-01]). */
+    private fun coverWord(): String = if (container.settingsRepository.current.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"
 
     /** [EXTRA-01] True when [type] would turn a day the roster gives off into a working day: likely a 대근. */
     fun isRosterRestDay(day: ResolvedDay, type: ShiftType): Boolean =
