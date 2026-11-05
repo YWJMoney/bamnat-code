@@ -512,7 +512,8 @@ private fun alarmSummary(type: ShiftType): String {
 @Composable
 private fun AlarmSpecRow(
     alarm: AlarmSpec,
-    ringsAt: LocalTime,
+    /** "06:30", "전날 23:30", "다음날 14:00". */
+    ringsAt: String,
     onEdit: () -> Unit,
     onToggle: (Boolean) -> Unit,
     onRemove: () -> Unit,
@@ -533,7 +534,7 @@ private fun AlarmSpecRow(
                 .padding(vertical = 4.dp),
         ) {
             Text("근무 ${Fmt.offset(alarm.offsetMinutes)}", style = MaterialTheme.typography.bodyLarge)
-            Text("${Fmt.time(ringsAt)}에 울려요 · 눌러서 바꾸기", style = MaterialTheme.typography.bodySmall,
+            Text("${ringsAt}에 울려요 · 눌러서 바꾸기", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = alarm.enabled, onCheckedChange = onToggle)
@@ -788,7 +789,7 @@ fun ShiftTypeEditorDialog(
                                 for (alarm in sorted) {
                                     AlarmSpecRow(
                                         alarm = alarm,
-                                        ringsAt = start.minusMinutes(alarm.offsetMinutes.toLong()),
+                                        ringsAt = com.bamnat.app.ui.components.alarmClock(start, alarm.offsetMinutes), // [EASE-18] 전날·다음날
                                         onEdit = { editingAlarm = alarm },
                                         onToggle = { on ->
                                             draft = draft.copy(alarms = draft.alarms.map { if (it == alarm) it.copy(enabled = on) else it })

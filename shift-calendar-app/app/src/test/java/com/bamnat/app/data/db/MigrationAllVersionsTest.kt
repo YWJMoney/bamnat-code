@@ -212,7 +212,9 @@ class MigrationAllVersionsTest(private val from: Int) {
             "receivable_payments" to mapOf("id" to 1, "receivableId" to 1, "epochDay" to 20767, "amount" to 100000, "entryId" to null),
             "imported_events" to mapOf("eventKey" to "7@2026-11-03T19:00", "epochDay" to 20760, "memoId" to 1, "importedAt" to 1),
             "money_accounts" to mapOf("id" to 1, "name" to "신한 Deep", "type" to "CREDIT", "last4" to "1234", "payDay" to 14, "closeDay" to null,
-                "payFromId" to null, "opening" to 0, "color" to 0, "sortOrder" to 0, "hidden" to 0, "remind" to 1),
+                "payFromId" to null, "opening" to 0, "color" to 0, "sortOrder" to 0, "hidden" to 0, "remind" to 1,
+                // 1.38 [LEDH-25][LEDH-27] Version 26's columns; older versions get their defaults.
+                "rate" to 0.0, "monthlyPay" to 0L, "perfTiers" to "", "perfSkip" to ""),
             "money_budgets" to mapOf("category" to "식비", "amount" to 300000),
             "money_categories" to mapOf("kind" to "EXPENSE", "name" to "운동", "position" to 0, "hidden" to 0),
             "invest_accounts" to mapOf("id" to 1, "name" to "일반 계좌", "type" to "OTHER", "broker" to "", "feeRate" to 0.00015, "sortOrder" to 0, "hidden" to 0),

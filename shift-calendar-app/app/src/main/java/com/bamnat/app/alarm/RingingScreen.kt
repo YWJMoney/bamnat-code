@@ -58,6 +58,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -104,6 +105,10 @@ internal fun RingingScreen(
     hint: String? = null,
     /** [ALRM-22] A call is on: the sound waits for it. */
     inCall: Boolean = false,
+    /** [EASE-20] The day's shift, big on its own colour; null for an alarm without a shift (memo, test, 일어났나요?). */
+    shift: RingShift? = null,
+    /** [EASE-19] 끄고 오늘 보기: off, then the app on today. Null hides it (with a mission, or previews). */
+    onToday: (() -> Unit)? = null,
 ) {
     val now by produceState(Today.dateTime()) {
         while (true) {
@@ -138,7 +143,8 @@ internal fun RingingScreen(
                         style = NumberStyle,
                     )
                     Spacer(Modifier.height(8.dp))
-                    Text(title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
+                    if (shift != null) ShiftBlock(shift)
+                    else Text(title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
                         textAlign = TextAlign.Center)
                     Text(subtitle, color = Color.White.copy(alpha = 0.82f), style = MaterialTheme.typography.bodyLarge,
                         textAlign = TextAlign.Center)
@@ -173,6 +179,14 @@ internal fun RingingScreen(
                             Text("오늘 남은 알람 모두 끄기", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
                         }
                     }
+                    // [EASE-19] Turning it off ends there (the app does not open); this is for when the user wants the day.
+                    if (onToday != null) {
+                        androidx.compose.material3.TextButton(
+                            onClick = onToday,
+                            modifier = Modifier.heightIn(min = 48.dp),
+                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.85f)),
+                        ) { Text("끄고 오늘 보기", style = MaterialTheme.typography.titleSmall) }
+                    }
                 }
             }
             if (sideways) {
@@ -189,6 +203,41 @@ internal fun RingingScreen(
             }
         }
     }
+}
+
+/** [EASE-20] What the ringing screen shows big: "오늘 근무" over "주간" on the shift's colour. */
+data class RingShift(val day: String, val name: String, val color: Color)
+
+/** [EASE-20] The shift [ring] is for, said from [today]: 오늘, 내일 (an alarm the evening before), 어제 (a nap after a 야간). */
+internal fun ringShift(ring: RingRequest, today: java.time.LocalDate): RingShift? {
+    if (ring.shiftName.isBlank() || ring.label != null || ring.recheck) return null
+    val day = when (ring.shiftDate) {
+        today -> "오늘 근무"
+        today.plusDays(1) -> "내일 근무"
+        today.minusDays(1) -> "어제 시작한 근무"
+        else -> "${ring.shiftDate.monthValue}월 ${ring.shiftDate.dayOfMonth}일 근무"
+    }
+    val color = if (ring.shiftColor == 0L) Color(0xFF3D5AFE) else Color(ring.shiftColor.toInt()).copy(alpha = 1f)
+    return RingShift(day, ring.shiftName, color)
+}
+
+/** [EASE-20] The shift's name large on its colour, in white or near-black, whichever reads on it. */
+@Composable
+private fun ShiftBlock(shift: RingShift) {
+    val ink = if (shift.color.luminance() > 0.45f) Color(0xFF14161F) else Color.White
+    Surface(
+        color = shift.color,
+        contentColor = ink,
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.widthIn(min = 200.dp, max = 420.dp).fillMaxWidth()
+            .semantics(mergeDescendants = true) {},
+    ) {
+        Column(Modifier.padding(horizontal = 24.dp, vertical = 18.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(shift.day, style = MaterialTheme.typography.titleMedium, color = ink.copy(alpha = 0.8f))
+            Text(shift.name, fontSize = 44.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, lineHeight = 50.sp)
+        }
+    }
+    Spacer(Modifier.height(10.dp))
 }
 
 /** The sky at [hour]: deep night, a dawn that warms at the bottom, an evening dusk, or a clear day. */

@@ -10,6 +10,11 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.38.0 (docs/plans/1.38-개발계획.md). 갈래마다 줄을 고치면 부딪히니 통합 브랜치에서만 더해요(갈래 0).
+        Release(52, "1.38.0", listOf(
+            // [EASE-17][EASE-20][EASE-21]
+            Line("알람 화면 맨 위에서 다음 알람을 보고 이번만 끌 수 있어요. 울릴 때는 오늘 근무가 근무 색으로 크게 보여요", "alarm.check"),
+        )),
         // 1.37.0 (docs/plans/1.37-인계.md, 통합 PR: 묶음 A·B·C·D·H, 장터 카드, 시간 바퀴, 첫 설정 미루기). 공유 테마(SHR-31·32)는
         // 처리방침 3.11이 켜지는 11월 10일 뒤에 따로 알려요.
         Release(51, "1.37.0", listOf(

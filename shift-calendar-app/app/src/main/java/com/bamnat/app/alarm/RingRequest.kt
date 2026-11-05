@@ -25,6 +25,8 @@ data class RingRequest(
     val shiftTypeId: Long = 0,
     /** [PROV-07] Rung again because 일어났나요? got no answer; it asks no more after this one. */
     val recheck: Boolean = false,
+    /** [EASE-20] The shift's colour (ARGB) for the ringing screen; 0 for none. */
+    val shiftColor: Long = 0,
 ) {
     /** "주간 근무 알람", "알람" for a hand-set alarm on a day without work, or a memo schedule's words. */
     val title: String get() = if (recheck) "일어났나요?" else label ?: if (shiftName.isBlank()) "알람" else "$shiftName 근무 알람"
@@ -41,6 +43,7 @@ data class RingRequest(
         .putExtra(X_LABEL, label)
         .putExtra(X_TYPE, shiftTypeId)
         .putExtra(X_RECHECK, recheck)
+        .putExtra(X_COLOR, shiftColor)
 
     fun encode(): String = JSONObject()
         .put(X_NAME, shiftName)
@@ -54,6 +57,7 @@ data class RingRequest(
         .put(X_LABEL, label ?: JSONObject.NULL)
         .put(X_TYPE, shiftTypeId)
         .put(X_RECHECK, recheck)
+        .put(X_COLOR, shiftColor)
         .toString()
 
     companion object {
@@ -68,6 +72,7 @@ data class RingRequest(
         private const val X_LABEL = "ring_label"
         private const val X_TYPE = "ring_type"
         private const val X_RECHECK = "ring_recheck"
+        private const val X_COLOR = "ring_color"
 
         fun from(plan: PlannedAlarm, triggerAtMillis: Long) = RingRequest(
             shiftName = plan.shiftName,
@@ -78,6 +83,7 @@ data class RingRequest(
             triggerAtMillis = triggerAtMillis,
             custom = plan.custom,
             shiftTypeId = plan.shiftTypeId,
+            shiftColor = plan.colorArgb,
         )
 
         fun fromIntent(intent: Intent?): RingRequest? {
@@ -94,6 +100,7 @@ data class RingRequest(
                 label = intent.getStringExtra(X_LABEL),
                 shiftTypeId = intent.getLongExtra(X_TYPE, 0L),
                 recheck = intent.getBooleanExtra(X_RECHECK, false),
+                shiftColor = intent.getLongExtra(X_COLOR, 0L),
             )
         }
 
@@ -113,6 +120,7 @@ data class RingRequest(
                     label = if (o.isNull(X_LABEL)) null else o.optString(X_LABEL),
                     shiftTypeId = o.optLong(X_TYPE, 0L),
                     recheck = o.optBoolean(X_RECHECK, false),
+                    shiftColor = o.optLong(X_COLOR, 0L),
                 )
             }.getOrNull()
         }

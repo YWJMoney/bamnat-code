@@ -131,6 +131,8 @@ object Fmt {
 
     fun offset(minutes: Int): String = when {
         minutes == 0 -> "시작 시각"
+        // [EASE-18] An alarm after the start: "시작 7시간 뒤".
+        minutes < 0 -> "시작 " + offset(-minutes).removeSuffix(" 전") + " 뒤"
         minutes % 60 == 0 -> "${minutes / 60}시간 전"
         minutes > 60 -> "${minutes / 60}시간 ${minutes % 60}분 전"
         else -> "${minutes}분 전"

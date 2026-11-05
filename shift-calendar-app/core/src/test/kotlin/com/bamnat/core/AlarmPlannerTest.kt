@@ -186,4 +186,30 @@ class AlarmPlannerTest {
         assertNull(AlarmPlanner.restDay(before, resolver(listOf(DayEntry(date, leave = com.bamnat.core.model.Leave(quarters = 2)))), date))
         assertNull(AlarmPlanner.restDay(before, before, start.plusDays(4)))
     }
+
+    /** [EASE-18] An alarm after the start (below zero) rings on the next day, and the codec keeps it. */
+    @Test
+    fun alarmAfterStartRingsNextDay() {
+        // 야간 starts 22:00 (fixture); 다음날 14:30 is 16h30m after the start.
+        val nap = night.copy(alarms = listOf(AlarmSpec(-(16 * 60 + 30))))
+        val types = Fixtures.all.map { if (it.id == night.id) nap else it }
+        val a = AlarmPlanner.alarmsOn(resolver(types = types), start.plusDays(2)).single()
+        assertEquals(start.plusDays(3).atTime(night.start!!.plusMinutes(16 * 60 + 30L)), a.triggerAt)
+        assertEquals(-(16 * 60 + 30), a.offsetMinutes)
+        val next = AlarmPlanner.nextAlarm(resolver(types = types), start.plusDays(3).atTime(0, 0))!!
+        assertEquals(a.triggerAt, next.triggerAt)
+        assertEquals(listOf(AlarmSpec(-990, true)), AlarmCodec.decodeSpecs(AlarmCodec.encodeSpecs(listOf(AlarmSpec(-990)))))
+    }
+
+    /** [EASE-18] 전날·당일·다음날 and back. */
+    @Test
+    fun alarmDayWords() {
+        val s = LocalTime.of(22, 0)
+        assertEquals(0, com.bamnat.core.alarm.AlarmOffsets.dayOf(s, 60))
+        assertEquals(-1, com.bamnat.core.alarm.AlarmOffsets.dayOf(LocalTime.of(6, 0), 7 * 60))
+        assertEquals(1, com.bamnat.core.alarm.AlarmOffsets.dayOf(s, -10 * 60))
+        assertEquals(-16 * 60, com.bamnat.core.alarm.AlarmOffsets.offsetFor(s, LocalTime.of(14, 0), 1))
+        assertEquals(8 * 60, com.bamnat.core.alarm.AlarmOffsets.offsetFor(s, LocalTime.of(14, 0), 0))
+        assertNull(com.bamnat.core.alarm.AlarmOffsets.offsetFor(LocalTime.of(9, 0), LocalTime.of(9, 0), 1))
+    }
 }
