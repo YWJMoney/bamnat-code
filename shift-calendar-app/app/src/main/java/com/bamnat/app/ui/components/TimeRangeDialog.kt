@@ -178,12 +178,13 @@ fun TimeRangeDialog(
                             }
                         }
                     }
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // Room under the chips, so with large text the row is not half cut against the buttons (PC 7934283c).
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (part == TimeRangePart.END) {
                             // [TIME-03] The end tab offers ends that fit the start (PC 1a8e88f6: a 야간's end tab offered its
                             // own 19:00 start): the usual lengths, then the other times, never the start itself.
-                            for ((t, len) in endChoices(range.start, presets)) {
-                                AssistChip(onClick = { setTime(t) }, label = { Text(if (len != null) "${clock(t)} (${len}시간)" else clock(t)) })
+                            for ((t, label) in endChoices(range.start, presets, initial.end)) {
+                                AssistChip(onClick = { setTime(t) }, label = { Text(label) })
                             }
                         } else {
                             for (t in presets) AssistChip(onClick = { setTime(t) }, label = { Text(clock(t)) })
@@ -202,13 +203,21 @@ fun TimeRangeDialog(
 private fun clock(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
 
 /**
- * [TIME-03] Ends to offer for a shift starting at [start]: start + 8·9·10·12시간 with their length, then the other
- * [presets] that are not one of those and not the start itself.
+ * [TIME-03] Ends to offer for a shift starting at [start], each with its words: start + 8·9·10·12시간 ("다음날 07:00 ·
+ * 12시간" when it runs past midnight), then the other [presets] that are not one of those and not the start itself.
+ * The end the window opened with says "원래" (PC 7934283c).
  */
-internal fun endChoices(start: LocalTime, presets: List<LocalTime>): List<Pair<LocalTime, Int?>> {
-    val byLength = listOf(8, 9, 10, 12).map { start.plusHours(it.toLong()) to it }
-    val taken = byLength.map { it.first }.toSet() + start
-    return byLength + presets.filter { it !in taken }.distinct().map { it to null }
+internal fun endChoices(start: LocalTime, presets: List<LocalTime>, original: LocalTime? = null): List<Pair<LocalTime, String>> {
+    fun label(t: LocalTime, hours: Int?): String = listOfNotNull(
+        (if (!t.isAfter(start)) "다음날 " else "") + clock(t),
+        hours?.let { "${it}시간" },
+        if (t == original) "원래" else null,
+    ).joinToString(" · ")
+    val byLength = listOf(8, 9, 10, 12).map { start.plusHours(it.toLong()) }
+    val lengths = listOf(8, 9, 10, 12)
+    val taken = byLength.toSet() + start
+    return byLength.mapIndexed { i, t -> t to label(t, lengths[i]) } +
+        presets.filter { it !in taken }.distinct().map { it to label(it, null) }
 }
 
 private val BREAK_CHOICES = listOf(0, 30, 60, 90, 120)

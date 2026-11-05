@@ -346,6 +346,9 @@ internal fun rangeChangeNote(wasStart: LocalTime, wasEnd: LocalTime, start: Loca
     }
 }
 
+/** [TIME-03] Above this text scale the change line keeps two lines' room instead of shrinking into one. */
+private const val LARGE_TEXT_SCALE = 1.15f
+
 private fun wheelClock(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
 
 /**
@@ -354,16 +357,20 @@ private fun wheelClock(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minu
  */
 @Composable
 internal fun TimeChangeLine(text: String?, modifier: Modifier = Modifier) {
-    // Always one line: a long one shrinks a little instead of folding and pushing the wheels down (PC 1a8e88f6).
+    // At the usual text size it is always one line: a long one shrinks a little instead of folding and pushing the
+    // wheels down (PC 1a8e88f6). With large text it keeps two lines' room from the start and wraps at full size
+    // instead of turning into the smallest words in the window (PC 7934283c).
     // The held empty line is not read out, so TalkBack does not stop on a blank (PC 6ed1650c).
+    val style = MaterialTheme.typography.bodyMedium.merge(NumberStyle)
+        .copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
     Box(
         modifier.fillMaxWidth().padding(vertical = 2.dp).then(if (text == null) Modifier.clearAndSetSemantics {} else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        com.bamnat.app.ui.FitText(
-            text ?: " ",
-            style = MaterialTheme.typography.bodyMedium.merge(NumberStyle)
-                .copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary),
-        )
+        if (LocalDensity.current.fontScale > LARGE_TEXT_SCALE) {
+            Text(text ?: " ", style = style, minLines = 2, maxLines = 2, modifier = Modifier.fillMaxWidth())
+        } else {
+            com.bamnat.app.ui.FitText(text ?: " ", style = style)
+        }
     }
 }

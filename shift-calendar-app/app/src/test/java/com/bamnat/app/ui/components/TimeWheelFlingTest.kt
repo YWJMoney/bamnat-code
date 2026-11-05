@@ -45,9 +45,12 @@ class TimeWheelFlingTest {
 
     @Test
     fun endTabOffersEndsThatFitTheStart() {
-        val choices = endChoices(LocalTime.of(19, 0), listOf(LocalTime.of(7, 0), LocalTime.of(19, 0), LocalTime.of(9, 0)))
+        val choices = endChoices(LocalTime.of(19, 0), listOf(LocalTime.of(7, 0), LocalTime.of(19, 0), LocalTime.of(9, 0)), original = LocalTime.of(7, 0))
         // 야간 19:00: 03·04·05·07시 by length, then 09:00; never its own 19:00 start, 07:00 only once.
         assertEquals(listOf(LocalTime.of(3, 0), LocalTime.of(4, 0), LocalTime.of(5, 0), LocalTime.of(7, 0), LocalTime.of(9, 0)), choices.map { it.first })
-        assertEquals(12, choices[3].second)
+        assertEquals("다음날 07:00 · 12시간 · 원래", choices[3].second)
+        assertEquals("다음날 09:00", choices[4].second)
+        // A day shift's ends stay on the same day.
+        assertEquals("17:00 · 8시간", endChoices(LocalTime.of(9, 0), emptyList()).first().second)
     }
 }
