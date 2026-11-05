@@ -133,7 +133,8 @@ class LedgerAppTest {
     /** [LEDG-06][LEDG-08][LEDG-11][LEDG-14] Accounts, budgets, categories and the lines' new parts go through a backup. */
     @Test fun theLedgerGoesThroughABackup() = runBlocking {
         ScheduleRepository(db).ensureDefaults()
-        val card = money.save(MoneyAccount(name = "신한 Deep", type = AccountType.CREDIT, last4 = "1234", payDay = 14, closeDay = 31))
+        val card = money.save(MoneyAccount(name = "신한 Deep", type = AccountType.CREDIT, last4 = "1234", payDay = 14, closeDay = 31,
+            perfTiers = listOf(300_000, 500_000), perfSkip = listOf("세금")))
         val line = money.save(
             MoneyEntry(
                 date = day, kind = MoneyKind.EXPENSE, amount = 30_000, category = "식비", accountId = card.id, memo = "민지랑",
@@ -147,6 +148,7 @@ class LedgerAppTest {
         val backups = BackupManager(db, SettingsRepository(context))
         val json = backups.export()
         assertEquals(1, org.json.JSONObject(json).getJSONArray("accounts").length())
+        assertEquals(listOf(300_000L, 500_000L), before.accounts.single().perfTiers) // 1.38 [LEDH-27] version 26
 
         money.deleteAll(listOf(line))
         money.remove(money.book.first().accounts.single())
