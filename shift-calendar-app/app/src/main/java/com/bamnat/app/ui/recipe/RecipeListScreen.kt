@@ -130,7 +130,7 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(item.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("좋아요 ${item.likes} · 쓰는 분 ${item.users}", style = MaterialTheme.typography.labelSmall,
+                            Text("좋아요 ${item.likes} · 넣은 분 ${item.users}", style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -453,7 +453,7 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
                     Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "만 바꿔요" else " 탭만 바꿔요"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
                 Text(buildString {
-                    append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 쓰는 분 ${item.users}")
+                    append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣은 분 ${item.users}")
                     item.kept?.let { append(" · 7일 유지 $it%") }
                     append(" · ").append(RecipeDescribe.styles(com.bamnat.core.recipe.Recipe(item.title, styles = item.styles, pieces = emptyList())))
                 }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -482,7 +482,7 @@ private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = 
                     color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // 1.36 [VIL-18] 오래 쓰는 분이 많은 것과 새 창작자의 첫 작품이 눈에 띄게.
-            Text("♥ ${item.likes} · 입은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: ""),
+            Text("♥ ${item.likes} · 넣은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: ""),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (item.newMaker) Text("새 창작자", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         }

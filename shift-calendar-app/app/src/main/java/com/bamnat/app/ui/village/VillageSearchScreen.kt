@@ -152,7 +152,7 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
                         if (rs.isNotEmpty()) {
                             item { Group("장터 작품 ${rs.size}") }
                             items(rs.take(10), key = { "r" + it.code }) { r ->
-                                Row(r.title, r.summary.ifBlank { "좋아요 ${r.likes} · 쓰는 분 ${r.users}" }) { keep(words); onRecipe(r.code) }
+                                Row(r.title, r.summary.ifBlank { "좋아요 ${r.likes} · 넣은 분 ${r.users}" }) { keep(words); onRecipe(r.code) }
                             }
                         }
                         if (ps.isNotEmpty()) {

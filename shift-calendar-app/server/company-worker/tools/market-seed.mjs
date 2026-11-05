@@ -9,13 +9,15 @@
 // Works are JSON files: one recipe, or an array of recipes / {recipe, showcase?} entries. Never posts to the real server: that is the
 // operator's paste in the 관리자 앱, after the user's last say-so (CLAUDE.md 3-1).
 import { readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 // index.js first: recipes.js → photo-guard.js → index.js is a cycle that only loads cleanly from this end (as the tests do).
 import "../src/index.js";
 import { cleanRecipe, tabsOf, scopeOf, RecipeError } from "../src/recipes.js";
 import * as recipes from "../src/recipes.js";
 
-const ROOT = new URL("../../../docs/recipes/", import.meta.url).pathname;
+// fileURLToPath, not .pathname: on Windows the latter is "/C:/…" and URL-escaped (PC 확인 2026-11-05).
+const ROOT = fileURLToPath(new URL("../../../docs/recipes/", import.meta.url));
 const DIR = join(ROOT, "market-136");
 const OUT = join(ROOT, "market-136.json");
 export const BATCH = "1.36 출시 작품";
@@ -88,7 +90,7 @@ async function post(base, entries) {
   return ok;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const args = process.argv.slice(2);
   const { entries, refused, count, short } = await build(readWorks());
   console.log(`작품 ${entries.length}개 · 구간 ${Object.entries(count).map(([k, n]) => `${k} ${n}`).join(", ")}`);

@@ -730,7 +730,7 @@ internal fun WorkTile(item: RecipeItem, pinned: Boolean, modifier: Modifier = Mo
             val viewer = LocalViewerStyle.current
             Text(buildString {
                 if (item.scope == "tab") item.tabs.firstOrNull()?.let { append("🧩 ").append(marketTabLabel(it, viewer)).append(" · ") }
-                append("♥ ${item.likes} · 쓰는 분 ${item.users}")
+                append("♥ ${item.likes} · 넣은 분 ${item.users}")
             }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -742,7 +742,7 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
     val lines = buildList<Pair<String, (() -> Unit)?>> {
         if (b.newFollowers > 0) add("👤 새 팔로워 ${b.newFollowers}명" + (b.followerFaces.firstOrNull()?.nick?.let { " ($it 님 등)" } ?: "") to onPeople)
         b.milestones.filter { it.key in unseen }.forEach { m ->
-            add((if (m.kind == "users") "🎉 ‘${m.title}’ 쓰는 분 ${m.n}명 넘음" else "❤️ ‘${m.title}’ 좋아요 ${m.n}개 넘음") to { onOpen(m.code) })
+            add((if (m.kind == "users") "🎉 ‘${m.title}’ 넣은 분 ${m.n}명 넘음" else "❤️ ‘${m.title}’ 좋아요 ${m.n}개 넘음") to { onOpen(m.code) })
         }
         b.questions.forEach { (code, title, body) -> add("❓ ‘$title’에 질문: $body" to { onOpen(code) }) }
         b.remixes.forEach { (code, title, parent) -> add("🔁 내 ‘$parent’${com.bamnat.app.ui.Fmt.obj("‘$parent’")} 고친 ‘$title’" to { onOpen(code) }) }
@@ -1323,7 +1323,7 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit
                 Card(Modifier.fillMaxWidth().clickable(onClickLabel = "작품 보기") { onOpen(i.code) }) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(i.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("쓰는 분 ${i.users} · 이번 주 ${i.week} · 좋아요 ${i.likes} · 안좋아요 ${i.dislikes}" + (i.kept?.let { " · 7일 뒤에도 $it%" } ?: ""),
+                        Text("넣은 분 ${i.users} · 이번 주 ${i.week} · 좋아요 ${i.likes} · 안좋아요 ${i.dislikes}" + (i.kept?.let { " · 7일 뒤에도 $it%" } ?: ""),
                             style = MaterialTheme.typography.bodySmall)
                         if (vm.pro) Bars(i.days) else if (i === st.items.first()) TextButton(onClick = onPro) { Text("프로 꾸미기로 28일 날별 그래프 보기") }
                     }
