@@ -38,7 +38,7 @@ fun PolicyConsentNotice(modifier: Modifier = Modifier) {
     SoftCard(modifier.padding(horizontal = 16.dp, vertical = 6.dp), highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (thanked) {
-                Text("고마워요. 정식 출시일(11월 10일 예정)부터 새 처리방침·이용약관으로 써요.", style = MaterialTheme.typography.bodyMedium)
+                Text("고마워요. 정식 출시일부터 새 처리방침·이용약관으로 써요.", style = MaterialTheme.typography.bodyMedium)
                 TextButton(onClick = { thanked = false }) { Text("닫기") }
                 return@Column
             }

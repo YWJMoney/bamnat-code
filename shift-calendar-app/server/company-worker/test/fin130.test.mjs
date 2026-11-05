@@ -121,13 +121,13 @@ test("[FIN130-15][PRIV-05] a company's one amount is taken only once 처리방�
     const page = (await call("GET", `/api/companies/${r.data.company.id}`, undefined, as(n))).data;
     return page.setups[0].setup.pay.items.find((i) => i.name === "식대");
   };
-  // Before 2026-11-10 (the calendar's 3.9): no refusal, the allowance stays 회사 공통, its amount does not come.
-  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-09T14:00:00Z") });
+  // Before 2026-11-12 (the calendar's 3.9): no refusal, the allowance stays 회사 공통, its amount does not come.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-11T14:00:00Z") });
   const before = await meal("금액상사", 1);
   assert.equal(before.share, "FIXED");
   assert.equal("fixedAmount" in before, false);
   // From the day it is in force (KST), it comes.
-  t.mock.timers.setTime(Date.parse("2026-11-09T15:00:00Z"));
+  t.mock.timers.setTime(Date.parse("2026-11-11T15:00:00Z"));
   assert.equal((await meal("금액물산", 2)).fixedAmount, 100000);
   // The owner moved 3.9 later in the developer app: the server follows its own calendar.
   await DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")

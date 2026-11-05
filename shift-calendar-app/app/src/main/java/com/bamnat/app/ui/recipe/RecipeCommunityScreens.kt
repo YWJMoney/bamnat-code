@@ -175,7 +175,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                 Text("‘이런 레시피 있었으면’을 적으면 좋아요가 모이고, 만들 분이 ‘만들게요’를 눌러 완성하면 그 레시피로 이어져요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (vm.canWrite) Button(onClick = { writing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("요청 쓰기") }
-                else Text("요청 쓰기·좋아요는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall)
+                else Text("요청 쓰기·좋아요는 정식 출시일부터 돼요", style = MaterialTheme.typography.bodySmall)
                 val items = s.items
                 when {
                     items == null && s.error != null -> { Text(s.error!!); TextButton(onClick = vm::load) { Text("다시 해 보기") } }

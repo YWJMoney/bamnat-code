@@ -125,7 +125,7 @@ class RecipeMakeViewModel(
 
     /**
      * PC 15차 (출시일 뒤인데도 막힘, 왜 막히는지 모름): what still holds 올리기 — the first condition left, with what is known of it
-     * (e.g. 처리방침 3.9 시행일(11-10)부터 · 서버 시각 기준 · 3일 남음).
+     * (e.g. 처리방침 3.9 시행일(11-12)부터 · 서버 시각 기준 · 3일 남음).
      */
     fun publishHeld(row: com.bamnat.core.flags.FlagState?): String? = row?.takeIf { !it.on }?.checks
         ?.firstOrNull { it.status != com.bamnat.core.flags.Check.Status.MET }?.let { k -> k.label + (k.detail?.let { " · $it" } ?: "") }
@@ -576,7 +576,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     // body above, often out of sight; it is said here by the button too.
                     s.step == 5 && s.error != null && !s.sending -> s.error
                     // PC 확인 a6cab3c8 (올리기가 닫혀 있을 때 회색 단추 위에 까닭이 없어요): said by the button too.
-                    s.step == 5 && !vm.canPublish -> "올리기가 아직 닫혀 있어요 · " + (vm.publishHeld(barHeld) ?: "정식 출시일(11월 10일 예정)부터 열려요")
+                    s.step == 5 && !vm.canPublish -> "올리기가 아직 닫혀 있어요 · " + (vm.publishHeld(barHeld) ?: "정식 출시일부터 열려요")
                     s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
@@ -619,7 +619,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 // PC 17차 사용성 제안 (닫혀 있는 걸 4/4 맨 아래에서야 앎): said from the first step, before the work.
                 val heldRow by vm.publishRow.collectAsStateWithLifecycle()
                 if (s.sent == null && s.step < 5 && !vm.canPublish) Text("올리기는 아직 닫혀 있어요 · " +
-                    (vm.publishHeld(heldRow) ?: "정식 출시일(11월 10일 예정)부터 열려요") + " · 만들고 저장하는 건 지금 돼요",
+                    (vm.publishHeld(heldRow) ?: "정식 출시일부터 열려요") + " · 만들고 저장하는 건 지금 돼요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 s.sent?.let { sent ->
                     SentCard(s.recipe.title, sent, onOpen, onStudio = if (finishOnly) onBack else null, sending = s.sending, onAgain = vm::again, onPrivate = { vm.rescope("private") },
@@ -898,7 +898,7 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         OutlinedButton(onClick = { vm.coverPhoto(shot) }, enabled = vm.canPublish) { Text("스튜디오 미리 보기를 표지로") }
     }
     Text(if (vm.canPublish) "사진은 작게 줄이고 위치·기기 정보를 지운 뒤 보내요. 운영자가 본 뒤 다른 분께 보여요"
-        else "사진 표지는 정식 출시일(11월 10일 예정)부터 돼요", style = MaterialTheme.typography.bodySmall,
+        else "사진 표지는 정식 출시일부터 돼요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (pick) EmojiPickerDialog(onPick = { e -> vm.edit { it.copy(cover = it.cover.copy(emoji = e)) }; pick = false }, onDismiss = { pick = false })
     ThemeTokens(r) { f -> vm.edit(f) }
@@ -977,7 +977,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     // PC 15차 사용성 제안 (출시일 막힘: 왜 막히는지 모름): what holds it and when it opens, and 다시 확인 (the server's clock asked again).
     val publishRow by vm.publishRow.collectAsStateWithLifecycle()
     if (!vm.canPublish) Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("올리기가 아직 닫혀 있어요 · " + (vm.publishHeld(publishRow) ?: "정식 출시일(11월 10일 예정)부터 열려요") +
+        Text("올리기가 아직 닫혀 있어요 · " + (vm.publishHeld(publishRow) ?: "정식 출시일부터 열려요") +
             ". 그동안 만들던 것은 이 휴대폰에 저장돼요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f))
         TextButton(onClick = { vm.recheckPublish() }) { Text("다시 확인") }
