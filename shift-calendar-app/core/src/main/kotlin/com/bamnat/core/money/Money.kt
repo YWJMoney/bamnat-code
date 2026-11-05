@@ -134,6 +134,9 @@ data class Job(
     /** [FLD-03] What the job is worth to the user: its pay, or for a cancelled one only what was already paid. */
     val earned: Long get() = if (cancelled) received else payable
 
+    /** 1.37 PC: the work is done: marked 완료, or its last day has passed (a 가계약 stays to come until it is confirmed). */
+    fun isDone(today: LocalDate): Boolean = !cancelled && (status == JobStatus.DONE || status != JobStatus.TENTATIVE && today.isAfter(lastDate))
+
     /** [FLD-03] 입금 완료 follows from the money, not from a step the user picks. */
     val fullyPaid: Boolean get() = !cancelled && amount > 0 && unpaid == 0L
 }

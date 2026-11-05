@@ -86,13 +86,21 @@ class CalendarFocusTest {
             Job(date = LocalDate.of(2026, 10, 12), title = "수전", amount = 150_000, balancePaid = true),
             Job(date = LocalDate.of(2026, 9, 29), endDate = LocalDate.of(2026, 10, 1), title = "도배", amount = 500_000),
         )
-        val o = MonthOverview.of(october, CalendarFocus.JOBS, ScheduleResolver(Fixtures.all, null, emptyList()), jobs = jobs)
+        val o = MonthOverview.of(october, CalendarFocus.JOBS, ScheduleResolver(Fixtures.all, null, emptyList()), jobs = jobs,
+            today = LocalDate.of(2026, 11, 5))
         // The September job is that month's money but runs on 10/1 too.
         assertEquals(2, o.jobs)
         assertEquals(1 + 1 + 2, o.jobDays)
         assertEquals(1_150_000, o.jobEarned)
         assertEquals(450_000, o.jobReceived)
         assertEquals(700_000, o.jobOwed)
+        // 1.37 PC: on 10/20 the 욕실 job is still to come: not 번 돈 yet, said as 할 일.
+        val mid = MonthOverview.of(october, CalendarFocus.JOBS, ScheduleResolver(Fixtures.all, null, emptyList()), jobs = jobs,
+            today = LocalDate.of(2026, 10, 20))
+        assertEquals(150_000, mid.jobEarned)
+        assertEquals(1_000_000, mid.jobAhead)
+        assertEquals(0, mid.jobOwed)
+        assertEquals(450_000, mid.jobReceived)
     }
 
     @Test

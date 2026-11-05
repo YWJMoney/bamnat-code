@@ -662,6 +662,12 @@ private fun TileGrid(tiles: List<@Composable (Modifier) -> Unit>, columns: Int) 
 @Composable
 private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
     val m = remember(book, month) { book.month(month) }
+    val ahead = remember(book, month) {
+        val today = com.bamnat.core.time.Today.date()
+        val mine = book.jobs.filter { YearMonth.from(it.date) == month && !it.cancelled }
+        mine.filter { it.isDone(today) }.sumOf { it.payable } + book.jobs.filter { YearMonth.from(it.date) == month && it.cancelled }.sumOf { it.earned } to
+            mine.filterNot { it.isDone(today) }.sumOf { it.payable }
+    }
     val days = remember(book, month) {
         book.jobs.filter { YearMonth.from(it.date) == month && !it.cancelled }
             .flatMap { j -> (0 until j.days).map { j.date.plusDays(it.toLong()) } }
@@ -671,7 +677,9 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         // [J133-77] '0일 일해요' read oddly: the days only once there are some.
         { md -> StatTile("${month.monthValue}월 일감", "${m.jobCount}건", md, caption = if (days > 0) "${days}일 일해요" else "아직 없어요") },
-        { md -> StatTile("번 돈", Fmt.won(m.jobEarned), md, caption = m.jobReceived.takeIf { it > 0 }?.let { "받음 ${wonBrief(it)}" }) },
+        // 1.37 PC (달력 요약과 같이): 번 돈은 끝난 일감만, 아직 할 일감은 '할 일'로 따로.
+        { md -> StatTile("번 돈", Fmt.won(ahead.first), md, caption = listOfNotNull(m.jobReceived.takeIf { it > 0 }?.let { "받음 ${wonBrief(it)}" },
+            ahead.second.takeIf { it > 0 }?.let { "할 일 ${wonBrief(it)}" }).joinToString(" · ").ifEmpty { null }) },
         { md -> StatTile("받을 돈", Fmt.won(m.jobOwed), md, warning = m.jobOwed > 0) },
         { md -> StatTile("남은 돈", Fmt.won(m.jobProfit), md, caption = m.jobCosts.takeIf { it > 0 }?.let { "경비 ${wonBrief(it)}" }) },
     )
