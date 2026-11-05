@@ -394,6 +394,11 @@ private fun DayGroups(
                             open = groups.isOpen(key, moneyFirst), onToggle = { groups.toggle(key, moneyFirst) },
                         ) {
                             if (!moneyFirst) DayPayContent(insight, profile?.wageType, profile != null, onOpenPay)
+                            // 1.37 [LEDH-04] 이날 일하면? (교대·일근·알바, 급여 설정이 있을 때).
+                            if (!moneyFirst && style?.usesPayEngine == true) profile?.let { p ->
+                                val cal by vm.activeCalendar.collectAsStateWithLifecycle()
+                                com.bamnat.app.ui.money.DayWhatIfSection(date, snapshot, p, cal.id)
+                            }
                             val memoText = remember(memos) {
                                 memos.joinToString("\n") { m -> (listOf(m.title, m.body) + m.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n") }
                             }
