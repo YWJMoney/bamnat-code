@@ -362,7 +362,7 @@ object RuleText {
                 val v = m.groupValues[4].replace(",", "").toDouble()
                 val pay: RulePay = when (m.groupValues[5]) {
                     "%" -> if ("통상임금" in c) RulePay.OfOrdinaryMonthly(v / 100) else RulePay.OfBaseMonthly(v / 100)
-                    "만원" -> RulePay.Monthly((v * 10_000).toLong())
+                    "만원" -> RulePay.Monthly(Math.round(v * 10_000)) // [P3-ACC] 1.13 × 10,000 is 11,299.99… as a Double
                     else -> RulePay.Monthly(v.toLong())
                 }
                 Triple(years, end, pay)

@@ -42,7 +42,7 @@ data class WithholdingYear(
             else -> {
                 val t = col(top, f)
                 val o = over.lastOrNull { pay > it.above }
-                if (o == null) t else t + o.add + cut10((pay - o.above) * o.factor * o.rate)
+                if (o == null) t else t + o.add + WonCut.cut10(pay - o.above, o.factor, o.rate)
             }
         }
         val kids = children.coerceAtLeast(0)
@@ -57,7 +57,6 @@ data class WithholdingYear(
 
     companion object {
         const val TOP = 10_000_000L
-        private fun cut10(v: Double): Long = v.toLong() / 10 * 10
     }
 }
 
