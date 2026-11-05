@@ -1088,8 +1088,10 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
     }
     deleting?.let { m ->
         ConfirmDialog(
-            title = "이 메모를 지울까요?",
-            message = "휴지통으로 옮겨요. 메모 탭의 휴지통에서 되살릴 수 있어요.",
+            title = com.bamnat.app.ui.memo.memoDeleteTitle(m, "이 메모를 지울까요?"),
+            message = com.bamnat.app.ui.memo.memoDeleteMessage(m, "휴지통으로 옮겨요. 메모 탭의 휴지통에서 되살릴 수 있어요.") { id ->
+                snapshot?.typesById?.get(id)?.name
+            },
             confirmLabel = "지우기",
             destructive = true,
             onDismiss = { deleting = null },

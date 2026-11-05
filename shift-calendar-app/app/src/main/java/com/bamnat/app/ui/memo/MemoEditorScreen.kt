@@ -309,7 +309,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 MemoToLedgerChip(memo)
                 AssistChip(
                     onClick = { showDatePicker = true },
-                    label = { Text(if (date != null) Fmt.fullDate(date) else "날짜 붙이기") },
+                    // This year's date without the year ("11월 7일 (토)"), so the chips after it stay in sight.
+                    label = { Text(if (date == null) "날짜 붙이기" else if (date.year == com.bamnat.core.time.Today.date().year) Fmt.dayTitle(date) else Fmt.fullDate(date)) },
                     leadingIcon = { Icon(Icons.Filled.Event, null, Modifier.size(18.dp)) },
                     trailingIcon = if (date != null) {
                         { Icon(Icons.Filled.Close, "날짜 떼기", Modifier.size(18.dp).clickable { vm.setDate(null) }) }
@@ -317,12 +318,13 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         null
                     },
                 )
-                if (date != null) ShiftLabel(day)
                 // [NOTE-05] A memo can come back every week, month or year, [EASE-22] or every 야간; [EASE-23] one with no date
-                // gets the day to start from, and says so.
+                // gets the day to start from, and says so. Right after the date, before the shift label (1.38 PC 확인 9b028f4c:
+                // after the label it sat past the screen's edge and took a swipe to find).
                 val shiftTypes by vm.shiftTypes.collectAsStateWithLifecycle()
                 val say: (String?) -> Unit = { it?.let { line -> Toast.makeText(context, line, Toast.LENGTH_LONG).show() } }
                 MemoRepeatChip(date, memo.repeat, { say(vm.setRepeat(it)) }, shiftTypes, day?.shiftType?.id, { say(vm.setShiftRepeat(it)) })
+                if (date != null) ShiftLabel(day)
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }
@@ -468,9 +470,10 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     if (showLast) lastSame?.let { (label, memos) -> LastShiftDialog(label, memos) { showLast = false } }
 
     if (confirmDelete) {
+        val deleteTypes by vm.shiftTypes.collectAsStateWithLifecycle()
         ConfirmDialog(
-            title = "메모를 지울까요?",
-            message = "휴지통으로 옮겨요. 30일 동안 되살릴 수 있어요.",
+            title = memoDeleteTitle(memo, "메모를 지울까요?"),
+            message = memoDeleteMessage(memo, "휴지통으로 옮겨요. 30일 동안 되살릴 수 있어요.") { id -> deleteTypes.firstOrNull { it.id == id }?.name },
             confirmLabel = "삭제",
             destructive = true,
             onDismiss = { confirmDelete = false },

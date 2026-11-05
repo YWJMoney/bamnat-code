@@ -109,3 +109,14 @@ internal fun MemoRepeatChip(
         }
     }
 }
+
+/**
+ * 1.38 PC 확인(9b028f4c): a repeating memo is one memo, so deleting it takes it off every day it repeats on. The confirm says
+ * so ("‘야간마다’ 반복 메모라서 …") instead of reading like this day alone. [base] is what the dialog says otherwise.
+ */
+internal fun memoDeleteTitle(memo: com.bamnat.core.memo.Memo, plain: String): String =
+    if (memo.repeat.isEmpty()) plain else "반복 메모를 지울까요?"
+
+internal fun memoDeleteMessage(memo: com.bamnat.core.memo.Memo, base: String, shiftName: (Long) -> String?): String =
+    if (memo.repeat.isEmpty()) base
+    else "‘${com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName)}’ 반복 메모라서 이 날만이 아니라 반복되는 모든 날에서 사라져요. $base"

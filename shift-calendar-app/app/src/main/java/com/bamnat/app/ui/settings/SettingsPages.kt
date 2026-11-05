@@ -175,6 +175,7 @@ private fun WorkPage(
             com.bamnat.core.guide.RuleCards.Where.SHIFT_TYPES -> onOpenShiftTypes()
             com.bamnat.core.guide.RuleCards.Where.PAY -> SettingsLinks.go(SettingsGo.PAY_ITEMS)
             com.bamnat.core.guide.RuleCards.Where.STUDIO -> SettingsLinks.go(SettingsGo.STUDIO_RULES)
+            com.bamnat.core.guide.RuleCards.Where.MEMOS -> com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.MEMOS)
         }
     }
     WorkTools(work.workStyle)

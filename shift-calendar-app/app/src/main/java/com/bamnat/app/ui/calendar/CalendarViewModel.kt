@@ -966,7 +966,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val beforePatterns = snap.patterns
             schedule.changePatternFrom(PatternTimeline.realign(rotation, date, step), date)
             val beforeDays = if (clear.isEmpty()) emptyMap() else schedule.updateDays(clear) { it.copy(override = ShiftOverride.None) }
-            val cleared = if (clear.isEmpty()) "" else " · 직접 바꾼 ${clear.size}일은 근무 주기대로"
+            // On its own line and short, so the end is never cut (1.38 PC 확인: "직접 바…").
+            val cleared = if (clear.isEmpty()) "" else "\n직접 바꾼 ${clear.size}일은 순서대로"
             // [EASE-25] A push or pull by a day says what moved where, in one line ("6일 야간은 7일로").
             val push = PatternTimeline.pushOf(rotation, date, step)
             val said = when (push) {
@@ -974,7 +975,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
                 1, -1 -> {
                     val name = rotation.steps[rotation.stepIndexOn(date)]?.let { snap.typesById[it]?.name } ?: "쉬는 날"
                     val to = date.plusDays(push.toLong())
-                    "${Fmt.monthDay(date)}부터 하루 ${if (push > 0) "밀었어요" else "당겼어요"} · ${date.dayOfMonth}일 $name${Fmt.eun(name)} ${to.dayOfMonth}일로"
+                    "${Fmt.monthDay(date)}부터 하루 ${if (push > 0) "밀었어요" else "당겼어요"} · ${date.dayOfMonth}일 $name → ${to.dayOfMonth}일"
                 }
                 else -> "${Fmt.monthDay(date)}부터 ${kotlin.math.abs(push)}일 ${if (push > 0) "밀었어요" else "당겼어요"}"
             }
