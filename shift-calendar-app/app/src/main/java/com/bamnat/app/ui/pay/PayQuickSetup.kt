@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.core.work.words
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -215,9 +216,14 @@ fun PayQuickSetup(
         byHand = slipByHand,
         onDismiss = { slipOpen = false; slipByHand = false },
         onApply = { r ->
-            fromSlip = r.profile
+            // [PAYIN-03] PC 5566ff20 (명세서 기본급 2,500,000원이 '기본급만 넣으면 끝나요'에 안 넘어옴): the payslip's 기본급 is dated from
+            // its own month, which can be after this one (a payslip printed for next month's pay day); it is taken from there and
+            // put on this month too, so the setup never asks for a base the payslip gave.
+            val slipBase = r.profile.base.on(r.month).value.takeIf { it > 0 } ?: r.profile.base.on(thisMonth).value
+            fromSlip = if (slipBase > 0 && r.profile.base.on(thisMonth).value != slipBase)
+                com.bamnat.core.pay.BaseAsk.apply(r.profile, slipBase, thisMonth) else r.profile
             if (form == null) form = guessed ?: WorkForm.OFFICE
-            amount = r.profile.base.on(thisMonth).value
+            amount = slipBase
             holiday = r.profile.rules.holidayWork
             slipOpen = false
             slipByHand = false
@@ -325,12 +331,14 @@ fun PayQuickSetup(
                     // asked right here instead, on the page that shows what the month comes to. [PAYG-04] 1.30: the same card
                     // as the pay screen's.
                     if (!com.bamnat.core.pay.BaseAsk.showsEstimate(p, thisMonth)) {
+                        if (tried) Text("먼저 아래 칸에 ${p.wageType.baseName()}을 넣고 ‘예상 급여 보기’를 눌러 주세요.",
+                            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                         BaseNeededCard(p, thisMonth, onSave = { b, h ->
                             if (h != null) hours = h
                             amount = b
                             fromSlip = fromSlip?.let { com.bamnat.core.pay.BaseAsk.apply(it, b, thisMonth, h) }
                         })
-                    } else ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, onSlip = { slipOpen = true },
+                    } else ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, tab = style.words().tab, onSlip = { slipOpen = true },
                         onDetailed = { onDetailed(p) }, onTax = { taxPicked = it },
                         // E1: the calendar looks like one form and another was picked; said once with a way to take the calendar's.
                         otherForm = guessed?.takeIf { g -> form != null && g != form && fromSlip == null && g.wageType == form?.wageType },
@@ -372,8 +380,10 @@ fun PayQuickSetup(
                     }) { Text("직접 만들게요") }
                 } else if (step == CONFIRM) com.bamnat.app.ui.components.SaveButton(
                     // [J133-56] The pay screen works the month out next; the button says so at once.
-                    onClick = { draft?.let { onDone(it, fromSlip != null) } },
-                    enabled = ready && draft != null,
+                    // [PAYIN-03] PC 5566ff20 ('이대로 계산'을 두 번 눌러도 반응 없음): with no 기본급 yet it answers in red over the card's
+                    // field, as 다음 does (1.36 Y17), instead of being a grey button that does nothing.
+                    onClick = { if (ready) draft?.let { onDone(it, fromSlip != null) } else tried = true },
+                    enabled = draft != null,
                     busyText = "계산하는 중…",
                 ) { Text("이대로 계산") }
                 else Button(onClick = {
@@ -529,6 +539,8 @@ private fun ConfirmPage(
     onForm: (WorkForm) -> Unit = {},
     fixed: FixedOt = FixedOt(),
     onFixed: (FixedOt) -> Unit = {},
+    /** PC 02d6dabf: the tab named as this calendar names it (알바 '출근·시급'). */
+    tab: String = "근무·급여",
 ) {
     var range by remember { mutableStateOf<PayRange?>(null) }
     LaunchedEffect(p) {
@@ -577,11 +589,12 @@ private fun ConfirmPage(
         if (net.deductions.isNotEmpty()) Text("떼는 돈 ${com.bamnat.app.ui.Fmt.won(r.total - net.net)} (간이세액표·4대 보험 요율 참고값)",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    Text("월급에서 떼는 돈", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+    // PC 8eae2521 (알바 설정 마지막 쪽에 '월급에서 떼는 돈'): 시급·일당 is 급여.
+    Text(if (p.wageType == WageType.MONTHLY) "월급에서 떼는 돈" else "급여에서 떼는 돈", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
     com.bamnat.app.tax.TaxWayChips(p.taxMode, onPick = onTax)
     Text(if (p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.NONE)
-        "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 근무·급여에서도 바꿀 수 있어요."
-        else "대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 근무·급여에서 바꿀 수 있어요.",
+        "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요."
+        else "대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 ‘$tab’에서 바꿀 수 있어요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     OutlinedButton(onClick = onSlip, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text("명세서·회사 계산 방법 사진으로 맞추기")
@@ -622,6 +635,7 @@ internal fun SlipRulesDialog(
         busy = true
         scope.launch {
             val res = try { infer(r, ticked) } catch (e: CancellationException) { throw e } catch (_: Exception) { null }
+                ?.let { x -> withSlipBase(x, r) }
             busy = false
             if (res != null) onApply(res) else failed = r
         }
@@ -655,6 +669,16 @@ internal fun SlipRulesDialog(
             confirmButton = { TextButton(onClick = { failed = null }) { Text("확인") } },
         )
     }
+}
+
+/**
+ * [PAYIN-03] PC 5566ff20: a monthly setup the payslip's 기본급 did not reach (the guessed form was not 월급, or the line came under
+ * another kind) gets the payslip's 기본급 line as its base, so the next page never asks for what the payslip already said.
+ */
+internal fun withSlipBase(x: SlipRulesResult, read: PayslipRead): SlipRulesResult {
+    val base = read.amount(com.bamnat.core.pay.SlipRole.BASE)?.takeIf { it > 0 } ?: return x
+    if (x.profile.wageType != WageType.MONTHLY || x.profile.base.on(x.month).value > 0) return x
+    return x.copy(profile = com.bamnat.core.pay.BaseAsk.apply(x.profile, base, x.month))
 }
 
 /** [PHOTO-34] What [SlipRulesResult] says, for the bar under the result. */

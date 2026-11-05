@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -97,42 +99,44 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                     AmountField("계좌이체", transfer, { transfer = it }, Modifier.weight(1f))
                     AmountField("배달앱", delivery, { delivery = it }, Modifier.weight(1f))
                 }
+                // 1.37 PC 736fb7a6 (자영업 마감: 숫자를 넣는 사이 위에 줄이 생기고 사라져 칸이 밀리고, 경비에 넣을 것이 '센 현금'에 들어감):
+                // every field stays where it was while typing. The rows that wait on an amount are there from the start and turn
+                // on with it, the sum keeps its field's height, and the cash note comes below, next to 센 현금.
                 // 1.32 [TAXP-14] 현금영수증 발행 확인 (조사 4장): cash sales without one are what 신고 most often misses.
-                if (cash.toAmount() > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AmountField("그중 현금영수증 발행", receipt, { receipt = it }, Modifier.weight(1f), allowZero = true)
-                        com.bamnat.app.ui.components.FilterChip(selected = receipt.toAmount() == cash.toAmount(), onClick = { receipt = cash },
-                            label = { Text("전부 발행") })
-                    }
-                    val missing = (cash.toAmount() - receipt.toAmount()).coerceAtLeast(0)
-                    if (missing > 0) Text("현금영수증 없이 받은 현금 ${Fmt.won(missing)}도 매출이에요. 부가세·종소세 신고 때 빠뜨리지 마세요. " +
-                        "손님이 원하면 발행해야 하고, 의무발행업종은 10만 원 이상이면 원하지 않아도 발행해야 해요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val hasCash = cash.toAmount() > 0
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AmountField("그중 현금영수증 발행", receipt, { receipt = it }, Modifier.weight(1f), allowZero = true, enabled = hasCash)
+                    com.bamnat.app.ui.components.FilterChip(selected = hasCash && receipt.toAmount() == cash.toAmount(), enabled = hasCash,
+                        onClick = { receipt = cash }, label = { Text("전부 발행") })
                 }
-                if (parts == 0L) {
-                    AmountField("매출 합계", total, { total = it })
-                    Text("결제 수단을 나눠 적으면 합계가 저절로 나와요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
+                // PC ef116bf4: 64dp, the field's own height (56dp left a 21px step when it turned into the sum).
+                Box(Modifier.fillMaxWidth().heightIn(min = 64.dp), contentAlignment = Alignment.CenterStart) {
+                    if (parts == 0L) AmountField("매출 합계", total, { total = it })
                     // 1.36 실사용 S20 (나눠 적으면 '매출 합계' 칸이 사라져 저장 전 합계가 안 보여요): the sum stays in the same place.
-                    Text("매출 합계 ${Fmt.won(parts + earlierCredit)}" + if (earlierCredit > 0) " (외상 ${Fmt.won(earlierCredit)} 포함)" else "",
+                    else Text("매출 합계 ${Fmt.won(parts + earlierCredit)}" + if (earlierCredit > 0) " (외상 ${Fmt.won(earlierCredit)} 포함)" else "",
                         style = MaterialTheme.typography.titleSmall)
                 }
+                Text(if (parts == 0L) "결제 수단을 나눠 적으면 합계가 저절로 나와요." else "결제 수단별 금액을 더한 합계예요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 AmountField("경비 (재료비·인건비 등)", costs, { costs = it })
                 // [J133-29] 1.33 (실사용 테스트 "경비 칸에서 증빙 여부를 고를 수 없어 부가세가 크게 나와요").
-                if (costs.toAmount() > 0) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AmountField("그중 증빙 있음", proven, { proven = it }, Modifier.weight(1f), allowZero = true)
-                        com.bamnat.app.ui.components.FilterChip(selected = proven.toAmount() == costs.toAmount(), onClick = { proven = costs },
-                            label = { Text("전부 있음") })
-                    }
-                    Text("세금계산서·카드 영수증·현금영수증을 받은 경비는 부가세 예상에서 빠져요. 인건비는 보통 증빙이 아니에요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                val hasCosts = costs.toAmount() > 0
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AmountField("그중 증빙 있음", proven, { proven = it }, Modifier.weight(1f), allowZero = true, enabled = hasCosts)
+                    com.bamnat.app.ui.components.FilterChip(selected = hasCosts && proven.toAmount() == costs.toAmount(), enabled = hasCosts,
+                        onClick = { proven = costs }, label = { Text("전부 있음") })
                 }
+                Text("세금계산서·카드 영수증·현금영수증을 받은 경비는 부가세 예상에서 빠져요. 인건비는 보통 증빙이 아니에요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 CashCheck(initial?.copy(cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount())
                     ?: DailySales(date, sales, cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount()),
                     rules, book, counted) { counted = it }
+                // PC 8eae2521 (자판이 열린 채 현금을 넣으면 '센 현금' 칸이 172px 내려감): the note comes under 센 현금, so no field moves.
+                val missing = if (hasCash) (cash.toAmount() - receipt.toAmount()).coerceAtLeast(0) else 0
+                if (missing > 0) Text("현금영수증 없이 받은 현금 ${Fmt.won(missing)}도 매출이에요. 부가세·종소세 신고 때 빠뜨리지 마세요. " +
+                    "손님이 원하면 발행해야 하고, 의무발행업종은 10만 원 이상이면 원하지 않아도 발행해야 해요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 // [SHOP-06] 외상: a sale not paid yet, followed up in 받을 돈.
                 Text("외상 (나중에 받을 돈)", style = MaterialTheme.typography.labelLarge)

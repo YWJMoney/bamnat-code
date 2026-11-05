@@ -281,7 +281,7 @@ fun SetupPaySheet(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 PendingDone(c, company, way, onDone = onNow, onSaved = null,
-                    intro = "달력을 채웠어요. ‘${way.title}’ 급여 계산도 들어 있어요. 쓸까요?",
+                    intro = "설정을 마쳤어요. ‘${way.title}’ 급여 계산도 들어 있어요. 쓸까요?",
                     onSkip = {
                         // Not this company's pay: nothing of it stays to be asked again; the pay is made by hand later.
                         company.store.pendingPay = null
@@ -299,7 +299,7 @@ fun SetupPaySheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Icon(Icons.Filled.Payments, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
-            Text("달력을 채웠어요. 예상 급여도 볼까요?", style = MaterialTheme.typography.headlineSmall)
+            Text("설정을 마쳤어요. 예상 급여도 볼까요?", style = MaterialTheme.typography.headlineSmall)
             Text(
                 if (companyPay) "회사 급여 방식은 함께 받아 왔어요. 내 기본급이나 시급만 넣으면 이번 달 예상 급여를 보여 드려요."
                 // [J133-71] 1.33: 알바 looks for no company; the 시급 is all it takes.

@@ -85,6 +85,38 @@ data class PayslipMatch(
     /** [profile] with this check stored, for the app to save once the user applies the match. */
     fun verifiedProfile(atMillis: Long): PayProfile = profile.copy(verified = PayslipCheck(month, gross, total, atMillis))
 
+    /**
+     * [PAYIN-03] 1.37 PC 3e347ec6 (연장 없는 명세서에 '209→243시간'과 '근무표 시간은 모두 기본 근무'가 한 단추에 묶여 들어감): [profile]
+     * with only the [changes] whose keys are in [keep]; the rest stay as in [before]. Amounts, new allowances and rules the
+     * user added on the way stay. Marked as checked against the payslip only when every change is kept.
+     */
+    fun picked(before: PayProfile, keep: Set<String>, atMillis: Long): PayProfile {
+        val off = changes.map { it.key }.filter { it !in keep }.toSet()
+        if (off.isEmpty()) return verifiedProfile(atMillis)
+        var p = profile
+        if (Unknowns.BASE in off) p = p.copy(base = before.base)
+        if (Unknowns.MONTHLY_HOURS in off) p = p.copy(monthlyHours = before.monthlyHours)
+        if (Unknowns.HOLIDAY_PAY_MODE in off) p = p.copy(holidayPayMode = before.holidayPayMode)
+        if (Unknowns.SCHEDULE_IS_REGULAR in off) p = p.copy(scheduleIsRegular = before.scheduleIsRegular, flexPeriod = before.flexPeriod)
+        if (Unknowns.REST_DAY_WORK in off) p = p.copy(rules = p.rules.copy(restDayWork = before.rules.restDayWork))
+        if ("nightWindow" in off) p = p.copy(rules = p.rules.copy(nightStart = before.rules.nightStart, nightEnd = before.rules.nightEnd))
+        if ("overtimeRounding" in off) p = p.copy(rules = p.rules.copy(overtimeRounding = before.rules.overtimeRounding))
+        val olds = before.items.associateBy { it.id }
+        p = p.copy(items = p.items.map { item ->
+            val old = olds[item.id] ?: return@map item
+            var i = item
+            if (Unknowns.item(item.id) in off) i = i.copy(amount = old.amount)
+            if ("ordinary:${item.id}" in off) i = i.copy(ordinary = old.ordinary)
+            i
+        })
+        // A kept-back answer stays as sure or as unsure as it was.
+        p = p.copy(estimatedFields = (p.estimatedFields - off) + (before.estimatedFields intersect off))
+        return p.copy(verified = before.verified)
+    }
+
+    /** [PAYIN-03] A change to how the company counts (hours, 연장, 휴일), not an amount read off the payslip. */
+    fun isWayChange(key: String): Boolean = key != Unknowns.BASE && !key.startsWith(Unknowns.item(""))
+
     companion object {
         /** The least gap that counts as matched, in won. */
         const val TOLERANCE_WON = 1_000L

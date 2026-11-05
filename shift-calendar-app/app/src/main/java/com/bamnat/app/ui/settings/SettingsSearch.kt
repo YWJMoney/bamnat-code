@@ -157,7 +157,7 @@ internal object SettingsIndex {
 
     /** [J133-77] Screens of wage work (급여, 추가 근무, 듀티표, 근태, 출퇴근) that a shop, a freelancer or an investor does not have. */
     private val WAGE_SCREENS = setOf(SettingsGo.EXTRA_KINDS, SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT,
-        SettingsGo.COMMUTE, SettingsGo.PAY, SettingsGo.PAY_BASE, SettingsGo.PAY_ITEMS, SettingsGo.PAY_PERIOD)
+        SettingsGo.COMMUTE, SettingsGo.PAY, SettingsGo.PAY_BASE, SettingsGo.PAY_ITEMS, SettingsGo.PAY_PERIOD, SettingsGo.PAY_HOURS)
     /** [J133-77] Rows about shifts, wages and 연차. */
     private val WAGE_ROWS = setOf("휴식 점검", "근무표 점검 기준", "한 주 근무 경고", "최근 3개월 한 주 평균 경고", "퇴근 시각 알림", "연속 근무 경고",
         "급여 입금 비교", "연차 사용 촉진 알림", "근무마다 다른 소리", "알람 뒤 오늘 카드")
@@ -362,6 +362,9 @@ internal object SettingsIndex {
         // [J133-34] 순번 714 (1.32 실사용 테스트: 'ㄱㅂㄱ'·'기본급'으로 찾아도 기본급 칸으로 가는 결과가 없었어요): the values themselves.
         screen("근무·급여 › 값", "기본급·시급 바꾸기", SettingsGo.PAY_BASE, "기본급", "시급", "일당", "월급 금액", "급여 금액", "임금"),
         screen("근무·급여 › 값", "수당 넣기·고치기", SettingsGo.PAY_ITEMS, "수당", "야간수당", "교대수당", "식대", "상여", "보너스", "직책수당"),
+        // PC e1ca9e5b (탄력제·회사 규모를 고르는 길을 설정에서 못 찾음): the 기본 rules, where 5인 이상, 탄력적 근로시간제 and the hours are.
+        screen("근무·급여 › 규칙", "회사 규모·탄력적 근로시간제·소정근로시간", SettingsGo.PAY_HOURS, "5인 이상", "5인 미만", "회사 규모", "탄력제",
+            "탄력적 근로시간제", "탄력근무", "주 64시간", "주 52시간", "소정근로시간", "209시간", "근무표 시간"),
         screen("근무·급여 › 규칙", "월급날·정산 기간", SettingsGo.PAY_PERIOD, "월급날", "급여일", "지급일", "정산", "마감일", "월급 들어오는 날"),
         screen("급여", "이것만 넣으면 정확해져요", SettingsGo.PAY, "규칙만", "명세서 없이", "시수", "월 소정근로시간", "기본급 넣기", "필수 값", "0원"),
         // S 1.32 [SECX-04] 1.28's 진단 › 기능 상태 row is gone with the card (no developer words such as 다크머지 in search).

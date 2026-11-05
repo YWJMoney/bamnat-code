@@ -1443,7 +1443,9 @@ private fun AppNavHost(
                         if (nudges.invite.value != null) inviting = true
                         container.payInviteLater = false
                     }
-                } else if (container.payInviteLater && !container.firstSetup.quietToday()) {
+                // 가계부 PC (앞으로의 돈 '월급날 넣기'로 오면 나누기 시트가 먼저 떠서 월급날 칸 대신 회사 규칙 맨 위로 감): a visit for one
+                // value goes straight to it; the invitation waits for a plain visit.
+                } else if (container.payInviteLater && payFocus == null && !container.firstSetup.quietToday()) {
                     kotlinx.coroutines.delay(2_000)
                     container.payInviteLater = false
                     if (nudges.invite.value != null) inviting = true
@@ -2093,6 +2095,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.PAY_BASE -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.BASE.key)
     SettingsGo.PAY_ITEMS -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.ITEMS.key)
     SettingsGo.PAY_PERIOD -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.PERIOD.key)
+    SettingsGo.PAY_HOURS -> Routes.pay(focus = com.bamnat.app.ui.pay.PayFocus.HOURS.key)
     SettingsGo.CALENDARS -> Routes.CALENDARS
     SettingsGo.DIAGNOSTICS -> Routes.diagnostics(false)
     SettingsGo.INQUIRY -> Routes.INQUIRY

@@ -40,7 +40,7 @@ val LocalCardFeature = compositionLocalOf<CardFeature?> { null }
  * [calendar], otherwise [content] with ⋮ › 이 기능 끄기 on its card. Seeing it counts as using it [GUIDE-04].
  */
 @Composable
-fun FeatureCard(id: String, calendar: String, content: @Composable () -> Unit) {
+fun FeatureCard(id: String, calendar: String, name: String? = null, content: @Composable () -> Unit) {
     val context = LocalContext.current
     val store = remember { GuideStore.get(context) }
     val state by store.state.collectAsStateWithLifecycle()
@@ -52,7 +52,8 @@ fun FeatureCard(id: String, calendar: String, content: @Composable () -> Unit) {
     if (state.isOff(feature, calendar)) return
     // A card with a tip of its own keeps it for its moment (급여일, 15시간) until it is used there.
     if (feature.moment == null) LaunchedEffect(id) { store.used(id) }
-    CompositionLocalProvider(LocalCardFeature provides CardFeature(feature, calendar)) { content() }
+    // PC ef116bf4 (알바 카드의 화면 읽기 이름이 '월급날 비교 더 보기'): a card named in the calendar's own words is read by that name.
+    CompositionLocalProvider(LocalCardFeature provides CardFeature(name?.let { feature.copy(name = it) } ?: feature, calendar)) { content() }
 }
 
 /**

@@ -350,7 +350,11 @@ fun MonthGrid(
             val rowStart = firstCell.plusWeeks(row.toLong())
             // [WEEK-01] The Monday-to-Sunday week that holds most of the row: on a grid from Sunday, the row's Monday on.
             val week = remember(calculator, rowStart) { calculator.week(rowStart.plusDays(3)) }
-            val holidayWeek = hourly?.let { h -> remember(snapshot, rowStart, h) { HourlyWork.weekEndingIn(rowStart, h.holidayWeekStart, snapshot.resolver::resolve) } }
+            // PC 02d6dabf (일요일 시작 달력에서 일요일 ✓가 다음 주 표시로 읽힘): the 주휴 week that has most of its days in this row (the
+            // one holding the row's middle day); its ✓ goes on its last day in the row.
+            val holidayWeek = hourly?.let { h -> remember(snapshot, rowStart, h) {
+                HourlyWork.week(rowStart.plusDays(3).with(java.time.temporal.TemporalAdjusters.previousOrSame(h.holidayWeekStart)), snapshot.resolver::resolve)
+            } }
             // [CAL-01] A week over the limit gets a bar at its left instead of a tint that mixes with the shifts' colors.
             val barColor = cal.warning
             Row(
@@ -406,7 +410,8 @@ fun MonthGrid(
                         onLongPress = onLongPress?.let { f -> { f(date) } },
                         isRangeStart = date == rangeFrom,
                         hourly = hourly,
-                        holidayWeekDone = col == 6 && holidayWeek?.holidayPay == true,
+                        // PC e1ca9e5b·02d6dabf: on that week's last day within this row.
+                        holidayWeekDone = holidayWeek?.holidayPay == true && date == minOf(holidayWeek.start.plusDays(6), rowStart.plusDays(6)),
                         quietWorkDays = quietWorkDays,
                         invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight().then(

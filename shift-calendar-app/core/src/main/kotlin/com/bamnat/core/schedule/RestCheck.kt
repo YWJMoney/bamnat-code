@@ -85,7 +85,7 @@ object RestCheck {
                         pattern = if (a.evening && b.day && nextDay) "E-D(이브데이)" else null)
                 // [TIME-03] Backward rotation is a change of shift (오후 → 주간), not the same shift moved by half an
                 // hour on one day: 야간 19–07 then 20–08, or 일근 09–18 then 08:30–19:00, is not a rotation (PC 1a8e88f6).
-                nextDay && a.name != b.name && b.from.toLocalTime() < a.from.toLocalTime() && gap < AFTER_NIGHT_MINUTES ->
+                rules.rotationOrder && nextDay && a.name != b.name && b.from.toLocalTime() < a.from.toLocalTime() && gap < AFTER_NIGHT_MINUTES ->
                     issues += Issue(b.date, Kind.BACKWARD, "${a.name} 다음 날 ${b.name} (시작이 앞당겨지는 순서)", RestRules.Sources.ORDER,
                         pattern = if (a.evening && b.day) "E-D(이브데이)" else null)
             }

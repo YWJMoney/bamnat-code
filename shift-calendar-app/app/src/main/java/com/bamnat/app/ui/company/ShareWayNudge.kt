@@ -76,7 +76,9 @@ enum class ShareMoment {
     /** The pay setup was made by hand. */
     PAY,
     /** Rules read from a payslip or a company rule photo were applied. */
-    PAYSLIP;
+    PAYSLIP,
+    /** [PAYIN-08] 1.37 B8: the pay setup was put right. */
+    FIXED;
 
     val title: String get() = com.bamnat.core.plaza.ShareAsk.Moment.valueOf(name).title
 }

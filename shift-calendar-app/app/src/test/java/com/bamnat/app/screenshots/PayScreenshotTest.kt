@@ -454,7 +454,9 @@ class PayScreenshotTest : ScreenshotBase() {
         // 1.23 묶음 K's 회사마다 다른 계산 sits above it: two steps, each within reveal's scrolls.
         reveal("근로시간 제도 (주 52시간 예외)", exact = true)
         reveal("예시 규칙", exact = true)
-        tapText("탄력적 근로시간제 2주", exact = true, scrolls = 0)
+        // PC 02d6dabf moved 주 52시간 예외 up into 기본, so 예시 규칙 is reached folded: opened here.
+        if (!shows("탄력적 근로시간제 2주", exact = true)) { tapText("예시 규칙", exact = true); settle() }
+        tapText("탄력적 근로시간제 2주", exact = true)
     }
     @Test fun foldedPayFlexTwoWeeks() = shoot("474_folded_pay_flex_two_weeks", FOLDED) {
         leaveRulesEditor { it.copy(scheduleIsRegular = true, flexPeriod = com.bamnat.core.pay.FlexPeriod.TWO_WEEKS, flexStart = today.minusDays(3)) }.invoke(this)

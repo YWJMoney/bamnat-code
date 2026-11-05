@@ -14,11 +14,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.bamnat.app.ui.components.Button
 import com.bamnat.app.ui.components.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -102,8 +105,9 @@ internal fun SlipCheck(
     }
     fun save(i: Int, fixed: SlipLine) {
         if (i < 0) {
-            // A line the reader missed goes before the totals, where payslips list their items.
-            val at = read.lines.indexOfFirst { it.role in TOTALS }.takeIf { it >= 0 } ?: read.lines.size
+            // A line the reader missed goes before the totals, where payslips list their items; [PAYIN-02] a 공제 before 공제 합계.
+            val at = (if (fixed.role in RIGHT) read.lines.indexOfFirst { it.role == SlipRole.DEDUCTION_TOTAL || it.role == SlipRole.NET }
+                else read.lines.indexOfFirst { it.role in TOTALS }).takeIf { it >= 0 } ?: read.lines.size
             val lines = read.lines.toMutableList().apply { add(at, fixed) }
             onChange(read.copy(lines = lines), unsure.map { if (it >= at) it + 1 else it }.toSet())
         } else {
@@ -114,33 +118,90 @@ internal fun SlipCheck(
         }
         editing = null
     }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        read.lines.forEachIndexed { i, line ->
-            val doubt = i in unsure
-            Row(
-                Modifier.fillMaxWidth()
-                    .then(if (doubt) Modifier.background(WARN.copy(alpha = 0.3f), RoundedCornerShape(6.dp)) else Modifier)
-                    // [PHOTO-31] 1.30 AW: any line opens under itself on a tap, not only after '다른 곳이 있어요'.
-                    .clickable(role = Role.Button, onClickLabel = "이 줄 고치기") { editing = if (editing == i) null else i }
-                    .heightIn(min = 44.dp)
-                    .padding(horizontal = 4.dp, vertical = 2.dp)
-                    .semantics { if (doubt) contentDescription = "${line.name} ${line.amount?.let(::won).orEmpty()}, 사진에서 두 가지로 읽혔어요" },
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(line.role.short(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.width(76.dp))
-                Text(line.name + (line.minutes?.let { " · ${com.bamnat.core.pay.PayCalculator.hours(it)}" } ?: ""),
-                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                Text(line.amount?.let(::won) ?: "", style = MaterialTheme.typography.bodyMedium)
-                if (fixing) Text("  고치기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+    // [PAYIN-02] 1.37 B2 (사용자 2026-11-04 "지급내역과 공제내역을 분리해서 좌우로 배열"): the lines as the payslip prints them, 지급 on
+    // the left and 공제 on the right, each with its quick names to add; 실수령 worked out under them. A line still opens under the two.
+    var preset by remember { mutableStateOf<SlipLine?>(null) }
+    val editorAt = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    LaunchedEffect(editing, preset) { if (editing != null) { kotlinx.coroutines.delay(80); runCatching { editorAt.bringIntoView() } } }
+    @Composable
+    fun cell(i: Int, line: SlipLine) {
+        val doubt = i in unsure
+        Column(
+            Modifier.fillMaxWidth()
+                .then(if (doubt) Modifier.background(WARN.copy(alpha = 0.3f), RoundedCornerShape(6.dp)) else Modifier)
+                .then(if (editing == i) Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(6.dp)) else Modifier)
+                // [PHOTO-31] 1.30 AW: any line opens on a tap, not only after '다른 곳이 있어요'.
+                .clickable(role = Role.Button, onClickLabel = "이 줄 고치기") { preset = null; editing = if (editing == i) null else i }
+                .heightIn(min = 44.dp)
+                .padding(horizontal = 6.dp, vertical = 4.dp)
+                .semantics { if (doubt) contentDescription = "${line.name} ${line.amount?.let(::won).orEmpty()}, 사진에서 두 가지로 읽혔어요" },
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // PC 5566ff20 ('실지급액객'): a total's name is its kind's own word; what the photo printed stays under it.
+                val shownName = if (line.role in TOTALS) line.role.label else line.name
+                Text(shownName + (line.minutes?.let { " · ${com.bamnat.core.pay.PayCalculator.hours(it)}" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 2)
+                if (fixing) Text("고치기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text((if (line.role in TOTALS) line.name.takeIf { it != line.role.label } else line.role.short().takeIf { it != line.name }) ?: "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                Text(line.amount?.let(::won) ?: "금액 없음", style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (line.role in TOTALS) androidx.compose.ui.text.font.FontWeight.Bold else null)
             }
             // [PHOTO-29] A yellow line being looked at: is it as the photo shows?
-            if (reviewing && doubt && !fixing) Row(Modifier.fillMaxWidth().padding(start = 76.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (reviewing && doubt && !fixing) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedButton(onClick = { rightAsRead(i) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("맞아요") }
-                TextButton(onClick = { editing = i }, modifier = Modifier.heightIn(min = 48.dp)) { Text("고치기") }
+                TextButton(onClick = { preset = null; editing = i }, modifier = Modifier.heightIn(min = 48.dp)) { Text("고치기") }
             }
-            // [PHOTO-31] 1.30 AW: the line is fixed where it is, under itself, not in a window over the list.
-            if (editing == i) key(i, line) { SlipLineEditor(line, onDismiss = { editing = null }, onDelete = { delete(i) }, onSave = { save(i, it) }) }
+        }
+    }
+    @Composable
+    fun side(title: String, indices: List<Int>, quick: List<Pair<SlipRole, String>>, modifier: Modifier) {
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 6.dp, bottom = 2.dp))
+            if (indices.isEmpty()) Text("아직 없어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 6.dp))
+            indices.forEach { i -> key(i) { cell(i, read.lines[i]) } }
+            // [PAYIN-02] The names payslips print most, one tap to a new line with its kind and name (only the amount to type). A
+            // kind a payslip has once (기본급, 지급·공제 합계, 연장·야간·휴일) is not offered again; a side with lines folds them under one button.
+            val have = read.lines.map { it.name.filterNot(Char::isWhitespace) }.toSet()
+            val roles = read.lines.map { it.role }.toSet()
+            val left = quick.filter { (role, n) -> n.filterNot(Char::isWhitespace) !in have && !(role in ONCE && (role in roles || role == SlipRole.GROSS && SlipRole.TOTAL in roles)) }
+            var open by remember { mutableStateOf(false) }
+            if (left.isNotEmpty()) {
+                if (indices.size >= 3 && !open) TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("+ 자주 쓰는 이름 ${left.size}개", style = MaterialTheme.typography.labelMedium)
+                } else FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 4.dp)) {
+                    left.forEach { (role, name) ->
+                        androidx.compose.material3.SuggestionChip(onClick = { preset = SlipLine(name, role, null); editing = -1 },
+                            label = { Text("+ $name", style = MaterialTheme.typography.labelSmall) })
+                    }
+                }
+            }
+        }
+    }
+    val payIdx = read.lines.indices.filter { read.lines[it].role !in RIGHT && read.lines[it].role != SlipRole.NET }
+    val dedIdx = read.lines.indices.filter { read.lines[it].role in RIGHT }
+    val netIdx = read.lines.indices.filter { read.lines[it].role == SlipRole.NET }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            if (maxWidth >= 320.dp) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                side("지급", payIdx, QUICK_PAY, Modifier.weight(1f))
+                side("공제", dedIdx, QUICK_DED, Modifier.weight(1f))
+            } else Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                side("지급", payIdx, QUICK_PAY, Modifier.fillMaxWidth())
+                side("공제", dedIdx, QUICK_DED, Modifier.fillMaxWidth())
+            }
+        }
+        netIdx.forEach { i -> key(i) { cell(i, read.lines[i]) } }
+        SlipSums(read)
+        // [PHOTO-31] 1.30 AW: the line is fixed in the list, not in a window over it; [PAYIN-02] under the two sides.
+        Column(Modifier.bringIntoViewRequester(editorAt)) {
+            editing?.takeIf { it >= 0 && it < read.lines.size }?.let { i ->
+                val line = read.lines[i]
+                key(i, line) { SlipLineEditor(line, onDismiss = { editing = null }, onDelete = { delete(i) }, onSave = { save(i, it) }) }
+            }
+            if (editing == -1) key(preset) { SlipLineEditor(null, onDismiss = { editing = null; preset = null }, onDelete = null, onSave = { save(-1, it); preset = null }, preset = preset) }
         }
         read.gross?.let { g ->
             Text(
@@ -151,8 +212,7 @@ internal fun SlipCheck(
             )
         }
         // [PHOTO-06] 1.29: a line can be added any time, not only after '다른 곳이 있어요'.
-        if (editing == -1) SlipLineEditor(null, onDismiss = { editing = null }, onDelete = null, onSave = { save(-1, it) })
-        else com.bamnat.app.ui.components.AddButton("칸 더하기 (빠진 줄)", onClick = { editing = -1 })
+        if (editing != -1) com.bamnat.app.ui.components.AddButton("칸 더하기 (빠진 줄)", onClick = { preset = null; editing = -1 })
         when {
             same == true -> Text("사진과 같다고 확인했어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             fromPhoto && same == null -> Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium) {
@@ -181,6 +241,59 @@ internal fun SlipCheck(
 
 private val TOTALS = setOf(SlipRole.GROSS, SlipRole.TOTAL, SlipRole.DEDUCTION_TOTAL, SlipRole.NET)
 
+/** [PAYIN-02] Kinds a payslip prints once: not offered as a quick name when there is one. */
+private val ONCE = setOf(SlipRole.BASE, SlipRole.GROSS, SlipRole.TOTAL, SlipRole.DEDUCTION_TOTAL, SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY)
+
+/** [PAYIN-02] The 공제 side of a payslip. */
+private val RIGHT = setOf(SlipRole.DEDUCTION, SlipRole.DEDUCTION_TOTAL)
+
+/** [PAYIN-02] Names most payslips print, one tap each to a new line. */
+private val QUICK_PAY = listOf(
+    SlipRole.BASE to "기본급", SlipRole.OVERTIME to "연장근로수당", SlipRole.NIGHT to "야간근로수당", SlipRole.HOLIDAY to "휴일근로수당",
+    SlipRole.ALLOWANCE to "식대", SlipRole.BONUS to "상여금", SlipRole.GROSS to "지급합계",
+)
+private val QUICK_DED = listOf(
+    SlipRole.DEDUCTION to "국민연금", SlipRole.DEDUCTION to "건강보험", SlipRole.DEDUCTION to "장기요양보험", SlipRole.DEDUCTION to "고용보험",
+    SlipRole.DEDUCTION to "소득세", SlipRole.DEDUCTION to "지방소득세", SlipRole.DEDUCTION_TOTAL to "공제합계",
+)
+
+/**
+ * [PAYIN-02] Under the two sides: 지급 − 공제 = 실수령, worked out from the lines as they are now, and whether the payslip's own
+ * 실수령 says the same. Nothing to work out yet says so.
+ */
+@Composable
+internal fun SlipSums(read: PayslipRead) {
+    val pay = read.gross
+    val ded = read.deducted
+    val stated = read.lines.firstOrNull { it.role == SlipRole.NET && it.amount != null }?.amount
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(Modifier.fillMaxWidth()) {
+                Text("지급 합계", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                Text(pay?.let(::won) ?: "-", style = MaterialTheme.typography.bodyMedium)
+            }
+            Row(Modifier.fillMaxWidth()) {
+                Text("공제 합계", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                Text(ded?.let { "− " + won(it) } ?: "-", style = MaterialTheme.typography.bodyMedium)
+            }
+            HorizontalDivider(Modifier.padding(vertical = 2.dp))
+            val worked = if (pay != null && ded != null) pay - ded else null
+            Row(Modifier.fillMaxWidth()) {
+                Text("실수령", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text((worked ?: stated)?.let(::won) ?: "-", style = MaterialTheme.typography.titleSmall)
+            }
+            when {
+                worked != null && stated != null && kotlin.math.abs(worked - stated) > com.bamnat.core.pay.PayslipMatch.tolerance(worked) ->
+                    Text("명세서의 실수령 ${won(stated)}과 ${won(kotlin.math.abs(worked - stated))} 달라요. 빠진 공제 줄이 있는지 봐 주세요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                worked != null && stated != null -> Text("명세서의 실수령과 맞아요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                pay == null -> Text("왼쪽에 지급 줄을 넣으면 합계가 바로 나와요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                ded == null -> Text("오른쪽에 공제 줄을 넣으면 실수령이 나와요 (급여 계산에는 지급 줄만 써요)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
 /** [PHOTO-06] Lines that can carry hours. */
 private val TIMED = setOf(SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY, SlipRole.WEEKLY_HOLIDAY, SlipRole.EXTRA_WORK)
 
@@ -201,16 +314,21 @@ private val COMMON_ROLES = listOf(SlipRole.BASE, SlipRole.ALLOWANCE, SlipRole.OV
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun SlipLineEditor(line: SlipLine?, onDismiss: () -> Unit, onDelete: (() -> Unit)?, onSave: (SlipLine) -> Unit) {
-    var role by remember { mutableStateOf(line?.role ?: SlipRole.ALLOWANCE) }
-    var name by remember { mutableStateOf(line?.name.orEmpty()) }
+internal fun SlipLineEditor(
+    line: SlipLine?, onDismiss: () -> Unit, onDelete: (() -> Unit)?, onSave: (SlipLine) -> Unit,
+    /** [PAYIN-02] A new line's kind and name picked from the quick names; only the amount is left to type. */
+    preset: SlipLine? = null,
+) {
+    var role by remember { mutableStateOf(line?.role ?: preset?.role ?: SlipRole.ALLOWANCE) }
+    var name by remember { mutableStateOf(line?.name ?: preset?.name.orEmpty()) }
     var amount by remember { mutableStateOf(line?.amount) }
     var more by remember { mutableStateOf(role !in COMMON_ROLES) }
     // [PHOTO-06] The hours a premium line shows (연장 12시간), in hours as payslips print them.
+    val huge = rememberHugeCheck()
     var hours by remember { mutableStateOf(line?.minutes?.let { com.bamnat.app.ui.components.decimalText(it / 60.0) }.orEmpty()) }
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(if (line == null) "빠진 줄 더하기" else "이 줄 고치기", style = MaterialTheme.typography.titleSmall)
+            Text(if (line == null) (preset?.let { "‘${it.name}’ 금액 넣기" } ?: "빠진 줄 더하기") else "이 줄 고치기", style = MaterialTheme.typography.titleSmall)
             Text("어떤 줄인가요?", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 (if (more) ROLES else COMMON_ROLES).forEach { r ->
@@ -231,7 +349,7 @@ internal fun SlipLineEditor(line: SlipLine?, onDismiss: () -> Unit, onDelete: ((
                 TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("취소") }
                 Button(onClick = {
                     val minutes = if (role in TIMED) hours.toDoubleOrNull()?.takeIf { it > 0 && it < 500 }?.let { Math.round(it * 60).toInt() } else null
-                    onSave(SlipLine(name.trim().ifBlank { role.label }, role, amount, minutes, line?.source.orEmpty()))
+                    huge.run(amount) { onSave(SlipLine(name.trim().ifBlank { role.label }, role, amount, minutes, line?.source.orEmpty())) }
                 }, enabled = amount != null, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (line == null) "더하기" else "고치기") }
             }
         }

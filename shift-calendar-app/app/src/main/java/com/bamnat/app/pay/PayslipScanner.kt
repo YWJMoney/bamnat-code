@@ -88,6 +88,8 @@ object PayslipScanner {
         context: Context, uri: Uri, scanned: Boolean = false,
         /** A 1.32 [FIX132-01] '돌려서 다시 읽기': the user's turn (90·180·270), read as it is without looking for a better one. */
         turn: Int = 0,
+        /** [PAYIN-04] 1.37: the reading model coming down to the phone (percent, null while unknown), before the first reading. */
+        preparing: (Int?) -> Unit = {},
         progress: (Int, Int) -> Unit = { _, _ -> },
     ): Scan = withContext(Dispatchers.Default) {
         // [PHOTO-24] The company's payslips the user confirmed before (on the phone only).
@@ -96,7 +98,7 @@ object PayslipScanner {
         var photo = ImagePrep.load(context, uri)
         if (turn != 0) photo = ImagePrep.turned(photo, turn.toFloat()).also { if (it !== photo) photo.recycle() }
         progress(1, 0)
-        var first = OcrModel.read(context, photo)
+        var first = OcrModel.read(context, photo, preparing)
         var firstLines = lines(first)
         var kept = turn
         // [PHOTO-25] 1.30: read on its side. A 1.32 [FIX132-01]: upside down too, and every way weighed by how much it reads

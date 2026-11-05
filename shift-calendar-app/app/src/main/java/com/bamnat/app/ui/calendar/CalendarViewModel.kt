@@ -414,7 +414,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         RotationSpeed.of(PatternTimeline.on(snapshot.patterns, date) ?: PatternTimeline.current(snapshot.patterns, date), snapshot.shiftTypes)
 
     /** [REST-03] [rules] as they fit the pattern on [date]. */
-    fun rulesFor(snapshot: ScheduleSnapshot, date: LocalDate, rules: RestRules): RestRules = rotation(snapshot, date).adjust(rules)
+    fun rulesFor(snapshot: ScheduleSnapshot, date: LocalDate, rules: RestRules): RestRules =
+        rotation(snapshot, date).adjust(rules).forStyle(settings.value.workStyle)
 
     /** [REST-01] The rules sheet's answer: the limits, and 점검 끄기 as the 휴식 점검 switch. */
     fun setRestRules(rules: RestRules) = container.settingsRepository.update {

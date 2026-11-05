@@ -101,7 +101,7 @@ data class MemoView(
         /** [TAB-02] 누락 점검 N9 (2차 5-7 "보기: 목록·카드·보드·표·달력·갤러리"): dated memos on a month. */
         const val CALENDAR = "cal"
         val VIEWS = listOf(LIST, BOARD, TABLE, CALENDAR, GALLERY)
-        val LABELS = mapOf(LIST to "목록", BOARD to "보드", TABLE to "표", CALENDAR to "달력", GALLERY to "갤러리")
+        val LABELS = mapOf(LIST to "목록", BOARD to "보드", TABLE to "표", CALENDAR to "월별", GALLERY to "갤러리") // PC e1ca9e5b: not "달력", the bottom tab's name
 
         const val BY_TAG = "tag"
         const val BY_COLOR = "color"

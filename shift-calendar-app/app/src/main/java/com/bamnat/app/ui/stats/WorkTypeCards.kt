@@ -88,11 +88,13 @@ internal fun WorkTypeFirstCard(
     nonTaxable: Long? = null,
     /** G 1.32 [WTYP-07] The days the month counts (the pay period when chosen). */
     range: Pair<LocalDate, LocalDate>? = null,
+    /** The week limit the whole screen reads (see StatsScreen); null works it out from [profile]. */
+    weekLimitHours: Int? = null,
 ) {
     when {
         // [GUIDE-05] Each card can be turned off for its calendar.
         style.isShift() -> FeatureCard("shift.firstCard", calendarId) { ShiftFirstCard(snapshot, month, payTotal, range) }
-        style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns, nonTaxable) }
+        style == WorkStyle.DAY -> FeatureCard("day.firstCard", calendarId) { DayFirstCard(calendarId, snapshot, month, summary, payTotal, profile, columns, nonTaxable, weekLimitHours) }
     }
 }
 
@@ -116,7 +118,7 @@ internal fun WorkTypeMoreCards(
     takeHome: suspend (Long, YearMonth) -> com.bamnat.core.tax.TaxLearner.Forecast? = { _, _ -> null },
 ) {
     // [GUIDE-05] Each card can be turned off for its calendar.
-    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId) {
+    if (style?.usesPayEngine != false) FeatureCard("pay.gap", calendarId, name = if (style == WorkStyle.HOURLY) "급여날 비교" else null) {
         PayGapCard(calendarId, month, payTotal, profile, book, style, nonTaxable, onOpenPay, onAddPay, takeHome)
     }
     if (style.isShift()) FeatureCard("shift.swapCard", calendarId) { SwapCard(snapshot, month) }
@@ -215,6 +217,7 @@ private fun DayFirstCard(
     profile: PayProfile?,
     columns: Int,
     nonTaxable: Long? = null,
+    weekLimitHours: Int? = null,
 ) {
     val context = LocalContext.current
     val prefs = WorkTypePrefs.get(context)
@@ -259,7 +262,8 @@ private fun DayFirstCard(
         // 1.32 [WTYP-26] (조사 4·8장) 이번 주 52시간 and, for 공무원, 이번 달 시간외 57시간: bars on the first card.
         if (YearMonth.from(today) == month) {
             val week = remember(snapshot, today) { com.bamnat.core.hours.WorkHoursCalculator(snapshot.resolver, java.time.DayOfWeek.MONDAY).week(today) }
-            HoursBar("이번 주 근무", week.totalMinutes, com.bamnat.core.hours.HourLimits().legalWeeklyHours)
+            // PC f42b2eba: the same limit as the 주별 근무시간 lines on this screen.
+            (weekLimitHours ?: legalWeekHours(profile))?.let { HoursBar("이번 주 근무", week.totalMinutes, it) }
         }
         com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)?.let { cap ->
             HoursBar("${month.monthValue}월 시간외", summary.extraMinutes, cap)
@@ -330,7 +334,7 @@ private fun PayGapCard(
     val fromRecords = learned?.basis == com.bamnat.core.tax.TaxLearner.Basis.LEARNED
     val expected = if (fromRecords) learned?.net else payTotal?.takeIf { mode != null }?.let { TakeHome.estimate(it, mode!!, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
         nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
-    val basisLabel = if (fromRecords) "내 월급 기록으로 맞춘 세후" else mode?.gapLabel() ?: "세전"
+    val basisLabel = if (fromRecords) "내 ${if (style == WorkStyle.HOURLY) "급여" else "월급"} 기록으로 맞춘 세후" else mode?.gapLabel() ?: "세전"
     val payDate = profile?.period?.payDate(month)
     val gap = remember(book, month, expected, profile) { book?.let { PayGaps.of(month, expected, payDate, it.entries) } }
     var adding by remember { mutableStateOf(false) }
@@ -342,11 +346,13 @@ private fun PayGapCard(
         if (profile != null && gap == null) adding = true
     }
     val cal = LocalCalendarColors.current
-    SectionCard(title = "${month.monthValue}월 월급날 비교", modifier = Modifier.bringIntoViewRequester(bring)) {
+    // PC 8eae2521 (알바에 '월급날 비교'·'월급이 들어오면'): 알바's pay is 급여, weekly or monthly.
+    val payWord = if (style == WorkStyle.HOURLY) "급여" else "월급"
+    SectionCard(title = "${month.monthValue}월 ${payWord}날 비교", modifier = Modifier.bringIntoViewRequester(bring)) {
         when {
             // [J133-01] Pay is set up but the tax way never asked: the way first, here, then the 예상.
             profile != null && payTotal != null && mode == null && !fromRecords -> {
-                Text("${com.bamnat.app.tax.TaxWay.UNKNOWN}. 월급에서 무엇을 떼나요?", style = MaterialTheme.typography.bodyMedium)
+                Text("${com.bamnat.app.tax.TaxWay.UNKNOWN}. ${payWord}에서 무엇을 떼나요?", style = MaterialTheme.typography.bodyMedium)
                 val c = context.appContainer
                 com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 6.dp)) { m -> scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, m) } }
             }
@@ -357,7 +363,7 @@ private fun PayGapCard(
             }
             gap == null -> {
                 Text("예상 ${Fmt.won(expected)} ($basisLabel)", style = MaterialTheme.typography.titleMedium.merge(NumberStyle))
-                Text("월급이 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 가계부 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
+                Text("${payWord}${if (payWord == "급여") "가" else "이"} 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 가계부 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp))
                 Button(onClick = { adding = true }, modifier = Modifier.padding(top = 8.dp)) { Text("들어온 급여 적기") }

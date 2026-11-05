@@ -1165,7 +1165,7 @@ private fun AlarmReadyCard(
                                 val snap = context.appContainer.scheduleRepository.snapshot.first()
                                 val days = generateSequence(com.bamnat.core.schedule.RestCheck.lookbackFrom(date, settings.rules)) { it.plusDays(1) }
                                     .takeWhile { !it.isAfter(date) }.map(snap.resolver::resolve).toList()
-                                com.bamnat.core.schedule.RestNudge.alarmLine(com.bamnat.core.schedule.RestNudge.on(days, date, settings.rules))
+                                com.bamnat.core.schedule.RestNudge.alarmLine(com.bamnat.core.schedule.RestNudge.on(days, date, settings.rules.forStyle(settings.workStyle)))
                             }
                         }.getOrNull()
                     }
