@@ -318,7 +318,7 @@ private fun MoneyPage(p: WatchPayload, onDone: () -> Unit) {
         items(categories) { cat ->
             Button(
                 onClick = {
-                    val line = com.bamnat.core.work.WatchMoney.Line(java.util.UUID.randomUUID().toString(), amount, cat, System.currentTimeMillis())
+                    val line = com.bamnat.core.work.WatchMoney.Line(java.util.UUID.randomUUID().toString(), amount, cat, com.bamnat.core.time.Today.millis())
                     scope.launch {
                         val sent = runCatching { WatchStore.send(context, WatchDays.MONEY_PATH, com.bamnat.core.work.WatchMoney.encode(line)) }.getOrDefault(false)
                         if (sent) onDone() else note = "휴대폰과 연결되어 있지 않아 못 보냈어요"

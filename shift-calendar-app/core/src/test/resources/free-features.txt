@@ -257,3 +257,8 @@ money.dayClose
 money.found
 money.whatIf
 money.quickAdd
+money.debt
+money.cardPerf
+money.firstFill
+money.shiftPreview
+money.challenge
