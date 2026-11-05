@@ -73,4 +73,20 @@ class AlarmTrustTest {
         assertEquals("오늘 남은 알람 모두 끄기", allOffLabel(false))
         assertTrue(allOffLabel(true).startsWith("한 번 더 누르면"))
     }
+
+    /** [ALRM-29] What a change to the calendar says about alarms. */
+    @Test
+    fun calendarChangeSaysTheAlarm() {
+        fun a(h: Int, m: Int) = PlannedAlarm(today.atTime(h, m), today, LocalTime.of(7, 0), 1, "주간", 60, null)
+        fun w(was: List<PlannedAlarm>, now: List<PlannedAlarm>, skipped: Boolean = false, byHand: Boolean = false, wasWork: Boolean = false) =
+            com.bamnat.core.alarm.AlarmPlanner.WorkDay(today, was, now, skipped, byHand, wasWork)
+        assertEquals(" · 06:00 알람이 울려요", com.bamnat.app.ui.calendar.workAlarmWords(listOf(w(emptyList(), listOf(a(6, 0))))))
+        assertEquals(" · 꺼 뒀던 06:00 알람을 켰어요", com.bamnat.app.ui.calendar.workAlarmWords(listOf(w(emptyList(), listOf(a(6, 0)), skipped = true))))
+        assertEquals(" · 이날 알람은 꺼져 있어요", com.bamnat.app.ui.calendar.workAlarmWords(listOf(w(emptyList(), listOf(a(6, 0)), skipped = true, byHand = true))))
+        // 오전 반차 or another shift: the alarm moved.
+        assertEquals(" · 알람 05:30 → 09:30", com.bamnat.app.ui.calendar.workAlarmWords(listOf(w(listOf(a(5, 30)), listOf(a(9, 30)), wasWork = true))))
+        // Turned off at work by the user: the change says nothing of it.
+        assertEquals("", com.bamnat.app.ui.calendar.workAlarmWords(listOf(w(listOf(a(5, 30)), listOf(a(9, 30)), skipped = true, wasWork = true))))
+        assertEquals(" · 2일 알람이 맞춰졌어요", com.bamnat.app.ui.calendar.workAlarmWords(listOf(w(emptyList(), listOf(a(6, 0))), w(emptyList(), listOf(a(7, 0))))))
+    }
 }

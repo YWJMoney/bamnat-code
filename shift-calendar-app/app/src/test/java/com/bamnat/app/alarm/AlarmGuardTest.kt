@@ -111,4 +111,20 @@ class AlarmGuardTest {
         assertNull(nm.getNotification(AlarmGuard.NOTICE_ID))
         AlarmSoon.unskip(app)
     }
+
+    /** [ALRM-29] The first alarm after a break is said the evening before, with 이번만 끄기. */
+    @Test fun backToWorkIsSaidTheEveningBefore() {
+        assertEquals(day.minusDays(1).atTime(20, 0), AlarmGuard.backAt(day.atTime(6, 0)))
+        assertEquals(day.minusDays(1).atTime(21, 0), AlarmGuard.backAt(day.atTime(9, 30)))
+        assertEquals(day.atTime(7, 0), AlarmGuard.backAt(day.atTime(17, 0)))
+        assertEquals("오늘 다시 근무예요", AlarmGuard.backTitle(day, day))
+        assertEquals("내일부터 다시 근무예요", AlarmGuard.backTitle(day, day.minusDays(1)))
+        AlarmActionReceiver().onReceive(app, Intent(app, AlarmActionReceiver::class.java).setAction(AlarmGuard.ACTION_BACK)
+            .putExtra("at", six).putExtra("text", "06:00 주간 근무 알람"))
+        val n = nm.getNotification(AlarmGuard.BACK_NOTICE_ID)
+        assertNotNull(n)
+        assertEquals("오늘 다시 근무예요", n.extras.getString("android.title"))
+        assertEquals("06:00 주간 근무 알람이 켜져 있어요", n.extras.getCharSequence("android.text").toString())
+        assertEquals("이번만 끄기", n.actions.single().title.toString())
+    }
 }

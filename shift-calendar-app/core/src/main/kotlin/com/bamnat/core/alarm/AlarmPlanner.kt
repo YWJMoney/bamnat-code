@@ -141,6 +141,42 @@ object AlarmPlanner {
         return RestDay(date, was, alarmsOn(after, date))
     }
 
+    /**
+     * [ALRM-29] 1.38 (사용자 2026-11-05 '대근이나 대타시 알람을 맞춰논 시간이 있다면 켜지게'): a day whose alarms changed because
+     * it became a working day, got a 대근, or its shift or times moved (오전 반차 too). [was] and [now] are what it would ring
+     * with its 알람 끄기 left aside; [skipped] says it is turned off, [byHand] that alarms set by hand stand in for the shift's,
+     * [wasWork] that it was a working day (or had a 대근) before. Null when the day is not working now or rings the same.
+     */
+    data class WorkDay(
+        val date: LocalDate,
+        val was: List<PlannedAlarm>,
+        val now: List<PlannedAlarm>,
+        val skipped: Boolean,
+        val byHand: Boolean,
+        val wasWork: Boolean,
+    )
+
+    fun workDay(before: ScheduleResolver, after: ScheduleResolver, date: LocalDate): WorkDay? {
+        val b = before.resolve(date)
+        val a = after.resolve(date)
+        if (!a.isWorkDay && a.extras.none { it.covered != null }) return null
+        val was = alarmsOn(before, date, includeSkipped = true)
+        val now = alarmsOn(after, date, includeSkipped = true)
+        if (now.isEmpty() || now.map { it.triggerAt } == was.map { it.triggerAt }) return null
+        return WorkDay(date, was, now, a.alarmSkipped, a.entry?.customAlarms != null,
+            wasWork = b.isWorkDay || b.extras.any { it.covered != null })
+    }
+
+    /**
+     * [ALRM-29] Whether the alarm at [next] comes after a stretch without any (휴가, 연휴): none in the [quietHours] before it,
+     * so the evening before can say "내일부터 다시 근무".
+     */
+    fun afterBreak(resolver: ScheduleResolver, next: LocalDateTime, quietHours: Long = BREAK_HOURS): Boolean =
+        nextAlarm(resolver, next.minusHours(quietHours), lookaheadDays = quietHours / 24 + 2)?.triggerAt?.let { !it.isBefore(next) } ?: true
+
+    /** [ALRM-29] Two days without an alarm is a break worth a word before work starts again. */
+    const val BREAK_HOURS = 48L
+
     /** Offsets are limited to 24h either way so the two-day search window above is always enough. */
     const val MAX_OFFSET_MINUTES = 24 * 60
 }
