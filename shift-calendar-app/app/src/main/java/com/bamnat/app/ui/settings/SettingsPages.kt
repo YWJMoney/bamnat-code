@@ -474,6 +474,18 @@ private fun NoticesPage(
                 settings.dayCloseNotice, warning = warning(settings.dayCloseNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
                 set(on) { it.copy(dayCloseNotice = on) }
             }
+        // 1.38 [LEDH-24] 근무 전 한 줄 예고: 근무표가 있는 유형만.
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT || settings.workStyle == com.bamnat.core.work.WorkStyle.DAY ||
+            settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) {
+            SwitchRow(SHIFT_PREVIEW_ROW, "근무 날에 어느 분류에 평소보다 뚜렷이 더 쓰면, 그 근무 전날 저녁에 한 줄로 알려 줘요. 일주일에 한 번까지예요",
+                settings.shiftPreviewNotice, warning = warning(settings.shiftPreviewNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
+                set(on) { it.copy(shiftPreviewNotice = on) }
+            }
+            if (settings.shiftPreviewNotice) com.bamnat.app.ui.components.StepperRow("예고 시각 (전날)") {
+                com.bamnat.app.ui.components.CountStepper(settings.shiftPreviewHour, { h -> set(true) { it.copy(shiftPreviewHour = h) } },
+                    name = "예고 시각", range = 6..23, format = { "${it}시" })
+            }
+        }
         // [ALRM-16] 1.31 N3
         SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
             settings.afterAlarmCard, warning = warning(settings.afterAlarmCard, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
@@ -1228,6 +1240,7 @@ internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
 internal const val DAY_CLOSE_ROW = "퇴근 뒤 가계부 정리 알림"
+internal const val SHIFT_PREVIEW_ROW = "근무 전 한 줄 예고"
 
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"

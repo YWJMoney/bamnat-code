@@ -563,6 +563,7 @@ fun MoneyScreen(
     var editing by remember { mutableStateOf<MoneyEntry?>(null) }
     var editingJob by remember { mutableStateOf<Job?>(null) }
     var pasting by remember { mutableStateOf(false) }
+    var firstFilling by remember { mutableStateOf(false) }
     var finishing by remember { mutableStateOf<Capture?>(null) }
     var editingFixed by remember { mutableStateOf<FixedCost?>(null) }
     var addingFixed by remember { mutableStateOf(false) }
@@ -743,6 +744,8 @@ fun MoneyScreen(
         MoneyPart.STORY to {
             Column(verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) {
                 WelcomeBackCard(book, today, onAdd = { adding = MoneyKind.EXPENSE })
+                // 1.38 [LEDH-29] 첫날 채우기.
+                FirstFillCard(book, vm.calendarId, onFill = { firstFilling = true; pasting = true })
                 MonthStoryCard(book, envelopeBook.second, aheadPay?.lastMonth, today, gate)
             }
         },
@@ -964,7 +967,8 @@ fun MoneyScreen(
     if (editingRules) CategoryRulesDialog(rules, book.categoriesOf(MoneyKind.EXPENSE), onSave = vm::setRule, onDelete = vm::deleteRule,
         onDismiss = { editingRules = false }, entries = book.entries, onApplyPast = vm::recategorizeAll)
     if (filtering) CaptureFilterDialog(autoRecord, onChange = vm::setCaptureFilter, onDismiss = { filtering = false })
-    if (pasting) PasteDialog(book.entries, rules, onSave = { vm.saveAll(it); pasting = false }, onDismiss = { pasting = false }, today = today)
+    if (pasting) PasteDialog(book.entries, rules, onSave = { vm.saveAll(it); pasting = false; firstFilling = false },
+        onDismiss = { pasting = false; firstFilling = false }, today = today, firstFill = firstFilling)
     if (addingFixed || editingFixed != null) {
         FixedCostDialog(editingFixed, onSave = { vm.saveFixed(it); addingFixed = false; editingFixed = null },
             onDelete = { vm.deleteFixed(it); editingFixed = null },
