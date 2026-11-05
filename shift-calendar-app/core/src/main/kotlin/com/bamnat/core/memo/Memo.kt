@@ -32,6 +32,11 @@ data class Memo(
     val calendars: Set<String> = emptySet(),
     /** [NOTE-05] How a dated memo comes back ("M25" every month on the 25th, "W2" every Tuesday); empty for once. */
     val repeat: String = "",
+    /**
+     * 1.38 (DB 28판) The days a repeating memo was taken off ("이 날만 빼기"): it does not come back on these, its own date
+     * included. Kept as it is when the repeat changes, so turning a repeat off and on again does not bring them back.
+     */
+    val skips: Set<LocalDate> = emptySet(),
 ) {
     /** [MEMO-01] Written for every calendar, now and later ones too. */
     val onEveryCalendar: Boolean get() = MemoCalendars.EVERY in calendars

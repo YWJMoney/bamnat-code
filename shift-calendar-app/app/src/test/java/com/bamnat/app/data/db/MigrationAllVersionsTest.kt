@@ -189,7 +189,9 @@ class MigrationAllVersionsTest(private val from: Int) {
                 "breakStartMinute" to null, "minutes" to 120, "coveredShiftTypeId" to null, "needsReview" to 0, "position" to 1),
             "memos" to mapOf("id" to 1, "epochDay" to 20001, "title" to "인수인계", "body" to "본문", "checklist" to "", "isChecklist" to 0,
                 "colorIndex" to 2, "pinned" to 1, "createdAt" to 1, "updatedAt" to 2, "deletedAt" to null, "remindAt" to "2026-11-03T15:00",
-                "remindRing" to 1, "remindNotify" to 0, "remindAsked" to "2026-11-03T15:00", "calendars" to ",*,", "repeat" to "M25"),
+                "remindRing" to 1, "remindNotify" to 0, "remindAsked" to "2026-11-03T15:00", "calendars" to ",*,", "repeat" to "M25",
+                // 1.38 Version 28's 이 날만 빼기; older versions get none.
+                "skips" to "20026,20057"),
             "memos" to mapOf("id" to 2, "epochDay" to null, "title" to "지운 메모", "body" to "", "checklist" to "", "isChecklist" to 0,
                 "colorIndex" to 0, "pinned" to 0, "createdAt" to 3, "updatedAt" to 4, "deletedAt" to 5, "remindAt" to null,
                 "remindRing" to 0, "remindNotify" to 0, "remindAsked" to null, "calendars" to "", "repeat" to ""),

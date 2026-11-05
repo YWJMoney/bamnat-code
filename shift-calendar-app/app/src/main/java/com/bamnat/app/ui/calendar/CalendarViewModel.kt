@@ -1435,6 +1435,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewModelScope.launch { memoRepo.delete(memo) }
     }
 
+    /** 1.38 (DB 28판) 이 날만 빼기: [day] comes off repeating [memo]; the undo is offered where deletion's is. */
+    fun skipMemoDay(memo: Memo, day: LocalDate) {
+        viewModelScope.launch { memoRepo.get(memo.id)?.let { memoRepo.skipDay(it, day) } }
+    }
+
     private val _openMemo = MutableSharedFlow<Long>(extraBufferCapacity = 1)
     /** [SCHED-01] A memo to open in the editor, from the snackbar's 일정으로 넣기. */
     val openMemo: SharedFlow<Long> = _openMemo.asSharedFlow()

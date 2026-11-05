@@ -486,7 +486,9 @@ class BackupManager(
                     .putOpt("remindAsked", m.remindAsked)
                     // [NOTE-01] Version 16. [MEMO-01] Without it the memo is 내 달력's; ",*," is every calendar.
                     .putOpt("calendars", m.calendars.ifEmpty { null })
-                    .putOpt("repeat", m.repeat.ifEmpty { null }),
+                    .putOpt("repeat", m.repeat.ifEmpty { null })
+                    // 1.38 DB 28판 이 날만 빼기. An older app ignores it and the memo comes back on those days too.
+                    .putOpt("skips", m.skips.ifEmpty { null }),
             )
         }
         root.put("memos", memos)
@@ -913,6 +915,7 @@ class BackupManager(
                 remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
                 calendars = com.bamnat.core.memo.MemoCalendars.encode(com.bamnat.core.memo.MemoCalendars.decode(o.optStringOrNull("calendars"))),
                 repeat = o.optString("repeat"),
+                skips = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("skips"))),
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->

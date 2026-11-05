@@ -61,4 +61,18 @@ class ShiftMemoFollowTest {
         assertTrue(start.plusDays(10) in after)
         assertTrue("before the push stays", start.plusDays(1) in after)
     }
+
+    /** 1.38 (DB 28판) 이 날만 빼기: the memo leaves that day only, and 되돌리기 puts it back. */
+    @Test fun aDayTakenOffComesBackWithUndo() = runBlocking {
+        val memo = memos.save(Memo(date = start, title = "분리수거", repeat = "W1", calendars = setOf(PersonalCalendar.MAIN)))
+        val off = start.plusWeeks(1)
+        memos.skipDay(memo, off)
+        assertTrue(memos.memosOn(off, PersonalCalendar.MAIN).first().isEmpty())
+        assertEquals(1, memos.memosOn(start.plusWeeks(2), PersonalCalendar.MAIN).first().size)
+        assertFalse(off in memos.datesWithMemos(PersonalCalendar.MAIN).first())
+        assertEquals(off, memos.lastSkipped.value?.day)
+        memos.undoSkip()
+        assertEquals("분리수거", memos.memosOn(off, PersonalCalendar.MAIN).first().single().title)
+        assertTrue(memos.get(memo.id)!!.skips.isEmpty())
+    }
 }

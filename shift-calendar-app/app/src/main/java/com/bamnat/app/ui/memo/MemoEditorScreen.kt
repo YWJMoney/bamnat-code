@@ -92,7 +92,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.ui.Fmt
-import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.components.LocalEdgeScroll
 import com.bamnat.app.ui.components.edgeScrollViewport
 import com.bamnat.app.ui.components.rememberSelectionDrag
@@ -328,6 +327,16 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }
+            // 1.38 (DB 28판) The days taken off this repeating memo (이 날만 빼기), and a way to put them back.
+            if (memo.repeat.isNotEmpty() && memo.skips.isNotEmpty()) {
+                val shown = memo.skips.sorted().take(SKIPS_SHOWN).joinToString(", ") { Fmt.monthDay(it) } +
+                    if (memo.skips.size > SKIPS_SHOWN) " 외 ${memo.skips.size - SKIPS_SHOWN}일" else ""
+                Row(Modifier.padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("뺀 날: $shown", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = vm::clearSkips) { Text("다시 넣기") }
+                }
+            }
             // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
             lastSame?.let { (label, memos) ->
                 if (memos.isNotEmpty()) TextButton(onClick = { showLast = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
@@ -471,15 +480,21 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
 
     if (confirmDelete) {
         val deleteTypes by vm.shiftTypes.collectAsStateWithLifecycle()
-        ConfirmDialog(
-            title = memoDeleteTitle(memo, "메모를 지울까요?"),
-            message = memoDeleteMessage(memo, "휴지통으로 옮겨요. 30일 동안 되살릴 수 있어요.") { id -> deleteTypes.firstOrNull { it.id == id }?.name },
-            confirmLabel = "삭제",
-            destructive = true,
+        // 1.38 (DB 28판) A repeating memo asks: 이 날만 빼기 (the day it was opened from) or 반복 전부 지우기.
+        MemoDeleteDialog(
+            memo = memo,
+            day = vm.openedOn,
+            shiftName = { id -> deleteTypes.firstOrNull { it.id == id }?.name },
+            plainTitle = "메모를 지울까요?",
+            plainMessage = "휴지통으로 옮겨요. 30일 동안 되살릴 수 있어요.",
             onDismiss = { confirmDelete = false },
-            onConfirm = {
+            onDeleteAll = {
                 confirmDelete = false
                 vm.delete(onBack)
+            },
+            onSkipDay = { d ->
+                confirmDelete = false
+                vm.skipDay(d, onBack)
             },
         )
     }
@@ -952,3 +967,6 @@ internal fun numberOnly(typed: String): String {
     }
     return sb.toString()
 }
+
+/** 1.38 How many days taken off a repeating memo the editor names before "외 N일". */
+private const val SKIPS_SHOWN = 3
