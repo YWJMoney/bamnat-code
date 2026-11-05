@@ -335,13 +335,15 @@ internal fun timeChangeNote(part: String?, was: LocalTime, now: LocalTime, nextD
  * down (PC 1a8e88f6: "시작 … · 끝 …" folded onto two): "19:00~07:00 → 20:00~다음날 08:00으로 바뀌어요". With one
  * of the two changed, it names that one ("끝 07:00 → 다음날 08:00으로 바뀌어요"). Null when neither changed.
  */
-internal fun rangeChangeNote(wasStart: LocalTime, wasEnd: LocalTime, start: LocalTime, end: LocalTime): String? {
+internal fun rangeChangeNote(wasStart: LocalTime, wasEnd: LocalTime, start: LocalTime, end: LocalTime, short: Boolean = false): String? {
     val same = { a: LocalTime, b: LocalTime -> a.hour == b.hour && a.minute == b.minute }
     val nextDay = !end.isAfter(start)
     return when {
         same(wasStart, start) && same(wasEnd, end) -> null
         same(wasEnd, end) -> timeChangeNote("시작", wasStart, start)
         same(wasStart, start) -> timeChangeNote("끝", wasEnd, end, nextDay)
+        // With large text only the new times, which two lines hold whole (PC cf5ee1c6: the end was cut on a third).
+        short -> "${wheelClock(start)}~${if (nextDay) "다음날 " else ""}${wheelClock(end)}으로 바뀌어요"
         else -> "${wheelClock(wasStart)}~${wheelClock(wasEnd)} → ${wheelClock(start)}~${if (nextDay) "다음날 " else ""}${wheelClock(end)}으로 바뀌어요"
     }
 }
@@ -356,7 +358,7 @@ private fun wheelClock(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minu
  * ([text] null) it still holds its line, so the wheels below do not jump when it comes and goes.
  */
 @Composable
-internal fun TimeChangeLine(text: String?, modifier: Modifier = Modifier) {
+internal fun TimeChangeLine(text: String?, modifier: Modifier = Modifier, largeText: String? = text) {
     // At the usual text size it is always one line: a long one shrinks a little instead of folding and pushing the
     // wheels down (PC 1a8e88f6). With large text it keeps two lines' room from the start and wraps at full size
     // instead of turning into the smallest words in the window (PC 7934283c).
@@ -368,7 +370,8 @@ internal fun TimeChangeLine(text: String?, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         if (LocalDensity.current.fontScale > LARGE_TEXT_SCALE) {
-            Text(text ?: " ", style = style, minLines = 2, maxLines = 2, modifier = Modifier.fillMaxWidth())
+            // [largeText] is the shorter wording, so the two lines hold the new time whole (PC cf5ee1c6).
+            Text(largeText ?: " ", style = style, minLines = 2, maxLines = 2, modifier = Modifier.fillMaxWidth())
         } else {
             com.bamnat.app.ui.FitText(text ?: " ", style = style)
         }

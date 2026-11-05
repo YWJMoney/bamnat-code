@@ -16,7 +16,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import com.bamnat.app.ui.components.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -106,7 +112,11 @@ fun TimeRangeDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
+          val scroll = rememberScrollState()
+          // [TIME-03] With large text the chips can sit below the window's edge: a fading edge and an arrow say there
+          // is more below (PC cf5ee1c6).
+          Box {
+            Column(Modifier.verticalScroll(scroll)) {
                 note?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp))
@@ -135,7 +145,11 @@ fun TimeRangeDialog(
                 // (the shift editor keeps what the window returns when the user goes back).
                 // The line keeps its place when nothing changed, so the wheels do not jump (PC a9bcce14).
                 // Both changes share one line, so changing start and end does not push the wheels down either.
-                TimeChangeLine(rangeChangeNote(initial.start, initial.end, range.start, range.end), Modifier.padding(bottom = 4.dp))
+                TimeChangeLine(
+                    rangeChangeNote(initial.start, initial.end, range.start, range.end),
+                    Modifier.padding(bottom = 4.dp),
+                    largeText = rangeChangeNote(initial.start, initial.end, range.start, range.end, short = true),
+                )
                 if (part == TimeRangePart.BREAK) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         MinutesStepper(minutes = breakMin, onChange = { breakMin = it }, step = 10, max = maxBreakMinutes, dialogTitle = "휴게 시간")
@@ -183,7 +197,7 @@ fun TimeRangeDialog(
                         if (part == TimeRangePart.END) {
                             // [TIME-03] The end tab offers ends that fit the start (PC 1a8e88f6: a 야간's end tab offered its
                             // own 19:00 start): the usual lengths, then the other times, never the start itself.
-                            for ((t, label) in endChoices(range.start, presets, initial.end)) {
+                            for ((t, label) in endChoices(range.start, presets, initial.end, if (showBreak) breakMin else 0)) {
                                 AssistChip(onClick = { setTime(t) }, label = { Text(label) })
                             }
                         } else {
@@ -192,6 +206,16 @@ fun TimeRangeDialog(
                     }
                 }
             }
+            if (scroll.canScrollForward) {
+                Box(
+                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp)
+                        .background(Brush.verticalGradient(listOf(Color.Transparent, AlertDialogDefaults.containerColor))),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+          }
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(range) }, enabled = !breakTooLong) { Text(confirmLabel) }
@@ -203,17 +227,18 @@ fun TimeRangeDialog(
 private fun clock(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
 
 /**
- * [TIME-03] Ends to offer for a shift starting at [start], each with its words: start + 8·9·10·12시간 ("다음날 07:00 ·
- * 12시간" when it runs past midnight), then the other [presets] that are not one of those and not the start itself.
- * The end the window opened with says "원래" (PC 7934283c).
+ * [TIME-03] Ends to offer for a shift starting at [start], each with its words: 8·9·10·12시간 of work after the
+ * [breakMinutes] ("18:00 · 8시간 근무" from 09:00 with an hour's break, as the line above says "휴게 빼면 8시간"; PC
+ * cf5ee1c6), "다음날" when it runs past midnight, then the other [presets] that are not one of those and not the start
+ * itself. The end the window opened with says "원래" (PC 7934283c).
  */
-internal fun endChoices(start: LocalTime, presets: List<LocalTime>, original: LocalTime? = null): List<Pair<LocalTime, String>> {
+internal fun endChoices(start: LocalTime, presets: List<LocalTime>, original: LocalTime? = null, breakMinutes: Int = 0): List<Pair<LocalTime, String>> {
     fun label(t: LocalTime, hours: Int?): String = listOfNotNull(
         (if (!t.isAfter(start)) "다음날 " else "") + clock(t),
-        hours?.let { "${it}시간" },
+        hours?.let { if (breakMinutes > 0) "${it}시간 근무" else "${it}시간" },
         if (t == original) "원래" else null,
     ).joinToString(" · ")
-    val byLength = listOf(8, 9, 10, 12).map { start.plusHours(it.toLong()) }
+    val byLength = listOf(8, 9, 10, 12).map { start.plusHours(it.toLong()).plusMinutes(breakMinutes.toLong()) }
     val lengths = listOf(8, 9, 10, 12)
     val taken = byLength.toSet() + start
     return byLength.mapIndexed { i, t -> t to label(t, lengths[i]) } +

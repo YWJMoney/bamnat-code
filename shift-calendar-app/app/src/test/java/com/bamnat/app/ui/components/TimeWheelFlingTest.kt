@@ -41,6 +41,11 @@ class TimeWheelFlingTest {
         assertEquals("끝 07:00 → 다음날 08:00으로 바뀌어요", rangeChangeNote(LocalTime.of(19, 0), LocalTime.of(7, 0), LocalTime.of(19, 0), LocalTime.of(8, 0)))
         assertEquals("시작 09:00 → 08:30으로 바뀌어요", rangeChangeNote(LocalTime.of(9, 0), LocalTime.of(18, 0), LocalTime.of(8, 30), LocalTime.of(18, 0)))
         assertNull(rangeChangeNote(LocalTime.of(9, 0), LocalTime.of(18, 0), LocalTime.of(9, 0), LocalTime.of(18, 0)))
+        // Large text: only the new times, so two lines hold them whole.
+        assertEquals(
+            "20:00~다음날 08:00으로 바뀌어요",
+            rangeChangeNote(LocalTime.of(19, 0), LocalTime.of(7, 0), LocalTime.of(20, 0), LocalTime.of(8, 0), short = true),
+        )
     }
 
     @Test
@@ -52,5 +57,7 @@ class TimeWheelFlingTest {
         assertEquals("다음날 09:00", choices[4].second)
         // A day shift's ends stay on the same day.
         assertEquals("17:00 · 8시간", endChoices(LocalTime.of(9, 0), emptyList()).first().second)
+        // With a break the length is the work after it, as the line above the tabs counts it: 09:00 + 1시간 휴게 → 18:00.
+        assertEquals(LocalTime.of(18, 0) to "18:00 · 8시간 근무 · 원래", endChoices(LocalTime.of(9, 0), emptyList(), LocalTime.of(18, 0), 60).first())
     }
 }
