@@ -562,7 +562,9 @@ private fun DebtLines(book: MoneyBook, today: LocalDate, balances: Map<Long, Lon
             val paidThisMonth = book.entries.any { it.kind == MoneyKind.TRANSFER && it.toAccountId == loan.id && YearMonth.from(it.date) == YearMonth.from(today) }
             if (paidThisMonth) Text("이번 달은 갚았어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.income)
             else if (onRepay != null && loan.monthlyPay > 0) {
-                val lines = remember(left, loan, today) { com.bamnat.core.money.Debts.lines(loan, left, loan.monthlyPay, today) }
+                // 1.38 PC 1차: 이자는 '이자·금융'(사장님 장부는 원래 있던 '대출이자').
+                val interestCategory = if ("대출이자" in book.categoriesOf(MoneyKind.EXPENSE)) "대출이자" else MoneyCategories.INTEREST
+                val lines = remember(left, loan, today, interestCategory) { com.bamnat.core.money.Debts.lines(loan, left, loan.monthlyPay, today, interestCategory) }
                 val interest = lines.filter { it.kind == MoneyKind.EXPENSE }.sumOf { it.amount }
                 TextButton(onClick = { onRepay(lines) }) {
                     Text("이번 달 갚기 ${Fmt.won(lines.sumOf { it.amount })}" + (if (interest > 0) " (이자 ${Fmt.won(interest)})" else ""))
@@ -612,6 +614,9 @@ fun AccountEditor(
         (initial != null && (kind != initial.type || payDay != (initial.payDay ?: 14) || payFrom != initial.payFromId)) ||
         owedText != amountDigits(if (initial?.isLoan == true) -initial.opening else 0) || monthlyText != amountDigits(initial?.monthlyPay ?: 0) ||
         tiersText.isNotBlank() != initial?.perfTiers.orEmpty().isNotEmpty()
+    // 1.38 PC 1차 (갚는 통장을 안 고르면 '이번 달 갚기'가 어느 통장에서 나갔는지 몰라요): 대출을 처음 저장할 때 한 번만 물어요.
+    var askPayFrom by rememberSaveable { mutableStateOf(false) }
+    var askedPayFrom by rememberSaveable { mutableStateOf(initial?.isLoan == true) }
     com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = typed, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle(if (initial == null) "결제수단 추가" else "결제수단 고치기", onDismiss) {
@@ -634,11 +639,12 @@ fun AccountEditor(
                 // PC 확인 (이름을 친 뒤 자판이 오르면 '지금 들어 있는 돈' 칸이 밀려 이름 칸을 누르게 됨): the balance comes right under the
                 // name, and the keyboard's 다음 goes to it.
                 if (loan) {
-                    AmountField(if (initial == null) "남은 원금" else "남은 원금 (적기 시작할 때)", owedText, { owedText = it })
+                    // 1.38 PC 1차: 자판 '다음'으로 원금 → 이자율 → 매달 갚는 돈, 고른 칸은 자판 위로 올라와요.
+                    AmountField(if (initial == null) "남은 원금" else "남은 원금 (적기 시작할 때)", owedText, { owedText = it }, Modifier.aboveKeyboard())
                     OutlinedTextField(value = rateText, onValueChange = { v -> rateText = v.filter { it.isDigit() || it == '.' }.take(5) }, singleLine = true,
                         label = { Text("연 이자율 % (모르면 비워 둬요)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth())
-                    AmountField("매달 갚는 돈", monthlyText, { monthlyText = it })
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth().aboveKeyboard())
+                    AmountField("매달 갚는 돈", monthlyText, { monthlyText = it }, Modifier.aboveKeyboard(), imeAction = ImeAction.Done)
                     DayStepper("갚는 날", payDay) { payDay = it }
                     Text("이 계좌로 보낸 돈(이체)만큼 남은 원금이 줄어요. ‘이번 달 갚기’로 적으면 이자와 원금을 나눠 적어요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -700,9 +706,7 @@ fun AccountEditor(
                 Spacer(Modifier.height(4.dp))
             }
             HorizontalDivider()
-            com.bamnat.app.ui.components.SaveButton(
-                enabled = name.isNotBlank(),
-                onClick = {
+            val save = {
                     onSave((initial ?: MoneyAccount(name = name, type = kind)).copy(
                         name = name.trim(), type = kind, last4 = if (card) last4 else "",
                         payDay = payDay.takeIf { kind == AccountType.CREDIT || loan }, closeDay = closeDay.takeIf { kind == AccountType.CREDIT && ownClose },
@@ -713,9 +717,33 @@ fun AccountEditor(
                         perfTiers = if (card) com.bamnat.core.money.CardPerf.parseTiers(tiersText) else emptyList(),
                         perfSkip = if (card && com.bamnat.core.money.CardPerf.parseTiers(tiersText).isNotEmpty()) skip else emptyList(),
                     ))
+            }
+            com.bamnat.app.ui.components.SaveButton(
+                enabled = name.isNotBlank(),
+                onClick = {
+                    if (loan && payFrom == null && banks.isNotEmpty() && !askedPayFrom) { askedPayFrom = true; askPayFrom = true } else save()
                 },
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),
             ) { Text("저장") }
+            if (askPayFrom) {
+                AlertDialog(
+                    onDismissRequest = { askPayFrom = false },
+                    title = { Text("어느 통장에서 갚나요?") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("고르면 ‘이번 달 갚기’가 그 통장에서 나간 돈으로 적혀요. 나중에 고쳐도 돼요.",
+                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            banks.forEach { b ->
+                                TextButton(onClick = { payFrom = b.id; askPayFrom = false; save() }, modifier = Modifier.fillMaxWidth()) {
+                                    Text(b.label, modifier = Modifier.fillMaxWidth())
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = { TextButton(onClick = { askPayFrom = false; save() }) { Text("안 고르고 저장") } },
+                    dismissButton = { TextButton(onClick = { askPayFrom = false }) { Text("돌아가기") } },
+                )
+            }
         }
     }
 }

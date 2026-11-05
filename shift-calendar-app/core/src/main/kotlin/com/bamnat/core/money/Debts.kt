@@ -67,21 +67,21 @@ object Debts {
 
     /**
      * One payment split into its interest (this month's, on what is owed now) and the rest, which lowers what is owed.
-     * The interest is spending (분류 '이자'); the principal is a transfer to the loan.
+     * The interest is spending (분류 '이자·금융'); the principal is a transfer to the loan.
      */
     fun split(owed: Long, ratePct: Double, pay: Long): Pair<Long, Long> {
         val interest = (owed * ratePct.coerceAtLeast(0.0) / 100.0 / 12.0).roundToLong().coerceIn(0, pay)
         return interest to (pay - interest)
     }
 
-    /** The transfer category of the principal part; the interest part is spending under 기타 named "<대출> 이자". */
+    /** The transfer category of the principal part; the interest part is spending under 이자·금융 (사장님 장부는 대출이자) named "<대출> 이자". */
     const val PRINCIPAL = "대출 상환"
 
     /** This month's payment on [loan] as lines: the interest as spending, the rest as a transfer that lowers what is owed. */
-    fun lines(loan: MoneyAccount, owed: Long, pay: Long, day: LocalDate): List<MoneyEntry> {
+    fun lines(loan: MoneyAccount, owed: Long, pay: Long, day: LocalDate, interestCategory: String = MoneyCategories.INTEREST): List<MoneyEntry> {
         val (interest, principal) = split(owed, loan.rate, pay.coerceAtMost(owed + split(owed, loan.rate, pay).first))
         return listOfNotNull(
-            interest.takeIf { it > 0 }?.let { MoneyEntry(date = day, kind = MoneyKind.EXPENSE, amount = it, category = MoneyCategories.OTHER,
+            interest.takeIf { it > 0 }?.let { MoneyEntry(date = day, kind = MoneyKind.EXPENSE, amount = it, category = interestCategory,
                 merchant = "${loan.name} 이자", accountId = loan.payFromId) },
             principal.takeIf { it > 0 }?.let { MoneyEntry(date = day, kind = MoneyKind.TRANSFER, amount = it, category = PRINCIPAL,
                 merchant = loan.name, accountId = loan.payFromId, toAccountId = loan.id) },

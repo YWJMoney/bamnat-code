@@ -122,6 +122,7 @@ fun categoryIcon(name: String): ImageVector = when (name) {
     "보험" -> Icons.Outlined.HealthAndSafety
     "반려동물" -> Icons.Outlined.Pets
     "육아" -> Icons.Outlined.ChildCare
+    MoneyCategories.INTEREST, "대출이자" -> Icons.Outlined.RequestQuote
     MoneyCategories.SALARY -> Icons.Outlined.Payments
     "부수입" -> Icons.Outlined.WorkOutline
     "용돈" -> Icons.Outlined.VolunteerActivism
@@ -149,7 +150,8 @@ fun accountIcon(type: AccountType): ImageVector = when (type) {
 }
 
 /** Every category's place in the palette: spending first, then income and transfers, so each keeps its color. */
-private val CATEGORY_ORDER = MoneyCategories.expense + MoneyCategories.income + MoneyCategories.transfer
+// 1.38: 이자·금융 goes last so the colors the other categories already had stay theirs.
+private val CATEGORY_ORDER = (MoneyCategories.expense - MoneyCategories.INTEREST) + MoneyCategories.income + MoneyCategories.transfer + MoneyCategories.INTEREST
 
 @Composable
 @ReadOnlyComposable
