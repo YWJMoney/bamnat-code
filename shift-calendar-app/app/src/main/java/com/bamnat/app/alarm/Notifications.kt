@@ -88,6 +88,10 @@ object Notifications {
     /** [PROV-07] 일어났나요? */
     const val WAKE_CHECK_ID = 7005
 
+    /** [TOWN-08] Whether the newest channel this version made is on the phone (one check, not a call per channel). */
+    fun channelsMade(context: Context): Boolean =
+        context.getSystemService(NotificationManager::class.java)?.getNotificationChannel(PLAZA_CHANNEL_ID) != null
+
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannelGroups(listOf(

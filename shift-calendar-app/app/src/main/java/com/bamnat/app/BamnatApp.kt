@@ -104,7 +104,9 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         // Before the first unlock the app's own storage cannot be read: the channels are made, as before.
         if (BootAlarms.isLocked(this)) return Notifications.createChannels(this)
         val prefs = getSharedPreferences(APP_STATE, MODE_PRIVATE)
-        if (prefs.getInt(K_CHANNELS_FOR, 0) == BuildConfig.VERSION_CODE) return
+        // [TOWN-08] PC 확인 02af1eba (같은 판 번호로 덮어 깔면 새 소식 채널이 안 생겨요): a channel this version names but the phone
+        // lacks is made all the same.
+        if (prefs.getInt(K_CHANNELS_FOR, 0) == BuildConfig.VERSION_CODE && Notifications.channelsMade(this)) return
         Notifications.createChannels(this)
         prefs.edit().putInt(K_CHANNELS_FOR, BuildConfig.VERSION_CODE).apply()
     }
