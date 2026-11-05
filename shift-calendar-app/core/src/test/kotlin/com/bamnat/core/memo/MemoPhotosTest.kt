@@ -67,6 +67,20 @@ class MemoPhotosTest {
     }
 
     @Test
+    fun severalPickedAtOnceAllGoIn() {
+        // PC 확인 3dd61e00: two photos picked, only one went in.
+        val done = MemoPhotos.insertAll("가나다라", 2, listOf(a, b))
+        assertEquals(listOf(Text("가나"), Photo(a), Photo(b), Text("다라")), MemoPhotos.parse(done.text))
+        assertEquals(2, MemoPhotos.count(done.text))
+        assertEquals(listOf(a, b), MemoPhotos.names(done.text))
+        assertEquals("가나다라", MemoPhotos.plain(done.text).replace("\n", ""))
+        val atEnd = MemoPhotos.insertAll("글", null, listOf(a, b))
+        assertEquals(listOf(Text("글"), Photo(a), Photo(b)), MemoPhotos.parse(atEnd.text).filterNot { it == Text("") })
+        assertEquals(atEnd.text.length, atEnd.caret)
+        assertEquals("글", MemoPhotos.insertAll("글", null, emptyList()).text)
+    }
+
+    @Test
     fun resizeAlignAndWordsBeside() {
         var body = "위\n⟦사진 $a 100 가운데⟧\n아래"
         body = MemoPhotos.update(body, 1) { it.copy(width = 40, align = Align.RIGHT, side = "") }

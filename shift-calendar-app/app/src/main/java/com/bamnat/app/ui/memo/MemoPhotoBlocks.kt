@@ -46,6 +46,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -183,6 +187,15 @@ private fun MemoPhotoBlock(
     // The width while a finger drags the corner; written to the memo when the finger lets go (one step to undo).
     var live by remember(photo.width) { mutableIntStateOf(photo.width) }
     val most = if (photo.wraps) MemoPhotos.MAX_SIDE_WIDTH else 100
+    val sideFocus = remember { FocusRequester() }
+    var toSide by remember { mutableStateOf(false) }
+    LaunchedEffect(toSide, photo.wraps) {
+        if (toSide && photo.wraps) {
+            withFrameNanos { }
+            runCatching { sideFocus.requestFocus() }
+            toSide = false
+        }
+    }
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         BoxWithConstraints(Modifier.fillMaxWidth()) {
             val full = maxWidth
@@ -243,7 +256,7 @@ private fun MemoPhotoBlock(
             if (photo.wraps) {
                 Row(Modifier.fillMaxWidth()) {
                     if (photo.align == Align.LEFT) { picture(); Spacer(Modifier.width(10.dp)) }
-                    side(Modifier.weight(1f).heightIn(min = 48.dp))
+                    side(Modifier.weight(1f).heightIn(min = 48.dp).focusRequester(sideFocus))
                     if (photo.align == Align.RIGHT) { Spacer(Modifier.width(10.dp)); picture() }
                 }
             } else {
@@ -252,49 +265,57 @@ private fun MemoPhotoBlock(
                 }) { picture() }
             }
         }
-        if (chosen) Surface(
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-        ) {
-            // Wrapped, never a row to scroll sideways: every choice is in sight.
-            FlowRow(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("크기 ${live}%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.align(Alignment.CenterVertically).padding(end = 4.dp))
-                listOf(33 to "작게", 50 to "반", 75 to "크게", 100 to "꽉 차게").forEach { (pct, label) ->
-                    val p = pct.coerceAtMost(most)
-                    FilterChip(selected = live == p, onClick = { live = p; onChange(photo.copy(width = p)) }, label = { Text(label) })
+        MemoToolPanel(chosen) { Column {
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+            ) {
+                // Wrapped, never a row to scroll sideways: every choice is in sight.
+                FlowRow(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("크기 ${live}%", style = MaterialTheme.typography.labelLarge, modifier = Modifier.align(Alignment.CenterVertically).padding(end = 4.dp))
+                    listOf(33 to "작게", 50 to "반", 75 to "크게", 100 to "꽉 차게").forEach { (pct, label) ->
+                        val p = pct.coerceAtMost(most)
+                        FilterChip(selected = live == p, onClick = { live = p; onChange(photo.copy(width = p)) }, label = { Text(label) })
+                    }
+                    Align.entries.forEach { a ->
+                        FilterChip(selected = photo.align == a, onClick = {
+                            // Words beside a photo moved to the middle stay, under it (MemoPhotos.join).
+                            onChange(photo.copy(align = a))
+                        }, label = { Text(a.word) })
+                    }
+                    FilterChip(
+                        selected = photo.wraps,
+                        onClick = {
+                            if (photo.wraps) onUnwrap() // the words go on under it
+                            else {
+                                onChange(photo.copy(
+                                    side = photo.side.orEmpty(),
+                                    align = if (photo.align == Align.CENTER) Align.LEFT else photo.align,
+                                    width = photo.width.coerceAtMost(50),
+                                ))
+                                // (PC 확인 3dd61e00) The tools close and the caret goes to the new field beside the photo, so what is typed
+                                // next lands there, not at the end of the memo.
+                                toSide = true
+                                onChoose()
+                            }
+                        },
+                        label = { Text("옆에 글 쓰기") },
+                    )
+                    TextButton(onClick = { onMove(-1) }, enabled = canUp) { Text("↑ 위로") }
+                    TextButton(onClick = { onMove(1) }, enabled = canDown) { Text("↓ 아래로") }
+                    TextButton(onClick = onView) { Text("크게 보기") }
+                    TextButton(onClick = onRemove) { Text("빼기", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = onChoose) { Text("완료") }
                 }
-                Align.entries.forEach { a ->
-                    FilterChip(selected = photo.align == a, onClick = {
-                        // Words beside a photo moved to the middle stay, under it (MemoPhotos.join).
-                        onChange(photo.copy(align = a))
-                    }, label = { Text(a.word) })
-                }
-                FilterChip(
-                    selected = photo.wraps,
-                    onClick = {
-                        if (photo.wraps) onUnwrap() // the words go on under it
-                        else onChange(photo.copy(
-                            side = photo.side.orEmpty(),
-                            align = if (photo.align == Align.CENTER) Align.LEFT else photo.align,
-                            width = photo.width.coerceAtMost(50),
-                        ))
-                    },
-                    label = { Text("옆에 글 쓰기") },
-                )
-                TextButton(onClick = { onMove(-1) }, enabled = canUp) { Text("↑ 위로") }
-                TextButton(onClick = { onMove(1) }, enabled = canDown) { Text("↓ 아래로") }
-                TextButton(onClick = onView) { Text("크게 보기") }
-                TextButton(onClick = onRemove) { Text("빼기", color = MaterialTheme.colorScheme.error) }
-                TextButton(onClick = onChoose) { Text("완료") }
             }
-        }
-        if (chosen && photo.wraps) Text(
-            "사진 옆 칸에 쓴 글은 사진 옆에 놓여요. 사진 밑에 이어 쓰려면 사진 아래 빈 곳을 누르세요",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp, start = 4.dp),
-        )
+            if (photo.wraps) Text(
+                "사진 옆 칸에 쓴 글은 사진 옆에 놓여요. 사진 밑에 이어 쓰려면 사진 아래 빈 곳을 누르세요",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+            )
+        } }
     }
 }
 
@@ -338,7 +359,8 @@ internal fun rememberMemoPhotoPicker(
     onBoard: (() -> Unit)? = null,
     /** Called when the menu opens (a board that asked for photos before is let go). */
     onOpen: () -> Unit = {},
-    onPhoto: (String) -> Unit,
+    /** All the photos picked at once, in their order, put in by one edit. */
+    onPhoto: (List<String>) -> Unit,
 ): Pair<MemoPhotoPicker, @Composable () -> Unit> {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -351,11 +373,14 @@ internal fun rememberMemoPhotoPicker(
         busy = true
         scope.launch {
             var failed = 0
+            val names = ArrayList<String>()
             for (uri in uris.take(room)) {
                 val name = MemoPhotoFiles.import(context, uri)
-                if (name != null) onPhoto(name) else failed++
+                if (name != null) names += name else failed++
             }
             busy = false
+            // (PC 확인 3dd61e00) One at a time, the second went into a field the first had just split: only one stayed.
+            if (names.isNotEmpty()) onPhoto(names)
             if (uris.size > room) Toast.makeText(context, "메모 하나에 사진은 ${MemoPhotos.MAX_PER_MEMO}장까지라 ${room}장만 넣었어요", Toast.LENGTH_LONG).show()
             else if (failed > 0) Toast.makeText(context, "사진 ${failed}장을 열지 못했어요", Toast.LENGTH_SHORT).show()
         }

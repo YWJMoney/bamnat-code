@@ -487,9 +487,10 @@ class MemoEditorViewModel(
      * [MPH-01] 1.38 A photo put in where nothing is being typed: at the end of the words (above the list of a checklist). False when
      * the memo already holds [com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO].
      */
-    fun addPhoto(name: String): Boolean {
-        if (com.bamnat.core.memo.MemoPhotos.count(_memo.value.body) >= com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO) return false
-        update { m -> m.copy(body = com.bamnat.core.memo.MemoPhotos.insert(m.body, null, name).text) }
+    fun addPhotos(names: List<String>): Boolean {
+        val room = com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO - com.bamnat.core.memo.MemoPhotos.count(_memo.value.body)
+        if (room <= 0 || names.isEmpty()) return names.isEmpty()
+        update { m -> m.copy(body = com.bamnat.core.memo.MemoPhotos.insertAll(m.body, null, names.take(room)).text) }
         return true
     }
 

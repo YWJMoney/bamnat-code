@@ -276,6 +276,16 @@ object MemoPhotos {
         return Insert(result, head.length + photo.length + 1)
     }
 
+    /**
+     * [MPH-01] Several photos chosen at once, one under the other at [caret], in the order picked (PC 확인 3dd61e00: two picked, one went
+     * in). Put in by one edit, so one step undoes them all.
+     */
+    fun insertAll(text: String, caret: Int?, names: List<String>): Insert {
+        var at = Insert(text, (caret ?: text.length).coerceIn(0, text.length))
+        for (n in names) at = insert(at.text, at.caret, n)
+        return at
+    }
+
     /** [MPH-07] [text] with a new 자유 판 put in at [caret], as [insert] puts a photo. */
     fun insertBoard(text: String, caret: Int?, board: Board = Board()): Insert {
         val at = (caret ?: text.length).coerceIn(0, text.length)

@@ -154,6 +154,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     var copying by remember { mutableStateOf(false) }
     if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" }, shareText(memo)) { copying = false }
     val bodyTools = remember { MemoBodyTools() }
+    // [MPH-02] 1.38 A chosen photo's or board's tools, fixed above the keyboard bar.
+    val toolHost = remember { MemoToolHost() }
     // [MPH-01] 1.38 사진 넣기: at the caret of the field typed in last, or at the end of the words.
     // [MPH-07] A 자유 판's '+ 사진' sends the photos to that board instead (its block index).
     var boardTarget by remember { mutableStateOf<Int?>(null) }
@@ -165,21 +167,23 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             if (into != null) into() else vm.setBody(com.bamnat.core.memo.MemoPhotos.insertBoard(vm.memo.value.body, null).text)
         },
         onOpen = { boardTarget = null },
-    ) { name ->
+    ) { names ->
         boardTarget?.let { at ->
             val now = vm.memo.value.body
             val b = com.bamnat.core.memo.MemoPhotos.parse(now).getOrNull(at) as? com.bamnat.core.memo.MemoPhotos.Board
             if (b != null) {
-                val n = b.items.size
-                val item = com.bamnat.core.memo.MemoPhotos.BoardItem(com.bamnat.core.memo.MemoPhotos.BoardKind.PHOTO, name,
-                    x = 300 + (n % 4) * 120, y = 300 + (n % 3) * 150, w = 450)
-                vm.setBody(com.bamnat.core.memo.MemoPhotos.updateBoard(now, at, b.copy(items = b.items + item)))
+                val added = names.mapIndexed { k, name ->
+                    val n = b.items.size + k
+                    com.bamnat.core.memo.MemoPhotos.BoardItem(com.bamnat.core.memo.MemoPhotos.BoardKind.PHOTO, name,
+                        x = 300 + (n % 4) * 120, y = 300 + (n % 3) * 150, w = 450)
+                }
+                vm.setBody(com.bamnat.core.memo.MemoPhotos.updateBoard(now, at, b.copy(items = b.items + added)))
             }
             return@rememberMemoPhotoPicker
         }
         val into = bodyTools.insertPhoto
-        if (into != null && !memo.isChecklist) into(name)
-        else if (!vm.addPhoto(name)) Toast.makeText(context, "메모 하나에 사진은 ${com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO}장까지 넣을 수 있어요", Toast.LENGTH_LONG).show()
+        if (into != null && !memo.isChecklist) into(names)
+        else if (!vm.addPhotos(names)) Toast.makeText(context, "메모 하나에 사진은 ${com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO}장까지 넣을 수 있어요", Toast.LENGTH_LONG).show()
     }
     bodyTools.onPhoto = photoPicker.open
     // [MPH-06] 1.38 스튜디오 부품 '메모 쓰기 종이'(memo.page): a theme's paper colour for a memo left in the app's colour.
@@ -455,7 +459,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         Spacer(Modifier.size(8.dp))
                     }
                     ChecklistEditor(memo = memo, vm = vm)
-                } else CompositionLocalProvider(LocalEdgeScroll provides edge) {
+                } else CompositionLocalProvider(LocalEdgeScroll provides edge, LocalMemoToolHost provides toolHost) {
                     // [MPH-01][MPH-02] 1.38 The body as its words and photos; without photos it is the one field it always was.
                     MemoBlocksBody(
                         body = memo.body,
@@ -521,6 +525,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     onDecline = { vm.keepAsMemo(found) },
                 )
             }
+            if (!memo.isChecklist) MemoToolHostSlot(toolHost)
             if (!memo.isChecklist) MemoBodyToolbar(bodyTools)
             // [RUL-05] 1.36 사용자 "메모장 및 모든 곳에서": {근무}·{이번주야간} 같은 수식이 있으면 그날 값으로 어떻게 읽히는지.
             com.bamnat.app.logic.MemoFormulaPreview(memo, Modifier.padding(horizontal = 20.dp))
@@ -731,8 +736,8 @@ internal fun MemoBodyField(
             if (field.text != value) onValueChange(field.text)
         }
         // [MPH-01] 1.38 A photo goes in at the caret, on a line of its own.
-        tools.insertPhoto = if (!takesPhotos) null else { name ->
-            val done = com.bamnat.core.memo.MemoPhotos.insert(field.text, field.selection.end, name)
+        tools.insertPhoto = if (!takesPhotos) null else { names ->
+            val done = com.bamnat.core.memo.MemoPhotos.insertAll(field.text, field.selection.end, names)
             field = androidx.compose.ui.text.input.TextFieldValue(done.text, androidx.compose.ui.text.TextRange(done.caret))
             onValueChange(done.text)
         }

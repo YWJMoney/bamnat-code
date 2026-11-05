@@ -125,62 +125,64 @@ internal fun MemoBoardBlock(
                 )
             }
         }
-        if (chosen) Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-            FlowRow(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                val full = live.items.size >= MemoPhotos.MAX_BOARD_ITEMS
-                TextButton(enabled = !full, onClick = {
-                    put(live.copy(items = live.items + BoardItem(BoardKind.TEXT, "글", 500, 500, 400)))
-                    picked = live.items.lastIndex; editing = live.items.lastIndex
-                }) { Text("+ 글상자") }
-                TextButton(enabled = !full, onClick = onAddPhoto) { Text("+ 사진") }
-                TextButton(enabled = !full, onClick = { stickers = true }) { Text("+ 스티커") }
-                val p = picked?.let { i -> item(i)?.let { i to it } }
-                if (p != null) {
-                    val (i, it) = p
-                    if (it.kind == BoardKind.TEXT) {
-                        TextButton(onClick = { editing = i }) { Text("글 고치기") }
-                        TextButton(onClick = { change(i) { x -> x.copy(size = x.size + 2) } }) { Text("가+") }
-                        TextButton(onClick = { change(i) { x -> x.copy(size = x.size - 2) } }) { Text("가−") }
-                        TextButton(onClick = { change(i) { x -> x.copy(ink = nextInk(x.ink)) } }) { Text("글자 색") }
-                        TextButton(onClick = { change(i) { x -> x.copy(fill = nextFill(x.fill)) } }) { Text("바탕 색") }
-                    }
-                    TextButton(onClick = { change(i) { x -> x.copy(w = x.w + 80) } }) { Text("크게") }
-                    TextButton(onClick = { change(i) { x -> x.copy(w = x.w - 80) } }) { Text("작게") }
-                    TextButton(onClick = { change(i) { x -> x.copy(rot = x.rot + 15) } }) { Text("↻ 돌리기") }
-                    // 1.38 통합(GestureAlternativesTest): 끌어 옮기기 대신 버튼으로도 한 칸(5%)씩.
-                    TextButton(onClick = { change(i) { x -> x.copy(x = x.x - 50) } }) { Text("← 왼쪽") }
-                    TextButton(onClick = { change(i) { x -> x.copy(x = x.x + 50) } }) { Text("오른쪽 →") }
-                    TextButton(onClick = { change(i) { x -> x.copy(y = x.y - 50) } }) { Text("↑ 올리기") }
-                    TextButton(onClick = { change(i) { x -> x.copy(y = x.y + 50) } }) { Text("↓ 내리기") }
-                    TextButton(enabled = i < live.items.lastIndex, onClick = {
-                        val l = live.items.toMutableList(); val x = l.removeAt(i); l.add(i + 1, x); put(live.copy(items = l)); picked = i + 1
-                    }) { Text("앞으로") }
-                    TextButton(enabled = i > 0, onClick = {
-                        val l = live.items.toMutableList(); val x = l.removeAt(i); l.add(i - 1, x); put(live.copy(items = l)); picked = i - 1
-                    }) { Text("뒤로") }
+        MemoToolPanel(chosen) { Column {
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                FlowRow(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                    val full = live.items.size >= MemoPhotos.MAX_BOARD_ITEMS
                     TextButton(enabled = !full, onClick = {
-                        put(live.copy(items = live.items + it.copy(x = it.x + 40, y = it.y + 40).fixed())); picked = live.items.lastIndex
-                    }) { Text("복제") }
-                    TextButton(onClick = { put(live.copy(items = live.items.filterIndexed { j, _ -> j != i })); picked = null }) {
-                        Text("조각 지우기", color = MaterialTheme.colorScheme.error)
+                        put(live.copy(items = live.items + BoardItem(BoardKind.TEXT, "글", 500, 500, 400)))
+                        picked = live.items.lastIndex; editing = live.items.lastIndex
+                    }) { Text("+ 글상자") }
+                    TextButton(enabled = !full, onClick = onAddPhoto) { Text("+ 사진") }
+                    TextButton(enabled = !full, onClick = { stickers = true }) { Text("+ 스티커") }
+                    val p = picked?.let { i -> item(i)?.let { i to it } }
+                    if (p != null) {
+                        val (i, it) = p
+                        if (it.kind == BoardKind.TEXT) {
+                            TextButton(onClick = { editing = i }) { Text("글 고치기") }
+                            TextButton(onClick = { change(i) { x -> x.copy(size = x.size + 2) } }) { Text("가+") }
+                            TextButton(onClick = { change(i) { x -> x.copy(size = x.size - 2) } }) { Text("가−") }
+                            TextButton(onClick = { change(i) { x -> x.copy(ink = nextInk(x.ink)) } }) { Text("글자 색") }
+                            TextButton(onClick = { change(i) { x -> x.copy(fill = nextFill(x.fill)) } }) { Text("바탕 색") }
+                        }
+                        TextButton(onClick = { change(i) { x -> x.copy(w = x.w + 80) } }) { Text("크게") }
+                        TextButton(onClick = { change(i) { x -> x.copy(w = x.w - 80) } }) { Text("작게") }
+                        TextButton(onClick = { change(i) { x -> x.copy(rot = x.rot + 15) } }) { Text("↻ 돌리기") }
+                        // 1.38 통합(GestureAlternativesTest): 끌어 옮기기 대신 버튼으로도 한 칸(5%)씩.
+                        TextButton(onClick = { change(i) { x -> x.copy(x = x.x - 50) } }) { Text("← 왼쪽") }
+                        TextButton(onClick = { change(i) { x -> x.copy(x = x.x + 50) } }) { Text("오른쪽 →") }
+                        TextButton(onClick = { change(i) { x -> x.copy(y = x.y - 50) } }) { Text("↑ 올리기") }
+                        TextButton(onClick = { change(i) { x -> x.copy(y = x.y + 50) } }) { Text("↓ 내리기") }
+                        TextButton(enabled = i < live.items.lastIndex, onClick = {
+                            val l = live.items.toMutableList(); val x = l.removeAt(i); l.add(i + 1, x); put(live.copy(items = l)); picked = i + 1
+                        }) { Text("앞으로") }
+                        TextButton(enabled = i > 0, onClick = {
+                            val l = live.items.toMutableList(); val x = l.removeAt(i); l.add(i - 1, x); put(live.copy(items = l)); picked = i - 1
+                        }) { Text("뒤로") }
+                        TextButton(enabled = !full, onClick = {
+                            put(live.copy(items = live.items + it.copy(x = it.x + 40, y = it.y + 40).fixed())); picked = live.items.lastIndex
+                        }) { Text("복제") }
+                        TextButton(onClick = { put(live.copy(items = live.items.filterIndexed { j, _ -> j != i })); picked = null }) {
+                            Text("조각 지우기", color = MaterialTheme.colorScheme.error)
+                        }
+                    } else {
+                        TextButton(onClick = { put(live.copy(ratio = live.ratio + 25)) }) { Text("판 길게") }
+                        TextButton(onClick = { put(live.copy(ratio = (live.ratio - 25).coerceAtLeast(MemoPhotos.MIN_RATIO))) }) { Text("판 짧게") }
+                        TextButton(enabled = canUp, onClick = { onMove(-1) }) { Text("↑ 위로") }
+                        TextButton(enabled = canDown, onClick = { onMove(1) }) { Text("↓ 아래로") }
+                        TextButton(onClick = onRemove) { Text("판 빼기", color = MaterialTheme.colorScheme.error) }
                     }
-                } else {
-                    TextButton(onClick = { put(live.copy(ratio = live.ratio + 25)) }) { Text("판 길게") }
-                    TextButton(onClick = { put(live.copy(ratio = (live.ratio - 25).coerceAtLeast(MemoPhotos.MIN_RATIO))) }) { Text("판 짧게") }
-                    TextButton(enabled = canUp, onClick = { onMove(-1) }) { Text("↑ 위로") }
-                    TextButton(enabled = canDown, onClick = { onMove(1) }) { Text("↓ 아래로") }
-                    TextButton(onClick = onRemove) { Text("판 빼기", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = onChoose) { Text("완료") }
                 }
-                TextButton(onClick = onChoose) { Text("완료") }
             }
-        }
-        if (chosen) Text(
-            if (picked == null) "조각을 누르면 고를 수 있어요. 고른 조각은 한 손가락으로 옮기고, 두 손가락으로 키우고 돌려요"
-            else "한 손가락으로 옮기고, 두 손가락으로 벌리면 커지고 돌리면 돌아가요. 글상자는 두 번 누르면 글을 고쳐요",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp, start = 4.dp),
-        )
+            Text(
+                if (picked == null) "조각을 누르면 고를 수 있어요. 고른 조각은 한 손가락으로 옮기고, 두 손가락으로 키우고 돌려요"
+                else "한 손가락으로 옮기고, 두 손가락으로 벌리면 커지고 돌리면 돌아가요. 글상자는 두 번 누르면 글을 고쳐요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+            )
+        } }
     }
     editing?.let { i ->
         val it = item(i)
