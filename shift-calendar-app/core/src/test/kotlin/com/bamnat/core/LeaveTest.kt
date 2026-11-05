@@ -156,8 +156,7 @@ class LeaveTest {
         assertEquals("2027.1", r.version)
         assertEquals(10_700, r.minimumHourlyWage)
         assertEquals(0.10, r.pensionRate!!, 1e-9)
-        // [P3-ACC] 2026-10-30 장기요양위원회: 소득 대비 0.9994%.
-        assertEquals(0.009994, r.longTermCareRate!!, 1e-12)
+        assertNull(r.longTermCareRate)
         assertEquals(10_320, com.bamnat.core.pay.RateTable.on(LocalDate.of(2026, 12, 31)).minimumHourlyWage)
     }
 }

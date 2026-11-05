@@ -114,14 +114,31 @@ class OfficialSourceGoldenTest {
         assertEquals(302_570L, TakeHome.estimate(9_000_000, TaxMode.INSURANCE_4, on = LocalDate.of(2026, 6, 1)).deductions.toMap()["국민연금"])
     }
 
+    /**
+     * 2027: the app ships 장기요양 as 'not yet fixed' and the 2026-10-30 rate (0.9994%) comes in the signed
+     * `remote/v1/rates.json` (서명 열쇠 대기, release/1.38-대기/2027-장기요양-요율.patch). This lays that file over the
+     * built-in years exactly as the phone does and checks the official amounts.
+     */
     @Test fun insurance2027() {
-        val d = TakeHome.estimate(3_000_000, TaxMode.INSURANCE_4, on = feb27).deductions.toMap()
-        assertEquals(150_000L, d["국민연금"]) // 10% ÷ 2
-        assertEquals(107_850L, d["건강보험"]) // 7.19% 동결
-        assertEquals(14_990L, d["장기요양"]) // 107,850 × 13.90% = 14,991 → 14,990
-        assertEquals(27_000L, d["고용보험"])
-        val r = RateTable.on(feb27)
-        assertEquals(0.1390, r.longTermCareRate!! / r.healthRate!!, 0.00005)
+        val file = com.bamnat.core.remote.RemoteFiles.parse(
+            """{"format":1,"kind":"rates","version":2026110501,"issued":"2026-11-05","minApp":33,"data":{"rates":[{"from":"2027-01-01",
+            "version":"2027.1","source":"2027년 최저임금 고시, 2026-10-30 장기요양위원회","minimumHourlyWage":10700,"pensionRate":0.1,
+            "healthRate":0.0719,"longTermCareRate":0.009994,"unemploymentRate":0.018}],"pensionBases":[]}}""".toByteArray(),
+        )
+        try {
+            RateTable.use(file)
+            val d = TakeHome.estimate(3_000_000, TaxMode.INSURANCE_4, on = feb27).deductions.toMap()
+            assertEquals(150_000L, d["국민연금"]) // 10% ÷ 2
+            assertEquals(107_850L, d["건강보험"]) // 7.19% 동결
+            assertEquals(14_990L, d["장기요양"]) // 107,850 × 13.90% = 14,991 → 14,990
+            assertEquals(27_000L, d["고용보험"])
+            val r = RateTable.on(feb27)
+            assertEquals(0.1390, r.longTermCareRate!! / r.healthRate!!, 0.00005)
+            // 사장님 인건비 200만 원: 100,000 + 71,900 + 9,990 + 23,000 (고용 0.9% + 고용안정 0.25%) = 204,890원.
+            assertEquals(204_890L, com.bamnat.core.work.LaborCost.employerInsurance(2_000_000, LocalDate.of(2027, 5, 1)))
+        } finally {
+            RateTable.use(null)
+        }
     }
 
     // ---- 최저임금·주휴·기준시간 ----

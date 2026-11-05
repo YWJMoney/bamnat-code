@@ -44,8 +44,7 @@ class RemoteDataTest {
     @Test fun a2027RatesFileChangesTakeHome() {
         val feb27 = LocalDate.of(2027, 2, 1)
         fun care(on: LocalDate) = TakeHome.estimate(3_000_000, TaxMode.INSURANCE_4, on = on).deductions.toMap()["장기요양"]
-        // [P3-ACC] Built in: 2027 장기요양 0.9994% (건강보험료 대비 13.90%): 107,850 × 13.90% = 14,991 → 14,990원.
-        assertEquals(14_990L, care(feb27))
+        assertEquals(14_170L, care(feb27))
         // A made-up 2027 장기요양 rate (1.0% of pay) and new 2027.7 limits, as the 장기요양위원회 file would bring.
         RateTable.use(file("rates", """{"rates":[{"from":"2027-01-01","version":"2027.2","source":"시험","minimumHourlyWage":10700,
             "pensionRate":0.10,"healthRate":0.0719,"longTermCareRate":0.010,"unemploymentRate":0.018}],
@@ -57,7 +56,7 @@ class RemoteDataTest {
         assertEquals(10_700, RateTable.on(feb27).minimumHourlyWage)
         assertEquals(3, RateTable.current.size)
         RateTable.use(null)
-        assertEquals(14_990L, care(feb27))
+        assertEquals(14_170L, care(feb27))
     }
 
     @Test fun anOldRatesFileIsIgnoredAndABadOneRefused() {
@@ -144,6 +143,6 @@ class RemoteDataTest {
     // [LAWX-03] 사장님 인건비의 사업주 몫도 그해 요율: 2027 국민연금 5%.
     @Test fun laborCostFollowsTheYear() {
         assertEquals(199_340L, com.bamnat.core.work.LaborCost.employerInsurance(2_000_000, LocalDate.of(2026, 5, 1)))
-        assertEquals(204_890L, com.bamnat.core.work.LaborCost.employerInsurance(2_000_000, LocalDate.of(2027, 5, 1)))
+        assertEquals(204_340L, com.bamnat.core.work.LaborCost.employerInsurance(2_000_000, LocalDate.of(2027, 5, 1)))
     }
 }
