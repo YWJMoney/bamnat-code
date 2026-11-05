@@ -219,6 +219,15 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
             )
         }
     }
+    // [EASE-03] 1.38 PC 994c2328: sharing a public cycle with the same company is one box here, never ticked beforehand,
+    // instead of a window that came up over the new calendar after 저장.
+    d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
+        val c = LocalContext.current.appContainer
+        if (remember(s.name) { c.leadShare.canAsk(s.name) }) {
+            val on by vm.shareCycle.collectAsStateWithLifecycle()
+            ShareCycleLine(s.name, on) { vm.shareCycle.value = it }
+        }
+    }
     // [EASE-05][ONBOARD-05] 1.38: the first-start page is gone, so its one yes that goes to a server is here, on the first setup only,
     // never ticked beforehand (D42); 설정 › 개인정보·앱 정보 changes it later.
     if (vm.calendarId == null && !vm.again) {
@@ -367,6 +376,24 @@ fun CompanyPayWaiting(calendar: String, modifier: Modifier = Modifier) {
                     company.payWays.use(null)
                     gone = true
                 })
+        }
+    }
+}
+
+/** [EASE-03] The summary's one box for sharing the picked public cycle with others at [company]. */
+@Composable
+private fun ShareCycleLine(company: String, on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp)
+            .toggleable(value = on, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = onChange).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        androidx.compose.material3.Checkbox(checked = on, onCheckedChange = null)
+        Column(Modifier.weight(1f)) {
+            Text("‘$company’ 다른 분들도 이 근무주기를 쓰게 나누기 (선택)", style = MaterialTheme.typography.bodyLarge)
+            Text("근무 이름·시간·순서만 나눠요. 급여 금액, 이름, 연락처, 사진은 보내지 않아요. 설정 › 개인정보·앱 정보에서 바꿔요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

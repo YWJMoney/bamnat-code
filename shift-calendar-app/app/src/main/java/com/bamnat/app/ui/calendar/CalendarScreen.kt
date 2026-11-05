@@ -1319,6 +1319,11 @@ fun CalendarScreen(
             if (low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown }.forEach { placed ->
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
+        }.let { all ->
+            // [EASE-03] 1.38 PC 994c2328 (첫날 알림 허용 줄 밑에 '알림 1개 더 보기 · 근무주기 다음 단계'): on the first setup's day only
+            // what keeps the calendar working stays (the alarm line, money promised and late, the developer’s notice, what an invite
+            // the user just told became, the user's own parts); the next steps, asks and nudges wait for the next day.
+            if (c31.firstSetup.quietToday()) all.filter { it.key !in FIRST_DAY_WAITS } else all
         })
         }
         // [EASE-01] 1.38 (오늘근무 분석: 달력이 위로): '할 수 있는 것'·오늘의 팁 under the month, never on the first setup's day (EASE-03).
@@ -2974,3 +2979,9 @@ internal val ScheduleSnapshot.backWord: String
         weekdayOnly -> "평소대로"
         else -> "근무 주기대로"
     }
+
+/** [EASE-03] Cards above the month that wait for the day after the first setup. */
+private val FIRST_DAY_WAITS = setOf(
+    "statsMore", "crashAsk", "review", "holiday", "alarmSuggest", "recap", "plazaShare", "publicCycle",
+    "plazaRoom", "inviteNudge", "proMoment", "backupNudge", "journal",
+)

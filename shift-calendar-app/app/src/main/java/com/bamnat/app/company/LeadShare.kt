@@ -54,6 +54,28 @@ class LeadShare(private val c: AppContainer) {
         c.telemetry.event("lead_share", "offer")
     }
 
+    /**
+     * [EASE-03] 1.38 PC 994c2328 (저장한 뒤 '다른 사람이 사용해도 될까요?' 창이 끼어들어요): the first setup asks it on its summary
+     * instead, as one box never ticked beforehand. True when that box is shown for [company]: the plaza is on, the name is a
+     * name, and the user has not already said yes (then it goes on its own, as before).
+     */
+    fun canAsk(company: String): Boolean =
+        c.companyApi.enabled && CompanyText.norm(company).length >= 2 && c.companyStore.autoShare.value != true && ShareAskGate.open(c.appContext)
+
+    /**
+     * The setup was saved: shared at once when the user already said yes to the plaza or ticked the summary's box ([ticked]);
+     * otherwise nothing is sent and nothing is asked over the new calendar (설정 › 광장 can still turn it on).
+     */
+    fun afterSetup(pick: Pick, ticked: Boolean) {
+        if (!c.companyApi.enabled || CompanyText.norm(pick.company).length < 2) return
+        when {
+            c.companyStore.autoShare.value == true -> go(pick, null)
+            ticked -> { c.companyStore.setAutoShare(true); go(pick, null) }
+            else -> return
+        }
+        c.telemetry.event("lead_share", if (ticked) "summary_yes" else "auto")
+    }
+
     /** 같이 쓸게요: the plaza's one-time yes too (AH-D6), then sent. */
     fun yes() {
         val pick = _step.value?.pick ?: return
