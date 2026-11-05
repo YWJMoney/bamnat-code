@@ -169,7 +169,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         val mine = inUse().filter { subscribed(it.code) }
         if (mine.isEmpty() || !c.recipeApi.enabled) return emptyMap()
         val v = runCatching { c.recipeApi.versions(mine.map { it.code }) }.getOrDefault(emptyMap())
-        return mine.mapNotNull { e -> v[e.code]?.takeIf { it > e.version }?.let { e.code to it } }.toMap()
+        // 1.37 PC 3차 (공방 › 내 것에 가짜 ‘새 판 v1 있어요’): a theme put on without its 판 known (0) is at least the first one.
+        return mine.mapNotNull { e -> v[e.code]?.takeIf { it > maxOf(e.version, 1) }?.let { e.code to it } }.toMap()
     }
 
     /**

@@ -104,7 +104,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     LaunchedEffect(s.message) {
         val m = s.message ?: return@LaunchedEffect
         // PC 확인 보안 6차: a tab laid on the theme is taken back here too (with 마을 › 테마's 빼기 as before).
-        val undo = (s.appliedId != null && m.startsWith("적용했어요")) || (s.laidAt != null && m.contains("테마 위에 얹었어요"))
+        val undo = (s.appliedId != null && m.startsWith("넣었어요")) || (s.laidAt != null && m.contains("테마 위에 얹었어요"))
         // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
         // PC 확인 7525ccff (신고 띠가 아래 스위치를 가려요): a line with nothing to do has its own ✕, so it goes at once when asked.
         val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else null, withDismissAction = !undo,
@@ -372,9 +372,9 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 } != null
                 val restToo = s.pieces.any { it.on && it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
                 Text(when {
-                    laysOn && restToo -> "모양은 지금 테마 위에 얹어요(마을 › 테마에서 빼기). 나머지는 7일 안에 마을 › 공방 › 내 것 › 받은 레시피에서 되돌려요"
+                    laysOn && restToo -> "모양은 지금 테마 위에 얹어요(마을 › 테마에서 빼기). 나머지는 7일 안에 마을 › 테마(내 서랍)의 받은 것에서 되돌려요"
                     laysOn -> "지금 테마 위에 얹어요. 마을 › 테마에서 언제든 뺄 수 있어요"
-                    else -> "7일 안에는 마을 › 공방 › 내 것 › 받은 레시피에서 되돌릴 수 있어요"
+                    else -> "7일 안에는 마을 › 테마(내 서랍)의 받은 것에서 되돌릴 수 있어요"
                 }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 adNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }

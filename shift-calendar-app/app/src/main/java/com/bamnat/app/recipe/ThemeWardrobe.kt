@@ -29,6 +29,35 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         _lease.value = l
     }
 
+    /**
+     * 1.37 PC d12d4cf1 (백업을 복원하면 담아 둔 조각·입어 본 테마·묶음이 사라짐): after a restore wrote this file, what is held in memory
+     * is read again from it, so the next save does not write the old phone's state back over it.
+     */
+    fun reload() {
+        _lease.value = ThemeLease.decode(prefs.getString(K_LEASE, null))
+        _kept.value = readKept()
+        _overlays.value = readOverlays()
+        _folders.value = readFolders()
+        _placed.value = readPlaced()
+    }
+
+    /**
+     * 내 테마로 저장's count: my themes, without a studio mix kept by itself when it was taken off (PC 6eed57a2: 저장한 적 없는 조합이
+     * 한 칸을 써요).
+     */
+    fun ownCount(l: ThemeLease = _lease.value): Int = l.history.count { it.own && !isMix(it.title) }
+
+    /**
+     * 1.37 PC d12d4cf1 (입던 조합을 벗거나 바꾸면 서랍에서 사라져요): a mix of other themes' parts made in the studio stays in 입어 본
+     * 테마 as one of mine mixed from them ([ThemeLease.Wear.mixedFrom]: the 30-day rule, 장터 only as a 수정판), to wear again.
+     */
+    private fun keepMix(l: ThemeLease): ThemeLease {
+        val w = l.worn?.takeIf { isMix(it.title) && !it.own } ?: return l
+        val from = l.history.firstOrNull { it.key == w.key }?.title ?: w.title.removePrefix(MIX)
+        val mine = ThemeLease.Wear(w.title, "", w.body, w.from, w.until, own = true, mixedFrom = from.take(30), mixedCodes = w.code)
+        return l.copy(history = (listOf(mine) + l.history.filter { it.key != mine.key }).take(ThemeLease.HISTORY))
+    }
+
     /** Whether ads may run (the `ads` switch) and the user is on 프로; before launch the gate says 프로, so nothing runs. */
     fun adsOn(): Boolean = c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS)
     fun pro(): Boolean = c.featureGate.allows(com.bamnat.app.tier.Feature.THEME_WARDROBE)
@@ -67,13 +96,14 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
      * Puts on [r]'s looks (nothing else in it) with 7일 되돌리기 as any recipe; the user's own look is kept aside the first time.
      * [code] is the 나눔 판 code, "builtin:<title>" or "" for one of mine.
      */
-    suspend fun wear(r: Recipe, code: String, own: Boolean, ver: Int = 0): Boolean {
+    suspend fun wear(r: Recipe, code: String, own: Boolean, ver: Int = 0, whole: Recipe? = null): Boolean {
         val looks = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
         if (looks.pieces.isEmpty()) return false
         beforeWear()
         val picks = looks.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
-        c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
-        afterWear(looks, code, own, ver)
+        // A mix made in the studio is mine to look at: no 받은 레시피 row under the code its parts came from (no 새 판 알림 for it).
+        lastApplied = c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") && !isMix(r.title) }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
+        afterWear(looks, code, own, ver, whole)
         // [MKX-02] The tabs laid on stay over the new theme.
         reOverlay()
         return true
@@ -85,8 +115,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     /** [looks] are on: the theme worn from today, its days running for someone else's (not [own]) under the ads switch. */
-    suspend fun afterWear(looks: Recipe, code: String, own: Boolean, ver: Int = 0) {
-        val l = _lease.value
+    suspend fun afterWear(looks: Recipe, code: String, own: Boolean, ver: Int = 0, whole: Recipe? = null) {
+        val l = keepMix(_lease.value)
         // [J135-16] What was worn before, so 되돌리기 of this one puts its name back with its look.
         prefs.edit().putString(K_WORN_LOOK, JSONObject(c.recipes.pieces.lookSnapshot()).toString())
             .putString(K_PREV, ThemeLease.encode(ThemeLease(worn = l.worn))).apply()
@@ -95,9 +125,32 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val shared = was?.shared?.takeIf { own }.orEmpty().ifEmpty { if (own && code.isNotEmpty() && !code.startsWith("builtin:")) code else "" }
         val free = shared.isEmpty() && adsOn() && !pro() && l.freeUsed < ThemeLease.FREE_FIRST
         val only = looks.copy(pieces = looks.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
-        save(l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own, shared, if (ver > 0) ver else was?.ver ?: 0, was?.bare == true),
-            Today.date().toEpochDay(), free))
+        // PC 6eed57a2 (섞은 테마를 다시 입으면 '내 것 · 나만'으로): one of mine mixed from others keeps where it came from.
+        val next = l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own, shared, if (ver > 0) ver else was?.ver ?: 0, was?.bare == true,
+            mixedFrom = was?.mixedFrom?.takeIf { own }.orEmpty(), mixedCodes = was?.mixedCodes?.takeIf { own }.orEmpty()),
+            Today.date().toEpochDay(), free)
+        save(when {
+            whole != null -> keepWhole(l, next, whole)
+            // 1.37 PC (스튜디오에서 입힌 섞은 모양이 서랍에서 그 테마 자리를 차지해요): the theme its parts came from stays in 입었던 테마.
+            isMix(looks.title) && !own -> next.copy(history = (l.history.filter { it.key == next.worn?.key && !isMix(it.title) } + next.history.filter { it.key != next.worn?.key && !(isMix(it.title) && !it.own) })
+                .take(ThemeLease.HISTORY))
+            else -> next
+        })
+        next.worn?.let { stamp(it.key) }
         refreshWidgets()
+    }
+
+    /**
+     * 1.37 PC (일부만 입으면 서랍의 테마가 ‘… 일부’로 바뀌어요): [whole]'s parts were picked, so 입었던 테마 keeps the whole theme under its
+     * own name (worn first), and only what is worn now is ‘… 일부’.
+     */
+    private fun keepWhole(prev: ThemeLease, l: ThemeLease, whole: Recipe): ThemeLease {
+        val now = l.worn ?: return l
+        val looks = whole.copy(pieces = whole.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
+        val w = now.copy(title = whole.title.take(30), body = RecipeCodec.write(looks))
+        val before = prev.history.firstOrNull { it.key == w.key }
+        val keep = before?.copy(from = now.from, until = now.until) ?: w
+        return l.copy(history = (listOf(keep) + l.history.filter { it.key != w.key && it.key != now.key }).take(ThemeLease.HISTORY))
     }
 
     /**
@@ -108,7 +161,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val worn = _lease.value.worn ?: return
         val now = c.recipes.pieces.lookSnapshot()
         val after = readMap(K_WORN_LOOK)
-        var l = _lease.value
+        var l = keepMix(_lease.value)
         if (after != null && after != now) {
             val mine = myLookRecipe("내가 고친 ${worn.title}".take(30))
             l = l.wear(ThemeLease.Wear(mine.title, "", RecipeCodec.write(mine), 0, 0, own = true), Today.date().toEpochDay(), free = false)
@@ -170,13 +223,14 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
 
     /** [FREE-10] 내 테마로 저장: the look on the phone now kept as one of mine (free [FREE_OUTFITS], 프로 [PRO_OUTFITS]). */
     suspend fun saveMine(title: String): Boolean {
-        val mine = _lease.value.history.count { it.own }
+        val mine = ownCount()
         if (mine >= outfitLimit()) return false
         val r = myLookRecipe(title.take(30).ifBlank { "내 테마 ${mine + 1}" })
         if (r.pieces.isEmpty()) return false
         val l = _lease.value
         val w = ThemeLease.Wear(r.title, "", RecipeCodec.write(r), Today.date().toEpochDay(), Today.date().toEpochDay(), own = true)
-        save(l.copy(history = (l.history.filter { it.key != w.key } + w).take(ThemeLease.HISTORY)))
+        save(l.copy(history = (listOf(w) + l.history.filter { it.key != w.key }).take(ThemeLease.HISTORY)))
+        stamp(w.key)
         return true
     }
 
@@ -219,7 +273,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val from = code
         val k = Kept(Today.millis(), com.bamnat.core.recipe.LookParts.title(r.title, ids), from, r.title.take(30),
             RecipeCodec.write(only.copy(title = r.title.take(30).ifBlank { "조각" })), ids)
-        writeKept(listOf(k) + _kept.value)
+        // PC 08a6f771 (같은 조각을 다시 담으면 같은 칸이 늘어요): the same parts from the same theme are one 조각, the newer.
+        writeKept(listOf(k) + _kept.value.filter { it.from != k.from || it.fromTitle != k.fromTitle || it.parts.toSet() != k.parts.toSet() })
         return true
     }
 
@@ -335,14 +390,15 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val name = r.title.take(30)
         // Saving over one of mine of the same name replaces it (and keeps it in 장터 if it was).
         val same = l.history.firstOrNull { it.own && it.key == "own:$name" }
-        val mine = l.history.count { it.own }
+        val mine = ownCount(l)
         val only = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
         if ((same == null && mine >= outfitLimit()) || only.pieces.isEmpty()) return false
         val keep = was ?: same
         val w = ThemeLease.Wear(name.ifBlank { "내 테마 ${mine + 1}" }, "", RecipeCodec.write(only), keep?.from ?: Today.date().toEpochDay(),
             keep?.until ?: Today.date().toEpochDay(), own = true, shared = keep?.shared.orEmpty(), ver = keep?.ver ?: 0, bare = keep?.bare == true,
             mixedFrom = mixedFrom, mixedCodes = mixedCodes)
-        save(l.copy(history = (l.history.filter { it.key != w.key } + w).take(ThemeLease.HISTORY)))
+        save(l.copy(history = (listOf(w) + l.history.filter { it.key != w.key }).take(ThemeLease.HISTORY)))
+        stamp(w.key)
         return true
     }
 
@@ -388,9 +444,11 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
      */
     suspend fun newerWorn(): Int? {
         val w = _lease.value.worn ?: return null
-        if (w.own || w.code.isEmpty() || w.code.startsWith("builtin:") || !c.recipeApi.enabled) return null
+        // 1.37 PC (스튜디오에서 조각을 얹어 입히면 ‘조합 · …’에 '만든 분이 1판을 올렸어요'): a mix of parts is not that theme's 판, and a
+        // theme worn without its 판 known (0) is at least the first.
+        if (w.own || isMix(w.title) || w.code.isEmpty() || w.code.startsWith("builtin:") || !c.recipeApi.enabled) return null
         val v = runCatching { c.recipeApi.versions(listOf(w.code)) }.getOrNull()?.get(w.code) ?: return null
-        return v.takeIf { it > w.ver && prefs.getString(K_SKIP, null) != "${w.code}|$it" }
+        return v.takeIf { it > maxOf(w.ver, 1) && prefs.getString(K_SKIP, null) != "${w.code}|$it" }
     }
 
     /** 지금 그대로: this 판 is not asked about again (a later one is). */
@@ -439,6 +497,96 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         return true
     }
 
+    // ---- [DRW-03] 1.37 넣었어요 · 되돌리기 (후보 1, 사용자 2026-11-04 묶음 C) ----
+
+    /** The 받은 레시피 row the last [wear] wrote (its looks), so 되돌리기 marks it taken back too. */
+    @Volatile private var lastApplied: Long? = null
+
+    /** What the phone wore just before a 입기·벗기·빼기: its look and this wardrobe's own record of it. */
+    class Mark internal constructor(val look: Map<String, String>, val saved: Map<String, String?>)
+
+    /** Taken right before a change that 넣었어요 · 되돌리기 offers to take back. */
+    fun mark(): Mark {
+        lastApplied = null
+        return Mark(c.recipes.pieces.lookSnapshot(), UNDO_KEYS.associateWith { prefs.getString(it, null) })
+    }
+
+    /**
+     * 되돌리기: the look and the theme worn (its days, 입었던 테마, the tabs laid on) back to [m]. A free wear already used stays used, so
+     * 입기 → 되돌리기 → 입기 does not hand out free ones. A 받은 레시피 row the 입기 wrote is marked taken back.
+     */
+    suspend fun undoTo(m: Mark) {
+        val id = lastApplied
+        lastApplied = null
+        // PC 확인 e34fae4e (입은 뒤 되돌리기를 눌러도 그대로): the look and the theme go back first, at once, whatever the 받은 레시피 row
+        // does after; that row's own 되돌리기 (shift colours, pictures) gets a few seconds and never holds the rest up.
+        putBack(m)
+        if (id != null) {
+            val done = kotlinx.coroutines.withTimeoutOrNull(UNDO_ROW_MS) { runCatching { c.recipes.undo(id) }.onFailure { android.util.Log.w(TAG, "row undo", it) } }
+            if (done == null) android.util.Log.w(TAG, "row undo took over ${UNDO_ROW_MS}ms")
+            // Its own undo also says what is worn (forget) and puts its looks back: what was worn just before stays the answer.
+            putBack(m)
+        }
+    }
+
+    private suspend fun putBack(m: Mark) {
+        val used = _lease.value.freeUsed
+        val e = prefs.edit()
+        m.saved.forEach { (k, v) -> if (v == null) e.remove(k) else e.putString(k, v) }
+        e.apply()
+        val back = ThemeLease.decode(m.saved[K_LEASE])
+        save(back.copy(freeUsed = maxOf(back.freeUsed, used)))
+        _overlays.value = readOverlays()
+        c.recipes.pieces.restoreLook(m.look)
+        refreshWidgets()
+    }
+
+    // ---- [DRW-02] 1.37 내 서랍의 묶음 (사용자 2026-11-04 "폴더") ----
+
+    private val _folders = MutableStateFlow(readFolders())
+    /** The 묶음 name of each thing in 내 서랍, by its [com.bamnat.app.recipe.DrawerItem.key]. */
+    val folders: StateFlow<Map<String, String>> = _folders.asStateFlow()
+
+    private fun readFolders(): Map<String, String> = runCatching {
+        val o = JSONObject(prefs.getString(K_FOLDERS, "{}") ?: "{}")
+        o.keys().asSequence().associateWith { o.getString(it) }
+    }.getOrDefault(emptyMap())
+
+    /** Puts [key] in the 묶음 [name] (blank takes it out of any). */
+    fun setFolder(key: String, name: String?) {
+        val n = name?.trim()?.take(FOLDER_NAME).orEmpty()
+        val next = if (n.isEmpty()) _folders.value - key else _folders.value + (key to n)
+        prefs.edit().putString(K_FOLDERS, JSONObject(next).toString()).apply()
+        _folders.value = next
+    }
+
+    /** A 묶음 renamed ([to] blank lets every thing in it out). */
+    fun renameFolder(from: String, to: String) {
+        val n = to.trim().take(FOLDER_NAME)
+        val next = _folders.value.mapNotNull { (k, v) -> if (v != from) k to v else if (n.isEmpty()) null else k to n }.toMap()
+        prefs.edit().putString(K_FOLDERS, JSONObject(next).toString()).apply()
+        _folders.value = next
+    }
+
+    /**
+     * 1.37 PC 3차 (‘최근 것부터’로 보면 방금 저장한 테마가 맨 뒤에): when each theme came into 내 서랍 or was last put on, to the
+     * millisecond ([ThemeLease.Wear.from] is only the day), by its key.
+     */
+    private val _placed = MutableStateFlow(readPlaced())
+    val placed: StateFlow<Map<String, Long>> = _placed.asStateFlow()
+
+    private fun readPlaced(): Map<String, Long> = runCatching {
+        val o = JSONObject(prefs.getString(K_PLACED, "{}") ?: "{}")
+        o.keys().asSequence().associateWith { o.getLong(it) }
+    }.getOrDefault(emptyMap())
+
+    private fun stamp(key: String) {
+        val keys = _lease.value.history.map { it.key }.toSet() + key
+        val next = (_placed.value + (key to Today.millis())).filterKeys { it in keys }
+        prefs.edit().putString(K_PLACED, JSONObject(next).toString()).apply()
+        _placed.value = next
+    }
+
     companion object {
         /**
          * 1.37 [SHR-31] The code of a theme that came in a 근무표 링크 (+ the link's id). It starts with `builtin:` so every place that
@@ -446,6 +594,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
          * someone else's theme, as a built-in one's do.
          */
         const val LINK = "builtin:link:"
+        /** The name the studio gives a look made of other themes' parts ("조합 · <내 모양>"). */
+        const val MIX = "조합 · "
+        fun isMix(title: String) = title.startsWith(MIX)
         const val FREE_OUTFITS = 1
         const val PRO_OUTFITS = 10
         /** [TRY-03] 조각 보관함: free 20, 프로 200. */
@@ -463,6 +614,13 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_KEEP_OVERLAYS = "keep_overlays"
         private const val K_SKIP = "skip_ver"
         private const val K_PREV_VER = "prev_ver"
+        private const val K_FOLDERS = "folders"
+        private const val K_PLACED = "placed"
+        private const val TAG = "BamnatDrawer"
+        private const val UNDO_ROW_MS = 4_000L
+        const val FOLDER_NAME = 12
+        /** What [mark] keeps of this wardrobe: the theme worn and what 벗기 and 되돌리기 need of it. */
+        private val UNDO_KEYS = listOf(K_LEASE, K_MINE, K_WORN_LOOK, K_PREV, K_OVERLAYS)
     }
 }
 

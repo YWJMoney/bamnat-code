@@ -222,6 +222,9 @@ class AppContainer(context: Context) {
                 wishOff.reload()
                 memoTemplates.reload()
                 recipes.reload()
+                // 1.37 PC d12d4cf1 (복원하면 담아 둔 조각·입어 본 테마·묶음이 사라짐): 내 서랍 reads its file again, so what it holds in
+                // memory is not written back over the restored one.
+                wardrobe.reload()
             }
         })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
