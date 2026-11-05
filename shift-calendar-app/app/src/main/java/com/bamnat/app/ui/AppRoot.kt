@@ -2139,6 +2139,7 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.DUTY_ROSTER -> screen(Routes.DUTY_ROSTER)
         Place.HEALTH_REPORT -> screen(Routes.HEALTH_REPORT)
         Place.TEAMS -> screen(Routes.TEAMS)
+        Place.LEADER_TEAMS -> screen(Routes.LEADER_TEAMS)
         Place.YEAR -> screen(Routes.YEAR)
         Place.ATTENDANCE_IMPORT -> screen(Routes.ATTENDANCE_IMPORT)
         Place.COMMUTE -> screen(Routes.COMMUTE)

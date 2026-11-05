@@ -44,7 +44,7 @@ import java.time.YearMonth
  * 1.38 [P3-01][TEAM-09][BOSS-01] Phase 3's tables (DB 27) as the core's models: the 리더 팀 근무표 and the 사장님 급여 대장. Everything
  * stays on this phone; the screens that use it are off until their flag (`team.leader`, `boss.payroll`).
  */
-class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long = System::currentTimeMillis) {
+class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long = com.bamnat.core.time.Today::millis) {
     private val teams get() = db.teamDao()
     private val pay get() = db.payrollDao()
 

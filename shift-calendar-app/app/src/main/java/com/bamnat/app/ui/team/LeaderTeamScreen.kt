@@ -28,7 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.outlined.Lock
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -88,7 +88,6 @@ import com.bamnat.core.team.WishKind
 import com.bamnat.core.time.Today
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.util.UUID
@@ -164,7 +163,7 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
             val id = UUID.randomUUID().toString()
             val shifts = s.shiftTypes.sortedBy { it.sortOrder }.map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
             scope.launch {
-                c.phaseThree.saveTeam(Team(id, name.trim(), shifts = shifts, createdAt = System.currentTimeMillis()))
+                c.phaseThree.saveTeam(Team(id, name.trim(), shifts = shifts, createdAt = Today.millis()))
                 c.phaseThree.saveMembers(people.mapIndexed { i, p -> TeamMember(UUID.randomUUID().toString(), id, p.name, p.role, p.skill, sort = i) })
                 onMade(id)
             }
@@ -417,7 +416,7 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         val id = m.linkId
         val token = m.linkToken
         val st = if (id != null && token != null) runCatching {
-            c.shareApi.update(ShareLinkState(id, "", token, Instant.now(), "${team.name} ${m.name}"), payload)
+            c.shareApi.update(ShareLinkState(id, "", token, Today.instant(), "${team.name} ${m.name}"), payload)
         }.getOrElse { c.shareApi.create(payload) } else c.shareApi.create(payload)
         out += m to st.url
         updated += m.copy(linkId = st.id, linkToken = st.deleteToken)

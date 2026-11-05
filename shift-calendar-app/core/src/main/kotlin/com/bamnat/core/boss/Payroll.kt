@@ -80,7 +80,7 @@ data class StaffMember(
     val name: String,
     val form: WageForm = WageForm.HOUR,
     /** 시급, 월급 or 일급 in won. */
-    val base: Long = RateTable.on(LocalDate.now()).minimumHourlyWage,
+    val base: Long = RateTable.on(com.bamnat.core.time.Today.date()).minimumHourlyWage,
     val allowances: List<StaffAllowance> = emptyList(),
     val hiredOn: LocalDate? = null,
     val leftOn: LocalDate? = null,
@@ -219,7 +219,9 @@ object PayrollLedger {
             ?.takeIf { it > 0 } ?: days.sumOf { it.scheduledMinutes + it.extras.sumOf { e -> e.minutes } }
         fun minutesOf(kind: LineKind) = pay?.lines?.filter { it.kind == kind }?.sumOf { it.minutes } ?: 0
         val gross = pay?.total ?: 0
-        val insurance = if (s.insurance.any) employerInsurance(gross, s.insurance, month.atDay(1)) else 0
+        // [BOSS-11] Only the 4대보험 the law puts them in (G2·G3·G6), not just what was ticked.
+        val eligible = InsuranceRules.of(place, s, month).effective
+        val insurance = if (eligible.any) employerInsurance(gross, eligible, month.atDay(1)) else 0
         val line = LedgerLine(
             staff = s, month = month, pay = pay,
             workDays = workDays, workMinutes = workMinutes,

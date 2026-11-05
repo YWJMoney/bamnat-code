@@ -16,7 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.WarningAmber
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -195,6 +195,9 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
             FilterChip(selected = mark?.paidAt != null, onClick = { scope.launch { store.mark(place.id, month, l, paid = mark?.paidAt == null) } },
                 label = { Text(if (mark?.paidAt != null) "지급했어요 ✓" else "지급했어요") })
         }
+        // [BOSS-11] 4대보험 the law leaves out, with why (공식 대조 G2·G3·G6).
+        val rules = remember(place, l.staff, month) { com.bamnat.core.boss.InsuranceRules.of(place, l.staff, month) }
+        rules.reasons.forEach { Hint("ⓘ $it") }
         // [BOSS-05] ⚠ signs, each explaining itself on a tap.
         if (l.warnings.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             l.warnings.forEach { w ->
@@ -299,6 +302,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
     var s by remember { mutableStateOf(start) }
     var picking by remember { mutableStateOf<Pair<DayOfWeek, Boolean>?>(null) }
     var hirePick by remember { mutableStateOf(false) }
+    var birthPick by remember { mutableStateOf(false) }
     val minimum = RateTable.on(Today.date()).minimumHourlyWage
     ToolScreen(s.name.ifBlank { "새 직원" }, onDismiss, action = "저장", actionEnabled = s.name.isNotBlank(), onAction = { onSave(s) }) {
         OutlinedTextField(s.name, { s = s.copy(name = it.take(20)) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -313,6 +317,10 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("입사일", modifier = Modifier.weight(1f))
             TextButton(onClick = { hirePick = true }) { Text(s.hiredOn?.let(Fmt::shortFullDate) ?: "고르기") }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("생년월일 (선택)", modifier = Modifier.weight(1f))
+            TextButton(onClick = { birthPick = true }) { Text(s.birth?.let(Fmt::shortFullDate) ?: "고르기") }
         }
         SwitchLine("주휴수당 주기", s.weeklyHolidayPay, { s = s.copy(weeklyHolidayPay = it) }, "한 주 15시간이 안 되면 저절로 빠져요")
         Text("4대보험 (사장님 몫 계산)", style = MaterialTheme.typography.labelLarge)
@@ -351,7 +359,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
         if (start.name.isNotBlank()) TextButton(onClick = onRemove) {
             Icon(Icons.Outlined.Delete, null, Modifier.size(18.dp)); Text(" 직원 빼기")
         }
-        Hint("이름·생년월일·입사일·하는 일은 임금대장 칸이에요(근로기준법 시행령 제27조). 직원 정보는 이 휴대폰에만 있고, 백업은 암호를 걸어야 들어가요.")
+        Hint("이름·생년월일·입사일·하는 일은 임금대장 칸이에요(근로기준법 시행령 제27조). 생년월일과 입사일을 넣으면 나이·근무 기간에 따른 4대보험 가입 대상도 저절로 맞춰요. 주민등록번호는 묻지 않아요. 직원 정보는 이 휴대폰에만 있고, 백업은 암호를 걸어야 들어가요.")
     }
     picking?.let { (day, isStart) ->
         val sh = s.weekly[day] ?: StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0))
@@ -361,6 +369,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             picking = null
         }
     }
+    if (birthPick) DayPick(s.birth ?: LocalDate.of(2000, 1, 1), onDismiss = { birthPick = false }) { s = s.copy(birth = it); birthPick = false }
     if (hirePick) DayPick(s.hiredOn ?: Today.date(), onDismiss = { hirePick = false }) { s = s.copy(hiredOn = it); hirePick = false }
 }
 

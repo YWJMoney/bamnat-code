@@ -83,7 +83,7 @@ data class Payslip(
         const val NOTE = "근로기준법 제48조 제2항에 따라 드리는 임금명세서예요. 계산이 다르면 사장님께 말씀해 주세요."
 
         fun of(place: Workplace, line: LedgerLine, nonTaxable: Long = 0, dependents: Int = 1): Payslip {
-            val ins = line.staff.insurance
+            val ins = InsuranceRules.of(place, line.staff, line.month).effective
             val on = line.month.atEndOfMonth()
             val mode = when (line.staff.insurance.tax) { StaffTax.BIZ -> TaxMode.WITHHOLDING_3_3; StaffTax.WAGE -> TaxMode.INSURANCE_4; StaffTax.NONE -> TaxMode.NONE }
             val all = TakeHome.estimate(line.gross, mode, dependents, on, nonTaxable = nonTaxable).deductions
@@ -96,7 +96,15 @@ data class Payslip(
                     else -> true
                 }
             }
-            return Payslip(place, line, place.payDate(line.month), kept)
+            // G4 건강보험 보수월액 하한 28만 원: a small month still pays on 28만 원 (시행령 제32조).
+            val taxable = (line.gross - nonTaxable).coerceAtLeast(0)
+            val floored = if (ins.health && taxable in 1 until InsuranceRules.HEALTH_BASE_MIN) {
+                val sh = TakeHome.sharesOn(on)
+                val health = (InsuranceRules.HEALTH_BASE_MIN * sh.health).toLong() / 10 * 10
+                val care = (health * sh.careOfHealth).toLong() / 10 * 10
+                kept.map { (n, v) -> when (n) { "건강보험" -> n to health; "장기요양" -> n to care; else -> n to v } }
+            } else kept
+            return Payslip(place, line, place.payDate(line.month), floored)
         }
     }
 }

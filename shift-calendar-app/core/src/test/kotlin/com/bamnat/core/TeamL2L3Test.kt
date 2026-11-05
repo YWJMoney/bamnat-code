@@ -164,3 +164,50 @@ class PayslipTest {
         assertEquals("지난달 기록 없음", com.bamnat.core.boss.PayrollCompare.rows(now, null).single().why)
     }
 }
+
+/** 1.38 [BOSS-11] 4대보험 가입 대상 자동 판단 (공식 대조 G2·G3·G4·G6). */
+class InsuranceRulesTest {
+    private val nov = YearMonth.of(2026, 11)
+    private val place = com.bamnat.core.boss.Workplace("w", "카페", fivePlus = false, payday = 10)
+    private fun shift(h: Int) = com.bamnat.core.work.StaffShift(LocalTime.of(9, 0), LocalTime.of(9 + h, 0))
+    private fun staff(days: Int, hours: Int, hired: java.time.LocalDate? = null, birth: java.time.LocalDate? = null) = com.bamnat.core.boss.StaffMember(
+        "s", "가", base = 10_320, hiredOn = hired, birth = birth, insurance = com.bamnat.core.boss.Insurance.ALL,
+        weekly = java.time.DayOfWeek.entries.take(days).associateWith { shift(hours) })
+
+    @Test
+    fun `under 15 hours a week is out of pension health and new employment`() {
+        // 3일 × 4시간(휴게 30분 빼면 3.5시간) = 10.5시간.
+        val r = com.bamnat.core.boss.InsuranceRules.of(place, staff(3, 4, hired = nov.atDay(1)), nov)
+        assertEquals(com.bamnat.core.boss.Insurance(), r.effective)
+        assertEquals(2, r.reasons.count { it.contains("15시간") })
+        // After three months the 고용보험 comes back.
+        val later = com.bamnat.core.boss.InsuranceRules.of(place, staff(3, 4, hired = nov.minusMonths(3).atDay(1)), nov)
+        assertEquals(com.bamnat.core.boss.Insurance(employment = true), later.effective)
+    }
+
+    @Test
+    fun `age rules for pension and employment`() {
+        val sixty = com.bamnat.core.boss.InsuranceRules.of(place, staff(5, 8, birth = java.time.LocalDate.of(1965, 1, 1)), nov)
+        assertTrue(!sixty.effective.pension && sixty.effective.health)
+        val late = com.bamnat.core.boss.InsuranceRules.of(place, staff(5, 8, hired = java.time.LocalDate.of(2026, 3, 1), birth = java.time.LocalDate.of(1960, 1, 1)), nov)
+        assertTrue(!late.effective.employment)
+        val full = com.bamnat.core.boss.InsuranceRules.of(place, staff(5, 8, birth = java.time.LocalDate.of(1995, 1, 1)), nov)
+        assertEquals(com.bamnat.core.boss.Insurance.ALL, full.effective)
+    }
+
+    @Test
+    fun `a slip leaves out what the law leaves out, and health pays on at least 28만 원`() {
+        val short = staff(3, 4, hired = nov.atDay(1))
+        val slip = com.bamnat.core.boss.Payslip.of(place, com.bamnat.core.boss.PayrollLedger.line(place, short, nov, emptyList()))
+        assertTrue(slip.deductions.none { it.first in setOf("국민연금", "건강보험", "고용보험") })
+        // A 월급 of 20만 원 with 건강보험: the 보험료 is on 28만 원.
+        val one = com.bamnat.core.boss.StaffMember("o", "나", form = com.bamnat.core.boss.WageForm.MONTH, base = 200_000,
+            insurance = com.bamnat.core.boss.Insurance(health = true), hiredOn = java.time.LocalDate.of(2026, 1, 1),
+            weekly = java.time.DayOfWeek.entries.take(5).associateWith { shift(8) })
+        val l = com.bamnat.core.boss.PayrollLedger.line(place, one, nov, emptyList())
+        assertTrue(l.gross in 1 until 280_000)
+        val s = com.bamnat.core.boss.Payslip.of(place, l)
+        assertEquals((280_000 * com.bamnat.core.pay.TakeHome.sharesOn(nov.atEndOfMonth()).health).toLong() / 10 * 10,
+            s.deductions.first { it.first == "건강보험" }.second)
+    }
+}

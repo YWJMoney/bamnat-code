@@ -39,6 +39,9 @@ object ProCatalog {
         "look.wardrobe" to "THEME_WARDROBE",
         // 1.36 [PRF-12] 창작자 꾸미기.
         "recipe.creatorPro" to "CREATOR_PRO",
+        // 1.38 [GROW-06] Phase 3 더 쓰기.
+        "team.more" to "TEAM_ROSTER",
+        "boss.staff" to "BOSS_STAFF",
     )
 
     fun isPro(id: String): Boolean = id in tiers
