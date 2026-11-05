@@ -511,6 +511,7 @@ class BackupManager(
                 .put("weekStart", s.weekStart.name).put("weeklyLimit", s.weeklyLimitHours)
                 .put("averageLimit", s.averageLimitHours).put("theme", s.themeMode.name)
                 .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar)
+                .put("orgDayGroup", s.orgDayGroup).put("orgDaysOn", s.orgDaysOn)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("setupLater", s.setupLater).put("rosterMonthly", s.rosterMonthly)
@@ -997,6 +998,8 @@ class BackupManager(
                     dynamicColor = o.optBoolean("dynamicColor", s.dynamicColor),
                     showHoursInCells = o.optBoolean("cellHours", s.showHoursInCells),
                     showLunar = o.optBoolean("lunar", s.showLunar),
+                    orgDayGroup = o.optString("orgDayGroup", s.orgDayGroup),
+                    orgDaysOn = o.optBoolean("orgDaysOn", s.orgDaysOn),
                     // Sound files from another phone usually do not exist here.
                     vibrate = o.optBoolean("vibrate", s.vibrate),
                     gradualVolume = o.optBoolean("gradual", s.gradualVolume),

@@ -229,6 +229,24 @@ object PublicCycles {
         )
     }
 
+    /** [CYC-10] The order said in its letters (주·오·야·당·비·휴, 2 to 62 of them) as codes, else null. */
+    fun orderCodes(query: String): String? {
+        val t = query.filter { !it.isWhitespace() && it != '·' && it != '-' }
+        if (t.length !in 2..CycleOrders.MAX || t.any { it !in SPOKEN }) return null
+        // A word with only one kind (휴휴) or no work is not an order anyone searches for.
+        if (t.none { it in "주오야당" }) return null
+        return t.map { SPOKEN.getValue(it) }.joinToString("")
+    }
+
+    private val SPOKEN = mapOf('주' to 'D', '오' to 'E', '야' to 'N', '당' to 'X', '비' to 'B', '휴' to 'O')
+
+    /** [codes] is [want] started on another day (주야비휴 = 야비휴주). */
+    fun sameRotation(codes: String, want: String): Boolean = codes.length == want.length && want in codes + codes
+
+    /** [CYC-10] How old the row's 시점 is in years by [today], when it says a year; null otherwise. */
+    fun yearsOld(c: PublicCycle, today: java.time.LocalDate): Int? =
+        Regex("""(19|20)\d{2}""").find(c.asOf)?.value?.toInt()?.let { today.year - it }
+
     /** Lower case without spaces, (주)·주식회사 and marks, so "S-OIL 온산", "에스오일" stay what they are but "(주) 예시" finds 예시. */
     fun norm(s: String): String = s.lowercase().replace("주식회사", "").replace("(주)", "").replace("㈜", "")
         .filter { it.isLetterOrDigit() }
@@ -248,6 +266,9 @@ object PublicCycles {
             (industry == null || it.c.industry == industry) && (form == null || it.c.formKey == form) && (group == null || it.c.group.key == group)
         }
         if (norm(q).length < 2) return if (industry != null || form != null || group != null) pool.sortedBy { it.name }.map { it.c } else emptyList()
+        // [CYC-10] 1.38 순서로 찾기: "주야비휴", "당비비" typed as the order is said finds the rows with that very rotation
+        // (any day first), so someone who knows only their order, not the company's name, still lands on it.
+        orderCodes(q)?.let { want -> return pool.filter { sameRotation(it.c.codes, want) }.sortedBy { it.name }.map { it.c } }
         // "4조 2교대" is one thing when some row has it as one; "포스코 광양" two that must both be there.
         val whole = norm(q)
         val words = if (pool.any { e -> e.fields.any { whole in it } }) listOf(whole) else q.split(Regex("\\s+")).map(::norm).filter { it.isNotEmpty() }
