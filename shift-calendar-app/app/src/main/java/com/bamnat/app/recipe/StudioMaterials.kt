@@ -49,7 +49,7 @@ object StudioMaterials {
     @Volatile private var cached: Pair<Long, List<StudioMaterial>>? = null
 
     /** The open materials, kept for ten minutes; null when the server could not be reached. */
-    suspend fun list(c: AppContainer, now: Long = System.currentTimeMillis()): List<StudioMaterial>? {
+    suspend fun list(c: AppContainer, now: Long = com.bamnat.core.time.Today.millis()): List<StudioMaterial>? {
         cached?.let { (at, list) -> if (now - at < KEEP_MS) return list }
         val got = runCatching { c.recipeApi.materials() }.getOrNull() ?: return null
         cached = now to got
@@ -63,7 +63,7 @@ object StudioMaterials {
 
     fun openUntil(context: Context, pack: String): Long = prefs(context).getLong("pack.$pack", 0L)
 
-    fun open(context: Context, pack: String, now: Long = System.currentTimeMillis()) {
+    fun open(context: Context, pack: String, now: Long = com.bamnat.core.time.Today.millis()) {
         prefs(context).edit().putLong("pack.$pack", now + PACK_DAYS * DAY_MS).apply()
     }
 

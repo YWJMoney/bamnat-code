@@ -92,7 +92,7 @@ internal fun MaterialShelf(kind: String, onPick: (StudioMaterial) -> Unit) {
             packs.forEach { p -> FilterChip(selected = p == now, onClick = { pack = p; locked = null }, label = { Text(p) }) }
         }
         val shown = mine.filter { it.pack == now }
-        val t = System.currentTimeMillis()
+        val t = com.bamnat.core.time.Today.millis()
         // [opened] is read so a pack opened by an ad redraws its locks.
         val until = remember(now, opened) { StudioMaterials.openUntil(context, now) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
