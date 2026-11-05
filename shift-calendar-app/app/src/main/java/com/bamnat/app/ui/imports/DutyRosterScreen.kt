@@ -195,6 +195,15 @@ class DutyRosterViewModel(
         /** [NURS-04] Days read with doubt the user has not touched yet, and cells still unknown. */
         val doubtful: Set<Int>
             get() = (row?.doubtful(days).orEmpty() - edits.keys) + cells.filterValues { it is DutyCell.Unknown }.keys
+        /**
+         * [EASE-15] 1.38: cells the user changed from what the photo read, for "사진에서 읽은 28칸 중 2칸 고쳤어요" (a photo
+         * that needs few fixes is the point of reading it).
+         */
+        val fixed: Int
+            get() {
+                val read = row?.cells ?: return 0
+                return edits.count { (d, c) -> d in read && c != null && resolve(read.getValue(d)) != c }
+            }
         /** [ROST-03] What the roster said besides the code, for the days it stays on. */
         val notes: Map<Int, String> get() = row?.notes.orEmpty().filterKeys { it <= days && it !in edits && it in writable }
         /** [ROST-04] Days of the roster this month has not (31일 on a 30-day month). */
@@ -422,7 +431,9 @@ class DutyRosterViewModel(
             if (u.from != RosterFrom.TYPED && u.row?.guessed.orEmpty().any { it in cells && it !in u.edits }) markShiftsInferred()
             _ui.update { it.copy(applied = cells.size, history = emptyList()) }
             container.proMoments.rosterIn() // 1.32 [PROX-02]
-            val text = "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요"
+            // [EASE-15] A photo's month says how few cells needed a hand.
+            val text = "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요" +
+                if (u.from == RosterFrom.PHOTO && u.row != null) " · 사진에서 고친 칸 ${u.fixed}개" else ""
             val undo: suspend () -> Unit = {
                 before.forEach { (d, e) -> repo.restoreDay(d, e) }
                 if (memos.isNotEmpty()) container.memoRepository.delete(memos, offerUndo = false)
@@ -645,6 +656,11 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?) {
         if (ui.named != null && ui.row != null) add("근무표에 적힌 ${ui.named.monthValue}월로 넣어요")
         if (ui.beyond.isNotEmpty()) add("${ui.beyond.joinToString(",")}일 칸이 있는데 ${ui.month.monthValue}월은 ${ui.month.lengthOfMonth()}일까지라 그 칸은 빼요")
         if (ui.doubtful.isNotEmpty()) add("노란 칸 ${ui.doubtful.size}개는 확실하지 않아요. 누르고 키로 맞춰 주세요")
+        // [EASE-15] How much the photo saved: the cells read, and how few needed a key.
+        val read = ui.row?.cells?.size ?: 0
+        if (ui.from == RosterFrom.PHOTO && read > 0) add("사진에서 ${read}칸을 읽었어요" + if (ui.fixed > 0) " · ${ui.fixed}칸 고쳤어요" else "")
+        // [EASE-15] A photo that read nothing goes straight on by hand: the keys below start on the 1st.
+        if (ui.from == RosterFrom.PHOTO && ui.error != null && ui.rows.isNullOrEmpty()) add("아래 키로 ${ui.month.monthValue}월 ${ui.cursor}일부터 바로 이어서 넣을 수 있어요")
         if (ui.notes.isNotEmpty()) add("표시가 붙은 ${ui.notes.size}칸은 그 날 메모로 남겨요")
         if (snap != null) {
             val over = DutyRoster.overwrites(ui.writable.mapKeys { ui.month.atDay(it.key) }, snap.entries.associateBy { it.date })

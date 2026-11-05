@@ -815,6 +815,11 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
     }
     SectionCard(title = "다른 캘린더 앱과") {
+        // [GROW-05] 1.38 다른 앱에서 옮기기: the two ways that read only what is on the phone — a screenshot, the phone's calendar.
+        var moving by remember { mutableStateOf(false) }
+        NavRow("다른 앱에서 옮기기", "쓰던 근무 앱의 한 달 화면 캡처나 휴대폰 캘린더에서 근무를 옮겨 와요") { moving = true }
+        if (moving) MoveFromOtherApp(onDismiss = { moving = false })
+        HorizontalDivider()
         // [IMPORT-01]
         NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 근무와 메모로 옮겨요") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
@@ -1277,4 +1282,29 @@ private fun AccentRow(accent: Long, onPick: (Long) -> Unit) {
         )
     }
     if (picking) com.bamnat.app.ui.recipe.ColorPickerDialog(if (accent == 0L) 0xFF2F5BEAL else accent, { c -> onPick(c); picking = false }, { picking = false }, "앱 강조색")
+}
+
+/**
+ * [GROW-05] 1.38 다른 앱에서 옮기기: a screenshot of the month view of the app used before (read on the phone like a 근무표 사진,
+ * a month calendar's 7 columns too) or the phone's own calendar. Never another app's files or servers.
+ */
+@Composable
+internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
+    com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("다른 앱에서 옮기기") },
+        text = {
+            androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(4.dp)) {
+                NavRow("한 달 화면 캡처로", "쓰던 근무 앱의 달력 화면을 캡처해 고르면 근무를 읽어 칠해요. 틀린 칸만 고쳐요") {
+                    onDismiss(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER)
+                }
+                NavRow("휴대폰 캘린더에서", "근무를 구글·삼성 캘린더에 넣어 두었다면 그 일정을 근무로 옮겨요") {
+                    onDismiss(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
+                }
+                Text("사진과 일정은 휴대폰 안에서만 읽어요. 다른 앱의 파일이나 서버는 쓰지 않아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }

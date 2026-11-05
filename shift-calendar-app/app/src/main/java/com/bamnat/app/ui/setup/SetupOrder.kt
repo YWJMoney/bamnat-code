@@ -132,6 +132,19 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft) {
             },
         )
     }
+    // [GROW-05] 1.38 다른 앱에서 옮기기: the month view of the app used before, captured, gives the order.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val capturing by vm.captureReading.collectAsStateWithLifecycle()
+    val capture = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) { custom = true; vm.orderFromCapture(context, uri) }
+    }
+    ChoiceCard(
+        title = if (capturing) "캡처를 읽는 중이에요…" else "다른 앱 화면 캡처로 가져오기",
+        subtitle = "쓰던 근무 앱이나 캘린더의 한 달 화면을 캡처해 고르면 순서와 오늘 근무를 찾아요. 사진은 휴대폰 안에서만 읽어요",
+        icon = Icons.Filled.PhotoCamera,
+        selected = false,
+        onClick = { if (!capturing) capture.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+    )
     ChoiceCard(
         title = "직접 만들기",
         subtitle = "근무를 하루씩 눌러 순서를 만들어요",
@@ -139,7 +152,10 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft) {
         selected = custom,
         onClick = { custom = true },
     )
-    if (custom) RotationEditor(d, types, onChange = vm::setRotation)
+    if (custom) {
+        val today = remember(d.types) { vm.questionDate(d) }
+        RotationEditor(d, types, onChange = vm::setRotation, today = today, onToday = { step -> vm.answerToday(today, step) })
+    }
 }
 
 /** One order to pick: its days as badges, how often it comes round and the week's average. */
@@ -161,9 +177,19 @@ internal fun orderLine(steps: List<Long?>, types: Map<Long, ShiftType>): String 
 /** [SETUP-02] An order typed a day at a time; a day tapped is changed by the next shift tapped. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun RotationEditor(d: SetupDraft, types: Map<Long, ShiftType>, onChange: (List<Long?>) -> Unit) {
+private fun RotationEditor(
+    d: SetupDraft, types: Map<Long, ShiftType>, onChange: (List<Long?>) -> Unit,
+    today: java.time.LocalDate = java.time.LocalDate.now(), onToday: (Int) -> Unit = {},
+) {
     var picked by rememberSaveable { mutableStateOf<Int?>(null) }
     val steps = d.rotation
+    // [EASE-14] Where today is in the order, kept while the order is typed (a change of the order clears the setup's answer,
+    // so a start chosen here is put back after each key).
+    var todayStep by rememberSaveable { androidx.compose.runtime.mutableIntStateOf(todayStepOf(d.anchor, d.rotation.size, today)) }
+    var startChosen by rememberSaveable { mutableStateOf(d.anchor != null) }
+    androidx.compose.runtime.LaunchedEffect(steps) {
+        if (startChosen && steps.isNotEmpty() && d.anchor == null) onToday(Math.floorMod(todayStep, steps.size))
+    }
     val choices: List<Long?> = d.types.map { it.id } + if (d.types.none { it.isOff }) listOf<Long?>(null) else emptyList()
     Surface(
         shape = MaterialTheme.shapes.large,
@@ -219,6 +245,8 @@ private fun RotationEditor(d: SetupDraft, types: Map<Long, ShiftType>, onChange:
             }
             if (steps.isNotEmpty()) {
                 Text(orderLine(steps, types), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                // [EASE-14] The order repeated over the months at once, and today's place in it.
+                OrderPreview(steps, types, today, todayStep, onToday = { s -> todayStep = s; startChosen = true; onToday(s) })
             }
         }
     }
