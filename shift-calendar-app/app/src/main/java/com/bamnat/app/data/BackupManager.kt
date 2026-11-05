@@ -197,7 +197,9 @@ class BackupManager(
             money.allAccounts().forEach { a ->
                 put(JSONObject().put("id", a.id).put("name", a.name).put("type", a.type).put("last4", a.last4)
                     .putOpt("payDay", a.payDay).putOpt("closeDay", a.closeDay).putOpt("payFrom", a.payFromId)
-                    .put("opening", a.opening).put("color", a.color).put("order", a.sortOrder).put("hidden", a.hidden).put("remind", a.remind))
+                    .put("opening", a.opening).put("color", a.color).put("order", a.sortOrder).put("hidden", a.hidden).put("remind", a.remind)
+                    // 1.38 [LEDH-25][LEDH-27] (version 26). Older apps ignore these keys.
+                    .put("rate", a.rate).put("monthlyPay", a.monthlyPay).put("perfTiers", a.perfTiers).put("perfSkip", a.perfSkip))
             }
         })
         into.put("budgets", JSONArray().apply {
@@ -765,6 +767,8 @@ class BackupManager(
                 payDay = o.optIntOrNull("payDay"), closeDay = o.optIntOrNull("closeDay"), payFromId = o.optLongOrNull("payFrom"),
                 opening = o.optLong("opening"), color = o.optInt("color"), sortOrder = o.optInt("order"), hidden = o.optBoolean("hidden"),
                 remind = o.optBoolean("remind", true),
+                rate = o.optDouble("rate", 0.0).takeIf { it.isFinite() && it >= 0 } ?: 0.0, monthlyPay = o.optLong("monthlyPay").coerceAtLeast(0),
+                perfTiers = o.optString("perfTiers"), perfSkip = o.optString("perfSkip"),
             )
         }
         val budgets = from.optJSONArray("budgets")?.objects()?.map { o -> MoneyBudgetEntity(o.optString("category"), o.optLong("amount")) }

@@ -96,6 +96,12 @@ data class MoneyAccountEntity(
     val sortOrder: Int,
     val hidden: Boolean,
     val remind: Boolean,
+    /** Version 26 (1.38 [LEDH-25]): 대출·빌린 돈's yearly interest in percent and the amount paid each month. */
+    @ColumnInfo(defaultValue = "0") val rate: Double = 0.0,
+    @ColumnInfo(defaultValue = "0") val monthlyPay: Long = 0,
+    /** Version 26 (1.38 [LEDH-27]): a card's 전월 실적 구간 ("300000,500000") and the categories it does not count. */
+    @ColumnInfo(defaultValue = "''") val perfTiers: String = "",
+    @ColumnInfo(defaultValue = "''") val perfSkip: String = "",
 )
 
 /** [LEDG-06] Monthly budgets; "" is the whole month's. Version 15. */
@@ -465,12 +471,15 @@ fun FixedCost.toEntity() = FixedCostEntity(
 fun MoneyAccountEntity.toModel() = MoneyAccount(
     id = id, name = name, type = runCatching { AccountType.valueOf(type) }.getOrDefault(AccountType.OTHER), last4 = last4,
     payDay = payDay, closeDay = closeDay, payFromId = payFromId, opening = opening, color = color, order = sortOrder,
-    hidden = hidden, remind = remind,
+    hidden = hidden, remind = remind, rate = rate, monthlyPay = monthlyPay,
+    perfTiers = perfTiers.split(',').mapNotNull { it.trim().toLongOrNull() }.filter { it > 0 }.distinct().sorted(),
+    perfSkip = perfSkip.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
 )
 
 fun MoneyAccount.toEntity() = MoneyAccountEntity(
     id = id, name = name, type = type.name, last4 = last4, payDay = payDay, closeDay = closeDay, payFromId = payFromId,
-    opening = opening, color = color, sortOrder = order, hidden = hidden, remind = remind,
+    opening = opening, color = color, sortOrder = order, hidden = hidden, remind = remind, rate = rate, monthlyPay = monthlyPay,
+    perfTiers = perfTiers.joinToString(","), perfSkip = perfSkip.joinToString(","),
 )
 
 fun MoneyBudgetEntity.toModel() = MoneyBudget(category, amount)
