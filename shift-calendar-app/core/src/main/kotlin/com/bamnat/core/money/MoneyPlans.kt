@@ -95,12 +95,15 @@ object UpcomingPayments {
      */
     private fun cardBills(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, from: LocalDate, to: LocalDate): List<Upcoming> =
         accounts.filter { it.hasBill && !it.hidden }.flatMap { card ->
-            generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(to)) }.mapNotNull { m ->
+            val months = generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(to)) }.toList()
+            // fc374a23 PC 확인: what was paid to the card already comes off the bill (paid early or in parts too).
+            val owed = CardCycle.left(card, (1L..3L).map { YearMonth.from(from).minusMonths(it) } + months, entries, accounts, from)
+            months.mapNotNull { m ->
                 val day = CardCycle.payDate(card, m)
                 if (day.isBefore(from) || day.isAfter(to) || CardCycle.paid(card, m, entries)) return@mapNotNull null
-                val bill = CardCycle.bill(card, m, entries, accounts)
-                if (bill.amount <= 0) null else Upcoming(cardCost(card, bill.amount), day, ChronoUnit.DAYS.between(from, day).toInt(), card.id)
-            }.toList()
+                val amount = owed[m] ?: CardCycle.bill(card, m, entries, accounts).amount
+                if (amount <= 0) null else Upcoming(cardCost(card, amount), day, ChronoUnit.DAYS.between(from, day).toInt(), card.id)
+            }
         }
 
     /** The 카드값 line a card's bill is written as. */

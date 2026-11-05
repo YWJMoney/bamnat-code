@@ -96,7 +96,7 @@ import com.bamnat.core.time.Today
  * still to leave, over the days left) and where the month is heading.
  */
 @Composable
-fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: () -> Unit) {
+fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: () -> Unit, aheadSaysToday: Boolean = false) {
     val cal = LocalCalendarColors.current
     val current = YearMonth.from(today) == m.month
     // 1.37 PC 확인 6a4efc92: '11월 남은 돈 0원'이 통장 잔액으로 본 '오늘 쓸 돈'과 나란히 있어 헷갈렸어요. 이 카드는 가계부에 적은
@@ -148,7 +148,12 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
             return@SectionCard
         }
         val left = status.todayLeft
-        if (current && left != null) {
+        // fc374a23 PC 확인 (같은 화면에 '오늘 쓸 수 있는 돈'이 두 숫자): when 앞으로의 돈 says today's money from the accounts, this card
+        // keeps the budget's share as a quiet line under its own name, not a second 오늘 쓸 돈.
+        if (current && left != null && aheadSaysToday) {
+            Text("예산으로는 하루 ${Fmt.won(status.perDay ?: 0)} · 남은 ${status.daysLeft}일. 오늘 쓸 돈은 ‘앞으로의 돈’이 통장으로 셈해요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
+        } else if (current && left != null) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Column(Modifier.weight(1f)) {
                     Text("오늘 쓸 수 있는 돈", style = MaterialTheme.typography.labelLarge)
@@ -247,7 +252,7 @@ fun BudgetEditor(
     /** 1.37 PC 4차: a 월급 user with no pay day yet is told where the switch comes from. */
     payDayHint: Boolean = false,
     /** 1.37 [LEDH-34] 예산 넘김: the categories that carry, and how to change them (saved at once, like 월급날 기준). */
-    rolling: Set<String> = emptySet(), onRolling: (Set<String>) -> Unit = {},
+    rolling: Set<String> = emptySet(), onRolling: (Set<String>) -> Unit = {}, canRoll: Boolean = true,
 ) {
     val categories = remember(book) { book.categoriesOf(MoneyKind.EXPENSE) }
     val values = remember {
@@ -318,7 +323,8 @@ fun BudgetEditor(
                 // 1.37 [LEDH-34] 예산 넘김: what a category's budget left over this month is added to next month's (and what it went
                 // over is taken off), one month at a time.
                 val budgeted = categories.filter { (values[it]?.toAmount() ?: 0) > 0 }
-                if (budgeted.isNotEmpty()) {
+                // bc7e2d43 PC 확인: 투자 달력에는 예산 넘김이 안 보여요.
+                if (canRoll && budgeted.isNotEmpty()) {
                     Text("남은 예산 다음 달로 넘기기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
                     Text("고른 분류는 이번 달에 남은 만큼 다음 달 예산이 늘고, 넘긴 만큼 줄어요. 한 달씩만 넘어가요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)

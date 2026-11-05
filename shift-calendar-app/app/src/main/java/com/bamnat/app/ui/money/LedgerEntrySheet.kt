@@ -390,8 +390,18 @@ fun EntryDialog(
                     FieldTitle(if (kind == MoneyKind.TRANSFER) "어디서" else if (kind == MoneyKind.INCOME) "들어온 곳" else "결제수단")
                     AccountChips(accounts, account) { account = it; accountTouched = true }
                     if (kind == MoneyKind.TRANSFER) {
+                        // fc374a23 PC 확인 (카드값 이체 때 '어디로'가 비어 순자산이 그냥 줄어요): 카드값 goes to a card by itself —
+                        // the one most used. Another one can still be picked.
+                        androidx.compose.runtime.LaunchedEffect(category, account) {
+                            if (toAccount == null && category == "카드값") {
+                                toAccount = accounts.filter { it.id != account && it.type == com.bamnat.core.money.AccountType.CREDIT }
+                                    .maxByOrNull { a -> entries.count { it.accountId == a.id } }?.id
+                            }
+                        }
                         FieldTitle("어디로")
                         AccountChips(accounts.filter { it.id != account }, toAccount) { toAccount = it }
+                        if (toAccount == null) Text("어디로를 고르면 통장·카드 잔액과 순자산이 맞게 바뀌어요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
                 if (credit) {

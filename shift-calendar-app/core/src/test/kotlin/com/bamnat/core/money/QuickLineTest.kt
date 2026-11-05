@@ -29,9 +29,10 @@ class QuickLineTest {
     }
 
     @Test fun incomeAndManCheon() {
-        val d = QuickLine.parse("+ 용돈 3만5천", cats)!!
+        val d = QuickLine.parse("+ 용돈 3만5천", cats + listOf("급여", "용돈"))!!
         assertEquals(35_000L, d.amount)
         assertEquals(MoneyKind.INCOME, d.kind)
+        assertEquals("용돈", d.category)
         assertEquals(15_000L, QuickLine.parse("1.5만 카페", cats)!!.amount)
     }
 

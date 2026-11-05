@@ -115,10 +115,16 @@ internal fun AheadCard(
         if (style == WorkStyle.FIELD || style == WorkStyle.BUSINESS || style == WorkStyle.HOURLY) {
             val self = remember(book, today, full.hasBalance) {
                 val months = (6L downTo 1L).map { java.time.YearMonth.from(today).minusMonths(it) }.map { book.month(it, today = today) }
-                com.bamnat.core.money.SelfSalary.of(months.map { it.received }, months.map { it.spent }, full.start.takeIf { full.hasBalance })
+                // fc374a23 PC 확인 (현장 '내 월급'이 경비 빼기 전 기준): 현장's work costs (자재비·유류비…) come off what came in first,
+                // so the salary is what the work left; 가게 경비 is already out of 가게 순수익.
+                val work = if (style == WorkStyle.FIELD) com.bamnat.core.money.MoneyCategories.FIELD_EXPENSE.toSet() else emptySet()
+                val costs = months.map { mm -> if (work.isEmpty()) 0L else book.entries.filter { e ->
+                    e.kind == com.bamnat.core.money.MoneyKind.EXPENSE && java.time.YearMonth.from(e.date) == mm.month && e.category in work }.sumOf { it.amount } }
+                com.bamnat.core.money.SelfSalary.of(months.mapIndexed { i, mm -> (mm.received - costs[i]).coerceAtLeast(0) },
+                    months.mapIndexed { i, mm -> (mm.spent - costs[i]).coerceAtLeast(0) }, full.start.takeIf { full.hasBalance })
             }
             self?.let { p ->
-                Muted("내 월급: 매달 ${Fmt.won(p.salary)}씩 나에게 주면 지난 ${p.months}달 중 ${p.covered}달은 그만큼 벌었어요" +
+                Muted("내 월급" + (if (style == WorkStyle.FIELD) "(경비 뺀 뒤)" else "") + ": 매달 ${Fmt.won(p.salary)}씩 나에게 주면 지난 ${p.months}달 중 ${p.covered}달은 그만큼 벌었어요" +
                     (p.lastFor?.let { " · 지금 통장으로 ${"%.1f".format(it).removeSuffix(".0")}달 버텨요" } ?: "") + ". 더 번 달의 남는 돈은 모으기 봉투로 옮겨 두면 덜 번 달을 메워요.")
             }
         }

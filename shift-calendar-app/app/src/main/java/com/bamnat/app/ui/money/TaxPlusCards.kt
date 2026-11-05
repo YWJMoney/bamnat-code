@@ -111,6 +111,7 @@ internal fun CardBillCard(book: MoneyBook, today: LocalDate, gate: Gate) {
             }
             if (pro && r.open && r.projected > r.now) Muted("이대로 쓰면 ${Fmt.won(r.projected)}쯤 나가요")
             if (r.installments > 0) Muted("이 중 할부 ${Fmt.won(r.installments)}")
+            if (r.paid > 0) Muted("미리 갚은 ${Fmt.won(r.paid)}을 뺐어요")
         }
         if (pro) Muted("합계 ${Fmt.won(rows.sumOf { it.projected })} (마감일까지 지금 속도로 어림)")
         else TextButton(onClick = { openPro(Feature.MONEY_STATS) }) { Text("이대로면 얼마 나갈지 보기 (프로)") }

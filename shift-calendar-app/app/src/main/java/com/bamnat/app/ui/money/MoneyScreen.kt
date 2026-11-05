@@ -684,7 +684,9 @@ fun MoneyScreen(
         else profile?.period?.let { p -> com.bamnat.core.money.PayCycle.around(today, (-2L..2L).mapNotNull { p.payDate(YearMonth.from(today).plusMonths(it)) }) }
     }
     // 1.37 [LEDH-34] 예산 넘김: chosen categories carry last stretch's leftover (or overspend).
-    val rolling = remember(settings.budgetRollover) { settings.budgetRollover.split('\t').filter { it.isNotBlank() }.toSet() }
+    val rolling = remember(settings.budgetRollover, settings.workStyle) {
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.INVEST) emptySet() else settings.budgetRollover.split('\t').filter { it.isNotBlank() }.toSet()
+    }
     val budget = remember(book, month, today, leftFixed, cycle, rolling) {
         val from = cycle?.from ?: month.atDay(1)
         val to = cycle?.to ?: month.atEndOfMonth()
@@ -709,8 +711,16 @@ fun MoneyScreen(
     val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(vm.calendarId)
     val shownPartsNow = moneyParts(settings.moneyLayout).filter { it.shown }.map { it.part }
         .filter { com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.MONEY_PARTS, it.id, style, fitAdded) }
+    // fc374a23 PC 확인: 앞으로의 돈 says 오늘 쓸 돈 from the accounts when it can; the summary then keeps one such number.
+    val aheadSaysToday = remember(book, today, aheadPay, style, shownPartsNow) {
+        MoneyPart.AHEAD in shownPartsNow && runCatching {
+            val spent = book.entries.filter { it.date == today && it.kind == com.bamnat.core.money.MoneyKind.EXPENSE }.sumOf { it.amount }
+            com.bamnat.core.money.MoneyAhead.forecast(book, today, com.bamnat.core.money.MoneyAhead.FULL_DAYS, aheadPay?.days.orEmpty())
+                .untilNext(nextKinds(style), spent)?.todayLeft != null
+        }.getOrDefault(false)
+    }
     val cards: Map<MoneyPart, @Composable () -> Unit> = mapOf(
-        MoneyPart.HERO to { HeroCard(m, budget, today, onBudget = { budgeting = true }) },
+        MoneyPart.HERO to { HeroCard(m, budget, today, onBudget = { budgeting = true }, aheadSaysToday = aheadSaysToday) },
         MoneyPart.NEW to {
             NewRecordsCard(unseen, captures, onOpen = { editing = it }, onAllSeen = vm::markAllSeen,
                 onFinish = { finishing = it }, onDrop = vm::dropCapture,
@@ -739,11 +749,12 @@ fun MoneyScreen(
             val net = remember(takeHome, payRecords, month) { takeHome?.let { v -> TaxPlus.netLine(month, payRecords, v.gross, v.forecast) } }
             // 1.37 [LEDH-21] 겹침 합치기: 세전·세후 is said once, in 세금·실수령, when that card is on and open.
             val taxSays = side == TaxSide.PAY && MoneyPart.TAX in shownPartsNow && !gate.locked(com.bamnat.app.tier.Feature.TAX_FORECAST)
-            IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome, netLine = net.takeIf { !taxSays }, gate = gate)
+            IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome, netLine = net.takeIf { !taxSays }, gate = gate, taxSays = taxSays)
         },
         // [TAX-02][TAX-05] 세전·세후 and this year's tax (프로).
         MoneyPart.TAX to { side?.let { s -> TaxCard(s, takeHome, business, gate, onOpen = { if (s == TaxSide.PAY) takingHome = true else bizTax = true },
-            onTaxWay = vm::pickTaxWay) } },
+            onTaxWay = vm::pickTaxWay, ledgerNet = profile?.ledgerTakeHome?.takeIf { s == TaxSide.PAY && !gate.locked(com.bamnat.app.tier.Feature.TAX_FORECAST) },
+            onLedgerNet = vm::setLedgerTakeHome) } },
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
         MoneyPart.OWED to {
             OwedCard(owed, today, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
@@ -958,7 +969,8 @@ fun MoneyScreen(
         byPayCycle = settings.moneyByPayCycle.takeIf { profile?.period?.payDay != null && style?.usesPayEngine != false },
         payDayHint = profile?.period?.payDay == null && style?.usesPayEngine != false,
         onPayCycle = { on -> vm.updateSettings { it.copy(moneyByPayCycle = on) } },
-        rolling = rolling, onRolling = { set -> vm.updateSettings { it.copy(budgetRollover = set.joinToString("\t")) } })
+        rolling = rolling, onRolling = { set -> vm.updateSettings { it.copy(budgetRollover = set.joinToString("\t")) } },
+        canRoll = style != com.bamnat.core.work.WorkStyle.INVEST)
     if (editingAccount != null || addingAccount != null || addingAnyAccount) {
         AccountEditor(editingAccount, addingAccount, book,
             onSave = { vm.saveAccount(it); editingAccount = null; addingAccount = null; addingAnyAccount = false },
@@ -994,7 +1006,7 @@ private fun RecentCard(recent: List<MoneyEntry>, month: YearMonth, onOpen: (Mone
 
 @Composable
 internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, onOpenPay: () -> Unit, onTakeHome: (Boolean) -> Unit,
-                        netLine: TaxPlus.NetLine? = null, gate: com.bamnat.app.tier.Gate? = null) {
+                        netLine: TaxPlus.NetLine? = null, gate: com.bamnat.app.tier.Gate? = null, taxSays: Boolean = false) {
     val hasProfile = profile != null
     val net = profile?.ledgerTakeHome == true
     SectionCard(title = "수입 내역") {
@@ -1018,7 +1030,8 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
                 }
             }
             // [TAX-01] 결정 W-D1: the pay that came is an observation beside the estimate, never added on top.
-            if (m.payObserved) m.payEstimate?.let { est ->
+            // 25f2364b PC 확인 (수입 내역의 실수령 예상과 세전·실수령 칩이 세금·실수령 카드와 겹쳐요): with that card on, it says them.
+            if (m.payObserved && !taxSays) m.payEstimate?.let { est ->
                 val d = m.payRecorded - est
                 Line("  ${if (net) "실수령" else "세전"} 예상 ${Fmt.won(est)}" + when {
                     d == 0L -> " · 같아요"
@@ -1027,7 +1040,7 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
                 }, "", muted = true)
             }
             // [LEDG-29] 세전 of the month's work, or the 실수령 that lands on the pay day (통장에 찍히는 돈).
-            if (hasProfile && (m.payRecorded == 0L || m.payObserved)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (hasProfile && !taxSays && (m.payRecorded == 0L || m.payObserved)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !net, onClick = { onTakeHome(false) }, label = { Text("그달 일한 세전") })
                 FilterChip(selected = net, onClick = { onTakeHome(true) }, label = { Text("지급일 실수령") })
             }

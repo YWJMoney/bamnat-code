@@ -88,7 +88,9 @@ object TaxPlus {
 
     // ---- [TAXP-04] 595 다음 달 카드값 ----
 
-    data class CardForecast(val card: MoneyAccount, val payDate: LocalDate, val now: Long, val projected: Long, val installments: Long, val open: Boolean)
+    data class CardForecast(val card: MoneyAccount, val payDate: LocalDate, val now: Long, val projected: Long, val installments: Long, val open: Boolean,
+        /** What was paid to the card toward this bill already (taken off [now]). */
+        val paid: Long = 0)
 
     /**
      * Each credit card's next bill not yet paid: what is on it now ([CardCycle.bill], 할부 회차 included) and, while its
@@ -96,21 +98,26 @@ object TaxPlus {
      */
     fun cardForecast(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, today: LocalDate): List<CardForecast> =
         accounts.filter { it.hasBill && !it.hidden }.flatMap { card ->
-            // The bill still to pay and the one this month's spending is going on, when they differ.
-            generateSequence(YearMonth.from(today)) { it.plusMonths(1) }.take(3).filter { m ->
-                !CardCycle.payDate(card, m).isBefore(today) && !CardCycle.paid(card, m, entries) && !CardCycle.period(card, m).first.isAfter(today)
+            // The bill still to pay and the one this month's spending is going on, when they differ; what was paid to the card already
+            // comes off ([CardCycle.left]), from three bills back on.
+            val base = YearMonth.from(today)
+            val owed = CardCycle.left(card, (-3L..2L).map { base.plusMonths(it) }, entries, accounts, today)
+            generateSequence(base) { it.plusMonths(1) }.take(3).filter { m ->
+                !CardCycle.payDate(card, m).isBefore(today) && !CardCycle.period(card, m).first.isAfter(today)
             }.mapNotNull { m ->
                 val bill = CardCycle.bill(card, m, entries, accounts)
+                val now = owed[m] ?: bill.amount
+                val paidPart = bill.amount - now
                 val (from, to) = CardCycle.period(card, m)
                 val inst = entries.filter { it.kind == MoneyKind.EXPENSE && it.installments > 1 && MoneyAccounts.of(it, accounts) == card.id }
                     .sumOf { CardCycle.portion(it, CardCycle.billMonth(card, it.date), m) }
                 val open = !today.isAfter(to)
-                val projected = if (!open) bill.amount else {
+                val projected = if (!open) now else {
                     val gone = ChronoUnit.DAYS.between(from, today) + 1
                     val left = ChronoUnit.DAYS.between(today, to)
-                    bill.amount + ((bill.amount - inst).toDouble() / gone * left).roundToLong()
+                    now + ((bill.amount - inst).toDouble() / gone * left).roundToLong()
                 }
-                if (bill.amount <= 0 && projected <= 0) null else CardForecast(card, CardCycle.payDate(card, m), bill.amount, projected, inst, open)
+                if (now <= 0 && projected <= 0) null else CardForecast(card, CardCycle.payDate(card, m), now, projected, inst, open, paidPart)
             }.toList()
         }.sortedBy { it.payDate }
 

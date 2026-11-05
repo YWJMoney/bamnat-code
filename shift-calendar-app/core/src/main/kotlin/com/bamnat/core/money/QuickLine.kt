@@ -51,7 +51,8 @@ object QuickLine {
             val bare = when { w.endsWith("으로") -> w.dropLast(2); w.endsWith("로") && w.length > 1 -> w.dropLast(1); else -> w }
             when {
                 DAYS.containsKey(w) -> daysAgo = DAYS.getValue(w)
-                w in INCOME -> { kind = MoneyKind.INCOME; left += w }
+                // 25f2364b PC 확인 ('+ 용돈 3만5천'이 급여로 저장됨): an income word that is a category is that category too.
+                w in INCOME -> { kind = MoneyKind.INCOME; if (category == null && categories.contains(w)) category = w; left += w }
                 accountId == null && accounts.any { a -> !a.hidden && a.name.isNotBlank() && (a.name == w || a.name == bare) } ->
                     accountId = accounts.first { a -> !a.hidden && (a.name == w || a.name == bare) }.id
                 type == null && TYPES.containsKey(bare) -> type = TYPES.getValue(bare)

@@ -77,6 +77,9 @@ internal fun TaxCard(
     onOpen: () -> Unit,
     /** [J133-01] Picks the pay setup's tax way, when it was never asked. */
     onTaxWay: (com.bamnat.core.pay.TaxMode) -> Unit = {},
+    /** 25f2364b PC 확인: 수입 내역's 세전·실수령 choice, said here instead when this card is on (null leaves it out). */
+    ledgerNet: Boolean? = null,
+    onLedgerNet: (Boolean) -> Unit = {},
 ) {
     SectionCard(
         title = "세금·실수령",
@@ -92,7 +95,16 @@ internal fun TaxCard(
         com.bamnat.app.ui.pro.ProLock(Feature.TAX_FORECAST, gate) {
             Column {
                 when (side) {
-                    TaxSide.PAY -> PayTaxLines(view, onTaxWay)
+                    TaxSide.PAY -> {
+                        PayTaxLines(view, onTaxWay)
+                        ledgerNet?.let { net ->
+                            Muted("가계부 수입에 넣는 급여")
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                com.bamnat.app.ui.components.FilterChip(selected = !net, onClick = { onLedgerNet(false) }, label = { Text("그달 일한 세전") })
+                                com.bamnat.app.ui.components.FilterChip(selected = net, onClick = { onLedgerNet(true) }, label = { Text("지급일 실수령") })
+                            }
+                        }
+                    }
                     TaxSide.BUSINESS -> BusinessTaxLines(business)
                 }
             }

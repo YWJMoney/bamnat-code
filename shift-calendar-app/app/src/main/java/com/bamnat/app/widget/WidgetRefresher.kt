@@ -43,7 +43,7 @@ object WidgetRefresher {
             MonthWidget().updateAll(app)
             TeamsWidget().updateAll(app)
             CountdownWidget().updateAll(app)
-            MoneyWidget().updateAll(app)
+            MoneyWidget.redraw(app)
         }
         val data = runCatching { WidgetData.load(app) }.getOrNull()
         // [WIDG-05] A countdown on the home screen moves on every 15 minutes; the others wait for the next change.

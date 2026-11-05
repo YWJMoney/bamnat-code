@@ -827,9 +827,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         // PC 확인 V22 1.36 (안 바꾼 위젯 조각까지 작품에 실림): a look piece just as the app has it is not part of the theme.
         } else (s.pieces.filter { p -> plainPieces.none { it.kind == p.kind && it.values == p.values } } + s.extras.map { (k, v) -> Piece(k, v) })
             .sortedBy { it.kind.ordinal }
+        // bc7e2d43 PC 확인 (기능만 올리는데 이름이 '내 테마 1'): 기능만 is named for its 기능 (‘가계부 틀’), not the look's theme.
+        val featureTitle = if (onlyTab == FEATURES_ONLY) s.extras.keys.sortedBy { it.ordinal }.joinToString("·") { it.label }.take(30) else null
         val withExtras = s.meta?.copy(pieces = pieces, parent = null)
             // 빌드 e382585e (올리기 2/4의 이름 칸이 비어 있어요): one of my themes goes up under its name.
-            ?: recipe("").copy(title = s.savedTitle ?: (ownStart ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces,
+            ?: recipe("").copy(title = featureTitle ?: s.savedTitle ?: (ownStart ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces,
                 // [STU-41] The 표지 starts in the look's own colours (바탕 → 강조), not the app's blue and purple.
                 cover = coverOf(s.draft))
         // [THM-08] 302576c8 PC 확인 (섞은 테마가 수정판 표시 없이 올라감): a mixed theme names every theme it took from in its 설명,

@@ -438,7 +438,9 @@ private fun TotalsStrip(t: LedgerTotals, partsOnly: Boolean) {
                     FitText(out, MaterialTheme.typography.titleSmall, cal.expense)
                 }
                 Column(Modifier.weight(1f)) {
-                    Text("들어온 돈", style = MaterialTheme.typography.labelSmall, color = labelInk)
+                    // fc374a23 PC 확인 (내역과 요약의 '들어온 돈'이 달라요): this is the sum of the lines written here; 요약's 들어온 돈 also
+                    // counts paid 일감, 가게 순수익 and the pay estimate, so this one is named for what it adds up.
+                    Text("적은 수입", style = MaterialTheme.typography.labelSmall, color = labelInk)
                     FitText(ins, MaterialTheme.typography.titleSmall, cal.income)
                 }
             }
@@ -446,7 +448,7 @@ private fun TotalsStrip(t: LedgerTotals, partsOnly: Boolean) {
             // [LEDG-15] At very large text each total gets the whole width, so no amount is cut.
             Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
                 Text("${t.count}건", style = MaterialTheme.typography.labelLarge)
-                listOf(Triple("나간 돈", out, cal.expense), Triple("들어온 돈", ins, cal.income)).forEach { (label, amount, color) ->
+                listOf(Triple("나간 돈", out, cal.expense), Triple("적은 수입", ins, cal.income)).forEach { (label, amount, color) ->
                     Row(Modifier.semantics(mergeDescendants = true) {}, verticalAlignment = Alignment.CenterVertically) {
                         Text(label, style = MaterialTheme.typography.labelMedium, color = labelInk,
                             modifier = Modifier.padding(end = 8.dp))
