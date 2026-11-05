@@ -139,6 +139,12 @@ object RemoteKeys {
         "DjM9UzLI9MlnEWqpweAItpsvGvzNsFo8FNcai5M/NPY=",
         // [REMOTE-08] its spare, private half in release-key/bamnat-remote-ed25519-2026-10-26-2.pem.
         "ey5slM4bow7nLuljDW6ZCc2pVVIUN0o5dFkWsBQUc/E=",
+        // [REMOTE-09] 2026-11-05 key (사용자 결정 2026-11-05): the 2026-10-26 pair stayed in the old account's project,
+        // so 1.38 adds a new pair. From 1.38 on, files that change are signed with this one (.sig2); private half
+        // with the user and in the project's 키-보관/ folder as bamnat-remote-ed25519-2026-11-05.pem.
+        "FVLFYF4Vrj5dhvb3b2+sxXCjI2U3BRH1vFkynSMNv4s=",
+        // [REMOTE-09] its spare, bamnat-remote-ed25519-2026-11-05-2.pem.
+        "r2r7SkGBcGZlOpMK9IHocHQEsHEbuPJ1oVec8lhB5LU=",
     )
 
     /**

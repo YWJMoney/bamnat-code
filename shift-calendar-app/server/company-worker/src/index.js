@@ -6454,9 +6454,11 @@ export const REMOTE = {
   kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles", "merchants"],
   base: "https://ywjmoney.github.io/-/remote/v1",
   // The same keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file). [REMOTE-08] The last two are the
-  // 2026-10-26 key and its spare (결정 D83); their signatures are in <kind>.json.sig2.
+  // 2026-10-26 key and its spare (결정 D83); their signatures are in <kind>.json.sig2. [REMOTE-09] 1.38 adds the
+  // 2026-11-05 key and its spare (the 2026-10-26 pair stayed in the old account); files changed from 1.38 on use it.
   keys: ["6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ=",
-    "DjM9UzLI9MlnEWqpweAItpsvGvzNsFo8FNcai5M/NPY=", "ey5slM4bow7nLuljDW6ZCc2pVVIUN0o5dFkWsBQUc/E="],
+    "DjM9UzLI9MlnEWqpweAItpsvGvzNsFo8FNcai5M/NPY=", "ey5slM4bow7nLuljDW6ZCc2pVVIUN0o5dFkWsBQUc/E=",
+    "FVLFYF4Vrj5dhvb3b2+sxXCjI2U3BRH1vFkynSMNv4s=", "r2r7SkGBcGZlOpMK9IHocHQEsHEbuPJ1oVec8lhB5LU="],
   keepMs: 10 * 60 * 1000,
 };
 const remoteKept = new WeakMap();

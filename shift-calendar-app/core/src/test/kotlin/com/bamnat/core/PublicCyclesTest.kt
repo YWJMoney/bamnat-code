@@ -25,30 +25,44 @@ class PublicCyclesTest {
     private val all = PublicCycles.all
 
     @Test fun everyRowOfTheResearchIsRead() {
-        assertEquals(148, all.size)
-        assertEquals(148, all.map { it.id }.toSet().size)
+        assertEquals(154, all.size)
+        assertEquals(154, all.map { it.id }.toSet().size)
         val f = RemoteFiles.bundled(RemoteFiles.CYCLES)!!
         assertEquals("cycles", f.kind)
         assertTrue(RemoteFiles.CYCLES in RemoteFiles.KINDS)
-        // The same 148 rows as the CSV the file was built from, column by column.
+        // The same 154 rows (148 of 2026-10-25 + 6 checked in 1.38 [CYC-01]) as the CSV the file was built from, column by column.
         val csv = File("../tools/data/company-cycles.csv").readLines(Charsets.UTF_8).drop(1).filter { it.isNotBlank() }
-        assertEquals(148, csv.size)
+        assertEquals(154, csv.size)
         all.zip(csv).forEach { (c, line) -> assertTrue("${c.id} ${c.display}", line.startsWith(c.display.let { if (',' in it) "\"$it" else it })) }
     }
 
     @Test fun convertedAndFormOnlyCountsAreThePlans() {
         // 계획/1.26-AC-개발계획.md 2장: 36 spelled out, 28 filled with the usual order of a count, 84 형태만 (6 monthly rosters).
-        assertEquals(36, all.count { it.orderState == OrderState.EXACT })
-        assertEquals(28, all.count { it.orderState == OrderState.USUAL })
-        assertEquals(84, all.count { it.orderState == OrderState.NONE })
-        assertEquals(6, all.count { it.roster })
-        assertEquals(139, all.count { it.shifts.isNotEmpty() })
+        // [CYC-01] 1.38 added 4 spelled out (관제·교정 변형 4부제·소방 당비비·서울교통공사), 1 usual (교정 4부제), 1 roster (병원).
+        assertEquals(40, all.count { it.orderState == OrderState.EXACT })
+        assertEquals(29, all.count { it.orderState == OrderState.USUAL })
+        assertEquals(85, all.count { it.orderState == OrderState.NONE })
+        assertEquals(7, all.count { it.roster })
+        assertEquals(144, all.count { it.shifts.isNotEmpty() })
         all.forEach { c ->
             // Every working code of an order has a shift with times.
             c.codes.filter { it in "DENX" }.forEach { code -> assertTrue("${c.id} $code", c.shifts.any { it.code == code }) }
             if (c.weekly) assertEquals(c.id, 7, c.codes.length)
             assertEquals(c.id, c.hasOrder, c.orderState != OrderState.NONE)
         }
+    }
+
+    @Test fun theRowsAddedIn138ReadAsTheirSources() {
+        // [CYC-01] 서울신문 2017-11-06: 변형 4부제는 주간·야간·비번·주간·주간·야간·비번·휴무.
+        val variant = all.first { it.form == "변형 4부제" }
+        assertEquals("DNBDDNBO", variant.codes)
+        assertEquals(OrderState.EXACT, variant.orderState)
+        // 뉴시스 2019-04-24: 3조1교대는 당번·비번·비번.
+        assertEquals("XBO", all.first { it.industry == "소방" && it.form == "3조1교대" }.codes)
+        // 광진구 공고: 주간 08-18 · 야간 18-08.
+        val cctv = all.first { it.company == "광진구 CCTV 통합관제센터" }
+        assertEquals("DNBO", cctv.codes)
+        assertEquals(listOf("08:00", "18:00"), cctv.shifts.map { it.start.toString() })
     }
 
     @Test fun ordersReadAsTheSourceSaysThem() {
@@ -92,7 +106,7 @@ class PublicCyclesTest {
         assertTrue("포스코 광양", PublicCycles.search("포스코 광양").let { r -> r.isNotEmpty() && r.all { "광양" in it.site } })
         // The form as written, with or without a space; a row moving to 4조2교대 (3조2교대 → 4조2교대 예정) is found too.
         val four = PublicCycles.search("4조 2교대")
-        assertEquals(41, four.count { it.formKey == "4조2교대" })
+        assertEquals(43, four.count { it.formKey == "4조2교대" })
         assertTrue(four.all { it.formKey == "4조2교대" || "4조2교대" in PublicCycles.norm(it.form + it.display) })
         assertEquals(four, PublicCycles.search("4조2교대"))
         assertEquals(all.count { it.industry == "발전" }, PublicCycles.search("", industry = "발전").size)
