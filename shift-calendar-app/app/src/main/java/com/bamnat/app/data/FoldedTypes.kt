@@ -42,12 +42,18 @@ class FoldedTypes(context: Context?) {
      * was before 접어 두기 stopped it on [StoppedCycle.on], so going back to work with a cycle brings it back. In the same file, so it
      * goes in the backup with the folded kinds.
      */
-    data class StoppedCycle(val on: java.time.LocalDate, val was: List<com.bamnat.core.model.WorkPattern>)
+    data class StoppedCycle(
+        val on: java.time.LocalDate,
+        val was: List<com.bamnat.core.model.WorkPattern>,
+        /** The kind of work it was stopped from: only going back to that one brings it back (1.37 PC 0068727b: 알바 got 교대's 주간·야간). */
+        val from: com.bamnat.core.work.WorkStyle? = null,
+    )
 
     fun stopped(calendar: String): StoppedCycle? = runCatching {
         val o = org.json.JSONObject(prefs?.getString(CYCLE + calendar, null) ?: return null)
         val a = o.getJSONArray("was")
-        StoppedCycle(java.time.LocalDate.ofEpochDay(o.getLong("on")), (0 until a.length()).mapNotNull { i ->
+        StoppedCycle(java.time.LocalDate.ofEpochDay(o.getLong("on")), from = o.optString("from").let { n ->
+            com.bamnat.core.work.WorkStyle.entries.firstOrNull { it.name == n } }, was = (0 until a.length()).mapNotNull { i ->
             val p = a.getJSONObject(i)
             com.bamnat.app.data.db.PatternEntity(
                 kind = p.getString("kind"), startEpochDay = p.getLong("start"), endEpochDay = if (p.isNull("end")) null else p.getLong("end"),
@@ -60,6 +66,7 @@ class FoldedTypes(context: Context?) {
         val e = prefs?.edit() ?: return
         if (cycle == null) e.remove(CYCLE + calendar) else e.putString(CYCLE + calendar, org.json.JSONObject()
             .put("on", cycle.on.toEpochDay())
+            .put("from", cycle.from?.name ?: "")
             .put("was", org.json.JSONArray(cycle.was.mapIndexed { i, p ->
                 val x = p.toEntity(i + 1)
                 org.json.JSONObject().put("kind", x.kind).put("start", x.startEpochDay).put("end", x.endEpochDay ?: org.json.JSONObject.NULL)

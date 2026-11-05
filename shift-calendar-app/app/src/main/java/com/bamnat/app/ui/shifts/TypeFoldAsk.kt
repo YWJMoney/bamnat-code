@@ -60,9 +60,10 @@ object TypeFoldAsk {
     }
 
     /** Stops [calendar]'s cycle after today, keeping it as it was for [resume]. */
-    suspend fun stopCycle(c: AppContainer, calendar: String, was: List<com.bamnat.core.model.WorkPattern>) {
+    suspend fun stopCycle(c: AppContainer, calendar: String, was: List<com.bamnat.core.model.WorkPattern>, from: WorkStyle? = null) {
         val today = com.bamnat.core.time.Today.date()
-        c.foldedTypes.stop(calendar, com.bamnat.app.data.FoldedTypes.StoppedCycle(today, was))
+        // Stopped twice (현장 → 자영업 with 접어 두기 again): the first one, the cycle before any of it, is the one kept.
+        if (c.foldedTypes.stopped(calendar) == null) c.foldedTypes.stop(calendar, com.bamnat.app.data.FoldedTypes.StoppedCycle(today, was, from))
         c.calendars.repository(calendar).endPatternsAfter(today)
     }
 
@@ -73,10 +74,22 @@ object TypeFoldAsk {
     suspend fun resume(c: AppContainer, calendar: String, to: WorkStyle) {
         if (stopsCycle(to)) return
         val stopped = c.foldedTypes.stopped(calendar) ?: return
+        // 1.37 PC 0068727b: only the kind of work it was stopped from takes it back (교대's 주간·야간 are not an 알바's days).
+        if (stopped.from != null && stopped.from != to) return
         c.foldedTypes.stop(calendar, null)
         val repo = c.calendars.repository(calendar)
-        val now = repo.patterns.first()
-        if (now == com.bamnat.core.work.QuitCheck.endPatterns(stopped.was, stopped.on)) repo.restorePatterns(stopped.was)
+        if (!madeByHand(repo.patterns.first(), stopped)) repo.restorePatterns(stopped.was)
+    }
+
+    /**
+     * Whether a cycle was set again by hand after [stopped] (that one is the user's, kept as it is). A 자영업's 영업일 or a 현장's
+     * weekly schedule saved meanwhile is the other work's and goes with it (1.37 PC 0068727b: 현장 → 자영업 → 교대 stayed 영업).
+     */
+    internal fun madeByHand(now: List<com.bamnat.core.model.WorkPattern>, stopped: com.bamnat.app.data.FoldedTypes.StoppedCycle): Boolean {
+        val kept = com.bamnat.core.work.QuitCheck.endPatterns(stopped.was, stopped.on)
+        return now.filterIsInstance<com.bamnat.core.model.WorkPattern.Rotation>().any { p ->
+            kept.none { e -> e is com.bamnat.core.model.WorkPattern.Rotation && e.withRange(e.startDate, p.endDate) == p }
+        }
     }
 
     val done = MutableStateFlow<Done?>(null)
@@ -126,7 +139,7 @@ fun TypeFoldHost(c: AppContainer) {
                 val ids = a.types.map { it.id }
                 c.foldedTypes.fold(a.calendar, ids)
                 val was = patterns.takeIf { stops }
-                if (was != null) c.appScope.launch { TypeFoldAsk.stopCycle(c, a.calendar, was) }
+                if (was != null) c.appScope.launch { TypeFoldAsk.stopCycle(c, a.calendar, was, a.from) }
                 if (a.adds.isNotEmpty()) c.appScope.launch {
                     val repo = c.calendars.repository(a.calendar)
                     val have = repo.shiftTypes.first()
