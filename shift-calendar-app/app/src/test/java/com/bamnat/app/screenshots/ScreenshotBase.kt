@@ -106,6 +106,8 @@ abstract class ScreenshotBase {
     fun seed() = runBlocking<Unit> {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS, Manifest.permission.USE_FULL_SCREEN_INTENT)
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
+        // A search one shot left open must not open the next shot's 회사 찾기 with its name and chips.
+        com.bamnat.app.ui.company.PublicBrowse.reset()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
