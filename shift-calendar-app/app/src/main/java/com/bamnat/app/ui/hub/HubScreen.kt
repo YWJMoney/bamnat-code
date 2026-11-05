@@ -218,7 +218,10 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
         // PC 확인 7b26965a ("아주 크게"에서 제목이 세로로 꺾여요): with big letters the two buttons go under the title.
         val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
         val buttons: @Composable () -> Unit = {
-            TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) { Text("입어 보기") }
+            TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) {
+                // 가계부 PC LOW-2: a work of one tab or of rules (가계부 틀 …) is not a look to wear.
+                Text(if (r.scope == null || r.scope == "theme") "입어 보기" else "살펴보기")
+            }
             TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
         }
         Column(Modifier.weight(1f)) {

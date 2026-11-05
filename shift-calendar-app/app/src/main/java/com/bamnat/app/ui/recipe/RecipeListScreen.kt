@@ -450,7 +450,7 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // [MKX-01] One tab's: which tab it changes, said once.
                 if (item.scope == "tab") item.tabs.firstOrNull()?.let { t ->
-                    Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "만 바꿔요" else " 탭만 바꿔요"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만 들어가요" else " 탭에만 들어가요"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
                 Text(buildString {
                     append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣은 분 ${item.users}")
@@ -478,7 +478,7 @@ private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = 
             }
             Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (item.scope == "tab") item.tabs.firstOrNull()?.let { t ->
-                Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "만" else " 탭만"), style = MaterialTheme.typography.labelMedium,
+                Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만" else " 탭에만"), style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // 1.36 [VIL-18] 오래 쓰는 분이 많은 것과 새 창작자의 첫 작품이 눈에 띄게.
