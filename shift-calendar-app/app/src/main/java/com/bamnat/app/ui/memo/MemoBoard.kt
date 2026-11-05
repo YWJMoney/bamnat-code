@@ -148,6 +148,11 @@ internal fun MemoBoardBlock(
                     TextButton(onClick = { change(i) { x -> x.copy(w = x.w + 80) } }) { Text("크게") }
                     TextButton(onClick = { change(i) { x -> x.copy(w = x.w - 80) } }) { Text("작게") }
                     TextButton(onClick = { change(i) { x -> x.copy(rot = x.rot + 15) } }) { Text("↻ 돌리기") }
+                    // 1.38 통합(GestureAlternativesTest): 끌어 옮기기 대신 버튼으로도 한 칸(5%)씩.
+                    TextButton(onClick = { change(i) { x -> x.copy(x = x.x - 50) } }) { Text("← 왼쪽") }
+                    TextButton(onClick = { change(i) { x -> x.copy(x = x.x + 50) } }) { Text("오른쪽 →") }
+                    TextButton(onClick = { change(i) { x -> x.copy(y = x.y - 50) } }) { Text("↑ 올리기") }
+                    TextButton(onClick = { change(i) { x -> x.copy(y = x.y + 50) } }) { Text("↓ 내리기") }
                     TextButton(enabled = i < live.items.lastIndex, onClick = {
                         val l = live.items.toMutableList(); val x = l.removeAt(i); l.add(i + 1, x); put(live.copy(items = l)); picked = i + 1
                     }) { Text("앞으로") }

@@ -42,7 +42,7 @@ import androidx.compose.material.icons.outlined.EventRepeat
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.OutlinedTextField

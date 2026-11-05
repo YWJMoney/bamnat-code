@@ -114,7 +114,7 @@ object MemoPhotoFiles {
      * Deletes the photo files that none of [used] (every memo's photos, the trash's too) names, and the half-written ones, once they are a
      * day old. How many went.
      */
-    fun sweep(context: Context, used: Set<String>, now: Long = System.currentTimeMillis()): Int {
+    fun sweep(context: Context, used: Set<String>, now: Long = com.bamnat.core.time.Today.millis()): Int {
         val files = dir(context).listFiles().orEmpty()
         var n = 0
         for (f in files) {
