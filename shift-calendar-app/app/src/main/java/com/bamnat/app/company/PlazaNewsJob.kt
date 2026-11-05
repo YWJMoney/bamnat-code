@@ -164,6 +164,9 @@ class PlazaNewsJob : JobService() {
                 .setStyle(NotificationCompat.InboxStyle().also { s -> h.lines.forEach(s::addLine) })
                 .setContentIntent(Notifications.open(context, h.target, 2203))
                 .setAutoCancel(true)
+                // [TOWN-08] PC 확인 73f69cbd: Android folded this into one bundle with '오늘 휴무' and a tap opened the calendar.
+                // A group of its own (as its own summary) keeps it apart.
+                .setGroup(Notifications.GROUP_NEWS).setGroupSummary(true)
                 .build()
             Notifications.post(context, Notifications.PLAZA_ID, n)
             // [OBS-01] 기록 지점 10.

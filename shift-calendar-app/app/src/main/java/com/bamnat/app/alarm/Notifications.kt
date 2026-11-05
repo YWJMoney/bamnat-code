@@ -53,6 +53,9 @@ object Notifications {
     private const val GROUP_ALARMS = "alarms"
     private const val GROUP_DAY = "day"
     private const val GROUP_MONEY = "money"
+    /** [TOWN-08] 밤낮 소식 and 오늘 근무 each stay a notification of their own, never bundled together by Android. */
+    const val GROUP_NEWS = "bamnat_news"
+    const val GROUP_TODAY = "bamnat_today"
 
     const val ALARM_NOTIFICATION_ID = 7001
     /** 1.35 [J135-08] The ringing notice put up again as a new one (an update of the first does not pop up again). */

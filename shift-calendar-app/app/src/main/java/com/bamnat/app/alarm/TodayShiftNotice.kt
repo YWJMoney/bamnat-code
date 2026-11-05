@@ -46,6 +46,8 @@ object TodayShiftNotice {
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3314))
+            // [TOWN-08] Its own group, so Android does not bundle it with 소식 or other notices (a tap on the bundle opened this).
+            .setGroup(Notifications.GROUP_TODAY).setGroupSummary(true)
             .build()
         Notifications.post(context, ID, notification)
         return true

@@ -139,6 +139,9 @@ class RecipeMakeViewModel(
     val ownCode: String? get() = upCode
     /** [BLU-07] PC 8차: once sent, the next 올리기 from this screen is that code's 새 판 (or the same 판 moved to 나만). */
     private var upCode: String? = code
+    /** [TOWN-09] The recipe as last sent from this screen, so a 새 판 with nothing changed is told so instead of going up again. */
+    private var lastSent: String? = null
+    private var lastScope: String? = null
     /** PC 13차: 따로 올리기 chosen over a 새 판 of my recipe with the same name. */
     private var apartFromOwn = false
 
@@ -422,6 +425,10 @@ class RecipeMakeViewModel(
     fun publish() {
         val s = _state.value
         if (!RecipeLint.ready(lint)) return
+        if (upCode != null && lastSent == RecipeCodec.write(s.recipe) && lastScope == s.scope) {
+            _state.value = s.copy(error = "바뀐 것이 없어요. 고친 뒤에 새 판으로 올려 주세요", errorCode = "same")
+            return
+        }
         _state.value = s.copy(sending = true, error = null, errorCode = null, keptNote = null, ownSame = null)
         viewModelScope.launch {
             try {
@@ -444,6 +451,7 @@ class RecipeMakeViewModel(
                 val sent = if (up != null) c.recipeApi.newVersion(c.companyStore.device, up, r, s.scope)
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
                 upCode = sent.code
+                lastSent = RecipeCodec.write(s.recipe); lastScope = sent.scope
                 if (s.draftId != 0L) c.recipes.deleteDraft(s.draftId)
                 // 1.36 [GRW-09] PC 6ec395bf: 만든 분 보상(공모·모두의 도구·기본 도구)이 프로 › 보상 이용권에 보이도록, 작품을 올린 휴대폰도 이용권을 물어요.
                 c.appContext.getSharedPreferences("maker", android.content.Context.MODE_PRIVATE).edit().putBoolean("made", true).apply()
@@ -559,6 +567,9 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     s.step < 5 && s.recipe.pieces.isEmpty() -> "예시 앱에서 하나 이상 바꾸거나 켜면 다음으로 가요"
                     s.step == 3 && s.recipe.title.isBlank() -> "이름을 넣으면 다음으로 가요"
                     // PC 확인 V36 1.36 (4/4의 빨간 줄이 아래 단추 줄에 가려짐): what holds 올리기 back also sits here, always in sight.
+                    // [TOWN-09] PC 확인 73f69cbd (바꾼 것 없이 새 판으로 올리기를 누르면 아무 반응이 없어요): the server's refusal is shown in the
+                    // body above, often out of sight; it is said here by the button too.
+                    s.step == 5 && s.error != null && !s.sending -> s.error
                     s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
