@@ -179,7 +179,7 @@ internal fun orderLine(steps: List<Long?>, types: Map<Long, ShiftType>): String 
 @Composable
 private fun RotationEditor(
     d: SetupDraft, types: Map<Long, ShiftType>, onChange: (List<Long?>) -> Unit,
-    today: java.time.LocalDate = java.time.LocalDate.now(), onToday: (Int) -> Unit = {},
+    today: java.time.LocalDate, onToday: (Int) -> Unit = {},
 ) {
     var picked by rememberSaveable { mutableStateOf<Int?>(null) }
     val steps = d.rotation

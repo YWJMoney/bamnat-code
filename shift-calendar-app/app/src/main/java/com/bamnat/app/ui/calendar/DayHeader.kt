@@ -251,7 +251,6 @@ fun DayHeader(
         val headChips = shiftChipsInHead(day, snapshot, settings.workStyle)
         if (chipsFirst && headChips) ShiftChips(day, snapshot, vm, settings, Modifier.padding(bottom = 4.dp), endSpace = 12.dp)
         if (chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(bottom = 6.dp), endSpace = 12.dp)
-        if (chipsFirst && day.extras.isNotEmpty()) ExtraNudgeLine(day, vm, Modifier.padding(start = 12.dp, bottom = 6.dp))
         AnimatedContent(
             targetState = day,
             contentKey = { it.date },
@@ -268,7 +267,8 @@ fun DayHeader(
         if (!chipsFirst && headChips) ShiftChips(day, snapshot, vm, settings, Modifier.padding(top = 6.dp), endSpace = 12.dp)
         if (!chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(top = if (headChips) 4.dp else 6.dp), endSpace = 76.dp)
         // [EASE-26] The extra work just put in, made longer or shorter right here (잔업 1시간 30분: 날짜 · 잔업 · −30분).
-        if (!chipsFirst && day.extras.isNotEmpty()) ExtraNudgeLine(day, vm, Modifier.padding(start = 12.dp, top = 4.dp))
+        // [EASE-26] Under the calendar only: the opened day has the same ± in its 추가 근무 piece, so its head stays short.
+        if (onOpen != null && day.extras.isNotEmpty()) ExtraNudgeLine(day, vm, Modifier.padding(start = 12.dp, top = 4.dp))
     }
 }
 
