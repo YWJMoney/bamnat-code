@@ -21,10 +21,32 @@ object Sheets {
 
     class SheetException(message: String) : Exception(message)
 
-    /** The rows of [bytes]: a workbook when it is a zip, a CSV otherwise. */
-    fun read(bytes: ByteArray): List<List<String>> {
+    /** [READ-30] One sheet of a workbook, by its tab name ("" for a CSV or a page of HTML). */
+    data class Sheet(val name: String, val rows: List<List<String>>)
+
+    /**
+     * The rows of [bytes]: the first sheet that has anything on it. [READ-30] 1.38: a workbook whose first sheet is a
+     * cover note (안내) no longer reads as empty.
+     */
+    fun read(bytes: ByteArray): List<List<String>> = book(bytes).firstOrNull { s -> s.rows.any { r -> r.any { it.isNotBlank() } } }?.rows.orEmpty()
+
+    /**
+     * [READ-30] 1.38 (사용자 "엑셀표·PDF 등 어떠한 형식으로든"): every sheet of [bytes], whatever the file is underneath its name —
+     * .xlsx and .ods (zips), a real old .xls (BIFF8 in an OLE2 file), the HTML table or Excel 2003 XML a 근태·ERP system saves as
+     * ".xls", or CSV in UTF-8 or CP949. A merged cell's value is put in every cell it covers (연차 written once over three
+     * days counts for three days; a name over two rows is on both). Nothing leaves the phone.
+     */
+    fun book(bytes: ByteArray): List<Sheet> {
         if (bytes.size > MAX_BYTES) throw SheetException("파일이 너무 커요")
-        return if (bytes.size > 4 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()) xlsx(bytes) else csv(decode(bytes))
+        return when (SheetFormats.kindOf(bytes)) {
+            SheetFormats.Kind.ZIP -> if (SheetFormats.isOds(bytes)) SheetFormats.ods(bytes) else xlsxBook(bytes)
+            SheetFormats.Kind.OLE -> SheetFormats.xls(bytes)
+            SheetFormats.Kind.HTML -> SheetFormats.html(decode(bytes))
+            SheetFormats.Kind.XML2003 -> SheetFormats.xml2003(decode(bytes))
+            SheetFormats.Kind.PDF -> throw SheetException("PDF는 표 파일이 아니라 그림으로 읽어요")
+            SheetFormats.Kind.IMAGE -> throw SheetException("사진은 표 파일이 아니라 그림으로 읽어요")
+            SheetFormats.Kind.TEXT -> listOf(Sheet("", csv(decode(bytes))))
+        }
     }
 
     // ---- CSV ----
@@ -74,7 +96,10 @@ object Sheets {
     // ---- XLSX ----
 
     /** Rows of a workbook's first sheet, with empty cells in their places. */
-    fun xlsx(bytes: ByteArray): List<List<String>> {
+    fun xlsx(bytes: ByteArray): List<List<String>> = xlsxBook(bytes).firstOrNull()?.rows.orEmpty()
+
+    /** [READ-30] Every sheet of a workbook in its tab order, merged cells filled. */
+    fun xlsxBook(bytes: ByteArray): List<Sheet> {
         val parts = HashMap<String, String>()
         ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
             while (true) {
@@ -95,14 +120,25 @@ object Sheets {
             }
         }
         val strings = parts["xl/sharedStrings.xml"]?.let(::sharedStrings).orEmpty()
-        val sheet = parts[firstSheet(parts)] ?: parts.keys.filter { it.startsWith("xl/worksheets/") }.minOrNull()?.let { parts[it] }
-            ?: throw SheetException("엑셀 파일에서 시트를 찾지 못했어요")
+        val order = sheetsInOrder(parts).ifEmpty {
+            parts.keys.filter { it.startsWith("xl/worksheets/") && !it.contains("/_rels/") }.sorted().map { it.substringAfterLast('/').removeSuffix(".xml") to it }
+        }
+        if (order.isEmpty()) throw SheetException("엑셀 파일에서 시트를 찾지 못했어요")
         val styles = parts["xl/styles.xml"]
         // [IMPORT-04] A workbook made on a Mac may count dates from 1904-01-01 (<workbookPr date1904="1"/>).
         val date1904 = parts["xl/workbook.xml"]?.let { wb ->
             Regex("""<workbookPr\b[^>]*>""").find(wb)?.value?.let { attr(it, "date1904") } in setOf("1", "true")
         } == true
-        return sheetRows(sheet, strings, styles?.let(::timeStyles).orEmpty(), styles?.let(::dateStyles).orEmpty(), date1904)
+        val times = styles?.let(::timeStyles).orEmpty()
+        val dates = styles?.let(::dateStyles).orEmpty()
+        return order.mapNotNull { (name, path) ->
+            val xml = parts[path] ?: return@mapNotNull null
+            val merges = Regex("""<mergeCell\b[^>]*\bref="([A-Z]+)(\d+):([A-Z]+)(\d+)"""").findAll(xml).mapNotNull { m ->
+                val (c1, r1, c2, r2) = m.destructured
+                SheetFormats.Merge(r1.toInt() - 1, columnOf(c1) ?: return@mapNotNull null, r2.toInt() - 1, columnOf(c2) ?: return@mapNotNull null)
+            }.toList()
+            Sheet(name, sheetRows(xml, strings, times, dates, date1904, merges))
+        }
     }
 
     /**
@@ -160,14 +196,19 @@ object Sheets {
             .filter { (_, m) -> attr(m.value, "numFmtId")?.toIntOrNull()?.let(::isTime) == true }.map { it.index }.toSet()
     }
 
-    /** The first sheet in the workbook's order, through its relationship id. */
-    private fun firstSheet(parts: Map<String, String>): String? {
-        val wb = parts["xl/workbook.xml"] ?: return null
-        val rid = Regex("""<sheet\b[^>]*\br:id="([^"]+)"""").find(wb)?.groupValues?.get(1) ?: return null
-        val rels = parts["xl/_rels/workbook.xml.rels"] ?: return null
-        val rel = Regex("""<Relationship\b[^>]*>""").findAll(rels).map { it.value }.firstOrNull { attr(it, "Id") == rid } ?: return null
-        val target = attr(rel, "Target") ?: return null
-        return if (target.startsWith("/")) target.removePrefix("/") else "xl/" + target.removePrefix("./")
+    /** [READ-30] The sheets in the workbook's tab order (hidden ones left out): tab name and part, through relationship ids. */
+    private fun sheetsInOrder(parts: Map<String, String>): List<Pair<String, String>> {
+        val wb = parts["xl/workbook.xml"] ?: return emptyList()
+        val rels = parts["xl/_rels/workbook.xml.rels"] ?: return emptyList()
+        val byId = Regex("""<Relationship\b[^>]*>""").findAll(rels).map { it.value }.mapNotNull { r -> attr(r, "Id")?.let { it to attr(r, "Target") } }.toMap()
+        return Regex("""<sheet\b[^>]*>""").findAll(wb).mapNotNull { m ->
+            val tag = m.value
+            if (attr(tag, "state") in setOf("hidden", "veryHidden")) return@mapNotNull null
+            val rid = Regex("""\br:id="([^"]+)"""").find(tag)?.groupValues?.get(1) ?: return@mapNotNull null
+            val target = byId[rid] ?: return@mapNotNull null
+            val path = if (target.startsWith("/")) target.removePrefix("/") else "xl/" + target.removePrefix("./")
+            unescape(attr(tag, "name").orEmpty()) to path
+        }.toList()
     }
 
     private fun sharedStrings(xml: String): List<String> =
@@ -179,12 +220,17 @@ object Sheets {
 
     private fun sheetRows(
         xml: String, strings: List<String>, timeStyles: Set<Int> = emptySet(), dateStyles: Set<Int> = emptySet(), date1904: Boolean = false,
+        merges: List<SheetFormats.Merge> = emptyList(),
     ): List<List<String>> {
-        val rows = mutableListOf<List<String>>()
+        val grid = sortedMapOf<Int, List<String>>()
         val rowRe = Regex("""<row\b[^>]*?(?:/>|>(.*?)</row>)""", RegexOption.DOT_MATCHES_ALL)
         val cellRe = Regex("""<c\b([^>]*?)(?:/>|>(.*?)</c>)""", RegexOption.DOT_MATCHES_ALL)
+        var nextRow = 0
         for (r in rowRe.findAll(xml)) {
-            if (rows.size >= MAX_ROWS) break
+            if (grid.size >= MAX_ROWS) break
+            // [READ-30] Rows keep their place (r="5"), so a merge's rows and a blank row between two tables line up.
+            val rowAt = Regex("""^<row\b[^>]*?\br="(\d+)"""").find(r.value)?.groupValues?.get(1)?.toIntOrNull()?.minus(1) ?: nextRow
+            nextRow = rowAt + 1
             val cells = sortedMapOf<Int, String>()
             var next = 0
             for (c in cellRe.findAll(r.groupValues[1])) {
@@ -208,10 +254,10 @@ object Sheets {
             }
             if (cells.values.any { it.isNotEmpty() }) {
                 val width = (cells.keys.maxOrNull() ?: -1) + 1
-                rows += List(width) { cells[it].orEmpty() }
+                grid[rowAt] = List(width) { cells[it].orEmpty() }
             }
         }
-        return rows
+        return SheetFormats.filled(grid, merges)
     }
 
     /**

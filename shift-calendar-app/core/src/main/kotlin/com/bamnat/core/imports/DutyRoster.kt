@@ -529,12 +529,25 @@ object DutyRoster {
             var fit = first.second
             // The columns again, from where this line's own cells stand.
             val own = RosterGeometry.leastSquares(read.positions)
-            if (own != null && read.positions.size >= 5 && own.second in start.b * 0.8..start.b * 1.25) {
+            if (start.knots.isNotEmpty()) {
+                // [READ-33] Uneven columns: the row of days' places moved and stretched to this line's cells (x = α + β·x(d)).
+                val pairs = read.positions.map { (d, x) -> start.x(d) to x }
+                if (pairs.size >= 5) {
+                    val mx = pairs.sumOf { it.first } / pairs.size; val my = pairs.sumOf { it.second } / pairs.size
+                    val sxx = pairs.sumOf { (p, _) -> (p - mx) * (p - mx) }
+                    val beta = if (sxx > 0) pairs.sumOf { (p, q) -> (p - mx) * (q - my) } / sxx else 1.0
+                    val alpha = my - beta * mx
+                    if (beta in 0.8..1.25) {
+                        val refit = start.copy(a = alpha + beta * start.a, b = beta * start.b, knots = start.knots.map { (d, x) -> d to alpha + beta * x })
+                        readLine(row, refit, codes).first.let { again -> if (again.cells.size >= read.cells.size) { read = again; fit = refit } }
+                    }
+                }
+            } else if (own != null && read.positions.size >= 5 && own.second in start.b * 0.8..start.b * 1.25) {
                 val refit = start.copy(a = own.first, b = own.second, c = 0.0)
                 readLine(row, refit, codes).first.let { again -> if (again.cells.size >= read.cells.size) { read = again; fit = refit } }
             }
             // [READ-13] 1.27: columns that narrow along the row (seen from one side): bent to where this line's cells stand.
-            RosterGeometry.bent(fit, read.positions)?.let { bent ->
+            if (fit.knots.isEmpty()) RosterGeometry.bent(fit, read.positions)?.let { bent ->
                 readLine(row, bent, codes).first.let { again -> if (again.cells.size >= read.cells.size && again.unsure.size <= read.unsure.size) { read = again; fit = bent } }
             }
             if (read.cells.size >= min) {
