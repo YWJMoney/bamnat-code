@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.ui.company.SoftCard
-import com.bamnat.app.ui.recipe.thumb
 import com.bamnat.core.recipe.RecipeDescribe
 import com.bamnat.core.work.WorkStyle
 
@@ -214,7 +213,8 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
         // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.
         // PC 확인: big enough to see the week, not an icon.
-        r.thumb()?.let { com.bamnat.app.ui.recipe.ThemeThumb(it, width = 88.dp); Spacer(Modifier.padding(start = 8.dp)) }
+        // [MKV-01] 1.37: the work as it really looks, as in 장터.
+        com.bamnat.app.ui.recipe.MarketShot(r, 60.dp, style, onClick = { onRecipe(r.code) }); Spacer(Modifier.padding(start = 8.dp))
         // PC 확인 7b26965a ("아주 크게"에서 제목이 세로로 꺾여요): with big letters the two buttons go under the title.
         val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
         val buttons: @Composable () -> Unit = {

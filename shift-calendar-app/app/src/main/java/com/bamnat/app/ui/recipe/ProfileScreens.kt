@@ -721,8 +721,9 @@ private fun Grid(items: List<RecipeItem>, pins: List<String>, empty: String, onO
 internal fun WorkTile(item: RecipeItem, pinned: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(modifier.clickable(onClickLabel = "작품 보기", onClick = onClick)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                item.look?.let { ThemeThumb(it, width = maxWidth) } ?: RecipeCover(item.cover, size = maxWidth)
+            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                // [MKV-01] 1.37: the work as it really looks, as in 장터.
+                MarketShot(item, maxWidth, LocalViewerStyle.current, onClick)
                 if (pinned) Text("📌", modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).semantics { contentDescription = "대표 작품" })
             }
             Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -776,7 +777,7 @@ private fun SetCard(set: MakerSet, works: List<RecipeItem>, mine: Boolean, onOpe
     Card(Modifier.fillMaxWidth().clickable(onClickLabel = "모음 보기", onClick = onOpen)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items.take(4).forEach { r -> r.look?.let { ThemeThumb(it, width = 64.dp) } ?: RecipeCover(r.cover, size = 64.dp) }
+                items.take(4).forEach { r -> MarketShot(r, 64.dp, viewer, onOpen) }
             }
             Text(set.title, style = MaterialTheme.typography.titleMedium)
             if (set.summary.isNotEmpty()) Text(set.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

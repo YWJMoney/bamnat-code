@@ -37,7 +37,6 @@ import androidx.compose.ui.unit.dp
 import com.bamnat.app.AppContainer
 import com.bamnat.app.recipe.RecipeClient
 import com.bamnat.app.recipe.RecipeItem
-import com.bamnat.app.ui.recipe.ThemeThumb
 import com.bamnat.app.ui.recipe.thumb
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
@@ -80,7 +79,10 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                         val t = list[i]
                         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)) {
-                            BoxWithConstraints(Modifier.widthIn(max = 360.dp).fillMaxWidth()) { ThemeThumb(t.thumb()!!, width = maxWidth) }
+                            // [MKV-01] 1.37: the theme as it really looks, as big as fits above its name and buttons.
+                            BoxWithConstraints(Modifier.widthIn(max = 260.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                com.bamnat.app.ui.recipe.MarketShot(t, maxWidth, style, onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = t.code; onRecipe(t.code) })
+                            }
                             Text(t.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             // 1.36 [VIL-17] PC 확인 V9: say what wearing it changes, not just a picture.
                             if (t.tabs.isNotEmpty()) Text("바뀌는 곳: " + t.tabs.joinToString(" · ") { com.bamnat.app.ui.recipe.marketTabLabel(it, style) },
