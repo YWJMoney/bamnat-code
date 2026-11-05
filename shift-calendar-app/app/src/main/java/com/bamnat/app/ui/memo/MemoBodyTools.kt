@@ -44,6 +44,18 @@ internal class MemoBodyTools {
 
     var editing by mutableStateOf(false)
     var onAction: ((Action) -> Unit)? = null
+
+    /** [MPH-01] 1.38 The body field typed in last (a memo with photos has one field between each two): it owns the bar. */
+    var owner: Any? = null
+
+    /** [MPH-01] Puts a photo in where the caret of the field typed in last is; null when no field was typed in (it goes at the end). */
+    var insertPhoto: ((String) -> Unit)? = null
+
+    /** [MPH-07] Puts a new 자유 판 in where the caret of the field typed in last is. */
+    var insertBoard: (() -> Unit)? = null
+
+    /** [MPH-01] The bar's 사진 button: opens the editor's 사진 넣기 menu. */
+    var onPhoto: (() -> Unit)? = null
 }
 
 /** [NOTE-07] The bar above the keyboard while the body is typed in: 목록, 번호, 체크 칸, 오늘 날짜. */
@@ -61,6 +73,8 @@ internal fun MemoBodyToolbar(tools: MemoBodyTools) {
                 TextButton(onClick = { tools.onAction?.invoke(MemoBodyTools.Action.Mark(MemoText.Mark.NUMBER)) }) { Text("1. 번호") }
                 TextButton(onClick = { tools.onAction?.invoke(MemoBodyTools.Action.Mark(MemoText.Mark.CHECK)) }) { Text("☐ 체크") }
                 TextButton(onClick = { tools.onAction?.invoke(MemoBodyTools.Action.Today) }) { Text("오늘 날짜") }
+                // [MPH-01] 1.38 사진: put in where the caret is.
+                if (tools.onPhoto != null) TextButton(onClick = { tools.onPhoto?.invoke() }) { Text("🖼 사진") }
             }
         }
     }

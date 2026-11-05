@@ -786,10 +786,13 @@ private val LocalMemoCardLook = androidx.compose.runtime.staticCompositionLocalO
 
 @Composable
 private fun MemoContent(memo: Memo, query: String) {
+    // [MPH-04] 1.38 A memo's photos as small pictures on its card.
+    val photos = remember(memo.body) { memo.photos }
+    if (photos.isNotEmpty()) MemoPhotoStrip(photos)
     // The title row already shows the preview line when there is no title.
     if (memo.isChecklist) {
         // [J135-07] A template's answers kept above the list.
-        if (memo.body.isNotBlank()) Text(highlighted(memo.body, query), style = MaterialTheme.typography.bodySmall,
+        if (memo.text.isNotBlank()) Text(highlighted(memo.text, query), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
         val items = memo.checklist.filter { it.text.isNotBlank() }
         val cardLook = LocalMemoCardLook.current
@@ -817,12 +820,12 @@ private fun MemoContent(memo: Memo, query: String) {
             Text("외 ${items.size - shown}개", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
         }
-    } else if (memo.title.isNotBlank() && memo.body.isNotBlank()) {
+    } else if (memo.title.isNotBlank() && memo.text.isNotBlank()) {
         // PC 확인 d5678f31: a "칸: 값" line shown as a pill under the card (PropPills, the first 3) is not written again in the text.
         val body = remember(memo.body) {
             val pills = com.bamnat.core.memo.MemoProps.of(memo).take(3).map { it.label }.toSet()
             // PC 확인 c9a89b20: a line of 꼬리표 alone is shown by the tag chips, not again in the text.
-            memo.body.lines().filterNot { com.bamnat.core.memo.MemoProps.labelOfLine(it) in pills || TAG_LINE.matches(it.trim()) }.joinToString("\n").trim()
+            memo.text.lines().filterNot { com.bamnat.core.memo.MemoProps.labelOfLine(it) in pills || TAG_LINE.matches(it.trim()) }.joinToString("\n").trim()
         }
         if (body.isEmpty()) return
         // [MEMO-04] 1.27 AK: a long memo is drawn as its start, or the lines around the word searched for, never whole.

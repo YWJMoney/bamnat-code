@@ -21,7 +21,7 @@ object MemoSearch {
         /** Title, body and items, lower case, in one string. */
         val text: String = buildString {
             append(memo.title.lowercase()); append('\n')
-            append(memo.body.lowercase())
+            append(memo.text.lowercase())
             memo.checklist.forEach { append('\n'); append(it.text.lowercase()) }
         }
         /** The 초성 of [text], made the first time a 초성 query needs it. */

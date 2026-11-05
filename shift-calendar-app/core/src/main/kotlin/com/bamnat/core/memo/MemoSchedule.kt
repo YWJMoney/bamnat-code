@@ -37,7 +37,7 @@ object MemoTime {
     private val DAY_ONLY = Regex("(?<![\\d월/])(\\d{1,2})\\s*일(?!\\s*(?:간|동안|째))")
 
     fun find(memo: Memo, now: LocalDateTime): Found? = find(
-        (sequenceOf(memo.title, memo.body) + memo.checklist.asSequence().map { it.text }).joinToString("\n"),
+        (sequenceOf(memo.title, memo.text) + memo.checklist.asSequence().map { it.text }).joinToString("\n"),
         now,
         memo.date,
     )

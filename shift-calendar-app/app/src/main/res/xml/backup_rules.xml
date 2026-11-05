@@ -8,6 +8,8 @@
     <include domain="file" path="." />
     <exclude domain="file" path="diag/" />
     <exclude domain="file" path="receipts/" />
+    <!-- [MPH-03] 1.38 메모 사진도 영수증처럼 클라우드 백업에서 빼요(25MB 한도). -->
+    <exclude domain="file" path="memo-photos/" />
     <!-- [MAT-05] 1.36 받은 공개 글꼴은 다시 받으면 돼요(본명조 14MB, 자동 백업 25MB 한도를 아껴요). -->
     <exclude domain="file" path="fonts/open/" />
 </full-backup-content>

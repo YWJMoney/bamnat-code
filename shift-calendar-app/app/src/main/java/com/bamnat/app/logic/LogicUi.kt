@@ -99,7 +99,7 @@ fun LogicMessageHost(c: AppContainer, snackbar: SnackbarHostState) {
  */
 @androidx.compose.runtime.Composable
 fun MemoFormulaPreview(memo: com.bamnat.core.memo.Memo, modifier: Modifier = Modifier) {
-    val text = if (memo.isChecklist) memo.checklist.joinToString("\n") { it.text } else memo.body
+    val text = if (memo.isChecklist) memo.checklist.joinToString("\n") { it.text } else memo.text
     val src = listOf(memo.title, text).filter { '{' in it }.joinToString("\n")
     if (src.isEmpty()) return
     val facts = LocalDayFacts.current ?: rememberAppDayFacts() ?: return

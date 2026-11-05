@@ -137,6 +137,8 @@ export const PART_IDS = [
   // [TAB-01][TAB-02] 메모 속성·보드·표
   "memo.prop", "memo.board", "memo.board.col", "memo.board.head", "memo.table", "memo.table.head", "memo.table.row",
   "memo.cal", "memo.cal.cell",
+  // [MPH-06] 1.38 메모 쓰기 화면: 종이, 종이 줄, 메모 사진
+  "memo.page", "memo.page.rule", "memo.photo",
   "money.head", "money.day", "money.row", "money.amount",
   // [TAB-06] 가계부 판
   "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",

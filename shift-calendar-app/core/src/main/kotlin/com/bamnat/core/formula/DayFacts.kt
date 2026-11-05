@@ -154,7 +154,7 @@ class DayFactsBook(
             FormulaName.MONTH_HOURS.ko to (endOfMonth?.second ?: 0.0),
             FormulaName.STREAK.ko to streak,
             FormulaName.MEMO_COUNT.ko to dayMemos.size,
-            FormulaName.MEMO.ko to dayMemos.joinToString("\n") { listOf(it.title, it.body).filter { t -> t.isNotBlank() }.joinToString(" ") }.take(Formula.MAX_TEXT),
+            FormulaName.MEMO.ko to dayMemos.joinToString("\n") { listOf(it.title, it.text).filter { t -> t.isNotBlank() }.joinToString(" ") }.take(Formula.MAX_TEXT),
             FormulaName.TAGS.ko to dayMemos.flatMap { it.tags }.distinct().take(Formula.MAX_LIST),
             FormulaName.CHECK_RATE.ko to (if (checks.isEmpty()) 0 else checks.count { it.checked } * 100 / checks.size),
             FormulaName.CHECKS_LEFT.ko to checks.count { !it.checked },
