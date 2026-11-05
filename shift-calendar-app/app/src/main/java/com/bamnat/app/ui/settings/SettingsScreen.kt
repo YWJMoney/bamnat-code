@@ -137,6 +137,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -233,12 +234,22 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val ruleCards: StateFlow<List<com.bamnat.core.guide.RuleCards.Card>> = kotlinx.coroutines.flow.combine(
         container.calendars.active.flatMapLatest { id ->
-            kotlinx.coroutines.flow.combine(container.calendars.repository(id).live, container.calendars.pay(id).profile) { s, p -> s to p }
+            kotlinx.coroutines.flow.combine(
+                container.calendars.repository(id).live,
+                container.calendars.pay(id).profile,
+                // The repeating memos of this calendar; a 근무마다 memo only where it goes by this calendar's kinds of day.
+                container.memoRepository.memosFor(id).map { list ->
+                    list.filter { m ->
+                        m.repeat.isNotEmpty() && (com.bamnat.core.memo.MemoRepeat.shiftIdOf(m.repeat) == null ||
+                            com.bamnat.app.data.MemoRepository.calendarOf(m, id) == id)
+                    }
+                },
+            ) { s, p, m -> Triple(s, p, m) }
         },
         container.settingsRepository.settings,
-    ) { (s, p), st ->
+    ) { (s, p, m), st ->
         com.bamnat.core.guide.RuleCards.of(s.patterns, s.shiftTypes, com.bamnat.core.time.Today.date(), p?.customRules.orEmpty(),
-            com.bamnat.core.formula.Logic.decode(st.logic))
+            com.bamnat.core.formula.Logic.decode(st.logic), alarmsOn = st.alarmsEnabled, memos = m)
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()

@@ -92,4 +92,23 @@ class ShiftMemoRepeatTest {
         val rot = RuleCards.of(listOf(order), listOf(day, night, off), start)
         assertEquals("만약 날마다 → 주야휴휴 순서로 4일마다 돌아요", rot.first().sentence)
     }
+
+    @Test fun withEveryAlarmOffNoCardSaysItRings() {
+        val cards = RuleCards.of(listOf(order), listOf(day, night, off), start, alarmsOn = false)
+        val alarms = cards.filter { it.group == RuleCards.Group.ALARM }
+        assertTrue(alarms.isNotEmpty())
+        assertTrue(alarms.none { it.on || it.result.contains("울려요") })
+    }
+
+    @Test fun repeatingMemosAreCards() {
+        val memos = listOf(
+            Memo(id = 2, date = start, title = "분리수거", repeat = "W1"),
+            Memo(id = 1, date = start.plusDays(1), title = "도시락", repeat = MemoRepeat.shiftCode(2)),
+            Memo(id = 3, date = start, title = "한 번만"),
+            Memo(id = 4, date = start, title = "지운 근무", repeat = MemoRepeat.shiftCode(99)),
+        )
+        val cards = RuleCards.of(listOf(order), listOf(day, night, off), start, memos = memos).filter { it.group == RuleCards.Group.MEMO }
+        assertEquals(listOf("만약 야간 날이면 → 메모 ‘도시락’이 보여요", "만약 매주 월요일이면 → 메모 ‘분리수거’가 보여요"), cards.map { it.sentence })
+        assertTrue(cards.all { it.where == RuleCards.Where.MEMOS })
+    }
 }
