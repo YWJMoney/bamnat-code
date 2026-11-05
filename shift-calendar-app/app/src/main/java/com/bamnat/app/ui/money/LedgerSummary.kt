@@ -169,7 +169,18 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
             }
             Spacer(Modifier.height(10.dp))
         }
-        BudgetLineView(total, status.elapsed.takeIf { current }, onClick = onBudget, whole = true)
+        // 1.38 (1.37 PC 확인: 예산 카드를 누르면 바로 '예산 정하기' 창이 떠요): a tap opens the categories' budgets right here;
+        // changing them is its own 고치기.
+        var open by rememberSaveable { mutableStateOf(false) }
+        BudgetLineView(total, status.elapsed.takeIf { current }, onClick = { open = !open }, whole = true, expanded = open)
+        if (open) {
+            Column(Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp)) {
+                if (status.categories.isEmpty()) Text("분류마다 예산을 나누면 어디서 많이 쓰는지 여기서 바로 보여요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                status.categories.forEach { b -> BudgetMiniRow(b) }
+                TextButton(onClick = onBudget, modifier = Modifier.align(Alignment.End)) { Text("예산 고치기") }
+            }
+        }
         if (current && status.fixedLeft > 0) {
             Text("이번 달 남은 반복 지출 ${Fmt.won(status.fixedLeft)}은 미리 빼고 계산했어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
@@ -179,7 +190,7 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
 
 /** One budget: spent against it, a mark for how far the month is, and a plain word on where it stands. */
 @Composable
-private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, whole: Boolean = false) {
+private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, whole: Boolean = false, expanded: Boolean? = null) {
     val cal = LocalCalendarColors.current
     val color = when (b.level) { BudgetLevel.OVER -> cal.warning; BudgetLevel.NEAR -> cal.changed; BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
     val pct = (b.fraction * 100).toInt()
@@ -205,6 +216,10 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
             Spacer(Modifier.width(8.dp))
             Text("${Fmt.won(b.spent)} / ${Fmt.won(b.budget)}", style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            expanded?.let {
+                Icon(if (it) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, if (it) "분류별 예산 접기" else "분류별 예산 펼치기",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
         }
         // 1.37 [LEDH-34] What came over from last month, inside the budget shown.
         if (b.carried != 0L) Text(if (b.carried > 0) "지난달 남은 ${Fmt.won(b.carried)} 더함" else "지난달 넘긴 ${Fmt.won(-b.carried)} 뺌",
@@ -221,6 +236,21 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
                 color = when { b.level == BudgetLevel.OVER -> cal.warning; b.headedOver || b.level == BudgetLevel.NEAR -> cal.changed
                     else -> MaterialTheme.colorScheme.onSurfaceVariant })
         }
+    }
+}
+
+/** 1.38: one category's budget in a single line under the month's, for the budget opened in place. */
+@Composable
+private fun BudgetMiniRow(b: BudgetLine) {
+    val cal = LocalCalendarColors.current
+    val color = when (b.level) { BudgetLevel.OVER -> cal.warning; BudgetLevel.NEAR -> cal.changed; BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics(mergeDescendants = true) {}) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(b.category, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (b.left >= 0) "${Fmt.won(b.left)} 남음" else "${Fmt.won(-b.left)} 넘음", style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
+                color = if (b.level == BudgetLevel.OVER) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        LedgerTrack(b.fraction, color, marker = null, height = 6.dp)
     }
 }
 
