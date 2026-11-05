@@ -114,6 +114,12 @@ val PRO_PILLARS = listOf(
         setOf(Feature.THEME_WARDROBE, Feature.CREATOR_PRO)),
 )
 
+/**
+ * 1.38 [EASE-33] Beside the ad promise: no account, and the alarm check anyone can run. The store page says the same
+ * (`docs/store-listing.md`); 알람 점검 is in 설정 › 알람.
+ */
+internal const val TRUST_LINE = "로그인·회원가입 없이 바로 써요. 알람이 제시간에 울릴지는 설정 › 알람 › 알람 점검에서 누구나 무료로 확인해요."
+
 /** [MON-04] 무료 vs 프로, row by row. Everything not listed is free. */
 val PRO_COMPARE = listOf(
     Triple("근무표·패턴·빠른 입력·대근·연차", true, true),
@@ -232,6 +238,9 @@ fun ProScreen(onBack: () -> Unit) {
                     // G 1.32 [WTYP-01] The ad promise, in words.
                     Text(com.bamnat.core.tier.AdRules.PROMISE, style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    // 1.38 [EASE-33] The other two promises the store page makes, said here too.
+                    Text(TRUST_LINE, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
                 }
 
                 if (!gate.live || gate.preview) {

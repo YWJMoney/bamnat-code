@@ -5,7 +5,7 @@ import java.time.LocalDate
 /**
  * [PRIV-03] 처리방침 시행일을 정식 출시일로 앞당기며 지키는 약속(결정 D84 3.1, 결정 D111 3.9).
  *
- * 3.1(결정 D84, 2026-10-26 사용자): 2.5~3.0이 알린 11-21·11-24 시행을 [LAUNCH_EFFECTIVE](11-10)로 앞당겼어요. 3.1을
+ * 3.1(결정 D84, 2026-10-26 사용자): 2.5~3.0이 알린 11-21·11-24 시행을 [LAUNCH_EFFECTIVE](11-12, 1.38에서 11-10을 옮김)로 앞당겼어요. 3.1을
  * 게시하기 전에 깐 휴대폰이 동의하지 않으면 [LAUNCH_HELD_UNTIL]까지 결제·광고를 켜지 않아요.
  *
  * 3.9(결정 D111, 2026-10-30 사용자 "출시일 전에 개발한 모든 사항은 처리방침을 출시일로, 출시 이후에는 정상적으로"):
@@ -20,19 +20,29 @@ object PolicyConsent {
     const val VERSION = "3.9"
     /** 3.9 게시 예정일. 늦어지면 관리자 앱 › 기능 관리 › 일정 › 처리방침 일정에서 옮겨요(앱 업데이트 없이). */
     val POSTED: LocalDate = LocalDate.of(2026, 10, 31)
-    /** 정식 출시(Play 프로덕션 승인) 예정일, 3.1과 같은 날. */
-    val EFFECTIVE: LocalDate = LocalDate.of(2026, 11, 10)
+    /**
+     * 정식 출시(Play 프로덕션 승인) 뒤 출시 전 기능을 푸는 기본일, 3.1과 같은 날. 1.38(사용자 2026-11-05): 11-10 → 11-12. 게시된 3.1·3.9·3.10
+     * 페이지의 시행일(11-10)보다 늦으니 약속을 어기지 않아요. 기능을 푸는 날은 관리자 앱 › 기능 관리 › 일정 › 처리방침 일정에서 옮겨요
+     * (앱 업데이트 없이). 처리방침 개정은 1.38 배포 때 한 판으로 해요(사용자 2026-11-05 "1.38배포할때 처리방침 바꾸자").
+     */
+    val EFFECTIVE: LocalDate = LocalDate.of(2026, 11, 12)
     /** 3.2~3.8이 약속한 가장 늦은 시행일. 이날부터는 동의가 없어도 원래 약속대로 시행돼요. */
     val HELD_UNTIL: LocalDate = LocalDate.of(2026, 11, 29)
 
     /**
-     * 1.37 [SHR-31][SHR-32] 3.11(사용자 2026-11-04 "11월10일로 맞춰서"): 근무표 링크의 테마·근무 설정(1항). 정식 출시 전에 게시하니 결정 D111대로
+     * 1.37 [SHR-31][SHR-32] 3.11(사용자 2026-11-04 "11월10일로 맞춰서", 1.38에서 함께 11-12로): 근무표 링크의 테마·근무 설정(1항). 정식 출시 전에 게시하니 결정 D111대로
      * 시행일은 정식 출시일([EFFECTIVE])이고, 3.11을 게시하기 전에 깐 휴대폰은 달력 위 카드로 한 번 묻고, 동의하지 않으면 30일
      * 고지가 끝나는 [SHARE_LOOK_HELD_UNTIL]부터예요. 카드는 가장 새 판 [ASK_VERSION]을 물어요(동의하면 3.9·3.1도 동의한 것으로 쳐요).
      */
     const val SHARE_LOOK_VERSION = "3.11"
     val SHARE_LOOK_POSTED: LocalDate = LocalDate.of(2026, 11, 4)
     val SHARE_LOOK_HELD_UNTIL: LocalDate = LocalDate.of(2026, 12, 4)
+    /**
+     * 1.38 (사용자 2026-11-05 "1.38배포할때 처리방침 바꾸자"): 3.11은 아직 게시 전(공개 저장소 PR #10 보류)이라 시행일을 정하지 않았어요.
+     * 그동안 `share.look`이 정식 출시일에 저절로 풀리지 않게 먼 날을 둬요(동의 없이도 시행되는 날은 따로 두지 않아요: 시행일보다 앞설 수 없어요).
+     * 1.38 배포일에 새 판을 게시하면 관리자 앱 일정에서 게시일·시행일·[SHARE_LOOK_HELD_UNTIL](30일 고지 끝)을 그날에 맞춰 넣어요.
+     */
+    val SHARE_LOOK_EFFECTIVE: LocalDate = LocalDate.of(2027, 12, 31)
     /** The newest version the calendar card asks for and a yes writes. */
     const val ASK_VERSION = SHARE_LOOK_VERSION
 
@@ -40,7 +50,7 @@ object PolicyConsent {
     const val LAUNCH_VERSION = "3.1"
     /** 3.1 게시(1.27.0을 main에 합친 날 기준). 이날 전에 깐 휴대폰에 물어요. */
     val LAUNCH_POSTED: LocalDate = LocalDate.of(2026, 10, 27)
-    val LAUNCH_EFFECTIVE: LocalDate = LocalDate.of(2026, 11, 10)
+    val LAUNCH_EFFECTIVE: LocalDate = LocalDate.of(2026, 11, 12)
     /** 3.0이 약속한 시행일. 이날부터는 동의가 없어도 원래 약속대로 시행돼요. */
     val LAUNCH_HELD_UNTIL: LocalDate = LocalDate.of(2026, 11, 24)
 
@@ -52,7 +62,7 @@ object PolicyConsent {
     fun holdsLaunch(installed: LocalDate?, agreed: Boolean, today: LocalDate): Boolean = asks(installed, agreed, today)
 
     val lines: List<String> = listOf(
-        "정식 출시일(11월 10일 예정)부터 처리방침 3.11·이용약관이 시행돼요(원래 11월 24일~12월 4일)",
+        "정식 출시일부터 새 처리방침·이용약관이 시행돼요(원래 알린 날은 11월 24일~12월 4일)",
         "그날부터 레시피 올리기·좋아요·이야기·구독, 동료 링크에 회사 설정 담기, 근무표 링크에 테마·근무 설정 담기, 문의에 멈춤 관찰 기록 붙이기, 회사 공통 수당 금액 나누기, ‘사진이 달라요’ 횟수, 따로 동의한 분의 통계 더 보내기가 시작돼요",
         "프로·광고는 Play 정식 출시가 승인된 날부터 켜져요. 그 전엔 지금처럼 모두 무료예요",
     )

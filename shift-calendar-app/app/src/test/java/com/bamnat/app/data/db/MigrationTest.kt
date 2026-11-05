@@ -434,6 +434,46 @@ class MigrationTest {
         }
     }
 
+    /**
+     * 1.38 [LEDH-25][LEDH-27] A version 25 account comes through version 26 (and on, through 1.38 Phase 3's 27) as it was:
+     * 이자 없음, 매달 갚는 돈 없음, 실적 구간 없음. A loan and a card's 실적 구간 then save and read back.
+     */
+    @Test
+    fun version25AccountsKeepTheirMeaning() = runBlocking {
+        val name = "migration-25.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 25)
+        sql.execSQL("INSERT INTO money_accounts (id, name, type, last4, payDay, closeDay, payFromId, opening, color, sortOrder, hidden, remind) " +
+            "VALUES (1, '신한 Deep', 'CREDIT', '1234', 14, NULL, NULL, 0, 0, 0, 0, 1)")
+        sql.execSQL("INSERT INTO envelopes (id, name, target, dueEpochDay, kind, sharePercent, emoji, sortOrder, closed, createdEpochDay) " +
+            "VALUES (1, '여행', 1200000, NULL, 0, 0, '', 0, 0, NULL)")
+        sql.version = 25
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val card = db.moneyDao().allAccounts().single().toModel()
+            assertEquals(14, card.payDay)
+            assertEquals(0.0, card.rate, 0.0)
+            assertEquals(0L, card.monthlyPay)
+            assertTrue(card.perfTiers.isEmpty() && card.perfSkip.isEmpty())
+            assertEquals("여행", db.moneyDao().allEnvelopes().single().name)
+            db.moneyDao().insertAccount(card.copy(id = 2, name = "전세 대출", type = com.bamnat.core.money.AccountType.OTHER,
+                opening = -50_000_000, rate = 3.9, monthlyPay = 400_000).toEntity())
+            db.moneyDao().insertAccount(card.copy(id = 3, perfTiers = listOf(500_000, 300_000), perfSkip = listOf("세금")).toEntity())
+            val back = db.moneyDao().allAccounts().map { it.toModel() }.associateBy { it.id }
+            assertEquals(3.9, back.getValue(2).rate, 1e-9)
+            assertEquals(400_000L, back.getValue(2).monthlyPay)
+            assertEquals(listOf(300_000L, 500_000L), back.getValue(3).perfTiers)
+            assertEquals(listOf("세금"), back.getValue(3).perfSkip)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
     private fun createTables(file: File, version: Int): SQLiteDatabase {
         val schema = JSONObject(File(SCHEMA_DIR, "$version.json").readText()).getJSONObject("database")
         val sql = SQLiteDatabase.openOrCreateDatabase(file, null)

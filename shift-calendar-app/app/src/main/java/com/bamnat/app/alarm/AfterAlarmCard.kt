@@ -49,6 +49,8 @@ object AfterAlarmCard {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText("$text\n$OFF_HINT"))
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3316))
+            // [EASE-19] Turning the alarm off opened nothing; the day is one tap away here.
+            .addAction(0, "오늘 보기", Notifications.open(context, NoticeLinks.Target.TODAY, 3317))
             .build()
         Notifications.post(context, ID, n)
     }

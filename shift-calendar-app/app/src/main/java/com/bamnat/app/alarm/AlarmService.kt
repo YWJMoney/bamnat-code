@@ -263,10 +263,19 @@ class AlarmService : Service() {
         }
     }
 
+    /** [EASE-21] When the hold for a call began, 0 when not holding; how long it has held decides whether it still may. */
+    private var holdSince = 0L
+
     private fun callActive(): Boolean {
         val mode = runCatching { getSystemService(AudioManager::class.java)?.mode }.getOrNull() ?: return false
-        return mode == AudioManager.MODE_RINGTONE || mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION ||
-            (Build.VERSION.SDK_INT >= 30 && mode == AudioManager.MODE_CALL_SCREENING)
+        val now = Today.millis()
+        val held = if (holdSince == 0L) 0L else now - holdSince
+        val holds = holdsForCall(mode, held)
+        holdSince = if (holds) (if (holdSince == 0L) now else holdSince) else 0L
+        if (!holds && held > 0 && mode != AudioManager.MODE_NORMAL && !BootAlarms.isLocked(this)) {
+            appContainer.telemetry.event("alarm_call_hold_end", "mode=$mode held=${held / 1000}s")
+        }
+        return holds
     }
 
     private fun holdForCall(ring: RingRequest) {
@@ -542,6 +551,7 @@ class AlarmService : Service() {
         _ringing.value = null
         _since.value = null
         inCallNow = false
+        holdSince = 0L
         _inCall.value = false
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         NotificationManagerCompat.from(this).cancel(Notifications.ALARM_NOTIFICATION_ID)
@@ -618,6 +628,23 @@ class AlarmService : Service() {
 
         /** [ALRM-22] How often a ringing alarm looks for a call. */
         private const val CALL_CHECK_MILLIS = 1_500L
+
+        /** [EASE-21] A voice or video call in an app (메신저 통화) holds the alarm this long at most. */
+        const val APP_CALL_HOLD_MILLIS = 3 * 60_000L
+        /** [EASE-21] Any call holds it this long at most: a phone left in call mode after the call must not keep it quiet. */
+        const val CALL_HOLD_MILLIS = 30 * 60_000L
+
+        /**
+         * [EASE-21] 1.38 (오늘근무 리뷰 '통화 중 오판' 사례): whether the alarm keeps quiet for a call, from the phone's audio
+         * [mode] and how long it has already [heldMillis]. A phone call (ringing, in a call, screening) holds up to
+         * [CALL_HOLD_MILLIS]; the mode apps use for their calls is also what some apps leave on after a call or for voice
+         * messages, so it holds only [APP_CALL_HOLD_MILLIS]. After that the alarm rings, even if the phone still says "call".
+         */
+        internal fun holdsForCall(mode: Int, heldMillis: Long): Boolean = when (mode) {
+            AudioManager.MODE_RINGTONE, AudioManager.MODE_IN_CALL, AudioManager.MODE_CALL_SCREENING -> heldMillis < CALL_HOLD_MILLIS
+            AudioManager.MODE_IN_COMMUNICATION -> heldMillis < APP_CALL_HOLD_MILLIS
+            else -> false
+        }
 
         private val _quiet = MutableStateFlow(false)
         /** [ALRM-08] A button quieted a mission alarm for a while. */
@@ -704,7 +731,8 @@ class AlarmService : Service() {
                 ring.isSnooze -> "다시 울림"
                 ring.custom && work -> "$start 근무 시작 · 이 날 알람"
                 ring.custom -> "이 날 알람"
-                else -> "$start 근무 시작 · ${ring.offsetMinutes}분 전 알람"
+                // [EASE-18] One after the start says so (다음날 낮잠).
+                else -> "$start 근무 시작 · " + if (ring.offsetMinutes < 0) "${com.bamnat.app.ui.Fmt.offset(ring.offsetMinutes)} 알람" else "${ring.offsetMinutes}분 전 알람"
             }
         }
 

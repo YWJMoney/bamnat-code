@@ -3790,7 +3790,7 @@ function adminApp(L, BUILD, M) {
     openDialog(`<form data-form="flag-cond" data-key="${esc(key)}"><h2>${esc(r.name)}의 켜지는 조건</h2>
       <p>한 줄에 조건 하나, 모두 채우면 켜져요. 'or'로 이으면 그중 하나면 돼요. 저장하면 휴대폰은 앱에 든 조건 대신 이 조건을 써요.</p>
       <div class="fieldset"><label for="flag-cond">조건</label><textarea id="flag-cond" name="conditions" spellcheck="false" aria-describedby="flag-cond-out">${esc(text)}</textarea>
-        <span class="help">예: date >= 2026-11-10 · date >= policy 3.1 · policy 3.1 · consent ads? · profile pay.setup · app 39..45 · workType SHIFT,DAY · rollout 10% · manual play.production · admin</span></div>
+        <span class="help">예: date >= 2026-11-12 · date >= policy 3.1 · policy 3.1 · consent ads? · profile pay.setup · app 39..45 · workType SHIFT,DAY · rollout 10% · manual play.production · admin</span></div>
       <div id="flag-cond-out" class="cond-out" aria-live="polite">${flagCondPreview(text)}</div>
       <div class="fieldset"><label for="fc-why">이유(필수)</label><input id="fc-why" name="why" maxlength="300" required></div>
       <div class="actions">${r.override?.conditions ? '<button class="btn ghost" type="submit" name="reset" value="1" formnovalidate>앱 조건으로 되돌리기</button>' : ""}

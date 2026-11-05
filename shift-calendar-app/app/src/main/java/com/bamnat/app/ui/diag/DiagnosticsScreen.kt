@@ -136,6 +136,83 @@ const val STOP_SECTION = "앱 멈춤"
 /** 1.32.1 [STAB-10] 멈춤 관찰 기록: the phone's screen and the app's memory before a stop ([com.bamnat.app.diag.Trail]). */
 const val STOP_TRAIL_SECTION = "앱 멈춤 관찰"
 
+/**
+ * [REL-13] The things an alarm needs, each with whether it is fine now and how to fix it. [EASE-21] 1.38: also read by the
+ * card on top of 설정 › 알람, so the same checks are said in both places.
+ */
+internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmCheck> {
+    val settings = container.settingsRepository.current
+    val power = context.getSystemService(PowerManager::class.java)
+    val am = context.getSystemService(ActivityManager::class.java)
+    val pkg = Uri.parse("package:${context.packageName}")
+    val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)
+    val audio = context.getSystemService(android.media.AudioManager::class.java)
+    val channel = { id: String -> Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, id) }
+    return buildList {
+        add(AlarmCheck("알람 사용", settings.alarmsEnabled, "꺼져 있으면 근무 알람이 하나도 울리지 않아요.", "켜기", Fix.TurnOn))
+        // [ALRM-01] R11: without it the alarm still rings, but its buttons and 일어났나요? cannot show.
+        add(AlarmCheck("알림 허용", Notifications.canPost(context),
+            "꺼져 있으면 알람이 울려도 끄기·다시 울림 버튼이 안 보이고, ‘일어났나요?’도 묻지 못해 건너뛰어요.", "알림 설정 열기",
+            Fix.Open(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))))
+        // [ALRM-01] R10: the alarm's channels can be turned off one by one in the system settings.
+        if (Notifications.canPost(context)) {
+            add(AlarmCheck("알람 알림 켜짐", Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID),
+                "휴대폰 설정에서 ‘근무 알람’ 알림이 꺼져 있어 알람 화면을 띄우지 못할 수 있어요.", "알람 알림 켜기",
+                Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
+            add(AlarmCheck("예비 소리 켜짐", Notifications.channelOn(context, Notifications.FALLBACK_CHANNEL_ID),
+                "알람 화면을 못 띄울 때 대신 울리는 ‘예비 소리’가 꺼져 있어요.", "예비 소리 켜기",
+                Fix.Open(channel(Notifications.FALLBACK_CHANNEL_ID))))
+        }
+        if (audio != null) add(AlarmCheck("알람 소리 크기", audio.getStreamVolume(android.media.AudioManager.STREAM_ALARM) > 0,
+            "휴대폰의 알람 소리가 0이라 울려도 들리지 않아요(진동만 와요).", "70%로 올리기", Fix.AlarmVolume))
+        if (Build.VERSION.SDK_INT >= 31) add(AlarmCheck("정확한 알람", container.alarmScheduler.canScheduleExact(),
+            "허용하지 않으면 알람이 몇 분 늦을 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))
+        if (Build.VERSION.SDK_INT >= 34) add(AlarmCheck("잠금 화면 알람", Notifications.canUseFullScreen(context),
+            "허용하면 화면이 꺼져 있어도 알람 화면이 바로 떠요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))))
+        // [ALRM-07] 1.25 AB: the other reasons a ringing screen does not show on the lock screen.
+        if (Notifications.canPost(context) && Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
+            val trouble = Notifications.alarmChannelTrouble(context)
+            add(AlarmCheck("잠금 화면에 알람 보이기", trouble == null,
+                (trouble ?: "‘근무 알람’ 알림이 조용히·숨김으로 바뀌면 알람 화면이 안 떠요") + ". ‘긴급’(소리와 팝업)·잠금 화면 ‘표시’로 바꿔 주세요.",
+                "알람 알림 설정 열기", Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
+        }
+        if (Notifications.dndBlocksAlarms(context)) add(AlarmCheck("방해 금지", false,
+            "‘완전히 무음’ 방해 금지가 켜져 있어 알람도 울리지 않아요. 알람은 허용하는 방해 금지로 바꿔 주세요.", "방해 금지 설정 열기",
+            Fix.OpenFirst(listOf(Intent(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS), Intent(Settings.ACTION_SETTINGS)))))
+        if (Notifications.makerLockScreenPermission()) add(AlarmCheck("제조사 잠금 화면 표시", null,
+            "이 휴대폰은 ‘잠금 화면에 표시’·‘백그라운드에서 팝업 창 표시’ 권한이 따로 있어요. 앱 정보 › 권한(기타 권한)에서 둘 다 허용해 주세요.",
+            "앱 정보 열기", Fix.Open(details)))
+        // [ALRM-01] R10, [ALRM-15] 1.31 R9: the phone's list of apps (no permission to ask for), the app's page as a fallback.
+        add(AlarmCheck("배터리 최적화 제외", power?.isIgnoringBatteryOptimizations(context.packageName) == true,
+            "밤낮을 배터리 최적화에서 빼면 오래 안 써도 알람이 늦지 않아요. 여는 목록에서 ‘모든 앱’을 고른 뒤 밤낮을 눌러 ‘최적화 안 함’(또는 ‘제한 없음’)으로 바꿔 주세요.",
+            "설정 열기",
+            Fix.OpenFirst(listOf(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS), details))))
+        if (power?.isPowerSaveMode == true) add(AlarmCheck("절전 모드", false,
+            "절전 모드가 켜져 있어 휴대폰이 앱을 더 자주 멈춰요. 알람은 울리지만 늦을 수 있어요.", "절전 설정 열기",
+            Fix.Open(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS))))
+        // [ALRM-01] M 4-1: the system's standby bucket; RARE and RESTRICTED hold alarms back.
+        if (Build.VERSION.SDK_INT >= 28) {
+            val bucket = context.getSystemService(android.app.usage.UsageStatsManager::class.java)?.appStandbyBucket
+            if (bucket != null) add(AlarmCheck("앱 대기 상태", bucket < android.app.usage.UsageStatsManager.STANDBY_BUCKET_RARE,
+                "휴대폰이 밤낮을 ‘드물게 쓰는 앱’으로 분류했어요. 앱을 한 번 열고, 배터리 최적화에서 빼 주세요.", "앱 정보 열기", Fix.Open(details)))
+        }
+        if (Build.VERSION.SDK_INT >= 28) add(AlarmCheck("백그라운드 제한 없음", am?.isBackgroundRestricted != true,
+            "제한되어 있으면 알람이 늦거나 울리지 않을 수 있어요.", "앱 정보 열기", Fix.Open(details)))
+        if (settings.alarmsEnabled && container.alarmScheduler.upcoming.value != null) add(AlarmCheck("다음 알람 등록",
+            container.alarmScheduler.systemHolds(), "휴대폰이 알람을 잃어버렸으면 다시 걸어요.", "다시 걸기", Fix.Repair))
+        // Samsung's 절전 앱 list puts apps to sleep that the system's own setting allows.
+        // [ALRM-01] R10: Samsung's own battery screen first, where 절전 예외 앱 is.
+        if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) add(AlarmCheck("삼성 절전 예외", null,
+            "설정 › 배터리 › 백그라운드 사용 한도에서 '절전 예외 앱'에 밤낮을 넣고, '사용하지 않는 앱을 절전 상태로 전환'을 꺼 주세요.",
+            "배터리 설정 열기", Fix.OpenFirst(listOf(
+                Intent("com.samsung.android.sm.ACTION_BATTERY"),
+                Intent().setClassName("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity"),
+                Intent(Settings.ACTION_SETTINGS),
+            ))))
+    }
+}
+
 class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
     val upcoming = container.alarmScheduler.upcoming
     val snoozeAt = container.alarmScheduler.snoozeAt
@@ -165,78 +242,7 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
      * [REL-13] The things an alarm needs, each with whether it is fine now and how to fix it.
      * Shown first so a user can put everything right without reading the log.
      */
-    fun checks(context: Context): List<AlarmCheck> {
-        val settings = container.settingsRepository.current
-        val power = context.getSystemService(PowerManager::class.java)
-        val am = context.getSystemService(ActivityManager::class.java)
-        val pkg = Uri.parse("package:${context.packageName}")
-        val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg)
-        val audio = context.getSystemService(android.media.AudioManager::class.java)
-        val channel = { id: String -> Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
-            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName).putExtra(Settings.EXTRA_CHANNEL_ID, id) }
-        return buildList {
-            add(AlarmCheck("알람 사용", settings.alarmsEnabled, "꺼져 있으면 근무 알람이 하나도 울리지 않아요.", "켜기", Fix.TurnOn))
-            // [ALRM-01] R11: without it the alarm still rings, but its buttons and 일어났나요? cannot show.
-            add(AlarmCheck("알림 허용", Notifications.canPost(context),
-                "꺼져 있으면 알람이 울려도 끄기·다시 울림 버튼이 안 보이고, ‘일어났나요?’도 묻지 못해 건너뛰어요.", "알림 설정 열기",
-                Fix.Open(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))))
-            // [ALRM-01] R10: the alarm's channels can be turned off one by one in the system settings.
-            if (Notifications.canPost(context)) {
-                add(AlarmCheck("알람 알림 켜짐", Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID),
-                    "휴대폰 설정에서 ‘근무 알람’ 알림이 꺼져 있어 알람 화면을 띄우지 못할 수 있어요.", "알람 알림 켜기",
-                    Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
-                add(AlarmCheck("예비 소리 켜짐", Notifications.channelOn(context, Notifications.FALLBACK_CHANNEL_ID),
-                    "알람 화면을 못 띄울 때 대신 울리는 ‘예비 소리’가 꺼져 있어요.", "예비 소리 켜기",
-                    Fix.Open(channel(Notifications.FALLBACK_CHANNEL_ID))))
-            }
-            if (audio != null) add(AlarmCheck("알람 소리 크기", audio.getStreamVolume(android.media.AudioManager.STREAM_ALARM) > 0,
-                "휴대폰의 알람 소리가 0이라 울려도 들리지 않아요(진동만 와요).", "70%로 올리기", Fix.AlarmVolume))
-            if (Build.VERSION.SDK_INT >= 31) add(AlarmCheck("정확한 알람", container.alarmScheduler.canScheduleExact(),
-                "허용하지 않으면 알람이 몇 분 늦을 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))
-            if (Build.VERSION.SDK_INT >= 34) add(AlarmCheck("잠금 화면 알람", Notifications.canUseFullScreen(context),
-                "허용하면 화면이 꺼져 있어도 알람 화면이 바로 떠요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))))
-            // [ALRM-07] 1.25 AB: the other reasons a ringing screen does not show on the lock screen.
-            if (Notifications.canPost(context) && Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
-                val trouble = Notifications.alarmChannelTrouble(context)
-                add(AlarmCheck("잠금 화면에 알람 보이기", trouble == null,
-                    (trouble ?: "‘근무 알람’ 알림이 조용히·숨김으로 바뀌면 알람 화면이 안 떠요") + ". ‘긴급’(소리와 팝업)·잠금 화면 ‘표시’로 바꿔 주세요.",
-                    "알람 알림 설정 열기", Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
-            }
-            if (Notifications.dndBlocksAlarms(context)) add(AlarmCheck("방해 금지", false,
-                "‘완전히 무음’ 방해 금지가 켜져 있어 알람도 울리지 않아요. 알람은 허용하는 방해 금지로 바꿔 주세요.", "방해 금지 설정 열기",
-                Fix.OpenFirst(listOf(Intent(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS), Intent(Settings.ACTION_SETTINGS)))))
-            if (Notifications.makerLockScreenPermission()) add(AlarmCheck("제조사 잠금 화면 표시", null,
-                "이 휴대폰은 ‘잠금 화면에 표시’·‘백그라운드에서 팝업 창 표시’ 권한이 따로 있어요. 앱 정보 › 권한(기타 권한)에서 둘 다 허용해 주세요.",
-                "앱 정보 열기", Fix.Open(details)))
-            // [ALRM-01] R10, [ALRM-15] 1.31 R9: the phone's list of apps (no permission to ask for), the app's page as a fallback.
-            add(AlarmCheck("배터리 최적화 제외", power?.isIgnoringBatteryOptimizations(context.packageName) == true,
-                "밤낮을 배터리 최적화에서 빼면 오래 안 써도 알람이 늦지 않아요. 여는 목록에서 ‘모든 앱’을 고른 뒤 밤낮을 눌러 ‘최적화 안 함’(또는 ‘제한 없음’)으로 바꿔 주세요.",
-                "설정 열기",
-                Fix.OpenFirst(listOf(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS), details))))
-            if (power?.isPowerSaveMode == true) add(AlarmCheck("절전 모드", false,
-                "절전 모드가 켜져 있어 휴대폰이 앱을 더 자주 멈춰요. 알람은 울리지만 늦을 수 있어요.", "절전 설정 열기",
-                Fix.Open(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS))))
-            // [ALRM-01] M 4-1: the system's standby bucket; RARE and RESTRICTED hold alarms back.
-            if (Build.VERSION.SDK_INT >= 28) {
-                val bucket = context.getSystemService(android.app.usage.UsageStatsManager::class.java)?.appStandbyBucket
-                if (bucket != null) add(AlarmCheck("앱 대기 상태", bucket < android.app.usage.UsageStatsManager.STANDBY_BUCKET_RARE,
-                    "휴대폰이 밤낮을 ‘드물게 쓰는 앱’으로 분류했어요. 앱을 한 번 열고, 배터리 최적화에서 빼 주세요.", "앱 정보 열기", Fix.Open(details)))
-            }
-            if (Build.VERSION.SDK_INT >= 28) add(AlarmCheck("백그라운드 제한 없음", am?.isBackgroundRestricted != true,
-                "제한되어 있으면 알람이 늦거나 울리지 않을 수 있어요.", "앱 정보 열기", Fix.Open(details)))
-            if (settings.alarmsEnabled && container.alarmScheduler.upcoming.value != null) add(AlarmCheck("다음 알람 등록",
-                container.alarmScheduler.systemHolds(), "휴대폰이 알람을 잃어버렸으면 다시 걸어요.", "다시 걸기", Fix.Repair))
-            // Samsung's 절전 앱 list puts apps to sleep that the system's own setting allows.
-            // [ALRM-01] R10: Samsung's own battery screen first, where 절전 예외 앱 is.
-            if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) add(AlarmCheck("삼성 절전 예외", null,
-                "설정 › 배터리 › 백그라운드 사용 한도에서 '절전 예외 앱'에 밤낮을 넣고, '사용하지 않는 앱을 절전 상태로 전환'을 꺼 주세요.",
-                "배터리 설정 열기", Fix.OpenFirst(listOf(
-                    Intent("com.samsung.android.sm.ACTION_BATTERY"),
-                    Intent().setClassName("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity"),
-                    Intent(Settings.ACTION_SETTINGS),
-                ))))
-        }
-    }
+    fun checks(context: Context): List<AlarmCheck> = alarmChecks(container, context)
 
     fun turnOnAlarms() {
         container.settingsRepository.update { it.copy(alarmsEnabled = true) }
@@ -616,6 +622,24 @@ internal fun openFirst(context: Context, intents: List<Intent>) {
         if (ok) return
     }
     SystemSettings.open(context, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+}
+
+/** [EASE-21] One check's fix, from the card on top of 설정 › 알람 (the diagnostics screen does the same through its model). */
+internal fun applyAlarmFix(container: AppContainer, context: Context, fix: Fix, where: String) {
+    when (fix) {
+        Fix.TurnOn -> {
+            container.settingsRepository.update { it.copy(alarmsEnabled = true) }
+            container.telemetry.event("alarms_switch", "on $where")
+        }
+        Fix.Repair -> container.verifyAlarms()
+        is Fix.Open -> SystemSettings.open(context, fix.intent)
+        is Fix.OpenFirst -> openFirst(context, fix.intents)
+        Fix.AlarmVolume -> {
+            val audio = context.getSystemService(android.media.AudioManager::class.java) ?: return
+            val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_ALARM)
+            runCatching { audio.setStreamVolume(android.media.AudioManager.STREAM_ALARM, (max * 0.7).toInt().coerceAtLeast(1), 0) }
+        }
+    }
 }
 
 /** [ALRM-01] I21 지난 7일 알람 성적표, with what to do about an alarm that may have been missed. */

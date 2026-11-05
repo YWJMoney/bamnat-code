@@ -66,7 +66,7 @@ data class PolicyCalendar(val versions: List<PolicyVersion>) {
             // [PRIV-05] 결정 D111: 3.2~3.8 brought forward to 정식 출시일; a phone installed before 3.9 that says no keeps 11-29.
             PolicyVersion(PolicyConsent.VERSION, PolicyConsent.POSTED, PolicyConsent.EFFECTIVE, PolicyConsent.HELD_UNTIL),
             // [SHR-31][SHR-32] 1.37: 근무표 링크의 테마·근무 설정 (1항); posted before 정식 출시, so it starts that day too (D111).
-            PolicyVersion(PolicyConsent.SHARE_LOOK_VERSION, PolicyConsent.SHARE_LOOK_POSTED, PolicyConsent.EFFECTIVE, PolicyConsent.SHARE_LOOK_HELD_UNTIL),
+            PolicyVersion(PolicyConsent.SHARE_LOOK_VERSION, PolicyConsent.SHARE_LOOK_POSTED, PolicyConsent.SHARE_LOOK_EFFECTIVE),
         ))
 
         /** "3.10" after "3.9": compared part by part as numbers. */

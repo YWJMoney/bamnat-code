@@ -730,7 +730,7 @@ class RecipeClient(
                 "offline" -> "인터넷에 연결되지 않았어요"
                 // 1.36 [SEC-10] The font's own words say a foundry that sells fonts made it.
                 "sold" -> "이 글꼴은 글꼴 안에 유료 글꼴 회사가 적혀 있어 나눌 수 없어요. OFL 같은 공개 글꼴만 함께 보낼 수 있어요"
-                "not_yet" -> "정식 출시일(11월 10일 예정)부터 쓸 수 있어요"
+                "not_yet" -> "정식 출시일부터 쓸 수 있어요"
                 "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
                 "name_like" -> "다른 분 레시피와 이름이 거의 같아요. 이름을 바꾸거나 그 레시피를 고쳐 만들어 주세요"
                 "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as CompanyException).retryAfter ?: 86_400).let { w ->

@@ -155,7 +155,9 @@ fun ShareDialog(
     val lookOpen = remember { ShareContent.lookInLink(container) }
     val kitFits = remember(style) { com.bamnat.core.recipe.ShareKit.kitFits(style) }
     val lookFrom = remember {
-        container.remoteConfig.config.value.calendar.of(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK_POLICY)?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" }
+        // 1.38: 3.11's date is not set until 1.38's release (a far placeholder), so no date is said until the owner sets it.
+        container.remoteConfig.config.value.calendar.of(com.bamnat.core.flags.FlagCatalog.SHARE_LOOK_POLICY)?.effective
+            ?.takeIf { it < com.bamnat.core.time.Today.date().plusYears(1) }?.let { "${it.monthValue}월 ${it.dayOfMonth}일" }
     }
     val setupFrom = remember {
         container.remoteConfig.config.value.calendar.of(com.bamnat.core.ops.PolicyConsent.VERSION)?.effective?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: "정식 출시일"
