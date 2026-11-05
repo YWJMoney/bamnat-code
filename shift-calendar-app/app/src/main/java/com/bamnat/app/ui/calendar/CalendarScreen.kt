@@ -1468,7 +1468,11 @@ fun CalendarScreen(
                 // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
                 val stamping = mark != null || (paint != null && paint != PaintTool.Pick)
                 val memoCounts = remember(datedMemos) { datedMemos.groupingBy { it.date!! }.eachCount() }
-                androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.logic.LocalDayFacts provides dayFacts) {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    com.bamnat.app.logic.LocalDayFacts provides dayFacts,
+                    // [CYC-04] 1.38 업종 기념일.
+                    LocalOrgDayGroup provides orgGroupOf(settings),
+                ) {
                 HorizontalPager(
                     state = pagerState,
                     // [CAL-08] The list is as tall as its month; the grid is always six weeks.

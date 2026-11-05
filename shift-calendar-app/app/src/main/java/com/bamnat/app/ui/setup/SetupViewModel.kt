@@ -369,6 +369,8 @@ class SetupViewModel(
      * the 근무형태 key for a first provider's row.
      */
     fun pickPublic(cycle: PublicCycle, codes: String) {
+        // [CYC-04] 1.38 업종 기념일.
+        com.bamnat.app.ui.calendar.rememberOrgGroup(c.settingsRepository, cycle)
         val text = PublicCycleFiles.text(cycle, codes)
         val roster = if (current.style == WorkStyle.SHIFT) cycle.roster else null
         useShared(SetupSource(SetupSource.Kind.PUBLIC, text, id = cycle.id, name = cycle.company, dept = cycle.formKey), text, roster)

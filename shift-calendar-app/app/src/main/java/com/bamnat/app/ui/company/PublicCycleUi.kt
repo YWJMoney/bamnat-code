@@ -153,25 +153,35 @@ fun PublicCycleSection(
     limit: Int = 8,
     browse: Boolean = false,
     title: Boolean = true,
+    /** [CYC-09] '우리 회사 근무표 올리기' at the end of the list. */
+    upload: Boolean = true,
 ) {
     var form by rememberSaveable { mutableStateOf<String?>(null) }
-    var industry by rememberSaveable { mutableStateOf<String?>(null) }
+    // [CYC-09] 1.38: an 업종 묶음 (소방, 병원·요양…) in place of the 70 raw 업종 words.
+    var group by rememberSaveable { mutableStateOf<String?>(null) }
     var more by rememberSaveable(query) { mutableStateOf(false) }
     var open by remember { mutableStateOf<PublicCycle?>(null) }
-    val hits = remember(query, form, industry) { PublicCycles.search(query, industry, form) }
+    var uploading by rememberSaveable { mutableStateOf(false) }
+    val hits = remember(query, form, group) { PublicCycles.search(query, form = form, group = group) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (browse && query.trim().length < 2) {
             Text("근무형태로 찾기", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 PublicCycles.forms.take(6).forEach { (key, name) ->
-                    FilterChip(selected = form == key, onClick = { form = if (form == key) null else key; industry = null }, label = { Text(name) })
+                    FilterChip(selected = form == key, onClick = { form = if (form == key) null else key; group = null }, label = { Text(name) })
                 }
             }
             Text("업종으로 찾기", style = MaterialTheme.typography.titleSmall)
+            val groups = remember { com.bamnat.core.plaza.IndustryGroups.counts(PublicCycles.all) }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                PublicCycles.industries.take(8).forEach { i ->
-                    FilterChip(selected = industry == i, onClick = { industry = if (industry == i) null else i; form = null }, label = { Text(i) })
+                groups.forEach { (g, n) ->
+                    FilterChip(selected = group == g.key, onClick = { group = if (group == g.key) null else g.key; form = null },
+                        label = { Text("${g.name} $n") })
                 }
+            }
+            // [CYC-09] One line on how the picked 업종's work usually goes.
+            com.bamnat.core.plaza.IndustryGroups.byKey(group)?.let { g ->
+                Text(g.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (hits.isNotEmpty()) {
@@ -187,6 +197,20 @@ fun PublicCycleSection(
             val shown = if (more) hits else hits.take(limit)
             shown.forEach { c -> PublicCycleCard(c, onClick = { open = c }) }
             if (hits.size > shown.size) TextButton(onClick = { more = true }) { Text("공개 자료 ${hits.size - shown.size}곳 더 보기") }
+        }
+        // [CYC-09][CYC-03] 1.38: always at the end of the list, the way to add one's own company when it is not here (or wrong).
+        if (upload && (browse || hits.isNotEmpty())) {
+            OutlinedButton(onClick = { uploading = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Icon(Icons.Filled.Edit, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("우리 회사 근무표 올리기")
+            }
+        }
+    }
+    if (uploading) {
+        UploadCycleDialog(query.trim(), onDismiss = { uploading = false }) { name, formKey ->
+            uploading = false
+            open = PublicCycles.provided(name, formKey)
         }
     }
     open?.let { c ->
@@ -325,6 +349,8 @@ fun PublicApplySheet(
                             runCatching { PublicCycleFiles.apply(c, cycle, codes, if (needsToday) today else null, calendar) }
                                 .onSuccess {
                                     done = true
+                                    // [CYC-04] 1.38 업종 기념일.
+                                    com.bamnat.app.ui.calendar.rememberOrgGroup(c.settingsRepository, cycle)
                                     // [PLAZA-14] 1.27 AH: once, "이 정보를 다른 사람이 사용해도 될까요?" (AH-D6).
                                     c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar))
                                 }
@@ -583,4 +609,38 @@ internal fun CompanyPayOffer(company: String, onPay: () -> Unit, calendar: Strin
     }
     TextButton(onClick = { declined = true }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("아니요, 근무주기만") }
     return true
+}
+
+/**
+ * [CYC-03][CYC-09] 1.38 우리 회사 근무표 올리기: the company's name and its 근무형태, then the same sheet as a public row (order
+ * picked or made day by day, today in the cycle). Once it is on the calendar the plaza asks once whether others may use it
+ * ([com.bamnat.app.company.LeadShare]: only shifts, times and order, no name or pay); a yes reaches the admin app's 검토
+ * (제보), where a checked one can become a row of the public table ("공개 표 줄 만들기").
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun UploadCycleDialog(initial: String, onDismiss: () -> Unit, onNext: (name: String, formKey: String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf(initial) }
+    var form by rememberSaveable { mutableStateOf<String?>(null) }
+    val ok = PublicCycles.norm(name).length >= 2 && form != null
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("우리 회사 근무표 올리기") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("근무 순서와 시간만 넣어요. 이름·급여는 보내지 않고, 다른 분이 써도 되는지는 달력에 넣은 뒤 한 번 물어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                androidx.compose.material3.OutlinedTextField(name, { name = it.take(40) }, label = { Text("회사·기관 이름") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                Text("어떤 근무형태예요?", style = MaterialTheme.typography.titleSmall)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    PublicCycles.PROVIDE_FORMS.forEach { key ->
+                        FilterChip(selected = form == key, onClick = { form = key }, label = { Text(PublicCycles.formName(key)) })
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { form?.let { onNext(name.trim(), it) } }, enabled = ok) { Text("순서 넣기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }

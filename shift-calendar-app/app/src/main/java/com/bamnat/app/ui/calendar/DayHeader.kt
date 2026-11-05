@@ -276,11 +276,14 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
     val sales = dayBook.sales?.takeIf { it.sales != 0L || it.costs != 0L }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         val holiday = KoreanHolidays.nameOf(day.date)
-        if (settings.showLunar || holiday != null) {
+        // [CYC-04] 1.38 업종 기념일, in the accent colour (not a day off).
+        val orgDay = orgDayName(orgGroupOf(settings), day.date, holiday)
+        if (settings.showLunar || holiday != null || orgDay != null) {
             Row {
                 if (holiday != null) Text(holiday, style = MaterialTheme.typography.labelLarge, color = cal.sunday)
+                if (orgDay != null) Text(orgDay, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 if (settings.showLunar) {
-                    if (holiday != null) Spacer(Modifier.width(8.dp))
+                    if (holiday != null || orgDay != null) Spacer(Modifier.width(8.dp))
                     Text(KoreanLunar.fromSolar(day.date).label, style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
