@@ -1294,6 +1294,53 @@ export function adminLib() {
   }
   // ---- AX 1.30 끝 ----
 
+  // ---- 1.38 [CYC-03] 근무표 제보 → 공개 근무주기 표 한 줄 ----
+
+  /**
+   * [CYC-03] A 제보 group of 검토 (its company, 부서 and the setup in words, describe()) as one line of
+   * tools/data/company-cycles.csv: the order in codes after "순서:" (D 주간 · E 오후 · N 야간 · X 당번 · B 비번 · O 쉼), the
+   * shifts' times, the 근무형태 worked out from the order (조 = 주기 일수 × 교대 수 ÷ 근무 일수), and 신뢰도 '밤낮 제보'. 업종
+   * is left for the admin to fill in. No name, no pay: only what the 근무·순서 lines say. Null when the setup has no order.
+   */
+  function cycleCsvRow(g, now = new Date()) {
+    const line = (label) => (g.lines ?? []).find(([l]) => l === label || l.startsWith(label + " "))?.[1] ?? "";
+    const shifts = line("근무").split(" · ").map((t) => {
+      const m = t.match(/^(.+?)(?:\(쉬는 날\)| (\d{1,2}:\d{2})~(\d{1,2}:\d{2}))/);
+      return m ? { name: m[1].trim(), off: !m[2], start: m[2], end: m[3] } : { name: t.trim(), off: true };
+    });
+    const steps = line("순서").replace(/빈 날/g, "빈날").split(" ").filter(Boolean);
+    if (!steps.length) return null;
+    const byName = (n) => shifts.find((s) => s.name === n);
+    const codeOf = (n) => {
+      const s = byName(n);
+      if (n === "빈날" || !s || s.off) return /^비/.test(n) ? "B" : "O";
+      const span = s.start && s.end ? ((+s.end.slice(0, 2) * 60 + +s.end.slice(-2)) - (+s.start.slice(0, 2) * 60 + +s.start.slice(-2)) + 1440) % 1440 : 0;
+      if (/^당/.test(n) || (s.start && (span === 0 || span >= 1200))) return "X";
+      if (/^(주|데이|오전|D)/i.test(n)) return "D";
+      if (/^(오후|이브|E)/i.test(n)) return "E";
+      if (/^(야|나이트|N)/i.test(n)) return "N";
+      const h = +(s.start ?? "09").slice(0, 2);
+      return h >= 4 && h <= 11 ? "D" : h >= 12 && h <= 17 ? "E" : "N";
+    };
+    const codes = steps.map(codeOf).join("");
+    const kinds = [...new Set(codes.replace(/[BO]/g, ""))];
+    const work = codes.replace(/[BO]/g, "").length;
+    const teams = work ? (codes.length * kinds.length) / work : 0;
+    const shiftsPerDay = kinds.includes("X") ? 1 : kinds.length;
+    const form = Number.isInteger(teams) && teams >= 2 && teams <= 6 ? (kinds.includes("X") && teams === 2 ? "격일제" : `${teams}조${shiftsPerDay}교대`) : "그 밖의 교대";
+    const label = { D: "주", E: "오후", N: "야", X: "당" };
+    const time = kinds.map((k) => {
+      const s = shifts.find((x) => !x.off && codeOf(x.name) === k);
+      return s?.start ? `${label[k]} ${s.start}-${s.end}` : "";
+    }).filter(Boolean).join(" / ");
+    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const site = g.dept || "현장";
+    const company = g.company?.name ?? "";
+    const cell = (v) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    return [`${company} [${site}] · (업종)`, company, "(업종)", site, form, `순서:${codes}`, time, `${ym} 밤낮 제보`, "밤낮 제보 (관리자 확인)", "", "", ""]
+      .map(cell).join(",");
+  }
+
   return {
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
@@ -1306,5 +1353,7 @@ export function adminLib() {
     inquiryCopyText, copyDevItem, copyTitle, sameGroups, kstTime, COPY_KINDS,
     // AX 1.30 [ADMX-01][ADMX-02][ADMX-03][ADMX-07]
     ACTION_NAMES, actionName, change, spark, tokenHtml, compareRows, trendTone,
+    // 1.38 [CYC-03]
+    cycleCsvRow,
   };
 }

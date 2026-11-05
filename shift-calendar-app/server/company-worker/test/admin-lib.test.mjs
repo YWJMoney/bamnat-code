@@ -380,3 +380,15 @@ test("[ADMX-01][ADMX-12] the stylesheet no longer hides the numbers on a phone, 
   const app = await adminFile("/admin/app.js").text();
   for (const f of ["todayViews", "plazaViews", "insightViews"]) assert.ok(app.includes(`function ${f}(A)`), f);
 });
+
+test("[CYC-03] a 제보 with an order becomes one line of the public cycle table", () => {
+  const g = { company: { name: "예시물산" }, dept: "2공장", lines: [["근무", "주간 07:00~19:00 휴게 60분 · 야간 19:00~07:00 · 휴무(쉬는 날)"], ["순서 4일", "주간 야간 빈 날 휴무"]] };
+  assert.equal(L.cycleCsvRow(g, new Date(2026, 10, 6)),
+    "예시물산 [2공장] · (업종),예시물산,(업종),2공장,4조2교대,순서:DNOO,주 07:00-19:00 / 야 19:00-07:00,2026-11 밤낮 제보,밤낮 제보 (관리자 확인),,,");
+  const duty = { company: { name: "가" }, lines: [["근무", "당번 09:00~09:00 · 비번(쉬는 날) · 휴무(쉬는 날)"], ["순서 3일", "당번 비번 휴무"]] };
+  assert.match(L.cycleCsvRow(duty), /,3조1교대,순서:XBO,당 09:00-09:00,/);
+  const six = { company: { name: "다, 주식회사" }, lines: [["근무", "주간 06:00~14:00 · 오후 14:00~22:00 · 야간 22:00~06:00 · 휴무(쉬는 날)"], ["순서 8일", "주간 주간 오후 오후 야간 야간 휴무 휴무"]] };
+  assert.match(L.cycleCsvRow(six), /^"다, 주식회사 \[현장\] · \(업종\)","다, 주식회사",.*,4조3교대,순서:DDEENNOO,주 06:00-14:00 \/ 오후 14:00-22:00 \/ 야 22:00-06:00,/);
+  // No order (a monthly roster or weekdays only): nothing to copy.
+  assert.equal(L.cycleCsvRow({ company: { name: "나" }, lines: [["근무", "주간 06:00~14:00"]] }), null);
+});

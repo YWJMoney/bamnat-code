@@ -18,7 +18,15 @@ enum class CycleTrust(val label: String, val note: String) {
     LABOR("노무사이트", "노무 사이트의 교대 코드표예요"),
     COMMUNITY("커뮤니티", "한 사람의 답변이라 확인 중으로만 봐요"),
     UNION("노조 게시판", "노조 게시판 글이에요"),
+    /** [CYC-03] 1.38: a 밤낮 user sent their own roster (이름 없이) and the admin app checked it before it joined the table. */
+    REPORT("밤낮 제보", "밤낮 사용자가 보낸 근무표를 관리자가 확인했어요"),
 }
+
+/**
+ * [CYC-06] 1.38 (갈래 4와 맞춘 칸): one team of a row (1조·A조…), in the order the teams follow each other through the cycle,
+ * and [anchor], the day it is on the order's first day, only when a public source says it.
+ */
+data class CycleTeam(val name: String, val anchor: java.time.LocalDate? = null)
 
 /**
  * [SPAT-01] How sure the order is: [EXACT] the source spells it, [USUAL] the source gives a count (6근2휴, 2근2휴) and
@@ -88,7 +96,12 @@ data class PublicCycle(
     val weekly: Boolean,
     val roster: Boolean,
     val shifts: List<CycleShift>,
+    /** [CYC-06] The teams in the order they follow each other through the cycle (1조·2조…); empty when unknown. */
+    val teams: List<CycleTeam> = emptyList(),
 ) {
+    /** [CYC-07] The 업종 묶음 this row is listed under. */
+    val group: IndustryGroups.Group get() = IndustryGroups.of(industry)
+
     val hasOrder: Boolean get() = codes.isNotEmpty()
 
     val formName: String get() = PublicCycles.formName(formKey)
@@ -210,6 +223,9 @@ object PublicCycles {
             orderState = when (o.strOr("orderState", "none")) { "exact" -> OrderState.EXACT; "usual" -> OrderState.USUAL; else -> OrderState.NONE }
                 .let { if (codes.isEmpty()) OrderState.NONE else it },
             weekly = o.boolOr("weekly", false), roster = o.boolOr("roster", false), shifts = shifts,
+            teams = o.objs("teams").map { t ->
+                CycleTeam(t.str("name"), runCatching { java.time.LocalDate.parse(t.strOr("anchor", "")) }.getOrNull())
+            },
         )
     }
 
@@ -222,13 +238,16 @@ object PublicCycles {
      * [industry] and [form] when given. Best first: a name that starts with the query, then one that has it, then the rest.
      * Two letters at least, as the company server asks; with only a chip picked, every row of it.
      */
-    fun search(query: String, industry: String? = null, form: String? = null, rows: List<PublicCycle> = all): List<PublicCycle> {
+    fun search(query: String, industry: String? = null, form: String? = null, rows: List<PublicCycle> = all, group: String? = null): List<PublicCycle> {
         val q = query.trim()
         // AS 1.29 [SRCH-12] The rows' words from the file's index (made once), not worked out again for every letter typed.
         val b = book
         val entries = if (rows === b.cycles) b.indexLazy.value else rows.map(::Entry)
-        val pool = entries.filter { (industry == null || it.c.industry == industry) && (form == null || it.c.formKey == form) }
-        if (norm(q).length < 2) return if (industry != null || form != null) pool.sortedBy { it.name }.map { it.c } else emptyList()
+        // [CYC-09] 1.38: or within an 업종 묶음 ([IndustryGroups]).
+        val pool = entries.filter {
+            (industry == null || it.c.industry == industry) && (form == null || it.c.formKey == form) && (group == null || it.c.group.key == group)
+        }
+        if (norm(q).length < 2) return if (industry != null || form != null || group != null) pool.sortedBy { it.name }.map { it.c } else emptyList()
         // "4조 2교대" is one thing when some row has it as one; "포스코 광양" two that must both be there.
         val whole = norm(q)
         val words = if (pool.any { e -> e.fields.any { whole in it } }) listOf(whole) else q.split(Regex("\\s+")).map(::norm).filter { it.isNotEmpty() }
@@ -270,7 +289,7 @@ object PublicCycles {
     fun provided(company: String, formKey: String): PublicCycle {
         val three = formKey in PublicCycle.THREE_FORMS
         val codes = when (formKey) {
-            "3조1교대", "격일제" -> listOf('X')
+            "3조1교대", "4조1교대", "격일제" -> listOf('X')
             "주간연속2교대" -> listOf('D', 'E')
             "고정" -> listOf('D')
             else -> if (three) listOf('D', 'E', 'N') else listOf('D', 'N')
@@ -283,5 +302,5 @@ object PublicCycles {
     }
 
     /** The forms a first provider picks from, in the order people most often work them. */
-    val PROVIDE_FORMS: List<String> = listOf("4조2교대", "3조2교대", "4조3교대", "3조3교대", "5조3교대", "2조2교대", "3조1교대", "격일제", "주간연속2교대", "고정")
+    val PROVIDE_FORMS: List<String> = listOf("4조2교대", "3조2교대", "4조3교대", "3조3교대", "5조3교대", "2조2교대", "3조1교대", "4조1교대", "격일제", "주간연속2교대", "고정")
 }

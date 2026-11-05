@@ -116,7 +116,8 @@ export function plazaViews(A) {
         <details data-key="${key}:lines"${S.opened.get(`${key}:lines`) ?? !g.changes ? " open" : ""}><summary>보낸 설정</summary>${lines(g.lines)}</details>
         <div class="actions start">
           ${can("community") && g.posts ? `<a class="btn small ghost" href="${href("community", groupKey(g))}">토론 ${g.posts}개 읽기</a>` : ""}
-          ${can("companies") ? `<a class="btn small ghost" href="${href("companies", g.company.id)}">회사 열기</a>` : ""}</div>
+          ${can("companies") ? `<a class="btn small ghost" href="${href("companies", g.company.id)}">회사 열기</a>` : ""}
+          ${L.cycleCsvRow(g) ? `<button class="btn small ghost" data-act="cycle-row" data-company="${g.company.id}" data-setup="${g.setup}" title="공개 근무주기 표(company-cycles.csv)에 넣을 한 줄을 복사해요. 업종을 채워 개발에 넘겨 주세요">공개 표 줄 복사</button>` : ""}</div>
       </div></details></li>`;
   }
 
@@ -241,6 +242,18 @@ export function plazaViews(A) {
   // ---- what these screens do ----
 
   const actions = {
+    // 1.38 [CYC-03] 근무표 제보 → 공개 근무주기 표 한 줄 (업종은 채워서 개발로).
+    "cycle-row": async ({ company, setup }) => {
+      const g = (S.data.queue?.groups ?? []).find((x) => String(x.company.id) === String(company) && String(x.setup) === String(setup));
+      const row = g && L.cycleCsvRow(g);
+      if (!row) return toast("순서가 없는 제보예요");
+      try {
+        await navigator.clipboard.writeText(row);
+        toast("공개 표 한 줄을 복사했어요. (업종)을 채워 개발에 넘겨 주세요");
+      } catch {
+        window.prompt("이 줄을 복사해 주세요", row);
+      }
+    },
     // [ADMX-09] 검토 여러 개 거절
     "review-pick-mode": () => {
       S.reviewPick = S.reviewPick ? null : new Set();
