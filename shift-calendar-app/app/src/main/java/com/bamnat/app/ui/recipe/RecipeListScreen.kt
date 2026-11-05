@@ -240,7 +240,9 @@ fun RecipeListScreen(
     // 사용자 2026-11-03 (마을 › 장터 스크롤): in 마을 the tab row already says 장터 and whose; the list starts right under it.
     val hubHeader = if (onBack == null) com.bamnat.app.ui.hub.LocalHubHeader.current else null
     val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
-    androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > 0) listState.animateScrollToItem(0) }
+    // [TOWN-11] 장터 tapped again (or opened from a 소식) also reads the list again, so a work just put up shows.
+    val reselectAt = remember { reselect }
+    androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > reselectAt) { vm.load(); listState.animateScrollToItem(0) } }
     // The 구간 and 정렬 chips stay at the top once the cards above them are gone, so another 구간 is one tap from anywhere in the list.
     val stickyAt = if (hubHeader != null) 2 else 1
     val pinned by remember(stickyAt) { derivedStateOf { listState.firstVisibleItemIndex >= stickyAt } }

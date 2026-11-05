@@ -581,6 +581,15 @@ internal suspend fun payTrial(c: AppContainer, text: String, setup: String, mont
  * [COMM-06] The talk on one rule set: its posts, writing one, taking one's own back and 신고. Shared by
  * the company screen and 회사 규칙 광장.
  */
+/**
+ * [TOWN-10] PC 확인 73f69cbd (광장 글 창을 열어 둔 채 소식 알림을 누르면 그 창이 다시 보이고 새 답이 안 보여요): one signal that
+ * closes every talk sheet on screen.
+ */
+object TalkSheets {
+    val closing = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    fun closeAll() { closing.tryEmit(Unit) }
+}
+
 class TalkHolder(
     private val c: AppContainer,
     private val scope: kotlinx.coroutines.CoroutineScope,
@@ -610,6 +619,9 @@ class TalkHolder(
 
     private val _open = MutableStateFlow<Open?>(null)
     val open: StateFlow<Open?> = _open.asStateFlow()
+
+    // [TOWN-10] A tapped 소식 closes any talk left open, so the place it opens is not hidden under the old sheet.
+    init { scope.launch { TalkSheets.closing.collect { close() } } }
 
     /**
      * PC 확인 41e73582 (처음 답글을 누르면 규칙 창·이름 카드를 거친 뒤 '○○에게 답글'이 풀려 새 글로 바뀌었어요): what is being written

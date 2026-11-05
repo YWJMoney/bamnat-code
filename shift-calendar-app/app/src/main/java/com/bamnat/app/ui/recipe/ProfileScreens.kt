@@ -1183,7 +1183,10 @@ class FollowingStripViewModel(private val c: AppContainer, private val style: Wo
 @Composable
 fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll: () -> Unit, onFind: (() -> Unit)? = null) {
     val s by vm.state.collectAsStateWithLifecycle()
-    LaunchedEffect(Unit) { vm.load() }
+    // [TOWN-11] Read again when 장터 is tapped again or opened from a 소식, so the ring on a new work shows at once.
+    val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
+    val reselectAt = remember { reselect }
+    LaunchedEffect(reselect) { vm.load(force = reselect > reselectAt) }
     if (!s.loaded) return
     Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
         if (s.following.isEmpty() && s.month.isNotEmpty()) Text("이달의 제작자", style = MaterialTheme.typography.labelLarge,
