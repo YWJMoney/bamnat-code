@@ -57,3 +57,20 @@ test("[STM-02] the operator puts materials in waiting, opens them with the app v
   await call("POST", "/api/admin/recipes/materials", { items: [items[1]] }, admin);
   assert.deepEqual((await call("GET", "/api/recipes/materials?app=52")).data.items.map((x) => x.id), [bg]);
 });
+
+test("[STM-10] 무료·광고 나누기: 묶음마다 모두 무료·모두 광고·앞쪽 3분의 1만 무료", async () => {
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  const items = [heart, thumb].map((b, i) => ({ kind: "icon", pack: "날씨", name: `날씨 ${i}`, ord: i, webp: b.toString("base64") }));
+  const ids = (await call("POST", "/api/admin/recipes/materials", { items }, admin)).data.ids;
+  const n = new Set(ids).size;
+  assert.equal(n, 2);
+  await call("POST", "/api/admin/recipes/materials/state", { state: "ok", all: true }, admin);
+  const third = await call("POST", "/api/admin/recipes/materials/free", { pack: "날씨", mode: "third" }, admin);
+  assert.deepEqual([third.data.free, third.data.paid], [Math.ceil(n / 3), n - Math.ceil(n / 3)]);
+  assert.equal((await call("GET", "/api/admin/recipes/materials", undefined, admin)).data.items.filter((x) => x.free).length, Math.ceil(n / 3));
+  assert.equal((await call("POST", "/api/admin/recipes/materials/free", { pack: "날씨", mode: "none" }, admin)).data.free, 0);
+  assert.equal((await call("POST", "/api/admin/recipes/materials/free", { pack: "날씨", mode: "all" }, admin)).data.paid, 0);
+  assert.equal((await call("POST", "/api/admin/recipes/materials/free", { pack: "날씨", mode: "some" }, admin)).status, 400);
+  assert.equal((await call("POST", "/api/admin/recipes/materials/free", { pack: "날씨", mode: "all" })).status, 403);
+});

@@ -727,6 +727,8 @@ function adminApp(L, BUILD, M) {
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         // 1.36 [MKS-01] 출시 대기 묶음.
         if (t === "waiting") jobs.push(api("/recipes/release").then(keep((d) => { S.data.recipeRelease = d; })).catch(() => {}));
+        // 1.38 [STM-10] 밤낮 재료(스튜디오 색 아이콘·배경) 묶음도 출시 대기에서.
+        if (t === "waiting") jobs.push(api("/recipes/materials").then(keep((d) => { S.data.materials = d; })).catch(() => {}));
         if (S.recipeLog) jobs.push(api("/recipes/actions").then(keep((d) => { S.data.recipeLog = d; })).catch(() => {}));
       }
       // [ADMIN-19] 알림 on this device, now under 관리 › 내 계정·이 기기.
@@ -2428,7 +2430,7 @@ function adminApp(L, BUILD, M) {
           ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
           <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
       : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
-    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) : "";
+    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit) : "";
     const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
       <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
       <textarea name="recipe" rows="8" required></textarea>
@@ -2459,6 +2461,33 @@ function adminApp(L, BUILD, M) {
       <label>이 앱 판부터 보이기 (versionCode, 비우면 모든 앱) <input name="minApp" inputmode="numeric" pattern="[0-9]*" maxlength="6"></label>
       <label class="switch"><input type="checkbox" name="replace"${on ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>같은 이름의 운영자 작품은 새 판으로 고치기 (다시 넣어도 두 개가 되지 않아요)</span></label>
       <p class="hint">파일 안의 항목에 hold·batch·minApp·replace가 있으면 그것이 먼저예요.</p></fieldset>`;
+  }
+
+  /** 1.38 [STM-10] 밤낮 재료 묶음: 몇 개·공개 상태·무료 수, 공개·숨기기, 무료·광고 나누기(광고로 연 묶음은 30일, 프로는 모두). */
+  function materialsView(d, edit) {
+    if (!d) return "";
+    if (!d.items.length) return `<h3>밤낮 재료</h3><p class="hint">넣은 재료가 없어요. tools/materials-seed.mjs로 넣어요.</p>`;
+    const packs = new Map();
+    for (const m of d.items) {
+      const p = packs.get(m.pack) ?? { kind: m.kind, n: 0, ok: 0, waiting: 0, hidden: 0, free: 0 };
+      p.n++; p[m.state] = (p[m.state] ?? 0) + 1; if (m.free) p.free++;
+      packs.set(m.pack, p);
+    }
+    const c = d.counts ?? {};
+    const freeOf = (p) => (p.free === p.n ? "all" : p.free === 0 ? "none" : "third");
+    const row = ([name, p]) => `<li><form data-form="material-free" data-key="${esc(name)}" class="row"><span class="row-main"><b>${esc(name)}</b>
+        <small>${p.n}개 · 공개 ${p.ok}${p.waiting ? ` · 대기 ${p.waiting}` : ""}${p.hidden ? ` · 숨김 ${p.hidden}` : ""} · 무료 ${p.free}</small></span>
+        ${edit ? `<span class="row-side inline"><select name="mode" style="width:auto" aria-label="${esc(name)} 무료·광고">${[["all", "모두 무료"], ["third", "3분의 1 무료"], ["none", "모두 광고·프로"]]
+          .map(([k, l]) => `<option value="${k}"${freeOf(p) === k ? " selected" : ""}>${l}</option>`).join("")}</select>
+          <button class="btn small" type="submit">바꾸기</button>
+          ${p.ok < p.n ? `<button class="btn small primary" type="button" data-act="material-state" data-id="${esc(name)}" data-key="ok">공개</button>`
+            : `<button class="btn small" type="button" data-act="material-state" data-id="${esc(name)}" data-key="hidden">숨기기</button>`}</span>` : ""}</form></li>`;
+    const group = (kind, label) => {
+      const list = [...packs].filter(([, p]) => p.kind === kind);
+      return list.length ? `<details data-key="materials-${kind}"><summary>${label} ${list.length}묶음 · ${list.reduce((n, [, p]) => n + p.n, 0)}개</summary><ul class="rows">${list.map(row).join("")}</ul></details>` : "";
+    };
+    return `<h3>밤낮 재료</h3><p class="hint">공개 ${c.ok ?? 0} · 대기 ${c.waiting ?? 0} · 숨김 ${c.hidden ?? 0}. 스튜디오 › 꾸밈 › 넣기의 ‘밤낮 재료’ 칸이에요. 무료가 아닌 재료는 광고 한 편으로 그 묶음을 30일 열거나 프로로 모두 써요.</p>
+      ${group("icon", "색 아이콘")}${group("bg", "배경")}`;
   }
 
   /** 1.36 [MKS-01] 출시 대기 묶음: 몇 개, 예약, 지금 공개. */
@@ -4805,6 +4834,11 @@ function adminApp(L, BUILD, M) {
       await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
       load();
     }),
+    // 1.38 [STM-10] 밤낮 재료 묶음: 공개·숨기기, 무료·광고 나누기.
+    "material-state": async ({ id, key }) => {
+      await act(() => api("/recipes/materials/state", "POST", { state: key, pack: id }), key === "ok" ? `‘${id}’ 묶음을 공개했어요` : `‘${id}’ 묶음을 숨겼어요`);
+      load();
+    },
     "recipe-do": async ({ id, key }) => {
       await act(() => api(`/recipes/${id}/${key}`, "POST", {}), { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요" }[key] ?? "했어요");
       load();
@@ -5028,6 +5062,12 @@ function adminApp(L, BUILD, M) {
       load();
     },
     // [RCX-08]
+    // 1.38 [STM-10] 밤낮 재료 묶음의 무료·광고 나누기.
+    "material-free": async (form) => {
+      const mode = String(new FormData(form).get("mode") ?? "");
+      await act(() => api("/recipes/materials/free", "POST", { pack: form.dataset.key, mode }), (r) => `무료 ${r?.free ?? 0} · 광고·프로 ${r?.paid ?? 0}`);
+      load();
+    },
     "recipe-picks": async (form) => {
       const codes = String(new FormData(form).get("codes") ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean);
       await act(() => api("/recipes/picks", "POST", { style: form.dataset.key, codes }), codes.length ? `${codes.length}개 골랐어요` : "이번 주 고른 것을 비웠어요");

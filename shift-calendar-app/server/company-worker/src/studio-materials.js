@@ -107,6 +107,19 @@ export async function materialAdmin(d, request, env, path, url, now) {
     }
     return d.json({ ids: done }, 201);
   }
+  // 1.38 [STM-10] 무료·광고 나누기: 묶음마다 all(모두 무료)·none(모두 광고·프로)·third(앞쪽 3분의 1만 무료, 나머지 광고·프로).
+  if (path === "/recipes/materials/free" && method === "POST") {
+    const body = await d.readJson(request, 4 * 1024);
+    const pack = smText(body?.pack, MATERIAL_LIMITS.pack);
+    const mode = ["all", "none", "third"].includes(body?.mode) ? body.mode : null;
+    if (!pack || !mode) return d.json({ error: "which" }, 400);
+    const rows = await d.all(env, "SELECT id FROM studio_materials WHERE pack = ? ORDER BY ord, id", pack.trim());
+    const cut = mode === "all" ? rows.length : mode === "none" ? 0 : Math.ceil(rows.length / 3);
+    if (rows.length) {
+      await d.batch(env, rows.map((r, i) => d.stmt(env, "UPDATE studio_materials SET free = ? WHERE id = ?", i < cut ? 1 : 0, r.id)));
+    }
+    return d.json({ pack: pack.trim(), free: cut, paid: rows.length - cut });
+  }
   if (path === "/recipes/materials/state" && method === "POST") {
     const body = await d.readJson(request, 64 * 1024);
     const state = MATERIAL_STATES.includes(body?.state) ? body.state : null;
