@@ -104,6 +104,22 @@ async function seed() {
       await run("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
     }
   }
+  // 1.38 Phase 3 분석판: a few days of 팀·가게 events and made-up 팀·직원 요금제 purchases, so the card has something on it.
+  for (let i = 1; i <= 20; i++) {
+    const day = kst(Date.now() - i * 864e5);
+    for (const [event, n] of [["manage_open", 6], ["team_made", i % 4 === 0 ? 1 : 0], ["team_confirm", i % 3 === 0 ? 2 : 0], ["team_links", i % 3 === 0 ? 2 : 0],
+      ["ledger_closed", i % 7 === 0 ? 1 : 0], ["slip_sent", i % 7 === 0 ? 3 : 0], ["plan_view_team", 2], ["plan_view_staff", 1], ["plan_buy_tap", i % 2],
+      ["manage_hint_shown", 5], ["manage_hint_open", 1]]) {
+      if (n) await run("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.38.0', ?, ?, ?, ?)", day, event, n, n, n);
+    }
+  }
+  for (const [i, product, plan, trial, renew] of [[1, "bamnat_team", "c15-yearly", 1, 1], [2, "bamnat_team", "c15-monthly", 0, 1], [3, "bamnat_team", "c30-yearly", 0, 1],
+    [4, "bamnat_team", "c50-monthly", 0, 0], [5, "bamnat_staff", "c5-yearly", 0, 1], [6, "bamnat_staff", "c10-monthly", 0, 1]]) {
+    await run(`INSERT OR IGNORE INTO subs (hash, device, token, product, base_plan, state, expiry, trial, auto_renew, created_at, checked_at)
+      VALUES (?, ?, 'seed', ?, ?, 'ACTIVE', ?, ?, ?, ?, ?)`, `seed-sub-${i}`, `seed-device-s${i}`, product, plan, Date.now() + 20 * 864e5, trial, renew, Date.now() - i * 2 * 864e5, Date.now());
+  }
+  await run(`INSERT OR IGNORE INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at, product)
+    VALUES ('seed-pass-1', 'seed-device-p1', '', 'ACTIVE', ?, ?, ?, 'bamnat_team_pass_15')`, Date.now() - 5 * 864e5, Date.now(), Date.now());
   if (login.ok) await seedVersions(login.headers.get("set-cookie").split(";")[0], a);
   // [ADMUX-14] Four weeks of questions with their first answers and the askers' word, and the plaza spread over them.
   const kinds = ["bug", "question", "idea", "bug", "other"];

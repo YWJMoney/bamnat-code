@@ -207,6 +207,8 @@ data class AppSettings(
     val calendarLayout: String = "",
     /** [CUST-01] The same for the 근무·급여 (통계) page. */
     val statsLayout: String = "",
+    /** 1.38 팀·가게 관리 화면의 카드 순서·숨김 (스튜디오 › 팀·가게 관리 › 카드 배치), as [com.bamnat.core.layout.PageLayout]. */
+    val manageLayout: String = "",
     /**
      * [DAY-04] The day view's groups in the user's own order, by key ("work", "memo", ...); empty means the
      * order that fits [workStyle]. Keys the app does not know are skipped, missing ones go at the end.
@@ -435,6 +437,7 @@ class SettingsRepository(context: Context) {
             appLock = prefs.getBoolean(K_APP_LOCK, d.appLock),
             calendarLayout = prefs.getString(K_CALENDAR_LAYOUT, null) ?: d.calendarLayout,
             statsLayout = prefs.getString(K_STATS_LAYOUT, null) ?: d.statsLayout,
+            manageLayout = prefs.getString(K_MANAGE_LAYOUT, null) ?: d.manageLayout,
             // [DAY-04] 메모 중심 of 1.12 and before put 메모 first; that carries over as the user's own order.
             dayGroupOrder = prefs.getString(K_DAY_GROUP_ORDER, null)?.let(::decodeGroupOrder)
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
@@ -558,6 +561,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_APP_LOCK, s.appLock)
             .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
             .putString(K_STATS_LAYOUT, s.statsLayout)
+            .putString(K_MANAGE_LAYOUT, s.manageLayout)
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
             .putString(K_PHONE_CALENDARS, s.phoneCalendars.joinToString(","))
             .putString(K_TAB_ORDER, s.tabOrder.joinToString(","))
@@ -619,6 +623,7 @@ class SettingsRepository(context: Context) {
         const val K_APP_LOCK = "app_lock"
         const val K_CALENDAR_LAYOUT = "calendar_layout"
         const val K_STATS_LAYOUT = "stats_layout"
+        const val K_MANAGE_LAYOUT = "manage_layout"
         const val K_DAY_GROUP_ORDER = "day_group_order"
         const val K_PHONE_CALENDARS = "phone_calendars"
         const val K_TAB_ORDER = "tab_order"

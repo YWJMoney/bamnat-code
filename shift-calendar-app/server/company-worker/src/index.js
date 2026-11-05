@@ -770,6 +770,8 @@ const SCHEMA = [
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
 const COLUMNS = [
   "ALTER TABLE audit ADD COLUMN actor TEXT NOT NULL DEFAULT ''",
+  // 1.38 팀·직원 요금제 1년 이용권: which product (프로 이용권 rows from before stay 'bamnat_pro_pass_1y').
+  "ALTER TABLE year_passes ADD COLUMN product TEXT NOT NULL DEFAULT 'bamnat_pro_pass_1y'",
   // [ADMIN-02] 모두의 문의: a question sent as public, why it is hidden, its 신고, whether the developer kept it, 나도 그래요.
   "ALTER TABLE inquiries ADD COLUMN public INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE inquiries ADD COLUMN hidden TEXT",

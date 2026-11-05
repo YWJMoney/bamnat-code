@@ -164,6 +164,8 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     SETTINGS("설정", FreeTarget.SETTINGS, TabOrder.SETTINGS),
     WIDGET("위젯", null, TabOrder.SETTINGS),
     ALARM("알람 화면", FreeTarget.ALARM, TabOrder.SETTINGS),
+    /** 1.38 팀·가게 관리 (리더·사장님): 카드 순서·숨김, 색·배경은 설정 화면과 함께. 기능이 켜진 휴대폰에서만 보여요. */
+    MANAGE("팀·가게 관리", FreeTarget.SETTINGS, TabOrder.SETTINGS),
     // 사용자 2026-11-01 ("스튜디오에 결제 처리방침이 왜 있어"): 결제·처리방침·동의 화면은 꾸미지 않아요 — 늘 앱 기본 모양 ([ScreenSkin]).
     ALL("앱 전체", FreeTarget.ALL, TabOrder.CALENDAR),
     ;
@@ -185,6 +187,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
         SETTINGS -> listOf(Tool.COLORS, Tool.PARTS, Tool.DECOR, Tool.BOX, Tool.TABS, Tool.CORNERS)
         WIDGET -> listOf(Tool.WIDGET, Tool.PARTS, Tool.DECOR, Tool.BOX)
         ALARM -> listOf(Tool.COLORS)
+        MANAGE -> listOf(Tool.CARDS, Tool.COLORS)
         // [STU-30] 1.36 한 색으로 앱 전체 first: one colour makes every screen's colours.
         // [STU-37] 근무에 따라 바뀌는 모양 second.
         // [RUL-06] 한 색, 근무에 따라, 부품, 규칙·단추 first.
@@ -212,7 +215,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
     }
 
     /** Screens drawn only in 자세히 (the example app has no page of their own). */
-    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, WIDGET)
+    val detailOnly: Boolean get() = this in setOf(PAY, ALARM, WIDGET, MANAGE)
 
     companion object {
         fun of(tab: String): Area = when (tab) {
@@ -724,7 +727,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             FilterChip(selected = true, onClick = { hold(); open = true }, label = { Text("화면: ${area.labelFor(vm.style)} ▾") })
                             DropdownMenu(open, { open = false }) {
                                 // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
-                                Area.entries.filter { it.target != null && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) }
+                                val manageOn = com.bamnat.app.ui.work.rememberManageOn()
+                                Area.entries.filter { it.target != null && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) && (it != Area.MANAGE || manageOn) }
                                     .forEach { a -> DropdownMenuItem({ Text(a.labelFor(vm.style)) }, onClick = { open = false; pick(a) }) }
                                 HorizontalDivider()
                                 listOf(Area.ALL, Area.FEATURES, Area.RULES).forEach { a ->
@@ -845,6 +849,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                             Area.PAY -> PaySample(payLooks[payStyle] ?: PayLook(), payStyle) { openTool(Area.PAY, Tool.PAY_LOOK) }
                                             Area.ALARM -> AlarmSample { openTool(Area.ALARM, Tool.COLORS) }
                                             Area.WIDGET -> WidgetSample(WidgetLook.decode(d.widgetLook), vm.style)
+                                            Area.MANAGE -> com.bamnat.app.ui.work.ManageSample(d.manageLayout) { openTool(Area.MANAGE, Tool.CARDS) }
                                             else -> ScreenSample(t) { openTool(area, Tool.COLORS) }
                                         }
                                     }
@@ -1354,6 +1359,8 @@ private fun CardsTool(area: Area, style: WorkStyle?, d: com.bamnat.app.data.AppS
         }
         Area.STATS -> PartsEditor("통계 카드", StatsPart.entries.filter { fitsHere(FitSurface.STATS_PARTS, it.id, style) }.map { Triple(it.id, it.label, it.movable) },
             d.statsLayout.ifEmpty { null }) { line -> change { it.copy(statsLayout = line.orEmpty()) } }
+        Area.MANAGE -> PartsEditor("팀·가게 관리 카드", com.bamnat.app.ui.work.ManagePart.editable.map { Triple(it.id, it.label, true) }, d.manageLayout.ifEmpty { null },
+            note = "할 일은 늘 맨 위에 있어요. 이 순서는 이 휴대폰에만 남고 테마·레시피에는 들어가지 않아요") { line -> change { it.copy(manageLayout = line.orEmpty()) } }
         else -> Unit
     }
 }

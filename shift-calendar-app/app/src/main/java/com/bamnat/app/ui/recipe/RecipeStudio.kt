@@ -718,9 +718,9 @@ private fun StudioEditors(r: Recipe, vm: RecipeMakeViewModel, tab: String) {
 
 /** A page's parts in order: up and down for the movable ones, shown or hidden for each, and 처음대로. */
 @Composable
-internal fun PartsEditor(title: String, parts: List<Triple<String, String, Boolean>>, line: String?, onChange: (String?) -> Unit) {
+internal fun PartsEditor(title: String, parts: List<Triple<String, String, Boolean>>, line: String?, note: String? = null, onChange: (String?) -> Unit) {
     val placed = PageLayout.decode(line).arrange(parts) { it.first }
-    StudioCard(title, if (line == null) "처음 모양이에요. 바꾸면 레시피에 들어가요" else "바꾼 순서와 숨김이 레시피에 들어가요",
+    StudioCard(title, note ?: if (line == null) "처음 모양이에요. 바꾸면 레시피에 들어가요" else "바꾼 순서와 숨김이 레시피에 들어가요",
         onReset = line?.let { { onChange(null) } }) {
         placed.forEachIndexed { i, p ->
             val (id, label, movable) = p.part

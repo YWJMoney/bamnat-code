@@ -170,7 +170,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                     }
                 }) { Text("임금대장 파일(CSV)") }
                 if (isClosed) OutlinedButton(onClick = { scope.launch { store.reopen(place.id, ym, RateTable.on(ym.atDay(1)).version) } }) { Text("다시 열기") }
-                else OutlinedButton(onClick = { scope.launch { store.close(place.id, ym, ledger.lines, RateTable.on(ym.atDay(1)).version) } }) { Text("이 달 닫기") }
+                else OutlinedButton(onClick = { scope.launch { store.close(place.id, ym, ledger.lines, RateTable.on(ym.atDay(1)).version); context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.LEDGER_CLOSED.key) } }) { Text("이 달 닫기") }
             }
             Hint(if (isClosed) "닫은 달은 근무를 고칠 수 없어요. 고칠 게 있으면 다시 열어 주세요." else "닫으면 이 달 계산을 그대로 남겨 둬요. 나중에 규칙이 바뀌어도 닫은 달은 그대로예요.")
             Hint(LedgerCsv.KEEP)
@@ -447,12 +447,13 @@ private fun PayslipDialog(place: Workplace, l: LedgerLine, month: YearMonth, onD
                 scope.launch {
                     runCatching { com.bamnat.app.report.ReportShare.pdf(context, slip.doc(), "임금명세서-${l.staff.name.ifBlank { "직원" }}-$month.pdf") }
                     store.mark(place.id, month, l, sent = true)
+                    context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.SLIP_SENT.key)
                 }
             }) { Text("PDF") }
             TextButton(enabled = slip.ready, onClick = {
                 val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, slip.text()) }
                 runCatching { context.startActivity(android.content.Intent.createChooser(i, "명세서 보내기")) }
-                scope.launch { store.mark(place.id, month, l, sent = true) }
+                scope.launch { store.mark(place.id, month, l, sent = true); context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.SLIP_SENT.key) }
             }) { Text("글로 보내기") }
         }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })

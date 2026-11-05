@@ -295,6 +295,8 @@ private object Routes {
     const val TEAMS = "teams"
     /** 1.38 [P3-02] 리더 팀 근무표 (team.leader). */
     const val LEADER_TEAMS = "leaderTeams"
+    /** 1.38 관리 화면 (팀·가게 관리), apart from the personal screens. */
+    const val MANAGE = "manage"
     const val YEAR = "year"
     const val ATTENDANCE_IMPORT = "attendance_import"
     const val COMMUTE = "commute"
@@ -1963,6 +1965,10 @@ private fun AppNavHost(
             val calendar = remember { container.calendars.active.value }
             com.bamnat.app.ui.team.LeaderTeamScreen(calendar, onBack = { nav.popFrom(Routes.LEADER_TEAMS) })
         }
+        composable(Routes.MANAGE) {
+            val calendar = remember { container.calendars.active.value }
+            com.bamnat.app.ui.work.ManageScreen(calendar, onBack = { nav.popFrom(Routes.MANAGE) })
+        }
         composable(Routes.YEAR) {
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "year_$calendar") { com.bamnat.app.ui.calendar.YearViewModel(it, calendar) }
@@ -2214,6 +2220,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
     SettingsGo.PROFILE -> Routes.PROFILE
     SettingsGo.JOURNAL -> Routes.JOURNAL
+    SettingsGo.MANAGE -> Routes.MANAGE
     SettingsGo.RECIPES -> Routes.RECIPE_MINE
     SettingsGo.STUDIO -> Routes.studio()
     SettingsGo.STUDIO_RULES -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "RULES")
@@ -2226,6 +2233,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.STUDIO_MONEY -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MONEY")
     SettingsGo.STUDIO_MEMO -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MEMO")
     SettingsGo.STUDIO_STATS -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "STATS")
+    SettingsGo.STUDIO_MANAGE -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MANAGE")
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SENT -> Routes.companySent()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,

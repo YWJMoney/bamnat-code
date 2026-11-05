@@ -49,26 +49,26 @@ class Phase3ScreenshotTest : ScreenshotBase() {
 
     @Test fun leaderTeamList() = shoot("p3_1_leader_teams", FOLDED) {
         seedTeam()
-        content { com.bamnat.app.ui.team.LeaderTeamScreen("main") {} }
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
     }
 
     @Test fun leaderBoard() = shoot("p3_2_leader_board", FOLDED) {
         seedTeam()
-        content { com.bamnat.app.ui.team.LeaderTeamScreen("main") {} }
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
         settle()
         tapText("열기", exact = true)
     }
 
     @Test fun leaderBoardWide() = shoot("p3_3_leader_board_wide", UNFOLDED) {
         seedTeam()
-        content { com.bamnat.app.ui.team.LeaderTeamScreen("main") {} }
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
         settle()
         tapText("열기", exact = true)
     }
 
     @Test fun leaderBoardLower() = shoot("p3_4_leader_board_lower", FOLDED) {
         seedTeam()
-        content { com.bamnat.app.ui.team.LeaderTeamScreen("main") {} }
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
         settle()
         tapText("열기", exact = true)
         scrollUp(700); scrollUp(700)
@@ -88,6 +88,16 @@ class Phase3ScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.work.PayrollScreen(roster, YearMonth.from(Today.date())) {} }
         settle()
         scrollUp(700); scrollUp(700)
+    }
+
+    @Test fun manageHub() = shoot("p3_8_manage", FOLDED) {
+        seedTeam()
+        runBlocking {
+            val store = app.container.phaseThree
+            store.saveWorkplace(com.bamnat.core.boss.Workplace("p1", "우리 가게", payday = 10))
+            store.saveStaff(com.bamnat.core.boss.StaffMember("s1", "김알바", base = 10_320L, weekly = mapOf(java.time.DayOfWeek.MONDAY to StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0)))), "p1")
+        }
+        content { com.bamnat.app.ui.work.ManageScreen("main", onBack = {}, showAll = true) }
     }
 
     @Test fun teamPlanSheet() = shoot("p3_7_team_plan", FOLDED) {
