@@ -117,6 +117,14 @@ class SetupViewModel(
     /** [READ-15] A line to show, e.g. why the document scanner could not run. */
     fun say(text: String) { _message.value = text }
 
+    /**
+     * [SETUP-16] 1.37 PC fca16ba8 ('백업을 불러왔어요… 이어서 해요'가 잠깐 떴다 사라져 못 봤어요): a line that stays over the step
+     * until the user goes on or closes it.
+     */
+    private val _note = MutableStateFlow<String?>(null)
+    val note: StateFlow<String?> = _note.asStateFlow()
+    fun closeNote() { _note.value = null }
+
     fun consumeMessage() {
         _message.value = null
     }
@@ -150,6 +158,7 @@ class SetupViewModel(
     // ---- moving between steps ----
 
     fun next() {
+        _note.value = null
         val d = current
         if (!d.canLeave()) return
         if (d.step == SetupStep.SUMMARY) return save()
@@ -161,6 +170,7 @@ class SetupViewModel(
 
     /** One step back; while fixing from the summary, straight back to it. */
     fun back() {
+        _note.value = null
         if (_fixing.value) {
             _fixing.value = false
             update { it.copy(step = SetupStep.SUMMARY) }
@@ -175,11 +185,27 @@ class SetupViewModel(
         update { it.copy(step = step) }
     }
 
-    /** "나중에": the app opens on the calendar with a card to go on from here. */
+    /**
+     * "나중에": the app opens on the calendar with a card to go on from here. [SETUP-16] 1.37: the kind of work already
+     * chosen is the app's from now on (설정 > 내 근무, the tabs, pay and every card that fits a kind of work), with
+     * [com.bamnat.app.data.AppSettings.setupLater] so the setup still counts as not done.
+     */
     fun later() {
         c.telemetry.event("setup_later", current.step.name)
         if (again) return cancelAgain()
         update { it.copy(later = true) }
+        if (calendarId == null) current.style?.let { style -> keepStyle(style) }
+    }
+
+    /** [SETUP-16] A first setup put off with [style] chosen: that kind of work shows now, its setup waits. */
+    private fun keepStyle(style: WorkStyle) {
+        c.settingsRepository.update { s -> if (s.setupDone) s else s.copy(workStyle = style, setupLater = true) }
+        // 1.37 PC f42b2eba (교대 기본값이 섞여 '근무 6가지', 일근 출근 시간에 오후·야간): the shifts answered so far are the calendar's
+        // already, the first ones it does not use gone. Finishing the setup finds them by name, never twice.
+        val d = current.takeIf { it.style == style && it.types.isNotEmpty() }
+        if (d != null) c.appScope.launch {
+            runCatching { c.scheduleRepository.applySetupTypes(d) }.onFailure { android.util.Log.w("Setup", "shifts put off", it) }
+        }
     }
 
     /** [PLAZA-06] Leaves 처음 설정 다시 받기: its answers go, the calendar stays as it was. */
@@ -211,6 +237,9 @@ class SetupViewModel(
                 _fixing.value = false
                 c.telemetry.event("setup_style", style.name + if (roster) "_ROSTER" else "")
                 store.save(start.copy(step = target))
+                // [SETUP-16] A setup put off and taken up again: the kind of work shown everywhere follows the new answer at once
+                // (after the draft, so the setup's own watch finds them agreeing).
+                if (calendarId == null && !again && c.settingsRepository.current.setupLater && c.settingsRepository.current.workStyle != style) keepStyle(style)
             }
         }
     }
@@ -281,7 +310,12 @@ class SetupViewModel(
                 c.backupManager.restore(json)
                 c.telemetry.event("setup_restore")
                 // A backup from before the kind of work was asked, without a pattern: the setup goes on.
-                if (c.settingsRepository.current.workStyle != null) store.clear()
+                if (c.settingsRepository.current.setupDone) store.clear()
+                // [SETUP-16] 1.37 PC f42b2eba HIGH-2: a backup made while its first setup was put off goes on here, from its step, and says so.
+                else if (c.settingsRepository.current.setupLater) {
+                    store.draft.value?.let { store.save(it.copy(later = false)) }
+                    _note.value = "백업을 불러왔어요. ${c.settingsRepository.current.workStyle?.label ?: "근무"} 설정을 멈췄던 곳부터 이어서 해요"
+                }
             }.onFailure { e -> _message.value = (e as? BackupException)?.message ?: "백업을 불러오지 못했어요" }
             _saving.value = false
         }

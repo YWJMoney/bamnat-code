@@ -223,12 +223,15 @@ class ScheduleRepository(
      * [WORK-01] Hourly workers get part-time shifts to tap instead of 주간·야간: morning, afternoon
      * and evening. Added once; types the user already has are left alone.
      */
-    suspend fun addHourlyTypes() {
+    suspend fun addHourlyTypes() = addMissingTypes(DefaultShiftTypes.hourly())
+
+    /** Puts in the kinds of day of [wanted] whose names are not here yet (a kind of work's own, e.g. 일근 for 일근). */
+    suspend fun addMissingTypes(wanted: List<ShiftType>) {
         db.withTransaction {
             val have = shiftTypeDao.getAll().map { it.toModel() }
             val names = have.map { it.name }.toSet()
             val next = (have.maxOfOrNull { it.sortOrder } ?: -1) + 1
-            val add = DefaultShiftTypes.hourly().filter { it.name !in names }
+            val add = wanted.filter { it.name !in names }.map { it.copy(id = 0) }
                 .mapIndexed { i, t -> t.copy(sortOrder = next + i) }
             if (add.isNotEmpty()) shiftTypeDao.insertAll(add.map { it.toEntity() })
         }
@@ -370,24 +373,7 @@ class ScheduleRepository(
          */
         backfill: Boolean = true,
     ): SetupDraft = db.withTransaction {
-        val existing = shiftTypeDao.getAll().map { it.toModel() }
-        val ids = LinkedHashMap<Long, Long>()
-        for (t in draft.typesToSave().sortedBy { it.sortOrder }) {
-            val mine = existing.firstOrNull { it.name == t.name.trim() }
-            val icon = t.icon ?: mine?.icon ?: ShiftIcon.suggest(t)?.key
-            ids[t.id] = saveShiftType(t.copy(id = mine?.id ?: 0, icon = icon, alarmSoundUri = mine?.alarmSoundUri))
-        }
-        // Field and shop work bring no shifts and keep the first ones, to mark a shift now and then.
-        val seeded = if (ids.isEmpty()) emptySet() else DefaultShiftTypes.all().map { it.name }.toSet()
-        for (t in existing) {
-            if (t.id in ids.values || t.name !in seeded || isReferenced(t.id)) continue
-            shiftTypeDao.delete(t.id)
-        }
-        // The draft's shifts first, in its order; any the user made meanwhile after them.
-        val rank = ids.values.withIndex().associate { (i, id) -> id to i }
-        val all = shiftTypeDao.getAll()
-        shiftTypeDao.updateAll(all.sortedWith(compareBy({ rank[it.id] ?: Int.MAX_VALUE }, { it.sortOrder })).mapIndexed { i, e -> e.copy(sortOrder = i) })
-        val saved = draft.remap(ids)
+        val saved = draft.remap(putSetupTypes(draft))
         saved.pattern(today)?.let { pattern ->
             val periods = patternDao.getAll().mapNotNull { it.toModel() }
             when {
@@ -403,6 +389,37 @@ class ScheduleRepository(
             writeDay(before.copy(override = if (day.date in saved.painted) day.override else before.override, leave = day.leave ?: before.leave))
         }
         saved
+    }
+
+    /**
+     * [SETUP-16] 1.37 PC f42b2eba (알바로 미뤘더니 근무 종류에 교대 기본값이 섞여 '근무 6가지'): a first setup put off puts its
+     * shifts in already, as [applySetup] does, without any order or day. Finishing the setup later finds them by name.
+     */
+    suspend fun applySetupTypes(draft: SetupDraft) {
+        db.withTransaction { putSetupTypes(draft) }
+    }
+
+    /** [applySetup]'s shifts part, inside its transaction: the draft's ids to the saved ones. */
+    private suspend fun putSetupTypes(draft: SetupDraft): Map<Long, Long> {
+        val existing = shiftTypeDao.getAll().map { it.toModel() }
+        val ids = LinkedHashMap<Long, Long>()
+        for (t in draft.typesToSave().sortedBy { it.sortOrder }) {
+            val mine = existing.firstOrNull { it.name == t.name.trim() }
+            val icon = t.icon ?: mine?.icon ?: ShiftIcon.suggest(t)?.key
+            ids[t.id] = saveShiftType(t.copy(id = mine?.id ?: 0, icon = icon, alarmSoundUri = mine?.alarmSoundUri))
+        }
+        // Field and shop work bring no shifts and keep the first ones, to mark a shift now and then.
+        // [SETUP-16] The 알바 shifts a setup put off (or a change to 알바) added count as seeded too: unused, they go.
+        val seeded = if (ids.isEmpty()) emptySet() else (DefaultShiftTypes.all() + DefaultShiftTypes.hourly()).map { it.name }.toSet()
+        for (t in existing) {
+            if (t.id in ids.values || t.name !in seeded || isReferenced(t.id)) continue
+            shiftTypeDao.delete(t.id)
+        }
+        // The draft's shifts first, in its order; any the user made meanwhile after them.
+        val rank = ids.values.withIndex().associate { (i, id) -> id to i }
+        val all = shiftTypeDao.getAll()
+        shiftTypeDao.updateAll(all.sortedWith(compareBy({ rank[it.id] ?: Int.MAX_VALUE }, { it.sortOrder })).mapIndexed { i, e -> e.copy(sortOrder = i) })
+        return ids
     }
 
     /** Whether a pattern, a day or a piece of extra work still points at shift type [id]. */

@@ -993,7 +993,7 @@ fun CalendarScreen(
             header(Modifier)
         }
         // [SETUP-01] A first setup left for later comes first; it fills the calendar.
-        val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
+        val waiting = pendingSetup?.takeIf { it.later && !settings.setupDone }
         androidx.compose.runtime.SideEffect { startCardShown = false }
         if (waiting != null) {
             SetupResumeCard(waiting, onResume = vm::resumeSetup)
@@ -1102,12 +1102,12 @@ fun CalendarScreen(
         val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today, pendingSetup) {
             // 1.36 PC C3: from the day after the first setup, so its first day asks one thing only (the pay sheet).
             // 03df48fb Y7: while '근무 설정을 마저 해 주세요' is up, it is the one card (its 이어서 하기 is the next step).
-            val resuming = pendingSetup?.let { it.later && settings.workStyle == null } == true
+            val resuming = pendingSetup?.let { it.later && !settings.setupDone } == true
             if (startHidden || resuming || viewingReceived != null || c31.firstSetup.quietToday()) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
         }
         // [R136-02] 1.36 (리뷰 R-42: 투자 첫 화면 '입금 적기' 카드 밑에 '할 수 있는 것 1번 원금 입금·출금'): while the empty
         // calendar's first-step card is up, it is the one guide; '할 수 있는 것' comes once the first record is in.
-        val startCardUp = paint == null && !settings.rosterMonthly && !(pendingSetup?.later == true && settings.workStyle == null) && settings.workStyle.let { style ->
+        val startCardUp = paint == null && !settings.rosterMonthly && !(pendingSetup?.later == true && !settings.setupDone) && settings.workStyle.let { style ->
             when {
                 style?.usesPattern != false -> snap.isEmpty
                 style == com.bamnat.core.work.WorkStyle.HOURLY -> overview.isEmpty && !snap.hasPattern
@@ -1277,7 +1277,7 @@ fun CalendarScreen(
             })
             // 1.32 [STAB-08] 백업한 지 30일, without 매일 자동 백업.
             if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("backupNudge", "백업 알림") {
-                com.bamnat.app.ui.settings.BackupNudgeNotice(hasRecords = settings.workStyle != null)
+                com.bamnat.app.ui.settings.BackupNudgeNotice(hasRecords = settings.setupDone)
             })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })

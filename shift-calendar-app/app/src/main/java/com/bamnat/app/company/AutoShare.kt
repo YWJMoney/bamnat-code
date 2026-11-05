@@ -35,6 +35,15 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
         internal val opened = MutableStateFlow<String?>(null)
     }
 
+    /**
+     * 1.37 PC fca16ba8 (현장 건별형을 고른 뒤 회사 광장에 나눌까요?): work written day by day (현장·자영업·투자) is never offered to a
+     * company, even by a calendar that once had one. 교대·일근, and an 알바 that joined its company, are asked as before.
+     */
+    private fun companyWork(): Boolean = when (c.calendars.styleOf(cal, c.settingsRepository.current.workStyle)) {
+        com.bamnat.core.work.WorkStyle.FIELD, com.bamnat.core.work.WorkStyle.BUSINESS, com.bamnat.core.work.WorkStyle.INVEST -> false
+        else -> true
+    }
+
     /** This calendar's company things. */
     private val scope: CompanyScope get() = c.companyOf(cal)
     private val store: CompanyStore get() = scope.store
@@ -109,7 +118,7 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
      * does not ask its own question on top.
      */
     fun saved(): Boolean {
-        if (!c.companyApi.enabled) return false
+        if (!c.companyApi.enabled || !companyWork()) return false
         company() ?: return false
         val mode = store.autoShare.value
         if (mode == false || publicCardFirst()) return false
@@ -119,7 +128,7 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
 
     /** What [saved] does after the save, in its own time: asks, sends, or does nothing for the same values. */
     internal suspend fun check() = looking.withLock {
-        if (!c.companyApi.enabled || publicCardFirst()) return@withLock
+        if (!c.companyApi.enabled || !companyWork() || publicCardFirst()) return@withLock
         val (name, dept) = company() ?: return@withLock
         val mode = store.autoShare.value
         if (mode == false) return@withLock

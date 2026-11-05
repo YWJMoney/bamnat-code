@@ -54,8 +54,13 @@ class ShiftsViewModel(
     fun fold(id: Long) = container.foldedTypes.fold(calendarId, listOf(id))
 
     /** Null until loaded; [PatternState.pattern] is null when there is no pattern. */
+    // 1.37 PC 978d10f1 MED-1 (알바 토·일을 '내일'부터 저장한 뒤 다시 열면 빈칸): the schedule going on after today, one saved from
+    // tomorrow too, before the one today is the last day of.
     val pattern: StateFlow<PatternState?> =
-        active.flatMapLatest { it.pattern }.map { PatternState(it) }
+        active.flatMapLatest { it.patterns }.map { all ->
+            val today = Today.date()
+            PatternState(TypeFoldAsk.going(all, today) ?: com.bamnat.core.schedule.PatternTimeline.current(all, today))
+        }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
@@ -75,8 +80,17 @@ class ShiftsViewModel(
     /** Pattern being edited; survives navigating to the shift type screen and back. */
     val draft = PatternDraft()
 
+    /** The calendar's kind of work now. */
+    val style: com.bamnat.core.work.WorkStyle?
+        get() = container.calendars.styleOf(calendarId, container.settingsRepository.current.workStyle)
+
+    /** The kinds put away in this calendar now (not offered as a new schedule's day). */
+    fun foldedNow(): Set<Long> = container.foldedTypes.of(calendarId)
+
     fun save(type: ShiftType) {
-        viewModelScope.launch { repo.saveShiftType(type) }
+        // [SETUP-16] 1.37 PC b98f9d1e (묻기로 두고 주간 끝을 18:30으로 고쳐도 '회사 광장에 나눌까요?'가 없음): a kind's time is part of what
+        // the plaza has, so its save is held against the one last shared too (the same values again ask nothing).
+        viewModelScope.launch { repo.saveShiftType(type); shared() }
     }
 
     /**
@@ -217,8 +231,11 @@ class PatternDraft {
         altSaturday = null
     }
 
-    /** Loads the saved pattern once; later calls keep the user's unsaved edits. */
-    fun initFrom(existing: WorkPattern?, today: LocalDate, weekdayShiftId: Long? = null) {
+    /**
+     * Loads the saved pattern once; later calls keep the user's unsaved edits. [weekly]: with nothing saved, days of the week
+     * start (filled 월~금 with [weekdayShiftId], or empty to pick).
+     */
+    fun initFrom(existing: WorkPattern?, today: LocalDate, weekdayShiftId: Long? = null, weekly: Boolean = weekdayShiftId != null) {
         if (initialized) return
         when (existing) {
             is WorkPattern.Rotation -> {
@@ -227,14 +244,14 @@ class PatternDraft {
             }
             is WorkPattern.Weekly -> {
                 kind = PatternKind.WEEKLY
-                existing.steps.forEachIndexed { i, id -> weekly[i] = id }
+                existing.steps.forEachIndexed { i, id -> this.weekly[i] = id }
                 holidaysOff = existing.holidaysOff
                 altSaturday = existing.altSaturday
             }
             // [WORK-01] Day workers start from Monday to Friday on their day shift.
-            null -> if (weekdayShiftId != null) {
+            null -> if (weekly) {
                 kind = PatternKind.WEEKLY
-                for (i in 0 until 5) weekly[i] = weekdayShiftId
+                if (weekdayShiftId != null) for (i in 0 until 5) this.weekly[i] = weekdayShiftId
             }
         }
         // A rotation is edited by its step-0 day; its period may reach back years.

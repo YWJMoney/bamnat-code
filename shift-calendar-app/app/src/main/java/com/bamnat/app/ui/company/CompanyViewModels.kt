@@ -1614,7 +1614,9 @@ class CompanyNudgeViewModel(
     private val scope = c.companyOf(calendar)
     private val store = scope.store
     // [J133-71] 1.33: a calendar of work with no company (알바·현장·가게·투자) is not asked to share or pick one.
-    val enabled: Boolean = c.companyFits(calendar)
+    // [SETUP-16] 1.37 PC 736167de: read each time, as the kind of work can change while the calendar stays open (교대 put off,
+    // then 현장·투자 in 설정): kept from when it was made, the 현장 calendar went on asking to share with a company.
+    val enabled: Boolean get() = c.companyFits(calendar)
     val applied: StateFlow<AppliedSetup?> = store.applied
     val draft: StateFlow<CompanyDraft?> = store.draft
     private val _terms = MutableStateFlow(c.termsNow())

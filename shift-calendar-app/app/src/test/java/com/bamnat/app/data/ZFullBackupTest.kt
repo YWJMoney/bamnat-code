@@ -36,6 +36,8 @@ class ZFullBackupTest {
         snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
         plazaNews = false, plazaHidden = com.bamnat.core.plaza.HideList().hide("w".repeat(64), "글쓴이", 1_000L).encode(), plazaRulesAgreed = 2,
         workStyle = WorkStyle.SHIFT, rosterMonthly = true,
+        // 1.37 [SETUP-16] 첫 설정을 미뤄 둔 채 백업.
+        setupLater = true,
         extraKinds = ExtraKinds(ExtraKinds.DEFAULTS.map { if (it.id == ExtraKind.COVER_ID) it.copy(name = "대신 근무") else it }),
         memoInCells = true, calendarMemos = false, restCheck = false, strictRest = true, restRules = "11h", sleepTips = false,
         todayShiftNotice = true, briefing = true, commuteNotice = true, bedtimeNotice = true, sleepingNotice = false,

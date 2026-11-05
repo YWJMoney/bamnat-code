@@ -514,7 +514,8 @@ private fun QuickChips(
         // [DAYW-03] A day worker's 지금 퇴근, first on today's working day.
         if (leaveDay != null) item { LeaveNowChip(leaveDay, vm, yesterday = leaveDay.date != day.date) }
         // 1.32 [WTYP-09] 비번 날 비상소집·동원, one chip (기능 켜고 끄기 `shift.callout`).
-        if (!moneyFirst && !day.isWorkDay && com.bamnat.core.work.Callout.offered(settings.workStyle) &&
+        // [SETUP-16] 1.37 PC f42b2eba: without any 근무표 (일근 first setup put off) no day is a 비번 to be called in on.
+        if (!moneyFirst && !day.isWorkDay && (snapshot.hasPattern || !settings.setupLater) && com.bamnat.core.work.Callout.offered(settings.workStyle) &&
             !com.bamnat.app.ui.guide.FeatureSwitches.hidden(calendarContainer, "shift.callout", calendar.id)
         ) item { CalloutChip(day, snapshot, vm) }
         // 1.32 [WTYP-11] 희망 오프 on a day to come (기능 켜고 끄기 `shift.wishOff`).

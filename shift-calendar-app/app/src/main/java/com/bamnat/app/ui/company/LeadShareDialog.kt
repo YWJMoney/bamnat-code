@@ -49,7 +49,9 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
     var site by rememberSaveable(step.pick) { mutableStateOf("") }
     val open = { id: String? -> lead.close(); id?.let(onOpen) }
     AlertDialog(
-        onDismissRequest = { if (step is Step.Ask) lead.no() else if (step !is Step.Working) lead.close() },
+        // [SETUP-16] 1.37 PC 122d18a0·b98f9d1e (뒤로 닫으면 무엇을 고른 건지 몰라요; 알림은 바로 뜨는 급여 시트에 가려요): the question is
+        // answered with one of its two buttons ('내 달력에만 쓸게요' is the visible way out); back and a tap outside leave it open.
+        onDismissRequest = { if (step !is Step.Ask && step !is Step.Working) lead.close() },
         title = {
             Text(
                 when (step) {

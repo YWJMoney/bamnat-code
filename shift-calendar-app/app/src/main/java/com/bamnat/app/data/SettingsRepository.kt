@@ -81,10 +81,17 @@ data class AppSettings(
      */
     val previewTier: Tier? = null,
     /**
-     * [WORK-01] How the user works; null until chosen on first launch. [SETUP-01] The first setup
-     * writes it only when it saves, so null also means the first setup is not done.
+     * [WORK-01] How the user works; null until chosen on first launch. [SETUP-01] The first setup writes it when it
+     * saves; [SETUP-16] "나중에 할게요" after the kind of work was chosen writes it too, with [setupLater]. Whether the
+     * first setup is done is [setupDone], never this alone.
      */
     val workStyle: WorkStyle? = null,
+    /**
+     * [SETUP-16] 1.37 (PC 4ef0b92b: 알바를 고르고 요일 단계에서 '나중에 할게요' → 설정 > 내 근무가 '일하는 방식 정하기', 교대 기본값):
+     * the first setup was put off after [workStyle] was chosen. The kind of work shows everywhere already; the setup is
+     * still to finish (its card on the calendar and in 설정 > 내 근무). In the backup.
+     */
+    val setupLater: Boolean = false,
     /** [SETUP-02] Shift work on a roster that comes every month: days are painted, not repeated. */
     val rosterMonthly: Boolean = false,
     /** [PAYX-09][EXTRA-01] The kinds of extra work this person's company has, with their times. */
@@ -253,6 +260,9 @@ data class AppSettings(
     /** [ALRM-03] What was answered ([com.bamnat.core.alarm.AlarmSuggest.Memory]); kept on this phone only, like [monthRecapSeen]. */
     val alarmSuggestMemory: String = "",
 ) {
+    /** [SETUP-16] The first setup is finished: the kind of work is chosen and the setup was not put off. */
+    val setupDone: Boolean get() = workStyle != null && !setupLater
+
     // PC 첫 설정 3차 (자영업 매출·영업 탭에 '주 52시간을 넘은 주'): no 근로기준법 hours for work that is not wage work: a shop,
     // a freelancer's 현장 jobs, investing.
     val limits: HourLimits get() = if (workStyle?.usesPayEngine == false) OWNER_HOURS
@@ -343,6 +353,7 @@ class SettingsRepository(context: Context) {
             usageStatsMore = if (prefs.contains(K_STATS_MORE)) prefs.getBoolean(K_STATS_MORE, false) else null,
             usageStatsLookup = prefs.getBoolean(K_STATS_LOOKUP, d.usageStatsLookup),
             workStyle = prefs.getString(K_WORK_STYLE, null)?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
+            setupLater = prefs.getBoolean(K_SETUP_LATER, d.setupLater),
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
             memoInCells = prefs.getBoolean(K_MEMO_FIRST, d.memoInCells),
@@ -456,6 +467,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_STATS_LOOKUP, s.usageStatsLookup)
             .remove(K_OLD_TIER)
             .putString(K_WORK_STYLE, s.workStyle?.name)
+            .putBoolean(K_SETUP_LATER, s.setupLater)
             .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
             .putString(K_EXTRA_KINDS, s.extraKinds.encode())
             .putBoolean(K_MEMO_FIRST, s.memoInCells)
@@ -617,6 +629,7 @@ class SettingsRepository(context: Context) {
         const val K_STATS_MORE = "usage_stats_more"
         const val K_STATS_LOOKUP = "usage_stats_lookup"
         const val K_WORK_STYLE = "work_style"
+        const val K_SETUP_LATER = "setup_later"
         const val K_ROSTER_MONTHLY = "roster_monthly"
         const val K_EXTRA_KINDS = "extra_kinds"
         const val K_MEMO_FIRST = "memo_first"

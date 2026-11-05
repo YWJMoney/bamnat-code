@@ -207,6 +207,7 @@ class AppContainer(context: Context) {
         if (id == com.bamnat.app.data.PersonalCalendar.MAIN || calendars.get(id) == null) database else calendars.database(id))
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
+        setupDrafts = { setupDrafts },
         teams = teams, pro = { proStore }, dutyCodes = { dutyCodes },
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
@@ -300,7 +301,11 @@ class AppContainer(context: Context) {
     fun companyFits(calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN, needsServer: Boolean = true): Boolean {
         // [SHR-20] A company setup passed as a file or in a link needs no company server ([needsServer] false).
         if (needsServer && !companyApi.enabled) return false
-        if (scopeOf(calendarId).currentSettings().workStyle?.usesCompany != false) return true
+        val style = scopeOf(calendarId).currentSettings().workStyle
+        if (style?.usesCompany != false) return true
+        // [SETUP-16] 1.37 PC 736167de: work written day by day (현장·자영업·투자) has no company, even when the calendar kept
+        // the one chosen while it was 교대·일근 (the plaza cards, 급여도 넣어 볼까요?). An 알바 that joined its company keeps it.
+        if (style != com.bamnat.core.work.WorkStyle.HOURLY) return false
         val store = companyOf(calendarId).store
         return store.applied.value != null || store.member.value != null
     }
@@ -524,7 +529,7 @@ class AppContainer(context: Context) {
                 ads.consent.value?.let { put("ads", it) }
             },
             profile = setOfNotNull(
-                "setup.done".takeIf { s.workStyle != null },
+                "setup.done".takeIf { s.setupDone },
                 "pay.setup".takeIf { payStore.profile.value != null },
                 "company.linked".takeIf { warm && (companyStore.member.value != null || companyStore.applied.value != null) },
             ),
@@ -563,7 +568,7 @@ class AppContainer(context: Context) {
     var phoneMark: () -> String? = { com.bamnat.app.tier.PhoneMark.of(appContext) }
     val invites by lazy {
         com.bamnat.app.tier.Invites(appContext, com.bamnat.app.tier.InviteStore(appContext), { inviteApi }, { companyStore.device }, { phoneMark() },
-            setupDone = { settingsRepository.current.workStyle != null }, installedAt = { installedAt }, referrer = { referrerSource })
+            setupDone = { settingsRepository.current.setupDone }, installedAt = { installedAt }, referrer = { referrerSource })
     }
     /** AG 1.27 [INVITE-11][INVITE-12] When this phone was asked to invite friends or to tell the developer. */
     val grow by lazy { com.bamnat.app.data.GrowStore(appContext) }
@@ -971,6 +976,9 @@ class AppContainer(context: Context) {
             }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
             keep("leave") {
+                // [SETUP-16] In the same job (StartupBudgetTest): a first setup put off follows its kind of work wherever it
+                // changes (설정 > 일하는 방식, a backup brought back).
+                launch { com.bamnat.app.data.SetupLater.follow(settingsRepository, setupDrafts, firstSetup) }
                 val lots = leaveRepository.summary.map { s -> s.lots.map { it.lot } }.distinctUntilChanged()
                 val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
                 combine(lots, on) { l, o -> l to o }

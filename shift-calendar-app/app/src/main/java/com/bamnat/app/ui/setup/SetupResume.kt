@@ -28,7 +28,7 @@ fun SetupResumeCard(modifier: Modifier = Modifier) {
     val container = LocalContext.current.appContainer
     val draft by container.setupDrafts.draft.collectAsStateWithLifecycle()
     val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
-    val d = draft?.takeIf { it.later && settings.workStyle == null } ?: return
+    val d = draft?.takeIf { it.later && !settings.setupDone } ?: return
     val left = d.steps.size - d.position
     Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
         Column(Modifier.padding(16.dp)) {

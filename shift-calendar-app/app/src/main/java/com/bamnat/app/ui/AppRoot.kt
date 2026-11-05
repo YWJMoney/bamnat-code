@@ -339,14 +339,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val calendarList by container.calendars.calendars.collectAsStateWithLifecycle()
     val activeStyle = calendarList.firstOrNull { it.id == activeCalendarId }?.takeIf { !it.isMain }?.style ?: settingsNow.workStyle
     val setupDraft by container.setupDrafts.draft.collectAsStateWithLifecycle()
-    val needsSetup by produceState<Boolean?>(if (settingsNow.workStyle != null) false else null, settingsNow.workStyle, setupDraft == null) {
+    // [SETUP-16] A setup put off keeps its kind of work in the settings: done is [AppSettings.setupDone], not the kind of work alone.
+    val needsSetup by produceState<Boolean?>(if (settingsNow.setupDone) false else null, settingsNow.setupDone, setupDraft == null) {
         value = when {
-            settingsNow.workStyle != null -> {
+            settingsNow.setupDone -> {
                 // Set some other way meanwhile (a backup restored in settings): the setup left is not needed.
                 if (setupDraft?.committing == false) container.setupDrafts.clear()
                 false
             }
-            setupDraft == null && container.scheduleRepository.patterns.first().isNotEmpty() -> {
+            settingsNow.workStyle == null && setupDraft == null && container.scheduleRepository.patterns.first().isNotEmpty() -> {
                 container.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
                 false
             }
@@ -362,6 +363,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val startMine: (Boolean) -> Unit = { keep -> rootScope.launch { container.example.startMine(keep) } }
     // [SETUP-15] "무슨 일 하세요?" before the consent screen: its answer ("" when skipped) shapes that screen and starts the setup.
     var firstStyleKey by rememberSaveable { mutableStateOf<String?>(null) }
+    // [SETUP-17] The first screen's file chooser was opened (it opens once).
+    var fileAsked by rememberSaveable { mutableStateOf(false) }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
@@ -379,13 +382,19 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
                     // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
                     val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
-                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { sizeSeen(); firstStyleKey = it.key }, onSkip = { sizeSeen(); firstStyleKey = "" },
+                    // [SETUP-17] A backup, a company file or looking around first: the features pages come after the setup (as on a
+                    // new phone that answers), not as '새로 생긴 기능이 있어요' over the calendar (1.37 PC 270fc15e).
+                    val skip: (String) -> Unit = { k -> sizeSeen(); container.consentStore.afterSetup = true; firstStyleKey = k }
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { sizeSeen(); firstStyleKey = it.key }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
+                        onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
                     return
                 }
                 // 1.36 W4: before 1.36 the recommended-features page came here, between "무슨 일 하세요?" and the setup. A phone
                 // that answered on an older build and was updated mid-way still sees it here.
-                if (!container.consentStore.afterSetup) {
+                // [SETUP-17] 1.37 PC f42b2eba: '백업이나 회사 파일로 시작할게요' went through the features and "어떻게 일하세요?" first;
+                // a backup brings its own answers, so the file chooser opens straight away.
+                if (!container.consentStore.afterSetup && key != com.bamnat.app.ui.onboarding.FirstStyle.FILE && key != com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) {
                     val first = com.bamnat.app.ui.onboarding.FirstStyle.of(key)
                     androidx.activity.compose.BackHandler { firstStyleKey = null }
                     ConsentPages(container, onDone = {}, style = first?.style, onBrowse = {
@@ -397,8 +406,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             SetupHost(appViewModel { SetupViewModel(it) },
-                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } }, browseFirst = browseFirst,
+                onBrowse = { style -> browseFirst = false; rootScope.launch { container.example.browse(style) } },
+                browseFirst = browseFirst || firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.BROWSE,
                 firstStyle = com.bamnat.app.ui.onboarding.FirstStyle.of(firstStyleKey)?.let { it.style to it.roster },
+                // [SETUP-17] Once: 1.37 PC 270fc15e: kept, every later 이어서 하기 opened the file chooser first.
+                openFileFirst = firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.FILE && !fileAsked,
+                onFileOpened = { fileAsked = true },
+                onBrowseBack = { firstStyleKey = null }.takeIf { firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.BROWSE },
                 onFirstStyleUsed = { firstStyleKey = "" })
             return
         }
@@ -695,7 +709,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val ctx = container.appContext
         val info = runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0) }.getOrNull()
         // [J133-53] A phone with no setup yet (reinstalled, data cleared) has nothing new to compare against.
-        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime || container.settingsRepository.current.workStyle == null
+        val fresh = info == null || info.firstInstallTime == info.lastUpdateTime || !container.settingsRepository.current.setupDone
         mutableStateOf(com.bamnat.app.data.GuideStore.get(ctx).whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh))
     }
     // [ONBOARD-04] A phone set up before 1.22 keeps its own values; the update notice offers the rest once.
@@ -831,7 +845,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             val result = kotlinx.coroutines.withTimeoutOrNull(8_000) {
                 snackbar.showSnackbar(offer.message + (fold?.let { " · ${it.message}" } ?: ""), actionLabel = "되돌리기", duration = SnackbarDuration.Indefinite)
             } ?: SnackbarResult.Dismissed
-            if (result == SnackbarResult.ActionPerformed && fold != null) container.foldedTypes.unfold(fold.calendar, fold.ids)
+            if (result == SnackbarResult.ActionPerformed && fold != null) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, fold)
             // Read once the snackbar is answered: the change sets it right after it is offered.
             val extras = styleExtras.value?.takeIf { it.entryId == offer.entry.id }
             if (extras != null) styleExtras.value = null
@@ -854,7 +868,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
             snackbar.currentSnackbarData?.dismiss()
             val r = snackbar.showSnackbar("${d.message} · 설정 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)
-            if (r == SnackbarResult.ActionPerformed) container.foldedTypes.unfold(d.calendar, d.ids)
+            if (r == SnackbarResult.ActionPerformed) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, d)
         }
     }
 
@@ -1083,14 +1097,20 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 private val PAY_ASKS = setOf("pay.calc", "pay.report", "pay.gap", "pay.whatIf", "pay.compLeave", "hourly.takeHome", "hourly.weeks", "leave.ledger")
 
 /** [UNDO-01] A kind-of-work change's own extras, for its 되돌리기: the 시급 types it added and the next step it opened (a route pattern). */
-internal class StyleExtras(val entryId: String, val calendar: String, val addedTypes: List<Long>, val opened: String?)
+internal class StyleExtras(
+    val entryId: String, val calendar: String, val addedTypes: List<Long>, val opened: String?,
+    /** The change, so 되돌리기 puts the new work's own kinds of day away again (1.37 PC 978d10f1 LOW-4: 일근 stayed under 교대). */
+    val from: WorkStyle? = null, val to: WorkStyle? = null,
+)
 
 /** [UNDO-01] Adds what [style] brings to calendar [calendar] (시급 types for hourly work); the ids added, for 되돌리기. */
 internal suspend fun addStyleTypes(container: AppContainer, calendar: String, style: WorkStyle): List<Long> {
-    if (style != WorkStyle.HOURLY) return emptyList()
+    // [SETUP-16] 1.37 사용자: 일근 gets its own 일근 (09~18, its time the user's), not 교대's 주간.
+    if (style != WorkStyle.HOURLY && style != WorkStyle.DAY) return emptyList()
     val schedule = container.calendars.repository(calendar)
     val typesBefore = schedule.shiftTypes.first().map { it.id }.toSet()
-    schedule.addHourlyTypes()
+    if (style == WorkStyle.HOURLY) schedule.addHourlyTypes()
+    else schedule.addMissingTypes(com.bamnat.app.ui.shifts.TypeFoldAsk.startTypes(WorkStyle.DAY))
     return schedule.shiftTypes.first().map { it.id }.filter { it !in typesBefore }
 }
 
@@ -1100,6 +1120,13 @@ internal suspend fun undoOffer(container: AppContainer, entryId: String, extras:
     if (ok && extras != null && extras.entryId == entryId) {
         val schedule = container.calendars.repository(extras.calendar)
         extras.addedTypes.forEach { schedule.deleteShiftType(it) }
+        val from = extras.from
+        val to = extras.to
+        if (from != null && to != null && from != to) {
+            val names = com.bamnat.app.data.FoldedTypes.startNames(to) - com.bamnat.app.data.FoldedTypes.startNames(from)
+            val left = schedule.shiftTypes.first().filter { !it.isOff && it.name in names && it.id !in extras.addedTypes }
+            if (left.isNotEmpty()) container.foldedTypes.fold(extras.calendar, left.map { it.id })
+        }
     }
     return ok
 }
@@ -1248,16 +1275,28 @@ private fun AppNavHost(
             val current = if (isMain) settings.workStyle else cal?.style ?: settings.workStyle
             // [UNDO-01] A calendar with records is asked first whether they stay; the answer can be taken back for 7 days.
             var asking by remember { mutableStateOf<Pair<WorkStyle, com.bamnat.app.data.RecordsTrash.Records>?>(null) }
+            var styleBusy by remember { mutableStateOf(false) }
             // clear: null when nothing is changed from a kind of work (the first one, or the same again).
-            val apply: (WorkStyle, Boolean?) -> Unit = { style, clear ->
+            val apply: (WorkStyle, Boolean?) -> Unit = apply@{ style, clear ->
                 val before = current
+                // [SETUP-16] 1.37 PC f42b2eba HIGH-1: the first setup is still waiting: it goes on with this kind of work at once.
+                val setupWaits = isMain && container.settingsRepository.current.setupLater
                 // [WORK-07] A new kind of work goes straight on to what it still needs, as its card said
                 // ("다음: …"): the order for shift work, the days for weekday work, the wage for hourly work.
                 // What it already has is kept, so switching back and forth never asks twice.
-                scope.launch {
+                // [SETUP-16] 1.37 PC 122d18a0 (목록을 스크롤한 직후 '현장·프리랜서'를 누르면 형태만 바뀌고 화면이 그대로, '접어 둘까요?'도
+                // 없음): the change runs to its end on the app's own scope, so nothing on screen going away halfway cuts it; one at a time.
+                if (styleBusy) return@apply
+                styleBusy = true
+                container.appScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                  try {
                     if (clear == null) {
                         // [CALS-02] Each calendar keeps its own kind of work: the main one in settings, an added one in its entry.
-                        if (isMain) container.settingsRepository.update { it.copy(workStyle = style) } else container.calendars.setStyle(calendar, style)
+                        // [SETUP-16] A setup waiting, changed to work with nothing more to ask: the setup is saved with it, here, before the
+                        // screens below (1.37 PC 270fc15e: 자영업 stayed on this screen, no 영업일, no '접어 둘까요').
+                        if (setupWaits && style != before && with(com.bamnat.app.data.SetupLater) { !style.asksMore }) {
+                            runCatching { container.firstSetup.save(com.bamnat.core.setup.SetupDraft(style = style), quiet = true) }
+                        } else if (isMain) container.settingsRepository.update { it.copy(workStyle = style) } else container.calendars.setStyle(calendar, style)
                     }
                     val schedule = container.calendars.repository(calendar)
                     val patterns = schedule.patterns.first()
@@ -1279,9 +1318,20 @@ private fun AppNavHost(
                             else -> style.changedMessage()
                         },
                     )
-                    val added = addStyleTypes(container, calendar, style)
+                    val added = if (style != before || style == WorkStyle.HOURLY) addStyleTypes(container, calendar, style) else emptyList()
                     // 1.36 PC 재검토: the old kind of work's 근무 종류 are offered once to be put away (never deleted).
                     com.bamnat.app.ui.shifts.TypeFoldAsk.after(container, calendar, before, style)
+                    // 1.37 PC 978d10f1 LOW-1 (일근으로 돌아올 때마다 '1/2 근무 주기'가 열림): the next step looks at the schedule after
+                    // a stopped one came back by itself.
+                    val patternsNow = schedule.patterns.first()
+                    // Shifts, days and hours are then asked by the setup, not by the pattern or pay screen. 현장·자영업·투자 have
+                    // nothing more to ask: the setup's own watch saves it ([com.bamnat.app.data.SetupLater]) and the screens below follow.
+                    if (setupWaits && style != before && with(com.bamnat.app.data.SetupLater) { style.asksMore }) {
+                        nav.popFrom(Routes.WORK_STYLE)
+                        container.setupDrafts.save(com.bamnat.app.data.SetupLater.fresh(style, company = container.setupDrafts.draft.value?.companyName.orEmpty()))
+                        if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, null, before, style)
+                        return@launch
+                    }
                     var opened: String? = null
                     fun go(route: String, pattern: String) {
                         opened = pattern
@@ -1289,8 +1339,8 @@ private fun AppNavHost(
                     }
                     when {
                         style == before -> nav.popFrom(Routes.WORK_STYLE)
-                        style == WorkStyle.SHIFT && patterns.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay, calendar = calendar), Routes.PATTERN)
-                        style == WorkStyle.DAY && patterns.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay, calendar = calendar), Routes.PATTERN)
+                        style == WorkStyle.SHIFT && patternsNow.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay, calendar = calendar), Routes.PATTERN)
+                        style == WorkStyle.DAY && patternsNow.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay, calendar = calendar), Routes.PATTERN)
                         style == WorkStyle.HOURLY && !pay -> go(Routes.pay(calendar), Routes.PAY)
                         // [TYPE-03] A shop sets its hours and regular days off next.
                         style == WorkStyle.BUSINESS -> go(Routes.shopDays(calendar), Routes.SHOP_DAYS)
@@ -1300,7 +1350,8 @@ private fun AppNavHost(
                         }
                     }
                     // [UNDO-01] What 되돌리기 takes back besides the trash entry: the types added and the step opened.
-                    if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, opened)
+                    if (entry != null) styleExtras.value = StyleExtras(entry.id, calendar, added, opened, before, style)
+                  } finally { styleBusy = false }
                 }
             }
             WorkStyleScreen(current = current, title = if (isMain) "근무 형태 바꾸기" else "‘${cal?.name}’ 근무 형태", onBack = { nav.popFrom(Routes.WORK_STYLE) }, onPick = { style ->
@@ -1417,7 +1468,8 @@ private fun AppNavHost(
             val company = remember(calendar) { container.companyOf(calendar) }
             val pendingPay by company.store.pendingPayFlow.collectAsStateWithLifecycle()
             // [MCAL-06] A coworker's company setup is for the pay of the calendar it went into (1.29: the main one's only).
-            if (profile == null && pendingPay != null) {
+            // [SETUP-16] 1.37 PC 122d18a0: not once the calendar became work with no company (its setup waits for 교대·일근 again).
+            if (profile == null && pendingPay != null && container.companyFits(calendar, needsServer = false)) {
                 // [COMM-01] A coworker's setup came with its pay: only the user's own amounts are left.
                 val companyPay = appViewModel(key = "company-pay-$calendar-${pendingPay.hashCode()}") { CompanyPayViewModel(it, calendar) }
                 CompanyPayScreen(companyPay, onBack = { nav.popFrom(Routes.PAY) }, onByHand = { company.store.pendingPay = null })
@@ -1431,7 +1483,8 @@ private fun AppNavHost(
                 container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle)?.usesPayEngine != false
             }
             // [J133-71] 1.33: and only for work that has a company (교대·일근), or an 알바 calendar that already joined one.
-            val companyPay = payEngine && calendar != PersonalCalendar.EXAMPLE && remember(calendar) { container.companyFits(calendar) }
+            // [SETUP-16] 1.37 PC 122d18a0: read each time (the kind of work may have changed since this screen was first opened).
+            val companyPay = payEngine && calendar != PersonalCalendar.EXAMPLE && container.companyFits(calendar)
             // [COMM-02] Right after a pay setup made by hand under a company's name, the invitation slides up once.
             var wasEmpty by rememberSaveable { mutableStateOf(profile == null) }
             var inviting by rememberSaveable { mutableStateOf(false) }
@@ -1499,7 +1552,9 @@ private fun AppNavHost(
                 // [PAYS-10][UX-05] '?' opens the pay answers first, then a question if they don't help.
                 onHelp = { com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "급여", help = true)) },
                 // [SPAT-04] The public cycle in use, for the first pay setup. [CALI-04] The calendar's own (1.29: the main one's).
-                fromCycle = publicUse?.let { u -> u.cycle?.let { it to u.codes } },
+                // [SETUP-16] 1.37 PC 122d18a0 (현대제철 교대 → 알바: 급여 설정이 '철강 교대 수당'을 넣겠다고 함): a company's cycle
+                // starts the pay only on a calendar that is still that company's work.
+                fromCycle = publicUse?.takeIf { container.companyFits(calendar, needsServer = false) }?.let { u -> u.cycle?.let { it to u.codes } },
                 // [PLAZA-30] 1.27 AI: the plaza form's 명세서로 맞춰 보기, once.
                 startMatching = remember { container.pendingMatch.also { container.pendingMatch = false } },
                 // [PLAZA-16] 1.27 AH: 우리 회사 급여 방식 찾기, for the main job's pay. [PAYF-01] 1.29: the setup's first question.

@@ -43,6 +43,8 @@ import com.bamnat.core.plaza.PublicSetup
 @Composable
 fun PublicWayNotice(modifier: Modifier = Modifier, onPay: () -> Unit, onShare: () -> Unit) {
     val c = LocalContext.current.appContainer
+    // [SETUP-16] 1.37 PC 736167de: a company's cycle and its pay are not offered once the calendar became 현장·자영업·투자.
+    if (!c.companyFits(LocalCompanyCalendar.current, needsServer = false)) return
     // [CALI-04] 1.30 BB: the public cycle of the calendar on screen ([LocalCompanyCalendar]), with that calendar's pay.
     val scope = companyScope(c)
     val store = scope.store

@@ -60,6 +60,8 @@ class BackupManager(
     private val recordsTrash: () -> RecordsTrash? = { null },
     /** [CREW-01] Each calendar's teams for 모든 조 보기. */
     private val teams: TeamStore? = null,
+    /** [SETUP-16] A first setup put off: its answers so far go with the backup, so a new phone goes on where it stopped. */
+    private val setupDrafts: () -> SetupDraftStore? = { null },
     /** [MON-08] The 프로 recovery code, so passes follow to a new phone; never the purchase itself. */
     private val pro: () -> com.bamnat.app.tier.ProStore? = { null },
     /** [PROV-04] The links the user made, with their keys, so a new phone keeps updating them. */
@@ -487,6 +489,7 @@ class BackupManager(
         profiles()?.let { p -> root.put("profile", JSONObject(p.export() as Map<*, *>)) }
         settingsFiles()?.let { root.put("settingsFiles", it.export()) }
         val s = settings.current
+        if (s.setupLater) setupDrafts()?.draft?.value?.takeIf { !it.committing }?.let { root.put("setupDraft", SetupDraftCodec.encode(it.copy(later = true))) }
         root.put(
             "settings",
             JSONObject()
@@ -495,7 +498,7 @@ class BackupManager(
                 .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmsOn", s.alarmsEnabled)
-                .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
+                .putOpt("workStyle", s.workStyle?.name).put("setupLater", s.setupLater).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
                 .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsByPayPeriod).put("appLock", s.appLock)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
@@ -937,6 +940,15 @@ class BackupManager(
             goneCalendars.forEach(tools::reload)
         }
         root.optJSONObject("settings")?.let { o ->
+            // [SETUP-16] The setup put off on the old phone goes on from its step here; one without its answers starts at the kind of
+            // work's next question. Put back before the settings (1.37 PC 270fc15e: after them, the setup's own watch saw no answers
+            // yet and started that next question over them, so the card said 2단계 instead of 3).
+            val waits = o.optBoolean("setupLater", false)
+            val style = o.optStringOrNull("workStyle")
+            if (waits && style != null) root.optJSONObject("setupDraft")?.let { d ->
+                runCatching { SetupDraftCodec.decode(d) }.getOrNull()?.takeIf { it.style?.name == style }
+                    ?.let { setupDrafts()?.save(it.copy(later = true, committing = false)) }
+            }
             settings.update { s ->
                 s.copy(
                     weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(s.weekStart),
@@ -956,6 +968,8 @@ class BackupManager(
                     // [SETUP-01] A backup from before the question with a pattern in it is shift work, as on the phone.
                     workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle
                         ?: WorkStyle.SHIFT.takeIf { schedule.patterns.isNotEmpty() },
+                    // [SETUP-16] Backups before 1.37 wrote the kind of work only once the first setup was done.
+                    setupLater = if (o.has("workStyle")) o.optBoolean("setupLater", false) else s.setupLater,
                     rosterMonthly = o.optBoolean("rosterMonthly", s.rosterMonthly),
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
                     memoInCells = o.optBoolean("memoFirst", s.memoInCells),

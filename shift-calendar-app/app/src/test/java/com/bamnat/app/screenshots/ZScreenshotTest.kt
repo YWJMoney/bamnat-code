@@ -382,8 +382,8 @@ class ZScreenshotTest : ScreenshotBase() {
             back()
             assertFalse("one back on the very first screen does not close the app", scenario.finishing())
             assertTrue(appears("어떤 일을 하고 계신가요?"))
+            // [SETUP-17] 1.37: straight to the file chooser (no features pages); closed without a file, the first question stays.
             tapText("백업이나 회사 파일로 시작할게요", exact = true)
-            tapText("허용은 나중에 할게요")
             assertTrue(appears("어떻게 일하세요?"))
             back()
             assertFalse("one back on the first question does not close the app", scenario.finishing())
