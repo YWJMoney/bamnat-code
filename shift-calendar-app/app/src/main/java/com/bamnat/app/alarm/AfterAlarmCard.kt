@@ -37,7 +37,10 @@ object AfterAlarmCard {
         if (!s.afterAlarmCard || !Notifications.canPost(context)) return
         val snapshot = c.scheduleRepository.snapshot.first()
         if (snapshot.isEmpty) return
-        val (title, text) = lines(snapshot.resolver, today, s.weekStart, s.limits)
+        // PC 267560dd: after an alarm three notices said "오늘 야간 19:00~07:00". When 잠금 화면 '오늘 근무' or the day's planning
+        // notice (with its nap advice) already says the shift, this card adds only the week.
+        val said = s.todayShiftNotice || showing(context, Notifications.BRIEFING_ID)
+        val (title, text) = lines(snapshot.resolver, today, s.weekStart, s.limits, shiftSaid = said) ?: return
         val n = NotificationCompat.Builder(context, Notifications.DAY_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
@@ -55,9 +58,16 @@ object AfterAlarmCard {
         Notifications.post(context, ID, n)
     }
 
-    /** "오늘 야간 19:00~07:00" over "이번 주 38시간 · 52시간까지 14시간 · 내일 쉬는 날". */
-    fun lines(resolver: ScheduleResolver, today: LocalDate, weekStart: DayOfWeek, limits: com.bamnat.core.hours.HourLimits): Pair<String, String> {
+    private fun showing(context: Context, id: Int): Boolean = runCatching {
+        context.getSystemService(android.app.NotificationManager::class.java)?.activeNotifications?.any { it.id == id } == true
+    }.getOrDefault(false)
+
+    /** "오늘 야간 19:00~07:00" over "이번 주 38시간 · 52시간까지 14시간 · 내일 쉬는 날"; null when there is nothing to add. */
+    fun lines(resolver: ScheduleResolver, today: LocalDate, weekStart: DayOfWeek, limits: com.bamnat.core.hours.HourLimits,
+              shiftSaid: Boolean = false): Pair<String, String>? {
         val week = WorkHoursCalculator(resolver, weekStart, limits).glance(today)
+        // Another notice says the shift already: the week alone, or nothing.
+        if (shiftSaid) return if (week.minutes > 0) "이번 주 ${week.text}" to "내일 ${TodayShiftNotice.describe(resolver.resolve(today.plusDays(1)))}" else null
         val tomorrow = TodayShiftNotice.describe(resolver.resolve(today.plusDays(1)))
         val parts = listOfNotNull(if (week.minutes > 0) "이번 주 ${week.text}" else null, "내일 $tomorrow")
         return "오늘 ${TodayShiftNotice.describe(resolver.resolve(today))}" to parts.joinToString(" · ")

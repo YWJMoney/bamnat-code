@@ -837,6 +837,8 @@ fun ShiftTypeEditorDialog(
                         AnimatedVisibility(styling) {
                             Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text("색상", style = MaterialTheme.typography.labelLarge)
+                                // PC 267560dd: 화면 읽기 said "색 1~12"; each swatch is said in words.
+                                val paletteNames = remember { com.bamnat.app.ui.settings.colorNames(ShiftPalette) }
                                 FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     ShiftPalette.forEachIndexed { i, c ->
                                         val selected = c == draft.colorArgb
@@ -846,7 +848,7 @@ fun ShiftTypeEditorDialog(
                                                 .size(48.dp)
                                                 .clip(CircleShape)
                                                 .clickable(onClickLabel = "이 색 고르기") { draft = draft.copy(colorArgb = c) }
-                                                .semantics { contentDescription = "색 ${i + 1}"; this.selected = selected },
+                                                .semantics { contentDescription = paletteNames[i]; this.selected = selected },
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Box(

@@ -67,19 +67,19 @@ class DayNoticesTest {
         assertEquals(Kind.BRIEFING, firstNight.kind)
         assertEquals(at(6, 14, 30), firstNight.at)
         assertEquals(at(6, 19), firstNight.until)
-        assertEquals("오늘 야간 19:00–07:00", firstNight.title)
-        assertEquals("15:00–16:30 낮잠 · 커피는 02:00까지 · 퇴근 후 08:00–15:00 잘 시간", firstNight.text)
+        assertEquals("오늘 야간 19:00~07:00", firstNight.title)
+        assertEquals("15:00~16:30 낮잠 · 커피는 02:00까지 · 퇴근 후 08:00~15:00 잘 시간", firstNight.text)
         val home = nights[1]
         assertEquals(Kind.COMMUTE, home.kind)
         assertEquals(at(7, 7), home.at)
         assertEquals(at(7, 9), home.until)
         assertEquals("야간 수고했어요", home.title)
-        assertEquals("졸리면 운전 전에 쉬어 가요 · 잘 시간 08:00–15:00", home.text)
+        assertEquals("졸리면 운전 전에 쉬어 가요 · 잘 시간 08:00~15:00", home.text)
         // The second night: 3 hours before, after the sleep that follows the first.
         val secondNight = nights[2]
         assertEquals(Kind.BRIEFING, secondNight.kind)
         assertEquals(at(7, 16), secondNight.at)
-        assertEquals("커피는 02:00까지 · 퇴근 후 08:00–15:00 잘 시간", secondNight.text)
+        assertEquals("커피는 02:00까지 · 퇴근 후 08:00~15:00 잘 시간", secondNight.text)
         assertEquals(Kind.COMMUTE, nights[3].kind)
         assertEquals(at(8, 7), nights[3].at)
     }
@@ -116,7 +116,7 @@ class DayNoticesTest {
         val brief = plan(r, at(2, 12)).first { it.key.startsWith("brief-2026-11-03") }
         assertEquals(at(2, 22), brief.at)
         assertEquals("내일 06:00 새벽 · 쉴 틈 8시간", brief.title)
-        assertEquals("잘 수 있는 시간 23:00–04:30 · 알람 04:30", brief.text)
+        assertEquals("잘 수 있는 시간 23:00~04:30 · 알람 04:30", brief.text)
     }
 
     @Test

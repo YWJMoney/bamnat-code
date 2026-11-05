@@ -183,11 +183,14 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         if (Notifications.makerLockScreenPermission()) add(AlarmCheck("제조사 잠금 화면 표시", null,
             "이 휴대폰은 ‘잠금 화면에 표시’·‘백그라운드에서 팝업 창 표시’ 권한이 따로 있어요. 앱 정보 › 권한(기타 권한)에서 둘 다 허용해 주세요.",
             "앱 정보 열기", Fix.Open(details)))
-        // [ALRM-01] R10, [ALRM-15] 1.31 R9: the phone's list of apps (no permission to ask for), the app's page as a fallback.
+        // [ALRM-01] R10, [ALRM-15] 1.31 R9: no permission to ask for. PC 267560dd: the list of every app made people hunt for
+        // 밤낮, so on Android 12+ the app's own page opens first (배터리 › 제한 없음 is two taps there), the list on older phones.
         add(AlarmCheck("배터리 최적화 제외", power?.isIgnoringBatteryOptimizations(context.packageName) == true,
-            "밤낮을 배터리 최적화에서 빼면 오래 안 써도 알람이 늦지 않아요. 여는 목록에서 ‘모든 앱’을 고른 뒤 밤낮을 눌러 ‘최적화 안 함’(또는 ‘제한 없음’)으로 바꿔 주세요.",
-            "설정 열기",
-            Fix.OpenFirst(listOf(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS), details))))
+            if (android.os.Build.VERSION.SDK_INT >= 31) "밤낮을 배터리 최적화에서 빼면 오래 안 써도 알람이 늦지 않아요. 여는 밤낮 앱 정보에서 ‘배터리’(앱 배터리 사용량)를 눌러 ‘제한 없음’으로 바꿔 주세요."
+            else "밤낮을 배터리 최적화에서 빼면 오래 안 써도 알람이 늦지 않아요. 여는 목록에서 ‘모든 앱’을 고른 뒤 밤낮을 눌러 ‘최적화 안 함’으로 바꿔 주세요.",
+            if (android.os.Build.VERSION.SDK_INT >= 31) "밤낮 배터리 설정 열기" else "설정 열기",
+            Fix.OpenFirst(if (android.os.Build.VERSION.SDK_INT >= 31) listOf(details, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                else listOf(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS), details))))
         if (power?.isPowerSaveMode == true) add(AlarmCheck("절전 모드", false,
             "절전 모드가 켜져 있어 휴대폰이 앱을 더 자주 멈춰요. 알람은 울리지만 늦을 수 있어요.", "절전 설정 열기",
             Fix.Open(Intent(Settings.ACTION_BATTERY_SAVER_SETTINGS))))

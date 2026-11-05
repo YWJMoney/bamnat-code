@@ -95,7 +95,7 @@ fun AlarmOffsetDialog(
                 TimeChangeLine(
                     if (picked == null || minutes == first) null
                     else timeChangeNote(null, AlarmOffsets.ringAt(start, first), ring)
-                        ?: "시작 ${Fmt.offset(first)} → ${Fmt.offset(minutes)}으로 바뀌어요",
+                        ?: Fmt.startOffset(minutes).let { "${Fmt.startOffset(first)} → $it${Fmt.ro(it)} 바뀌어요" },
                 )
                 if (byClock == 1) {
                     // [EASE-18] Which day it rings: 전날 for an early start, 다음날 for a nap after a 야간.
@@ -143,10 +143,10 @@ fun AlarmOffsetDialog(
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     for (m in shortcuts) {
                         FilterChip(selected = picked == m, enabled = m !in existing, onClick = { setMinutes(m); jump++ },
-                            label = { Text(Fmt.offset(m)) })
+                            label = { Text(Fmt.offset(m), maxLines = 1, softWrap = false) })
                     }
                 }
             }
@@ -160,7 +160,7 @@ fun AlarmOffsetDialog(
 /** "06:30에 울려요 · 시작 1시간 30분 전", "전날 23:30에 울려요 · …", "다음날 14:00에 울려요 · 시작 16시간 뒤", "시작 시각에 울려요". */
 internal fun alarmLine(start: LocalTime, minutes: Int): String {
     if (minutes == 0) return "${Fmt.time(start)} 시작 시각에 울려요"
-    return "${alarmClock(start, minutes)}에 울려요 · " + if (minutes < 0) Fmt.offset(minutes) else "시작 ${Fmt.offset(minutes)}"
+    return "${alarmClock(start, minutes)}에 울려요 · " + Fmt.startOffset(minutes)
 }
 
 /** [EASE-18] When a shift's alarm rings, with the day when it is not the shift's own: "06:30", "전날 23:30", "다음날 14:00". */

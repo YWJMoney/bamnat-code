@@ -122,12 +122,13 @@ fun TimePickerDialog(
                         }
                     }
                 }
+                // PC 267560dd (큰 글자): '08:00' was cut; room under the chips as in 날짜 시간 바꾸기, and the label never wraps.
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     for (t in presets) {
-                        AssistChip(onClick = { set(t) }, label = { Text("%02d:%02d".format(t.hour, t.minute)) })
+                        AssistChip(onClick = { set(t) }, label = { Text("%02d:%02d".format(t.hour, t.minute), maxLines = 1, softWrap = false) })
                     }
                 }
             }

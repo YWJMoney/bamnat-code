@@ -44,6 +44,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -169,23 +170,28 @@ internal fun RingingScreen(
                     SlideToAnswer(snoozeMinutes, dismissLabel, onSnooze, onDismiss)
                     Text("가운데를 밀어요 · 오른쪽 끄기, 왼쪽 ${snoozeMinutes}분 뒤", color = Color.White.copy(alpha = 0.65f),
                         style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.Center)
-                    if (onAllOff != null) {
-                        // [ALRM-09] Up, out of bed: nothing more today. Tomorrow's alarms stay; 다시 켜기 waits on the notice.
+                    // [EASE-19] Turning it off ends there (the app does not open); this is for when the user wants the day.
+                    // PC 267560dd: it is the one most want after the slider, so it gets the outlined button.
+                    if (onToday != null) {
                         OutlinedButton(
-                            onClick = onAllOff,
+                            onClick = onToday,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        ) {
-                            Text("오늘 남은 알람 모두 끄기", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-                        }
+                        ) { Text("끄고 오늘 보기", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center) }
                     }
-                    // [EASE-19] Turning it off ends there (the app does not open); this is for when the user wants the day.
-                    if (onToday != null) {
+                    if (onAllOff != null) {
+                        // [ALRM-09] Up, out of bed: nothing more today. Tomorrow's alarms stay; 다시 켜기 waits on the notice.
+                        // PC 267560dd: it silences the rest of the day, so the first tap only asks; a second within a few seconds does it.
+                        var asking by remember { mutableStateOf(false) }
+                        LaunchedEffect(asking) { if (asking) { delay(ALL_OFF_ASK_MILLIS); asking = false } }
                         androidx.compose.material3.TextButton(
-                            onClick = onToday,
-                            modifier = Modifier.heightIn(min = 48.dp),
+                            onClick = { if (asking) onAllOff() else asking = true },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                             colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.85f)),
-                        ) { Text("끄고 오늘 보기", style = MaterialTheme.typography.titleSmall) }
+                        ) {
+                            Text(allOffLabel(asking), style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center,
+                                fontWeight = if (asking) FontWeight.SemiBold else null)
+                        }
                     }
                 }
             }
@@ -204,6 +210,12 @@ internal fun RingingScreen(
         }
     }
 }
+
+private const val ALL_OFF_ASK_MILLIS = 5_000L
+
+/** [ALRM-09] The 모두 끄기 button, before and after the first tap. */
+internal fun allOffLabel(asking: Boolean) =
+    if (asking) "한 번 더 누르면 오늘 남은 알람이 모두 꺼져요" else "오늘 남은 알람 모두 끄기"
 
 /** [EASE-20] What the ringing screen shows big: "오늘 근무" over "주간" on the shift's colour. */
 data class RingShift(val day: String, val name: String, val color: Color)
