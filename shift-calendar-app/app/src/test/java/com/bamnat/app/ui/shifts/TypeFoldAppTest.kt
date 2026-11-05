@@ -134,4 +134,24 @@ class TypeFoldAppTest {
         TypeFoldAsk.asking.value = null
         repo.clearPattern()
     }
+
+    /** 1.37 PC deca4f1f: 교대 → 알바 with 접어 두기 stops 교대's cycle too; the 알바 days saved meanwhile go when 교대 comes back. */
+    @Test fun anyFoldStopsTheOldCycleAndShiftWorkTakesItBack() = runBlocking {
+        val c = app.container
+        val repo = c.calendars.repository(PersonalCalendar.MAIN)
+        repo.ensureDefaults()
+        c.foldedTypes.stop(PersonalCalendar.MAIN, null)
+        assertTrue(TypeFoldAsk.stopsCycle(WorkStyle.SHIFT, WorkStyle.HOURLY) && !TypeFoldAsk.stopsCycle(WorkStyle.SHIFT, WorkStyle.SHIFT))
+        val today = com.bamnat.core.time.Today.date()
+        val day = repo.shiftTypes.first().first { !it.isOff }.id
+        repo.restorePatterns(listOf(com.bamnat.core.model.WorkPattern.Rotation(today.minusDays(30), listOf(day, null))))
+        val was = repo.patterns.first()
+        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, was, WorkStyle.SHIFT)
+        repo.changePatternFrom(com.bamnat.core.model.WorkPattern.Weekly(today.plusDays(1), java.time.DayOfWeek.entries.associateWith { day }), today.plusDays(1))
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.HOURLY, WorkStyle.SHIFT)
+        assertEquals(was, repo.patterns.first())
+        TypeFoldAsk.asking.value = null
+        repo.clearPattern()
+    }
 }

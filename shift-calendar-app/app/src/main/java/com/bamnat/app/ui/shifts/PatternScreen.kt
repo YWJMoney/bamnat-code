@@ -113,7 +113,10 @@ fun PatternScreen(
     LaunchedEffect(cleared) { if (cleared) scroll.animateScrollTo(0) }
     LaunchedEffect(existing, cleared) {
         if (cleared && existing == null && draft0.initialized) draft0.forget()
-        draft0.initFrom(existing, today, if (startWeekdays) types.firstOrNull { !it.isOff && it.hasTimes }?.id else null)
+        // [SETUP-16] 1.37 PC deca4f1f (일근으로 바꾸면 교대 8일 순서가 채워져 있어 저장하면 교대 순서가 다시 들어감): days of the week
+        // asked for start from 월~금, not from the shift work's order.
+        val from = existing?.takeIf { !(startWeekdays && it is com.bamnat.core.model.WorkPattern.Rotation) }
+        draft0.initFrom(from, today, if (startWeekdays) types.firstOrNull { !it.isOff && it.hasTimes }?.id else null)
     }
     if (!draft0.initialized) return
     var kind by draft0::kind

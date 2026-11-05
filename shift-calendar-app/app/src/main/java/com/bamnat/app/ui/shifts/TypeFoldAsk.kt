@@ -51,6 +51,12 @@ object TypeFoldAsk {
      */
     fun stopsCycle(to: WorkStyle): Boolean = to == WorkStyle.FIELD || to == WorkStyle.BUSINESS || to == WorkStyle.INVEST
 
+    /**
+     * 1.37 PC deca4f1f (교대에서 알바로 바로 가며 접어 두면 교대 주기가 계속 칠해짐): putting the old 근무 away stops its cycle whatever the
+     * new kind of work is; the new one sets its own days (알바 요일, 일근 월~금, 교대 순서) and going back brings the old cycle back.
+     */
+    fun stopsCycle(from: WorkStyle, to: WorkStyle): Boolean = from != to
+
     /** 되돌리기 of a [Done]: the 근무 out again, and the cycle as it was. */
     fun undo(c: AppContainer, d: Done) {
         c.foldedTypes.unfold(d.calendar, d.ids)
@@ -72,8 +78,8 @@ object TypeFoldAsk {
      * nothing was changed in it since. The days between went on being the other work's (written by hand, they stay as written).
      */
     suspend fun resume(c: AppContainer, calendar: String, to: WorkStyle) {
-        if (stopsCycle(to)) return
         val stopped = c.foldedTypes.stopped(calendar) ?: return
+        if (stopped.from == null && stopsCycle(to)) return
         // 1.37 PC 0068727b: only the kind of work it was stopped from takes it back (교대's 주간·야간 are not an 알바's days).
         if (stopped.from != null && stopped.from != to) return
         c.foldedTypes.stop(calendar, null)
@@ -87,8 +93,10 @@ object TypeFoldAsk {
      */
     internal fun madeByHand(now: List<com.bamnat.core.model.WorkPattern>, stopped: com.bamnat.app.data.FoldedTypes.StoppedCycle): Boolean {
         val kept = com.bamnat.core.work.QuitCheck.endPatterns(stopped.was, stopped.on)
-        return now.filterIsInstance<com.bamnat.core.model.WorkPattern.Rotation>().any { p ->
-            kept.none { e -> e is com.bamnat.core.model.WorkPattern.Rotation && e.withRange(e.startDate, p.endDate) == p }
+        // The stopped work's own kind of schedule: an order for 교대, days of the week for 일근·알바.
+        val rotation = stopped.from?.let { it == WorkStyle.SHIFT } ?: stopped.was.any { it is com.bamnat.core.model.WorkPattern.Rotation }
+        return now.filter { (it is com.bamnat.core.model.WorkPattern.Rotation) == rotation }.any { p ->
+            kept.none { e -> e.javaClass == p.javaClass && e.withRange(e.startDate, p.endDate) == p }
         }
     }
 
@@ -121,7 +129,7 @@ fun TypeFoldHost(c: AppContainer) {
     val patterns by androidx.compose.runtime.produceState<List<com.bamnat.core.model.WorkPattern>>(emptyList(), a) {
         value = c.calendars.repository(a.calendar).patterns.first()
     }
-    val stops = TypeFoldAsk.stopsCycle(a.to) && patterns.isNotEmpty()
+    val stops = TypeFoldAsk.stopsCycle(a.from, a.to) && patterns.isNotEmpty()
     val names = a.types.joinToString("·") { it.name }
     AlertDialog(
         onDismissRequest = { TypeFoldAsk.asking.value = null },
