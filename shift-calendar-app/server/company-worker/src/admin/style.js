@@ -660,6 +660,7 @@ table.list td small{color:var(--muted);font-size:.75rem}
 table.list tr.picked td{background:var(--accent-soft)}
 @media (hover:hover) and (min-width:600px){table.list tbody tr:hover td{background:var(--hover)}}
 @media (min-width:600px){table.list thead th:not(:first-child){text-align:right}table.list thead th.pickcol+th{text-align:left}}
+@media (min-width:600px){table.list.nums td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}}
 @media (min-width:600px){table.list .lab{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 @media (max-width:599.98px){
   .table-wrap:has(table.list){border:0;overflow:visible}

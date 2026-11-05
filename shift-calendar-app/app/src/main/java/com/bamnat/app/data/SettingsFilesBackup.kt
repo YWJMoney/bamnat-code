@@ -176,6 +176,7 @@ class SettingsFilesBackup(
             Part("calendar_start"),
             Part("leave_hire"), // [LEAVE-14]
             Part("pro_trials"), // [MON-13]
+            Part("work_plans"), // 1.38 팀 요금제: 무료로 쓴 첫 확정 달 (팀을 지워도, 새로 깔아도 남게)
             Part("folded_types"), // 1.36 PC 재검토: 안 쓰는 근무 종류
             Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays", "folders", "placed")),
         )

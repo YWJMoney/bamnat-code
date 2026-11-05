@@ -101,14 +101,15 @@ import java.util.UUID
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit) {
+fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? = null) {
     val c = LocalContext.current.appContainer
     val store = c.phaseThree
     val teams by store.teamList.collectAsStateWithLifecycle(null)
-    var openId by rememberSaveable { mutableStateOf<String?>(null) }
+    // 관리 화면 opens one team straight away; its 뒤로 goes back there, not to the team list.
+    var openId by rememberSaveable { mutableStateOf(startTeam) }
     var making by rememberSaveable { mutableStateOf(false) }
     val open = teams?.firstOrNull { it.id == openId }
-    if (open != null) { TeamBoardScreen(open, onBack = { openId = null }); return }
+    if (open != null) { TeamBoardScreen(open, onBack = { if (startTeam != null) onBack() else openId = null }); return }
     Scaffold(topBar = {
         TopAppBar(title = { Text("내가 짜는 팀 근무표") },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
@@ -177,6 +178,7 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
             scope.launch {
                 c.phaseThree.saveTeam(Team(id, name.trim(), shifts = shifts, createdAt = Today.millis()))
                 c.phaseThree.saveMembers(people.mapIndexed { i, p -> TeamMember(UUID.randomUUID().toString(), id, p.name, p.role, p.skill, sort = i) })
+                c.telemetry.event(com.bamnat.core.stats.UsageEvent.TEAM_MADE.key)
                 onMade(id)
             }
         }) { Text("만들기") }
@@ -365,10 +367,13 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
                     // 1.38 검토: sending the links again with nothing changed keeps the same 판 (it used to count one up each time).
                     val again = state.state == MonthState.CONFIRMED && changes.isEmpty()
                     val m = if (again) state else store.confirm(team.id, b, state)
+                    if (!again) c.telemetry.event(com.bamnat.core.stats.UsageEvent.TEAM_CONFIRM.key)
                     if (need.verdict == com.bamnat.core.tier.WorkPlanRules.Verdict.FREE) store.keepFreeMonth(month)
                     val made = runCatching { links(c, team, b, active) }
                     busy = null
                     // 1.38 PC 1차: after 다시 확정 the links are the same ones, only their days changed: say so, and offer to send anyway.
+                    made.onFailure { c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "team_links") }
+                    made.onSuccess { c.telemetry.event(com.bamnat.core.stats.UsageEvent.TEAM_LINKS.key) }
                     made.onSuccess { l -> if (state.state == MonthState.CONFIRMED && !again) resent = m.version to l else linksFor = l }.onFailure { dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + "링크는 인터넷이 될 때 다시 눌러 주세요." }
                 }
             }, enabled = busy == null, modifier = Modifier.fillMaxWidth()) {
@@ -458,8 +463,10 @@ private fun Keypad(team: Team, b: TeamBoard, m: TeamMember, month: YearMonth, cu
                     modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "${s.name} 칠하기" }) { Text(s.label, color = Color.White, fontWeight = FontWeight.Bold) }
             }
             OutlinedButton(onClick = { change { it.paint(m.id, month.atDay(cursor), null) }; after(pad().erase(), cursor == days) },
-                modifier = Modifier.heightIn(min = 48.dp)) { Text("✕ 지우기") }
-            OutlinedButton(onClick = { after(pad().skip(), cursor == days) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("» 건너뛰기") }
+                // 갈래5 PaintPad와 같은 글자·같은 읽기 (TalkBack: "n월 d일 넣은 것 지우기", "d일 건너뛰기").
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "${month.monthValue}월 ${cursor}일 넣은 것 지우기" }) { Text("✕ 지우기") }
+            OutlinedButton(onClick = { after(pad().skip(), cursor == days) },
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "${cursor}일 건너뛰기" }) { Text("» 건너뛰기") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val cell = b.cell(m.id, month.atDay(cursor))

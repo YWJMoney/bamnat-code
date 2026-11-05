@@ -45,7 +45,10 @@ fun WorkPlanSheet(kind: WorkPlanKind, need: WorkPlanRules.Need, onDismiss: () ->
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
     val offers by c.billing.work.collectAsStateWithLifecycle()
     var message by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(Unit) { runCatching { c.billing.refresh() } }
+    LaunchedEffect(Unit) {
+        c.telemetry.event(if (kind == WorkPlanKind.TEAM) com.bamnat.core.stats.UsageEvent.PLAN_VIEW_TEAM.key else com.bamnat.core.stats.UsageEvent.PLAN_VIEW_STAFF.key)
+        runCatching { c.billing.refresh() }
+    }
     // Bought (or changed): the need is met, the sheet closes by itself.
     LaunchedEffect(gate.hold(kind)?.cap) { if ((gate.hold(kind)?.cap ?: 0) >= need.count && need.count > 0) onDismiss() }
     val table = gate.plans
@@ -77,6 +80,7 @@ fun WorkPlanSheet(kind: WorkPlanKind, need: WorkPlanRules.Need, onDismiss: () ->
                     BandCard(kind, band, fits = band.cap >= need.count, picked = band == need.band, held = held?.cap == band.cap,
                         offers = offers.filter { it.kind == kind && it.cap == band.cap }, passBlocked = held != null && !held.pass,
                         onBuy = { o ->
+                            c.telemetry.event(com.bamnat.core.stats.UsageEvent.PLAN_BUY_TAP.key)
                             val a = context.findActivity()
                             if (a == null || !c.billing.buyWork(a, o)) message = "Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요."
                         })

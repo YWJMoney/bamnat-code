@@ -45,6 +45,10 @@ enum class SettingsGo {
     STUDIO_MOTION, STUDIO_PARTS,
     /** [CNV-08] 1.37 각 탭의 카드 배치 → 스튜디오의 그 화면 (한 곳에서 고쳐요). */
     STUDIO_CALENDAR, STUDIO_MONEY, STUDIO_MEMO, STUDIO_STATS,
+    /** 1.38 스튜디오 › 팀·가게 관리. */
+    STUDIO_MANAGE,
+    /** 1.38 관리 화면: 팀 근무표·급여 대장·명세서를 한곳에 (리더·사장님). */
+    MANAGE,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

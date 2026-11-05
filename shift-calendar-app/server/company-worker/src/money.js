@@ -222,9 +222,11 @@ export async function boughtUntil(env, dev, now) {
   const row = await one(env, `SELECT MAX(expiry) AS until FROM subs WHERE device = ? AND trial = 0
     AND state IN ('ACTIVE', 'GRACE', 'CANCELED') AND expiry > ?`, dev, now);
   // 1.36 841: a 1년 이용권 is bought 프로 too (프로 나눔 1인). Passes stack: each adds a year from its purchase or the end before.
-  const passes = await all(env, "SELECT purchased_at FROM year_passes WHERE device = ? AND state = 'ACTIVE' ORDER BY purchased_at", dev);
-  let passEnd = null;
-  for (const p of passes) passEnd = Math.max(passEnd ?? p.purchased_at, p.purchased_at) + 365 * DAY;
+  // 1.38: a 팀·직원 이용권 holds 프로 too, but each product stacks on its own (a team pass does not lengthen the 프로 one).
+  const passes = await all(env, "SELECT product, purchased_at FROM year_passes WHERE device = ? AND state = 'ACTIVE' ORDER BY purchased_at", dev);
+  const ends = new Map();
+  for (const p of passes) ends.set(p.product, Math.max(ends.get(p.product) ?? p.purchased_at, p.purchased_at) + 365 * DAY);
+  const passEnd = ends.size ? Math.max(...ends.values()) : null;
   const best = Math.max(row?.until ?? 0, passEnd && passEnd > now ? passEnd : 0);
   return best || null;
 }
@@ -945,9 +947,9 @@ async function yearPass(env, dev, token, now, product = PASS_PRODUCT) {
     await audit(env, now, "purchase_rebind", product, hash.slice(0, 8));
   }
   if (!p.purchasedAt) return json({ verified: false });
-  await run(env, `INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, checked_at = excluded.checked_at`,
-  hash, dev, p.orderId, p.state, p.purchasedAt, now, now);
+  await run(env, `INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at, product) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (hash) DO UPDATE SET device = excluded.device, state = excluded.state, checked_at = excluded.checked_at, product = excluded.product`,
+  hash, dev, p.orderId, p.state, p.purchasedAt, now, now, product);
   return json({ verified: true, state: p.state, purchasedAt: iso(p.purchasedAt), expiry: iso(p.purchasedAt + PASS_DAYS * DAY),
     trial: false, autoRenew: false, acknowledged: p.acknowledged });
 }

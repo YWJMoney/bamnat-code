@@ -37,6 +37,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.EventRepeat
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Schedule
@@ -840,6 +841,12 @@ private fun SettingsHub(
         // [MON-04] 프로: what it is now, and the screen to start, manage or restore it.
         val gate by vm.gate.collectAsStateWithLifecycle()
         GroupRow(Icons.Outlined.WorkspacePremium, "프로", proSummary(gate), false) { SettingsLinks.go(SettingsGo.PRO) }
+        // 1.38 관리 화면: 리더·사장님 일은 개인 화면과 따로 한곳에.
+        val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
+        val leaderOn = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
+        val bossOn = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+        if (leaderOn || bossOn) GroupRow(Icons.Outlined.Groups, "팀·가게 관리",
+            listOfNotNull("팀 근무표".takeIf { leaderOn }, "급여 대장·명세서·직원".takeIf { bossOn }, "할 일").joinToString(" · "), false) { SettingsLinks.go(SettingsGo.MANAGE) }
         // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there. AG 1.27 [INVITE-09]: the rules as meant.
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
         if (LocalContext.current.appContainer.inviteApi.enabled && !com.bamnat.app.ui.grow.rememberGrowCardShown()) {

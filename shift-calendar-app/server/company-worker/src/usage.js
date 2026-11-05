@@ -2,6 +2,7 @@ import { SWITCH_FLAGS, flagDef, flagStore, migrateFlags, serverEval, setFlagForc
 import { all, allow, appVersions, audit, batch, given, inquiryStats, iso, item, json, list, metricRange, network, one, overLimit, playVitals, randomId, readJson, refuse, run, sha256, shareStats, stmt, versions } from "./index.js";
 import { SLA_SQL, plainText, readSla } from "./inquiries.js";
 import { DAY, HOUR } from "./units.js";
+import { WORK_PRODUCTS, phase3Metrics } from "./phase3-metrics.js";
 // ---- running the service, 1.22 [SRV-04][SRV-05][SRV-06][STAT-01][COMM-09][COMM-10][ADMIN-13][ADMIN-14] ----
 
 /** A day as people in Korea count it (KST, no daylight saving), "2026-10-22". */
@@ -290,6 +291,19 @@ export const EVENTS = {
   theme_free_show_failed: "테마 무료(광고 표시 실패)",
   theme_free_not_ready: "테마 무료(광고 준비 안 됨)",
   theme_free_other: "테마 무료(그 밖)",
+  // 1.38 Phase 3 분석판: how often only (팀·가게·이름·금액 없이, 처리방침 3.9 사용 통계와 같은 종류).
+  manage_open: "팀·가게 관리 열기",
+  team_made: "팀 만들기",
+  team_confirm: "팀 근무표 확정",
+  team_links: "팀원 링크 보내기",
+  ledger_closed: "급여 대장 닫기",
+  slip_sent: "임금명세서 보내기",
+  plan_view_team: "팀 요금제 창 보기",
+  plan_view_staff: "직원 요금제 창 보기",
+  plan_buy_tap: "요금제 결제 누르기",
+  manage_error: "팀·가게 화면 오류",
+  manage_hint_shown: "팀·가게 기능 안내 보임",
+  manage_hint_open: "팀·가게 기능 안내 누름",
 };
 
 export async function usage(request, env) {
@@ -574,7 +588,8 @@ export async function metrics(env, url, now) {
       WHERE day BETWEEN ? AND ? GROUP BY event`, from, to),
     stmt(env, `SELECT SUM(CASE WHEN trial = 1 THEN 1 ELSE 0 END) AS trials, SUM(CASE WHEN trial = 0 THEN 1 ELSE 0 END) AS paid,
       SUM(CASE WHEN trial = 0 AND base_plan = 'yearly' THEN 1 ELSE 0 END) AS yearly,
-      SUM(CASE WHEN auto_renew = 0 THEN 1 ELSE 0 END) AS ending FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?`, now),
+      SUM(CASE WHEN auto_renew = 0 THEN 1 ELSE 0 END) AS ending FROM subs WHERE state IN ('ACTIVE', 'GRACE') AND expiry > ?
+      AND product NOT IN (${WORK_PRODUCTS.map(() => "?").join(", ")})`, now, ...WORK_PRODUCTS),
     // [ADMUX-07] The period just before, day by day, for the chart's dashed line.
     stmt(env, "SELECT day, SUM(phones) AS phones FROM usage_days WHERE day BETWEEN ? AND ? GROUP BY day", r.beforeFrom, r.beforeTo),
     // [ADMUX-13] Which app the phones of the period's last seven days run.
@@ -597,7 +612,7 @@ export async function metrics(env, url, now) {
     env.DB.prepare(SLA_SQL),
     // 1.36 841 1년 이용권: those still running and those bought in the period.
     stmt(env, `SELECT SUM(CASE WHEN purchased_at > ? THEN 1 ELSE 0 END) AS running, SUM(CASE WHEN purchased_at >= ? AND purchased_at < ? THEN 1 ELSE 0 END) AS bought
-      FROM year_passes WHERE state = 'ACTIVE'`, now - 365 * DAY, start, end),
+      FROM year_passes WHERE state = 'ACTIVE' AND product = 'bamnat_pro_pass_1y'`, now - 365 * DAY, start, end),
   ])).map((x) => x.results);
   const was = new Map(beforeRows.map((x) => [x.day, x.phones]));
   const phoneDays = dayRows.reduce((n, x) => n + x.phones, 0);
@@ -649,6 +664,8 @@ export async function metrics(env, url, now) {
       passes: passRows?.[0]?.running ?? 0, passesBought: passRows?.[0]?.bought ?? 0,
     },
     shares: await shareStats(env, days),
+    // 1.38 Phase 3 분석판.
+    phase3: await phase3Metrics(env, start, end, now, ev),
     // [ADMUX-13] Phone-days only (결정 D42): the same phone on seven days counts seven times, so a week is an average.
     active: {
       daily, week: week.length ? Math.round(week.reduce((n, x) => n + x.phones, 0) / week.length) : 0,

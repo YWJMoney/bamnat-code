@@ -43,7 +43,7 @@ class ZFullBackupTest {
         todayShiftNotice = true, briefing = true, commuteNotice = true, bedtimeNotice = true, sleepingNotice = false,
         quietWhileAsleep = false, moneyNotices = false, leaveNotice = false, sleepTargetMinutes = 8 * 60, commuteMinutes = 40,
         restDayCompared = true, phoneDayView = PhoneDayView.WEEK, showDayCard = true, appLock = true,
-        calendarLayout = "cards:a", statsLayout = "stats:b", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
+        calendarLayout = "cards:a", statsLayout = "stats:b", manageLayout = "plan,-keep", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
         alarmMission = "math", shiftMissions = mapOf(shiftId to "math"), wakeCheckMinutes = 10, widgetMemo = false,
         backupPhotos = false, moneyLayout = "money:c", moneyCheckOpen = true, budgetRollover = "식비", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", rateHint = false, alarmSuggest = false,
         // 1.25 AB.

@@ -182,6 +182,27 @@ test("[ADMIN-13][STAT-03][STAT-04] the gate numbers: shares of phones, the funne
   assert.deepEqual(g["유료 구독 사용자"], [3, "pass"]);
   assert.deepEqual([m.funnel.paywall, m.funnel.trials, m.funnel.paid, m.funnel.ending], [140, 1, 1, 1]);
   assert.equal(m.events.find((e) => e.event === "pay_view").label, "급여 화면");
+  // 1.38 Phase 3 분석판: 팀·직원 요금제 by band, kept apart from 프로 전환; a 팀 이용권 is not a 프로 이용권.
+  DB.db.prepare(`INSERT INTO subs (hash, device, token, product, base_plan, state, expiry, trial, auto_renew, created_at, checked_at, stopped_at)
+    VALUES ('h3', 'd3', 't', 'bamnat_team', 'c15-yearly', 'ACTIVE', ?, 1, 1, ?, ?, NULL), ('h4', 'd4', 't', 'bamnat_team', 'c30-monthly', 'ACTIVE', ?, 0, 0, ?, ?, NULL),
+    ('h5', 'd5', 't', 'bamnat_staff', 'c5-yearly', 'EXPIRED', ?, 0, 0, ?, ?, ?)`)
+    .run(NOW + 86400e3, NOW - 3 * 86400e3, NOW, NOW + 86400e3, NOW - 3 * 86400e3, NOW, NOW - 86400e3, NOW - 40 * 86400e3, NOW, NOW - 2 * 86400e3);
+  DB.db.prepare(`INSERT INTO year_passes (hash, device, order_id, state, purchased_at, created_at, checked_at, product)
+    VALUES ('p1', 'd6', '', 'ACTIVE', ?, ?, ?, 'bamnat_staff_pass_10')`).run(NOW - 86400e3, NOW, NOW);
+  const day = new Date(NOW + 9 * 3600e3 - 86400e3).toISOString().slice(0, 10);
+  ev.run(day, "team_confirm", 4, 5, 4);
+  ev.run(day, "plan_view_team", 3, 3, 3);
+  m = (await call("GET", "/api/admin/metrics?days=28", undefined, admin)).data;
+  assert.deepEqual([m.funnel.trials, m.funnel.paid, m.funnel.passes], [1, 1, 0]);
+  const bands = Object.fromEntries(m.phase3.bands.map((b) => [`${b.who}${b.cap}`, b]));
+  assert.deepEqual(Object.keys(bands), ["팀15", "팀30", "직원5", "직원10"]);
+  assert.deepEqual([bands.팀15.trials, bands.팀15.yearly, bands.팀15.started], [1, 0, 1]);
+  assert.deepEqual([bands.팀30.monthly, bands.팀30.ending], [1, 1]);
+  assert.deepEqual([bands.직원5.monthly + bands.직원5.yearly, bands.직원5.stopped], [0, 1]);
+  assert.deepEqual([bands.직원10.passes, bands.직원10.passesBought], [1, 1]);
+  assert.deepEqual([m.phase3.team.confirms, m.phase3.team.confirmPhones, m.phase3.team.planView, m.phase3.team.paid, m.phase3.shop.paid], [5, 4, 3, 1, 1]);
+  // No name, amount or team id travels in it.
+  assert.doesNotMatch(JSON.stringify(m.phase3), /d[0-9]|h[0-9]|token/);
 });
 
 test("[COMM-09] 이 사람 글 안 보기: the phone's own list hides a writer everywhere, and no two posts' marks match", async () => {

@@ -528,7 +528,7 @@ class BackupManager(
                 .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
                 // 1.38 [LEDH-24]
                 .put("shiftPreview", s.shiftPreviewNotice).put("shiftPreviewHour", s.shiftPreviewHour).put("moneyChallenge", s.moneyChallenge)
-                .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
+                .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("manageLayout", s.manageLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
                 .put("tabOrder", s.tabOrder.joinToString(","))
@@ -1056,6 +1056,7 @@ class BackupManager(
                     appLock = o.optBoolean("appLock", false),
                     calendarLayout = o.optString("calendarLayout", s.calendarLayout),
                     statsLayout = o.optString("statsLayout", s.statsLayout),
+                    manageLayout = o.optString("manageLayout", s.manageLayout),
                     hideDayAlarmNotice = o.optBoolean("hideDayAlarmNotice", s.hideDayAlarmNotice),
                     dayGroupOrder = o.optStringOrNull("dayGroupOrder")?.let(::decodeGroupOrder)
                         ?: if (o.optBoolean("memoFirst", false)) listOf("memo") else s.dayGroupOrder,
