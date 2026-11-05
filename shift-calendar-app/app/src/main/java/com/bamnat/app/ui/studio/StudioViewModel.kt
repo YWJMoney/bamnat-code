@@ -801,7 +801,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     /** F-101: the 장터 code 올리기 sends a next 판 to, when the draft is one of mine already there. */
     fun plazaCode(): String? = ownStart?.takeIf { it.free }?.shared
 
-    fun mineCount(): Int = c.wardrobe.lease.value.history.count { it.own }
+    fun mineCount(): Int = c.wardrobe.ownCount()
     fun outfitLimit(): Int = c.wardrobe.outfitLimit()
 
     /** 장터에 올리기: the draft as a recipe to finish in 만들기 (이름·설명·확인), with the theme it came from as its parent. */
