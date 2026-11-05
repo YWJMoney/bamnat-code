@@ -90,6 +90,26 @@ class CompanyScopeTest {
         assertEquals(listOf(main), c.companyScopes())
     }
 
+    /** [SETUP-16] 1.37 PC 736167de: 교대 with 현대제철 turned 현장·자영업·투자 is not offered company things; an 알바 that joined keeps them. */
+    @Test fun aCompanyKeptFromShiftWorkIsNotOfferedToDayByDayWork() {
+        val was = c.settingsRepository.current
+        try {
+            c.companyStore.setApplied(applied("c-h", "현대제철"))
+            c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+            assertTrue(c.companyFits(needsServer = false))
+            for (style in listOf(WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST)) {
+                c.settingsRepository.update { it.copy(workStyle = style) }
+                assertFalse("$style", c.companyFits(needsServer = false))
+            }
+            c.settingsRepository.update { it.copy(workStyle = WorkStyle.HOURLY) }
+            assertTrue("회사에 든 알바", c.companyFits(needsServer = false))
+            c.companyStore.setApplied(null)
+            assertFalse("회사 없는 알바", c.companyFits(needsServer = false))
+        } finally {
+            c.settingsRepository.update { was }
+        }
+    }
+
     @Test fun aPhoneFromBeforeReadsItsCompanyAsItWas() {
         // 1.29's own preferences file, written as it was: read the same, nothing moved.
         c.companyStore.setApplied(applied("c-old", "옛회사"))

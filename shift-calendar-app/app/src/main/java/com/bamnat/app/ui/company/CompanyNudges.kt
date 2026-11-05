@@ -86,7 +86,7 @@ internal const val ASK_NOTICE =
  */
 @Composable
 fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (FixPlace) -> Unit) {
-    if (!vm.enabled) return
+    if (!liveEnabled(vm)) return
     val invite by vm.invite.collectAsStateWithLifecycle()
     val askVote by vm.askVote.collectAsStateWithLifecycle()
     val terms by vm.terms.collectAsStateWithLifecycle()
@@ -197,7 +197,7 @@ fun ShareInviteNotice(modifier: Modifier = Modifier) {
     // [CALI-04] The calendar on screen's own invitation.
     val calendar = LocalCompanyCalendar.current
     val vm = com.bamnat.app.ui.appViewModel(key = "company-nudges-$calendar") { CompanyNudgeViewModel(it, calendar) }
-    if (!vm.enabled) return
+    if (!liveEnabled(vm)) return
     val draft = vm.invite.collectAsStateWithLifecycle().value ?: return
     val terms by vm.terms.collectAsStateWithLifecycle()
     Box(modifier) {
@@ -350,6 +350,18 @@ private fun ChoiceRow(title: String, subtitle: String, enabled: Boolean, onClick
  * The invitation right after a pay setup made by hand under a company's name [COMM-02]: once,
  * when the work is fresh in mind. "나중에" leaves the card on the pay screen and in settings.
  */
+/**
+ * [SETUP-16] 1.37 PC 736167de: [CompanyNudgeViewModel.enabled] read again whenever the kind of work changes (설정 or an added
+ * calendar's own), so a 교대 calendar turned 현장·투자 stops asking to share with a company at once.
+ */
+@Composable
+private fun liveEnabled(vm: CompanyNudgeViewModel): Boolean {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    c.settingsRepository.settings.collectAsStateWithLifecycle().value.workStyle
+    c.calendars.calendars.collectAsStateWithLifecycle().value.size
+    return vm.enabled
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InviteSheet(vm: CompanyNudgeViewModel, onShare: () -> Unit, onDismiss: () -> Unit) {

@@ -298,7 +298,11 @@ class AppContainer(context: Context) {
     fun companyFits(calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN, needsServer: Boolean = true): Boolean {
         // [SHR-20] A company setup passed as a file or in a link needs no company server ([needsServer] false).
         if (needsServer && !companyApi.enabled) return false
-        if (scopeOf(calendarId).currentSettings().workStyle?.usesCompany != false) return true
+        val style = scopeOf(calendarId).currentSettings().workStyle
+        if (style?.usesCompany != false) return true
+        // [SETUP-16] 1.37 PC 736167de: work written day by day (현장·자영업·투자) has no company, even when the calendar kept
+        // the one chosen while it was 교대·일근 (the plaza cards, 급여도 넣어 볼까요?). An 알바 that joined its company keeps it.
+        if (style != com.bamnat.core.work.WorkStyle.HOURLY) return false
         val store = companyOf(calendarId).store
         return store.applied.value != null || store.member.value != null
     }
