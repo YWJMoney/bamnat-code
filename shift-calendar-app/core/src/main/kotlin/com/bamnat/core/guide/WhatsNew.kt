@@ -10,6 +10,26 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.37.0 (docs/plans/1.37-인계.md, 통합 PR: 묶음 A·B·C·D·H, 장터 카드, 시간 바퀴, 첫 설정 미루기). 공유 테마(SHR-31·32)는
+        // 처리방침 3.11이 켜지는 11월 10일 뒤에 따로 알려요.
+        Release(51, "1.37.0", listOf(
+            // [CNV-01..14]
+            Line("스튜디오에서 판을 크게 보고, 바꿀 곳을 누르면 그 부분 메뉴가 바로 열려요. 카드도 끌어서 옮겨요", "recipe.studio"),
+            // [DRW-01..03]
+            Line("마을 › 테마가 ‘내 서랍’이 됐어요. 내 테마·입어 본 것·조각을 한곳에서 묶고 찾고, 입은 뒤 바로 되돌려요", "recipe.mine"),
+            // [MKV-01..06]
+            Line("장터 카드가 작품을 입힌 실제 화면으로 보여요", "recipe.browse"),
+            // [LEDH-01][LEDH-04]
+            Line("가계부 요약이 ‘오늘 · 이번 달 · 앞으로’로 나뉘고, 쉬는 날에 일하면 급여가 얼마나 바뀌는지 날짜 창에서 바로 봐요", "money.whatIf"),
+            // [LEDH-14]
+            Line("홈 화면 ‘오늘 쓸 돈’ 위젯과 빠른 설정 ‘돈 적기’ 타일로 한 번에 적어요", "money.quickAdd"),
+            // [PAYIN-01..08]
+            Line("명세서 사진을 보며 급여를 넣고, 저장하면 이달 급여가 얼마에서 얼마로 바뀌었는지 보여 줘요. 바로 되돌릴 수도 있어요", "pay.calc"),
+            // [TOWN-01..14]
+            Line("마을 › 광장 위에 내 글에 달린 새 답이 모여 보이고, 소식 알림을 누르면 바로 그 글이 열려요", "plaza.news"),
+            // [TIME-03][SETUP-16]
+            Line("시간 바퀴를 세게 튕겨도 두 칸까지만 돌고 저장 전에 바뀐 시간을 보여 줘요. 첫 설정을 미뤄도 고른 근무 유형은 그대로예요"),
+        )),
         // 1.35.0 나눔 판 완성 (계획/1.34-나눔판-설계서.md 1.35·1.36 몫).
         Release(47, "1.35.0", listOf(
             // [RCX-02][RCX-03]
