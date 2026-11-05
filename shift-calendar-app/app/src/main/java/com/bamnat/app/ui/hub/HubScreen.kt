@@ -60,6 +60,17 @@ enum class HubSection(val label: String, val line: String) {
     MAKE("공방", "스튜디오 하나에서 꾸미고, 기능까지 묶어 올려요. 내 것은 여기 한곳에"),
 }
 
+/**
+ * [TOWN-01] 1.37: the part 마을 opens on next, set by a 소식 notice (광장 for answers and plaza news, 장터 for new works), taken
+ * once. Without it 마을 opens on the part last seen, and a reply notice could land on 테마.
+ */
+object HubLinks {
+    private val _next = kotlinx.coroutines.flow.MutableStateFlow<HubSection?>(null)
+    val next: kotlinx.coroutines.flow.StateFlow<HubSection?> = _next
+    fun open(section: HubSection) { _next.value = section }
+    fun take(): HubSection? = _next.value.also { _next.value = null }
+}
+
 /** 장터 in 마을: the rows that open its list (팔로잉 줄, 오늘의 하나, 넘겨 보기), scrolled with it; null on a 장터 of its own. */
 val LocalHubHeader = androidx.compose.runtime.staticCompositionLocalOf<(@Composable () -> Unit)?> { null }
 
@@ -109,7 +120,21 @@ fun HubScreen(
     var section by rememberSaveable { mutableStateOf(prefs.getString("section", null)?.let { n -> HubSection.entries.firstOrNull { it.name == n } } ?: firstSection(style)) }
     androidx.compose.runtime.LaunchedEffect(section) { prefs.edit().putString("section", section.name).apply() }
     var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
+    // [TOWN-01] A 소식 notice says which part to open on.
     var reselect by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // [TOWN-11] PC 확인 73f69cbd (장터 소식으로 들어가도 새 작품이 바로 안 보여요): a 소식 opens its part read again, from the top.
+    // PC 확인 f7c41660: keyed on the asked part, taking it (null) cancelled the wait before the read; one collector does it all.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        HubLinks.next.collect { asked ->
+            if (asked == null) return@collect
+            HubLinks.take()
+            if (asked == HubSection.SHARE) shareKind = null
+            section = asked
+            // The part is drawn first (taking the count as it is), then asked to read again.
+            repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+            reselect++
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {

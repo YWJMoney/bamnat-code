@@ -975,6 +975,8 @@ class AppContainer(context: Context) {
             }
             mainIdle()
             delay(LATER_THIRD_MILLIS)
+            // [TOWN-07] 1.37: whether my plaza posts got new answers, for the dot on 마을 (one ask a run, only after writing there).
+            appScope.launch { runCatching { com.bamnat.app.company.VillageReplies.refresh(this@AppContainer) } }
             // [COMM-10] 광장 소식, [SRV-10] since 1.23 밤낮 소식: the one daily job runs while it has something to do here.
             keep("plaza news") {
                 combine(

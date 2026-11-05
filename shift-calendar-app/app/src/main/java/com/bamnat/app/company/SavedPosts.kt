@@ -69,7 +69,9 @@ internal fun myPostsOf(o: JSONObject): List<MyPost> {
 /** 1.36 [VIL-06] What 마을 검색 found on the plazas and 요청 판 (장터 is searched through the recipe list). */
 data class VillageFound(val posts: List<FoundPost>, val requests: List<FoundRequest>)
 data class FoundPost(val id: String, val room: String, val roomName: String, val body: String, val kind: String, val replies: Int, val at: Instant)
-data class FoundRequest(val id: String, val body: String, val likes: Int, val state: String, val code: String?)
+data class FoundRequest(val id: String, val body: String, val likes: Int, val state: String, val code: String?,
+    /** [TOWN-06] 1.37: the kind of work it was asked for (WorkStyle name, or ALL); null from an older server. */
+    val style: String? = null)
 
 internal fun villageFoundOf(o: JSONObject): VillageFound {
     val p = o.optJSONArray("posts") ?: JSONArray()
@@ -80,7 +82,8 @@ internal fun villageFoundOf(o: JSONObject): VillageFound {
                 it.optInt("replies"), Instant.parse(it.getString("at")))
         },
         (0 until r.length()).map { r.getJSONObject(it) }.map {
-            FoundRequest(it.getString("id"), it.optString("body"), it.optInt("likes"), it.optString("state"), it.optString("code").takeIf { c -> c.isNotEmpty() })
+            FoundRequest(it.getString("id"), it.optString("body"), it.optInt("likes"), it.optString("state"), it.optString("code").takeIf { c -> c.isNotEmpty() },
+                it.optString("style").takeIf { s -> s.isNotEmpty() })
         },
     )
 }

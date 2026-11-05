@@ -19,6 +19,7 @@ import com.bamnat.app.alarm.AlarmService
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.TextButton
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.appContainer
@@ -250,7 +251,9 @@ private object Routes {
         "recipe_make?calendar=$calendar&draft=$draft&kind=$kind&code=$code"
     const val RECIPE_MINE = "recipe_mine"
     /** 1.36 [VIL-13] 간직한 글 · 내 글. */
-    const val VILLAGE_POSTS = "village_posts"
+    const val VILLAGE_POSTS = "village_posts?tab={tab}"
+    /** [TOWN-01] 1.37: 간직한 글 · 내 글, on 내 글 ([mine]) from a 새 답 line or notice. */
+    fun villagePosts(mine: Boolean = false) = "village_posts?tab=${if (mine) 1 else 0}"
     /** 1.36 [VIL-06] 마을에서 찾기. */
     const val VILLAGE_SEARCH = "village_search"
     /** 1.36 [VIL-17] 장터 넘겨 보기. */
@@ -508,7 +511,18 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.PLAZA -> { nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target) }
+            // [TOWN-01] 1.37: a 소식 opens 마을 on the part it speaks of, not on the part last seen (장터·테마·공방 hid the answer).
+            NoticeLinks.Target.PLAZA -> {
+                com.bamnat.app.ui.company.TalkSheets.closeAll()
+                com.bamnat.app.ui.hub.HubLinks.open(com.bamnat.app.ui.hub.HubSection.TALK)
+                nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
+            }
+            NoticeLinks.Target.MARKET -> {
+                com.bamnat.app.ui.company.TalkSheets.closeAll()
+                com.bamnat.app.ui.hub.HubLinks.open(com.bamnat.app.ui.hub.HubSection.SHARE)
+                nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
+            }
+            NoticeLinks.Target.VILLAGE_POSTS -> { com.bamnat.app.ui.company.TalkSheets.closeAll(); nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
@@ -649,6 +663,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [UX-05] A new answer to the user's question shows on the 설정 tab from the moment the app opens.
     val inquiryUnread by container.inquiryStore.unread.collectAsStateWithLifecycle()
+    // [TOWN-07] New answers to my plaza posts: a dot on 마을.
+    val villageNew by com.bamnat.app.company.VillageReplies.count.collectAsStateWithLifecycle()
+    // [TOWN-07] PC 확인 699bbbc8 (켠 뒤 22초까지 점이 없어요): the count last worked out is read as the tabs first show, off the main thread.
+    LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.bamnat.app.company.VillageReplies.restore(container.appContext) } } }
     LaunchedEffect(homeRequests) {
         if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
@@ -906,7 +924,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             NavigationRailItem(
                                 selected = selected,
                                 onClick = { onTab(dest) },
-                                icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
+                                icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0, dot = dest == TopLevel.PLAZA && villageNew > 0) } },
                                 label = { TabLabel(label) },
                                 modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = false, tabsShown, tabNames, saveTabs),
                                 // [VIS-03] The chosen tab in the same blue as every other chosen thing.
@@ -963,7 +981,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                         NavigationBarItem(
                                             selected = selected,
                                             onClick = { onTab(dest) },
-                                            icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0) } },
+                                            icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0, dot = dest == TopLevel.PLAZA && villageNew > 0) } },
                                             label = { TabLabel(label, twoLineRoom, if (selected) tabOn else tabPart) },
                                             modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = true, tabsShown, tabNames, saveTabs),
                                             colors = itemColors,
@@ -1601,7 +1619,7 @@ private fun AppNavHost(
                 },
                 onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
                 onMine = { nav.navigate(Routes.RECIPE_MINE) { launchSingleTop = true } },
-                onPosts = { nav.navigate(Routes.VILLAGE_POSTS) { launchSingleTop = true } },
+                onPosts = { nav.navigate(Routes.villagePosts()) { launchSingleTop = true } },
                 onSearch = { nav.navigate(Routes.VILLAGE_SEARCH) { launchSingleTop = true } },
                 onSwipe = { nav.navigate(Routes.VILLAGE_SWIPE) { launchSingleTop = true } },
                 onRequests = { nav.navigate(Routes.recipeRequests(recipeCal)) { launchSingleTop = true } },
@@ -1632,7 +1650,8 @@ private fun AppNavHost(
                     onCompany = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false, calendar = calendar)) },
                     onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
                     onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-                    header = {
+                    // PC 확인 41e73582: the talk comes first; 장터's cards follow it.
+                    footer = {
                         if (recipesOn && container.recipeApi.enabled) com.bamnat.app.ui.recipe.PlazaRecipeBlock(container, calendar,
                             onOpen = { nav.navigate(Routes.recipes(calendar)) { launchSingleTop = true } },
                             onMake = { nav.navigate(Routes.studio()) { launchSingleTop = true } },
@@ -1751,8 +1770,8 @@ private fun AppNavHost(
                 onPlaza = { nav.navigate(Routes.stylePlaza()) { launchSingleTop = true } },
                 onRequests = { nav.navigate(Routes.recipeRequests()) { launchSingleTop = true } })
         }
-        composable(Routes.VILLAGE_POSTS) {
-            com.bamnat.app.ui.village.MyVillagePostsScreen(container, onBack = { nav.popFrom(Routes.VILLAGE_POSTS) },
+        composable(Routes.VILLAGE_POSTS, arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 })) { entry ->
+            com.bamnat.app.ui.village.MyVillagePostsScreen(container, startTab = entry.arguments?.getInt("tab") ?: 0, onBack = { nav.popFrom(Routes.VILLAGE_POSTS) },
                 onPlaza = { nav.navigate(Routes.stylePlaza()) { launchSingleTop = true } })
         }
         composable(Routes.RECIPE_MINE) {
@@ -1988,8 +2007,13 @@ private fun twoLineTabs(names: List<String>): Boolean =
 
 /** [UX-05] A tab's icon; 설정 carries how many answers to the user's questions are new. */
 @Composable
-private fun TabIcon(dest: TopLevel, selected: Boolean, badge: Int) {
+private fun TabIcon(dest: TopLevel, selected: Boolean, badge: Int, dot: Boolean = false) {
     val icon = if (selected) dest.selectedIcon else dest.icon
+    // [TOWN-07] 마을: a dot, no number, when my plaza posts have new answers.
+    if (badge <= 0 && dot) {
+        BadgedBox(badge = { androidx.compose.material3.Badge(Modifier.semantics { contentDescription = "광장 내 글에 새 답" }) }) { Icon(icon, contentDescription = null) }
+        return
+    }
     if (badge <= 0) {
         Icon(icon, contentDescription = null)
         return
@@ -2216,8 +2240,13 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
     val member by company.store.member.collectAsStateWithLifecycle()
     // 사용자 2026-11-03 (마을 스크롤): in 마을 the 팔로잉 줄·오늘의 하나 are the first rows of 광장's own list, scrolled with it.
     val hubHead = if (inHub) com.bamnat.app.ui.hub.LocalHubHeader.current else null
+    val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
+    val plan = remember(member, style) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
     val chips: @Composable () -> Unit = {
         hubHead?.invoke()
+        // [TOWN-02] 1.37: answers to my posts in any plaza, first thing in 마을 › 광장 (the room on screen says its own).
+        if (inHub) com.bamnat.app.ui.village.NewAnswersLine(container, except = plan.room.takeIf { container.companyApi.enabled },
+            onOpen = { nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true } })
         com.bamnat.app.ui.company.PlazaCalendarChips(container, calendar, onPick = { calendar = it },
             Modifier.padding(horizontal = 16.dp))
         // [RCP-19] 1.34 나눔 판 on every kind of work's 광장, while it is on (설정 › 나눔 판).
@@ -2230,8 +2259,6 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
             onRequests = { nav.navigate(Routes.recipeRequests(calendar)) { launchSingleTop = true } },
         )
     }
-    val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
-    val plan = remember(member, style) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
     CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
     if (container.companyApi.enabled && plan.room != null) {
         val home = appViewModel(key = "plaza-home-$calendar-${plan.room}") { com.bamnat.app.ui.company.PlazaHomeViewModel(it, calendar) }
