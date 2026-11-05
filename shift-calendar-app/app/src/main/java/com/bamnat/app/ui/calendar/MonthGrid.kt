@@ -935,7 +935,7 @@ private fun DayCell(
             // [SCHED-03] I 리뷰 I5: the order drifted (a team moved a day) — restart it from here.
             if (usesShifts && snapshot.resolver.patternOn(date) is WorkPattern.Rotation) {
                 DropdownMenuItem(
-                    text = { Text("이 날부터 순서 다시 맞추기") },
+                    text = { Text("이 날부터 하루 밀기·순서 맞추기") }, // [EASE-25]
                     leadingIcon = { Icon(Icons.Filled.Autorenew, null) },
                     onClick = { menu = false; onQuickAction(QuickAction.Realign) },
                 )

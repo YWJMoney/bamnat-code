@@ -506,12 +506,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [FEAT-17] Memos that belong to a date, for the list under the calendar and memo-first cells. */
-    val datedMemos: StateFlow<List<Memo>> = combine(container.calendars.active.flatMapLatest { memoRepo.memosFor(it) }, // [MEMO-01]
-        container.shownMonth.month) { list, month ->
+    val datedMemos: StateFlow<List<Memo>> = combine(container.calendars.active.flatMapLatest { cal ->
+        // [MEMO-01] [EASE-22] with the schedule each 근무마다 memo goes by, so it moves when its shift does.
+        memoRepo.memosFor(cal).flatMapLatest { list -> memoRepo.shiftLookup(list, cal).map { list to it } }
+    }, container.shownMonth.month) { (list, shifts), month ->
         // [NOTE-05] A repeating memo is on each day it comes back on. [SPD-25] 1.31 R5: only around the month on screen (the
         // pager's months either side and one more), not four years, and off the main thread.
         val (from, to) = com.bamnat.app.data.MemoRepository.shownWindow(month)
-        com.bamnat.core.memo.MemoRepeat.expand(list, from, to)
+        com.bamnat.core.memo.MemoRepeat.expand(list, from, to, shifts)
             .filter { it.date != null && !it.inTrash && !it.isBlank }.sortedWith(compareBy({ it.date }, { -it.updatedAtMillis }))
     }.flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -952,8 +954,19 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             schedule.changePatternFrom(PatternTimeline.realign(rotation, date, step), date)
             val beforeDays = if (clear.isEmpty()) emptyMap() else schedule.updateDays(clear) { it.copy(override = ShiftOverride.None) }
             val cleared = if (clear.isEmpty()) "" else " · 직접 바꾼 ${clear.size}일은 근무 주기대로"
+            // [EASE-25] A push or pull by a day says what moved where, in one line ("6일 야간은 7일로").
+            val push = PatternTimeline.pushOf(rotation, date, step)
+            val said = when (push) {
+                0 -> null
+                1, -1 -> {
+                    val name = rotation.steps[rotation.stepIndexOn(date)]?.let { snap.typesById[it]?.name } ?: "쉬는 날"
+                    val to = date.plusDays(push.toLong())
+                    "${Fmt.monthDay(date)}부터 하루 ${if (push > 0) "밀었어요" else "당겼어요"} · ${date.dayOfMonth}일 $name${Fmt.eun(name)} ${to.dayOfMonth}일로"
+                }
+                else -> "${Fmt.monthDay(date)}부터 ${kotlin.math.abs(push)}일 ${if (push > 0) "밀었어요" else "당겼어요"}"
+            }
             _messages.emit(
-                UndoMessage("${Fmt.monthDay(date)}부터 ${step + 1}번째 날로 다시 맞췄어요$cleared") {
+                UndoMessage((said ?: "${Fmt.monthDay(date)}부터 ${step + 1}번째 날로 다시 맞췄어요") + cleared) {
                     schedule.restorePatterns(beforePatterns)
                     beforeDays.forEach { (d, e) -> schedule.restoreDay(d, e) }
                 },

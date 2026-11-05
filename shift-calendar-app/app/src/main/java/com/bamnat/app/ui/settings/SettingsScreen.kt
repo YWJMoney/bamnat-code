@@ -136,6 +136,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -225,6 +226,21 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val workSettings: StateFlow<AppSettings> = kotlinx.coroutines.flow.combine(container.settingsRepository.settings, container.calendars.activeCalendar) { s, cal ->
         com.bamnat.app.data.CalendarScope.run { s.forCalendar(cal) }
     }.stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current)
+    /**
+     * [EASE-27] 1.38 내 규칙 한눈에: the calendar picked's order, alarms, pay rules it made and the 이럴 때 이렇게 rules, each as a
+     * "만약 ○○이면 → △△" card.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val ruleCards: StateFlow<List<com.bamnat.core.guide.RuleCards.Card>> = kotlinx.coroutines.flow.combine(
+        container.calendars.active.flatMapLatest { id ->
+            kotlinx.coroutines.flow.combine(container.calendars.repository(id).live, container.calendars.pay(id).profile) { s, p -> s to p }
+        },
+        container.settingsRepository.settings,
+    ) { (s, p), st ->
+        com.bamnat.core.guide.RuleCards.of(s.patterns, s.shiftTypes, com.bamnat.core.time.Today.date(), p?.customRules.orEmpty(),
+            com.bamnat.core.formula.Logic.decode(st.logic))
+    }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
     fun update(transform: (AppSettings) -> AppSettings) = container.settingsRepository.update(transform)
     fun canScheduleExact() = container.alarmScheduler.canScheduleExact()

@@ -723,6 +723,7 @@ fun CalendarScreen(
                 month = visibleMonth,
                 memos = remember(datedMemos, visibleMonth) { datedMemos.filter { YearMonth.from(it.date!!) == visibleMonth } },
                 showEmpty = settings.memoInCells,
+                shiftOn = { d -> snap.resolver.resolve(d).shiftType }, // [EASE-24]
                 onOpen = onOpenMemo,
                 onNew = { onNewMemo(if (YearMonth.from(selected) == visibleMonth) selected else visibleMonth.atDay(1)) },
                 modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
@@ -973,7 +974,9 @@ fun CalendarScreen(
             style = settings.workStyle,
             // [NAV-03] Which tiles this kind of calendar has at all, so the others keep their places while one waits.
             toolFit = ToolFit(teams = settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT, receive = received.enabled,
-                viewingReceived = viewingReceived != null, hasShiftTypes = snap.shiftTypes.isNotEmpty(), teamsReady = openTeams != null || viewingReceived != null),
+                viewingReceived = viewingReceived != null, hasShiftTypes = snap.shiftTypes.isNotEmpty(), teamsReady = openTeams != null || viewingReceived != null,
+                pushReady = snap.resolver.patternOn(today) is com.bamnat.core.model.WorkPattern.Rotation),
+            onPushToday = { realigning = today }, // [EASE-25]
         ) }
         if (sideways) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1946,6 +1949,8 @@ private fun CalendarHeader(
     style: com.bamnat.core.work.WorkStyle? = null,
     /** [NAV-03] Which tiles this kind of calendar has and which have to wait (1.25 Z). */
     toolFit: ToolFit = ToolFit(),
+    /** [EASE-25] 오늘부터 하루 밀기: the push-and-realign window on today. */
+    onPushToday: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
@@ -2056,6 +2061,7 @@ private fun CalendarHeader(
                 CalendarToolSlots.EDIT -> onEditCalendar
                 CalendarToolSlots.TEAMS -> onOpenTeams
                 CalendarToolSlots.TYPE_MONTH -> onTypeMonth
+                CalendarToolSlots.PUSH -> onPushToday
                 CalendarToolSlots.SHARE -> onShare
                 CalendarToolSlots.YEAR -> ({ com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.YEAR) })
                 CalendarToolSlots.RECEIVE -> onReceive
@@ -2125,6 +2131,7 @@ private fun CalendarToolSlots.Slot.icon(): androidx.compose.ui.graphics.vector.I
     CalendarToolSlots.EDIT -> Icons.Outlined.Edit
     CalendarToolSlots.TEAMS -> Icons.Outlined.Groups
     CalendarToolSlots.TYPE_MONTH -> Icons.Outlined.Keyboard
+    CalendarToolSlots.PUSH -> Icons.Filled.Autorenew
     CalendarToolSlots.SHARE -> Icons.Filled.Share
     CalendarToolSlots.YEAR -> Icons.Outlined.CalendarViewMonth
     CalendarToolSlots.RECEIVE -> Icons.Outlined.GroupAdd
@@ -2657,6 +2664,8 @@ private fun MonthMemoCard(
     onOpen: (Long) -> Unit,
     onNew: () -> Unit,
     modifier: Modifier = Modifier,
+    /** [EASE-24] 1.38: the kind of day on a date, shown beside it so a memo reads with its shift ("6일 목 [야] 도시락"). */
+    shiftOn: (LocalDate) -> com.bamnat.core.model.ShiftType? = { null },
 ) {
     if (memos.isEmpty() && !showEmpty) return
     var all by remember(month) { mutableStateOf(false) }
@@ -2690,6 +2699,13 @@ private fun MonthMemoCard(
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.labelWidth(56.dp),
                     )
+                    // [EASE-24] The day's shift as its badge (its name for TalkBack), the same mark as on the calendar.
+                    val shift = shiftOn(d)
+                    if (shift != null) {
+                        ShiftBadge(shift, size = 20.dp, outlined = shift.isOff,
+                            modifier = Modifier.semantics { contentDescription = shift.name })
+                        Spacer(Modifier.width(8.dp))
+                    }
                     Column(Modifier.weight(1f)) {
                         val title = m.title.ifBlank { m.preview }
                         Text(title.ifBlank { "빈 메모" }, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
