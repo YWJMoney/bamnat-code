@@ -784,7 +784,8 @@ fun MoneyScreen(
                 onEdit = { c -> if (c == null) addingFixed = true else editingFixed = c }, style = style)
         },
         MoneyPart.REPEAT to { com.bamnat.app.ui.guide.FeatureCard("money.repeat", vm.calendarId) { RepeatSuggestCard(repeats, onAdd = vm::addRepeat, onNo = vm::notRepeating) } },
-        MoneyPart.ACCOUNTS to { AccountsCard(book, today, onAdd = { t -> if (t == null) addingAnyAccount = true else addingAccount = t }, onEdit = { editingAccount = it }) },
+        MoneyPart.ACCOUNTS to { AccountsCard(book, today, onAdd = { t -> if (t == null) addingAnyAccount = true else addingAccount = t }, onEdit = { editingAccount = it },
+            onRepay = { lines -> lines.forEach(vm::saveEntry) }) },
         // [LEDG-02] Ways to type less.
         MoneyPart.AUTO to { AutoRecordCard(onPaste = { pasting = true }) },
         // 1.37 [LEDH-21] 오늘 쓸 돈 is said by 앞으로의 돈 and the 할부 left by 할부 청구 기준 when they are on; the graph is in 통계.

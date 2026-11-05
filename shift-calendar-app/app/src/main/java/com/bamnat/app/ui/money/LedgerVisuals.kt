@@ -48,6 +48,7 @@ import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material.icons.outlined.Restaurant
+import androidx.compose.material.icons.outlined.RequestQuote
 import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Sell
@@ -144,6 +145,7 @@ fun accountIcon(type: AccountType): ImageVector = when (type) {
     AccountType.CHECK, AccountType.CREDIT -> Icons.Outlined.CreditCard
     AccountType.PAY -> Icons.Outlined.AccountBalanceWallet
     AccountType.OTHER -> Icons.Outlined.Savings
+    AccountType.LOAN -> Icons.Outlined.RequestQuote
 }
 
 /** Every category's place in the palette: spending first, then income and transfers, so each keeps its color. */
