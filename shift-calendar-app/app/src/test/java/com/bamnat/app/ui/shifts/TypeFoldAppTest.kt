@@ -154,4 +154,15 @@ class TypeFoldAppTest {
         TypeFoldAsk.asking.value = null
         repo.clearPattern()
     }
+
+    /** 1.37 PC 70710298: back in 교대, folding the 알바 kinds does not stop the 교대 cycle that just came back. */
+    @Test fun onlyTheOldWorksOwnScheduleIsStopped() {
+        val d = com.bamnat.core.time.Today.date()
+        val rotation = com.bamnat.core.model.WorkPattern.Rotation(d, listOf(1L, null))
+        val weekly = com.bamnat.core.model.WorkPattern.Weekly(d, java.time.DayOfWeek.entries.associateWith { 1L })
+        assertTrue(TypeFoldAsk.ownSchedule(WorkStyle.SHIFT, rotation))
+        assertTrue(!TypeFoldAsk.ownSchedule(WorkStyle.HOURLY, rotation))
+        assertTrue(TypeFoldAsk.ownSchedule(WorkStyle.HOURLY, weekly) && TypeFoldAsk.ownSchedule(WorkStyle.DAY, weekly))
+        assertTrue(!TypeFoldAsk.ownSchedule(WorkStyle.SHIFT, weekly) && !TypeFoldAsk.ownSchedule(WorkStyle.HOURLY, null))
+    }
 }

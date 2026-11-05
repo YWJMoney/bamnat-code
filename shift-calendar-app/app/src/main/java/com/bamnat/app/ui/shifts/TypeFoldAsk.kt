@@ -57,6 +57,17 @@ object TypeFoldAsk {
      */
     fun stopsCycle(from: WorkStyle, to: WorkStyle): Boolean = from != to
 
+    /**
+     * Whether [pattern], the one in use today, is [style]'s own: an order for 교대, days of the week for the others (투자 has none).
+     * 1.37 PC 70710298 (교대 → 알바 → 교대에서 처음 주기가 안 돌아옴): back in 교대, putting the 알바 kinds away stopped the 교대 cycle
+     * that had just come back; only the old work's own schedule is stopped.
+     */
+    fun ownSchedule(style: WorkStyle, pattern: com.bamnat.core.model.WorkPattern?): Boolean = when (style) {
+        WorkStyle.SHIFT -> pattern is com.bamnat.core.model.WorkPattern.Rotation
+        WorkStyle.INVEST -> false
+        else -> pattern is com.bamnat.core.model.WorkPattern.Weekly
+    }
+
     /** 되돌리기 of a [Done]: the 근무 out again, and the cycle as it was. */
     fun undo(c: AppContainer, d: Done) {
         c.foldedTypes.unfold(d.calendar, d.ids)
@@ -129,7 +140,8 @@ fun TypeFoldHost(c: AppContainer) {
     val patterns by androidx.compose.runtime.produceState<List<com.bamnat.core.model.WorkPattern>>(emptyList(), a) {
         value = c.calendars.repository(a.calendar).patterns.first()
     }
-    val stops = TypeFoldAsk.stopsCycle(a.from, a.to) && patterns.isNotEmpty()
+    val stops = TypeFoldAsk.stopsCycle(a.from, a.to) &&
+        TypeFoldAsk.ownSchedule(a.from, com.bamnat.core.schedule.PatternTimeline.on(patterns, com.bamnat.core.time.Today.date()))
     val names = a.types.joinToString("·") { it.name }
     AlertDialog(
         onDismissRequest = { TypeFoldAsk.asking.value = null },

@@ -75,6 +75,13 @@ class ShiftsViewModel(
     /** Pattern being edited; survives navigating to the shift type screen and back. */
     val draft = PatternDraft()
 
+    /** The calendar's kind of work now. */
+    val style: com.bamnat.core.work.WorkStyle?
+        get() = container.calendars.styleOf(calendarId, container.settingsRepository.current.workStyle)
+
+    /** The kinds put away in this calendar now (not offered as a new schedule's day). */
+    fun foldedNow(): Set<Long> = container.foldedTypes.of(calendarId)
+
     fun save(type: ShiftType) {
         // [SETUP-16] 1.37 PC b98f9d1e (묻기로 두고 주간 끝을 18:30으로 고쳐도 '회사 광장에 나눌까요?'가 없음): a kind's time is part of what
         // the plaza has, so its save is held against the one last shared too (the same values again ask nothing).
