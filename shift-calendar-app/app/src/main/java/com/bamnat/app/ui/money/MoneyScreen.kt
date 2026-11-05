@@ -564,6 +564,7 @@ fun MoneyScreen(
     var editingJob by remember { mutableStateOf<Job?>(null) }
     var pasting by remember { mutableStateOf(false) }
     var firstFilling by remember { mutableStateOf(false) }
+    var pickingChallenge by rememberSaveable { mutableStateOf(false) }
     var finishing by remember { mutableStateOf<Capture?>(null) }
     var editingFixed by remember { mutableStateOf<FixedCost?>(null) }
     var addingFixed by remember { mutableStateOf(false) }
@@ -746,6 +747,12 @@ fun MoneyScreen(
                 WelcomeBackCard(book, today, onAdd = { adding = MoneyKind.EXPENSE })
                 // 1.38 [LEDH-29] 첫날 채우기.
                 FirstFillCard(book, vm.calendarId, onFill = { firstFilling = true; pasting = true })
+                // 1.38 [LEDH-31] 혼자 하는 챌린지 (⋮ › 도전 시작하기).
+                val run = remember(settings.moneyChallenge) { com.bamnat.core.money.Challenges.decode(settings.moneyChallenge) }
+                val nightOf = snapshot?.let { snap -> { d: LocalDate -> com.bamnat.core.schedule.DutyCheck.isNight(runCatching { snap.resolver.resolve(d).shiftType }.getOrNull()) } }
+                ChallengeCard(run, book, envelopeBook.second, today, nightOf.takeIf { style == com.bamnat.core.work.WorkStyle.SHIFT }, pickingChallenge,
+                    onStart = { k -> vm.updateSettings { it.copy(moneyChallenge = com.bamnat.core.money.Challenges.encode(com.bamnat.core.money.Challenges.Run(k, today))) }; pickingChallenge = false },
+                    onStop = { vm.updateSettings { it.copy(moneyChallenge = "") } }, onClosePicker = { pickingChallenge = false })
                 MonthStoryCard(book, envelopeBook.second, aheadPay?.lastMonth, today, gate)
             }
         },
@@ -877,6 +884,8 @@ fun MoneyScreen(
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text("자동 기록") }, onClick = { menuOpen = false; autoRecording = true })
                         DropdownMenuItem(text = { Text("결제 문자 붙여넣기") }, onClick = { menuOpen = false; pasting = true })
+                        // 1.38 [LEDH-31]
+                        DropdownMenuItem(text = { Text("도전 시작하기") }, onClick = { menuOpen = false; pickingChallenge = true; vm.showPage(MoneyViewModel.Page.SUMMARY) })
                         DropdownMenuItem(text = { Text("분류 편집") }, onClick = { menuOpen = false; editingCategories = true })
                         // [DAILY-15] 화면 꾸미기, as on 달력 and 근무·급여.
                         DropdownMenuItem(text = { Text("카드 배치") }, onClick = { menuOpen = false; com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MONEY) })

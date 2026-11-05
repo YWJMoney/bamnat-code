@@ -188,6 +188,8 @@ data class AppSettings(
     /** 1.38 [LEDH-24] 근무 전 한 줄 예고: the evening before a work day that spends on something more, at [shiftPreviewHour]. Off by default. In the backup. */
     val shiftPreviewNotice: Boolean = false,
     val shiftPreviewHour: Int = com.bamnat.core.money.ShiftPreview.DEFAULT_HOUR,
+    /** 1.38 [LEDH-31] 혼자 하는 챌린지 going on ([com.bamnat.core.money.Challenges.encode]), empty for none. In the backup. */
+    val moneyChallenge: String = "",
     /** 1.37 [LEDH-22] 금액 가리기: amounts show as dots across the app and the widgets. Kept on this phone only (not in the backup). */
     val hideAmounts: Boolean = false,
     /** [LOCK-01] 앱 잠금: the phone's own lock before the app shows, on opening and after a minute away. */
@@ -416,6 +418,7 @@ class SettingsRepository(context: Context) {
             dayCloseNotice = prefs.getBoolean(K_DAY_CLOSE, d.dayCloseNotice),
             shiftPreviewNotice = prefs.getBoolean(K_SHIFT_PREVIEW, d.shiftPreviewNotice),
             shiftPreviewHour = prefs.getInt(K_SHIFT_PREVIEW_HOUR, d.shiftPreviewHour).coerceIn(0, 23),
+            moneyChallenge = prefs.getString(K_MONEY_CHALLENGE, d.moneyChallenge).orEmpty(),
             hideAmounts = prefs.getBoolean(K_HIDE_AMOUNTS, d.hideAmounts),
             appLock = prefs.getBoolean(K_APP_LOCK, d.appLock),
             calendarLayout = prefs.getString(K_CALENDAR_LAYOUT, null) ?: d.calendarLayout,
@@ -535,6 +538,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_DAY_CLOSE, s.dayCloseNotice)
             .putBoolean(K_SHIFT_PREVIEW, s.shiftPreviewNotice)
             .putInt(K_SHIFT_PREVIEW_HOUR, s.shiftPreviewHour)
+            .putString(K_MONEY_CHALLENGE, s.moneyChallenge)
             .putBoolean(K_HIDE_AMOUNTS, s.hideAmounts)
             .putBoolean(K_APP_LOCK, s.appLock)
             .putString(K_CALENDAR_LAYOUT, s.calendarLayout)
@@ -633,6 +637,7 @@ class SettingsRepository(context: Context) {
         const val K_DAY_CLOSE = "day_close_notice"
         const val K_SHIFT_PREVIEW = "shift_preview_notice"
         const val K_SHIFT_PREVIEW_HOUR = "shift_preview_hour"
+        const val K_MONEY_CHALLENGE = "money_challenge"
         const val K_HIDE_AMOUNTS = "hide_amounts"
         const val K_MEMO_LAYOUT = "memo_layout"
         const val K_TAB_VIEWS = "tab_views"

@@ -519,7 +519,7 @@ class BackupManager(
                 // 1.37 [LEDH-06][LEDH-07] 근무가 보이는 가계부.
                 .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
                 // 1.38 [LEDH-24]
-                .put("shiftPreview", s.shiftPreviewNotice).put("shiftPreviewHour", s.shiftPreviewHour)
+                .put("shiftPreview", s.shiftPreviewNotice).put("shiftPreviewHour", s.shiftPreviewHour).put("moneyChallenge", s.moneyChallenge)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
@@ -1037,6 +1037,7 @@ class BackupManager(
                     dayCloseNotice = o.optBoolean("dayCloseNotice", s.dayCloseNotice),
                     shiftPreviewNotice = o.optBoolean("shiftPreview", s.shiftPreviewNotice),
                     shiftPreviewHour = o.optInt("shiftPreviewHour", s.shiftPreviewHour).coerceIn(0, 23),
+                    moneyChallenge = o.optString("moneyChallenge", s.moneyChallenge).takeIf { it.isEmpty() || com.bamnat.core.money.Challenges.decode(it) != null }.orEmpty(),
                     appLock = o.optBoolean("appLock", false),
                     calendarLayout = o.optString("calendarLayout", s.calendarLayout),
                     statsLayout = o.optString("statsLayout", s.statsLayout),
