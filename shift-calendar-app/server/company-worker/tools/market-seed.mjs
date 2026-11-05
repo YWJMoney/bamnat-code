@@ -5,6 +5,7 @@
 //   node tools/market-seed.mjs                      check and write the file
 //   node tools/market-seed.mjs --check              check only (exit 1 on a refused work or a section short of its goal)
 //   node tools/market-seed.mjs --post http://127.0.0.1:8788   also put them in a LOCAL server's 출시 대기 (ADMIN_PASSWORD from the env)
+//   node tools/market-seed.mjs --set 138s --post <url> --open   … and release that batch at once (PC 확인용)
 //
 // Works are JSON files: one recipe, or an array of recipes / {recipe, showcase?} entries. Never posts to the real server: that is the
 // operator's paste in the 관리자 앱, after the user's last say-so (CLAUDE.md 3-1).
@@ -88,14 +89,27 @@ export async function build(works, set = SETS[136]) {
   return { entries, refused, count, short };
 }
 
-async function post(base, entries) {
+async function login(base) {
   const pw = process.env.ADMIN_PASSWORD;
   if (!pw) throw new Error("ADMIN_PASSWORD 가 없어요");
   if (!/^http:\/\/(127\.0\.0\.1|localhost|10\.0\.2\.2)(:\d+)?$/.test(base)) throw new Error("로컬 서버에만 넣어요");
-  const login = await fetch(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base },
+  const r = await fetch(`${base}/api/admin/login`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base },
     body: JSON.stringify({ password: pw }) });
-  if (login.status !== 200) throw new Error(`login ${login.status}`);
-  const cookie = login.headers.get("set-cookie").split(";")[0];
+  if (r.status !== 200) throw new Error(`login ${r.status}`);
+  return r.headers.get("set-cookie").split(";")[0];
+}
+
+/** 1.38 [STM-09] 정리 목록(market-138-refresh-plan.json)의 내림 작품을 로컬 서버에서 숨겨요. */
+async function hide(base, dry) {
+  const cookie = await login(base);
+  const titles = JSON.parse(readFileSync(join(ROOT, "market-138-refresh-plan.json"), "utf8")).hide.map((x) => x.title);
+  const r = await fetch(`${base}/api/admin/recipes/hide-titles`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
+    body: JSON.stringify({ titles, dry, note: "1.38 장터 정리" }) });
+  return `${r.status} ${await r.text()}`;
+}
+
+async function post(base, entries, open = null) {
+  const cookie = await login(base);
   let ok = 0;
   for (const e of entries) {
     const r = await fetch(`${base}/api/admin/recipes`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
@@ -103,11 +117,22 @@ async function post(base, entries) {
     if (r.status < 300) ok++;
     else console.log(`못 넣음 ${e.recipe.title}: ${r.status} ${await r.text()}`);
   }
+  // --open: PC 확인용으로 이 묶음을 바로 장터에(실서버에서는 출시 날 관리자 앱 › 출시 대기에서).
+  if (open) {
+    const r = await fetch(`${base}/api/admin/recipes/release`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
+      body: JSON.stringify({ batch: open }) });
+    console.log(`장터에 내기(${open}): ${r.status} ${await r.text()}`);
+  }
   return ok;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const args = process.argv.slice(2);
+  // node tools/market-seed.mjs --hide http://127.0.0.1:8789 [--dry]   1.38 정리 목록의 내림 171개 숨기기(로컬)
+  if (args.includes("--hide")) {
+    console.log(`숨기기: ${await hide(args[args.indexOf("--hide") + 1], args.includes("--dry"))}`);
+    process.exit(0);
+  }
   const set = SETS[args.includes("--set") ? args[args.indexOf("--set") + 1] : 136];
   if (!set) throw new Error("--set 은 136, 138, 138s, 138r 중 하나예요");
   const { entries, refused, count, short } = await build(readWorks(set.dir), set);
@@ -119,6 +144,6 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     console.log(`썼어요: ${set.out}`);
   }
   const at = args.indexOf("--post");
-  if (at >= 0) console.log(`로컬 서버 출시 대기에 ${await post(args[at + 1], entries)}개 넣었어요`);
+  if (at >= 0) console.log(`로컬 서버 출시 대기에 ${await post(args[at + 1], entries, args.includes("--open") ? set.batch : null)}개 넣었어요`);
   if (refused.length || (args.includes("--check") && short.length)) process.exit(1);
 }

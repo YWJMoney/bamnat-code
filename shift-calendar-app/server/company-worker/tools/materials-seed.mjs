@@ -1,6 +1,7 @@
 // 1.38 [STM-05] 밤낮 재료(색 아이콘·배경) 넣기 도구.
 //   node tools/materials-seed.mjs --check                          목록과 그림 파일을 맞춰 봐요(크기·이름·중복·id)
 //   node tools/materials-seed.mjs --post http://127.0.0.1:8789     로컬 서버의 출시 대기에 넣어요(ADMIN_PASSWORD는 환경 변수로)
+//   … --post <주소> --open                                          넣고 바로 공개(PC 확인용)
 // 실서버에는 넣지 않아요. 실서버는 사용자가 정한 뒤 관리자 앱에서 해요.
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -37,7 +38,7 @@ export function load(out = OUT) {
   return { items, problems, license: list.license };
 }
 
-async function post(base, items) {
+async function post(base, items, open = false) {
   const pw = process.env.ADMIN_PASSWORD;
   if (!pw) throw new Error("ADMIN_PASSWORD 가 없어요");
   if (!/^http:\/\/(127\.0\.0\.1|localhost|10\.0\.2\.2)(:\d+)?$/.test(base)) throw new Error("로컬 서버에만 넣어요");
@@ -53,6 +54,12 @@ async function post(base, items) {
     if (r.status < 300) ok += batch.length;
     else console.log(`못 넣음 ${i}~: ${r.status} ${await r.text()}`);
   }
+  // --open: PC 확인용으로 바로 공개(실서버에서는 출시 날 관리자 앱에서).
+  if (open) {
+    const r = await fetch(`${base}/api/admin/recipes/materials/state`, { method: "POST",
+      headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie }, body: JSON.stringify({ state: "ok", all: true }) });
+    console.log(`공개: ${r.status} ${await r.text()}`);
+  }
   return ok;
 }
 
@@ -64,5 +71,5 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   for (const p of problems) console.log(`문제: ${p}`);
   if (problems.length) process.exit(1);
   const at = args.indexOf("--post");
-  if (at >= 0) console.log(`로컬 서버 출시 대기에 ${await post(args[at + 1], items)}개 넣었어요`);
+  if (at >= 0) console.log(`로컬 서버 출시 대기에 ${await post(args[at + 1], items, args.includes("--open"))}개 넣었어요`);
 }
