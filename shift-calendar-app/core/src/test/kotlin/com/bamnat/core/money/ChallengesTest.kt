@@ -24,6 +24,14 @@ class ChallengesTest {
         assertEquals("2일째 이어 가는 중 · 3일 중 2일", Challenges.words(s))
     }
 
+    /** 1.38 PC 1차: the first day says which day it is and when the stamp comes, not '0일 중 0일'. */
+    @Test fun theFirstDaySaysWhenTheStampComes() {
+        val s = Challenges.status(Challenges.Run(Challenges.Kind.LESS_DELIVERY, start), emptyList(), emptyList(), start)
+        assertEquals("오늘 1일째 · 밤 12시에 도장 · 11/8까지", Challenges.words(s))
+        val env = Challenges.status(Challenges.Run(Challenges.Kind.ENVELOPE_30, start), emptyList(), emptyList(), start)
+        assertEquals("오늘 1일째 · 봉투에 넣으면 도장 · 12/1까지", Challenges.words(env))
+    }
+
     @Test fun nightLunchboxCountsOnlyNights() {
         val run = Challenges.Run(Challenges.Kind.NIGHT_LUNCHBOX, start)
         val nights = setOf(start, start.plusDays(2))

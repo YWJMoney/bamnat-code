@@ -38,6 +38,16 @@ class DebtsAndCardPerfTest {
         assertEquals(0L to 300_000L, Debts.split(10_000_000, 0.0, 300_000))
     }
 
+    /** 1.38 PC 1차: 이번 달 갚기's interest is 이자·금융 spending (not 기타), the rest a transfer to the loan. */
+    @Test fun thisMonthsPaymentPutsInterestUnderInterest() {
+        val loan = MoneyAccount(id = 9, name = "전세 대출", type = AccountType.LOAN, opening = -10_000_000, rate = 4.8, monthlyPay = 300_000, payFromId = 2)
+        val lines = Debts.lines(loan, 10_000_000, 300_000, LocalDate.of(2026, 11, 5))
+        assertEquals(listOf(MoneyKind.EXPENSE to 40_000L, MoneyKind.TRANSFER to 260_000L), lines.map { it.kind to it.amount })
+        assertEquals(MoneyCategories.INTEREST, lines[0].category)
+        assertTrue(MoneyCategories.INTEREST in MoneyCategories.expense)
+        assertEquals("대출이자", Debts.lines(loan, 10_000_000, 300_000, LocalDate.of(2026, 11, 5), "대출이자")[0].category)
+    }
+
     @Test fun aLoanIsOwedInNetWorthAndPaysDownByTransfer() {
         val bank = MoneyAccount(id = 1, name = "월급 통장", type = AccountType.BANK, opening = 2_000_000)
         val loan = MoneyAccount(id = 2, name = "학자금", type = AccountType.LOAN, opening = -5_000_000, rate = 1.7, monthlyPay = 200_000, payDay = 25)

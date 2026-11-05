@@ -20,7 +20,8 @@ object Challenges {
 
     data class Run(val kind: Kind, val start: LocalDate)
 
-    data class Status(val run: Run, val stamps: List<Stamp>, val streak: Int, val kept: Int, val counted: Int, val done: Boolean) {
+    data class Status(val run: Run, val stamps: List<Stamp>, val streak: Int, val kept: Int, val counted: Int, val done: Boolean,
+        /** Which day of the run today is, from 1. */ val dayNo: Int = 1) {
         val end: LocalDate get() = run.start.plusDays(run.kind.days - 1L)
     }
 
@@ -64,12 +65,19 @@ object Challenges {
         val counted = stamps.filter { it == Stamp.KEPT || it == Stamp.MISSED }
         var streak = 0
         for (s in stamps.filter { it != Stamp.NOT_COUNTED && it != Stamp.LATER }.asReversed()) { if (s == Stamp.KEPT) streak++ else break }
-        return Status(run, stamps, streak, counted.count { it == Stamp.KEPT }, counted.size, ChronoUnit.DAYS.between(run.start, today) >= run.kind.days)
+        return Status(run, stamps, streak, counted.count { it == Stamp.KEPT }, counted.size, ChronoUnit.DAYS.between(run.start, today) >= run.kind.days,
+            (ChronoUnit.DAYS.between(run.start, today) + 1).toInt().coerceIn(1, run.kind.days))
     }
 
     /** The line under the stamps. */
     fun words(s: Status): String = when {
         s.done -> "끝났어요. ${s.counted}일 중 ${s.kept}일 지켰어요" + if (s.kept == s.counted && s.counted > 0) ". 다 지켰어요!" else ""
+        // 1.38 PC 1차 ('0일 중 0일'): before the first day is stamped, which day it is and when the stamp comes.
+        s.counted == 0 -> "오늘 ${s.dayNo}일째 · " + when (s.run.kind) {
+            Kind.ENVELOPE_30 -> "봉투에 넣으면 도장"
+            Kind.NIGHT_LUNCHBOX -> "야간 날 밤 12시에 도장"
+            else -> "밤 12시에 도장"
+        } + " · ${s.end.monthValue}/${s.end.dayOfMonth}까지"
         s.streak >= 2 -> "${s.streak}일째 이어 가는 중 · ${s.counted}일 중 ${s.kept}일"
         else -> "${s.counted}일 중 ${s.kept}일 지켰어요 · ${s.end.monthValue}/${s.end.dayOfMonth}까지"
     }
