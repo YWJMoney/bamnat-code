@@ -28,6 +28,15 @@ export const MIN_APP = 49;
 export const GOALS = { theme: 68, "tab:calendar": 20, "tab:pay": 20, "tab:money": 20, "tab:memo": 20, "tab:alarm": 20, "tab:widget": 20, part: 20, logic: 20 };
 
 /** The 장터 구간 a written recipe falls in: the server's own sectionOf when it has one (갈래 F), else 테마 / 기능별 탭. */
+/**
+ * 1.38 [LEDH-18] 판마다 따로 내는 작품 묶음: `--set 138` reads docs/recipes/market-138/ (장터 첫 가계부 틀 넷) and holds them for
+ * 1.38 apps (versionCode 52), as their own batch to release with 1.38.
+ */
+export const SETS = {
+  136: { dir: DIR, out: OUT, batch: BATCH, minApp: MIN_APP, goals: GOALS },
+  138: { dir: join(ROOT, "market-138"), out: join(ROOT, "market-138.json"), batch: "1.38 가계부 틀", minApp: 52, goals: { "tab:money": 4 } },
+};
+
 export function sectionKey(text) {
   if (typeof recipes.sectionOf === "function") {
     const s = recipes.sectionOf(text);
@@ -50,10 +59,10 @@ export function readWorks(dir = DIR) {
   return out;
 }
 
-export async function build(works) {
+export async function build(works, set = SETS[136]) {
   const refused = [];
   const entries = [];
-  const count = Object.fromEntries(Object.keys(GOALS).map((k) => [k, 0]));
+  const count = Object.fromEntries(Object.keys(set.goals).map((k) => [k, 0]));
   const names = new Set();
   for (const w of works) {
     try {
@@ -62,13 +71,13 @@ export async function build(works) {
       names.add(c.recipe.title);
       const key = sectionKey(c.text);
       count[key] = (count[key] ?? 0) + 1;
-      entries.push({ recipe: JSON.parse(c.text), hold: true, replace: true, batch: BATCH, minApp: MIN_APP, ...(w.showcase ? { showcase: true } : {}) });
+      entries.push({ recipe: JSON.parse(c.text), hold: true, replace: true, batch: set.batch, minApp: set.minApp, ...(w.showcase ? { showcase: true } : {}) });
     } catch (e) {
       if (!(e instanceof RecipeError)) throw e;
       refused.push(`${w.file} · ${w.recipe?.title ?? "?"}: ${e.code} ${e.path}`);
     }
   }
-  const short = Object.entries(GOALS).filter(([k, n]) => (count[k] ?? 0) < n).map(([k, n]) => `${k} ${count[k] ?? 0}/${n}`);
+  const short = Object.entries(set.goals).filter(([k, n]) => (count[k] ?? 0) < n).map(([k, n]) => `${k} ${count[k] ?? 0}/${n}`);
   return { entries, refused, count, short };
 }
 
@@ -92,13 +101,15 @@ async function post(base, entries) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const args = process.argv.slice(2);
-  const { entries, refused, count, short } = await build(readWorks());
+  const set = SETS[args.includes("--set") ? args[args.indexOf("--set") + 1] : 136];
+  if (!set) throw new Error("--set 은 136 또는 138이에요");
+  const { entries, refused, count, short } = await build(readWorks(set.dir), set);
   console.log(`작품 ${entries.length}개 · 구간 ${Object.entries(count).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   for (const r of refused) console.log(`거절: ${r}`);
   if (short.length) console.log(`목표 모자람: ${short.join(", ")}`);
   if (!args.includes("--check")) {
-    writeFileSync(OUT, JSON.stringify(entries, null, 1) + "\n");
-    console.log(`썼어요: ${OUT}`);
+    writeFileSync(set.out, JSON.stringify(entries, null, 1) + "\n");
+    console.log(`썼어요: ${set.out}`);
   }
   const at = args.indexOf("--post");
   if (at >= 0) console.log(`로컬 서버 출시 대기에 ${await post(args[at + 1], entries)}개 넣었어요`);

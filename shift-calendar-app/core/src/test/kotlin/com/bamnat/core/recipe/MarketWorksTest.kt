@@ -29,4 +29,20 @@ class MarketWorksTest {
             assertTrue("${r.title}: ${errors.map { it.text }}", errors.isEmpty())
         }
     }
+
+    /** 1.38 [LEDH-18] 장터 첫 가계부 틀 넷 (`docs/recipes/market-138.json`, `tools/market-seed.mjs --set 138`): read on the phone, no error. */
+    @Test fun theLedgerFramesReadOnThePhone() {
+        val f = File("../docs/recipes/market-138.json")
+        @Suppress("UNCHECKED_CAST")
+        val works = Json.parse(f.readText()) as List<Map<String, Any?>>
+        assertEquals(listOf("자취 첫 달 가계부", "야간 근무자 가계부", "배달 라이더 장부", "1인 카페 장부"),
+            works.map { RecipeCodec.clean(it["recipe"]).title })
+        for (w in works) {
+            val r = RecipeCodec.clean(w["recipe"])
+            assertEquals(52, (w["minApp"] as Number).toInt())
+            assertTrue(r.title, r.pieces.any { it.kind == PieceKind.LEDGER })
+            val errors = RecipeLint.check(r).filter { it.level == RecipeLint.Level.ERROR }
+            assertTrue("${r.title}: ${errors.map { it.text }}", errors.isEmpty())
+        }
+    }
 }
