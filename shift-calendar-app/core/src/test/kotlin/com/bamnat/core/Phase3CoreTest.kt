@@ -61,6 +61,11 @@ class Phase3CoreTest {
         assertEquals(Skill.CHARGE, p[0].skill)
         assertEquals(Skill.REG, p[2].skill)
         assertEquals(Skill.NEW, p[4].skill)
+        // 1.38 PC 1차: "지우 (주임)", "하은/선임", "민지★".
+        val q = TeamPaste.people("지우 (주임)\n하은/선임\n서연★\n도윤 [신규]")
+        assertEquals(listOf("지우", "하은", "서연", "도윤"), q.map { it.name })
+        assertEquals(listOf("주임", "선임", "책임", "신규"), q.map { it.role })
+        assertEquals(listOf(Skill.CHARGE, Skill.CHARGE, Skill.CHARGE, Skill.NEW), q.map { it.skill })
     }
 
     @Test

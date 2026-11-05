@@ -111,18 +111,40 @@ data class Payslip(
 
 /** [BOSS-10] 지난달 비교: how each staff member's pay moved, for "왜 달라졌어요?" before it is asked. */
 object PayrollCompare {
-    data class Row(val staff: StaffMember, val now: Long, val before: Long?, val minutesNow: Int, val minutesBefore: Int?) {
+    data class Row(
+        val staff: StaffMember, val now: Long, val before: Long?, val minutesNow: Int, val minutesBefore: Int?,
+        /** Each pay line's amount by its label, this month and last, for the line that moved most. */
+        val linesNow: Map<String, Long> = emptyMap(), val linesBefore: Map<String, Long> = emptyMap(),
+    ) {
         val diff: Long? get() = before?.let { now - it }
-        val why: String get() = when {
-            before == null -> "지난달 기록 없음"
-            diff == 0L -> "지난달과 같아요"
-            minutesBefore != null && minutesNow != minutesBefore -> "일한 시간 ${(minutesNow - minutesBefore) / 60}시간 ${if (minutesNow > minutesBefore) "늘었어요" else "줄었어요"}"
-            else -> "시간은 같고 수당·요율이 달라졌어요"
+
+        /**
+         * Why, in the order a boss asks: the hours (with their real sign) and the pay line that moved most. 1.38 PC 1차: "−247,680원 · 일한 시간
+         * 8시간 늘었어요" said the opposite of the money; now both are said, so they never seem to disagree.
+         */
+        val why: String get() {
+            if (before == null) return "지난달 기록 없음"
+            if (diff == 0L) return "지난달과 같아요"
+            val parts = ArrayList<String>()
+            if (minutesBefore != null && minutesNow != minutesBefore) {
+                val d = minutesNow - minutesBefore
+                val h = kotlin.math.abs(d) / 60.0
+                val hText = if (kotlin.math.abs(d) % 60 == 0) "${kotlin.math.abs(d) / 60}" else "%.1f".format(h)
+                parts += "일한 시간 ${hText}시간 ${if (d > 0) "늘었어요" else "줄었어요"}"
+            }
+            val moved = (linesNow.keys + linesBefore.keys).map { it to (linesNow[it] ?: 0L) - (linesBefore[it] ?: 0L) }
+                .filter { it.second != 0L }.maxByOrNull { kotlin.math.abs(it.second) }
+            moved?.let { (label, d) -> parts += "$label ${if (d > 0) "+" else "−"}${"%,d".format(kotlin.math.abs(d))}원" }
+            return parts.ifEmpty { listOf("시간은 같고 수당·요율이 달라졌어요") }.joinToString(" · ")
         }
     }
 
     fun rows(now: Ledger, before: Ledger?): List<Row> {
         val last = before?.lines.orEmpty().associateBy { it.staff.id }
-        return now.lines.map { l -> Row(l.staff, l.gross, last[l.staff.id]?.gross, l.workMinutes, last[l.staff.id]?.workMinutes) }
+        fun amounts(l: LedgerLine?) = l?.lines.orEmpty().groupBy { it.label }.mapValues { e -> e.value.sumOf { it.amount } }
+        return now.lines.map { l ->
+            val b = last[l.staff.id]
+            Row(l.staff, l.gross, b?.gross, l.workMinutes, b?.workMinutes, amounts(l), amounts(b))
+        }
     }
 }

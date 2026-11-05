@@ -207,9 +207,12 @@ object TeamPaste {
     fun people(text: String): List<Person> {
         val seen = HashMap<String, Int>()
         return text.lines().mapNotNull { raw ->
-            val line = raw.replace(Regex("""^\s*(\d+[.)]|[-•·*])\s*"""), "").trim().replace(Regex("""\s+"""), " ")
+            // 1.38 PC 1차 ("지우 (주임)"): a role in brackets or after a slash is a role too; a ★ after a name means 책임.
+            val star = raw.contains('★')
+            val line = raw.replace(Regex("""^\s*(\d+[.)]|[-•·*])\s*"""), "").replace('★', ' ')
+                .replace(Regex("""[()\[\]{}/,]"""), " ").trim().replace(Regex("""\s+"""), " ")
             if (line.isEmpty()) return@mapNotNull null
-            val words = line.split(" ")
+            val words = line.split(" ") + if (star && line.split(" ").none { it == "책임" }) listOf("책임") else emptyList()
             val role = words.drop(1).filter { it in ROLES || it.uppercase() in ROLES }.joinToString(" ")
             val name = words.filterIndexed { i, w -> i == 0 || (w !in ROLES && w.uppercase() !in ROLES) }.joinToString(" ").take(NAME_MAX)
             val skill = when {

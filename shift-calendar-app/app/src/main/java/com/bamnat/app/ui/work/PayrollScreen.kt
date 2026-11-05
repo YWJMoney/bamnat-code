@@ -114,6 +114,15 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         }
         SectionCard(title = place.name, trailing = { TextButton(onClick = { settings = true }) { Text("사업장 설정") } }) {
             ledger.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = if (place.fivePlus == null) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurfaceVariant) }
+            // PC 1차 제안: not answered yet → ask right here in one tap, not behind 사업장 설정. The safe side (가산 넣기) stays until then.
+            if (place.fivePlus == null) {
+                Text("사장님 빼고 일하는 사람(가족 아닌 직원·알바 모두)이 평소 몇 명인가요? 지금 대장엔 ${staff.size}명이 있어요.",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = false, onClick = { scope.launch { store.saveWorkplace(place.copy(fivePlus = true)) } }, label = { Text("5명 이상") })
+                    FilterChip(selected = false, onClick = { scope.launch { store.saveWorkplace(place.copy(fivePlus = false)) } }, label = { Text("5명 미만") })
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
                 StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${staff.size}명")
                 StatTile("사장님 4대보험", Fmt.won(ledger.employerInsurance), Modifier.weight(1f), caption = "참고")
