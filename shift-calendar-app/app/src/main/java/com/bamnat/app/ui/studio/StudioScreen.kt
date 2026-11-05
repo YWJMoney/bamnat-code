@@ -403,9 +403,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var quick by remember { mutableStateOf<StudioEdit.Quick?>(null) }
     var panel by rememberSaveable { mutableStateOf(false) }
     var panelMode by rememberSaveable { mutableStateOf(PanelMode.TOOL) }
-    var panelBig by rememberSaveable { mutableStateOf(false) }
+    // PC 확인 1.37 A18 MED-1: the 판's size is kept across restarts (with the folded rows, a device-only choice).
+    val (panelBig, setPanelBig) = com.bamnat.app.ui.components.rememberFold("studio.panel.big")
     // 1.37 가계부 LOW-4: the 기능 tool changes no look, so its 판 opens big (the example folded to a strip) until 작게.
-    var featureSmall by rememberSaveable { mutableStateOf(false) }
+    val (featureSmall, setFeatureSmall) = com.bamnat.app.ui.components.rememberFold("studio.panel.feature.small")
     var condFirst by remember { mutableStateOf(false) }
     // PC 확인 1.37 A8: each ‘＋ 조건으로 꾸미기’ asks again, also when the part's panel is already open.
     var condAsk by remember { mutableStateOf(0) }
@@ -905,7 +906,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 PanelMode.CARDS -> "${area.labelFor(vm.style)} · 카드 넣기"
                                 PanelMode.TOOL -> "${area.labelFor(vm.style)} · ${t.label}"
                             }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).semantics { heading() })
-                            TextButton(onClick = { if (featurePanel) featureSmall = !featureSmall else panelBig = !panelBig },
+                            TextButton(onClick = { if (featurePanel) setFeatureSmall(!featureSmall) else setPanelBig(!panelBig) },
                                 modifier = Modifier.heightIn(min = 48.dp)) { Text(if (big) "작게" else "크게") }
                             TextButton(onClick = { panel = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
                         }
