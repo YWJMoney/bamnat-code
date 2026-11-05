@@ -219,7 +219,8 @@ fun CalendarScreen(
     vm: CalendarViewModel,
     wide: Boolean,
     snackbarHostState: SnackbarHostState,
-    onOpenMemo: (Long) -> Unit,
+    /** A memo by id, and the day it was opened from (a repeating memo's day, for 이 날만 빼기), null for none. */
+    onOpenMemo: (Long, LocalDate?) -> Unit,
     onNewMemo: (LocalDate) -> Unit,
     onOpenPattern: () -> Unit,
     onOpenShiftTypes: () -> Unit,
@@ -408,7 +409,7 @@ fun CalendarScreen(
         }
     }
 
-    LaunchedEffect(vm) { vm.openMemo.collect { onOpenMemo(it) } }
+    LaunchedEffect(vm) { vm.openMemo.collect { onOpenMemo(it, null) } }
 
     val snap = snapshot
     // [RUL-05] 1.36 탭 사이 흐름: the days' values formulas read (근무·메모·꼬리표·지출), for 조건부 꾸미기, 단추 and 규칙.
@@ -1319,6 +1320,11 @@ fun CalendarScreen(
             if (low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown }.forEach { placed ->
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
+        }.let { all ->
+            // [EASE-03] 1.38 PC 994c2328 (첫날 알림 허용 줄 밑에 '알림 1개 더 보기 · 근무주기 다음 단계'): on the first setup's day only
+            // what keeps the calendar working stays (the alarm line, money promised and late, the developer’s notice, what an invite
+            // the user just told became, the user's own parts); the next steps, asks and nudges wait for the next day.
+            if (c31.firstSetup.quietToday()) all.filter { it.key !in FIRST_DAY_WAITS } else all
         })
         }
         // [EASE-01] 1.38 (오늘근무 분석: 달력이 위로): '할 수 있는 것'·오늘의 팁 under the month, never on the first setup's day (EASE-03).
@@ -2695,7 +2701,7 @@ private fun MonthMemoCard(
     memos: List<com.bamnat.core.memo.Memo>,
     /** [DAY-04] With memos under the dates, the card stays to say where the month's memos gather. */
     showEmpty: Boolean,
-    onOpen: (Long) -> Unit,
+    onOpen: (Long, LocalDate?) -> Unit,
     onNew: () -> Unit,
     modifier: Modifier = Modifier,
     /** [EASE-24] 1.38: the kind of day on a date, shown beside it so a memo reads with its shift ("6일 목 [야] 도시락"). */
@@ -2724,7 +2730,7 @@ private fun MonthMemoCard(
             for (m in shown) {
                 val d = m.date!!
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onOpen(m.id) }.padding(horizontal = 16.dp, vertical = 7.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onOpen(m.id, m.date) }.padding(horizontal = 16.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -2974,3 +2980,9 @@ internal val ScheduleSnapshot.backWord: String
         weekdayOnly -> "평소대로"
         else -> "근무 주기대로"
     }
+
+/** [EASE-03] Cards above the month that wait for the day after the first setup. */
+private val FIRST_DAY_WAITS = setOf(
+    "statsMore", "crashAsk", "review", "holiday", "alarmSuggest", "recap", "plazaShare", "publicCycle",
+    "plazaRoom", "inviteNudge", "proMoment", "backupNudge", "journal",
+)

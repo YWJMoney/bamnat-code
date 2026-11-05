@@ -175,7 +175,7 @@ fun DayPanel(
     vm: CalendarViewModel,
     groups: DayGroupState,
     onDateChange: (LocalDate) -> Unit,
-    onOpenMemo: (Long) -> Unit,
+    onOpenMemo: (Long, LocalDate?) -> Unit,
     onNewMemo: (LocalDate) -> Unit,
     onOpenShiftTypes: () -> Unit,
     onOpenPay: () -> Unit,
@@ -225,7 +225,7 @@ private fun DayGroups(
     vm: CalendarViewModel,
     groups: DayGroupState,
     memoFocus: Int,
-    onOpenMemo: (Long) -> Unit,
+    onOpenMemo: (Long, LocalDate?) -> Unit,
     onNewMemo: (LocalDate) -> Unit,
     onOpenShiftTypes: () -> Unit,
     onOpenPay: () -> Unit,
@@ -403,7 +403,7 @@ private fun DayGroups(
                                 com.bamnat.app.ui.money.DayWhatIfSection(date, snapshot, p, cal.id)
                             }
                             val memoText = remember(memos) {
-                                memos.joinToString("\n") { m -> (listOf(m.title, m.body) + m.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n") }
+                                memos.joinToString("\n") { m -> (listOf(m.title, m.text) + m.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n") }
                             }
                             // 1.37 [LEDH-30] 근무에서 바로 적기: what was spent twice or more on the last 90 days' days of this shift.
                             val habits by androidx.compose.runtime.produceState<Pair<String, List<com.bamnat.core.money.MoneyEntry>>?>(null, book, snapshot, date, style) {
@@ -1007,7 +1007,7 @@ private fun DayNoteField(date: LocalDate, label: String, vm: CalendarViewModel) 
 
 /** The day's memos: a quick line that saves with one tap, and the list; deleting asks first [DAY-03]. */
 @Composable
-private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewModel, memoFocus: Int, onOpenMemo: (Long) -> Unit) {
+private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewModel, memoFocus: Int, onOpenMemo: (Long, LocalDate?) -> Unit) {
     var text by rememberSaveable(date) { mutableStateOf("") }
     var deleting by remember { mutableStateOf<Memo?>(null) }
     val focus = remember { FocusRequester() }
@@ -1055,20 +1055,24 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
         }
     }
     for (memo in memos) {
-        MemoRow(memo = memo, onClick = { onOpenMemo(memo.id) }, onDelete = { deleting = memo })
+        MemoRow(memo = memo, onClick = { onOpenMemo(memo.id, date) }, onDelete = { deleting = memo })
     }
     deleting?.let { m ->
-        ConfirmDialog(
-            title = com.bamnat.app.ui.memo.memoDeleteTitle(m, "이 메모를 지울까요?"),
-            message = com.bamnat.app.ui.memo.memoDeleteMessage(m, "휴지통으로 옮겨요. 메모 탭의 휴지통에서 되살릴 수 있어요.") { id ->
-                snapshot?.typesById?.get(id)?.name
-            },
-            confirmLabel = "지우기",
-            destructive = true,
+        // 1.38 (DB 28판) A repeating memo asks: 이 날만 빼기 or 반복 전부 지우기.
+        com.bamnat.app.ui.memo.MemoDeleteDialog(
+            memo = m,
+            day = date,
+            shiftName = { id -> snapshot?.typesById?.get(id)?.name },
+            plainTitle = "이 메모를 지울까요?",
+            plainMessage = "휴지통으로 옮겨요. 메모 탭의 휴지통에서 되살릴 수 있어요.",
             onDismiss = { deleting = null },
-            onConfirm = {
+            onDeleteAll = {
                 deleting = null
                 vm.deleteMemo(m)
+            },
+            onSkipDay = { d ->
+                deleting = null
+                vm.skipMemoDay(m, d)
             },
         )
     }
@@ -1080,7 +1084,7 @@ private fun MemoRow(memo: Memo, onClick: () -> Unit, onDelete: () -> Unit) {
     // A 1.32 [FIX132-05] A long press copies the memo, all of it or a part, without opening it.
     var copying by remember { mutableStateOf(false) }
     if (copying) com.bamnat.app.ui.components.CopyTextSheet(memo.title.ifBlank { "메모" },
-        (listOf(memo.title, memo.body) + memo.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n")) { copying = false }
+        (listOf(memo.title, memo.text) + memo.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n")) { copying = false }
     Row(
         Modifier
             .fillMaxWidth()

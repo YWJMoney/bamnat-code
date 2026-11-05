@@ -123,6 +123,13 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="image/*" />
                 <data android:mimeType="text/plain" />
+                <!-- [READ-30] 1.38: a roster file from 카카오톡·메일 (PDF, 엑셀, CSV), read on the phone. -->
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/vnd.oasis.opendocument.spreadsheet" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
             </intent-filter>
             <intent-filter android:label="@string/open_file_label">
                 <action android:name="android.intent.action.VIEW" />

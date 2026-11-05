@@ -42,6 +42,7 @@ import androidx.compose.material.icons.outlined.EventRepeat
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.OutlinedTextField
@@ -1289,8 +1290,38 @@ internal object BackupPlace {
     private const val PREFS = "backup_place"
     private const val KEY = "last"
 
-    fun remember(context: Context, uri: Uri) {
+    private const val RECENT = "recent"
+    private const val KEEP = 3
+
+    /** 1.38 PC 확인(c00dc792) 제안: a backup this app saved, offered first in 파일 불러오기 (the picker opened on a grid of downloads). */
+    data class Recent(val uri: Uri, val name: String, val at: java.time.LocalDateTime)
+
+    fun remember(context: Context, uri: Uri, name: String? = null) {
         runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, uri.toString()).apply() }
+        if (name == null) return
+        // The file stays readable after the app restarts only with a kept grant; the oldest past [KEEP] gives its grant back.
+        runCatching { context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        val list = (listOf(Recent(uri, name, Today.dateTime().withSecond(0).withNano(0))) + stored(context).filter { it.uri != uri })
+        list.drop(KEEP).forEach { old ->
+            runCatching { context.contentResolver.releasePersistableUriPermission(old.uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        }
+        val json = org.json.JSONArray()
+        list.take(KEEP).forEach { r -> json.put(org.json.JSONObject().put("u", r.uri.toString()).put("n", r.name).put("t", r.at.toString())) }
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(RECENT, json.toString()).apply() }
+    }
+
+    private fun stored(context: Context): List<Recent> = runCatching {
+        val a = org.json.JSONArray(context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(RECENT, null) ?: return emptyList())
+        (0 until a.length()).mapNotNull { i ->
+            val o = a.optJSONObject(i) ?: return@mapNotNull null
+            runCatching { Recent(Uri.parse(o.getString("u")), o.getString("n"), java.time.LocalDateTime.parse(o.getString("t"))) }.getOrNull()
+        }
+    }.getOrDefault(emptyList())
+
+    /** The backups saved here that can still be read (the grant kept), newest first. */
+    fun recent(context: Context): List<Recent> {
+        val granted = runCatching { context.contentResolver.persistedUriPermissions.filter { it.isReadPermission }.map { it.uri }.toSet() }.getOrDefault(emptySet())
+        return stored(context).filter { it.uri in granted }
     }
 
     fun last(context: Context): Uri? =
@@ -1307,9 +1338,10 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     val context = LocalContext.current
     // Survives the app being closed behind the file picker, unlike the password itself.
     var sealedExport by rememberSaveable { mutableStateOf(false) }
+    var exportName by rememberSaveable { mutableStateOf<String?>(null) }
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BackupManager.FILE_MIME)) { uri ->
         if (uri != null) {
-            BackupPlace.remember(context, uri)
+            BackupPlace.remember(context, uri, exportName)
             vm.exportTo(context, uri, sealedExport)
         }
     }
@@ -1331,7 +1363,9 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
                 vm.prepareExport(password)
                 sealedExport = password != null
                 // 1.38 PC 확인(e6dc244a) 제안: two backups on one day get names of their own (밤낮-백업-2026-11-05-1930).
-                exportLauncher.launch("밤낮-백업-${Today.date()}-${java.time.LocalTime.now().let { "%02d%02d".format(it.hour, it.minute) }}.${BackupManager.EXTENSION}")
+                val name = "밤낮-백업-${Today.date()}-${Today.time().let { "%02d%02d".format(it.hour, it.minute) }}.${BackupManager.EXTENSION}"
+                exportName = name
+                exportLauncher.launch(name)
             },
         )
     }
@@ -1367,6 +1401,14 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     }
     val locked by vm.locked.collectAsStateWithLifecycle()
     locked?.let { UnlockBackupDialog(it, onUnlock = vm::unlock, onDismiss = vm::cancelUnlock) }
+    val pickAny = { openLauncher.launch(arrayOf(BackupManager.MIME_TYPE, com.bamnat.app.data.CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) }
+    var recentBackups by remember { mutableStateOf<List<BackupPlace.Recent>>(emptyList()) }
+    if (recentBackups.isNotEmpty()) {
+        RecentBackupsDialog(recentBackups,
+            onPick = { r -> recentBackups = emptyList(); vm.readFile(context, r.uri) },
+            onOther = { recentBackups = emptyList(); pickAny() },
+            onDismiss = { recentBackups = emptyList() })
+    }
     val pendingRestore by vm.pendingRestore.collectAsStateWithLifecycle()
     pendingRestore?.let { (_, summary) ->
         ConfirmDialog(
@@ -1378,14 +1420,38 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
             onConfirm = vm::confirmRestore,
         )
     }
-    return remember(exportLauncher, icsLauncher, openLauncher) {
+    return remember(exportLauncher, icsLauncher, openLauncher, context) {
         SettingsFiles(
             saveBackup = { askingPassword = true },
-            openFile = { openLauncher.launch(arrayOf(BackupManager.MIME_TYPE, com.bamnat.app.data.CompanyShare.MIME_TYPE, "text/plain", "application/octet-stream")) },
+            // 1.38 PC 확인(c00dc792) 제안: the backups saved here come first; the picker is one tap further.
+            openFile = { BackupPlace.recent(context).let { if (it.isEmpty()) pickAny() else recentBackups = it } },
             exportIcs = { icsLauncher.launch("밤낮-근무-${Today.date()}.ics") },
             shareCompany = { sharingCompany = true },
         )
     }
+}
+
+/** 1.38: 파일 불러오기 with the backups this phone saved (newest first) and 다른 파일 고르기 for anything else. */
+@Composable
+private fun RecentBackupsDialog(list: List<BackupPlace.Recent>, onPick: (BackupPlace.Recent) -> Unit, onOther: () -> Unit, onDismiss: () -> Unit) {
+    val at = java.time.format.DateTimeFormatter.ofPattern("M월 d일 a h:mm", java.util.Locale.KOREAN)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("어떤 파일을 불러올까요?") },
+        text = {
+            Column {
+                Text("이 휴대폰에서 만든 백업이에요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                list.forEach { r ->
+                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { onPick(r) }.padding(vertical = 10.dp)) {
+                        Text(r.at.format(at) + " 백업", style = MaterialTheme.typography.bodyLarge)
+                        Text(r.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onOther) { Text("다른 파일 고르기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 /** [SET-01] Everything a restore replaces, and that the data before it is kept. */

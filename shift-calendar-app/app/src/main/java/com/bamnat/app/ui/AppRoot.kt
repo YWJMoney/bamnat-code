@@ -660,19 +660,6 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
         }
     }
-    // [J133-77] A 자영업 calendar just set up opens on its 영업일·정기휴무, once the setup screen is gone.
-    LaunchedEffect(Unit) {
-        container.pendingShopDays.collect { id ->
-            if (id == null) return@collect
-            // The kind of work is saved a moment after the setup closes: wait for it, a few seconds at most.
-            val saved = kotlinx.coroutines.withTimeoutOrNull(3_000) {
-                while (container.calendars.styleOf(id, container.settingsRepository.current.workStyle) != WorkStyle.BUSINESS) kotlinx.coroutines.delay(100)
-                true
-            }
-            container.pendingShopDays.value = null
-            if (saved == true) { kotlinx.coroutines.delay(300); nav.openPattern(container, id) }
-        }
-    }
     // [GUIDE-01] The checklist, a tip, the help search or 기능 켜고 끄기 opens a feature where it lives,
     // for the calendar on screen.
     val featureLink by com.bamnat.app.ui.guide.FeatureLinks.target.collectAsStateWithLifecycle()
@@ -857,6 +844,23 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             container.appScope.launch { container.memoRepository.undoDelete() }
         } else {
             container.memoRepository.consumeLastDeleted()
+        }
+    }
+
+    // 1.38 이 날만 빼기: undo for a day taken off a repeating memo, wherever it was taken off.
+    val lastSkipped by container.memoRepository.lastSkipped.collectAsStateWithLifecycle()
+    LaunchedEffect(lastSkipped) {
+        val skipped = lastSkipped ?: return@LaunchedEffect
+        val title = skipped.memo.title.ifBlank { skipped.memo.preview }.take(20)
+        val result = snackbar.showSnackbar(
+            message = (if (title.isBlank()) "메모를" else "‘$title’ 메모를") + " ${Fmt.monthDay(skipped.day)}에서만 뺐어요",
+            actionLabel = "되돌리기",
+            duration = SnackbarDuration.Long,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            container.appScope.launch { container.memoRepository.undoSkip() }
+        } else {
+            container.memoRepository.consumeLastSkipped()
         }
     }
 
@@ -1211,7 +1215,7 @@ private fun AppNavHost(
                 // the month: in half of 600dp the days were too narrow for their shift chips (660 shot).
                 wide = wide && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= CALENDAR_BESIDE_DP,
                 snackbarHostState = snackbar,
-                onOpenMemo = { id -> nav.navigate(Routes.memo(id)) },
+                onOpenMemo = { id, day -> nav.navigate(Routes.memo(id, day)) },
                 onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
                 // [MCAL-01] The calendar on screen is the one these edit.
                 onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },

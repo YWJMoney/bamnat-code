@@ -130,8 +130,9 @@ class YScreenshotTest : ScreenshotBase() {
     })
 
     @Test fun aChipPicksTheJob() = shoot("898_y_job_chip", PHONE_393, firstScreen {
+        // [EASE-09] 1.38 PC 994c2328: the chip starts the job at once, with no '이렇게 시작할까요?' card to tap again.
         tapText("편의점 알바", exact = true)
-        tapText("편의점 알바 · 아르바이트 · 시급", exact = true)
+        assertTrue(gone("이렇게 시작할까요?"))
         assertTrue(gone(LATER))
         assertEquals(WorkStyle.HOURLY, c.setupDrafts.draft.value?.style)
     })

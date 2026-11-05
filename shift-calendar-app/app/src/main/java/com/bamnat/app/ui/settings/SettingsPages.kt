@@ -237,7 +237,7 @@ private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
     fun open(t: com.bamnat.app.NoticeLinks.Target) = com.bamnat.app.NoticeLinks.open(t)
     when (style) {
         null, com.bamnat.core.work.WorkStyle.SHIFT -> SectionCard(title = "교대 근무 도구") {
-            NavRow("한 달 근무 넣기", "달력 위 키패드로 바로 넣거나, 듀티표 사진·엑셀·CSV를 읽어 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
+            NavRow("한 달 근무 넣기", "달력 위 키패드로 바로 넣거나, 듀티표 사진·엑셀·PDF를 읽어 한 번에 넣어요") { open(com.bamnat.app.NoticeLinks.Target.DUTY_ROSTER) }
             HorizontalDivider()
             NavRow("연간 건강 지표", "야간 비율, 연속 야간, 짧은 휴식, 주말·공휴일 근무") { open(com.bamnat.app.NoticeLinks.Target.HEALTH_REPORT) }
         }
@@ -838,7 +838,7 @@ private fun BackupPhotosRow(vm: SettingsViewModel) {
     val about = size?.takeIf { !it.isEmpty }?.let { "지금 ${it.count}장 · ${photoMegabytes(it.bytes)}. " }.orEmpty()
     SwitchRow(
         "사진도 백업",
-        about + if (settings.backupPhotos) "영수증·계약서 사진이 백업 파일에 들어가 새 휴대폰에서도 보여요. 끄면 사진은 이 휴대폰에만 남아요"
+        about + if (settings.backupPhotos) "영수증·계약서·메모 사진이 백업 파일에 들어가 새 휴대폰에서도 보여요. 끄면 사진은 이 휴대폰에만 남아요"
         else "꺼져 있어요. 사진은 이 휴대폰에만 있어서 휴대폰을 바꾸면 옮겨지지 않아요",
         settings.backupPhotos,
     ) { on -> vm.update { it.copy(backupPhotos = on) } }

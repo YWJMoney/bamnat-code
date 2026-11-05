@@ -264,7 +264,7 @@ class BackupManager(
     private suspend fun exportWithPhotos(sealed: Boolean = false): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
         val root = exportNow(sealed)
         // [BACK-01] The photos the records point at, unless the user keeps them on the phone only.
-        val files = if (settings.current.backupPhotos) photos?.let { p -> photoNames(root).let { (r, c) -> p.files(r, c) } }.orEmpty() else emptyList()
+        val files = if (settings.current.backupPhotos) photos?.let { p -> photoNames(root).let { (r, c) -> p.files(r, c, memoPhotoNames(root)) } }.orEmpty() else emptyList()
         root.toString(1) to files
     }
 
@@ -486,7 +486,9 @@ class BackupManager(
                     .putOpt("remindAsked", m.remindAsked)
                     // [NOTE-01] Version 16. [MEMO-01] Without it the memo is 내 달력's; ",*," is every calendar.
                     .putOpt("calendars", m.calendars.ifEmpty { null })
-                    .putOpt("repeat", m.repeat.ifEmpty { null }),
+                    .putOpt("repeat", m.repeat.ifEmpty { null })
+                    // 1.38 DB 28판 이 날만 빼기. An older app ignores it and the memo comes back on those days too.
+                    .putOpt("skips", m.skips.ifEmpty { null }),
             )
         }
         root.put("memos", memos)
@@ -580,6 +582,10 @@ class BackupManager(
         return receipts to contracts
     }
 
+    /** [MPH-03] 1.38 The photos the backup's memos (the trash's too) put in their bodies. */
+    private fun memoPhotoNames(root: JSONObject): Set<String> =
+        root.optJSONArray("memos").objects().flatMapTo(LinkedHashSet()) { com.bamnat.core.memo.MemoPhotos.names(it.optString("body")) }
+
     /** [BACK-01] What the photos would add to a backup made now: shown beside 사진도 백업. */
     suspend fun photoSize(): BackupPhotos.Size {
         val p = photos ?: return BackupPhotos.Size(0, 0)
@@ -595,7 +601,9 @@ class BackupManager(
             })
         }
         val (receipts, contracts) = photoNames(root)
-        return p.size(receipts, contracts)
+        // [MPH-03] 1.38 메모 사진 too.
+        val memoNames = db.memoDao().getAll().flatMapTo(LinkedHashSet()) { com.bamnat.core.memo.MemoPhotos.names(it.body) }
+        return p.size(receipts, contracts, memoNames)
     }
 
     /** Reads a backup without changing anything. Throws [BackupException] for a file that is not ours. */
@@ -913,6 +921,7 @@ class BackupManager(
                 remindNotify = o.optBoolean("remindNotify"), remindAsked = o.optStringOrNull("remindAsked"),
                 calendars = com.bamnat.core.memo.MemoCalendars.encode(com.bamnat.core.memo.MemoCalendars.decode(o.optStringOrNull("calendars"))),
                 repeat = o.optString("repeat"),
+                skips = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("skips"))),
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->

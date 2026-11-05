@@ -189,7 +189,7 @@ object ShareLinkPayload {
     /** The title, else the body's first line or a checklist's first item, never the rest of it. */
     private fun Memo.firstLine(): String {
         fun first(text: String) = text.lineSequence().map { it.trim() }.firstOrNull { it.isNotEmpty() }
-        return first(title) ?: if (isChecklist) checklist.firstOrNull { it.text.isNotBlank() }?.text.orEmpty() else first(body).orEmpty()
+        return first(title) ?: if (isChecklist) checklist.firstOrNull { it.text.isNotBlank() }?.text.orEmpty() else first(text).orEmpty()
     }
 
     const val MEMO_CHARS = 80

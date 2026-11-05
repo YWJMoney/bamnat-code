@@ -108,6 +108,9 @@ class SetupViewModel(
         _done.value = true
     }
 
+    /** [EASE-03] 1.38: the summary's '같은 회사 분들과 이 근무주기 나누기' box; never ticked beforehand. */
+    val shareCycle = MutableStateFlow(false)
+
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving.asStateFlow()
 
@@ -224,8 +227,9 @@ class SetupViewModel(
         when (style) {
             // Field and shop work are written day by day: nothing more to ask.
             WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST -> {
-                // [J133-77] A shop's days and card fees are its first question, asked on their own screen right after.
-                if (style == WorkStyle.BUSINESS) c.pendingShopDays.value = calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
+                // [J133-77] A shop's days were asked on their own screen right after. [EASE-09] 1.38 PC 994c2328 (자영업 1번 뒤에
+                // 영업일 화면이 나와 저장·뒤로를 더 눌러요): the calendar comes first with every day open; 영업일·정기휴무 is in
+                // 근무 주기 when the user wants it.
                 save(SetupDraft(style = style))
             }
             else -> {
@@ -796,9 +800,10 @@ class SetupViewModel(
                     c.asks.set(cal, com.bamnat.core.profile.AskScheduler.rest(c.asks.of(cal), today))
                     // [J133-52] The setup came from a company: the first week's card does not ask for one again.
                     if (d.source?.name?.isNotBlank() == true) com.bamnat.app.ui.guide.StartStepsState.companyPicked(c)
-                    // [PLAZA-14] 1.27 AH: a cycle from a company search is asked about once, for the calendar it went into.
+                    // [PLAZA-14] 1.27 AH: a cycle from a company search is shared for the calendar it went into. [EASE-03] 1.38 PC 994c2328:
+                    // asked on the summary (one box), not in a window over the new calendar.
                     d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
-                        c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN))
+                        c.leadShare.afterSetup(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN), shareCycle.value)
                     }
                     c.telemetry.event("setup_done", buildString {
                         append(d.style?.name)

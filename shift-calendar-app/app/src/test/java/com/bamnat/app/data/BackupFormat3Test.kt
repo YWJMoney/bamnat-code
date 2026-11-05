@@ -80,6 +80,26 @@ class BackupFormat3Test {
         assertFalse("nothing waits after the restore", File(root, "staging").exists())
     }
 
+    /** [MPH-03] 1.38 메모 사진: a photo a memo (or the trash) points at goes in the file and comes back; one no memo names does not. */
+    @Test fun memoPhotosGoAndComeBack() = runBlocking {
+        val memos = File(root, "memo-photos").apply { mkdirs() }
+        val name = "0123abcd-0000.jpg"
+        File(memos, name).writeBytes(ByteArray(2000) { (it % 199).toByte() })
+        File(memos, "9999ffff-0000.jpg").writeBytes(ByteArray(100))
+        MemoRepository(db).save(com.bamnat.core.memo.Memo(title = "사진 메모", body = "위\n⟦사진 $name 50 왼쪽⟧\n아래"))
+        val b = BackupManager(db, settings, photos = BackupPhotos(receipts, memos) { File(contracts, it) }, staging = File(root, "staging"))
+        val bytes = ByteArrayOutputStream().also { b.exportFile(it, null) }.toByteArray()
+        val names = ArrayList<String>()
+        ZipInputStream(bytes.inputStream()).use { z -> while (true) names += (z.nextEntry ?: break).name }
+        assertTrue(names.toString(), "photos/memos/$name" in names)
+        assertFalse(names.toString(), names.any { it.contains("9999ffff") })
+        val photo = File(memos, name).readBytes()
+        File(memos, name).delete()
+        val json = b.read(bytes.inputStream())
+        b.restore(json)
+        assertTrue(File(memos, name).readBytes().contentEquals(photo))
+    }
+
     /** [ALRM-04] 증명 사진's fingerprints belong to this phone and this home: neither backup carries them. */
     @Test fun thePhotoMissionFingerprintsStayOnThePhone() = runBlocking {
         val refs = com.bamnat.app.alarm.PhotoReferences(context).apply { clear(); add(0x0123456789ABCDEFL, "욕실 거울") }

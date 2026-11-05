@@ -37,8 +37,8 @@ class EaseScreenshotTest : ScreenshotBase() {
     // ---- EASE-10: 근무 칩, one tap ----
     @Test fun dayChipsChangeTheDay() = shoot("2600_ease_day_chips_one_tap", FOLDED, style(WorkStyle.SHIFT) {
         openDay(dayCell)
-        assertTrue(appears("주간로 바꾸기"))
-        tapText("주간로 바꾸기")
+        assertTrue(appears("주간으로 바꾸기"))
+        tapText("주간으로 바꾸기")
         settle()
         assertEquals(ShiftOverride.Shift(typeId("주간")), overrideOn(dayCell))
         // [EASE-12] The change says what it was, with the way back.
@@ -47,7 +47,7 @@ class EaseScreenshotTest : ScreenshotBase() {
 
     @Test fun changedLineGoesBack() = shoot("2601_ease_changed_line_back", FOLDED, style(WorkStyle.SHIFT) {
         openDay(dayCell)
-        tapText("주간로 바꾸기")
+        tapText("주간으로 바꾸기")
         settle()
         tapText("되돌리기", exact = true)
         settle()
@@ -58,11 +58,41 @@ class EaseScreenshotTest : ScreenshotBase() {
     // ---- EASE-11: a rest day's shift asks once about 대근 ----
     @Test fun restDayAsksCover() = shoot("2602_ease_rest_day_cover", FOLDED, style(WorkStyle.SHIFT) {
         openDay(plainRestDay)
-        tapText("주간로 바꾸기")
+        tapText("주간으로 바꾸기")
         settle()
         assertEquals(ShiftOverride.Shift(typeId("주간")), overrideOn(plainRestDay))
         assertTrue(appears("대근으로 칠까요"))
         assertTrue(appears("대근으로", exact = true))
+    })
+
+    /** PC 3db30e1e: after the bar is gone, the day's own line still makes it a 대근 (근무표는 쉬는 날 그대로, 대근은 추가 근무). */
+    @Test fun changedLineMakesItACover() = shoot("2606_ease_changed_line_cover", FOLDED, style(WorkStyle.SHIFT) {
+        openDay(plainRestDay)
+        tapText("주간으로 바꾸기")
+        settle()
+        tapText("근무표는 쉬는 날 그대로")
+        settle()
+        assertNull(overrideOn(plainRestDay))
+        assertTrue(entry(plainRestDay)!!.extras.any { it.kindId != ExtraKind.OVERTIME_ID })
+        assertTrue(gone("근무표는 쉬는 날 그대로"))
+    })
+
+    /** PC 3db30e1e: 한 달 근무 넣기's keys are the keypad sheet's: ✕ takes the day away, » leaves it as it is. */
+    @Test fun rosterKeysEraseAndSkip() = shoot("2607_ease_roster_keys", FOLDED, style(WorkStyle.SHIFT) {
+        val vm = com.bamnat.app.ui.imports.DutyRosterViewModel(c, com.bamnat.app.data.PersonalCalendar.MAIN)
+        content { com.bamnat.app.ui.imports.DutyRosterScreen(vm, onBack = {}) }
+        settle()
+        val day = com.bamnat.core.imports.DutyCell.Shift(typeId("주간"))
+        vm.tap(1); vm.put(day); vm.put(day)
+        vm.tap(1); vm.skip()
+        assertEquals(2, vm.ui.value.cursor)
+        assertEquals(day, vm.ui.value.cells[1])
+        vm.erase()
+        assertEquals(3, vm.ui.value.cursor)
+        assertFalse(2 in vm.ui.value.cells)
+        settle()
+        assertTrue(appears("» 건너뛰기"))
+        assertTrue(appears("✕ 지우기"))
     })
 
     // ---- EASE-26: 잔업 ± chips in the opened 추가 근무 piece (the day under the calendar has them in its head) ----

@@ -4,4 +4,6 @@
     <cache-path name="share" path="share/" />
     <!-- [PAYS-05] A payslip photo taken to be read on the phone; deleted once read. -->
     <cache-path name="scan" path="scan/" />
+    <!-- [MPH-04] 1.38 메모 사진, shared with a memo only when the user shares it (read permission for that share only). -->
+    <files-path name="memo" path="memo-photos/" />
 </paths>

@@ -93,6 +93,23 @@ class ShiftMemoRepeatTest {
         assertEquals("만약 날마다 → 주야휴휴 순서로 4일마다 돌아요", rot.first().sentence)
     }
 
+    @Test fun aDayTakenOffIsNotOneOfItsDays() {
+        val weekly = Memo(id = 1, date = start, title = "분리수거", repeat = "W1", skips = setOf(start.plusWeeks(1)))
+        assertEquals(listOf(start, start.plusWeeks(2)), MemoRepeat.datesIn(weekly, start, start.plusWeeks(2)))
+        // Its own date taken off, with nothing else in range: not shown in that range at all.
+        val first = weekly.copy(skips = setOf(start))
+        assertEquals(emptyList<Memo>(), MemoRepeat.expand(listOf(first), start, start.plusDays(3)))
+        assertFalse(MemoRepeat.occursOn(first, start))
+        // A 근무마다 memo leaves that 야간 only.
+        val night = Memo(id = 2, date = start.plusDays(1), title = "도시락", repeat = MemoRepeat.shiftCode(2), skips = setOf(start.plusDays(5)))
+        assertEquals(listOf(start.plusDays(1), start.plusDays(9)), MemoRepeat.datesIn(night, start, start.plusDays(11), shifts(resolver())))
+        // A memo that does not repeat is not taken off its own day.
+        assertTrue(MemoRepeat.occursOn(Memo(id = 3, date = start, skips = setOf(start)), start))
+        // Stored and read back, in order; junk is left out.
+        assertEquals("20760,20764", MemoRepeat.encodeSkips(setOf(LocalDate.ofEpochDay(20764), LocalDate.ofEpochDay(20760))))
+        assertEquals(setOf(LocalDate.ofEpochDay(20760)), MemoRepeat.decodeSkips("20760,x,"))
+    }
+
     @Test fun withEveryAlarmOffNoCardSaysItRings() {
         val cards = RuleCards.of(listOf(order), listOf(day, night, off), start, alarmsOn = false)
         val alarms = cards.filter { it.group == RuleCards.Group.ALARM }

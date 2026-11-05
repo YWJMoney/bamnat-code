@@ -82,6 +82,7 @@ class AlarmScheduler(
             if (!enabled) _ahead.value = emptyList()
             AlarmSoon.schedule(context, null, null, 0)
             AlarmGuard.schedule(context, null)
+            AlarmGuard.scheduleBack(context, null, null)
             prefs.edit().remove(K_PENDING).apply()
             alarmManager.cancel(operation)
             if (_upcoming.value != null) telemetry.event(DiagEvents.ALARM_CLEARED, if (enabled) "none_ahead" else "switched_off")
@@ -93,6 +94,9 @@ class AlarmScheduler(
         prefs.edit().putLong(K_PENDING, triggerAt).apply()
         AlarmSoon.schedule(context, triggerAt, soonText(plan), soonMinutes())
         AlarmGuard.schedule(context, if (guard()) triggerAt else null)
+        // [ALRM-29] The first alarm after a break (no alarm in any calendar for two days) is said the evening before.
+        val back = guard() && calendars.all { (_, s) -> com.bamnat.core.alarm.AlarmPlanner.afterBreak(s.resolver, plan.triggerAt) }
+        AlarmGuard.scheduleBack(context, if (back) triggerAt else null, backText(plan))
         val previous = _upcoming.value
         // The schedule is re-planned on every edit; only a different alarm is worth a log line.
         if (previous == null || previous.triggerAtMillis != triggerAt || previous.exact != exact) {
@@ -132,6 +136,10 @@ class AlarmScheduler(
     }
 
     /** [ALRM-21] What 곧 알람이 울려요 says the alarm is for. */
+    /** [ALRM-29] "05:30 주간 근무 알람", "07:00 알람". */
+    private fun backText(plan: PlannedAlarm): String =
+        com.bamnat.app.ui.Fmt.time(plan.triggerAt.toLocalTime()) + if (plan.shiftName.isNotBlank()) " ${plan.shiftName} 근무 알람" else " 알람"
+
     private fun soonText(plan: PlannedAlarm): String = when {
         plan.shiftName.isNotBlank() -> "${plan.shiftName} 근무 알람이에요. 이번 알람을 끌까요?"
         else -> "이 날 알람이에요. 이번 알람을 끌까요?"

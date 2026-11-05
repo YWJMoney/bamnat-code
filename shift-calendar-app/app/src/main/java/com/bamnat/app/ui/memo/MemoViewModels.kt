@@ -483,6 +483,16 @@ class MemoEditorViewModel(
     fun setTitle(title: String) = update { it.copy(title = title) }
     fun setBody(body: String) = update { it.copy(body = body) }
 
+    /**
+     * [MPH-01] 1.38 A photo put in where nothing is being typed: at the end of the words (above the list of a checklist). False when
+     * the memo already holds [com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO].
+     */
+    fun addPhoto(name: String): Boolean {
+        if (com.bamnat.core.memo.MemoPhotos.count(_memo.value.body) >= com.bamnat.core.memo.MemoPhotos.MAX_PER_MEMO) return false
+        update { m -> m.copy(body = com.bamnat.core.memo.MemoPhotos.insert(m.body, null, name).text) }
+        return true
+    }
+
     /** [RCP-11] 1.34 메모 틀: the user's own and those a 나눔 판 recipe added. */
     val templates: StateFlow<List<com.bamnat.core.memo.MemoTemplate>> = container.memoTemplates.items
 
@@ -611,7 +621,7 @@ class MemoEditorViewModel(
     val scheduleOffer: StateFlow<MemoTime.Found?> = combine(_memo, shiftDays) { m, days ->
         val now = Today.dateTime()
         val found = MemoTime.find(m, now) ?: com.bamnat.core.memo.ShiftMemoTime.find(
-            (sequenceOf(m.title, m.body) + m.checklist.asSequence().map { it.text }).joinToString("\n"), now, days) ?: return@combine null
+            (sequenceOf(m.title, m.text) + m.checklist.asSequence().map { it.text }).joinToString("\n"), now, days) ?: return@combine null
         found.takeIf { m.reminderAsked != it.key && m.reminder?.at != it.at }
     }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -655,8 +665,20 @@ class MemoEditorViewModel(
             m.copy(isChecklist = false, body = listOf(m.body, text).filter { it.isNotBlank() }.joinToString("\n"),
                 checklist = emptyList())
         } else {
-            val items = m.body.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { ChecklistItem(it) }
-            m.copy(isChecklist = true, body = "", checklist = items.ifEmpty { listOf(ChecklistItem("")) })
+            // [MPH-04] 1.38 The words become items; the photos stay, above the list.
+            val words = com.bamnat.core.memo.MemoPhotos.parse(m.body).mapNotNull { b ->
+                (b as? com.bamnat.core.memo.MemoPhotos.Text)?.text ?: (b as? com.bamnat.core.memo.MemoPhotos.Photo)?.side
+            }.joinToString("\n")
+            val items = words.lines().map { it.trim() }.filter { it.isNotEmpty() }.map { ChecklistItem(it) }
+            // [MPH-05][MPH-07] The paper and the 자유 판 stay too (a board keeps its own words).
+            val photos = com.bamnat.core.memo.MemoPhotos.parse(m.body).mapNotNull { b ->
+                when (b) {
+                    is com.bamnat.core.memo.MemoPhotos.Photo -> b.copy(side = null)
+                    is com.bamnat.core.memo.MemoPhotos.Paper, is com.bamnat.core.memo.MemoPhotos.Board -> b
+                    else -> null
+                }
+            }
+            m.copy(isChecklist = true, body = com.bamnat.core.memo.MemoPhotos.join(photos), checklist = items.ifEmpty { listOf(ChecklistItem("")) })
         }
     }
 
@@ -697,6 +719,28 @@ class MemoEditorViewModel(
             withContext(kotlinx.coroutines.Dispatchers.Main) { onDone() }
         }
     }
+
+    /** 1.38 The day this memo was opened from on the calendar (a repeating memo's day), for 이 날만 빼기; null from elsewhere. */
+    val openedOn: LocalDate? = if (memoId != 0L) initialDate else null
+
+    /**
+     * 1.38 (DB 28판) 이 날만 빼기 from the editor: [day] comes off the repeat, with what was typed saved too, and the editor closes.
+     * The undo is offered where the memo deletion's is (AppRoot).
+     */
+    fun skipDay(day: LocalDate, onDone: () -> Unit) {
+        saveJob?.cancel()
+        container.appScope.launch {
+            saveMutex.withLock {
+                val stored = repo.skipDay(_memo.value, day)
+                _memo.value = stored
+                dirty = false
+            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) { onDone() }
+        }
+    }
+
+    /** 1.38 Brings back every day taken off this repeating memo. */
+    fun clearSkips() = update { it.copy(skips = emptySet()) }
 
     private suspend fun save() {
         saveMutex.withLock {

@@ -122,7 +122,7 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
                 modifier = Modifier.padding(start = 28.dp))
         }
         // [ALRM-27] 알람 지킴이: the same checks a few hours before each alarm, said while there is time to fix them.
-        SwitchRow(GUARD_ROW, "알람 ${com.bamnat.app.alarm.AlarmGuard.LEAD_MILLIS / 3_600_000}시간 전에 소리 0·알림 꺼짐·방해 금지처럼 알람을 막는 것이 있으면 미리 알려요",
+        SwitchRow(GUARD_ROW, "알람 ${com.bamnat.app.alarm.AlarmGuard.LEAD_MILLIS / 3_600_000}시간 전에 소리 0·알림 꺼짐·방해 금지처럼 알람을 막는 것이 있으면 미리 알려요. 휴가 뒤 첫 알람은 전날 저녁에 알려요",
             settings.alarmGuard) { on ->
             c.settingsRepository.update { it.copy(alarmGuard = on) }
             c.appScope.launch { runCatching { c.rescheduleAlarms() } }

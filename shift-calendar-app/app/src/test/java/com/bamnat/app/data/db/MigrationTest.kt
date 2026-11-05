@@ -452,7 +452,7 @@ class MigrationTest {
         val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
             .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
         try {
-            assertEquals(27, db.openHelper.writableDatabase.version)
+            assertEquals(AppDatabase.MIGRATIONS.last().endVersion, db.openHelper.writableDatabase.version) // 27, and on (28)
             assertEquals("신한 Deep", db.moneyDao().allAccounts().single().name)
             assertTrue(db.teamDao().teams().isEmpty() && db.payrollDao().workplaces().isEmpty())
             db.teamDao().upsertTeam(TeamEntity("t", "7병동 A팀", "", "[]", "", 1, false))
@@ -505,6 +505,40 @@ class MigrationTest {
             assertEquals(400_000L, back.getValue(2).monthlyPay)
             assertEquals(listOf(300_000L, 500_000L), back.getValue(3).perfTiers)
             assertEquals(listOf("세금"), back.getValue(3).perfSkip)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /**
+     * 1.38 갈래 2 (DB 28판, 이 날만 빼기): a version 27 repeating memo comes through as it was, with no day taken off; a day
+     * taken off then saves, reads back and keeps the memo off that day only.
+     */
+    @Test
+    fun version27MemosKeepTheirMeaning() = runBlocking {
+        val name = "migration-27.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 27)
+        sql.execSQL("INSERT INTO memos (id, epochDay, title, body, checklist, isChecklist, colorIndex, pinned, createdAt, updatedAt, " +
+            "deletedAt, remindAt, remindRing, remindNotify, remindAsked, calendars, repeat) " +
+            "VALUES (1, 20760, '분리수거', '', '', 0, 0, 0, 1, 1, NULL, NULL, 0, 0, NULL, '', 'W2')")
+        sql.version = 27
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val memo = db.memoDao().getAll().single().toModel()
+            assertEquals("W2", memo.repeat)
+            assertTrue(memo.skips.isEmpty())
+            val start = java.time.LocalDate.ofEpochDay(20760)
+            val off = start.plusWeeks(1)
+            db.memoDao().update(memo.copy(skips = setOf(off)).toEntity())
+            val back = db.memoDao().getAll().single().toModel()
+            assertEquals(setOf(off), back.skips)
+            assertEquals(listOf(start, start.plusWeeks(2)), com.bamnat.core.memo.MemoRepeat.datesIn(back, start, start.plusWeeks(2)))
         } finally {
             db.close()
             context.deleteDatabase(name)

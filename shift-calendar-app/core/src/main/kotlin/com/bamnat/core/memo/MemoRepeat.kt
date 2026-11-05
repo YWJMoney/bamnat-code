@@ -63,6 +63,8 @@ object MemoRepeat {
      */
     fun occursOn(memo: Memo, date: LocalDate, shifts: ShiftOf? = null): Boolean {
         val start = memo.date ?: return false
+        // 1.38 이 날만 빼기: a day taken off a repeating memo is not one of its days.
+        if (date in memo.skips && kindOf(memo.repeat) != Kind.NONE) return false
         val n = memo.repeat.drop(1)
         // [EASE-22] A 근무마다 memo is where its kind of day is, its own date too: a day changed to another shift lets it go.
         if (kindOf(memo.repeat) == Kind.SHIFT && shifts != null) return !date.isBefore(start) && shifts.on(date) == n.toLongOrNull()
@@ -84,7 +86,9 @@ object MemoRepeat {
     fun datesIn(memo: Memo, from: LocalDate, to: LocalDate, shifts: ShiftOf? = null): List<LocalDate> {
         val start = memo.date ?: return emptyList()
         val kind = kindOf(memo.repeat)
-        if (kind == Kind.NONE || kind == Kind.SHIFT && shifts == null) return if (start in from..to) listOf(start) else emptyList()
+        if (kind == Kind.NONE || kind == Kind.SHIFT && shifts == null) {
+            return if (start in from..to && (kind == Kind.NONE || start !in memo.skips)) listOf(start) else emptyList()
+        }
         return generateSequence(maxOf(from, start)) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }
             .filter { occursOn(memo, it, shifts) }.toList()
     }
@@ -103,9 +107,17 @@ object MemoRepeat {
                 val shifts = shiftsOf(m)
                 if (shifts == null) listOf(m) else datesIn(m, from, to, shifts).map { m.copy(date = it) }
             }
-            else -> datesIn(m, from, to).map { m.copy(date = it) }.ifEmpty { listOf(m) }
+            // Nothing in range: as it is, unless its own date is in range and was taken off (이 날만 빼기).
+            else -> datesIn(m, from, to).map { m.copy(date = it) }.ifEmpty { if (m.date in m.skips && m.date in from..to) emptyList() else listOf(m) }
         }
     }
+
+    /** 1.38 [Memo.skips] as stored: epoch days in order, "20760,20764"; '' for none. */
+    fun encodeSkips(days: Set<LocalDate>): String = days.map { it.toEpochDay() }.sorted().joinToString(",")
+
+    /** [encodeSkips] read back; anything that is not a day is left out. */
+    fun decodeSkips(text: String): Set<LocalDate> =
+        if (text.isBlank()) emptySet() else text.split(',').mapNotNullTo(LinkedHashSet()) { it.trim().toLongOrNull()?.let(LocalDate::ofEpochDay) }
 
     private val WEEKLY = Regex("W[1-7]")
     private val MONTHLY = Regex("M([1-9]|[12]\\d|3[01])")

@@ -45,6 +45,18 @@ internal class MemoBodyTools {
 
     var editing by mutableStateOf(false)
     var onAction: ((Action) -> Unit)? = null
+
+    /** [MPH-01] 1.38 The body field typed in last (a memo with photos has one field between each two): it owns the bar. */
+    var owner: Any? = null
+
+    /** [MPH-01] Puts a photo in where the caret of the field typed in last is; null when no field was typed in (it goes at the end). */
+    var insertPhoto: ((String) -> Unit)? = null
+
+    /** [MPH-07] Puts a new 자유 판 in where the caret of the field typed in last is. */
+    var insertBoard: (() -> Unit)? = null
+
+    /** [MPH-01] The bar's 사진 button: opens the editor's 사진 넣기 menu. */
+    var onPhoto: (() -> Unit)? = null
 }
 
 /** [NOTE-07] The bar above the keyboard while the body is typed in: 목록, 번호, 체크 칸, 오늘 날짜. */
@@ -62,6 +74,8 @@ internal fun MemoBodyToolbar(tools: MemoBodyTools) {
                 TextButton(onClick = { tools.onAction?.invoke(MemoBodyTools.Action.Mark(MemoText.Mark.NUMBER)) }) { Text("1. 번호") }
                 TextButton(onClick = { tools.onAction?.invoke(MemoBodyTools.Action.Mark(MemoText.Mark.CHECK)) }) { Text("☐ 체크") }
                 TextButton(onClick = { tools.onAction?.invoke(MemoBodyTools.Action.Today) }) { Text("오늘 날짜") }
+                // [MPH-01] 1.38 사진: put in where the caret is.
+                if (tools.onPhoto != null) TextButton(onClick = { tools.onPhoto?.invoke() }) { Text("🖼 사진") }
             }
         }
     }
@@ -111,12 +125,69 @@ internal fun MemoRepeatChip(
 }
 
 /**
- * 1.38 PC 확인(9b028f4c): a repeating memo is one memo, so deleting it takes it off every day it repeats on. The confirm says
- * so ("‘야간마다’ 반복 메모라서 …") instead of reading like this day alone. [base] is what the dialog says otherwise.
+ * 1.38 (DB 28판) Deleting a memo. A repeating one is one memo on many days, so it asks which: '[day]만 빼기' (it stays on every
+ * other day it comes back on) or '반복 전부 지우기' (to the trash, every day). Opened from the memo tab ([day] null) only the
+ * second is offered, with where to go for one day. A memo that does not repeat gets the plain confirm ([plainTitle], [plainMessage]).
  */
-internal fun memoDeleteTitle(memo: com.bamnat.core.memo.Memo, plain: String): String =
-    if (memo.repeat.isEmpty()) plain else "반복 메모를 지울까요?"
+@Composable
+internal fun MemoDeleteDialog(
+    memo: com.bamnat.core.memo.Memo,
+    day: LocalDate?,
+    shiftName: (Long) -> String?,
+    plainTitle: String,
+    plainMessage: String,
+    onDismiss: () -> Unit,
+    onDeleteAll: () -> Unit,
+    onSkipDay: (LocalDate) -> Unit,
+) {
+    val start = memo.date
+    if (memo.repeat.isEmpty() || start == null) {
+        com.bamnat.app.ui.components.ConfirmDialog(plainTitle, plainMessage, "지우기", onDismiss, onDeleteAll, destructive = true)
+        return
+    }
+    val label = MemoRepeat.label(memo.repeat, shiftName)
+    val skip = day?.takeIf { !it.isBefore(start) && it !in memo.skips }
+    com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("반복 메모를 지울까요?") },
+        text = {
+            androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("‘$label’ 반복 메모예요.", style = MaterialTheme.typography.bodyMedium)
+                if (skip != null) DeleteChoice(
+                    title = "${com.bamnat.app.ui.Fmt.dayTitle(skip)}만 빼기",
+                    detail = "다른 날에는 그대로 보여요",
+                    onClick = { onSkipDay(skip) },
+                )
+                DeleteChoice(
+                    title = "반복 전부 지우기",
+                    detail = "반복되는 모든 날에서 사라지고 휴지통으로 가요. 30일 동안 되살릴 수 있어요.",
+                    danger = true,
+                    onClick = onDeleteAll,
+                )
+                if (skip == null) Text(
+                    "하루만 빼려면 달력에서 그 날을 눌러 이 메모를 열고 지우세요.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
+}
 
-internal fun memoDeleteMessage(memo: com.bamnat.core.memo.Memo, base: String, shiftName: (Long) -> String?): String =
-    if (memo.repeat.isEmpty()) base
-    else "‘${com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName)}’ 반복 메모라서 이 날만이 아니라 반복되는 모든 날에서 사라져요. $base"
+@Composable
+private fun DeleteChoice(title: String, detail: String, onClick: () -> Unit, danger: Boolean = false) {
+    Surface(
+        onClick = onClick,
+        shape = MaterialTheme.shapes.medium,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        androidx.compose.foundation.layout.Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+            Text(title, style = MaterialTheme.typography.titleSmall,
+                color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+            Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
