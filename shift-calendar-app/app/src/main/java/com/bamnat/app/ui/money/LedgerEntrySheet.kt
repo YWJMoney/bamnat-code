@@ -395,7 +395,15 @@ fun EntryDialog(
                         // the one most used. Another one can still be picked.
                         androidx.compose.runtime.LaunchedEffect(category, account) {
                             if (toAccount == null && category == "카드값") {
-                                toAccount = accounts.filter { it.id != account && it.type == com.bamnat.core.money.AccountType.CREDIT }
+                                val credit = com.bamnat.core.money.AccountType.CREDIT
+                                // PC 확인 46200ae4 (카드로 쓴 뒤 첫 카드값 이체에 카드가 '어디서'에 들어감): a card picked as 어디서
+                                // (the last account used) is where the money goes; 어디서 becomes the bank most used.
+                                val from = accounts.firstOrNull { it.id == account }
+                                if (from?.type == credit) {
+                                    toAccount = from.id
+                                    account = from.payFromId ?: accounts.filter { it.type != credit && it.type != com.bamnat.core.money.AccountType.CHECK }
+                                        .maxByOrNull { a -> entries.count { it.accountId == a.id } }?.id
+                                } else toAccount = accounts.filter { it.id != account && it.type == credit }
                                     .maxByOrNull { a -> entries.count { it.accountId == a.id } }?.id
                             }
                         }

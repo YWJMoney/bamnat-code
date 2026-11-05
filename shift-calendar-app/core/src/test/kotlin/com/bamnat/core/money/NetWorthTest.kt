@@ -34,4 +34,20 @@ class SelfSalaryTest {
         assertEquals(2.5, p.lastFor!!, 0.001)
         assertEquals(null, SelfSalary.of(listOf(0, 0, 1_000_000), listOf(0, 0, 500_000), null))
     }
+
+    /** PC 확인 46200ae4: the morning's money is the balance before today's lines; card and no-account spending never left it. */
+    @Test fun morningBalanceCountsOnlyWhatLeftTheAccounts() {
+        val today = java.time.LocalDate.of(2026, 11, 20)
+        val bank = MoneyAccount(id = 1, name = "월급통장", type = AccountType.BANK, opening = 1_000_000)
+        val card = MoneyAccount(id = 2, name = "신용", type = AccountType.CREDIT, payFromId = 1)
+        val e = listOf(
+            MoneyEntry(date = today, kind = MoneyKind.EXPENSE, amount = 10_000, category = "식비", accountId = 2),
+            MoneyEntry(date = today, kind = MoneyKind.EXPENSE, amount = 5_000, category = "식비"),
+            MoneyEntry(date = today, kind = MoneyKind.EXPENSE, amount = 3_000, category = "카페", accountId = 1),
+            MoneyEntry(date = today, kind = MoneyKind.TRANSFER, amount = 50_000, category = "카드값", accountId = 1, toAccountId = 2),
+        )
+        assertEquals(53_000L, MoneyAhead.spentFromStart(listOf(bank, card), e, today))
+        val f = MoneyAhead.forecast(MoneyBook(entries = e, accounts = listOf(bank, card)), today, 30, emptyList())
+        assertEquals(947_000L, f.start)
+    }
 }

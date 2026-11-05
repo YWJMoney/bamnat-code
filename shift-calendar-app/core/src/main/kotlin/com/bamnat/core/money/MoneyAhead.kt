@@ -118,10 +118,14 @@ object MoneyAhead {
     fun spendable(a: MoneyAccount): Boolean = !a.hidden && a.keepsBalance && a.type != AccountType.OTHER
 
     /** [LEDH-01] The money in spendable accounts now, or null when there is none to count. */
-    /** What was spent on [today] out of the accounts [startBalance] counts (not on a credit card, not on no account). */
+    /**
+     * What left the accounts [startBalance] counts on [today], net: the morning's balance less now's. PC 확인 46200ae4 (오늘 아침 통장이
+     * 카드·현금 지출을 더하고 통장에서 나간 이체는 빼먹음): worked out from the balances themselves, so only what really moved counts.
+     */
     fun spentFromStart(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, today: LocalDate): Long {
-        val ids = accounts.filter(::spendable).map { it.id }.toSet()
-        return entries.filter { it.date == today && it.kind == MoneyKind.EXPENSE && MoneyAccounts.of(it, accounts) in ids }.sumOf { it.amount }
+        val now = startBalance(accounts, entries) ?: return 0
+        val morning = startBalance(accounts, entries.filter { it.date != today }) ?: return 0
+        return morning - now
     }
 
     fun startBalance(accounts: List<MoneyAccount>, entries: List<MoneyEntry>): Long? {
