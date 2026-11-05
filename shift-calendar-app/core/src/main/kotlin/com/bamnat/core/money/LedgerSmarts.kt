@@ -390,5 +390,33 @@ object LedgerSmarts {
         return CardGauge(threshold, credit, other, over, (threshold - credit - other).coerceAtLeast(0), tip)
     }
 
+    /**
+     * 1.37 [LEDH-30] 근무에서 바로 적기: what is spent again and again on [dates] (the past days of one kind of shift), as lines to
+     * start from — the same place (or category) and amount on two days or more, most often first.
+     */
+    fun dayHabits(entries: List<MoneyEntry>, dates: Set<LocalDate>, limit: Int = 3): List<MoneyEntry> =
+        entries.filter { it.kind == MoneyKind.EXPENSE && it.amount > 0 && it.source != MoneySource.FIXED && it.date in dates }
+            .groupBy { (it.merchant.ifBlank { it.category }.trim()) to it.amount }
+            .filterValues { l -> l.map { it.date }.distinct().size >= 2 }
+            .entries.sortedWith(compareByDescending<Map.Entry<Pair<String, Long>, List<MoneyEntry>>> { it.value.size }.thenByDescending { it.value.maxOf { e -> e.date } })
+            .take(limit).map { (_, l) -> l.maxBy { it.date } }
+
+    /**
+     * 1.37 [LEDH-36] 평소보다 큰 지출: the spending lines of the last [days] days at least [times] the usual (the median of the same
+     * category over the half year before today, from five lines or more) and 3만 원 or more. Repeating lines are left out; the list only
+     * marks them quietly.
+     */
+    fun unusual(entries: List<MoneyEntry>, today: java.time.LocalDate, days: Long = 60, times: Int = 3): Set<Long> {
+        val from = today.minusDays(180)
+        val spend = entries.filter { it.kind == MoneyKind.EXPENSE && it.amount > 0 && it.source != MoneySource.FIXED && !it.date.isBefore(from) && !it.date.isAfter(today) }
+        val usual = spend.groupBy { it.category }.filterValues { it.size >= 5 }.mapValues { (_, l) ->
+            val sorted = l.map { it.amount }.sorted()
+            sorted[sorted.size / 2]
+        }
+        val since = today.minusDays(days - 1)
+        return spend.filter { e -> !e.date.isBefore(since) && e.amount >= 30_000 && usual[e.category]?.let { e.amount >= it * times } == true }
+            .map { it.id }.toSet()
+    }
+
     private fun won(v: Long) = "%,d원".format(v)
 }

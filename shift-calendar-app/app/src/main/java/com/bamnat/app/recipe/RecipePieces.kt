@@ -118,6 +118,18 @@ class RecipePieces(private val c: AppContainer) {
             runCatching { mapOf("setup" to c.companyShare.export("", withAmounts = false)) }.getOrNull()
         // [RCX-11] A bundle is made of codes on 만들기, not taken from the phone.
         PieceKind.BUNDLE -> null
+        // 1.37 [LEDH-18] 가계부 틀: names and plans only, never a line, a balance or an account.
+        PieceKind.LEDGER -> {
+            val money = c.scopeOf(cal).money
+            val cats = money.categories.first()
+            val style = c.scopeOf(cal).settings.first().workStyle
+            val budgets = money.allBudgets().filter { !it.isTotal && it.amount > 0 }.take(12).map { mapOf("category" to it.category.take(20), "amount" to it.amount) }
+            val envelopes = money.envelopes.first().first.filter { !it.closed && it.kind == com.bamnat.core.money.EnvelopeKind.GOAL }.take(6).map { e ->
+                mapOf("name" to e.name.take(20), "target" to e.target.takeIf { it > 0 }, "share" to e.sharePercent.takeIf { it > 0 }?.toLong(), "emoji" to e.emoji.ifEmpty { null })
+            }
+            mapOf("costs" to MoneyCategories.of(MoneyKind.EXPENSE, cats, style).take(20), "incomes" to MoneyCategories.of(MoneyKind.INCOME, cats, style).take(12),
+                "budgets" to budgets, "envelopes" to envelopes)
+        }
         PieceKind.LAYOUT -> from.let { s ->
             mapOf("tabs" to com.bamnat.core.layout.TabOrder.of(s.tabOrder), "calendar" to s.calendarLayout.ifEmpty { null })
         }
@@ -268,6 +280,12 @@ class RecipePieces(private val c: AppContainer) {
             else listOf(Change(runCatching { c.companyShare.summarize(values["setup"] as String).let { s -> "근무 ${s.shiftTypes.size}가지와 순서, 급여 규칙" } }
                 .getOrDefault("근무 주기와 급여 규칙")))
         PieceKind.BUNDLE -> listOf(Change("묶음 안 레시피 ${items(values, "items").size}개는 아래에서 하나씩 열어 골라 넣어요", skipped = true))
+        PieceKind.LEDGER -> listOfNotNull(
+            texts(values, "costs").takeIf { it.isNotEmpty() }?.let { Change("지출 분류 ${it.size}개 (없는 것만 더하기)") },
+            texts(values, "incomes").takeIf { it.isNotEmpty() }?.let { Change("수입 분류 ${it.size}개 (없는 것만 더하기)") },
+            items(values, "budgets").takeIf { it.isNotEmpty() }?.let { b -> Change("예산 ${b.size}개: " + b.joinToString(", ") { "${it["category"]} ${com.bamnat.app.ui.Fmt.won((it["amount"] as? Number)?.toLong() ?: 0)}" }) },
+            items(values, "envelopes").takeIf { it.isNotEmpty() }?.let { e -> Change("빈 모으기 봉투 ${e.size}개: " + e.joinToString(", ") { it["name"].toString() }) },
+        ).ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         // [RCX-30] Said from the recipe itself: its pictures come down only when it is put in.
         PieceKind.PHOTO_LOOK -> {
             val mine = types(cal)
@@ -471,6 +489,47 @@ class RecipePieces(private val c: AppContainer) {
                     .put("profile", profile?.let(PayCodec::encode) ?: JSONObject.NULL)
             }
             PieceKind.BUNDLE -> null
+            PieceKind.LEDGER -> {
+                val money = c.scopeOf(cal).money
+                val style = c.scopeOf(cal).settings.first().workStyle ?: com.bamnat.core.work.WorkStyle.SHIFT
+                val out = JSONObject()
+                val added = JSONObject()
+                addCategories(cal, MoneyKind.EXPENSE, texts(values, "costs"), style)?.let { added.put("EXPENSE", it) }
+                addCategories(cal, MoneyKind.INCOME, texts(values, "incomes"), style)?.let { added.put("INCOME", it) }
+                if (added.length() > 0) out.put("categories", added)
+                // A budget for a category the user does not have adds the category too, so it can be picked.
+                val budgets = items(values, "budgets").mapNotNull { b ->
+                    val name = (b["category"] as? String)?.let(MoneyCategories::clean)?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                    name to ((b["amount"] as? Number)?.toLong() ?: return@mapNotNull null)
+                }
+                addCategories(cal, MoneyKind.EXPENSE, budgets.map { it.first }, style)?.let { more ->
+                    val all = added.optJSONArray("EXPENSE") ?: JSONArray()
+                    for (i in 0 until more.length()) all.put(more.getString(i))
+                    added.put("EXPENSE", all); out.put("categories", added)
+                }
+                val had = money.allBudgets().associate { it.category to it.amount }
+                val set = JSONArray()
+                budgets.forEach { (name, amount) ->
+                    val before = had[name] ?: 0L
+                    if (amount == before) return@forEach
+                    money.setBudget(name, amount)
+                    set.put(JSONObject().put("category", name).put("before", before).put("after", amount))
+                }
+                if (set.length() > 0) out.put("budgets", set)
+                val (envs, _) = money.envelopes.first()
+                val open = envs.filter { !it.closed }.map { it.name }.toSet()
+                var order = (envs.maxOfOrNull { it.order } ?: -1) + 1
+                val made = JSONArray()
+                items(values, "envelopes").forEach { e ->
+                    val name = (e["name"] as? String)?.trim()?.takeIf { it.isNotEmpty() && it !in open } ?: return@forEach
+                    val id = money.saveEnvelope(com.bamnat.core.money.Envelope(name = name, target = (e["target"] as? Number)?.toLong() ?: 0,
+                        sharePercent = ((e["share"] as? Number)?.toInt() ?: 0).coerceIn(0, 100), emoji = (e["emoji"] as? String).orEmpty(),
+                        order = order++, created = com.bamnat.core.time.Today.date()))
+                    made.put(id)
+                }
+                if (made.length() > 0) out.put("envelopes", made)
+                out.takeIf { it.length() > 0 }
+            }
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
             PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR, PieceKind.TAB_VIEW -> {
                 // [RCX-30] The recipe's pictures come first; one the phone cannot get (not looked at yet) is left out.
@@ -547,7 +606,7 @@ class RecipePieces(private val c: AppContainer) {
                     (ShiftIcon.emoji(t.icon)?.let { mapOf("emoji" to it) } ?: emptyMap())
             })
         }
-        PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.INVEST, PieceKind.COMPANY, PieceKind.BUNDLE -> base
+        PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.INVEST, PieceKind.COMPANY, PieceKind.BUNDLE, PieceKind.LEDGER -> base
         else -> export(kind, cal)?.filterValues { it != null } ?: base
     }
 
@@ -692,6 +751,23 @@ class RecipePieces(private val c: AppContainer) {
                 before.optJSONObject("profile")?.let { p -> runCatching { c.payStore.save(PayCodec.decode(p)) } }
             }
             PieceKind.BUNDLE -> {}
+            PieceKind.LEDGER -> {
+                val money = c.scopeOf(cal).money
+                // A budget the user changed after is theirs; an envelope money went into stays.
+                val now = money.allBudgets().associate { it.category to it.amount }
+                before.optJSONArray("budgets")?.objects()?.forEach { o ->
+                    val name = o.getString("category")
+                    if ((now[name] ?: 0L) == o.getLong("after")) money.setBudget(name, o.getLong("before"))
+                }
+                before.optJSONArray("envelopes")?.let { a ->
+                    (0 until a.length()).forEach { i ->
+                        val id = a.getLong(i)
+                        val (e, moves) = money.envelopeWithMoves(id)
+                        if (e != null && moves.isEmpty()) money.deleteEnvelope(id)
+                    }
+                }
+                removeCategories(cal, before.optJSONObject("categories"))
+            }
             PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.PHOTO_LOOK, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK,
             PieceKind.MONEY_LOOK, PieceKind.SCREEN_LOOK, PieceKind.PARTS, PieceKind.LOGIC, PieceKind.DECOR, PieceKind.TAB_VIEW -> {
                 val sets = before.optJSONObject("settings") ?: return

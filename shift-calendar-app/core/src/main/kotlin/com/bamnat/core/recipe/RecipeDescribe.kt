@@ -144,6 +144,13 @@ object RecipeDescribe {
                 "메모·가계부를 바꾸는 동작 있음".takeIf { l.writes },
             ).joinToString(" · ").ifEmpty { "수식·규칙" }
         }
+        // 1.37 [LEDH-18] 가계부 틀.
+        PieceKind.LEDGER -> listOfNotNull(
+            (p.values["costs"] as? List<*>)?.takeIf { it.isNotEmpty() }?.let { "지출 분류 ${it.size}개" },
+            (p.values["incomes"] as? List<*>)?.takeIf { it.isNotEmpty() }?.let { "수입 분류 ${it.size}개" },
+            (p.values["budgets"] as? List<*>)?.takeIf { it.isNotEmpty() }?.let { "예산 ${it.size}개" },
+            (p.values["envelopes"] as? List<*>)?.takeIf { it.isNotEmpty() }?.let { "모으기 봉투 ${it.size}개" },
+        ).joinToString(" · ").ifEmpty { "가계부 틀" }
         // [TAB-07] 1.36 탭 보기.
         PieceKind.TAB_VIEW -> listOfNotNull(
             (p.values["cal"] as? String)?.let { "달력 " + com.bamnat.core.layout.CalendarBoard.of(it).label },

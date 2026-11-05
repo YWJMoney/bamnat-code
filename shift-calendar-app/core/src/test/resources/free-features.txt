@@ -256,3 +256,4 @@ money.workTime
 money.dayClose
 money.found
 money.whatIf
+money.quickAdd

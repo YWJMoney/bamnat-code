@@ -594,6 +594,13 @@ fun MoneyScreen(
         vm.showPage(MoneyViewModel.Page.SUMMARY)
         autoRecording = true
     }
+    // 1.37 [LEDH-14] 돈 적기 from the widget or the quick settings tile: the add sheet straight away.
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.MONEY_ADD) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.MONEY_ADD)
+        vm.showMonth(YearMonth.from(com.bamnat.core.time.Today.date()))
+        adding = MoneyKind.EXPENSE
+    }
     // [TAX-01] What came in since the last look is checked for pay, and 알림 '세금 카드' lands on the sheet.
     LaunchedEffect(vm) { vm.checkSalary() }
     var takingHome by rememberSaveable { mutableStateOf(false) }
@@ -692,6 +699,11 @@ fun MoneyScreen(
     }
 
     // [DAILY-15][DAILY-04] Each card of 요약 by its id; 화면 꾸미기 orders them and turns them off.
+    // 1.37 [LEDH-21] Which parts are on, so a card can leave out what another card on the page already says.
+    // [FIT-01][FIT-02] The parts that suit this calendar's kind of work, and those the user added.
+    val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(vm.calendarId)
+    val shownPartsNow = moneyParts(settings.moneyLayout).filter { it.shown }.map { it.part }
+        .filter { com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.MONEY_PARTS, it.id, style, fitAdded) }
     val cards: Map<MoneyPart, @Composable () -> Unit> = mapOf(
         MoneyPart.HERO to { HeroCard(m, budget, today, onBudget = { budgeting = true }) },
         MoneyPart.NEW to {
@@ -714,7 +726,9 @@ fun MoneyScreen(
         MoneyPart.INCOME to {
             // F 1.32 [TAXP-01] 세전·세후 on one line: 명세서 > 입금 > 직접 적음 > 추정.
             val net = remember(takeHome, payRecords, month) { takeHome?.let { v -> TaxPlus.netLine(month, payRecords, v.gross, v.forecast) } }
-            IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome, netLine = net, gate = gate)
+            // 1.37 [LEDH-21] 겹침 합치기: 세전·세후 is said once, in 세금·실수령, when that card is on and open.
+            val taxSays = side == TaxSide.PAY && MoneyPart.TAX in shownPartsNow && !gate.locked(com.bamnat.app.tier.Feature.TAX_FORECAST)
+            IncomeCard(m, style, profile, onOpenPay = onOpenPay, onTakeHome = vm::setLedgerTakeHome, netLine = net.takeIf { !taxSays }, gate = gate)
         },
         // [TAX-02][TAX-05] 세전·세후 and this year's tax (프로).
         MoneyPart.TAX to { side?.let { s -> TaxCard(s, takeHome, business, gate, onOpen = { if (s == TaxSide.PAY) takingHome = true else bizTax = true },
@@ -743,7 +757,9 @@ fun MoneyScreen(
         MoneyPart.ACCOUNTS to { AccountsCard(book, today, onAdd = { t -> if (t == null) addingAnyAccount = true else addingAccount = t }, onEdit = { editingAccount = it }) },
         // [LEDG-02] Ways to type less.
         MoneyPart.AUTO to { AutoRecordCard(onPaste = { pasting = true }) },
-        MoneyPart.PACE to { PaceCard(book, today, budget) },
+        // 1.37 [LEDH-21] 오늘 쓸 돈 is said by 앞으로의 돈 and the 할부 left by 할부 청구 기준 when they are on; the graph is in 통계.
+        MoneyPart.PACE to { PaceCard(book, today, budget, sayToday = MoneyPart.AHEAD !in shownPartsNow, sayInstallments = MoneyPart.INSTALL !in shownPartsNow,
+            onGraph = { vm.showPage(MoneyViewModel.Page.REPORT) }) },
         MoneyPart.FOUND to { FoundMoneyCard(book.entries, today, autoRecord.lookedAt, onOpen = vm::showPlace) },
         MoneyPart.SUBS to { SubscriptionsCard(book.entries, today, autoRecord.lookedAt, onStillUsing = vm::stillUsing, onOpen = vm::showPlace) },
         MoneyPart.CARD25 to {
@@ -757,10 +773,7 @@ fun MoneyScreen(
         MoneyPart.SALESSPLIT to { SalesSplitCard(book, month) },
         MoneyPart.FREELANCE to { FreelanceCard(vm.calendarId, book, today, business, gate) },
     )
-    // [FIT-01][FIT-02] The parts that suit this calendar's kind of work, and those the user added.
-    val fitAdded = com.bamnat.app.ui.guide.rememberFitAdded(vm.calendarId)
-    val shownParts = moneyParts(settings.moneyLayout).filter { it.shown }.map { it.part }
-        .filter { com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.MONEY_PARTS, it.id, style, fitAdded) }
+    val shownParts = shownPartsNow
     // 1.37 [LEDH-15] With 정리함 on, its four parts live inside it (in the user's order and on/off) instead of apart.
     val inboxParts = listOf(MoneyPart.NEW, MoneyPart.ASK, MoneyPart.OTHER, MoneyPart.REPEAT)
     val inboxOn = MoneyPart.INBOX in shownParts
@@ -783,8 +796,11 @@ fun MoneyScreen(
     var arranging by rememberSaveable { mutableStateOf(false) }
     // Unfolded: the overview on the left, the month's lines on the right, each side in the user's order.
     @Composable fun draw(p: MoneyPart) { if (p == MoneyPart.INBOX) inboxCard() else cards.getValue(p)() }
-    val left: @Composable () -> Unit = { placed.filter { !wide || !it.right }.forEach { draw(it) } }
-    val right: @Composable () -> Unit = { if (wide) placed.filter { it.right }.forEach { draw(it) } }
+    // 1.37 [LEDH-20] 요약 세 층: 오늘 / 이번 달 / 앞으로, and 점검 folded until opened.
+    val gap = com.bamnat.app.ui.theme.LocalSpacing.current.card
+    val onCheck: (Boolean) -> Unit = { open -> vm.updateSettings { it.copy(moneyCheckOpen = open) } }
+    val left: @Composable () -> Unit = { MoneyLayered(placed.filter { !wide || !it.right }, gap, settings.moneyCheckOpen, onCheck) { draw(it) } }
+    val right: @Composable () -> Unit = { if (wide) MoneyLayered(placed.filter { it.right }, gap, settings.moneyCheckOpen, onCheck) { draw(it) } }
 
     // 1.37 [LEDH-07] 근무 시간 환산 for the lines and the 돈 적기 sheet of this tab.
     val workTime = remember(style, settings.workTimeFrom, book, today, aheadPay) { WorkTimeSay.of(style, settings.workTimeFrom, book, today, aheadPay?.hourly) }
@@ -861,7 +877,10 @@ fun MoneyScreen(
                     }
                 } else {
                     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) { left(); right(); Spacer(Modifier.height(FabClearance)) }
+                        verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) {
+                        MoneyLayered(placed, gap, settings.moneyCheckOpen, onCheck) { draw(it) }
+                        Spacer(Modifier.height(FabClearance))
+                    }
                 }
                 MoneyViewModel.Page.LIST -> LedgerListPane(book, month, view, vm::setView, selection, vm::select, listActions, wide,
                     onAdd = { adding = MoneyKind.EXPENSE })
@@ -1123,29 +1142,36 @@ internal fun MoneyEditSheet(
     /** [FIT-01] The calendar's kind of work and id: the parts it does not use wait under 더 보기. */
     style: com.bamnat.core.work.WorkStyle? = null, calendar: String = com.bamnat.app.data.PersonalCalendar.MAIN,
 ) {
-    val placed = moneyParts(layout)
+    // 1.37 [LEDH-20] Cards move inside their layer (오늘·이번 달·앞으로·점검), the order the summary draws them in.
+    val placed = byLayer(moneyParts(layout)) { it.part }
     val context = androidx.compose.ui.platform.LocalContext.current
     val added = com.bamnat.app.ui.guide.rememberFitAdded(calendar)
     val surface = com.bamnat.core.guide.FitSurface.MONEY_PARTS
     fun write(next: List<com.bamnat.core.layout.PageLayout.Placed<MoneyPart>>) =
         update { it.copy(moneyLayout = com.bamnat.core.layout.PageLayout.of(next) { p -> p.id }.encode()) }
-    val rows = { movable: Boolean ->
-        placed.filter { it.part.movable == movable && com.bamnat.core.guide.FitTable.visible(surface, it.part.id, style, added) }.map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
+    val rows = { movable: Boolean, layer: MoneyLayer? ->
+        placed.filter { it.part.movable == movable && (layer == null || it.part.layer == layer) && com.bamnat.core.guide.FitTable.visible(surface, it.part.id, style, added) }
+            .map { com.bamnat.app.ui.components.EditRow(it.part.id, it.part.label, it.part.what, it.shown, movable, it.isNew) }
     }
     com.bamnat.app.ui.components.PageEditSheet(
         title = "가계부 카드 배치",
         groups = listOf(
-            com.bamnat.app.ui.components.EditGroup("위쪽", rows(false)),
-            com.bamnat.app.ui.components.EditGroup("아래쪽 카드 순서", rows(true)),
-        ),
+            com.bamnat.app.ui.components.EditGroup("위쪽", rows(false, null)),
+        ) + MoneyLayer.entries.mapNotNull { l ->
+            l.title?.let { t -> com.bamnat.app.ui.components.EditGroup(if (l == MoneyLayer.CHECK) "$t (요약에서 접어 둘 수 있어요)" else "$t 카드 순서", rows(true, l)) }
+        }.filter { it.rows.isNotEmpty() },
         middle = "요약·내역·통계 탭",
         others = com.bamnat.app.ui.guide.fitOthers(surface, style, added) { id -> MoneyPart.entries.firstOrNull { it.id == id }?.let { it.label to it.what } },
         onAdd = { id, on -> com.bamnat.app.ui.guide.setFitAdded(context, calendar, surface, id, on) },
         onShow = { id, shown -> write(placed.map { if (it.part.id == id) it.copy(shown = shown) else it }) },
         onMove = { id, by ->
             val fixed = placed.filterNot { it.part.movable }
-            val movable = placed.filter { it.part.movable }
-            write(fixed + com.bamnat.core.layout.PageLayout.move(movable, movable.indexOfFirst { it.part.id == id }, by))
+            val layer = placed.first { it.part.id == id }.part.layer
+            val movable = MoneyLayer.entries.flatMap { l ->
+                val mine = placed.filter { it.part.movable && it.part.layer == l }
+                if (l == layer) com.bamnat.core.layout.PageLayout.move(mine, mine.indexOfFirst { it.part.id == id }, by) else mine
+            }
+            write(fixed + movable)
         },
         onReset = { update { it.copy(moneyLayout = "") } },
         onAsk = {

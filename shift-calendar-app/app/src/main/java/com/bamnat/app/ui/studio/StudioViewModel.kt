@@ -944,6 +944,6 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         fun recipeStart(own: String?): String = START_RECIPE + (own?.let { ":$it" } ?: "") + "@" + com.bamnat.core.time.Today.millis()
         /** [STU-21] The 기능 the studio can carry, in the order shown. */
         val FEATURES = listOf(PieceKind.SHIFT_LOOK, PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.HOURLY_RULES, PieceKind.FIELD_SHEET,
-            PieceKind.SHOP, PieceKind.INVEST, PieceKind.APP_FEEL, PieceKind.COMPANY)
+            PieceKind.SHOP, PieceKind.LEDGER, PieceKind.INVEST, PieceKind.APP_FEEL, PieceKind.COMPANY)
     }
 }

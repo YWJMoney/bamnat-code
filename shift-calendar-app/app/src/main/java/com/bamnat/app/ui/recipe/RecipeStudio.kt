@@ -583,7 +583,7 @@ private fun repeatLabel(r: String) = when {
 /** The pieces a tab's screen shows, in the order they are edited there. */
 private fun piecesOn(tab: String): List<PieceKind> = when (tab) {
     TabOrder.CALENDAR -> listOf(PieceKind.SHIFT_LOOK, PieceKind.CAL_THEME, PieceKind.ALARMS)
-    TabOrder.MONEY -> listOf(PieceKind.MONEY_LOOK, PieceKind.SHOP, PieceKind.FIELD_SHEET)
+    TabOrder.MONEY -> listOf(PieceKind.MONEY_LOOK, PieceKind.LEDGER, PieceKind.SHOP, PieceKind.FIELD_SHEET)
     TabOrder.MEMOS -> listOf(PieceKind.MEMO_LOOK, PieceKind.MEMO_TEMPLATES, PieceKind.INVEST)
     TabOrder.STATS -> listOf(PieceKind.HOURLY_RULES)
     // [FREE-05] 화면 색·배경 comes from 설정 › 화면 꾸미기 (the colours and pictures are made there, with the example on top).
@@ -870,6 +870,9 @@ internal object StudioStarters {
             com.bamnat.core.recipe.Decor.CELL, on = "d25", x = 820, y = 180, w = 12, h = 12, fill = 0xFFFFB300))).values()
         // [TAB-07] 1.36 탭 보기: a 근무 띠 calendar and a 보드 메모장 to start from.
         PieceKind.TAB_VIEW -> mapOf("cal" to "rota", "memo" to "board", "memoBy" to "tag", "money" to "board")
+        // 1.37 [LEDH-18] 가계부 틀: a 야간 근무자's start.
+        PieceKind.LEDGER -> mapOf("costs" to listOf("야식", "편의점", "택시"), "budgets" to listOf(mapOf("category" to "야식", "amount" to 100_000L)),
+            "envelopes" to listOf(mapOf("name" to "비상금", "target" to 1_000_000L, "emoji" to "🛟")))
     }
 }
 

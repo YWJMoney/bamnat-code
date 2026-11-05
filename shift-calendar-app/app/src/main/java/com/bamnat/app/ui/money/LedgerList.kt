@@ -184,6 +184,8 @@ fun LedgerListPane(
 ) {
     val filter = remember(view, month) { view.applied(month) }
     val shown = remember(book, filter, view.sort) { Ledger.search(book.entries, filter, view.sort, book.accounts) }
+    // 1.37 [LEDH-36] 평소보다 큰 지출, marked quietly on its line.
+    val bigOnes = remember(book.entries) { com.bamnat.core.money.LedgerSmarts.unusual(book.entries, com.bamnat.core.time.Today.date()) }
     val totals = remember(shown, filter) { Ledger.totals(shown, filter) }
     val byDate = view.sort == LedgerSort.NEWEST || view.sort == LedgerSort.OLDEST
     val days = remember(shown, byDate) { if (byDate) Ledger.days(shown) else emptyList() }
@@ -261,7 +263,7 @@ fun LedgerListPane(
                             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     }
                     items(lines, key = { it.id }) { e ->
-                        LedgerRow(e, book, selecting, e.id in selection, actions,
+                        LedgerRow(e, book, selecting, e.id in selection, actions, big = e.id in bigOnes,
                             onToggle = { onSelection(if (e.id in selection) selection - e.id else selection + e.id) },
                             modifier = Modifier.animateItem())
                     }
@@ -269,14 +271,14 @@ fun LedgerListPane(
                     days.forEach { d ->
                         stickyHeader(key = "d${d.date}") { DayHeader(d.date, d.expense, d.income) }
                         items(d.entries, key = { it.id }) { e ->
-                            LedgerRow(e, book, selecting, e.id in selection, actions,
+                            LedgerRow(e, book, selecting, e.id in selection, actions, big = e.id in bigOnes,
                                 onToggle = { onSelection(if (e.id in selection) selection - e.id else selection + e.id) },
                                 modifier = Modifier.animateItem())
                         }
                     }
                 } else {
                     items(shown, key = { it.id }) { e ->
-                        LedgerRow(e, book, selecting, e.id in selection, actions, showDate = true,
+                        LedgerRow(e, book, selecting, e.id in selection, actions, showDate = true, big = e.id in bigOnes,
                             onToggle = { onSelection(if (e.id in selection) selection - e.id else selection + e.id) },
                             modifier = Modifier.animateItem())
                     }
@@ -520,6 +522,8 @@ private fun LedgerRow(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
     showDate: Boolean = false,
+    /** 1.37 [LEDH-36] Much more than this category usually is. */
+    big: Boolean = false,
 ) {
     val haptics = LocalHapticFeedback.current
     // [SWIPE-01] A slide to the left never removes the line by itself: it springs back and asks first,
@@ -585,6 +589,7 @@ private fun LedgerRow(
             when (e.source) {
                 MoneySource.NOTIFICATION -> "알림"; MoneySource.PASTE -> "문자"; MoneySource.MEMO -> "메모"; MoneySource.FIXED -> "반복"; MoneySource.MANUAL -> null
             },
+            "평소보다 큼".takeIf { big },
         ).joinToString(" · ")
         val said = listOf(e.title, signedWon(e).replace("-", "마이너스 "), caption).joinToString(", ")
         Surface(

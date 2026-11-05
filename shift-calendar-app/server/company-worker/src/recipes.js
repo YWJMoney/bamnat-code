@@ -310,6 +310,10 @@ export const RECIPE_PIECES = {
     T("photo", 16, { optional: true, guard: false, check: decorPhoto }), T("tap", 12, { optional: true, guard: false, check: decorTap }),
     F("full", { input: false }),
   ], { min: 1 })] },
+  // 1.37 [LEDH-18] 가계부 틀: categories, budgets and empty envelopes; amounts are the receiver's.
+  ledger: { styles: ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS"], fields: [TS("costs", 20, 20), TS("incomes", 12, 20),
+    I("budgets", 12, [T("category", 20, { min: 1 }), M("amount", 0, 50_000_000)], { optional: true }),
+    I("envelopes", 6, [T("name", 20, { min: 1 }), M("target", 0, 1_000_000_000, { optional: true }), N("share", 0, 100, { optional: true }), E("emoji")], { optional: true })] },
 };
 const PIECE_KEYS = Object.keys(RECIPE_PIECES);
 
@@ -971,7 +975,7 @@ export const RECIPE_KINDS = {
   skin: ["screenLook", "calTheme", "calView", "photoLook", "shiftLook", "decor"],
   layout: ["layout", "cards", "appFeel", "tabView"],
   memo: ["memoLook", "memoTpl"],
-  money: ["moneyLook", "shop", "field"],
+  money: ["moneyLook", "shop", "field", "ledger"],
   rules: ["alarms", "hourly", "invest", "company", "logic"],
 };
 
@@ -996,7 +1000,7 @@ export function tabsOf(body) {
     switch (p.kind) {
       case "shiftLook": case "calTheme": case "calView": out.add("calendar"); break;
       case "memoLook": case "memoTpl": case "invest": out.add("memo"); break;
-      case "moneyLook": case "shop": case "field": out.add("money"); break;
+      case "moneyLook": case "shop": case "field": case "ledger": out.add("money"); break;
       case "hourly": case "company": out.add("pay"); break;
       case "alarms": out.add("alarm"); break;
       case "widget": out.add("widget"); break;

@@ -490,6 +490,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.AUTO_RECORD -> nav.navigateTopLevel(TopLevel.MONEY.route)
             // [TAX-02] Likewise, to open 세금·실수령.
             NoticeLinks.Target.TAX -> nav.navigateTopLevel(TopLevel.MONEY.route)
+            // 1.37 [LEDH-14] The 돈 적기 widget and tile: the money tab opens its add sheet itself.
+            NoticeLinks.Target.MONEY_ADD -> nav.navigateTopLevel(TopLevel.MONEY.route)
             NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
             // [RUL-03] 메모 틀 열기 from a button or rule: a new memo on that day, started from the template.
             NoticeLinks.Target.LOGIC_MEMO -> {

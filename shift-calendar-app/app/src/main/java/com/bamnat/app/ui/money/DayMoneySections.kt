@@ -164,7 +164,11 @@ fun Figure(label: String, value: String, modifier: Modifier = Modifier, strong: 
 
 /** [LEDG-01] The day's ledger lines and a quick way to add one. */
 @Composable
-fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntry>, actions: MoneyActions, memoText: String = "") {
+fun DayLedgerSection(
+    date: LocalDate, style: WorkStyle?, entries: List<MoneyEntry>, actions: MoneyActions, memoText: String = "",
+    /** 1.37 [LEDH-30] What is often spent on this kind of shift, and the shift's name. */
+    habits: Pair<String, List<MoneyEntry>>? = null,
+) {
     var adding by remember { mutableStateOf<MoneyKind?>(null) }
     var fromMemo by remember { mutableStateOf<MoneyEntry?>(null) }
     val memoAmounts = remember(memoText, entries) { MemoAmounts.pending(memoText, entries) }
@@ -185,6 +189,16 @@ fun DayLedgerSection(date: LocalDate, style: WorkStyle?, entries: List<MoneyEntr
                 },
                 icon = { Icon(Icons.Filled.Add, null) },
             )
+        }
+        // 1.37 [LEDH-30] 근무에서 바로 적기: "야간 날 자주 · 야식 8,000원" opens 돈 적기 filled in; nothing is saved until 저장.
+        habits?.let { (shift, picks) ->
+            picks.filter { p -> entries.none { it.amount == p.amount && it.merchant == p.merchant } }.forEach { p ->
+                SuggestionChip(
+                    onClick = { fromMemo = p.copy(id = 0, date = date, source = MoneySource.MANUAL, time = null, receipt = "", reviewed = true) },
+                    label = { Text("$shift 날 자주 · ${p.merchant.ifBlank { p.category }} ${Fmt.won(p.amount)}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    icon = { Icon(Icons.Filled.Add, null) },
+                )
+            }
         }
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // [UX-08] The app's one '+ 추가' button.
@@ -260,10 +274,10 @@ fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
 
 /** Sections of a calendar day for the user's kind of work [WORK-01]. */
 @Composable
-fun DayMoneySections(date: LocalDate, style: WorkStyle?, day: DayBook, actions: MoneyActions, memoText: String = "") {
+fun DayMoneySections(date: LocalDate, style: WorkStyle?, day: DayBook, actions: MoneyActions, memoText: String = "", habits: Pair<String, List<MoneyEntry>>? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (style?.usesJobs == true || day.jobs.isNotEmpty()) JobsSection(date, day.jobs, actions)
         if (style?.usesSales == true || day.sales != null) SalesSection(date, day.sales, actions)
-        DayLedgerSection(date, style, day.entries, actions, memoText)
+        DayLedgerSection(date, style, day.entries, actions, memoText, habits)
     }
 }

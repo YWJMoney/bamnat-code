@@ -433,6 +433,29 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Text("memoSort", 23, optional = true, guard = false, check = { if (com.bamnat.core.memo.MemoView.validSort(it)) null else "memoSort" }),
             Field.Pick("money", com.bamnat.core.money.LedgerBoard.KEYS, optional = true),
         ),
+    ),
+
+    /**
+     * 1.37 [LEDH-18] 가계부 틀: the categories, monthly budgets and 모으기 봉투 someone set their 가계부 up with (자취 첫 달, 야간 간호사,
+     * 배달 라이더 장부 …). Never a line written, a balance or an account; a budget or a goal's amount is the receiver's to decide
+     * ([Field.Money]), and an envelope comes in empty.
+     */
+    LEDGER(
+        "ledger", "가계부 틀", setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD, WorkStyle.BUSINESS),
+        listOf(
+            Field.Texts("costs", 20, 20),
+            Field.Texts("incomes", 12, 20),
+            Field.Items("budgets", 12, optional = true, fields = listOf(Field.Text("category", 20, min = 1), Field.Money("amount", 0, 50_000_000))),
+            Field.Items(
+                "envelopes", 6, optional = true,
+                fields = listOf(
+                    Field.Text("name", 20, min = 1),
+                    Field.Money("target", 0, 1_000_000_000, optional = true),
+                    Field.Num("share", 0.0, 100.0, optional = true),
+                    Field.Emoji("emoji"),
+                ),
+            ),
+        ),
     );
 
     companion object {

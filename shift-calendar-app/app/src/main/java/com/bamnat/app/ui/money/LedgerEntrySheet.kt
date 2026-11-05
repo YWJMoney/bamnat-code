@@ -278,6 +278,42 @@ fun EntryDialog(
                         scanNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
                     }
                 }
+                // 1.37 [LEDH-28] 한 줄로 적기: "점심 9천 카드" fills the amount, place, day, category and card it names.
+                if (isNew && kind != MoneyKind.TRANSFER) {
+                    var lineOpen by rememberSaveable { mutableStateOf(false) }
+                    var line by rememberSaveable { mutableStateOf("") }
+                    var lineNote by remember { mutableStateOf<String?>(null) }
+                    if (!lineOpen) AssistChip(onClick = { lineOpen = true }, label = { Text("한 줄로 적기") })
+                    else {
+                        fun fill() {
+                            val all = ledger.categoriesOf(MoneyKind.EXPENSE) + ledger.categoriesOf(MoneyKind.INCOME)
+                            val d = com.bamnat.core.money.QuickLine.parse(line, all, ledger.accounts)
+                            if (d == null) { lineNote = "금액이나 쓴 곳을 적어 주세요"; return }
+                            if (d.kind != kind) {
+                                kind = d.kind
+                                val list = ledger.categoriesOf(kind)
+                                if (category !in list) category = Ledger.lastCategory(entries, kind)?.takeIf { it in list } ?: list.first()
+                            }
+                            d.amount?.let { digits = amountDigits(it) }
+                            d.category?.takeIf { it in ledger.categoriesOf(kind) }?.let { category = it; categoryTouched = true }
+                            if (d.place.isNotBlank()) place = d.place
+                            day = com.bamnat.core.time.Today.date().minusDays(d.daysAgo.toLong()).toString()
+                            com.bamnat.core.money.QuickLine.account(d, ledger.accounts, entries)?.let { account = it; accountTouched = true }
+                            lineNote = listOfNotNull(d.amount?.let { Fmt.won(it) }, d.place.takeIf { it.isNotBlank() },
+                                if (d.daysAgo > 0) "${d.daysAgo}일 전" else null).joinToString(" · ") + "로 채웠어요. 아래에서 고칠 수 있어요"
+                            line = ""
+                        }
+                        OutlinedTextField(
+                            value = line, onValueChange = { line = it.take(60); lineNote = null }, singleLine = true,
+                            label = { Text("한 줄로 적기") }, placeholder = { Text("예: 점심 9천 카드, 어제 택시 12,500") },
+                            trailingIcon = { TextButton(onClick = { fill() }, enabled = line.isNotBlank()) { Text("채우기") } },
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { fill() }),
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        lineNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+                    }
+                }
                 AmountField(
                     if (cancel) "돌려받은 금액" else "금액", digits, { digits = it }, Modifier.focusRequester(amountFocus),
                     textStyle = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
@@ -330,8 +366,15 @@ fun EntryDialog(
                     }
                 }
                 FieldTitle("분류")
+                // 1.37 [LEDH-35] 추천 분류 3개: the three used most in the last 60 days come first, so the long list is seldom read.
+                val top = remember(entries, kind, categories) {
+                    val since = com.bamnat.core.time.Today.date().minusDays(60)
+                    entries.filter { it.kind == kind && !it.date.isBefore(since) && it.category in categories }
+                        .groupingBy { it.category }.eachCount().entries.sortedByDescending { it.value }.take(3).map { it.key }
+                        .takeIf { categories.size > 6 && it.size >= 2 }.orEmpty()
+                }
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    categories.forEach { c ->
+                    (top + categories.filter { it !in top }).forEach { c ->
                         FilterChip(
                             selected = category == c, onClick = { category = c; categoryTouched = true },
                             label = { Text(c) },

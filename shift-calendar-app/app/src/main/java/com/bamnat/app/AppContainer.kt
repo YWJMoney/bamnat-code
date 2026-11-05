@@ -939,6 +939,13 @@ class AppContainer(context: Context) {
             // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
             // [SLP-15] So does the 나갈 돈·받을 돈 switch.
             keep("money") {
+                // 1.37 [LEDH-14] The 오늘 쓸 돈 widget follows 내 달력's money book and 금액 가리기; only it is redrawn (one job with
+                // the reminders, inside the start's budget [PERF-10]).
+                launch {
+                    combine(calendars.money(com.bamnat.app.data.PersonalCalendar.MAIN).book, settingsRepository.settings.map { it.hideAmounts }.distinctUntilChanged()) { b, h -> b to h }
+                        .drop(1).debounce(800)
+                        .collect { com.bamnat.app.widget.MoneyWidget.redraw(appContext) }
+                }
                 val on = settingsRepository.settings.map { it.moneyNotices }.distinctUntilChanged()
                 // [MCAL-06] A job booked on any calendar is told about.
                 combine(calendars.everyMoney, on) { book, _ -> book }.debounce(500)
