@@ -390,6 +390,22 @@ object LedgerSmarts {
         return CardGauge(threshold, credit, other, over, (threshold - credit - other).coerceAtLeast(0), tip)
     }
 
+    /** 1.37 [LEDH-32] Days since the last line written by hand, and the lines that came in by themselves meanwhile. */
+    data class Away(val days: Int, val auto: Int)
+
+    /**
+     * 1.37 [LEDH-32] 복귀 반김: the user wrote nothing by hand for [minDays] days or more, after using the book (ten lines or more by
+     * hand); null otherwise.
+     */
+    fun away(entries: List<MoneyEntry>, today: LocalDate, minDays: Int = 7): Away? {
+        val byHand = entries.filter { it.source == MoneySource.MANUAL && !it.date.isAfter(today) }
+        if (byHand.size < 10) return null
+        val last = byHand.maxOf { it.date }
+        val days = ChronoUnit.DAYS.between(last, today).toInt()
+        if (days < minDays) return null
+        return Away(days, entries.count { it.source != MoneySource.MANUAL && it.date.isAfter(last) && !it.date.isAfter(today) })
+    }
+
     /**
      * 1.37 [LEDH-30] 근무에서 바로 적기: what is spent again and again on [dates] (the past days of one kind of shift), as lines to
      * start from — the same place (or category) and amount on two days or more, most often first.

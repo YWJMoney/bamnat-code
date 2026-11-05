@@ -201,6 +201,9 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
             Text("${Fmt.won(b.spent)} / ${Fmt.won(b.budget)}", style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // 1.37 [LEDH-34] What came over from last month, inside the budget shown.
+        if (b.carried != 0L) Text(if (b.carried > 0) "지난달 남은 ${Fmt.won(b.carried)} 더함" else "지난달 넘긴 ${Fmt.won(-b.carried)} 뺌",
+            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(6.dp))
         LedgerTrack(b.fraction, color, marker = elapsed, height = if (whole) 10.dp else 8.dp)
         Spacer(Modifier.height(4.dp))
@@ -243,6 +246,8 @@ fun BudgetEditor(
     byPayCycle: Boolean? = null, onPayCycle: (Boolean) -> Unit = {},
     /** 1.37 PC 4차: a 월급 user with no pay day yet is told where the switch comes from. */
     payDayHint: Boolean = false,
+    /** 1.37 [LEDH-34] 예산 넘김: the categories that carry, and how to change them (saved at once, like 월급날 기준). */
+    rolling: Set<String> = emptySet(), onRolling: (Set<String>) -> Unit = {},
 ) {
     val categories = remember(book) { book.categoriesOf(MoneyKind.EXPENSE) }
     val values = remember {
@@ -308,6 +313,20 @@ fun BudgetEditor(
                         Spacer(Modifier.width(8.dp))
                         AmountField("예산", values[c].orEmpty(), { values[c] = it },
                             Modifier.widthIn(max = 168.dp).semantics { contentDescription = "$c 예산" })
+                    }
+                }
+                // 1.37 [LEDH-34] 예산 넘김: what a category's budget left over this month is added to next month's (and what it went
+                // over is taken off), one month at a time.
+                val budgeted = categories.filter { (values[it]?.toAmount() ?: 0) > 0 }
+                if (budgeted.isNotEmpty()) {
+                    Text("남은 예산 다음 달로 넘기기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+                    Text("고른 분류는 이번 달에 남은 만큼 다음 달 예산이 늘고, 넘긴 만큼 줄어요. 한 달씩만 넘어가요.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        budgeted.forEach { c ->
+                            com.bamnat.app.ui.components.FilterChip(selected = c in rolling, onClick = { onRolling(if (c in rolling) rolling - c else rolling + c) },
+                                label = { Text(c) })
+                        }
                     }
                 }
                 Spacer(Modifier.height(4.dp))
@@ -388,6 +407,39 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
             Row {
                 Text("통장·현금 합계", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Text(Fmt.won(kept.sumOf { balances[it.id] ?: it.opening }), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), fontWeight = FontWeight.Bold)
+            }
+        }
+        // 1.37 [LEDH-26] 순자산 한 장: 가진 돈 − 남은 카드값, and a year of month-ends as one thin line.
+        val year = remember(book, today) { com.bamnat.core.money.NetWorth.year(book.accounts, book.entries, today) }
+        year.lastOrNull()?.let { now ->
+            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+            Row {
+                Text("순자산", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text(Fmt.won(now.net), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), fontWeight = FontWeight.Bold,
+                    color = if (now.net < 0) cal.expense else MaterialTheme.colorScheme.onSurface)
+            }
+            // Only the months the book was in use: before the first line the past is not known.
+            val first = book.entries.minOfOrNull { it.date }
+            val known = year.filter { first != null && !it.date.isBefore(first) }
+            val start = known.firstOrNull()?.takeIf { it != now }
+            Text(
+                (if (now.owe > 0) "가진 돈 ${Fmt.won(now.have)} − 남은 카드값 ${Fmt.won(now.owe)}" else "가진 돈 ${Fmt.won(now.have)}") +
+                    (start?.let { s -> val d = now.net - s.net; " · ${s.date.monthValue}월 말보다 " + (if (d >= 0) "+" else "−") + Fmt.won(kotlin.math.abs(d)) } ?: ""),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (known.size >= 3) {
+                val line = MaterialTheme.colorScheme.primary
+                val values = known.map { it.net }
+                androidx.compose.foundation.Canvas(Modifier.fillMaxWidth().height(36.dp).padding(top = 6.dp)
+                    .semantics { contentDescription = "순자산 ${known.size}달 흐름" }) {
+                    val lo = values.min().toFloat(); val hi = values.max().toFloat()
+                    val span = (hi - lo).takeIf { it > 0f } ?: 1f
+                    val step = size.width / (values.size - 1)
+                    for (i in 1 until values.size) {
+                        drawLine(line, androidx.compose.ui.geometry.Offset((i - 1) * step, size.height - (values[i - 1] - lo) / span * size.height),
+                            androidx.compose.ui.geometry.Offset(i * step, size.height - (values[i] - lo) / span * size.height), strokeWidth = 2.dp.toPx())
+                    }
+                }
             }
         }
     }

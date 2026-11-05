@@ -214,6 +214,8 @@ data class AppSettings(
     val moneyLayout: String = "",
     /** 1.37 [LEDH-20] 가계부 요약의 '점검' 묶음이 펼쳐져 있는지. */
     val moneyCheckOpen: Boolean = false,
+    /** 1.37 [LEDH-34] 예산 넘김: the categories whose budget left over (or gone over) carries to the next month, tab-separated. */
+    val budgetRollover: String = "",
     /** [DAILY-15] 화면 꾸미기 of the 메모 page. */
     val memoLayout: String = "",
     /** [TAB-02][TAB-04][TAB-06] 1.36 탭 보기 ([com.bamnat.core.layout.TabViews.encode]): 달력 판, 메모장 보기, 가계부 판; empty is the app's own. In the backup. */
@@ -413,6 +415,7 @@ class SettingsRepository(context: Context) {
             backupPhotos = prefs.getBoolean(K_BACKUP_PHOTOS, d.backupPhotos),
             moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
             moneyCheckOpen = prefs.getBoolean(K_MONEY_CHECK_OPEN, d.moneyCheckOpen),
+            budgetRollover = prefs.getString(K_BUDGET_ROLLOVER, null) ?: d.budgetRollover,
             calTheme = prefs.getString(K_CAL_THEME, null) ?: d.calTheme,
             widgetLook = prefs.getString(K_WIDGET_LOOK, null) ?: d.widgetLook,
             myColors = prefs.getString(K_MY_COLORS, null) ?: d.myColors,
@@ -526,6 +529,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_BACKUP_PHOTOS, s.backupPhotos)
             .putString(K_MONEY_LAYOUT, s.moneyLayout)
             .putBoolean(K_MONEY_CHECK_OPEN, s.moneyCheckOpen)
+            .putString(K_BUDGET_ROLLOVER, s.budgetRollover)
             .putString(K_CAL_THEME, s.calTheme)
             .putString(K_WIDGET_LOOK, s.widgetLook)
             .putString(K_MY_COLORS, s.myColors)
@@ -602,6 +606,7 @@ class SettingsRepository(context: Context) {
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
         const val K_MONEY_CHECK_OPEN = "money_check_open"
+        const val K_BUDGET_ROLLOVER = "budget_rollover"
         const val K_MONEY_CYCLE = "money_pay_cycle"
         const val K_WORK_TIME = "work_time_from"
         const val K_DAY_CLOSE = "day_close_notice"

@@ -46,3 +46,26 @@ object ShiftRhythm {
         return Plan(todayLabel, share(todayLabel), shares)
     }
 }
+
+/**
+ * 1.37 [LEDH-23] 내 월급 만들기, for money that comes in unevenly (현장·가게·알바): pay yourself the same amount each month — the second
+ * lowest of the last six months' income, so five months of six would have covered it — and how many months what is in the accounts
+ * now would last at the usual spending.
+ */
+object SelfSalary {
+    data class Plan(val salary: Long, val months: Int, val covered: Int, val lastFor: Double?, val spend: Long)
+
+    /** [incomes] and [spends] of the last whole months, oldest first; null with fewer than three months of income. */
+    fun of(incomes: List<Long>, spends: List<Long>, have: Long?): Plan? {
+        val months = incomes.indices.filter { incomes[it] > 0 || spends.getOrElse(it) { 0 } > 0 }
+        if (months.size < 3) return null
+        val inc = months.map { incomes[it] }
+        val sorted = inc.sorted()
+        val salary = (sorted.getOrElse(1) { sorted.first() } / 10_000) * 10_000
+        if (salary <= 0) return null
+        val spend = months.map { spends.getOrElse(it) { 0 } }.average().toLong()
+        val lastFor = if (have == null || spend <= 0) null else Math.round(have.toDouble() / spend * 10) / 10.0
+        return Plan(salary, inc.size, inc.count { it >= salary }, lastFor, spend)
+    }
+}
+

@@ -683,9 +683,14 @@ fun MoneyScreen(
         if (!settings.moneyByPayCycle || month != YearMonth.from(today)) null
         else profile?.period?.let { p -> com.bamnat.core.money.PayCycle.around(today, (-2L..2L).mapNotNull { p.payDate(YearMonth.from(today).plusMonths(it)) }) }
     }
-    val budget = remember(book, month, today, leftFixed, cycle) {
-        cycle?.let { c -> Budgets.statusIn(book.budgets, book.entries, c.from, c.to, today, UpcomingPayments.leftUntil(book.fixed, book.entries, today, c.to)) }
-            ?: Budgets.status(book.budgets, book.entries, month, today, leftFixed)
+    // 1.37 [LEDH-34] 예산 넘김: chosen categories carry last stretch's leftover (or overspend).
+    val rolling = remember(settings.budgetRollover) { settings.budgetRollover.split('\t').filter { it.isNotBlank() }.toSet() }
+    val budget = remember(book, month, today, leftFixed, cycle, rolling) {
+        val from = cycle?.from ?: month.atDay(1)
+        val to = cycle?.to ?: month.atEndOfMonth()
+        val carry = Budgets.carry(book.budgets, book.entries, from, to, rolling)
+        cycle?.let { c -> Budgets.statusIn(book.budgets, book.entries, c.from, c.to, today, UpcomingPayments.leftUntil(book.fixed, book.entries, today, c.to), carry) }
+            ?: Budgets.status(book.budgets, book.entries, month, today, leftFixed, carry)
     }
     val recent = remember(book, month) { book.entries.filter { YearMonth.from(it.date) == month }.take(5) }
     val listActions = remember(vm) {
@@ -716,7 +721,13 @@ fun MoneyScreen(
             AheadCard(book, style, today, aheadPay, budget, toSort = unseen.size, gate = gate,
                 onAddAccount = { addingAccount = com.bamnat.core.money.AccountType.BANK }, onOpenPay = onOpenPayDay, snapshot = snapshot)
         },
-        MoneyPart.STORY to { MonthStoryCard(book, envelopeBook.second, aheadPay?.lastMonth, today, gate) },
+        // 1.37 [LEDH-32] 복귀 반김 first (a week or more without a line), then 지난달 돈 이야기.
+        MoneyPart.STORY to {
+            Column(verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card)) {
+                WelcomeBackCard(book, today, onAdd = { adding = MoneyKind.EXPENSE })
+                MonthStoryCard(book, envelopeBook.second, aheadPay?.lastMonth, today, gate)
+            }
+        },
         MoneyPart.ENVELOPES to {
             val (envs, moves) = envelopeBook
             EnvelopesCard(book, envs, moves, style, today, aheadPay?.perShift, pro = !gate.live || gate.tier >= com.bamnat.app.tier.Tier.PRO,
@@ -767,6 +778,7 @@ fun MoneyScreen(
             CardGaugeCard(book, today, gross)
         },
         MoneyPart.CARDBILL to { CardBillCard(book, today, gate) },
+        MoneyPart.ASKME to { AskLedgerCard(book, today) },
         MoneyPart.ASK to { LedgerAsksCard(book, today, vm) },
         MoneyPart.INSTALL to { InstallmentPlanCard(book, today) },
         MoneyPart.SHIFTSPEND to { ShiftSpendCard(book, snapshot, today, gate) },
@@ -945,7 +957,8 @@ fun MoneyScreen(
     if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false }, onDismiss = { budgeting = false },
         byPayCycle = settings.moneyByPayCycle.takeIf { profile?.period?.payDay != null && style?.usesPayEngine != false },
         payDayHint = profile?.period?.payDay == null && style?.usesPayEngine != false,
-        onPayCycle = { on -> vm.updateSettings { it.copy(moneyByPayCycle = on) } })
+        onPayCycle = { on -> vm.updateSettings { it.copy(moneyByPayCycle = on) } },
+        rolling = rolling, onRolling = { set -> vm.updateSettings { it.copy(budgetRollover = set.joinToString("\t")) } })
     if (editingAccount != null || addingAccount != null || addingAnyAccount) {
         AccountEditor(editingAccount, addingAccount, book,
             onSave = { vm.saveAccount(it); editingAccount = null; addingAccount = null; addingAnyAccount = false },
@@ -1132,6 +1145,8 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     SALESSPLIT("salessplit", "매출 나눠 보기", "카드·현금·이체·배달앱 비율"),
     FREELANCE("freelance", "3.3% 합계", "일한 곳별 뗀 3.3%와 5월 신고 준비"),
     AUTO("auto", "덜 적는 법", "결제 알림 읽기·문자 붙여넣기", right = true),
+    // 1.37 [LEDH-33]
+    ASKME("askme", "가계부에 묻기", "어디에 제일 많이 썼는지, 지난달보다 더 썼는지 칩 한 번에"),
 }
 
 internal fun moneyParts(layout: String) = com.bamnat.core.layout.PageLayout.decode(layout).arrange(MoneyPart.entries.toList()) { it.id }

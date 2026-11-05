@@ -37,3 +37,17 @@ class DayHabitsTest {
         assertEquals(listOf("야식" to 8_000L), picks.map { it.merchant to it.amount })
     }
 }
+
+/** 1.37 [LEDH-32] 복귀 반김. */
+class AwayTest {
+    private val today = LocalDate.of(2026, 11, 20)
+    private fun e(days: Long, source: MoneySource = MoneySource.MANUAL) =
+        MoneyEntry(date = today.minusDays(days), kind = MoneyKind.EXPENSE, amount = 1_000, category = "식비", source = source)
+
+    @Test fun aWeekAwayAfterRealUseIsSaid() {
+        val used = (10L..19L).map { e(it) } + e(3, MoneySource.NOTIFICATION) + e(2, MoneySource.FIXED)
+        assertEquals(LedgerSmarts.Away(10, 2), LedgerSmarts.away(used, today))
+        assertEquals(null, LedgerSmarts.away(used + e(1), today))
+        assertEquals(null, LedgerSmarts.away((10L..12L).map { e(it) }, today))
+    }
+}

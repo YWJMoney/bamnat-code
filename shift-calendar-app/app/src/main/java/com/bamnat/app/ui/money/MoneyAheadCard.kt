@@ -111,6 +111,17 @@ internal fun AheadCard(
                 (if (u.arriving > 0) " + 들어올 돈 ${Fmt.won(u.arriving)}" else "") + ") ÷ ${u.daysLeft}일 = 하루 ${Fmt.won(u.perDay!!)}" +
                 (if (todaySpent > 0) ", 오늘 쓴 ${Fmt.won(todaySpent)}을 빼고 보여요" else ""))
         }
+        // 1.37 [LEDH-23] 내 월급 만들기: money that comes in unevenly, paid to yourself evenly.
+        if (style == WorkStyle.FIELD || style == WorkStyle.BUSINESS || style == WorkStyle.HOURLY) {
+            val self = remember(book, today, full.hasBalance) {
+                val months = (6L downTo 1L).map { java.time.YearMonth.from(today).minusMonths(it) }.map { book.month(it, today = today) }
+                com.bamnat.core.money.SelfSalary.of(months.map { it.received }, months.map { it.spent }, full.start.takeIf { full.hasBalance })
+            }
+            self?.let { p ->
+                Muted("내 월급: 매달 ${Fmt.won(p.salary)}씩 나에게 주면 지난 ${p.months}달 중 ${p.covered}달은 그만큼 벌었어요" +
+                    (p.lastFor?.let { " · 지금 통장으로 ${"%.1f".format(it).removeSuffix(".0")}달 버텨요" } ?: "") + ". 더 번 달의 남는 돈은 모으기 봉투로 옮겨 두면 덜 번 달을 메워요.")
+            }
+        }
         rhythm?.let { p ->
             val say: @Composable () -> Unit = {
                 Muted("근무 리듬대로 하루: ${p.words(Fmt::won)}. 오늘(${p.todayLabel})은 ${Fmt.won((p.today - todaySpent).coerceAtLeast(0))} 남았어요.")

@@ -87,6 +87,8 @@ object FitTable {
         money("cardbill"), money("shiftspend", setOf(SHIFT)), money("salessplit", setOf(SHOP)), money("freelance", setOf(FIELD)),
         // 1.32 [LEDX-16][LEDX-17][LEDX-19] 확인할 것 and 할부 청구 기준 are for every kind of work.
         money("ask"), money("install"),
+        // 1.37 [LEDH-33] 가계부에 묻기.
+        money("askme"),
     )
 
     private val byKey: Map<String, FitItem> = all.associateBy { it.key }

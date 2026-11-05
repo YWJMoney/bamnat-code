@@ -15,7 +15,11 @@ data class MoneyBudget(val category: String, val amount: Long) {
 enum class BudgetLevel { OK, NEAR, OVER }
 
 /** [LEDG-06] One budget against what was spent, and where the month's pace is heading. */
-data class BudgetLine(val category: String, val budget: Long, val spent: Long, val forecast: Long) {
+data class BudgetLine(
+    val category: String, val budget: Long, val spent: Long, val forecast: Long,
+    /** 1.37 [LEDH-34] What came over from the stretch before (left over, or below zero when it went over); inside [budget]. */
+    val carried: Long = 0,
+) {
     val left: Long get() = budget - spent
     val fraction: Float get() = if (budget <= 0) 0f else spent.toFloat() / budget
     val level: BudgetLevel get() = when {
@@ -66,14 +70,36 @@ object Budgets {
      * adds the pace of everyday spending to what is spent, without repeating lines, which come
      * once ([fixedLeft] is added to the whole month's).
      */
-    fun status(budgets: List<MoneyBudget>, entries: List<MoneyEntry>, month: YearMonth, today: LocalDate, fixedLeft: Long = 0): BudgetStatus =
-        statusIn(budgets, entries, month.atDay(1), month.atEndOfMonth(), today, fixedLeft)
+    fun status(budgets: List<MoneyBudget>, entries: List<MoneyEntry>, month: YearMonth, today: LocalDate, fixedLeft: Long = 0,
+               carry: Map<String, Long> = emptyMap()): BudgetStatus =
+        statusIn(budgets, entries, month.atDay(1), month.atEndOfMonth(), today, fixedLeft, carry)
+
+    /**
+     * 1.37 [LEDH-34] 예산 넘김: for each category in [rolling] with a budget, what the stretch just before [from] left over (or went over,
+     * below zero), at most one budget either way. Only one stretch back, so a long-forgotten month does not pile up.
+     */
+    fun carry(budgets: List<MoneyBudget>, entries: List<MoneyEntry>, from: LocalDate, to: LocalDate, rolling: Set<String>): Map<String, Long> {
+        if (rolling.isEmpty()) return emptyMap()
+        val length = java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1
+        val monthly = from.dayOfMonth == 1 && to == YearMonth.from(from).atEndOfMonth()
+        val prevFrom = if (monthly) YearMonth.from(from).minusMonths(1).atDay(1) else from.minusDays(length)
+        val prevTo = from.minusDays(1)
+        val spent = HashMap<String, Long>()
+        entries.filter { it.kind == MoneyKind.EXPENSE && !it.date.isBefore(prevFrom) && !it.date.isAfter(prevTo) }
+            .forEach { e -> e.shares().forEach { (c, a) -> spent.merge(c, a, Long::plus) } }
+        // Nothing written that stretch: nothing to carry (the app was not in use yet).
+        if (entries.none { !it.date.isBefore(prevFrom) && !it.date.isAfter(prevTo) }) return emptyMap()
+        return budgets.filter { !it.isTotal && it.amount > 0 && it.category in rolling }.associate { b ->
+            b.category to (b.amount - (spent[b.category] ?: 0)).coerceIn(-b.amount, b.amount)
+        }.filterValues { it != 0L }
+    }
 
     /**
      * 1.37 [LEDH-06] The same budgets over any stretch of days, such as 급여일 주기 (25일~다음 달 24일): the monthly
      * amounts stand for the stretch, as a month's pay stands for the month it covers.
      */
-    fun statusIn(budgets: List<MoneyBudget>, entries: List<MoneyEntry>, from: LocalDate, to: LocalDate, today: LocalDate, fixedLeft: Long = 0): BudgetStatus {
+    fun statusIn(budgets: List<MoneyBudget>, entries: List<MoneyEntry>, from: LocalDate, to: LocalDate, today: LocalDate, fixedLeft: Long = 0,
+                 carry: Map<String, Long> = emptyMap()): BudgetStatus {
         val month = YearMonth.from(to)
         val spent = entries.filter { it.kind == MoneyKind.EXPENSE && !it.date.isBefore(from) && !it.date.isAfter(to) }
         val byCategory = HashMap<String, Long>()
@@ -93,11 +119,11 @@ object Budgets {
         val fixedAside = if (current) fixedLeft else 0
         val all = spent.sumOf { it.amount }
         val explicit = budgets.firstOrNull { it.isTotal && it.amount > 0 }?.amount
-        val categoryBudgets = budgets.filter { !it.isTotal && it.amount > 0 }
+        val categoryBudgets = budgets.filter { !it.isTotal && it.amount > 0 }.map { b -> carry[b.category]?.let { b.copy(amount = (b.amount + it).coerceAtLeast(0)) } ?: b }
         val totalBudget = explicit ?: categoryBudgets.sumOf { it.amount }.takeIf { it > 0 }
         val total = totalBudget?.let { BudgetLine(MoneyBudget.TOTAL, it, all, forecast(all, everyday.values.sum()) + fixedAside) }
         val lines = categoryBudgets.map { b ->
-            BudgetLine(b.category, b.amount, byCategory[b.category] ?: 0, forecast(byCategory[b.category] ?: 0, everyday[b.category] ?: 0))
+            BudgetLine(b.category, b.amount, byCategory[b.category] ?: 0, forecast(byCategory[b.category] ?: 0, everyday[b.category] ?: 0), carry[b.category] ?: 0)
         }.sortedWith(compareBy<BudgetLine> { it.level != BudgetLevel.OVER }.thenByDescending { it.fraction }.thenBy { it.category })
         val todaySpent = if (current) spent.filter { it.date == today }.sumOf { it.amount } else 0
         val perDay = if (total == null || daysLeft == 0) null else

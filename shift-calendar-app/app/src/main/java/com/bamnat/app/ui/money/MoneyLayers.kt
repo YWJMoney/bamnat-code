@@ -11,6 +11,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.SubcomposeLayout
@@ -36,7 +38,7 @@ internal val MoneyPart.layer: MoneyLayer
         MoneyPart.WORK, MoneyPart.OWED, MoneyPart.ALL -> MoneyLayer.MONTH
         MoneyPart.UPCOMING, MoneyPart.CARDBILL, MoneyPart.INSTALL -> MoneyLayer.AHEAD
         MoneyPart.FOUND, MoneyPart.SUBS, MoneyPart.CARD25, MoneyPart.OTHER, MoneyPart.REPEAT, MoneyPart.SHIFTSPEND,
-        MoneyPart.SALESSPLIT, MoneyPart.FREELANCE, MoneyPart.AUTO -> MoneyLayer.CHECK
+        MoneyPart.SALESSPLIT, MoneyPart.FREELANCE, MoneyPart.AUTO, MoneyPart.ASKME -> MoneyLayer.CHECK
     }
 
 /** [parts] in layer order, the user's order kept inside each layer. */
@@ -91,5 +93,48 @@ private fun LayerHeading(title: String, count: Int?, open: Boolean, onToggle: ((
             Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+    }
+}
+
+/**
+ * 1.37 [LEDH-32] 복귀 반김: back after a week or more without a line, no blame and no catch-up list — the days away, what came in by
+ * itself meanwhile, and that writing only the big ones is fine. Gone once a line is written, or for now with 넘기기.
+ */
+@Composable
+internal fun WelcomeBackCard(book: com.bamnat.core.money.MoneyBook, today: java.time.LocalDate, onAdd: () -> Unit) {
+    var skipped by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val away = androidx.compose.runtime.remember(book, today) { com.bamnat.core.money.LedgerSmarts.away(book.entries, today) } ?: return
+    if (skipped) return
+    com.bamnat.app.ui.components.SectionCard(title = "${away.days}일 만이에요") {
+        Text(
+            (if (away.auto > 0) "그동안 결제 알림·반복 지출로 ${away.auto}건이 저절로 적혔어요. " else "") +
+                "빠진 날을 다 채우지 않아도 돼요. 기억나는 큰 것만 적고 오늘부터 이어 가요.",
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+            androidx.compose.material3.TextButton(onClick = onAdd) { Text("돈 적기") }
+            androidx.compose.material3.TextButton(onClick = { skipped = true }) { Text("넘기기") }
+        }
+    }
+}
+
+/** 1.37 [LEDH-33] 가계부에 묻기: a chip per question, the answer worked out on the phone from the book. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun AskLedgerCard(book: com.bamnat.core.money.MoneyBook, today: java.time.LocalDate) {
+    if (book.entries.none { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE }) return
+    var asked by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
+    com.bamnat.app.ui.components.SectionCard(title = "가계부에 묻기") {
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) {
+            com.bamnat.core.money.LedgerAsk.Question.entries.forEach { q ->
+                com.bamnat.app.ui.components.FilterChip(selected = asked == q.name, onClick = { asked = if (asked == q.name) null else q.name }, label = { Text(q.label) })
+            }
+        }
+        val q = asked?.let { n -> com.bamnat.core.money.LedgerAsk.Question.entries.firstOrNull { it.name == n } }
+        if (q != null) {
+            val answer = androidx.compose.runtime.remember(book, today, q) { com.bamnat.core.money.LedgerAsk.answer(q, book.entries, today) }
+            Text(com.bamnat.app.ui.Fmt.hide(answer), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 6.dp))
+        } else Text("궁금한 걸 누르면 적은 기록으로 바로 답해요. 휴대폰 안에서만 셈해요.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

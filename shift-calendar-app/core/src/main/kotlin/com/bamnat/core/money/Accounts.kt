@@ -184,3 +184,37 @@ object CardCycle {
 
     private const val PAID_WINDOW_DAYS = 14L
 }
+
+/**
+ * 1.37 [LEDH-26] 순자산 한 장: what the accounts that hold money have, less what the credit cards still owe (spent on the card and not
+ * yet paid to it), on any day; and the last twelve month-ends, for one line over the year.
+ */
+object NetWorth {
+    data class Point(val date: LocalDate, val have: Long, val owe: Long) {
+        val net: Long get() = have - owe
+    }
+
+    fun on(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, date: LocalDate): Point {
+        val until = entries.filter { !it.date.isAfter(date) }
+        val have = MoneyAccounts.balances(accounts, until).values.sum()
+        val credit = accounts.filter { it.isCredit }.map { it.id }.toSet()
+        var owe = 0L
+        for (e in until) {
+            val on = MoneyAccounts.of(e, accounts)
+            when {
+                e.kind == MoneyKind.EXPENSE && on in credit -> owe += e.amount
+                e.kind == MoneyKind.INCOME && on in credit -> owe -= e.amount
+                e.kind == MoneyKind.TRANSFER && e.toAccountId in credit -> owe -= e.amount
+            }
+        }
+        return Point(date, have, owe.coerceAtLeast(0))
+    }
+
+    /** Today and the last [months] month-ends before it, oldest first; empty with no account that holds money. */
+    fun year(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, today: LocalDate, months: Int = 12): List<Point> {
+        if (accounts.none { it.keepsBalance && !it.hidden }) return emptyList()
+        val ends = (months downTo 1).map { java.time.YearMonth.from(today).minusMonths(it.toLong()).atEndOfMonth() }
+        return (ends + today).map { on(accounts, entries, it) }
+    }
+}
+
