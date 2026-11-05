@@ -404,6 +404,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var panel by rememberSaveable { mutableStateOf(false) }
     var panelMode by rememberSaveable { mutableStateOf(PanelMode.TOOL) }
     var panelBig by rememberSaveable { mutableStateOf(false) }
+    // 1.37 가계부 LOW-4: the 기능 tool changes no look, so its 판 opens big (the example folded to a strip) until 작게.
+    var featureSmall by rememberSaveable { mutableStateOf(false) }
     var condFirst by remember { mutableStateOf(false) }
     // PC 확인 1.37 A8: each ‘＋ 조건으로 꾸미기’ asks again, also when the part's panel is already open.
     var condAsk by remember { mutableStateOf(0) }
@@ -760,11 +762,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // [CNV-01] The canvas: the example takes all the room left, at any size ([CNV-02]).
                 val spotsOn = !half && !comparing && !peeking
                 BoxWithConstraints(Modifier.fillMaxWidth().weight(1f)) {
-                val panelH = (totalH * (if (panelBig) 0.66f else 0.42f)).coerceAtMost(maxHeight - 96.dp).coerceAtLeast(160.dp)
+                val featurePanel = panel && panelMode == PanelMode.TOOL && tool == Tool.FEATURE
+                val big = if (featurePanel) !featureSmall else panelBig
+                val panelH = (if (featurePanel && big) maxHeight - 96.dp else totalH * (if (big) 0.66f else 0.42f))
+                    .coerceAtMost(maxHeight - 96.dp).coerceAtLeast(160.dp)
                 val coverPx = with(androidx.compose.ui.platform.LocalDensity.current) { if (panel) panelH.toPx() else 0f }
                 androidx.compose.runtime.SideEffect { zoom.cover = coverPx }
                 // [CNV-04] A part picked while the 판 is open (or the 판 opened over one) is brought into the part left in view.
-                LaunchedEffect(sel, panel, panelBig) { if (panel) sel?.let { id -> spots.boxes(id).firstOrNull()?.let { zoom.reveal(it) } } }
+                LaunchedEffect(sel, panel, big) { if (panel) sel?.let { id -> spots.boxes(id).firstOrNull()?.let { zoom.reveal(it) } } }
                 // PC 확인 1.37 A9 (색 도구를 열면 고른 부품이 가려짐): a quick tool opened in the bar above brings the part into the view left.
                 LaunchedEffect(quick) { if (quick != null) { kotlinx.coroutines.delay(180); sel?.let { id -> spots.boxes(id).firstOrNull()?.let { zoom.reveal(it) } } } }
                 Column(Modifier.fillMaxSize()) {
@@ -900,7 +905,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 PanelMode.CARDS -> "${area.labelFor(vm.style)} · 카드 넣기"
                                 PanelMode.TOOL -> "${area.labelFor(vm.style)} · ${t.label}"
                             }, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).semantics { heading() })
-                            TextButton(onClick = { panelBig = !panelBig }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (panelBig) "작게" else "크게") }
+                            TextButton(onClick = { if (featurePanel) featureSmall = !featureSmall else panelBig = !panelBig },
+                                modifier = Modifier.heightIn(min = 48.dp)) { Text(if (big) "작게" else "크게") }
                             TextButton(onClick = { panel = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
                         }
                         HorizontalDivider()

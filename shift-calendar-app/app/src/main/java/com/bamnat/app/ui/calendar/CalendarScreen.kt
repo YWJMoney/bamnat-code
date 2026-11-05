@@ -2465,7 +2465,9 @@ private fun PaintBar(
                         modifier = Modifier.semantics { contentDescription = "쉬는 날 칠하기" },
                     )
                 }
-                FilterChip(
+                // 1.37 시간 바퀴 PC LOW: a weekday calendar (일근·요일 근무) has no cycle to go back to; 되돌리기 and the
+                // day sheet's '평소대로' undo a painted day there.
+                if (!snapshot.weekdayOnly) FilterChip(
                     selected = tool == PaintTool.Clear,
                     onClick = { onTool(if (tool == PaintTool.Clear) PaintTool.Pick else PaintTool.Clear) },
                     label = { Text("근무 주기대로", maxLines = 1, softWrap = false) }, // 1.36 PC X7: never cut onto two lines
@@ -2897,3 +2899,15 @@ internal fun Modifier.holdHeight(hold: Boolean): Modifier {
         layout(p.width, h) { p.place(0, 0) }
     }
 }
+
+/** 1.37 시간 바퀴 PC LOW: every pattern is a week (일근·요일 근무), so there is no '근무 주기' to speak of. */
+internal val ScheduleSnapshot.weekdayOnly: Boolean
+    get() = patterns.isNotEmpty() && patterns.all { it is com.bamnat.core.model.WorkPattern.Weekly }
+
+/** What putting a painted day back is called: the cycle for shift work, the usual weekdays for 일근, 지우기 without a pattern. */
+internal val ScheduleSnapshot.backWord: String
+    get() = when {
+        !hasPattern -> "지우기"
+        weekdayOnly -> "평소대로"
+        else -> "근무 주기대로"
+    }
