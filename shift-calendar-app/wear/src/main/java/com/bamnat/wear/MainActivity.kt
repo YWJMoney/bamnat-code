@@ -39,6 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.rotary.onRotaryScrollEvent
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -91,12 +94,19 @@ private fun WatchApp() {
         scope.launch { noPhone = runCatching { !WatchStore.refresh(context) }.getOrDefault(false); refreshing = false }
     }
     LaunchedEffect(Unit) { refresh() }
+    // 1.38 [LEDH-14] 워치로 돈 적기 opens over the pages from 오늘's button and goes back after sending.
+    var writing by remember { mutableStateOf(false) }
     val pager = rememberPagerState(pageCount = { 3 })
+    val shown = payload
+    if (writing && shown != null) {
+        MoneyPage(shown, onDone = { writing = false })
+        return
+    }
     HorizontalPager(pager, Modifier.fillMaxSize().background(Color.Black)) { page ->
         val p = payload
         when {
             p == null -> Empty(refreshing, noPhone, ::refresh)
-            page == 0 -> TodayPage(p, refreshing, ::refresh)
+            page == 0 -> TodayPage(p, refreshing, ::refresh, onMoney = { writing = true })
             page == 1 -> WeekPage(p)
             else -> MonthPage(p)
         }
@@ -148,7 +158,7 @@ private fun rememberMinute(): LocalDateTime {
 }
 
 @Composable
-private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Unit) {
+private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Unit, onMoney: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val now = rememberMinute()
@@ -180,6 +190,11 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
             Button(onClick = { scope.launch { WatchStore.send(context, WatchDays.CLOCK_PATH, if (out) "out" else "in") } },
                 colors = ButtonDefaults.buttonColors(), modifier = Modifier.fillMaxWidth(),
                 label = { Text(if (out) "퇴근 적기" else "출근 적기", fontSize = 13.sp) })
+        }
+        // 1.38 [LEDH-14] 워치로 돈 적기.
+        item {
+            Button(onClick = onMoney, colors = ButtonDefaults.filledTonalButtonColors(), modifier = Modifier.fillMaxWidth(),
+                label = { Text("돈 적기", fontSize = 13.sp) })
         }
         // [WEAR-06] 1.31: the phone's alarm can show here only with the notification permission.
         if (p.ringOnWatch && !notificationsOn(context)) item {
@@ -267,3 +282,53 @@ private fun MonthPage(p: WatchPayload) {
 }
 
 
+
+/**
+ * 1.38 [LEDH-14] 워치로 돈 적기: the amount by ± 1천·1만 (or turning the crown), then a category to send it with. The phone writes it
+ * to the main 가계부 as today's spending. Nothing is kept on the watch; with no phone near it says so and nothing is lost on the phone.
+ */
+@Composable
+private fun MoneyPage(p: WatchPayload, onDone: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var amount by remember { mutableStateOf(0L) }
+    var note by remember { mutableStateOf<String?>(null) }
+    val categories = p.moneyCategories.ifEmpty { com.bamnat.core.work.WatchMoney.FALLBACK }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    androidx.activity.compose.BackHandler { onDone() }
+    ScalingLazyColumn(
+        Modifier.fillMaxSize().background(Color.Black)
+            .onRotaryScrollEvent { e -> amount = (amount + (if (e.verticalScrollPixels > 0) 1_000L else -1_000L)).coerceIn(0, com.bamnat.core.work.WatchMoney.MAX_AMOUNT); true }
+            .focusRequester(focus).focusable(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        item { Text("돈 적기 · 오늘", fontSize = 12.sp, color = Color(0xFF9AA3B5)) }
+        item { Text(String.format(java.util.Locale.KOREA, "%,d원", amount), fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                com.bamnat.core.work.WatchMoney.STEPS.forEach { step ->
+                    CompactButton(onClick = { amount = (amount - step).coerceAtLeast(0) }, label = { Text("−${step / 1000}천".replace("10천", "1만"), fontSize = 11.sp) })
+                    CompactButton(onClick = { amount = (amount + step).coerceAtMost(com.bamnat.core.work.WatchMoney.MAX_AMOUNT) },
+                        label = { Text("+${step / 1000}천".replace("10천", "1만"), fontSize = 11.sp) })
+                }
+            }
+        }
+        note?.let { n -> item { Text(n, fontSize = 12.sp, color = Color(0xFFFFC266), textAlign = TextAlign.Center) } }
+        items(categories) { cat ->
+            Button(
+                onClick = {
+                    val line = com.bamnat.core.work.WatchMoney.Line(java.util.UUID.randomUUID().toString(), amount, cat, System.currentTimeMillis())
+                    scope.launch {
+                        val sent = runCatching { WatchStore.send(context, WatchDays.MONEY_PATH, com.bamnat.core.work.WatchMoney.encode(line)) }.getOrDefault(false)
+                        if (sent) onDone() else note = "휴대폰과 연결되어 있지 않아 못 보냈어요"
+                    }
+                },
+                enabled = amount > 0, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.filledTonalButtonColors(),
+                label = { Text(cat, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            )
+        }
+        item { Text("금액을 맞춘 뒤 분류를 누르면 휴대폰 가계부에 적혀요", fontSize = 10.sp, color = Color(0xFF6E7687), textAlign = TextAlign.Center) }
+        item { CompactButton(onClick = onDone, label = { Text("닫기", fontSize = 11.sp) }) }
+    }
+}

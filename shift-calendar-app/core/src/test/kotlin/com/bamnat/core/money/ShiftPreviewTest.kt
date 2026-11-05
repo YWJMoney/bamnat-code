@@ -39,3 +39,21 @@ class ShiftPreviewTest {
         assertEquals(today.plusDays(4), r.second.day)
     }
 }
+
+/** 1.38 [LEDH-14] 워치로 돈 적기: the line and the categories go through their text and back. */
+class WatchMoneyTest {
+    @Test fun aLineGoesThroughAndBadOnesAreDropped() {
+        val l = com.bamnat.core.work.WatchMoney.Line("a1-b2", 8_000, "식비", 1_700_000_000_000)
+        assertEquals(l, com.bamnat.core.work.WatchMoney.decode(com.bamnat.core.work.WatchMoney.encode(l)))
+        assertNull(com.bamnat.core.work.WatchMoney.decode("x\t0\t식비\t1"))
+        assertNull(com.bamnat.core.work.WatchMoney.decode("x\t99999999999\t식비\t1"))
+        assertNull(com.bamnat.core.work.WatchMoney.decode("garbage"))
+    }
+
+    @Test fun categoriesRideInThePayloadAndOldPayloadsReadWithout() {
+        val p = com.bamnat.core.work.WatchPayload(emptyList(), LocalDateTime.of(2026, 11, 5, 9, 0), moneyCategories = listOf("식비", "카페"))
+        assertEquals(listOf("식비", "카페"), com.bamnat.core.work.WatchDays.decode(com.bamnat.core.work.WatchDays.encode(p))!!.moneyCategories)
+        val old = com.bamnat.core.work.WatchDays.encode(p.copy(moneyCategories = emptyList())).lines().first().split('\t').take(12).joinToString("\t")
+        assertEquals(emptyList<String>(), com.bamnat.core.work.WatchDays.decode(old)!!.moneyCategories)
+    }
+}
