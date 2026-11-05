@@ -14,15 +14,9 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.verticalScroll
 import com.bamnat.app.ui.components.AlertDialog
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material3.AlertDialogDefaults
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -112,11 +106,10 @@ fun TimeRangeDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-          val scroll = rememberScrollState()
-          // [TIME-03] With large text the chips can sit below the window's edge: a fading edge and an arrow say there
-          // is more below (PC cf5ee1c6).
-          Box {
-            Column(Modifier.verticalScroll(scroll)) {
+          // [TIME-03] With large text the chips can sit below the window's edge: "아래 더 있음" says there is more below
+          // (PC cf5ee1c6), on its own line under the body so it no longer covers the ± buttons (1.37 LOW).
+          ScrollMoreColumn {
+            Column {
                 note?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 8.dp))
@@ -204,15 +197,6 @@ fun TimeRangeDialog(
                             for (t in presets) AssistChip(onClick = { setTime(t) }, label = { Text(clock(t)) })
                         }
                     }
-                }
-            }
-            if (scroll.canScrollForward) {
-                Box(
-                    Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(28.dp)
-                        .background(Brush.verticalGradient(listOf(Color.Transparent, AlertDialogDefaults.containerColor))),
-                    contentAlignment = Alignment.BottomCenter,
-                ) {
-                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
           }

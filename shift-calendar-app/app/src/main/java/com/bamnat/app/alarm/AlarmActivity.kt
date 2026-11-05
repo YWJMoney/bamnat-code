@@ -178,12 +178,33 @@ class AlarmActivity : ComponentActivity() {
                         },
                         hint = AlarmButtons.hint(buttons, mission != AlarmMission.NONE),
                         inCall = inCall,
+                        shift = ringShift(current, Today.date()),
+                        // [EASE-19] With a mission 끄기 opens the mission, so the shortcut is left out.
+                        onToday = if (mission == AlarmMission.NONE) ({ dismissAndOpenToday() }) else null,
                     )
                 }
               }
               }
             }
         }
+    }
+
+    /**
+     * [EASE-19] 끄고 오늘 보기: the alarm off, then the app on today. Over the lock screen the phone asks to unlock first
+     * (this screen stays until then); if the user backs out of that, the alarm keeps ringing here to be turned off.
+     */
+    private fun dismissAndOpenToday() {
+        val open = {
+            AlarmService.dismiss(this)
+            runCatching { startActivity(com.bamnat.app.NoticeLinks.intent(this, com.bamnat.app.NoticeLinks.Target.TODAY)) }
+            Unit
+        }
+        val keyguard = getSystemService(android.app.KeyguardManager::class.java)
+        if (keyguard?.isKeyguardLocked == true) {
+            keyguard.requestDismissKeyguard(this, object : android.app.KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() { open() }
+            })
+        } else open()
     }
 
     companion object {
