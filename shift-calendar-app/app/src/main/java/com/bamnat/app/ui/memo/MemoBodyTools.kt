@@ -49,7 +49,7 @@ internal class MemoBodyTools {
     var owner: Any? = null
 
     /** [MPH-01] Puts a photo in where the caret of the field typed in last is; null when no field was typed in (it goes at the end). */
-    var insertPhoto: ((String) -> Unit)? = null
+    var insertPhoto: ((List<String>) -> Unit)? = null
 
     /** [MPH-07] Puts a new 자유 판 in where the caret of the field typed in last is. */
     var insertBoard: (() -> Unit)? = null
