@@ -35,6 +35,9 @@ export const GOALS = { theme: 68, "tab:calendar": 20, "tab:pay": 20, "tab:money"
 export const SETS = {
   136: { dir: DIR, out: OUT, batch: BATCH, minApp: MIN_APP, goals: GOALS },
   138: { dir: join(ROOT, "market-138"), out: join(ROOT, "market-138.json"), batch: "1.38 가계부 틀", minApp: 52, goals: { "tab:money": 4 } },
+  // 1.38 [STM-07] 스튜디오 재료(밤낮 색 아이콘·배경)로 만든 테마 100·기능별 300 (docs/recipes/market-138-studio/make).
+  "138s": { dir: join(ROOT, "market-138-studio"), out: join(ROOT, "market-138-studio.json"), batch: "1.38 스튜디오 작품", minApp: 52,
+    goals: { theme: 100, "tab:calendar": 50, "tab:memo": 50, "tab:money": 50, "tab:pay": 40, "tab:widget": 35, "tab:alarm": 25, part: 30, logic: 20 } },
 };
 
 export function sectionKey(text) {
@@ -102,7 +105,7 @@ async function post(base, entries) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const args = process.argv.slice(2);
   const set = SETS[args.includes("--set") ? args[args.indexOf("--set") + 1] : 136];
-  if (!set) throw new Error("--set 은 136 또는 138이에요");
+  if (!set) throw new Error("--set 은 136, 138, 138s 중 하나예요");
   const { entries, refused, count, short } = await build(readWorks(set.dir), set);
   console.log(`작품 ${entries.length}개 · 구간 ${Object.entries(count).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   for (const r of refused) console.log(`거절: ${r}`);
