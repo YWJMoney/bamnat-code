@@ -190,7 +190,8 @@ fun PlazaPhoneSettings() {
         ) {
             Column(Modifier.weight(1f)) {
                 Text("밤낮 소식 알림", style = MaterialTheme.typography.titleSmall)
-                Text("쓰는 규칙이 바뀌거나 보낸 규칙·제안·시세가 채택되거나 신고한 글에 결과가 나오면, 문의 답과 함께 하루에 한 번 모아서 알려 줘요. " +
+                // [TOWN-13] PC 확인 a6cab3c8: what it carries said in full (내 글의 새 답, 팔로우한 분의 새 작품 were not named).
+                Text("광장 내 글에 달린 새 답, 팔로우한 분의 새 작품, 쓰는 규칙이 바뀌거나 보낸 규칙·제안·시세가 채택되거나 신고한 글에 결과가 나오면, 문의 답과 함께 하루에 한 번 모아서 알려 줘요. " +
                     "켜 두어도 광고는 오지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

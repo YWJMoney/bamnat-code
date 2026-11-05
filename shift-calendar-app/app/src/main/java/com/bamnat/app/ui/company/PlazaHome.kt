@@ -200,11 +200,12 @@ class PlazaHomeViewModel(
         _state.value = _state.value.copy(talk = t, error = null)
     }
 
-    fun openTalk() {
+    /** [focus]: the post tapped on the card (PC 확인 a6cab3c8: 미리보기를 눌러도 반응이 없어요), scrolled to and marked. */
+    fun openTalk(focus: String? = null) {
         val p = _plan.value
         val room = p.room ?: return
         markSeen()
-        talk.show(room, StylePlaza.ROOM, p.title, hint = p.hint, note = p.note)
+        talk.show(room, StylePlaza.ROOM, p.title, hint = p.hint, note = p.note, focus = focus)
     }
 
     /**
@@ -298,7 +299,7 @@ fun PlazaHomeScreen(
                         }
                     }
                 }
-                TalkCard(plan, state, seen = vm.seen.collectAsStateWithLifecycle().value, onOpen = vm::openTalk)
+                TalkCard(plan, state, seen = vm.seen.collectAsStateWithLifecycle().value, onOpen = { vm.openTalk() }, onPost = { vm.openTalk(it) })
                 (plan.alsoRoom ?: vm.backRoom.takeIf { plan.top != StylePlaza.Top.COMPANY_ROOM })?.let {
                     OutlinedButton(onClick = vm::across, modifier = Modifier.fillMaxWidth()) {
                         Text(if (plan.top == StylePlaza.Top.COMPANY_ROOM) "${styleName(it)}도 보기" else "회사 정보 광장으로")
@@ -380,7 +381,7 @@ private fun FixesCard(state: PlazaHomeViewModel.State, onCompany: () -> Unit, on
 
 /** 자유 토의: the newest few posts, and the sheet to read and write them all. */
 @Composable
-private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, seen: Long = 0L, onOpen: () -> Unit) {
+private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, seen: Long = 0L, onOpen: () -> Unit, onPost: (String) -> Unit = { onOpen() }) {
     SoftCard(highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(plan.roomTitle.ifEmpty { "자유 토의" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
@@ -403,7 +404,8 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
                 talk.posts.isEmpty() -> Text("아직 글이 없어요. 처음 이야기를 꺼내 주세요.", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> talk.posts.filter { it.parent == null && it.hidden == null }.takeLast(3).reversed().forEach { p ->
-                    Column {
+                    // [TOWN-13] PC 확인 a6cab3c8: the preview opens the talk at that post.
+                    Column(Modifier.fillMaxWidth().clickable(onClickLabel = "이 글 보기") { onPost(p.id) }.heightIn(min = 48.dp)) {
                         // 1.36 [VIL-10] PC 확인 V7: a question with a poll says so on the card.
                         val tag = when { p.poll != null -> "📊 투표 · "; p.kind == "question" -> "질문 · "; else -> "" }
                         Text(tag + if (p.mine) "나 (${p.nick ?: "참여자 ${p.who}"})" else p.nick ?: "참여자 ${p.who}", style = MaterialTheme.typography.labelLarge)

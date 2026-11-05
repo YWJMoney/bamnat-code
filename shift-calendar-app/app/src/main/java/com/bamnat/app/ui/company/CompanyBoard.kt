@@ -492,7 +492,9 @@ fun TalkSheet(holder: TalkHolder) {
                         if (only == NIGHT) awakeNow(talk.posts).takeIf { it > 0 }?.let { n ->
                             Text("지난 3시간 동안 이야기한 분 ${n}명이 깨어 있어요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         }
+                        // [TOWN-13] PC 확인 a6cab3c8 (자유 토의가 오래된 글부터라 새 글을 보려면 맨 아래까지 내려요): a room's newest first, like its card.
                         val tops = allTops.filter { only == null || it.kind == only || (only == NIGHT && nightPost(it)) }
+                            .let { if (o.room) it.asReversed() else it }
                         if (tops.isEmpty()) Text("이 꼬리표의 글이 아직 없어요", style = MaterialTheme.typography.bodyMedium)
                         tops.forEach { p -> androidx.compose.runtime.key(p.id) {
                             // 1.36 [VIL-06] PC 확인: opened for one post (찾기·내 글), it is scrolled to and marked.
