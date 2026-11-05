@@ -59,6 +59,32 @@ object TeamCheck {
         return out.sortedWith(compareBy({ it.date }, { it.kind }))
     }
 
+    /** One line of the 확인할 것 card: [count] signs of one kind told at once, the dangerous kinds first. */
+    data class Line(val kind: Kind, val text: String, val count: Int, val first: LocalDate)
+
+    /** Danger first: 규칙(역순·11시간·연속) and 주 52시간 are the leader's to fix; 부족 next; 책임자 없음 last, as one line. */
+    val ORDER = listOf(Kind.RULE, Kind.WEEK_HOURS, Kind.SHORT, Kind.NO_CHARGE)
+
+    /**
+     * 1.38 PC 1차 (58 signs, most of them 책임자 없음, hid the N→D): the card's lines. Each RULE and WEEK_HOURS sign keeps its own line;
+     * SHORT and NO_CHARGE are told once each, with how many and the first days ("책임자 없는 근무 32번 · 1일 N, 2일 D …").
+     */
+    fun summary(signs: List<Sign>, dayWords: (LocalDate) -> String = { "${it.dayOfMonth}일" }): List<Line> {
+        val byKind = signs.groupBy { it.kind }
+        return ORDER.flatMap { k ->
+            val list = byKind[k].orEmpty().sortedBy { it.date }
+            when {
+                list.isEmpty() -> emptyList()
+                k == Kind.RULE || k == Kind.WEEK_HOURS -> list.map { Line(k, "${dayWords(it.date)} ${it.text}", 1, it.date) }
+                else -> {
+                    val head = if (k == Kind.SHORT) "인원이 모자란 날 ${list.map { it.date }.distinct().size}일" else "책임자 없는 근무 ${list.size}번"
+                    val some = list.take(4).joinToString(", ") { "${dayWords(it.date)} ${it.text.removeSuffix(" 책임자 없음")}" }
+                    listOf(Line(k, "$head · $some" + if (list.size > 4) " …" else "", list.size, list.first().date))
+                }
+            }
+        }
+    }
+
     /** [TEAM-17] 공정성 표 (설계 L2 C): each member's 야간·주말·공휴일 근무와 쉬는 날 in the month. */
     data class Fair(val member: TeamMember, val nights: Int, val weekends: Int, val holidays: Int, val offs: Int, val minutes: Int)
 

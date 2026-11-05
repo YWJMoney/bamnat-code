@@ -155,7 +155,7 @@ data class Ledger(val workplace: Workplace, val month: YearMonth, val lines: Lis
     /** The line above the ledger for a place under 5 people, or one not answered yet. */
     val note: String? get() = when (workplace.fivePlus) {
         false -> "5인 미만 사업장: 연장·야간·휴일 가산 없이 계산했어요(근로기준법 제11조)"
-        null -> "5인 이상인지 아직 몰라요. 5인 이상으로 보고 가산을 넣었어요. 사업장 설정에서 한 번만 골라 주세요"
+        null -> "5인 이상인지 아직 몰라요. 그때까지는 덜 주지 않게 가산을 넣어 계산했어요. 아래에서 한 번만 골라 주세요"
         true -> null
     }
 }
@@ -215,7 +215,8 @@ object PayrollLedger {
         val days = (1..month.lengthOfMonth()).map { r.resolve(month.atDay(it)) }.filter { s.employedOn(it.date) }
         val worked = pay?.minutes.orEmpty()
         val workDays = days.count { it.isWorkDay || it.extras.isNotEmpty() }
-        val workMinutes = pay?.lines?.filter { it.kind == LineKind.BASE || it.kind == LineKind.EXTRA_HOURS }?.sumOf { it.minutes }
+        // 1.38 PC 1차: hours worked on a 휴일 are hours worked too (10월 22일 근무가 160시간으로 보이고 지난달 비교가 거꾸로 말하던 것).
+        val workMinutes = pay?.lines?.filter { it.kind == LineKind.BASE || it.kind == LineKind.EXTRA_HOURS || it.kind == LineKind.HOLIDAY }?.sumOf { it.minutes }
             ?.takeIf { it > 0 } ?: days.sumOf { it.scheduledMinutes + it.extras.sumOf { e -> e.minutes } }
         fun minutesOf(kind: LineKind) = pay?.lines?.filter { it.kind == kind }?.sumOf { it.minutes } ?: 0
         val gross = pay?.total ?: 0

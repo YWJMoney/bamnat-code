@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -155,7 +156,10 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
     var name by rememberSaveable { mutableStateOf("") }
     var names by rememberSaveable { mutableStateOf("") }
     val people = remember(names) { TeamPaste.people(names) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("팀 만들기") }, text = {
+    // 1.38 PC 1차 (ESC·뒤로에 명단이 사라짐): with something typed, a tap outside or 뒤로 does not close it; 닫기 does.
+    val typed = name.isNotBlank() || names.isNotBlank()
+    AlertDialog(onDismissRequest = { if (!typed) onDismiss() }, properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = !typed, dismissOnClickOutside = !typed),
+        title = { Text("팀 만들기") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(name, { name = it.take(20) }, label = { Text("팀 이름 (예: 3병동)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(names, { names = it.take(3000) }, label = { Text("팀원 이름, 한 줄에 한 명") }, minLines = 4, modifier = Modifier.fillMaxWidth())
@@ -200,6 +204,12 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
     var board by remember(team.id, month) { mutableStateOf<TeamBoard?>(null) }
     LaunchedEffect(saved) { val s = saved ?: return@LaunchedEffect; if (editor == null || board?.members != s.members) { editor = TeamEditor(board?.let { now -> val ids = s.members.map { it.id }.toSet(); now.copy(members = s.members, cells = now.cells.filterKeys { it.first in ids }) } ?: s); board = editor!!.board } }
     LaunchedEffect(board) { val b = board ?: return@LaunchedEffect; if (b != saved) { delay(400); store.saveBoard(team.id, b) } }
+    // 1.38 검토(데이터 보존): leaving within the 400ms wait used to drop the last cells painted; they are written on the way out.
+    val lastBoard by androidx.compose.runtime.rememberUpdatedState(board)
+    val lastSaved by androidx.compose.runtime.rememberUpdatedState(saved)
+    androidx.compose.runtime.DisposableEffect(team.id, month) {
+        onDispose { val b = lastBoard; if (b != null && b != lastSaved) c.appScope.launch { store.saveBoard(team.id, b) } }
+    }
     var member by rememberSaveable(team.id) { mutableStateOf<String?>(null) }
     var cursor by rememberSaveable(team.id, monthText) { mutableStateOf(1) }
     var swapFrom by remember { mutableStateOf<Pair<String, LocalDate>?>(null) }
@@ -208,6 +218,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
     var dialog by remember { mutableStateOf<String?>(null) }
     var planAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var plans by remember { mutableStateOf<List<TeamAuto.Plan>?>(null) }
+    var resent by remember { mutableStateOf<Pair<Int, List<Pair<TeamMember, String>>>?>(null) }
+    var fit by rememberSaveable { mutableStateOf(false) }
     val b = board
     fun change(f: (TeamBoard) -> TeamBoard) { val e = editor ?: return; board = e.apply(f) }
 
@@ -239,31 +251,53 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
                 }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 IconButton(onClick = { monthText = month.plusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
             }
+            // 1.38 검토: the whole month at once (사용자 2026-11-04 "좌우로 스크롤해야 보이는 줄은 펼쳐서 한눈에"), colors only when small.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("${active.size}명 · ${b.days.size}일", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                TextButton(onClick = { fit = !fit }) { Text(if (fit) "크게 보기" else "한 달 한눈에") }
+            }
+            val screen = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+            val cellDp = if (fit) ((screen - 24 - 64) / b.days.size).coerceIn(9, CELL) else CELL
+            val small = cellDp < 22
             // The grid: names fixed on the left, days to the side; the marked cell is outlined.
             Row {
                 Column {
-                    Spacer(Modifier.heightIn(min = 28.dp))
+                    // As tall as the date head (two lines and the mark row, or one small line).
+                    Spacer(Modifier.height(if (small) 15.dp else 36.dp))
                     active.forEach { m ->
                         Text(m.name + if (m.skill == Skill.CHARGE) "★" else "", maxLines = 1, style = MaterialTheme.typography.bodySmall,
                             fontWeight = if (m.id == current?.id) FontWeight.Bold else null,
-                            modifier = Modifier.width(64.dp).heightIn(min = CELL.dp).clickable { member = m.id }.padding(top = 9.dp))
+                            modifier = Modifier.width(64.dp).height(cellDp.dp).clickable { member = m.id }.padding(top = if (small) 0.dp else 9.dp))
                     }
-                    Text("인원", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp).padding(top = 6.dp))
+                    if (!small) Text("인원", style = MaterialTheme.typography.labelSmall, modifier = Modifier.width(64.dp).padding(top = 6.dp))
                 }
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                Row(if (fit) Modifier else Modifier.horizontalScroll(rememberScrollState())) {
                     b.days.forEach { d ->
                         val short = daySigns[d].orEmpty()
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("${d.dayOfMonth}\n${Fmt.dayOfWeekShort(d.dayOfWeek)}", style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
-                                color = if (short.isNotEmpty()) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.width(CELL.dp).clickable(enabled = short.isNotEmpty()) { dialog = short.joinToString("\n") { "${Fmt.monthDay(d)} ${it.text}" } })
+                            // 1.38 PC 1차 (날짜 머리가 모두 빨간색): the weekday's own color; a day short of people gets an amber mark under it,
+                            // 책임자 없음 only a small dot, so the header says the danger and not every note.
+                            val lack = short.any { it.kind == TeamCheck.Kind.SHORT }
+                            val dayColor = when (d.dayOfWeek) {
+                                java.time.DayOfWeek.SUNDAY -> MaterialTheme.colorScheme.error
+                                java.time.DayOfWeek.SATURDAY -> Color(0xFF3D6FD6)
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                            Text(if (small) "${d.dayOfMonth}" else "${d.dayOfMonth}\n${Fmt.dayOfWeekShort(d.dayOfWeek)}", style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
+                                color = dayColor, fontSize = if (small) 8.sp else androidx.compose.ui.unit.TextUnit.Unspecified, maxLines = if (small) 1 else 2,
+                                modifier = Modifier.width(cellDp.dp)
+                                    .background(if (lack) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning.copy(alpha = 0.22f) else Color.Transparent, RoundedCornerShape(4.dp))
+                                    .clickable(enabled = short.isNotEmpty()) { dialog = short.joinToString("\n") { "${Fmt.monthDay(d)} ${it.text}" } })
+                            Box(Modifier.width(cellDp.dp).height(4.dp), contentAlignment = Alignment.Center) {
+                                if (short.isNotEmpty() && !lack) Box(Modifier.size(3.dp).background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp)))
+                            }
                             active.forEach { m ->
                                 val cell = b.cell(m.id, d)
                                 val t = cell?.shiftId?.let(types::get)
                                 val marked = m.id == current?.id && d.dayOfMonth == cursor
                                 val warn = cellSigns[m.id to d]
                                 val changed = state.state == MonthState.CONFIRMED && was[m.id to d] != cell?.shiftId
-                                Box(Modifier.size(CELL.dp).padding(1.dp)
+                                Box(Modifier.size(cellDp.dp).padding(if (small) 0.5.dp else 1.dp)
                                     .background(t?.let { Color(it.colorArgb).copy(alpha = 0.85f) } ?: MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
                                     .then(if (marked) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
                                         else if (warn != null) Modifier.border(2.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(4.dp)) else Modifier)
@@ -277,15 +311,15 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
                                     }
                                     .semantics { contentDescription = "${m.name} ${Fmt.monthDay(d)} ${t?.name ?: "빈칸"}" + (wishAt[m.id to d]?.let { ", 희망 ${it.kind.label}" } ?: "") },
                                     contentAlignment = Alignment.Center) {
-                                    Text(t?.label ?: (if (wishAt[m.id to d] != null) "♡" else ""), color = if (t != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    if (!small) Text(t?.label ?: (if (wishAt[m.id to d] != null) "♡" else ""), color = if (t != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 13.sp, fontWeight = FontWeight.Bold)
                                     if (cell?.locked == true) Icon(Icons.Outlined.Lock, null, Modifier.size(9.dp).align(Alignment.TopEnd), tint = Color.White)
                                     if (changed) Box(Modifier.size(6.dp).align(Alignment.BottomEnd).background(MaterialTheme.colorScheme.tertiary, RoundedCornerShape(3.dp)))
                                 }
                             }
                             val count = b.count(d)
-                            Text(team.shifts.filter { !it.isOff }.joinToString("\n") { "${it.label}${count[it.id] ?: 0}" }, style = MaterialTheme.typography.labelSmall,
-                                textAlign = TextAlign.Center, modifier = Modifier.width(CELL.dp))
+                            if (!small) Text(team.shifts.filter { !it.isOff }.joinToString("\n") { "${it.label}${count[it.id] ?: 0}" }, style = MaterialTheme.typography.labelSmall,
+                                textAlign = TextAlign.Center, modifier = Modifier.width(cellDp.dp))
                         }
                     }
                 }
@@ -294,8 +328,16 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
                 swapping = swapFrom != null, onSwap = { swapFrom = if (swapFrom == null) current.id to month.atDay(cursor) else null })
             if (swapFrom != null) Text("${Fmt.monthDay(swapFrom!!.second)} 같은 날 다른 사람 칸을 누르면 맞바꿔요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             if (signs.isNotEmpty()) SectionCard(title = "확인할 것 ${signs.size}") {
-                signs.take(8).forEach { Text("${Fmt.monthDay(it.date)} ${it.text}", style = MaterialTheme.typography.bodySmall) }
-                if (signs.size > 8) Text("…외 ${signs.size - 8}개", style = MaterialTheme.typography.bodySmall)
+                // 1.38 PC 1차: danger first, 부족·책임자 없음 one line each, so an N→D is never under 50 notes.
+                val lines = remember(signs) { TeamCheck.summary(signs) { Fmt.monthDay(it) } }
+                var all by remember { mutableStateOf(false) }
+                lines.take(if (all) lines.size else 6).forEach { l ->
+                    val danger = l.kind == TeamCheck.Kind.RULE || l.kind == TeamCheck.Kind.WEEK_HOURS
+                    Text((if (danger) "⚠ " else "· ") + l.text, style = MaterialTheme.typography.bodySmall,
+                        color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                        fontWeight = if (danger) FontWeight.Medium else null)
+                }
+                if (lines.size > 6) TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "나머지 ${lines.size - 6}줄 더 보기") }
                 Text("알림이에요. 그대로 확정해도 돼요. 기준은 설정 › 근무표 점검 기준과 같아요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             // The month's tools.
@@ -326,7 +368,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
                     if (need.verdict == com.bamnat.core.tier.WorkPlanRules.Verdict.FREE) store.keepFreeMonth(month)
                     val made = runCatching { links(c, team, b, active) }
                     busy = null
-                    made.onSuccess { linksFor = it }.onFailure { dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + "링크는 인터넷이 될 때 다시 눌러 주세요." }
+                    // 1.38 PC 1차: after 다시 확정 the links are the same ones, only their days changed: say so, and offer to send anyway.
+                    made.onSuccess { l -> if (state.state == MonthState.CONFIRMED && !again) resent = m.version to l else linksFor = l }.onFailure { dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + "링크는 인터넷이 될 때 다시 눌러 주세요." }
                 }
             }, enabled = busy == null, modifier = Modifier.fillMaxWidth()) {
                 Text(when {
@@ -365,6 +408,12 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
             }
         }, confirmButton = { TextButton(onClick = { plans = null }) { Text("닫기") } })
+    }
+    resent?.let { (v, list) ->
+        AlertDialog(onDismissRequest = { resent = null }, title = { Text("${v}판으로 다시 확정했어요") }, text = {
+            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 다시 보낼 필요는 없어요. 바뀐 걸 알려 주고 싶으면 보내도 돼요.", style = MaterialTheme.typography.bodyMedium)
+        }, confirmButton = { TextButton(onClick = { resent = null }) { Text("알겠어요") } },
+            dismissButton = { TextButton(onClick = { resent = null; linksFor = list }) { Text("그래도 알리기") } })
     }
     linksFor?.let { list ->
         AlertDialog(onDismissRequest = { linksFor = null }, title = { Text("팀원 링크") }, text = {
@@ -522,6 +571,18 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
     val store = LocalContext.current.appContainer.phaseThree
     val scope = rememberCoroutineScope()
     var add by rememberSaveable { mutableStateOf("") }
+    // 1.38 검토(데이터 보존): taking someone out deletes their days in every month, confirmed ones too; ask first and offer 쉼, which keeps them.
+    var removing by remember { mutableStateOf<TeamMember?>(null) }
+    removing?.let { m ->
+        AlertDialog(onDismissRequest = { removing = null }, title = { Text("${m.name} 빼기") }, text = {
+            Text("빼면 ${m.name}의 칠한 칸이 지난달·확정한 달까지 모두 지워져요. 그만두거나 쉬는 거라면 '쉼'으로 두면 지난 근무표가 그대로 남아요.",
+                style = MaterialTheme.typography.bodyMedium)
+        }, confirmButton = {
+            TextButton(onClick = { scope.launch { store.saveMembers(listOf(m.copy(active = false))) }; removing = null }) { Text("쉼으로 두기") }
+        }, dismissButton = {
+            TextButton(onClick = { scope.launch { store.removeMember(m.id) }; removing = null }) { Text("그래도 지우기", color = MaterialTheme.colorScheme.error) }
+        })
+    }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("팀원 ${members.count { it.active }}명") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             members.forEach { m ->
@@ -530,7 +591,7 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
                     FilterChip(selected = m.skill == Skill.CHARGE, onClick = { scope.launch { store.saveMembers(listOf(m.copy(skill = if (m.skill == Skill.CHARGE) Skill.REG else Skill.CHARGE))) } },
                         label = { Text("책임") })
                     TextButton(onClick = { scope.launch { store.saveMembers(listOf(m.copy(active = !m.active))) } }) { Text(if (m.active) "쉼" else "복귀") }
-                    TextButton(onClick = { scope.launch { store.removeMember(m.id) } }) { Text("빼기") }
+                    TextButton(onClick = { removing = m }) { Text("빼기") }
                 }
             }
             OutlinedTextField(add, { add = it.take(1000) }, label = { Text("더할 이름 (한 줄에 한 명)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
