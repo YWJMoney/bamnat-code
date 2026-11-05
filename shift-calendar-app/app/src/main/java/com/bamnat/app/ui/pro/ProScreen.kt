@@ -112,10 +112,6 @@ val PRO_PILLARS = listOf(
             // [PRF-12] 1.36 창작자 꾸미기.
             "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프"),
         setOf(Feature.THEME_WARDROBE, Feature.CREATOR_PRO)),
-    // 1.38 [GROW-06] Phase 3: one team and three staff stay free; 팀원 always free.
-    Pillar("팀장님·사장님",
-        listOf("팀 근무표를 여러 팀으로, 빈칸은 규칙·희망 휴무를 지키며 자동 채우기", "급여 대장·임금명세서를 직원 네 명부터"),
-        setOf(Feature.TEAM_ROSTER, Feature.BOSS_STAFF)),
 )
 
 /**

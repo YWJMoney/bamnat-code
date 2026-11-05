@@ -136,14 +136,22 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                 Hint(r.why)
             }
         }
-        // [GROW-06] 3 staff free, as SHOP-11; a fourth and more with 프로. Staff already in always stay.
+        // 1.38 Phase 3 요금: 3 staff are the free taste; from the fourth the 직원 요금제 band that holds them. Staff already in always stay
+        // and their pay is worked out and exported as before, plan or not.
         val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
-        val config by context.appContainer.remoteConfig.config.collectAsStateWithLifecycle()
-        val needPro = staff.size >= config.freeStaff && gate.locked(com.bamnat.app.tier.Feature.BOSS_STAFF)
+        val next = gate.staff(staff.size + 1)
+        var ask by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
         OutlinedButton(onClick = {
-            if (needPro && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.BOSS_STAFF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.BOSS_STAFF); return@OutlinedButton }
+            if (!next.allowed) { ask = next; return@OutlinedButton }
             editing = StaffMember(UUID.randomUUID().toString(), "", base = RateTable.on(ym.atDay(1)).minimumHourlyWage)
-        }, enabled = !isClosed && staff.size < 60) { Text(if (needPro) "직원 더하기 (${config.freeStaff + 1}명부터 프로)" else "직원 더하기") }
+        }, enabled = !isClosed) { Text("직원 더하기") }
+        val hold = gate.hold(com.bamnat.core.tier.WorkPlanKind.STAFF)
+        if (gate.live) Hint(when {
+            hold != null && hold.cap < Int.MAX_VALUE -> "직원 요금제 ${hold.cap}명 구간 · 지금 ${staff.size}명"
+            hold != null -> "직원 ${staff.size}명"
+            else -> "직원 ${gate.plans.freeStaff}명까지 무료예요 · 지금 ${staff.size}명"
+        })
+        ask?.let { com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.STAFF, it, onDismiss = { ask = null }) }
 
         if (ledger.lines.isNotEmpty()) SectionCard(title = "이번 달 마무리") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

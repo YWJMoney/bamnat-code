@@ -100,7 +100,7 @@ class AppContainer(context: Context) {
     })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     /** 1.38 [P3-01] Phase 3: 리더 팀 근무표와 사업장 급여 대장 (DB 27), used only while their flags are on. */
-    val phaseThree = com.bamnat.app.data.PhaseThreeStore(database)
+    val phaseThree = com.bamnat.app.data.PhaseThreeStore(database).also { it.prefsOf = { appContext.getSharedPreferences("work_plans", android.content.Context.MODE_PRIVATE) } }
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
     val consentStore by lazy { com.bamnat.app.data.ConsentStore(appContext) }
     /** [ALRM-04] 증명 사진's reference fingerprints. */
@@ -563,7 +563,8 @@ class AppContainer(context: Context) {
     private val playBilling by lazy {
         com.bamnat.app.billing.PlayBilling(appContext, proStore, api = { tierApi },
             device = { companyStore.device }, scope = appScope, log = { runCatching { telemetry.event("billing", it) } },
-            onBought = { trial -> proMoments.welcome(true); telemetry.event(if (trial) com.bamnat.core.stats.UsageEvent.TRIAL_START.key else com.bamnat.core.stats.UsageEvent.SUBSCRIBE.key) })
+            onBought = { trial -> proMoments.welcome(true); telemetry.event(if (trial) com.bamnat.core.stats.UsageEvent.TRIAL_START.key else com.bamnat.core.stats.UsageEvent.SUBSCRIBE.key) },
+            workPlans = { remoteConfig.current.workPlans })
     }
     // AE 1.26 [INVITE-02][INVITE-03] 친구 초대: built on first use; screenshots and tests put fakes in place of the
     // server, Play's referrer and the phone mark.

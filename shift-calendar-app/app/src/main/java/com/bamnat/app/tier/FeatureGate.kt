@@ -19,8 +19,9 @@ import java.time.ZoneId
 import com.bamnat.core.time.Today
 
 /**
- * [MON-01] Two tiers for sale (결정 3): 무료 and 프로. 리더 is kept for a later 리더 상품 (1.38 GROW-06: Phase 3's extras are 프로
- * until one is set on Play). A '플러스' saved by an older version reads as 프로.
+ * [MON-01] Two tiers for sale (결정 3): 무료 and 프로. 1.38 Phase 3 요금 (사용자 2026-11-05 20:22): 팀·직원 요금제 are not tiers but
+ * bands held beside them ([Gate.holds]); each includes 프로. [LEADER] is the 알람 점검 preview of "every band open". A '플러스' saved by
+ * an older version reads as 프로.
  */
 enum class Tier(val label: String) {
     FREE("무료"),
@@ -78,13 +79,6 @@ enum class Feature(val minTier: Tier, private val ownLabel: String? = null) {
     THEME_WARDROBE(Tier.PRO),
     /** [PRF-12] 1.36 창작자 꾸미기: 프로필 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프. 팔로우·보기는 늘 무료. */
     CREATOR_PRO(Tier.PRO),
-    /**
-     * 1.38 [GROW-06] Phase 3 M24 (결정 P3-D3 추천 B, 방향 논의 2026-11-05 "프로에 포함, 팀원 무료, 팀 1개 무료"): one team with painting,
-     * 바로 검사, 확정과 팀원 링크 is free; a second team and 빈칸 자동 채우기 are 프로. [Tier.LEADER] waits until a 리더 상품 is set on Play.
-     */
-    TEAM_ROSTER(Tier.PRO),
-    /** 1.38 [GROW-06] Phase 3 M25: the 급여 대장 and 명세서 are free for 3 staff, as SHOP-11; a fourth and more is 프로. */
-    BOSS_STAFF(Tier.PRO),
     ;
 
     /** [NXT-03] 1.29 AU: a 프로 feature's name is core's ProFeatures table, the one the server and 진단 use for free.<FEATURE>. */
@@ -109,7 +103,21 @@ data class Gate(
      */
     val leases: com.bamnat.core.tier.FeatureLease.State = com.bamnat.core.tier.FeatureLease.State(),
     val now: Long = 0L,
+    /** 1.38 Phase 3 요금: the band of each 팀·직원 요금제 this phone holds now (an admin phone or the 리더 preview holds every band). */
+    val holds: Map<com.bamnat.core.tier.WorkPlanKind, com.bamnat.core.tier.WorkHold> = emptyMap(),
+    /** 1.38 Phase 3 요금: the bands, prices and free taste the server set. */
+    val plans: com.bamnat.core.tier.WorkPlanTable = com.bamnat.core.tier.WorkPlanTable.DEFAULT,
 ) {
+    fun hold(kind: com.bamnat.core.tier.WorkPlanKind): com.bamnat.core.tier.WorkHold? = holds[kind]
+
+    /** 1.38 Phase 3 요금: may this leader confirm [month] of a team of [members] that has confirmed [confirmed] before. */
+    fun teamConfirm(confirmed: Set<java.time.YearMonth>, month: java.time.YearMonth, members: Int) =
+        com.bamnat.core.tier.WorkPlanRules.teamConfirm(plans, live, hold(com.bamnat.core.tier.WorkPlanKind.TEAM), confirmed, month, members)
+
+    fun moreTeams(teams: Int) = com.bamnat.core.tier.WorkPlanRules.moreTeams(plans, live, hold(com.bamnat.core.tier.WorkPlanKind.TEAM), teams)
+
+    fun staff(count: Int) = com.bamnat.core.tier.WorkPlanRules.staff(plans, live, hold(com.bamnat.core.tier.WorkPlanKind.STAFF), count)
+
     fun allows(feature: Feature): Boolean = !live || feature in free || tier >= feature.minTier || onTrial(feature)
 
     /** [MON-13] 839: the bundle [feature] is in, or null for an always-on 프로 feature (no ad opens it). */
@@ -245,12 +253,19 @@ class FeatureGate(
         // S 1.32 [SECX-01] Before the launch only on an approved admin phone: a user's phone ignores a stored preview.
         if (previewTier != null && (debug || (!live && s.passes?.admin?.approved == true))) {
             val on = previewTier >= Tier.PRO
-            return Gate(live = true, tier = previewTier, access = Access(on, ProReason.PREVIEW), preview = true)
+            val all = if (previewTier == Tier.LEADER) everyBand() else emptyMap()
+            return Gate(live = true, tier = previewTier, access = Access(on, ProReason.PREVIEW), preview = true, holds = all, plans = config.workPlans)
         }
-        val access = ProAccess.resolve(s.sources(config, installedAt(), zone(), live), clock(), zone())
-        return Gate(live = live, tier = if (access.pro) Tier.PRO else Tier.FREE, access = access, free = free)
+        val now = clock()
+        val access = ProAccess.resolve(s.sources(config, installedAt(), zone(), live, now), now, zone())
+        val admin = s.passes?.admin?.takeIf { it.approved && java.time.Duration.between(s.passes.checkedAt, now) < ProAccess.ADMIN_CHECK } != null
+        val holds = if (admin) everyBand() else com.bamnat.core.tier.WorkPlanKind.entries.mapNotNull { k -> s.hold(k, now, config.workPlans)?.let { k to it } }.toMap()
+        return Gate(live = live, tier = if (access.pro) Tier.PRO else Tier.FREE, access = access, free = free, holds = holds, plans = config.workPlans)
     }
 }
+
+/** An admin phone and the 리더 preview: every band, no end. */
+private fun everyBand() = com.bamnat.core.tier.WorkPlanKind.entries.associateWith { com.bamnat.core.tier.WorkHold(Int.MAX_VALUE, null) }
 
 /** [MON-13] How often an open bundle's end is looked for: a changed clock or a long sleep ends it within this. */
 private const val END_CHECK_MS = 60_000L

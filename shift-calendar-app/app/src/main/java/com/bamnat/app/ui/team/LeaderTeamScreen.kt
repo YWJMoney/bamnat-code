@@ -121,17 +121,25 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit) {
                     Text("${members.count { it.active }}명 · 근무 ${t.shifts.count { !it.isOff }}가지", style = MaterialTheme.typography.bodySmall)
                 }
             }
-            // [GROW-06] One team is free; a second is 프로.
+            // 1.38 Phase 3 요금: one team and its first confirmed month are the free taste; more is the 팀 요금제.
             val gate by c.featureGate.state.collectAsStateWithLifecycle()
-            val config by c.remoteConfig.config.collectAsStateWithLifecycle()
-            val more = teams.orEmpty().count { !it.archived } >= config.freeTeams
+            var ask by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
+            var everConfirmed by remember { mutableStateOf<Set<YearMonth>?>(null) }
+            LaunchedEffect(teams) { everConfirmed = store.confirmedMonths() }
             Button(onClick = {
-                if (more && gate.locked(com.bamnat.app.tier.Feature.TEAM_ROSTER) && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.TEAM_ROSTER)) {
-                    com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.TEAM_ROSTER); return@Button
-                }
+                val need = gate.moreTeams(teams.orEmpty().count { !it.archived })
+                if (!need.allowed) { ask = need; return@Button }
                 making = true
-            }) { Text(if (more && gate.locked(com.bamnat.app.tier.Feature.TEAM_ROSTER)) "팀 더 만들기 (프로)" else "팀 만들기") }
-            Text("팀 ${config.freeTeams}개는 무료예요. 팀원은 늘 무료로 링크를 받아요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }) { Text("팀 만들기") }
+            val hold = gate.hold(com.bamnat.core.tier.WorkPlanKind.TEAM)
+            Text(when {
+                !gate.live -> "팀원은 늘 무료로 링크를 받아요."
+                hold != null && hold.cap < Int.MAX_VALUE -> "팀 요금제 ${hold.cap}명 구간을 쓰고 있어요. 팀원은 늘 무료예요."
+                hold != null -> "팀원은 늘 무료로 링크를 받아요."
+                everConfirmed.isNullOrEmpty() -> "팀 하나를 만들어 첫 달 확정까지 무료로 써 볼 수 있어요. 팀원은 늘 무료예요."
+                else -> "무료 맛보기(첫 달 확정)를 썼어요. 다음 달 확정부터 팀 요금제예요. 만든 표는 언제든 보고 내보낼 수 있어요."
+            }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ask?.let { com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.TEAM, it, onDismiss = { ask = null }) }
         }
     }
     if (making) NewTeamDialog(calendarId, onDismiss = { making = false }) { id -> making = false; openId = id }
@@ -198,6 +206,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
     var linksFor by remember { mutableStateOf<List<Pair<TeamMember, String>>?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
     var dialog by remember { mutableStateOf<String?>(null) }
+    var planAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var plans by remember { mutableStateOf<List<TeamAuto.Plan>?>(null) }
     val b = board
     fun change(f: (TeamBoard) -> TeamBoard) { val e = editor ?: return; board = e.apply(f) }
@@ -293,9 +302,11 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedButton(onClick = { scope.launch { val last = store.boardNow(team.id, month.minusMonths(1)); change { TeamCopy.nextMonth(last, it) } } }) { Text("지난달 이어 칠하기") }
                 OutlinedButton(onClick = {
-                    val f = com.bamnat.app.tier.Feature.TEAM_ROSTER
-                    if (c.featureGate.state.value.locked(f) && !com.bamnat.app.ui.pro.tryFeature(f)) { com.bamnat.app.ui.pro.openPro(f); return@OutlinedButton }
-                    plans = TeamAuto.plans(team, b, wishes, rules)
+                    scope.launch {
+                        val need = c.featureGate.state.value.teamConfirm(store.confirmedMonths(), month, active.size)
+                        if (!need.allowed) { planAsk = need; return@launch }
+                        plans = TeamAuto.plans(team, b, wishes, rules)
+                    }
                 }, enabled = b.empty > 0) { Text("빈칸 자동 채우기") }
                 OutlinedButton(onClick = { dialog = "need" }) { Text("근무별 인원") }
                 OutlinedButton(onClick = { dialog = "wish" }) { Text("희망 휴무 ${wishes.size}") }
@@ -305,11 +316,17 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
             val changes = remember(b, was, state) { if (state.state == MonthState.CONFIRMED) b.changesFrom(TeamBoard(month, b.members, was.mapValues { (k, v) -> com.bamnat.core.team.TeamCell(k.first, k.second, v) })) else emptyList() }
             Button(onClick = {
                 scope.launch {
+                    // 1.38 Phase 3 요금: the first confirmed month is free; after it the 팀 요금제 band that holds the team.
+                    val need = c.featureGate.state.value.teamConfirm(store.confirmedMonths(), month, active.size)
+                    if (!need.allowed) { planAsk = need; return@launch }
                     busy = "링크를 만들고 있어요…"
-                    val m = store.confirm(team.id, b, state)
+                    // 1.38 검토: sending the links again with nothing changed keeps the same 판 (it used to count one up each time).
+                    val again = state.state == MonthState.CONFIRMED && changes.isEmpty()
+                    val m = if (again) state else store.confirm(team.id, b, state)
+                    if (need.verdict == com.bamnat.core.tier.WorkPlanRules.Verdict.FREE) store.keepFreeMonth(month)
                     val made = runCatching { links(c, team, b, active) }
                     busy = null
-                    made.onSuccess { linksFor = it }.onFailure { dialog = "확정은 했어요(${m.version}판). 링크는 인터넷이 될 때 다시 눌러 주세요." }
+                    made.onSuccess { linksFor = it }.onFailure { dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + "링크는 인터넷이 될 때 다시 눌러 주세요." }
                 }
             }, enabled = busy == null, modifier = Modifier.fillMaxWidth()) {
                 Text(when {
@@ -332,6 +349,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
             else -> AlertDialog(onDismissRequest = { dialog = null }, confirmButton = { TextButton(onClick = { dialog = null }) { Text("알겠어요") } }, text = { Text(dialog!!) })
         }
     }
+    planAsk?.let { com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.TEAM, it, onDismiss = { planAsk = null }) }
     plans?.let { list ->
         AlertDialog(onDismissRequest = { plans = null }, title = { Text("빈칸 자동 채우기") }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
