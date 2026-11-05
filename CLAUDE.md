@@ -86,7 +86,7 @@ Claude Code는 저장소 맨 위의 이 파일을 저절로 읽어요(클라우�
 
 사용자는 전달만 하고, 문의 답부터 개발·출시 뒤 안내까지 Claude가 처리해요(사용자 2026-11-03·11-04). 설계는 `shift-calendar-app/docs/plans/1.37-문의-개발-운영장부-설계.md`, 쓰는 법은 `shift-calendar-app/docs/ops-desk.md`.
 
-1. 클라우드 환경 비밀값 `BAMNAT_OPS_KEY`가 있으면 `curl -s -H "authorization: Bearer $BAMNAT_OPS_KEY" -H "x-admin: 1" https://api.bamnat.app/api/admin/desk`로 장부를 읽어요. 열쇠를 출력하거나 파일·커밋에 적지 않아요. 없거나 막히면 사용자에게 관리자 앱 › 정리함 › 'Claude에게 넘기기' 글을 붙여 달라고 해요.
+1. 클라우드 환경 비밀값 `BAMNAT_OPS_KEY`가 있으면 `curl -s -H "authorization: Bearer $BAMNAT_OPS_KEY" -H "x-admin: 1" https://api.bamnat.app/api/admin/desk`로 장부를 읽어요. 열쇠를 출력하거나 파일·커밋에 적지 않아요. 없거나 막히면 사용자가 정리함 › 'Claude에게 넘기기'로 복사해 붙여 넣은 글을 읽고, 끝에 그 글의 '결과 적는 법' 모양(`q<id> 답 …`, `q<id> 새개발 …`, `d<id> 완료 1.37.0 | 답: …`)으로 결과 덩어리를 코드 블록 하나에 줘요. 사용자는 그것을 '개발 결과 붙여 넣기'에 붙여 넣기만 해요.
 2. 한 줄마다: 답으로 끝(질문·이미 고침·개발 목록에 있음) / 개발사항으로 묶기 / 사용자에게 묻기 중 하나. 답은 쉬운 존댓말·결론부터, '고쳤어요'는 장부의 `shipped` 이하로 고친 것에만.
 3. **보내지 말고 꼭 묻는 것**: 환불·결제·보상, 법·안전 신고, 개인정보 지우기·열람, 크게 화난 민원, 약관·처리방침 질문, 회사 이름이 나오는 회사 방식 공개, 큰 방향 개선. 한 번에 고르기 카드로.
 4. 개발할 것은 지금처럼 작업 스레드 → PR → 디버그 빌드 → PC 확인. 단계마다 개발사항 상태를 열쇠로 올려요(`POST /api/admin/dev/<id>` `{status}`), 끝나면 `완료 <판>`.

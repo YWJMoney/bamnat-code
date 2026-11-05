@@ -727,6 +727,7 @@ details.card.events>summary h2{display:inline;font-size:1.06rem}
 .sort-field textarea{min-height:4.5rem}
 ul.mini{list-style:none;margin:.4rem 0 0;padding:0;display:flex;flex-direction:column;gap:.3rem;font-size:.86rem}
 ul.mini small{color:var(--muted);margin-left:.3rem}
+ul.mini small.answer{display:block;margin:.15rem 0 0;color:var(--fg);white-space:pre-line}
 /* 1.35 [ADMHE-01] A phone: the list starts higher. 정렬·고르기·CSV fold behind one button; the waiting line that only
    repeats this tab's own number and the keyboard hint are left out. */
 .tools-toggle{display:none}

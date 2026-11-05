@@ -1544,8 +1544,10 @@ test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 
   t.window.navigator.clipboard.writeText = async (x) => { copied = x; };
   await t.click('[data-act="sort-handoff"]');
   await t.settle(20);
-  assert.match(copied ?? "", /# 밤낮 관리자 앱 → 개발 넘김/);
-  assert.ok(t.$('[data-act="sort-handoff"]').disabled, "nothing left to hand over");
+  // 1.37 [ADM2-08] The text carries the waiting questions too, so the button stays for them; the 개발사항 are marked.
+  assert.match(copied ?? "", /# 밤낮 관리자 앱 → Claude/);
+  assert.match(copied ?? "", /## 답을 기다리는 문의/);
+  assert.match(t.$('[data-act="sort-handoff"]').textContent, /개발 0/);
   assert.deepEqual(t.errors, []);
 });
 

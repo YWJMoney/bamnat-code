@@ -1659,7 +1659,7 @@ function adminApp(L, BUILD, M) {
     const body = d.total ? order.filter((k) => d.piles[k].length).map((k) => pileSection(k, d.piles[k])).join("")
       : empty("정리할 문의가 없어요", "답을 기다리는 문의가 모두 개발사항에 묶였거나 답했어요.");
     // A phone shows the piles first and 자동 대응·넘기기 under them (CSS order); the strip's last card leads there.
-    const n = S.data.handoff?.items?.length ?? 0;
+    const n = (S.data.handoff?.items?.length ?? 0) + (S.data.handoff?.asks ?? 0);
     const go = `<a role="listitem" class="pile-card handoff-chip${n ? " warn" : " zero"}" href="#sort-tools" data-act="sort-jump" data-key="tools">
         <span class="pile-n">${n}</span><span class="pile-name">Claude에게 넘길 것</span></a>`;
     return `<div class="sort-view"><p class="hint">답을 기다리는 문의 ${d.total}건을 서버가 미리 나눠 두었어요. 카드마다 보낼 답이 적혀 있어요. 고쳐서 보내도 되고, ‘빼 두기’를 누르면 정리함에서만 빠져요.</p>
@@ -1712,18 +1712,23 @@ function adminApp(L, BUILD, M) {
   function handoffCard() {
     const h = S.data.handoff;
     const n = h?.items?.length ?? 0;
+    // 1.37 [ADM2-08] 넘길 글에는 답을 기다리는 문의도 함께 가요.
+    const asks = h?.asks ?? 0;
     const res = S.sortResult;
+    const ASK_DO = { reply: "답", link: "개발사항에 묶고 답", dev: "새 개발사항", skip: "빼 두기" };
+    const askRows = (res?.asks ?? []).map((a) => `<li>${a.ids.length > 1 ? `문의 ${a.ids.length}건` : "문의"} · ${esc(ASK_DO[a.do] ?? a.do)}${a.item ? ` ${esc(a.item)}` : ""}${a.title ? ` ‘${esc(a.title)}’` : ""}
+        <small>${esc(a.previews.filter(Boolean).join(" / "))}</small>${a.text ? `<small class="answer">답: ${esc(a.text)}</small>` : ""}${a.problem ? ` <span class="pill bad">${esc(a.problem)}</span>` : ""}</li>`).join("");
     const lines = res ? `<ul class="mini">${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(DEV_NAMES[l.status] ?? l.status)}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
-        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}</li>`).join("")}</ul>
+        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.text ? `<small class="answer">답: ${esc(l.text)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}</li>`).join("")}${askRows}</ul>
       <label class="switch"><input type="checkbox" id="sort-notify" checked><span class="track" aria-hidden="true"></span><span>완료·반려된 개발사항의 문의에도 답 보내기</span></label>
-      <div class="actions"><button class="btn small primary" data-act="sort-result-go"${res.lines.some((l) => !l.problem) ? "" : " disabled"}>반영하기</button>
+      <div class="actions"><button class="btn small primary" data-act="sort-result-go"${[...res.lines, ...(res.asks ?? [])].some((l) => !l.problem) ? "" : " disabled"}>반영하기</button>
         <button class="btn small ghost" data-act="sort-result-clear">다시 붙여 넣기</button></div>` : "";
     return `<div class="card handoff-card"><b>Claude에게 넘기기</b>
-      <small>${h ? (n ? `아직 넘기지 않은 개발사항 ${n}개 (문의 ${h.items.reduce((a, i) => a + i.asks, 0)}건). 복사해서 Claude에게 붙여 넣으면 다음 개발에 들어가요.` : "새로 넘길 개발사항이 없어요.") : "불러오는 중이에요"}</small>
-      <div class="actions"><button class="btn small primary" data-act="sort-handoff"${n ? "" : " disabled"}>${icon(P.copy)}넘길 글 복사 (${n})</button>
+      <small>${h ? (n || asks ? `답을 기다리는 문의 ${asks}건과 새 개발사항 ${n}개를 한 글로 복사해요. 프로젝트 채팅에 붙여 넣으면 Claude가 답과 개발을 하고 결과를 줘요.` : "넘길 문의와 개발사항이 없어요.") : "불러오는 중이에요"}</small>
+      <div class="actions"><button class="btn small primary" data-act="sort-handoff"${n || asks ? "" : " disabled"}>${icon(P.copy)}넘길 글 복사 (문의 ${asks} · 개발 ${n})</button>
         <button class="btn small" data-act="sort-handoff-all">진행 중인 것 모두 복사</button></div>
       <details${res ? " open" : ""}><summary>개발 결과 붙여 넣기</summary>
-        <p class="hint">Claude가 개발을 마치고 준 ‘결과’ 줄(예: d0123… 완료 1.36.0)을 붙여 넣어요. 먼저 무엇이 바뀌는지 보여 드려요.</p>
+        <p class="hint">Claude가 준 ‘결과’ 덩어리를 통째로 붙여 넣어요. 문의 답, 개발사항 묶기·만들기, 개발 상태와 묶인 문의 답이 한 번에 처리돼요. 먼저 무엇이 바뀌는지 보여 드려요.</p>
         ${res ? lines : `<textarea id="sort-result" rows="4" placeholder="d0123456789abcde 완료 1.36.0"></textarea>
         <div class="actions"><button class="btn small" data-act="sort-result-check">무엇이 바뀌는지 보기</button></div>`}</details></div>`;
   }
@@ -4034,9 +4039,10 @@ function adminApp(L, BUILD, M) {
     },
     "sort-handoff": async (_, __, all = false) => {
       const h = all ? await act(() => api("/inquiries/handoff?all=1")) : S.data.handoff;
-      if (!h?.items?.length) return toast("넘길 개발사항이 없어요");
+      if (!h?.items?.length && !h?.asks) return toast("넘길 문의와 개발사항이 없어요");
       if (!(await toClipboard(h.text))) return toast("복사하지 못했어요. 다시 해 주세요");
-      await act(() => api("/inquiries/handoff/mark", "POST", { ids: h.items.map((i) => i.id) }), `개발사항 ${h.items.length}개를 복사했어요. Claude에게 붙여 넣어 주세요`);
+      if (!h.items.length) { toast(`문의 ${h.asks}건을 복사했어요. Claude에게 붙여 넣어 주세요`); return; }
+      await act(() => api("/inquiries/handoff/mark", "POST", { ids: h.items.map((i) => i.id) }), `문의 ${h.asks ?? 0}건 · 개발사항 ${h.items.length}개를 복사했어요. Claude에게 붙여 넣어 주세요`);
       S.data.handoff = null; load();
     },
     "sort-handoff-all": (a, el) => ACTIONS["sort-handoff"](a, el, true),
@@ -4051,7 +4057,8 @@ function adminApp(L, BUILD, M) {
       const res = S.sortResult;
       if (!res) return;
       const notify = document.getElementById("sort-notify")?.checked === true;
-      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => `개발사항 ${r.changed}개 반영${r.answered ? ` · 문의 ${r.answered}건에 답` : ""}`);
+      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => [r.changed && `개발사항 ${r.changed}개 반영`, r.created?.length && `새 개발사항 ${r.created.length}개`, r.answered && `문의 ${r.answered}건에 답`,
+        r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || "바뀐 것이 없어요");
       if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
     },
     ...FLAG_ACTIONS,

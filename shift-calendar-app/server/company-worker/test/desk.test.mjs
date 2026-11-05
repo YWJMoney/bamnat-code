@@ -134,3 +134,48 @@ test("[ADM2] a database made by an older server takes the new tables: the ALTERs
   assert.equal(res.status, 200);
   assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM admin_keys").first()).n, 0);
 });
+
+test("[ADM2-08] 복사 두 번으로 끝: 넘길 글에 문의가 있고, 결과 덩어리 하나로 답·묶기·새 개발사항·빼기·개발 상태가 처리돼요", async () => {
+  const { call } = server();
+  const admin = await signIn(call);
+  const q1 = await ask(call, 1, "백업 파일은 어디서 가져오나요?", "question");
+  const q2 = await ask(call, 2, "위젯에 내일 근무도 보이면 좋겠어요", "idea");
+  const q3 = await ask(call, 3, "위젯에서 내일 근무까지 보여 주세요", "idea");
+  const q4 = await ask(call, 4, "ㅋㅋㅋ", "other");
+  const q5 = await ask(call, 5, "잠금 화면 알람 소리가 안 나요");
+  const item = (await call("POST", "/api/admin/dev", { title: "잠금 화면 알람 소리" }, admin)).data.id;
+  const h = (await call("GET", "/api/admin/inquiries/handoff", undefined, admin)).data;
+  assert.equal(h.asks, 5);
+  for (const q of [q1, q2, q3, q4, q5]) assert.ok(h.text.includes(`q${q}`), q);
+  assert.match(h.text, /추천 답:/);
+  assert.match(h.text, /q<문의 id> 새개발/);
+  const block = [
+    "결과",
+    `q${q1} 답 설정 › 백업에서 '가져오기'를 눌러요.\\n파일을 고르면 끝이에요.`,
+    `q${q2}, q${q3} 새개발 위젯에 내일 근무 | 답: 개발 목록에 올렸어요.`,
+    `q${q4} 빼기`,
+    `q${q5} 개발 ${item} | 답: 같은 문제를 고치고 있어요.`,
+    `${item} 완료 1.37.0 | 답: 1.37.0에서 고쳐요. 나오면 알려 드릴게요.`,
+    "qZZZZZZZZZZZZZZZZZZZZZZ 답 없는 문의",
+  ].join("\n");
+  const dry = (await call("POST", "/api/admin/inquiries/handoff/result", { text: block, dry: true }, admin)).data;
+  assert.equal(dry.asks.length, 5);
+  assert.equal(dry.asks.at(-1).problem, "없는 문의");
+  assert.equal(dry.lines[0].text, "1.37.0에서 고쳐요. 나오면 알려 드릴게요.");
+  const r = (await call("POST", "/api/admin/inquiries/handoff/result", { text: block, notify: true }, admin)).data;
+  assert.equal(r.changed, 1);
+  assert.equal(r.created.length, 1);
+  assert.equal(r.skipped, 1);
+  // q1 답 (줄바꿈 그대로), q2·q3 새 개발사항과 답, q5 묶기와 답(문의 줄) — 개발사항 줄의 답은 q5가 묶이기 전이라 아직 없음.
+  assert.equal((await asker(call, q1, 1)).messages.at(-1).text, "설정 › 백업에서 '가져오기'를 눌러요.\n파일을 고르면 끝이에요.");
+  assert.equal((await asker(call, q2, 2)).messages.at(-1).text, "개발 목록에 올렸어요.");
+  assert.equal((await asker(call, q3, 3)).progress.stage, "planned");
+  assert.equal((await asker(call, q5, 5)).messages.at(-1).text, "같은 문제를 고치고 있어요.");
+  assert.equal((await asker(call, q4, 4)).messages.length, 1);
+  const sorted = (await call("GET", "/api/admin/inquiries/sort", undefined, admin)).data;
+  assert.equal(sorted.total, 0);
+  // The 개발사항 Claude made from the block is already Claude's: nothing new to hand over.
+  const again = (await call("GET", "/api/admin/inquiries/handoff", undefined, admin)).data;
+  assert.equal(again.asks, 0);
+  assert.equal(again.items.length, 0);
+});

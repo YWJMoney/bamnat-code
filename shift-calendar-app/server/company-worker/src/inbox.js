@@ -242,6 +242,17 @@ export async function sortInbox(env) {
 export async function applySort(request, env, now) {
   const body = await readJson(request, 256 * 1024);
   if (!Array.isArray(body.actions) || !body.actions.length || body.actions.length > SORTING.apply) refuse("actions", "actions");
+  const done = await sortActions(env, body.actions, now);
+  if (done instanceof Response) return done;
+  await audit(env, now, "inbox_apply", `${body.actions.length}건`,
+    [done.replied && `답 ${done.replied}`, done.linked && `연결 ${done.linked}`, done.created.length && `개발사항 ${done.created.length}`,
+      done.reopened && `다시 접수 ${done.reopened}`, done.skipped && `빼 둠 ${done.skipped}`].filter(Boolean).join(" · "));
+  return json(done);
+}
+
+/** The 정리함 steps themselves, shared by applySort and 1.37 [ADM2-08] the 결과 block's 문의 lines; a Response when not allowed. */
+async function sortActions(env, actions, now) {
+  const body = { actions };
   const id22 = (v) => (typeof v === "string" && /^[A-Za-z0-9]{22}$/.test(v) ? v : refuse("id", "id"));
   const devId = (v) => (typeof v === "string" && /^d[A-Za-z0-9]{15}$/.test(v) ? v : refuse("item", "item"));
   const needsDev = body.actions.some((a) => a.do === "dev" || a.do === "link" || a.do === "reopen" || (a.do === "reply" && a.item));
@@ -284,10 +295,7 @@ export async function applySort(request, env, now) {
     }
     if ((a.do === "reply" || a.do === "reopen") && a.text && (await inboxAnswer(env, id, a.text, now, name))) done.replied++;
   }
-  await audit(env, now, "inbox_apply", `${body.actions.length}건`,
-    [done.replied && `답 ${done.replied}`, done.linked && `연결 ${done.linked}`, done.created.length && `개발사항 ${done.created.length}`,
-      done.reopened && `다시 접수 ${done.reopened}`, done.skipped && `빼 둠 ${done.skipped}`].filter(Boolean).join(" · "));
-  return json(done);
+  return done;
 }
 
 /** Ties question [id] to 개발사항 [item]; false when it already was (or either is gone). */
@@ -351,35 +359,71 @@ export async function autoAnswer(env, id, now) {
 // anything that went with them but the app version and phone model). Claude ends a round with a 결과 block in the same
 // ids, which pasted back sets 완료 (with the version), 개발중 or 반려 here and can answer every tied question at once.
 
+// 1.37 [ADM2-08] (사용자 2026-11-05 "정리함에서 Claude에게 넘기기를 하고 너가 개발 결과를 주면 그것을 내가 복사 넣기를 하면 문의 대응까지
+// 완벽하게") The text also carries every question still waiting in 정리함 (q + its id, the server's guess and a draft answer), and the
+// 결과 block answers them too: 답, 개발(tie to an item), 새개발(a new item from several), 빼기, and a "| 답:" after a 개발사항 line.
+
+const KIND_WORDS = { bug: "문제", question: "질문", idea: "제안", company: "회사", other: "기타" };
+const oneLine = (t, n = 300) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, n);
+
 /** [INBOX-05] GET /inquiries/handoff?all=1: the text, and which items it holds (all=1 takes those handed before too). */
 export async function handoff(env, params, now) {
   const everything = params.get("all") === "1";
-  const items = await all(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d
-    WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') ${everything ? "" : "AND d.handed_at IS NULL"}
-    ORDER BY asks DESC, d.created_at LIMIT ${SORTING.handoff}`);
+  const [items, waitingOnes, k] = await Promise.all([
+    all(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d
+      WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') ${everything ? "" : "AND d.handed_at IS NULL"}
+      ORDER BY asks DESC, d.created_at LIMIT ${SORTING.handoff}`),
+    waiting(env),
+    known(env),
+  ]);
+  const asks = waitingOnes.slice(0, SORTING.handoff);
   const day = new Date(now + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  const out = [`# 밤낮 관리자 앱 → 개발 넘김 (${day})`, "",
-    "아래 개발사항을 다음 개발에 넣어 주세요. 문의 수가 많은 것부터예요. 끝나면 맨 아래 ‘결과 적는 법’대로 결과를 적어 주세요.", ""];
+  const out = [`# 밤낮 관리자 앱 → Claude (${day})`, "",
+    `Play에 나간 판: ${k.shipped?.v ?? "(아직 안 적음)"}. '고쳤어요·업데이트해 주세요'는 이 판 이하로 고친 것에만 써 주세요.`,
+    "아래 문의에 답하고, 개발할 것은 개발사항으로 묶고, 개발사항을 개발해 주세요. 끝나면 맨 아래 ‘결과 적는 법’대로 결과를 한 덩어리로 주세요.",
+    "환불·결제·보상, 법·안전 신고, 개인정보 요청, 크게 화난 민원, 약관 질문, 회사 이름이 나오는 회사 방식은 답을 적지 말고 사용자에게 먼저 물어 주세요.", ""];
+  out.push(`## 답을 기다리는 문의 (${asks.length}건)`, "");
+  for (const q of asks) {
+    const c = classify(q, k);
+    const m = c.match;
+    const guess = m?.type === "dev" ? ` · 서버 판단: ${PILE_NAMES[c.pile]} ≈ ${m.id} ‘${m.title}’(${DEV.statuses[m.status] ?? m.status}${m.releasedIn ? ` ${m.releasedIn}` : ""})`
+      : m ? ` · 서버 판단: ${PILE_NAMES[c.pile]} ≈ ‘${oneLine(m.title, 60)}’` : " · 서버 판단: 새 문제·개선";
+    out.push(`- q${q.id} · ${KIND_WORDS[q.kind] ?? q.kind}${q.info?.app ? ` · 앱 ${String(q.info.app).split(" ")[0]}` : ""}${q.same ? ` · 나도 그래요 ${q.same}` : ""}${guess}`);
+    out.push(`  문의: ${oneLine(q.text, 600)}`);
+    if (c.reply) out.push(`  추천 답: ${oneLine(c.reply, 400)}`);
+  }
+  if (!asks.length) out.push("(기다리는 문의가 없어요)");
+  out.push("", `## 개발사항 (${items.length}개)`, "");
   for (const d of items) {
-    const asks = await all(env, `SELECT i.kind, i.info, (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first
+    const linked = await all(env, `SELECT i.kind, i.info, (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first
       FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ? ORDER BY i.created_at LIMIT 8`, d.id);
-    const versions = [...new Set(asks.map((a) => JSON.parse(a.info).app).filter(Boolean).map((v) => String(v).split(" ")[0]))];
-    out.push(`## ${d.id} · ${d.title}`);
+    const versions = [...new Set(linked.map((a) => JSON.parse(a.info).app).filter(Boolean).map((v) => String(v).split(" ")[0]))];
+    out.push(`### ${d.id} · ${d.title}`);
     out.push(`- 상태: ${DEV.statuses[d.status]} · 문의 ${d.asks}건${versions.length ? ` · 앱 ${versions.join(", ")}` : ""}${d.handed_at ? " · 전에 넘김" : ""}`);
     // A body made in 정리함 is the questions' own words: said once, in the 문의 lines under it.
-    const said = asks.map((a) => String(a.first ?? "").replace(/\s+/g, " ").trim());
+    const said = linked.map((a) => oneLine(a.first, 1000));
     const body = String(d.body ?? "").split(/\n+/).map((l) => l.replace(/^[-*]\s*/, "").replace(/\s+/g, " ").trim()).filter((l) => l && !said.some((t) => t.startsWith(l.slice(0, 60))));
     if (body.length) out.push(`- 내용: ${body.join(" / ")}`);
-    for (const a of asks) {
+    for (const a of linked) {
       const info = JSON.parse(a.info);
-      out.push(`- 문의(${({ bug: "문제", question: "질문", idea: "제안", company: "회사", other: "기타" })[a.kind] ?? a.kind}${info.model ? `, ${info.model}` : ""}${info.app ? `, ${String(info.app).split(" ")[0]}` : ""}): ${String(a.first ?? "").replace(/\s+/g, " ").slice(0, 300)}`);
+      out.push(`- 문의(${KIND_WORDS[a.kind] ?? a.kind}${info.model ? `, ${info.model}` : ""}${info.app ? `, ${String(info.app).split(" ")[0]}` : ""}): ${oneLine(a.first)}`);
     }
     out.push("");
   }
-  if (!items.length) out.push("(넘길 개발사항이 없어요)", "");
-  out.push("## 결과 적는 법", "한 줄에 하나씩, 개발사항 id와 결과를 적어요. 관리자 앱 › 문의 › 정리함 › ‘개발 결과 붙여 넣기’에 그대로 붙여 넣어요.", "```",
-    "d0123456789abcde 완료 1.36.0", "d0123456789abcde 개발중", "d0123456789abcde 반려 이유를 한 줄로", "```");
-  return { text: out.join("\n"), items: items.map((d) => ({ id: d.id, title: d.title, status: d.status, asks: d.asks, handed: d.handed_at ? iso(d.handed_at) : null })) };
+  if (!items.length) out.push("(새로 넘길 개발사항이 없어요)", "");
+  out.push("## 결과 적는 법",
+    "한 줄에 하나씩, 아래 모양으로만 적어요. 관리자 앱 › 문의 › 정리함 › ‘개발 결과 붙여 넣기’에 통째로 붙여 넣으면 상태가 바뀌고 문의마다 답이 가요.",
+    "답은 한 줄로, 줄을 바꾸려면 \\n을 써요. 문의 줄은 쉼표로 여럿을 묶을 수 있어요.", "```",
+    "q<문의 id> 답 보낼 답",
+    "q<문의 id> 개발 d0123456789abcde | 답: 개발 목록에 올렸어요. 고쳐지면 알려 드릴게요.",
+    "q<문의 id>,q<문의 id> 새개발 개발사항 제목 | 답: 보낼 답",
+    "q<문의 id> 빼기",
+    "d0123456789abcde 개발중",
+    "d0123456789abcde 완료 1.37.0",
+    "d0123456789abcde 완료 1.37.0 | 답: 묶인 문의에 보낼 답(안 적으면 기본 답)",
+    "d0123456789abcde 반려 이유를 한 줄로", "```");
+  return { text: out.join("\n"), asks: asks.length,
+    items: items.map((d) => ({ id: d.id, title: d.title, status: d.status, asks: d.asks, handed: d.handed_at ? iso(d.handed_at) : null })) };
 }
 
 /** [INBOX-05] POST /inquiries/handoff/mark {ids}: 넘김 on those items (after the text really went to the clipboard). */
@@ -394,17 +438,43 @@ export async function markHanded(request, env, now) {
 }
 
 const RESULT = /^\s*[-*•]?\s*(d[A-Za-z0-9]{15})\s*[:·\-]?\s*(완료|개발중|개발 중|반려|접수)\s*(.*)$/;
+const ASK_LINE = /^\s*[-*•]?\s*(q[A-Za-z0-9]{22}(?:\s*,\s*q[A-Za-z0-9]{22})*)\s*[:·\-]?\s*(답|개발|새개발|새 개발|빼기|빼 두기)(?=\s|$)\s*(.*)$/;
+/** "… | 답: …" at the end of a line: the answer, with \n for a new line. */
+const splitAnswer = (rest) => {
+  const m = rest.match(/^(.*?)\s*\|\s*답\s*[:：]\s*(.*)$/);
+  return m ? [m[1].trim(), m[2].replace(/\\n/g, "\n").trim()] : [rest.trim(), ""];
+};
 
-/** The lines of a 결과 block: id, status and the rest (the version for 완료, the reason for 반려). */
+/** The 개발사항 lines of a 결과 block: id, status and the rest (the version for 완료, the reason for 반려), and its own answer. */
 export function readResult(text) {
   const out = [];
   for (const line of String(text ?? "").split(/\r?\n/)) {
     const m = line.match(RESULT);
     if (!m) continue;
     const status = { 완료: "done", 개발중: "doing", "개발 중": "doing", 반려: "rejected", 접수: "todo" }[m[2]];
-    const rest = m[3].trim();
+    const [rest, answer] = splitAnswer(m[3]);
     const v = status === "done" ? rest.match(/\d{1,2}\.\d{1,2}\.\d{1,3}/)?.[0] ?? null : null;
-    out.push({ id: m[1], status, version: v, reason: status === "rejected" ? rest.slice(0, DEV.reason) : "" });
+    out.push({ id: m[1], status, version: v, reason: status === "rejected" ? rest.slice(0, DEV.reason) : "", ...(answer ? { text: answer } : {}) });
+  }
+  return out;
+}
+
+/** 1.37 [ADM2-08] The 문의 lines of a 결과 block. */
+export function readAsks(text) {
+  const out = [];
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    const m = line.match(ASK_LINE);
+    if (!m) continue;
+    const ids = [...new Set(m[1].split(",").map((s) => s.trim().slice(1)))];
+    const verb = { 답: "reply", 개발: "link", 새개발: "dev", "새 개발": "dev", 빼기: "skip", "빼 두기": "skip" }[m[2]];
+    const raw = m[3].trim();
+    if (verb === "reply") out.push({ ids, do: verb, text: raw.replace(/^[:：]\s*/, "").replace(/\\n/g, "\n").trim() });
+    else {
+      const [rest, answer] = splitAnswer(raw);
+      if (verb === "link") out.push({ ids, do: verb, item: rest.match(/d[A-Za-z0-9]{15}/)?.[0] ?? null, text: answer });
+      else if (verb === "dev") out.push({ ids, do: verb, title: rest.slice(0, DEV.title), text: answer });
+      else out.push({ ids, do: verb, text: "" });
+    }
   }
   return out;
 }
@@ -412,12 +482,15 @@ export function readResult(text) {
 /**
  * [INBOX-06] POST /inquiries/handoff/result {text, notify?, dry?}: Claude's 결과 block applied — status, the version a
  * finished one goes out in, the reason of a 반려 — each a line of the item's history. [dry] only reads it back for the
- * screen to show first; [notify] answers each tied question still waiting (완료: update to that version; 반려: the reason).
+ * screen to show first; [notify] answers each tied question still waiting (완료: update to that version; 반려: the reason;
+ * a "| 답:" on the line says it instead). 1.37 [ADM2-08] Its 문의 lines answer, tie, make 개발사항 and put aside as 정리함 does.
  */
 export async function applyResult(request, env, now) {
-  const body = await readJson(request, 64 * 1024);
+  const body = await readJson(request, 256 * 1024);
   const lines = readResult(body.text);
-  if (!lines.length) refuse("text", "text");
+  const askLines = readAsks(body.text);
+  if (!lines.length && !askLines.length) refuse("text", "text");
+  if (askLines.length > SORTING.apply) refuse("text", "text");
   // D1 binds at most 100 values in one query; a long 결과 block is read in groups of 90.
   const rows = [];
   for (let i = 0; i < lines.length; i += 90) {
@@ -427,8 +500,21 @@ export async function applyResult(request, env, now) {
   const byId = new Map(rows.map((r) => [r.id, r]));
   const plan = lines.map((l) => ({ ...l, title: byId.get(l.id)?.title ?? null, found: byId.has(l.id),
     problem: !byId.has(l.id) ? "없는 개발사항" : l.status === "rejected" && !l.reason ? "반려 이유가 없어요" : null }));
-  if (body.dry === true) return json({ lines: plan });
-  if (plan.some((l) => l.status !== "doing" && l.status !== "todo") && !can(env.actor, "devStatus", "edit")) return json({ error: "no_permission", area: "devStatus" }, 403);
+  const askIds = [...new Set(askLines.flatMap((a) => a.ids))];
+  const asked = new Map();
+  for (let i = 0; i < askIds.length; i += 90) {
+    const part = askIds.slice(i, i + 90);
+    for (const r of await all(env, `SELECT i.id, i.status, (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first
+      FROM inquiries i WHERE i.id IN (${part.map(() => "?").join(", ")})`, ...part)) asked.set(r.id, r);
+  }
+  const items = new Set(rows.map((r) => r.id));
+  const linkTo = [...new Set(askLines.filter((a) => a.do === "link" && a.item).map((a) => a.item))].filter((id) => !items.has(id));
+  for (const r of linkTo.length ? await all(env, `SELECT id FROM dev_items WHERE deleted_at IS NULL AND id IN (${linkTo.map(() => "?").join(", ")})`, ...linkTo) : []) items.add(r.id);
+  const askPlan = askLines.map((a) => ({ ...a, previews: a.ids.map((id) => oneLine(asked.get(id)?.first, 60)),
+    problem: a.ids.some((id) => !asked.has(id)) ? "없는 문의" : a.do === "reply" && !a.text ? "답이 비어 있어요"
+      : a.do === "link" && !(a.item && items.has(a.item)) ? "없는 개발사항" : a.do === "dev" && !a.title.trim() ? "제목이 없어요" : null }));
+  if (body.dry === true) return json({ lines: plan, asks: askPlan });
+  if (plan.some((l) => !l.problem && l.status !== "doing" && l.status !== "todo") && !can(env.actor, "devStatus", "edit")) return json({ error: "no_permission", area: "devStatus" }, 403);
   let changed = 0;
   let answered = 0;
   const shipped = await shippedVersion(env);
@@ -436,17 +522,33 @@ export async function applyResult(request, env, now) {
     const row = await one(env, "SELECT * FROM dev_items WHERE id = ?", l.id);
     const r = await devUpdate(env, row, { status: l.status, ...(l.status === "rejected" ? { reason: l.reason } : {}), ...(l.version ? { releasedIn: l.version } : {}) }, now);
     if (r === true) changed++;
-    if (body.notify === true && (l.status === "done" || l.status === "rejected")) {
+    if (body.notify === true && (l.status === "done" || l.status === "rejected" || l.text)) {
       const waitingOnes = await all(env, `SELECT i.id FROM dev_links k JOIN inquiries i ON i.id = k.inquiry_id WHERE k.item_id = ? AND i.status != 'closed'`, l.id);
       // 1.37 [ADM2-02] 'Play 업데이트'는 그 판이 나갔을 때만. 나가기 전이면 "업데이트에 들어가요", 판을 저장할 때 다시 알려요.
-      const text = l.status === "done"
+      const text = l.text || (l.status === "done"
         ? (l.version && isOut(l.version, shipped) ? `말씀해 주신 내용을 ${l.version} 버전에서 고쳤어요. Play 스토어에서 밤낮을 최신 버전으로 업데이트해 주세요.` : laterText(l.version))
-        : replyFor("declined", { reason: l.reason });
+        : replyFor("declined", { reason: l.reason }));
       for (const w of waitingOnes) if (await inboxAnswer(env, w.id, text, now, actorName(env))) answered++;
     }
   }
-  await audit(env, now, "dev_result", `${changed}개`, answered ? `문의 ${answered}건에 답` : "");
-  return json({ lines: plan, changed, answered });
+  // 1.37 [ADM2-08] 문의 lines, after the 개발사항 ones (a line may tie a question to an item the block just set).
+  const actions = [];
+  for (const a of askPlan.filter((x) => !x.problem)) {
+    if (a.do === "dev") actions.push({ do: "dev", ids: a.ids, title: a.title, body: "", ...(a.text ? { text: a.text } : {}) });
+    // 개발 with an answer is 정리함's "reply with item": tied and answered.
+    else for (const id of a.ids) actions.push({ do: a.do === "link" && a.text ? "reply" : a.do, id, ...(a.item ? { item: a.item } : {}), ...(a.text ? { text: a.text } : {}) });
+  }
+  let sorted = { replied: 0, linked: 0, created: [], skipped: 0 };
+  if (actions.length) {
+    const r = await sortActions(env, actions, now);
+    if (r instanceof Response) return r;
+    sorted = r;
+    // Claude made these itself from the block: they are already with Claude, not 넘길 것 again.
+    if (sorted.created.length) await run(env, `UPDATE dev_items SET handed_at = ? WHERE id IN (${sorted.created.map(() => "?").join(", ")})`, now, ...sorted.created.map((c) => c.id));
+  }
+  await audit(env, now, "dev_result", `${changed}개`, [answered && `문의 ${answered}건에 답`, sorted.replied && `문의 줄 답 ${sorted.replied}`,
+    sorted.created.length && `새 개발사항 ${sorted.created.length}`].filter(Boolean).join(" · "));
+  return json({ lines: plan, asks: askPlan, changed, answered: answered + sorted.replied, linked: sorted.linked, created: sorted.created, skipped: sorted.skipped });
 }
 
 /** The routes under /api/admin/inquiries/sort and /handoff; null for any other path. */
