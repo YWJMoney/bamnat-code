@@ -1578,6 +1578,24 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   assert.deepEqual(t.errors, []);
 });
 
+test("[EASE-31] 운영 장부: a question a saved answer fits has '마을 Q&A로 올리기', which opens that answer with the 묻는 말 box", async () => {
+  const { call, env } = server();
+  const owner = await signIn(call);
+  const list = (await call("POST", "/api/admin/templates", { label: "백업 옮기기", text: "설정 › 백업에서 파일로 내보낸 뒤 새 폰에서 가져오기를 눌러요", topic: "backup" }, owner)).data;
+  const tpl = (list.templates ?? list).find((x) => x.label === "백업 옮기기");
+  await call("POST", "/api/inquiries", { v: 1, device: device(21), kind: "question", text: "새 폰으로 옮기려면 백업을 어떻게 가져오기 하나요", info: { app: "1.37.0 (51)" } }, from(21));
+  const t = await signedIn(env);
+  await t.go("#/desk?view=claude&group=ask");
+  const up = t.$('#main [data-act="template-edit"]');
+  assert.ok(up, "the line of a question a saved answer fits offers 마을 Q&A로 올리기");
+  assert.match(up.textContent, /마을 Q&A로 올리기/);
+  assert.equal(up.dataset.id, String(tpl.id), "it opens the answer that fits");
+  await t.click(up);
+  await t.idle();
+  assert.ok(t.$("#tpl-q"), "the saved answer opens with its 묻는 말 box");
+  assert.deepEqual(t.errors, []);
+});
+
 test("[SEC-11] 서버 상태 shows Play Integrity: off, and require without a service account as the thing to fix", async () => {
   // PC 확인 d263030e: /server answered integrity but the screen drew none of it.
   const off = await signedIn(server().env);

@@ -2,7 +2,7 @@
 // other screen groups and called with what the app shares (A); it may use no name from outside itself.
 //   한 줄 = 한 건(문의·개발사항·스튜디오 요구·신고·사진·검토·운영). 번호(K-0001) · 들어온 날·종류 · 요약 · 겹침 · 묶음 · 단계 · 답 · 담당 · 기한 · 기록.
 //   데스크톱은 칸이 맞는 표, 휴대폰은 카드 한 장(번호·요약 한 줄, 그 아래 단계·담당·기한). 줄을 누르면 그 자리에서 펼쳐
-//   원문·겹침 후보 3개·정리함 답(고쳐서 보내기·묶기·개발사항으로·빼 두기)·상태(보는 중·기다림·끝내기, 이유는 꼭)·요약·기록(되돌리기).
+//   원문·겹침 후보 3개·정리함 답(고쳐서 보내기·묶기·개발사항으로·빼 두기, 자주 쓰는 답이면 '마을 Q&A로 올리기' [EASE-31])·상태(보는 중·기다림·끝내기, 이유는 꼭)·요약·기록(되돌리기).
 //   위에는 보기(오늘 할 것 · Claude 차례 · 최고 관리자 확인 · 개발 중 · 출시 대기 · 기한 넘음 · 열린 것 · 닫힘)와 종류·판·찾기·CSV,
 //   그리고 정리함에 있던 'Claude에게 넘기기·개발 결과 붙여 넣기·자동 대응'을 접어 둔 칸.
 export function ledgerViews(A) {
@@ -114,7 +114,8 @@ export function ledgerViews(A) {
         <label class="sort-field"><span>${k === "new" ? "함께 보낼 답 (비우면 답 없이 넘겨요)" : "보낼 답"}</span><textarea id="lg-reply-${esc(r.id)}" rows="3">${esc(r.sort.reply ?? "")}</textarea></label>
         <div class="actions start"><button class="btn small primary" data-act="ledger-sort" data-key="${esc(r.key)}">${esc(k === "new" && group.length > 1 ? `${group.length}건 개발사항으로 넘기기` : PILE_DO[k])}</button>
           ${k === "new" ? `<button class="btn small" data-act="ledger-reply" data-key="${esc(r.key)}">답만 보내기</button>` : ""}
-          <button class="btn small ghost" data-act="ledger-skip" data-key="${esc(r.key)}">빼 두기 (7일)</button></div></div>`);
+          <button class="btn small ghost" data-act="ledger-skip" data-key="${esc(r.key)}">빼 두기 (7일)</button>
+          ${k === "faq" && r.sort.match?.type === "template" ? `<button class="btn small" data-act="template-edit" data-id="${esc(r.sort.match.id)}" title="이 답을 마을 밤낮 Q&A에 공개해요">마을 Q&A로 올리기</button>` : ""}</div></div>`);
     }
     // 원래 칸(처리 자체는 그 화면에서): 할 일함과 같은 길.
     const open = r.link ?? inboxLink({ type: r.type, id: r.id });
