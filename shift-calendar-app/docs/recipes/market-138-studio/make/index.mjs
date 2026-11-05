@@ -42,7 +42,9 @@ for (const [name, list] of Object.entries(files)) {
     if (seen.has(t)) problems.push(`${name} · ${t}: 제목이 겹쳐요`);
     if (taken.has(t)) problems.push(`${name} · ${t}: 이미 장터에 있는 제목이에요`);
     seen.add(t);
-    problems.push(...lint(w.recipe).map((p) => `${name} · ${t}: ${p}`));
+    // 부품 작품의 요일·어두운 화면·고른 상태 줄도 그때그때 바뀌는 상태 줄이에요(1.36 lint는 role·오늘·공휴일·돈만 봐요).
+    const stateOk = w.recipe.pieces.some((p) => p.kind === "parts" && p.parts.some((l) => /^(sat|sun|dark|sel)$/.test(l.on ?? "")));
+    problems.push(...lint(w.recipe).filter((x) => !(stateOk && x.startsWith("수식"))).map((p) => `${name} · ${t}: ${p}`));
   }
   writeFileSync(join(OUT, name), JSON.stringify(list, null, 1) + "\n");
   n += list.length;
