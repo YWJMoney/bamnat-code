@@ -71,6 +71,9 @@ object Fmt {
      * hidden the same way, "하루 •••••원 더 써요"; as it is when 가리기 is off.
      */
     fun hide(text: String): String = if (!masked) text else wonInText.replace(text, MASK + "원")
+    /** 1.37 PC 6차: also short amounts in 만·억·천 ("365.7만", "−37.1만"), for cells that hold only money. */
+    fun hideShort(text: String): String = if (!masked) text else shortInText.replace(hide(text), "•••")
+    private val shortInText = Regex("""[-+−]?\d[\d,.]*\s*(?:억|만|천)(?:\s*\d[\d,.]*\s*(?:만|천))?\s*원?""")
     private val wonInText = Regex("""[-+−]?\d[\d,.]*\s*(?:억\s*)?(?:\d[\d,.]*\s*)?(?:만|천)?\s*원""")
 
     /** "1,250,000원" */

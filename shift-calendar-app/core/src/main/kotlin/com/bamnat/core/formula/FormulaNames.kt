@@ -111,7 +111,9 @@ object FormulaNames {
     /** The nearest main name or function to a mistyped [word] (one letter off, or it starts the same), or null. */
     fun near(word: String): String? {
         val all = FormulaName.entries.map { it.ko } + Fn.entries.map { it.ko }
-        return all.firstOrNull { dist(it, word) <= 1 } ?: all.firstOrNull { word.length >= 2 && it.startsWith(word.take(2)) }
+        // 1.37 PC 6차: '월급' gave '월' (one letter off); a name that starts with what was typed comes first ('월급까지').
+        return all.firstOrNull { word.length >= 2 && it.startsWith(word) }
+            ?: all.firstOrNull { it.length >= 2 && dist(it, word) <= 1 } ?: all.firstOrNull { word.length >= 2 && it.startsWith(word.take(2)) }
     }
 
     private fun dist(a: String, b: String): Int {
