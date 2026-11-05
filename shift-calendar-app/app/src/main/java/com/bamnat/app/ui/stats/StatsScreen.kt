@@ -284,6 +284,14 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             if (style?.usesPayEngine != false) Text("달력에 근무 시간을 넣으면 주별 근무시간과 3개월 평균도 여기서 볼 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp))
+            // PC 8eae2521 (현장: 시간 카드를 더해도 아무것도 안 보임): an hour card the user added says where its hours come from.
+            else if (listOf(StatsPart.WEEKS, StatsPart.THREE, StatsPart.TREND, StatsPart.KINDS).any(::shown)) SectionCard(title = StatsPart.WEEKS.textFor(style).first) {
+                Text(when (style) {
+                    WorkStyle.FIELD -> "일감을 적을 때 시작·끝 시각을 넣으면 주마다 일한 시간이 여기 보여요. 시각이 없는 일감은 세지 않아요."
+                    WorkStyle.BUSINESS -> "영업일·정기휴무에서 영업시간을 정하면 주마다 영업한 시간이 여기 보여요."
+                    else -> "일한 시각이 있는 기록이 생기면 주마다 일한 시간이 여기 보여요."
+                }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             return@Column
         }
 
@@ -499,10 +507,13 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             }
         }
 
+        // PC 8eae2521 (자영업 탭 맨 아래 각주에 '잔업·특근·대근'): a calendar without wages reads its own words.
         Text(
-            "· 야간처럼 자정을 넘기는 근무는 시작한 날에 모두 셉니다.\n" +
+            if (employee) "· 야간처럼 자정을 넘기는 근무는 시작한 날에 모두 셉니다.\n" +
                 "· 휴게 시간은 빼고, 잔업·특근·대근 같은 추가 근무는 더해서 계산해요.\n" +
-                "· 3개월 평균은 해당 3개월의 총 근무시간 ÷ (일수 ÷ 7)이에요.",
+                "· 3개월 평균은 해당 3개월의 총 근무시간 ÷ (일수 ÷ 7)이에요."
+            else "· 자정을 넘겨 일한 시간은 시작한 날에 모두 셉니다.\n" +
+                "· 쉬는 시간은 빼고 계산해요. 일한 시간은 참고용이에요.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 24.dp),

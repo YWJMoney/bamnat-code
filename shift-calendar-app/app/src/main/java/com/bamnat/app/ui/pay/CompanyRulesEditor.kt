@@ -233,7 +233,7 @@ fun CompanyRulesEditor(
                         start = draft.flexStart, onStart = { draft = draft.copy(flexStart = it) })
                 }
                 if (!draft.scheduleIsRegular) {
-                    Toggle("하루 8시간 넘으면 연장", "탄력적·선택적 근로시간제라면 꺼 주세요", draft.dailyLimitMinutes != null) {
+                    Toggle("하루 8시간 넘으면 연장", "선택적 근로시간제라면 꺼 주세요. 탄력제는 위 ‘근무표 시간은 모두 기본 근무’를 켜고 골라요", draft.dailyLimitMinutes != null) {
                         draft = draft.copy(dailyLimitMinutes = if (it) 480 else null)
                     }
                     Toggle("주 40시간 넘으면 연장", "근무표대로 일한 시간이 주 40시간을 넘어도 기본급에 들어 있으면 꺼 주세요", draft.weeklyLimitMinutes != null) {

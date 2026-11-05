@@ -128,13 +128,14 @@ fun DayCloseDialog(date: LocalDate, initial: DailySales?, onSave: (DailySales) -
                 Text("세금계산서·카드 영수증·현금영수증을 받은 경비는 부가세 예상에서 빠져요. 인건비는 보통 증빙이 아니에요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                CashCheck(initial?.copy(cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount())
+                    ?: DailySales(date, sales, cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount()),
+                    rules, book, counted) { counted = it }
+                // PC 8eae2521 (자판이 열린 채 현금을 넣으면 '센 현금' 칸이 172px 내려감): the note comes under 센 현금, so no field moves.
                 val missing = if (hasCash) (cash.toAmount() - receipt.toAmount()).coerceAtLeast(0) else 0
                 if (missing > 0) Text("현금영수증 없이 받은 현금 ${Fmt.won(missing)}도 매출이에요. 부가세·종소세 신고 때 빠뜨리지 마세요. " +
                     "손님이 원하면 발행해야 하고, 의무발행업종은 10만 원 이상이면 원하지 않아도 발행해야 해요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                CashCheck(initial?.copy(cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount())
-                    ?: DailySales(date, sales, cash = cash.toAmount(), card = card.toAmount(), transfer = transfer.toAmount(), delivery = delivery.toAmount()),
-                    rules, book, counted) { counted = it }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 // [SHOP-06] 외상: a sale not paid yet, followed up in 받을 돈.
                 Text("외상 (나중에 받을 돈)", style = MaterialTheme.typography.labelLarge)

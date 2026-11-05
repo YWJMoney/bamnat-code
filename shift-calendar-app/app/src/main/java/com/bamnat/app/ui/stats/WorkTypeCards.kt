@@ -334,7 +334,7 @@ private fun PayGapCard(
     val fromRecords = learned?.basis == com.bamnat.core.tax.TaxLearner.Basis.LEARNED
     val expected = if (fromRecords) learned?.net else payTotal?.takeIf { mode != null }?.let { TakeHome.estimate(it, mode!!, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
         nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
-    val basisLabel = if (fromRecords) "내 월급 기록으로 맞춘 세후" else mode?.gapLabel() ?: "세전"
+    val basisLabel = if (fromRecords) "내 ${if (style == WorkStyle.HOURLY) "급여" else "월급"} 기록으로 맞춘 세후" else mode?.gapLabel() ?: "세전"
     val payDate = profile?.period?.payDate(month)
     val gap = remember(book, month, expected, profile) { book?.let { PayGaps.of(month, expected, payDate, it.entries) } }
     var adding by remember { mutableStateOf(false) }
@@ -346,11 +346,13 @@ private fun PayGapCard(
         if (profile != null && gap == null) adding = true
     }
     val cal = LocalCalendarColors.current
-    SectionCard(title = "${month.monthValue}월 월급날 비교", modifier = Modifier.bringIntoViewRequester(bring)) {
+    // PC 8eae2521 (알바에 '월급날 비교'·'월급이 들어오면'): 알바's pay is 급여, weekly or monthly.
+    val payWord = if (style == WorkStyle.HOURLY) "급여" else "월급"
+    SectionCard(title = "${month.monthValue}월 ${payWord}날 비교", modifier = Modifier.bringIntoViewRequester(bring)) {
         when {
             // [J133-01] Pay is set up but the tax way never asked: the way first, here, then the 예상.
             profile != null && payTotal != null && mode == null && !fromRecords -> {
-                Text("${com.bamnat.app.tax.TaxWay.UNKNOWN}. 월급에서 무엇을 떼나요?", style = MaterialTheme.typography.bodyMedium)
+                Text("${com.bamnat.app.tax.TaxWay.UNKNOWN}. ${payWord}에서 무엇을 떼나요?", style = MaterialTheme.typography.bodyMedium)
                 val c = context.appContainer
                 com.bamnat.app.tax.TaxWayChips(null, Modifier.padding(top = 6.dp)) { m -> scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, m) } }
             }
@@ -361,7 +363,7 @@ private fun PayGapCard(
             }
             gap == null -> {
                 Text("예상 ${Fmt.won(expected)} ($basisLabel)", style = MaterialTheme.typography.titleMedium.merge(NumberStyle))
-                Text("월급이 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 가계부 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
+                Text("${payWord}${if (payWord == "급여") "가" else "이"} 들어오면 금액을 적어 주세요. 계산과 얼마나 다른지 바로 보여 드려요. 가계부 탭에 ‘급여’로 들어간 것도 똑같이 셈해요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp))
                 Button(onClick = { adding = true }, modifier = Modifier.padding(top = 8.dp)) { Text("들어온 급여 적기") }

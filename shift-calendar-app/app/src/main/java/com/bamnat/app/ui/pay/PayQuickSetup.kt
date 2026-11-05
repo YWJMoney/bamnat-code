@@ -589,7 +589,8 @@ private fun ConfirmPage(
         if (net.deductions.isNotEmpty()) Text("떼는 돈 ${com.bamnat.app.ui.Fmt.won(r.total - net.net)} (간이세액표·4대 보험 요율 참고값)",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    Text("월급에서 떼는 돈", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+    // PC 8eae2521 (알바 설정 마지막 쪽에 '월급에서 떼는 돈'): 시급·일당 is 급여.
+    Text(if (p.wageType == WageType.MONTHLY) "월급에서 떼는 돈" else "급여에서 떼는 돈", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
     com.bamnat.app.tax.TaxWayChips(p.taxMode, onPick = onTax)
     Text(if (p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.NONE)
         "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요."

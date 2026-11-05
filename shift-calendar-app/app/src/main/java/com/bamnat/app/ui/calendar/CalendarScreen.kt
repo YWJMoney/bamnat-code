@@ -753,7 +753,8 @@ fun CalendarScreen(
             // it rides under the month only when the whole month shows at the page's top. A longer page keeps it in its usual
             // place all the way, so it never hides below the edge and does not jump while scrolling.
             val ride = gridBottom + dockGap - (fabAreaBottom - fabLift)
-            if (ride + pageScroll.value >= fabLift - 1f) 0f else ride.coerceIn(0f, fabLift)
+            // PC 8eae2521 (달력만 보기에서 달력 아래에 붙은 단추가 아래 탭을 반쯤 가림): it never goes lower than its own area's bottom.
+            if (ride + pageScroll.value >= fabLift - 1f) 0f else ride.coerceIn(0f, fabLift - fabHeight)
         }
     }
     val fabDrop = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -770,6 +771,9 @@ fun CalendarScreen(
     val fabExpanded by remember { derivedStateOf { fabDrop.value > 0.5f || pageScroll.value == 0 || !pageScroll.canScrollForward } }
     // Below the screen's edge with the month, it is not there for TalkBack either.
     val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f } }
+    // PC 8eae2521 (근무 0개: 안내 카드의 '빠른 입력'과 떠 있는 '빠른 입력' 두 개, 떠 있는 것이 날짜 칸을 가림): while the empty
+    // calendar's start card is up, its own button is the one way in.
+    var startCardShown by remember { mutableStateOf(false) }
 
     // [SLP-15] A tapped day notice opens on today: the user's own calendar, this month, the page's top.
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
@@ -989,6 +993,7 @@ fun CalendarScreen(
         }
         // [SETUP-01] A first setup left for later comes first; it fills the calendar.
         val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
+        androidx.compose.runtime.SideEffect { startCardShown = false }
         if (waiting != null) {
             SetupResumeCard(waiting, onResume = vm::resumeSetup)
         } else if (paint == null && !settings.rosterMonthly) {
@@ -1002,6 +1007,7 @@ fun CalendarScreen(
                 style == com.bamnat.core.work.WorkStyle.INVEST -> investState?.loaded == true && investState.full.isEmpty
                 else -> overview.isEmpty && YearMonth.from(today) == visibleMonth
             }
+            androidx.compose.runtime.SideEffect { startCardShown = empty }
             if (empty) CalendarStartCard(
                 start = style.calendarStart(),
                 onAction = {
@@ -1599,7 +1605,8 @@ fun CalendarScreen(
         val place = Modifier.align(Alignment.BottomEnd).padding(FAB_MARGIN).offset { IntOffset(0, fabDrop.value.roundToInt()) }
             // Coming up from the edge it fades in with how much of it shows, so a sliver is not a stray shape.
             .graphicsLayer { alpha = ((fabLift - fabDrop.value) / fabHeight).coerceIn(0f, 1f) }
-        if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
+        if (startCardShown && paint == null) Unit
+        else if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
             // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
             val label = if (style.usesJobs) "일감 적기" else if (style.usesTrades) "매매 기록" else "매출 적기"
             // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
