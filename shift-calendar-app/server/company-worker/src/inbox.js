@@ -33,6 +33,8 @@ export const SORTING = {
   // 1.37 [ADM2-09] 넘길 글의 ‘개발 기록’: 지난 개발사항 몇 개까지, 하나에 기록 몇 줄까지.
   history: 120,
   historyNotes: 3,
+  // 1.38 [DESK-03] 정리함에서 '빼 두기'한 문의도 이만큼 지나 아직 답을 기다리면 다시 돌아와요(할 일함의 7일과 같은 규칙).
+  skipBackDays: 7,
 };
 
 export const PILES = ["fixed", "known", "again", "declined", "answered", "faq", "new"];
@@ -116,8 +118,8 @@ export function titleFrom(text) {
   return c.length > 60 ? `${c.slice(0, 59).join("")}…` : first || "새 문의";
 }
 
-/** What the server knows to weigh questions against: 개발사항, answered questions, saved answers. */
-async function known(env) {
+/** What the server knows to weigh questions against: 개발사항, answered questions, saved answers. 1.38 [DESK-02] 운영 장부도 써요. */
+export async function known(env) {
   const [devs, answered, templates, shipped] = await Promise.all([
     all(env, `SELECT id, title, body, status, reason, released_in FROM dev_items WHERE deleted_at IS NULL ORDER BY updated_at DESC LIMIT ${SORTING.devs}`),
     // Questions an admin answered (the last word theirs), with the first question and that answer.
@@ -184,18 +186,22 @@ export function classify(q, k) {
 
 const round = (s) => Math.round(s * 100) / 100;
 
-/** The questions waiting on an admin with no 개발사항 yet and not put aside in 정리함, newest first. */
+/**
+ * The questions waiting on an admin with no 개발사항 yet and not put aside in 정리함, newest first. 1.38 [DESK-03] 빼 둔 문의도
+ * [SORTING.skipBackDays]가 지나 아직 답을 기다리면 다시 와요(빠뜨리지 않게).
+ */
 async function waiting(env, ids = null) {
-  const rows = await all(env, `SELECT i.id, i.kind, i.info, i.created_at, i.updated_at, i.same, i.handed_in,
+  const back = Date.now() - SORTING.skipBackDays * 86400000;
+  const rows = await all(env, `SELECT i.id, i.kind, i.info, i.created_at, i.updated_at, i.same, i.handed_in, i.sorted_at,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
     FROM inquiries i
-    WHERE i.status = 'open' AND i.sorted_at IS NULL
+    WHERE i.status = 'open' AND (i.sorted_at IS NULL OR i.sorted_at < ?)
       AND NOT EXISTS (SELECT 1 FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = i.id)
       ${ids ? `AND i.id IN (${ids.map(() => "?").join(", ")})` : ""}
-    ORDER BY i.created_at DESC LIMIT ${SORTING.candidates}`, ...(ids ?? []));
+    ORDER BY i.created_at DESC LIMIT ${SORTING.candidates}`, back, ...(ids ?? []));
   return rows.filter((r) => r.last === "user" && r.first).map((r) => ({ id: r.id, kind: r.kind, info: JSON.parse(r.info), text: r.first,
-    at: r.created_at, same: r.same ?? 0, handedIn: r.handed_in ?? null }));
+    at: r.created_at, same: r.same ?? 0, handedIn: r.handed_in ?? null, back: r.sorted_at !== null && r.sorted_at !== undefined }));
 }
 
 /** [INBOX-02] 자동 대응: which piles the server answers by itself as a question comes in (the owner's choice; off at first). */
@@ -209,14 +215,14 @@ export async function autoSettings(env) {
  * [INBOX-01] GET /inquiries/sort: every waiting question in its pile, with what it matched and the answer to start from.
  * New ones that read alike come as one group (the oldest first), so they go to 개발 as one 개발사항.
  */
-export async function sortInbox(env) {
-  const [list, k, auto] = await Promise.all([waiting(env), known(env), autoSettings(env)]);
+export async function sortInbox(env, preloaded = null) {
+  const [list, k, auto] = await Promise.all([waiting(env), preloaded ?? known(env), autoSettings(env)]);
   const piles = Object.fromEntries(PILES.map((p) => [p, []]));
   const fresh = [];
   for (const q of list) {
     const c = classify(q, k);
     const item = { id: q.id, kind: q.kind, preview: [...q.text].slice(0, 160).join(""), app: q.info?.app ?? null, model: q.info?.model ?? null,
-      at: iso(q.at), same: q.same, ...triage(q.kind, q.text, q.info), match: c.match, reply: c.reply };
+      at: iso(q.at), same: q.same, ...triage(q.kind, q.text, q.info), match: c.match, reply: c.reply, ...(q.back ? { back: true } : {}) };
     if (c.pile === "new") fresh.push({ item, g: grams(q.text), topic: c.topic });
     else piles[c.pile].push(item);
   }

@@ -92,6 +92,7 @@ import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
+import { LEDGER_SCHEMA, ledgerRoute } from "./ledger.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -749,6 +750,8 @@ const SCHEMA = [
   ...WORK_SCHEMA,
   // 1.37 [ADM2-03] Claude 운영 열쇠 (desk.js).
   ...DESK_SCHEMA,
+  // 1.38 [DESK-02] 운영 장부 줄 번호와 요약 (ledger.js).
+  ...LEDGER_SCHEMA,
   // 1.36 [PUSH-01] 문의 답 바로 알리기 (fcm.js).
   ...FCM_SCHEMA,
 ];
@@ -4417,6 +4420,8 @@ function areaFor(path) {
   if (path === "/search") return null;
   // 1.36 [GRW-07] 할 일함: each part reads only the areas the admin has (work.js).
   if (path === "/work" || path.startsWith("/work/")) return null;
+  // 1.38 [DESK-02] 운영 장부도 할 일함처럼 칸마다 그 권한으로만 읽어요(ledger.js).
+  if (path === "/ledger" || path === "/ledger.csv" || path.startsWith("/ledger/")) return null;
   // 1.37 [ADM2] 흐름과 장부는 문의를 맡은 사람이, 나간 판 저장은 개발사항 처리를 가진 사람이, 운영 열쇠는 주인만(아래 기본값).
   if (path === "/flow" || path === "/desk") return "inquiries";
   if (path === "/desk/ship") return "devStatus";
@@ -4609,6 +4614,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/flow" || path === "/desk" || path.startsWith("/desk/") || path === "/keys" || path.startsWith("/keys/")) {
     const d = await deskRoute(request, env, path, method, now, (e, id, text, at) => inboxAnswer(e, id, text, at, actorName(e)));
     if (d) return d;
+  }
+  // 1.38 [DESK-02][DESK-03] 운영 장부: 정리함·할 일함을 하나로.
+  if (path === "/ledger" || path === "/ledger.csv" || path.startsWith("/ledger/")) {
+    const l = await ledgerRoute(request, env, url, path, now);
+    if (l) return l;
   }
   // 1.36 [GRW-07] 할 일함.
   if (path === "/work" || path.startsWith("/work/")) {

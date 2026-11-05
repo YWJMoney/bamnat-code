@@ -210,7 +210,7 @@ export async function flow(env, now) {
   const built = devs.filter((d) => d.status === "done" && !isOut(d.released_in, shipped));
   const notify = linkedWaiting.filter((r) => isOut(r.released_in, shipped));
   const stages = [
-    stage("answer", "새 문의", fresh, (q) => q.created_at, "정리함에서 나눠 답하거나 개발사항으로 넘겨요", { route: "sort", label: "정리함 열기" }),
+    stage("answer", "새 문의", fresh, (q) => q.created_at, "운영 장부에서 나눠 답하거나 개발사항으로 넘겨요", { route: "sort", label: "운영 장부 열기" }),
     stage("todo", "개발 대기", todo, (d) => d.created_at, "Claude에게 넘기기로 복사하거나, 열쇠가 있으면 Claude가 직접 가져가요", { route: "sort", label: "Claude에게 넘기기" }),
     stage("handed", "Claude에게 넘김", handed, (d) => d.handed_at, "Claude가 개발을 시작하면 개발중으로 바뀌어요", { route: "dev", label: "개발사항 보기" }),
     stage("doing", "개발 중", doing, (d) => d.updated_at, "PR·디버그 빌드·PC 확인 중이에요", { route: "dev", label: "개발사항 보기" }),
@@ -256,9 +256,13 @@ const keyDayOf = (now) => new Date(now + 9 * HOUR).toISOString().slice(0, 10);
 
 /** 열쇠로 할 수 있는 것: 문의·개발사항 읽기·답·상태·묶기, 장부, 나간 판. 이 밖은 모두 막아요. */
 const KEY_GET = [/^\/desk$/, /^\/flow$/, /^\/me$/, /^\/badges$/, /^\/inquiries$/, /^\/inquiries\/[A-Za-z0-9]{22}$/, /^\/inquiries\/sort$/, /^\/inquiries\/handoff$/,
-  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}$/, /^\/templates$/];
+  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}$/, /^\/templates$/,
+  // 1.38 [DESK-02] 운영 장부(줄·CSV·기록): 열쇠의 권한(문의·개발사항) 안의 줄만 보여요.
+  /^\/ledger$/, /^\/ledger\.csv$/, /^\/ledger\/log$/];
 const KEY_POST = [/^\/inquiries\/[A-Za-z0-9]{22}\/(reply|status|assign|notes)$/, /^\/inquiries\/sort\/apply$/, /^\/inquiries\/handoff\/(mark|result)$/,
-  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}(\/links|\/links\/remove|\/notes|\/reply)?$/, /^\/desk\/ship$/];
+  /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}(\/links|\/links\/remove|\/notes|\/reply)?$/, /^\/desk\/ship$/,
+  // 1.38 [DESK-02][DESK-03] 장부 줄의 상태(보는 중·기다림·끝, 이유와 함께)·되돌리기·한 줄 요약.
+  /^\/ledger\/(state|undo|summary)$/];
 export const keyAllows = (path, method) => (method === "GET" ? KEY_GET : method === "POST" ? KEY_POST : []).some((r) => r.test(path));
 
 /** 'Claude' 관리자: 문의와 개발사항만, 처리까지. 기록에는 'Claude'로 남아요. */
@@ -336,6 +340,7 @@ async function desk(env, now) {
       "답은 쉬운 존댓말, 결론부터. '고쳤어요'는 나간 판(shipped) 이하로 고친 것에만.",
       "환불·결제·보상, 법·안전 신고, 개인정보 요청, 크게 화난 민원, 약관·처리방침 질문, 회사 이름이 나오는 회사 방식, 큰 방향 개선은 보내지 말고 사용자에게 물어요.",
       "지우기·사용자 제한·스위치·공지·관리자 계정은 이 열쇠로 할 수 없어요.",
+      "1.38 운영 장부: GET /api/admin/ledger?view=claude(Claude 차례)·owner(최고 관리자 확인)·today·late. 줄마다 key(type:id)·번호(K-0001)·겹침 후보·단계·답·담당·기한. 처리한 줄은 POST /ledger/state {keys, state:'done', reason}로 끝내고(이유: answered·duplicate·fixed·dev·wontfix·spam·nothing·handled), 한 줄 요약은 POST /ledger/summary {key, text}.",
     ],
     shipped,
     flow: { stages: f.stages, metrics: f.metrics, next: f.next },

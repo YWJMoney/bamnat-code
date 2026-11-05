@@ -901,4 +901,69 @@ dialog h3{font-size:.95rem;margin:1rem 0 .4rem}
 ul.mini li.batch{font-weight:600}
 .handoff-log ul.mini{margin-top:.4rem}
 form[data-form="dev-ship-note"] textarea{min-height:5rem}
+/* 1.38 [DESK-02][DESK-03] 운영 장부: 휴대폰은 카드 한 장(번호·요약 위, 단계·담당·기한 아래), 태블릿은 다섯 칸, 컴퓨터는 열 칸 표. */
+.ledger-view .lg-tiles{grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr))}
+.lg-tools>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;cursor:pointer}
+.lg-tools .sort-top{margin-top:.75rem}
+.lg-card .segmented{margin-bottom:.5rem}
+.lg-bar{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.5rem 0}
+.lg-bar input[type=search]{flex:1 1 14rem;min-width:0}
+.lg-bar select{flex:0 0 auto;max-width:9rem}
+.lg-hint{display:flex;flex-wrap:wrap;gap:.25rem .75rem;justify-content:space-between}
+.lg-hint .meta{display:none}
+.rows.ledger{margin:0}
+.rows.ledger>li>details>summary{list-style:none}
+.rows.ledger>li>details>summary::-webkit-details-marker{display:none}
+.lg-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"no sum due" "st st who";gap:.35rem .6rem;align-items:center;min-height:3.5rem;padding:.65rem .85rem}
+.lg-row>span{min-width:0}
+.rows.ledger .lg-row{position:relative;padding-right:1.4rem}
+.rows.ledger .lg-row::after{position:absolute;right:.45rem;top:50%;transform:translateY(-50%);font-size:.75rem;color:var(--muted)}
+.lg-row .c-no{grid-area:no;font-variant-numeric:tabular-nums;font-size:.8rem;color:var(--muted)}
+.lg-row .c-sum{grid-area:sum;display:flex;flex-wrap:wrap;gap:.2rem .35rem;align-items:center}
+.lg-row .c-sum>b{flex:1 1 100%;font-size:.95rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lg-row .c-sum .sub{flex:1 1 100%;color:var(--muted);font-size:.75rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lg-row .c-sum .pill{font-size:.7rem}
+.lg-row .c-st{grid-area:st}
+.lg-row .c-who{grid-area:who;justify-self:end}
+.lg-row .c-due{grid-area:due;justify-self:end}
+.lg-row .c-in,.lg-row .c-ov,.lg-row .c-bu,.lg-row .c-an,.lg-row .c-log{display:none}
+.lg-row small{font-size:.75rem;color:var(--muted)}
+.lg-row .kind{font-size:.75rem;font-weight:700}
+.lg-row .who-claude,.feed .who-claude{color:var(--accent);font-weight:700}
+.lg-pick{grid-area:no;display:flex;align-items:center}
+.lg-table.picking .lg-row{grid-template-columns:auto auto minmax(0,1fr) auto;grid-template-areas:"pk no sum due" "pk st st who"}
+.lg-table.picking .lg-row .lg-pick{grid-area:pk}
+.lg-line.late .lg-row{box-shadow:inset 3px 0 0 var(--bad)}
+.lg-line.shut .lg-row .c-sum>b{color:var(--muted);font-weight:600}
+.lg-line details[open]>.lg-row{background:var(--hover)}
+.lg-detail{padding:.25rem .85rem .9rem;display:grid;gap:.5rem;border-top:1px dashed var(--line)}
+.lg-detail .lg-text{margin:.5rem 0 0;padding:.5rem .75rem;border-left:3px solid var(--line-strong);background:var(--soft);border-radius:var(--r-sm);white-space:pre-wrap;overflow-wrap:anywhere}
+.lg-detail .meta,.lg-detail p{margin:0}
+.lg-detail .lg-block ol.mini{margin:.25rem 0 0;padding-left:1.25rem}
+.lg-detail .lg-block small{display:block;color:var(--muted)}
+.lg-detail .lg-sort{display:grid;gap:.4rem;padding:.6rem .75rem;border:1px solid var(--line);border-radius:var(--r-sm)}
+.lg-detail .lg-sort textarea{width:100%}
+.lg-head{display:none}
+@media (min-width:600px){
+  .lg-hint .meta{display:inline}
+  .lg-head{display:grid;padding:.45rem .85rem;font-size:.75rem;font-weight:700;color:var(--muted);background:var(--soft);border:1px solid var(--line);border-bottom:0;border-radius:var(--r-lg) var(--r-lg) 0 0}
+  .lg-table .rows.ledger{border-radius:0 0 var(--r-lg) var(--r-lg)}
+  .lg-head,.lg-row{grid-template-columns:4.2rem minmax(0,1fr) 7.5rem 6.5rem 6rem;grid-template-areas:none;gap:.5rem}
+  .lg-head>span,.lg-row>span,.lg-row .c-no,.lg-row .c-sum,.lg-row .c-st,.lg-row .c-who,.lg-row .c-due,.lg-row .lg-pick{grid-area:auto}
+  .lg-head .c-in,.lg-head .c-ov,.lg-head .c-bu,.lg-head .c-an,.lg-head .c-log{display:none}
+  .lg-row .c-who,.lg-row .c-due{justify-self:start}
+  .lg-table.picking .lg-head,.lg-table.picking .lg-row{grid-template-columns:1.5rem 4.2rem minmax(0,1fr) 7.5rem 6.5rem 6rem;grid-template-areas:none}
+}
+@media (min-width:1024px){
+  .lg-head,.lg-row{grid-template-columns:4.2rem 5.5rem minmax(11rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
+  .lg-head .c-in,.lg-head .c-bu,.lg-head .c-an,.lg-head .c-log,.lg-row .c-in,.lg-row .c-bu,.lg-row .c-an,.lg-row .c-log{display:block}
+  .lg-row .c-log small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+  .lg-table.picking .lg-head,.lg-table.picking .lg-row{grid-template-columns:1.5rem 4.2rem 5.5rem minmax(11rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
+}
+@media (min-width:1300px){
+  .lg-head,.lg-row{grid-template-columns:4.2rem 5.5rem minmax(11rem,1.6fr) minmax(7rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
+  .lg-head .c-ov,.lg-row .c-ov{display:block}
+  .lg-row .c-ov small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lg-table.picking .lg-head,.lg-table.picking .lg-row{grid-template-columns:1.5rem 4.2rem 5.5rem minmax(11rem,1.6fr) minmax(7rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
+}
 `;
