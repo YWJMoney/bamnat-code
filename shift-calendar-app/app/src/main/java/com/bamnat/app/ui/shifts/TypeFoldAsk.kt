@@ -55,7 +55,28 @@ object TypeFoldAsk {
     fun undo(c: AppContainer, d: Done) {
         c.foldedTypes.unfold(d.calendar, d.ids)
         val was = d.patterns ?: return
+        c.foldedTypes.stop(d.calendar, null)
         c.appScope.launch { c.calendars.repository(d.calendar).restorePatterns(was) }
+    }
+
+    /** Stops [calendar]'s cycle after today, keeping it as it was for [resume]. */
+    suspend fun stopCycle(c: AppContainer, calendar: String, was: List<com.bamnat.core.model.WorkPattern>) {
+        val today = com.bamnat.core.time.Today.date()
+        c.foldedTypes.stop(calendar, com.bamnat.app.data.FoldedTypes.StoppedCycle(today, was))
+        c.calendars.repository(calendar).endPatternsAfter(today)
+    }
+
+    /**
+     * [SETUP-16] 1.37 PC b98f9d1e: back to work with a cycle (교대·일근·알바), the one [stopCycle] stopped comes back as it was, when
+     * nothing was changed in it since. The days between went on being the other work's (written by hand, they stay as written).
+     */
+    suspend fun resume(c: AppContainer, calendar: String, to: WorkStyle) {
+        if (stopsCycle(to)) return
+        val stopped = c.foldedTypes.stopped(calendar) ?: return
+        c.foldedTypes.stop(calendar, null)
+        val repo = c.calendars.repository(calendar)
+        val now = repo.patterns.first()
+        if (now == com.bamnat.core.work.QuitCheck.endPatterns(stopped.was, stopped.on)) repo.restorePatterns(stopped.was)
     }
 
     val done = MutableStateFlow<Done?>(null)
@@ -63,6 +84,7 @@ object TypeFoldAsk {
     /** Asks when the change from [from] to [to] left kinds of day the old one started with. */
     suspend fun after(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle) {
         if (from == to) return
+        runCatching { resume(c, calendar, to) }
         val types = c.calendars.repository(calendar).shiftTypes.first()
         // Back to a kind of work: what it starts with comes out of '안 쓰는 종류' by itself.
         val own = com.bamnat.app.data.FoldedTypes.startNames(to)
@@ -104,9 +126,7 @@ fun TypeFoldHost(c: AppContainer) {
                 val ids = a.types.map { it.id }
                 c.foldedTypes.fold(a.calendar, ids)
                 val was = patterns.takeIf { stops }
-                if (was != null) c.appScope.launch {
-                    c.calendars.repository(a.calendar).endPatternsAfter(com.bamnat.core.time.Today.date())
-                }
+                if (was != null) c.appScope.launch { TypeFoldAsk.stopCycle(c, a.calendar, was) }
                 if (a.adds.isNotEmpty()) c.appScope.launch {
                     val repo = c.calendars.repository(a.calendar)
                     val have = repo.shiftTypes.first()

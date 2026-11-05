@@ -71,4 +71,44 @@ class TypeFoldAppTest {
         assertEquals(listOf<com.bamnat.core.model.WorkPattern>(cycle), repo.patterns.first())
         repo.clearPattern()
     }
+
+    /** [SETUP-16] 1.37 PC b98f9d1e: the 되돌리기 missed, going back to 교대 brings the stopped cycle back; to 현장 again it stays stopped. */
+    @Test fun backToShiftWorkBringsTheStoppedCycleBack() = runBlocking {
+        val c = app.container
+        val repo = c.calendars.repository(PersonalCalendar.MAIN)
+        repo.ensureDefaults()
+        val today = com.bamnat.core.time.Today.date()
+        val day = repo.shiftTypes.first().first { !it.isOff }.id
+        val cycle = com.bamnat.core.model.WorkPattern.Rotation(today.minusDays(30), listOf(day, null))
+        val next = com.bamnat.core.model.WorkPattern.Rotation(today.plusDays(10), listOf(day, day, null))
+        repo.restorePatterns(listOf(cycle, next))
+        val was = repo.patterns.first()
+        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, was)
+        assertEquals(today, repo.patterns.first().single().endDate)
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.FIELD, WorkStyle.BUSINESS)
+        assertEquals(1, repo.patterns.first().size)
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.BUSINESS, WorkStyle.SHIFT)
+        assertEquals(was, repo.patterns.first())
+        assertEquals(null, c.foldedTypes.stopped(PersonalCalendar.MAIN))
+        TypeFoldAsk.asking.value = null
+        repo.clearPattern()
+    }
+
+    /** A cycle changed by hand after it was stopped is the user's: going back leaves it as it is. */
+    @Test fun aCycleSetAgainByHandIsNotReplaced() = runBlocking {
+        val c = app.container
+        val repo = c.calendars.repository(PersonalCalendar.MAIN)
+        repo.ensureDefaults()
+        val today = com.bamnat.core.time.Today.date()
+        val day = repo.shiftTypes.first().first { !it.isOff }.id
+        repo.restorePatterns(listOf(com.bamnat.core.model.WorkPattern.Rotation(today.minusDays(30), listOf(day, null))))
+        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, repo.patterns.first())
+        val mine = com.bamnat.core.model.WorkPattern.Rotation(today, listOf(day, day, null, null))
+        repo.restorePatterns(listOf(mine))
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.FIELD, WorkStyle.SHIFT)
+        assertEquals(listOf<com.bamnat.core.model.WorkPattern>(mine), repo.patterns.first())
+        TypeFoldAsk.asking.value = null
+        repo.clearPattern()
+    }
 }

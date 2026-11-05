@@ -76,7 +76,9 @@ class ShiftsViewModel(
     val draft = PatternDraft()
 
     fun save(type: ShiftType) {
-        viewModelScope.launch { repo.saveShiftType(type) }
+        // [SETUP-16] 1.37 PC b98f9d1e (묻기로 두고 주간 끝을 18:30으로 고쳐도 '회사 광장에 나눌까요?'가 없음): a kind's time is part of what
+        // the plaza has, so its save is held against the one last shared too (the same values again ask nothing).
+        viewModelScope.launch { repo.saveShiftType(type); shared() }
     }
 
     /**

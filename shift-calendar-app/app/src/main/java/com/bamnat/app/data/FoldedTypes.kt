@@ -1,6 +1,8 @@
 package com.bamnat.app.data
 
 import android.content.Context
+import com.bamnat.app.data.db.toEntity
+import com.bamnat.app.data.db.toModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,12 +37,44 @@ class FoldedTypes(context: Context?) {
         }?.apply()
     }
 
-    private fun load(): Map<String, Set<Long>> = prefs?.all.orEmpty().mapNotNull { (k, v) ->
+    /**
+     * [SETUP-16] 1.37 PC b98f9d1e (현장으로 접어 두기 → 되돌리기를 놓치고 교대로 돌아가니 11/6부터 다 쉬는 날): the repeating schedule as it
+     * was before 접어 두기 stopped it on [StoppedCycle.on], so going back to work with a cycle brings it back. In the same file, so it
+     * goes in the backup with the folded kinds.
+     */
+    data class StoppedCycle(val on: java.time.LocalDate, val was: List<com.bamnat.core.model.WorkPattern>)
+
+    fun stopped(calendar: String): StoppedCycle? = runCatching {
+        val o = org.json.JSONObject(prefs?.getString(CYCLE + calendar, null) ?: return null)
+        val a = o.getJSONArray("was")
+        StoppedCycle(java.time.LocalDate.ofEpochDay(o.getLong("on")), (0 until a.length()).mapNotNull { i ->
+            val p = a.getJSONObject(i)
+            com.bamnat.app.data.db.PatternEntity(
+                kind = p.getString("kind"), startEpochDay = p.getLong("start"), endEpochDay = if (p.isNull("end")) null else p.getLong("end"),
+                steps = p.getString("steps"), anchorEpochDay = if (p.isNull("anchor")) null else p.getLong("anchor"),
+            ).toModel()
+        })
+    }.getOrNull()
+
+    fun stop(calendar: String, cycle: StoppedCycle?) {
+        val e = prefs?.edit() ?: return
+        if (cycle == null) e.remove(CYCLE + calendar) else e.putString(CYCLE + calendar, org.json.JSONObject()
+            .put("on", cycle.on.toEpochDay())
+            .put("was", org.json.JSONArray(cycle.was.mapIndexed { i, p ->
+                val x = p.toEntity(i + 1)
+                org.json.JSONObject().put("kind", x.kind).put("start", x.startEpochDay).put("end", x.endEpochDay ?: org.json.JSONObject.NULL)
+                    .put("steps", x.steps).put("anchor", x.anchorEpochDay ?: org.json.JSONObject.NULL)
+            })).toString())
+        e.apply()
+    }
+
+    private fun load(): Map<String, Set<Long>> = prefs?.all.orEmpty().filterKeys { !it.startsWith(CYCLE) }.mapNotNull { (k, v) ->
         (v as? String)?.split(',')?.mapNotNull { it.toLongOrNull() }?.toSet()?.takeIf { it.isNotEmpty() }?.let { k to it }
     }.toMap()
 
     companion object {
         private const val FILE = "folded_types"
+        private const val CYCLE = "cycle:"
 
         /** The names of the kinds of day a kind of work starts with (to fold what the old one brought and the new one does not use). */
         fun startNames(style: com.bamnat.core.work.WorkStyle?): Set<String> = when (style) {
