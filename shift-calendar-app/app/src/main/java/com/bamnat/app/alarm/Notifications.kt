@@ -62,6 +62,8 @@ object Notifications {
     /** [TOWN-08] 밤낮 소식 and 오늘 근무 each stay a notification of their own, never bundled together by Android. */
     const val GROUP_NEWS = "bamnat_news"
     const val GROUP_TODAY = "bamnat_today"
+    /** 1.38 '오늘 남은 알람을 껐어요' alone, never bundled with 소식. */
+    const val GROUP_STATUS = "bamnat_status"
 
     const val ALARM_NOTIFICATION_ID = 7001
     /** 1.35 [J135-08] The ringing notice put up again as a new one (an update of the first does not pop up again). */

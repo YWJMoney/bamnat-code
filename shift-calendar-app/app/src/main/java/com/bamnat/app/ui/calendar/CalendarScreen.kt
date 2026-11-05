@@ -77,7 +77,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WarningAmber
-import com.bamnat.app.share.MonthImage
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -661,6 +660,8 @@ fun CalendarScreen(
 
     var showMonthPicker by remember { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
+    // 1.38 [EASE-28] The month about to go out as a picture: the sheet shows it and what rides on it first.
+    var imageMonth by remember { mutableStateOf<YearMonth?>(null) }
     // [PROV-04] Which of the calendar's links the sheet opens on: the first, or the one a notice is about.
     var shareSlot by remember { mutableIntStateOf(1) }
     val shareLinks = remember { com.bamnat.app.share.ShareLinkClient().enabled }
@@ -671,10 +672,7 @@ fun CalendarScreen(
         shareSlot = 1
         // [MKT-09] With a link server the sheet offers picture or link; without one it sends the picture.
         if (shareLinks) showShare = true
-        else {
-            scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }
-            vm.logShare()
-        }
+        else imageMonth = visibleMonth
     }
     // [MCAL-03] Keyed by the calendar, so a sheet opened as the calendar changes starts from that calendar's link.
     if (showShare) androidx.compose.runtime.key(activeCalendar?.id) {
@@ -682,9 +680,17 @@ fun CalendarScreen(
             snapshot = snap, month = visibleMonth,
             calendar = activeCalendar,
             startSlot = shareSlot,
-            onImage = { scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }; vm.logShare() },
+            onImage = { imageMonth = visibleMonth },
             onDismiss = { showShare = false },
             onOpenReceived = { showShare = false; adding = "" },
+        )
+    }
+    imageMonth?.let { m ->
+        ImageShareSheet(
+            snapshot = snap, month = m, weekStart = settings.weekStart, memos = datedMemos,
+            startName = remember(activeCalendar.id) { context.appContainer.shareLinksOf(com.bamnat.app.share.ShareLinkKey.of(activeCalendar.id, 1)).link.value?.title.orEmpty() },
+            onSent = { vm.logShare() },
+            onDismiss = { imageMonth = null },
         )
     }
     // [SHR-02][MCAL-01] Whose calendar is on screen, once there is more than one.
@@ -702,6 +708,9 @@ fun CalendarScreen(
     }
     val currentRow: CalendarRow = viewingReceived?.let { CalendarRow.Got(it) }
         ?: calendarRows.firstOrNull { it.key == com.bamnat.app.data.CalendarKey.Mine(activeCalendar.id) } ?: CalendarRow.Mine(activeCalendar, null)
+    // 1.38 [EASE-30] 같이 보기 goes once this calendar has a link out; the faces take its place once one is taken in.
+    var together by remember { mutableStateOf(false) }
+    val togetherDone = remember(activeCalendar.id, showShare) { context.appContainer.hasShareLink(activeCalendar.id) }
     // [UX-03] Always there: whose calendar this is (a tap opens the switcher, where a coworker's calendar
     // is taken in too) and 공유, on every screen size.
     val identityBar: @Composable () -> Unit = {
@@ -712,8 +721,15 @@ fun CalendarScreen(
             onOpenSwitcher = { switching = true },
             onPick = pickCalendar,
             onShare = shareCalendar,
+            // 1.38 [EASE-30] Until a link went out or another calendar sits beside this one.
+            onTogether = if (shareLinks && viewingReceived == null && !togetherDone) ({ together = true }) else null,
         )
     }
+    if (together) TogetherSheet(
+        onSend = { together = false; shareCalendar() },
+        onTake = if (received.enabled) ({ together = false; adding = "" }) else null,
+        onDismiss = { together = false },
+    )
     // Back from someone's calendar returns to the user's own, like leaving another account.
     androidx.activity.compose.BackHandler(enabled = viewingReceived != null) { received.view(null) }
 
@@ -817,10 +833,7 @@ fun CalendarScreen(
         vm.viewCalendar(com.bamnat.app.share.ShareLinkKey.calendar(key))
         shareSlot = com.bamnat.app.share.ShareLinkKey.slot(key)
         if (shareLinks) showShare = true
-        else {
-            scope.launch { MonthImage.share(context, snap, visibleMonth, settings.weekStart) }
-            vm.logShare()
-        }
+        else imageMonth = visibleMonth
     }
     // [UX-03] 동료 근무표 받기 from settings or a help answer: the sheet that takes a received link.
     LaunchedEffect(noticeTarget) {
@@ -986,7 +999,9 @@ fun CalendarScreen(
         } else {
             identityBar()
             // [CAL-50] The hint points at 공유 above it; it waits for a day with nothing else to say.
-            if (!shareHintDone && !linkMade && !snap.isEmpty && paint == null && pendingSetup?.later != true && notices.count == 0) {
+            // 1.38 [EASE-30][EASE-03] Not while 같이 보기 already points at the same thing in the bar above.
+            val togetherShown = shareLinks && viewingReceived == null && !linkMade && calendarRows.size <= 1
+            if (!shareHintDone && !linkMade && !togetherShown && !snap.isEmpty && paint == null && pendingSetup?.later != true && notices.count == 0) {
                 ShareHintCard(
                     onShare = shareCalendar,
                     onClose = { hints.markDone(HintStore.SHARE); shareHintDone = true },
@@ -1241,7 +1256,7 @@ fun CalendarScreen(
                     val recap = remember(snap, m) { com.bamnat.core.work.MonthRecap.of(m, snap.resolver.resolveRange(m.atDay(1), m.atEndOfMonth())) }
                     MonthRecapCard(
                         recap,
-                        onShare = { scope.launch { MonthImage.share(context, snap, m, settings.weekStart) }; vm.logShare() },
+                        onShare = { imageMonth = m },
                         onClose = { vm.closeMonthRecap(m) },
                     )
                 }

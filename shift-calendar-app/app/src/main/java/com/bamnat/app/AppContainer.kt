@@ -510,7 +510,7 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.StartupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_MORE) }
         // [STAT-08] 1.31 N4: lookup times from 처리방침 3.5's date on (the `stats.lookup` row turns on by itself that day).
         com.bamnat.app.diag.LookupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LOOKUP) }
-        // 1.38 Phase 3: the guide and 기능 찾기 show a feature only once its 깃발 is on.
+        // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }
 

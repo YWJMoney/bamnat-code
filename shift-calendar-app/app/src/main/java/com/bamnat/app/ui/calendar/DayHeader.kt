@@ -122,7 +122,7 @@ internal fun whenText(alarm: PlannedAlarm, date: LocalDate): String =
     (if (alarm.triggerAt.toLocalDate().isBefore(date)) "전날 " else "") + Fmt.time(alarm.triggerAt.toLocalTime())
 
 /** [DAY-01] One fact about the day in the header: 알람 끔, 직접 바꿈, 메모 2 … */
-private data class DayToken(val text: String, val tone: Tone) {
+private data class DayToken(val text: String, val tone: Tone, val said: String? = null, val struck: Boolean = false) {
     enum class Tone { PLAIN, ACCENT, WARNING, ERROR }
 }
 
@@ -488,10 +488,12 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     return buildList {
         // [CAL-13] An added calendar kept from ringing says so on each of its days.
         if (alarms.isNotEmpty() && !calendarAlarms) add(DayToken("이 달력 알람 꺼짐", DayToken.Tone.PLAIN))
-        else if (alarms.isNotEmpty() && (day.alarmSkipped || !settings.alarmsEnabled)) add(DayToken("알람 끔", DayToken.Tone.ERROR))
         else if (alarms.isNotEmpty()) {
+            // 1.37 시간 바퀴 PC LOW: turned off, the token keeps its words (struck through) so the rows under it do not jump.
             val first = alarms.first()
-            add(DayToken("알람 ${whenText(first, day.date)}" + if (alarms.size > 1) " 외 ${alarms.size - 1}" else "", DayToken.Tone.PLAIN))
+            val text = "알람 ${whenText(first, day.date)}" + if (alarms.size > 1) " 외 ${alarms.size - 1}" else ""
+            val off = day.alarmSkipped || !settings.alarmsEnabled
+            add(if (off) DayToken(text, DayToken.Tone.ERROR, said = "$text 꺼짐", struck = true) else DayToken(text, DayToken.Tone.PLAIN))
         }
         if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.WARNING))
         // [EASE-12] A changed shift has its own line ("원래 → 새 근무"); the token stays for changed times.
@@ -523,7 +525,9 @@ private fun Token(t: DayToken) {
         style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
         color = fg,
         maxLines = 1,
-        modifier = Modifier.clip(MaterialTheme.shapes.small).background(bg).padding(horizontal = 8.dp, vertical = 3.dp),
+        textDecoration = if (t.struck) androidx.compose.ui.text.style.TextDecoration.LineThrough else null,
+        modifier = Modifier.clip(MaterialTheme.shapes.small).background(bg).padding(horizontal = 8.dp, vertical = 3.dp)
+            .then(if (t.said != null) Modifier.semantics { contentDescription = t.said } else Modifier),
     )
 }
 

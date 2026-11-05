@@ -37,8 +37,8 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material.icons.outlined.Backspace
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -760,7 +760,8 @@ private fun Keypad(
                 TextButton(onClick = vm::undo, enabled = ui.history.isNotEmpty()) {
                     Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp)); Text(" 되돌리기", maxLines = 1)
                 }
-                TextButton(onClick = vm::skip) { Icon(Icons.Outlined.Backspace, null, Modifier.size(18.dp)); Text(" 비우기", maxLines = 1) }
+                // 1.38 PC LOW ('비우기'인데 칸은 그대로 두고 다음 칸으로 가요): 건너뛰기 with » (EASE-13 키패드와 같은 말), not ⌫.
+                TextButton(onClick = vm::skip) { Icon(Icons.Filled.SkipNext, null, Modifier.size(18.dp)); Text(" 건너뛰기", maxLines = 1) }
                 TextButton(onClick = { vm.repeatOrder() }, enabled = vm.canRepeat(ui)) {
                     Icon(Icons.Filled.Repeat, null, Modifier.size(18.dp)); Text(" 이 순서 반복", maxLines = 1)
                 }

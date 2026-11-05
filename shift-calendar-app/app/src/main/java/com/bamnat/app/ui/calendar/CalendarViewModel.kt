@@ -738,6 +738,14 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             container.calendars.activeSnapshot.first { s -> dates.any { s.resolver.entryOn(it) != was[it] } }
         } ?: return ""
         val days = dates.mapNotNull { com.bamnat.core.alarm.AlarmPlanner.restDay(before.resolver, after.resolver, it) }
+            // 1.37 시간 바퀴 PC LOW: a changed day put back to its own day off (the pattern's 휴무) is not asked again: the
+            // alarms were the changed shift's, and nothing set by hand is left to ring.
+            .filterNot { d ->
+                val old = was[d.date]
+                val now = after.resolver.entryOn(d.date)
+                d.left.isEmpty() && old != null && old.override != ShiftOverride.None &&
+                    (now?.override ?: ShiftOverride.None) == ShiftOverride.None && now?.leave == old.leave
+            }
         // 1.35 [J135-10] (사용자 '물어보고 끄기'): asked for every such day, also when only the shift's own alarms stopped, so
         // nobody misses a wake-up they still wanted. Closing the ask changes nothing more.
         // [J135-13] The change's message says nothing of alarms while the ask is open: the answer says it.
