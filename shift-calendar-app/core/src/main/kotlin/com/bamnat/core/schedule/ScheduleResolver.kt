@@ -136,6 +136,16 @@ class ScheduleResolver(
     /** Shift type id the pattern gives [date] (null for a day off or no pattern). */
     fun patternShiftIdOn(date: LocalDate): Long? = patternOn(date)?.shiftTypeIdOn(date)
 
+    /**
+     * [EASE-22] The kind of day on [date] as the calendar shows it (a day set by hand first, then the order), without
+     * working out its hours: what a 근무마다 메모 asks for every day of years ahead. Null for nothing scheduled.
+     */
+    fun shiftIdOn(date: LocalDate): Long? = when (val o = entriesByDate[date]?.override ?: ShiftOverride.None) {
+        ShiftOverride.Off -> null
+        is ShiftOverride.Shift -> o.shiftTypeId.takeIf { it in typesById }
+        ShiftOverride.None -> patternShiftIdOn(date)?.takeIf { it in typesById }
+    }
+
     fun resolve(date: LocalDate): ResolvedDay {
         val day = resolveDay(date)
         return if (legalBreaks) LegalBreak.apply(day) else day

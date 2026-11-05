@@ -83,6 +83,10 @@ data class MemoListState(
     /** [MEMO-03] 1.27 AK: the shifts worked on days with a calendar memo (for '야간 날' chips), and the one chosen. */
     val shifts: List<String> = emptyList(),
     val shift: String? = null,
+    /** [EASE-24] The calendar on screen's kind of day on a date, for the 달력 보기's cells. */
+    val shiftOn: (LocalDate) -> com.bamnat.core.model.ShiftType? = { null },
+    /** [EASE-22] The schedule each 근무마다 memo goes by, to lay it on its days in the 달력 보기. */
+    val shiftsOf: (Memo) -> com.bamnat.core.memo.MemoRepeat.ShiftOf? = { null },
 ) {
     val manyCalendars: Boolean get() = calendars.size > 1
     val activeName: String get() = calendars.firstOrNull { it.id == activeCalendar }?.name ?: com.bamnat.app.data.PersonalCalendar.MAIN_NAME
@@ -240,6 +244,12 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
             trashCount = trashCount,
             shifts = shifts,
             shift = shift,
+            shiftOn = snapshots[active]?.resolver?.let { r -> { d: LocalDate -> r.resolve(d).shiftType } } ?: { _: LocalDate -> null },
+            shiftsOf = { m: Memo ->
+                if (com.bamnat.core.memo.MemoRepeat.kindOf(m.repeat) != com.bamnat.core.memo.MemoRepeat.Kind.SHIFT) null
+                else snapshots[com.bamnat.app.data.MemoRepository.calendarOf(m, active)]?.resolver
+                    ?.let { r -> com.bamnat.core.memo.MemoRepeat.ShiftOf { d -> r.shiftIdOn(d) } }
+            },
         )
     }
 
@@ -500,16 +510,52 @@ class MemoEditorViewModel(
     fun removeTemplate(id: String) = container.memoTemplates.remove(id)
     fun setColor(index: Int) = update { it.copy(colorIndex = index) }
     fun togglePinned() = update { it.copy(pinned = !it.pinned) }
-    /** [NOTE-05] A repeat follows the new date (same kind, its weekday or day), and goes with the date. */
+    /** [NOTE-05] A repeat follows the new date (same kind, its weekday or day), and goes with the date. [EASE-22] 근무마다 stays as it is. */
     fun setDate(date: LocalDate?) = update {
         val kind = com.bamnat.core.memo.MemoRepeat.kindOf(it.repeat)
-        it.copy(date = date, repeat = date?.let { d -> com.bamnat.core.memo.MemoRepeat.code(kind, d) }.orEmpty())
+        val repeat = if (kind == com.bamnat.core.memo.MemoRepeat.Kind.SHIFT && date != null) it.repeat
+            else date?.let { d -> com.bamnat.core.memo.MemoRepeat.code(kind, d) }.orEmpty()
+        it.copy(date = date, repeat = repeat)
     }
 
-    /** [NOTE-05] How a dated memo comes back: every week on its weekday, every month on its day, every year. */
-    fun setRepeat(kind: com.bamnat.core.memo.MemoRepeat.Kind) = update {
-        val date = it.date ?: return@update it
-        it.copy(repeat = com.bamnat.core.memo.MemoRepeat.code(kind, date))
+    /**
+     * [NOTE-05] How a dated memo comes back: every week on its weekday, every month on its day, every year. [EASE-23] 1.38: a
+     * memo with no date gets today's (a repeat needs a day to start from) instead of being told to put one first; returns what
+     * was done for the user to read, or null when nothing needs saying.
+     */
+    fun setRepeat(kind: com.bamnat.core.memo.MemoRepeat.Kind): String? {
+        val m = _memo.value
+        if (kind == com.bamnat.core.memo.MemoRepeat.Kind.SHIFT) return null
+        val today = Today.date()
+        if (kind == com.bamnat.core.memo.MemoRepeat.Kind.NONE) { update { it.copy(repeat = "") }; return null }
+        val date = m.date ?: today
+        update { it.copy(date = date, repeat = com.bamnat.core.memo.MemoRepeat.code(kind, date)) }
+        return if (m.date == null) "반복하려면 시작할 날이 있어야 해서 오늘(${com.bamnat.app.ui.Fmt.monthDay(today)})부터로 정했어요" else null
+    }
+
+    /**
+     * [EASE-22] "야간마다": the memo comes back on every day of kind [shiftId] on its calendar, moving with it. [EASE-23] The memo
+     * needs a day of that kind to start on: an undated memo, or one on a day of another kind, starts on the next such day (from its
+     * date, else today), and the returned line says so.
+     */
+    fun setShiftRepeat(shiftId: Long): String? {
+        val start = _memo.value.date
+        val snap = shiftSnap.value
+        val name = snap?.typesById?.get(shiftId)?.name ?: "그 근무"
+        val from = start ?: Today.date()
+        val resolver = snap?.resolver
+        val first = if (resolver == null) null
+            else generateSequence(from) { it.plusDays(1) }.take(SHIFT_SEARCH_DAYS).firstOrNull { resolver.shiftIdOn(it) == shiftId }
+        val date = first ?: from
+        update { it.copy(date = date, repeat = com.bamnat.core.memo.MemoRepeat.shiftCode(shiftId)) }
+        val fmt = com.bamnat.app.ui.Fmt
+        val i = fmt.iga(name)
+        return when {
+            first == null && resolver != null -> "앞으로 1년 안에 $name 날이 없어요. $name$i 달력에 생기면 그날마다 보여요"
+            start == null -> "반복하려면 시작할 날이 있어야 해서 다음 $name ${fmt.dayTitle(date)}부터로 정했어요"
+            date != start -> "${fmt.monthDay(start)}${fmt.eun(fmt.monthDay(start))} $name$i 아니라서 다음 $name ${fmt.dayTitle(date)}부터 보여요"
+            else -> "${name}마다 보여요. 근무가 바뀌거나 밀리면 메모도 따라가요"
+        }
     }
     /** [NOTE-02][MEMO-01] The calendars the memo shows on; [com.bamnat.core.memo.MemoCalendars.EVERY] for every calendar. */
     fun setCalendars(ids: Set<String>) = update { it.copy(calendars = ids) }
@@ -547,6 +593,15 @@ class MemoEditorViewModel(
             }
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** [EASE-22] The schedule of the calendar this memo goes by: its kinds of day for '근무마다', and where each one falls. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val shiftSnap: StateFlow<ScheduleSnapshot?> = shiftCal.flatMapLatest { cal -> container.calendars.repository(cal).live }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** [EASE-22] The kinds of day offered as '야간마다', in the calendar's order; 1.36 kinds put away are left out. */
+    val shiftTypes: StateFlow<List<com.bamnat.core.model.ShiftType>> = shiftSnap.map { s -> s?.shiftTypes.orEmpty().sortedBy { it.sortOrder } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /**
      * [SCHED-01] A time written in the memo that has not been answered yet: offered as a schedule, or,
@@ -681,6 +736,8 @@ class MemoEditorViewModel(
     companion object {
         private const val AUTOSAVE_DELAY_MILLIS = 400L
         private const val HISTORY_COALESCE_MILLIS = 1_000L
+        /** [EASE-22] How far ahead the first day of a 근무마다 memo's kind is looked for. */
+        private const val SHIFT_SEARCH_DAYS = 366
         private const val MAX_HISTORY = 200
     }
 }

@@ -97,6 +97,9 @@ class AppContainer(context: Context) {
     /** [MEMO-01] Memos stay with the calendar they were written on, unless calendars share them. */
     val memoRepository = MemoRepository(database, sharing = kotlinx.coroutines.flow.combine(memoSharing.state, calendars.calendars) { s, list ->
         s.cleaned(list.map { it.id })
+    }, shiftsOf = { id ->
+        // [EASE-22] 근무마다 메모 follow the calendar's own days (one shared reading per calendar).
+        calendars.repository(id).live.map { s -> com.bamnat.core.memo.MemoRepeat.ShiftOf { d -> s.resolver.shiftIdOn(d) } }
     })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */

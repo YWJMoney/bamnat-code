@@ -318,8 +318,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     },
                 )
                 if (date != null) ShiftLabel(day)
-                // [NOTE-05] A dated memo can come back every week, month or year.
-                if (date != null) MemoRepeatChip(date, memo.repeat, vm::setRepeat)
+                // [NOTE-05] A memo can come back every week, month or year, [EASE-22] or every 야간; [EASE-23] one with no date
+                // gets the day to start from, and says so.
+                val shiftTypes by vm.shiftTypes.collectAsStateWithLifecycle()
+                val say: (String?) -> Unit = { it?.let { line -> Toast.makeText(context, line, Toast.LENGTH_LONG).show() } }
+                MemoRepeatChip(date, memo.repeat, { say(vm.setRepeat(it)) }, shiftTypes, day?.shiftType?.id, { say(vm.setShiftRepeat(it)) })
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }

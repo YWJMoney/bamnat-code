@@ -2,6 +2,10 @@ package com.bamnat.app.ui.settings
 
 import com.bamnat.app.data.rules
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
@@ -163,8 +167,66 @@ private fun WorkPage(
         }
     }
     Note("일하는 방식을 바꿔도 적어 둔 기록은 그대로 남아요.")
+    // [EASE-27] Every rule of this calendar as a sentence card, with where to change it.
+    val rules by vm.ruleCards.collectAsStateWithLifecycle()
+    RuleCardsSection(rules) { where ->
+        when (where) {
+            com.bamnat.core.guide.RuleCards.Where.PATTERN -> onOpenPattern()
+            com.bamnat.core.guide.RuleCards.Where.SHIFT_TYPES -> onOpenShiftTypes()
+            com.bamnat.core.guide.RuleCards.Where.PAY -> SettingsLinks.go(SettingsGo.PAY_ITEMS)
+            com.bamnat.core.guide.RuleCards.Where.STUDIO -> SettingsLinks.go(SettingsGo.STUDIO_RULES)
+        }
+    }
     WorkTools(work.workStyle)
 }
+
+internal const val RULE_CARDS_ROW = "내 규칙 한눈에"
+
+/**
+ * [EASE-27] 1.38 "규칙을 문장형 카드로": 내 규칙 한눈에. Each rule as "만약 ○○이면" over "→ △△", grouped (근무 · 알람 · 수당 · 이럴 때
+ * 이렇게); a rule that is off is dimmed and says so. '고치기' opens the screen the rule lives on. The first [RULES_FOLDED]
+ * show; the rest open with '모두 보기'.
+ */
+@Composable
+private fun RuleCardsSection(cards: List<com.bamnat.core.guide.RuleCards.Card>, onEdit: (com.bamnat.core.guide.RuleCards.Where) -> Unit) {
+    if (cards.isEmpty()) return
+    var all by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val shown = if (all) cards else cards.take(RULES_FOLDED)
+    SectionCard(title = RULE_CARDS_ROW, modifier = Modifier.focusMark(RULE_CARDS_ROW)) {
+        Text("근무·알람·수당이 언제 어떻게 바뀌는지 한 줄씩 모았어요. 고치기를 누르면 그 규칙이 있는 화면이 열려요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        var group: com.bamnat.core.guide.RuleCards.Group? = null
+        for (c in shown) {
+            if (c.group != group) {
+                group = c.group
+                Text(c.group.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp).semantics { heading() })
+            }
+            androidx.compose.material3.Surface(
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 3.dp)
+                    .then(if (c.on) Modifier else Modifier.alpha(0.6f)),
+            ) {
+                Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = c.sentence + if (c.on) "" else ", 꺼져 있음" }) {
+                        Text("만약 ${c.cond}", style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                        Text("→ ${c.result}" + if (c.on) "" else " · 꺼짐", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    androidx.compose.material3.TextButton(onClick = { onEdit(c.where) }) { Text("고치기") }
+                }
+            }
+        }
+        if (cards.size > RULES_FOLDED) {
+            androidx.compose.material3.TextButton(onClick = { all = !all }, modifier = Modifier.padding(start = 4.dp)) {
+                Text(if (all) "접기" else "${cards.size - RULES_FOLDED}개 더 보기")
+            }
+        }
+    }
+}
+
+private const val RULES_FOLDED = 6
 
 /** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] Tools of the calendar's own kind of work, for the calendar picked above. */
 @Composable
