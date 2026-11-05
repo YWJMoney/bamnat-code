@@ -2,7 +2,6 @@ package com.bamnat.app.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -43,13 +42,16 @@ import com.bamnat.app.ui.diag.alarmChecks
 import com.bamnat.app.ui.diag.applyAlarmFix
 import com.bamnat.core.time.Today
 import java.time.LocalDate
+import kotlinx.coroutines.launch
 
 /** [EASE-17] The row title settings search points at. */
 const val SKIP_ONCE_ROW = "이번만 끄기"
+/** [ALRM-27] */
+const val GUARD_ROW = "알람 지킴이"
 
 /**
- * [EASE-17][EASE-21] 1.38 (오늘근무 분석 P5 '믿음'): the top of 설정 › 알람. The next alarm in words, 이번만 끄기 for that one
- * alone (the next after it still rings, 다시 켜기 brings it back), and the alarm checks in a line: all ready, or what to fix with
+ * [EASE-17][EASE-21] 1.38 (오늘근무 분석 P5 '믿음'): the top of 설정 › 알람. The next alarm in words and [ALRM-26] the next three,
+ * each with 이번만 끄기 for that one alone (the others still ring, 다시 켜기 brings it back), and the alarm checks in a line: all ready, or what to fix with
  * its button right here. How a call is handled is said too, and 알람 점검 is one tap away for the rest.
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -62,31 +64,33 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
     // Back from the phone's settings: read the checks and the skipped alarm again.
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
     val checks = remember(refresh, settings.alarmsEnabled, upcoming) { runCatching { alarmChecks(c, context) }.getOrDefault(emptyList()) }
-    val skipped = remember(refresh, upcoming) { AlarmSoon.skipped(context) }
+    val ahead by c.alarmScheduler.ahead.collectAsStateWithLifecycle()
+    val skips = remember(refresh, upcoming, ahead) { AlarmSoon.skippedAll(context).toSet() }
     val bad = checks.filter { it.ok == false }
+    val today = Today.date()
     SectionCard(title = "다음 알람", modifier = Modifier.focusMark(SKIP_ONCE_ROW)) {
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(nextLine(settings.alarmsEnabled, upcoming, Today.date()), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            if (skipped != null) {
-                Text("${whenText(AlarmScheduler.millisToLocal(skipped).toLocalDate(), Today.date())} ${Fmt.time(AlarmScheduler.millisToLocal(skipped).toLocalTime())} 알람은 이번만 꺼 뒀어요",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                val next = upcoming
-                // One alarm is put aside at a time: the one already off comes back first.
-                if (skipped == null && settings.alarmsEnabled && next != null) {
-                    FilledTonalButton(onClick = { AlarmSoon.skip(context, next.triggerAtMillis); refresh++ }, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text("$SKIP_ONCE_ROW · ${Fmt.time(next.plan.triggerAt.toLocalTime())}")
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(nextLine(settings.alarmsEnabled, upcoming, today), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            // [ALRM-26] 1.38: the next few, each with its own 이번만 끄기 / 다시 켜기 (not only the very next one).
+            if (settings.alarmsEnabled) for (r in ahead) {
+                val off = r.triggerAtMillis in skips
+                val at = AlarmScheduler.millisToLocal(r.triggerAtMillis)
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("${whenText(at.toLocalDate(), today)} ${Fmt.time(at.toLocalTime())}",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (off) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+                            textDecoration = if (off) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
+                        Text(if (off) "이번만 꺼 뒀어요" else r.title, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                }
-                if (skipped != null) {
-                    OutlinedButton(onClick = { AlarmSoon.unskip(context); refresh++ }, modifier = Modifier.heightIn(min = 48.dp)) {
-                        Text("다시 켜기 · ${Fmt.time(AlarmScheduler.millisToLocal(skipped).toLocalTime())}")
-                    }
+                    if (off) OutlinedButton(onClick = { AlarmSoon.unskip(context, r.triggerAtMillis); refresh++ }) { Text("다시 켜기") }
+                    else FilledTonalButton(onClick = { AlarmSoon.skip(context, r.triggerAtMillis); refresh++ },
+                        enabled = skips.size < AlarmSoon.MAX_SKIPS) { Text(SKIP_ONCE_ROW) }
                 }
             }
-            if (skipped == null && settings.alarmsEnabled && upcoming != null) {
-                Text("이 알람 하나만 쉬고, 다음 알람부터는 그대로 울려요", style = MaterialTheme.typography.bodySmall,
+            if (settings.alarmsEnabled && ahead.isNotEmpty()) {
+                Text("끈 알람만 쉬고 나머지는 그대로 울려요. 날마다 끄려면 달력에서 그 날을 눌러요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -116,6 +120,14 @@ internal fun AlarmTrustCard(settings: AppSettings, onOpenDiagnostics: (Boolean) 
             }
             Text(CALL_LINE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(start = 28.dp))
+        }
+        // [ALRM-27] 알람 지킴이: the same checks a few hours before each alarm, said while there is time to fix them.
+        SwitchRow(GUARD_ROW, "알람 ${com.bamnat.app.alarm.AlarmGuard.LEAD_MILLIS / 3_600_000}시간 전에 소리 0·알림 꺼짐·방해 금지처럼 알람을 막는 것이 있으면 미리 알려요",
+            settings.alarmGuard) { on ->
+            c.settingsRepository.update { it.copy(alarmGuard = on) }
+            c.appScope.launch { runCatching { c.rescheduleAlarms() } }
+        }
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
             TextButton(onClick = { onOpenDiagnostics(false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text("알람 점검 · 시험 알람 울려 보기")
             }

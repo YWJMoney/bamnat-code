@@ -446,13 +446,14 @@ internal fun proNote(live: Boolean): String =
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
+    val names = androidx.compose.runtime.remember { com.bamnat.app.ui.settings.colorNames(PersonalCalendar.COLORS) }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         PersonalCalendar.COLORS.forEachIndexed { i, c ->
             val on = c == selected
             Box(
                 Modifier.size(40.dp).clip(MineShape).background(c.asColor())
                     .clickable(role = Role.RadioButton) { onPick(c) }
-                    .semantics { this.selected = on; contentDescription = "색 ${i + 1}" },
+                    .semantics { this.selected = on; contentDescription = names[i] },
                 contentAlignment = Alignment.Center,
             ) { if (on) Icon(Icons.Filled.Check, null, tint = com.bamnat.app.ui.components.contentColorOn(c.asColor())) } // [VIS-03]
         }

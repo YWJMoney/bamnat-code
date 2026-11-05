@@ -66,12 +66,13 @@ class AlarmSoonCallTest {
         Today.reset()
     }
 
-    private suspend fun twoMornings(): Long {
+    private suspend fun twoMornings(days: Int = 2): Long {
         val repo = c.scheduleRepository
         val id = repo.saveShiftType(ShiftType(0, "주간", "주", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(16, 0), alarmEnabled = true,
             alarms = listOf(AlarmSpec(60))))
         repo.setOverride(day, ShiftOverride.Shift(id))
         repo.setOverride(day.plusDays(1), ShiftOverride.Shift(id))
+        for (i in 2 until days) repo.setOverride(day.plusDays(i.toLong()), ShiftOverride.Shift(id))
         c.settingsRepository.update { it.copy(alarmsEnabled = true, alarmSoonMinutes = 5) }
         c.rescheduleAlarms()
         return id
@@ -105,6 +106,42 @@ class AlarmSoonCallTest {
         AlarmSoon.unskip(app)
         c.rescheduleAlarms()
         assertEquals(six, c.alarmScheduler.upcoming.value!!.triggerAtMillis)
+    }
+
+    /** [ALRM-26] Several alarms ahead put aside at once, each brought back on its own; the card lists them. */
+    @Test fun skippingSeveralKeepsTheRest() = runBlocking {
+        at(day.atTime(5, 0))
+        twoMornings(days = 3)
+        val one = millis(day.atTime(6, 0))
+        val two = millis(day.plusDays(1).atTime(6, 0))
+        val three = millis(day.plusDays(2).atTime(6, 0))
+        assertEquals(listOf(one, two, three), c.alarmScheduler.ahead.value.map { it.triggerAtMillis })
+        AlarmSoon.skip(app, one)
+        AlarmSoon.skip(app, two)
+        c.rescheduleAlarms()
+        assertEquals("both off, the third rings", three, c.alarmScheduler.upcoming.value!!.triggerAtMillis)
+        assertEquals(listOf(one, two), AlarmSoon.skippedAll(app))
+        // The card still lists the two turned off, with the one that rings.
+        assertEquals(listOf(one, two, three), c.alarmScheduler.ahead.value.map { it.triggerAtMillis })
+        // 다시 켜기 on the second alone.
+        AlarmSoon.unskip(app, two)
+        c.rescheduleAlarms()
+        assertEquals(two, c.alarmScheduler.upcoming.value!!.triggerAtMillis)
+        assertEquals(listOf(one), AlarmSoon.skippedAll(app))
+        assertTrue(AlarmSoon.silences(app, RingRequest("주간", day, LocalTime.of(7, 0), 60, null, one)))
+        assertFalse(AlarmSoon.silences(app, RingRequest("주간", day.plusDays(1), LocalTime.of(7, 0), 60, null, two)))
+        // One that has passed is forgotten.
+        at(day.atTime(6, 5))
+        assertTrue(AlarmSoon.skippedAll(app).isEmpty())
+    }
+
+    /** [ALRM-26] Up to the third alarm that still rings, with those turned off in between. */
+    @Test fun cardListsThreeThatRing() {
+        val r = { m: Long -> RingRequest("주간", day, LocalTime.of(7, 0), 60, null, m) }
+        val all = (1L..6L).map(r)
+        assertEquals(listOf(1L, 2L, 3L), AlarmScheduler.shownAhead(all, emptySet()).map { it.triggerAtMillis })
+        assertEquals(listOf(1L, 2L, 3L, 4L), AlarmScheduler.shownAhead(all, setOf(2L)).map { it.triggerAtMillis })
+        assertEquals(listOf(1L, 2L, 3L, 4L, 5L), AlarmScheduler.shownAhead(all, setOf(1L, 2L)).map { it.triggerAtMillis })
     }
 
     @Test fun nothingShowsWhileThePhoneIsAsleep() {

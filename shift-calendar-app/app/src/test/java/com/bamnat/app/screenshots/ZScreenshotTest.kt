@@ -241,11 +241,14 @@ class ZScreenshotTest : ScreenshotBase() {
 
     @Test fun alarmWheelsBeforeTheStart() = shoot("915_z_alarm_before", FOLDED) {
         dayShiftAlarm()
-        tapText("시작 몇 시간 전", exact = true)
-        assertTrue("시작 몇 시간 전 is chosen", nodes().any { n ->
+        tapText("시작 기준", exact = true)
+        assertTrue("시작 기준 is chosen", nodes().any { n ->
             n.config.getOrNull(SemanticsProperties.Selected) == true &&
-                n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == "시작 몇 시간 전" }
+                n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == "시작 기준" }
         })
+        // [ALRM-28] Before or after the start, on the same wheels.
+        assertTrue(appears("시작 전", exact = true))
+        assertTrue(appears("시작 뒤", exact = true))
     }
 
     @Test fun alarmPickedOnTheWheelsIsSaved() = shoot("916_z_alarm_saved", FOLDED) {

@@ -248,6 +248,7 @@ class SettingsFilesBackup(
             "device" to "동의 기록은 새 휴대폰에서 다시 물어요",
             "usage_stats" to "사용 통계는 이 휴대폰에서 동의한 만큼만",
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
+            "alarm_guard" to "알람 지킴이가 오늘 알린 문제(하루 한 번 알리기 위한 표시)일 뿐이에요", // [ALRM-27]
             "boot_alarms" to "알람 예약 상태는 설정에서 다시 만들어요",
             "alarms_off" to "‘오늘 남은 알람 모두 끄기’는 이 휴대폰의 오늘 하루 것",
             // [ALRM-21] 1.35.

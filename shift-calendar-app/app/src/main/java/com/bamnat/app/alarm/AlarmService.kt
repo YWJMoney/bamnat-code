@@ -725,6 +725,8 @@ class AlarmService : Service() {
                 // [SCHED-01] A memo's schedule: when it is.
                 // [PROV-07] 일어났나요? had no answer.
                 ring.recheck -> "끈 뒤 답이 없어 다시 울려요"
+                // PC 267560dd: the test said "14:08 일정"; it says what it is for.
+                ring.label == AlarmScheduler.TEST_NAME -> if (ring.isSnooze) "시험 알람 · 다시 울림" else "소리와 화면이 잘 나오는지 보는 알람이에요"
                 ring.label != null && ring.isSnooze -> "$start 일정 · 다시 울림"
                 ring.label != null -> "$start 일정"
                 ring.isSnooze && work -> "$start 근무 시작 · 다시 울림"
@@ -732,7 +734,19 @@ class AlarmService : Service() {
                 ring.custom && work -> "$start 근무 시작 · 이 날 알람"
                 ring.custom -> "이 날 알람"
                 // [EASE-18] One after the start says so (다음날 낮잠).
-                else -> "$start 근무 시작 · " + if (ring.offsetMinutes < 0) "${com.bamnat.app.ui.Fmt.offset(ring.offsetMinutes)} 알람" else "${ring.offsetMinutes}분 전 알람"
+                // PC 267560dd: "19:00 근무 시작" read as tonight on a nap alarm the next day; it says the shift began yesterday.
+                ring.offsetMinutes < 0 -> startedLine(ring, start) + " · ${com.bamnat.app.ui.Fmt.offset(ring.offsetMinutes)} 알람"
+                else -> "$start 근무 시작 · ${ring.offsetMinutes}분 전 알람"
+            }
+        }
+
+        /** "어제 19:00에 시작한 근무" when the alarm comes on a later day than the shift began, else "19:00 근무 시작". */
+        internal fun startedLine(ring: RingRequest, start: String): String {
+            val ringDay = AlarmScheduler.millisToLocal(ring.triggerAtMillis).toLocalDate()
+            return when (java.time.temporal.ChronoUnit.DAYS.between(ring.shiftDate, ringDay)) {
+                0L -> "$start 근무 시작"
+                1L -> "어제 ${start}에 시작한 근무"
+                else -> "${ring.shiftDate.monthValue}월 ${ring.shiftDate.dayOfMonth}일 ${start}에 시작한 근무"
             }
         }
 

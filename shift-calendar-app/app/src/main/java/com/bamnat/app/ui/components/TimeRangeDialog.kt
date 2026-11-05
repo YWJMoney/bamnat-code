@@ -191,10 +191,10 @@ fun TimeRangeDialog(
                             // [TIME-03] The end tab offers ends that fit the start (PC 1a8e88f6: a 야간's end tab offered its
                             // own 19:00 start): the usual lengths, then the other times, never the start itself.
                             for ((t, label) in endChoices(range.start, presets, initial.end, if (showBreak) breakMin else 0)) {
-                                AssistChip(onClick = { setTime(t) }, label = { Text(label) })
+                                AssistChip(onClick = { setTime(t) }, label = { Text(label, maxLines = 1, softWrap = false) })
                             }
                         } else {
-                            for (t in presets) AssistChip(onClick = { setTime(t) }, label = { Text(clock(t)) })
+                            for (t in presets) AssistChip(onClick = { setTime(t) }, label = { Text(clock(t), maxLines = 1, softWrap = false) })
                         }
                     }
                 }

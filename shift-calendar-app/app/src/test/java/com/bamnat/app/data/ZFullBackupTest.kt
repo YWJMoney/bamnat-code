@@ -33,7 +33,7 @@ class ZFullBackupTest {
     private fun sample(s: AppSettings, shiftId: Long) = s.copy(
         weekStart = DayOfWeek.MONDAY, weeklyLimitHours = 60, averageLimitHours = 48, themeMode = ThemeMode.DARK,
         dynamicColor = true, showHoursInCells = false, showLunar = true, vibrate = false, gradualVolume = false,
-        snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
+        snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, alarmGuard = false, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
         plazaNews = false, plazaHidden = com.bamnat.core.plaza.HideList().hide("w".repeat(64), "글쓴이", 1_000L).encode(), plazaRulesAgreed = 2,
         workStyle = WorkStyle.SHIFT, rosterMonthly = true,
         // 1.37 [SETUP-16] 첫 설정을 미뤄 둔 채 백업.
