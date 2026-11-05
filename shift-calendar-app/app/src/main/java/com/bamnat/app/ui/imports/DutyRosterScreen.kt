@@ -37,7 +37,6 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.TouchApp
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
