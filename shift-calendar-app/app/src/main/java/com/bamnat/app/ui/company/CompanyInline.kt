@@ -152,7 +152,11 @@ fun CompanyInlineResults(
                 modifier = Modifier.semantics { heading() })
         }
         hits.take(limit).forEach { hit -> InlineCompanyRow(hit) { onServer?.invoke(hit) } }
-        publicRows.take(if (more) PUBLIC_MORE else limit).forEach { row -> InlinePublicRow(row) { open = row } }
+        // [EASE-06] 1.38: in the setup a row whose order is known goes on at once (its order is on the next screen to change);
+        // only a row with no order opens its sheet to pick one.
+        publicRows.take(if (more) PUBLIC_MORE else limit).forEach { row ->
+            InlinePublicRow(row) { val codes = row.setupCodes(); if (onPick != null && codes != null) onPick(row, codes) else open = row }
+        }
         // [J133-47] The rest one tap away, right here (1.32 pointed at a '더 찾기' the first setup did not have).
         if (!more && publicRows.size > limit) {
             TextButton(onClick = { more = true }, modifier = Modifier.heightIn(min = 48.dp)) {

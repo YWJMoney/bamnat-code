@@ -108,7 +108,8 @@ class WidgetData(
                 TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled, log, settings.sleepTargetMinutes, settings.commuteMinutes,
                     settings.restCheck, settings.strictRest,
                     rules = com.bamnat.core.schedule.RotationSpeed.of(com.bamnat.core.schedule.PatternTimeline.current(snapshot.patterns, now.toLocalDate()),
-                        snapshot.shiftTypes).adjust(settings.rules))
+                        snapshot.shiftTypes).adjust(settings.rules),
+                    since = container.recordsTrash.styleChangedOn(PersonalCalendar.MAIN))
             }
             // [CAL-11] Field and shop work fill the widgets from the money book, read on the phone only.
             val book = if (focus == CalendarFocus.SHIFTS || focus == CalendarFocus.INVEST) null else container.calendars.money(PersonalCalendar.MAIN).book.first()

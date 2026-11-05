@@ -84,7 +84,11 @@ class JScreenshotTest : ScreenshotBase() {
     @Test fun settingsAlarmDark() = shoot("585_j_settings_alarm_dark", FOLDED_NIGHT) { settingsPage("알람"); reveal(MOVE_ALL_ALARMS_ROW, exact = true) }
     @Test fun moveAllAlarmsDark() = shoot("586_j_move_all_alarms_dark", FOLDED_NIGHT) { settingsPage("알람"); tapText(MOVE_ALL_ALARMS_ROW, exact = true) }
     @Test fun featureSwitchesDark() = shoot("587_j_feature_switches_dark", FOLDED_NIGHT) { tab(SETTINGS_TAB, wide = false); tapText("기능 켜고 끄기", exact = true) }
-    @Test fun recommendedDark() = shoot("588_j_recommended_dark", FOLDED_NIGHT, recommended())
+    // [EASE-05] The page opens from 설정 now, not on the first start.
+    @Test fun recommendedDark() = shoot("588_j_recommended_dark", FOLDED_NIGHT) {
+        com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.RECOMMENDED)
+        settle()
+    }
     @Test fun settingsSearchDark() = shoot("589_j_settings_search_dark", FOLDED_NIGHT) { tab(SETTINGS_TAB, wide = false); typeInto("설정 찾기", "알람") }
 
     @Test fun setupStyleBig() = shoot("590_j_setup_style_200", FOLDED, 2f, fresh(null))
@@ -104,8 +108,8 @@ class JScreenshotTest : ScreenshotBase() {
      * [answer] it stops at the question.
      */
     private fun Screen.toTodayBig(answer: Boolean = true) {
-        toTimes(); tapText("네, 시간이 맞아요")
-        tapText("4조 2교대 8일 (주휴야휴)"); tapText("다음", exact = true)
+        toTimes(); tapText("순서가 달라요 · 다른 순서 고르기")
+        tapText("4조 2교대 8일 (주휴야휴)"); tapText("네, 맞아요", exact = true)
         if (!answer) return
         reveal("야간", exact = true); tapText("야간", exact = true)
         reveal("둘째 날", exact = true); tapText("둘째 날")

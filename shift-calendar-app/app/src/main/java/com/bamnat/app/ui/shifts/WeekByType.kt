@@ -1,0 +1,80 @@
+package com.bamnat.app.ui.shifts
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.components.ShiftBadge
+import com.bamnat.app.ui.components.asColor
+import com.bamnat.app.ui.components.contentColorOn
+import com.bamnat.core.model.ShiftType
+import java.time.DayOfWeek
+
+/**
+ * 1.37 PC MED-2 사용성 제안 (알바 출근 요일: 칩 4개가 한 줄에 빽빽하고 '저녁 알바'가 안 보임): for each kind of work a row of the
+ * seven days, so every kind is in sight without scrolling sideways. A day takes one kind; another tapped on it takes its place, and
+ * a day taken by another kind is ringed in that kind's color. [weekly] is indexed by [DayOfWeek.ordinal] (월 = 0).
+ */
+@Composable
+fun WeekByType(types: List<ShiftType>, weekly: List<Long?>, onSet: (Int, Long?) -> Unit, modifier: Modifier = Modifier) {
+    val byId = types.associateBy { it.id }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        types.forEach { t ->
+            val color = t.colorArgb.asColor()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ShiftBadge(t, size = 20.dp)
+                Text(t.name + (t.start?.let { s -> t.end?.let { e -> " ${Fmt.time(s)}–${Fmt.time(e)}" } } ?: ""),
+                    style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(start = 8.dp).weight(1f),
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${weekly.count { it == t.id }}일", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                DayOfWeek.entries.forEach { day ->
+                    val i = day.ordinal
+                    val on = weekly.getOrNull(i) == t.id
+                    val other = weekly.getOrNull(i)?.takeIf { it != t.id }?.let { byId[it] }?.takeIf { !it.isOff }
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(if (on) color else MaterialTheme.colorScheme.surfaceContainerHigh)
+                            .then(if (other != null) Modifier.border(2.dp, other.colorArgb.asColor().copy(alpha = 0.6f), CircleShape) else Modifier)
+                            .toggleable(value = on, role = Role.Checkbox, onValueChange = { onSet(i, if (it) t.id else null) })
+                            .semantics {
+                                contentDescription = "${Fmt.dayOfWeekShort(day)}요일 ${t.name} " + when {
+                                    on -> "일해요"
+                                    other != null -> "아니고 ${other.name}"
+                                    else -> "쉼"
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(Fmt.dayOfWeekShort(day), style = MaterialTheme.typography.titleSmall,
+                            color = if (on) contentColorOn(color) else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+        Text("한 요일에는 한 가지만 넣어요. 다른 줄에서 누르면 그 근무로 바뀌어요.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}

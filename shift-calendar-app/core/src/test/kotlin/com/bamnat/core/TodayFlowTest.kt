@@ -17,6 +17,7 @@ import com.bamnat.core.sleep.TodayFlow.State
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -101,6 +102,16 @@ class TodayFlowTest {
         assertEquals(State.SLEEP_TIME, home.state)
         assertEquals("08:00–15:00 잘 시간", home.headline)
         assertEquals("19:00 야간 · 알람 17:30", home.detail)
+    }
+
+    @Test
+    fun `the work before the kind of work changed is another job's`() {
+        // 1.37 PC LOW: 교대 → 일근 today; last night's 야간 was the old job, so no sleep after it and no rest sign from it.
+        val card = TodayFlow.of(at(4, 7, 20), resolver(), true, since = LocalDate.of(2026, 11, 4))
+        assertNotEquals(State.AFTER_SHIFT, card.state)
+        assertNull(card.rest)
+        // A change before yesterday leaves today's flow as it was.
+        assertEquals(State.AFTER_SHIFT, TodayFlow.of(at(4, 7, 20), resolver(), true, since = LocalDate.of(2026, 11, 1)).state)
     }
 
     @Test

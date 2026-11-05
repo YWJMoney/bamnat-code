@@ -67,12 +67,13 @@ class SettingsScreenshotTest : ScreenshotBase() {
         tapText("순서가 돌아가요"); tapText("4조 2교대 12시간")
     })
     @Test fun firstLaunchSetupOrder() = shoot("61d_folded_setup_order", FOLDED, fresh(null) {
-        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("네, 시간이 맞아요")
+        // [EASE-07] The order is on the times' screen: its other orders opened.
+        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("순서가 달라요 · 다른 순서 고르기")
     })
     @Test fun firstLaunchSetupToday() = shoot("61e_folded_setup_today", FOLDED, fresh(null) { setupToToday() })
     @Test fun unfoldedSetupToday() = shoot("61f_unfolded_setup_today", UNFOLDED, fresh(null) { setupToToday() })
     @Test fun firstLaunchSetupSummary() = shoot("61g_folded_setup_summary", FOLDED, fresh(null) {
-        setupToToday(); tapText("회사 근무표와 같아요"); tapText("다음", exact = true)
+        setupToToday(); tapText("회사 근무표와 같아요")
     })
     @Test fun firstLaunchSetupRoster() = shoot("61h_folded_setup_roster", FOLDED, fresh(null) {
         tapText("근무표가 매달 나와요"); tapText("건너뛰고 직접 정할게요"); tapText("병원 3교대"); tapText("네, 시간이 맞아요")
@@ -267,17 +268,21 @@ class SettingsScreenshotTest : ScreenshotBase() {
         settle()
     }
 
+    // [EASE-05] 1.38: "밤낮을 제대로 쓰는 설정" is no longer a page of the first start; it opens from 설정 (and 업데이트 소식).
+    private fun recommendedPage(): Screen.() -> Unit = {
+        com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.RECOMMENDED)
+        settle()
+    }
     @Test fun foldedRecommended() = shoot("520_folded_recommended", FOLDED, run {
         shadowOf(app.getSystemService(android.app.NotificationManager::class.java)).setNotificationsEnabled(false)
-        recommended()
+        recommendedPage()
     })
-    @Test fun unfoldedRecommended() = shoot("521_unfolded_recommended", UNFOLDED, recommended())
-    @Test fun phoneRecommendedHugeText() = shoot("522_phone_recommended_huge_text", PHONE, fontScale = 2f, recommended())
+    @Test fun unfoldedRecommended() = shoot("521_unfolded_recommended", UNFOLDED, recommendedPage())
+    @Test fun phoneRecommendedHugeText() = shoot("522_phone_recommended_huge_text", PHONE, fontScale = 2f, recommendedPage())
     @Test fun recommendedLaterLeadsToTheFirstSetupWithFeaturesOn() = shoot("523_folded_recommended_then_setup", FOLDED,
         recommended(setOf(ConsentItem.CALENDAR)) {
-            tapText("허용은 나중에 할게요")
-            // The first setup comes next, past the work already told on the first screen [SETUP-15], the screen
-            // does not come back, and the recommended features are on.
+            // [EASE-05] 1.38: the first setup comes next at once, past the work already told on the first screen [SETUP-15];
+            // no page or permission between, and the recommended features are on.
             assertTrue("어느 회사 question next", appears("어느 회사"))
             val c = app.container
             assertTrue(c.consentStore.seen.value!!.contains(ConsentItem.CALENDAR))

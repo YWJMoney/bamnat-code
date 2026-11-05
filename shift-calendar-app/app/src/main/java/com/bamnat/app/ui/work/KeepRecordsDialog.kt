@@ -13,7 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.RecordsTrash
@@ -31,10 +34,16 @@ fun KeepRecordsDialog(
     from: WorkStyle,
     to: WorkStyle,
     records: RecordsTrash.Records,
-    onKeep: () -> Unit,
-    onClear: () -> Unit,
+    onKeep: (fold: Boolean) -> Unit,
+    onClear: (fold: Boolean) -> Unit,
     onDismiss: () -> Unit,
+    /**
+     * 1.37 PC MED-2 사용성 제안 (확인 창 두 번): the old kind of work's 근무 that would be offered to put away ("주간·야간"), asked
+     * here with a check instead of in a second dialog; null when there are none.
+     */
+    foldNames: String? = null,
 ) {
+    var fold by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(true) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("기존 기록을 유지할까요?") },
@@ -49,6 +58,17 @@ fun KeepRecordsDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (foldNames != null) {
+                    androidx.compose.foundation.layout.Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .toggleable(value = fold, role = androidx.compose.ui.semantics.Role.Checkbox) { fold = it },
+                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    ) {
+                        androidx.compose.material3.Checkbox(checked = fold, onCheckedChange = null)
+                        Text("${from.label} 근무 $foldNames${Fmt.eun(foldNames)} 접어 두기 · 하루 시트에서만 빠지고 기록은 그대로예요",
+                            style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    }
+                }
                 Text(
                     "어느 쪽이든 7일 안에는 되돌릴 수 있어요. 설정 › 데이터 › 최근 지운 기록",
                     style = MaterialTheme.typography.bodySmall,
@@ -58,9 +78,9 @@ fun KeepRecordsDialog(
         },
         confirmButton = {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Button(onClick = onKeep, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("유지하고 바꾸기") }
+                Button(onClick = { onKeep(foldNames != null && fold) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("유지하고 바꾸기") }
                 OutlinedButton(
-                    onClick = onClear,
+                    onClick = { onClear(foldNames != null && fold) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                 ) { Text("기록을 지우고 새로 시작") }

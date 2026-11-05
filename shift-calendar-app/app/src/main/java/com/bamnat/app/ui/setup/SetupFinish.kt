@@ -26,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -59,6 +60,15 @@ import com.bamnat.app.ui.company.PendingDone
 @Composable
 internal fun AlarmStep(vm: SetupViewModel, d: SetupDraft) {
     StepHeader("출근 몇 분 전에 깨워 드릴까요?", "근무가 있는 날에만 울려요. 쉬는 날은 조용해요.")
+    AlarmPart(vm, d)
+}
+
+/**
+ * [EASE-07] 1.38: the alarm on the last screen, already at 출근 1시간 전, instead of a screen of its own (one tap less). The same
+ * choices; [compact] leaves the per-shift lines out until '근무마다 다르게' is on.
+ */
+@Composable
+internal fun AlarmPart(vm: SetupViewModel, d: SetupDraft, compact: Boolean = false) {
     val perShift = d.alarmByType.isNotEmpty()
     if (!perShift) AlarmChoices(d.alarmMinutes, "알람", onPick = vm::setAlarm)
     if (d.workTypes.size > 1) {
@@ -75,7 +85,7 @@ internal fun AlarmStep(vm: SetupViewModel, d: SetupDraft) {
             Switch(checked = perShift, onCheckedChange = null)
         }
     }
-    d.workTypes.forEach { t ->
+    if (!compact || perShift) d.workTypes.forEach { t ->
         val minutes = d.alarmFor(t)
         Surface(
             shape = MaterialTheme.shapes.large,
@@ -186,18 +196,36 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
         val date = vm.questionDate(d)
         todaySentence(d, date, vm.today)?.let { SummaryCard("오늘", it, onFix = { vm.fix(SetupStep.TODAY) }) }
     }
+    // [EASE-07] 1.38: the alarm is chosen here (already 출근 1시간 전), not on a screen of its own.
     val first = remember(d) { vm.firstAlarm(d) }
-    SummaryCard(
-        "알람",
-        buildString {
-            append(alarmLine(d))
-            first?.let { a ->
-                append("\n첫 알람: ${relativeDay(a.triggerAt.toLocalDate(), vm.today)} ${Fmt.time(a.triggerAt.toLocalTime())}")
-                if (a.shiftName.isNotEmpty()) append(" · ${a.shiftName}")
-            }
-        },
-        onFix = { vm.fix(SetupStep.ALARM) },
-    )
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("근무 알람 · 출근 몇 분 전에 깨울까요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            AlarmPart(vm, d, compact = true)
+            Text(
+                buildString {
+                    append(alarmLine(d))
+                    first?.let { a ->
+                        append(" · 첫 알람 ${relativeDay(a.triggerAt.toLocalDate(), vm.today)} ${Fmt.time(a.triggerAt.toLocalTime())}")
+                        if (a.shiftName.isNotEmpty()) append(" ${a.shiftName}")
+                    }
+                },
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+    // [EASE-05][ONBOARD-05] 1.38: the first-start page is gone, so its one yes that goes to a server is here, on the first setup only,
+    // never ticked beforehand (D42); 설정 › 개인정보·앱 정보 changes it later.
+    if (vm.calendarId == null && !vm.again) {
+        val c = LocalContext.current.appContainer
+        val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+        com.bamnat.app.ui.onboarding.StatsLine(settings.shareUsageStats) { c.setUsageStats(it) }
+    }
 }
 
 @Composable
@@ -311,6 +339,34 @@ fun SetupPaySheet(
             )
             Button(onClick = onNow, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("지금 할게요") }
             TextButton(onClick = onLater, modifier = Modifier.fillMaxWidth()) { Text("나중에") }
+        }
+    }
+}
+
+/**
+ * [EASE-03] 1.38: the company's pay that came with the first setup (PAYG-07), offered where the pay is set up, on the pay tab the
+ * first time, instead of a sheet over the first calendar. Nothing when there is none. '쓰지 않을게요' forgets it.
+ */
+@Composable
+fun CompanyPayWaiting(calendar: String, modifier: Modifier = Modifier) {
+    val c = LocalContext.current.appContainer
+    val company = remember(calendar) { c.companyOf(calendar) }
+    var gone by remember { mutableStateOf(false) }
+    val way = remember(company, gone) {
+        val text = company.store.pendingPay
+        val a = company.store.applied.value
+        if (gone || text == null || a == null) null else PendingWay(a.companyId, a.company, a.dept, a.setup, text, PendingWay.Source.FIRST_SETUP)
+    } ?: return
+    androidx.compose.runtime.LaunchedEffect(way) { company.pendingWays.offer(way) }
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, modifier = modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            PendingDone(c, company, way, onDone = { gone = true }, onSaved = null,
+                intro = "근무 설정에서 고른 ‘${way.title}’의 급여 계산도 들어 있어요. 쓸까요?",
+                onSkip = {
+                    company.store.pendingPay = null
+                    company.payWays.use(null)
+                    gone = true
+                })
         }
     }
 }

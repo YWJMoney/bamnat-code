@@ -127,7 +127,6 @@ import com.bamnat.app.ui.setup.SetupHost
 import com.bamnat.app.ui.onboarding.ConsentPages
 import com.bamnat.app.ui.onboarding.NewConsentPrompt
 import com.bamnat.app.ui.setup.SetupViewModel
-import com.bamnat.app.ui.setup.SetupPaySheet
 import com.bamnat.app.ui.company.CompanyBoardScreen
 import com.bamnat.app.ui.company.CompanyBoardViewModel
 import com.bamnat.app.ui.company.CompanyDetailScreen
@@ -385,7 +384,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     // [SETUP-17] A backup, a company file or looking around first: the features pages come after the setup (as on a
                     // new phone that answers), not as '새로 생긴 기능이 있어요' over the calendar (1.37 PC 270fc15e).
                     val skip: (String) -> Unit = { k -> sizeSeen(); container.consentStore.afterSetup = true; firstStyleKey = k }
-                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = { sizeSeen(); firstStyleKey = it.key }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
+                    // [EASE-05] 1.38: no '밤낮을 제대로 쓰는 설정' page and no phone questions in the first setup (오늘근무 분석: 권한 창 0번);
+                    // that kind of work's notices are on quietly, and each permission is asked where it is first needed.
+                    com.bamnat.app.ui.onboarding.FirstStyleScreen(onPick = {
+                        sizeSeen()
+                        com.bamnat.app.ui.onboarding.QuietStart.apply(container, it.style)
+                        firstStyleKey = it.key
+                    }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
                         onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
                     return
@@ -417,9 +422,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             return
         }
         false -> if (consentSeen == null && container.consentStore.afterSetup && !browse.browsing) {
-            // 1.36 W4: the recommended features and the phone's questions, once the calendar is set up.
-            ConsentPages(container, onDone = { container.consentStore.afterSetup = false }, style = settingsNow.workStyle)
-            return
+            // 1.36 W4: the recommended features once the calendar is set up. [EASE-05] 1.38: quietly, for the kind of work the
+            // backup or the company file brought; never a page over the first calendar (EASE-03).
+            LaunchedEffect(Unit) {
+                com.bamnat.app.ui.onboarding.QuietStart.apply(container, settingsNow.workStyle, keepRestored = true)
+                container.consentStore.afterSetup = false
+            }
         }
     }
 
@@ -1077,20 +1085,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
         } else if (leadAsking == null) {
-            // [PAYF-02][PAYF-05] 1.29 AP: the company named in the setup is asked for while the user reads this, so the pay's
-            // first question lists its pay way at once.
+            // [EASE-03] 1.38 (오늘근무 분석: 첫 달력에 끼어드는 창 0개): no '예상 급여도 볼까요?' sheet over the first calendar. The pay
+            // is set up when the 급여 tab is first opened, where the company's pay that came with the setup waits (CompanyPayWaiting);
+            // the company named is still read ahead so that screen lists its pay way at once.
             val prefetch = rememberCoroutineScope()
             LaunchedEffect(saved) {
                 com.bamnat.app.ui.company.PayFindSearch.prefetch(container, prefetch, container.companyOf(PersonalCalendar.MAIN).find.known())
+                container.firstSetup.consumeSaved()
             }
-            SetupPaySheet(
-                companyPay = container.companyOf(PersonalCalendar.MAIN).store.pendingPay != null,
-                onNow = {
-                    container.firstSetup.consumeSaved()
-                    nav.navigate(Routes.pay()) { launchSingleTop = true }
-                },
-                onLater = { container.firstSetup.consumeSaved() },
-            )
         }
     }
 }
@@ -1212,19 +1214,10 @@ private fun AppNavHost(
             val id = entry.arguments?.getString("id").orEmpty()
             val vm = appViewModel(key = "calendar_setup_$id") { SetupViewModel(it, calendarId = id) }
             val done by vm.done.collectAsStateWithLifecycle()
-            val profile by remember(id) { container.calendars.pay(id).profile }.collectAsStateWithLifecycle()
-            // [MCAL-06] As after the first setup: work paid by the hour or month is offered its pay next.
-            val asksPay = done && container.calendars.get(id)?.let { it.ready && it.style?.usesPayEngine == true } == true &&
-                profile == null
-            LaunchedEffect(done) { if (done && !asksPay) nav.popFrom(Routes.CALENDAR_SETUP) }
+            // [MCAL-06] [EASE-03] 1.38: as after the first setup, no pay sheet once it is saved: that calendar's 급여 tab asks, with
+            // the company's pay that came with it (CompanyPayWaiting).
+            LaunchedEffect(done) { if (done) nav.popFrom(Routes.CALENDAR_SETUP) }
             SetupHost(vm)
-            if (asksPay) SetupPaySheet(
-                // [CALI-05] 1.30 BB: a coworkers' setup that came with its pay, for this calendar.
-                companyPay = remember(id) { container.companyOf(id).store.pendingPay != null },
-                onNow = { nav.navigate(Routes.pay(id)) { popUpTo(Routes.CALENDAR_SETUP) { inclusive = true }; launchSingleTop = true } },
-                onLater = { nav.popFrom(Routes.CALENDAR_SETUP) },
-                calendar = id, // [PAYG-07]
-            )
         }
         composable(Routes.CALENDARS) {
             val vm = appViewModel { CalendarsViewModel(it) }
@@ -1278,6 +1271,7 @@ private fun AppNavHost(
             val current = if (isMain) settings.workStyle else cal?.style ?: settings.workStyle
             // [UNDO-01] A calendar with records is asked first whether they stay; the answer can be taken back for 7 days.
             var asking by remember { mutableStateOf<Pair<WorkStyle, com.bamnat.app.data.RecordsTrash.Records>?>(null) }
+            var foldNames by remember { mutableStateOf<String?>(null) }
             var styleBusy by remember { mutableStateOf(false) }
             // clear: null when nothing is changed from a kind of work (the first one, or the same again).
             val apply: (WorkStyle, Boolean?) -> Unit = apply@{ style, clear ->
@@ -1289,7 +1283,7 @@ private fun AppNavHost(
                 // What it already has is kept, so switching back and forth never asks twice.
                 // [SETUP-16] 1.37 PC 122d18a0 (목록을 스크롤한 직후 '현장·프리랜서'를 누르면 형태만 바뀌고 화면이 그대로, '접어 둘까요?'도
                 // 없음): the change runs to its end on the app's own scope, so nothing on screen going away halfway cuts it; one at a time.
-                if (styleBusy) return@apply
+                if (styleBusy) { com.bamnat.app.ui.shifts.TypeFoldAsk.preanswer.value = null; return@apply }
                 styleBusy = true
                 container.appScope.launch(kotlinx.coroutines.Dispatchers.Main.immediate) {
                   try {
@@ -1317,6 +1311,7 @@ private fun AppNavHost(
                         calendar, style, clear,
                         when {
                             clear -> "기록을 지우고 ${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 새로 시작해요"
+                            opens && style == WorkStyle.HOURLY -> "${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 바꿨어요 · 시급은 ‘출근·시급’ 탭에서 넣어요"
                             opens -> "${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 바꿨어요"
                             else -> style.changedMessage()
                         },
@@ -1344,7 +1339,12 @@ private fun AppNavHost(
                         style == before -> nav.popFrom(Routes.WORK_STYLE)
                         style == WorkStyle.SHIFT && patternsNow.none { it is WorkPattern.Rotation } -> go(Routes.pattern(weekdays = false, setup = !pay, calendar = calendar), Routes.PATTERN)
                         style == WorkStyle.DAY && patternsNow.none { it is WorkPattern.Weekly } -> go(Routes.pattern(weekdays = true, setup = !pay, calendar = calendar), Routes.PATTERN)
-                        style == WorkStyle.HOURLY && !pay -> go(Routes.pay(calendar), Routes.PAY)
+                        // 1.37 PC MED-2 사용성 제안 (알바로 바꾸자마자 급여 화면으로 넘어감): back where the change was made, its 되돌리기 in view;
+                        // the wage is the 출근·시급 tab's own first card, said in the change's line.
+                        style == WorkStyle.HOURLY && !pay -> {
+                            nav.popFrom(Routes.WORK_STYLE)
+                            if (clear == null) snackbar.showSnackbar("${style.label}${com.bamnat.app.ui.Fmt.ro(style.label)} 바꿨어요 · 시급은 ‘출근·시급’ 탭에서 넣어요")
+                        }
                         // [TYPE-03] A shop sets its hours and regular days off next.
                         style == WorkStyle.BUSINESS -> go(Routes.shopDays(calendar), Routes.SHOP_DAYS)
                         else -> {
@@ -1361,7 +1361,12 @@ private fun AppNavHost(
                 if (current == null || style == current) apply(style, null)
                 else scope.launch {
                     val records = container.recordsTrash.records(calendar)
-                    if (records.isEmpty) apply(style, false) else asking = style to records
+                    if (records.isEmpty) apply(style, false)
+                    else {
+                        foldNames = com.bamnat.app.ui.shifts.TypeFoldAsk.foldable(container, calendar, current, style)
+                            .takeIf { it.isNotEmpty() }?.joinToString("·") { it.name }
+                        asking = style to records
+                    }
                 }
             })
             asking?.let { (style, records) ->
@@ -1370,9 +1375,10 @@ private fun AppNavHost(
                     from = current ?: style,
                     to = style,
                     records = records,
-                    onKeep = { asking = null; apply(style, false) },
-                    onClear = { asking = null; apply(style, true) },
+                    onKeep = { f -> asking = null; if (foldNames != null) com.bamnat.app.ui.shifts.TypeFoldAsk.preanswer.value = f; apply(style, false) },
+                    onClear = { f -> asking = null; if (foldNames != null) com.bamnat.app.ui.shifts.TypeFoldAsk.preanswer.value = f; apply(style, true) },
                     onDismiss = { asking = null },
+                    foldNames = foldNames,
                 )
             }
         }

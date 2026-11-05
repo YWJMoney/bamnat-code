@@ -830,8 +830,9 @@ abstract class ScreenshotBase {
         { it.copy(period = com.bamnat.core.pay.PayPeriod(endDay = 20, payDay = 25), rules = it.rules.copy(holidayByShiftStart = true)) }
     /** 4조 2교대 from its template, the user's own 주주휴휴야야휴휴, today the second night. */
     internal fun Screen.setupToToday() {
-        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("네, 시간이 맞아요")
-        tapText("4조 2교대 8일 (주휴야휴)"); tapText("다음", exact = true)
+        // [EASE-07] The order is picked on the times' screen (the template's usual one is in already).
+        tapText("순서가 돌아가요"); tapText("4조 2교대 12시간"); tapText("순서가 달라요 · 다른 순서 고르기")
+        tapText("4조 2교대 8일 (주휴야휴)"); tapText("네, 맞아요", exact = true)
         tapText("야간", exact = true); tapText("둘째 날")
     }
 

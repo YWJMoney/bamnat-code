@@ -288,7 +288,7 @@ private fun SwitchLine(title: String, what: String, okay: String, on: Boolean, o
  * it is kept are said before the yes (제15조 제2항); it is not called 익명, as the policy treats it as personal data.
  */
 @Composable
-private fun StatsLine(on: Boolean, onChange: (Boolean) -> Unit) {
+internal fun StatsLine(on: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(value = on, role = Role.Checkbox, onValueChange = onChange).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
