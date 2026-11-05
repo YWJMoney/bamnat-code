@@ -242,9 +242,6 @@ object FlagEval {
         "play.subscription" to "정기 결제 상품 활성",
         "data.safety" to "Play 데이터 보안 답 고침",
         // 1.38 [P3-01] Phase 3 관문: the developer starts a pilot or confirms the watch, in the admin app.
-        "pilot.team" to "팀 파일럿 시작",
-        "pilot.shop" to "사업장 파일럿 시작",
-        "watch.sleep" to "워치 수면 확인(헬스 커넥트)",
     )
     val TYPE_WORDS = mapOf(
         "SHIFT" to "교대", "DAY" to "일근", "HOURLY" to "시급", "FIELD" to "현장", "BUSINESS" to "자영업", "INVEST" to "투자",

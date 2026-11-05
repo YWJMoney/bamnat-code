@@ -755,9 +755,6 @@ export function adminLib() {
     "play.production": "Play 프로덕션 승인",
     "play.subscription": "정기 결제 상품 활성",
     "data.safety": "Play 데이터 보안 답 고침",
-    "pilot.team": "팀 파일럿 시작",
-    "pilot.shop": "사업장 파일럿 시작",
-    "watch.sleep": "워치 수면 확인(헬스 커넥트)",
   };
   const MANUAL_KEY = /^[a-z][a-z0-9]{1,19}(\.[a-z0-9]{1,30}){1,2}$/;
   const POLICY_VERSION = /^\d{1,2}\.\d{1,2}$/;
