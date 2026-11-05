@@ -41,7 +41,7 @@ data class MoneyFacts(
         ): MoneyFacts {
             val f = MoneyAhead.forecast(book, today, DAYS, pay)
             val spent = book.entries.filter { it.date == today && it.kind == MoneyKind.EXPENSE && it.source != MoneySource.FIXED }.sumOf { it.amount }
-            val next = f.untilNext(nextKinds(styleWord), spent)
+            val next = f.untilNext(nextKinds(styleWord), spent, MoneyAhead.spentFromStart(book.accounts, book.entries, today))
             val open = Envelopes.status(envelopes, moves, today)
             val target = envelopes.filter { !it.closed && it.target > 0 }.sumOf { it.target }
             val saved = open.sumOf { it.saved }

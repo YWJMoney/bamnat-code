@@ -27,7 +27,8 @@ import androidx.compose.ui.unit.dp
  * The user's order holds inside each layer.
  */
 internal enum class MoneyLayer(val title: String?) {
-    TOP(null), TODAY("오늘"), MONTH("이번 달"), AHEAD("앞으로"), CHECK("점검"),
+    // PC 확인 ('앞으로의 돈' 카드는 '오늘' 층에, '앞으로' 층에는 곧 나갈 돈뿐이라 헷갈림): the third layer is named for what is in it.
+    TOP(null), TODAY("오늘"), MONTH("이번 달"), AHEAD("나갈 돈"), CHECK("점검"),
 }
 
 internal val MoneyPart.layer: MoneyLayer
@@ -87,12 +88,14 @@ private fun LayerHeading(title: String, count: Int?, open: Boolean, onToggle: ((
     Row(m.fillMaxWidth().padding(top = 4.dp, bottom = 0.dp, start = 4.dp).then(if (onToggle != null) Modifier.padding(vertical = 8.dp) else Modifier),
         verticalAlignment = Alignment.CenterVertically) {
         Text(title + (count?.let { " $it" } ?: ""), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+            color = MaterialTheme.colorScheme.primary)
+        // PC 확인 (점검 머리 '펼치기'를 돈 적기 단추가 가림): 펼치기 sits right after the name, away from the corner the button floats in.
         if (onToggle != null) {
-            Text(if (open) "접기" else "펼치기", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(" · " + (if (open) "접기" else "펼치기"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
     }
 }
 

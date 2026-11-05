@@ -75,13 +75,18 @@ data class MoneyForecast(
      * [LEDH-02] 다음 월급날(or next money in)까지 하루 쓸 돈: the money now, less what must leave before then and
      * plus what else arrives before then, spread over the days left including today. Null without account balances.
      */
-    fun untilNext(kinds: Set<FlowKind> = setOf(FlowKind.PAY), todaySpent: Long = 0): UntilNext? {
+    /**
+     * [todaySpent] is all spent today (taken off today's share); [fromStart] the part of it that already came out of [start] (lines on a
+     * spendable account), which is put back to count the morning's money. PC 확인 (통장 잔액이 기록과 안 이어졌는데 '오늘 아침 통장
+     * 555,000원'으로 거꾸로 셈): a line on no account never left the balance, so it is not added back.
+     */
+    fun untilNext(kinds: Set<FlowKind> = setOf(FlowKind.PAY), todaySpent: Long = 0, fromStart: Long = todaySpent): UntilNext? {
         val next = flows.firstOrNull { it.kind in kinds && it.date.isAfter(today) } ?: return null
         val daysLeft = ChronoUnit.DAYS.between(today, next.date).toInt().coerceAtLeast(1)
         val before = flows.filter { it.date.isBefore(next.date) }
         val reserved = -before.filter { it.amount < 0 }.sumOf { it.amount }
         val arriving = before.filter { it.amount > 0 }.sumOf { it.amount }
-        val perDay = if (!hasBalance) null else ((start + todaySpent + arriving - reserved) / daysLeft).coerceAtLeast(0)
+        val perDay = if (!hasBalance) null else ((start + fromStart + arriving - reserved) / daysLeft).coerceAtLeast(0)
         return UntilNext(next, daysLeft, perDay, reserved, arriving, perDay?.let { it - todaySpent })
     }
 }
@@ -113,6 +118,12 @@ object MoneyAhead {
     fun spendable(a: MoneyAccount): Boolean = !a.hidden && a.keepsBalance && a.type != AccountType.OTHER
 
     /** [LEDH-01] The money in spendable accounts now, or null when there is none to count. */
+    /** What was spent on [today] out of the accounts [startBalance] counts (not on a credit card, not on no account). */
+    fun spentFromStart(accounts: List<MoneyAccount>, entries: List<MoneyEntry>, today: LocalDate): Long {
+        val ids = accounts.filter(::spendable).map { it.id }.toSet()
+        return entries.filter { it.date == today && it.kind == MoneyKind.EXPENSE && MoneyAccounts.of(it, accounts) in ids }.sumOf { it.amount }
+    }
+
     fun startBalance(accounts: List<MoneyAccount>, entries: List<MoneyEntry>): Long? {
         val ids = accounts.filter(::spendable).map { it.id }.toSet()
         if (ids.isEmpty()) return null

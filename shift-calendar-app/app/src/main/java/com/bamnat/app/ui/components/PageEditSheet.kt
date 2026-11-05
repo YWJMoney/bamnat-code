@@ -33,6 +33,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -98,7 +100,13 @@ fun PageEditSheet(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).semantics { heading() })
-                TextButton(onClick = onReset, modifier = Modifier.heightIn(min = 48.dp)) { Text("처음대로") }
+                // PC 확인 ('처음대로'가 묻지 않고 바로 되돌림): asked first, since the order and what is hidden go back.
+                var resetting by remember { mutableStateOf(false) }
+                TextButton(onClick = { resetting = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("처음대로") }
+                if (resetting) AlertDialog(onDismissRequest = { resetting = false },
+                    title = { Text("처음 순서로 되돌릴까요?") }, text = { Text("카드 순서와 숨긴 카드가 처음대로 돌아가요.") },
+                    confirmButton = { TextButton(onClick = { resetting = false; onReset() }) { Text("되돌리기") } },
+                    dismissButton = { TextButton(onClick = { resetting = false }) { Text("그대로 두기") } })
             }
             Text("바꾸는 대로 저장되고 화면에 바로 보여요. 아래 미리보기에서 순서를 확인하세요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -163,9 +171,15 @@ private fun LayoutPreview(groups: List<EditGroup>, middle: String) {
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             val (above, below) = groups.partition { it.title.startsWith("위") }
-            above.flatMap { it.rows }.filter { it.shown }.forEach { Block(it.label, scheme.secondaryContainer) }
+            // PC 확인 (가계부 카드 배치 미리보기에 층 머리가 없어요): with more than one group on a side, each says its name.
+            @Composable fun side(gs: List<EditGroup>) = gs.forEach { g ->
+                val shown = g.rows.filter { it.shown }
+                if (gs.size > 1 && shown.isNotEmpty()) Text(g.title, style = MaterialTheme.typography.labelSmall, color = scheme.primary, maxLines = 1)
+                shown.forEach { Block(it.label, scheme.secondaryContainer) }
+            }
+            side(above)
             Block(middle, scheme.primaryContainer, tall = true)
-            below.flatMap { it.rows }.filter { it.shown }.forEach { Block(it.label, scheme.secondaryContainer) }
+            side(below)
         }
     }
 }

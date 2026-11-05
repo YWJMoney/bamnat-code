@@ -299,8 +299,9 @@ fun EntryDialog(
                             if (d.place.isNotBlank()) place = d.place
                             day = com.bamnat.core.time.Today.date().minusDays(d.daysAgo.toLong()).toString()
                             com.bamnat.core.money.QuickLine.account(d, ledger.accounts, entries)?.let { account = it; accountTouched = true }
-                            lineNote = listOfNotNull(d.amount?.let { Fmt.won(it) }, d.place.takeIf { it.isNotBlank() },
-                                if (d.daysAgo > 0) "${d.daysAgo}일 전" else null).joinToString(" · ") + "로 채웠어요. 아래에서 고칠 수 있어요"
+                            // PC 확인 (조사 '점심로·1일 전로'): what was filled is listed, then said, with no particle glued to it.
+                            lineNote = "채웠어요: " + listOfNotNull(d.amount?.let { Fmt.won(it) }, d.place.takeIf { it.isNotBlank() },
+                                if (d.daysAgo == 1) "어제" else if (d.daysAgo > 1) "${d.daysAgo}일 전" else null).joinToString(" · ") + ". 아래에서 고칠 수 있어요"
                             line = ""
                         }
                         OutlinedTextField(

@@ -64,6 +64,9 @@ object Budgets {
     /** A budget 80% used is close to its end. */
     const val NEAR_AT = 0.8f
 
+    /** One line this big is a lump (자재비, 가전, 병원비): it counts in what is spent, not in the daily pace. */
+    const val LUMP = 100_000L
+
     /**
      * [LEDG-06] Budgets against the ledger's spending in [month] (job costs and transfers are not
      * spending here). A split payment counts under each of its categories [LEDG-11]. The forecast
@@ -106,7 +109,9 @@ object Budgets {
         val everyday = HashMap<String, Long>()
         for (e in spent) for ((c, a) in e.shares()) {
             byCategory.merge(c, a, Long::plus)
-            if (e.source != MoneySource.FIXED) everyday.merge(c, a, Long::plus)
+            // PC 확인 (자재비 25만을 한 번 적었더니 '이대로면 약 125만원 넘을 것 같아요'): one big line ([LUMP] or more) is counted once,
+            // not as a pace that repeats every day.
+            if (e.source != MoneySource.FIXED && e.amount < LUMP) everyday.merge(c, a, Long::plus)
         }
         val length = (java.time.temporal.ChronoUnit.DAYS.between(from, to) + 1).toInt().coerceAtLeast(1)
         val current = !today.isBefore(from) && !today.isAfter(to)

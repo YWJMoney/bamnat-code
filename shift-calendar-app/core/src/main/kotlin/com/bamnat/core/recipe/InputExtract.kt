@@ -59,7 +59,6 @@ object InputExtract {
                 required = def == null && !item,
                 hint = when {
                     def != null -> "처음 값은 법정 기준이에요. 내 금액으로 바꿔 주세요"
-                    item -> "비워 두면 금액 없이 넣어요"
                     else -> ""
                 },
             )

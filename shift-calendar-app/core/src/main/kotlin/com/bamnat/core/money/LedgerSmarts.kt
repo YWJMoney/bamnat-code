@@ -246,10 +246,13 @@ object LedgerSmarts {
      */
     fun pace(entries: List<MoneyEntry>, today: LocalDate, budget: Long?, fixedToCome: Long = 0): Pace {
         val month = YearMonth.from(today)
-        val spent = entries.filter { it.kind == MoneyKind.EXPENSE && YearMonth.from(it.date) == month && !it.date.isAfter(today) }.sumOf { it.amount }
+        val lines = entries.filter { it.kind == MoneyKind.EXPENSE && YearMonth.from(it.date) == month && !it.date.isAfter(today) }
+        val spent = lines.sumOf { it.amount }
         val day = today.dayOfMonth
         val days = month.lengthOfMonth()
-        val projected = (spent.coerceAtLeast(0).toDouble() / day * days).roundToLong() + fixedToCome
+        // PC 확인 (덩어리 경비 한 번에 과한 경고): repeating lines and big ones ([Budgets.LUMP]) count once; only the rest is a pace.
+        val once = lines.filter { it.source == MoneySource.FIXED || it.amount >= Budgets.LUMP }.sumOf { it.amount }
+        val projected = once + ((spent - once).coerceAtLeast(0).toDouble() / day * days).roundToLong() + fixedToCome
         val daysLeft = days - day + 1
         val todayLeft = budget?.let { ((it - spent - fixedToCome).coerceAtLeast(0) / daysLeft) }
         return Pace(spent, projected, budget, todayLeft, daysLeft)

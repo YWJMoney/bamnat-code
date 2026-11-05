@@ -790,9 +790,11 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
                 }
                 if (i.kind == com.bamnat.core.recipe.InputKind.MONEY) {
                     var asking by remember { mutableStateOf(false) }
-                    TextButton(onClick = { asking = true }) { Text("모두에게 같은 금액이에요 (회사 공통 정액)") }
+                    TextButton(onClick = { asking = true }) { Text("모두에게 같은 금액이에요") }
                     if (asking) AlertDialog(onDismissRequest = { asking = false }, title = { Text("이 금액을 레시피에 그대로 둘까요?") },
-                        text = { Text("받는 분 모두에게 같은 금액일 때만 두세요. 내 시급·일당이면 칸으로 두는 게 안전해요") },
+                        // bc7e2d43 PC 확인 LOW-3: said for any amount (가계부 예산·봉투 목표 too), and how to give it when the field is empty.
+                        text = { Text("받는 분 모두에게 같은 금액(회사 공통 정액 같은 것)일 때만 두세요. 내 시급·일당·예산처럼 나만의 금액이면 칸으로 두는 게 안전해요" +
+                            (if (i.default !is Long) "\n\n그대로 두려면 위 칸에 금액을 먼저 넣어 주세요" else "")) },
                         confirmButton = { TextButton(onClick = { (i.default as? Long)?.let { vm.keep(i.id, it) }; asking = false }, enabled = i.default is Long) { Text("그대로 두기") } },
                         dismissButton = { TextButton(onClick = { asking = false }) { Text("칸으로 두기") } })
                 }

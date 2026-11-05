@@ -425,7 +425,8 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
                     color = if (now.net < 0) cal.expense else MaterialTheme.colorScheme.onSurface)
             }
             // Only the months the book was in use: before the first line the past is not known.
-            val first = book.entries.minOfOrNull { it.date }
+            // PC 확인 (통장을 오늘 처음 만들었는데 '9월 말보다 +0원'과 석 달 선): counted from the first line on an account, not any line.
+            val first = book.entries.filter { it.accountId != null || it.toAccountId != null }.minOfOrNull { it.date }
             val known = year.filter { first != null && !it.date.isBefore(first) }
             val start = known.firstOrNull()?.takeIf { it != now }
             Text(
@@ -497,7 +498,14 @@ fun AccountEditor(
                 OutlinedTextField(value = name, onValueChange = { name = it.take(MoneyAccount.MAX_NAME) }, singleLine = true,
                     label = { Text(when (kind) { AccountType.CREDIT, AccountType.CHECK -> "카드 이름 (예: 신한 Deep)"; AccountType.BANK -> "통장 이름 (예: 월급 통장)"
                         AccountType.CASH -> "이름 (예: 지갑)"; AccountType.PAY -> "이름 (예: 카카오페이)"; AccountType.OTHER -> "이름" }) },
-                    modifier = Modifier.fillMaxWidth())
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth())
+                // PC 확인 (이름을 친 뒤 자판이 오르면 '지금 들어 있는 돈' 칸이 밀려 이름 칸을 누르게 됨): the balance comes right under the
+                // name, and the keyboard's 다음 goes to it.
+                if (!card) {
+                    AmountField(if (initial == null) "지금 들어 있는 돈" else "처음 들어 있던 돈 (적기 시작할 때)", opening, { opening = it })
+                    Text("이후 이 계좌로 적은 수입·지출·이체로 잔액을 계산해요.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 if (card) {
                     OutlinedTextField(value = last4, onValueChange = { v -> last4 = v.filter(Char::isDigit).take(4) }, singleLine = true,
                         label = { Text("카드 끝 4자리 (선택)") }, supportingText = { Text("이 카드의 결제 알림은 이 달력에만 알아서 적어요") },
@@ -525,11 +533,6 @@ fun AccountEditor(
                         FilterChip(selected = payFrom == null, onClick = { payFrom = null }, label = { Text("안 고름") })
                         banks.forEach { b -> FilterChip(selected = payFrom == b.id, onClick = { payFrom = b.id }, label = { Text(b.label) }) }
                     }
-                }
-                if (!card) {
-                    AmountField(if (initial == null) "지금 들어 있는 돈" else "처음 들어 있던 돈", opening, { opening = it })
-                    Text("이후 이 계좌로 적은 수입·지출·이체로 잔액을 계산해요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (kind == AccountType.CREDIT) {
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { remind = !remind }, verticalAlignment = Alignment.CenterVertically) {

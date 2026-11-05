@@ -61,8 +61,8 @@ internal fun nextKinds(style: WorkStyle?): Set<FlowKind> = when (style) {
  * 1.37 [LEDH-03] 오늘 한 줄: "오늘 쓸 돈 2만 3천 원 · 월급까지 9일 · 정리할 것 3". From the forecast when account
  * balances are known, else from the budget; parts that cannot be known are left out. Null when nothing is known.
  */
-internal fun todayLine(forecast: MoneyForecast?, budget: BudgetStatus, style: WorkStyle?, toSort: Int, todaySpent: Long): String? {
-    val until = forecast?.untilNext(nextKinds(style), todaySpent)
+internal fun todayLine(forecast: MoneyForecast?, budget: BudgetStatus, style: WorkStyle?, toSort: Int, todaySpent: Long, fromStart: Long = todaySpent): String? {
+    val until = forecast?.untilNext(nextKinds(style), todaySpent, fromStart)
     val left = until?.todayLeft ?: budget.todayLeft
     return listOfNotNull(
         left?.let { if (it >= 0) "오늘 쓸 돈 ${Fmt.won(it)}" else "오늘 ${Fmt.won(-it)} 넘게 썼어요" },
@@ -86,12 +86,13 @@ internal fun AheadCard(
     val full = remember(book, today, pay) { MoneyAhead.forecast(book, today, MoneyAhead.FULL_DAYS, pay?.days.orEmpty()) }
     val shown = remember(full, span) { full.copy(days = full.days.take(span)) }
     val todaySpent = remember(book, today) { book.entries.filter { it.date == today && it.kind == com.bamnat.core.money.MoneyKind.EXPENSE }.sumOf { it.amount } }
-    val line = todayLine(full, budget, style, toSort, todaySpent)
+    val fromStart = remember(book, today) { MoneyAhead.spentFromStart(book.accounts, book.entries, today) }
+    val line = todayLine(full, budget, style, toSort, todaySpent, fromStart)
     // 1.37 [LEDH-08] 근무 리듬 예산: the money until pay shared out by how each kind of day spends (교대·일근·알바).
     val rhythm by androidx.compose.runtime.produceState<com.bamnat.core.money.ShiftRhythm.Plan?>(null, full, snapshot, style, today) {
         value = if (snapshot == null || style?.usesPayEngine != true) null else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             runCatching {
-                val until = full.untilNext(nextKinds(style), todaySpent) ?: return@runCatching null
+                val until = full.untilNext(nextKinds(style), todaySpent, fromStart) ?: return@runCatching null
                 val perDay = until.perDay ?: return@runCatching null
                 val label = com.bamnat.core.tax.TaxPlus.dayLabel(snapshot.resolver::resolve)
                 val everyday = book.entries.filter { it.source != com.bamnat.core.money.MoneySource.FIXED }
@@ -106,8 +107,8 @@ internal fun AheadCard(
     SectionCard(title = "앞으로의 돈") {
         line?.let { Text(it, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) }
         // 1.37 PC 확인 6a4efc92 제안: '오늘 쓸 돈'을 어떻게 셌는지 한 줄 풀이.
-        full.untilNext(nextKinds(style), todaySpent)?.takeIf { it.perDay != null }?.let { u ->
-            Muted("(" + (if (todaySpent > 0) "오늘 아침 통장 " else "통장 ") + "${Fmt.won(full.start + todaySpent)}" + (if (u.reserved > 0) " − 그 전에 나갈 돈 ${Fmt.won(u.reserved)}" else "") +
+        full.untilNext(nextKinds(style), todaySpent, fromStart)?.takeIf { it.perDay != null }?.let { u ->
+            Muted("(" + (if (fromStart > 0) "오늘 아침 통장 " else "통장 ") + "${Fmt.won(full.start + fromStart)}" + (if (u.reserved > 0) " − 그 전에 나갈 돈 ${Fmt.won(u.reserved)}" else "") +
                 (if (u.arriving > 0) " + 들어올 돈 ${Fmt.won(u.arriving)}" else "") + ") ÷ ${u.daysLeft}일 = 하루 ${Fmt.won(u.perDay!!)}" +
                 (if (todaySpent > 0) ", 오늘 쓴 ${Fmt.won(todaySpent)}을 빼고 보여요" else ""))
         }
@@ -125,7 +126,7 @@ internal fun AheadCard(
             }
             self?.let { p ->
                 Muted("내 월급" + (if (style == WorkStyle.FIELD) "(경비 뺀 뒤)" else "") + ": 매달 ${Fmt.won(p.salary)}씩 나에게 주면 지난 ${p.months}달 중 ${p.covered}달은 그만큼 벌었어요" +
-                    (p.lastFor?.let { " · 지금 통장으로 ${"%.1f".format(it).removeSuffix(".0")}달 버텨요" } ?: "") + ". 더 번 달의 남는 돈은 모으기 봉투로 옮겨 두면 덜 번 달을 메워요.")
+                    (p.lastFor?.let { " · 지금 통장으로 ${"%.1f".format(it).removeSuffix(".0")}달 버텨요(지난 ${p.months}달 한 달 평균 지출 ${Fmt.won(p.spend)} 기준)" } ?: "") + ". 더 번 달의 남는 돈은 모으기 봉투로 옮겨 두면 덜 번 달을 메워요.")
             }
         }
         rhythm?.let { p ->

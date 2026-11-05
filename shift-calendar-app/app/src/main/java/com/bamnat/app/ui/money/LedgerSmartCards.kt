@@ -39,7 +39,8 @@ internal fun PaceCard(
     val pace = remember(book, today, budget) { LedgerSmarts.pace(book.entries, today, budget.total?.budget, leftFixed) }
     if (pace.spent <= 0 && leftFixed <= 0) return
     SectionCard(title = "이번 달 흐름") {
-        Text("지금까지 ${Fmt.won(pace.spent)} · 이대로면 월말 ${Fmt.won(pace.projected)}", style = MaterialTheme.typography.titleSmall)
+        // PC 확인 (통계 '나간 돈'과 '지금까지'가 다름, 기준 설명 없음): this counts up to today; 통계 has lines written ahead too.
+        Text("오늘까지 ${Fmt.won(pace.spent)} · 이대로면 월말 ${Fmt.won(pace.projected)}", style = MaterialTheme.typography.titleSmall)
         pace.budget?.let { b ->
             val over = pace.projected - b
             Text(if (over > 0) "예산보다 ${Fmt.won(over)} 넘을 것 같아요" else "예산 안에서 끝날 것 같아요 (${Fmt.won(-over)} 남음)",

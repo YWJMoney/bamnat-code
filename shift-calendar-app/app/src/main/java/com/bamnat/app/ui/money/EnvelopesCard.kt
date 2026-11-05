@@ -76,7 +76,9 @@ internal fun EnvelopesCard(
         TextButton(onClick = { editing = Envelope(name = "", created = today) }, enabled = canAdd) { Text("봉투 만들기") }
     }) {
         if (rows.isEmpty()) {
-            Muted("여행·비상금·새 폰처럼 모으는 돈마다 봉투를 만들면, 이대로 언제 채우는지와 근무 몇 번이면 되는지 알려 드려요. 돈은 통장에 그대로 있고 봉투는 그 돈의 이름표예요.")
+            // bc7e2d43 PC 확인 LOW-10: 근무 몇 번 only where there are shifts (투자 has none).
+            Muted("여행·비상금·새 폰처럼 모으는 돈마다 봉투를 만들면, 이대로 언제 채우는지" + (if (style?.usesPayEngine == true) "와 근무 몇 번이면 되는지" else "") +
+                " 알려 드려요. 돈은 통장에 그대로 있고 봉투는 그 돈의 이름표예요.")
         }
         rows.forEach { s -> EnvelopeRow(s, today, perShift, onPut = { putting = s }, onEdit = { editing = s.envelope }) }
         if (!canAdd) Muted("봉투는 ${Envelopes.FREE_COUNT}개까지 무료예요. 다 채운 봉투를 닫으면 새로 만들 수 있어요.")

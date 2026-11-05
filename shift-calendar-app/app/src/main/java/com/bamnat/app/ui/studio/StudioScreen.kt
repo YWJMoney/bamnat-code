@@ -276,6 +276,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // PC 006d0aec: what went up from here (body → the answer), so 올리기 with nothing changed says so at once, before '무엇을 올릴까요'.
     var sentBodies by remember { mutableStateOf(mapOf<String, com.bamnat.app.recipe.Sent>()) }
     var noChange by remember { mutableStateOf<com.bamnat.app.recipe.Sent?>(null) }
+    var nothingToSend by remember { mutableStateOf(false) }
     var openedLine by remember { mutableStateOf<String?>(null) }
     var detail by rememberSaveable { mutableStateOf(false) }
     var comparing by remember { mutableStateOf(false) }
@@ -487,7 +488,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     val (body, parent) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { vm.upload() }
                                     // PC 006d0aec: nothing changed since it last went up from here: said at once.
                                     val same = sentBodies[body]
-                                    if (same != null) { noChange = same; preparing = false }
+                                    // bc7e2d43 PC 확인 LOW-6 (기능 0개·모양 그대로인데 빈 레시피가 올라감): nothing to send, said.
+                                    val empty = body.contains("\"pieces\":[]")
+                                    if (empty) { nothingToSend = true; preparing = false }
+                                    else if (same != null) { noChange = same; preparing = false }
                                     else { publishRound++; publishing = Triple(body, parent, vm.nextOf()) }
                                 }
                             } }, enabled = !preparing && publishing == null,
@@ -929,6 +933,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             }
         }
     }
+    if (nothingToSend) AlertDialog(onDismissRequest = { nothingToSend = false }, title = { Text("올릴 것이 없어요") },
+        text = { Text("모양을 바꾸거나 기능(가계부 틀 등)을 켠 뒤 올려 주세요.") },
+        confirmButton = { TextButton(onClick = { nothingToSend = false }) { Text("확인") } })
     noChange?.let { sent -> NoChangeDialog(sent, onOpen = { noChange = null; onOpen(sent.code) }, onDismiss = { noChange = null }) }
     if (saving) SaveDialog(vm, s, onDismiss = { saving = false }) { name, toPlaza ->
         saving = false

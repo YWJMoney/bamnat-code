@@ -729,7 +729,10 @@ internal fun FieldsForm(fields: List<Field>, values: Map<String, Any?>, kind: Pi
             is Field.Text -> OutlinedTextField((v as? String).orEmpty(), { t -> onChange(f.key, t.take(f.max).ifEmpty { if (f.optional) null else t }) },
                 label = { Text(label) }, singleLine = !f.lines, minLines = if (f.lines) 3 else 1, modifier = Modifier.fillMaxWidth())
             is Field.Num -> NumberRow(label, (v as? Number)?.toDouble(), f.decimals, f.lo, f.hi) { d -> onChange(f.key, d?.let { if (f.decimals == 0) it.toLong() else it }) }
-            is Field.Money -> Text(if (v is Ref.Input || v == null) "$label: 받는 분이 직접 넣어요" else "$label: 모두에게 같은 금액",
+            // bc7e2d43 PC 확인 LOW-5 ('모두에게 같은 금액'이라 적혔는데 올리기 1/4에서는 받는 칸): an amount here is mine for now; on
+            // upload it becomes the receiver's field first, and 1/4 is where it can be kept the same for everyone.
+            is Field.Money -> Text(if (v is Ref.Input || v == null) "$label: 받는 분이 직접 넣어요"
+                else "$label: 지금 ${com.bamnat.app.ui.Fmt.won((v as? Number)?.toLong() ?: 0)} · 올리면 받는 분이 정하는 칸이 돼요(올리기 1/4에서 바꿔요)",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             is Field.Color -> ColorSwatch((v as? Long) ?: 0xFF5C6BC0L, label + if (v is Ref) " (테마·받는 분 색)" else "", { c -> onChange(f.key, c) })
             is Field.Emoji -> {

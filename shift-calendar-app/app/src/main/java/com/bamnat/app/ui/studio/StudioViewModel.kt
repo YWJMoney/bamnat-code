@@ -829,9 +829,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
             .sortedBy { it.kind.ordinal }
         // bc7e2d43 PC 확인 (기능만 올리는데 이름이 '내 테마 1'): 기능만 is named for its 기능 (‘가계부 틀’), not the look's theme.
         val featureTitle = if (onlyTab == FEATURES_ONLY) s.extras.keys.sortedBy { it.ordinal }.joinToString("·") { it.label }.take(30) else null
-        val withExtras = s.meta?.copy(pieces = pieces, parent = null)
+        val withExtras = s.meta?.copy(pieces = pieces, parent = null)?.let { m -> if (featureTitle != null && m.summary == "내가 꾸민 모양") m.copy(summary = featureSummary(s.extras.keys)) else m }
             // 빌드 e382585e (올리기 2/4의 이름 칸이 비어 있어요): one of my themes goes up under its name.
             ?: recipe("").copy(title = featureTitle ?: s.savedTitle ?: (ownStart ?: mixedStart())?.title.orEmpty(), styles = setOf(style ?: WorkStyle.SHIFT), pieces = pieces,
+                // bc7e2d43 PC 확인 LOW-2: 기능만 is not a look; its first one-liner says what it holds.
+                summary = if (featureTitle != null) featureSummary(s.extras.keys) else "내가 꾸민 모양",
                 // [STU-41] The 표지 starts in the look's own colours (바탕 → 강조), not the app's blue and purple.
                 cover = coverOf(s.draft))
         // [THM-08] 302576c8 PC 확인 (섞은 테마가 수정판 표시 없이 올라감): a mixed theme names every theme it took from in its 설명,
@@ -947,6 +949,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** A start for [START_RECIPE], one of a kind each time (the studio's ViewModel is kept per start). */
         fun recipeStart(own: String?): String = START_RECIPE + (own?.let { ":$it" } ?: "") + "@" + com.bamnat.core.time.Today.millis()
         /** [STU-21] The 기능 the studio can carry, in the order shown. */
+        /** The first one-liner of a 기능만 upload: what it holds, not "내가 꾸민 모양". */
+        fun featureSummary(kinds: Collection<PieceKind>): String =
+            if (kinds.singleOrNull() == PieceKind.LEDGER) "가계부 분류·예산·봉투 틀이에요" else kinds.sortedBy { it.ordinal }.joinToString("·") { it.label }.take(40) + " 기능을 담았어요"
+
         /** [upload]'s choice that sends the 기능 alone, no look (장터 '기능별'). */
         const val FEATURES_ONLY = "features"
         val FEATURES = listOf(PieceKind.SHIFT_LOOK, PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.HOURLY_RULES, PieceKind.FIELD_SHEET,

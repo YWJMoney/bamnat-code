@@ -594,12 +594,20 @@ fun MoneyScreen(
         vm.showPage(MoneyViewModel.Page.SUMMARY)
         autoRecording = true
     }
+    var fromOutside by remember { mutableStateOf(false) }
     // 1.37 [LEDH-14] 돈 적기 from the widget or the quick settings tile: the add sheet straight away.
     LaunchedEffect(noticeTarget) {
         if (noticeTarget != NoticeLinks.Target.MONEY_ADD) return@LaunchedEffect
         NoticeLinks.consume(NoticeLinks.Target.MONEY_ADD)
         vm.showMonth(YearMonth.from(com.bamnat.core.time.Today.date()))
         adding = MoneyKind.EXPENSE
+        fromOutside = true
+    }
+    // bc7e2d43 PC 확인 LOW-8 (빠른 설정 '돈 적기'를 닫으면 설정 앱이 아니라 밤낮 가계부가 남음): opened from the tile or the widget,
+    // closing the sheet goes back to where it was opened.
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    LaunchedEffect(adding) {
+        if (adding == null && fromOutside) { fromOutside = false; activity?.moveTaskToBack(true) }
     }
     // [TAX-01] What came in since the last look is checked for pay, and 알림 '세금 카드' lands on the sheet.
     LaunchedEffect(vm) { vm.checkSalary() }
@@ -1133,7 +1141,7 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     // 1.37 [LEDH-01][LEDH-02][LEDH-03] 근무가 보이는 가계부.
     AHEAD("ahead", "앞으로의 돈", "오늘 쓸 돈·월급까지 며칠·날마다 남을 돈"),
     // 1.37 [LEDH-11][LEDH-13]
-    ENVELOPES("envelopes", "모으기 봉투", "목표까지 얼마·근무 몇 번, 월급 나누기, 세금 봉투"),
+    ENVELOPES("envelopes", "모으기 봉투", "목표까지 얼마·언제 채우나, 월급 나누기, 세금 봉투"),
     // 1.37 [LEDH-17]
     FOUND("found", "찾아 준 돈", "올해 이어 붙인 환불, 볼 만한 구독, 오른 값"),
     RECENT("recent", "최근 기록", "이번 달 마지막 다섯 줄", right = true),
@@ -1148,7 +1156,7 @@ internal enum class MoneyPart(val id: String, val label: String, val what: Strin
     REPEAT("repeat", "반복 지출 찾기", "매달 나가는 것 같은 지출"),
     ACCOUNTS("accounts", "통장·카드", "계좌와 카드 잔액"),
     // E 1.32 [LEDX-07][LEDX-09][LEDX-10]
-    PACE("pace", "이번 달 흐름", "이대로면 월말 지출, 오늘 쓸 수 있는 돈"),
+    PACE("pace", "이번 달 흐름", "이대로면 월말 지출, 지난달과 견주기"),
     SUBS("subs", "구독 점검", "매달 나가는 결제와 1년치, 오른 값"),
     CARD25("card25", "카드 소득공제 문턱", "총급여 25% 문턱과 신용·체크 고르기"),
     CARDBILL("cardbill", "다음 카드값", "카드별 다음 결제 금액과 이대로면 얼마"),

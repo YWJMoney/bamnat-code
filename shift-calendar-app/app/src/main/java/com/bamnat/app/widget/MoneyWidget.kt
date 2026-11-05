@@ -92,7 +92,7 @@ class MoneyWidget : GlanceAppWidget() {
             // from the accounts until the next pay when that can be known, else from this month's budget.
             val spentAll = book.entries.filter { it.date == today && it.kind == MoneyKind.EXPENSE }.sumOf { it.amount }
             val until = com.bamnat.core.money.MoneyAhead.forecast(book, today, com.bamnat.core.money.MoneyAhead.FULL_DAYS, payDays)
-                .untilNext(MoneyFacts.nextKinds(style?.formulaWord().orEmpty()), spentAll)
+                .untilNext(MoneyFacts.nextKinds(style?.formulaWord().orEmpty()), spentAll, com.bamnat.core.money.MoneyAhead.spentFromStart(book.accounts, book.entries, today))
             val left = until?.todayLeft ?: run {
                 val month = java.time.YearMonth.from(today)
                 val rolling = if (style == com.bamnat.core.work.WorkStyle.INVEST) emptySet() else settings.budgetRollover.split('\t').filter { it.isNotBlank() }.toSet()
@@ -125,7 +125,7 @@ class MoneyWidgetReceiver : GlanceAppWidgetReceiver() {
 @Composable
 private fun MoneyContent(line: MoneyWidget.Line) {
     val short = LocalSize.current.height < 90.dp
-    fun won(v: Long) = if (line.hidden) "•••원" else Fmt.won(v)
+    fun won(v: Long) = if (line.hidden) Fmt.MASK + "원" else Fmt.won(v)
     val main = line.perDay?.let { won(it) } ?: "통장 잔액이나 예산을 적으면 보여요"
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(GlanceModifier.defaultWeight()) {
