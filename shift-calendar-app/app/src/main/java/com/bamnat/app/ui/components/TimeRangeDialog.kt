@@ -131,11 +131,12 @@ fun TimeRangeDialog(
                 )
                 // [TIME-03] Which times 완료 will change, so a wheel turned by a stray flick shows before it is kept
                 // (the shift editor keeps what the window returns when the user goes back).
+                // The line keeps its place when nothing changed, so the wheels do not jump (PC a9bcce14).
                 val changes = listOfNotNull(
                     timeChangeNote("시작", initial.start, range.start),
                     timeChangeNote("끝", initial.end, range.end),
                 )
-                for (c in changes) TimeChangeLine(c, Modifier.padding(bottom = 4.dp))
+                TimeChangeLine(changes.joinToString("\n").ifEmpty { null }, Modifier.padding(bottom = 4.dp))
                 if (part == TimeRangePart.BREAK) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         MinutesStepper(minutes = breakMin, onChange = { breakMin = it }, step = 10, max = maxBreakMinutes, dialogTitle = "휴게 시간")

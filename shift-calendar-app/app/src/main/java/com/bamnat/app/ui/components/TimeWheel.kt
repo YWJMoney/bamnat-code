@@ -97,7 +97,7 @@ fun TimePickerDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 // [TIME-03] What 완료 will change, so a wheel turned by accident shows before it is kept.
-                timeChangeNote(null, initial, current)?.let { TimeChangeLine(it) }
+                TimeChangeLine(timeChangeNote(null, initial, current))
                 Box(Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * VISIBLE_ITEMS), contentAlignment = Alignment.Center) {
                     // Band behind the selected row.
                     Box(
@@ -331,11 +331,14 @@ internal fun timeChangeNote(part: String?, was: LocalTime, now: LocalTime): Stri
     return (part?.let { "$it " } ?: "") + "${clock(was)} → ${clock(now)}으로 바뀌어요"
 }
 
-/** [TIME-03] One line in the primary colour under the time, saying what is about to change. */
+/**
+ * [TIME-03] One line in the primary colour under the time, saying what is about to change. With nothing changed
+ * ([text] null) it still holds its line, so the wheels below do not jump when it comes and goes.
+ */
 @Composable
-internal fun TimeChangeLine(text: String, modifier: Modifier = Modifier) {
+internal fun TimeChangeLine(text: String?, modifier: Modifier = Modifier) {
     Text(
-        text,
+        text ?: " ",
         style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
