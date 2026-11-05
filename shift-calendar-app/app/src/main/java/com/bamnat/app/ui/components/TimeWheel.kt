@@ -325,19 +325,28 @@ private class WheelFling(
  * [TIME-03] "끝 18:30 → 07:30으로 바뀌어요" when [now] differs from [was], null when it is the same. [part] names
  * which time ("시작", "끝"), or null for a window with one time.
  */
-internal fun timeChangeNote(part: String?, was: LocalTime, now: LocalTime): String? =
-    timeChangeNote(listOf(Triple(part, was, now)))
+internal fun timeChangeNote(part: String?, was: LocalTime, now: LocalTime, nextDay: Boolean = false): String? {
+    if (was.hour == now.hour && was.minute == now.minute) return null
+    return (part?.let { "$it " } ?: "") + "${wheelClock(was)} → ${if (nextDay) "다음날 " else ""}${wheelClock(now)}으로 바뀌어요"
+}
 
 /**
- * [TIME-03] Several times in one line, so two changes do not push the wheels down: "시작 07:00 → 08:00 · 끝 18:30 →
- * 19:00으로 바뀌어요". Only the changed ones; null when none changed.
+ * [TIME-03] A shift's start and end in one short line, so two changes still fit one line and do not push the wheels
+ * down (PC 1a8e88f6: "시작 … · 끝 …" folded onto two): "19:00~07:00 → 20:00~다음날 08:00으로 바뀌어요". With one
+ * of the two changed, it names that one ("끝 07:00 → 다음날 08:00으로 바뀌어요"). Null when neither changed.
  */
-internal fun timeChangeNote(changes: List<Triple<String?, LocalTime, LocalTime>>): String? {
-    val clock = { t: LocalTime -> "%02d:%02d".format(t.hour, t.minute) }
-    val changed = changes.filter { (_, was, now) -> was.hour != now.hour || was.minute != now.minute }
-    if (changed.isEmpty()) return null
-    return changed.joinToString(" · ") { (part, was, now) -> (part?.let { "$it " } ?: "") + "${clock(was)} → ${clock(now)}" } + "으로 바뀌어요"
+internal fun rangeChangeNote(wasStart: LocalTime, wasEnd: LocalTime, start: LocalTime, end: LocalTime): String? {
+    val same = { a: LocalTime, b: LocalTime -> a.hour == b.hour && a.minute == b.minute }
+    val nextDay = !end.isAfter(start)
+    return when {
+        same(wasStart, start) && same(wasEnd, end) -> null
+        same(wasEnd, end) -> timeChangeNote("시작", wasStart, start)
+        same(wasStart, start) -> timeChangeNote("끝", wasEnd, end, nextDay)
+        else -> "${wheelClock(wasStart)}~${wheelClock(wasEnd)} → ${wheelClock(start)}~${if (nextDay) "다음날 " else ""}${wheelClock(end)}으로 바뀌어요"
+    }
 }
+
+private fun wheelClock(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
 
 /**
  * [TIME-03] One line in the primary colour under the time, saying what is about to change. With nothing changed
@@ -345,13 +354,16 @@ internal fun timeChangeNote(changes: List<Triple<String?, LocalTime, LocalTime>>
  */
 @Composable
 internal fun TimeChangeLine(text: String?, modifier: Modifier = Modifier) {
-    Text(
-        text ?: " ",
-        style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        textAlign = TextAlign.Center,
-        // The held empty line is not read out, so TalkBack does not stop on a blank (PC 6ed1650c).
-        modifier = modifier.fillMaxWidth().padding(vertical = 2.dp).then(if (text == null) Modifier.clearAndSetSemantics {} else Modifier),
-    )
+    // Always one line: a long one shrinks a little instead of folding and pushing the wheels down (PC 1a8e88f6).
+    // The held empty line is not read out, so TalkBack does not stop on a blank (PC 6ed1650c).
+    Box(
+        modifier.fillMaxWidth().padding(vertical = 2.dp).then(if (text == null) Modifier.clearAndSetSemantics {} else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        com.bamnat.app.ui.FitText(
+            text ?: " ",
+            style = MaterialTheme.typography.bodyMedium.merge(NumberStyle)
+                .copy(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary),
+        )
+    }
 }

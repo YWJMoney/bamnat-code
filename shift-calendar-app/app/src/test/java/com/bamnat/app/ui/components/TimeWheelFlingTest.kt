@@ -29,14 +29,25 @@ class TimeWheelFlingTest {
         assertEquals("끝 18:30 → 07:30으로 바뀌어요", timeChangeNote("끝", LocalTime.of(18, 30), LocalTime.of(7, 30)))
         assertEquals("09:00 → 09:10으로 바뀌어요", timeChangeNote(null, LocalTime.of(9, 0), LocalTime.of(9, 10)))
         assertNull(timeChangeNote("시작", LocalTime.of(9, 0), LocalTime.of(9, 0)))
-        // Two changes stay on one line.
+        // Start and end together stay one short line; a night's end says 다음날.
         assertEquals(
-            "시작 07:00 → 08:00 · 끝 18:30 → 19:00으로 바뀌어요",
-            timeChangeNote(listOf(Triple("시작", LocalTime.of(7, 0), LocalTime.of(8, 0)), Triple("끝", LocalTime.of(18, 30), LocalTime.of(19, 0)))),
+            "07:00~19:00 → 06:30~19:30으로 바뀌어요",
+            rangeChangeNote(LocalTime.of(7, 0), LocalTime.of(19, 0), LocalTime.of(6, 30), LocalTime.of(19, 30)),
         )
         assertEquals(
-            "끝 18:30 → 19:00으로 바뀌어요",
-            timeChangeNote(listOf(Triple("시작", LocalTime.of(7, 0), LocalTime.of(7, 0)), Triple("끝", LocalTime.of(18, 30), LocalTime.of(19, 0)))),
+            "19:00~07:00 → 20:00~다음날 08:00으로 바뀌어요",
+            rangeChangeNote(LocalTime.of(19, 0), LocalTime.of(7, 0), LocalTime.of(20, 0), LocalTime.of(8, 0)),
         )
+        assertEquals("끝 07:00 → 다음날 08:00으로 바뀌어요", rangeChangeNote(LocalTime.of(19, 0), LocalTime.of(7, 0), LocalTime.of(19, 0), LocalTime.of(8, 0)))
+        assertEquals("시작 09:00 → 08:30으로 바뀌어요", rangeChangeNote(LocalTime.of(9, 0), LocalTime.of(18, 0), LocalTime.of(8, 30), LocalTime.of(18, 0)))
+        assertNull(rangeChangeNote(LocalTime.of(9, 0), LocalTime.of(18, 0), LocalTime.of(9, 0), LocalTime.of(18, 0)))
+    }
+
+    @Test
+    fun endTabOffersEndsThatFitTheStart() {
+        val choices = endChoices(LocalTime.of(19, 0), listOf(LocalTime.of(7, 0), LocalTime.of(19, 0), LocalTime.of(9, 0)))
+        // 야간 19:00: 03·04·05·07시 by length, then 09:00; never its own 19:00 start, 07:00 only once.
+        assertEquals(listOf(LocalTime.of(3, 0), LocalTime.of(4, 0), LocalTime.of(5, 0), LocalTime.of(7, 0), LocalTime.of(9, 0)), choices.map { it.first })
+        assertEquals(12, choices[3].second)
     }
 }

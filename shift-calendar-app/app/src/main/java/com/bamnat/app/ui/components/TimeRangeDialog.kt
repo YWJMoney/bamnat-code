@@ -135,10 +135,7 @@ fun TimeRangeDialog(
                 // (the shift editor keeps what the window returns when the user goes back).
                 // The line keeps its place when nothing changed, so the wheels do not jump (PC a9bcce14).
                 // Both changes share one line, so changing start and end does not push the wheels down either.
-                TimeChangeLine(
-                    timeChangeNote(listOf(Triple("시작", initial.start, range.start), Triple("끝", initial.end, range.end))),
-                    Modifier.padding(bottom = 4.dp),
-                )
+                TimeChangeLine(rangeChangeNote(initial.start, initial.end, range.start, range.end), Modifier.padding(bottom = 4.dp))
                 if (part == TimeRangePart.BREAK) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         MinutesStepper(minutes = breakMin, onChange = { breakMin = it }, step = 10, max = maxBreakMinutes, dialogTitle = "휴게 시간")
@@ -182,7 +179,15 @@ fun TimeRangeDialog(
                         }
                     }
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        for (t in presets) AssistChip(onClick = { setTime(t) }, label = { Text(clock(t)) })
+                        if (part == TimeRangePart.END) {
+                            // [TIME-03] The end tab offers ends that fit the start (PC 1a8e88f6: a 야간's end tab offered its
+                            // own 19:00 start): the usual lengths, then the other times, never the start itself.
+                            for ((t, len) in endChoices(range.start, presets)) {
+                                AssistChip(onClick = { setTime(t) }, label = { Text(if (len != null) "${clock(t)} (${len}시간)" else clock(t)) })
+                            }
+                        } else {
+                            for (t in presets) AssistChip(onClick = { setTime(t) }, label = { Text(clock(t)) })
+                        }
                     }
                 }
             }
@@ -195,6 +200,16 @@ fun TimeRangeDialog(
 }
 
 private fun clock(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
+
+/**
+ * [TIME-03] Ends to offer for a shift starting at [start]: start + 8·9·10·12시간 with their length, then the other
+ * [presets] that are not one of those and not the start itself.
+ */
+internal fun endChoices(start: LocalTime, presets: List<LocalTime>): List<Pair<LocalTime, Int?>> {
+    val byLength = listOf(8, 9, 10, 12).map { start.plusHours(it.toLong()) to it }
+    val taken = byLength.map { it.first }.toSet() + start
+    return byLength + presets.filter { it !in taken }.distinct().map { it to null }
+}
 
 private val BREAK_CHOICES = listOf(0, 30, 60, 90, 120)
 

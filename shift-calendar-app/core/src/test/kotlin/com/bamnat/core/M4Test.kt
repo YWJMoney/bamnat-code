@@ -42,6 +42,17 @@ class M4Test {
     }
 
     @Test
+    fun `the same shift with its times moved one day is not backward rotation`() {
+        val n = Fixtures.night.id; val d = Fixtures.day.id; val o = Fixtures.off.id
+        // [TIME-03] 주간 moved to start an hour later on Monday, then the usual 주간 on Tuesday: same shift, no rotation.
+        val later = DayEntry(monday, customStart = Fixtures.day.start!!.plusHours(1), customEnd = Fixtures.day.end!!.plusHours(1))
+        assertTrue(RestCheck.check(days(List(5) { d } + List(2) { o }, later)).none { it.kind == RestCheck.Kind.BACKWARD })
+        // The same for a night moved an hour later, followed by the usual night.
+        val lateNight = DayEntry(monday, customStart = Fixtures.night.start!!.plusHours(1), customEnd = Fixtures.night.end!!.plusHours(1))
+        assertTrue(RestCheck.check(days(listOf(n, n, o, o, o, o, o), lateNight)).none { it.kind == RestCheck.Kind.BACKWARD })
+    }
+
+    @Test
     fun `overtime shortens the rest before the next shift`() {
         val d = Fixtures.day.id; val o = Fixtures.off.id
         // 주간 09–18 + 잔업 6시간 → 24:00, next 주간 09:00: 9 hours off.
