@@ -63,17 +63,16 @@ internal fun nextKinds(style: WorkStyle?): Set<FlowKind> = when (style) {
  */
 internal fun todayLine(forecast: MoneyForecast?, budget: BudgetStatus, style: WorkStyle?, toSort: Int, todaySpent: Long, fromStart: Long = todaySpent): String? {
     val until = forecast?.untilNext(nextKinds(style), todaySpent, fromStart)
+    // 1.38 (1.37 PC LOW 621c55f4, 급여를 정하기 전 '오늘 6,462원 넘게 썼어요'가 통장 셈 줄들과 섞여 보임): when the line comes from the
+    // budget and not the accounts, it says so, so it is not read as the forecast's 오늘 쓸 돈.
+    val fromBudget = until?.todayLeft == null
     val left = until?.todayLeft ?: budget.todayLeft
-    // 1.38 PC 621c55f4 LOW (급여를 정하기 전 '오늘 6,462원 넘게 썼어요'가 다른 줄과 섞여요): without pay or balances the figure is the
-    // budget's, so it says so, and is not read as money running out before pay.
-    val byBudget = until?.todayLeft == null && budget.todayLeft != null
     return listOfNotNull(
         left?.let {
             when {
-                byBudget && it >= 0 -> "오늘 예산 ${Fmt.won(it)} 남음"
-                byBudget -> "오늘 예산보다 ${Fmt.won(-it)} 더 씀"
-                it >= 0 -> "오늘 쓸 돈 ${Fmt.won(it)}"
-                else -> "오늘 ${Fmt.won(-it)} 넘게 썼어요"
+                !fromBudget -> if (it >= 0) "오늘 쓸 돈 ${Fmt.won(it)}" else "오늘 ${Fmt.won(-it)} 넘게 썼어요"
+                it >= 0 -> "오늘 예산 ${Fmt.won(it)} 남았어요"
+                else -> "오늘 예산보다 ${Fmt.won(-it)} 더 썼어요"
             }
         },
         until?.words,

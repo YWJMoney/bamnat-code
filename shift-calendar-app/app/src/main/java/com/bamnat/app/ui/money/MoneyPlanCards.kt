@@ -373,6 +373,30 @@ private fun openAccess(context: Context) {
     }
 }
 
+/**
+ * 1.38 [LEDH-29] 첫날 채우기 (조사 D4): a book with almost nothing in it offers to fill the last month from payment texts pasted
+ * at once, so the ledger does not start empty. Unknown cards and repeating costs found in them are then asked in 정리함 as usual.
+ * Gone once the book has lines, or for good after 넘기기.
+ */
+@Composable
+fun FirstFillCard(book: com.bamnat.core.money.MoneyBook, calendarId: String, onFill: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences("bamnat_money_first_fill", Context.MODE_PRIVATE) }
+    var skipped by remember(calendarId) { mutableStateOf(prefs.getBoolean(calendarId, false)) }
+    if (skipped || book.entries.size >= FIRST_FILL_UNDER) return
+    com.bamnat.app.ui.components.SectionCard(title = "첫날부터 채워진 가계부") {
+        Text("카드·은행 결제 문자를 여러 개 골라 한 번에 붙여 넣으면 지난 한 달이 바로 채워져요. 처음 보는 카드와 매달 나가는 돈은 그다음에 물어볼게요.",
+            style = MaterialTheme.typography.bodyMedium)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+            androidx.compose.material3.TextButton(onClick = onFill) { Text("문자로 채우기") }
+            androidx.compose.material3.TextButton(onClick = { skipped = true; prefs.edit().putBoolean(calendarId, true).apply() }) { Text("넘기기") }
+        }
+    }
+}
+
+/** Below this many lines the book counts as just begun. */
+const val FIRST_FILL_UNDER = 5
+
 /** One pasted text read into a line, and whether it goes in. */
 private data class PasteRow(val chunk: String, val entry: MoneyEntry?, val reason: String?, val duplicate: Boolean)
 
@@ -388,6 +412,8 @@ fun PasteDialog(
     onDismiss: () -> Unit,
     today: LocalDate = Today.date(),
     initialText: String = "",
+    /** 1.38 [LEDH-29] 첫날 채우기: the steps for copying many texts at once from the messages app. */
+    firstFill: Boolean = false,
 ) {
     var text by rememberSaveable { mutableStateOf(initialText) }
     val rows = remember(text, existing, rules) {
@@ -415,9 +441,13 @@ fun PasteDialog(
     val chosen = rows.withIndex().filter { (i, r) -> r.entry != null && i !in skipped }.map { it.value.entry!! }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("결제 문자 붙여넣기") },
+        title = { Text(if (firstFill) "지난 결제 문자로 한 번에 채우기" else "결제 문자 붙여넣기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                // 1.38 [LEDH-29] 밤낮은 문자를 직접 읽지 않아요(READ_SMS는 Play 정책상 가계부 앱이 쓸 수 없어요). 사용자가 고른 문자만 붙여 넣어요.
+                if (firstFill) Text(
+                    "1. 메시지 앱에서 카드사·은행 대화를 열어요\n2. 문자 하나를 길게 눌러 지난 한 달 문자를 여러 개 골라요\n3. 복사해서 아래에 붙여 넣어요. 카드사가 여럿이면 이어서 붙여 넣어도 돼요",
+                    style = MaterialTheme.typography.bodyMedium)
                 Text("카드·은행 문자를 길게 눌러 복사한 뒤 붙여 넣어요. 여러 건도 한 번에 돼요. 문자 원문은 저장하지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(value = text, onValueChange = { text = it.take(20_000) }, label = { Text("문자 내용") },

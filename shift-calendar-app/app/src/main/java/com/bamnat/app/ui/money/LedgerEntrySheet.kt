@@ -172,6 +172,8 @@ fun EntryDialog(
     }
     var memo by rememberSaveable { mutableStateOf(draft?.memo ?: initial?.memo.orEmpty()) }
     var fromDraft by rememberSaveable { mutableStateOf(draft != null) }
+    // 1.38 (1.37 PC LOW '쓸면 적던 것이 사라져요'): the 한 줄로 적기 text counts as typed too, so a swipe asks first.
+    var line by rememberSaveable { mutableStateOf("") }
     var tagsText by rememberSaveable { mutableStateOf(initial?.tags.orEmpty().joinToString(" ") { "#$it" }) }
     var partsText by rememberSaveable { mutableStateOf(encodeParts(initial?.parts.orEmpty())) }
     var installments by rememberSaveable { mutableIntStateOf(initial?.installments ?: 1) }
@@ -221,7 +223,8 @@ fun EntryDialog(
 
     // 1.37 PC 확인 6a4efc92 (높음): 시트 안에서 위로 가려고 아래로 끌면 시트가 닫히고 금액·날짜·카드가 말없이 사라졌어요. 적은 것이
     // 있으면 끌기·뒤로·바깥 누르기는 먼저 물어요 (FormSheet와 같은 방식). 제목 줄의 닫기는 그대로 바로 닫아요.
-    val typed = if (initial == null) amount > 0 || place.isNotBlank() || memo.isNotBlank() || tagsText.isNotBlank()
+    val typed = if (initial == null) amount > 0 || place.isNotBlank() || memo.isNotBlank() || tagsText.isNotBlank() || line.isNotBlank() ||
+        partsText.isNotBlank() || receipt.isNotBlank()
     else amount != abs(initial.amount) || kind != initial.kind || category != initial.category || day != initial.date.toString() ||
         account != initial.accountId || place.trim() != initial.merchant.ifBlank { initial.note }.trim() || memo.trim() != initial.memo.trim()
     // Kept whenever the sheet goes without 저장 (a swipe, 뒤로, ✕ or 버리기): 저장 clears it.
@@ -296,7 +299,6 @@ fun EntryDialog(
                 // 1.37 [LEDH-28] 한 줄로 적기: "점심 9천 카드" fills the amount, place, day, category and card it names.
                 if (isNew && kind != MoneyKind.TRANSFER) {
                     var lineOpen by rememberSaveable { mutableStateOf(false) }
-                    var line by rememberSaveable { mutableStateOf("") }
                     var lineNote by remember { mutableStateOf<String?>(null) }
                     if (!lineOpen) AssistChip(onClick = { lineOpen = true }, label = { Text("한 줄로 적기") })
                     else {

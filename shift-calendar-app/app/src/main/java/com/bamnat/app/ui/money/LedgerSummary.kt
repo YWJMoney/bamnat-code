@@ -169,7 +169,18 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
             }
             Spacer(Modifier.height(10.dp))
         }
-        BudgetLineView(total, status.elapsed.takeIf { current }, onClick = onBudget, whole = true)
+        // 1.38 (1.37 PC 확인: 예산 카드를 누르면 바로 '예산 정하기' 창이 떠요): a tap opens the categories' budgets right here;
+        // changing them is its own 고치기.
+        var open by rememberSaveable { mutableStateOf(false) }
+        BudgetLineView(total, status.elapsed.takeIf { current }, onClick = { open = !open }, whole = true, expanded = open)
+        if (open) {
+            Column(Modifier.fillMaxWidth().padding(start = 8.dp, top = 4.dp)) {
+                if (status.categories.isEmpty()) Text("분류마다 예산을 나누면 어디서 많이 쓰는지 여기서 바로 보여요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                status.categories.forEach { b -> BudgetMiniRow(b) }
+                TextButton(onClick = onBudget, modifier = Modifier.align(Alignment.End)) { Text("예산 고치기") }
+            }
+        }
         if (current && status.fixedLeft > 0) {
             Text("이번 달 남은 반복 지출 ${Fmt.won(status.fixedLeft)}은 미리 빼고 계산했어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
@@ -179,7 +190,7 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
 
 /** One budget: spent against it, a mark for how far the month is, and a plain word on where it stands. */
 @Composable
-private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, whole: Boolean = false) {
+private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, whole: Boolean = false, expanded: Boolean? = null) {
     val cal = LocalCalendarColors.current
     val color = when (b.level) { BudgetLevel.OVER -> cal.warning; BudgetLevel.NEAR -> cal.changed; BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
     val pct = (b.fraction * 100).toInt()
@@ -205,6 +216,10 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
             Spacer(Modifier.width(8.dp))
             Text("${Fmt.won(b.spent)} / ${Fmt.won(b.budget)}", style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+            expanded?.let {
+                Icon(if (it) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, if (it) "분류별 예산 접기" else "분류별 예산 펼치기",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+            }
         }
         // 1.37 [LEDH-34] What came over from last month, inside the budget shown.
         if (b.carried != 0L) Text(if (b.carried > 0) "지난달 남은 ${Fmt.won(b.carried)} 더함" else "지난달 넘긴 ${Fmt.won(-b.carried)} 뺌",
@@ -221,6 +236,21 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
                 color = when { b.level == BudgetLevel.OVER -> cal.warning; b.headedOver || b.level == BudgetLevel.NEAR -> cal.changed
                     else -> MaterialTheme.colorScheme.onSurfaceVariant })
         }
+    }
+}
+
+/** 1.38: one category's budget in a single line under the month's, for the budget opened in place. */
+@Composable
+private fun BudgetMiniRow(b: BudgetLine) {
+    val cal = LocalCalendarColors.current
+    val color = when (b.level) { BudgetLevel.OVER -> cal.warning; BudgetLevel.NEAR -> cal.changed; BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
+    Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics(mergeDescendants = true) {}) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(b.category, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(if (b.left >= 0) "${Fmt.won(b.left)} 남음" else "${Fmt.won(-b.left)} 넘음", style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
+                color = if (b.level == BudgetLevel.OVER) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        LedgerTrack(b.fraction, color, marker = null, height = 6.dp)
     }
 }
 
@@ -361,7 +391,8 @@ private fun SheetTitle(title: String, onDismiss: () -> Unit, action: (@Composabl
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Unit, onEdit: (MoneyAccount) -> Unit) {
+fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Unit, onEdit: (MoneyAccount) -> Unit,
+                 onRepay: ((List<com.bamnat.core.money.MoneyEntry>) -> Unit)? = null) {
     val accounts = book.activeAccounts
     val cal = LocalCalendarColors.current
     val balances = remember(book) { MoneyAccounts.balances(book.accounts, book.entries) }
@@ -387,6 +418,18 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
                 }
                 a.isCredit -> null to "결제일을 정하면 카드값을 계산해요"
                 a.type == AccountType.CHECK -> null to (book.account(a.payFromId)?.let { "${it.name}에서 바로 나가요" } ?: "연결한 통장을 고르면 잔액에 반영해요")
+                // 1.38 [LEDH-25] 대출: 남은 원금과 다 갚는 달.
+                a.isLoan -> {
+                    val left = com.bamnat.core.money.Debts.left(a, balances)
+                    val plan = com.bamnat.core.money.Debts.plan(left, a.rate, a.monthlyPay, com.bamnat.core.money.Debts.firstMonth(a, today))
+                    val payoff = plan.payoff
+                    Fmt.won(left) to when {
+                        left == 0L -> "다 갚았어요"
+                        a.monthlyPay <= 0 -> "남은 원금 · 매달 갚는 돈을 적으면 다 갚는 달을 알려 줘요"
+                        payoff == null -> "남은 원금 · 매달 갚는 돈이 이자보다 적어 줄지 않아요"
+                        else -> "남은 원금 · ${payoff.year}년 ${payoff.monthValue}월에 다 갚아요"
+                    }
+                }
                 else -> Fmt.won(balances[a.id] ?: a.opening) to (if (a.last4.isNotBlank()) "끝 ${a.last4}" else a.type.label)
             }
             Row(
@@ -401,13 +444,16 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
                 if (value != null) {
-                    val negative = !a.isCredit && (balances[a.id] ?: 0) < 0
+                    val negative = !a.isCredit && !a.isLoan && (balances[a.id] ?: 0) < 0
                     Text(value, style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold,
                         color = if (negative) cal.expense else MaterialTheme.colorScheme.onSurface)
                 }
             }
         }
-        val kept = accounts.filter { it.keepsBalance }
+        // 1.38 [LEDH-27] 카드 실적 게이지, [LEDH-25] 빚 갚기 비교.
+        CardPerfLines(book, today)
+        DebtLines(book, today, balances, onRepay)
+        val kept = accounts.filter { it.keepsBalance && !it.isLoan }
         if (kept.size > 1) {
             HorizontalDivider(Modifier.padding(vertical = 6.dp))
             Row {
@@ -430,7 +476,7 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
             val known = year.filter { first != null && !it.date.isBefore(first) }
             val start = known.firstOrNull()?.takeIf { it != now }
             Text(
-                (if (now.owe > 0) "가진 돈 ${Fmt.won(now.have)} − 남은 카드값 ${Fmt.won(now.owe)}" else "가진 돈 ${Fmt.won(now.have)}") +
+                (if (now.owe > 0) "가진 돈 ${Fmt.won(now.have)} − " + (if (accounts.any { it.isLoan }) "남은 카드값·빚" else "남은 카드값") + " ${Fmt.won(now.owe)}" else "가진 돈 ${Fmt.won(now.have)}") +
                     (start?.let { s -> val d = now.net - s.net; " · ${s.date.monthValue}월 말보다 " + (if (d >= 0) "+" else "−") + Fmt.won(kotlin.math.abs(d)) } ?: ""),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -450,6 +496,81 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
             }
         }
     }
+}
+
+/** 1.38 [LEDH-27] Each card with 실적 구간: how far this month has come and what is left to the next tier. */
+@Composable
+private fun CardPerfLines(book: MoneyBook, today: LocalDate) {
+    val gauges = remember(book, today) { com.bamnat.core.money.CardPerf.all(book.accounts, book.entries, today) }
+    if (gauges.isEmpty()) return
+    val cal = LocalCalendarColors.current
+    HorizontalDivider(Modifier.padding(vertical = 6.dp))
+    Text("카드 실적", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    gauges.forEach { g ->
+        val next = g.next
+        val reached = g.reached
+        val words = when {
+            next == null -> "가장 높은 ${wonBrief(reached ?: 0)}원 구간을 채웠어요"
+            reached == null -> "${wonBrief(g.toNext ?: 0)}원 더 쓰면 ${wonBrief(next)}원 구간"
+            else -> "${wonBrief(reached)}원 구간 · ${wonBrief(g.toNext ?: 0)}원 더 쓰면 ${wonBrief(next)}원 구간"
+        }
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics(mergeDescendants = true) {}) {
+            Row {
+                Text(g.card.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("이번 달 ${Fmt.won(g.counted)}", style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            LedgerTrack(g.fraction, if (g.next == null) cal.income else MaterialTheme.colorScheme.primary, height = 6.dp,
+                marker = g.card.perfTiers.dropLast(1).lastOrNull()?.let { it.toFloat() / g.card.perfTiers.last() })
+            Text(words + (g.lastReached?.let { " · 지난달 ${wonBrief(it)}원 구간이라 이번 달 혜택은 그 구간이에요" } ?: ""),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    Text("1일~말일에 이 카드로 쓴 돈이에요" + (if (gauges.any { it.skipped > 0 }) "(고른 분류는 뺐어요)" else "") + ". 카드사 기준과 다를 수 있어요.",
+        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/** 1.38 [LEDH-25] Each loan: how much sooner and how much less interest if a little more is paid each month, and 이번 달 갚기. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DebtLines(book: MoneyBook, today: LocalDate, balances: Map<Long, Long>, onRepay: ((List<com.bamnat.core.money.MoneyEntry>) -> Unit)?) {
+    val loans = book.activeAccounts.filter { it.isLoan && com.bamnat.core.money.Debts.left(it, balances) > 0 }
+    if (loans.isEmpty()) return
+    HorizontalDivider(Modifier.padding(vertical = 6.dp))
+    Text("빚 갚기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    loans.forEach { loan ->
+        val left = com.bamnat.core.money.Debts.left(loan, balances)
+        val first = com.bamnat.core.money.Debts.firstMonth(loan, today)
+        var extra by rememberSaveable(loan.id) { mutableStateOf(com.bamnat.core.money.Debts.EXTRAS[1]) }
+        val plan = remember(left, loan) { com.bamnat.core.money.Debts.plan(left, loan.rate, loan.monthlyPay, first) }
+        val cmp = remember(left, loan, extra) { com.bamnat.core.money.Debts.compare(left, loan.rate, loan.monthlyPay, extra, first) }
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text(loan.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            if (plan.months != null && plan.payoff != null) {
+                Text("${plan.months}달 남았어요" + (if (loan.rate > 0) " · 남은 이자 약 ${wonBrief(plan.interest)}원" else ""),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.core.money.Debts.EXTRAS.forEach { x ->
+                        FilterChip(selected = extra == x, onClick = { extra = x }, label = { Text("매달 +${wonBrief(x)}") })
+                    }
+                }
+                cmp?.let { c ->
+                    Text(if (c.sooner <= 0) "더 갚아도 끝나는 달은 같아요"
+                        else "매달 ${wonBrief(c.extra)}원 더 갚으면 ${c.sooner}달 일찍 끝나요" + (if (c.interestSaved > 0) " · 이자 ${wonBrief(c.interestSaved)}원 덜" else ""),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+            }
+            val paidThisMonth = book.entries.any { it.kind == MoneyKind.TRANSFER && it.toAccountId == loan.id && YearMonth.from(it.date) == YearMonth.from(today) }
+            if (paidThisMonth) Text("이번 달은 갚았어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.income)
+            else if (onRepay != null && loan.monthlyPay > 0) {
+                val lines = remember(left, loan, today) { com.bamnat.core.money.Debts.lines(loan, left, loan.monthlyPay, today) }
+                val interest = lines.filter { it.kind == MoneyKind.EXPENSE }.sumOf { it.amount }
+                TextButton(onClick = { onRepay(lines) }) {
+                    Text("이번 달 갚기 ${Fmt.won(lines.sumOf { it.amount })}" + (if (interest > 0) " (이자 ${Fmt.won(interest)})" else ""))
+                }
+            }
+        }
+    }
+    Text("매달 같은 돈을 갚는 셈이라 은행 상환표와 조금 다를 수 있어요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /**
@@ -476,11 +597,21 @@ fun AccountEditor(
     var payFrom by rememberSaveable { mutableStateOf(initial?.payFromId) }
     var opening by rememberSaveable { mutableStateOf(amountDigits(initial?.opening ?: 0)) }
     var remind by rememberSaveable { mutableStateOf(initial?.remind ?: true) }
-    val banks = book.activeAccounts.filter { it.keepsBalance && it.id != initial?.id }
+    // 1.38 [LEDH-25] 대출: 남은 원금은 양수로 받아 음수 잔액으로 둬요. [LEDH-27] 카드 실적 구간·뺄 분류.
+    var owedText by rememberSaveable { mutableStateOf(amountDigits(if (initial?.isLoan == true) -initial.opening else 0)) }
+    var rateText by rememberSaveable { mutableStateOf(initial?.rate?.takeIf { it > 0 }?.let { "%.2f".format(it).trimEnd('0').trimEnd('.') }.orEmpty()) }
+    var monthlyText by rememberSaveable { mutableStateOf(amountDigits(initial?.monthlyPay ?: 0)) }
+    var tiersText by rememberSaveable { mutableStateOf(initial?.perfTiers.orEmpty().joinToString(", ") { if (it % 10_000 == 0L) "${it / 10_000}만" else "$it" }) }
+    var skipText by rememberSaveable { mutableStateOf(initial?.perfSkip.orEmpty().joinToString(",")) }
+    val skip = skipText.split(',').filter { it.isNotBlank() }
+    val loan = kind == AccountType.LOAN
+    val banks = book.activeAccounts.filter { it.keepsBalance && !it.isLoan && it.id != initial?.id }
     val card = kind == AccountType.CREDIT || kind == AccountType.CHECK
     // 1.37 PC 확인 6a4efc92: 끌어서 닫을 때 적은 것을 묻기 (같은 구조의 돈 시트 모두).
     val typed = name.trim() != initial?.name.orEmpty() || last4 != initial?.last4.orEmpty() || opening != amountDigits(initial?.opening ?: 0) ||
-        (initial != null && (kind != initial.type || payDay != (initial.payDay ?: 14) || payFrom != initial.payFromId))
+        (initial != null && (kind != initial.type || payDay != (initial.payDay ?: 14) || payFrom != initial.payFromId)) ||
+        owedText != amountDigits(if (initial?.isLoan == true) -initial.opening else 0) || monthlyText != amountDigits(initial?.monthlyPay ?: 0) ||
+        tiersText.isNotBlank() != initial?.perfTiers.orEmpty().isNotEmpty()
     com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = typed, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle(if (initial == null) "결제수단 추가" else "결제수단 고치기", onDismiss) {
@@ -497,11 +628,22 @@ fun AccountEditor(
                 Text(kind.hint, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(value = name, onValueChange = { name = it.take(MoneyAccount.MAX_NAME) }, singleLine = true,
                     label = { Text(when (kind) { AccountType.CREDIT, AccountType.CHECK -> "카드 이름 (예: 신한 Deep)"; AccountType.BANK -> "통장 이름 (예: 월급 통장)"
-                        AccountType.CASH -> "이름 (예: 지갑)"; AccountType.PAY -> "이름 (예: 카카오페이)"; AccountType.OTHER -> "이름" }) },
+                        AccountType.CASH -> "이름 (예: 지갑)"; AccountType.PAY -> "이름 (예: 카카오페이)"; AccountType.OTHER -> "이름"
+                        AccountType.LOAN -> "이름 (예: 전세 대출, 언니에게 빌린 돈)" }) },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth())
                 // PC 확인 (이름을 친 뒤 자판이 오르면 '지금 들어 있는 돈' 칸이 밀려 이름 칸을 누르게 됨): the balance comes right under the
                 // name, and the keyboard's 다음 goes to it.
-                if (!card) {
+                if (loan) {
+                    AmountField(if (initial == null) "남은 원금" else "남은 원금 (적기 시작할 때)", owedText, { owedText = it })
+                    OutlinedTextField(value = rateText, onValueChange = { v -> rateText = v.filter { it.isDigit() || it == '.' }.take(5) }, singleLine = true,
+                        label = { Text("연 이자율 % (모르면 비워 둬요)") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth())
+                    AmountField("매달 갚는 돈", monthlyText, { monthlyText = it })
+                    DayStepper("갚는 날", payDay) { payDay = it }
+                    Text("이 계좌로 보낸 돈(이체)만큼 남은 원금이 줄어요. ‘이번 달 갚기’로 적으면 이자와 원금을 나눠 적어요.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                if (!card && !loan) {
                     AmountField(if (initial == null) "지금 들어 있는 돈" else "처음 들어 있던 돈 (적기 시작할 때)", opening, { opening = it })
                     Text("이후 이 계좌로 적은 수입·지출·이체로 잔액을 계산해요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -527,8 +669,23 @@ fun AccountEditor(
                     Text("${Today.month().plusMonths(1).monthValue}월 ${if (payDay >= 31) "말일" else "${payDay}일"} 결제: ${Fmt.shortDate(from)}~${Fmt.shortDate(to)}에 쓴 돈",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
-                if (card && banks.isNotEmpty()) {
-                    Text("돈이 나가는 통장", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 1.38 [LEDH-27] 카드 실적 게이지: 카드사 앱의 전월 실적 구간을 적어 두면 이번 달 얼마 더 쓰면 되는지 보여 줘요.
+                if (card) {
+                    OutlinedTextField(value = tiersText, onValueChange = { tiersText = it.take(40) }, singleLine = true,
+                        label = { Text("전월 실적 구간 (선택, 예: 30만, 50만)") },
+                        supportingText = { Text("카드사 앱의 혜택 구간을 적으면 이번 달 얼마 더 쓰면 되는지 보여 줘요") },
+                        modifier = Modifier.fillMaxWidth())
+                    if (com.bamnat.core.money.CardPerf.parseTiers(tiersText).isNotEmpty()) {
+                        Text("실적에서 빠지는 분류 (카드사마다 달라요)", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            book.categoriesOf(MoneyKind.EXPENSE).forEach { c ->
+                                FilterChip(selected = c in skip, onClick = { skipText = (if (c in skip) skip - c else skip + c).joinToString(",") }, label = { Text(c) })
+                            }
+                        }
+                    }
+                }
+                if ((card || loan) && banks.isNotEmpty()) {
+                    Text(if (loan) "갚는 통장" else "돈이 나가는 통장", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         FilterChip(selected = payFrom == null, onClick = { payFrom = null }, label = { Text("안 고름") })
                         banks.forEach { b -> FilterChip(selected = payFrom == b.id, onClick = { payFrom = b.id }, label = { Text(b.label) }) }
@@ -548,8 +705,13 @@ fun AccountEditor(
                 onClick = {
                     onSave((initial ?: MoneyAccount(name = name, type = kind)).copy(
                         name = name.trim(), type = kind, last4 = if (card) last4 else "",
-                        payDay = payDay.takeIf { kind == AccountType.CREDIT }, closeDay = closeDay.takeIf { kind == AccountType.CREDIT && ownClose },
-                        payFromId = payFrom.takeIf { card }, opening = if (card) 0 else opening.toAmount(), remind = remind,
+                        payDay = payDay.takeIf { kind == AccountType.CREDIT || loan }, closeDay = closeDay.takeIf { kind == AccountType.CREDIT && ownClose },
+                        payFromId = payFrom.takeIf { card || loan }, opening = when { card -> 0; loan -> -owedText.toAmount(); else -> opening.toAmount() },
+                        remind = remind,
+                        rate = if (loan) rateText.toDoubleOrNull()?.coerceIn(0.0, 30.0) ?: 0.0 else 0.0,
+                        monthlyPay = if (loan) monthlyText.toAmount() else 0,
+                        perfTiers = if (card) com.bamnat.core.money.CardPerf.parseTiers(tiersText) else emptyList(),
+                        perfSkip = if (card && com.bamnat.core.money.CardPerf.parseTiers(tiersText).isNotEmpty()) skip else emptyList(),
                     ))
                 },
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),

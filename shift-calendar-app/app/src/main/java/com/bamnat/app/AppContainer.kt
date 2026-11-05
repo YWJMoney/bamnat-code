@@ -987,10 +987,13 @@ class AppContainer(context: Context) {
             keep("datenotices") {
                 launch { com.bamnat.app.calendar.DateNoticeAlarm.follow(this@AppContainer) }
                 // 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림 follows the same roster and its own switch, in the same job (시작 예산).
-                combine(scheduleRepository.snapshot, settingsRepository.settings.map { Triple(it.leaveTimeNotice, it.dayCloseNotice, it.workStyle) }.distinctUntilChanged()) { _, _ -> Unit }
+                combine(scheduleRepository.snapshot, settingsRepository.settings.map { listOf(it.leaveTimeNotice, it.dayCloseNotice, it.workStyle,
+                    it.shiftPreviewNotice, it.shiftPreviewHour) }.distinctUntilChanged()) { _, _ -> Unit }
                     .debounce(500).collect {
                         com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext)
                         com.bamnat.app.money.DayCloseNotice.reschedule(appContext)
+                        // 1.38 [LEDH-24] 근무 전 한 줄 예고, in the same job (시작 예산).
+                        com.bamnat.app.money.ShiftPreviewNotice.reschedule(appContext)
                     }
             }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
