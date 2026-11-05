@@ -92,6 +92,19 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     suspend fun saveBoard(teamId: String, b: TeamBoard) =
         teams.replaceMonth(teamId, b.month.atDay(1).toEpochDay(), b.month.atEndOfMonth().toEpochDay(), b.cells.values.map { it.toEntity(teamId) })
 
+    /**
+     * 1.38 Phase 3 요금: every month this phone ever confirmed, any team, deleted ones included ([freeMonth] keeps the free one after
+     * its team is gone), for "첫 달 확정까지 무료".
+     */
+    suspend fun confirmedMonths(): Set<YearMonth> =
+        teams.months().filter { it.confirmedAt != null }.mapNotNull { runCatching { YearMonth.parse(it.month) }.getOrNull() }.toSet() + listOfNotNull(freeMonth())
+
+    /** Where the free month is remembered (null in tests: then only the months on record count). */
+    var prefsOf: (() -> android.content.SharedPreferences)? = null
+    private val prefs by lazy { prefsOf?.invoke() }
+    fun freeMonth(): YearMonth? = prefs?.getString("teamFreeMonth", null)?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
+    fun keepFreeMonth(m: YearMonth) { if (freeMonth() == null) prefs?.edit()?.putString("teamFreeMonth", m.toString())?.apply() }
+
     /** [TEAM-13] 확정: the month CONFIRMED one version up, and the board as it was confirmed, for 바뀐 칸 next time. */
     suspend fun confirm(teamId: String, b: TeamBoard, was: TeamMonth): TeamMonth {
         val m = was.copy(state = MonthState.CONFIRMED, version = was.version + 1, confirmedAt = clock())

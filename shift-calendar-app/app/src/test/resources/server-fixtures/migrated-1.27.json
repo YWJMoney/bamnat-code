@@ -10,8 +10,62 @@
     ],
     "adQuietDays": 3,
     "trialAskDays": 7,
-    "freeTeams": 1,
-    "freeStaff": 3,
+    "workPlans": {
+      "team": [
+        {
+          "cap": 15,
+          "monthly": 7900,
+          "yearly": 47000,
+          "pass": 54000
+        },
+        {
+          "cap": 30,
+          "monthly": 9900,
+          "yearly": 59000,
+          "pass": 68000
+        },
+        {
+          "cap": 50,
+          "monthly": 14900,
+          "yearly": 89000,
+          "pass": 102000
+        },
+        {
+          "cap": 100,
+          "monthly": 19900,
+          "yearly": 119000,
+          "pass": 137000
+        }
+      ],
+      "staff": [
+        {
+          "cap": 5,
+          "monthly": 9900,
+          "yearly": 59000,
+          "pass": 68000
+        },
+        {
+          "cap": 10,
+          "monthly": 14900,
+          "yearly": 89000,
+          "pass": 102000
+        },
+        {
+          "cap": 20,
+          "monthly": 24900,
+          "yearly": 149000,
+          "pass": 171000
+        },
+        {
+          "cap": 50,
+          "monthly": 49900,
+          "yearly": 299000,
+          "pass": 344000
+        }
+      ],
+      "freeStaff": 3,
+      "freeTeamMonths": 1
+    },
     "notices": [],
     "off": [
       "PLAZA_WRITE"

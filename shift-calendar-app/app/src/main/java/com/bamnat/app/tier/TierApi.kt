@@ -69,6 +69,8 @@ data class ServerSub(
     val autoRenew: Boolean = false,
     val consentAt: Instant? = null,
     val stoppedAt: Instant? = null,
+    /** 1.38 Phase 3 요금: the base plan Play says (the band of a 팀·직원 요금제). */
+    val basePlan: String? = null,
 )
 
 /**
@@ -141,6 +143,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             autoRenew = o.optBoolean("autoRenew"),
             consentAt = o.optStringOrNull("consentAt")?.let(Instant::parse),
             stoppedAt = o.optStringOrNull("stoppedAt")?.let(Instant::parse),
+            basePlan = o.optStringOrNull("basePlan"),
         )
     }
 

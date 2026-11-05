@@ -38,11 +38,10 @@ data class LaunchConfig(
     val adQuietDays: Int = AdRules.QUIET_DAYS,
     val trialAskDays: Int = TrialConsent.ASK_BEFORE.toDays().toInt(),
     /**
-     * 1.38 [GROW-06] Phase 3 free limits, from the server so they move without an update (사용자 2026-11-05: 팀 1개·직원 3명 무료; a
-     * '5명 추가당 월 5,000원' 확장 팩 is still to be talked over, so [Feature.TEAM_ROSTER]/[Feature.BOSS_STAFF] open the rest for now).
+     * 1.38 Phase 3 요금 (사용자 2026-11-05 20:22): the 팀·직원 요금제 bands, their shown prices and the free taste, from the server so
+     * they move without an update (Play Console holds the real price).
      */
-    val freeTeams: Int = FREE_TEAMS,
-    val freeStaff: Int = FREE_STAFF,
+    val workPlans: com.bamnat.core.tier.WorkPlanTable = com.bamnat.core.tier.WorkPlanTable.DEFAULT,
     val fetchedAt: Instant? = null,
     /** [SRV-04] The developer app's notices, shown one at a time over the calendar. */
     val notices: List<AppNotice> = emptyList(),
@@ -78,7 +77,7 @@ data class LaunchConfig(
 
     fun toJson(): JSONObject = JSONObject().put("billingLive", billingLive).put("launchedAt", launchedAt?.toString() ?: JSONObject.NULL)
         .put("thanksMonths", thanksMonths).put("freeFeatures", JSONArray(freeFeatures.map { it.name }))
-        .put("adQuietDays", adQuietDays).put("trialAskDays", trialAskDays).put("freeTeams", freeTeams).put("freeStaff", freeStaff).put("fetchedAt", fetchedAt?.toString() ?: JSONObject.NULL)
+        .put("adQuietDays", adQuietDays).put("trialAskDays", trialAskDays).put("workPlans", workPlansJson(workPlans)).put("fetchedAt", fetchedAt?.toString() ?: JSONObject.NULL)
         .put("notices", JSONArray(notices.map { n ->
             JSONObject().put("id", n.id).put("title", n.title).put("body", n.body).put("level", if (n.important) "important" else "info")
                 .put("from", Instant.ofEpochMilli(n.from).toString()).put("until", Instant.ofEpochMilli(n.until).toString())
@@ -98,9 +97,34 @@ data class LaunchConfig(
         .put("fetchedElapsed", fetchedElapsed ?: JSONObject.NULL).put("fetchedBoot", fetchedBoot ?: JSONObject.NULL)
 
     companion object {
-        /** 1.38 [GROW-06] 팀 하나·직원 셋은 무료 (사용자 2026-11-05). */
-        const val FREE_TEAMS = 1
-        const val FREE_STAFF = 3
+        /** 1.38 Phase 3 요금: the table as the server sends it (`workPlans`). */
+        fun workPlansJson(t: com.bamnat.core.tier.WorkPlanTable): JSONObject {
+            fun bands(l: List<com.bamnat.core.tier.PlanBand>) = JSONArray(l.map { JSONObject().put("cap", it.cap).put("monthly", it.monthly).put("yearly", it.yearly).put("pass", it.pass) })
+            return JSONObject().put("team", bands(t.team)).put("staff", bands(t.staff)).put("freeStaff", t.freeStaff).put("freeTeamMonths", t.freeTeamMonths)
+        }
+
+        /**
+         * A missing or odd table keeps the app's own: a band needs a cap of 1..1000 and prices of 0..10,000,000 원, caps rising; a list
+         * that is empty or wrong falls back to the default list of its kind.
+         */
+        fun workPlansOf(o: JSONObject?): com.bamnat.core.tier.WorkPlanTable {
+            val d = com.bamnat.core.tier.WorkPlanTable.DEFAULT
+            o ?: return d
+            fun bands(k: String, fallback: List<com.bamnat.core.tier.PlanBand>): List<com.bamnat.core.tier.PlanBand> {
+                val a = o.optJSONArray(k) ?: return fallback
+                val l = (0 until a.length()).mapNotNull { i ->
+                    val b = a.optJSONObject(i) ?: return@mapNotNull null
+                    val cap = b.optInt("cap", 0); val m = b.optLong("monthly", -1); val y = b.optLong("yearly", -1); val p = b.optLong("pass", -1)
+                    if (cap !in 1..1000 || listOf(m, y, p).any { it !in 0..10_000_000 }) null else com.bamnat.core.tier.PlanBand(cap, m, y, p)
+                }.sortedBy { it.cap }
+                return if (l.isEmpty() || l.size != a.length() || l.map { it.cap }.distinct().size != l.size) fallback else l
+            }
+            return com.bamnat.core.tier.WorkPlanTable(
+                team = bands("team", d.team), staff = bands("staff", d.staff),
+                freeStaff = o.optInt("freeStaff", d.freeStaff).coerceIn(0, 100),
+                freeTeamMonths = o.optInt("freeTeamMonths", d.freeTeamMonths).coerceIn(0, 12),
+            )
+        }
 
         /** The server's answer read strictly: a wrong shape is an error, so the last good answer stays. */
         fun parse(o: JSONObject, now: Instant): LaunchConfig {
@@ -117,8 +141,7 @@ data class LaunchConfig(
                 freeFeatures = names.mapNotNull { n -> Feature.entries.firstOrNull { it.name == n } }.filter { it.minTier > Tier.FREE }.toSet(),
                 adQuietDays = o.optInt("adQuietDays", AdRules.QUIET_DAYS).coerceIn(0, 30),
                 trialAskDays = o.optInt("trialAskDays", TrialConsent.ASK_BEFORE.toDays().toInt()).coerceIn(1, 30),
-                freeTeams = o.optInt("freeTeams", FREE_TEAMS).coerceIn(1, 20),
-                freeStaff = o.optInt("freeStaff", FREE_STAFF).coerceIn(1, 100),
+                workPlans = workPlansOf(o.optJSONObject("workPlans")),
                 fetchedAt = now,
                 notices = o.optJSONArray("notices")?.let { a -> (0 until a.length()).map { notice(a.getJSONObject(it)) } }.orEmpty().take(AppNoticesMax),
                 // A switch of a newer server is skipped; this app has nothing of it to pause.

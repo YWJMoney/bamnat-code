@@ -122,8 +122,6 @@ class TierAppTest {
                 "THEME_WARDROBE" to Tier.PRO,
                 // [PRF-12] 1.36.
                 "CREATOR_PRO" to Tier.PRO,
-                // 1.38 [GROW-06] Phase 3's extras are 프로 (one team and 3 staff free).
-                "TEAM_ROSTER" to Tier.PRO, "BOSS_STAFF" to Tier.PRO,
             ),
             Feature.entries.associate { it.name to it.minTier },
         )
@@ -171,7 +169,41 @@ class TierAppTest {
         assertEquals(Tier.PRO, g.tier)
         assertEquals(ProReason.TRIAL, g.access.reason)
         assertTrue(g.allows(Feature.NO_ADS))
-        assertTrue("1.38 GROW-06: 체험 중에는 팀 더 쓰기도 열려요", g.allows(Feature.TEAM_ROSTER))
+    }
+
+    // 1.38 Phase 3 요금 (사용자 2026-11-05 20:22): 팀·직원 요금제 are bands beside 프로, and each includes 프로.
+    @Test fun aTeamPlanHoldsItsBandAndIncludesPro() {
+        val start = now.minusSeconds(86_400 * 3)
+        val team = SubRecord(product = "bamnat_team", basePlan = "c30-yearly", state = PlaySub.State.ACTIVE, expiry = start.plusSeconds(86_400L * 365),
+            trial = false, autoRenew = true, purchasedAt = start, verified = true, checkedAt = start)
+        val g = gate(LaunchConfig(billingLive = true), edit = { setWork("bamnat_team", team) })
+        assertEquals(30, g.hold(com.bamnat.core.tier.WorkPlanKind.TEAM)?.cap)
+        assertEquals(null, g.hold(com.bamnat.core.tier.WorkPlanKind.STAFF))
+        assertEquals(ProReason.WORK_PLAN, g.access.reason)
+        assertTrue(g.allows(Feature.NO_ADS))
+        val nov = java.time.YearMonth.of(2026, 11)
+        assertTrue(g.teamConfirm(setOf(nov), nov.plusMonths(1), 30).allowed)
+        assertEquals(com.bamnat.core.tier.WorkPlanRules.Verdict.BIGGER, g.teamConfirm(setOf(nov), nov.plusMonths(1), 31).verdict)
+        // No staff plan: the fourth asks.
+        assertEquals(com.bamnat.core.tier.WorkPlanRules.Verdict.PLAN, g.staff(4).verdict)
+    }
+
+    @Test fun aWorkPassHoldsItsBandForAYearAndThenNot() {
+        val g = gate(LaunchConfig(billingLive = true), edit = { addWorkPass("GPA.1", "bamnat_staff_pass_10", now.minusSeconds(86_400 * 10)) })
+        assertEquals(10, g.hold(com.bamnat.core.tier.WorkPlanKind.STAFF)?.cap)
+        assertTrue(g.staff(10).allowed)
+        val old = gate(LaunchConfig(billingLive = true), edit = { removeWorkPass("GPA.1"); addWorkPass("GPA.2", "bamnat_staff_pass_10", now.minusSeconds(86_400 * 400)) })
+        assertEquals(null, old.hold(com.bamnat.core.tier.WorkPlanKind.STAFF))
+    }
+
+    @Test fun theServersTableIsReadAndAnOddOneKeepsTheApps() {
+        val o = org.json.JSONObject(LaunchConfig.workPlansJson(com.bamnat.core.tier.WorkPlanTable.DEFAULT).toString())
+        assertEquals(com.bamnat.core.tier.WorkPlanTable.DEFAULT, LaunchConfig.workPlansOf(o))
+        val odd = org.json.JSONObject().put("team", org.json.JSONArray().put(org.json.JSONObject().put("cap", 0).put("monthly", 1).put("yearly", 1).put("pass", 1)))
+            .put("freeStaff", 5)
+        val read = LaunchConfig.workPlansOf(odd)
+        assertEquals(com.bamnat.core.tier.WorkPlanTable.DEFAULT_TEAM, read.team)
+        assertEquals(5, read.freeStaff)
     }
 
     @Test fun theDayPassLastsTillMidnight() {
