@@ -1077,10 +1077,12 @@ internal class StyleExtras(val entryId: String, val calendar: String, val addedT
 
 /** [UNDO-01] Adds what [style] brings to calendar [calendar] (시급 types for hourly work); the ids added, for 되돌리기. */
 internal suspend fun addStyleTypes(container: AppContainer, calendar: String, style: WorkStyle): List<Long> {
-    if (style != WorkStyle.HOURLY) return emptyList()
+    // [SETUP-16] 1.37 사용자: 일근 gets its own 일근 (09~18, its time the user's), not 교대's 주간.
+    if (style != WorkStyle.HOURLY && style != WorkStyle.DAY) return emptyList()
     val schedule = container.calendars.repository(calendar)
     val typesBefore = schedule.shiftTypes.first().map { it.id }.toSet()
-    schedule.addHourlyTypes()
+    if (style == WorkStyle.HOURLY) schedule.addHourlyTypes()
+    else schedule.addMissingTypes(com.bamnat.app.ui.shifts.TypeFoldAsk.startTypes(WorkStyle.DAY))
     return schedule.shiftTypes.first().map { it.id }.filter { it !in typesBefore }
 }
 
@@ -1281,7 +1283,7 @@ private fun AppNavHost(
                             else -> style.changedMessage()
                         },
                     )
-                    val added = addStyleTypes(container, calendar, style)
+                    val added = if (style != before || style == WorkStyle.HOURLY) addStyleTypes(container, calendar, style) else emptyList()
                     // 1.36 PC 재검토: the old kind of work's 근무 종류 are offered once to be put away (never deleted).
                     com.bamnat.app.ui.shifts.TypeFoldAsk.after(container, calendar, before, style)
                     // Shifts, days and hours are then asked by the setup, not by the pattern or pay screen. 현장·자영업·투자 have

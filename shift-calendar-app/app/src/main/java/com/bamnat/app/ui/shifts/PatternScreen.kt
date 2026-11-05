@@ -119,9 +119,17 @@ fun PatternScreen(
         // 일근's days of the week never start from a shift order, and a schedule stopped by 접어 두기 lends its days but not its end.
         val style = vm.style
         val weekdaysWork = startWeekdays || style == com.bamnat.core.work.WorkStyle.DAY || style == com.bamnat.core.work.WorkStyle.HOURLY
+        val hourly = style == com.bamnat.core.work.WorkStyle.HOURLY
+        // [SETUP-16] 1.37 사용자 (③ 알바 요일은 빈칸으로, 직접 고르게): an 알바's days start empty unless its own days are going on;
+        // days another work left (stopped by 접어 두기) are not lent.
         val from = existing?.takeIf { !(weekdaysWork && it is com.bamnat.core.model.WorkPattern.Rotation) }
+            ?.takeIf { !hourly || it.endDate?.isAfter(today) != false }
         val away = vm.foldedNow()
-        draft0.initFrom(from, today, if (weekdaysWork) types.firstOrNull { !it.isOff && it.hasTimes && it.id !in away }?.id else null)
+        // ④ 일근 starts on its own 일근, not on 교대's 주간 (whatever comes first in the list).
+        val own = com.bamnat.app.data.FoldedTypes.startNames(style)
+        val usable = types.filter { !it.isOff && it.hasTimes && it.id !in away }
+        val first = usable.firstOrNull { it.name in own } ?: usable.firstOrNull()
+        draft0.initFrom(from, today, if (weekdaysWork && !hourly) first?.id else null, weekly = weekdaysWork)
         if (from?.endDate?.isAfter(today) == false) draft0.endDate = null
     }
     if (!draft0.initialized) return

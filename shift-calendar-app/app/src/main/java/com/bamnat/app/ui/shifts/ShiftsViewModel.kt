@@ -226,8 +226,11 @@ class PatternDraft {
         altSaturday = null
     }
 
-    /** Loads the saved pattern once; later calls keep the user's unsaved edits. */
-    fun initFrom(existing: WorkPattern?, today: LocalDate, weekdayShiftId: Long? = null) {
+    /**
+     * Loads the saved pattern once; later calls keep the user's unsaved edits. [weekly]: with nothing saved, days of the week
+     * start (filled 월~금 with [weekdayShiftId], or empty to pick).
+     */
+    fun initFrom(existing: WorkPattern?, today: LocalDate, weekdayShiftId: Long? = null, weekly: Boolean = weekdayShiftId != null) {
         if (initialized) return
         when (existing) {
             is WorkPattern.Rotation -> {
@@ -236,14 +239,14 @@ class PatternDraft {
             }
             is WorkPattern.Weekly -> {
                 kind = PatternKind.WEEKLY
-                existing.steps.forEachIndexed { i, id -> weekly[i] = id }
+                existing.steps.forEachIndexed { i, id -> this.weekly[i] = id }
                 holidaysOff = existing.holidaysOff
                 altSaturday = existing.altSaturday
             }
             // [WORK-01] Day workers start from Monday to Friday on their day shift.
-            null -> if (weekdayShiftId != null) {
+            null -> if (weekly) {
                 kind = PatternKind.WEEKLY
-                for (i in 0 until 5) weekly[i] = weekdayShiftId
+                if (weekdayShiftId != null) for (i in 0 until 5) this.weekly[i] = weekdayShiftId
             }
         }
         // A rotation is edited by its step-0 day; its period may reach back years.

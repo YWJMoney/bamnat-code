@@ -223,12 +223,15 @@ class ScheduleRepository(
      * [WORK-01] Hourly workers get part-time shifts to tap instead of 주간·야간: morning, afternoon
      * and evening. Added once; types the user already has are left alone.
      */
-    suspend fun addHourlyTypes() {
+    suspend fun addHourlyTypes() = addMissingTypes(DefaultShiftTypes.hourly())
+
+    /** Puts in the kinds of day of [wanted] whose names are not here yet (a kind of work's own, e.g. 일근 for 일근). */
+    suspend fun addMissingTypes(wanted: List<ShiftType>) {
         db.withTransaction {
             val have = shiftTypeDao.getAll().map { it.toModel() }
             val names = have.map { it.name }.toSet()
             val next = (have.maxOfOrNull { it.sortOrder } ?: -1) + 1
-            val add = DefaultShiftTypes.hourly().filter { it.name !in names }
+            val add = wanted.filter { it.name !in names }.map { it.copy(id = 0) }
                 .mapIndexed { i, t -> t.copy(sortOrder = next + i) }
             if (add.isNotEmpty()) shiftTypeDao.insertAll(add.map { it.toEntity() })
         }

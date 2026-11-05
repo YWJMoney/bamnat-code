@@ -197,4 +197,35 @@ class TypeFoldAppTest {
         WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
         repo.clearPattern()
     }
+
+    /** [SETUP-16] 1.37 사용자 ④: 교대 → 일근 puts in its own 일근 (09~18) and leaves 교대's 주간 time as it was; 교대 주간 can be put away. */
+    @Test fun dayWorkGetsItsOwn일근AndLeavesTheShiftsDayAlone() = runBlocking {
+        val c = app.container
+        val repo = c.calendars.repository(PersonalCalendar.MAIN)
+        repo.ensureDefaults()
+        val before = repo.shiftTypes.first().first { it.name == "주간" }
+        val added = com.bamnat.app.ui.addStyleTypes(c, PersonalCalendar.MAIN, WorkStyle.DAY)
+        val types = repo.shiftTypes.first()
+        val own = types.single { it.name == "일근" }
+        assertEquals(listOf(own.id), added)
+        assertEquals(java.time.LocalTime.of(9, 0) to java.time.LocalTime.of(18, 0), own.start to own.end)
+        assertEquals(before, types.first { it.name == "주간" })
+        assertTrue("한 번만 넣어요", com.bamnat.app.ui.addStyleTypes(c, PersonalCalendar.MAIN, WorkStyle.DAY).isEmpty())
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.SHIFT, WorkStyle.DAY)
+        val ask = TypeFoldAsk.asking.value!!
+        assertTrue(ask.types.any { it.name == "주간" } && ask.types.none { it.name == "일근" } && ask.adds.isEmpty())
+        TypeFoldAsk.asking.value = null
+        repo.deleteShiftType(own.id)
+    }
+
+    /** ③ 알바 요일은 빈칸에서 직접: days of the week with no day given start empty; 일근 starts 월~금. */
+    @Test fun anHourlyWeekStartsEmpty() {
+        val today = com.bamnat.core.time.Today.date()
+        val empty = PatternDraft().apply { initFrom(null, today, null, weekly = true) }
+        assertEquals(PatternKind.WEEKLY, empty.kind)
+        assertTrue(empty.weekly.all { it == null })
+        val day = PatternDraft().apply { initFrom(null, today, 7L) }
+        assertEquals(listOf(7L, 7L, 7L, 7L, 7L, null, null), day.weekly.toList())
+    }
 }

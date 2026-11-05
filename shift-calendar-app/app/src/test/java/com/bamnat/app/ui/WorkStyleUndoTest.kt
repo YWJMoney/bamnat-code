@@ -56,6 +56,9 @@ class WorkStyleUndoTest {
         val added = addStyleTypes(c, PersonalCalendar.MAIN, WorkStyle.HOURLY)
         assertTrue(undoOffer(c, entry.id, StyleExtras("other", PersonalCalendar.MAIN, added, null)))
         assertTrue(schedule.shiftTypes.first().map { it.id }.containsAll(added))
-        assertTrue(addStyleTypes(c, PersonalCalendar.MAIN, WorkStyle.DAY).isEmpty())
+        // [SETUP-16] 1.37 사용자 ④: 일근 brings its own 일근 (not 교대's 주간), once.
+        val day = addStyleTypes(c, PersonalCalendar.MAIN, WorkStyle.DAY)
+        assertEquals(listOf("일근"), schedule.shiftTypes.first().filter { it.id in day }.map { it.name })
+        assertTrue(addStyleTypes(c, PersonalCalendar.MAIN, WorkStyle.FIELD).isEmpty())
     }
 }
