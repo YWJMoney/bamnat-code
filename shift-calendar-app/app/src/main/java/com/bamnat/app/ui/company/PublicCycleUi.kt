@@ -134,8 +134,8 @@ internal object PublicBrowse {
     var at: Long = 0L
 
     /** The name typed last, if the search was left a short while ago. */
-    fun recentQuery(now: Long = System.currentTimeMillis()): String = if (now - at <= KEEP_MS) query else ""
-    fun keep(q: String, now: Long = System.currentTimeMillis()) { query = q; at = now }
+    fun recentQuery(now: Long = com.bamnat.core.time.Today.millis()): String = if (now - at <= KEEP_MS) query else ""
+    fun keep(q: String, now: Long = com.bamnat.core.time.Today.millis()) { query = q; at = now }
     fun reset() { form = null; group = null; query = ""; at = 0L }
     private const val KEEP_MS = 10 * 60 * 1000L
 }
