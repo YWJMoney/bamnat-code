@@ -38,6 +38,10 @@ export const SETS = {
   // 1.38 [STM-07] 스튜디오 재료(밤낮 색 아이콘·배경)로 만든 테마 100·기능별 300 (docs/recipes/market-138-studio/make).
   "138s": { dir: join(ROOT, "market-138-studio"), out: join(ROOT, "market-138-studio.json"), batch: "1.38 스튜디오 작품", minApp: 52,
     goals: { theme: 100, "tab:calendar": 50, "tab:memo": 50, "tab:money": 50, "tab:pay": 40, "tab:widget": 35, "tab:alarm": 25, part: 30, logic: 20 } },
+  // 1.38 [STM-09] 1.36 '다듬기' 작품에 밤낮 배경·아이콘을 얹은 같은 제목 새 판(make/refresh.mjs). 1.36 앱도 읽으니 minApp 없이,
+  // 이미 장터에 있는 판은 넣는 즉시 바뀌어요: 1.38 출시 날 사용자 확인 뒤 넣어요.
+  "138r": { dir: join(ROOT, "market-138-refresh"), out: join(ROOT, "market-138-refresh.json"), batch: "1.38 옛 작품 새 판", minApp: null,
+    goals: { theme: 49, "tab:calendar": 22, "tab:memo": 11, "tab:money": 1, "tab:pay": 22, "tab:widget": 2 } },
 };
 
 export function sectionKey(text) {
@@ -74,7 +78,7 @@ export async function build(works, set = SETS[136]) {
       names.add(c.recipe.title);
       const key = sectionKey(c.text);
       count[key] = (count[key] ?? 0) + 1;
-      entries.push({ recipe: JSON.parse(c.text), hold: true, replace: true, batch: set.batch, minApp: set.minApp, ...(w.showcase ? { showcase: true } : {}) });
+      entries.push({ recipe: JSON.parse(c.text), hold: true, replace: true, batch: set.batch, ...(set.minApp ? { minApp: set.minApp } : {}), ...(w.showcase ? { showcase: true } : {}) });
     } catch (e) {
       if (!(e instanceof RecipeError)) throw e;
       refused.push(`${w.file} · ${w.recipe?.title ?? "?"}: ${e.code} ${e.path}`);
@@ -105,7 +109,7 @@ async function post(base, entries) {
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const args = process.argv.slice(2);
   const set = SETS[args.includes("--set") ? args[args.indexOf("--set") + 1] : 136];
-  if (!set) throw new Error("--set 은 136, 138, 138s 중 하나예요");
+  if (!set) throw new Error("--set 은 136, 138, 138s, 138r 중 하나예요");
   const { entries, refused, count, short } = await build(readWorks(set.dir), set);
   console.log(`작품 ${entries.length}개 · 구간 ${Object.entries(count).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   for (const r of refused) console.log(`거절: ${r}`);
