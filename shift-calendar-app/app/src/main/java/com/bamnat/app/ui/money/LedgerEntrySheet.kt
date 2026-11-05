@@ -403,8 +403,11 @@ fun EntryDialog(
                                     toAccount = from.id
                                     account = from.payFromId ?: accounts.filter { it.type != credit && it.type != com.bamnat.core.money.AccountType.CHECK }
                                         .maxByOrNull { a -> entries.count { it.accountId == a.id } }?.id
+                                // PC 확인 621c55f4 (CardB로 쓴 직후인데 '어디로'가 앞서 이체한 CardA): the card spent on last, not the
+                                // one used most.
                                 } else toAccount = accounts.filter { it.id != account && it.type == credit }
-                                    .maxByOrNull { a -> entries.count { it.accountId == a.id } }?.id
+                                    .maxByOrNull { a -> entries.filter { it.accountId == a.id && it.kind == MoneyKind.EXPENSE }
+                                        .maxOfOrNull { it.date.toEpochDay() * 1_000_000_000L + it.id } ?: Long.MIN_VALUE }?.id
                             }
                         }
                         FieldTitle("어디로")
