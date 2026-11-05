@@ -2,8 +2,11 @@ package com.bamnat.app.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.snapping.SnapPosition
-import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.foundation.gestures.FlingBehavior
+import androidx.compose.foundation.gestures.ScrollScope
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
@@ -47,6 +51,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.bamnat.app.ui.theme.NumberStyle
@@ -91,6 +96,8 @@ fun TimePickerDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // [TIME-03] What 완료 will change, so a wheel turned by accident shows before it is kept.
+                timeChangeNote(null, initial, current)?.let { TimeChangeLine(it) }
                 Box(Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * VISIBLE_ITEMS), contentAlignment = Alignment.Center) {
                     // Band behind the selected row.
                     Box(
@@ -217,7 +224,7 @@ internal fun Wheel(
     }
     LazyColumn(
         state = state,
-        flingBehavior = rememberSnapFlingBehavior(state, SnapPosition.Center),
+        flingBehavior = rememberWheelFling(state, cyclic, count),
         modifier = modifier
             .height(WHEEL_ROW_HEIGHT * VISIBLE_ITEMS)
             .semantics {
@@ -254,4 +261,85 @@ internal fun Wheel(
             }
         }
     }
+}
+
+/**
+ * [TIME-03] How many rows one flick may move past the row under the finger. A plain snap fling ran on with
+ * the flick's speed, so a flick (or a swipe meant to scroll the window) turned 18시 into 22시 or 02시 and
+ * the user did not notice (PC rec-70710298-3, S15-02·04·06). Now a flick moves at most this many rows;
+ * a long way still goes by dragging, which follows the finger, or by the ±10·30분 buttons and the shortcuts.
+ */
+internal const val WHEEL_MAX_FLING_ROWS = 2
+
+/**
+ * [TIME-03] Rows a flick adds, from its speed in dp per second: a slow release just settles on the nearest row,
+ * a flick moves one more, a hard flick two, never more than [WHEEL_MAX_FLING_ROWS].
+ */
+internal fun wheelFlingRows(velocityDpPerSecond: Float): Int {
+    val speed = kotlin.math.abs(velocityDpPerSecond)
+    val rows = when {
+        speed < 400f -> 0
+        speed < 1800f -> 1
+        else -> 2
+    }.coerceAtMost(WHEEL_MAX_FLING_ROWS)
+    return if (velocityDpPerSecond < 0) -rows else rows
+}
+
+/** [TIME-03] Settles the wheel on a row at most [WHEEL_MAX_FLING_ROWS] away from where the finger let go. */
+@Composable
+private fun rememberWheelFling(state: LazyListState, cyclic: Boolean, count: Int): FlingBehavior {
+    val density = LocalDensity.current
+    return remember(state, cyclic, count, density) { WheelFling(state, density, if (cyclic) count * LOOPS - 1 else count - 1) }
+}
+
+private class WheelFling(
+    private val state: LazyListState,
+    private val density: Density,
+    private val last: Int,
+) : FlingBehavior {
+    override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
+        val info = state.layoutInfo
+        val center = (info.viewportStartOffset + info.viewportEndOffset) / 2
+        val nearest = info.visibleItemsInfo.minByOrNull { kotlin.math.abs(it.offset + it.size / 2 - center) } ?: return 0f
+        val rowPx = with(density) { WHEEL_ROW_HEIGHT.toPx() }
+        val target = (nearest.index + wheelFlingRows(with(density) { initialVelocity.toDp().value })).coerceIn(0, last)
+        // Positive scrolls toward later rows, the same sign as the velocity.
+        val distance = (nearest.offset + nearest.size / 2 - center) + (target - nearest.index) * rowPx
+        if (kotlin.math.abs(distance) < 0.5f) return 0f
+        var done = 0f
+        animate(
+            initialValue = 0f,
+            targetValue = distance,
+            // Settling back against the flick (a slow release short of half a row) starts from rest.
+            initialVelocity = if (initialVelocity * distance > 0) initialVelocity else 0f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+        ) { value, _ ->
+            val consumed = scrollBy(value - done)
+            done += consumed
+        }
+        return 0f
+    }
+}
+
+/**
+ * [TIME-03] "끝 18:30 → 07:30으로 바뀌어요" when [now] differs from [was], null when it is the same. [part] names
+ * which time ("시작", "끝"), or null for a window with one time.
+ */
+internal fun timeChangeNote(part: String?, was: LocalTime, now: LocalTime): String? {
+    if (was.hour == now.hour && was.minute == now.minute) return null
+    val clock = { t: LocalTime -> "%02d:%02d".format(t.hour, t.minute) }
+    return (part?.let { "$it " } ?: "") + "${clock(was)} → ${clock(now)}으로 바뀌어요"
+}
+
+/** [TIME-03] One line in the primary colour under the time, saying what is about to change. */
+@Composable
+internal fun TimeChangeLine(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        textAlign = TextAlign.Center,
+        modifier = modifier.fillMaxWidth().padding(vertical = 2.dp),
+    )
 }
