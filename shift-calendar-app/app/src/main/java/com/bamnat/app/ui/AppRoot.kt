@@ -714,7 +714,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         val fresh = info == null || info.firstInstallTime == info.lastUpdateTime || !container.settingsRepository.current.setupDone
         val store = com.bamnat.app.data.GuideStore.get(ctx)
         val updates = store.whatsNew(com.bamnat.app.BuildConfig.VERSION_CODE, fresh)
-        // 1.38 갈래6: what a server switch turned on since (공유 테마, 11월 10일), told once, on top of an update's lines if any.
+        // 1.38 갈래6: what a server switch turned on since (공유 테마, 정식 출시일), told once, on top of an update's lines if any.
         val switched = store.switchedNew({ container.flags.on(it) }, fresh)
         mutableStateOf(when {
             switched.isEmpty() -> updates

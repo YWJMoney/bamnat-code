@@ -156,7 +156,7 @@ object FeatureRegistry {
             ALL, "달력 › 공유 (좁은 화면은 ⋮ › 근무표 공유)", at(Place.SHARE), "공유", "링크", "카톡", "가족", "동료", "보내기"),
         f("share.receive", "UX-03", "동료 근무표 받기", "받은 링크를 넣고 내 달력과 바꿔 보며 같이 쉬는 날을 찾아요",
             ALL, "달력 › ⋮ › 동료 근무표 받기", at(Place.RECEIVE), "받은 링크", "바꿔 보기", "같이 쉬는 날", "남편", "아내"),
-        // 1.37 [SHR-31][SHR-32], told from 처리방침 3.11's date (11월 10일, the `share.look` row) — 1.38 갈래6 (공유 남은 일).
+        // 1.37 [SHR-31][SHR-32], told from the launch date (the `share.look` row) — 1.38 갈래6 (공유 남은 일).
         f("share.look", "SHR-31", "링크에 테마·근무 설정 담기", "근무표 링크에 내 테마와 근무 이름·색·알람 시각을 함께 담아요. 받는 분은 입어 보고 골라 넣어요",
             ALL, "달력 › 공유 › 링크 › 내 테마·근무 설정", at(Place.SHARE), "테마 보내기", "테마 공유", "설정 보내기", "근무 설정 공유", "똑같이 꾸미기",
             flag = "share.look"),

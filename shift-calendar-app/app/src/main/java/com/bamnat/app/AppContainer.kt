@@ -505,7 +505,7 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.StartupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_MORE) }
         // [STAT-08] 1.31 N4: lookup times from 처리방침 3.5's date on (the `stats.lookup` row turns on by itself that day).
         com.bamnat.app.diag.LookupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LOOKUP) }
-        // 1.38 갈래6: help and 설정 검색 offer a feature waiting for its switch (공유 테마, 11월 10일) only once it is on.
+        // 1.38 갈래6: help and 설정 검색 offer a feature waiting for its switch (공유 테마, 정식 출시일) only once it is on.
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }
 

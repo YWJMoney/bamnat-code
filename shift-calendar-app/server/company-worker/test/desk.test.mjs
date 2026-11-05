@@ -70,6 +70,10 @@ test("[ADM2-01][ADM2-05] 흐름: each stage's count, the oldest wait, 막힘, an
   assert.equal(f.metrics.inMonth, 2);
   assert.equal(f.metrics.slaKept, 0);
   assert.equal(f.metrics.weeks.length, 8);
+  // 1.38 [ADM2-07] 밀린 건수: 모든 단계 합, 막힌 단계 몫.
+  assert.equal(f.metrics.backlog, 2);
+  assert.equal(f.metrics.backlogStuck, 2);
+  assert.equal(f.metrics.fixDays, null);
   await call("POST", `/api/admin/inquiries/${a}/reply`, { text: "확인했어요" }, admin);
   const g = (await call("GET", "/api/admin/flow", undefined, admin)).data;
   assert.equal(g.stages.find((s) => s.key === "answer").n, 1);

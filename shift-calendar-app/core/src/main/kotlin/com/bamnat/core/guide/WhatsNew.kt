@@ -305,11 +305,11 @@ object WhatsNew {
 
     /** The releases after [seenCode] up to [currentCode], newest first; none for a fresh install (seenCode 0). */
     /**
-     * 1.38 갈래6 (공유 남은 일: 새로 생긴 것 줄, 11월 10일 켤 때): what a server switch brings when it turns on, told once then and
+     * 1.38 갈래6 (공유 남은 일: 새로 생긴 것 줄, 정식 출시일에 켤 때): what a server switch brings when it turns on, told once then and
      * not at the update (the feature was not there yet). Keyed by the switch ([com.bamnat.core.flags.FlagCatalog]).
      */
     val switched: List<Pair<String, Line>> = listOf(
-        // 1.37 [SHR-31][SHR-32] from 처리방침 3.11 (11월 10일).
+        // 1.37 [SHR-31][SHR-32] from the launch date (사용자 2026-11-05: 11월 12일 또는 사용자가 정한 날).
         "share.look" to Line("근무표 링크에 내 테마와 근무 설정도 함께 담아 보내요. 받은 분은 입어 보고 마음에 드는 것만 골라 넣어요", "share.look"),
     )
 

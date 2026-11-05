@@ -385,7 +385,7 @@ fun RecipeListScreen(
             // with nothing shown, the problem and 다시 시도 (before, a red line and no way to try again but leaving).
             state.error?.let { e -> item(key = "error") {
                 if (state.items.isNotEmpty() && state.loadedAt > 0L) com.bamnat.app.ui.company.RefreshLine(refreshing = false, stale = true,
-                    onRetry = { vm.load() }, seenAt = java.time.Instant.ofEpochMilli(state.loadedAt).atZone(java.time.ZoneId.systemDefault())
+                    onRetry = { vm.load() }, seenAt = java.time.Instant.ofEpochMilli(state.loadedAt).atZone(com.bamnat.core.time.Today.zone())
                         .toLocalTime().let { "%d:%02d".format(it.hour, it.minute) })
                 else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
                     Text(e, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))

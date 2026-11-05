@@ -203,6 +203,9 @@ export async function flow(env, now) {
     slaTargets(env),
     one(env, "SELECT COUNT(*) AS n, MAX(last_at) AS last FROM admin_keys WHERE revoked_at IS NULL AND expires_at > ?", now).catch(() => ({ n: 0, last: null })),
   ]);
+  // 1.38 [ADM2-07] 처리 속도: 문의가 들어온 때부터 고친 판이 나갔다고 알린 때(dev_links.told_at)까지, 60일.
+  const toldRows = await all(env, `SELECT l.told_at, i.created_at FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id
+    WHERE l.told_at IS NOT NULL AND l.told_at > ?`, now - 60 * DAY).catch(() => []);
   const stage = (key, name, list, at, hint, act) => {
     const oldest = list.length ? Math.min(...list.map(at)) : null;
     const wait = oldest === null ? 0 : now - oldest;
@@ -244,6 +247,11 @@ export async function flow(env, now) {
     slaKept: judged.length ? Math.round((kept / judged.length) * 100) : null,
     helpful: rated.length ? Math.round((rated.filter((q) => q.rating === 1).length / rated.length) * 100) : null,
     devDays: r1(median(doneDevs)),
+    // 1.38 [ADM2-07] 고친 판이 문의한 분께 닿기까지(중앙값, 일)와 지금 밀린 건수(모든 단계 합, 그중 막힌 단계의 건수).
+    fixDays: r1(median(toldRows.map((r) => (r.told_at - r.created_at) / DAY))),
+    fixedTold: toldRows.length,
+    backlog: stages.reduce((n, x) => n + x.n, 0),
+    backlogStuck: stages.filter((x) => x.stuck).reduce((n, x) => n + x.n, 0),
     inMonth: month.length,
     answeredMonth: month.filter((q) => q.first).length,
     weeks,

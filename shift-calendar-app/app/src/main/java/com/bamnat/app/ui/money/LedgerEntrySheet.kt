@@ -1,6 +1,5 @@
 package com.bamnat.app.ui.money
 
-import com.bamnat.app.ui.components.keepSheetOnScroll
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -254,7 +253,7 @@ fun EntryDialog(
                 IconButton(onClick = close) { Icon(Icons.Filled.Close, "닫기") }
             }
             Column(
-                Modifier.weight(1f, fill = false).keepSheetOnScroll()
+                Modifier.weight(1f, fill = false)
                     .verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -710,13 +709,13 @@ internal object EntryDraft {
     private var saved: Saved? = null
     private var at: Long = 0L
 
-    fun keep(d: Saved) { saved = d; at = System.currentTimeMillis() }
+    fun keep(d: Saved) { saved = d; at = com.bamnat.core.time.Today.millis() }
 
     fun clear() { saved = null }
 
     fun take(day: LocalDate): Saved? {
         val d = saved ?: return null
         saved = null
-        return d.takeIf { it.day == day && System.currentTimeMillis() - at < KEEP_MINUTES * 60_000 }
+        return d.takeIf { it.day == day && com.bamnat.core.time.Today.millis() - at < KEEP_MINUTES * 60_000 }
     }
 }

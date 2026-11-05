@@ -74,7 +74,9 @@ export function flowViews(A) {
     const kpi = (k, v, desc, tone = "") => `<div class="tile kpi${tone ? ` ${tone}` : ""}"><span class="k">${esc(k)}</span><span class="v">${v}</span><span class="d">${esc(desc)}</span></div>`;
     const kpis = `<div class="tiles core">${kpi("첫 답까지", num(m.firstAnswerHours, "시간"), "30일 중앙값")}
       ${kpi("답 목표 지킴", num(m.slaKept, "%"), "문의 종류별 목표 안에 첫 답", m.slaKept !== null && m.slaKept < 80 ? "hot" : "")}
-      ${kpi("도움이 됐어요", num(m.helpful, "%"), "답을 평가한 분 중")}${kpi("개발 걸린 날", num(m.devDays, "일"), "접수부터 완료까지 중앙값(60일)")}</div>`;
+      ${kpi("도움이 됐어요", num(m.helpful, "%"), "답을 평가한 분 중")}${kpi("개발 걸린 날", num(m.devDays, "일"), "접수부터 완료까지 중앙값(60일)")}
+      ${kpi("고친 판이 닿기까지", num(m.fixDays ?? null, "일"), `문의부터 '고친 판 나왔어요' 안내까지 중앙값(60일${m.fixedTold ? `, ${m.fixedTold}건` : ""})`)}
+      ${kpi("밀린 건수", num(m.backlog ?? null, "건"), m.backlogStuck ? `그중 막힌 단계 ${m.backlogStuck}건` : "모든 단계를 더한 수", m.backlogStuck ? "hot" : "")}</div>`;
     const trend = `<section class="card"><div class="card-head"><h2>8주 추이</h2><span class="meta">30일 들어옴 ${m.inMonth} · 답함 ${m.answeredMonth}</span></div>${weekChart(m.weeks)}
       <details class="data-table"><summary>숫자로 보기</summary><table><thead><tr><th scope="col">주 시작</th><th scope="col">들어옴</th><th scope="col">첫 답</th></tr></thead>
       <tbody>${m.weeks.map((w) => `<tr><td>${esc(w.from.slice(0, 10))}</td><td>${w.in}</td><td>${w.out}</td></tr>`).join("")}</tbody></table></details></section>`;

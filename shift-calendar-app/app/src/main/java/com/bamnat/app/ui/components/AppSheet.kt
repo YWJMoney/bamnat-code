@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 
 /**
  * [J133-49] 1.33 (사용자 2026-10-29 13:32 "닫는 창도 없는 것"): every sheet of the app, with an X to close it in the handle's row,
@@ -126,18 +125,4 @@ fun GuardedSheet(
         onDismissRequest = { if (!keep) onDismissRequest() else { asking = true; scope.launch { state.show() } } },
         modifier = modifier, sheetState = state, closeButton = closeButton, onClose = onDismissRequest, content = content,
     )
-}
-
-/**
- * 1.38 PC LOW (자유 토의 시트를 아래로 쓸면 닫혀요, 돈 적기 시트를 아래로 쓸면 적던 금액이 사라져요): put on a sheet's scrolling body
- * (before its verticalScroll), a drag that reaches the top of the list stops there instead of pulling the whole sheet down. The sheet
- * still closes from its handle and title, ✕, 뒤로 or a tap outside.
- */
-fun Modifier.keepSheetOnScroll(): Modifier = this.then(Modifier.nestedScroll(SheetScrollStop))
-
-private object SheetScrollStop : androidx.compose.ui.input.nestedscroll.NestedScrollConnection {
-    override fun onPostScroll(consumed: androidx.compose.ui.geometry.Offset, available: androidx.compose.ui.geometry.Offset,
-                              source: androidx.compose.ui.input.nestedscroll.NestedScrollSource) = available.copy(x = 0f)
-
-    override suspend fun onPostFling(consumed: androidx.compose.ui.unit.Velocity, available: androidx.compose.ui.unit.Velocity) = available.copy(x = 0f)
 }

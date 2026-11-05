@@ -121,7 +121,7 @@ object BuiltInThemes {
      */
     private fun cellsFor(f: Family, s: WorkStyle): List<String> {
         if (s != WorkStyle.BUSINESS && s != WorkStyle.INVEST) return f.cells
-        val tint = "bg:%08X".format(f.accent)
+        val tint = "bg:" + f.accent.toString(16).uppercase().padStart(8, '0')
         return f.cells.map { c ->
             when {
                 "mk:fill" in c -> c.replace("mk:fill", "$tint|mk:dot|mp:bottom").replace(Regex("ba:\\d+"), "ba:28")

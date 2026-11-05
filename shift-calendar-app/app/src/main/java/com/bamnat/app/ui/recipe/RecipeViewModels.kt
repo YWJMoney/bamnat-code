@@ -128,7 +128,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
                     c.recipeApi.list(if (s.allStyles) null else style, "hot", "", 0, otherKind).items
                         .count { RecipeClient.fits(it, otherKind) && !c.recipes.hides(it) }
                 }.getOrDefault(0)
-                _state.value.copy(items = items, next = page.next, loading = false, elsewhere = other, other = otherCount, loadedAt = System.currentTimeMillis())
+                _state.value.copy(items = items, next = page.next, loading = false, elsewhere = other, other = otherCount, loadedAt = com.bamnat.core.time.Today.millis())
             } catch (e: Exception) {
                 _state.value.copy(loading = false, error = RecipeClient.problem(e))
             }
