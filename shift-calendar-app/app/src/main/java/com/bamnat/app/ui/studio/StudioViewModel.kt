@@ -819,7 +819,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val parent = (s.parentCode ?: leasedFrom()?.first ?: mixedCodes().firstOrNull().takeIf { !ownMake() }
             ?: (s.origin as? Origin.Theme)?.wear?.code).orEmpty().takeIf { !it.startsWith("builtin:") }.orEmpty()
         // [STU-21] The 기능 go up with the look; every amount in them becomes 받는 분이 넣을 값 first (S7), as 레시피 만들기 did.
-        val pieces = if (onlyTab != null) {
+        // fc374a23 PC 확인 (가계부 틀만 만들어 올렸는데 입고 있던 테마 조각이 함께 가 장터 '테마'로 나옴): 기능만 is the 기능 alone.
+        val pieces = if (onlyTab == FEATURES_ONLY) s.extras.map { (k, v) -> Piece(k, v) }.sortedBy { it.kind.ordinal }
+        else if (onlyTab != null) {
             val draft = Recipe("d", styles = WorkStyle.entries.toSet(), pieces = s.pieces)
             com.bamnat.core.recipe.LookParts.pick(draft, com.bamnat.core.recipe.LookParts.of(draft).filter { it.tab == onlyTab }.map { it.id }).pieces
         // PC 확인 V22 1.36 (안 바꾼 위젯 조각까지 작품에 실림): a look piece just as the app has it is not part of the theme.
@@ -943,6 +945,8 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         /** A start for [START_RECIPE], one of a kind each time (the studio's ViewModel is kept per start). */
         fun recipeStart(own: String?): String = START_RECIPE + (own?.let { ":$it" } ?: "") + "@" + com.bamnat.core.time.Today.millis()
         /** [STU-21] The 기능 the studio can carry, in the order shown. */
+        /** [upload]'s choice that sends the 기능 alone, no look (장터 '기능별'). */
+        const val FEATURES_ONLY = "features"
         val FEATURES = listOf(PieceKind.SHIFT_LOOK, PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.HOURLY_RULES, PieceKind.FIELD_SHEET,
             PieceKind.SHOP, PieceKind.LEDGER, PieceKind.INVEST, PieceKind.APP_FEEL, PieceKind.COMPANY)
     }

@@ -127,7 +127,13 @@ class RecipePieces(private val c: AppContainer) {
             val envelopes = money.envelopes.first().first.filter { !it.closed && it.kind == com.bamnat.core.money.EnvelopeKind.GOAL }.take(6).map { e ->
                 mapOf("name" to e.name.take(20), "target" to e.target.takeIf { it > 0 }, "share" to e.sharePercent.takeIf { it > 0 }?.toLong(), "emoji" to e.emoji.ifEmpty { null })
             }
-            mapOf("costs" to MoneyCategories.of(MoneyKind.EXPENSE, cats, style).take(20), "incomes" to MoneyCategories.of(MoneyKind.INCOME, cats, style).take(12),
+            // fc374a23 PC 확인 (내가 더한 야식·헬스장이 안 담기고 기본 20개만): the ones I added go first, then the rest in my order.
+            fun mineFirst(kind: MoneyKind, max: Int): List<String> {
+                val all = MoneyCategories.of(kind, cats, style)
+                val base = MoneyCategories.of(kind, style).toSet()
+                return (all.filter { it !in base } + all.filter { it in base }).take(max)
+            }
+            mapOf("costs" to mineFirst(MoneyKind.EXPENSE, 20), "incomes" to mineFirst(MoneyKind.INCOME, 12),
                 "budgets" to budgets, "envelopes" to envelopes)
         }
         PieceKind.LAYOUT -> from.let { s ->
@@ -283,7 +289,7 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.LEDGER -> listOfNotNull(
             texts(values, "costs").takeIf { it.isNotEmpty() }?.let { Change("지출 분류 ${it.size}개 (없는 것만 더하기)") },
             texts(values, "incomes").takeIf { it.isNotEmpty() }?.let { Change("수입 분류 ${it.size}개 (없는 것만 더하기)") },
-            items(values, "budgets").takeIf { it.isNotEmpty() }?.let { b -> Change("예산 ${b.size}개: " + b.joinToString(", ") { "${it["category"]} ${com.bamnat.app.ui.Fmt.won((it["amount"] as? Number)?.toLong() ?: 0)}" }) },
+            items(values, "budgets").takeIf { it.isNotEmpty() }?.let { b -> Change("예산 ${b.size}개: " + b.joinToString(", ") { "${it["category"]}" + ((it["amount"] as? Number)?.let { a -> " " + com.bamnat.app.ui.Fmt.won(a.toLong()) } ?: " (금액 없이 분류만)") }) },
             items(values, "envelopes").takeIf { it.isNotEmpty() }?.let { e -> Change("빈 모으기 봉투 ${e.size}개: " + e.joinToString(", ") { it["name"].toString() }) },
         ).ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         // [RCX-30] Said from the recipe itself: its pictures come down only when it is put in.

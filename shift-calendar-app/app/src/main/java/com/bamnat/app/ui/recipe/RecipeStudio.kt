@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -787,13 +788,22 @@ private fun fmt(d: Double) = if (d == d.toLong().toDouble()) d.toLong().toString
 @Composable
 private fun TextsEditor(label: String, list: List<String>, max: Int, itemMax: Int, onChange: (List<String>) -> Unit) {
     Text(label, style = MaterialTheme.typography.labelLarge)
+    // fc374a23 PC 확인 (새 분류 이름을 치는 동안 키보드가 '더하기'를 가림): typing in a row keeps 더하기 in sight above the keyboard,
+    // and the keyboard's 다음 on the last row adds the next one.
+    val addSeen = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     list.forEachIndexed { i, t ->
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(t, { s -> onChange(list.toMutableList().apply { set(i, s.take(itemMax)) }) }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(t, { s -> onChange(list.toMutableList().apply { set(i, s.take(itemMax)) }) }, singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onNext = {
+                    if (i == list.lastIndex && t.isNotBlank() && list.size < max) onChange(list + "") else defaultKeyboardAction(androidx.compose.ui.text.input.ImeAction.Next)
+                }),
+                modifier = Modifier.weight(1f).onFocusEvent { e -> if (e.isFocused) scope.launch { kotlinx.coroutines.delay(300); addSeen.bringIntoView() } })
             IconButton(onClick = { onChange(list.toMutableList().apply { removeAt(i) }) }) { Icon(Icons.Filled.Close, "$label ${i + 1}번 빼기") }
         }
     }
-    if (list.size < max) TextButton(onClick = { onChange(list + "") }) { Icon(Icons.Filled.Add, null); Text(" 더하기") }
+    if (list.size < max) TextButton(onClick = { onChange(list + "") }, modifier = Modifier.bringIntoViewRequester(addSeen)) { Icon(Icons.Filled.Add, null); Text(" 더하기") }
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -804,7 +814,7 @@ private fun ItemsEditor(label: String, f: Field.Items, list: List<Map<String, An
         OutlinedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(((item["name"] ?: item["title"] ?: item["text"] ?: item["role"]?.let { PICK_LABELS[it] }) as? String) ?: "${i + 1}번",
+                    Text(((item["name"] ?: item["title"] ?: item["text"] ?: item["category"] ?: item["role"]?.let { PICK_LABELS[it] }) as? String) ?: "${i + 1}번",
                         style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (list.size > f.min) IconButton(onClick = { onChange(list.toMutableList().apply { removeAt(i) }) }) { Icon(Icons.Filled.Close, "${i + 1}번 빼기") }
                 }

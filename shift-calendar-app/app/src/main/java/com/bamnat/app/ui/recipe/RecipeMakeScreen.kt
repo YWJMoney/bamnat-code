@@ -326,7 +326,7 @@ class RecipeMakeViewModel(
     fun keep(inputId: String, value: Long) {
         val s = _state.value
         val i = s.recipe.input(inputId) ?: return
-        val key = s.recipe.pieces.firstNotNullOfOrNull { p -> p.values.entries.firstOrNull { it.value == com.bamnat.core.recipe.Ref.Input(inputId) }?.let { "${p.kind.key}.${it.key}" } }
+        val key = InputExtract.keyOf(s.recipe, inputId)
         _state.value = s.copy(recipe = InputExtract.keep(s.recipe, i.id, value), kept = s.kept + listOfNotNull(key))
     }
 
