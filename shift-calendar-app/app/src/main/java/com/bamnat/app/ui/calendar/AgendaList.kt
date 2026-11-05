@@ -155,7 +155,7 @@ private fun GapRow(g: AgendaRow.Gap, focus: CalendarFocus) {
             Box(Modifier.size(4.dp).clip(CircleShape).background(MaterialTheme.colorScheme.outlineVariant))
         }
         Spacer(Modifier.width(8.dp))
-        Text("$range · ${focus.gap(g.days)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("$range · ${focus.gap(g.days, g.closed)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

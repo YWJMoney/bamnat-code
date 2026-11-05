@@ -111,7 +111,7 @@ internal fun AheadCard(
         }
         rhythm?.let { p ->
             val say: @Composable () -> Unit = {
-                Muted("근무 리듬대로 하루: ${p.words(Fmt::wonShort)}. 오늘(${p.todayLabel})은 ${Fmt.won((p.today - todaySpent).coerceAtLeast(0))} 남았어요.")
+                Muted("근무 리듬대로 하루: ${p.words(Fmt::won)}. 오늘(${p.todayLabel})은 ${Fmt.won((p.today - todaySpent).coerceAtLeast(0))} 남았어요.")
             }
             if (gate.allows(Feature.MONEY_STATS)) say() else com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) { say() }
         }

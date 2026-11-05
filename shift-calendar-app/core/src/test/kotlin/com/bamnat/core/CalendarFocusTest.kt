@@ -139,6 +139,21 @@ class CalendarFocusTest {
     }
 
     @Test
+    fun `a shop's closed days fold apart from open days with no sales`() {
+        // 1.37 PC 4차: 정기휴무 is '쉬는 날', not '1일 매출 없음'.
+        val rows = MonthAgenda.of(october, CalendarFocus.SALES, ScheduleResolver(Fixtures.all, weekdays, emptyList()), weekStart = DayOfWeek.MONDAY)
+        val weekend = rows.filterIsInstance<AgendaRow.Gap>().first { it.from == LocalDate.of(2026, 10, 10) }
+        assertTrue(weekend.closed)
+        assertEquals(2, weekend.days)
+        assertEquals("2일 쉬어요", CalendarFocus.SALES.gap(weekend.days, weekend.closed))
+        // Open days with no sales keep their own row (to write sales on); only closed days fold.
+        assertTrue(rows.filterIsInstance<AgendaRow.Gap>().all { it.closed })
+        assertEquals("쉬는 날", CalendarFocus.SALES.gap(1, true))
+        assertEquals("매출 없음", CalendarFocus.SALES.gap(1, false))
+        assertEquals("3일 비어 있어요", CalendarFocus.JOBS.gap(3, true))
+    }
+
+    @Test
     fun `a range covers both ends in either order`() {
         val a = LocalDate.of(2026, 10, 30)
         val b = LocalDate.of(2026, 11, 2)

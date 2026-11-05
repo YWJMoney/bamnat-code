@@ -23,6 +23,7 @@ import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.SectionCard
+import com.bamnat.app.ui.Fmt
 import com.bamnat.core.money.EnvelopeMove
 import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.MonthStory
@@ -76,7 +77,7 @@ internal fun MonthStoryCard(book: MoneyBook, moves: List<EnvelopeMove>, work: Mo
 private fun StoryPage(c: MonthStory.Card) {
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(c.title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(c.big, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        c.lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        Text(Fmt.hide(c.big), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        c.lines.forEach { Text(Fmt.hide(it), style = MaterialTheme.typography.bodyMedium) }
     }
 }

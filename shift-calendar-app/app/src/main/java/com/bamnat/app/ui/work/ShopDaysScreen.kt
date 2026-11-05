@@ -160,6 +160,9 @@ object ShopKeeper {
 class ShopDaysViewModel(private val c: AppContainer, val calendarId: String) : ViewModel() {
     private val _rules = MutableStateFlow(c.calendars.get(calendarId)?.shop ?: ShopRules())
     val rules: StateFlow<ShopRules> = _rules.asStateFlow()
+    /** 1.37 PC 4차: what was saved last, so leaving with taps not saved asks first. */
+    private var kept = _rules.value
+    fun changed(now: ShopRules): Boolean = now != kept
     val name: String get() = c.calendars.get(calendarId)?.name ?: PersonalCalendar.MAIN_NAME
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
@@ -171,6 +174,7 @@ class ShopDaysViewModel(private val c: AppContainer, val calendarId: String) : V
         _busy.value = true
         viewModelScope.launch {
             ShopKeeper.apply(c, calendarId, _rules.value)
+            kept = _rules.value
             c.telemetry.event("shop_days")
             _busy.value = false
             onDone("영업일을 저장했어요. ${ShopDays.describe(_rules.value)}")
@@ -185,11 +189,22 @@ fun ShopDaysScreen(vm: ShopDaysViewModel, onBack: () -> Unit, onSaved: (String) 
     val rules by vm.rules.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
     var picking by remember { mutableStateOf<Boolean?>(null) }
+    // 1.37 PC 4차: 요일을 누르고 저장 없이 뒤로 가면 말없이 사라져, 첫 설정 뒤 정기휴무가 '없음'이었어요. 나가기 전에 물어요.
+    var leaving by remember { mutableStateOf(false) }
+    val leave = { if (vm.changed(rules) && !busy) leaving = true else onBack() }
+    androidx.activity.compose.BackHandler(enabled = vm.changed(rules) && !busy) { leaving = true }
+    if (leaving) com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { leaving = false },
+        title = { Text("바꾼 영업일을 저장할까요?") },
+        text = { Text("저장하지 않고 나가면 고른 요일과 시간이 사라져요.") },
+        confirmButton = { androidx.compose.material3.TextButton(onClick = { leaving = false; vm.save(onSaved) }) { Text("저장") } },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { leaving = false; onBack() }) { Text("저장 안 함") } },
+    )
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("영업일·정기휴무") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                navigationIcon = { IconButton(onClick = leave) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
     ) { padding ->

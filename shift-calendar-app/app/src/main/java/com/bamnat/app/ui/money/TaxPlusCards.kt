@@ -56,7 +56,7 @@ internal fun NetSummaryLine(line: TaxPlus.NetLine?, gate: Gate) {
     val locked = line.estimated && gate.locked(Feature.TAX_FORECAST)
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).let { if (locked) it.clickable { if (!com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) openPro(Feature.TAX_FORECAST) } else it },
         verticalAlignment = Alignment.CenterVertically) {
-        Text(if (locked) listOfNotNull(line.gross?.let { "세전 ${Fmt.won(it)}" }, "세후 예상은 프로").joinToString(" · ") else TaxPlus.netText(line),
+        Text(if (locked) listOfNotNull(line.gross?.let { "세전 ${Fmt.won(it)}" }, "세후 예상은 프로").joinToString(" · ") else Fmt.hide(TaxPlus.netText(line)),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
         if (locked) ProPill(locked = true)
     }
@@ -134,7 +134,7 @@ internal fun ShiftSpendCard(book: MoneyBook, snapshot: ScheduleSnapshot?, today:
     SectionCard(title = "근무별 소비 (90일)") {
         run {
             Column {
-                TaxPlus.shiftWords(rows)?.let { Text(it, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp)) }
+                TaxPlus.shiftWords(rows)?.let { Text(Fmt.hide(it), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 4.dp)) }
                 val top = rows.maxOf { it.perDay }.coerceAtLeast(1)
                 rows.take(6).forEach { r ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {

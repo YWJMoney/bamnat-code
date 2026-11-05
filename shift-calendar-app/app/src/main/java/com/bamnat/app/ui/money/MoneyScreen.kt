@@ -872,7 +872,11 @@ fun MoneyScreen(
         }
         // PC 4277abca (통계에서 '돈 적기'가 카페 줄 금액·카드 머리를 덮음): 통계 is for reading, so the floating button is not over it;
         // 돈 적기 stays on 요약 and 내역.
-        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
+        // 1.37 PC 4차: 되돌리기 줄이 '돈 적기'를 덮어, 줄이 사라질 때 누른 손이 돈 적기를 열었어요. 줄이 있는 동안과 사라진 뒤 잠깐은 숨겨요.
+        val barUp = snackbar?.currentSnackbarData != null
+        var fabBack by remember { mutableStateOf(true) }
+        LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(600); fabBack = true } }
+        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
             ExtendedFloatingActionButton(
                 onClick = { adding = MoneyKind.EXPENSE },
@@ -921,6 +925,7 @@ fun MoneyScreen(
     }
     if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false }, onDismiss = { budgeting = false },
         byPayCycle = settings.moneyByPayCycle.takeIf { profile?.period?.payDay != null && style?.usesPayEngine != false },
+        payDayHint = profile?.period?.payDay == null && style?.usesPayEngine != false,
         onPayCycle = { on -> vm.updateSettings { it.copy(moneyByPayCycle = on) } })
     if (editingAccount != null || addingAccount != null || addingAnyAccount) {
         AccountEditor(editingAccount, addingAccount, book,

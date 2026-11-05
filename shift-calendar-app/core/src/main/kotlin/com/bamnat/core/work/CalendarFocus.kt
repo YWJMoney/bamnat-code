@@ -36,11 +36,15 @@ enum class CalendarFocus {
         INVEST -> "매매 기록"
     }
 
+    /** 1.37 PC 4차 (S5-13): a run of days the shop does not open: "쉬는 날", "2일 쉬어요". */
+    fun gap(days: Int, closed: Boolean): String = if (this == SALES && closed) (if (days == 1) "쉬는 날" else "${days}일 쉬어요") else gap(days)
+
     /** A run of empty days in the month list, e.g. "3일 비어 있어요". */
     fun gap(days: Int): String = when (this) {
         SHIFTS -> "${days}일 쉬어요"
         JOBS -> "${days}일 비어 있어요"
-        SALES -> "${days}일 매출 없음"
+        // 1.37 PC 4차: '1일 매출 없음'이 헷갈렸어요. 하루는 그냥 '매출 없음'.
+        SALES -> if (days == 1) "매출 없음" else "${days}일 매출 없음"
         INVEST -> "${days}일 매매 없음"
     }
 

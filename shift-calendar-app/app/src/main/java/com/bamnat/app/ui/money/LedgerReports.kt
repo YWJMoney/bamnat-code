@@ -234,7 +234,7 @@ private fun PaceCard(r: MonthReport, budget: Long?, today: LocalDate) {
         else -> "지난달 같은 날과 똑같이 썼어요"
     }
     SectionCard(title = "쓰는 속도", trailing = { ProPill() }) {
-        Text(line, style = MaterialTheme.typography.titleSmall, color = if (current && diff > 0) cal.expense else MaterialTheme.colorScheme.onSurface)
+        Text(Fmt.hide(line), style = MaterialTheme.typography.titleSmall, color = if (current && diff > 0) cal.expense else MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(8.dp))
         PaceChart(r.cumulative, r.previousCumulative, r.month.lengthOfMonth(), budget, "$line. 이번 달 ${Fmt.won(r.spent)}, 지난달 ${Fmt.won(r.previousSpent)}")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 6.dp)) {

@@ -85,7 +85,7 @@ internal fun EnvelopesCard(
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                 Text("들어온 돈의 $pct%를 $what 봉투로 떼어 두면 신고 철에 덜 놀라요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                TextButton(onClick = { actions.save(Envelope(name = "$what 봉투", kind = EnvelopeKind.TAX, sharePercent = pct, created = today, emoji = "🧾")) }) {
+                TextButton(onClick = { actions.save(Envelope(name = what, kind = EnvelopeKind.TAX, sharePercent = pct, created = today, emoji = "🧾")) }) {
                     Text("세금 봉투 만들기")
                 }
             }

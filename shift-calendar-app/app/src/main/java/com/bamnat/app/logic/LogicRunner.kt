@@ -68,6 +68,9 @@ object LogicRunner {
      */
     private val resting: Boolean get() = com.bamnat.app.diag.StartGuard.safe.value
 
+    /** 1.37 PC 4차: the app is on screen (its message line can show 되돌리기), set by [LogicMessageHost]. */
+    @Volatile var onScreen: Boolean = false
+
     /** Does [act] for [date]; [who] names the rule or the button (for its count and its line). */
     suspend fun run(c: AppContainer, act: LogicAct, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false) {
         if (resting) { if (!quiet) _message.value = "안전 모드라 규칙과 단추는 쉬어요. ‘평소대로’를 누르면 다시 돌아요"; return }
@@ -119,7 +122,8 @@ object LogicRunner {
                 val cal = c.calendars.active.value
                 val money = c.scopeOf(cal).money
                 val open = money.envelopes.first().first.filter { !it.closed }.sortedWith(compareBy({ it.order }, { it.id }))
-                val e = open.firstOrNull { it.name == act.arg.trim() } ?: open.firstOrNull() ?: return
+                val e = open.firstOrNull { it.name == act.arg.trim() } ?: open.firstOrNull()
+                if (e == null) { if (!quiet || onScreen) _message.value = "열린 봉투가 없어 넣지 못했어요. 가계부 › 봉투에서 하나 만들어요"; return }
                 val id = money.moveEnvelope(com.bamnat.core.money.EnvelopeMove(envelopeId = e.id, date = date, amount = amount))
                 store.wrote(who, JSONObject().put("envMove", id).put("cal", cal).put("say", act.say()))
             }
@@ -139,8 +143,10 @@ object LogicRunner {
         }
         store.ran(who)
         // 1.36 [SEC-12] 보안 점검 M4: a rule that wrote while nobody looked says so in a quiet notice (one per rule, the last).
-        if (quiet && act.verb.writes) wroteQuietly(ctx, who, act)
-        if (!quiet && act.verb != LogicVerb.SCREEN && act.verb != LogicVerb.MEMO_TEMPLATE) {
+        // 1.37 PC 4차: 시각 규칙은 늘 조용히 돌아 앱을 보고 있어도 되돌리기가 안 나왔어요. 화면이 보이면 쓴 것은 되돌리기 줄로 말해요.
+        val seen = !quiet || (act.verb.writes && onScreen)
+        if (quiet && act.verb.writes && !seen) wroteQuietly(ctx, who, act)
+        if (seen && act.verb != LogicVerb.SCREEN && act.verb != LogicVerb.MEMO_TEMPLATE) {
             _message.value = when (act.verb) {
                 LogicVerb.NOTIFY -> words.ifBlank { who }
                 LogicVerb.NEW_MEMO -> "‘${act.arg.ifEmpty { "메모" }}’ 메모를 만들었어요"

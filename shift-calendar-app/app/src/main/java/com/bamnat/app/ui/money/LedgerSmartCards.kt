@@ -94,7 +94,7 @@ internal fun CardGaugeCard(book: MoneyBook, today: LocalDate, yearGross: Long?) 
         Text("쓴 돈 ${Fmt.won(gauge.spent)} / 문턱 ${Fmt.won(gauge.threshold)} (총급여의 25%)", style = MaterialTheme.typography.bodyMedium)
         Text("신용카드 ${Fmt.won(gauge.credit)} · 체크카드·현금·페이 ${Fmt.won(gauge.debitAndCash)}", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(gauge.tip, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+        Text(Fmt.hide(gauge.tip), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
         Text("통장·카드에 카드 종류를 넣으면 더 정확해요. 전통시장·대중교통·문화비는 공제율이 더 높아요(40~80%).",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -115,7 +115,8 @@ internal fun FoundMoneyCard(entries: List<MoneyEntry>, today: LocalDate, lookedA
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (f.staleSubs.isNotEmpty()) {
-            Text("석 달 넘게 안 본 구독 ${f.staleSubs.size}개 · 1년이면 ${Fmt.won(f.staleYearly)}", style = MaterialTheme.typography.bodyMedium,
+            // 1.37 PC 4차: '안 본'은 이번 달에도 결제된 넷플릭스를 안 쓰는 것처럼 읽혔어요. 석 달 넘게 매달 나가고 아직 '써요'를 안 누른 구독이에요.
+            Text("석 달 넘게 매달 나가는 구독 ${f.staleSubs.size}개 · 아직 쓰나요? 1년이면 ${Fmt.won(f.staleYearly)}", style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 8.dp))
             f.staleSubs.take(4).forEach { s ->
                 Row(Modifier.fillMaxWidth().clickable { onOpen(s.place) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -128,7 +129,7 @@ internal fun FoundMoneyCard(entries: List<MoneyEntry>, today: LocalDate, lookedA
             Text("값이 오른 구독: " + f.raisedSubs.take(3).joinToString(" · ") { "${it.place} +${Fmt.won(it.raised ?: 0)}" },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         }
-        Text("구독을 해지하거나 계속 쓰기로 하면 구독 점검 카드에서 정리돼요.", style = MaterialTheme.typography.bodySmall,
+        Text("구독 점검 카드에서 '써요'를 누르면 석 달 동안 여기서 빠져요.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
     }
 }

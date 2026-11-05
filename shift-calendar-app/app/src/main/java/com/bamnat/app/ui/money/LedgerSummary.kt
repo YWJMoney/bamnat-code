@@ -113,7 +113,7 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(1f)) {
                 Text("들어온 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FitText("+" + Fmt.won(m.received), MaterialTheme.typography.titleMedium, cal.income, fontWeight = FontWeight.Bold)
+                FitText((if (m.received > 0) "+" else "") + Fmt.won(m.received), MaterialTheme.typography.titleMedium, cal.income, fontWeight = FontWeight.Bold)
             }
             // [J133-02] 1.33 (보고서 A10): the pay estimate is money still to come, not money that came in.
             m.payExpected?.let { expected ->
@@ -124,7 +124,7 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
             }
             Column(Modifier.weight(1f)) {
                 Text("나간 돈", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FitText("-" + Fmt.won(m.spent), MaterialTheme.typography.titleMedium, cal.expense, fontWeight = FontWeight.Bold)
+                FitText((if (m.spent > 0) "-" else "") + Fmt.won(m.spent), MaterialTheme.typography.titleMedium, cal.expense, fontWeight = FontWeight.Bold)
             }
         }
         // 1.37 PC 실사용(자영업 S5-16): '나간 돈 −0원'인데 경비 30만이 있어 헷갈렸어요. 가게 경비는 가게 순수익(들어온 돈)에서 빠져요.
@@ -241,6 +241,8 @@ fun BudgetEditor(
     book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) -> Unit, onDismiss: () -> Unit,
     /** 1.37 [LEDH-06] 월급날 기준 on or off; null when no pay day is set, so the choice is not offered. */
     byPayCycle: Boolean? = null, onPayCycle: (Boolean) -> Unit = {},
+    /** 1.37 PC 4차: a 월급 user with no pay day yet is told where the switch comes from. */
+    payDayHint: Boolean = false,
 ) {
     val categories = remember(book) { book.categoriesOf(MoneyKind.EXPENSE) }
     val values = remember {
@@ -254,7 +256,10 @@ fun BudgetEditor(
     }
     val sum = categories.sumOf { values[it]?.toAmount() ?: 0 }
     // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 1.37 PC 4차: 뒤로 가기로 적은 예산이 말없이 사라졌어요. 바뀐 게 있으면 먼저 물어요.
+    val initial = remember { values.toMap() }
+    val unsaved = values.filterValues { it.isNotEmpty() } != initial.filterValues { it.isNotEmpty() }
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = unsaved, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("예산 정하기", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
@@ -274,6 +279,8 @@ fun BudgetEditor(
                             modifier = Modifier.semantics { contentDescription = "월급날 기준으로 보기" })
                     }
                 }
+                if (byPayCycle == null && payDayHint) Text("월급날을 정하면 여기서 '월급날 기준으로 보기'를 켤 수 있어요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (values[MoneyBudget.TOTAL].isNullOrEmpty() && sum > 0) {
                     Text("전체를 비우면 분류별 예산의 합 ${Fmt.won(sum)}이 한 달 예산이 돼요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -528,8 +535,10 @@ fun CategoryEditor(
     }
     var renaming by remember { mutableStateOf<Int?>(null) }
     var adding by remember { mutableStateOf("") }
+    // 1.37 PC 4차: 예산 창과 같은 구조라 같이, 뒤로 가기 전에 바꾼 것을 버릴지 물어요.
+    val start = remember(kind) { rows.toList() }
     // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, closeButton = false, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = rows.toList() != start || adding.isNotBlank(), closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("분류 편집", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),

@@ -61,6 +61,13 @@ object Fmt {
 
     private val wonFormat = java.text.NumberFormat.getIntegerInstance(korean)
 
+    /**
+     * 1.37 PC 4차 (금액 가리기에서 '하루 1,545원 더 써요'가 그대로 보였어요): a sentence made outside Fmt (core) with its amounts
+     * hidden the same way, "하루 •••••원 더 써요"; as it is when 가리기 is off.
+     */
+    fun hide(text: String): String = if (!masked) text else wonInText.replace(text, MASK + "원")
+    private val wonInText = Regex("""[-+−]?\d[\d,.]*\s*(?:억\s*)?(?:\d[\d,.]*\s*)?(?:만|천)?\s*원""")
+
     /** "1,250,000원" */
     fun won(amount: Long): String = if (masked) MASK + "원" else wonFormat.format(amount) + "원"
 

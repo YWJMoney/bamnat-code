@@ -69,6 +69,10 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
 /** The line after a button or rule acted, with 되돌리기 when it wrote data (메모·체크·가계부). */
 @Composable
 fun LogicMessageHost(c: AppContainer, snackbar: SnackbarHostState) {
+    androidx.lifecycle.compose.LifecycleStartEffect(Unit) {
+        LogicRunner.onScreen = true
+        onStopOrDispose { LogicRunner.onScreen = false }
+    }
     // PC D16 (낮): one collector for the whole time. Keyed on the message, taking it (null) restarted the effect and cancelled the
     // snackbar it had just asked for, so a line like '안전 모드라 … 쉬어요' never showed, however often the button was pressed.
     LaunchedEffect(Unit) {
