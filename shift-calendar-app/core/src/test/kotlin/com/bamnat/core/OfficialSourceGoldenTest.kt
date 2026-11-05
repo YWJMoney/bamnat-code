@@ -115,6 +115,35 @@ class OfficialSourceGoldenTest {
     }
 
     /**
+     * 4대사회보험 정보연계센터 모의계산 (2026, 150명 미만), 코디네이터가 2026-11-05에 옮겨 적은 값과 한 줄씩.
+     * 상한·하한은 국민연금에만 있고(659만·41만), 건강·장기요양·고용은 보수 그대로.
+     */
+    @Test fun socialInsuranceCalculator2026AtTheLimits() {
+        fun four(pay: Long) = TakeHome.estimate(pay, TaxMode.INSURANCE_4, on = aug26).deductions.toMap()
+            .let { listOf(it["국민연금"], it["건강보험"], it["장기요양"], it["고용보험"]) }
+        assertEquals(listOf(313_020L, 323_550L, 42_510L, 81_000L), four(9_000_000))
+        assertEquals(760_080L, four(9_000_000).sumOf { it!! })
+        assertEquals(listOf(19_470L, 10_780L, 1_410L, 2_700L), four(300_000))
+        assertEquals(34_360L, four(300_000).sumOf { it!! })
+        assertEquals(291_520L, four(3_000_000).sumOf { it!! })
+        assertEquals(209_530L, TakeHome.estimate(2_156_880, TaxMode.INSURANCE_4, on = aug26).deductions.toMap()
+            .filterKeys { it in setOf("국민연금", "건강보험", "장기요양", "고용보험") }.values.sum())
+    }
+
+    @Test fun employerShare2026OnThreeMillion() {
+        // 사업주: 국민 142,500 + 건강 107,850 + 장기 14,170 + 고용 34,500 (0.9% + 고용안정·직능 0.25%) = 299,020.
+        assertEquals(299_020L, com.bamnat.core.work.LaborCost.employerInsurance(3_000_000, aug26))
+        val all = com.bamnat.core.boss.Insurance(pension = true, health = true, employment = true)
+        assertEquals(299_020L, com.bamnat.core.boss.PayrollLedger.employerInsurance(3_000_000, all, aug26))
+        // 하나씩 뺐을 때도 그 몫만 정확히 빠져요.
+        assertEquals(299_020L - 34_500, com.bamnat.core.boss.PayrollLedger.employerInsurance(3_000_000, all.copy(employment = false), aug26))
+        assertEquals(299_020L - 107_850 - 14_170, com.bamnat.core.boss.PayrollLedger.employerInsurance(3_000_000, all.copy(health = false), aug26))
+        assertEquals(299_020L - 142_500, com.bamnat.core.boss.PayrollLedger.employerInsurance(3_000_000, all.copy(pension = false), aug26))
+        // 900만: 국민연금만 상한(659만)에서 멈춰요. 313,020 + 323,550 + 42,510 + 103,500 = 782,580.
+        assertEquals(782_580L, com.bamnat.core.work.LaborCost.employerInsurance(9_000_000, aug26))
+    }
+
+    /**
      * 2027: the app ships 장기요양 as 'not yet fixed' and the 2026-10-30 rate (0.9994%) comes in the signed
      * `remote/v1/rates.json` (서명 열쇠 대기, release/1.38-대기/2027-장기요양-요율.patch). This lays that file over the
      * built-in years exactly as the phone does and checks the official amounts.

@@ -46,6 +46,8 @@ enum class UsageEvent(val key: String) {
     // P3-OPS-07 기능 안내: shown and opened, by no one in particular.
     MANAGE_HINT_SHOWN("manage_hint_shown"),
     MANAGE_HINT_OPEN("manage_hint_open"),
+    // 1.38 가져오기: a roster or staff list put in from a file or photo (어느 쪽인지·몇 칸인지는 보내지 않음).
+    MANAGE_IMPORT("manage_import"),
     ;
 
     companion object {

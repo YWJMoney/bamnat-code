@@ -53,4 +53,19 @@ class TeamGridImportTest {
         assertEquals(1, a.keptLocked)
         assertEquals(3, a.written)
     }
+
+    @Test fun rowsWithNoMemberBecomeNewOnesAfterTheTeam() {
+        val rows = listOf(Row("김민지", null, emptyMap()), Row("박하은", "책임", emptyMap()), Row("정우", null, emptyMap()), Row("한별", null, emptyMap()))
+        var n = 0
+        val (made, ids) = TeamGridImport.newMembers(rows, listOf("m1", null, null, null), skipped = setOf(2), teamId = "t", members = members, limit = 4) { "new${n++}" }
+        assertEquals(listOf("m1", "new0", null, null), ids)
+        assertEquals("박하은", made.single().name)
+        assertEquals(com.bamnat.core.team.Skill.CHARGE, made.single().skill)
+        assertEquals("팀 순서 뒤에", 1, made.single().sort)
+    }
+
+    @Test fun theBigCodesAreListedFirst() {
+        val rows = listOf(Row("a", null, mapOf(d(1) to "D", d(2) to "D", d(3) to "N1")), Row("b", null, mapOf(d(1) to "D", d(2) to "", d(3) to "N1", d(4) to "O")))
+        assertEquals(listOf("D" to 3, "N1" to 2, "O" to 1), TeamGridImport.codeCounts(rows))
+    }
 }

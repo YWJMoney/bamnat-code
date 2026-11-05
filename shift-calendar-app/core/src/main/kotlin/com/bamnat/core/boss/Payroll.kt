@@ -246,10 +246,12 @@ object PayrollLedger {
         if (!ins.any) return 0
         val all = LaborCost.employerInsurance(pay, on)
         val sh = com.bamnat.core.pay.TakeHome.sharesOn(on)
-        val health = (pay * sh.health).toLong() / 10 * 10
-        val care = (health * sh.careOfHealth).toLong() / 10 * 10
-        val pension = ((pay / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax) * sh.pension).toLong() / 10 * 10
-        val employment = (pay * (sh.employment + LaborCost.STABILITY)).toLong() / 10 * 10
+        // [P3-ACC] The same exact won × rate as [LaborCost.employerInsurance], so a box taken off takes off exactly what it added.
+        val cut = com.bamnat.core.pay.WonCut
+        val health = cut.cut10(pay, sh.health)
+        val care = cut.cut10(health, sh.careRatio)
+        val pension = cut.cut10((pay / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax), sh.pension)
+        val employment = cut.cut10(pay, cut.exact(sh.employment).add(cut.exact(LaborCost.STABILITY)).toDouble())
         return all - (if (ins.pension) 0 else pension) - (if (ins.health) 0 else health + care) - (if (ins.employment) 0 else employment)
     }
 

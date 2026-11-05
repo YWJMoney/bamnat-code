@@ -108,8 +108,10 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? 
     // 관리 화면 opens one team straight away; its 뒤로 goes back there, not to the team list.
     var openId by rememberSaveable { mutableStateOf(startTeam) }
     var making by rememberSaveable { mutableStateOf(false) }
+    // 1.38 가져오기: a team made from a file opens with that file waiting for ① 이름 ② 코드.
+    var madeFrom by remember { mutableStateOf<Pair<com.bamnat.core.imports.RosterGrid, Boolean>?>(null) }
     val open = teams?.firstOrNull { it.id == openId }
-    if (open != null) { TeamBoardScreen(open, onBack = { if (startTeam != null) onBack() else openId = null }); return }
+    if (open != null) { TeamBoardScreen(open, onBack = { madeFrom = null; if (startTeam != null) onBack() else openId = null }, startImport = madeFrom); return }
     Scaffold(topBar = {
         TopAppBar(title = { Text("내가 짜는 팀 근무표") },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
@@ -144,12 +146,12 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? 
             ask?.let { com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.TEAM, it, onDismiss = { ask = null }) }
         }
     }
-    if (making) NewTeamDialog(calendarId, onDismiss = { making = false }) { id -> making = false; openId = id }
+    if (making) NewTeamDialog(calendarId, onDismiss = { making = false }) { id, from -> making = false; madeFrom = from; openId = id }
 }
 
 /** 팀 만들기: a name, the names pasted in one go ([TeamPaste]), the kinds of day copied from the leader's own calendar. */
 @Composable
-private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (String) -> Unit) {
+private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (String, Pair<com.bamnat.core.imports.RosterGrid, Boolean>?) -> Unit) {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
     val snapFlow = remember(calendarId) { c.scopeOf(calendarId).schedule.snapshot }
@@ -157,6 +159,24 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
     var name by rememberSaveable { mutableStateOf("") }
     var names by rememberSaveable { mutableStateOf("") }
     val people = remember(names) { TeamPaste.people(names) }
+    val context = LocalContext.current
+    // 1.38 가져오기: names straight from a roster file or photo; the file goes on the board right after 만들기.
+    var from by remember { mutableStateOf<Pair<com.bamnat.core.imports.RosterGrid, Boolean>?>(null) }
+    var reading by remember { mutableStateOf<String?>(null) }
+    val pickFile = rememberAnyFilePicker { uri ->
+        scope.launch {
+            reading = "파일을 읽고 있어요…"
+            val shifts = snap?.shiftTypes.orEmpty().map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
+            when (val got = com.bamnat.app.imports.ManageImport.roster(context, uri, YearMonth.from(Today.date()).plusMonths(1), shifts, Today.date())) {
+                is com.bamnat.app.imports.ManageImport.Got.Read -> {
+                    from = got.value to got.fromPhoto
+                    names = got.value.rows.joinToString("\n") { r -> r.name + (r.role?.let { " $it" } ?: "") }.take(3000)
+                    reading = null
+                }
+                is com.bamnat.app.imports.ManageImport.Got.Failed -> reading = got.why
+            }
+        }
+    }
     // 1.38 PC 1차 (ESC·뒤로에 명단이 사라짐): with something typed, a tap outside or 뒤로 does not close it; 닫기 does.
     val typed = name.isNotBlank() || names.isNotBlank()
     AlertDialog(onDismissRequest = { if (!typed) onDismiss() }, properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = !typed, dismissOnClickOutside = !typed),
@@ -164,6 +184,10 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(name, { name = it.take(20) }, label = { Text("팀 이름 (예: 3병동)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(names, { names = it.take(3000) }, label = { Text("팀원 이름, 한 줄에 한 명") }, minLines = 4, modifier = Modifier.fillMaxWidth())
+            OutlinedButton(onClick = pickFile, modifier = Modifier.fillMaxWidth()) { Text(if (from == null) "근무표 파일·사진에서 이름 가져오기" else "다른 파일 고르기") }
+            (reading ?: from?.let { (g, _) -> "${Fmt.month(g.month)} 근무표 ${g.rows.size}명을 읽었어요. 만들면 근무도 바로 넣을 수 있어요." })?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            }
             Text(if (people.isEmpty()) "단톡방 명단을 그대로 붙여 넣어도 돼요. '민지 책임'처럼 직급은 따로 나눠요."
                 else "${people.size}명: " + people.take(6).joinToString(", ") { it.name } + if (people.size > 6) " …" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -179,7 +203,7 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
                 c.phaseThree.saveTeam(Team(id, name.trim(), shifts = shifts, createdAt = Today.millis()))
                 c.phaseThree.saveMembers(people.mapIndexed { i, p -> TeamMember(UUID.randomUUID().toString(), id, p.name, p.role, p.skill, sort = i) })
                 c.telemetry.event(com.bamnat.core.stats.UsageEvent.TEAM_MADE.key)
-                onMade(id)
+                onMade(id, from)
             }
         }) { Text("만들기") }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
@@ -190,7 +214,7 @@ private const val CELL = 34
 /** The board of one team and month: the grid, the keypad under it, and what to do with the month. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
+private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<com.bamnat.core.imports.RosterGrid, Boolean>? = null) {
     val context = LocalContext.current
     val c = context.appContainer
     val store = c.phaseThree
@@ -204,6 +228,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
     // The board being painted: an editor over the saved one, written back a moment after each change.
     var editor by remember(team.id, month) { mutableStateOf<TeamEditor?>(null) }
     var board by remember(team.id, month) { mutableStateOf<TeamBoard?>(null) }
+    LaunchedEffect(startImport) { startImport?.first?.month?.let { if (it != month) monthText = it.toString() } }
     LaunchedEffect(saved) { val s = saved ?: return@LaunchedEffect; if (editor == null || board?.members != s.members) { editor = TeamEditor(board?.let { now -> val ids = s.members.map { it.id }.toSet(); now.copy(members = s.members, cells = now.cells.filterKeys { it.first in ids }) } ?: s); board = editor!!.board } }
     LaunchedEffect(board) { val b = board ?: return@LaunchedEffect; if (b != saved) { delay(400); store.saveBoard(team.id, b) } }
     // 1.38 검토(데이터 보존): leaving within the 400ms wait used to drop the last cells painted; they are written on the way out.
@@ -222,6 +247,26 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
     var plans by remember { mutableStateOf<List<TeamAuto.Plan>?>(null) }
     var resent by remember { mutableStateOf<Pair<Int, List<Pair<TeamMember, String>>>?>(null) }
     var fit by rememberSaveable { mutableStateOf(false) }
+    // 1.38 가져오기: the file read (and whether from a photo) waiting for ① 이름 ② 코드, and the cells to check after it.
+    var importing by remember { mutableStateOf(startImport) }
+    var checkCells by remember(team.id, month) { mutableStateOf<List<Pair<String, LocalDate>>>(emptyList()) }
+    val pickFile = rememberAnyFilePicker { uri ->
+        scope.launch {
+            busy = "파일을 읽고 있어요…"
+            val got = com.bamnat.app.imports.ManageImport.roster(context, uri, month, team.shifts, Today.date())
+            busy = null
+            when (got) {
+                is com.bamnat.app.imports.ManageImport.Got.Read -> {
+                    if (got.value.month != month) monthText = got.value.month.toString()
+                    importing = got.value to got.fromPhoto
+                }
+                is com.bamnat.app.imports.ManageImport.Got.Failed -> {
+                    c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "import")
+                    dialog = got.why
+                }
+            }
+        }
+    }
     val b = board
     fun change(f: (TeamBoard) -> TeamBoard) { val e = editor ?: return; board = e.apply(f) }
 
@@ -299,19 +344,21 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
                                 val marked = m.id == current?.id && d.dayOfMonth == cursor
                                 val warn = cellSigns[m.id to d]
                                 val changed = state.state == MonthState.CONFIRMED && was[m.id to d] != cell?.shiftId
+                                val toCheck = (m.id to d) in checkCells
                                 Box(Modifier.size(cellDp.dp).padding(if (small) 0.5.dp else 1.dp)
                                     .background(t?.let { Color(it.colorArgb).copy(alpha = 0.85f) } ?: MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
                                     .then(if (marked) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
-                                        else if (warn != null) Modifier.border(2.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(4.dp)) else Modifier)
+                                        else if (warn != null) Modifier.border(2.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(4.dp))
+                                        else if (toCheck) Modifier.border(2.dp, com.bamnat.app.ui.theme.LocalCalendarColors.current.warning, RoundedCornerShape(4.dp)) else Modifier)
                                     .clickable {
                                         val from = swapFrom
                                         if (from != null && from.second == d && from.first != m.id) {
                                             val news = TeamCheck.swapCheck(team, b, from.first, m.id, d, rules)
                                             change { it.swap(from.first, m.id, d) }; swapFrom = null
                                             if (news.isNotEmpty()) dialog = "맞바꿨어요. 확인할 것:\n" + news.joinToString("\n") { it.text }
-                                        } else { member = m.id; cursor = d.dayOfMonth; warn?.let { w -> dialog = w.joinToString("\n") { it.text } } }
+                                        } else { member = m.id; cursor = d.dayOfMonth; if (toCheck) checkCells = checkCells - (m.id to d); warn?.let { w -> dialog = w.joinToString("\n") { it.text } } }
                                     }
-                                    .semantics { contentDescription = "${m.name} ${Fmt.monthDay(d)} ${t?.name ?: "빈칸"}" + (wishAt[m.id to d]?.let { ", 희망 ${it.kind.label}" } ?: "") },
+                                    .semantics { contentDescription = "${m.name} ${Fmt.monthDay(d)} ${t?.name ?: "빈칸"}" + (if (toCheck) ", 확인할 칸" else "") + (wishAt[m.id to d]?.let { ", 희망 ${it.kind.label}" } ?: "") },
                                     contentAlignment = Alignment.Center) {
                                     if (!small) Text(t?.label ?: (if (wishAt[m.id to d] != null) "♡" else ""), color = if (t != null) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -328,6 +375,16 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
             }
             if (current != null) Keypad(team, b, current, month, cursor, onCursor = { cursor = it }, onMember = { member = it }, change = ::change,
                 swapping = swapFrom != null, onSwap = { swapFrom = if (swapFrom == null) current.id to month.atDay(cursor) else null })
+            // 1.38 가져오기 ③: the cells read without being sure, or with a code not paired, one after another.
+            if (checkCells.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("확인할 칸 ${checkCells.size}개", style = MaterialTheme.typography.bodyMedium, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning,
+                    fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { checkCells = emptyList() }) { Text("다 봤어요") }
+                Button(onClick = {
+                    val next = checkCells.first()
+                    member = next.first; cursor = next.second.dayOfMonth; checkCells = checkCells.drop(1)
+                }) { Text("다음 칸") }
+            }
             if (swapFrom != null) Text("${Fmt.monthDay(swapFrom!!.second)} 같은 날 다른 사람 칸을 누르면 맞바꿔요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             if (signs.isNotEmpty()) SectionCard(title = "확인할 것 ${signs.size}") {
                 // 1.38 PC 1차: danger first, 부족·책임자 없음 one line each, so an N→D is never under 50 notes.
@@ -356,6 +413,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
                 OutlinedButton(onClick = { dialog = "wish" }) { Text("희망 휴무 ${wishes.size}") }
                 OutlinedButton(onClick = { dialog = "fair" }) { Text("공정성 표") }
                 OutlinedButton(onClick = { dialog = "members" }) { Text("팀원") }
+                ImportButton(onClick = pickFile)
             }
             val changes = remember(b, was, state) { if (state.state == MonthState.CONFIRMED) b.changesFrom(TeamBoard(month, b.members, was.mapValues { (k, v) -> com.bamnat.core.team.TeamCell(k.first, k.second, v) })) else emptyList() }
             Button(onClick = {
@@ -398,6 +456,28 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
         }
     }
     planAsk?.let { com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.TEAM, it, onDismiss = { planAsk = null }) }
+    // Shown once the board of the file's month is there, so ① matches the names against this team as it is now.
+    importing?.let { (grid, photo) ->
+        val now = board
+        if (now != null && now.month == grid.month) TeamImportDialog(grid, photo, now.members, team.shifts, onDismiss = { importing = null }) { choice ->
+            importing = null
+            scope.launch {
+                val rows = com.bamnat.core.team.TeamGridImport.rows(grid)
+                val cur = board ?: return@launch
+                val (made, ids) = com.bamnat.core.team.TeamGridImport.newMembers(rows, choice.memberOf, choice.skipped, team.id, cur.members)
+                if (made.isNotEmpty()) store.saveMembers(made)
+                var applied: com.bamnat.core.team.TeamGridImport.Applied? = null
+                // One change, so one 되돌리기 takes the whole file back (the new members stay, with nothing painted).
+                change { it0 -> com.bamnat.core.team.TeamGridImport.apply(it0.copy(members = it0.members + made.filter { m -> it0.members.none { o -> o.id == m.id } }), rows, ids, choice.codes).also { applied = it }.board }
+                val a = applied ?: return@launch
+                val order = (cur.members + made).map { it.id }
+                checkCells = a.toCheck.sortedWith(compareBy({ order.indexOf(it.first) }, { it.second }))
+                checkCells.firstOrNull()?.let { member = it.first; cursor = it.second.dayOfMonth }
+                c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key, if (photo) "team_photo" else "team_file")
+                dialog = importSummary(a, made.size)
+            }
+        }
+    }
     plans?.let { list ->
         AlertDialog(onDismissRequest = { plans = null }, title = { Text("빈칸 자동 채우기") }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

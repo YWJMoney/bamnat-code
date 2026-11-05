@@ -106,4 +106,29 @@ class Phase3ScreenshotTest : ScreenshotBase() {
                 com.bamnat.core.tier.WorkPlanRules.Need(com.bamnat.core.tier.WorkPlanRules.Verdict.PLAN, com.bamnat.core.tier.WorkPlanTable.DEFAULT_TEAM[1], 18), onDismiss = {})
         }
     }
+
+    // 1.38 가져오기: ① 이름 ② 코드 on one page, and the staff list with what to look at.
+    @Test fun teamImport() = shoot("p3_9_team_import", FOLDED) {
+        val team = seedTeam()
+        val month = YearMonth.from(Today.date()).plusMonths(1)
+        val codes = listOf("D", "D", "N1", "휴", "E", "OFF", "D")
+        val rows = listOf("민지 책임", "준호", "박하은", "서연").mapIndexed { i, n ->
+            com.bamnat.core.imports.GridRow(n.substringBefore(" "), n.substringAfter(" ", "").ifBlank { null },
+                (1..28).associate { d -> month.atDay(d) to codes[(d + i) % codes.size] }, if (i == 0) setOf(month.atDay(3)) else emptySet())
+        }
+        val grid = com.bamnat.core.imports.RosterGrid(month, (1..28).map(month::atDay), rows, codes.distinct())
+        val members = runBlocking { app.container.phaseThree.boardNow("t1", month).members }
+        content { com.bamnat.app.ui.team.TeamImportDialog(grid, true, members, team.shifts, onDismiss = {}, onApply = {}) }
+    }
+
+    @Test fun staffImport() = shoot("p3_10_staff_import", FOLDED) {
+        val rows = listOf(
+            com.bamnat.core.imports.StaffRow("김알바", com.bamnat.core.boss.WageForm.HOUR, 10_500, mapOf(DayOfWeek.MONDAY to (LocalTime.of(9, 0) to LocalTime.of(15, 0)), DayOfWeek.WEDNESDAY to (LocalTime.of(9, 0) to LocalTime.of(15, 0))), "홀"),
+            com.bamnat.core.imports.StaffRow("이주방", null, null),
+            com.bamnat.core.imports.StaffRow("박매니저", com.bamnat.core.boss.WageForm.MONTH, 2_500_000, doubtful = setOf("base")),
+            com.bamnat.core.imports.StaffRow("최주말", com.bamnat.core.boss.WageForm.HOUR, 11_000, mapOf(DayOfWeek.SATURDAY to (LocalTime.of(10, 0) to LocalTime.of(20, 0)))),
+        )
+        val lines = com.bamnat.core.boss.StaffImport.lines(rows, listOf(com.bamnat.core.boss.StaffMember("x", "김알바")), Today.date())
+        content { com.bamnat.app.ui.work.StaffImportDialog(lines, false, 2, onDismiss = {}, onApply = { _, _ -> }) }
+    }
 }

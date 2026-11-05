@@ -139,8 +139,8 @@ class LServerAlarmTest {
     }
 
     @Test fun noticeOpenIsTheEighteenthUsageEvent() {
-        // 1.35 added five theme_free_* after it ([FREE-10]); 1.38 twelve 팀·가게 counts (Phase 3 분석판); 35 in all, as policy 1-9 lists.
-        assertEquals(35, UsageEvent.entries.size)
+        // 1.35 added five theme_free_* after it ([FREE-10]); 1.38 thirteen 팀·가게 counts (Phase 3 분석판); 36 in all, as policy 1-9 lists.
+        assertEquals(36, UsageEvent.entries.size)
         assertEquals(17, UsageEvent.entries.indexOfFirst { it.key == "notice_open" })
     }
 }

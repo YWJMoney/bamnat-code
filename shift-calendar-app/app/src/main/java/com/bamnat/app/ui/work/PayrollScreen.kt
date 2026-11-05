@@ -154,6 +154,39 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
             if (!next.allowed) { ask = next; return@OutlinedButton }
             editing = StaffMember(UUID.randomUUID().toString(), "", base = RateTable.on(ym.atDay(1)).minimumHourlyWage)
         }, enabled = !isClosed) { Text("직원 더하기") }
+        // 1.38 가져오기: a staff list in any file or photo (엑셀·CSV·PDF·사진), checked on one page before anyone is added.
+        var reading by remember { mutableStateOf<String?>(null) }
+        var importing by remember { mutableStateOf<Pair<List<com.bamnat.core.boss.StaffImport.Line>, Boolean>?>(null) }
+        val pickList = com.bamnat.app.ui.team.rememberAnyFilePicker { uri ->
+            scope.launch {
+                reading = "명단을 읽고 있어요…"
+                when (val got = com.bamnat.app.imports.ManageImport.staff(context, uri, Today.date())) {
+                    is com.bamnat.app.imports.ManageImport.Got.Read -> {
+                        reading = null
+                        importing = com.bamnat.core.boss.StaffImport.lines(got.value.rows, staff, ym.atDay(1)) to got.fromPhoto
+                    }
+                    is com.bamnat.app.imports.ManageImport.Got.Failed -> {
+                        reading = got.why
+                        context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "import")
+                    }
+                }
+            }
+        }
+        OutlinedButton(onClick = pickList, enabled = !isClosed) { Text("명단 파일·사진에서 가져오기") }
+        reading?.let { Hint(it) }
+        importing?.let { (lines, photo) ->
+            // How many more fit now: the free 3, or the band held.
+            val room = (1..200).takeWhile { gate.staff(staff.size + it).allowed }.size
+            StaffImportDialog(lines, photo, room, onDismiss = { importing = null }) { add, over ->
+                importing = null
+                scope.launch {
+                    add.forEach { store.saveStaff(it.member, place.id) }
+                    context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key)
+                    reading = "${add.size}명을 더했어요." + if (add.any { it.check.isNotEmpty() }) " 노란 ‘확인’이 있던 사람은 이름을 눌러 한 번 봐 주세요." else ""
+                    if (over) ask = gate.staff(staff.size + add.size + 1)
+                }
+            }
+        }
         val hold = gate.hold(com.bamnat.core.tier.WorkPlanKind.STAFF)
         if (gate.live) Hint(when {
             hold != null && hold.cap < Int.MAX_VALUE -> "직원 요금제 ${hold.cap}명 구간 · 지금 ${staff.size}명"
