@@ -875,7 +875,7 @@ fun MoneyScreen(
         // 1.37 PC 4차: 되돌리기 줄이 '돈 적기'를 덮어, 줄이 사라질 때 누른 손이 돈 적기를 열었어요. 줄이 있는 동안과 사라진 뒤 잠깐은 숨겨요.
         val barUp = snackbar?.currentSnackbarData != null
         var fabBack by remember { mutableStateOf(true) }
-        LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(600); fabBack = true } }
+        LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(1_200); fabBack = true } }
         AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
             ExtendedFloatingActionButton(

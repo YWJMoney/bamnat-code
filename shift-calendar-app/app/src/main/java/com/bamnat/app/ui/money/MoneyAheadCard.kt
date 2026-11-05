@@ -96,7 +96,9 @@ internal fun AheadCard(
                 val label = com.bamnat.core.tax.TaxPlus.dayLabel(snapshot.resolver::resolve)
                 val everyday = book.entries.filter { it.source != com.bamnat.core.money.MoneySource.FIXED }
                 val rows = com.bamnat.core.tax.TaxPlus.byShift(everyday, today.minusDays(89), today, label)
-                com.bamnat.core.money.ShiftRhythm.plan(perDay * until.daysLeft, today, until.next.date.minusDays(1), label, rows)
+                val spendDays = everyday.filter { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE && !it.date.isBefore(today.minusDays(89)) && !it.date.isAfter(today) }
+                    .map { it.date }.distinct().size
+                com.bamnat.core.money.ShiftRhythm.plan(perDay * until.daysLeft, today, until.next.date.minusDays(1), label, rows, spendDays)
             }.getOrNull()
         }
     }

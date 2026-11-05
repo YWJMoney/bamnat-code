@@ -143,7 +143,7 @@ private fun RuleEditor(
                 if (changes.isNotEmpty()) {
                     Text("지난 거래 ${changes.size}건이 ‘$category’(으)로 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
                     changes.take(5).forEach { e ->
-                        Text("${e.date.monthValue}/${e.date.dayOfMonth} ${e.title} · ${"%,d".format(e.amount)}원 · ${e.category} → $category",
+                        Text("${e.date.monthValue}/${e.date.dayOfMonth} ${e.title} · ${com.bamnat.app.ui.Fmt.won(e.amount)} · ${e.category} → $category",
                             style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     if (changes.size > 5) Text("외 ${changes.size - 5}건", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

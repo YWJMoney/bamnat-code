@@ -22,7 +22,12 @@ object Fmt {
      * 1.37 [LEDH-22] 금액 가리기: every amount Fmt writes shows as dots, for opening the app on a bus or at work. Set from
      * the settings with [clock12]; the eye on 가계부 turns it on and off, and the widgets follow.
      */
-    @Volatile var masked: Boolean = false
+    // 1.37 PC 5차: a plain field did not redraw what was already on screen (예산 22,000/500,000, 봉투, 최근 기록 stayed),
+    // so a screen only changed where it read 가리기 itself. As Compose state every amount Fmt wrote redraws.
+    private val maskedState = androidx.compose.runtime.mutableStateOf(false)
+    var masked: Boolean
+        get() = maskedState.value
+        set(v) { if (maskedState.value != v) maskedState.value = v }
     const val MASK = "•••••"
 
     private fun twelve(t: LocalTime): String {

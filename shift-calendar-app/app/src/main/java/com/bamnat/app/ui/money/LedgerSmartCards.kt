@@ -129,7 +129,7 @@ internal fun FoundMoneyCard(entries: List<MoneyEntry>, today: LocalDate, lookedA
             Text("값이 오른 구독: " + f.raisedSubs.take(3).joinToString(" · ") { "${it.place} +${Fmt.won(it.raised ?: 0)}" },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         }
-        Text("구독 점검 카드에서 '써요'를 누르면 석 달 동안 여기서 빠져요.", style = MaterialTheme.typography.bodySmall,
+        if (f.staleSubs.isNotEmpty()) Text("구독 점검 카드에서 '써요'를 누르면 석 달 동안 여기서 빠져요.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
     }
 }

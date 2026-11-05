@@ -82,7 +82,8 @@ fun LogicMessageHost(c: AppContainer, snackbar: SnackbarHostState) {
             val resting = com.bamnat.app.diag.StartGuard.safe.value
             val canUndo = !resting && LogicStore(c.appContext).undo != null
             val action = when { resting -> "평소대로"; canUndo -> "되돌리기"; else -> null }
-            val r = snackbar.showSnackbar(m, actionLabel = action, duration = SnackbarDuration.Short)
+            // 1.37 PC 5차: 되돌리기 줄이 너무 빨리 사라졌어요. 되돌릴 게 있으면 길게.
+            val r = snackbar.showSnackbar(m, actionLabel = action, duration = if (action != null) SnackbarDuration.Long else SnackbarDuration.Short)
             if (r == SnackbarResult.ActionPerformed) when {
                 resting -> c.wakeAfterSafe()
                 canUndo -> snackbar.showSnackbar(if (LogicRunner.undo(c)) "되돌렸어요" else "되돌릴 것이 없어요")

@@ -127,7 +127,7 @@ data class LogicAct(val verb: LogicVerb, val arg: String = "", val amount: Long?
         LogicVerb.ADD_MONEY -> "가계부에 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’ 넣기"
         LogicVerb.ADD_INCOME -> "가계부 수입에 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’ 넣기"
         LogicVerb.MEMO_LINE -> "그날 메모에 ‘${arg.ifEmpty { "한 줄" }}’ 더하기"
-        LogicVerb.ENVELOPE -> "‘${arg.ifEmpty { "첫" }}’ 봉투에${amount?.let { " " + won(it) } ?: ""} 넣기"
+        LogicVerb.ENVELOPE -> (if (arg.isEmpty()) "맨 위 봉투에" else "‘$arg’ 봉투에") + "${amount?.let { " " + won(it) } ?: ""} 넣기"
         LogicVerb.SCREEN -> "${LogicVerb.SCREENS[arg] ?: "화면"} 열기"
     }
 

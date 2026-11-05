@@ -612,7 +612,7 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, st
                     color = MaterialTheme.colorScheme.onPrimaryContainer)
                 Text(
                     when {
-                        total != null -> "%,d원".format(total)
+                        total != null -> Fmt.won(total)
                         hasProfile -> "계산하는 중이에요"
                         else -> "근무표로 급여 계산하기"
                     },

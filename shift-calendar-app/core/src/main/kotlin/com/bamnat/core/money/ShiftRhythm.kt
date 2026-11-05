@@ -9,6 +9,8 @@ import java.time.LocalDate
  * "야간 날 3만 원 · 쉬는 날 4만 원 · 주간 1만 5천 원". A day kind seen too rarely to learn from takes the average.
  */
 object ShiftRhythm {
+    const val MIN_SPEND_DAYS = 14
+
     data class Share(val label: String, val perDay: Long, val days: Int)
 
     data class Plan(val todayLabel: String, val today: Long, val shares: List<Share>) {
@@ -20,7 +22,11 @@ object ShiftRhythm {
      * [pool] shared over [from]..[until] (both counted; [from] is today) by [label]. Null when fewer than two kinds of
      * day were learned or the days ahead are all of one kind (nothing to share differently), or nothing is left.
      */
-    fun plan(pool: Long, from: LocalDate, until: LocalDate, label: (LocalDate) -> String?, rows: List<TaxPlus.ShiftSpend>): Plan? {
+    fun plan(pool: Long, from: LocalDate, until: LocalDate, label: (LocalDate) -> String?, rows: List<TaxPlus.ShiftSpend>,
+        /** Days with spending written in the window [rows] came from; under [MIN_SPEND_DAYS] there is too little to learn. */
+        spendDays: Int = MIN_SPEND_DAYS): Plan? {
+        // 1.37 PC 5차: 지출을 이틀만 적었는데 근무 리듬 줄이 나왔어요. 두 주는 적어야 날 종류마다 쓰는 돈을 배워요.
+        if (spendDays < MIN_SPEND_DAYS) return null
         // PC 확인 37446021: 새로 깔아 지출이 없는데도 모든 날이 '2만'으로 나왔어요. 쓴 돈이 있는 날 종류가 둘은 있어야 배워요.
         val spent = rows.filter { it.perDay > 0 }
         if (pool <= 0 || spent.size < 2 || until.isBefore(from)) return null

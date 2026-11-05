@@ -11,6 +11,6 @@ class EnvelopeVerbTest {
         assertEquals(a, LogicAct.from(a.toMap()))
         assertEquals("envelope", a.toMap()["do"])
         assertEquals(Logic.RECEIVED_MAX_WON, a.copy(amount = Logic.RECEIVED_MAX_WON + 1).held().amount)
-        assertEquals("‘첫’ 봉투에 넣기", LogicAct(LogicVerb.ENVELOPE).say())
+        assertEquals("맨 위 봉투에 넣기", LogicAct(LogicVerb.ENVELOPE).say())
     }
 }

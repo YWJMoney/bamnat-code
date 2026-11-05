@@ -46,6 +46,12 @@ fun AppSheet(
     // PC 확인 7b26965a ("아주 크게"에서도 자유 토의 시트 글자는 그대로): a sheet is a window of its own, whose view gives it the
     // phone's own density again; the app's 글자 크기 (BamnatTheme's LocalDensity) is handed on to it here.
     val appDensity = androidx.compose.ui.platform.LocalDensity.current
+    // 1.37 PC 5차 (높음, 한 번): 되돌리기 줄이 '돈 적기'로 바뀌는 순간 연 창이 안 보인 채 열려, 화면을 덮은 창 때문에 2분쯤 멈춘
+    // 것처럼 보였어요. 여는 움직임이 끊겨 숨은 채 남으면 한 번 다시 펼쳐요.
+    androidx.compose.runtime.LaunchedEffect(sheetState) {
+        kotlinx.coroutines.delay(800)
+        if (!sheetState.isVisible && sheetState.targetValue == androidx.compose.material3.SheetValue.Hidden) runCatching { sheetState.show() }
+    }
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         // [J133-49] 1.33 (중간 빌드 확인: 끝까지 펼친 시트의 X가 상태줄 밑에 그려져 눌리지 않았어요): a sheet stops under the status

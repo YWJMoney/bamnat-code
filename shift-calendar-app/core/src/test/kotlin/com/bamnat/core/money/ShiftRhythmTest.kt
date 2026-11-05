@@ -25,6 +25,8 @@ class ShiftRhythmTest {
         assertNull(ShiftRhythm.plan(300_000, from, until, { "야간" }, rows))
         assertNull(ShiftRhythm.plan(300_000, from, until, label, rows.take(1)))
         assertNull(ShiftRhythm.plan(0, from, until, label, rows))
+        // PC 5차: 이틀치 지출로는 배우지 않아요.
+        assertNull(ShiftRhythm.plan(300_000, from, until, label, rows, spendDays = 2))
         // PC 확인 37446021: 새로 깔아 쓴 돈이 없으면 (날마다 0원) 아무 줄도 없어요.
         assertNull(ShiftRhythm.plan(300_000, from, until, label, listOf(TaxPlus.ShiftSpend("야간", 10, 0), TaxPlus.ShiftSpend(TaxPlus.OFF, 10, 0))))
     }

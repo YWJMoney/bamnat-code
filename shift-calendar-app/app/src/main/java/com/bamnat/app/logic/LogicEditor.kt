@@ -231,6 +231,10 @@ fun FormulaField(value: String, onChange: (String) -> Unit, scope: FormulaScope,
             }, label = { Text(o) })
         }
     }
+    // 1.37 PC 5차: 치는 중에 나오는 이름 칩에 설명이 없었어요(‘급여 설정 전에는 비어 있어요’도 못 찾음). 고를 이름의 설명을 한 줄씩.
+    offers.mapNotNull { o -> FormulaNames.of(o.trim().trimEnd('('))?.let { "${it.ko}: ${it.help}" } }.take(3).forEach {
+        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     if (inputs) InputValuesLine(value, scope)
     if (!text) PreviewLine(value, scope)
 }
@@ -310,7 +314,7 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
         LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME, LogicVerb.ENVELOPE -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(act.arg, { onChange(act.copy(arg = it.take(20))) }, Modifier.fillMaxWidth(), singleLine = true,
                 label = { Text(if (act.verb == LogicVerb.ENVELOPE) "봉투 이름" else "분류") },
-                placeholder = if (act.verb == LogicVerb.ENVELOPE) ({ Text("비우면 첫 봉투") }) else null)
+                placeholder = if (act.verb == LogicVerb.ENVELOPE) ({ Text("비우면 맨 위 봉투") }) else null)
             OutlinedTextField(act.amount?.toString() ?: "", { s -> onChange(act.copy(amount = s.filter(Char::isDigit).take(9).toLongOrNull())) },
                 Modifier.fillMaxWidth(), singleLine = true, label = { Text("금액(원)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
         }

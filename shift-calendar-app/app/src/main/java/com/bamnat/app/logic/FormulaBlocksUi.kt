@@ -354,7 +354,7 @@ private fun NameChip(current: String, onPick: (String) -> Unit) {
             Text(g.label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
             FormulaName.entries.filter { it.group == g }.forEach { n ->
-                DropdownMenuItem(text = { Text(n.ko) }, onClick = { open = false; onPick(n.ko) })
+                DropdownMenuItem(text = { Column { Text(n.ko); Text(n.help, style = MaterialTheme.typography.bodySmall) } }, onClick = { open = false; onPick(n.ko) })
             }
         }
     }

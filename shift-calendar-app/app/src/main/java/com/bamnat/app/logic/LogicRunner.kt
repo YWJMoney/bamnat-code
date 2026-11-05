@@ -77,6 +77,8 @@ object LogicRunner {
         val ctx = c.appContext
         val store = LogicStore(ctx)
         val words = FormulaText.render(act.arg, scope)
+        // 1.37 PC 5차: 이름을 비운 봉투 규칙은 "‘첫’ 봉투"라고 했어요. 실제로 넣은 봉투 이름으로 말해요.
+        var envName: String? = null
         when (act.verb) {
             LogicVerb.NOTIFY -> notify(ctx, who, words.ifBlank { who })
             LogicVerb.MEMO_TEMPLATE -> {
@@ -124,6 +126,7 @@ object LogicRunner {
                 val open = money.envelopes.first().first.filter { !it.closed }.sortedWith(compareBy({ it.order }, { it.id }))
                 val e = open.firstOrNull { it.name == act.arg.trim() } ?: open.firstOrNull()
                 if (e == null) { if (!quiet || onScreen) _message.value = "열린 봉투가 없어 넣지 못했어요. 가계부 › 봉투에서 하나 만들어요"; return }
+                envName = e.name
                 val id = money.moveEnvelope(com.bamnat.core.money.EnvelopeMove(envelopeId = e.id, date = date, amount = amount))
                 store.wrote(who, JSONObject().put("envMove", id).put("cal", cal).put("say", act.say()))
             }
@@ -154,7 +157,7 @@ object LogicRunner {
                 LogicVerb.ADD_MONEY -> "가계부에 ‘${act.arg.ifEmpty { "기타" }}’ ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
                 LogicVerb.ADD_INCOME -> "가계부 수입에 ‘${act.arg.ifEmpty { "기타" }}’ ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
                 LogicVerb.MEMO_LINE -> "그날 메모에 ‘${words.take(20)}’ 줄을 더했어요"
-                LogicVerb.ENVELOPE -> "${act.arg.ifEmpty { "첫" }} 봉투에 ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
+                LogicVerb.ENVELOPE -> "‘${envName ?: act.arg}’ 봉투에 ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
                 else -> act.say()
             }
         }
