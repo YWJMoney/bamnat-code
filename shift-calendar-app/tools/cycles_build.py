@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Builds remote/v1/cycles.json from tools/data/company-cycles.csv [SPAT-01].
 
-The CSV is the public-source research (research/shift-patterns/회사별-교대주기.csv in the project files, 148 rows):
+The CSV is the public-source research (research/shift-patterns/회사별-교대주기.csv in the project files, 148 rows; [CYC-01] 1.38 added 6 checked rows, 154):
 표시 이름, 회사·기관, 업종, 사업장·직무, 근무형태, 순서(한 주기), 시간, 시점, 신뢰도, 출처. Only public facts with
 their source links; nothing about a person.
 
@@ -31,8 +31,8 @@ import sys
 APP = pathlib.Path(__file__).resolve().parent.parent
 SRC = APP / "tools" / "data" / "company-cycles.csv"
 OUT = APP.parent / "remote" / "v1" / "cycles.json"
-VERSION = 2026102501
-ISSUED = "2026-10-25"
+VERSION = 2026110501
+ISSUED = "2026-11-05"
 MIN_APP = 37
 
 FORMS = [
@@ -102,6 +102,9 @@ def order_of(row, key):
         return "DDDDOOOONNNNOOOO", usual if "추정" in o else exact, False, False
     if o.startswith("주·주·휴·휴·야·야·휴·휴"):
         return "DDOONNOO", exact, False, False
+    if o.startswith("주·야·비·주·주·야·비·휴"):
+        # [CYC-01] 교정 변형 4부제 (8일에 휴무 하루).
+        return "DNBDDNBO", exact, False, False
     if o.startswith("주·야·비·휴또는"):
         return "DNBO", usual, False, False
     if o.startswith("주·야·비·휴(원래)"):
@@ -287,7 +290,7 @@ def build():
         "version": VERSION,
         "issued": ISSUED,
         "minApp": MIN_APP,
-        "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25. 사실(근무형태·순서·시간)과 출처 링크만",
+        "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25 · 2026-11-05 더함. 사실(근무형태·순서·시간)과 출처 링크만",
         "data": {"forms": [{"key": k, "name": n} for k, n in FORMS], "cycles": cycles},
     }
 

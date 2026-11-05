@@ -19,10 +19,11 @@ class RemoteKeysTest {
         """{"format": 1, "kind": "$kind", "version": 2027010101, "issued": "2026-12-20", "minApp": 33, "source": "시험", "data": {"x": 1}}"""
             .toByteArray()
 
-    @Test fun fourDistinctPublicKeysAreTrusted() {
+    @Test fun sixDistinctPublicKeysAreTrusted() {
         // [REMOTE-08] the two 2026-10 keys (lost, kept for files still signed with them) + the 2026-10-26 key and spare.
-        assertEquals(4, RemoteKeys.TRUSTED.size)
-        assertEquals(4, RemoteKeys.TRUSTED.toSet().size)
+        // [REMOTE-09] + the 2026-11-05 key and spare (the 2026-10-26 pair stayed in the old account).
+        assertEquals(6, RemoteKeys.TRUSTED.size)
+        assertEquals(6, RemoteKeys.TRUSTED.toSet().size)
         assertEquals(listOf(".sig2", ".sig"), RemoteKeys.SIGNATURES)
         RemoteKeys.TRUSTED.forEach { assertEquals(32, Base64.getDecoder().decode(it).size) }
     }
