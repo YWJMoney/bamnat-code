@@ -38,8 +38,25 @@ object TypeFoldAsk {
 
     val asking = MutableStateFlow<Ask?>(null)
 
-    /** Said after 접어 두기, with 되돌리기 (the AppRoot snackbar shows it). */
-    data class Done(val calendar: String, val ids: List<Long>, val message: String)
+    /**
+     * Said after 접어 두기, with 되돌리기 (the AppRoot snackbar shows it). [patterns]: the repeating schedule as it was, when 접어 두기
+     * also stopped it ([stopsCycle]); 되돌리기 puts it back ([undo]).
+     */
+    data class Done(val calendar: String, val ids: List<Long>, val message: String, val patterns: List<com.bamnat.core.model.WorkPattern>? = null)
+
+    /**
+     * [SETUP-16] 1.37 PC 122d18a0 (현대제철 교대 → 현장, 접어 두기: 달력이 12월까지 주·야·휴를 계속 칠함, 근무 알람 안내도 남음):
+     * work written day by day (현장·자영업·투자) has no repeating schedule, so putting the old 근무 away also stops the cycle after
+     * today. Past days stay; 그대로 두기 keeps the cycle as it was.
+     */
+    fun stopsCycle(to: WorkStyle): Boolean = to == WorkStyle.FIELD || to == WorkStyle.BUSINESS || to == WorkStyle.INVEST
+
+    /** 되돌리기 of a [Done]: the 근무 out again, and the cycle as it was. */
+    fun undo(c: AppContainer, d: Done) {
+        c.foldedTypes.unfold(d.calendar, d.ids)
+        val was = d.patterns ?: return
+        c.appScope.launch { c.calendars.repository(d.calendar).restorePatterns(was) }
+    }
 
     val done = MutableStateFlow<Done?>(null)
 
@@ -66,6 +83,10 @@ object TypeFoldAsk {
 fun TypeFoldHost(c: AppContainer) {
     val ask by TypeFoldAsk.asking.collectAsStateWithLifecycle()
     val a = ask ?: return
+    val patterns by androidx.compose.runtime.produceState<List<com.bamnat.core.model.WorkPattern>>(emptyList(), a) {
+        value = c.calendars.repository(a.calendar).patterns.first()
+    }
+    val stops = TypeFoldAsk.stopsCycle(a.to) && patterns.isNotEmpty()
     val names = a.types.joinToString("·") { it.name }
     AlertDialog(
         onDismissRequest = { TypeFoldAsk.asking.value = null },
@@ -74,6 +95,7 @@ fun TypeFoldHost(c: AppContainer) {
             val adds = a.adds.joinToString("·") { it.name }
             Text("$names${com.bamnat.app.ui.Fmt.eun(names)} ${a.to.label}에서 잘 쓰지 않아요. 접어 두면 하루 시트에서 빠지고, 지난 날짜 기록과 급여는 그대로예요. " +
                 (if (adds.isNotEmpty()) "대신 ${a.to.label} 기본 근무 $adds${com.bamnat.app.ui.Fmt.obj(adds)} 넣어 둘게요(시간은 근무 종류와 시간에서 고쳐요). " else "") +
+                (if (stops) "${a.from.label} 근무 주기도 오늘까지만 칠하고 멈춰요. " else "") +
                 (if (a.empty) "접으면 쓰는 ${dayKindSubject(a.to)} 없어 하루 시트엔 쉬는 날만 남아요. 필요하면 ${dayKindsPlace(a.to)} › ${dayKindNoun(a.to)} 추가로 넣어요. " else "") +
                 "${dayKindsPlace(a.to)} › 안 쓰는 종류에서 언제든 다시 꺼낼 수 있어요.")
         },
@@ -81,6 +103,10 @@ fun TypeFoldHost(c: AppContainer) {
             TextButton(onClick = {
                 val ids = a.types.map { it.id }
                 c.foldedTypes.fold(a.calendar, ids)
+                val was = patterns.takeIf { stops }
+                if (was != null) c.appScope.launch {
+                    c.calendars.repository(a.calendar).endPatternsAfter(com.bamnat.core.time.Today.date())
+                }
                 if (a.adds.isNotEmpty()) c.appScope.launch {
                     val repo = c.calendars.repository(a.calendar)
                     val have = repo.shiftTypes.first()
@@ -88,7 +114,8 @@ fun TypeFoldHost(c: AppContainer) {
                     a.adds.filter { t -> have.none { it.name == t.name } }.forEachIndexed { i, t -> repo.saveShiftType(t.copy(id = 0, sortOrder = next + i)) }
                 }
                 // Said before the question closes, so the kind-of-work line waiting for it says both (AppRoot).
-                TypeFoldAsk.done.value = TypeFoldAsk.Done(a.calendar, ids, "${a.from.label} 근무 종류 ${ids.size}개를 접었어요")
+                TypeFoldAsk.done.value = TypeFoldAsk.Done(a.calendar, ids,
+                    "${a.from.label} 근무 종류 ${ids.size}개를 접었어요" + if (was != null) " · 근무 주기는 오늘까지예요" else "", was)
                 TypeFoldAsk.asking.value = null
             }) { Text("접어 두기") }
         },

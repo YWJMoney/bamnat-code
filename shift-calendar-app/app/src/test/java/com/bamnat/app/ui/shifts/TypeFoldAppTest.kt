@@ -52,4 +52,23 @@ class TypeFoldAppTest {
         TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.HOURLY, WorkStyle.FIELD)
         assertTrue(TypeFoldAsk.asking.value!!.empty)
     }
+
+    /** [SETUP-16] 1.37 PC 122d18a0: 접어 두기 into 현장·자영업·투자 stops the cycle after today; 되돌리기 brings it back as it was. */
+    @Test fun foldingIntoDayByDayWorkStopsTheCycleAndUndoBringsItBack() = runBlocking {
+        val c = app.container
+        val repo = c.calendars.repository(PersonalCalendar.MAIN)
+        repo.ensureDefaults()
+        val today = com.bamnat.core.time.Today.date()
+        val day = repo.shiftTypes.first().first { !it.isOff }.id
+        val cycle = com.bamnat.core.model.WorkPattern.Rotation(today.minusDays(30), listOf(day, null))
+        repo.savePattern(cycle)
+        assertTrue(TypeFoldAsk.stopsCycle(WorkStyle.FIELD) && TypeFoldAsk.stopsCycle(WorkStyle.INVEST) && TypeFoldAsk.stopsCycle(WorkStyle.BUSINESS))
+        assertTrue(!TypeFoldAsk.stopsCycle(WorkStyle.HOURLY) && !TypeFoldAsk.stopsCycle(WorkStyle.SHIFT))
+        repo.endPatternsAfter(today)
+        assertEquals(today, repo.patterns.first().single().endDate)
+        TypeFoldAsk.undo(c, TypeFoldAsk.Done(PersonalCalendar.MAIN, emptyList(), "", listOf(cycle)))
+        kotlinx.coroutines.withTimeout(5_000) { while (repo.patterns.first().singleOrNull()?.endDate != null) kotlinx.coroutines.delay(20) }
+        assertEquals(listOf<com.bamnat.core.model.WorkPattern>(cycle), repo.patterns.first())
+        repo.clearPattern()
+    }
 }

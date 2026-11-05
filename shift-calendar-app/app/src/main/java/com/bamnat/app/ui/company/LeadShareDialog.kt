@@ -48,8 +48,15 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
     val company = step.pick.company
     var site by rememberSaveable(step.pick) { mutableStateOf("") }
     val open = { id: String? -> lead.close(); id?.let(onOpen) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     AlertDialog(
-        onDismissRequest = { if (step is Step.Ask) lead.no() else if (step !is Step.Working) lead.close() },
+        // [SETUP-16] 1.37 PC 122d18a0 (뒤로 닫으면 무엇을 고른 건지 몰라요): back is 내 달력에만, and says so.
+        onDismissRequest = {
+            if (step is Step.Ask) {
+                lead.no()
+                android.widget.Toast.makeText(context, "내 달력에만 쓰기로 했어요. 설정 › 개인정보·앱 정보에서 바꿀 수 있어요", android.widget.Toast.LENGTH_LONG).show()
+            } else if (step !is Step.Working) lead.close()
+        },
         title = {
             Text(
                 when (step) {
