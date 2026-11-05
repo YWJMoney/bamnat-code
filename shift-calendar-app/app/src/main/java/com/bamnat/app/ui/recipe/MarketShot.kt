@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
@@ -88,9 +89,11 @@ internal object MarketShots {
     /**
      * PC 확인 e50bb622 MED-2 (긴 테마 목록을 천천히 내리면 그림을 처음 그릴 때 끊김, Janky 19%): one example phone is drawn live at a time;
      * the others keep their small picture until it is their turn, and a card only flown past is never drawn.
+     * PC 확인 edb46c62 MED-1 (멈춘 뒤 보이는 카드 넷이 작은 그림으로 남음): a count could be taken and never given back (a card composed
+     * ahead of the screen and never drawn held it); a fair lock is given back when its card leaves, and after [HOLD] at most.
      */
-    val drawing = androidx.compose.runtime.mutableIntStateOf(0)
-    const val AT_ONCE = 1
+    val drawing = kotlinx.coroutines.sync.Mutex()
+    const val HOLD = 1500L
 
     fun shot(key: String): ImageBitmap? = shots.get(key)
     fun keep(key: String, b: ImageBitmap) { shots.put(key, b) }
@@ -183,18 +186,42 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
     var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
     val recipe by produceState<Recipe?>(null, key) { if (picture == null) value = MarketShots.recipe(c, item) }
     // Said once for the card: the real look once it is drawn, the small picture while it comes.
-    // MED-2: this card's turn to be drawn live: it has stayed on screen a moment and no other is drawing.
+    ShotFrame(key, width, height, picture, { picture = it }, recipe, MarketShots.gaveUp(item), style = shown, onClick = onClick, modifier = modifier,
+        face = { MarketShots.faceOf(item, it) }, standIn = { ShotStandIn(item, width, height, shown) })
+}
+
+/** [MKV-05] A theme that comes with the app (처음이라면 이런 테마부터), drawn the same way as the 장터 cards. */
+@Composable
+internal fun BuiltInShot(r: Recipe, name: String, width: Dp, style: WorkStyle?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val height = width * (MarketShots.PHONE_H / MarketShots.PHONE_W)
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val key = "builtin:" + name + "|" + style?.name + "|" + dark + "|" + width.value.toInt()
+    var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
+    ShotFrame(key, width, height, picture, { picture = it }, r, false, style = style, onClick = onClick, modifier = modifier,
+        face = { MarketShots.Face.Tab(TabOrder.CALENDAR) },
+        standIn = { Box(Modifier.size(width, height).background(MaterialTheme.colorScheme.surfaceContainerHigh)) })
+}
+
+@Composable
+private fun ShotFrame(
+    key: String, width: Dp, height: Dp, picture: ImageBitmap?, setPicture: (ImageBitmap) -> Unit, recipe: Recipe?, gaveUp: Boolean,
+    style: WorkStyle?, onClick: () -> Unit, modifier: Modifier, face: (Recipe) -> MarketShots.Face, standIn: @Composable () -> Unit,
+) {
+    // MED-2: this card's turn to be drawn live: it is on the screen (not only composed ahead of it), has stayed a moment, and no other is drawing.
     var turn by remember(key) { mutableStateOf(false) }
+    var placed by remember(key) { mutableStateOf(false) }
+    val now by androidx.compose.runtime.rememberUpdatedState(picture)
     if (picture == null && recipe != null) LaunchedEffect(key) {
+        androidx.compose.runtime.snapshotFlow { placed }.first { it }
         kotlinx.coroutines.delay(150)
-        androidx.compose.runtime.snapshotFlow { MarketShots.drawing.intValue }.first { it < MarketShots.AT_ONCE }
-        MarketShots.drawing.intValue += 1
-        turn = true
+        MarketShots.drawing.lock()
+        try {
+            turn = true
+            kotlinx.coroutines.withTimeoutOrNull(MarketShots.HOLD) { androidx.compose.runtime.snapshotFlow { now }.first { it != null } }
+        } finally { MarketShots.drawing.unlock() }
     }
-    if (turn) androidx.compose.runtime.DisposableEffect(key) { onDispose { MarketShots.drawing.intValue -= 1 } }
-    if (turn && picture != null) LaunchedEffect(Unit) { turn = false }
-    val said = if (picture != null || recipe != null) "작품 모습" else if (MarketShots.gaveUp(item)) "작품 작은 그림" else "작품 모습 불러오는 중"
-    Box(modifier.size(width, height).clip(RoundedCornerShape(width / 10)).clearAndSetSemantics {
+    val said = if (picture != null || recipe != null) "작품 모습" else if (gaveUp) "작품 작은 그림" else "작품 모습 불러오는 중"
+    Box(modifier.size(width, height).clip(RoundedCornerShape(width / 10)).onPlaced { placed = true }.clearAndSetSemantics {
         contentDescription = said
     }, contentAlignment = Alignment.Center) {
         val p = picture
@@ -204,19 +231,24 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
             r != null && turn -> {
                 // Drawn live once; when its fonts and pictures have come in, kept as a picture.
                 val layer = rememberGraphicsLayer()
+                // Taken only once the phone has really been drawn into the layer; until then it is tried again.
+                val drew = remember(key) { booleanArrayOf(false) }
                 // PC 확인 e50bb622 MED-3: a picture of the phone, its letters the example's own size under 아주 크게 too.
                 val d = androidx.compose.ui.platform.LocalDensity.current
                 androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f)) {
-                    Box(Modifier.fillMaxSize().drawWithContent { layer.record { this@drawWithContent.drawContent() }; drawLayer(layer) }) {
-                        ShotPhone(item, r, shown, width / MarketShots.PHONE_W.dp)
+                    Box(Modifier.fillMaxSize().drawWithContent { layer.record { this@drawWithContent.drawContent() }; drawLayer(layer); drew[0] = true }) {
+                        ShotPhone(face(r), r, style, width / MarketShots.PHONE_W.dp)
                     }
                 }
                 LaunchedEffect(key) {
                     kotlinx.coroutines.delay(700)
-                    runCatching { layer.toImageBitmap() }.getOrNull()?.let { MarketShots.keep(key, it); picture = it }
+                    while (true) {
+                        if (drew[0]) runCatching { layer.toImageBitmap() }.getOrNull()?.let { MarketShots.keep(key, it); setPicture(it); return@LaunchedEffect }
+                        kotlinx.coroutines.delay(300)
+                    }
                 }
             }
-            else -> ShotStandIn(item, width, height, shown)
+            else -> standIn()
         }
         // On top of everything drawn, so the example's own taps and scroll never take the card's.
         Box(Modifier.fillMaxSize().pointerInput(onClick) { detectTapGestures { onClick() } })
@@ -234,8 +266,7 @@ private fun ShotStandIn(item: RecipeItem, width: Dp, height: Dp, style: WorkStyl
 }
 
 @Composable
-private fun ShotPhone(item: RecipeItem, r: Recipe, style: WorkStyle?, scale: Float) {
-    val face = remember(item, r) { MarketShots.faceOf(item, r) }
+private fun ShotPhone(face: MarketShots.Face, r: Recipe, style: WorkStyle?, scale: Float) {
     Box(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
         Box(Modifier.requiredSize(MarketShots.PHONE_W.dp, MarketShots.PHONE_H.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {
             when (face) {
@@ -335,9 +366,22 @@ private fun RulesPhone(r: Recipe) {
 private fun sample(text: String): String = text.replace(Regex("\\{[^}]{1,20}\\}")) { m ->
     val name = m.value.trim('{', '}')
     when {
+        // PC 확인 edb46c62 LOW: '오늘 매출 3, 목표를 넘었어요' — money blanks are written {원(…)}.
+        name.startsWith("원(") && "지출" in name -> "38,500원"
+        name.startsWith("원(") || "돈" in name || "급여" in name || "금액" in name || "매출" in name -> "120,000원"
+        name == "근무시작" -> "07:00"
+        name == "근무끝" -> "19:00"
+        name == "근무시간" -> "12"
+        name == "이달근무시간" -> "168"
+        name == "날짜" -> "11월 5일"
+        name == "요일" -> "수"
+        name == "월" -> "11"
+        name == "일" -> "5"
+        name == "이번주야간" -> "2"
+        name == "연속근무" -> "4"
+        name == "공휴일이름" -> "개천절"
         "시각" in name -> "07:00"
         "시간" in name -> "40"
-        "돈" in name || "급여" in name || "금액" in name || "매출" in name -> "120,000원"
         "공휴일" in name -> "개천절"
         "이름" in name || "근무" == name -> "주간"
         else -> "3"

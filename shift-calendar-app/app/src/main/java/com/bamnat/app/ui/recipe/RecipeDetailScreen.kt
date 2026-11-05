@@ -142,7 +142,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         val r = s.recipe
         if (doc == null || r == null) {
             Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (s.error != null) { Text(s.error!!); TextButton(onClick = vm::load) { Text("다시 해 보기") } } else CircularProgressIndicator()
+                if (s.error != null) {
+                    Text(s.error!!)
+                    // PC 확인 edb46c62 LOW: a work from a newer app cannot open by trying again; only an update helps.
+                    if (!s.error!!.startsWith("새 판 밤낮")) TextButton(onClick = vm::load) { Text("다시 해 보기") }
+                } else CircularProgressIndicator()
             }
             return@Scaffold
         }
