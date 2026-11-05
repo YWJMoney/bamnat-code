@@ -12,7 +12,6 @@ import com.bamnat.app.R
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.Fmt
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
 import com.bamnat.core.time.Today
 
 /**
@@ -24,6 +23,10 @@ import com.bamnat.core.time.Today
 object AlarmSoon {
     private const val PREFS = "alarm_soon"
     private const val K_SKIP = "skip"
+    /** [ALRM-26] 1.38: every alarm turned off ahead, as epoch-ms strings ([K_SKIP] holds a 1.35~1.37 single one). */
+    private const val K_SKIPS = "skips"
+    /** [ALRM-26] How many alarms ahead can be put aside at once. */
+    const val MAX_SKIPS = 8
     const val ACTION_SOON = "com.bamnat.app.alarm.SOON"
     const val ACTION_SKIP = "com.bamnat.app.alarm.SOON_SKIP"
     const val ACTION_KEEP = "com.bamnat.app.alarm.SOON_KEEP"
@@ -39,20 +42,29 @@ object AlarmSoon {
     private fun prefs(context: Context) =
         context.createDeviceProtectedStorageContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    /** The alarm turned off with 이번 알람 끄기 (its trigger, epoch ms) while it is still ahead, else null. */
-    fun skipped(context: Context, now: Long = Today.millis()): Long? =
-        prefs(context).getLong(K_SKIP, 0L).takeIf { it > now - 60_000 }
+    /**
+     * [ALRM-26] 1.38: the alarms turned off ahead (their triggers, epoch ms) while still ahead, earliest first. 1.35~1.37 kept
+     * one; any number of the next ones can now be put aside one by one (오늘근무 분석 P5: 다음 한 번만, we go further).
+     */
+    fun skippedAll(context: Context, now: Long = Today.millis()): List<Long> {
+        val p = prefs(context)
+        val old = p.getLong(K_SKIP, 0L).takeIf { it > 0 }
+        return (p.getStringSet(K_SKIPS, emptySet()).orEmpty().mapNotNull { it.toLongOrNull() } + listOfNotNull(old))
+            .filter { it > now - 60_000 }.distinct().sorted()
+    }
 
-    /** Where planning starts: just past the skipped alarm, so the one after it is registered. */
-    fun planFrom(context: Context, after: LocalDateTime): LocalDateTime {
-        val skip = skipped(context) ?: return after
-        val at = AlarmScheduler.millisToLocal(skip)
-        return if (at.isBefore(after)) after else at
+    /** The earliest alarm turned off ahead, else null. */
+    fun skipped(context: Context, now: Long = Today.millis()): Long? = skippedAll(context, now).firstOrNull()
+
+    fun isSkipped(context: Context, at: Long): Boolean = at in skippedAll(context, at - 1)
+
+    private fun save(context: Context, list: List<Long>) {
+        prefs(context).edit().remove(K_SKIP).putStringSet(K_SKIPS, list.takeLast(MAX_SKIPS).map { it.toString() }.toSet()).commit()
     }
 
     /** [ring] was turned off ahead of time; it stays quiet even if it was registered before. */
     fun silences(context: Context, ring: RingRequest): Boolean =
-        !ring.isSnooze && !ring.recheck && ring.label != AlarmScheduler.TEST_NAME && skipped(context) == ring.triggerAtMillis
+        !ring.isSnooze && !ring.recheck && ring.label != AlarmScheduler.TEST_NAME && isSkipped(context, ring.triggerAtMillis)
 
     private fun fireIntent(context: Context, at: Long, text: String?): PendingIntent = PendingIntent.getBroadcast(
         context, REQ_FIRE,
@@ -88,7 +100,7 @@ object AlarmSoon {
     fun onSoon(context: Context, intent: Intent) {
         val at = intent.getLongExtra(EXTRA_AT, 0L)
         val now = Today.millis()
-        if (at <= now || at - now > 31 * 60_000L || !inUse(context) || AlarmsOff.isOff(context) || skipped(context) == at) return
+        if (at <= now || at - now > 31 * 60_000L || !inUse(context) || AlarmsOff.isOff(context) || isSkipped(context, at)) return
         val text = intent.getStringExtra(EXTRA_TEXT).orEmpty()
         val time = Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())
         val notification = NotificationCompat.Builder(context, Notifications.ALARM_CHANNEL_ID)
@@ -112,7 +124,7 @@ object AlarmSoon {
     fun skip(context: Context, at: Long) {
         Notifications.cancel(context, NOTICE_ID)
         if (at <= Today.millis()) return
-        prefs(context).edit().putLong(K_SKIP, at).commit()
+        save(context, skippedAll(context) + at)
         if (!BootAlarms.isLocked(context)) {
             val c = context.appContainer
             c.telemetry.event("alarm_soon_skip")
@@ -131,9 +143,9 @@ object AlarmSoon {
         Notifications.post(context, NOTICE_ID, notification)
     }
 
-    /** 다시 켜기: the skipped alarm rings after all, while it is still ahead. */
-    fun unskip(context: Context) {
-        prefs(context).edit().remove(K_SKIP).commit()
+    /** 다시 켜기: the skipped alarm at [at] rings after all, while it is still ahead; null puts every one back. */
+    fun unskip(context: Context, at: Long? = null) {
+        save(context, if (at == null || at <= 0) emptyList() else skippedAll(context) - at)
         Notifications.cancel(context, NOTICE_ID)
         if (!BootAlarms.isLocked(context)) {
             val c = context.appContainer
