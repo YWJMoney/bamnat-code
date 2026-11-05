@@ -1546,8 +1546,12 @@ test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 
   await t.settle(20);
   // 1.37 [ADM2-08] The text carries the waiting questions too, so the button stays for them; the 개발사항 are marked.
   assert.match(copied ?? "", /# 밤낮 관리자 앱 → Claude/);
-  assert.match(copied ?? "", /## 답을 기다리는 문의/);
+  assert.match(copied ?? "", /## 새로 들어온 문의/);
   assert.match(t.$('[data-act="sort-handoff"]').textContent, /개발 0/);
+  // 1.37 [ADM2-10] The copy is kept as a 넘김 묶음; the question still waiting is now '전에 넘김'.
+  assert.match(t.text(".handoff-log"), /넘김 기록 \(1\)/);
+  assert.match(t.text(".handoff-log"), /결과 기다리는 중/);
+  assert.match(t.text(".handoff-card"), /전에 넘겼는데 아직 답이 없는 문의 1건/);
   assert.deepEqual(t.errors, []);
 });
 

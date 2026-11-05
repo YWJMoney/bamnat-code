@@ -214,3 +214,74 @@ test("[ADM2-09] 개발 기록: 결과의 기록 줄이 개발사항에 남고, �
   assert.match(h.text, /내용: 잠금 화면에서 소리가 안 나요/);
   assert.match(h.text, /기록 무엇을 어디서 어떻게 고쳤는지/);
 });
+
+test("[ADM2-10] 넘김 묶음·출시 안내: 묶음이 나뉘어 기록되고, 미리 쓴 출시 답이 판 저장 때 가고, 업데이트 소식 공지가 한 번 올라가요", async () => {
+  const { call } = server();
+  const admin = await signIn(call);
+  assert.equal((await call("POST", "/api/admin/desk/ship", { version: "1.36.1" }, admin)).status, 200);
+  const q1 = await ask(call, 1, "잠금 화면에서 알람 소리가 안 나요");
+  const q2 = await ask(call, 2, "백업은 어디서 하나요?", "question");
+  // 첫 묶음: 넘길 글을 복사하면 그대로 기록돼요.
+  const h1 = (await call("GET", "/api/admin/inquiries/handoff", undefined, admin)).data;
+  assert.match(h1.batch, /^h[A-Za-z0-9]{9}$/);
+  assert.match(h1.text, /## 새로 들어온 문의 \(처음, 2건\)/);
+  assert.match(h1.text, new RegExp(`^묶음 ${h1.batch}$`, "m"));
+  const m = (await call("POST", "/api/admin/inquiries/handoff/mark", { ids: [], asks: h1.askIds, batch: h1.batch, cut: h1.cut }, admin)).data;
+  assert.equal(m.batch, h1.batch);
+  assert.equal(m.asks, 2);
+  // 넘긴 뒤 들어온 문의는 다음 묶음의 '새로', 아직 답 없는 앞 문의는 '전에 넘김'.
+  const q3 = await ask(call, 3, "위젯 글자가 너무 작아요");
+  const h2 = (await call("GET", "/api/admin/inquiries/handoff", undefined, admin)).data;
+  assert.notEqual(h2.batch, h1.batch);
+  assert.equal(h2.fresh, 1);
+  assert.equal(h2.again, 2);
+  assert.match(h2.text, new RegExp(`지난 묶음: ${h1.batch} .* 결과 아직 안 옴`));
+  assert.match(h2.text, new RegExp(`q${q1} .* 전에 넘김 ${h1.batch}`));
+  assert.equal(h2.log[0].id, h1.batch);
+  // 첫 묶음의 결과: 새개발과 출시 전 답, 그리고 완료 줄에 출시 답·공지 한 줄.
+  const block1 = [`묶음 ${h1.batch}`,
+    `q${q1} 새개발 잠금 화면 알람 소리 | 답: 불편을 드려 죄송해요. 지금 해결하고 있어요.`,
+    `q${q2} 답 설정 › 백업에서 해요.`].join("\n");
+  const r1 = (await call("POST", "/api/admin/inquiries/handoff/result", { text: block1, notify: true }, admin)).data;
+  assert.equal(r1.batch.id, h1.batch);
+  const item = r1.created[0].id;
+  const dry = (await call("POST", "/api/admin/inquiries/handoff/result", { text: `${item} 완료 1.37.0`, dry: true }, admin)).data;
+  assert.deepEqual(dry.lines[0].warn, ["출시 답이 없어요(기본 답이 가요)", "공지 한 줄이 없어요"]);
+  const block2 = [`${item} 완료 1.37.0 | 기록: PR #171 | 출시 답: 기다려 주셔서 고마워요. 잠금 화면 알람 소리를 고친 1.37.0이 나왔어요. 업데이트해 주세요. | 공지: 잠금 화면에서도 알람 소리가 제대로 나요`,
+    `${item} 공지 잠금 화면에서도 알람 소리가 제대로 나요`].join("\n");
+  const dry2 = (await call("POST", "/api/admin/inquiries/handoff/result", { text: block2, dry: true }, admin)).data;
+  assert.deepEqual(dry2.lines[0].warn, []);
+  const r2 = (await call("POST", "/api/admin/inquiries/handoff/result", { text: block2, notify: true }, admin)).data;
+  assert.equal(r2.changed, 1);
+  assert.equal(r2.prepared, 1); // 같은 공지 한 줄을 또 적은 줄은 바뀐 게 없어요.
+  // 나가기 전 답은 '업데이트에 들어가요'.
+  assert.match((await asker(call, q1, 1)).messages.at(-1).text, /1\.37\.0 업데이트에 들어가요/);
+  const log = (await call("GET", "/api/admin/inquiries/handoff", undefined, admin)).data.log;
+  assert.ok(log.find((b) => b.id === h1.batch).resultAt);
+  // 판 저장: 미리 보기에 출시 답·공지, 저장하면 미리 쓴 답이 가고 공지가 올라가요.
+  const shipDry = (await call("POST", "/api/admin/desk/ship", { version: "1.37.0", dry: true }, admin)).data;
+  assert.equal(shipDry.answers, 1);
+  assert.match(shipDry.replies[0].text, /잠금 화면 알람 소리를 고친 1\.37\.0이 나왔어요/);
+  assert.equal(shipDry.fresh[0].shipReply, true);
+  assert.equal(shipDry.notice.title, "밤낮 1.37.0 업데이트 소식");
+  assert.match(shipDry.notice.body, /• 잠금 화면에서도 알람 소리가 제대로 나요/);
+  const shipped = (await call("POST", "/api/admin/desk/ship", { version: "1.37.0", notify: true }, admin)).data;
+  assert.equal(shipped.answered, 1);
+  assert.ok(shipped.notice?.id);
+  assert.match((await asker(call, q1, 1)).messages.at(-1).text, /잠금 화면 알람 소리를 고친 1\.37\.0이 나왔어요/);
+  const notices = (await call("GET", "/api/admin/notices", undefined, admin)).data.notices;
+  assert.equal(notices.filter((n) => n.title === "밤낮 1.37.0 업데이트 소식").length, 1);
+  assert.equal(notices[0].action.kind, "WHATS_NEW");
+  // 같은 판을 다시 저장해도 같은 문의에 다시 보내지 않고, 새로 나간 것이 없으면 공지도 없어요.
+  const again = (await call("POST", "/api/admin/desk/ship", { version: "1.37.0", notify: true }, admin)).data;
+  assert.equal(again.answered, 0);
+  assert.equal(again.notice, null);
+  assert.ok(q3);
+});
+
+test("[ADM2-10] 출시 전 기본 답은 '해결하고 있어요'를 정성스럽게", async () => {
+  const { replyFor } = await import("../src/inbox.js");
+  assert.match(replyFor("known", { status: "doing" }), /지금 해결하고 있어요.*바로 알려 드릴게요/);
+  assert.match(replyFor("known", { status: "done", releasedIn: "1.37.0" }), /불편을 드려 죄송해요.*1\.37\.0 업데이트에 들어가요.*바로 알려 드릴게요/);
+  assert.match(replyFor("new"), /해결하고 있어요/);
+});

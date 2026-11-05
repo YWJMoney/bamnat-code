@@ -1,4 +1,5 @@
 import { all, audit, iso, json, one, randomId, readJson, refuse, run, sha256 } from "./index.js";
+import { NOTICE, noticeRows } from "./usage.js";
 import { compareVersions, handoff, sortInbox, version } from "./inbox.js";
 import { slaKey, slaTargets } from "./inquiries.js";
 import { DAY, HOUR } from "./units.js";
@@ -24,11 +25,35 @@ export const DESK = {
   weeks: 8,
   /** 출시 전 '고쳐 두었어요' 답에 들어가는 말: 판을 저장할 때 이 답을 받은 문의에 다시 알려요. */
   later: "업데이트에 들어가요",
+  /** 1.37 [ADM2-10] 판을 저장할 때 올리는 '업데이트 소식' 공지: 며칠 보일지, 줄 수. */
+  newsDays: 14,
+  newsLines: 8,
+  /** 개발사항마다 미리 받아 두는 출시 답·공지 한 줄의 길이. */
+  shipReply: 1000,
+  news: 80,
+  /** 넘김 기록을 몇 개까지 보여 줄지. */
+  handoffLog: 10,
 };
 
 export const DESK_SCHEMA = [
+  // 1.37 [ADM2-10] 넘김 묶음: 'Claude에게 넘기기'를 복사한 때(cut)와 그 글에 든 문의·개발사항, 결과를 반영한 때와 요약.
+  `CREATE TABLE IF NOT EXISTS handoffs (id TEXT PRIMARY KEY, at INTEGER NOT NULL, cut INTEGER NOT NULL, by TEXT NOT NULL,
+    asks TEXT NOT NULL DEFAULT '[]', items TEXT NOT NULL DEFAULT '[]', result_at INTEGER, result TEXT NOT NULL DEFAULT '')`,
+  // 1.37 [ADM2-10] 이때부터 묶인 문의는 '출시되면 알림'을 따로 세요(dev_links.told_at). 처음 한 번만 적혀요.
+  "INSERT OR IGNORE INTO settings (key, value) VALUES ('links_tracked_from', CAST(strftime('%s', 'now') AS INTEGER) * 1000)",
   `CREATE TABLE IF NOT EXISTS admin_keys (id TEXT PRIMARY KEY, hash TEXT NOT NULL UNIQUE, label TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL, revoked_at INTEGER, last_at INTEGER, day TEXT NOT NULL DEFAULT '', n INTEGER NOT NULL DEFAULT 0, writes INTEGER NOT NULL DEFAULT 0)`,
+];
+
+/** 1.37 [ADM2-10] 이미 있는 표에 더하는 칸(ALTER, 이미 있으면 건너뛰어요). */
+export const DESK_COLUMNS = [
+  // 문의가 마지막으로 든 넘김 묶음.
+  "ALTER TABLE inquiries ADD COLUMN handed_in TEXT",
+  // 개발사항마다 미리 써 두는 '판이 나간 날 묶인 문의에 갈 답'과 '업데이트 소식 공지 한 줄'.
+  "ALTER TABLE dev_items ADD COLUMN ship_reply TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE dev_items ADD COLUMN news TEXT NOT NULL DEFAULT ''",
+  // 묶인 문의에 '고친 판이 나왔어요'를 보낸 때.
+  "ALTER TABLE dev_links ADD COLUMN told_at INTEGER",
 ];
 
 // ---- 나간 판 [ADM2-02] ----
@@ -54,23 +79,67 @@ export function isOut(released, shipped) {
   return !s || compareVersions(r, s) <= 0;
 }
 
-const shipText = (v) => `말씀해 주신 내용을 고친 ${v} 버전이 나왔어요. Play 스토어에서 밤낮을 최신 버전으로 업데이트해 주세요. 업데이트한 뒤에도 같은 일이 생기면 이 문의에 다시 알려 주세요.`;
-export const laterText = (v) => `말씀해 주신 내용을 고쳐 두었어요. ${v ? `${v} ` : "다음 "}${DESK.later}. 나오면 이 문의에서 다시 알려 드릴게요.`;
+// 1.37 [ADM2-10] (사용자 2026-11-05 "배포 전이면 문의는 해결 중이라는 말을 정성스레") 출시 전·출시 날의 기본 답. 개발사항에
+// 미리 써 둔 출시 답(ship_reply)이 있으면 그것이 먼저예요.
+export const shipText = (v) => `기다려 주셔서 정말 고마워요. 말씀해 주신 내용을 고친 ${v} 버전이 나왔어요. Play 스토어에서 밤낮을 업데이트해 주세요. 업데이트한 뒤에도 같은 일이 생기면 이 문의에 바로 알려 주세요. 다시 살펴볼게요.`;
+export const laterText = (v) => `불편을 드려 죄송해요. 말씀해 주신 내용은 원인을 찾아 고쳐 두었고, ${v ? `${v} ` : "다음 "}${DESK.later}. 업데이트가 나오는 대로 이 문의에서 바로 알려 드릴게요. 조금만 기다려 주세요.`;
 
 /** 새로 [v]가 나가면 답할 문의: 그 판 이하로 고친 개발사항에 묶였고, 아직 기다리거나 '출시 전' 답만 받은 문의. */
 async function shipTargets(env, v) {
-  const rows = await all(env, `SELECT d.id AS item, d.title, d.released_in, i.id AS inquiry,
+  const [rows, from] = await Promise.all([all(env, `SELECT d.id AS item, d.title, d.released_in, d.ship_reply, i.id AS inquiry, l.at AS linked, l.told_at,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin' ORDER BY m.id DESC LIMIT 1) AS said
     FROM dev_items d JOIN dev_links l ON l.item_id = d.id JOIN inquiries i ON i.id = l.inquiry_id
-    WHERE d.deleted_at IS NULL AND d.status = 'done' AND d.released_in IS NOT NULL AND i.status != 'closed'`);
+    WHERE d.deleted_at IS NULL AND d.status = 'done' AND d.released_in IS NOT NULL AND i.status != 'closed' AND l.told_at IS NULL`),
+    one(env, "SELECT value FROM settings WHERE key = 'links_tracked_from'")]);
+  const tracked = Number(from?.value ?? Infinity);
   const out = new Map();
   for (const r of rows) {
     if (!isOut(r.released_in, v)) continue;
-    const waiting = r.last === "user" || String(r.said ?? "").includes(DESK.later);
-    if (waiting && !out.has(r.inquiry)) out.set(r.inquiry, { inquiry: r.inquiry, item: r.item, title: r.title, version: r.released_in });
+    // 1.37 [ADM2-10] 이 서버부터 묶인 문의는 알림을 따로 세요(told_at). 그 전에 묶인 것은 1.37 처음처럼 아직 기다리거나 '출시 전' 답만 받은 것.
+    const waiting = r.linked >= tracked || r.last === "user" || String(r.said ?? "").includes(DESK.later);
+    if (waiting && !out.has(r.inquiry)) out.set(r.inquiry, { inquiry: r.inquiry, item: r.item, title: r.title, version: r.released_in, text: r.ship_reply || shipText(r.released_in) });
   }
   return [...out.values()];
+}
+
+/** 1.37 [ADM2-10] 묶인 문의에 '고친 판이 나왔어요'를 보냈다고 적어요(판을 저장할 때 다시 보내지 않게). */
+export async function markTold(env, item, inquiries, now) {
+  if (!inquiries.length) return;
+  for (let i = 0; i < inquiries.length; i += 90) {
+    const part = inquiries.slice(i, i + 90);
+    await run(env, `UPDATE dev_links SET told_at = ? WHERE item_id = ? AND told_at IS NULL AND inquiry_id IN (${part.map(() => "?").join(", ")})`, now, item, ...part);
+  }
+}
+
+/** 1.37 [ADM2-10] 이번에 새로 나간 개발사항: [was] 다음부터 [v]까지(처음 저장이면 [v] 그 판만). */
+async function newlyOut(env, v, was) {
+  const rows = await all(env, `SELECT d.id, d.title, d.news, d.ship_reply, d.released_in, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks
+    FROM dev_items d WHERE d.deleted_at IS NULL AND d.status = 'done' AND d.released_in IS NOT NULL ORDER BY d.updated_at`);
+  return rows.filter((d) => isOut(d.released_in, v) && (was ? !isOut(d.released_in, was) : compareVersions(version(d.released_in), version(v)) === 0));
+}
+
+/** 1.37 [ADM2-10] (사용자 2026-11-05 "새로운 개발 사항이나 개선 사항이 있다면 공지를 통해 보여 줘야 한다, 사용자가 모르는 것이 있으면 안 된다")
+ * 새로 나간 개발사항의 공지 한 줄로 만든 '업데이트 소식'. 한 줄도 없으면 null. */
+function newsNotice(v, items, now) {
+  const lines = items.map((d) => String(d.news ?? "").trim()).filter(Boolean).slice(0, DESK.newsLines);
+  if (!lines.length) return null;
+  const head = `이번 ${v} 업데이트에서 달라진 점이에요.`;
+  const tail = items.some((d) => d.asks > 0) ? "보내 주신 의견으로 고친 것도 있어요. 고마워요!" : "";
+  let body = [head, ...lines.map((l) => `• ${l}`), tail].filter(Boolean).join("\n");
+  if (body.length > NOTICE.body) body = `${body.slice(0, NOTICE.body - 1)}…`;
+  return { title: `밤낮 ${v} 업데이트 소식`.slice(0, NOTICE.title), body, level: "info", from: now, until: now + DESK.newsDays * DAY,
+    minApp: null, maxApp: null, audience: null, action: { kind: "WHATS_NEW", label: "바뀐 것 보기" } };
+}
+
+async function postNotice(env, n) {
+  let list = (await noticeRows(env)).filter((x) => x.until > n.from - 30 * DAY);
+  if (list.length >= NOTICE.max) list = list.filter((x) => x.until > n.from);
+  if (list.length >= NOTICE.max) return null;
+  const id = `n${randomId(9)}`;
+  list.push({ id, ...n });
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('notices', ?)", JSON.stringify(list));
+  return id;
 }
 
 /** POST /desk/ship {version, notify?, dry?}: 나간 판 저장. [dry]는 답할 문의만 세어 보여 줘요. */
@@ -78,14 +147,27 @@ async function ship(request, env, now, answer) {
   const body = await readJson(request, 2048);
   const v = String(body.version ?? "").trim();
   if (!/^\d{1,2}\.\d{1,2}\.\d{1,3}$/.test(v)) refuse("version", "version");
-  const targets = await shipTargets(env, v);
   const was = await shippedVersion(env);
-  if (body.dry === true) return json({ version: v, was: was?.v ?? null, answers: targets.length, items: [...new Set(targets.map((t) => t.title))].slice(0, 20) });
+  const [targets, fresh] = await Promise.all([shipTargets(env, v), newlyOut(env, v, was?.v)]);
+  const notice = newsNotice(v, fresh, now);
+  // 1.37 [ADM2-10] 판을 저장하기 전에 볼 것: 개발사항마다 미리 써 둔 출시 답·공지 한 줄이 있는지, 문의에 갈 답, 올라갈 공지.
+  const items = fresh.map((d) => ({ id: d.id, title: d.title, releasedIn: d.released_in, asks: d.asks, shipReply: Boolean(d.ship_reply), news: d.news || null }));
+  if (body.dry === true) {
+    const byItem = new Map();
+    for (const t of targets) byItem.set(t.item, { item: t.item, title: t.title, n: (byItem.get(t.item)?.n ?? 0) + 1, text: t.text });
+    return json({ version: v, was: was?.v ?? null, answers: targets.length, items: [...new Set(targets.map((t) => t.title))].slice(0, 20),
+      replies: [...byItem.values()].slice(0, 20), fresh: items.slice(0, 40), notice: notice ? { title: notice.title, body: notice.body, days: DESK.newsDays } : null });
+  }
   await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)", JSON.stringify({ v, at: now, by: env.actor?.name ?? "" }));
   let answered = 0;
-  if (body.notify === true) for (const t of targets) if (await answer(env, t.inquiry, shipText(t.version), now)) answered++;
-  await audit(env, now, "shipped_version", v, answered ? `문의 ${answered}건에 업데이트 안내` : "");
-  return json({ version: v, was: was?.v ?? null, answered });
+  if (body.notify === true) for (const t of targets) {
+    if (await answer(env, t.inquiry, t.text, now)) answered++;
+    await markTold(env, t.item, [t.inquiry], now);
+  }
+  // 공지는 따로 끄지 않는 한 올려요(notice: false면 안 올림).
+  const noticeId = notice && body.notice !== false ? await postNotice(env, notice) : null;
+  await audit(env, now, "shipped_version", v, [answered && `문의 ${answered}건에 업데이트 안내`, noticeId && "업데이트 소식 공지"].filter(Boolean).join(" · "));
+  return json({ version: v, was: was?.v ?? null, answered, notice: noticeId ? { id: noticeId, title: notice.title } : null });
 }
 
 // ---- 흐름(관제)과 운영 숫자 [ADM2-01][ADM2-05] ----

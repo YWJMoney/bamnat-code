@@ -1718,15 +1718,19 @@ function adminApp(L, BUILD, M) {
     const ASK_DO = { reply: "답", link: "개발사항에 묶고 답", dev: "새 개발사항", skip: "빼 두기" };
     const askRows = (res?.asks ?? []).map((a) => `<li>${a.ids.length > 1 ? `문의 ${a.ids.length}건` : "문의"} · ${esc(ASK_DO[a.do] ?? a.do)}${a.item ? ` ${esc(a.item)}` : ""}${a.title ? ` ‘${esc(a.title)}’` : ""}
         <small>${esc(a.previews.filter(Boolean).join(" / "))}</small>${a.text ? `<small class="answer">답: ${esc(a.text)}</small>` : ""}${a.problem ? ` <span class="pill bad">${esc(a.problem)}</span>` : ""}</li>`).join("");
-    const lines = res ? `<ul class="mini">${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(l.status ? DEV_NAMES[l.status] ?? l.status : "개발 기록")}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
-        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.note ? `<small class="answer">기록: ${esc(l.note)}</small>` : ""}${l.text ? `<small class="answer">답: ${esc(l.text)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}</li>`).join("")}${askRows}</ul>
+    const what = (l) => l.status ? DEV_NAMES[l.status] ?? l.status : l.note ? "개발 기록" : l.shipReply ? "출시 답" : l.news ? "공지 한 줄" : "개발 기록";
+    const batchRow = res?.batch?.id ? `<li class="batch">넘김 묶음 ${esc(res.batch.id)}${res.batch.at ? ` <small>${esc(moment(res.batch.at))}에 넘긴 것의 결과예요</small>` : res.batch.known ? "" : ' <span class="pill warn">기록에 없는 묶음</span>'}</li>` : "";
+    const lines = res ? `<ul class="mini">${batchRow}${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(what(l))}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
+        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.note ? `<small class="answer">기록: ${esc(l.note)}</small>` : ""}${l.text ? `<small class="answer">답: ${esc(l.text)}</small>` : ""}${l.shipReply ? `<small class="answer">출시 답: ${esc(l.shipReply)}</small>` : ""}${l.news ? `<small class="answer">공지: ${esc(l.news)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}${(l.warn ?? []).map((w) => ` <span class="pill warn">${esc(w)}</span>`).join("")}</li>`).join("")}${askRows}</ul>
       <label class="switch"><input type="checkbox" id="sort-notify" checked><span class="track" aria-hidden="true"></span><span>완료·반려된 개발사항의 문의에도 답 보내기</span></label>
       <div class="actions"><button class="btn small primary" data-act="sort-result-go"${[...res.lines, ...(res.asks ?? [])].some((l) => !l.problem) ? "" : " disabled"}>반영하기</button>
         <button class="btn small ghost" data-act="sort-result-clear">다시 붙여 넣기</button></div>` : "";
     return `<div class="card handoff-card"><b>Claude에게 넘기기</b>
-      <small>${h ? (n || asks ? `답을 기다리는 문의 ${asks}건과 새 개발사항 ${n}개를 한 글로 복사해요. 프로젝트 채팅에 붙여 넣으면 Claude가 답과 개발을 하고 결과를 줘요.` : "넘길 문의와 개발사항이 없어요.") : "불러오는 중이에요"}</small>
+      <small>${h ? (n || asks ? `지난 넘김 뒤 새로 들어온 문의 ${h.fresh ?? asks}건${h.again ? `, 전에 넘겼는데 아직 답이 없는 문의 ${h.again}건` : ""}과 새 개발사항 ${n}개를 한 묶음으로 복사해요. 프로젝트 채팅에 붙여 넣으면 Claude가 답과 개발을 하고 결과를 줘요.` : "넘길 문의와 개발사항이 없어요.") : "불러오는 중이에요"}</small>
       <div class="actions"><button class="btn small primary" data-act="sort-handoff"${n || asks ? "" : " disabled"}>${icon(P.copy)}넘길 글 복사 (문의 ${asks} · 개발 ${n})</button>
         <button class="btn small" data-act="sort-handoff-all">진행 중인 것 모두 복사</button></div>
+      ${h?.log?.length ? `<details class="handoff-log"><summary>넘김 기록 (${h.log.length})</summary><ul class="mini">${h.log.map((b) => `<li><b>${esc(b.id)}</b> · ${esc(moment(new Date(b.at).toISOString()))} · ${esc(b.by)}
+          <small>문의 ${b.asks}건 · 개발사항 ${b.items}개</small>${b.resultAt ? `<small class="answer">결과 반영 ${esc(moment(b.resultAt))}${b.result ? ` · 답 ${b.result.answered ?? 0} · 개발 상태 ${b.result.changed ?? 0} · 새 개발사항 ${b.result.created ?? 0}${b.result.prepared ? ` · 출시 안내 ${b.result.prepared}` : ""}` : ""}</small>` : ' <span class="pill warn">결과 기다리는 중</span>'}</li>`).join("")}</ul></details>` : ""}
       <details${res ? " open" : ""}><summary>개발 결과 붙여 넣기</summary>
         <p class="hint">Claude가 준 ‘결과’ 덩어리를 통째로 붙여 넣어요. 문의 답, 개발사항 묶기·만들기, 개발 상태와 개발 기록, 묶인 문의 답이 한 번에 처리돼요. 먼저 무엇이 바뀌는지 보여 드려요.</p>
         ${res ? lines : `<textarea id="sort-result" rows="4" placeholder="d0123456789abcde 완료 1.36.0"></textarea>
@@ -1805,6 +1809,12 @@ function adminApp(L, BUILD, M) {
           <p class="hint">완료한 항목이 나간 앱 버전(예: 1.18.0). 연결된 문의를 보낸 분 앱에 '반영됨 1.18.0'으로 보여요.</p>
           <div class="actions start"><input id="dev-release" name="v" inputmode="decimal" pattern="\\d{1,2}\\.\\d{1,2}\\.\\d{1,3}" placeholder="1.18.0" value="${esc(d.releasedIn ?? "")}">
           <button class="btn small" type="submit">저장</button></div></form></section>` : ""}
+      ${edit && d.status !== "rejected" ? `<form class="card mini" data-form="dev-ship-note" data-since="${d.updatedAt}"><div class="card-head"><h2>출시 안내 미리 쓰기</h2>
+          <span class="pill ${d.shipReply && d.news ? "ok" : "warn"}">${d.shipReply && d.news ? "준비됨" : "비어 있음"}</span></div>
+        <p class="hint">나간 판을 저장하는 날 쓰여요. 출시 답은 연결된 문의에 자동으로 가고, 공지 한 줄은 앱의 ‘업데이트 소식’ 공지에 실려요.</p>
+        <label for="dev-ship-reply">출시 답</label><textarea id="dev-ship-reply" name="shipReply" maxlength="1000" placeholder="기다려 주셔서 고마워요. 말씀해 주신 … 를 고친 업데이트가 나왔어요.">${esc(d.shipReply ?? "")}</textarea>
+        <label for="dev-news">공지 한 줄</label><input id="dev-news" name="news" maxlength="80" placeholder="잠금 화면에서도 알람 소리가 제대로 나요" value="${esc(d.news ?? "")}">
+        <div class="actions"><button class="btn small" type="submit">저장</button></div></form>` : ""}
       <section class="card"><div class="card-head"><h2>연결된 문의</h2><span class="pill">${d.links}</span></div>
         ${d.inquiries.length ? `<ul class="rows">${d.inquiries.map((q) => `<li class="item"><a class="row-main" href="${href("inquiries", q.id)}">
             <b>${esc(KIND_NAMES[q.kind] ?? "문의")} <span class="pill ${q.status === "open" ? "warn" : q.status === "answered" ? "ok" : ""}">${STATUS_NAMES[q.status] ?? q.status}</span></b>
@@ -1827,7 +1837,8 @@ function adminApp(L, BUILD, M) {
     const was = (a, b) => `<span class="was">${esc(a || "없음")}</span> → ${esc(b || "없음")}`;
     const what = {
       create: () => "만들었어요",
-      edit: () => [x.title ? `제목: ${L.wordDiff(x.title[0] ?? "", x.title[1] ?? "")}` : "", x.body ? `내용을 고쳤어요<details><summary>바뀐 곳</summary><blockquote class="wdiff">${L.wordDiff(x.body[0] ?? "", x.body[1] ?? "")}</blockquote></details>` : ""].filter(Boolean).join("<br>"),
+      edit: () => [x.title ? `제목: ${L.wordDiff(x.title[0] ?? "", x.title[1] ?? "")}` : "", x.shipReply ? `출시 답을 적었어요<blockquote>${esc(x.shipReply[1] || "(지움)")}</blockquote>` : "",
+        x.news ? `공지 한 줄: ${was(x.news[0], x.news[1])}` : "", x.body ? `내용을 고쳤어요<details><summary>바뀐 곳</summary><blockquote class="wdiff">${L.wordDiff(x.body[0] ?? "", x.body[1] ?? "")}</blockquote></details>` : ""].filter(Boolean).join("<br>"),
       status: () => `처리: ${was(DEV_NAMES[x.status?.[0]], DEV_NAMES[x.status?.[1]])}${x.bulk > 1 ? ` <span class="meta">(${x.bulk}개 한 번에)</span>` : ""}${x.reason ? `<blockquote>${esc(x.reason)}</blockquote>` : ""}`,
       assign: () => `맡은 사람: ${was(x.assignee?.[0], x.assignee?.[1])}`,
       note: () => `<blockquote>${esc(x.text)}</blockquote>`,
@@ -4041,8 +4052,9 @@ function adminApp(L, BUILD, M) {
       const h = all ? await act(() => api("/inquiries/handoff?all=1")) : S.data.handoff;
       if (!h?.items?.length && !h?.asks) return toast("넘길 문의와 개발사항이 없어요");
       if (!(await toClipboard(h.text))) return toast("복사하지 못했어요. 다시 해 주세요");
-      if (!h.items.length) { toast(`문의 ${h.asks}건을 복사했어요. Claude에게 붙여 넣어 주세요`); return; }
-      await act(() => api("/inquiries/handoff/mark", "POST", { ids: h.items.map((i) => i.id) }), `문의 ${h.asks ?? 0}건 · 개발사항 ${h.items.length}개를 복사했어요. Claude에게 붙여 넣어 주세요`);
+      // 1.37 [ADM2-10] 복사한 그대로가 넘김 묶음 하나로 남아요(담은 문의·개발사항, 넘긴 때).
+      await act(() => api("/inquiries/handoff/mark", "POST", { ids: h.items.map((i) => i.id), asks: h.askIds ?? [], ...(h.batch ? { batch: h.batch, cut: h.cut } : {}) }),
+        `묶음 ${h.batch ?? ""} · 문의 ${h.asks ?? 0}건 · 개발사항 ${h.items.length}개를 복사했어요. Claude에게 붙여 넣어 주세요`);
       S.data.handoff = null; load();
     },
     "sort-handoff-all": (a, el) => ACTIONS["sort-handoff"](a, el, true),
@@ -4057,7 +4069,7 @@ function adminApp(L, BUILD, M) {
       const res = S.sortResult;
       if (!res) return;
       const notify = document.getElementById("sort-notify")?.checked === true;
-      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => [r.changed && `개발사항 ${r.changed}개 반영`, r.noted && `개발 기록 ${r.noted}줄`, r.created?.length && `새 개발사항 ${r.created.length}개`, r.answered && `문의 ${r.answered}건에 답`,
+      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => [r.batch?.id && `묶음 ${r.batch.id}`, r.changed && `개발사항 ${r.changed}개 반영`, r.noted && `개발 기록 ${r.noted}줄`, r.prepared && `출시 안내 ${r.prepared}개`, r.created?.length && `새 개발사항 ${r.created.length}개`, r.answered && `문의 ${r.answered}건에 답`,
         r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || "바뀐 것이 없어요");
       if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
     },
@@ -5281,6 +5293,9 @@ function adminApp(L, BUILD, M) {
     "dev-release": async (form) => {
       const v = form.elements.v.value.trim();
       await devSave({ releasedIn: v || null, since: S.data.dev.updatedAt }, v ? `${v}에 반영으로 적었어요` : "반영 버전을 지웠어요");
+    },
+    "dev-ship-note": async (form) => {
+      await devSave({ shipReply: form.elements.shipReply.value, news: form.elements.news.value, since: S.data.dev.updatedAt }, "출시 안내를 저장했어요");
     },
     "dev-note": async (form) => {
       const r = await act(() => api(`/dev/${S.route.id}/notes`, "POST", { text: form.elements.text.value }), "메모를 남겼어요");

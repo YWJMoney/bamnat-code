@@ -2,7 +2,7 @@ import { fcmTell } from "./fcm.js";
 import { all, audit, batch, can, iso, json, one, randomId, readJson, refuse, run, stmt } from "./index.js";
 import { DEV, INQUIRY, actorName, cut, devEvent, devUpdate, plainText, triage } from "./inquiries.js";
 // 1.37 [ADM2-02] 나간 판: 반영 판이 Play에 나간 판 이하일 때만 '이미 고침'.
-import { isOut, laterText, shippedVersion } from "./desk.js";
+import { DESK, isOut, laterText, markTold, shippedVersion } from "./desk.js";
 
 // ---- 문의 정리함 [INBOX-01]~[INBOX-08] (1.35, 사용자 2026-10-30 "중복이나 이미 처리된 문의는 자동 대응 … 새롭거나 신규 문제
 // 개선사항을 개발에 넘겨서 … 올인원 관리 체계") ----
@@ -96,14 +96,15 @@ export function replyFor(pile, match) {
   const v = match?.releasedIn;
   switch (pile) {
     case "fixed": return `말씀하신 문제는 ${v} 버전에서 고쳤어요. Play 스토어에서 밤낮을 최신 버전으로 업데이트해 주세요. 업데이트한 뒤에도 같은 일이 생기면 이 문의에 다시 알려 주세요.`;
+    // 1.37 [ADM2-10] 출시 전에는 '해결하고 있어요'를 정성스럽게, 나오면 다시 알린다는 약속과 함께.
     case "known": return match?.status === "done"
-      ? "같은 내용을 이미 고쳐 두었어요. 다음 업데이트에 들어가요. 업데이트가 나오면 이 문의에서 알려 드릴게요."
-      : `같은 내용이 개발 목록에 올라가 있어요(지금 ${DEV.statuses[match?.status] ?? "접수"}). 고쳐지면 이 문의에서 알려 드릴게요. 알려 주셔서 고마워요.`;
+      ? laterText(match?.releasedIn)
+      : `알려 주셔서 고마워요. 같은 불편을 말씀해 주신 분들이 있어 지금 해결하고 있어요(지금 ${DEV.statuses[match?.status] ?? "접수"}). 고친 업데이트가 나오면 이 문의에서 바로 알려 드릴게요.`;
     case "declined": return match?.reason ? `검토해 봤는데 지금은 반영하기 어려워요. ${match.reason}` : "검토해 봤는데 지금은 반영하기 어려워요.";
     case "answered": return match?.answer ?? "";
     case "faq": return match?.text ?? "";
     case "again": return "알려 주셔서 고마워요. 고쳤던 문제가 다시 생긴 것 같아 바로 다시 살펴볼게요.";
-    default: return "알려 주셔서 고마워요. 확인해서 개발 목록에 올렸어요. 고쳐지면 이 문의에서 알려 드릴게요.";
+    default: return "알려 주셔서 고마워요. 말씀해 주신 내용을 확인해 개발 목록에 올렸고, 해결하고 있어요. 고친 업데이트가 나오면 이 문의에서 바로 알려 드릴게요.";
   }
 }
 
@@ -185,7 +186,7 @@ const round = (s) => Math.round(s * 100) / 100;
 
 /** The questions waiting on an admin with no 개발사항 yet and not put aside in 정리함, newest first. */
 async function waiting(env, ids = null) {
-  const rows = await all(env, `SELECT i.id, i.kind, i.info, i.created_at, i.updated_at, i.same,
+  const rows = await all(env, `SELECT i.id, i.kind, i.info, i.created_at, i.updated_at, i.same, i.handed_in,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
       (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last
     FROM inquiries i
@@ -194,7 +195,7 @@ async function waiting(env, ids = null) {
       ${ids ? `AND i.id IN (${ids.map(() => "?").join(", ")})` : ""}
     ORDER BY i.created_at DESC LIMIT ${SORTING.candidates}`, ...(ids ?? []));
   return rows.filter((r) => r.last === "user" && r.first).map((r) => ({ id: r.id, kind: r.kind, info: JSON.parse(r.info), text: r.first,
-    at: r.created_at, same: r.same ?? 0 }));
+    at: r.created_at, same: r.same ?? 0, handedIn: r.handed_in ?? null }));
 }
 
 /** [INBOX-02] 자동 대응: which piles the server answers by itself as a question comes in (the owner's choice; off at first). */
@@ -262,6 +263,7 @@ async function sortActions(env, actions, now) {
   if (needsDev && !can(env.actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
   const done = { replied: 0, linked: 0, created: [], reopened: 0, skipped: 0 };
   const name = actorName(env);
+  let shipped;
   for (const a of body.actions) {
     if (!["reply", "link", "dev", "reopen", "skip"].includes(a?.do)) refuse("do", "do");
     if (a.do === "dev") {
@@ -296,7 +298,14 @@ async function sortActions(env, actions, now) {
     if (a.do === "link" || a.do === "reopen" || (a.do === "reply" && a.item)) {
       if (await link(env, devId(a.item), id, now, name)) done.linked++;
     }
-    if ((a.do === "reply" || a.do === "reopen") && a.text && (await inboxAnswer(env, id, a.text, now, name))) done.replied++;
+    if ((a.do === "reply" || a.do === "reopen") && a.text && (await inboxAnswer(env, id, a.text, now, name))) {
+      done.replied++;
+      // 1.37 [ADM2-10] 이미 나간 판으로 고친 개발사항에 묶어 답했으면 그 답이 '나왔어요' 안내예요: 판을 저장할 때 다시 보내지 않아요.
+      if (a.do === "reply" && a.item) {
+        const it = await one(env, "SELECT status, released_in FROM dev_items WHERE id = ?", a.item);
+        if (it?.status === "done" && isOut(it.released_in, shipped ??= await shippedVersion(env))) await markTold(env, a.item, [id], now);
+      }
+    }
   }
   return done;
 }
@@ -381,22 +390,37 @@ export async function handoff(env, params, now) {
     known(env),
   ]);
   const asks = waitingOnes.slice(0, SORTING.handoff);
+  // 1.37 [ADM2-10] (사용자 2026-11-05 "넘기는 시점과 이전에 쌓이는 시점은 명확히 분리, 기록도 남아야") 이 글은 넘김 묶음 하나예요:
+  // 지금(cut)까지 들어온 것만 담고, 복사하면 묶음으로 기록돼요. 지난 묶음 뒤 새로 들어온 문의와 전에 넘겼는데 아직 답이 없는 문의를 나눠 보여요.
+  const batchId = `h${randomId(9)}`;
+  const log = await handoffLog(env);
+  const last = log[0] ?? null;
+  const fresh = asks.filter((q) => !q.handedIn);
+  const again = asks.filter((q) => q.handedIn);
   const day = new Date(now + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const out = [`# 밤낮 관리자 앱 → Claude (${day})`, "",
+    `넘김 묶음: ${batchId} · ${handoffTime(now)} 기준. 이 뒤에 들어온 문의는 다음 묶음에 들어가요.`,
+    last ? `지난 묶음: ${last.id} · ${handoffTime(last.at)} · 문의 ${last.asks} · 개발 ${last.items} · ${last.resultAt ? `결과 반영 ${handoffTime(Date.parse(last.resultAt))}` : "결과 아직 안 옴"}` : "지난 묶음: 없음(처음 넘겨요)",
     `Play에 나간 판: ${k.shipped?.v ?? "(아직 안 적음)"}. '고쳤어요·업데이트해 주세요'는 이 판 이하로 고친 것에만 써 주세요.`,
     "아래 문의에 답하고, 개발할 것은 개발사항으로 묶고, 개발사항을 개발해 주세요. 끝나면 맨 아래 ‘결과 적는 법’대로 결과를 한 덩어리로 주세요.",
+    "출시 전 답은 '지금 해결하고 있어요'를 정성스럽게: 불편에 공감하고, 무엇을 하고 있는지, 고친 업데이트가 나오면 이 문의에서 바로 알려 드린다는 약속까지.",
+    "개발을 마친 개발사항(완료 줄)에는 판이 나간 날 묶인 문의에 자동으로 갈 ‘출시 답’과 앱 공지 ‘업데이트 소식’에 실릴 한 줄(‘공지’, 사용자 말로 무엇이 좋아졌는지)을 꼭 미리 적어 주세요.",
     "환불·결제·보상, 법·안전 신고, 개인정보 요청, 크게 화난 민원, 약관 질문, 회사 이름이 나오는 회사 방식은 답을 적지 말고 사용자에게 먼저 물어 주세요.", ""];
-  out.push(`## 답을 기다리는 문의 (${asks.length}건)`, "");
-  for (const q of asks) {
+  const askLine = (q) => {
     const c = classify(q, k);
     const m = c.match;
     const guess = m?.type === "dev" ? ` · 서버 판단: ${PILE_NAMES[c.pile]} ≈ ${m.id} ‘${m.title}’(${DEV.statuses[m.status] ?? m.status}${m.releasedIn ? ` ${m.releasedIn}` : ""})`
       : m ? ` · 서버 판단: ${PILE_NAMES[c.pile]} ≈ ‘${oneLine(m.title, 60)}’` : " · 서버 판단: 새 문제·개선";
-    out.push(`- q${q.id} · ${KIND_WORDS[q.kind] ?? q.kind}${q.info?.app ? ` · 앱 ${String(q.info.app).split(" ")[0]}` : ""}${q.same ? ` · 나도 그래요 ${q.same}` : ""}${guess}`);
+    out.push(`- q${q.id} · ${KIND_WORDS[q.kind] ?? q.kind} · 받음 ${handoffTime(q.at)}${q.info?.app ? ` · 앱 ${String(q.info.app).split(" ")[0]}` : ""}${q.same ? ` · 나도 그래요 ${q.same}` : ""}${q.handedIn ? ` · 전에 넘김 ${q.handedIn}` : ""}${guess}`);
     out.push(`  문의: ${oneLine(q.text, 600)}`);
     if (c.reply) out.push(`  추천 답: ${oneLine(c.reply, 400)}`);
-  }
-  if (!asks.length) out.push("(기다리는 문의가 없어요)");
+  };
+  out.push(`## 새로 들어온 문의 (${last ? `지난 묶음 ${last.id} 뒤` : "처음"}, ${fresh.length}건)`, "");
+  fresh.forEach(askLine);
+  if (!fresh.length) out.push("(새로 들어온 문의가 없어요)");
+  out.push("", `## 전에 넘겼는데 아직 답이 없는 문의 (${again.length}건)`, "");
+  again.forEach(askLine);
+  if (!again.length) out.push("(없어요)");
   out.push("", `## 개발사항 (${items.length}개)`, "");
   for (const d of items) {
     const linked = await all(env, `SELECT i.kind, i.info, (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first
@@ -454,7 +478,8 @@ export async function handoff(env, params, now) {
   out.push("");
   out.push("## 결과 적는 법",
     "한 줄에 하나씩, 아래 모양으로만 적어요. 관리자 앱 › 문의 › 정리함 › ‘개발 결과 붙여 넣기’에 통째로 붙여 넣으면 상태가 바뀌고 문의마다 답이 가요.",
-    "답은 한 줄로, 줄을 바꾸려면 \\n을 써요. 문의 줄은 쉼표로 여럿을 묶을 수 있어요.", "```",
+    "답은 한 줄로, 줄을 바꾸려면 \\n을 써요. 문의 줄은 쉼표로 여럿을 묶을 수 있어요. 맨 위에 묶음 줄을 꼭 적어요.", "```",
+    `묶음 ${batchId}`,
     "q<문의 id> 답 보낼 답",
     "q<문의 id> 개발 d0123456789abcde | 답: 개발 목록에 올렸어요. 고쳐지면 알려 드릴게요.",
     "q<문의 id>,q<문의 id> 새개발 개발사항 제목 | 답: 보낼 답",
@@ -464,32 +489,67 @@ export async function handoff(env, params, now) {
     "d0123456789abcde 완료 1.37.0 | 답: 묶인 문의에 보낼 답(안 적으면 기본 답)",
     "d0123456789abcde 반려 이유를 한 줄로",
     "d0123456789abcde 기록 무엇을 어디서 어떻게 고쳤는지(PR·커밋·판·확인한 것)",
-    "d0123456789abcde 완료 1.37.0 | 기록: … | 답: …", "```",
-    "개발한 개발사항에는 ‘기록’ 줄을 꼭 남겨 주세요. 다음 넘길 글의 ‘개발 기록’에 실려요.");
-  return { text: out.join("\n"), asks: asks.length,
+    "d0123456789abcde 완료 1.37.0 | 기록: … | 답: 출시 전 답 | 출시 답: 판이 나간 날 갈 답 | 공지: 업데이트 소식 한 줄",
+    "d0123456789abcde 출시답 판이 나간 날 묶인 문의에 갈 답",
+    "d0123456789abcde 공지 업데이트 소식에 실릴 한 줄(80자 안)", "```",
+    "개발한 개발사항에는 ‘기록’ 줄을 꼭 남겨 주세요. 다음 넘길 글의 ‘개발 기록’에 실려요.",
+    "‘출시 답’과 ‘공지’는 판을 저장하는 날 쓰여요: 묶인 문의에 출시 답이 자동으로 가고, 공지 한 줄들이 ‘업데이트 소식’ 공지로 앱에 올라가요.");
+  return { text: out.join("\n"), asks: asks.length, fresh: fresh.length, again: again.length, batch: batchId, cut: iso(now), askIds: asks.map((q) => q.id), log,
     items: items.map((d) => ({ id: d.id, title: d.title, status: d.status, asks: d.asks, handed: d.handed_at ? iso(d.handed_at) : null })) };
+}
+
+const handoffTime = (ms) => new Date(Number(ms) + 9 * 3600 * 1000).toISOString().slice(0, 16).replace("T", " ");
+
+/** 1.37 [ADM2-10] 넘김 기록: 최근 묶음부터, 담은 수와 결과. */
+async function handoffLog(env) {
+  const rows = await all(env, `SELECT id, at, cut, by, asks, items, result_at, result FROM handoffs ORDER BY at DESC LIMIT ${DESK.handoffLog}`).catch(() => []);
+  return rows.map((r) => {
+    let result = null;
+    try {
+      result = r.result ? JSON.parse(r.result) : null;
+    } catch {
+      result = null;
+    }
+    return { id: r.id, at: r.at, cut: iso(r.cut), by: r.by, asks: JSON.parse(r.asks).length, items: JSON.parse(r.items).length,
+      resultAt: r.result_at ? iso(r.result_at) : null, result };
+  });
 }
 
 /** [INBOX-05] POST /inquiries/handoff/mark {ids}: 넘김 on those items (after the text really went to the clipboard). */
 export async function markHanded(request, env, now) {
   const body = await readJson(request, 16 * 1024);
-  const ids = Array.isArray(body.ids) && body.ids.length && body.ids.length <= SORTING.handoff && body.ids.every((x) => typeof x === "string" && /^d[A-Za-z0-9]{15}$/.test(x))
-    ? [...new Set(body.ids)] : refuse("ids", "ids");
-  await batch(env, [stmt(env, `UPDATE dev_items SET handed_at = ? WHERE id IN (${ids.map(() => "?").join(", ")})`, now, ...ids),
-    ...ids.map((id) => devEvent(env, id, now, "handoff", {}))]);
-  await audit(env, now, "dev_handoff", `${ids.length}개`);
-  return json({ marked: ids.length, at: iso(now) });
+  const raw = body.ids ?? [];
+  const ids = Array.isArray(raw) && raw.length <= SORTING.handoff && raw.every((x) => typeof x === "string" && /^d[A-Za-z0-9]{15}$/.test(x))
+    ? [...new Set(raw)] : refuse("ids", "ids");
+  // 1.37 [ADM2-10] 담은 문의와 묶음 id(넘길 글이 준 것)도 함께: 묶음 기록이 남고, 그 문의는 '전에 넘김'이 돼요.
+  const rawAsks = body.asks ?? [];
+  const asks = Array.isArray(rawAsks) && rawAsks.length <= SORTING.handoff && rawAsks.every((x) => typeof x === "string" && /^[A-Za-z0-9]{22}$/.test(x))
+    ? [...new Set(rawAsks)] : refuse("asks", "asks");
+  if (!ids.length && !asks.length) refuse("ids", "ids");
+  const batchId = body.batch === undefined ? `h${randomId(9)}` : typeof body.batch === "string" && /^h[A-Za-z0-9]{9}$/.test(body.batch) ? body.batch : refuse("batch", "batch");
+  const cut = Date.parse(body.cut ?? "");
+  const stmts = [stmt(env, "INSERT OR REPLACE INTO handoffs (id, at, cut, by, asks, items) VALUES (?, ?, ?, ?, ?, ?)",
+    batchId, now, Number.isFinite(cut) && cut <= now ? cut : now, actorName(env), JSON.stringify(asks), JSON.stringify(ids))];
+  if (ids.length) stmts.push(stmt(env, `UPDATE dev_items SET handed_at = ? WHERE id IN (${ids.map(() => "?").join(", ")})`, now, ...ids),
+    ...ids.map((id) => devEvent(env, id, now, "handoff", { batch: batchId })));
+  if (asks.length) stmts.push(stmt(env, `UPDATE inquiries SET handed_in = ? WHERE id IN (${asks.map(() => "?").join(", ")})`, batchId, ...asks));
+  await batch(env, stmts);
+  await audit(env, now, "dev_handoff", `${batchId} · 문의 ${asks.length} · 개발 ${ids.length}`);
+  return json({ marked: ids.length, asks: asks.length, batch: batchId, at: iso(now) });
 }
 
-const RESULT = /^\s*[-*•]?\s*(d[A-Za-z0-9]{15})\s*[:·\-]?\s*(완료|개발중|개발 중|반려|접수|기록|메모)(?=\s|$|[:：])\s*(.*)$/;
+const RESULT = /^\s*[-*•]?\s*(d[A-Za-z0-9]{15})\s*[:·\-]?\s*(완료|개발중|개발 중|반려|접수|기록|메모|출시답|출시 답|공지)(?=\s|$|[:：])\s*(.*)$/;
 const ASK_LINE = /^\s*[-*•]?\s*(q[A-Za-z0-9]{22}(?:\s*,\s*q[A-Za-z0-9]{22})*)\s*[:·\-]?\s*(답|개발|새개발|새 개발|빼기|빼 두기)(?=\s|$)\s*(.*)$/;
-/** "… | 답: …" and "… | 기록: …" at the end of a line (either order): the rest, the answer and the 개발 기록, with \n for a new line. */
+/** "… | 답: …", "| 기록: …", 1.37 [ADM2-10] "| 출시 답: …", "| 공지: …" at the end of a line (any order): the rest, the answer, the 개발 기록,
+ * the answer for the day the version ships and the 업데이트 소식 line, with \n for a new line. */
+const TAILS = { 답: "답", 기록: "기록", "출시 답": "출시", 출시답: "출시", 공지: "공지" };
 const splitTail = (rest) => {
-  const parts = String(rest).split(/\s*\|\s*(답|기록)\s*[:：]\s*/);
-  const tail = { 답: "", 기록: "" };
-  for (let i = 1; i + 1 < parts.length; i += 2) tail[parts[i]] = parts[i + 1].replace(/\\n/g, "\n").trim();
-  return [parts[0].trim(), tail.답, tail.기록];
+  const parts = String(rest).split(/\s*\|\s*(출시\s?답|답|기록|공지)\s*[:：]\s*/);
+  const tail = { 답: "", 기록: "", 출시: "", 공지: "" };
+  for (let i = 1; i + 1 < parts.length; i += 2) tail[TAILS[parts[i].replace(/\s+/, " ")] ?? TAILS[parts[i]]] = parts[i + 1].replace(/\\n/g, "\n").trim();
+  return [parts[0].trim(), tail.답, tail.기록, tail.출시, tail.공지];
 };
+const BATCH_LINE = /^\s*[-*•]?\s*묶음\s*[:：]?\s*(h[A-Za-z0-9]{9})\b/m;
 const splitAnswer = (rest) => splitTail(rest).slice(0, 2);
 
 /** The 개발사항 lines of a 결과 block: id, status and the rest (the version for 완료, the reason for 반려), and its own answer. */
@@ -499,14 +559,25 @@ export function readResult(text) {
     const m = line.match(RESULT);
     if (!m) continue;
     // 1.37 [ADM2-09] 기록·메모: 무엇을 어디서 어떻게 고쳤는지(PR·커밋·판), 개발사항 기록에 남고 다음 넘길 글에 실려요.
+    const own = m[3].replace(/^[:：]\s*/, "").replace(/\\n/g, "\n").trim();
     if (m[2] === "기록" || m[2] === "메모") {
-      out.push({ id: m[1], status: null, version: null, reason: "", note: m[3].replace(/^[:：]\s*/, "").replace(/\\n/g, "\n").trim().slice(0, DEV.note) });
+      out.push({ id: m[1], status: null, version: null, reason: "", note: own.slice(0, DEV.note) });
+      continue;
+    }
+    // 1.37 [ADM2-10] 출시 답·공지 한 줄만 따로.
+    if (m[2] === "출시답" || m[2] === "출시 답") {
+      out.push({ id: m[1], status: null, version: null, reason: "", shipReply: own.slice(0, DESK.shipReply), empty: !own });
+      continue;
+    }
+    if (m[2] === "공지") {
+      out.push({ id: m[1], status: null, version: null, reason: "", news: own.replace(/\s+/g, " ").slice(0, DESK.news), empty: !own });
       continue;
     }
     const status = { 완료: "done", 개발중: "doing", "개발 중": "doing", 반려: "rejected", 접수: "todo" }[m[2]];
-    const [rest, answer, note] = splitTail(m[3]);
+    const [rest, answer, note, shipReply, news] = splitTail(m[3]);
     const v = status === "done" ? rest.match(/\d{1,2}\.\d{1,2}\.\d{1,3}/)?.[0] ?? null : null;
-    out.push({ id: m[1], status, version: v, reason: status === "rejected" ? rest.slice(0, DEV.reason) : "", ...(answer ? { text: answer } : {}), ...(note ? { note: note.slice(0, DEV.note) } : {}) });
+    out.push({ id: m[1], status, version: v, reason: status === "rejected" ? rest.slice(0, DEV.reason) : "", ...(answer ? { text: answer } : {}), ...(note ? { note: note.slice(0, DEV.note) } : {}),
+      ...(shipReply ? { shipReply: shipReply.slice(0, DESK.shipReply) } : {}), ...(news ? { news: news.replace(/\s+/g, " ").slice(0, DESK.news) } : {}) });
   }
   return out;
 }
@@ -551,7 +622,17 @@ export async function applyResult(request, env, now) {
   }
   const byId = new Map(rows.map((r) => [r.id, r]));
   const plan = lines.map((l) => ({ ...l, title: byId.get(l.id)?.title ?? null, found: byId.has(l.id),
-    problem: !byId.has(l.id) ? "없는 개발사항" : l.status === "rejected" && !l.reason ? "반려 이유가 없어요" : l.status === null && !l.note ? "기록이 비어 있어요" : null }));
+    problem: !byId.has(l.id) ? "없는 개발사항" : l.status === "rejected" && !l.reason ? "반려 이유가 없어요"
+      : l.status === null && l.empty ? "내용이 비어 있어요" : l.status === null && !l.note && !l.shipReply && !l.news ? "기록이 비어 있어요" : null }));
+  // 1.37 [ADM2-10] 완료 줄인데 판이 나간 날 갈 출시 답·업데이트 소식 한 줄이 이 덩어리에도, 개발사항에도 없으면 알려요(막지는 않아요: 기본 답이 가요).
+  for (const l of plan.filter((x) => x.status === "done" && !x.problem)) {
+    const row = byId.get(l.id);
+    const has = (k, col) => plan.some((x) => x.id === l.id && x[k]) || Boolean(row?.[col]);
+    l.warn = [!has("shipReply", "ship_reply") && "출시 답이 없어요(기본 답이 가요)", !has("news", "news") && "공지 한 줄이 없어요"].filter(Boolean);
+  }
+  const batchLine = String(body.text ?? "").match(BATCH_LINE)?.[1] ?? null;
+  const batchRow = batchLine ? await one(env, "SELECT id, at FROM handoffs WHERE id = ?", batchLine)
+    : await one(env, "SELECT id, at FROM handoffs WHERE result_at IS NULL ORDER BY at DESC LIMIT 1").catch(() => null);
   const askIds = [...new Set(askLines.flatMap((a) => a.ids))];
   const asked = new Map();
   for (let i = 0; i < askIds.length; i += 90) {
@@ -565,22 +646,29 @@ export async function applyResult(request, env, now) {
   const askPlan = askLines.map((a) => ({ ...a, previews: a.ids.map((id) => oneLine(asked.get(id)?.first, 60)),
     problem: a.ids.some((id) => !asked.has(id)) ? "없는 문의" : a.do === "reply" && !a.text ? "답이 비어 있어요"
       : a.do === "link" && !(a.item && items.has(a.item)) ? "없는 개발사항" : a.do === "dev" && !a.title.trim() ? "제목이 없어요" : null }));
-  if (body.dry === true) return json({ lines: plan, asks: askPlan });
+  const batchInfo = { id: batchRow?.id ?? batchLine, known: Boolean(batchRow), at: batchRow ? iso(batchRow.at) : null };
+  if (body.dry === true) return json({ lines: plan, asks: askPlan, batch: batchInfo });
   if (plan.some((l) => !l.problem && l.status && l.status !== "doing" && l.status !== "todo") && !can(env.actor, "devStatus", "edit")) return json({ error: "no_permission", area: "devStatus" }, 403);
-  if (plan.some((l) => !l.problem && l.note) && !can(env.actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
+  if (plan.some((l) => !l.problem && (l.note || l.shipReply || l.news)) && !can(env.actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
   let changed = 0;
   let answered = 0;
   let noted = 0;
+  let prepared = 0;
   const shipped = await shippedVersion(env);
   for (const l of plan.filter((x) => !x.problem)) {
     if (l.note) {
       await batch(env, [stmt(env, "UPDATE dev_items SET updated_at = ? WHERE id = ?", now, l.id), devEvent(env, l.id, now, "note", { text: l.note })]);
       noted++;
     }
-    if (!l.status) continue;
+    const extra = { ...(l.shipReply ? { shipReply: l.shipReply } : {}), ...(l.news ? { news: l.news } : {}) };
+    if (!l.status && !Object.keys(extra).length) continue;
     const row = await one(env, "SELECT * FROM dev_items WHERE id = ?", l.id);
-    const r = await devUpdate(env, row, { status: l.status, ...(l.status === "rejected" ? { reason: l.reason } : {}), ...(l.version ? { releasedIn: l.version } : {}) }, now);
-    if (r === true) changed++;
+    const r = await devUpdate(env, row, { ...(l.status ? { status: l.status } : {}), ...(l.status === "rejected" ? { reason: l.reason } : {}), ...(l.version ? { releasedIn: l.version } : {}), ...extra }, now);
+    if (r === true) {
+      if (l.status) changed++;
+      if (Object.keys(extra).length) prepared++;
+    }
+    if (!l.status) continue;
     if (body.notify === true && (l.status === "done" || l.status === "rejected" || l.text)) {
       const waitingOnes = await all(env, `SELECT i.id FROM dev_links k JOIN inquiries i ON i.id = k.inquiry_id WHERE k.item_id = ? AND i.status != 'closed'`, l.id);
       // 1.37 [ADM2-02] 'Play 업데이트'는 그 판이 나갔을 때만. 나가기 전이면 "업데이트에 들어가요", 판을 저장할 때 다시 알려요.
@@ -588,6 +676,8 @@ export async function applyResult(request, env, now) {
         ? (l.version && isOut(l.version, shipped) ? `말씀해 주신 내용을 ${l.version} 버전에서 고쳤어요. Play 스토어에서 밤낮을 최신 버전으로 업데이트해 주세요.` : laterText(l.version))
         : replyFor("declined", { reason: l.reason }));
       for (const w of waitingOnes) if (await inboxAnswer(env, w.id, text, now, actorName(env))) answered++;
+      // 이미 나간 판으로 고쳤다고 답했으면, 판을 저장할 때 같은 안내를 다시 보내지 않아요.
+      if (l.status === "done" && l.version && isOut(l.version, shipped)) await markTold(env, l.id, waitingOnes.map((w) => w.id), now);
     }
   }
   // 1.37 [ADM2-08] 문의 lines, after the 개발사항 ones (a line may tie a question to an item the block just set).
@@ -605,9 +695,12 @@ export async function applyResult(request, env, now) {
     // Claude made these itself from the block: they are already with Claude, not 넘길 것 again.
     if (sorted.created.length) await run(env, `UPDATE dev_items SET handed_at = ? WHERE id IN (${sorted.created.map(() => "?").join(", ")})`, now, ...sorted.created.map((c) => c.id));
   }
-  await audit(env, now, "dev_result", `${changed}개`, [noted && `개발 기록 ${noted}줄`, answered && `문의 ${answered}건에 답`, sorted.replied && `문의 줄 답 ${sorted.replied}`,
+  // 1.37 [ADM2-10] 이 결과가 어느 넘김 묶음의 것인지 남겨요.
+  const summary = { changed, noted, prepared, answered: answered + sorted.replied, linked: sorted.linked, created: sorted.created.length, skipped: sorted.skipped };
+  if (batchRow) await run(env, "UPDATE handoffs SET result_at = ?, result = ? WHERE id = ?", now, JSON.stringify(summary), batchRow.id);
+  await audit(env, now, "dev_result", `${changed}개`, [batchRow && `묶음 ${batchRow.id}`, noted && `개발 기록 ${noted}줄`, prepared && `출시 안내 ${prepared}개`, answered && `문의 ${answered}건에 답`, sorted.replied && `문의 줄 답 ${sorted.replied}`,
     sorted.created.length && `새 개발사항 ${sorted.created.length}`].filter(Boolean).join(" · "));
-  return json({ lines: plan, asks: askPlan, changed, noted, answered: answered + sorted.replied, linked: sorted.linked, created: sorted.created, skipped: sorted.skipped });
+  return json({ lines: plan, asks: askPlan, batch: batchInfo, changed, noted, prepared, answered: answered + sorted.replied, linked: sorted.linked, created: sorted.created, skipped: sorted.skipped });
 }
 
 /** The routes under /api/admin/inquiries/sort and /handoff; null for any other path. */

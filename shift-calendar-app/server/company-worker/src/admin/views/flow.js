@@ -109,11 +109,21 @@ export function flowViews(A) {
     const v = String(new FormData(form).get("version") ?? "").trim();
     const r = await act(() => api("/desk/ship", "POST", { version: v, dry: true }));
     if (!r) return;
+    // 1.37 [ADM2-10] 저장하면 일어날 일 셋: 미리 써 둔 출시 답이 묶인 문의에, 업데이트 소식 공지가 앱에, 개발사항마다 준비됐는지.
+    const fresh = r.fresh ?? [];
+    const missing = fresh.filter((d) => d.asks && !d.shipReply).length;
+    const noNews = fresh.filter((d) => !d.news).length;
     openDialog(`<form data-form="flow-ship-go" data-version="${esc(r.version)}"><h2>${esc(r.version)}을 나간 판으로 저장할까요?</h2>
       <p>${r.was ? `지금은 ${esc(r.was)}이에요. ` : ""}${r.version} 이하로 고친 개발사항이 앱에 '반영'으로 보여요.</p>
-      ${r.answers ? `<p><b>문의 ${r.answers}건</b>에 "고친 ${esc(r.version)} 버전이 나왔어요, 업데이트해 주세요"가 가요.</p><ul class="plain">${r.items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+      ${fresh.length ? `<h3>이번에 나가는 개발사항 ${fresh.length}개</h3><ul class="mini">${fresh.map((d) => `<li>${esc(d.title)} <small>${esc(d.releasedIn)} · 문의 ${d.asks}건</small>
+          ${d.news ? `<small class="answer">공지: ${esc(d.news)}</small>` : ""}<span>${d.asks ? `<span class="pill ${d.shipReply ? "ok" : "warn"}">${d.shipReply ? "출시 답 준비됨" : "출시 답 없음(기본 답)"}</span>` : ""}
+          <span class="pill ${d.news ? "ok" : "warn"}">${d.news ? "공지 한 줄 있음" : "공지 한 줄 없음"}</span></span></li>`).join("")}</ul>
+        ${missing || noNews ? `<p class="note warn">미리 쓴 안내가 빠진 개발사항이 있어요. 개발사항 화면의 ‘출시 안내 미리 쓰기’에서 채우거나, 그대로 저장하면 기본 답이 가요.</p>` : ""}` : ""}
+      ${r.answers ? `<h3>문의 ${r.answers}건에 갈 답</h3><ul class="mini">${(r.replies ?? []).map((x) => `<li>${esc(x.title)} <small>문의 ${x.n}건</small><small class="answer">${esc(x.text)}</small></li>`).join("")}</ul>
         <label class="chk"><input type="checkbox" name="notify" checked><span>문의에 업데이트 안내 보내기</span></label>` : "<p>지금 안내를 보낼 문의는 없어요.</p>"}
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
+      ${r.notice ? `<h3>앱에 올라갈 공지 (${r.notice.days}일)</h3><div class="np notice-full"><b>${esc(r.notice.title)}</b><p>${esc(r.notice.body)}</p></div>
+        <label class="chk"><input type="checkbox" name="notice" checked><span>업데이트 소식 공지 올리기</span></label>` : fresh.length ? "<p class=\"meta\">공지 한 줄이 있는 개발사항이 없어 공지는 올라가지 않아요.</p>" : ""}
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`, "wide");
   }
 
   const actions = {
@@ -144,9 +154,11 @@ export function flowViews(A) {
   const forms = {
     "flow-ship": (form) => shipDry(form),
     "flow-ship-go": async (form) => {
-      const notify = Boolean(new FormData(form).get("notify"));
+      const fd = new FormData(form);
+      const notify = Boolean(fd.get("notify"));
+      const notice = Boolean(fd.get("notice"));
       dialog.close();
-      const r = await act(() => api("/desk/ship", "POST", { version: form.dataset.version, notify }), (x) => `나간 판 ${x.version}을 저장했어요${x.answered ? ` · 문의 ${x.answered}건에 안내` : ""}`);
+      const r = await act(() => api("/desk/ship", "POST", { version: form.dataset.version, notify, notice }), (x) => `나간 판 ${x.version}을 저장했어요${x.answered ? ` · 문의 ${x.answered}건에 안내` : ""}${x.notice ? " · 업데이트 소식 공지를 올렸어요" : ""}`);
       if (r) { S.data.flow = null; load(); }
     },
     "key-make": async (form) => {

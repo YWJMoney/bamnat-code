@@ -1104,6 +1104,15 @@ export async function devUpdate(env, row, body, now) {
     const text = plainText(body.body, DEV.body, "body");
     if (text !== row.body) [edit.body, set.body] = [[cut(row.body), cut(text)], text];
   }
+  // 1.37 [ADM2-10] 미리 써 두는 출시 답(판이 나간 날 묶인 문의에)과 업데이트 소식 공지 한 줄.
+  if (body.shipReply !== undefined) {
+    const text = body.shipReply === null ? "" : plainText(body.shipReply, 1000, "shipReply");
+    if (text !== (row.ship_reply ?? "")) [edit.shipReply, set.ship_reply] = [[cut(row.ship_reply ?? ""), cut(text)], text];
+  }
+  if (body.news !== undefined) {
+    const text = body.news === null ? "" : plainText(body.news, 80, "news");
+    if (text !== (row.news ?? "")) [edit.news, set.news] = [[row.news ?? "", text], text];
+  }
   if (Object.keys(edit).length) {
     stmts.push(devEvent(env, row.id, now, "edit", edit));
     notes.push(["dev_edit", Object.keys(edit).join(" ")]);
@@ -1244,6 +1253,8 @@ export const devItem = (r) => ({
   status: r.status,
   reason: r.reason,
   releasedIn: r.released_in ?? null,
+  shipReply: r.ship_reply ?? "",
+  news: r.news ?? "",
   links: r.links ?? 0,
   waiting: r.waiting ?? 0,
   createdBy: { id: r.created_by, name: r.created_by_name },

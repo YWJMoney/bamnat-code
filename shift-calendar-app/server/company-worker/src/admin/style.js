@@ -896,4 +896,9 @@ ul.plain{margin:.25rem 0 .75rem;padding-left:1.1rem;font-size:.88rem;color:var(-
 .flow-cols .card-head{flex-wrap:wrap}
 .flow-cols .card-head .meta{flex-basis:100%;margin:0}
 @media (min-width:600px){.flow-cols .card-head .meta{flex-basis:auto}}
+.np.notice-full p{margin:.2rem 0 0;white-space:pre-line;color:var(--fg)}
+dialog h3{font-size:.95rem;margin:1rem 0 .4rem}
+ul.mini li.batch{font-weight:600}
+.handoff-log ul.mini{margin-top:.4rem}
+form[data-form="dev-ship-note"] textarea{min-height:5rem}
 `;
