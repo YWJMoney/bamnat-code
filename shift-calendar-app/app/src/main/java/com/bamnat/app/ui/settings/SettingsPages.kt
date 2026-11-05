@@ -122,14 +122,23 @@ private fun WorkPage(
         NavRow("일하는 방식", work.workStyle?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onOpenWorkStyle)
         HorizontalDivider()
         // [SETUP-16] 1.37 PC 0068727b (7일로 바꾼 뒤에도 '주주휴휴야야휴휴처럼…' 고정 예시): the order in use now, when there is one.
+        // 1.37 PC 77e39e72: an 알바's or 일근's days too, and the schedule that goes on after today (one saved from tomorrow).
         val cycleLine = snapshot?.let { s ->
             val today = com.bamnat.core.time.Today.date()
-            (com.bamnat.core.schedule.PatternTimeline.current(s.patterns, today) as? com.bamnat.core.model.WorkPattern.Rotation)
-                ?.takeIf { it.endDate?.isBefore(today) != true }?.let { r ->
-                    val byId = s.shiftTypes.associateBy { it.id }
-                    val order = r.steps.joinToString("") { id -> byId[id]?.takeIf { !it.isOff }?.name?.take(1) ?: "휴" }
-                    (if (order.length > 16) order.take(16) + "…" else order) + " · ${r.steps.size}일마다 돌아요"
+            val byId = s.shiftTypes.associateBy { it.id }
+            val going = s.patterns.filter { it.endDate?.isAfter(today) != false }.maxByOrNull { it.startDate }
+            when (going) {
+                is com.bamnat.core.model.WorkPattern.Rotation -> {
+                    val order = going.steps.joinToString("") { id -> byId[id]?.takeIf { !it.isOff }?.name?.take(1) ?: "휴" }
+                    (if (order.length > 16) order.take(16) + "…" else order) + " · ${going.steps.size}일마다 돌아요"
                 }
+                is com.bamnat.core.model.WorkPattern.Weekly -> {
+                    val names = listOf("월", "화", "수", "목", "금", "토", "일")
+                    val on = going.steps.mapIndexedNotNull { i, id -> names.getOrNull(i)?.takeIf { id != null && byId[id]?.isOff != true } }
+                    if (on.isEmpty()) null else on.joinToString("·") + " · 매주"
+                }
+                else -> null
+            }
         }
         NavRow(words.pattern, cycleLine ?: words.patternHint, onOpenPattern)
         HorizontalDivider()

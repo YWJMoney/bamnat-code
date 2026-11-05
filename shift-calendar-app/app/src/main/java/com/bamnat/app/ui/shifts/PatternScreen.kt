@@ -509,6 +509,9 @@ fun PatternScreen(
             draft = draft,
             typesById = typesById,
             today = today,
+            // [SETUP-16] 1.37 PC 77e39e72 (요일을 처음 정할 때도 '조가 바뀌었다면…', 기본 '다음 달 1일'): a new kind of schedule, or one after
+            // a schedule that has stopped, is not a team change.
+            fresh = existing == null || existing.javaClass != draft.javaClass || existing.endDate?.isAfter(today) == false,
             moved = moved,
             onDismiss = { askWhen = false },
             onChangeFrom = { pattern, from ->
@@ -583,13 +586,14 @@ private fun ChangeFromDialog(
     onDismiss: () -> Unit,
     onChangeFrom: (WorkPattern, LocalDate) -> Unit,
     onFix: () -> Unit,
+    fresh: Boolean = false,
 ) {
     val nextMonth = today.withDayOfMonth(1).plusMonths(1)
-    var from by remember { mutableStateOf(nextMonth) }
+    var from by remember { mutableStateOf(if (fresh) today.plusDays(1) else nextMonth) }
     val rotation = draft as? WorkPattern.Rotation
     // Which step of the order falls on the first new day: [SET-04] where the order as edited puts it, so the
     // place just set on this screen is kept unless the user picks another (ux-review 1 P9).
-    var firstStep by remember { mutableStateOf(rotation?.stepIndexOn(nextMonth) ?: 0) }
+    var firstStep by remember { mutableStateOf(rotation?.stepIndexOn(from) ?: 0) }
     val start: (LocalDate) -> Unit = { d -> from = d; rotation?.let { firstStep = it.stepIndexOn(d) } }
     var pickDate by remember { mutableStateOf(false) }
 
@@ -599,7 +603,8 @@ private fun ChangeFromDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "조가 바뀌었다면 새 순서를 시작할 날을 골라 주세요. 그 전날까지의 근무와 잔업·특근·대근, 메모는 그대로 남아요.",
+                    if (fresh) "새 일정을 시작할 날을 골라 주세요. 그 전날까지의 기록과 메모는 그대로 남아요."
+                    else "조가 바뀌었다면 새 순서를 시작할 날을 골라 주세요. 그 전날까지의 근무와 잔업·특근·대근, 메모는 그대로 남아요.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -613,7 +618,7 @@ private fun ChangeFromDialog(
                         leadingIcon = { Icon(Icons.Filled.Event, null, Modifier.size(18.dp)) },
                     )
                 }
-                Text("새 순서 시작: ${Fmt.fullDate(from)}", style = MaterialTheme.typography.titleSmall,
+                Text((if (fresh) "새 일정 시작: " else "새 순서 시작: ") + Fmt.fullDate(from), style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary)
                 if (rotation != null) {
                     Text("${Fmt.dayTitle(from)}은 순서의 몇 번째 날인가요?", style = MaterialTheme.typography.bodyMedium)
@@ -641,7 +646,7 @@ private fun ChangeFromDialog(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-                TextButton(onClick = onFix, modifier = Modifier.fillMaxWidth()) {
+                if (!fresh) TextButton(onClick = onFix, modifier = Modifier.fillMaxWidth()) {
                     Text(if (moved.isEmpty()) "조 변경이 아니에요. 지금 순서를 고쳐요" else "그래도 지난 날까지 고쳐요")
                 }
             }
