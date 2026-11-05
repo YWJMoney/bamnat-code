@@ -11,6 +11,7 @@ import com.bamnat.core.recipe.ScreenLook
 import com.bamnat.core.recipe.ScreenLooks
 import com.bamnat.core.recipe.ThemeSeed
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -131,5 +132,34 @@ class StudioMaxTest {
         repeat(40) { if (again.state.value.draftId != id) { shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(100)); Thread.sleep(30) } }
         assertEquals(id, again.state.value.draftId)
         assertEquals(0xFF1565C0L, CalendarTheme.decode(again.state.value.draft.calTheme).sat)
+    }
+
+    /** 내 서랍 3c42b520: 조각 › 스튜디오에서 꾸미기 (START_KEPT) closed the app with an NPE on the locks while the model was still being made. */
+    @Test fun aKeptPartOpensTheStudio() {
+        val first = StudioViewModel(c)
+        idle()
+        val r = com.bamnat.core.recipe.Recipe("조각", styles = com.bamnat.core.work.WorkStyle.entries.toSet(), pieces = first.state.value.pieces)
+        val ids = com.bamnat.core.recipe.LookParts.of(r).map { it.id }.take(2)
+        org.junit.Assert.assertTrue(c.wardrobe.keep(r, "", ids))
+        val k = c.wardrobe.kept.value.first()
+        val vm = StudioViewModel(c, StudioViewModel.START_KEPT + k.id)
+        idle()
+        org.junit.Assert.assertNotNull(vm.state.value.draft)
+    }
+
+    /** 내 서랍 (PR #170): leaving the studio twice with the same change keeps one 만들던 것, not two. */
+    @Test fun theSameDraftIsKeptOnce() {
+        fun round() {
+            val vm = StudioViewModel(c)
+            idle()
+            vm.change { it.copy(calTheme = "cell=fill") }
+            repeat(30) { shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(100)); Thread.sleep(20) }
+        }
+        round()
+        val after1 = runBlocking { c.recipes.drafts.first() }.count { it.step <= 1 }
+        round()
+        val after2 = runBlocking { c.recipes.drafts.first() }.count { it.step <= 1 }
+        assertTrue("saved once: $after1", after1 >= 1)
+        assertEquals("the same look is not kept again", after1, after2)
     }
 }

@@ -115,6 +115,7 @@ export const FORMULA_NAMES = [
   ["연속근무", "streak"],
   ["메모수", "memoCount"], ["메모", "memo"], ["꼬리표", "tags", ["태그"]], ["체크율", "checkRate"], ["남은체크", "checksLeft"],
   ["지출", "spend"], ["수입", "income"], ["지출분류", "spendKinds"], ["이달지출", "monthSpend"], ["이달수입", "monthIncome"],
+  ["오늘쓸돈", "spendToday", ["하루쓸돈"]], ["월급까지", "daysToPay", ["입금까지"]], ["예상잔액", "balanceAhead"], ["봉투모은돈", "envelopeSaved"], ["봉투진행", "envelopeRate"], ["지출근무시간", "spendHours"],
   ["이달급여", "monthPay"], ["그날급여", "dayPay"],
   ["지금시각", "now"],
   ["제목", "title"], ["내용", "body"], ["색번호", "colorIndex"], ["고정", "pinned"], ["금액", "amount"], ["종류", "kind"], ["분류", "category"],

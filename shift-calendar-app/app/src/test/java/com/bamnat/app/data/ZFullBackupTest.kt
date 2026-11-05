@@ -36,6 +36,8 @@ class ZFullBackupTest {
         snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
         plazaNews = false, plazaHidden = com.bamnat.core.plaza.HideList().hide("w".repeat(64), "글쓴이", 1_000L).encode(), plazaRulesAgreed = 2,
         workStyle = WorkStyle.SHIFT, rosterMonthly = true,
+        // 1.37 [SETUP-16] 첫 설정을 미뤄 둔 채 백업.
+        setupLater = true,
         extraKinds = ExtraKinds(ExtraKinds.DEFAULTS.map { if (it.id == ExtraKind.COVER_ID) it.copy(name = "대신 근무") else it }),
         memoInCells = true, calendarMemos = false, restCheck = false, strictRest = true, restRules = "11h", sleepTips = false,
         todayShiftNotice = true, briefing = true, commuteNotice = true, bedtimeNotice = true, sleepingNotice = false,
@@ -43,7 +45,7 @@ class ZFullBackupTest {
         restDayCompared = true, phoneDayView = PhoneDayView.WEEK, showDayCard = true, appLock = true,
         calendarLayout = "cards:a", statsLayout = "stats:b", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
         alarmMission = "math", shiftMissions = mapOf(shiftId to "math"), wakeCheckMinutes = 10, widgetMemo = false,
-        backupPhotos = false, moneyLayout = "money:c", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", rateHint = false, alarmSuggest = false,
+        backupPhotos = false, moneyLayout = "money:c", moneyCheckOpen = true, budgetRollover = "식비", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", rateHint = false, alarmSuggest = false,
         // 1.25 AB.
         alarmButtonAction = "snooze",
         // 1.35 [FREE-03..08] 꾸미기.
@@ -63,7 +65,7 @@ class ZFullBackupTest {
         usageStatsLookup = true, afterAlarmCard = false, watchAlarm = AppSettings.WATCH_ALARM_WATCH, watchCalendar = "side-job",
         // 1.32 [CALX-03][CALX-04][CALX-05][LEDX-07][PAYA-05][UX132-05][UX132-06].
         tapSelectFirst = true, textAsked = true, compact = false, textStep = 3, clock12 = true, spendInCells = true, spendHeat = true, backupNudge = false,
-        payDepositNotice = false, calendarOnly = true, statsByPayPeriod = true,
+        payDepositNotice = false, calendarOnly = true, statsByPayPeriod = true, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true,
         // 1.32 조사 대조 [WTYP-12][WTYP-16].
         stretchLimitHours = 24, leaveTimeNotice = true,
     )

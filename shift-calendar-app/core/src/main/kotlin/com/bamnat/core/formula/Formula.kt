@@ -405,7 +405,7 @@ private class Parser(val src: String) {
                     }
                     else -> {
                         val name = FormulaNames.main(t.text)
-                            ?: throw FormulaError("name", "'${t.text}'라는 값은 없어요." + (FormulaNames.near(t.text)?.let { " '$it'를 쓰려던 건가요?" } ?: ""), t.at, t.end)
+                            ?: throw FormulaError("name", "'${t.text}'${Josa.irang(t.text)}는 값은 없어요." + (FormulaNames.near(t.text)?.let { " '$it'${Josa.eulreul(it)} 쓰려던 건가요?" } ?: ""), t.at, t.end)
                         Node.Ref(name, t.at, t.end)
                     }
                 }

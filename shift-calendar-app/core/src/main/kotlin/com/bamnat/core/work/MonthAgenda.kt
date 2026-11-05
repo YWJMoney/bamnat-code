@@ -39,7 +39,7 @@ sealed interface AgendaRow {
     }
 
     /** Days in a row with nothing on them, folded into one line. */
-    data class Gap(val from: LocalDate, val to: LocalDate) : AgendaRow {
+    data class Gap(val from: LocalDate, val to: LocalDate, /** 1.37: every day in it is a day the shop does not open. */ val closed: Boolean = false) : AgendaRow {
         val days: Int get() = (to.toEpochDay() - from.toEpochDay()).toInt() + 1
         override val key: String get() = "g$from"
     }
@@ -77,16 +77,21 @@ object MonthAgenda {
                 sales = days.sumOf { it.sales?.sales ?: 0 },
             )
             var gapFrom: LocalDate? = null
+            // 1.37 PC 4차 (S5-13): 정기휴무 is not '매출 없음'; a run of empty days breaks where open and closed days meet.
+            var gapClosed = false
             for (d in days) {
                 if (isEmpty(d, focus)) {
-                    if (gapFrom == null) gapFrom = d.date
+                    val closed = focus == CalendarFocus.SALES && !d.day.isWorkDay
+                    if (gapFrom != null && closed != gapClosed) rows += AgendaRow.Gap(gapFrom, d.date.minusDays(1), gapClosed)
+                    if (gapFrom == null || closed != gapClosed) gapFrom = d.date
+                    gapClosed = closed
                     continue
                 }
-                gapFrom?.let { rows += AgendaRow.Gap(it, d.date.minusDays(1)) }
+                gapFrom?.let { rows += AgendaRow.Gap(it, d.date.minusDays(1), gapClosed) }
                 gapFrom = null
                 rows += d
             }
-            gapFrom?.let { rows += AgendaRow.Gap(it, weekEnd) }
+            gapFrom?.let { rows += AgendaRow.Gap(it, weekEnd, gapClosed) }
             weekFrom = weekEnd.plusDays(1)
         }
         return rows

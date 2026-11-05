@@ -121,7 +121,26 @@ private fun WorkPage(
         // [WORK-01] Changing the kind of work keeps every record; it only changes what screens show.
         NavRow("일하는 방식", work.workStyle?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onOpenWorkStyle)
         HorizontalDivider()
-        NavRow(words.pattern, words.patternHint, onOpenPattern)
+        // [SETUP-16] 1.37 PC 0068727b (7일로 바꾼 뒤에도 '주주휴휴야야휴휴처럼…' 고정 예시): the order in use now, when there is one.
+        // 1.37 PC 77e39e72: an 알바's or 일근's days too, and the schedule that goes on after today (one saved from tomorrow).
+        val cycleLine = snapshot?.let { s ->
+            val today = com.bamnat.core.time.Today.date()
+            val byId = s.shiftTypes.associateBy { it.id }
+            val going = s.patterns.filter { it.endDate?.isAfter(today) != false }.maxByOrNull { it.startDate }
+            when (going) {
+                is com.bamnat.core.model.WorkPattern.Rotation -> {
+                    val order = going.steps.joinToString("") { id -> byId[id]?.takeIf { !it.isOff }?.name?.take(1) ?: "휴" }
+                    (if (order.length > 16) order.take(16) + "…" else order) + " · ${going.steps.size}일마다 돌아요"
+                }
+                is com.bamnat.core.model.WorkPattern.Weekly -> {
+                    val names = listOf("월", "화", "수", "목", "금", "토", "일")
+                    val on = going.steps.mapIndexedNotNull { i, id -> names.getOrNull(i)?.takeIf { id != null && byId[id]?.isOff != true } }
+                    if (on.isEmpty()) null else on.joinToString("·") + " · 매주"
+                }
+                else -> null
+            }
+        }
+        NavRow(words.pattern, cycleLine ?: words.patternHint, onOpenPattern)
         HorizontalDivider()
         // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not in the line, and the line says how many are put away.
         val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
@@ -447,6 +466,12 @@ private fun NoticesPage(
             settings.leaveTimeNotice, warning = warning(settings.leaveTimeNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveTimeNotice = on) }
         }
+        // 1.37 [LEDH-09] 퇴근 시각 하루 마감 (가계부): 근무 끝 30분 뒤, 쉬는 날은 저녁 9시.
+        if (settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST && settings.workStyle != com.bamnat.core.work.WorkStyle.BUSINESS)
+            SwitchRow(DAY_CLOSE_ROW, "근무가 끝나고 30분 뒤(쉬는 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요. 야간이면 다음 날 아침 퇴근 뒤예요",
+                settings.dayCloseNotice, warning = warning(settings.dayCloseNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
+                set(on) { it.copy(dayCloseNotice = on) }
+            }
         // [ALRM-16] 1.31 N3
         SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
             settings.afterAlarmCard, warning = warning(settings.afterAlarmCard, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
@@ -648,6 +673,9 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         SwitchRow(SPEND_HEAT_ROW, "날짜 밑 막대가 진할수록 그달 다른 날보다 많이 쓴 날이에요. 금액은 보이지 않아요", settings.spendHeat) { on ->
             vm.update { it.copy(spendHeat = on) }
         }
+        // 1.37 [LEDH-07] 근무 시간 환산 (결정 4: 5만 원 넘는 지출에만, 켜 둠). 투자 달력에는 보이지 않아요.
+        if (settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST) SwitchRow(WORK_TIME_ROW, "5만 원이 넘는 지출 옆에 '근무 6시간'처럼 내 실수령 시급으로 몇 시간 일한 돈인지 보여요. 현장은 공수, 자영업은 하루 매출 대비예요",
+            settings.workTimeFrom > 0) { on -> vm.update { it.copy(workTimeFrom = if (on) com.bamnat.core.money.WorkTime.DEFAULT_FROM else 0L) } }
         // [FEAT-17][DAY-04] For people who keep their days in notes. Where 메모 sits in the day is the order below.
         val memo = when { settings.memoInCells -> MemoView.CELLS; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
         ChoiceRow("메모 보기", when (memo) {
@@ -1191,11 +1219,13 @@ internal const val FREE_LOOK_ROW = "화면 꾸미기 (모든 화면)"
 
 /** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
 internal const val SPEND_HEAT_ROW = "지출 히트맵"
+internal const val WORK_TIME_ROW = "큰 지출을 근무 시간으로"
 internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 /** 1.32 [WTYP-12] */
 internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
+internal const val DAY_CLOSE_ROW = "퇴근 뒤 가계부 정리 알림"
 
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"
@@ -1212,7 +1242,8 @@ internal fun MoveToNewPhoneDialog(onSave: () -> Unit, onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium)
                 Text("옮겨지는 것", style = MaterialTheme.typography.titleSmall)
                 Text("모든 달력의 근무·바꾼 날·추가 근무, 메모, 돈 기록과 영수증 사진, 수면 기록, 급여·연차 설정, 근무 형태별 연장 상한·세금 방식, " +
-                    "적용한 회사 규칙과 보낸 제보, 광장 시세용 내 직종·지역, 앱의 모든 설정과 화면 배치, 결제 알림으로 적기 조정, 우리 조 모아 보기, 내가 만든 근무표 링크",
+                    "적용한 회사 규칙과 보낸 제보, 광장 시세용 내 직종·지역, 앱의 모든 설정과 화면 배치, 결제 알림으로 적기 조정, 우리 조 모아 보기, 내가 만든 근무표 링크, " +
+                    "마을 › 테마의 내 서랍(입은 테마·입어 본 테마·내 테마·담아 둔 조각·묶음)·받은 레시피·만들던 것",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("이 휴대폰에만 남는 것", style = MaterialTheme.typography.titleSmall)
                 Text("출퇴근 장소의 지도 위 좌표, 알람 소리 파일, 문의 기록, 받은 동료 달력, 동의 기록과 알림 권한(새 휴대폰에서 다시 물어요), " +

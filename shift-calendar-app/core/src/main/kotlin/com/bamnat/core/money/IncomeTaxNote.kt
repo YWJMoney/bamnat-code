@@ -36,8 +36,10 @@ object IncomeTaxNote {
         val isEmpty: Boolean get() = income == 0L && costs == 0L
     }
 
-    fun of(year: Int, jobs: List<Job>, sales: List<DailySales>, entries: List<MoneyEntry>): Year {
-        val j = jobs.filter { it.date.year == year && !it.cancelled }
+    fun of(year: Int, jobs: List<Job>, sales: List<DailySales>, entries: List<MoneyEntry>,
+        /** 1.37 PC 7차: counted on this day, only jobs done or past (as 번 돈 everywhere else). */
+        today: java.time.LocalDate? = null): Year {
+        val j = jobs.filter { it.date.year == year && !it.cancelled && (today == null || it.isDone(today)) }
         val s = sales.filter { it.date.year == year }
         val spent = entries.filter { it.date.year == year && it.kind == MoneyKind.EXPENSE }.sumOf { it.amount }
         // Each job's 3.3% split back into its two taxes, as the payer held them back.

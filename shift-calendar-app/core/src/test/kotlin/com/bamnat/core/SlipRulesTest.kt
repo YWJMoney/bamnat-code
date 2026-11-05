@@ -104,4 +104,15 @@ class SlipRulesTest {
         assertClose(c, r)
         assertTrue(r.changes.toString(), r.changes.any { it.startsWith("회사 계산 방법:") })
     }
+
+    /** [PAYIN-03] PC 5566ff20: a setup made mid-month with 0원 took the payslip's 기본급·수당 from a later day, so the month read 0원. */
+    @Test
+    fun `월 중간에 0원으로 만든 설정 - 명세서 기본급과 수당이 그 달 1일부터 들어감`() {
+        val c = SlipCases.hospital
+        val start = com.bamnat.core.pay.WorkForms.apply(com.bamnat.core.pay.WorkForm.NURSE, 0, java.time.LocalDate.of(2026, 10, 15))
+        val read = PayslipReader.read(text(c.file))
+        val r = SlipRules.infer(start, SlipCases.oct, c.resolver::resolve, read)!!
+        assertEquals(2_600_000, r.profile.base.on(SlipCases.oct).value)
+        assertEquals(50_000, r.profile.items.single { it.name == "면허수당" }.amount.on(SlipCases.oct).value)
+    }
 }

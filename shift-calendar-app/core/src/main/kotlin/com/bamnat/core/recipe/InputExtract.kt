@@ -13,12 +13,35 @@ object InputExtract {
     /** One amount found: where, its label, and the value the maker had. */
     data class Found(val piece: PieceKind, val field: String, val label: String, val value: Long)
 
-    /** Every amount written in [r]'s pieces as a plain value (not yet an input). */
+    /**
+     * fc374a23 PC 확인 (가계부 틀의 예산·봉투 목표가 보낸 사람 금액 그대로 감): an amount inside a list ([Field.Items]: 예산, 봉투) is the
+     * maker's too. It is called by the item's name ("식비 예산", "여행 목표").
+     */
+    private val ITEM_LABELS = mapOf("amount" to "예산", "target" to "목표")
+
+    /** Every amount written in [r]'s pieces as a plain value (not yet an input), in lists too. */
     fun found(r: Recipe): List<Found> = r.pieces.flatMap { p ->
-        p.kind.fields.filterIsInstance<Field.Money>().mapNotNull { f ->
-            val v = p.values[f.key] as? Long ?: return@mapNotNull null
-            Found(p.kind, f.key, LABELS[f.key] ?: f.key, v)
+        p.kind.fields.flatMap { f ->
+            when (f) {
+                is Field.Money -> listOfNotNull((p.values[f.key] as? Long)?.let { Found(p.kind, f.key, LABELS[f.key] ?: f.key, it) })
+                is Field.Items -> items(p.values[f.key]).flatMapIndexed { i, item ->
+                    f.fields.filterIsInstance<Field.Money>().mapNotNull { m ->
+                        (item[m.key] as? Long)?.let { Found(p.kind, "${f.key}.$i.${m.key}", itemLabel(f, item, i, m), it) }
+                    }
+                }
+                else -> emptyList()
+            }
         }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun items(v: Any?): List<Map<String, Any?>> = (v as? List<*>).orEmpty().filterIsInstance<Map<String, Any?>>()
+
+    /** "식비 예산": the item's first words and what the amount is, short enough for an input's name. */
+    private fun itemLabel(f: Field.Items, item: Map<String, Any?>, i: Int, m: Field.Money): String {
+        val name = f.fields.filterIsInstance<Field.Text>().firstNotNullOfOrNull { (item[it.key] as? String)?.trim()?.takeIf { s -> s.isNotEmpty() } }
+            ?: "${i + 1}번"
+        return "${name.take(12)} ${ITEM_LABELS[m.key] ?: m.key}"
     }
 
     /**
@@ -28,26 +51,72 @@ object InputExtract {
     fun extract(r: Recipe, keep: Set<String> = emptySet(), legal: (PieceKind, String) -> Long? = { _, _ -> null }): Recipe {
         val inputs = r.inputs.toMutableList()
         var next = (inputs.mapNotNull { it.id.removePrefix("i").toIntOrNull() }.maxOrNull() ?: 0) + 1
+        fun input(label: String, f: Field.Money, def: Long?, item: Boolean): Ref.Input {
+            val id = "i${next++}"
+            inputs += Input(
+                id, label, InputKind.MONEY, default = def, min = f.lo.toDouble(), max = f.hi.toDouble(),
+                // An amount in a list may stay empty: 예산 없이 분류만, 목표 없는 봉투.
+                required = def == null && !item,
+                hint = when {
+                    def != null -> "처음 값은 법정 기준이에요. 내 금액으로 바꿔 주세요"
+                    else -> ""
+                },
+            )
+            return Ref.Input(id)
+        }
         val pieces = r.pieces.map { p ->
             val values = LinkedHashMap(p.values)
-            for (f in p.kind.fields.filterIsInstance<Field.Money>()) {
-                if (values[f.key] !is Long || "${p.kind.key}.${f.key}" in keep || next > RecipeCodec.MAX_INPUTS) continue
-                val def = legal(p.kind, f.key)
-                val id = "i${next++}"
-                inputs += Input(
-                    id, LABELS[f.key] ?: f.key, InputKind.MONEY, default = def, min = f.lo.toDouble(), max = f.hi.toDouble(),
-                    required = def == null, hint = if (def != null) "처음 값은 법정 기준이에요. 내 금액으로 바꿔 주세요" else "",
-                )
-                values[f.key] = Ref.Input(id)
+            for (f in p.kind.fields) {
+                when (f) {
+                    is Field.Money -> {
+                        if (values[f.key] !is Long || "${p.kind.key}.${f.key}" in keep || next > RecipeCodec.MAX_INPUTS) continue
+                        values[f.key] = input(LABELS[f.key] ?: f.key, f, legal(p.kind, f.key), item = false)
+                    }
+                    is Field.Items -> {
+                        val list = values[f.key] as? List<*> ?: continue
+                        val money = f.fields.filterIsInstance<Field.Money>()
+                        if (money.isEmpty()) continue
+                        values[f.key] = list.mapIndexed { i, x ->
+                            @Suppress("UNCHECKED_CAST")
+                            val item = x as? Map<String, Any?> ?: return@mapIndexed x
+                            val out = LinkedHashMap(item)
+                            for (m in money) {
+                                if (item[m.key] !is Long || "${p.kind.key}.${f.key}.$i.${m.key}" in keep || next > RecipeCodec.MAX_INPUTS) continue
+                                out[m.key] = input(itemLabel(f, item, i, m), m, null, item = true)
+                            }
+                            out
+                        }
+                    }
+                    else -> {}
+                }
             }
             Piece(p.kind, values)
         }
         return r.copy(pieces = pieces, inputs = inputs)
     }
 
-    /** [r] with input [id] made a fixed value again ([value]): the maker said this amount is the same for everyone. */
+    /** [r] with input [id] made a fixed value again ([value]): the maker said this amount is the same for everyone. In lists too. */
+    @Suppress("UNCHECKED_CAST")
     fun keep(r: Recipe, id: String, value: Any): Recipe = r.copy(
-        pieces = r.pieces.map { p -> Piece(p.kind, p.values.mapValues { (_, v) -> if (v == Ref.Input(id)) value else v }) },
+        pieces = r.pieces.map { p -> Piece(p.kind, swap(p.values, Ref.Input(id), value) as Map<String, Any?>) },
         inputs = r.inputs.filter { it.id != id },
     )
+
+    private fun swap(v: Any?, ref: Ref.Input, value: Any): Any? = when (v) {
+        ref -> value
+        is Map<*, *> -> v.entries.associate { (k, x) -> k.toString() to swap(x, ref, value) }
+        is List<*> -> v.map { swap(it, ref, value) }
+        else -> v
+    }
+
+    /** Where input [id] sits in [r] (`<piece key>.<field>`, or `<piece key>.<list>.<n>.<field>`), for [extract]'s keep. */
+    fun keyOf(r: Recipe, id: String): String? {
+        val ref = Ref.Input(id)
+        for (p in r.pieces) for (f in p.kind.fields) {
+            val v = p.values[f.key]
+            if (v == ref) return "${p.kind.key}.${f.key}"
+            if (f is Field.Items) items(v).forEachIndexed { i, item -> item.entries.firstOrNull { it.value == ref }?.let { return "${p.kind.key}.${f.key}.$i.${it.key}" } }
+        }
+        return null
+    }
 }

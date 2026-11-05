@@ -126,7 +126,112 @@ class SetupFlowTest {
         assertEquals(SetupStep.COMPANY, again.step)
         // [WORK-01] Weekday work starts Monday to Friday.
         assertEquals(5, again.weekly.count { it != null })
+        // [SETUP-16] The kind of work chosen is kept; the setup still counts as not done.
+        assertEquals(WorkStyle.DAY, c.settingsRepository.current.workStyle)
+        assertTrue(c.settingsRepository.current.setupLater)
+        assertFalse(c.settingsRepository.current.setupDone)
+    }
+
+    /**
+     * [SETUP-16] 1.37 PC 4ef0b92b: 알바 put off at the 요일 step was 교대 everywhere (설정 > 내 근무 '일하는 방식 정하기').
+     * The kind of work and its 알바 shifts are there at once, the setup waits, and finishing it later adds no shift twice.
+     */
+    @Test fun hourlyPutOffAtTheDaysKeepsItsKindOfWorkUntilFinished() = runBlocking {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.HOURLY)
+        assertEquals(SetupStep.TIMES, draft.step)
+        vm.confirmTimes()
+        assertEquals(SetupStep.ORDER, draft.step)
+        vm.later()
+        val s = c.settingsRepository.current
+        assertEquals(WorkStyle.HOURLY, s.workStyle)
+        assertTrue(s.setupLater)
+        assertFalse(s.setupDone)
+        assertTrue(draft.later)
+        waitFor("the 알바 shifts") { runBlocking { c.scheduleRepository.shiftTypes.first().any { it.name == "오전 알바" } } }
+        assertTrue(c.scheduleRepository.patterns.first().isEmpty())
+        // 1.37 PC f42b2eba MED-b: only the 알바 shifts, no 교대 first ones left beside them ('근무 6가지').
+        assertEquals(listOf("오전 알바", "오후 알바", "저녁 알바"), c.scheduleRepository.shiftTypes.first().map { it.name })
+
+        // 이어서 하기 → 요일 → 알람 → 저장.
+        c.setupDrafts.save(draft.copy(later = false))
+        vm.setNoFixedDays(true)
+        vm.next()
+        assertEquals(SetupStep.ALARM, draft.step)
+        vm.next()
+        assertEquals(SetupStep.SUMMARY, draft.step)
+        vm.save()
+        waitFor("the save") { !c.settingsRepository.current.setupLater && c.setupDrafts.draft.value == null && c.firstSetup.saved.value != null }
+        assertEquals(WorkStyle.HOURLY, c.settingsRepository.current.workStyle)
+        assertTrue(c.settingsRepository.current.setupDone)
+        val names = c.scheduleRepository.shiftTypes.first().map { it.name }
+        listOf("오전 알바", "오후 알바", "저녁 알바").forEach { assertEquals(it, 1, names.count { n -> n == it }) }
+    }
+
+    /** [SETUP-16] PC f42b2eba HIGH-1: the kind of work changed in 설정 > 내 근무 while the setup waited is the one it goes on with. */
+    @Test fun aKindOfWorkChangedMeanwhileIsTheOneTheSetupGoesOnWith() {
+        val first = vm()
+        first.pickStyle(WorkStyle.HOURLY)
+        first.later()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
+        waitFor("the setup to follow") { c.setupDrafts.draft.value?.style == WorkStyle.DAY }
+        assertEquals(SetupStep.COMPANY, draft.step)
+        assertTrue("still waiting on the calendar's card", draft.later)
+        assertTrue(c.settingsRepository.current.setupLater)
+        // Taken up again and answered otherwise: that is what shows everywhere.
+        c.setupDrafts.save(draft.copy(later = false))
+        vm().pickStyle(WorkStyle.SHIFT)
+        assertEquals(WorkStyle.SHIFT, c.settingsRepository.current.workStyle)
+        assertEquals(WorkStyle.SHIFT, draft.style)
+    }
+
+    /** [SETUP-16] Changed to work written day by day while waiting: nothing more to ask, the setup is done. */
+    @Test fun changedToFieldWorkWhileWaitingFinishesTheSetup() {
+        val first = vm()
+        first.pickStyle(WorkStyle.DAY)
+        first.later()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.FIELD) }
+        waitFor("the setup to finish") { c.settingsRepository.current.setupDone && c.setupDrafts.draft.value == null }
+        assertEquals(WorkStyle.FIELD, c.settingsRepository.current.workStyle)
+    }
+
+    /** [SETUP-16] PC f42b2eba HIGH-2: a backup made while the setup waited brings its step to a new phone. */
+    @Test fun aBackupMadeWhileWaitingGoesOnFromItsStep() = runBlocking {
+        val first = vm()
+        first.pickStyle(WorkStyle.HOURLY)
+        first.confirmTimes()
+        first.later()
+        val step = draft.step
+        val file = c.backupManager.export()
+        // A new phone: nothing set, no setup begun.
+        c.settingsRepository.update { com.bamnat.app.data.AppSettings() }
+        c.setupDrafts.clear()
+        c.backupManager.restore(file)
+        assertEquals(WorkStyle.HOURLY, c.settingsRepository.current.workStyle)
+        assertTrue(c.settingsRepository.current.setupLater)
+        waitFor("the setup back") { c.setupDrafts.draft.value?.style == WorkStyle.HOURLY }
+        // 1.37 PC 270fc15e: the setup's own watch must not start the next question over the answers brought back.
+        val until = System.currentTimeMillis() + 800
+        waitFor("the watch to settle") { System.currentTimeMillis() > until }
+        assertEquals(step, draft.step)
+        assertTrue(draft.later)
+    }
+
+    /** [SETUP-16] Put off before the kind of work was chosen: nothing to keep, the setup is simply not done. */
+    @Test fun putOffBeforeChoosingKeepsNothing() {
+        vm().later()
         assertNull(c.settingsRepository.current.workStyle)
+        assertFalse(c.settingsRepository.current.setupLater)
+        assertFalse(c.settingsRepository.current.setupDone)
+    }
+
+    /** [SETUP-16] 교대 put off at the 회사 step is 교대 already, its setup waiting. */
+    @Test fun shiftPutOffKeepsShift() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.SHIFT)
+        vm.later()
+        assertEquals(WorkStyle.SHIFT, c.settingsRepository.current.workStyle)
+        assertFalse(c.settingsRepository.current.setupDone)
     }
 
     @Test fun inTheSmallHoursTheQuestionIsAboutYesterday() {

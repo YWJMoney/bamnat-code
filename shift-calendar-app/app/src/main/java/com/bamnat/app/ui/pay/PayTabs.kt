@@ -34,7 +34,17 @@ enum class PayFocus(val key: String, val label: String, val tab: PayTab) {
     PERIOD("period", "월급날·정산", PayTab.RULES),
     RULES("rules", "회사 규칙", PayTab.RULES),
     TOOLS("tools", "도구", PayTab.TOOLS),
+    /** PC 736fb7a6: 도구 scrolled down to the 급여 리포트 card (the 1-year card's link). */
+    REPORT("report", "급여 리포트", PayTab.TOOLS),
     ;
+
+    /** 1.37 PC 736fb7a6 (알바 화면에 '회사 규칙'·'월급'): 알바 sees 근무지 규칙 and 급여날. */
+    fun labelFor(style: com.bamnat.core.work.WorkStyle?): String = when {
+        style != com.bamnat.core.work.WorkStyle.HOURLY -> label
+        this == RULES -> "근무지 규칙"
+        this == PERIOD -> "급여날·정산"
+        else -> label
+    }
 
     companion object {
         fun of(key: String?): PayFocus? = entries.firstOrNull { it.key == key }

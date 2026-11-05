@@ -389,12 +389,16 @@ fun VoteButtons(
 fun TalkSheet(holder: TalkHolder) {
     val open by holder.open.collectAsStateWithLifecycle()
     val o = open ?: return
-    var text by rememberSaveable(o.setup) { mutableStateOf("") }
+    // PC 확인 41e73582: the words, the post answered and the kind live in the holder, so the rules and name cards cannot drop them.
+    var text by holder.draft
     var busy by remember { mutableStateOf(false) }
     var error by remember(o.setup) { mutableStateOf<String?>(null) }
     var flagging by remember { mutableStateOf<TalkPost?>(null) }
-    var replyTo by remember(o.setup) { mutableStateOf<TalkPost?>(null) }
-    var kind by rememberSaveable(o.setup) { mutableStateOf(o.startKind ?: "talk") }
+    var replyId by holder.replyId
+    val replyTo = replyId?.let { id -> o.talk?.posts?.firstOrNull { it.id == id } }
+    var kind by holder.kind
+    var justSent by holder.justSent
+    LaunchedEffect(justSent) { if (justSent != null) { kotlinx.coroutines.delay(4_000); justSent = null } }
     // 1.36 [VIL-08] The kind the list shows (null for all).
     var only by rememberSaveable(o.setup) { mutableStateOf<String?>(null) }
     var change by remember(o.setup) { mutableStateOf(listOf(blankChange())) }
@@ -449,10 +453,14 @@ fun TalkSheet(holder: TalkHolder) {
             // 1.36 [VIL-11] 이번 주 이야기 주제.
             o.talk?.topic?.let { Text("이번 주 주제 · $it", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.padding(top = 4.dp)) }
+            // [TOWN-05] 1.37 (후보 26, PC 확인: 회사 토론에서 투표가 무엇을 하는지 몰라요): what 맞아요·달라요 do on a company's rule talk.
+            if (!o.room) Text(holder.voteLine(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 4.dp))
             Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(vertical = 8.dp)) {
                 Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.width(6.dp))
-                Text("다른 분께는 ‘참여자 번호’로만 보여요. 이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요.",
+                Text((if (styleRoom) "다른 분께는 마을 이름(없으면 ‘참여자 번호’)으로 보여요. " else "다른 분께는 ‘참여자 번호’로만 보여요. ") +
+                    "이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 RulesLink()
             }
@@ -484,7 +492,9 @@ fun TalkSheet(holder: TalkHolder) {
                         if (only == NIGHT) awakeNow(talk.posts).takeIf { it > 0 }?.let { n ->
                             Text("지난 3시간 동안 이야기한 분 ${n}명이 깨어 있어요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                         }
+                        // [TOWN-13] PC 확인 a6cab3c8 (자유 토의가 오래된 글부터라 새 글을 보려면 맨 아래까지 내려요): a room's newest first, like its card.
                         val tops = allTops.filter { only == null || it.kind == only || (only == NIGHT && nightPost(it)) }
+                            .let { if (o.room) it.asReversed() else it }
                         if (tops.isEmpty()) Text("이 꼬리표의 글이 아직 없어요", style = MaterialTheme.typography.bodyMedium)
                         tops.forEach { p -> androidx.compose.runtime.key(p.id) {
                             // 1.36 [VIL-06] PC 확인: opened for one post (찾기·내 글), it is scrolled to and marked.
@@ -494,7 +504,7 @@ fun TalkSheet(holder: TalkHolder) {
                             Column(if (focused) Modifier.bringIntoViewRequester(bring)
                                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f), MaterialTheme.shapes.medium) else Modifier) {
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
-                                onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
+                                onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
                                 company = o.company, setup = o.setup, roomName = if (o.room) o.title else null,
                                 onRedo = if (talk.past || o.room) null else ({ redoing = p }),
                                 onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i) { e -> error = e } }))
@@ -504,7 +514,7 @@ fun TalkSheet(holder: TalkHolder) {
                                     Spacer(Modifier.width(20.dp))
                                     Column(Modifier.weight(1f)) {
                                         PostRow(r, onDelete = { holder.delete(r.id) }, onFlag = { flagging = r }, onHide = { hiding = r },
-                                            onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyTo = p }),
+                                            onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
                                             helpful = r.id == p.answer,
                                             onHelpful = if (p.kind == "question" && p.mine && !r.mine && r.hidden == null && !talk.past)
                                                 ({ holder.answer(p.id, r.id) { e -> error = e } }) else null)
@@ -534,6 +544,10 @@ fun TalkSheet(holder: TalkHolder) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             } else {
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
+                // PC 확인 41e73582 (보낸 답이 안 보여 한 번 더 보냈어요): said, and the list goes to it, marked.
+                if (justSent != null && error == null) Text("✓ 올렸어요 · 위에 표시한 글이에요", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp)
+                        .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                 // [PLZ-09] What kind of post: a word, a question, or a proposal to change the rule.
                 if (replyTo == null) {
                     // PC 확인 f39bcfbe: what kind of post to write, as buttons joined in one bar under "쓸 글", so it does not look like
@@ -553,7 +567,7 @@ fun TalkSheet(holder: TalkHolder) {
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                         Text("${replyTo?.let { it.nick ?: "참여자 ${it.who}" }}에게 답글", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { replyTo = null }) { Text("답글 취소") }
+                        TextButton(onClick = { replyId = null }) { Text("답글 취소") }
                     }
                 }
                 if (o.room && kind == "question" && replyTo == null) {
@@ -590,6 +604,12 @@ fun TalkSheet(holder: TalkHolder) {
                 // PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked
                 // when the box is first tapped, before anything is written; 보내기 still asks if they were put off (나중에).
                 var rulesAsked by remember { mutableStateOf(false) }
+                // [TOWN-12] PC 확인 a6cab3c8: the rules as a card above the box (the window took the words being written and closed
+                // on a tap outside); the 마을 이름 card [TOWN-03] only once they are agreed, so the two never come one after the other.
+                var rulesOk by remember { mutableStateOf(rules.isAgreed) }
+                if (rulesAsked && !rulesOk) PlazaRulesCard(rules, onAgreed = { rulesOk = true }, modifier = Modifier.padding(top = 8.dp))
+                else if (styleRoom && rulesAsked) com.bamnat.app.ui.village.VillageNameCard(holder.container, unnamed = "참여자 번호",
+                    modifier = Modifier.padding(top = 8.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
@@ -605,7 +625,7 @@ fun TalkSheet(holder: TalkHolder) {
                         }) },
                         maxLines = 4,
                         shape = MaterialTheme.shapes.large,
-                        modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) { rulesAsked = true; rules.ensure { } } },
+                        modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) rulesAsked = true },
                     )
                     IconButton(
                         onClick = {
@@ -622,13 +642,14 @@ fun TalkSheet(holder: TalkHolder) {
                             } else if (pollDraft.isNotEmpty() && kind == "question" && (poll.size < 2 || poll.toSet().size != poll.size)) {
                                 error = "투표 보기를 서로 다르게 두 개 이상 적어 주세요"
                             } else rules.ensure {
+                                rulesOk = true
                                 busy = true
                                 holder.send(body, parent = parent, kind = sentKind, change = if (proposing) lines else emptyList(), withSetup = withIt, poll = poll,
                                     attach = attach.takeIf { styleRoom && kind == "show" && replyTo == null }) { e ->
                                     busy = false; error = e
                                     // PC 확인 V35: sent, the box starts over: 이야기, no recipe, no choices.
                                     if (e == null) {
-                                        text = text.trim().removePrefix(body).trimStart(); replyTo = null; pollDraft = emptyList(); attach = null
+                                        text = text.trim().removePrefix(body).trimStart(); replyId = null; pollDraft = emptyList(); attach = null
                                         change = listOf(blankChange()); if (o.room || proposing) kind = "talk"
                                     }
                                 }

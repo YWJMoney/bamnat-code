@@ -201,9 +201,9 @@ class LedgerTest {
         assertEquals(listOf("카페", "식비"), s.categories.map { it.category })
         assertEquals(BudgetLevel.OVER, s.categories[0].level)
         assertEquals(BudgetLevel.NEAR, s.categories[1].level)
-        // 240,000 of 식비 in 10 days heads for 720,000 by the 30th.
+        // 식비: the 200,000 line is a lump (counted once); the other 40,000 in 10 days paces on to 320,000 by the 30th.
         assertTrue(s.categories[1].headedOver)
-        assertEquals(240_000L + 240_000 * 20 / 10, s.categories[1].forecast)
+        assertEquals(240_000L + 40_000 * 20 / 10, s.categories[1].forecast)
         // Past months have no per-day share; without a whole budget the categories add up to one.
         assertNull(Budgets.status(budgets, lines, nov, d(10).plusMonths(1)).perDay)
         assertEquals(350_000L, Budgets.status(budgets.drop(1), lines, nov, d(10)).total!!.budget)

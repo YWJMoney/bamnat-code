@@ -246,10 +246,13 @@ object LedgerSmarts {
      */
     fun pace(entries: List<MoneyEntry>, today: LocalDate, budget: Long?, fixedToCome: Long = 0): Pace {
         val month = YearMonth.from(today)
-        val spent = entries.filter { it.kind == MoneyKind.EXPENSE && YearMonth.from(it.date) == month && !it.date.isAfter(today) }.sumOf { it.amount }
+        val lines = entries.filter { it.kind == MoneyKind.EXPENSE && YearMonth.from(it.date) == month && !it.date.isAfter(today) }
+        val spent = lines.sumOf { it.amount }
         val day = today.dayOfMonth
         val days = month.lengthOfMonth()
-        val projected = (spent.coerceAtLeast(0).toDouble() / day * days).roundToLong() + fixedToCome
+        // PC 확인 (덩어리 경비 한 번에 과한 경고): repeating lines and big ones ([Budgets.LUMP]) count once; only the rest is a pace.
+        val once = lines.filter { it.source == MoneySource.FIXED || it.amount >= Budgets.LUMP }.sumOf { it.amount }
+        val projected = once + ((spent - once).coerceAtLeast(0).toDouble() / day * days).roundToLong() + fixedToCome
         val daysLeft = days - day + 1
         val todayLeft = budget?.let { ((it - spent - fixedToCome).coerceAtLeast(0) / daysLeft) }
         return Pace(spent, projected, budget, todayLeft, daysLeft)
@@ -388,6 +391,50 @@ object LedgerSmarts {
         val tip = if (over) "문턱을 넘었어요. 이제부터는 체크카드·현금영수증이 공제가 두 배(30%)예요"
         else "문턱까지 ${won(threshold - credit - other)} 남았어요. 그 전에는 혜택 많은 신용카드, 넘은 뒤엔 체크카드가 유리해요"
         return CardGauge(threshold, credit, other, over, (threshold - credit - other).coerceAtLeast(0), tip)
+    }
+
+    /** 1.37 [LEDH-32] Days since the last line written by hand, and the lines that came in by themselves meanwhile. */
+    data class Away(val days: Int, val auto: Int)
+
+    /**
+     * 1.37 [LEDH-32] 복귀 반김: the user wrote nothing by hand for [minDays] days or more, after using the book (ten lines or more by
+     * hand); null otherwise.
+     */
+    fun away(entries: List<MoneyEntry>, today: LocalDate, minDays: Int = 7): Away? {
+        val byHand = entries.filter { it.source == MoneySource.MANUAL && !it.date.isAfter(today) }
+        if (byHand.size < 10) return null
+        val last = byHand.maxOf { it.date }
+        val days = ChronoUnit.DAYS.between(last, today).toInt()
+        if (days < minDays) return null
+        return Away(days, entries.count { it.source != MoneySource.MANUAL && it.date.isAfter(last) && !it.date.isAfter(today) })
+    }
+
+    /**
+     * 1.37 [LEDH-30] 근무에서 바로 적기: what is spent again and again on [dates] (the past days of one kind of shift), as lines to
+     * start from — the same place (or category) and amount on two days or more, most often first.
+     */
+    fun dayHabits(entries: List<MoneyEntry>, dates: Set<LocalDate>, limit: Int = 3): List<MoneyEntry> =
+        entries.filter { it.kind == MoneyKind.EXPENSE && it.amount > 0 && it.source != MoneySource.FIXED && it.date in dates }
+            .groupBy { (it.merchant.ifBlank { it.category }.trim()) to it.amount }
+            .filterValues { l -> l.map { it.date }.distinct().size >= 2 }
+            .entries.sortedWith(compareByDescending<Map.Entry<Pair<String, Long>, List<MoneyEntry>>> { it.value.size }.thenByDescending { it.value.maxOf { e -> e.date } })
+            .take(limit).map { (_, l) -> l.maxBy { it.date } }
+
+    /**
+     * 1.37 [LEDH-36] 평소보다 큰 지출: the spending lines of the last [days] days at least [times] the usual (the median of the same
+     * category over the half year before today, from five lines or more) and 3만 원 or more. Repeating lines are left out; the list only
+     * marks them quietly.
+     */
+    fun unusual(entries: List<MoneyEntry>, today: java.time.LocalDate, days: Long = 60, times: Int = 3): Set<Long> {
+        val from = today.minusDays(180)
+        val spend = entries.filter { it.kind == MoneyKind.EXPENSE && it.amount > 0 && it.source != MoneySource.FIXED && !it.date.isBefore(from) && !it.date.isAfter(today) }
+        val usual = spend.groupBy { it.category }.filterValues { it.size >= 5 }.mapValues { (_, l) ->
+            val sorted = l.map { it.amount }.sorted()
+            sorted[sorted.size / 2]
+        }
+        val since = today.minusDays(days - 1)
+        return spend.filter { e -> !e.date.isBefore(since) && e.amount >= 30_000 && usual[e.category]?.let { e.amount >= it * times } == true }
+            .map { it.id }.toSet()
     }
 
     private fun won(v: Long) = "%,d원".format(v)

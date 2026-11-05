@@ -89,8 +89,11 @@ object ShiftBundles {
 
     fun byKey(key: String?): ShiftBundle? = all.firstOrNull { it.key == key }
 
-    /** [WORK-01] Weekday work: 주간 09~18 with an hour's break. */
-    val weekday: List<BundleShift> = listOf(work(ShiftRole.DAY, "주간", "주", BLUE, 9, 18, 60), off(ShiftRole.OFF, "휴무", "휴"))
+    /**
+     * [WORK-01] Weekday work: 일근 09~18 with an hour's break. [SETUP-16] 1.37 사용자 (일근으로 바꾸면 교대 '주간' 07~19를 그대로 씀):
+     * 일근 has its own kind of day, not 교대's 주간, so its time is the user's own and 교대 주간 is left alone.
+     */
+    val weekday: List<BundleShift> = listOf(work(ShiftRole.DAY, "일근", "일", BLUE, 9, 18, 60), off(ShiftRole.OFF, "휴무", "휴"))
 
     /** [WORK-01] Part-time blocks; under 4 hours of work needs no break, 4 hours or more gets 30 minutes. */
     val hourly: List<BundleShift> = listOf(

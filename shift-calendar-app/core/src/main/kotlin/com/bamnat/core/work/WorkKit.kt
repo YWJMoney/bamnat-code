@@ -217,11 +217,14 @@ object WorkStats {
         return out
     }
 
-    fun clients(month: YearMonth, jobs: List<Job>): List<ClientTotal> =
+    fun clients(month: YearMonth, jobs: List<Job>, /** 1.37 PC 6차: counted on this day, only done jobs are earned and owed. */ today: java.time.LocalDate? = null): List<ClientTotal> =
         // [FLD-03] Cancelled jobs are left out.
         jobs.filter { YearMonth.from(it.date) == month && !it.cancelled }
             .groupBy { it.client.trim().ifEmpty { "거래처 미정" } }
-            .map { (c, l) -> ClientTotal(c, l.size, l.sumOf { it.payable }, l.sumOf { it.unpaid }) }
+            .map { (c, l) ->
+                val done = if (today == null) l else l.filter { it.isDone(today) }
+                ClientTotal(c, l.size, done.sumOf { it.payable }, done.sumOf { it.unpaid })
+            }
             .sortedWith(compareByDescending<ClientTotal> { it.earned }.thenBy { it.client })
 }
 

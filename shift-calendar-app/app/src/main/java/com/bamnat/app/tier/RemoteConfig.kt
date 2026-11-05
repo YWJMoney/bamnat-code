@@ -184,7 +184,7 @@ class RemoteConfigStore(
     /** [PRIV-03] The 3.1 yes. */
     fun policyAgreed(): Boolean = PolicyCalendar.agreedAtLeast(_agreed.value, com.bamnat.core.ops.PolicyConsent.VERSION)
 
-    fun agreePolicy(now: Instant = Today.instant(), version: String = com.bamnat.core.ops.PolicyConsent.VERSION) {
+    fun agreePolicy(now: Instant = Today.instant(), version: String = com.bamnat.core.ops.PolicyConsent.ASK_VERSION) {
         prefs.edit().putString(POLICY_KEY, version).putString(POLICY_AT, now.toString()).apply()
         _agreed.value = readAgreed()
     }

@@ -62,6 +62,8 @@ internal fun PartsTool(
     onUploadPart: ((unit: String) -> Unit)? = null,
     /** [RUL-06] 스튜디오 › 규칙·단추 › 조건부 꾸미기: the condition row opens first. */
     conditionFirst: Boolean = false,
+    /** PC 확인 1.37 A8: goes up each time 조건으로 꾸미기 is asked for, so the condition opens and comes into view even when this was open. */
+    conditionAsk: Int = 0,
     /** The rules whose 조건 is this same formula (이 조건을 쓰는 곳). */
     rulesUsing: (String) -> List<String> = { emptyList() },
     onOpenRules: (() -> Unit)? = null,
@@ -69,6 +71,8 @@ internal fun PartsTool(
     advanced: Boolean = false,
     /** [LAY-08] PC 확인 C4: how many parts the next change goes to, for the line kept above ('3곳 함께 고치는 중'). */
     onTogether: (Int) -> Unit = {},
+    /** [CNV-11] 1.37: the condition being changed here, for the canvas's tool line to write the same line. */
+    onWhen: (String?) -> Unit = {},
     onChange: (String) -> Unit,
 ) {
     val bp = remember(parts) { Blueprint.decode(parts) }
@@ -102,7 +106,7 @@ internal fun PartsTool(
     // 타임라인 판 …) on top narrows the chips to one family.
     val families = remember(group) { ids.filter { it != group && it.count { c -> c == '.' } == 1 && BlueprintParts.CHILDREN[it].orEmpty().isNotEmpty() } }
     var family by rememberSaveable(group) { mutableStateOf<String?>(null) }
-    if (families.size >= 3) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    if (families.size >= 3) com.bamnat.app.ui.components.FoldRow("studio.families", what = "부품 묶음") {
         FilterChip(selected = family == null, onClick = { family = null }, label = { Text("모두") })
         families.forEach { f ->
             FilterChip(selected = family == f, onClick = { family = f; if (!(id == f || id.startsWith("$f."))) id = f },
@@ -128,7 +132,7 @@ internal fun PartsTool(
     }
     // 어떤 때
     val states = statesFor(id)
-    if (states.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    if (states.isNotEmpty()) com.bamnat.app.ui.components.FoldRow("studio.states", what = "어떤 때") {
         (listOf<String?>(null) + states).forEach { st ->
             FilterChip(selected = st == on, onClick = { on = st }, label = { Text(stateWord(id, st)) })
         }
@@ -155,7 +159,7 @@ internal fun PartsTool(
     var cond by rememberSaveable(id, on) { mutableStateOf<String?>(if (conditionFirst && dated) conds.firstOrNull() ?: "" else null) }
     if (!dated && conds.isNotEmpty()) Text("이 부품은 날짜가 없어서 조건이 맞을 때가 없어요. 조건으로 꾸민 모습은 날짜 칸·메모 카드·가계부 한 줄 같은 곳에서 써요",
         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (dated || conds.isNotEmpty()) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    if (dated || conds.isNotEmpty()) com.bamnat.app.ui.components.FoldRow("studio.conds", what = "조건") {
         FilterChip(selected = cond == null, onClick = { cond = null }, label = { Text("조건 없이") })
         conds.forEach { w ->
             FilterChip(selected = cond == w, onClick = { cond = w },
@@ -163,7 +167,16 @@ internal fun PartsTool(
         }
         if (dated && cond?.isBlank() != true) FilterChip(selected = false, onClick = { cond = "" }, label = { Text("＋ 조건으로 꾸미기") })
     }
-    cond?.let { now ->
+    // PC 확인 1.37 A8 (MED): 메모 제목 › 언제 › ‘＋ 조건으로 꾸미기’ showed the part's chips and sample, the condition far below them.
+    // The condition starts (also when this part was already open) and its editor is brought to the top of the panel.
+    val condBring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    LaunchedEffect(conditionAsk, id) {
+        if (conditionFirst && dated && conditionAsk > 0) {
+            if (cond == null) cond = conds.firstOrNull() ?: ""
+            kotlinx.coroutines.delay(150); condBring.bringIntoView()
+        }
+    }
+    cond?.let { now -> androidx.compose.foundation.layout.Column(Modifier.bringIntoViewRequester(condBring), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         com.bamnat.app.logic.ConditionEditor(now, { next ->
             val ok = next.isNotBlank() && com.bamnat.core.formula.Logic.formulaProblem(next) == null
             if (ok && now.isNotBlank() && next != now) {
@@ -172,7 +185,7 @@ internal fun PartsTool(
             }
             cond = next
         }, com.bamnat.app.logic.LocalDayFacts.current?.scope(com.bamnat.core.time.Today.date()) ?: com.bamnat.core.formula.FormulaNames.SAMPLE,
-            empty = "조건을 골라 주세요")
+            empty = "조건을 골라 주세요", lead = condLead(id), start = condStart(id))
         if (now.isBlank() || com.bamnat.core.formula.Logic.formulaProblem(now) != null) Text("조건을 다 고르면 아래에서 그때의 모습을 꾸며요",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // [RUL-06] 이 조건을 쓰는 곳: the same formula in 규칙, to go there and back.
@@ -182,8 +195,11 @@ internal fun PartsTool(
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             onOpenRules?.let { go -> TextButton(onClick = go) { Text("규칙 보기") } }
         }
-    }
+    } }
     val whenNow = cond?.takeIf { it.isNotBlank() && com.bamnat.core.formula.Logic.formulaProblem(it) == null }
+    // The first one is said only when a condition opened first (else the canvas keeps the one it had).
+    val whenSaid = remember(id, on) { booleanArrayOf(conditionFirst) }
+    LaunchedEffect(whenNow) { if (whenSaid[0]) onWhen(whenNow); whenSaid[0] = true }
     if (cond != null && whenNow == null) return
     val line: Map<String, Any?> = bp.lines.firstOrNull { it["id"] == id && it["on"] == on && it["when"] == whenNow } ?: emptyMap()
     fun setAll(vararg kv: Pair<String, Any?>) {
@@ -489,7 +505,7 @@ private fun PartsAdvanced(bp: Blueprint, id: String, on: String?, line: Map<Stri
                 onAll(Blueprint(Blueprint.clean(next)).encode()); open = n
             }
             // This part's colours tied to it in one tap.
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.bamnat.app.ui.components.FoldRow("studio.tie", what = "색 잇기") {
                 listOf("fill" to "채우기에", "ink" to "글자에", "lineC" to "선에").forEach { (k, w) ->
                     val tied = line[k] == c
                     FilterChip(selected = tied, onClick = { set(k, if (tied) null else c) }, label = { Text("${partWords(id, on)} $w") })
@@ -514,4 +530,16 @@ private fun PartNumber(label: String, value: Double?, range: ClosedFloatingPoint
     }, label = { Text(label) }, placeholder = { Text("처음대로") }, singleLine = true,
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
         modifier = Modifier.width(150.dp))
+}
+
+/** PC 확인 1.37 A9: a 메모 part's condition starts from the memo's own values (고정·체크), a 가계부 line's from its own and the money. */
+internal fun condLead(id: String): List<com.bamnat.core.formula.FormulaName.Group> = when {
+    id.startsWith("memo") -> listOf(com.bamnat.core.formula.FormulaName.Group.ROW, com.bamnat.core.formula.FormulaName.Group.MEMO)
+    id.startsWith("money") -> listOf(com.bamnat.core.formula.FormulaName.Group.ROW, com.bamnat.core.formula.FormulaName.Group.MONEY)
+    else -> emptyList()
+}
+
+internal fun condStart(id: String): com.bamnat.core.formula.FormulaName? = when {
+    id.startsWith("memo") -> com.bamnat.core.formula.FormulaName.PINNED
+    else -> condLead(id).firstOrNull()?.let { g -> com.bamnat.core.formula.FormulaName.entries.firstOrNull { it.group == g } }
 }

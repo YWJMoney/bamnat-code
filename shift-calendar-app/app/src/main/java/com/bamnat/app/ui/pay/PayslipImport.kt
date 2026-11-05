@@ -168,6 +168,8 @@ fun PayslipFillDialog(
     var reviewAsk by remember { mutableIntStateOf(0) }
     // 1.36 PC 사진 인식 W7: words read but no amount line found: said, with the words shown to fix, instead of an empty result.
     var notice by remember { mutableStateOf<String?>(null) }
+    // [PAYIN-01] 1.37 B1: the photo that could not be read, kept on screen while the lines are typed by hand.
+    var handPhoto by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     val sheet = rememberRuleSheetState()
     fun analyse() {
         val texts = listOf(text, second)
@@ -198,7 +200,8 @@ fun PayslipFillDialog(
         }
     }
     // [PHOTO-01] A photo with no words found, or one that failed to read, opens the lines to fill by hand, never a dead end.
-    fun byHand() {
+    fun byHand(photo: android.graphics.Bitmap? = null) {
+        handPhoto = photo
         val empty = PayslipRead(emptyList(), null)
         read = empty
         asRead = empty
@@ -212,12 +215,12 @@ fun PayslipFillDialog(
         byHandRules = true
     }
     fun retake() {
-        read = null; text = ""; second = ""; scan = null; scanSecond = null; byHandRules = false
+        read = null; text = ""; second = ""; scan = null; scanSecond = null; byHandRules = false; handPhoto = null
         sheet.reset(com.bamnat.core.pay.RuleSheet())
     }
     androidx.compose.runtime.LaunchedEffect(initialScan) { if (initialScan != null) analyse() }
     androidx.compose.runtime.LaunchedEffect(startByHand) { if (startByHand && rules != null && initialScan == null) rulesByHand() }
-    val photo = scan?.takeIf { it.text == text }?.image
+    val photo = scan?.takeIf { it.text == text }?.image ?: handPhoto
     val r = read
     if (r == null) {
         PickDialog(
@@ -227,7 +230,7 @@ fun PayslipFillDialog(
             onScan = { s -> scan = s; text = s.text; if (rules == null || second.isBlank() && !typing) analyse() },
             onScanSecond = { s -> scanSecond = s; second = if (second.isBlank()) s.text else second + "\n" + s.text },
             onPaste = { t -> text = t; scan = null; if (rules == null) analyse() },
-            onEmpty = ::byHand, onByHand = ::rulesByHand, onAnalyse = ::analyse, onDismiss = onDismiss,
+            onEmpty = { p -> byHand(p) }, onByHand = ::rulesByHand, onAnalyse = ::analyse, onDismiss = onDismiss,
         )
         return
     }
@@ -262,7 +265,9 @@ fun PayslipFillDialog(
             if (rules != null && chosen.isNotEmpty()) rules.onRules(chosen, r.month)
             when {
                 r.lines.isNotEmpty() -> onRead(r)
-                (rulesOnly || byHandRules) && chosen.isNotEmpty() -> onRead(PayslipRead(emptyList(), r.month))
+                // [PAYIN-03] 1.37 B3: rules put in with no payslip line went on and the window shut with no word (the setup then said
+                // nothing about them); now the caller hears it as an empty payslip with its month, as 규칙으로 계산하기 does.
+                chosen.isNotEmpty() -> onRead(PayslipRead(emptyList(), r.month))
                 else -> onDismiss()
             }
         }
@@ -271,14 +276,15 @@ fun PayslipFillDialog(
         // [J133-77] 알바's rules are the 근무지's.
         title = if (byHandRules) "${com.bamnat.app.ui.flags.rememberScreenStyle()?.employer ?: "회사"} 규칙 칸으로 적기" else title,
         photos = listOfNotNull(photo, scanSecond?.takeIf { it.text == second || second.contains(it.text) }?.image),
-        read = r, unsure = unsure, same = same, fromPhoto = photo != null,
+        read = r, unsure = unsure, same = same, fromPhoto = photo != null && photo !== handPhoto,
         onSame = { same = it },
         onSlip = { next, fixed -> read = next; unsure = fixed },
         sheet = sheet.takeIf { rules != null }, host = host,
-        rulesOnly = rulesOnly || byHandRules,
+        // [PAYIN-01] PC E10: a payslip typed by hand from its photo opens on the payslip's lines, not the company's rules.
+        rulesOnly = (rulesOnly || byHandRules) && handPhoto == null,
         preview = shown.value, working = shown.working, action = action,
         onDismiss = onDismiss, onRetake = ::retake, reviewAsk = reviewAsk, plaza = plaza,
-        startTab = if (byHandRules) ResultTab.RULES else null,
+        startTab = if (byHandRules) ResultTab.RULES else if (handPhoto != null) ResultTab.SLIP else null,
         slipExtras = {
             // [PHOTO-26] 1.30 AV: a payslip too long for one photo: '+ 한 장 더', read and put together with this one.
             scan?.takeIf { it.text == text && photo != null }?.let { s -> MorePageButton(s) { both -> scan = both; text = both.text; analyse() } }
@@ -300,7 +306,7 @@ private fun PickDialog(
     title: String, rules: RuleTarget?, rulesOnly: Boolean, text: String, second: String, typing: Boolean, notice: String?,
     onText: (String) -> Unit, onTyping: (Boolean) -> Unit,
     onScan: (PayslipScanner.Scan) -> Unit, onScanSecond: (PayslipScanner.Scan) -> Unit, onPaste: (String) -> Unit,
-    onEmpty: () -> Unit, onByHand: () -> Unit, onAnalyse: () -> Unit, onDismiss: () -> Unit,
+    onEmpty: (android.graphics.Bitmap?) -> Unit, onByHand: () -> Unit, onAnalyse: () -> Unit, onDismiss: () -> Unit,
 ) {
     val canRead = text.isNotBlank() || rulesOnly && second.isNotBlank()
     // 1.36 PC 사진 인식 W8: back (or 취소) with words typed or read asks before they go.

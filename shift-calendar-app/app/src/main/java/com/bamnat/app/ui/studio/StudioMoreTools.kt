@@ -113,7 +113,7 @@ internal fun FeelStartDialog(onDismiss: () -> Unit, onPick: (ThemeSeed.Scheme, I
                     Feel.entries.forEach { f -> FilterChip(selected = f == feel, onClick = { feel = f }, label = { Text(f.label) }) }
                 }
                 Text("2. 색", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.bamnat.app.ui.components.FoldRow("studio.seeds", what = "색") {
                     StudioColors.SEEDS.forEachIndexed { i, c ->
                         val on = c == seed
                         Box(Modifier.size(34.dp).clip(CircleShape).background(Color(c.toInt()))
@@ -275,7 +275,7 @@ internal fun ShiftLooksTool(vm: StudioViewModel, d: AppSettings, previewing: Shi
                     }, modifier = Modifier.semantics { contentDescription = "${mode.label} 모양 켜기" })
                 }
                 if (look != null) {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.app.ui.components.FoldRow("studio.seeds", what = "색") {
                         StudioColors.SEEDS.forEachIndexed { i, c ->
                             val on = c == seed
                             Box(Modifier.size(32.dp).clip(CircleShape).background(Color(c.toInt()))

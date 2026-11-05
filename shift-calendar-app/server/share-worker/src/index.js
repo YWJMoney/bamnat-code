@@ -29,7 +29,8 @@
 // when it expires.
 
 export const LIMITS = {
-  bodyBytes: 64 * 1024,
+  // 1.37 [SHR-31][SHR-32] Room for a 테마 (32 KB) and 근무 설정 (24 KB) next to a company setup (24 KB) and the days.
+  bodyBytes: 128 * 1024,
   days: 200,
   types: 24,
   text: 20,
@@ -54,6 +55,10 @@ export const LIMITS = {
   jobName: 12,
   // [SHR-20] A company setup file as the app writes it, without amounts.
   setup: 24 * 1024,
+  // 1.37 [SHR-31][SHR-32] A link's 테마 and 근무 설정, each a recipe as the app writes it (RecipeCodec, core ShareKit).
+  look: 32 * 1024,
+  kit: 24 * 1024,
+  kitPieces: 3,
   // [SRV-05] Reports: a few an hour from one caller, one per link and caller a day.
   reportsPerHour: 10,
   // A taken-down link answers "removed" this long, then is gone like any other.
@@ -90,6 +95,15 @@ export const SHOWS = ["leaveKinds", "extras", "memos", "pay", "jobs"];
 export const AUDIENCES = ["coworker", "family", "friend"];
 
 /** [SHR-11] What the money in `pay` is: an employee's pay, a freelancer's job income, a shop's sales. */
+/** 1.37 [SHR-31] The look pieces a link's 테마 may hold (core BuiltInThemes.LOOK_KINDS). */
+export const LOOK_KINDS = ["screenLook", "calView", "calTheme", "memoLook", "moneyLook", "widget", "photoLook", "layout", "cards", "parts", "decor", "tabView"];
+
+/**
+ * 1.37 [SHR-32] What a link's 근무 설정 may hold (core ShareKit.KINDS): 근무 꾸미기, 알람 시각 틀 and the 근무 주기 as a company file with
+ * no `pay` part. Never 급여 규칙 or an amount: a kit with any other piece, or a 근무 주기 with pay, is refused.
+ */
+export const KIT_KINDS = ["shiftLook", "alarms", "company"];
+
 export const PAY_KINDS = { pay: "급여", jobs: "일감 수입", sales: "매출" };
 
 /** [SHR-01] Leave as it shows without 휴가 종류 ticked: 연차 as it is, any other kind only by how much of the day is off. */
@@ -680,7 +694,42 @@ export function validate(body) {
     if (!file || typeof file !== "object" || Array.isArray(file) || file.format !== "bamnat-company") return { error: "setup" };
     schedule.setup = body.setup;
   }
+  if (body.look != null) {
+    const look = recipeText(body.look, LIMITS.look, LOOK_KINDS, LOOK_KINDS.length);
+    if (look === null) return { error: "look" };
+    schedule.look = look;
+  }
+  if (body.kit != null) {
+    const kit = recipeText(body.kit, LIMITS.kit, KIT_KINDS, LIMITS.kitPieces);
+    if (kit === null) return { error: "kit" };
+    schedule.kit = kit;
+  }
   return { schedule, ttlDays };
+}
+
+/**
+ * 1.37 [SHR-31][SHR-32] A recipe's text as the app sent it, kept as it is when its shape fits: the recipe format, at most [maxPieces]
+ * pieces, each of [kinds] and once. The receiving app reads it with its own recipe codec, which checks every field; the server only
+ * makes sure nothing else rides along (a 근무 주기 with its pay part above all). Null refuses it.
+ */
+function recipeText(text, max, kinds, maxPieces) {
+  if (typeof text !== "string" || text.length === 0 || text.length > max) return null;
+  let r;
+  try { r = JSON.parse(text); } catch { return null; }
+  if (!r || typeof r !== "object" || Array.isArray(r) || r.format !== "bamnat-recipe") return null;
+  if (!Array.isArray(r.pieces) || r.pieces.length === 0 || r.pieces.length > maxPieces) return null;
+  const seen = new Set();
+  for (const p of r.pieces) {
+    if (!p || typeof p !== "object" || !kinds.includes(p.kind) || seen.has(p.kind)) return null;
+    seen.add(p.kind);
+    if (p.kind === "company") {
+      if (typeof p.setup !== "string") return null;
+      let file;
+      try { file = JSON.parse(p.setup); } catch { return null; }
+      if (!file || typeof file !== "object" || file.format !== "bamnat-company" || Object.hasOwn(file, "pay")) return null;
+    }
+  }
+  return text;
 }
 
 function cleanText(value, max) {
@@ -871,7 +920,11 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
     .map((k) => (k === "pay" ? PAY_KINDS[payKind] : SHOW_NAMES[k]));
   const has = shows.length ? `<p class="muted">근무와 함께 보낸 것: ${esc(shows.join(", "))}</p>` : "";
   // [SHR-20] The page never shows the setup itself: only that the app takes it.
-  const setupLine = schedule.setup ? `<p class="muted">회사 근무 설정도 함께 보냈어요. 밤낮 앱에서 열면 기본급만 넣고 바로 쓸 수 있어요.</p>` : "";
+  const setupLine = (schedule.setup ? `<p class="muted">회사 근무 설정도 함께 보냈어요. 밤낮 앱에서 열면 기본급만 넣고 바로 쓸 수 있어요.</p>` : "") +
+    // 1.37 [SHR-31][SHR-32] Like the setup, the page names what came and never shows it.
+    (schedule.look || schedule.kit
+      ? `<p class="muted">${schedule.look && schedule.kit ? "테마와 근무 설정" : schedule.look ? "테마" : "근무 설정"}도 함께 보냈어요. 밤낮 앱에서 열면 입어 보고 골라 넣을 수 있어요.</p>`
+      : "");
   const pay = schedule.pay?.length
     ? `<section class="pay"><h2>함께 보낸 ${PAY_KINDS[payKind]}</h2><ul>${schedule.pay.map((p) => {
         const [y, m] = p.month.split("-").map(Number);

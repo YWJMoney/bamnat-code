@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -332,6 +333,9 @@ private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: Stri
         Button(onClick = { holder.setNick(nick) { e -> msg = e ?: if (nick.isBlank()) "별명을 지웠어요" else "별명을 정했어요" } }) { Text("저장") }
     }
     msg?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+    // [TOWN-02] PC 확인 41e73582 (내 활동에 내 글이 없어요): the posts I wrote in the plazas and their answers, one tap away.
+    androidx.compose.material3.OutlinedButton(onClick = { holder.close(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.VILLAGE_POSTS) },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("광장에 쓴 내 글과 답 보기") }
     HorizontalDivider()
     PlazaPhoneSettings()
     HorizontalDivider()

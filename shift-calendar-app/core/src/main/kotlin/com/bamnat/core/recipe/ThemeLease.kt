@@ -83,7 +83,7 @@ data class ThemeLease(
     fun extend(today: Long): ThemeLease = worn?.let { w ->
         val start = maxOf(today, w.until)
         val next = w.copy(until = start + DAYS)
-        copy(worn = next, history = history.map { if (it.key == next.key) next else it }, askedDay = null)
+        copy(worn = next, history = history.map { if (it.key == next.key) it.copy(until = next.until) else it }, askedDay = null)
     } ?: this
 
     /** No ad could come for [reason] on [day] ("yyyy-MM-dd"): [NO_AD_DAYS] more, and the reason counted. */
@@ -91,7 +91,7 @@ data class ThemeLease(
         val logged = counted(day, reason)
         return logged.worn?.let { w ->
             val next = w.copy(until = maxOf(today, w.until) + NO_AD_DAYS)
-            logged.copy(worn = next, history = logged.history.map { if (it.key == next.key) next else it }, askedDay = null)
+            logged.copy(worn = next, history = logged.history.map { if (it.key == next.key) it.copy(until = next.until) else it }, askedDay = null)
         } ?: logged
     }
 

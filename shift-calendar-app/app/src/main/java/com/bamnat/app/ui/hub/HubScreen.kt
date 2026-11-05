@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.ui.company.SoftCard
-import com.bamnat.app.ui.recipe.thumb
 import com.bamnat.core.recipe.RecipeDescribe
 import com.bamnat.core.work.WorkStyle
 
@@ -56,8 +55,20 @@ enum class HubSection(val label: String, val line: String) {
     TALK("광장", "같은 일을 하는 분들과 이야기하고, 회사 규칙과 시세를 나눠요"),
     // 1.35 (사용자 2026-10-30 21:37 "장터를 2번째로 옮기고 테마를 3번째로"): 고르고 받기는 장터, 입고 간직하기는 테마, 만들기는 공방.
     SHARE("장터", "테마·알람·메모 틀·급여 규칙·화면 배치를 받아 쓰고 좋아요·댓글을 남겨요"),
-    THEMES("테마", "내가 입은 테마와 간직한 테마예요. 기록은 그대로예요"),
+    // [DRW-01] 1.37 (사용자 2026-11-04 "테마 탭은 개인 보관함"): 내 서랍.
+    THEMES("테마", "내 서랍이에요. 입은 테마, 만든 것, 받은 것, 담아 둔 조각을 한곳에서 꺼내 써요"),
     MAKE("공방", "스튜디오 하나에서 꾸미고, 기능까지 묶어 올려요. 내 것은 여기 한곳에"),
+}
+
+/**
+ * [TOWN-01] 1.37: the part 마을 opens on next, set by a 소식 notice (광장 for answers and plaza news, 장터 for new works), taken
+ * once. Without it 마을 opens on the part last seen, and a reply notice could land on 테마.
+ */
+object HubLinks {
+    private val _next = kotlinx.coroutines.flow.MutableStateFlow<HubSection?>(null)
+    val next: kotlinx.coroutines.flow.StateFlow<HubSection?> = _next
+    fun open(section: HubSection) { _next.value = section }
+    fun take(): HubSection? = _next.value.also { _next.value = null }
 }
 
 /** 장터 in 마을: the rows that open its list (팔로잉 줄, 오늘의 하나, 넘겨 보기), scrolled with it; null on a 장터 of its own. */
@@ -103,13 +114,31 @@ fun HubScreen(
     onSearch: (() -> Unit)? = null,
     /** [VIL-17] 장터 넘겨 보기. */
     onSwipe: (() -> Unit)? = null,
+    /** [DRW-02] 1.37 내 서랍 › 장터에 올리기 (만들기's 올리기, with the theme handed over). */
+    onUpload: () -> Unit = {},
+    /** 내 서랍 › 만들던 것 (만들기에서 멈춘 것) › 이어서 하기. */
+    onMakeDraft: ((Long) -> Unit)? = null,
 ) {
     // [VIL-07] 1.36 마을 V7: 마을 opens on the part last seen; the first time on the one that fits the kind of work (자영업·투자 have a quiet 광장).
     val prefs = remember { c.appContext.getSharedPreferences(HUB_PREFS, android.content.Context.MODE_PRIVATE) }
     var section by rememberSaveable { mutableStateOf(prefs.getString("section", null)?.let { n -> HubSection.entries.firstOrNull { it.name == n } } ?: firstSection(style)) }
     androidx.compose.runtime.LaunchedEffect(section) { prefs.edit().putString("section", section.name).apply() }
     var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
+    // [TOWN-01] A 소식 notice says which part to open on.
     var reselect by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // [TOWN-11] PC 확인 73f69cbd (장터 소식으로 들어가도 새 작품이 바로 안 보여요): a 소식 opens its part read again, from the top.
+    // PC 확인 f7c41660: keyed on the asked part, taking it (null) cancelled the wait before the read; one collector does it all.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        HubLinks.next.collect { asked ->
+            if (asked == null) return@collect
+            HubLinks.take()
+            if (asked == HubSection.SHARE) shareKind = null
+            section = asked
+            // The part is drawn first (taking the count as it is), then asked to read again.
+            repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+            reselect++
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
@@ -144,7 +173,10 @@ fun HubScreen(
         // 사용자 2026-11-03 (장터를 내리고 올릴 때 박스가 부자연스러움): 광장 and 장터 have the 팔로잉 줄·오늘의 하나 as the first rows of
         // their own lists, so they scroll away with them in one motion; nothing above a list folds open and shut and moves it under the finger.
         val showPeople = recipesOn && c.recipeApi.enabled
+        // 1.37 PC 3차 (테마↔장터↔공방을 오가면 칩·검색·스크롤이 처음으로): each part keeps what was picked, typed and scrolled while away.
+        val kept = androidx.compose.runtime.saveable.rememberSaveableStateHolder()
         Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
+            kept.SaveableStateProvider(section.name) {
             when (section) {
                 HubSection.TALK -> androidx.compose.runtime.CompositionLocalProvider(
                     LocalHubHeader provides if (showPeople) ({ Column { people() } }) else null,
@@ -162,11 +194,12 @@ fun HubScreen(
                 ) { share(shareKind) }
                 HubSection.THEMES -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
                     Themes(style, onLook = { onStudio("mine") }, onFind = { shareKind = "skin"; section = HubSection.SHARE },
-                        onKept = { id -> onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_KEPT + id) })
+                        onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload, onMakeDraft = onMakeDraft)
                 }
                 HubSection.MAKE -> androidx.compose.runtime.CompositionLocalProvider(LocalHubReselect provides reselect) {
                     Make(c, style, onStudio, onMake, onMine, onRequests, onCode, onPosts, onRecipe)
                 }
+            }
             }
         }
     }
@@ -183,9 +216,14 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     var folded by remember { mutableStateOf(prefs.getString("todayFolded", null) == today) }
     if (folded) return
     var looked by remember(style, today) { mutableStateOf(false) }
+    // PC 확인 e50bb622 (인터넷 없이 켜면 '아직 작품이 없어요'): when the list could not be had, nothing is said rather than "none".
+    var offline by remember(style, today) { mutableStateOf(false) }
     val item by androidx.compose.runtime.produceState<com.bamnat.app.recipe.RecipeItem?>(null, style, today) {
-        val pool = runCatching { c.recipeApi.picks(style) }.getOrDefault(emptyList())
-            .ifEmpty { runCatching { c.recipeApi.list(style, "hot").items.take(5) }.getOrDefault(emptyList()) }
+        val picks = runCatching { c.recipeApi.picks(style) }
+        val hot = if (picks.getOrNull().isNullOrEmpty()) runCatching { c.recipeApi.list(style, "hot").items.take(5) } else null
+        offline = picks.isFailure && hot?.isFailure != false
+        val pool = picks.getOrDefault(emptyList())
+            .ifEmpty { hot?.getOrDefault(emptyList()).orEmpty() }
             // PC 확인 V40: only what is made for this kind of work (a 교대 theme is no 오늘의 하나 for 알바).
             .filter { !c.recipes.hides(it) && (style == null || it.styles.isEmpty() || style in it.styles) }
         value = pool.takeIf { it.isNotEmpty() }?.let { it[(com.bamnat.core.time.Today.date().dayOfYear) % it.size] }
@@ -194,7 +232,7 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     val r = item
     // PC 확인 V40: nothing for this kind of work yet: one line asking for its first, folded with 오늘은 그만 like the rest.
     if (r == null) {
-        if (!looked || style == null) return
+        if (!looked || style == null || offline) return
         val bigEmpty = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
         val emptyButtons: @Composable () -> Unit = {
             TextButton(onClick = onMake) { Text("만들기") }
@@ -214,11 +252,15 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
         // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.
         // PC 확인: big enough to see the week, not an icon.
-        r.thumb()?.let { com.bamnat.app.ui.recipe.ThemeThumb(it, width = 88.dp); Spacer(Modifier.padding(start = 8.dp)) }
+        // [MKV-01] 1.37: the work as it really looks, as in 장터.
+        com.bamnat.app.ui.recipe.MarketShot(r, 60.dp, style, onClick = { onRecipe(r.code) }); Spacer(Modifier.padding(start = 8.dp))
         // PC 확인 7b26965a ("아주 크게"에서 제목이 세로로 꺾여요): with big letters the two buttons go under the title.
         val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
         val buttons: @Composable () -> Unit = {
-            TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) { Text("입어 보기") }
+            TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) {
+                // 가계부 PC LOW-2: a work of one tab or of rules (가계부 틀 …) is not a look to wear.
+                Text(if (r.scope == null || r.scope == "theme") "입어 보기" else "살펴보기")
+            }
             TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
         }
         Column(Modifier.weight(1f)) {
@@ -256,11 +298,13 @@ private fun Page(scroll: androidx.compose.foundation.ScrollState = rememberScrol
     }
 }
 
-/** [HUB-02] 테마: the user's own page (지금 입은 테마, 내 테마, 입었던 테마); new themes are found in 장터, made in 공방. */
+/** [HUB-02][DRW-01] 테마 = 내 서랍: the user's own page; new themes are found in 장터, made in 공방. */
 @Composable
-private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, onKept: (Long) -> Unit) = Page {
+private fun Themes(style: WorkStyle?, onLook: () -> Unit, onFind: () -> Unit, onStudio: (String) -> Unit, onRecipe: (String) -> Unit,
+                   onUpload: () -> Unit, onMakeDraft: ((Long) -> Unit)? = null) = Page {
     Text(HubSection.THEMES.line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    com.bamnat.app.ui.recipe.ThemePicker(style, onFind = onFind, onFix = onLook, onUseKept = onKept)
+    com.bamnat.app.ui.recipe.ThemeDrawer(style, onFind = onFind, onFix = onLook, onStudio = onStudio, onRecipe = onRecipe, onUpload = onUpload,
+        onMakeDraft = onMakeDraft)
 }
 
 /** [HUB-03] 공방: the studio, my recipes and what others wish for, in one place. */
@@ -345,7 +389,7 @@ private fun MakeBody(c: AppContainer, style: WorkStyle?, onStudio: (String) -> U
                     label = { Text((if (w.own) "🎨 " else "") + w.title, maxLines = 1) })
             }
         }
-        if (kept.isNotEmpty()) Text("보관함에 조각 ${kept.size}개가 있어요. 마을 › 테마나 스튜디오의 ‘보관함’에서 얹어 섞어요", style = MaterialTheme.typography.bodySmall,
+        if (kept.isNotEmpty()) Text("서랍에 조각 ${kept.size}개가 있어요. 마을 › 테마(내 서랍)나 스튜디오의 ‘보관함’에서 얹어 섞어요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     // [R136-13] 1.36 (리뷰 R-23·M6): 내 것 in one place — 올린 것·받은 것·만들던 것 — and 코드로 받기 only here.

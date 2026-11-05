@@ -26,6 +26,18 @@ class M4Test {
         return (0L until 14L).map { r.resolve(monday.plusDays(it)) }
     }
 
+    /** PC f42b2eba: an 알바's evening then the next day's afternoon (14 hours off) is no 역순환; only a rotating roster is told. */
+    @Test
+    fun `역순환은 교대 달력에서만`() {
+        val d = Fixtures.day.id; val e = Fixtures.evening.id; val o = Fixtures.off.id
+        val list = days(listOf(e, d, o, o, o, o, o, o, o, o, o, o, o, o))
+        fun backward(style: com.bamnat.core.work.WorkStyle?) =
+            RestCheck.check(list, com.bamnat.core.schedule.RestRules().forStyle(style)).any { it.kind == RestCheck.Kind.BACKWARD }
+        assertTrue(backward(com.bamnat.core.work.WorkStyle.SHIFT))
+        assertTrue(!backward(com.bamnat.core.work.WorkStyle.HOURLY))
+        assertTrue(!backward(com.bamnat.core.work.WorkStyle.DAY))
+    }
+
     @Test
     fun `night then day within a day, short rest, backward rotation and night streaks`() {
         val n = Fixtures.night.id; val d = Fixtures.day.id; val e = Fixtures.evening.id; val o = Fixtures.off.id
@@ -39,6 +51,17 @@ class M4Test {
         assertTrue(issues.first { it.kind == RestCheck.Kind.AFTER_NIGHT }.text.contains("2시간"))
         // A plain 주주주주주휴휴 week is fine.
         assertTrue(RestCheck.check(days(List(5) { d } + List(2) { o })).isEmpty())
+    }
+
+    @Test
+    fun `the same shift with its times moved one day is not backward rotation`() {
+        val n = Fixtures.night.id; val d = Fixtures.day.id; val o = Fixtures.off.id
+        // [TIME-03] 주간 moved to start an hour later on Monday, then the usual 주간 on Tuesday: same shift, no rotation.
+        val later = DayEntry(monday, customStart = Fixtures.day.start!!.plusHours(1), customEnd = Fixtures.day.end!!.plusHours(1))
+        assertTrue(RestCheck.check(days(List(5) { d } + List(2) { o }, later)).none { it.kind == RestCheck.Kind.BACKWARD })
+        // The same for a night moved an hour later, followed by the usual night.
+        val lateNight = DayEntry(monday, customStart = Fixtures.night.start!!.plusHours(1), customEnd = Fixtures.night.end!!.plusHours(1))
+        assertTrue(RestCheck.check(days(listOf(n, n, o, o, o, o, o), lateNight)).none { it.kind == RestCheck.Kind.BACKWARD })
     }
 
     @Test

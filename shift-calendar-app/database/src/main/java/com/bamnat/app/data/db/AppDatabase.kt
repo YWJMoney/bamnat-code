@@ -26,8 +26,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PayObservationEntity::class, TaxSettingEntity::class,
         // [RCP-17][RCP-25] Version 24: 나눔 판 레시피 적용 기록과 만들던 레시피.
         AppliedRecipeEntity::class, RecipeDraftEntity::class,
+        // 1.37 [LEDH-11][LEDH-13] Version 25: 모으기·세금 봉투.
+        EnvelopeEntity::class, EnvelopeMoveEntity::class,
     ],
-    version = 24,
+    version = 25,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -63,7 +65,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9,
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
-                MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24,
+                MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
             )
 
         /** Version 2: several alarms per shift, hand-set alarms per day, memo trash. */
@@ -353,6 +355,18 @@ abstract class AppDatabase : RoomDatabase() {
          * Version 22 (1.32 조사 대조): 할부 수수료율 [LEDX-17], 현금영수증 발행한 현금 매출 [TAXP-14] and 시간외 인정 시간
          * [WTYP-24]. Only new columns with defaults: every row of version 21 keeps its meaning (무이자, 0원, 인정 시간 없음).
          */
+        /** Version 25 (1.37 [LEDH-11][LEDH-13]): 모으기·세금 봉투. Only new tables: every row of version 24 keeps its meaning. */
+        val MIGRATION_24_25 = object : Migration(24, 25) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `envelopes` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
+                    "`target` INTEGER NOT NULL, `dueEpochDay` INTEGER, `kind` INTEGER NOT NULL, `sharePercent` INTEGER NOT NULL, `emoji` TEXT NOT NULL, " +
+                    "`sortOrder` INTEGER NOT NULL, `closed` INTEGER NOT NULL, `createdEpochDay` INTEGER)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `envelope_moves` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `envelopeId` INTEGER NOT NULL, " +
+                    "`epochDay` INTEGER NOT NULL, `amount` INTEGER NOT NULL, `note` TEXT NOT NULL, `entryId` INTEGER)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_envelope_moves_envelopeId` ON `envelope_moves` (`envelopeId`)")
+            }
+        }
+
         /** Version 24 [RCP-17][RCP-25]: 나눔 판. Only new tables: every row of version 23 keeps its meaning. */
         val MIGRATION_23_24 = object : Migration(23, 24) {
             override fun migrate(db: SupportSQLiteDatabase) {

@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.focus.onFocusEvent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -192,7 +193,13 @@ internal fun Recipe.piece(kind: PieceKind) = pieces.firstOrNull { it.kind == kin
 @Composable
 internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, onPick: () -> Unit = {},
                        /** [TRY-04] 1.36: one scroll for both sides of 비교, so they move together (R-50). */
-                       scroll: androidx.compose.foundation.ScrollState? = null) {
+                       scroll: androidx.compose.foundation.ScrollState? = null,
+                       /** 장터 카드 실제 모습: drawn first on the screen (the pay page, the widget on a home screen, the alarm screen). */
+                       lead: (@Composable () -> Unit)? = null,
+                       /** With [lead]: the tab's own example is left out. */
+                       only: Boolean = false,
+                       /** False for what is not inside the app (the home screen's widget, the alarm screen): no tab bar. */
+                       bar: Boolean = true) {
     val resolved = remember(r) { r.pieces.associate { p -> p.kind to runCatching { RecipeResolve.piece(r, p, RecipeResolve.answers(r, emptyMap())) }.getOrDefault(p.values) } }
     val corners = resolved[PieceKind.PHOTO_LOOK]?.get("corners") as? String
     @Suppress("UNCHECKED_CAST")
@@ -230,19 +237,22 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                 com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.fillMaxSize().clickable(onClickLabel = "이 화면 고치기", onClick = onPick).verticalScroll(scroll ?: rememberScrollState()).padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    when (tab) {
+                    lead?.invoke()
+                    if (lead == null || !only) when (tab) {
                         TabOrder.CALENDAR -> MockCalendar(resolved, style)
                         TabOrder.MONEY -> {
                             MockParts(resolved[PieceKind.CARDS]?.get("money") as? String, MoneyPart.entries.map { Triple(it.id, it.label,
                                 // 빌드 6 확인: 일감 is 현장·가게 words.
                                 if (it == MoneyPart.OWED && style != WorkStyle.FIELD && style != WorkStyle.BUSINESS) "빌려준 돈·외상" else it.what) },
-                                fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.MONEY_PARTS, id, style) })
+                                fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.MONEY_PARTS, id, style) }, page = TabOrder.MONEY)
                             // [FREE-06]
-                            resolved[PieceKind.MONEY_LOOK]?.let { com.bamnat.app.ui.settings.MoneySample(moneyLookOf(it)) {} }
+                            // [CNV-11] 1.37 always there, so 날짜 머리·한 줄·금액 can be picked on the canvas.
+                            com.bamnat.app.ui.settings.MoneySample(resolved[PieceKind.MONEY_LOOK]?.let(::moneyLookOf) ?: com.bamnat.core.recipe.MoneyLook(),
+                                com.bamnat.app.ui.studio.rememberMyMoney()) {}
                         }
-                        TabOrder.MEMOS -> MockMemos(resolved)
+                        TabOrder.MEMOS -> MockMemos(resolved, style)
                         TabOrder.STATS -> MockParts(resolved[PieceKind.CARDS]?.get("stats") as? String, StatsPart.entries.map { Triple(it.id, it.label, it.what) }, bars = true,
-                            fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.STATS_PARTS, id, style) })
+                            fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.STATS_PARTS, id, style) }, page = TabOrder.STATS)
                         TabOrder.PLAZA -> MockNote(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji.orEmpty() + "마을",
                             "마을은 글과 단추 자리가 모두 같아요. 배경과 이모티콘만 내 화면에서 바뀌어요")
                         else -> MockSettings(resolved)
@@ -252,7 +262,7 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                 }
                 // PC 확인 S2 (어두운 한 색에서도 예시 맨 아래 탭 줄만 밝음): the tab bar in the screen's look too, as the phone draws it.
                 val barShape = RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp)
-                CompositionLocalProvider(com.bamnat.app.ui.theme.LocalScreenLooks provides skin) {
+                if (bar) CompositionLocalProvider(com.bamnat.app.ui.theme.LocalScreenLooks provides skin) {
                 com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.fillMaxWidth().clip(barShape)) {
                 val barPart = blueprint.style("app.tabs")
                 Row(Modifier.fillMaxWidth().partSpot("app.tabs").background(barPart.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.surfaceContainer, barShape).padding(vertical = 6.dp),
@@ -337,18 +347,29 @@ private fun MockCalendar(resolved: Map<PieceKind, Map<String, Any?>>, style: Wor
     // Only the cards this kind of work has, as on the phone (no 오늘 일감·매출 on a 교대 example, 자유도 점검).
     val placed = all.filter { it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.ASK && it.part != CalendarPart.JOURNAL &&
         fitsHere(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, it.part.id, style) }
-    placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
-    if (placed.any { it.part == CalendarPart.SUMMARY }) Box(Modifier.mockPick("cards")) { MockSummary(style) }
+    // [CNV-06] 1.37 Each card says which it is, for the studio's canvas to pick and move it.
+    fun spot(p: CalendarPart) = com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.CALENDAR, p.id)
+    placed.filter { above(it.part) && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style), spot = spot(it.part)) }
+    if (placed.any { it.part == CalendarPart.SUMMARY && above(it.part) }) Box(Modifier.partSpot(spot(CalendarPart.SUMMARY)).mockPick("cards")) { MockSummary(style) }
     val ownDays = (resolved[PieceKind.SHIFT_LOOK]?.get("items") as? List<Map<String, Any?>>)?.takeIf { it.isNotEmpty() }
     val days = ownDays ?: exampleDays(style)
     // PC 확인 Z13: this month's own counts of each kind of day, when the calendar has work (else the example's).
     val counts = rememberMonthKinds(days)
-    if (placed.any { it.part == CalendarPart.COUNTS }) Row(Modifier.mockPick("days"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        days.forEachIndexed { i, d -> Text("${d["label"]} ${counts?.getOrNull(i) ?: if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
-            color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
+    val countsRow: @Composable () -> Unit = {
+        Row(Modifier.partSpot(spot(CalendarPart.COUNTS)).mockPick("days"), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            days.forEachIndexed { i, d -> Text("${d["label"]} ${counts?.getOrNull(i) ?: if (d["role"] == "off") 8 else 11}", style = MaterialTheme.typography.labelSmall,
+                color = ((d["color"] as? Long) ?: 0xFF757575L).asColor()) }
+        }
     }
-    Box(Modifier.mockPick("cells")) { MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]), ownDays.orEmpty()) }
-    placed.filter { !above(it.part) }.forEach { MockCard(it.part.labelFor(style), mockWhat(it.part, style)) }
+    if (placed.any { it.part == CalendarPart.COUNTS && above(it.part) }) countsRow()
+    Box(Modifier.mockPick("cells")) { MockMonth(days, resolved[PieceKind.CAL_THEME].orEmpty(), viewOf(resolved[PieceKind.CAL_VIEW]), ownDays.orEmpty(), style) }
+    placed.filter { !above(it.part) }.forEach {
+        when (it.part) {
+            CalendarPart.SUMMARY -> Box(Modifier.partSpot(spot(CalendarPart.SUMMARY)).mockPick("cards")) { MockSummary(style) }
+            CalendarPart.COUNTS -> countsRow()
+            else -> MockCard(it.part.labelFor(style), mockWhat(it.part, style), spot = spot(it.part))
+        }
+    }
 }
 
 /** [CVW-01] 달력 모양's values as the calendar reads them. */
@@ -371,17 +392,27 @@ internal fun valuesOf(v: com.bamnat.core.recipe.CalendarView, keep: Map<String, 
 internal class MyWeeks(val first: java.time.LocalDate, val today: java.time.LocalDate, val days: List<com.bamnat.app.ui.calendar.SampleDay>)
 
 @Composable
-internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from: java.time.LocalDate? = null): MyWeeks? {
+internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from: java.time.LocalDate? = null,
+    /** PC 확인 1.37 A9 (현장 일감 3건인데 입어 보기·스튜디오 달력이 예시): a kind of work written day by day has no 근무표, so its month is
+     *  my own dates and holidays, the days blank, never the example. */
+    blankOk: Boolean = false,
+    /** PC 확인 1.37 A11: on those blank days, my 일감 (현장) by its 공수 or title. */
+    jobs: List<com.bamnat.core.money.Job>? = null): MyWeeks? {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
     val today = remember { com.bamnat.core.time.Today.date() }
     // [LAY-03] From the week of [from] (a day the 꾸밈 층 is pinned to) when it is given, else this week.
     val first = remember(today, from) { (from ?: today).let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } }
-    val real = remember(snap, days, first, weeks) {
+    val real = remember(snap, days, first, weeks, blankOk, jobs) {
         val s = snap ?: return@remember null
         val resolved = s.resolver.resolveRange(first, first.plusDays(weeks * 7L - 1))
-        if (resolved.none { it.shiftType != null }) return@remember null
+        if (resolved.none { it.shiftType != null }) return@remember if (!blankOk) null else resolved.map { r ->
+            val job = jobs?.firstOrNull { j -> !r.date.isBefore(j.date) && !r.date.isAfter(j.endDate ?: j.date) }
+            if (job != null) com.bamnat.app.ui.calendar.SampleDay(com.bamnat.app.ui.studio.jobCell(job), 0xFF8D6E63L,
+                holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date))
+            else com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = true, blank = true)
+        }
         resolved.map { r ->
             val t = r.shiftType
             val role = t?.let { com.bamnat.core.recipe.ShiftRole.guess(it.name, it.isOff, it.start?.hour, if (it.isOff) 0 else it.durationMinutes).key }
@@ -401,7 +432,9 @@ internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from
 @Composable
 private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, view: com.bamnat.core.recipe.CalendarView,
                       /** The recipe's own 근무 모양 (none: my calendar keeps its own colours, not the example's). */
-                      ownDays: List<Map<String, Any?>> = days) {
+                      ownDays: List<Map<String, Any?>> = days,
+                      /** PC 확인 1.37 A6: the example's memos and hours in this kind of work's words (투자 has no 8h, no 월급날). */
+                      style: WorkStyle? = null) {
     // [R136-07] 1.36 (리뷰 R-16·R-21, 후보 1 '내 달력으로 입어 보기'): this week and the next of the phone's own calendar, each day in
     // the recipe's look for its kind of day (the same name, then the same role) or its own; the real holidays and today. Memos stay
     // off the picture. A calendar with no kinds of day yet keeps the example.
@@ -410,7 +443,16 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
     val layer = com.bamnat.app.ui.decor.LocalDecor.current
     val pinned = remember(layer, now) { layer.nextPinned(now)?.takeIf { it.toEpochDay() - now.minusDays((now.dayOfWeek.value % 7).toLong()).toEpochDay() >= 14 } }
     // PC 확인 C4 1.36 (예시 근무 색이 실제 달력 색과 달라요): my days take a recipe's 근무 모양 only when it has one.
-    val mine = rememberMyWeeks(ownDays, from = pinned)
+    // [CNV-12] 1.37 (사용자 "실제의 현재 모습"): on my phone this whole month of my calendar, from the week of the 1st; the 올리기 표지 the example.
+    val realOn = com.bamnat.app.ui.studio.LocalRealLook.current
+    val monthStart = remember(now) { now.withDayOfMonth(1) }
+    val weeksN = remember(now) { ((monthStart.dayOfWeek.value % 7) + now.lengthOfMonth() + 6) / 7 }
+    val whole = pinned == null
+    val myJobs = if (style == WorkStyle.FIELD) com.bamnat.app.ui.studio.rememberMyJobs() else null
+    val mine = rememberMyWeeks(ownDays, weeks = if (whole) weeksN else 2, from = pinned ?: monthStart, blankOk = style != null && !style.usesPattern && style != WorkStyle.HOURLY,
+        jobs = myJobs).takeIf { realOn }
+    val rows = if (mine != null && whole) weeksN else 2
+    val n = rows * 7
     val exFirst = pinned?.let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } ?: EXAMPLE_FIRST
     val today = mine?.today ?: now
     val first = mine?.first ?: today
@@ -420,11 +462,19 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(d), off = true, blank = true) } }
     val start0 = if (blank != null) first.minusDays((first.dayOfWeek.value % 7).toLong()) else first
     val real = mine?.days ?: blank
-    val memos = listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("인수인계"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
+    // PC 확인 7b219467 (알바·현장 예시에 '월급날'·'인수인계'): the example's memos in each kind of work's own words.
+    val memos = when (style) {
+        WorkStyle.HOURLY -> listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("대타 부탁"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("알바비 들어오는 날"))
+        WorkStyle.FIELD -> listOf(listOf("자재 챙기기", "택배 오는 날"), emptyList(), listOf("현장 이동"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("일당 받는 날"))
+        WorkStyle.BUSINESS -> listOf(listOf("재료 주문", "택배 오는 날"), emptyList(), listOf("단골 예약"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("카드 정산일"))
+        WorkStyle.INVEST -> listOf(listOf("실적 발표", "택배 오는 날"), emptyList(), listOf("매매 일지"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("배당 들어오는 날"))
+        WorkStyle.DAY -> listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("주간 회의"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
+        else -> listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("인수인계"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
+    }
     val sample = real ?: (0 until 14).map { i ->
         val d = days[(i / 2) % days.size]
         com.bamnat.app.ui.calendar.SampleDay(((d["emoji"] as? String) ?: d["label"]?.toString()).orEmpty(), (d["color"] as? Long) ?: 0xFF757575L,
-            memos[i % memos.size], hours = if (d["role"] == "off") null else "8h", off = d["role"] == "off", role = d["role"] as? String)
+            memos[i % memos.size], hours = if (d["role"] == "off" || style == WorkStyle.INVEST) null else "8h", off = d["role"] == "off", role = d["role"] as? String)
     }
     Column(Modifier.partSpot("cal"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title, too.
@@ -443,11 +493,12 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         // F-92: a cell design or pattern is drawn by the month's own cell, as 자세히 and the phone do (the plain sample has neither).
         // U15 1.36 (빌드 확인: 누르고 있으면 전 모양이 다른 예시 날로 바뀜): with no own calendar both ways draw the same example — the
         // same days from the same Sunday the 9th, today the 3rd cell — so a cell design added or taken away changes only the looks.
-        if ((view.looks.isNotEmpty() || bp.touches("cal") || com.bamnat.app.ui.parts.LocalPartSpots.current != null) && blank == null) com.bamnat.app.ui.settings.CellWeeks(view, rows = 2, onCell = null,
+        if ((view.looks.isNotEmpty() || bp.touches("cal") || com.bamnat.app.ui.parts.LocalPartSpots.current != null) && blank == null) com.bamnat.app.ui.settings.CellWeeks(view, rows = if (real != null) rows else 2, onCell = null,
             start = if (real != null) start0 else exFirst, todayDate = if (real != null) today else exFirst.plusDays(2), days = sample,
             todayColor = (theme["today"] as? Long)?.asColor())
         else if (real != null) com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(),
-            rows = 2, numbers = (0 until 14).map { start0.plusDays(it.toLong()).dayOfMonth }, todayAt = (today.toEpochDay() - start0.toEpochDay()).toInt())
+            rows = if (mine != null) rows else 2, numbers = (0 until (if (mine != null) n else 14)).map { start0.plusDays(it.toLong()).dayOfMonth },
+            todayAt = (today.toEpochDay() - start0.toEpochDay()).toInt())
         else com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(), rows = 2,
             numbers = (0 until 14).map { exFirst.plusDays(it.toLong()).dayOfMonth })
         if (mine == null) Text("근무를 넣으면 내 달력으로 보여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -471,9 +522,19 @@ private fun MockSummary(style: WorkStyle?) {
         WorkStyle.INVEST -> listOf("기록" to "9일", "수익률" to "이번 달", "원금" to "합계")
         else -> listOf("근무" to "18일", "시간" to "162h", "급여" to "예상")
     }.let { ex ->
+        // PC 확인 1.37 A11: 현장 on my phone says my 일감 this month (일한 날 · 공수 · 받을 돈).
+        val jobs = if (style == WorkStyle.FIELD) com.bamnat.app.ui.studio.rememberMyJobs() else null
+        val rules = com.bamnat.app.ui.studio.rememberFieldRules()
+        if (jobs != null) return@let com.bamnat.app.ui.studio.jobMonth(jobs, rules).let { m ->
+            listOf("일한 날" to "${m.days}일", (if (m.units != null) "공수" to com.bamnat.core.money.DayRate.trim(m.units) else "일감" to "${m.count}건"),
+                "받을 돈" to (if (m.amount > 0) com.bamnat.app.ui.studio.won(m.amount) else "0원"))
+        }
         // PC 확인 Z5 (예시 숫자 '근무 18일 · 162h'): this month of the phone's own calendar, when it has work in it.
-        val mine = rememberMonthWork() ?: return@let ex
-        if (style == WorkStyle.BUSINESS || style == WorkStyle.INVEST) ex
+        // PC 확인 1.37 A10 (현장 기록 0건인데 '일한 날 15일 · 공수 16.5'): on my phone a kind of work with no 근무표 says my month, 0 when empty.
+        val realOn = com.bamnat.app.ui.studio.LocalRealLook.current
+        val noTable = style != null && !style.usesPattern && style != WorkStyle.HOURLY
+        val mine = rememberMonthWork() ?: if (realOn && noTable) 0 to 0 else return@let ex
+        if (style == WorkStyle.BUSINESS || style == WorkStyle.INVEST) (if (realOn) ex.map { (k, v) -> k to (if (v.endsWith("일")) "${mine.first}일" else v) } else ex)
         else listOf((if (style == WorkStyle.HOURLY || style == WorkStyle.FIELD) "일한 날" else "근무") to "${mine.first}일", "시간" to "${mine.second}h", ex.last())
     }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -487,11 +548,27 @@ private fun MockSummary(style: WorkStyle?) {
 }
 
 @Composable
-private fun MockCard(title: String, what: String, bars: Boolean = false) {
-    Card(Modifier.fillMaxWidth().partSpot("app.card").mockPick("cards"), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
+private fun MockCard(title: String, what: String, bars: Boolean = false, spot: String? = null,
+    /** [CNV-09] What the card shows on the phone (example numbers), in place of the words about it. */
+    body: com.bamnat.app.ui.studio.StudioExamples.Body? = null) {
+    Card(Modifier.fillMaxWidth().partSpot("app.card").let { m -> if (spot != null) m.partSpot(spot) else m }.mockPick("cards"), shape = MaterialTheme.shapes.medium, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.labelLarge)
-            Text(what, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            if (body == null) Text(what, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            else {
+                body.rows.forEach { (k, v) ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(k, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Text(v, style = MaterialTheme.typography.labelMedium, maxLines = 1)
+                    }
+                }
+                body.meter?.let { f ->
+                    Box(Modifier.fillMaxWidth().height(6.dp).background(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.shapes.extraSmall)) {
+                        Box(Modifier.fillMaxWidth(f).fillMaxSize().background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall))
+                    }
+                }
+            }
             if (bars) Row(Modifier.height(24.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
                 listOf(0.5f, 0.8f, 0.65f, 1f, 0.7f).forEach { h -> Box(Modifier.width(14.dp).fillMaxSize(h).background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall)) }
             }
@@ -500,22 +577,36 @@ private fun MockCard(title: String, what: String, bars: Boolean = false) {
 }
 
 @Composable
-private fun MockParts(line: String?, parts: List<Triple<String, String, String>>, bars: Boolean = false, fits: (String) -> Boolean = { true }) {
+private fun MockParts(line: String?, parts: List<Triple<String, String, String>>, bars: Boolean = false, fits: (String) -> Boolean = { true }, page: String? = null) {
     val placed = PageLayout.decode(line).arrange(parts) { it.first }.filter { it.shown && fits(it.part.first) }
-    placed.forEach { (p, _, _) -> MockCard(p.second, p.third, bars && p.first in setOf("weeks", "trend", "year", "three")) }
+    // [CNV-12] My own numbers where the card has them (this month's money, work days and hours); the example elsewhere.
+    val realOn = com.bamnat.app.ui.studio.LocalRealLook.current
+    val myMoney = if (page == TabOrder.MONEY) com.bamnat.app.ui.studio.rememberMyMoney() else null
+    val myWork = if (page == TabOrder.STATS) rememberMonthWork()?.takeIf { it.first > 0 } else null
+    placed.forEach { (p, _, _) -> MockCard(p.second, p.third, bars && p.first in setOf("weeks", "trend", "year", "three"),
+        spot = page?.let { com.bamnat.app.ui.studio.StudioEdit.cardId(it, p.first) },
+        // PC 확인 1.37 A7 (내 합계 옆에 예시 숫자 '세전 3,120,000원'): with my own numbers on the page, a card that has none of them says
+        // what it is for instead of made-up numbers that read as mine.
+        // Example numbers only on the 올리기 표지 (or a 가계부·통계 page whose kind I have nothing of yet: then words, not numbers).
+        body = when {
+            myMoney != null -> com.bamnat.app.ui.studio.myMoneyBody(p.first, myMoney)
+            myWork != null -> myWork.takeIf { p.first == "tiles" }?.let { (d, h) -> com.bamnat.app.ui.studio.StudioExamples.Body(listOf("근무한 날" to "${d}일", "근무 시간" to "${h}h")) }
+            realOn -> null
+            else -> page?.let { com.bamnat.app.ui.studio.StudioExamples.body(it, p.first) }
+        }) }
 }
 
 @Suppress("UNCHECKED_CAST")
 @Composable
-private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
+private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>, style: WorkStyle? = null) {
     val placed = PageLayout.decode(resolved[PieceKind.CARDS]?.get("memo") as? String).arrange(MemoPart.entries.toList()) { it.id }.filter { it.shown }
     placed.forEach { p ->
         when (p.part) {
-            MemoPart.SEARCH -> Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
+            MemoPart.SEARCH -> Box(Modifier.fillMaxWidth().partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)).background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
                 Text("🔍 제목·내용·#태그 찾기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            MemoPart.NOTEBOOKS -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("전체", "근무", "개인").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp),
+            MemoPart.NOTEBOOKS -> Row(Modifier.partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("전체", when (style) { WorkStyle.BUSINESS -> "가게"; WorkStyle.INVEST -> "매매"; WorkStyle.FIELD -> "현장"; else -> "근무" }, "개인").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer) }
             }
             else -> Unit
@@ -523,14 +614,16 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
     }
     val tpls = (resolved[PieceKind.MEMO_TEMPLATES]?.get("items") as? List<Map<String, Any?>>).orEmpty()
     val journal = (resolved[PieceKind.INVEST]?.get("journal") as? List<String>).orEmpty()
-    if (tpls.isEmpty() && journal.isEmpty()) MockNote("메모", "메모 틀을 더하면 '틀에서 시작'에 여기처럼 보여요")
     tpls.forEach { t ->
         MockCard("${t["emoji"] ?: "📝"} ${t["title"]}" + ((t["repeat"] as? String)?.let { " · ${repeatLabel(it)}" } ?: ""),
             (t["check"] as? List<String>)?.joinToString(" · ") { "☐ $it" }?.ifEmpty { null } ?: (t["body"] as? String).orEmpty())
     }
     if (journal.isNotEmpty()) MockCard("📒 투자일지", journal.joinToString(" · "))
     // [FREE-04] The memos in the recipe's 메모장 모양.
-    resolved[PieceKind.MEMO_LOOK]?.let { Box(Modifier.mockPick("memo")) { com.bamnat.app.ui.memo.MemoLookSample(memoLookOf(it)) {} } }
+    // [CNV-11] 1.37 always there, so each memo card's parts (카드·제목·내용·날짜) can be picked on the canvas.
+    // [CNV-12] My own memos on my phone (pinned first), the example ones for the 올리기 표지.
+    val myMemos = com.bamnat.app.ui.studio.rememberMyMemos()
+    Box(Modifier.mockPick("memo")) { com.bamnat.app.ui.memo.MemoLookSample(resolved[PieceKind.MEMO_LOOK]?.let(::memoLookOf) ?: com.bamnat.core.recipe.MemoLook(), myMemos, style) {} }
 }
 
 /** [FREE-04][FREE-06] A piece's values as the look they write (the same k=v line the settings keep). */
@@ -583,7 +676,7 @@ private fun repeatLabel(r: String) = when {
 /** The pieces a tab's screen shows, in the order they are edited there. */
 private fun piecesOn(tab: String): List<PieceKind> = when (tab) {
     TabOrder.CALENDAR -> listOf(PieceKind.SHIFT_LOOK, PieceKind.CAL_THEME, PieceKind.ALARMS)
-    TabOrder.MONEY -> listOf(PieceKind.MONEY_LOOK, PieceKind.SHOP, PieceKind.FIELD_SHEET)
+    TabOrder.MONEY -> listOf(PieceKind.MONEY_LOOK, PieceKind.LEDGER, PieceKind.SHOP, PieceKind.FIELD_SHEET)
     TabOrder.MEMOS -> listOf(PieceKind.MEMO_LOOK, PieceKind.MEMO_TEMPLATES, PieceKind.INVEST)
     TabOrder.STATS -> listOf(PieceKind.HOURLY_RULES)
     // [FREE-05] 화면 색·배경 comes from 설정 › 화면 꾸미기 (the colours and pictures are made there, with the example on top).
@@ -728,7 +821,10 @@ internal fun FieldsForm(fields: List<Field>, values: Map<String, Any?>, kind: Pi
             is Field.Text -> OutlinedTextField((v as? String).orEmpty(), { t -> onChange(f.key, t.take(f.max).ifEmpty { if (f.optional) null else t }) },
                 label = { Text(label) }, singleLine = !f.lines, minLines = if (f.lines) 3 else 1, modifier = Modifier.fillMaxWidth())
             is Field.Num -> NumberRow(label, (v as? Number)?.toDouble(), f.decimals, f.lo, f.hi) { d -> onChange(f.key, d?.let { if (f.decimals == 0) it.toLong() else it }) }
-            is Field.Money -> Text(if (v is Ref.Input || v == null) "$label: 받는 분이 직접 넣어요" else "$label: 모두에게 같은 금액",
+            // bc7e2d43 PC 확인 LOW-5 ('모두에게 같은 금액'이라 적혔는데 올리기 1/4에서는 받는 칸): an amount here is mine for now; on
+            // upload it becomes the receiver's field first, and 1/4 is where it can be kept the same for everyone.
+            is Field.Money -> Text(if (v is Ref.Input || v == null) "$label: 받는 분이 직접 넣어요"
+                else "$label: 지금 ${com.bamnat.app.ui.Fmt.won((v as? Number)?.toLong() ?: 0)} · 올리면 받는 분이 정하는 칸이 돼요(올리기 1/4에서 바꿔요)",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             is Field.Color -> ColorSwatch((v as? Long) ?: 0xFF5C6BC0L, label + if (v is Ref) " (테마·받는 분 색)" else "", { c -> onChange(f.key, c) })
             is Field.Emoji -> {
@@ -787,13 +883,22 @@ private fun fmt(d: Double) = if (d == d.toLong().toDouble()) d.toLong().toString
 @Composable
 private fun TextsEditor(label: String, list: List<String>, max: Int, itemMax: Int, onChange: (List<String>) -> Unit) {
     Text(label, style = MaterialTheme.typography.labelLarge)
+    // fc374a23 PC 확인 (새 분류 이름을 치는 동안 키보드가 '더하기'를 가림): typing in a row keeps 더하기 in sight above the keyboard,
+    // and the keyboard's 다음 on the last row adds the next one.
+    val addSeen = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     list.forEachIndexed { i, t ->
         Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(t, { s -> onChange(list.toMutableList().apply { set(i, s.take(itemMax)) }) }, singleLine = true, modifier = Modifier.weight(1f))
+            OutlinedTextField(t, { s -> onChange(list.toMutableList().apply { set(i, s.take(itemMax)) }) }, singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Next),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onNext = {
+                    if (i == list.lastIndex && t.isNotBlank() && list.size < max) onChange(list + "") else defaultKeyboardAction(androidx.compose.ui.text.input.ImeAction.Next)
+                }),
+                modifier = Modifier.weight(1f).onFocusEvent { e -> if (e.isFocused) scope.launch { kotlinx.coroutines.delay(300); addSeen.bringIntoView() } })
             IconButton(onClick = { onChange(list.toMutableList().apply { removeAt(i) }) }) { Icon(Icons.Filled.Close, "$label ${i + 1}번 빼기") }
         }
     }
-    if (list.size < max) TextButton(onClick = { onChange(list + "") }) { Icon(Icons.Filled.Add, null); Text(" 더하기") }
+    if (list.size < max) TextButton(onClick = { onChange(list + "") }, modifier = Modifier.bringIntoViewRequester(addSeen)) { Icon(Icons.Filled.Add, null); Text(" 더하기") }
 }
 
 @Suppress("UNCHECKED_CAST")
@@ -804,7 +909,7 @@ private fun ItemsEditor(label: String, f: Field.Items, list: List<Map<String, An
         OutlinedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(((item["name"] ?: item["title"] ?: item["text"] ?: item["role"]?.let { PICK_LABELS[it] }) as? String) ?: "${i + 1}번",
+                    Text(((item["name"] ?: item["title"] ?: item["text"] ?: item["category"] ?: item["role"]?.let { PICK_LABELS[it] }) as? String) ?: "${i + 1}번",
                         style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (list.size > f.min) IconButton(onClick = { onChange(list.toMutableList().apply { removeAt(i) }) }) { Icon(Icons.Filled.Close, "${i + 1}번 빼기") }
                 }
@@ -870,23 +975,28 @@ internal object StudioStarters {
             com.bamnat.core.recipe.Decor.CELL, on = "d25", x = 820, y = 180, w = 12, h = 12, fill = 0xFFFFB300))).values()
         // [TAB-07] 1.36 탭 보기: a 근무 띠 calendar and a 보드 메모장 to start from.
         PieceKind.TAB_VIEW -> mapOf("cal" to "rota", "memo" to "board", "memoBy" to "tag", "money" to "board")
+        // 1.37 [LEDH-18] 가계부 틀: a 야간 근무자's start.
+        PieceKind.LEDGER -> mapOf("costs" to listOf("야식", "편의점", "택시"), "budgets" to listOf(mapOf("category" to "야식", "amount" to 100_000L)),
+            "envelopes" to listOf(mapOf("name" to "비상금", "target" to 1_000_000L, "emoji" to "🛟")))
     }
 }
 
 /** Whether a card belongs on this kind of work's screen, as on the phone ([com.bamnat.core.guide.FitTable]). */
 internal fun fitsHere(surface: com.bamnat.core.guide.FitSurface, id: String, style: WorkStyle?): Boolean =
-    style == null || com.bamnat.core.guide.FitTable.visible(surface, id, style, emptySet())
+    // PC 확인 1.37 A6 (첫 설정을 미룬 달력에 한 카드가 예시에도, 숨긴 기능에도): no kind of work yet fits as on the phone, not 'everything'.
+    com.bamnat.core.guide.FitTable.visible(surface, id, style, emptySet())
 
 
 /** PC 확인 Z5: this month's work days and scheduled hours on the phone's own calendar (0 and 0 with none), or null while it loads. */
 @Composable
 private fun rememberMonthWork(): Pair<Int, Int>? {
     val own = LocalOwnMonth.current
+    val realOn = com.bamnat.app.ui.studio.LocalRealLook.current
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
-    return remember(snap) {
-        val sn = snap ?: return@remember null
+    return remember(snap, realOn) {
+        val sn = snap?.takeIf { realOn } ?: return@remember null
         val month = java.time.YearMonth.from(com.bamnat.core.time.Today.date())
         val days = sn.resolver.resolveRange(month.atDay(1), month.atEndOfMonth()).filter { it.isWorkDay }
         // PC 확인 V19 1.36 (공방 카드에 예시 '18일 · 162h'): the 공방 card is my own month even with no work yet (0일 · 0h); the studio
@@ -900,11 +1010,12 @@ private fun rememberMonthWork(): Pair<Int, Int>? {
 @Composable
 private fun rememberMonthKinds(days: List<Map<String, Any?>>): List<Int>? {
     val own = LocalOwnMonth.current
+    val realOn = com.bamnat.app.ui.studio.LocalRealLook.current
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
-    return remember(snap, days) {
-        val sn = snap ?: return@remember null
+    return remember(snap, days, realOn) {
+        val sn = snap?.takeIf { realOn } ?: return@remember null
         val month = java.time.YearMonth.from(com.bamnat.core.time.Today.date())
         val resolved = sn.resolver.resolveRange(month.atDay(1), month.atEndOfMonth())
         if (resolved.none { it.isWorkDay }) return@remember if (own) days.map { 0 } else null

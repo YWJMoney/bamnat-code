@@ -95,17 +95,17 @@ class RCScreenshotTest : ScreenshotBase() {
 
     /** 사용자 2026-11-01: 스튜디오 › 보관함 › 장터에서 찾기 opens 장터 on this area's 구간, and 뒤로 comes back to the studio as it was. */
     @Test fun studioBoxOpensMarketAndComesBack() { starters(); style(WorkStyle.SHIFT); shoot("1349_rcp_studio_market", PHONE) {
-        tab(4, wide = false)
-        tapText("공방", exact = true)
-        tapText("지금 모양 고치기", exact = true)
-        // PC 확인 1.36: the studio opens on 앱 전체 › 한 색 now; 달력 first for its 기능별 탭.
-        tapText("달력", exact = true)
+        // [CNV-08] 달력 도구 › 카드 배치 opens the studio on 달력 (the 화면 menu on top is a popup these tests do not read).
+        tapText("도구")
+        tapText("카드 배치", exact = true)
+        // [CNV-13] the tool row opens with 펼치기 instead of sliding it.
+        tapText("도구 줄 모두 펼쳐 보기", exact = true)
         tapText("보관함", prefix = true)
         tapText("장터 ‘기능별 탭 › 달력’에서 찾기", exact = true)
         assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))
         assertTrue(appears("탭 하나만", exact = true))
         back()
-        assertTrue("뒤로 → the studio", appears("앱 화면", exact = true))
+        assertTrue("뒤로 → the studio", appears("화면: 달력 ▾", exact = true))
     } }
 
     /** PC 확인 1.36: a code typed in 찾기 opens that work whatever its 구간; nothing found says what was looked for and offers the other 구간. */
@@ -223,7 +223,7 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(vm.state.value.appliedAt != null)
         // PC 확인 보안 7차 (넣었는데 쓰는 분 0명): this phone is one of them now (the count read again, or this phone's share added).
         assertEquals(120 + 1, vm.state.value.doc!!.item.users + vm.state.value.usersPlus)
-        // The 적용했어요 line with its own 되돌리기 goes after its ten seconds; then back to the top, where the line sits.
+        // The 넣었어요 line with its own 되돌리기 goes after its ten seconds; then back to the top, where the line sits.
         compose.mainClock.advanceTimeBy(12_000)
         settle()
         repeat(6) { scrollDown(400) }
@@ -241,7 +241,7 @@ class RCScreenshotTest : ScreenshotBase() {
         assertTrue(runBlocking { c.recipes.inUse() }.none { it.code == api.code(0) })
     }
 
-    /** PC 확인 8773e3ae: the same from the 적용했어요 line's own 되돌리기. */
+    /** PC 확인 8773e3ae: the same from the 넣었어요 line's own 되돌리기. */
     @Test fun takingItBackFromTheSnackbar() = shoot("1342d_rcp_detail_undone_snack", PHONE) {
         val api = starters()
         style(WorkStyle.SHIFT)
@@ -252,7 +252,7 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         tapText("넣기", exact = true)
         settle()
-        assertTrue(appears("적용했어요", exact = false))
+        assertTrue(appears("넣었어요", exact = false))
         tapText("되돌리기", exact = true, scrolls = 0)
         settle()
         settle()
@@ -369,8 +369,8 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         tapText("내 달력에 넣기", exact = false)
         settle()
-        // [MKX-02] Where it is undone: 내 것 › 받은 레시피, or 마을 › 테마 for a tab laid on the theme.
-        assertTrue(appears("마을 › 공방 › 내 것 › 받은 레시피에서 되돌", exact = false) || appears("마을 › 테마에서", exact = false))
+        // [MKX-02][DRW-01] Where it is undone: 내 서랍의 받은 것, or 마을 › 테마 for a tab laid on the theme.
+        assertTrue(appears("마을 › 테마(내 서랍)의 받은 것에서 되돌", exact = false) || appears("마을 › 테마에서", exact = false))
     }
 
     /** PC 확인 보안 7차 ("글자 주→주, 색 바뀜"): the put-on question says only what changes. */

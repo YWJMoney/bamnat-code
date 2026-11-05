@@ -72,25 +72,30 @@ class PayStore(
     private val _undo = MutableStateFlow<PayProfile?>(null)
     val canUndo: StateFlow<PayProfile?> = _undo.asStateFlow()
 
-    suspend fun save(profile: PayProfile?, keepUndo: Boolean = true) = withContext(Dispatchers.IO) {
-        synchronized(this@PayStore) { write(profile, keepUndo) }
+    suspend fun save(profile: PayProfile?, keepUndo: Boolean = true, why: String = "급여 설정을 바꿨어요") = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) { write(profile, keepUndo, why) }
     }
 
     /**
      * [STAB-01] Changes the saved profile in one step: two quick taps (two answers, two switches) each start
      * from the other's result, instead of the second one undoing the first.
      */
-    suspend fun update(transform: (PayProfile) -> PayProfile) = withContext(Dispatchers.IO) {
-        synchronized(this@PayStore) { _profile.value?.let { write(transform(it), keepUndo = true) } }
+    suspend fun update(transform: (PayProfile) -> PayProfile) = update("급여 값을 고쳤어요", transform)
+
+    /** [PAYIN-06] As [update], with what the change was for the 7-day list. */
+    suspend fun update(why: String, transform: (PayProfile) -> PayProfile) = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) { _profile.value?.let { write(transform(it), keepUndo = true, why = why) } }
     }
 
-    private fun write(given: PayProfile?, keepUndo: Boolean) {
+    private fun write(given: PayProfile?, keepUndo: Boolean, why: String = "급여 설정을 바꿨어요") {
         // D 1.32 [PAYA-01] A new payslip match joins the months matched before.
         val was = _profile.value
         val profile = given?.verified?.takeIf { it != was?.verified }?.let { v ->
             given.copy(checks = com.bamnat.core.pay.SlipProof.remember(given.checks, v))
         } ?: given
         if (keepUndo) _undo.value = _profile.value
+        // [PAYIN-06] 1.37 B6·B7: every change kept with what it was before, for 7 days ('고친 기록 · 되돌리기').
+        if (keepUndo && was != profile) remember(was, why)
         if (profile == null) file.delete() else {
             file.parentFile?.mkdirs()
             val tmp = File(file.parentFile, "profile.json.tmp")
@@ -108,6 +113,67 @@ class PayStore(
 
     private fun read(): PayProfile? =
         runCatching { if (file.exists()) PayCodec.decode(JSONObject(file.readText())) else null }.getOrNull()
+
+    // ---- [PAYIN-06] 1.37 B6·B7: the last 7 days of changes ----
+
+    /**
+     * One change to the pay setup: when, what was done, and the setup as it was just before ([before] null when there was none).
+     * On the phone only, with the setup itself; a change older than [KEEP_DAYS] goes.
+     */
+    data class Change(val at: Long, val why: String, val before: PayProfile?)
+
+    private val historyFile = File(dir, "history.json")
+    private val _history = MutableStateFlow(readHistory())
+    /** Newest first. */
+    val history: StateFlow<List<Change>> = _history.asStateFlow()
+
+    private fun remember(before: PayProfile?, why: String) {
+        val now = com.bamnat.core.time.Today.millis()
+        val next = (listOf(Change(now, why, before)) + _history.value).filter { now - it.at <= KEEP_DAYS * DAY_MS }.take(MAX_CHANGES)
+        writeHistory(next)
+    }
+
+    private fun writeHistory(next: List<Change>) {
+        runCatching {
+            historyFile.parentFile?.mkdirs()
+            val tmp = File(historyFile.parentFile, "history.json.tmp")
+            tmp.writeText(JSONArray(next.map { c ->
+                JSONObject().put("at", c.at).put("why", c.why).apply { c.before?.let { put("before", PayCodec.encode(it)) } }
+            }).toString())
+            tmp.renameTo(historyFile)
+        }
+        _history.value = next
+    }
+
+    private fun readHistory(): List<Change> = runCatching {
+        if (!historyFile.exists()) return@runCatching emptyList()
+        val now = com.bamnat.core.time.Today.millis()
+        val a = JSONArray(historyFile.readText())
+        (0 until a.length()).mapNotNull { i ->
+            val o = a.getJSONObject(i)
+            runCatching { Change(o.getLong("at"), o.optString("why"), o.optJSONObject("before")?.let(PayCodec::decode)) }.getOrNull()
+        }.filter { now - it.at <= KEEP_DAYS * DAY_MS }
+    }.getOrDefault(emptyList())
+
+    /** The setup put back as it was before [change]; this, too, is a change that can be put back. */
+    suspend fun restore(change: Change) = save(change.before, why = "${whenText(change.at)}의 바꾸기 전으로 되돌렸어요")
+
+
+    companion object {
+        /** [PAYIN-06] 사용자 2026-11-04 "되돌리기를 7일 안에". */
+        const val KEEP_DAYS = 7L
+        private const val DAY_MS = 24L * 60 * 60 * 1000
+        private const val MAX_CHANGES = 40
+        /** What [restart] writes as its reason; the pay screen finds the setup to bring back by it. */
+        const val RESTART = "처음부터 다시 만들려고 비웠어요"
+
+        /** "11월 4일 19:52", on the phone's clock. */
+        fun whenText(at: Long): String = java.time.Instant.ofEpochMilli(at).atZone(com.bamnat.core.time.Today.zone())
+            .let { "${it.monthValue}월 ${it.dayOfMonth}일 %02d:%02d".format(it.hour, it.minute) }
+    }
+
+    /** [PAYIN-06] 1.37 B6: the setup emptied to make it again from the start; the old one kept 7 days to bring back. */
+    suspend fun restart() = save(null, why = RESTART)
 
     // ---- closed months [PAYX-03, PAY-10] ----
 

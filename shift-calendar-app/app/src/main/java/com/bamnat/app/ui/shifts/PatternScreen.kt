@@ -113,7 +113,24 @@ fun PatternScreen(
     LaunchedEffect(cleared) { if (cleared) scroll.animateScrollTo(0) }
     LaunchedEffect(existing, cleared) {
         if (cleared && existing == null && draft0.initialized) draft0.forget()
-        draft0.initFrom(existing, today, if (startWeekdays) types.firstOrNull { !it.isOff && it.hasTimes }?.id else null)
+        // [SETUP-16] 1.37 PC deca4f1f (일근으로 바꾸면 교대 8일 순서가 채워져 있어 저장하면 교대 순서가 다시 들어감): days of the week
+        // asked for start from 월~금, not from the shift work's order.
+        // 1.37 PC 70710298 (접은 뒤 알바 '출근 요일'이 교대 8일 순서로 열리고, '끝나는 날(11/5) 뒤라 적용할 수 없어요'): an 알바's or
+        // 일근's days of the week never start from a shift order, and a schedule stopped by 접어 두기 lends its days but not its end.
+        val style = vm.style
+        val weekdaysWork = startWeekdays || style == com.bamnat.core.work.WorkStyle.DAY || style == com.bamnat.core.work.WorkStyle.HOURLY
+        val hourly = style == com.bamnat.core.work.WorkStyle.HOURLY
+        // [SETUP-16] 1.37 사용자 (③ 알바 요일은 빈칸으로, 직접 고르게): an 알바's days start empty unless its own days are going on;
+        // days another work left (stopped by 접어 두기) are not lent.
+        val from = existing?.takeIf { !(weekdaysWork && it is com.bamnat.core.model.WorkPattern.Rotation) }
+            ?.takeIf { !hourly || it.endDate?.isAfter(today) != false }
+        val away = vm.foldedNow()
+        // ④ 일근 starts on its own 일근, not on 교대's 주간 (whatever comes first in the list).
+        val own = com.bamnat.app.data.FoldedTypes.startNames(style)
+        val usable = types.filter { !it.isOff && it.hasTimes && it.id !in away }
+        val first = usable.firstOrNull { it.name in own } ?: usable.firstOrNull()
+        draft0.initFrom(from, today, if (weekdaysWork && !hourly) first?.id else null, weekly = weekdaysWork)
+        if (from?.endDate?.isAfter(today) == false) draft0.endDate = null
     }
     if (!draft0.initialized) return
     var kind by draft0::kind
@@ -201,7 +218,12 @@ fun PatternScreen(
             Text(
                 // [SETUP-09] What each choice means, with an example, instead of 교대 순환·요일 고정.
                 if (kind == PatternKind.ROTATION) "교대 근무예요. 주주야야비휴처럼 정한 순서가 며칠마다 다시 돌아요."
-                else "월~금 주간처럼 요일마다 근무가 같아요. 상근직·파트타임이 주로 골라요.",
+                // 1.37 PC 978d10f1 LOW-3: the example in the user's own work (일근 has its own 일근 now).
+                else when (vm.style) {
+                    com.bamnat.core.work.WorkStyle.HOURLY -> "토·일 오전처럼 요일마다 근무가 같아요. 일하는 요일만 골라요."
+                    com.bamnat.core.work.WorkStyle.DAY -> "월~금 일근처럼 요일마다 근무가 같아요."
+                    else -> "월~금 일근처럼 요일마다 근무가 같아요. 상근직·파트타임이 주로 골라요."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -500,6 +522,9 @@ fun PatternScreen(
             draft = draft,
             typesById = typesById,
             today = today,
+            // [SETUP-16] 1.37 PC 77e39e72 (요일을 처음 정할 때도 '조가 바뀌었다면…', 기본 '다음 달 1일'): a new kind of schedule, or one after
+            // a schedule that has stopped, is not a team change.
+            fresh = existing == null || existing.javaClass != draft.javaClass || existing.endDate?.isAfter(today) == false,
             moved = moved,
             onDismiss = { askWhen = false },
             onChangeFrom = { pattern, from ->
@@ -574,13 +599,14 @@ private fun ChangeFromDialog(
     onDismiss: () -> Unit,
     onChangeFrom: (WorkPattern, LocalDate) -> Unit,
     onFix: () -> Unit,
+    fresh: Boolean = false,
 ) {
     val nextMonth = today.withDayOfMonth(1).plusMonths(1)
-    var from by remember { mutableStateOf(nextMonth) }
+    var from by remember { mutableStateOf(if (fresh) today.plusDays(1) else nextMonth) }
     val rotation = draft as? WorkPattern.Rotation
     // Which step of the order falls on the first new day: [SET-04] where the order as edited puts it, so the
     // place just set on this screen is kept unless the user picks another (ux-review 1 P9).
-    var firstStep by remember { mutableStateOf(rotation?.stepIndexOn(nextMonth) ?: 0) }
+    var firstStep by remember { mutableStateOf(rotation?.stepIndexOn(from) ?: 0) }
     val start: (LocalDate) -> Unit = { d -> from = d; rotation?.let { firstStep = it.stepIndexOn(d) } }
     var pickDate by remember { mutableStateOf(false) }
 
@@ -590,7 +616,8 @@ private fun ChangeFromDialog(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    "조가 바뀌었다면 새 순서를 시작할 날을 골라 주세요. 그 전날까지의 근무와 잔업·특근·대근, 메모는 그대로 남아요.",
+                    if (fresh) "새 일정을 시작할 날을 골라 주세요. 그 전날까지의 기록과 메모는 그대로 남아요."
+                    else "조가 바뀌었다면 새 순서를 시작할 날을 골라 주세요. 그 전날까지의 근무와 잔업·특근·대근, 메모는 그대로 남아요.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -604,7 +631,7 @@ private fun ChangeFromDialog(
                         leadingIcon = { Icon(Icons.Filled.Event, null, Modifier.size(18.dp)) },
                     )
                 }
-                Text("새 순서 시작: ${Fmt.fullDate(from)}", style = MaterialTheme.typography.titleSmall,
+                Text((if (fresh) "새 일정 시작: " else "새 순서 시작: ") + Fmt.fullDate(from), style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.primary)
                 if (rotation != null) {
                     Text("${Fmt.dayTitle(from)}은 순서의 몇 번째 날인가요?", style = MaterialTheme.typography.bodyMedium)
@@ -632,7 +659,7 @@ private fun ChangeFromDialog(
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-                TextButton(onClick = onFix, modifier = Modifier.fillMaxWidth()) {
+                if (!fresh) TextButton(onClick = onFix, modifier = Modifier.fillMaxWidth()) {
                     Text(if (moved.isEmpty()) "조 변경이 아니에요. 지금 순서를 고쳐요" else "그래도 지난 날까지 고쳐요")
                 }
             }

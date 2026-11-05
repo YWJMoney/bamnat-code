@@ -3,6 +3,7 @@ package com.bamnat.app.ui.shifts
 import com.bamnat.core.work.words
 
 import com.bamnat.app.ui.components.TimeRangeDialog
+import com.bamnat.app.ui.components.TimeRangePart
 import com.bamnat.app.ui.components.TimeRange
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.Saver
@@ -573,6 +574,8 @@ fun ShiftTypeEditorDialog(
     var draft by rememberSaveable(initial, stateSaver = ShiftTypeSaver) { mutableStateOf(initial) }
     // [DAYW-11] Start, end and break in one window (J's shared dialog).
     var pickTimes by rememberSaveable { mutableStateOf(false) }
+    // [TIME-03] Which button opened the time window, so '종료' opens on the end time.
+    var pickEnd by rememberSaveable { mutableStateOf(false) }
     var pickBreak by rememberSaveable { mutableStateOf(false) }
     var addingAlarm by remember { mutableStateOf(false) }
     var editingAlarm by remember { mutableStateOf<AlarmSpec?>(null) }
@@ -667,12 +670,12 @@ fun ShiftTypeEditorDialog(
                         val timed = draft.copy(start = start, end = end)
                         SectionCard(title = "근무 시간") {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                TimeButton("시작", start, Modifier.weight(1f)) { pickTimes = true }
+                                TimeButton("시작", start, Modifier.weight(1f)) { pickEnd = false; pickTimes = true }
                                 TimeButton(
                                     if (timed.durationMinutes >= 24 * 60 || !end.isAfter(start)) "종료 (다음날)" else "종료",
                                     end,
                                     Modifier.weight(1f),
-                                ) { pickTimes = true }
+                                ) { pickEnd = true; pickTimes = true }
                             }
                             Spacer(Modifier.height(12.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -906,6 +909,7 @@ fun ShiftTypeEditorDialog(
             title = "${draft.name.ifBlank { "근무" }} 시간",
             initial = TimeRange(draft.start ?: LocalTime.of(9, 0), draft.end ?: LocalTime.of(18, 0), draft.breakMinutes),
             maxBreakMinutes = 12 * 60,
+            startOn = if (pickEnd) TimeRangePart.END else TimeRangePart.START,
             onDismiss = { pickTimes = false },
             onConfirm = {
                 draft = draft.copy(start = it.start, end = it.end, breakMinutes = it.breakMinutes)

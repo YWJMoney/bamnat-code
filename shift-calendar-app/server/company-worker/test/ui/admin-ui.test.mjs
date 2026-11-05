@@ -610,7 +610,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "plaza");
   // 1.36 [GRW-07] 오늘 has 할 일함 beside it now; 분석 sits under 더 보기 on the phone, which is lit there.
   await t.go("#/home");
-  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "work"]);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "flow", "work"]);
   await t.go("#/metrics");
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "more");
   // 민지 answers questions only: 오늘, 문의 (without 답 목표, which is 설정's) and 관리 (내 계정 only).
@@ -1544,8 +1544,14 @@ test("[INBOX-04] 정리함: piles with their answers, one tap sends a card, and 
   t.window.navigator.clipboard.writeText = async (x) => { copied = x; };
   await t.click('[data-act="sort-handoff"]');
   await t.settle(20);
-  assert.match(copied ?? "", /# 밤낮 관리자 앱 → 개발 넘김/);
-  assert.ok(t.$('[data-act="sort-handoff"]').disabled, "nothing left to hand over");
+  // 1.37 [ADM2-08] The text carries the waiting questions too, so the button stays for them; the 개발사항 are marked.
+  assert.match(copied ?? "", /# 밤낮 관리자 앱 → Claude/);
+  assert.match(copied ?? "", /## 새로 들어온 문의/);
+  assert.match(t.$('[data-act="sort-handoff"]').textContent, /개발 0/);
+  // 1.37 [ADM2-10] The copy is kept as a 넘김 묶음; the question still waiting is now '전에 넘김'.
+  assert.match(t.text(".handoff-log"), /넘김 기록 \(1\)/);
+  assert.match(t.text(".handoff-log"), /결과 기다리는 중/);
+  assert.match(t.text(".handoff-card"), /전에 넘겼는데 아직 답이 없는 문의 1건/);
   assert.deepEqual(t.errors, []);
 });
 

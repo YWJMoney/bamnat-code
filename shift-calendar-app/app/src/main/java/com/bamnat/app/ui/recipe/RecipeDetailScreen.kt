@@ -104,7 +104,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     LaunchedEffect(s.message) {
         val m = s.message ?: return@LaunchedEffect
         // PC 확인 보안 6차: a tab laid on the theme is taken back here too (with 마을 › 테마's 빼기 as before).
-        val undo = (s.appliedId != null && m.startsWith("적용했어요")) || (s.laidAt != null && m.contains("테마 위에 얹었어요"))
+        val undo = (s.appliedId != null && m.startsWith("넣었어요")) || (s.laidAt != null && m.contains("테마 위에 얹었어요"))
         // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
         // PC 확인 7525ccff (신고 띠가 아래 스위치를 가려요): a line with nothing to do has its own ✕, so it goes at once when asked.
         val r = snack.showSnackbar(m, actionLabel = if (undo) "되돌리기" else null, withDismissAction = !undo,
@@ -142,7 +142,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         val r = s.recipe
         if (doc == null || r == null) {
             Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (s.error != null) { Text(s.error!!); TextButton(onClick = vm::load) { Text("다시 해 보기") } } else CircularProgressIndicator()
+                if (s.error != null) {
+                    Text(s.error!!)
+                    // PC 확인 edb46c62 LOW: a work from a newer app cannot open by trying again; only an update helps.
+                    if (!s.error!!.startsWith("새 판 밤낮")) TextButton(onClick = vm::load) { Text("다시 해 보기") }
+                } else CircularProgressIndicator()
             }
             return@Scaffold
         }
@@ -169,7 +173,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         }
                     }
                 }
-                Text("쓰는 분 ${doc.item.users + s.usersPlus}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
+                Text("넣은 분 ${doc.item.users + s.usersPlus}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 VoteRow(s, vm, onDislike = { disliking = true })
                 if (doc.mine) MakerCard(doc, onNewVersion = vm.body()?.let { b -> { onNewVersion(b) } })
@@ -237,6 +241,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         s.applying -> "넣는 중…"
                         logicOnly -> listOfNotNull(inside.rules.size.takeIf { it > 0 }?.let { "규칙 ${it}개" }, inside.buttons.size.takeIf { it > 0 }?.let { "단추 ${it}개" })
                             .joinToString("·") + " 넣기"
+                        // bc7e2d43 PC 확인 LOW-1 (받은 뒤에도 넣기 단추가 그대로): once in, it says it goes in again.
+                        s.appliedAt != null -> "고른 ${chosen}개 다시 넣기"
                         else -> "고른 ${chosen}개 내 달력에 넣기"
                     })
                 }
@@ -372,9 +378,9 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 } != null
                 val restToo = s.pieces.any { it.on && it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
                 Text(when {
-                    laysOn && restToo -> "모양은 지금 테마 위에 얹어요(마을 › 테마에서 빼기). 나머지는 7일 안에 마을 › 공방 › 내 것 › 받은 레시피에서 되돌려요"
+                    laysOn && restToo -> "모양은 지금 테마 위에 얹어요(마을 › 테마에서 빼기). 나머지는 7일 안에 마을 › 테마(내 서랍)의 받은 것에서 되돌려요"
                     laysOn -> "지금 테마 위에 얹어요. 마을 › 테마에서 언제든 뺄 수 있어요"
-                    else -> "7일 안에는 마을 › 공방 › 내 것 › 받은 레시피에서 되돌릴 수 있어요"
+                    else -> "7일 안에는 마을 › 테마(내 서랍)의 받은 것에서 되돌릴 수 있어요"
                 }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 adNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
@@ -723,7 +729,7 @@ private fun ForkRow(k: com.bamnat.app.recipe.RecipeItem, mineLook: com.bamnat.ap
                 Text(k.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Text("바꾼 곳: $words", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                Text("${k.nick ?: "이름 없음"} · 좋아요 ${k.likes} · 쓰는 분 ${k.users}", style = MaterialTheme.typography.labelSmall,
+                Text("${k.nick ?: "이름 없음"} · 좋아요 ${k.likes} · 넣은 분 ${k.users}", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

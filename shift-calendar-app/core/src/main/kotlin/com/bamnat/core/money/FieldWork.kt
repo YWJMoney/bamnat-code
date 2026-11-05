@@ -287,3 +287,41 @@ object DepositMatch {
         Part.ALL -> JobPayments.all(job)
     }
 }
+
+/**
+ * 1.37 PC ef116bf4 (현장: 일감에 08:00–16:00을 넣어도 '주별 일한 시간'이 비어 있음): a field calendar's hours come from its jobs'
+ * start and end, each day of a job that runs several days counted once. A job with no times, or cancelled, adds nothing.
+ */
+object JobHours {
+    data class Week(val from: LocalDate, val to: LocalDate, val minutes: Int)
+
+    fun minutes(job: Job): Int {
+        val s = job.start ?: return 0
+        val e = job.end ?: return 0
+        val m = java.time.Duration.between(s, e).toMinutes().toInt()
+        return if (m <= 0) m + 24 * 60 else m
+    }
+
+    /** The weeks starting on [weekStart] that touch [month], with the minutes worked on the month's own days. */
+    fun weeks(jobs: List<Job>, month: YearMonth, weekStart: java.time.DayOfWeek): List<Week> {
+        val byDay = HashMap<LocalDate, Int>()
+        jobs.filter { !it.cancelled }.forEach { j ->
+            val m = minutes(j)
+            if (m == 0) return@forEach
+            var d = j.date
+            val last = j.endDate?.takeIf { !it.isBefore(j.date) } ?: j.date
+            while (!d.isAfter(last)) { byDay.merge(d, m, Int::plus); d = d.plusDays(1) }
+        }
+        val out = ArrayList<Week>()
+        var from = month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
+        while (!from.isAfter(month.atEndOfMonth())) {
+            val to = from.plusDays(6)
+            var sum = 0
+            var d = maxOf(from, month.atDay(1))
+            while (!d.isAfter(minOf(to, month.atEndOfMonth()))) { sum += byDay[d] ?: 0; d = d.plusDays(1) }
+            out += Week(from, to, sum)
+            from = from.plusDays(7)
+        }
+        return out
+    }
+}

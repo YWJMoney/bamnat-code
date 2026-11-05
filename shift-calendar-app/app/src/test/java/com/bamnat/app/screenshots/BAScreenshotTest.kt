@@ -169,7 +169,7 @@ class BAScreenshotTest : ScreenshotBase() {
         var now = false
         content { SetupPaySheet(companyPay = true, onNow = { now = true }, onLater = {}) }
         settle()
-        assertTrue(appears("달력을 채웠어요. ‘(주)예시정밀 · 생산팀’ 급여 계산도 들어 있어요. 쓸까요?", exact = true))
+        assertTrue(appears("설정을 마쳤어요. ‘(주)예시정밀 · 생산팀’ 급여 계산도 들어 있어요. 쓸까요?", exact = true))
         assertTrue(appears("기본급만 넣으면 끝나요", exact = true))
         typeInto("월 기본급", "2700000")
         tapText("이대로 계산", exact = true)

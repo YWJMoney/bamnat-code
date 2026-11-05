@@ -191,6 +191,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /** The last work's written form, to tell a newer app's work from one changed on the way. */
+    private var newerBody: String? = null
+
     init { load() }
 
     fun load() {
@@ -201,6 +204,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 val doc = try { c.recipeApi.show(code, device) } catch (e: java.io.IOException) {
                     kotlinx.coroutines.delay(800); c.recipeApi.show(code, device)
                 }
+                newerBody = doc.body
                 val r = doc.recipe()
                 val pieces = r.pieces.map { p -> Piece(p.kind, on = style == null || style in p.kind.styles, fits = style == null || style in p.kind.styles) }
                 _state.value = _state.value.copy(doc = doc, recipe = r, pieces = pieces, error = null,
@@ -218,7 +222,15 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     runCatching { pd.recipe() }.getOrNull()?.let { pr -> _state.value = _state.value.copy(parentDoc = pd, diff = com.bamnat.core.recipe.RecipeDiff.of(pr, r)) }
                 } }
             } catch (e: com.bamnat.core.recipe.RecipeException) {
-                _state.value = _state.value.copy(error = "레시피가 오는 길에 바뀌었어요. 받지 않았어요")
+                // PC 확인 e50bb622 MED-1 (가계부 틀 작품이 '오는 길에 바뀌었어요'로 안 열림): a work made by a newer app carries a kind of
+                // piece this app does not know; that is said as it is, with the way to open it.
+                val newer = newerBody?.let { b -> runCatching {
+                    val keys = PieceKind.entries.map { it.key }.toSet()
+                    val a = org.json.JSONObject(b).optJSONArray("pieces")
+                    a != null && (0 until a.length()).any { a.optJSONObject(it)?.optString("kind") !in keys }
+                }.getOrDefault(false) } == true
+                _state.value = _state.value.copy(error = if (newer) "새 판 밤낮에서 만든 작품이라 이 앱에서는 열 수 없어요. 앱을 업데이트하면 열려요"
+                    else "레시피가 오는 길에 바뀌었어요. 받지 않았어요")
             } catch (e: Exception) {
                 _state.value = _state.value.copy(error = RecipeClient.problem(e))
             }
@@ -324,15 +336,18 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             // Once a phone [SEC-15], as a theme put on is (the studio thread's own fix sent it at every 얹기).
             if (laid) c.recipes.countUse(code)
             val plus = if (!counted && c.recipes.countedHere(code)) 1 else 0
-            if (id != null && looks.isNotEmpty() && tab == null) runCatching {
+            // 1.37 PC (같은 모양이면 '바뀐 것이 없어요'만 뜨고 입은 테마로 안 잡혀요): the look is already that theme's, so it is worn all the same.
+            val sameLook = id == null && looks.isNotEmpty() && tab == null
+            if ((id != null || sameLook) && looks.isNotEmpty() && tab == null) runCatching {
                 c.wardrobe.afterWear(lookRecipe, code, own = doc.mine, ver = doc.item.version)
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
                 undoable = undoableNow(), laidAt = laidHere().maxOfOrNull { it.at }, usersPlus = _state.value.usersPlus + plus,
                 message = when {
                     laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
+                    sameLook -> "이미 같은 모양이라 바뀐 곳은 없어요. ‘${doc.item.title}’${com.bamnat.app.ui.Fmt.obj(doc.item.title)} 입은 테마로 잡았어요"
                     id == null -> "바뀐 것이 없어요"
-                    else -> "적용했어요. 7일 안에 되돌릴 수 있어요"
+                    else -> "넣었어요. 7일 안에 되돌릴 수 있어요"
                 })
             // PC 확인 C10 1.36 (넣은 직후 상세는 다시 열어야 문구가 바뀌어요): what each piece does now, said again at once.
             preview()

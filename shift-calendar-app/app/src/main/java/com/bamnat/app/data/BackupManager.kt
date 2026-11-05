@@ -60,6 +60,8 @@ class BackupManager(
     private val recordsTrash: () -> RecordsTrash? = { null },
     /** [CREW-01] Each calendar's teams for 모든 조 보기. */
     private val teams: TeamStore? = null,
+    /** [SETUP-16] A first setup put off: its answers so far go with the backup, so a new phone goes on where it stopped. */
+    private val setupDrafts: () -> SetupDraftStore? = { null },
     /** [MON-08] The 프로 recovery code, so passes follow to a new phone; never the purchase itself. */
     private val pro: () -> com.bamnat.app.tier.ProStore? = { null },
     /** [PROV-04] The links the user made, with their keys, so a new phone keeps updating them. */
@@ -201,6 +203,19 @@ class BackupManager(
         into.put("budgets", JSONArray().apply {
             money.allBudgets().forEach { b -> put(JSONObject().put("category", b.category).put("amount", b.amount)) }
         })
+        // 1.37 [LEDH-11][LEDH-13] 봉투 and the money moved into them. Older apps ignore this key.
+        into.put("envelopes", JSONObject()
+            .put("list", JSONArray().apply {
+                money.allEnvelopes().forEach { e ->
+                    put(JSONObject().put("id", e.id).put("name", e.name).put("target", e.target).putOpt("due", e.dueEpochDay).put("kind", e.kind)
+                        .put("share", e.sharePercent).put("emoji", e.emoji).put("order", e.sortOrder).put("closed", e.closed).putOpt("created", e.createdEpochDay))
+                }
+            })
+            .put("moves", JSONArray().apply {
+                money.allEnvelopeMoves().forEach { m ->
+                    put(JSONObject().put("id", m.id).put("envelope", m.envelopeId).put("day", m.epochDay).put("amount", m.amount).put("note", m.note).putOpt("entry", m.entryId))
+                }
+            }))
         into.put("categories", JSONArray().apply {
             money.allCategories().forEach { c ->
                 put(JSONObject().put("kind", c.kind).put("name", c.name).put("position", c.position).put("hidden", c.hidden))
@@ -487,6 +502,7 @@ class BackupManager(
         profiles()?.let { p -> root.put("profile", JSONObject(p.export() as Map<*, *>)) }
         settingsFiles()?.let { root.put("settingsFiles", it.export()) }
         val s = settings.current
+        if (s.setupLater) setupDrafts()?.draft?.value?.takeIf { !it.committing }?.let { root.put("setupDraft", SetupDraftCodec.encode(it.copy(later = true))) }
         root.put(
             "settings",
             JSONObject()
@@ -495,9 +511,11 @@ class BackupManager(
                 .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmsOn", s.alarmsEnabled)
-                .putOpt("workStyle", s.workStyle?.name).put("rosterMonthly", s.rosterMonthly)
+                .putOpt("workStyle", s.workStyle?.name).put("setupLater", s.setupLater).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
                 .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsByPayPeriod).put("appLock", s.appLock)
+                // 1.37 [LEDH-06][LEDH-07] 근무가 보이는 가계부.
+                .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
@@ -508,7 +526,7 @@ class BackupManager(
                 .put("alarmButton", s.alarmButtonAction)
                 // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
                 .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
-                .put("moneyLayout", s.moneyLayout).put("memoLayout", s.memoLayout).put("tabViews", s.tabViews).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("myColors", s.myColors).put("shiftLooks", s.shiftLooks).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("memoLook", s.memoLook).put("moneyLook", s.moneyLook).put("screenLooks", s.screenLooks).put("payLooks", s.payLooks).put("parts", s.parts).put("logic", s.logic).put("decor", s.decor).put("motion", s.motion).put("rateHint", s.rateHint)
+                .put("moneyLayout", s.moneyLayout).put("moneyCheckOpen", s.moneyCheckOpen).put("budgetRollover", s.budgetRollover).put("memoLayout", s.memoLayout).put("tabViews", s.tabViews).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("myColors", s.myColors).put("shiftLooks", s.shiftLooks).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("memoLook", s.memoLook).put("moneyLook", s.moneyLook).put("screenLooks", s.screenLooks).put("payLooks", s.payLooks).put("parts", s.parts).put("logic", s.logic).put("decor", s.decor).put("motion", s.motion).put("rateHint", s.rateHint)
                 // [ALRM-03] Added in 1.23; what was answered stays on the phone.
                 .put("alarmSuggest", s.alarmSuggest)
                 // [BAK-01] 1.25 Z: what the user chose after seeing what the law pays for work on days off.
@@ -716,6 +734,8 @@ class BackupManager(
         val tax: TaxBackup.Rows? = null,
         /** [RCP-25] Null for a backup without "recipes" (before 1.34): the phone's then stay. */
         val recipes: RecipeBackup.Rows? = null,
+        /** 1.37 [LEDH-11] Null for a backup without "envelopes" (before 1.37): the phone's then stay. */
+        val envelopes: Pair<List<com.bamnat.app.data.db.EnvelopeEntity>, List<com.bamnat.app.data.db.EnvelopeMoveEntity>>? = null,
     )
 
     private fun readMoney(from: JSONObject): MoneyRows {
@@ -788,7 +808,19 @@ class BackupManager(
         val invest = from.optJSONObject("invest")?.let(InvestBackup::read)
         val tax = from.optJSONObject("tax")?.let(TaxBackup::read)
         val recipes = from.optJSONObject("recipes")?.let { RecipeBackup.read(it, com.bamnat.core.time.Today.millis()) }
-        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest, tax, recipes)
+        val envelopes = from.optJSONObject("envelopes")?.let { o ->
+            val list = o.optJSONArray("list")?.objects()?.map { e ->
+                com.bamnat.app.data.db.EnvelopeEntity(e.optLong("id"), e.optString("name").take(com.bamnat.core.money.Envelope.MAX_NAME), e.optLong("target").coerceAtLeast(0),
+                    e.optLongOrNull("due"), e.optInt("kind"), e.optInt("share").coerceIn(0, 100), e.optString("emoji"), e.optInt("order"),
+                    e.optBoolean("closed"), e.optLongOrNull("created"))
+            }.orEmpty()
+            val ids = list.map { it.id }.toSet()
+            val moves = o.optJSONArray("moves")?.objects()?.map { m ->
+                com.bamnat.app.data.db.EnvelopeMoveEntity(m.optLong("id"), m.optLong("envelope"), m.optLong("day"), m.optLong("amount"), m.optString("note"), m.optLongOrNull("entry"))
+            }.orEmpty().filter { it.envelopeId in ids }
+            list to moves
+        }
+        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest, tax, recipes, envelopes)
     }
 
     /** [MCAL-06] Replaces a calendar's money with a backup's, part by part; call inside its transaction. */
@@ -803,6 +835,12 @@ class BackupManager(
         // Backups from before version 15 carry no accounts, budgets or categories; the ones on the phone then stay.
         rows.accounts?.let { list -> money.clearAccounts(); list.forEach { money.restoreAccount(it) } }
         rows.budgets?.let { list -> money.clearBudgets(); list.forEach { money.upsertBudget(it) } }
+        // 1.37 [LEDH-11] Backups from before 1.37 carry no envelopes; the ones on the phone then stay.
+        rows.envelopes?.let { (list, moves) ->
+            money.clearEnvelopeMoves(); money.clearEnvelopes()
+            list.forEach { money.upsertEnvelope(it) }
+            moves.forEach { money.insertEnvelopeMove(it) }
+        }
         rows.categories?.let { list -> money.clearAllCategories(); money.insertCategories(list) }
         // Backups from before version 13 carry no receivables; the ones on the phone then stay.
         rows.owed?.let { list ->
@@ -937,6 +975,15 @@ class BackupManager(
             goneCalendars.forEach(tools::reload)
         }
         root.optJSONObject("settings")?.let { o ->
+            // [SETUP-16] The setup put off on the old phone goes on from its step here; one without its answers starts at the kind of
+            // work's next question. Put back before the settings (1.37 PC 270fc15e: after them, the setup's own watch saw no answers
+            // yet and started that next question over them, so the card said 2단계 instead of 3).
+            val waits = o.optBoolean("setupLater", false)
+            val style = o.optStringOrNull("workStyle")
+            if (waits && style != null) root.optJSONObject("setupDraft")?.let { d ->
+                runCatching { SetupDraftCodec.decode(d) }.getOrNull()?.takeIf { it.style?.name == style }
+                    ?.let { setupDrafts()?.save(it.copy(later = true, committing = false)) }
+            }
             settings.update { s ->
                 s.copy(
                     weekStart = runCatching { DayOfWeek.valueOf(o.getString("weekStart")) }.getOrDefault(s.weekStart),
@@ -956,6 +1003,8 @@ class BackupManager(
                     // [SETUP-01] A backup from before the question with a pattern in it is shift work, as on the phone.
                     workStyle = o.optStringOrNull("workStyle")?.let { n -> WorkStyle.entries.firstOrNull { it.name == n } } ?: s.workStyle
                         ?: WorkStyle.SHIFT.takeIf { schedule.patterns.isNotEmpty() },
+                    // [SETUP-16] Backups before 1.37 wrote the kind of work only once the first setup was done.
+                    setupLater = if (o.has("workStyle")) o.optBoolean("setupLater", false) else s.setupLater,
                     rosterMonthly = o.optBoolean("rosterMonthly", s.rosterMonthly),
                     extraKinds = o.optStringOrNull("extraKinds")?.let { com.bamnat.core.model.ExtraKinds.decode(it) } ?: s.extraKinds,
                     memoInCells = o.optBoolean("memoFirst", s.memoInCells),
@@ -977,6 +1026,9 @@ class BackupManager(
                     payDepositNotice = o.optBoolean("payDepositNotice", s.payDepositNotice),
                     calendarOnly = o.optBoolean("calendarOnly", false),
                     statsByPayPeriod = o.optBoolean("statsPayPeriod", false),
+                    moneyByPayCycle = o.optBoolean("moneyPayCycle", s.moneyByPayCycle),
+                    workTimeFrom = o.optLong("workTimeFrom", s.workTimeFrom).coerceAtLeast(0),
+                    dayCloseNotice = o.optBoolean("dayCloseNotice", s.dayCloseNotice),
                     appLock = o.optBoolean("appLock", false),
                     calendarLayout = o.optString("calendarLayout", s.calendarLayout),
                     statsLayout = o.optString("statsLayout", s.statsLayout),
@@ -995,6 +1047,8 @@ class BackupManager(
                     widgetMemo = o.optBoolean("widgetMemo", s.widgetMemo),
                     backupPhotos = o.optBoolean("backupPhotos", s.backupPhotos),
                     moneyLayout = o.optString("moneyLayout", s.moneyLayout),
+                    moneyCheckOpen = o.optBoolean("moneyCheckOpen", s.moneyCheckOpen),
+                    budgetRollover = o.optString("budgetRollover", s.budgetRollover),
                     calTheme = o.optString("calTheme", s.calTheme),
                     widgetLook = o.optString("widgetLook", s.widgetLook),
                     myColors = o.optString("myColors", s.myColors),

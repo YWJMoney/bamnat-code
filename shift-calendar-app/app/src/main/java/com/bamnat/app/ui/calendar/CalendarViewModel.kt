@@ -414,7 +414,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         RotationSpeed.of(PatternTimeline.on(snapshot.patterns, date) ?: PatternTimeline.current(snapshot.patterns, date), snapshot.shiftTypes)
 
     /** [REST-03] [rules] as they fit the pattern on [date]. */
-    fun rulesFor(snapshot: ScheduleSnapshot, date: LocalDate, rules: RestRules): RestRules = rotation(snapshot, date).adjust(rules)
+    fun rulesFor(snapshot: ScheduleSnapshot, date: LocalDate, rules: RestRules): RestRules =
+        rotation(snapshot, date).adjust(rules).forStyle(settings.value.workStyle)
 
     /** [REST-01] The rules sheet's answer: the limits, and 점검 끄기 as the 휴식 점검 switch. */
     fun setRestRules(rules: RestRules) = container.settingsRepository.update {
@@ -1248,7 +1249,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
                 _messages.emit(UndoMessage("하루에 추가 근무는 ${com.bamnat.app.data.ScheduleRepository.MAX_EXTRAS}건까지 넣을 수 있어요"))
                 return@launch
             }
-            _messages.emit(UndoMessage("${Fmt.monthDay(date)}에 $name${Fmt.obj(name)} 넣었어요") { schedule.restoreDay(date, before) })
+            val said = dayWord(name)
+            _messages.emit(UndoMessage("${Fmt.monthDay(date)}에 $said${Fmt.obj(said)} 넣었어요") { schedule.restoreDay(date, before) })
         }
     }
 
@@ -1257,11 +1259,16 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewModelScope.launch { schedule.updateExtra(date, index, entry) }
     }
 
+    /** PC 확인 1.37 A16 (칩은 '야근 +2시간'인데 빼면 '잔업 2시간을 뺐어요'): a weekday worker's word, as the chip says it ([J133-27]). */
+    private fun dayWord(name: String): String =
+        if (settings.value.workStyle == com.bamnat.core.work.WorkStyle.DAY) name.replace("잔업", "야근") else name
+
     fun removeExtra(date: LocalDate, index: Int, name: String) = gate(WriteKind.DAY_TIME) {
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.removeExtra(date, index)
-            _messages.emit(UndoMessage("$name${Fmt.obj(name)} 뺐어요") { schedule.restoreDay(date, before) })
+            val said = dayWord(name)
+            _messages.emit(UndoMessage("$said${Fmt.obj(said)} 뺐어요") { schedule.restoreDay(date, before) })
         }
     }
 

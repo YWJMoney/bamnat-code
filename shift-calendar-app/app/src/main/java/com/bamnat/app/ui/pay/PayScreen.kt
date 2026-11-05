@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.theme.CalendarColors
 import com.bamnat.app.ui.theme.LocalCalendarColors
@@ -108,7 +110,8 @@ import com.bamnat.core.pay.WageType
 import java.time.YearMonth
 import com.bamnat.core.time.Today
 
-internal fun won(v: Long): String = "%,d원".format(v)
+/** 1.37 PC 5차: through Fmt, so 금액 가리기 hides 세전·세후·세금·실수령 too. */
+internal fun won(v: Long): String = com.bamnat.app.ui.Fmt.won(v)
 
 /** [FREE-07] 1.35 급여 모양 of the pay on screen. */
 internal val LocalPayLook = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.PayLook() }
@@ -176,6 +179,15 @@ fun PayScreen(
     val rulesTitle = PayTab.RULES.labelFor(workStyle)
     var editingSetup by rememberSaveable { mutableStateOf(false) }
     var editingRules by rememberSaveable { mutableStateOf(false) }
+    // 가계부 스레드·PC (설정 찾기 '월급날'이 회사 규칙 맨 위로만 열림): the value the rules editor opens at.
+    var rulesFocus by remember { mutableStateOf<PayFocus?>(null) }
+    // PC 02d6dabf (설정 찾기로 연 회사 규칙을 저장하면 급여 화면으로 감): opened for one value from elsewhere, closing it goes back there.
+    fun closeRules() {
+        editingRules = false
+        val back = rulesFocus != null
+        rulesFocus = null
+        if (back) onBack()
+    }
     // [J133-97] 1.33 빌드 8 확인 ("회사 규칙 칩으로 들어가면 ←·뒤로·취소로 못 나가요", 1.32부터): the result leaves the screen while
     // the rules editor is open, so a 'done' kept inside it started again on the way back and opened the editor once more.
     var focusUsed by rememberSaveable { mutableStateOf(false) }
@@ -183,14 +195,22 @@ fun PayScreen(
     var detailedFrom by remember { mutableStateOf<DetailedStart?>(null) }
     /** 1.36 PC X4: the ← and back while 자세히 고치기 is open, handed to it so it can ask before leaving. */
     var wizardLeave by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var rulesLeave by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var plazaAsk by rememberSaveable { mutableStateOf(false) }
+    // [PAYIN-05][PAYIN-06] 1.37 B5·B6·B7: what a save did, the 7 days of changes, starting over.
+    val note by vm.note.collectAsStateWithLifecycle()
+    val history by vm.history.collectAsStateWithLifecycle()
+    var showHistory by rememberSaveable { mutableStateOf(false) }
+    var askRestart by rememberSaveable { mutableStateOf(false) }
+    if (showHistory) PayHistoryDialog(history, profile, onRestore = vm::restore, onDismiss = { showHistory = false })
+    if (askRestart) RestartDialog(onRestart = { vm.restart(); detailedFrom = null; editingSetup = false }, onDismiss = { askRestart = false })
     if (plazaAsk && onShareWay != null) PlazaAskDialog(onShare = { plazaAsk = false; onShareWay() }, onDismiss = { plazaAsk = false })
     // The back gesture does what the arrow does: close the editor, not the whole pay screen.
     com.bamnat.app.ui.components.KeyboardFirstBackHandler(enabled = editingSetup || editingRules || detailedFrom != null) {
         when {
             detailedFrom != null -> wizardLeave++
             editingSetup -> editingSetup = false
-            else -> editingRules = false
+            else -> rulesLeave++
         }
     }
     // [PAYX-22] A change that moves a month matched with a payslip.
@@ -230,7 +250,7 @@ fun PayScreen(
                         when {
                             detailedFrom != null -> wizardLeave++
                             editingSetup -> editingSetup = false
-                            editingRules -> editingRules = false
+                            editingRules -> rulesLeave++
                             else -> onBack()
                         }
                     }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") }
@@ -249,6 +269,11 @@ fun PayScreen(
                                     onClick = { menu = false; detailedFrom = null; editingSetup = true })
                                 androidx.compose.material3.DropdownMenuItem(text = { Text("$rulesTitle (가산율·수당 기준)") },
                                     onClick = { menu = false; editingRules = true })
+                                // [PAYIN-06] 1.37 B6·B7.
+                                androidx.compose.material3.DropdownMenuItem(text = { Text("고친 기록 · 되돌리기 (7일)") },
+                                    onClick = { menu = false; showHistory = true })
+                                androidx.compose.material3.DropdownMenuItem(text = { Text("처음부터 다시 만들기 (지금 설정 7일 보관)") },
+                                    onClick = { menu = false; askRestart = true })
                             }
                         }
                     }
@@ -269,6 +294,11 @@ fun PayScreen(
                     val setupContext = LocalContext.current
                     // [PAYS-12] The easy setup first; the question-by-question one behind 자세히 고치기, from what it had.
                     val detailed = detailedFrom
+                    // [PAYIN-06] 1.37 B6: the setup emptied by '처음부터 다시' in the last 7 days, to bring back from here.
+                    val emptied = history.firstOrNull()?.takeIf { profile == null && it.why == com.bamnat.app.pay.PayStore.RESTART && it.before != null }
+                    Column(Modifier.fillMaxSize()) {
+                    emptied?.let { c -> RestoreBand(c, onRestore = { vm.restore(c) }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
+                    Box(Modifier.weight(1f)) {
                     if (detailed == null) PayQuickSetup(
                         initial = profile,
                         style = settings.workStyle,
@@ -299,20 +329,24 @@ fun PayScreen(
                         companyFind = companyFind,
                         leaveAsk = wizardLeave,
                     )
+                    }
+                    }
                 }
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
-                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { editingRules = false }, onOpenKinds = onOpenExtraKinds)
+                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { rulesLeave = 0; closeRules() }, onOpenKinds = onOpenExtraKinds, focus = rulesFocus, leaveAsk = rulesLeave, style = workStyle)
                 }
                 // [FREE-07] 1.35 급여 모양 of this kind of work; the figures and their 예상·추정 marks show whatever it says.
                 else -> androidx.compose.runtime.CompositionLocalProvider(LocalPayLook provides
                     (com.bamnat.app.ui.theme.LocalPayLooks.current[workStyle ?: com.bamnat.core.work.WorkStyle.SHIFT] ?: com.bamnat.core.recipe.PayLook())) {
-                    PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, top = top,
+                    PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, onEditRulesAt = { f -> rulesFocus = f; editingRules = true }, top = top,
                     onDetailed = { detailedFrom = DetailedStart(profile); editingSetup = true },
                     underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, onOpenShiftTypes = onOpenShiftTypes, startMatching = startMatching,
                     focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true })
                 }
             }
+            // [PAYIN-05] What the last save did, with 되돌리기.
+            note?.let { n -> ChangeNoteBar(n, onUndo = vm::undoNote, onClose = vm::noteShown, modifier = Modifier.align(Alignment.BottomCenter)) }
         }
     }
 }
@@ -338,6 +372,7 @@ private fun PayResult(
     focus: PayFocus? = null,
     focusUsed: Boolean = false,
     onFocusUsed: () -> Unit = {},
+    onEditRulesAt: (PayFocus) -> Unit = { onEditRules() },
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     // U 1.32 [UX132-03] 결과 · 내 급여 값 · 회사 규칙 · 도구.
@@ -410,13 +445,21 @@ private fun PayResult(
         onFocusUsed()
         when (focus) {
             PayFocus.BASE -> editTarget = ValueTarget.Base
-            PayFocus.HOURS, PayFocus.PERIOD, PayFocus.RULES -> onEditRules()
+            // PC 736fb7a6: the 회사 규칙 chip too, so saving goes back to 근무·급여.
+            PayFocus.HOURS, PayFocus.PERIOD, PayFocus.RULES -> onEditRulesAt(focus)
             else -> Unit
         }
     }
 
+    val resultScroll = rememberScrollState()
+    var reportY by remember { mutableStateOf<Int?>(null) }
+    // PC 736fb7a6 (리포트 단추로 가면 리포트 카드가 도구 맨 아래): opened for the report, scrolled to it.
+    androidx.compose.runtime.LaunchedEffect(focus, reportY) {
+        val y = reportY
+        if (focus == PayFocus.REPORT && y != null) resultScroll.animateScrollTo(y)
+    }
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier.fillMaxSize().verticalScroll(resultScroll).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
     ) {
         // [VIS-05] With large text the month's arrows took the row and the job's name stood one letter a line:
@@ -614,7 +657,9 @@ private fun PayResult(
         }
 
         // [PROV-01] The month or its year as a PDF or CSV (프로).
-        PayReportCard(vm, profile, snapshot, shown, closed = closedSnap != null, gate = gate, onEditSetup = onEditSetup)
+        androidx.compose.foundation.layout.Box(Modifier.onGloballyPositioned { reportY = it.positionInParent().y.toInt() }) {
+            PayReportCard(vm, profile, snapshot, shown, closed = closedSnap != null, gate = gate, onEditSetup = onEditSetup)
+        }
         } // TOOLS
 
         if (payTab == PayTab.RESULT) {
@@ -1030,11 +1075,12 @@ private fun effectText(e: com.bamnat.core.pay.UnknownEffect): String = when {
 @Composable
 private fun AmountDialog(title: String, label: String, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
     var amount by remember { mutableStateOf<Long?>(null) }
+    val huge = rememberHugeCheck()
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = { MoneyField(label, amount, { amount = it }) },
-        confirmButton = { Button(onClick = { amount?.let(onSave) }, enabled = (amount ?: 0) > 0) { Text("넣기") } },
+        confirmButton = { Button(onClick = { amount?.let { a -> huge.run(a) { onSave(a) } } }, enabled = (amount ?: 0) > 0) { Text("넣기") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }

@@ -134,7 +134,7 @@ fun CombinedScreen(onBack: () -> Unit) {
     val day = picked
     val m = combined
     if (day != null && m != null) {
-        com.bamnat.app.ui.components.AppSheet(onDismissRequest = { picked = null }) {
+        com.bamnat.app.ui.components.AppSheet(onDismissRequest = { picked = null }, holdHeight = true) {
             DaySheet(day, m, calendars)
         }
     }

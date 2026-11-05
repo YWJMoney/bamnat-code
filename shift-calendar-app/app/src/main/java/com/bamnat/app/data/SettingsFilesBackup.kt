@@ -177,7 +177,7 @@ class SettingsFilesBackup(
             Part("leave_hire"), // [LEAVE-14]
             Part("pro_trials"), // [MON-13]
             Part("folded_types"), // 1.36 PC 재검토: 안 쓰는 근무 종류
-            Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays")),
+            Part("theme_wardrobe", keys = setOf("lease", "mine", "worn_look", "parts", "skip_ver", "prev_ver", "overlays", "keep_overlays", "folders", "placed")),
         )
 
         /**
@@ -185,6 +185,7 @@ class SettingsFilesBackup(
          * "settings"; a test fails when a new field is in neither.
          */
         val SETTINGS_ON_PHONE = mapOf(
+            "hideAmounts" to "금액 가리기는 이 휴대폰을 남에게 보일 때 쓰는 것",
             "defaultAlarmSound" to "알람 소리 파일은 이 휴대폰에 있는 것",
             "healthSleep" to "헬스 커넥트 권한은 새 휴대폰에서 다시 받아요",
             "previewTier" to "개발용 등급 미리 보기",
@@ -206,6 +207,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // [CNV-13] 1.37 펼쳐 보기: which sliding rows were opened, a matter of this screen's width.
+            "fold_rows" to "꾸미기 줄을 펼쳐 둘지 접어 둘지(줄마다), 이 휴대폰 화면에 맞춘 것",
             // [MAT-05] 1.36 글꼴 고르기의 최근 쓴 글꼴 다섯, 이 휴대폰의 것.
             "font_recent" to "글꼴 고르기에서 최근 고른 글꼴(다섯 개), 이 휴대폰의 것",
             "font_waiting" to "테마가 쓰는데 아직 못 받은 나눈 글꼴(운영자 확인 전 등), 앱을 열 때 다시 받아 보려고 2주 동안 적어 둠",
@@ -270,6 +273,7 @@ class SettingsFilesBackup(
             "flag_preview" to "1.31까지의 관리자 미리 보기(1.32부터 비워 둬요, 관리자 앱이 정해요)",
             // A 1.32 [FIX132-01]: which way this phone's payslip photos read well last.
             "photo_turn" to "명세서 사진을 읽은 방향, 이 휴대폰의 사진기 것",
+            "month_story" to "지난달 돈 이야기를 닫은 달, 이 휴대폰에서 본 만큼 (LEDH-16)",
             "plaza_offer" to "명세서로 맞춘 뒤 광장 올리기를 물어본 때, 이 휴대폰에서 본 만큼",
             // C 1.32 [STAB-03][STAB-04]: this phone's stops, counted, and whether it opened safely.
             "crash_notice" to "같은 곳에서 멈춘 횟수와 마지막으로 알린 날, 이 휴대폰에서만",

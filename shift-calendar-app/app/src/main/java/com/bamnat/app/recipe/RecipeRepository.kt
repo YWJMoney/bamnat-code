@@ -169,7 +169,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         val mine = inUse().filter { subscribed(it.code) }
         if (mine.isEmpty() || !c.recipeApi.enabled) return emptyMap()
         val v = runCatching { c.recipeApi.versions(mine.map { it.code }) }.getOrDefault(emptyMap())
-        return mine.mapNotNull { e -> v[e.code]?.takeIf { it > e.version }?.let { e.code to it } }.toMap()
+        // 1.37 PC 3차 (공방 › 내 것에 가짜 ‘새 판 v1 있어요’): a theme put on without its 판 known (0) is at least the first one.
+        return mine.mapNotNull { e -> v[e.code]?.takeIf { it > maxOf(e.version, 1) }?.let { e.code to it } }.toMap()
     }
 
     /**
@@ -249,8 +250,16 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         // [LIN-04] 1.35 A 수정판 of my recipe is news whether or not I follow anyone (the news call says it).
         if (c.flags.on(com.bamnat.core.flags.FlagCatalog.RECIPE_TALK)) {
             val since = prefs.getString(K_NEWS_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
-            runCatching { c.recipeApi.news(c.companyStore.device, since) }.onSuccess { n ->
+            // [TOWN-14] PC 확인 f7c41660 (팔로우한 뒤 처음 올린 작품이 소식에서 빠졌어요): `since` is this phone's clock, the server's works
+            // are dated by its own; asked from two days before, so a clock apart or a late run loses nothing, and a work already
+            // said is not said again.
+            val asked = since?.minus(java.time.Duration.ofDays(NEWS_OVERLAP_DAYS))
+            runCatching { c.recipeApi.news(c.companyStore.device, asked) }.onSuccess { all ->
                 prefs.edit().putString(K_NEWS_SINCE, java.time.Instant.ofEpochMilli(Today.millis()).toString()).apply()
+                val told = keyList(K_NEWS_TOLD).toSet()
+                val n = all.copy(recipes = all.recipes.filter { "r:${it.code}" !in told }, remixes = all.remixes.filter { "x:${it.first.code}" !in told })
+                prefs.edit().putString(K_NEWS_TOLD, keyListJson(keyList(K_NEWS_TOLD),
+                    n.recipes.map { "r:${it.code}" } + n.remixes.map { "x:${it.first.code}" })).apply()
                 if (followNews()) n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 레시피 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
                 if (followNews()) n.replies.firstOrNull()?.let { (_, title, _) -> lines += "‘$title’에 만든 분이 답했어요" }
                 // [PRF-03] 1.36 My own profile's news, once: new followers and a milestone passed (the rest waits in 내 프로필).
@@ -343,6 +352,9 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_UNDO_SAID = "undo_said_"
         private const val K_REQUESTS = "requests_on"
         private const val K_NEWS_SINCE = "news_since"
+        /** [TOWN-14] The works and 수정판 소식 already said (so the two days asked again say nothing twice). */
+        private const val K_NEWS_TOLD = "news_told"
+        private const val NEWS_OVERLAP_DAYS = 2L
         private const val K_BLOCKED = "blocked_makers"
         private const val K_SEEN_INBOX_LIST = "seen_inbox_list"
         private const val KEYS_KEPT = 400

@@ -207,6 +207,7 @@ class AppContainer(context: Context) {
         if (id == com.bamnat.app.data.PersonalCalendar.MAIN || calendars.get(id) == null) database else calendars.database(id))
     val backupManager = BackupManager(database, settingsRepository, payStore = payStore, calendars = calendars, memoSharing = memoSharing,
         workTools = com.bamnat.app.data.WorkToolsStore.get(appContext), guide = com.bamnat.app.data.GuideStore.get(appContext), recordsTrash = { recordsTrash },
+        setupDrafts = { setupDrafts },
         teams = teams, pro = { proStore }, dutyCodes = { dutyCodes },
         shareLinks = com.bamnat.app.share.ShareLinkBackup({ calendars.calendars.value.filterNot { it.isExample }.map { it.id } }, { shareLinksOf(it) }),
         photos = com.bamnat.app.data.BackupPhotos(com.bamnat.app.ui.money.ReceiptFiles.dir(appContext)) { id -> com.bamnat.app.data.WorkToolsStore.get(appContext).photoDir(id) },
@@ -222,6 +223,9 @@ class AppContainer(context: Context) {
                 wishOff.reload()
                 memoTemplates.reload()
                 recipes.reload()
+                // 1.37 PC d12d4cf1 (복원하면 담아 둔 조각·입어 본 테마·묶음이 사라짐): 내 서랍 reads its file again, so what it holds in
+                // memory is not written back over the restored one.
+                wardrobe.reload()
             }
         })
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록: a calendar's records as they were before a change, for 7 days. */
@@ -297,7 +301,11 @@ class AppContainer(context: Context) {
     fun companyFits(calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN, needsServer: Boolean = true): Boolean {
         // [SHR-20] A company setup passed as a file or in a link needs no company server ([needsServer] false).
         if (needsServer && !companyApi.enabled) return false
-        if (scopeOf(calendarId).currentSettings().workStyle?.usesCompany != false) return true
+        val style = scopeOf(calendarId).currentSettings().workStyle
+        if (style?.usesCompany != false) return true
+        // [SETUP-16] 1.37 PC 736167de: work written day by day (현장·자영업·투자) has no company, even when the calendar kept
+        // the one chosen while it was 교대·일근 (the plaza cards, 급여도 넣어 볼까요?). An 알바 that joined its company keeps it.
+        if (style != com.bamnat.core.work.WorkStyle.HOURLY) return false
         val store = companyOf(calendarId).store
         return store.applied.value != null || store.member.value != null
     }
@@ -452,7 +460,8 @@ class AppContainer(context: Context) {
         val calendar = remoteConfig.current.calendar
         val installed = installedAt?.atZone(com.bamnat.core.flags.KST)?.toLocalDate()
         val today = com.bamnat.core.time.Today.date(com.bamnat.core.flags.KST)
-        return listOf(com.bamnat.core.ops.PolicyConsent.VERSION, com.bamnat.core.ops.PolicyConsent.LAUNCH_VERSION)
+        // 1.37: 3.11 (테마·근무 설정 in a link) too; one yes to it counts for 3.9 and 3.1.
+        return listOf(com.bamnat.core.ops.PolicyConsent.ASK_VERSION, com.bamnat.core.ops.PolicyConsent.VERSION, com.bamnat.core.ops.PolicyConsent.LAUNCH_VERSION)
             .any { calendar.holds(it, installed, remoteConfig.agreed.value, today) == true }
     }
     /**
@@ -520,7 +529,7 @@ class AppContainer(context: Context) {
                 ads.consent.value?.let { put("ads", it) }
             },
             profile = setOfNotNull(
-                "setup.done".takeIf { s.workStyle != null },
+                "setup.done".takeIf { s.setupDone },
                 "pay.setup".takeIf { payStore.profile.value != null },
                 "company.linked".takeIf { warm && (companyStore.member.value != null || companyStore.applied.value != null) },
             ),
@@ -559,7 +568,7 @@ class AppContainer(context: Context) {
     var phoneMark: () -> String? = { com.bamnat.app.tier.PhoneMark.of(appContext) }
     val invites by lazy {
         com.bamnat.app.tier.Invites(appContext, com.bamnat.app.tier.InviteStore(appContext), { inviteApi }, { companyStore.device }, { phoneMark() },
-            setupDone = { settingsRepository.current.workStyle != null }, installedAt = { installedAt }, referrer = { referrerSource })
+            setupDone = { settingsRepository.current.setupDone }, installedAt = { installedAt }, referrer = { referrerSource })
     }
     /** AG 1.27 [INVITE-11][INVITE-12] When this phone was asked to invite friends or to tell the developer. */
     val grow by lazy { com.bamnat.app.data.GrowStore(appContext) }
@@ -939,6 +948,13 @@ class AppContainer(context: Context) {
             // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
             // [SLP-15] So does the 나갈 돈·받을 돈 switch.
             keep("money") {
+                // 1.37 [LEDH-14] The 오늘 쓸 돈 widget follows 내 달력's money book and 금액 가리기; only it is redrawn (one job with
+                // the reminders, inside the start's budget [PERF-10]).
+                launch {
+                    combine(calendars.money(com.bamnat.app.data.PersonalCalendar.MAIN).book, settingsRepository.settings.map { it.hideAmounts }.distinctUntilChanged()) { b, h -> b to h }
+                        .drop(1).debounce(800)
+                        .collect { com.bamnat.app.widget.MoneyWidget.redraw(appContext) }
+                }
                 val on = settingsRepository.settings.map { it.moneyNotices }.distinctUntilChanged()
                 // [MCAL-06] A job booked on any calendar is told about.
                 combine(calendars.everyMoney, on) { book, _ -> book }.debounce(500)
@@ -962,11 +978,18 @@ class AppContainer(context: Context) {
             // of them), and 퇴근 시각 알림, which follows the roster and its switch.
             keep("datenotices") {
                 launch { com.bamnat.app.calendar.DateNoticeAlarm.follow(this@AppContainer) }
-                combine(scheduleRepository.snapshot, settingsRepository.settings.map { it.leaveTimeNotice to it.workStyle }.distinctUntilChanged()) { _, _ -> Unit }
-                    .debounce(500).collect { com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext) }
+                // 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림 follows the same roster and its own switch, in the same job (시작 예산).
+                combine(scheduleRepository.snapshot, settingsRepository.settings.map { Triple(it.leaveTimeNotice, it.dayCloseNotice, it.workStyle) }.distinctUntilChanged()) { _, _ -> Unit }
+                    .debounce(500).collect {
+                        com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext)
+                        com.bamnat.app.money.DayCloseNotice.reschedule(appContext)
+                    }
             }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
             keep("leave") {
+                // [SETUP-16] In the same job (StartupBudgetTest): a first setup put off follows its kind of work wherever it
+                // changes (설정 > 일하는 방식, a backup brought back).
+                launch { com.bamnat.app.data.SetupLater.follow(settingsRepository, setupDrafts, firstSetup) }
                 val lots = leaveRepository.summary.map { s -> s.lots.map { it.lot } }.distinctUntilChanged()
                 val on = settingsRepository.settings.map { it.leaveNotice }.distinctUntilChanged()
                 combine(lots, on) { l, o -> l to o }
@@ -974,6 +997,8 @@ class AppContainer(context: Context) {
             }
             mainIdle()
             delay(LATER_THIRD_MILLIS)
+            // [TOWN-07] 1.37: whether my plaza posts got new answers, for the dot on 마을 (one ask a run, only after writing there).
+            appScope.launch { runCatching { com.bamnat.app.company.VillageReplies.refresh(this@AppContainer) } }
             // [COMM-10] 광장 소식, [SRV-10] since 1.23 밤낮 소식: the one daily job runs while it has something to do here.
             keep("plaza news") {
                 combine(

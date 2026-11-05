@@ -241,6 +241,11 @@ fun DayHeader(
                 IconButton(onClick = onOpen) { Icon(Icons.Filled.ExpandLess, "하루 자세히 보기") }
             }
         }
+        // PC 확인 1.37 A16 (그날 근무·추가 근무 줄의 높이가 날마다 달라 칩 줄이 128px씩 움직여 '대근'이 잘못 눌림): in the day sheet the
+        // chips come right under the date, where nothing above them changes height; the day's facts follow.
+        // With very large text on a small phone the head is taller than the sheet's top; there the facts stay first so they are not cut.
+        val chipsFirst = onOpen == null && LocalDensity.current.fontScale < 1.5f
+        if (chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(bottom = 6.dp), endSpace = 12.dp)
         AnimatedContent(
             targetState = day,
             contentKey = { it.date },
@@ -254,7 +259,7 @@ fun DayHeader(
             DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp))
         }
         // Under the calendar the folded FAB sits over the row's end, so the last chip can scroll out from under it.
-        QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(top = 6.dp), endSpace = if (onOpen != null) 76.dp else 12.dp)
+        if (!chipsFirst) QuickChips(day, today, snapshot, vm, settings, onMemo, Modifier.padding(top = 6.dp), endSpace = 76.dp)
     }
 }
 
@@ -299,7 +304,7 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.EventBusy, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(focus.emptyDay, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(focus.emptyDay(day.isWorkDay), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         for (e in day.extras.take(MAX_EXTRA_LINES)) {
@@ -509,7 +514,8 @@ private fun QuickChips(
         // [DAYW-03] A day worker's 지금 퇴근, first on today's working day.
         if (leaveDay != null) item { LeaveNowChip(leaveDay, vm, yesterday = leaveDay.date != day.date) }
         // 1.32 [WTYP-09] 비번 날 비상소집·동원, one chip (기능 켜고 끄기 `shift.callout`).
-        if (!moneyFirst && !day.isWorkDay && com.bamnat.core.work.Callout.offered(settings.workStyle) &&
+        // [SETUP-16] 1.37 PC f42b2eba: without any 근무표 (일근 first setup put off) no day is a 비번 to be called in on.
+        if (!moneyFirst && !day.isWorkDay && (snapshot.hasPattern || !settings.setupLater) && com.bamnat.core.work.Callout.offered(settings.workStyle) &&
             !com.bamnat.app.ui.guide.FeatureSwitches.hidden(calendarContainer, "shift.callout", calendar.id)
         ) item { CalloutChip(day, snapshot, vm) }
         // 1.32 [WTYP-11] 희망 오프 on a day to come (기능 켜고 끄기 `shift.wishOff`).

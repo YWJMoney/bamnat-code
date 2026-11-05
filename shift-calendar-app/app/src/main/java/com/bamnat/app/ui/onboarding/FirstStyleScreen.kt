@@ -3,6 +3,7 @@ package com.bamnat.app.ui.onboarding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -35,7 +36,9 @@ import com.bamnat.core.work.WorkStyle
  * question is not asked twice. The same cards as the setup's first question.
  */
 @Composable
-fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep: Int? = null, onTextStep: (Int) -> Unit = {}) {
+fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep: Int? = null, onTextStep: (Int) -> Unit = {},
+                     /** [SETUP-17] '나중에 할게요': an example calendar to look around first; the first write asks again. */
+                     onLater: (() -> Unit)? = null) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
             Column(
@@ -43,6 +46,11 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                     .padding(horizontal = 20.dp, vertical = 16.dp).semantics { paneTitle = FIRST_QUESTION },
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                // [SETUP-17] 1.37 PC 270fc15e: the very first screen had no way to put it off; the file start sat at the bottom.
+                if (onLater != null) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onSkip, modifier = Modifier.heightIn(min = 48.dp)) { Text("파일로 시작") }
+                    TextButton(onClick = onLater, modifier = Modifier.heightIn(min = 48.dp)) { Text("나중에 할게요") }
+                }
                 // [FIT-03] U23: the user's own words first, the kinds of work under them.
                 // U 1.32 [UX132-05] 글자 크기 first, so everything after is read at the size chosen (설정 › 화면과 글자에서 다시).
                 if (textStep != null) {
@@ -72,6 +80,10 @@ data class FirstStyle(val style: WorkStyle, val roster: Boolean) {
 
     companion object {
         private const val ROSTER = "_ROSTER"
+        /** [SETUP-17] '백업이나 회사 파일로 시작할게요': no kind of work, the file chooser opens at once. */
+        const val FILE = "FILE"
+        /** [SETUP-17] '나중에 할게요' on the first screen: the example calendars to look around. */
+        const val BROWSE = "BROWSE"
         fun of(key: String?): FirstStyle? {
             val k = key ?: return null
             val style = WorkStyle.entries.firstOrNull { it.name == k.removeSuffix(ROSTER) } ?: return null

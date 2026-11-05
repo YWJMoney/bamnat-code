@@ -52,6 +52,10 @@ data class SharedSchedule(
     val audience: ShareAudience? = null,
     /** [SHR-20] A coworker's company setup file (no amounts), to put in with 같은 조예요·다른 조예요. */
     val setup: String? = null,
+    /** 1.37 [SHR-31] The sender's 테마 (looks only), to try on; null when the link has none or it could not be read. */
+    val look: com.bamnat.core.recipe.Recipe? = null,
+    /** 1.37 [SHR-32] The sender's 근무 설정 (근무 꾸미기·알람 시각 틀·근무 주기), to pick from; never pay. */
+    val kit: com.bamnat.core.recipe.Recipe? = null,
 ) {
     private val byId = types.associateBy { it.id }
     fun type(id: Long?): SharedType? = id?.let(byId::get)
@@ -107,7 +111,9 @@ data class SharedSchedule(
             // [SHR-20] Only a company file is taken as a setup.
             val setup = o.str("setup")?.takeIf { com.bamnat.app.data.CompanyShare.isCompanyFile(it) }
             return SharedSchedule(o.optString("title"), types, days, pay, shows, com.bamnat.core.work.MoneyShare.ofKey(o.str("payKind")),
-                ShareAudience.of(o.str("audience")), setup)
+                ShareAudience.of(o.str("audience")), setup,
+                // 1.37 [SHR-31][SHR-32] Read as any recipe: what the codec refuses, or a kit's pay, is left out.
+                com.bamnat.core.recipe.ShareKit.readLook(o.str("look")), com.bamnat.core.recipe.ShareKit.readKit(o.str("kit")))
         }
 
         private fun JSONArray?.objects(): List<JSONObject> =

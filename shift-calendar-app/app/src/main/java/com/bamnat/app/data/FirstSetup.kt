@@ -49,16 +49,23 @@ class FirstSetup(
         _saved.value = null
     }
 
-    suspend fun save(draft: SetupDraft): SetupDraft = lock.withLock {
+    suspend fun save(
+        draft: SetupDraft,
+        /**
+         * [SETUP-16] Saved from outside the setup screen (a setup put off, finished by a kind of work with nothing more to ask): the
+         * screen does not come up for the moment of the save. 1.37 PC 270fc15e: it did, and took the screen the user was on with it.
+         */
+        quiet: Boolean = false,
+    ): SetupDraft = lock.withLock {
         val style = requireNotNull(draft.style) { "A setup without a kind of work" }
-        val marked = draft.copy(committing = true, later = false)
+        val marked = draft.copy(committing = true, later = quiet)
         withContext(Dispatchers.IO) {
             drafts.save(marked)
             drafts.flush()
         }
         val saved = schedule.applySetup(marked, today())
         keepCompany(company(), marked, used)
-        settings.update { it.copy(workStyle = style, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }
+        settings.update { it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }
         drafts.clear()
         prefs?.edit()?.putString(DAY_KEY, today().toString())?.apply()
         _saved.value = saved

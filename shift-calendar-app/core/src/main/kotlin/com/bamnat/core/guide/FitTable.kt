@@ -78,7 +78,7 @@ object FitTable {
         stats("tiles", PAID), stats("pay", PAID), stats("kinds", PAID), stats("three", PAID), stats("weeks", PAID),
         stats("trend", PAID), stats("compare", PAID), stats("year", PAID),
         // 돈 화면 꾸미기 (MoneyPart).
-        money("hero"), money("new"), money("recent"), money("income"), money("owed"),
+        money("hero"), money("inbox"), money("new"), money("story"), money("ahead"), money("envelopes"), money("found"), money("recent"), money("income"), money("owed"),
         money("work", setOf(FIELD, SHOP)),
         money("all"), money("budget"), money("other"), money("upcoming"), money("repeat"), money("accounts"), money("auto"),
         // E 1.32 [LEDX-07][LEDX-09][LEDX-10] 카드 문턱 is for pay that has 총급여.
@@ -87,6 +87,8 @@ object FitTable {
         money("cardbill"), money("shiftspend", setOf(SHIFT)), money("salessplit", setOf(SHOP)), money("freelance", setOf(FIELD)),
         // 1.32 [LEDX-16][LEDX-17][LEDX-19] 확인할 것 and 할부 청구 기준 are for every kind of work.
         money("ask"), money("install"),
+        // 1.37 [LEDH-33] 가계부에 묻기.
+        money("askme"),
     )
 
     private val byKey: Map<String, FitItem> = all.associateBy { it.key }

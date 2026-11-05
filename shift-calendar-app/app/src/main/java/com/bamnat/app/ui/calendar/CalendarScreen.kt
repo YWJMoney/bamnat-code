@@ -305,7 +305,7 @@ fun CalendarScreen(
     // [CUST-01] 화면 꾸미기 opened from the help search or the update notice.
     val featureFocus by com.bamnat.app.ui.guide.FeatureLinks.focus.collectAsStateWithLifecycle()
     LaunchedEffect(featureFocus) {
-        if (featureFocus == "customize" && com.bamnat.app.ui.guide.FeatureLinks.take("customize")) editingLayout = true
+        if (featureFocus == "customize" && com.bamnat.app.ui.guide.FeatureLinks.take("customize")) com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_CALENDAR)
     }
     val memoDates by vm.memoDates.collectAsStateWithLifecycle()
     val moneyBook by vm.moneyBook.collectAsStateWithLifecycle()
@@ -748,7 +748,14 @@ fun CalendarScreen(
     val fabJump = with(density) { 8.dp.toPx() }
     val fabTarget: () -> Float = {
         if (!docking || gridBottom.isNaN() || fabAreaBottom.isNaN()) 0f
-        else (gridBottom + dockGap - (fabAreaBottom - fabLift)).coerceIn(0f, fabLift)
+        else {
+            // 1.37 PC 736fb7a6 (첫 근무를 칠하면 위에 카드가 생겨 달력이 내려가고, '빠른 입력'이 화면 아래로 숨어 끝까지 내려야 보임):
+            // it rides under the month only when the whole month shows at the page's top. A longer page keeps it in its usual
+            // place all the way, so it never hides below the edge and does not jump while scrolling.
+            val ride = gridBottom + dockGap - (fabAreaBottom - fabLift)
+            // PC 8eae2521 (달력만 보기에서 달력 아래에 붙은 단추가 아래 탭을 반쯤 가림): it never goes lower than its own area's bottom.
+            if (ride + pageScroll.value >= fabLift - 1f) 0f else ride.coerceIn(0f, fabLift - fabHeight)
+        }
     }
     val fabDrop = remember { androidx.compose.animation.core.Animatable(0f) }
     LaunchedEffect(docking, fabLift) {
@@ -764,6 +771,9 @@ fun CalendarScreen(
     val fabExpanded by remember { derivedStateOf { fabDrop.value > 0.5f || pageScroll.value == 0 || !pageScroll.canScrollForward } }
     // Below the screen's edge with the month, it is not there for TalkBack either.
     val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f } }
+    // PC 8eae2521 (근무 0개: 안내 카드의 '빠른 입력'과 떠 있는 '빠른 입력' 두 개, 떠 있는 것이 날짜 칸을 가림): while the empty
+    // calendar's start card is up, its own button is the one way in.
+    var startCardShown by remember { mutableStateOf(false) }
 
     // [SLP-15] A tapped day notice opens on today: the user's own calendar, this month, the page's top.
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
@@ -953,7 +963,8 @@ fun CalendarScreen(
             onReceive = if (received.enabled) ({ adding = "" }) else null,
             // [CALS-01] The calendar on screen is changed from its own page: name, kind of work, settings.
             onEditCalendar = if (viewingReceived == null) ({ onEditCalendar(activeCalendar.id) }) else null,
-            onCustomize = if (viewingReceived == null) ({ editingLayout = true }) else null,
+            // [CNV-08] 1.37 카드 배치 is the studio's 달력 화면 now (사용자 2026-11-04 "스튜디오랑 겹치고").
+            onCustomize = if (viewingReceived == null) ({ com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_CALENDAR) }) else null,
             calendarName = activeCalendar.name,
             calendarId = activeCalendar.id,
             onOpenTeams = openTeams,
@@ -982,7 +993,8 @@ fun CalendarScreen(
             header(Modifier)
         }
         // [SETUP-01] A first setup left for later comes first; it fills the calendar.
-        val waiting = pendingSetup?.takeIf { it.later && settings.workStyle == null }
+        val waiting = pendingSetup?.takeIf { it.later && !settings.setupDone }
+        androidx.compose.runtime.SideEffect { startCardShown = false }
         if (waiting != null) {
             SetupResumeCard(waiting, onResume = vm::resumeSetup)
         } else if (paint == null && !settings.rosterMonthly) {
@@ -996,6 +1008,7 @@ fun CalendarScreen(
                 style == com.bamnat.core.work.WorkStyle.INVEST -> investState?.loaded == true && investState.full.isEmpty
                 else -> overview.isEmpty && YearMonth.from(today) == visibleMonth
             }
+            androidx.compose.runtime.SideEffect { startCardShown = empty }
             if (empty) CalendarStartCard(
                 start = style.calendarStart(),
                 onAction = {
@@ -1089,12 +1102,12 @@ fun CalendarScreen(
         val startRows = remember(settings.alarmsEnabled, settings.workStyle, activeCalendar.id, snap.isEmpty, startHidden, today, pendingSetup) {
             // 1.36 PC C3: from the day after the first setup, so its first day asks one thing only (the pay sheet).
             // 03df48fb Y7: while '근무 설정을 마저 해 주세요' is up, it is the one card (its 이어서 하기 is the next step).
-            val resuming = pendingSetup?.let { it.later && settings.workStyle == null } == true
+            val resuming = pendingSetup?.let { it.later && !settings.setupDone } == true
             if (startHidden || resuming || viewingReceived != null || c31.firstSetup.quietToday()) null else com.bamnat.app.ui.guide.StartStepsState.rows(c31, !snap.isEmpty, activeCalendar.style ?: settings.workStyle)
         }
         // [R136-02] 1.36 (리뷰 R-42: 투자 첫 화면 '입금 적기' 카드 밑에 '할 수 있는 것 1번 원금 입금·출금'): while the empty
         // calendar's first-step card is up, it is the one guide; '할 수 있는 것' comes once the first record is in.
-        val startCardUp = paint == null && !settings.rosterMonthly && !(pendingSetup?.later == true && settings.workStyle == null) && settings.workStyle.let { style ->
+        val startCardUp = paint == null && !settings.rosterMonthly && !(pendingSetup?.later == true && !settings.setupDone) && settings.workStyle.let { style ->
             when {
                 style?.usesPattern != false -> snap.isEmpty
                 style == com.bamnat.core.work.WorkStyle.HOURLY -> overview.isEmpty && !snap.hasPattern
@@ -1264,7 +1277,7 @@ fun CalendarScreen(
             })
             // 1.32 [STAB-08] 백업한 지 30일, without 매일 자동 백업.
             if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("backupNudge", "백업 알림") {
-                com.bamnat.app.ui.settings.BackupNudgeNotice(hasRecords = settings.workStyle != null)
+                com.bamnat.app.ui.settings.BackupNudgeNotice(hasRecords = settings.setupDone)
             })
             // [SRV-04] The developer's notice, one line, only while it runs.
             add(Notice("devNotice", "공지") { AppNoticeLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
@@ -1331,7 +1344,8 @@ fun CalendarScreen(
         }
         // [CUST-01] The parts above the month in the user's order (화면 꾸미기); [CVW-06] the ones moved over it from below too.
         if (low || holding) { if (!holding) aboveHeights[1] = 0 } else Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) {
-            calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
+            // [CNV-06] 요약·횟수 줄 above the month stay just over it (below).
+            calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { placed ->
                 aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
             }
         }
@@ -1340,8 +1354,9 @@ fun CalendarScreen(
             weekPart()
         } else {
             // [CAL-06] The month in the kind of work's own three figures; [CAL-51] one line on a low screen.
-            val summaryPart: @Composable (Modifier) -> Unit = { place ->
-                if (!partShown(CalendarPart.SUMMARY)) Unit
+            // [CNV-06] 1.37: drawn over the month (summaryPart) or, moved, under it (summaryBelow).
+            val summaryAt: @Composable (Modifier, Boolean) -> Unit = { place, below ->
+                if (!partShown(CalendarPart.SUMMARY) || isAbove(CalendarPart.SUMMARY) == below) Unit
                 else if (focus == com.bamnat.core.work.CalendarFocus.INVEST && investVm != null) {
                     // [INV-06] The month in the investor's own figures.
                     com.bamnat.app.ui.invest.InvestMonthBar(investVm, visibleMonth, onOpen = onOpenStats, modifier = place.padding(horizontal = 16.dp, vertical = 4.dp))
@@ -1366,6 +1381,8 @@ fun CalendarScreen(
                     )
                 }
             }
+            val summaryPart: @Composable (Modifier) -> Unit = { summaryAt(it, false) }
+            val summaryBelow: @Composable (Modifier) -> Unit = { summaryAt(it, true) }
             // [CAL-31] I 리뷰 N10: past the checked table the red days are worked out, without 임시공휴일 or 선거일.
             val computedNote: @Composable () -> Unit = {
                 if (com.bamnat.core.holiday.KoreanHolidays.isComputed(visibleMonth.year) &&
@@ -1419,12 +1436,12 @@ fun CalendarScreen(
                         Spacer(Modifier.weight(1f))
                         switch()
                     }
-                    if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
+                    if (partShown(CalendarPart.COUNTS) && isAbove(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
                 } else Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     // The counts take what is left, so the two buttons always sit at the right edge.
                     // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
                     teamsChip()
-                    Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
+                    Box(Modifier.weight(1f)) { if (partShown(CalendarPart.COUNTS) && isAbove(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth) }
                     switch()
                 }
             }
@@ -1558,7 +1575,12 @@ fun CalendarScreen(
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
             // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
             if (settled) calendarParts.filter { !isAbove(it.part) && it.shown && it.part != CalendarPart.MONTH }.forEach { placed ->
-                aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
+                when (placed.part) {
+                    // [CNV-06] 1.37 요약·횟수 줄 moved under the month.
+                    CalendarPart.SUMMARY -> Box(Modifier.fillMaxWidth()) { summaryBelow(Modifier) }
+                    CalendarPart.COUNTS -> MonthShiftCounts(snap, visibleMonth, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                    else -> aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
+                }
             }
         }
     }
@@ -1593,7 +1615,8 @@ fun CalendarScreen(
         val place = Modifier.align(Alignment.BottomEnd).padding(FAB_MARGIN).offset { IntOffset(0, fabDrop.value.roundToInt()) }
             // Coming up from the edge it fades in with how much of it shows, so a sliver is not a stray shape.
             .graphicsLayer { alpha = ((fabLift - fabDrop.value) / fabHeight).coerceIn(0f, 1f) }
-        if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
+        if (startCardShown && paint == null) Unit
+        else if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
             // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
             val label = if (style.usesJobs) "일감 적기" else if (style.usesTrades) "매매 기록" else "매출 적기"
             // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
@@ -1844,7 +1867,7 @@ private fun DaySheet(snackbar: SnackbarHostState, onDismiss: () -> Unit, content
     // [STAB-01] A message still showing here when the sheet closes is closed with it: otherwise it waits for
     // a host that is gone, and every later message (되돌리기 and the rest) stops appearing.
     DisposableEffect(snackbar) { onDispose { snackbar.currentSnackbarData?.dismiss() } }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state, holdHeight = true) {
         // [UX-13] 1.25 Z (U13): scrolling the day up to its top no longer goes on to close it.
         Box(Modifier.fillMaxWidth().sheetScrollGuard()) {
             content()
@@ -2455,7 +2478,9 @@ private fun PaintBar(
                         modifier = Modifier.semantics { contentDescription = "쉬는 날 칠하기" },
                     )
                 }
-                FilterChip(
+                // 1.37 시간 바퀴 PC LOW: a weekday calendar (일근·요일 근무) has no cycle to go back to; 되돌리기 and the
+                // day sheet's '평소대로' undo a painted day there.
+                if (!snapshot.weekdayOnly) FilterChip(
                     selected = tool == PaintTool.Clear,
                     onClick = { onTool(if (tool == PaintTool.Clear) PaintTool.Pick else PaintTool.Clear) },
                     label = { Text("근무 주기대로", maxLines = 1, softWrap = false) }, // 1.36 PC X7: never cut onto two lines
@@ -2725,7 +2750,7 @@ private fun MonthRestCard(
             }
             if (count > 0 || overtime != null) {
                 val parts = listOfNotNull(
-                    count.takeIf { it > 0 }?.let { com.bamnat.core.pay.NightSummary.line(it, nights?.nightPay) },
+                    count.takeIf { it > 0 }?.let { com.bamnat.app.ui.Fmt.hide(com.bamnat.core.pay.NightSummary.line(it, nights?.nightPay)) },
                     overtime?.let { "이달 시간외 ${it.text}" },
                 )
                 Text(parts.joinToString(" · "), style = MaterialTheme.typography.bodyMedium,
@@ -2887,3 +2912,15 @@ internal fun Modifier.holdHeight(hold: Boolean): Modifier {
         layout(p.width, h) { p.place(0, 0) }
     }
 }
+
+/** 1.37 시간 바퀴 PC LOW: every pattern is a week (일근·요일 근무), so there is no '근무 주기' to speak of. */
+internal val ScheduleSnapshot.weekdayOnly: Boolean
+    get() = patterns.isNotEmpty() && patterns.all { it is com.bamnat.core.model.WorkPattern.Weekly }
+
+/** What putting a painted day back is called: the cycle for shift work, the usual weekdays for 일근, 지우기 without a pattern. */
+internal val ScheduleSnapshot.backWord: String
+    get() = when {
+        !hasPattern -> "지우기"
+        weekdayOnly -> "평소대로"
+        else -> "근무 주기대로"
+    }

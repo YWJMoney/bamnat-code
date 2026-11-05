@@ -61,7 +61,9 @@ object BulkEditPlanner {
         }
         is EditScope.OnlyMonth -> applyRange(timeline, newValue, scope.month, scope.month)
         is EditScope.Range -> applyRange(timeline, newValue, scope.from, scope.to)
-        EditScope.AllMonths -> timeline.copy(entries = listOf(DatedValue(timeline.entries.minOfOrNull { it.from } ?: EARLIEST, newValue)))
+        // [PAYIN-03] 1.37 PC: an entry dated from a pay period's first day (the 21st) left that month 0원 even after '모든 달 같게',
+        // since a month is read from its 1st; every month means from the 1st of the first month.
+        EditScope.AllMonths -> timeline.copy(entries = listOf(DatedValue(timeline.entries.minOfOrNull { it.from }?.withDayOfMonth(1) ?: EARLIEST, newValue)))
     }
 
     /** Before any month a calendar can hold. */

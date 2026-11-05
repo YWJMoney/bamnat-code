@@ -1,6 +1,8 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer } from "./inbox.js";
+// 1.37 [ADM2-02] 나간 판.
+import { isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
 import { fcmTell } from "./fcm.js";
 import { kstDay } from "./usage.js";
@@ -317,8 +319,11 @@ export async function inquiryView(env, row, admin = false) {
 export async function inquiryProgress(env, row, messages) {
   const items = await all(env, `SELECT d.status, d.released_in FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
     WHERE l.inquiry_id = ?`, row.id);
-  const done = items.filter((d) => d.status === "done");
+  // 1.37 [ADM2-02] '반영'은 고친 판이 Play에 나갔을 때만. 고쳤지만 아직 안 나갔으면 '만드는 중'.
+  const shipped = items.some((d) => d.status === "done") ? await shippedVersion(env) : null;
+  const done = items.filter((d) => d.status === "done" && (!d.released_in || isOut(d.released_in, shipped)));
   if (done.length) return { stage: "released", version: done.map((d) => d.released_in).find(Boolean) ?? null };
+  if (items.some((d) => d.status === "done")) return { stage: "building" };
   if (items.some((d) => d.status === "todo" || d.status === "doing")) return { stage: items.some((d) => d.status === "doing") ? "building" : "planned" };
   const answered = messages.some((m) => m.sender === "admin");
   const last = messages[messages.length - 1];
@@ -1099,6 +1104,15 @@ export async function devUpdate(env, row, body, now) {
     const text = plainText(body.body, DEV.body, "body");
     if (text !== row.body) [edit.body, set.body] = [[cut(row.body), cut(text)], text];
   }
+  // 1.37 [ADM2-10] 미리 써 두는 출시 답(판이 나간 날 묶인 문의에)과 업데이트 소식 공지 한 줄.
+  if (body.shipReply !== undefined) {
+    const text = body.shipReply === null ? "" : plainText(body.shipReply, 1000, "shipReply");
+    if (text !== (row.ship_reply ?? "")) [edit.shipReply, set.ship_reply] = [[cut(row.ship_reply ?? ""), cut(text)], text];
+  }
+  if (body.news !== undefined) {
+    const text = body.news === null ? "" : plainText(body.news, 80, "news");
+    if (text !== (row.news ?? "")) [edit.news, set.news] = [[row.news ?? "", text], text];
+  }
   if (Object.keys(edit).length) {
     stmts.push(devEvent(env, row.id, now, "edit", edit));
     notes.push(["dev_edit", Object.keys(edit).join(" ")]);
@@ -1239,6 +1253,8 @@ export const devItem = (r) => ({
   status: r.status,
   reason: r.reason,
   releasedIn: r.released_in ?? null,
+  shipReply: r.ship_reply ?? "",
+  news: r.news ?? "",
   links: r.links ?? 0,
   waiting: r.waiting ?? 0,
   createdBy: { id: r.created_by, name: r.created_by_name },

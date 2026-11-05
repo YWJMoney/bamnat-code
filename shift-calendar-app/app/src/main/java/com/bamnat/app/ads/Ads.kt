@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import com.bamnat.app.BuildConfig
 import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.RequestConfiguration
 import com.google.android.ump.ConsentInformation
 import com.google.android.ump.ConsentRequestParameters
 import com.google.android.ump.UserMessagingPlatform
@@ -81,10 +82,22 @@ class Ads(private val scope: CoroutineScope) {
         // Google asks for this off the main thread.
         // G 1.32 [WTYP-01] Every ad starts without sound (AdRules.MUTED).
         scope.launch {
+            // [ADAGE-01] Play's audience is 13 and over (사용자 2026-11-04 13:07): no ad above teen content, kept with whatever else
+            // the configuration already says (test devices and the like).
+            runCatching { MobileAds.setRequestConfiguration(AdContent.teenSafe(MobileAds.getRequestConfiguration())) }
             MobileAds.initialize(context) {
                 if (com.bamnat.core.tier.AdRules.MUTED) runCatching { MobileAds.setAppMuted(true); MobileAds.setAppVolume(0f) }
                 _ready.value = true
             }
         }
     }
+}
+
+/** [ADAGE-01] 1.37: the ad content ceiling for an app whose Play audience includes 13~17. */
+object AdContent {
+    const val MAX_RATING: String = RequestConfiguration.MAX_AD_CONTENT_RATING_T
+
+    /** [current] with its rating capped at T; everything else in it is kept. */
+    fun teenSafe(current: RequestConfiguration): RequestConfiguration =
+        current.toBuilder().setMaxAdContentRating(MAX_RATING).build()
 }

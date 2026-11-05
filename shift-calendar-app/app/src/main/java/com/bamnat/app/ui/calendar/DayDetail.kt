@@ -4,6 +4,7 @@ import com.bamnat.app.data.rules
 import com.bamnat.app.ui.components.labelWidth
 import com.bamnat.app.ui.components.TimeRange
 import com.bamnat.app.ui.components.TimeRangeDialog
+import com.bamnat.app.ui.components.TimeRangePart
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -394,10 +396,25 @@ private fun DayGroups(
                             open = groups.isOpen(key, moneyFirst), onToggle = { groups.toggle(key, moneyFirst) },
                         ) {
                             if (!moneyFirst) DayPayContent(insight, profile?.wageType, profile != null, onOpenPay)
+                            // 1.37 [LEDH-04] 이날 일하면? (교대·일근·알바, 급여 설정이 있을 때).
+                            if (!moneyFirst && style?.usesPayEngine == true) profile?.let { p ->
+                                val cal by vm.activeCalendar.collectAsStateWithLifecycle()
+                                com.bamnat.app.ui.money.DayWhatIfSection(date, snapshot, p, cal.id)
+                            }
                             val memoText = remember(memos) {
                                 memos.joinToString("\n") { m -> (listOf(m.title, m.body) + m.checklist.map { it.text }).filter { it.isNotBlank() }.joinToString("\n") }
                             }
-                            DayMoneySections(date, style, dayBook, vm, memoText)
+                            // 1.37 [LEDH-30] 근무에서 바로 적기: what was spent twice or more on the last 90 days' days of this shift.
+                            val habits by androidx.compose.runtime.produceState<Pair<String, List<com.bamnat.core.money.MoneyEntry>>?>(null, book, snapshot, date, style) {
+                                value = if (style?.usesPayEngine != true) null else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                                    runCatching {
+                                        val t = snapshot.resolver.resolve(date).shiftType?.takeIf { !it.isOff } ?: return@runCatching null
+                                        val days = (1L..90L).map { date.minusDays(it) }.filter { snapshot.resolver.resolve(it).shiftType?.id == t.id }.toSet()
+                                        com.bamnat.core.money.LedgerSmarts.dayHabits(book.entries, days).takeIf { it.isNotEmpty() }?.let { t.name to it }
+                                    }.getOrNull()
+                                }
+                            }
+                            DayMoneySections(date, style, dayBook, vm, memoText, habits)
                         }
                     }
                     G.BODY -> {
@@ -433,7 +450,7 @@ private fun DayGroups(
                         title = "기록", icon = Icons.Outlined.History,
                         summary = if (changes.isEmpty()) "바꾼 내용 있음" else "바꾼 기록 ${changes.size}건",
                         open = groups.isOpen(key, false), onToggle = { groups.toggle(key, false) },
-                    ) { RecordContent(day, changes, vm) }
+                    ) { RecordContent(day, changes, vm, snapshot.backWord.takeIf { it != "지우기" } ?: "처음대로") }
                 }
             }
         }
@@ -528,8 +545,13 @@ private fun DayGroup(
                 }
             }
             trailing?.invoke()
+            // 1.37 시간 바퀴 PC LOW: a switch right beside the arrow was easy to hit for the other; a gap and a line keep them apart.
+            if (trailing != null && onToggle != null) {
+                Spacer(Modifier.width(12.dp))
+                androidx.compose.material3.VerticalDivider(Modifier.height(28.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            }
             if (onToggle != null) {
-                Icon(Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.padding(start = 4.dp).rotate(turn),
+                Icon(Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.padding(start = if (trailing != null) 12.dp else 4.dp).rotate(turn),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -552,7 +574,7 @@ private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot): String {
             "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""
         }
         day.hasCustomTimes -> "$name$time · 이 날만 시간 바꿈"
-        day.source == DaySource.PATTERN -> "$name$time · 근무 주기대로"
+        day.source == DaySource.PATTERN -> "$name$time · ${snapshot.backWord}"
         else -> "$name$time"
     }
 }
@@ -615,7 +637,8 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             val until = day.date.plusDays(1)
             val days = generateSequence(com.bamnat.core.schedule.RestCheck.lookbackFrom(day.date, settings.rules)) { it.plusDays(1) }
                 .takeWhile { !it.isAfter(until) }.map(snapshot.resolver::resolve).toList()
-            (com.bamnat.core.schedule.RestNudge.on(days, day.date, settings.rules) + com.bamnat.core.schedule.RestNudge.on(days, until, settings.rules))
+            val rules = settings.rules.forStyle(style)
+            (com.bamnat.core.schedule.RestNudge.on(days, day.date, rules) + com.bamnat.core.schedule.RestNudge.on(days, until, rules))
                 .distinctBy { it.kind to it.date }
         }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
@@ -634,7 +657,7 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             TextButton(onClick = { vm.assign(day.date, ShiftOverride.None) }) {
                 Icon(Icons.Filled.Autorenew, contentDescription = null, Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
-                Text(if (snapshot.hasPattern) "근무 주기대로" else "지우기")
+                Text(snapshot.backWord)
             }
         }
     }
@@ -695,6 +718,8 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
                 if (day.leaveShrunk) "연차 ${HoursFormat.korean(day.leaveMinutes)}은 저장한 뒤 다시 빼요" else null,
             ).joinToString(" · ").ifEmpty { null },
             confirmLabel = "저장",
+            // [TIME-03] Open on the time the user tapped (PC a9bcce14: '끝' opened on 시작).
+            startOn = if (it == "end") TimeRangePart.END else TimeRangePart.START,
             onDismiss = { editing = null },
             onConfirm = {
                 editing = null
@@ -1159,19 +1184,19 @@ private fun DayPayContent(insight: DayInsight, wageType: WageType?, hasProfile: 
 
 /** [MKT-08][DAY-03] What was changed and when; putting the day back to the pattern asks first. */
 @Composable
-private fun RecordContent(day: ResolvedDay, changes: List<com.bamnat.app.data.DayChange>, vm: CalendarViewModel) {
+private fun RecordContent(day: ResolvedDay, changes: List<com.bamnat.app.data.DayChange>, vm: CalendarViewModel, back: String = "근무 주기대로") {
     var confirm by remember { mutableStateOf(false) }
     if (changes.isNotEmpty()) ChangeHistory(changes)
     if (day.entry != null) {
         TextButton(onClick = { confirm = true }) {
             Icon(Icons.Filled.RestartAlt, contentDescription = null)
             Spacer(Modifier.width(6.dp))
-            Text("이 날을 근무 주기대로 되돌리기")
+            Text("이 날을 $back 되돌리기")
         }
     }
     if (confirm) {
         ConfirmDialog(
-            title = "이 날을 근무 주기대로 되돌릴까요?",
+            title = "이 날을 $back 되돌릴까요?",
             message = "근무 변경, 시간, 추가 근무·휴가, 알람 설정이 지워져요. 메모와 가계부는 남아요.",
             confirmLabel = "되돌리기",
             destructive = true,

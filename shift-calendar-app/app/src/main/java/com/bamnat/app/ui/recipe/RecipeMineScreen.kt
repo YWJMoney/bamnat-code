@@ -92,8 +92,11 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                 }
 
                 Header("받은 레시피")
-                if (applied.isEmpty()) Muted("아직 넣은 레시피가 없어요")
-                applied.take(30).forEach { e ->
+                // 1.37 PC 3차 (받은 꾸밈이 서랍과 공방에 나뉘어 있어요): where all of it is together.
+                Muted("입은 테마·얹은 탭·담아 둔 조각까지 한곳에서 보려면 마을 › 테마(내 서랍)로 가요. 여기서는 새 판 반영과 알림을 정해요")
+                if (applied.none { !com.bamnat.app.recipe.ThemeWardrobe.isMix(it.title) }) Muted("아직 넣은 레시피가 없어요")
+                // 1.37 PC d12d4cf1: a look mixed and put on in the studio (‘조합 · …’) is mine, in 내 서랍, not a recipe received.
+                applied.filterNot { com.bamnat.app.recipe.ThemeWardrobe.isMix(it.title) }.take(30).forEach { e ->
                     Card(Modifier.fillMaxWidth().clickable(enabled = e.code.isNotEmpty()) { onOpen(e.code) }) {
                         Column(Modifier.padding(12.dp)) {
                             Text(e.title, style = MaterialTheme.typography.titleSmall)
@@ -139,7 +142,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                     "pending" -> com.bamnat.app.ui.company.StatusChip("사진 확인 중 · 보통 하루 안", com.bamnat.app.ui.company.Tone.WAIT)
                                 }
                                 st.third?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
-                                Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 쓰는 분 ${item.users} · 코드 ${item.code}",
+                                Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣은 분 ${item.users} · 코드 ${item.code}",
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 RemixCount(item.code)
                                 Row {
@@ -160,7 +163,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                         Column(Modifier.weight(1f).clickable { onDraft(d.id) }.padding(vertical = 8.dp)) {
                             Text(runCatching { org.json.JSONObject(d.body).optString("title") }.getOrNull()?.ifEmpty { null } ?: "이름 없는 레시피",
                                 style = MaterialTheme.typography.bodyLarge)
-                            Muted(if (d.step <= 1) "스튜디오에서 꾸미던 중" else "올리기 ${d.step - 1}/4단계에서 멈춤")
+                            Muted(if (d.step <= 1) "만들던 중 · 이어서 하면 멈춘 곳부터" else "올리기 ${d.step - 1}/4단계에서 멈춤")
                         }
                         TextButton(onClick = { asking = "만들던 레시피를 지울까요? 지우면 이어서 만들 수 없어요" to { vm.deleteDraft(d.id) } }) { Text("지우기") }
                     }

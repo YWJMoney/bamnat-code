@@ -114,7 +114,7 @@ data class LogicAct(val verb: LogicVerb, val arg: String = "", val amount: Long?
     }
 
     /** 1.36 [SEC-12] This act with a 가계부 amount held to [Logic.RECEIVED_MAX_WON]. */
-    fun held(): LogicAct = if ((verb == LogicVerb.ADD_MONEY || verb == LogicVerb.ADD_INCOME) && (amount ?: 0L) > Logic.RECEIVED_MAX_WON)
+    fun held(): LogicAct = if ((verb == LogicVerb.ADD_MONEY || verb == LogicVerb.ADD_INCOME || verb == LogicVerb.ENVELOPE) && (amount ?: 0L) > Logic.RECEIVED_MAX_WON)
         copy(amount = Logic.RECEIVED_MAX_WON) else this
 
     /** "‘인수인계’ 메모 틀 열기", "‘식비 8,000원’ 가계부에 넣기". */
@@ -127,6 +127,7 @@ data class LogicAct(val verb: LogicVerb, val arg: String = "", val amount: Long?
         LogicVerb.ADD_MONEY -> "가계부에 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’ 넣기"
         LogicVerb.ADD_INCOME -> "가계부 수입에 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’ 넣기"
         LogicVerb.MEMO_LINE -> "그날 메모에 ‘${arg.ifEmpty { "한 줄" }}’ 더하기"
+        LogicVerb.ENVELOPE -> (if (arg.isEmpty()) "맨 위 봉투에" else "‘$arg’ 봉투에") + "${amount?.let { " " + won(it) } ?: ""} 넣기"
         LogicVerb.SCREEN -> "${LogicVerb.SCREENS[arg] ?: "화면"} 열기"
     }
 
@@ -153,7 +154,9 @@ enum class LogicVerb(val key: String, val label: String, val writes: Boolean) {
     /** 사용자 2026-11-01 "메모와 달력을 연동": 그날 메모에 수식으로 만든 한 줄 (예: "야간 {이번주야간}번째, 이달 지출 {원(이달지출)}"). */
     MEMO_LINE("memoLine", "그날 메모에 한 줄 더하기", true),
     /** 가계부 수입 쪽 (예: 야간 근무 끝에 야간 수당 기록). */
-    ADD_INCOME("addIncome", "가계부에 수입 넣기", true);
+    ADD_INCOME("addIncome", "가계부에 수입 넣기", true),
+    /** 1.37 [LEDH-12] 모으기 봉투에 넣기 (예: 야간 근무 끝마다 '여행' 봉투에 1만 원). 이름이 없거나 없는 봉투면 첫 봉투. */
+    ENVELOPE("envelope", "봉투에 넣기", true);
 
     companion object {
         val KEYS = entries.map { it.key }

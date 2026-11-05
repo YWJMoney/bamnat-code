@@ -413,7 +413,7 @@ class PayCalculator(
                         w.night * pr.night).roundToLong().toInt()
                     compLeave[day.date] = (compLeave[day.date] ?: 0) + credit
                     parts += DayPart(LineKind.LEAVE, "${rules.extraName(e.kind.id)} → 보상휴가", 0,
-                        "${hours(w.worked)} 일한 것을 돈 대신 휴가 ${hours(credit)}로 (가산 포함)")
+                        "${hours(w.worked)} 일한 것을 돈 대신 휴가 ${hours(credit)}으로 (가산 포함)")
                     continue
                 }
                 // [PAYX-11] The shift the work covered: its own, else the day's.
@@ -899,7 +899,7 @@ class PayCalculator(
         // [PAYX-18] 보상휴가 earned this month, as a line of no money that says where the pay went.
         compLeave.values.sum().takeIf { it > 0 }?.let { mins ->
             lines += PayLine(LineKind.LEAVE, "보상휴가로 받음", 0,
-                formula = "${compLeave.size}일 근무를 돈 대신 휴가 ${hours(mins)}로 (가산 포함, 연차 원장에 들어가요)",
+                formula = "${compLeave.size}일 근무를 돈 대신 휴가 ${hours(mins)}으로 (가산 포함, 연차 원장에 들어가요)",
                 minutes = mins,
                 basis = "근로기준법 제57조 (근로자대표와 서면 합의가 있을 때)")
         }

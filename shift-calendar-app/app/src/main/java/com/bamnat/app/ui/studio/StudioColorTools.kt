@@ -259,8 +259,7 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     Text("색 하나만 고르면 바탕·카드·글자·강조·오늘·주말 색이 어울리게 맞춰져요. 글자는 늘 잘 읽히게 맞춰요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Text("색 고르기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically) {
+    com.bamnat.app.ui.components.FoldRow("studio.seeds", what = "색") {
         (photoColours + StudioColors.SEEDS.filter { it !in photoColours }).forEachIndexed { i, c ->
             if (i == photoColours.size && photoColours.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
             val on = c == seed
@@ -307,7 +306,7 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     if (photoColours.isNotEmpty()) {
         val names = remember(photoColours) { com.bamnat.app.ui.settings.colorNames(photoColours) }
         Text("사진에서 뽑은 색 ${photoColours.size}개 · 눌러서 골라요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        com.bamnat.app.ui.components.FoldRow("studio.photocolours", spacing = 10.dp, what = "사진 색") {
             photoColours.forEachIndexed { i, c ->
                 val on = c == seed
                 Column(Modifier.clickable { put(s = c, m = 0) }.semantics { contentDescription = "사진 색 ${names[i]}"; selected = on },

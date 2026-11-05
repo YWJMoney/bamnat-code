@@ -67,179 +67,83 @@ fun swatchOf(r: Recipe): ThemeSwatch? {
 }
 
 /**
- * [FREE-09][FREE-10] 1.35 내 테마 (사용자 2026-10-30 21:37 "테마는 사용자 자신의 페이지 성격이 강하므로 … 지금 중복이 존재해"): the user's
- * own wardrobe, not a second shop. The theme worn now, large, with its days and 벗기; 내 테마 (saved, 프로 more); 입었던 테마 to wear
- * again. Finding new themes is 장터's ([onFind]); only a phone that has never worn one sees three to start with. A tap opens
- * [ThemeSheet] (입어 보기, 입기). 벗기 always comes back to the user's own look; no record changes either way.
+ * [FREE-09][FREE-10] 1.35 지금 입은 테마 (사용자 2026-10-30 21:37), kept as the top of [ThemeDrawer] in 1.37: what the whole app wears
+ * now, drawn as itself, with its days, 벗기 and 내 모양 고치기; under it the tabs laid on ([MKX-02]), each to take off. 벗기 and 빼기
+ * say so with 되돌리기 ([DRW-03]). No record changes either way.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun ThemePicker(style: WorkStyle?, modifier: Modifier = Modifier, onFind: (() -> Unit)? = null, onFix: (() -> Unit)? = null,
-                onUseKept: ((Long) -> Unit)? = null) {
+fun WornNow(onFix: (() -> Unit)?) {
     val c = LocalContext.current.appContainer
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
-    var open by remember { mutableStateOf<Pair<Recipe, String>?>(null) }
     var takingOff by remember { mutableStateOf(false) }
-    // [THM-07] 1.36 빌드 8 (내 테마를 지울 곳이 없음): one of mine or one worn before, let go after asking.
-    var letGoTheme by remember { mutableStateOf<ThemeLease.Wear?>(null) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        // 지금 입은 테마: what the whole app wears now, drawn as itself.
-        androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                val w = lease.worn
-                val look = remember(w?.body) { w?.let { runCatching { RecipeCodec.read(it.body) }.getOrNull()?.let(::swatchOf) } }
-                look?.let { ThemeThumb(it, width = 96.dp) }
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("지금 입은 테마", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(w?.title ?: "내 모양 (테마 없음)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                    if (w != null) {
-                        val left = lease.daysLeft(Today.date().toEpochDay())
-                        val runs = c.wardrobe.state() != ThemeLease.State.NONE
-                        Text(if (runs && left != null) "${left}일 남았어요. 끝나는 날 연장할지 물어요" else if (w.free) "장터에 올린 내 테마라 기간 없이 입어요" else "기간 없이 입어요",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            val w = lease.worn
+            val look = remember(w?.body) { w?.let { runCatching { RecipeCodec.read(it.body) }.getOrNull()?.let(::swatchOf) } }
+            look?.let { ThemeThumb(it, width = 96.dp) }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("지금 입은 테마", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(w?.title ?: "내 모양 (테마 없음)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                if (w != null) {
+                    val left = lease.daysLeft(Today.date().toEpochDay())
+                    val runs = c.wardrobe.state() != ThemeLease.State.NONE
+                    Text(if (runs && left != null) "${left}일 남았어요. 끝나는 날 연장할지 물어요" else if (w.free) "장터에 올린 내 테마라 기간 없이 입어요" else "기간 없이 입어요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (w != null) TextButton(onClick = { takingOff = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("벗기") }
+                    // [THM-05] Within 7 days of a 새 판, the one before.
+                    val prev = remember(w?.ver) { c.wardrobe.previous() }
+                    if (w != null && prev != null) TextButton(onClick = { c.appScope.launch { c.wardrobe.backToPrevious() } }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("이전 판으로")
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        if (w != null) TextButton(onClick = { takingOff = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("벗기") }
-                        // [THM-05] Within 7 days of a 새 판, the one before.
-                        val prev = remember(w?.ver) { c.wardrobe.previous() }
-                        if (w != null && prev != null) TextButton(onClick = { c.appScope.launch { c.wardrobe.backToPrevious() } }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("이전 판으로")
-                        }
-                        onFix?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 모양 고치기") } }
-                    }
+                    onFix?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 모양 고치기") } }
                 }
             }
         }
-        // [MKX-02] 1.36 얹은 탭: one tab's looks from 장터's 기능별 탭, over the theme worn, each to take off.
-        val overlays by c.wardrobe.overlays.collectAsStateWithLifecycle()
-        if (overlays.isNotEmpty()) androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text("테마 위에 얹은 탭", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-                overlays.forEach { o ->
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("🧩 ${com.bamnat.core.recipe.LookParts.tabLabel(o.tab)} · ${o.title}", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { c.appScope.launch { c.wardrobe.removeOverlay(o.tab) } }) { Text("빼기") }
-                    }
-                }
-                var keep by remember { mutableStateOf(c.wardrobe.keepOverlays) }
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("다른 테마를 입어도 얹은 탭은 그대로", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    androidx.compose.material3.Switch(keep, { keep = it; c.wardrobe.keepOverlays = it })
-                }
-            }
-        }
-        // 내 테마: saved looks, free one, 프로 ten (꾸미기 혜택). [THM-01] Mine in 장터 never runs out; mine kept to myself runs as others' do.
-        val mine = lease.history.filter { it.own && it.key != lease.worn?.key }
-        val mineCount = lease.history.count { it.own }
-        val limit = c.wardrobe.outfitLimit()
-        Text("내 테마 ($mineCount/$limit)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-        if (mine.isNotEmpty()) Shelf(mine, onRemove = { letGoTheme = it }) { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code } }
-        var saveNote by remember { mutableStateOf<String?>(null) }
-        OutlinedButton(onClick = {
-            scope.launch { saveNote = if (kotlinx.coroutines.withContext(c.appScope.coroutineContext) { c.wardrobe.saveMine("내 테마 ${mineCount + 1}") }) "지금 모양을 ‘내 테마 ${mineCount + 1}’로 저장했어요" else "더 저장할 수 없어요" }
-        }, enabled = mineCount < limit, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("지금 모양을 내 테마로 저장") }
-        Text(saveNote ?: if (limit <= com.bamnat.app.recipe.ThemeWardrobe.FREE_OUTFITS) "무료는 ${limit}벌까지예요. 프로는 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 바꿔 입어요"
-            else "장터에 올린 내 테마는 광고 없이 입어요. 혼자 쓰는 테마는 다른 테마처럼 처음 2번 무료, 그 뒤 광고 한 번에 30일이에요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        // 입었던 테마: others' themes worn before, to wear again.
-        val past = lease.history.filter { !it.own && it.key != lease.worn?.key }
-        if (past.isNotEmpty()) {
-            Text("입었던 테마", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-            Shelf(past.take(10), onRemove = { letGoTheme = it }) { w -> runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let { open = it to w.code } }
-        }
-        // F-93 [TRY-02] 담아 둔 조각: the box shows here too, each with where it came from, to put on a draft in the studio or let go.
-        val kept by c.wardrobe.kept.collectAsStateWithLifecycle()
-        if (kept.isNotEmpty()) {
-            Text("담아 둔 조각 (${kept.size}/${c.wardrobe.partsLimit()})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-            var letGo by remember { mutableStateOf<com.bamnat.app.recipe.ThemeWardrobe.Kept?>(null) }
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                kept.forEach { k ->
-                    val look = remember(k.body) { runCatching { RecipeCodec.read(k.body) }.getOrNull()?.let(::swatchOf) }
-                    Column(Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        look?.let { ThemeThumb(it, width = 112.dp) }
-                        Text(k.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        Text(if (k.own) "내 조각" else "출처 ‘${k.fromTitle}’", style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        // F-103: two short buttons on one line (a wide padding broke 빼기 in two).
-                        Row {
-                            val pad = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)
-                            onUseKept?.let { use -> TextButton(onClick = { use(k.id) }, contentPadding = pad, modifier = Modifier.heightIn(min = 48.dp)) { Text("꾸미기", maxLines = 1, softWrap = false) } }
-                            TextButton(onClick = { letGo = k }, contentPadding = pad, modifier = Modifier.heightIn(min = 48.dp)) { Text("빼기", maxLines = 1, softWrap = false) }
-                        }
-                    }
-                }
-            }
-            letGo?.let { k ->
-                AlertDialog(
-                    onDismissRequest = { letGo = null },
-                    title = { Text("보관함에서 뺄까요?") },
-                    text = { Text("‘${k.title}’${com.bamnat.app.ui.Fmt.obj(k.title)} 보관함에서 빼요. 지금 입은 모양은 그대로예요") },
-                    confirmButton = { TextButton(onClick = { c.wardrobe.forgetKept(k.id); letGo = null }) { Text("빼기") } },
-                    dismissButton = { TextButton(onClick = { letGo = null }) { Text("닫기") } },
-                )
-            }
-        }
-        // A phone that never wore a theme: three of its kind of work to start with, the rest in 장터.
-        if (lease.worn == null && lease.history.isEmpty()) {
-            val starters = remember(style) { BuiltInThemes.of(style).take(3) }
-            Text("처음이라면 이런 테마부터", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                starters.forEach { r ->
-                    Column(Modifier.width(112.dp).clickable(onClickLabel = "테마 보기") { open = r to "builtin:${r.title}" },
-                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        swatchOf(r)?.let { ThemeThumb(it, width = 112.dp) }
-                        Text(r.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                        // [TAB-05] PC 확인 38d2d8e7: three 전문 달력 start on 목록, so each says how it differs.
-                        if (r.title.endsWith("전문 달력") && r.summary.isNotBlank()) Text(r.summary, style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-            }
-        }
-        onFind?.let { Button(onClick = it, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("장터에서 새 테마 찾기") } }
-        Text("테마는 색, 칸 모양, 배치처럼 보이는 방식만 바꿔요. 근무, 메모, 가계부, 급여 기록과 알람은 그대로예요",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    open?.let { (r, code) -> ThemeSheet(r, code, style) { open = null } }
-    letGoTheme?.let { w ->
-        AlertDialog(
-            onDismissRequest = { letGoTheme = null },
-            title = { Text(if (w.own) "내 테마에서 지울까요?" else "입었던 테마에서 뺄까요?") },
-            text = { Text("‘${w.title}’${com.bamnat.app.ui.Fmt.obj(w.title)} 목록에서 빼요. 지금 입은 모양은 그대로예요" +
-                if (w.own && w.shared.isNotEmpty()) ". 장터에 올린 것은 장터에 그대로 있어요" else "") },
-            confirmButton = { TextButton(onClick = { c.wardrobe.removeKept(w.key); letGoTheme = null }) { Text(if (w.own) "지우기" else "빼기") } },
-            dismissButton = { TextButton(onClick = { letGoTheme = null }) { Text("닫기") } },
-        )
+    // [MKX-02] 1.36 얹은 탭: one tab's looks from 장터's 기능별 탭, over the theme worn, each to take off.
+    val overlays by c.wardrobe.overlays.collectAsStateWithLifecycle()
+    if (overlays.isNotEmpty()) androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("테마 위에 얹은 탭", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+            overlays.forEach { o ->
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("🧩 ${com.bamnat.core.recipe.LookParts.tabLabel(o.tab)} · ${o.title}", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        c.appScope.launch {
+                            val m = c.wardrobe.mark()
+                            c.wardrobe.removeOverlay(o.tab)
+                            com.bamnat.app.ui.PutOnNotice.say("‘${com.bamnat.core.recipe.LookParts.tabLabel(o.tab)}’ 탭에서 ‘${o.title}’${com.bamnat.app.ui.Fmt.obj(o.title)} 뺐어요") {
+                                c.wardrobe.undoTo(m); true
+                            }
+                        }
+                    }) { Text("빼기") }
+                }
+            }
+            var keep by remember { mutableStateOf(c.wardrobe.keepOverlays) }
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("다른 테마를 입어도 얹은 탭은 그대로", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                androidx.compose.material3.Switch(keep, { keep = it; c.wardrobe.keepOverlays = it })
+            }
+        }
     }
     if (takingOff) AlertDialog(
         onDismissRequest = { takingOff = false },
         title = { Text("테마를 벗을까요?") },
-        text = { Text("입기 전 내 모양으로 돌아가요. 입었던 테마에 남아서 다시 입을 수 있고, 테마를 입은 채 고친 것은 ‘내가 고친 …’으로 따로 남아요") },
-        confirmButton = { TextButton(onClick = { takingOff = false; c.appScope.launch { c.wardrobe.takeOff() } }) { Text("벗기") } },
+        text = { Text("입기 전 내 모양으로 돌아가요. 입었던 것에 남아서 다시 입을 수 있고, 테마를 입은 채 고친 것은 ‘내가 고친 …’으로 따로 남아요") },
+        confirmButton = { TextButton(onClick = {
+            takingOff = false
+            val title = lease.worn?.title.orEmpty()
+            c.appScope.launch {
+                val m = c.wardrobe.mark()
+                c.wardrobe.takeOff()
+                com.bamnat.app.ui.PutOnNotice.say("‘$title’${com.bamnat.app.ui.Fmt.obj(title)} 벗었어요. 내 모양으로 돌아왔어요") { c.wardrobe.undoTo(m); true }
+            }
+        }) { Text("벗기") } },
         dismissButton = { TextButton(onClick = { takingOff = false }) { Text("닫기") } },
     )
-}
-
-/** Worn or saved themes in a row, each drawn as itself; a tap opens it. */
-@Composable
-private fun Shelf(items: List<ThemeLease.Wear>, onRemove: ((ThemeLease.Wear) -> Unit)? = null, onOpen: (ThemeLease.Wear) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        items.forEach { w ->
-            val look = remember(w.body) { runCatching { RecipeCodec.read(w.body) }.getOrNull()?.let(::swatchOf) }
-            Column(Modifier.width(112.dp).clickable(onClickLabel = if (w.own) "내 테마 보기" else "다시 입기") { onOpen(w) },
-                verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                look?.let { ThemeThumb(it, width = 112.dp) }
-                Text((if (w.own) "🎨 " else "") + w.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(if (w.free) "내 테마 · 장터에 있음" else if (w.own) "내 테마 · 나만" else "다시 입기", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                // [THM-08] 1.36 섞은 테마: the themes its parts came from.
-                if (w.mixedFrom.isNotBlank()) Text("섞음 · " + w.mixedFrom.split("·").joinToString("·") { "‘$it’" }, style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                onRemove?.let { rm ->
-                    TextButton(onClick = { rm(w) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp),
-                        modifier = Modifier.heightIn(min = 48.dp)) { Text(if (w.own) "지우기" else "빼기", maxLines = 1, softWrap = false) }
-                }
-            }
-        }
-    }
 }
 
 /**
@@ -247,7 +151,7 @@ private fun Shelf(items: List<ThemeLease.Wear>, onRemove: ((ThemeLease.Wear) -> 
  * asks for a rewarded ad watched to the end; mine, 프로 and the ads switch off never do.
  */
 @Composable
-fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit) {
+fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0, onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
     var note by remember { mutableStateOf<String?>(null) }
@@ -255,18 +159,24 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, onDismiss: () -> Unit
     // [THM-01] Mine kept to myself asks as others' do; mine in 장터 never.
     val needsAd = remember { c.wardrobe.needsAdFor(code, r.title) }
     val all = remember(r) { com.bamnat.core.recipe.LookParts.of(r).map { it.id }.toSet() }
-    fun said(t: String) = Toast.makeText(context.applicationContext, t, Toast.LENGTH_SHORT).show()
     // [J135-15] Worn on the app's scope: the look changing redraws the screens under this sheet, and a coroutine of the sheet would be
     // cancelled half way (the look on, 입는 중 never written). [TRY-01] Only the parts ticked; the rest stays the user's own.
     fun wear(picked: Set<String>, after: () -> Unit = {}) = c.appScope.launch {
         val whole = picked.containsAll(all)
         val worn = if (whole) r else com.bamnat.core.recipe.LookParts.pick(r, picked).copy(title = "${r.title} 일부".take(30))
-        if (c.wardrobe.wear(worn, code, own)) {
+        // [DRW-03] 1.37 넣었어요 · 되돌리기: what was worn just before, so the line under it takes this one back.
+        val m = c.wardrobe.mark()
+        if (c.wardrobe.wear(worn, code, own, ver, whole = r.takeIf { !whole })) {
             after()
-            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                said(if (whole) "‘${r.title}’${com.bamnat.app.ui.Fmt.obj(r.title)} 입었어요. 기록은 그대로예요" else "‘${r.title}’에서 고른 ${picked.size}개를 입었어요. 기록은 그대로예요")
-                onDismiss()
-            }
+            // The sheet closes first, so the line with 되돌리기 is not under it.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { onDismiss() }
+            // PC 3차 (얹은 탭이 같은 곳을 덮으면 일부만 입은 게 안 보여요): the tabs laid on over what was just put on are named.
+            val tabs = com.bamnat.core.recipe.LookParts.of(worn).map { it.tab }.toSet()
+            val under = c.wardrobe.overlays.value.filter { it.tab in tabs }
+            val hidden = if (under.isEmpty()) "" else ". " + under.joinToString(", ") { "‘${com.bamnat.core.recipe.LookParts.tabLabel(it.tab)}’" } +
+                " 탭은 얹은 탭이 덮고 있어 그대로 보여요. 마을 › 테마 › 테마 위에 얹은 탭에서 빼면 보여요"
+            com.bamnat.app.ui.PutOnNotice.say((if (whole) "‘${r.title}’${com.bamnat.app.ui.Fmt.obj(r.title)} 입었어요" else "‘${r.title}’에서 고른 ${picked.size}개를 입었어요") +
+                hidden.ifEmpty { ". 기록은 그대로예요" }) { c.wardrobe.undoTo(m); true }
         }
     }
     TryOnScreen(r, style, onDismiss,

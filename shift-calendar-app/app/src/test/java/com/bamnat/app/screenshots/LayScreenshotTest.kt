@@ -97,6 +97,8 @@ class LayScreenshotTest : ScreenshotBase() {
     @Test fun advancedShowsNumberBoxes() = shoot("1482_lay_numbers", PHONE) {
         tool()
         settle()
+        // [CNV-13] the row of 자석·돋보기·여러 개·고급 보기 may be folded on a narrow phone: 펼치기 shows it all.
+        if (!shows("고급 보기", exact = true)) tapText("보기 도구 모두 펼쳐 보기", exact = true)
         tapText("고급 보기", exact = true)
         tapText("레이어 3", exact = true)
         settle()

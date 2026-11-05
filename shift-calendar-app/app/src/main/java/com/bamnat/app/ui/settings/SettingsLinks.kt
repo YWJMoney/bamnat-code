@@ -26,7 +26,7 @@ enum class SettingsGo {
     /** [EASY-08][OBS-02] 내 정보 and 밤낮이 한 일. */
     PROFILE, JOURNAL,
     /** [J133-34] 순번 714: the pay screen opened at a value (기본급·시급, 수당, 월급날), as its 고치기 chips do. */
-    PAY_BASE, PAY_ITEMS, PAY_PERIOD,
+    PAY_BASE, PAY_ITEMS, PAY_PERIOD, PAY_HOURS,
     /** [RCP-38] 1.34 설정 › 나눔 판. */
     RECIPES,
     /** [STU-10] 1.35 스튜디오 (화면 꾸미기와 합침). */
@@ -43,6 +43,8 @@ enum class SettingsGo {
     STUDIO_SCREEN_FONT, STUDIO_DATE_FONT,
     /** [MAT-07] PC 확인 (마을 확인 중 사용성 제안): 스튜디오 › 앱 전체 › 움직임 and › 부품 (each part's own 움직임). */
     STUDIO_MOTION, STUDIO_PARTS,
+    /** [CNV-08] 1.37 각 탭의 카드 배치 → 스튜디오의 그 화면 (한 곳에서 고쳐요). */
+    STUDIO_CALENDAR, STUDIO_MONEY, STUDIO_MEMO, STUDIO_STATS,
 }
 
 /** [UX-04] Where a link inside the app goes: one group of settings (and the row to point at), or a screen. */

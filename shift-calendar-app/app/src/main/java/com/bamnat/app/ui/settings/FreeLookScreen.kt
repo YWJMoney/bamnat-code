@@ -275,7 +275,7 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
     }
     val looks = view.looks.ifEmpty { listOf(CellLook()) }
     val i = index.coerceIn(0, looks.lastIndex)
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+    com.bamnat.app.ui.components.FoldRow("freelook.1") {
         looks.indices.forEach { n -> FilterChip(selected = n == i, onClick = { onIndex(n) }, label = { Text("모양 ${n + 1}") }) }
         if (looks.size < CellLook.MAX) TextButton(onClick = { onChange(view.copy(looks = looks + looks[i])); onIndex(looks.size) }) { Text("+ 모양 더하기") }
     }
@@ -475,7 +475,9 @@ internal fun moneySummary(l: MoneyLook): String = if (l.isDefault) "처음대로
 
 /** A money list's example: a day's line and three records, by the real colours and sizes and the 가계부 parts (BLU-05·BLU-09). */
 @Composable
-internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
+internal fun MoneySample(look: MoneyLook,
+    /** [CNV-12] My own latest lines this month (the example's lunch, coffee and pay when null). */
+    mine: com.bamnat.app.ui.studio.MyMoney? = null, onTap: () -> Unit) {
     val (income, expense) = com.bamnat.app.ui.money.moneyInks()
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "가계부 모양 고치기", onClick = onTap)) {
@@ -488,12 +490,17 @@ internal fun MoneySample(look: MoneyLook, onTap: () -> Unit) {
             .then(com.bamnat.app.ui.parts.PartMods.box(day.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), dayShape))
             .background(day.fillColor ?: if (band) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface, dayShape)
             .padding(horizontal = (day.padH ?: 16).dp, vertical = (day.padV ?: 8).dp)) {
-            Text("11월 4일 (수)", modifier = Modifier.weight(1f),
+            val dayNow = com.bamnat.core.time.Today.date()
+            Text(if (mine != null) "${dayNow.monthValue}월 ${dayNow.dayOfMonth}일 (${"월화수목금토일"[dayNow.dayOfWeek.value - 1]})" else "11월 4일 (수)", modifier = Modifier.weight(1f),
                 style = com.bamnat.app.ui.parts.PartMods.text(day, (if (look.dayHead == "big") MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelLarge)
                     .copy(color = if (band) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary)))
-            Text("-13,500원", style = MaterialTheme.typography.labelMedium, color = expense)
+            Text(if (mine != null) "이번 달 -${"%,d원".format(mine.expense)}" else "-13,500원", style = MaterialTheme.typography.labelMedium, color = expense)
         }
-        listOf(Triple("🍚", "점심", -9_000L), Triple("☕", "커피", -4_500L), Triple("💼", "월급", 3_120_000L)).forEach { (emoji, title, amount) ->
+        val lines = mine?.recent?.take(3)?.map { e ->
+            val sign = if (e.kind == com.bamnat.core.money.MoneyKind.INCOME) 1L else -1L
+            Triple(if (sign > 0) "💼" else "🧾", e.merchant.ifBlank { e.note.ifBlank { e.category } }.take(14), sign * e.amount)
+        } ?: listOf(Triple("🍚", "점심", -9_000L), Triple("☕", "커피", -4_500L), Triple("💼", "월급", 3_120_000L))
+        lines.forEach { (emoji, title, amount) ->
             val (minH, padV) = when (look.rows) { "compact" -> 48.dp to 4.dp; "roomy" -> 76.dp to 12.dp; else -> 64.dp to 8.dp }
             val row = bp.style("money.row", setOf(if (amount < 0) "out" else "in"), todayScope)
             val amountPart = bp.style("money.amount", setOf(if (amount < 0) "out" else "in"), todayScope)
@@ -775,12 +782,14 @@ val LocalColorMemory = androidx.compose.runtime.staticCompositionLocalOf { Color
  * (빛깔·맑기·밝기, or a code). 처음대로 when [allowNone].
  */
 @Composable
+@OptIn(ExperimentalLayoutApi::class)
 fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (Long?) -> Unit) {
     var custom by remember { mutableStateOf(false) }
     val memory = LocalColorMemory.current
     fun pick(c: Long?) { c?.let(memory.used); onPick(c) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // PC 확인 1.37 A10 (색을 처음 고르면 머리줄에 ‘☆ 내 색에’가 생겨 색 줄이 밀림): the line keeps one height, with or without its buttons.
+        Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             // PC 확인 1.36 (색·배경의 바탕색 줄에 이름표가 안 보임): the colour's name as a heading, like 배경 사진 above the rows.
             Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
             Text(value?.let { colorName(it) } ?: "처음대로", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -804,9 +813,23 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             )
         }
         val split = recent.size + LIGHT_SWATCHES
+        // [CNV-13] 펼쳐 보기: the colours all at once (kept open for every 색 고르기 once opened), or the two rows that slide.
+        val (allOut, setAllOut) = com.bamnat.app.ui.components.rememberFold("color.swatches")
         // PC 제안 1.36: on a new phone, where the colours used will gather.
-        if (recent.isEmpty() && memory.pin != null) Text("쓴 색과 ★ 내 색은 줄 맨 앞에 모여요", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(if (recent.isEmpty() && memory.pin != null) "쓴 색과 ★ 내 색은 줄 맨 앞에 모여요" else "", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.FoldButton(if (allOut) "접기 ▴" else "모두 펼치기 ▾", if (allOut) "$label 색 한 줄로 접기" else "$label 색 모두 펼쳐 보기") { setAllOut(!allOut) }
+        }
+        if (allOut) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(
+                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
+                    .semantics { contentDescription = "$label 직접 고르기" },
+                contentAlignment = Alignment.Center,
+            ) { Text("+", style = MaterialTheme.typography.titleMedium) }
+            for (i in row.indices) Dot(i)
+        } else {
         // that slides the row on.
         val swatchScroll = rememberScrollState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -837,6 +860,7 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                     .clickable(onClickLabel = "색 더 보기") { scope.launch { swatchScroll.animateScrollBy(240f) } },
                 contentAlignment = Alignment.CenterEnd,
             ) { Text("›", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 8.dp)) }
+        }
         }
         }
     }

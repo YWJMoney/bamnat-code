@@ -43,6 +43,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
+import androidx.compose.foundation.selection.toggleable
+import com.bamnat.app.appContainer
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedCard
@@ -100,7 +102,7 @@ import kotlinx.coroutines.launch
 
 /**
  * [RCP-17..20] 만들기 5단계: 고르기 → 받는 사람이 정할 칸 → 꾸미기 → 설명 → 검사하고 올리기. Every step is kept on the phone
- * (만들던 레시피), so closing the screen loses nothing. [from] is a recipe to 고쳐 만들기 (its code becomes the parent); [kind] a
+ * (만들던 레시피), so closing the screen loses nothing. [from] is a recipe to 고쳐 만들기 (its code becomes the parent); [startKind] a
  * piece to start with (설정 화면의 '이 설정 나누기').
  */
 class RecipeMakeViewModel(
@@ -109,7 +111,8 @@ class RecipeMakeViewModel(
     draftId: Long = 0,
     from: String? = null,
     parent: String? = null,
-    kind: PieceKind? = null,
+    /** The piece '이 설정 나누기' started from: chosen, and 내 설정에서 더하기 open on it. */
+    val startKind: PieceKind? = null,
     /** The user's own recipe this becomes a new version of. */
     private val code: String? = null,
 ) : ViewModel() {
@@ -137,6 +140,9 @@ class RecipeMakeViewModel(
     val ownCode: String? get() = upCode
     /** [BLU-07] PC 8차: once sent, the next 올리기 from this screen is that code's 새 판 (or the same 판 moved to 나만). */
     private var upCode: String? = code
+    /** [TOWN-09] The recipe as last sent from this screen, so a 새 판 with nothing changed is told so instead of going up again. */
+    private var lastSent: String? = null
+    private var lastScope: String? = null
     /** PC 13차: 따로 올리기 chosen over a 새 판 of my recipe with the same name. */
     private var apartFromOwn = false
 
@@ -202,10 +208,12 @@ class RecipeMakeViewModel(
             }
             // [RCX-31] A draft from before kept 최저임금 with its amount in the hint, which the amount check then refused.
             val r = (start ?: blank()).let { d -> d.copy(inputs = d.inputs.map { i -> if (i.hint.contains("최저임금") && i.hint.any(Char::isDigit)) i.copy(hint = WAGE_HINT) else i }) }
-            val chosen = if (start != null) r.pieces.map { it.kind }.toSet() else setOfNotNull(kind)
+            val chosen = if (start != null) r.pieces.map { it.kind }.toSet() else setOfNotNull(startKind)
+            // 1.37 PC (이 설정 나누기로 오면 이름 칸이 비어 있어요): a name to start from, as the studio gives.
+            val named = if (start == null && startKind != null && r.title.isBlank()) r.copy(title = "내 ${startKind.label}".take(24)) else r
             // A recipe already shown keeps what was changed in it meanwhile (받는 분 값, 이름).
             _state.value = if (early != null) _state.value.copy(mine = mine)
-                else _state.value.copy(recipe = if (start != null) r else withPieces(r, chosen, mine), chosen = chosen, mine = mine, ready = true)
+                else _state.value.copy(recipe = if (start != null) r else withPieces(named, chosen, mine), chosen = chosen, mine = mine, ready = true)
             val put = runCatching { c.recipes.inUse().map { it.code to it.title } }.getOrDefault(emptyList())
             val mineUp = runCatching { c.recipeApi.mine(c.companyStore.device).items.map { it.first.code to it.first.title } }.getOrDefault(emptyList())
             _state.value = _state.value.copy(bundleChoices = (mineUp + put).filter { it.first != code }.distinctBy { it.first }.take(20))
@@ -326,7 +334,7 @@ class RecipeMakeViewModel(
     fun keep(inputId: String, value: Long) {
         val s = _state.value
         val i = s.recipe.input(inputId) ?: return
-        val key = s.recipe.pieces.firstNotNullOfOrNull { p -> p.values.entries.firstOrNull { it.value == com.bamnat.core.recipe.Ref.Input(inputId) }?.let { "${p.kind.key}.${it.key}" } }
+        val key = InputExtract.keyOf(s.recipe, inputId)
         _state.value = s.copy(recipe = InputExtract.keep(s.recipe, i.id, value), kept = s.kept + listOfNotNull(key))
     }
 
@@ -407,7 +415,8 @@ class RecipeMakeViewModel(
     }
 
     /** [BLU-07] PC 8차 (이미 올린 판을 다시 열면 끝 화면만): back to 마치기 to send a 새 판 of the same code. */
-    fun again() { _state.value = _state.value.copy(sent = null, step = 5, error = null, errorCode = null, keptNote = null) }
+    // PC 확인 f7c41660 (새 판 4/4의 확인 스위치가 켜진 채로 시작해요): each 새 판 is confirmed anew.
+    fun again() { _state.value = _state.value.copy(sent = null, step = 5, error = null, errorCode = null, keptNote = null, agreed = false) }
 
     /** [BLU-07] PC 8차: the 판 just sent, moved to 나만 (or another place) without a new version. */
     fun rescope(scope: String) {
@@ -420,6 +429,10 @@ class RecipeMakeViewModel(
     fun publish() {
         val s = _state.value
         if (!RecipeLint.ready(lint)) return
+        if (upCode != null && lastSent == RecipeCodec.write(s.recipe) && lastScope == s.scope) {
+            _state.value = s.copy(error = "바뀐 것이 없어요. 고친 뒤에 새 판으로 올려 주세요", errorCode = "same")
+            return
+        }
         _state.value = s.copy(sending = true, error = null, errorCode = null, keptNote = null, ownSame = null)
         viewModelScope.launch {
             try {
@@ -442,6 +455,7 @@ class RecipeMakeViewModel(
                 val sent = if (up != null) c.recipeApi.newVersion(c.companyStore.device, up, r, s.scope)
                     else c.recipeApi.publish(c.companyStore.device, r, s.scope)
                 upCode = sent.code
+                lastSent = RecipeCodec.write(s.recipe); lastScope = sent.scope
                 if (s.draftId != 0L) c.recipes.deleteDraft(s.draftId)
                 // 1.36 [GRW-09] PC 6ec395bf: 만든 분 보상(공모·모두의 도구·기본 도구)이 프로 › 보상 이용권에 보이도록, 작품을 올린 휴대폰도 이용권을 물어요.
                 c.appContext.getSharedPreferences("maker", android.content.Context.MODE_PRIVATE).edit().putBoolean("made", true).apply()
@@ -552,16 +566,30 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
             Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // 1.35 실사용 점검: say why 다음 does not go on.
+                val barHeld by vm.publishRow.collectAsStateWithLifecycle()
                 when {
                     !s.ready -> null
                     s.step < 5 && s.recipe.pieces.isEmpty() -> "예시 앱에서 하나 이상 바꾸거나 켜면 다음으로 가요"
                     s.step == 3 && s.recipe.title.isBlank() -> "이름을 넣으면 다음으로 가요"
                     // PC 확인 V36 1.36 (4/4의 빨간 줄이 아래 단추 줄에 가려짐): what holds 올리기 back also sits here, always in sight.
+                    // [TOWN-09] PC 확인 73f69cbd (바꾼 것 없이 새 판으로 올리기를 누르면 아무 반응이 없어요): the server's refusal is shown in the
+                    // body above, often out of sight; it is said here by the button too.
+                    s.step == 5 && s.error != null && !s.sending -> s.error
+                    // PC 확인 a6cab3c8 (올리기가 닫혀 있을 때 회색 단추 위에 까닭이 없어요): said by the button too.
+                    s.step == 5 && !vm.canPublish -> "올리기가 아직 닫혀 있어요 · " + (vm.publishHeld(barHeld) ?: "정식 출시일(11월 10일 예정)부터 열려요")
                     s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
-                    s.step == 5 && s.scope != "private" && !s.agreed -> "위 확인 스위치를 켜야 올라가요"
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
                     color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary) }
+                // [TOWN-04] 1.37 (후보 3, PC 확인: 확인 스위치가 '올리기'와 떨어져 있어 찾기 어려워요): the check is in the bar itself, right above
+                // 올리기, so it is in sight with the button whatever the page shows.
+                if (s.step == 5 && s.scope != "private") Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .toggleable(s.agreed, role = Role.Switch, onValueChange = vm::agree), verticalAlignment = Alignment.CenterVertically) {
+                    Switch(s.agreed, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("값만 나누고 개인 정보는 넣지 않았어요. 신고가 쌓이면 가려질 수 있어요 (처리방침 3.8)", style = MaterialTheme.typography.bodySmall,
+                        color = if (s.agreed) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (s.step > 1) OutlinedButton(onClick = { vm.go(s.step - 1) }, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(if (finishOnly && s.step == 2) "스튜디오로" else "이전")
@@ -615,9 +643,15 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                 }
                 when (s.step) {
                     1 -> {
-                        RecipeStudio(s, vm, tab, { tab = it }, onMockShown = { mockShown = it },
-                            onEdit = { top -> scope.launch { scroll.animateScrollTo((scroll.value + top - boxTop - 8f).toInt().coerceAtLeast(0)) } })
-                        var more by rememberSaveable { mutableStateOf(false) }
+                        // 1.37 PC (이 설정 나누기로 오면 골라진 것이 접힌 칸 안에만 있어요): open on what it was started from, and, PC d12d4cf1
+                        // (펼친 칸이 두 화면 반 아래), first on the page.
+                        var more by rememberSaveable { mutableStateOf(vm.startKind != null) }
+                        val pickFirst = vm.startKind != null
+                        val studio: @Composable () -> Unit = {
+                            RecipeStudio(s, vm, tab, { tab = it }, onMockShown = { mockShown = it },
+                                onEdit = { top -> scope.launch { scroll.animateScrollTo((scroll.value + top - boxTop - 8f).toInt().coerceAtLeast(0)) } })
+                        }
+                        if (!pickFirst) studio()
                         OutlinedCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -631,6 +665,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                                 if (more) StepPick(s, vm)
                             }
                         }
+                        if (pickFirst) studio()
                     }
                     2 -> StepInputs(s, vm)
                     3 -> StepLook(s, vm)
@@ -706,7 +741,8 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     Text("내 설정에서 나눌 것을 골라요. 근무 기록·가계부·메모 글은 들어가지 않아요", style = MaterialTheme.typography.bodyMedium)
     val fits = PieceKind.entries.filter { it != PieceKind.BUNDLE && (vm.style == null || vm.style in it.styles) }
     var more by remember { mutableStateOf(false) }
-    (if (more) PieceKind.entries.filter { it != PieceKind.BUNDLE } else fits).forEach { k ->
+    // PC 6eed57a2 (이 설정 나누기로 오면 골라진 줄이 목록 15줄 아래): the piece it was started from comes first.
+    (if (more) PieceKind.entries.filter { it != PieceKind.BUNDLE } else fits).sortedBy { if (it == vm.startKind) 0 else 1 }.forEach { k ->
         val mine = s.mine[k]
         Row(Modifier.fillMaxWidth().selectable(selected = k in s.chosen, enabled = mine != null, role = Role.Checkbox) { vm.toggle(k) }.padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically) {
@@ -790,9 +826,11 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
                 }
                 if (i.kind == com.bamnat.core.recipe.InputKind.MONEY) {
                     var asking by remember { mutableStateOf(false) }
-                    TextButton(onClick = { asking = true }) { Text("모두에게 같은 금액이에요 (회사 공통 정액)") }
+                    TextButton(onClick = { asking = true }) { Text("모두에게 같은 금액이에요") }
                     if (asking) AlertDialog(onDismissRequest = { asking = false }, title = { Text("이 금액을 레시피에 그대로 둘까요?") },
-                        text = { Text("받는 분 모두에게 같은 금액일 때만 두세요. 내 시급·일당이면 칸으로 두는 게 안전해요") },
+                        // bc7e2d43 PC 확인 LOW-3: said for any amount (가계부 예산·봉투 목표 too), and how to give it when the field is empty.
+                        text = { Text("받는 분 모두에게 같은 금액(회사 공통 정액 같은 것)일 때만 두세요. 내 시급·일당·예산처럼 나만의 금액이면 칸으로 두는 게 안전해요" +
+                            (if (i.default !is Long) "\n\n그대로 두려면 위 칸에 금액을 먼저 넣어 주세요" else "")) },
                         confirmButton = { TextButton(onClick = { (i.default as? Long)?.let { vm.keep(i.id, it) }; asking = false }, enabled = i.default is Long) { Text("그대로 두기") } },
                         dismissButton = { TextButton(onClick = { asking = false }) { Text("칸으로 두기") } })
                 }
@@ -944,12 +982,9 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
             modifier = Modifier.weight(1f))
         TextButton(onClick = { vm.recheckPublish() }) { Text("다시 확인") }
     }
-    // 1.36 U4: the check sits right above the button, so turning it on moves nothing.
-    if (s.scope != "private") Row(verticalAlignment = Alignment.CenterVertically) {
-        Switch(s.agreed, vm::agree)
-        Spacer(Modifier.width(8.dp))
-        Text("값만 나누고 개인 정보는 넣지 않았어요. 신고가 쌓이면 가려질 수 있어요 (처리방침 3.8)", style = MaterialTheme.typography.bodySmall)
-    }
+    // [TOWN-03] 1.37: before the first upload, the 마을 이름 the work will go up under (팔로잉 줄·프로필).
+    if (s.scope != "private") com.bamnat.app.ui.village.VillageNameCard(androidx.compose.ui.platform.LocalContext.current.appContainer, unnamed = "이름 없는 분")
+    // [TOWN-04] The check itself is in the bottom bar, right above 올리기.
     // PC 확인 W31 1.36 (경고나 꺼진 스위치로 막히면 올리기를 눌러도 반응이 없어 보임): what holds it back, in red right above the
     // button, with the one tap that clears it.
     val blocking = lines.filter { it.level == RecipeLint.Level.ERROR }

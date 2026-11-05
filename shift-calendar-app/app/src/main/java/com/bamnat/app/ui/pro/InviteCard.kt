@@ -251,7 +251,7 @@ fun InviteNudgeNotice(modifier: Modifier = Modifier) {
     val guideState by guide.state.collectAsStateWithLifecycle()
     val today = Today.date()
     val installedOn = c.invites.installedAt()?.atZone(Today.zone())?.toLocalDate()
-    val setupDone = c.settingsRepository.current.workStyle != null
+    val setupDone = c.settingsRepository.current.setupDone
     val off = com.bamnat.core.guide.FeatureRegistry.get(NUDGE_ID)?.let { guideState.isOff(it, GuideState.ALL) } ?: false
     val friendBusy = c.invites.offer() != null || c.invites.relay() != null
     if (off || friendBusy || !GrowNudges.invite(grow, installedOn, today, setupDone)) return

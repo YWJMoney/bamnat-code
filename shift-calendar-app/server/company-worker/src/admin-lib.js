@@ -286,12 +286,12 @@ export function adminLib() {
 
   /** The six hubs and their tabs (each tab is a route), in the order they show; 1~6 on a keyboard. */
   const HUBS = [
-    { key: "today", label: "오늘", icon: "home", tabs: ["home", "work"] },
+    { key: "today", label: "오늘", icon: "home", tabs: ["home", "flow", "work"] },
     { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "sort", "growth", "dev", "templates", "sla"] },
     { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "recipes", "companies", "shares", "adopt"] },
     { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
     { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
-    { key: "manage", label: "관리", icon: "admins", tabs: ["admins", "rewards", "server", "account"] },
+    { key: "manage", label: "관리", icon: "admins", tabs: ["admins", "keys", "rewards", "server", "account"] },
   ];
 
   /**
@@ -303,6 +303,8 @@ export function adminLib() {
   const TABS = {
     home: { label: "오늘", old: "홈 받은함 할 일 지금 할 일 inbox home" },
     // 1.36 [GRW-07] 할 일함: 모든 들어온 일을 상태(새로·보는 중·기다림·끝)와 함께 한 대기열로.
+    // 1.37 [ADM2-01] 흐름: 문의에서 출시까지 단계마다 건수·막힘·다음 할 일, 운영 숫자, 나간 판.
+    flow: { label: "흐름", area: "inquiries", old: "흐름 관제 파이프라인 단계 막힘 나간 판 출시 운영 장부 Claude 처리해 지표 첫 답 flow desk" },
     work: { label: "할 일함", old: "할 일함 대기열 누락 기한 넘김 다시 열림 상태 work" },
     // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구 묶음, 기본 도구 후보, 손잡이 지도.
     growth: { label: "스튜디오 요구", area: "inquiries", old: "스튜디오 요구 자가 발전 기본 도구 후보 모두의 도구 승격 손잡이 지도 출시 노트 growth" },
@@ -330,6 +332,8 @@ export function adminLib() {
     metrics: { label: "지표", area: "metrics", old: "통계 metrics" },
     effects: { label: "기능별 효과", area: "metrics", old: "플래그 효과 effects" },
     audit: { label: "활동 기록", area: "audit", old: "audit" },
+    // 1.37 [ADM2-03] Claude 운영 열쇠: 주인만.
+    keys: { label: "Claude 열쇠", owner: true, old: "Claude 열쇠 처리 API 키 BAMNAT_OPS_KEY keys" },
     admins: { label: "관리자", owner: true, badge: (o) => (o.admins?.waiting ?? 0) + (o.admins?.phones ?? 0), strip: "승인 대기", old: "관리자 휴대폰 admins" },
     // [ADMUX-32] 친구 초대 규칙 moved here from 설정; it is the settings area, so either opens the tab.
     rewards: { label: "보상", area: ["rewards", "settings"], badge: (o, me) => (can(me, "rewards") ? o.owed ?? 0 : 0), strip: "드릴 보상", old: "설정 친구 초대 rewards" },

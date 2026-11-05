@@ -71,6 +71,12 @@ fun AlarmOffsetDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (taken) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // [TIME-03] What 완료 will change, as in the other time windows (PC a9bcce14: only this one lacked it).
+                TimeChangeLine(
+                    if (minutes == initialMinutes) null
+                    else timeChangeNote(null, AlarmOffsets.ringAt(start, initialMinutes), ring)
+                        ?: "시작 ${Fmt.offset(initialMinutes)} → ${Fmt.offset(minutes)}으로 바뀌어요",
+                )
                 Box(Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * 5), contentAlignment = Alignment.Center) {
                     Box(
                         Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT).clip(MaterialTheme.shapes.medium)

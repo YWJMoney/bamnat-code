@@ -155,7 +155,7 @@ private fun GapRow(g: AgendaRow.Gap, focus: CalendarFocus) {
             Box(Modifier.size(4.dp).clip(CircleShape).background(MaterialTheme.colorScheme.outlineVariant))
         }
         Spacer(Modifier.width(8.dp))
-        Text("$range · ${focus.gap(g.days)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("$range · ${focus.gap(g.days, g.closed)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -191,11 +191,14 @@ private fun DayRow(
         row.jobs.forEach { j ->
             add((j.start?.let { Fmt.time(it) + " " } ?: "") + j.title +
                 (if (j.days > 1) " · ${j.days}일 중 ${(date.toEpochDay() - j.date.toEpochDay()).toInt() + 1}일째" else "") +
-                (if (j.date == date && j.unpaid > 0) " · 받을 돈 ${Fmt.wonShort(j.unpaid)}" else ""))
+                // 1.37 PC 6차: 받을 돈은 끝난 일감만, 아직 할 일감은 상태(확정·가계약)로.
+                (if (j.date == date && j.unpaid > 0) (if (j.isDone(today)) " · 받을 돈 ${Fmt.wonShort(j.unpaid)}" else " · ${j.status.label}") else ""))
         }
         row.sales?.takeIf { it.sales != 0L || it.costs != 0L }?.let { s ->
             add("매출 ${Fmt.won(s.sales)}" + if (s.costs != 0L) " · 남은 돈 ${Fmt.wonShort(s.net)}" else "")
         }
+        // 1.37 PC 6차: 지난 영업일에 매출이 없으면 앞날과 똑같아 보였어요.
+        if (focus == CalendarFocus.SALES && day.isWorkDay && date.isBefore(today) && row.sales.let { s -> s == null || (s.sales == 0L && s.costs == 0L) }) add("매출 없음")
     }
     val description = buildString {
         append(Fmt.dayTitle(date))
@@ -253,7 +256,7 @@ private fun DayRow(
         Column(Modifier.weight(1f)) {
             row.holiday?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = cal.sunday) }
             if (lines.isEmpty() && row.holiday == null && row.memos == 0) {
-                Text(focus.emptyDay, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                Text(focus.emptyDay(row.day.isWorkDay), style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
             }
             lines.forEachIndexed { i, l ->
                 Text(l, style = if (i == 0) MaterialTheme.typography.bodyLarge else MaterialTheme.typography.bodyMedium,

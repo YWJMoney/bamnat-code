@@ -55,8 +55,12 @@ object NoticeLinks {
         BACKUP,
         /** [DAILY-06] 내 달력 on the day in [payload] (yyyy-mm-dd) with that day open, from a widget's date. */
         DAY,
-        /** [COMM-10] 회사 규칙 광장, from 광장 소식. */
+        /** [COMM-10] 회사 규칙 광장, from 광장 소식. [TOWN-01] 1.37: 마을 opens on 광장 (not the part last seen). */
         PLAZA,
+        /** [TOWN-01] 1.37 마을 › 공방 › 간직한 글 · 내 글 on 내 글, from a 소식 that says only that my posts got answers. */
+        VILLAGE_POSTS,
+        /** [TOWN-01] 1.37 마을 › 장터, from a 소식 that says only what came new in 장터. */
+        MARKET,
         /** [GUIDE-20] 1.31: 회사 찾기, from the first week's 시작 단계 card. */
         COMPANY_FIND,
         /** [INQ-05] 문의하기 on 내 문의, from 밤낮 소식's answer line. */
@@ -81,6 +85,8 @@ object NoticeLinks {
         STOP_REPORT,
         /** [RUL-03] 1.36 a button or rule's 메모 틀 열기: a new memo on the day in [payload] from [com.bamnat.app.logic.LogicLinks.template]. */
         LOGIC_MEMO,
+        /** 1.37 [LEDH-14] 가계부 with 돈 적기 open, from the 돈 적기 widget and the quick settings tile. */
+        MONEY_ADD,
     }
 
     private const val EXTRA = "com.bamnat.app.extra.OPEN"

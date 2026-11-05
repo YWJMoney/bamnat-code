@@ -119,8 +119,13 @@ internal fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, ex
     var fromHere by rememberSaveable { mutableStateOf(false) }
     var client by rememberSaveable { mutableStateOf(existing?.client ?: rules.lastClient) }
     val u = picked.takeIf { it > 0 && it <= 5 }
+    // PC 확인 1.37 A11 (공수 창 바깥을 누르면 적던 일당이 말없이 사라짐): once something is written, a tap outside does not close it;
+    // 저장 or 취소 does (뒤로 가기 too).
+    val start = remember { Triple(units, amountDigits(existingRate ?: inForce), existing?.client ?: rules.lastClient) }
+    val written = picked != start.first || rate != start.second || client != start.third || typed.isNotEmpty() || fromHere
     AlertDialog(
         onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = !written),
         title = { Text("${Fmt.dayTitle(date)} 공수") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
