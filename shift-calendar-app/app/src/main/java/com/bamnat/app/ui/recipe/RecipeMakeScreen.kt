@@ -412,7 +412,8 @@ class RecipeMakeViewModel(
     }
 
     /** [BLU-07] PC 8차 (이미 올린 판을 다시 열면 끝 화면만): back to 마치기 to send a 새 판 of the same code. */
-    fun again() { _state.value = _state.value.copy(sent = null, step = 5, error = null, errorCode = null, keptNote = null) }
+    // PC 확인 f7c41660 (새 판 4/4의 확인 스위치가 켜진 채로 시작해요): each 새 판 is confirmed anew.
+    fun again() { _state.value = _state.value.copy(sent = null, step = 5, error = null, errorCode = null, keptNote = null, agreed = false) }
 
     /** [BLU-07] PC 8차: the 판 just sent, moved to 나만 (or another place) without a new version. */
     fun rescope(scope: String) {

@@ -123,8 +123,9 @@ fun PlazaRulesCard(gate: PlazaRulesGate, onAgreed: () -> Unit, modifier: Modifie
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(if (changed.isEmpty()) "처음 쓰기 전에 광장 운영 규칙에 동의해 주세요" else "운영 규칙이 바뀌었어요 (${changed.size}줄). 다시 동의해 주세요",
                 style = MaterialTheme.typography.titleSmall)
-            Text(PlazaRules.LINES.take(3).mapIndexed { i, l -> "${i + 1}. $l" }.joinToString("\n") + if (PlazaRules.LINES.size > 3) "\n…" else "",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 6)
+            // PC 확인 f7c41660 (키보드가 올라오면 카드가 커서 목록이 거의 가려져요): one line here; the rules themselves under 전체 보기.
+            Text("누군지 알 수 있는 정보·욕설·광고는 쓰지 않아요. 신고가 모이면 가려지고, 어기면 글쓰기가 막힐 수 있어요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, PlazaRules.URL, "광장 운영 규칙") },
                     modifier = Modifier.heightIn(min = 48.dp)) { Text("전체 보기") }

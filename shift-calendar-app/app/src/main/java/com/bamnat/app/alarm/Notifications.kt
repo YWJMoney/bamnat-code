@@ -44,7 +44,13 @@ object Notifications {
     /** [PROV-03] 자동 백업 that has not worked for days. */
     const val BACKUP_CHANNEL_ID = "auto_backup_v1"
     /** [COMM-10] 광장 소식, since 1.23 밤낮 소식 [SRV-10]: one bundled notice a day. */
-    const val PLAZA_CHANNEL_ID = "plaza_news_v1"
+    const val PLAZA_CHANNEL_ID = "plaza_news_v2"
+    /**
+     * [TOWN-08] PC 확인 f7c41660: two quiet notices (밤낮 소식, 잠금 화면 오늘 근무) are bundled by Android whatever their group, and a
+     * tap on the bundle opened the calendar. 소식 moves to a channel of the ordinary kind with no sound or buzz, so it sits apart;
+     * one the user had turned off stays off.
+     */
+    private const val OLD_PLAZA_CHANNEL_ID = "plaza_news_v1"
     /** 1.36 PC 6ec395bf: 내 문의에 온 답은 조용한 밤낮 소식이 아니라 소리 나는 기본 알림으로 (설정 › 알림에서 따로 끌 수 있어요). */
     const val INQUIRY_CHANNEL_ID = "inquiry_reply_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
@@ -164,10 +170,14 @@ object Notifications {
             description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되면 알려요"
             group = GROUP_DAY
         }
-        // [SRV-10] The id stays, so a channel the user turned off stays off; its name says what it carries now.
-        val plaza = NotificationChannel(PLAZA_CHANNEL_ID, "밤낮 소식", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "문의 답, 받은 근무표 바뀜, 광장 규칙·신고 결과를 하루에 한 번 모아서 조용히 알려요"
+        // [SRV-10] A channel the user turned off stays off ([TOWN-08] carried over from the old id); its name says what it carries now.
+        val wasOff = nm.getNotificationChannel(OLD_PLAZA_CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE
+        val plaza = NotificationChannel(PLAZA_CHANNEL_ID, "밤낮 소식",
+            if (wasOff) NotificationManager.IMPORTANCE_NONE else NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "내 글에 달린 새 답, 팔로우한 분의 새 작품, 받은 근무표 바뀜, 광장 규칙·신고 결과를 하루에 한 번 모아서 소리 없이 알려요"
             group = GROUP_DAY
+            setSound(null, null)
+            enableVibration(false)
         }
         val rules = NotificationChannel(RULES_CHANNEL_ID, "내 규칙 알림", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "스튜디오나 받은 테마의 규칙이 띄우는 알림이에요(예: 야간 근무 3시간 전 준비). 규칙은 설정 › 알람 › 수식·규칙·버튼에서 하나씩 끌 수 있어요"
@@ -181,6 +191,7 @@ object Notifications {
         }
         nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
+        nm.deleteNotificationChannel(OLD_PLAZA_CHANNEL_ID)
     }
 
     /** [SLP-15] A notice's tap opens the screen it is about. */

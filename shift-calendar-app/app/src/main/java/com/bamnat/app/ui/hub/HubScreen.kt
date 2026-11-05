@@ -121,16 +121,20 @@ fun HubScreen(
     androidx.compose.runtime.LaunchedEffect(section) { prefs.edit().putString("section", section.name).apply() }
     var shareKind by rememberSaveable { mutableStateOf<String?>(null) }
     // [TOWN-01] A 소식 notice says which part to open on.
-    val asked by HubLinks.next.collectAsStateWithLifecycle()
     var reselect by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     // [TOWN-11] PC 확인 73f69cbd (장터 소식으로 들어가도 새 작품이 바로 안 보여요): a 소식 opens its part read again, from the top.
-    androidx.compose.runtime.LaunchedEffect(asked) { HubLinks.take()?.let { s ->
-        if (s == HubSection.SHARE) shareKind = null
-        section = s
-        // The part is drawn first (taking the count as it is), then asked to read again.
-        repeat(2) { androidx.compose.runtime.withFrameNanos { } }
-        reselect++
-    } }
+    // PC 확인 f7c41660: keyed on the asked part, taking it (null) cancelled the wait before the read; one collector does it all.
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        HubLinks.next.collect { asked ->
+            if (asked == null) return@collect
+            HubLinks.take()
+            if (asked == HubSection.SHARE) shareKind = null
+            section = asked
+            // The part is drawn first (taking the count as it is), then asked to read again.
+            repeat(2) { androidx.compose.runtime.withFrameNanos { } }
+            reselect++
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
