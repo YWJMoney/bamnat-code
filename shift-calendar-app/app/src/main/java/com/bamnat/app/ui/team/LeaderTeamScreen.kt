@@ -122,7 +122,17 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit) {
                     Text("${members.count { it.active }}명 · 근무 ${t.shifts.count { !it.isOff }}가지", style = MaterialTheme.typography.bodySmall)
                 }
             }
-            Button(onClick = { making = true }) { Text("팀 만들기") }
+            // [GROW-06] One team is free; a second is 프로.
+            val gate by c.featureGate.state.collectAsStateWithLifecycle()
+            val config by c.remoteConfig.config.collectAsStateWithLifecycle()
+            val more = teams.orEmpty().count { !it.archived } >= config.freeTeams
+            Button(onClick = {
+                if (more && gate.locked(com.bamnat.app.tier.Feature.TEAM_ROSTER) && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.TEAM_ROSTER)) {
+                    com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.TEAM_ROSTER); return@Button
+                }
+                making = true
+            }) { Text(if (more && gate.locked(com.bamnat.app.tier.Feature.TEAM_ROSTER)) "팀 더 만들기 (프로)" else "팀 만들기") }
+            Text("팀 ${config.freeTeams}개는 무료예요. 팀원은 늘 무료로 링크를 받아요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
     if (making) NewTeamDialog(calendarId, onDismiss = { making = false }) { id -> making = false; openId = id }
@@ -283,7 +293,11 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit) {
             // The month's tools.
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 OutlinedButton(onClick = { scope.launch { val last = store.boardNow(team.id, month.minusMonths(1)); change { TeamCopy.nextMonth(last, it) } } }) { Text("지난달 이어 칠하기") }
-                OutlinedButton(onClick = { plans = TeamAuto.plans(team, b, wishes, rules) }, enabled = b.empty > 0) { Text("빈칸 자동 채우기") }
+                OutlinedButton(onClick = {
+                    val f = com.bamnat.app.tier.Feature.TEAM_ROSTER
+                    if (c.featureGate.state.value.locked(f) && !com.bamnat.app.ui.pro.tryFeature(f)) { com.bamnat.app.ui.pro.openPro(f); return@OutlinedButton }
+                    plans = TeamAuto.plans(team, b, wishes, rules)
+                }, enabled = b.empty > 0) { Text("빈칸 자동 채우기") }
                 OutlinedButton(onClick = { dialog = "need" }) { Text("근무별 인원") }
                 OutlinedButton(onClick = { dialog = "wish" }) { Text("희망 휴무 ${wishes.size}") }
                 OutlinedButton(onClick = { dialog = "fair" }) { Text("공정성 표") }

@@ -122,7 +122,8 @@ class TierAppTest {
                 "THEME_WARDROBE" to Tier.PRO,
                 // [PRF-12] 1.36.
                 "CREATOR_PRO" to Tier.PRO,
-                "TEAM_ROSTER" to Tier.LEADER,
+                // 1.38 [GROW-06] Phase 3's extras are 프로 (one team and 3 staff free).
+                "TEAM_ROSTER" to Tier.PRO, "BOSS_STAFF" to Tier.PRO,
             ),
             Feature.entries.associate { it.name to it.minTier },
         )
@@ -170,7 +171,7 @@ class TierAppTest {
         assertEquals(Tier.PRO, g.tier)
         assertEquals(ProReason.TRIAL, g.access.reason)
         assertTrue(g.allows(Feature.NO_ADS))
-        assertTrue("리더 기능은 Phase 3", g.locked(Feature.TEAM_ROSTER))
+        assertTrue("1.38 GROW-06: 체험 중에는 팀 더 쓰기도 열려요", g.allows(Feature.TEAM_ROSTER))
     }
 
     @Test fun theDayPassLastsTillMidnight() {

@@ -58,7 +58,7 @@ test("every app reads the switch; only the owner turns it", async (t) => {
   const { call } = server();
   const before = (await call("GET", "/api/config")).data;
   const { flags, policy, serverTime, ...old } = before;
-  assert.deepEqual(old, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, notices: [], off: [] });
+  assert.deepEqual(old, { v: 1, billingLive: false, launchedAt: null, thanksMonths: 1, freeFeatures: [], adQuietDays: 3, trialAskDays: 7, freeTeams: 1, freeStaff: 3, notices: [], off: [] });
   assert.equal(serverTime, "2026-11-20T01:00:00.000Z");
   assert.ok(flags.billing && policy.some((p) => p.version === "3.1"));
 

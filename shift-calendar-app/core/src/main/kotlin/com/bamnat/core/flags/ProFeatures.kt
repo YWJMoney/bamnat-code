@@ -29,6 +29,9 @@ object ProFeatures {
         "TAX_FORECAST" to "세금 예측·실수령",
         "THEME_WARDROBE" to "테마 옷장(여러 벌, 광고·기간 없이)",
         "CREATOR_PRO" to "창작자 꾸미기(표지 그림, 대표 작품 6개, 날별 통계)",
+        // 1.38 [GROW-06] Phase 3 extras.
+        "TEAM_ROSTER" to "팀 근무표 더 쓰기(팀 여러 개·자동 채우기)",
+        "BOSS_STAFF" to "급여 대장 직원 4명부터",
     )
 
     /** The feature's 한국어 이름, or [code] itself for a code this table does not know. */

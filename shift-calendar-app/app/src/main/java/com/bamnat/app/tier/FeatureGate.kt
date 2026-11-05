@@ -19,8 +19,8 @@ import java.time.ZoneId
 import com.bamnat.core.time.Today
 
 /**
- * [MON-01] Two tiers for sale (결정 3): 무료 and 프로. 리더 (team rosters) waits for Phase 3. A '플러스'
- * saved by an older version reads as 프로.
+ * [MON-01] Two tiers for sale (결정 3): 무료 and 프로. 리더 is kept for a later 리더 상품 (1.38 GROW-06: Phase 3's extras are 프로
+ * until one is set on Play). A '플러스' saved by an older version reads as 프로.
  */
 enum class Tier(val label: String) {
     FREE("무료"),
@@ -78,8 +78,13 @@ enum class Feature(val minTier: Tier, private val ownLabel: String? = null) {
     THEME_WARDROBE(Tier.PRO),
     /** [PRF-12] 1.36 창작자 꾸미기: 프로필 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프. 팔로우·보기는 늘 무료. */
     CREATOR_PRO(Tier.PRO),
-    /** Phase 3 (M24), not sold yet. */
-    TEAM_ROSTER(Tier.LEADER, "팀 근무표 만들기"),
+    /**
+     * 1.38 [GROW-06] Phase 3 M24 (결정 P3-D3 추천 B, 방향 논의 2026-11-05 "프로에 포함, 팀원 무료, 팀 1개 무료"): one team with painting,
+     * 바로 검사, 확정과 팀원 링크 is free; a second team and 빈칸 자동 채우기 are 프로. [Tier.LEADER] waits until a 리더 상품 is set on Play.
+     */
+    TEAM_ROSTER(Tier.PRO),
+    /** 1.38 [GROW-06] Phase 3 M25: the 급여 대장 and 명세서 are free for 3 staff, as SHOP-11; a fourth and more is 프로. */
+    BOSS_STAFF(Tier.PRO),
     ;
 
     /** [NXT-03] 1.29 AU: a 프로 feature's name is core's ProFeatures table, the one the server and 진단 use for free.<FEATURE>. */

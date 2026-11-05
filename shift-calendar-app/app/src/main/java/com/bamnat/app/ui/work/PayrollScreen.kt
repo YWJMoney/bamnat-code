@@ -136,8 +136,14 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                 Hint(r.why)
             }
         }
-        OutlinedButton(onClick = { editing = StaffMember(UUID.randomUUID().toString(), "", base = RateTable.on(ym.atDay(1)).minimumHourlyWage) },
-            enabled = !isClosed && staff.size < 60) { Text("직원 더하기") }
+        // [GROW-06] 3 staff free, as SHOP-11; a fourth and more with 프로. Staff already in always stay.
+        val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
+        val config by context.appContainer.remoteConfig.config.collectAsStateWithLifecycle()
+        val needPro = staff.size >= config.freeStaff && gate.locked(com.bamnat.app.tier.Feature.BOSS_STAFF)
+        OutlinedButton(onClick = {
+            if (needPro && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.BOSS_STAFF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.BOSS_STAFF); return@OutlinedButton }
+            editing = StaffMember(UUID.randomUUID().toString(), "", base = RateTable.on(ym.atDay(1)).minimumHourlyWage)
+        }, enabled = !isClosed && staff.size < 60) { Text(if (needPro) "직원 더하기 (${config.freeStaff + 1}명부터 프로)" else "직원 더하기") }
 
         if (ledger.lines.isNotEmpty()) SectionCard(title = "이번 달 마무리") {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
