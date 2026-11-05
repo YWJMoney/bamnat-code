@@ -845,6 +845,23 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
+    // 1.38 이 날만 빼기: undo for a day taken off a repeating memo, wherever it was taken off.
+    val lastSkipped by container.memoRepository.lastSkipped.collectAsStateWithLifecycle()
+    LaunchedEffect(lastSkipped) {
+        val skipped = lastSkipped ?: return@LaunchedEffect
+        val title = skipped.memo.title.ifBlank { skipped.memo.preview }.take(20)
+        val result = snackbar.showSnackbar(
+            message = (if (title.isBlank()) "메모를" else "‘$title’ 메모를") + " ${Fmt.monthDay(skipped.day)}에서만 뺐어요",
+            actionLabel = "되돌리기",
+            duration = SnackbarDuration.Long,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            container.appScope.launch { container.memoRepository.undoSkip() }
+        } else {
+            container.memoRepository.consumeLastSkipped()
+        }
+    }
+
     // [RUL-03][RUL-04] 1.36 what a button or rule did, with 되돌리기 when it wrote.
     com.bamnat.app.logic.LogicMessageHost(container, snackbar)
     // [DRW-03] 1.37 넣었어요 · 되돌리기: a theme put on or off, a tab taken off, a rule switched on.
@@ -1196,7 +1213,7 @@ private fun AppNavHost(
                 // the month: in half of 600dp the days were too narrow for their shift chips (660 shot).
                 wide = wide && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= CALENDAR_BESIDE_DP,
                 snackbarHostState = snackbar,
-                onOpenMemo = { id -> nav.navigate(Routes.memo(id)) },
+                onOpenMemo = { id, day -> nav.navigate(Routes.memo(id, day)) },
                 onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
                 // [MCAL-01] The calendar on screen is the one these edit.
                 onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },

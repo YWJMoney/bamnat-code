@@ -20,6 +20,9 @@ import java.time.LocalDate
 import com.bamnat.core.time.Today
 
 /** Memos that were just moved to the trash, offered for undo until consumed. */
+/** 1.38 [day] taken off repeating memo [memo] (이 날만 빼기). */
+data class SkippedDay(val memo: Memo, val day: LocalDate)
+
 data class DeletedMemos(val memos: List<Memo>) {
     val label: String
         get() = if (memos.size == 1) {
@@ -166,6 +169,31 @@ class MemoRepository(
         if (ids.isEmpty()) return
         dao.moveToTrash(ids, clock())
         if (offerUndo) _lastDeleted.value = DeletedMemos(memos.toList())
+    }
+
+    private val _lastSkipped = MutableStateFlow<SkippedDay?>(null)
+    /** 1.38 이 날만 빼기: the day most recently taken off a repeating memo, offered for undo until consumed. */
+    val lastSkipped: StateFlow<SkippedDay?> = _lastSkipped.asStateFlow()
+
+    /**
+     * 1.38 (DB 28판) Takes [day] off repeating memo [memo]: it stays on every other day it comes back on. With [memo] given as the
+     * editor holds it, what was typed is kept too. Offers undo through [lastSkipped].
+     */
+    suspend fun skipDay(memo: Memo, day: LocalDate): Memo {
+        val stored = save(memo.copy(skips = memo.skips + day))
+        _lastSkipped.value = SkippedDay(stored, day)
+        return stored
+    }
+
+    /** Puts the day of [lastSkipped] back on its memo, as the memo now is. */
+    suspend fun undoSkip() {
+        val skipped = _lastSkipped.value ?: return
+        _lastSkipped.value = null
+        get(skipped.memo.id)?.let { now -> save(now.copy(skips = now.skips - skipped.day)) }
+    }
+
+    fun consumeLastSkipped() {
+        _lastSkipped.value = null
     }
 
     suspend fun undoDelete() {

@@ -141,4 +141,6 @@ data class MemoEntity(
     @ColumnInfo(defaultValue = "''") val calendars: String = "",
     /** Version 17 [NOTE-05]. */
     @ColumnInfo(defaultValue = "''") val repeat: String = "",
+    /** Version 28 (1.38 이 날만 빼기): the days taken off a repeating memo, see [com.bamnat.core.memo.MemoRepeat.encodeSkips]. */
+    @ColumnInfo(defaultValue = "''") val skips: String = "",
 )

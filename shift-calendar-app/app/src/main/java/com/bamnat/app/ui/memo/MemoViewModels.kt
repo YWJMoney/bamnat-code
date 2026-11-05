@@ -698,6 +698,28 @@ class MemoEditorViewModel(
         }
     }
 
+    /** 1.38 The day this memo was opened from on the calendar (a repeating memo's day), for 이 날만 빼기; null from elsewhere. */
+    val openedOn: LocalDate? = if (memoId != 0L) initialDate else null
+
+    /**
+     * 1.38 (DB 28판) 이 날만 빼기 from the editor: [day] comes off the repeat, with what was typed saved too, and the editor closes.
+     * The undo is offered where the memo deletion's is (AppRoot).
+     */
+    fun skipDay(day: LocalDate, onDone: () -> Unit) {
+        saveJob?.cancel()
+        container.appScope.launch {
+            saveMutex.withLock {
+                val stored = repo.skipDay(_memo.value, day)
+                _memo.value = stored
+                dirty = false
+            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) { onDone() }
+        }
+    }
+
+    /** 1.38 Brings back every day taken off this repeating memo. */
+    fun clearSkips() = update { it.copy(skips = emptySet()) }
+
     private suspend fun save() {
         saveMutex.withLock {
             if (deleted || !dirty) return

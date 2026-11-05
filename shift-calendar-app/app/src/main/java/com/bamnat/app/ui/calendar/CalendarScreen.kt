@@ -219,7 +219,8 @@ fun CalendarScreen(
     vm: CalendarViewModel,
     wide: Boolean,
     snackbarHostState: SnackbarHostState,
-    onOpenMemo: (Long) -> Unit,
+    /** A memo by id, and the day it was opened from (a repeating memo's day, for 이 날만 빼기), null for none. */
+    onOpenMemo: (Long, LocalDate?) -> Unit,
     onNewMemo: (LocalDate) -> Unit,
     onOpenPattern: () -> Unit,
     onOpenShiftTypes: () -> Unit,
@@ -408,7 +409,7 @@ fun CalendarScreen(
         }
     }
 
-    LaunchedEffect(vm) { vm.openMemo.collect { onOpenMemo(it) } }
+    LaunchedEffect(vm) { vm.openMemo.collect { onOpenMemo(it, null) } }
 
     val snap = snapshot
     // [RUL-05] 1.36 탭 사이 흐름: the days' values formulas read (근무·메모·꼬리표·지출), for 조건부 꾸미기, 단추 and 규칙.
@@ -2700,7 +2701,7 @@ private fun MonthMemoCard(
     memos: List<com.bamnat.core.memo.Memo>,
     /** [DAY-04] With memos under the dates, the card stays to say where the month's memos gather. */
     showEmpty: Boolean,
-    onOpen: (Long) -> Unit,
+    onOpen: (Long, LocalDate?) -> Unit,
     onNew: () -> Unit,
     modifier: Modifier = Modifier,
     /** [EASE-24] 1.38: the kind of day on a date, shown beside it so a memo reads with its shift ("6일 목 [야] 도시락"). */
@@ -2729,7 +2730,7 @@ private fun MonthMemoCard(
             for (m in shown) {
                 val d = m.date!!
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onOpen(m.id) }.padding(horizontal = 16.dp, vertical = 7.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onOpen(m.id, m.date) }.padding(horizontal = 16.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
