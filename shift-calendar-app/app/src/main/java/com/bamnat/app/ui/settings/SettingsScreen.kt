@@ -617,6 +617,11 @@ fun SettingsScreen(
             page = null; focus = null
             searchAsked++
         }
+        if (link == SettingsLink.Home) {
+            SettingsLinks.consume(link!!)
+            page = null; focus = null; query = ""
+            hubScroll.scrollTo(0)
+        }
     }
     LaunchedEffect(searchAsked) { if (searchAsked > 0) { kotlinx.coroutines.delay(150); runCatching { searchFocus.requestFocus() } } }
     LaunchedEffect(link) {
@@ -1307,7 +1312,8 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
                 askingPassword = false
                 vm.prepareExport(password)
                 sealedExport = password != null
-                exportLauncher.launch("밤낮-백업-${Today.date()}.${BackupManager.EXTENSION}")
+                // 1.38 PC 확인(e6dc244a) 제안: two backups on one day get names of their own (밤낮-백업-2026-11-05-1930).
+                exportLauncher.launch("밤낮-백업-${Today.date()}-${java.time.LocalTime.now().let { "%02d%02d".format(it.hour, it.minute) }}.${BackupManager.EXTENSION}")
             },
         )
     }

@@ -17,6 +17,7 @@ Claude Code는 저장소 맨 위의 이 파일을 저절로 읽어요(클라우�
 ## 1-1. 지금 상태: 1.37.0 통합 끝, 1.38 시작 (2026-11-05)
 
 - **1.37.0(versionCode 51, 워치 100051)**: 1.37 묶음을 통합 PR #177(`claude/project-thread-p23w4m`)로 main에 합쳤어요. 출시 파일과 사용자 몫은 프로젝트 `release/1.37.0/`, 상태 요약은 `shift-calendar-app/docs/HANDOFF.md` 0-137항. 두 MED(가계부 카드값 '어디로', 첫 설정 일근 → 알바 → 일근)는 코드로 고쳤으나 PC 미확인이라 1.38 첫 빌드에서 먼저 봐요.
+- **1.37.0은 Play에 올리지 않아요**(사용자 2026-11-05 20:29). 1.38이 끝나면 배포판 1.36.1(versionCode 50, DB 24판)에서 바로 1.38로 넘어가요. 판 올림 시험은 1.36.1 → 1.38로 보고, 처리방침은 1.38 배포 때 한 판으로 바꿔요(`shift-calendar-app/docs/plans/1.38-처리방침-한판-초안.md`).
 - **1.38은 1.37 통합 위에서 시작**해요. `docs/plans/1.38-개발계획.md` 9장(1.37에서 넘긴 일)이 첫 할 일이에요.
 
 ### 1.36.1 때 적은 것 (참고)
@@ -51,7 +52,7 @@ Claude Code는 저장소 맨 위의 이 파일을 저절로 읽어요(클라우�
 
 **순서** (사용자 2026-11-01·11-02, PC에서는 git을 쓰지 않아요)
 1. 클라우드 작업 스레드가 고치고 작업 브랜치에 push해요.
-2. 디버그 APK를 `rm -rf app/build` 뒤 `bash gradlew :app:assembleDebug --no-build-cache -Pbamnat.companyBaseUrl=http://10.0.2.2:8789 -Pbamnat.shareBaseUrl=http://10.0.2.2:8790 -Pbamnat.remoteBaseUrl=`로 만들고, dex에 10.0.2.2만 있는지 본 뒤 8MB 조각 + `sha256.txt` + `확인할-것.md`(서버가 바뀌었으면 서버 zip도)를 프로젝트 파일 `release/<버전>-빌드/<커밋>/`에 올려요.
+2. 디버그 APK는 **고정 디버그 열쇠**(프로젝트 `release/1.38-빌드/디버그-열쇠/debug.keystore`를 `shift-calendar-app/app/debug.keystore`로 복사, git 밖)로 서명해 빌드끼리 덮어 깔리게 해요(1.38부터). `rm -rf app/build` 뒤 `bash gradlew :app:assembleDebug --no-build-cache -Pbamnat.companyBaseUrl=http://10.0.2.2:8789 -Pbamnat.shareBaseUrl=http://10.0.2.2:8790 -Pbamnat.remoteBaseUrl=`로 만들고, dex에 10.0.2.2만 있는지 본 뒤 8MB 조각 + `sha256.txt` + `확인할-것.md`(서버가 바뀌었으면 서버 zip도)를 프로젝트 파일 `release/<버전>-빌드/<커밋>/`에 올려요.
 3. PC(메인) 스레드가 조각을 잇고 sha256을 맞춘 뒤, **옛 앱을 지우고**(`adb uninstall com.bamnat.app`) 깔아요. 서버는 그 zip을 풀어 `npm run local -- 8789 --seed --test-clock`(관리자 화면은 `ADMIN_PASSWORD` 임시값), 공유는 `npm run local -- 8790 --test-clock`. 디버그 빌드는 `10.0.2.2:8789/8790`만 써요.
 4. **에뮬레이터는 항상 `C:\Users\yoj07\bamnat-도구\에뮬레이터-켜기` 스크립트로**(`-gpu host -feature -GuestAngle`, 클립보드 공유 끔) 켜요. 시계를 옮기기 전에 근무 알람을 꺼요.
    - 폰 두 대를 자동으로 누를 때(uiautomator 덤프·adb 입력)는 **한 대씩 번갈아**, 동작 사이에 쉬는 시간을 둬요. 두 대를 동시에 쉬지 않고 돌리면 폰 CPU가 차서 앱이 '응답 없음'이 돼요(2026-11-03). '응답 없음'이 뜨면 닫기 전에 `dumpsys dropbox --print data_app_anr`, `logcat -d -b all`, `logcat -b events`의 `am_anr`을 먼저 받아 둬요.

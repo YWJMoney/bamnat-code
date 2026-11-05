@@ -632,7 +632,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val settingsLink by SettingsLinks.target.collectAsStateWithLifecycle()
     LaunchedEffect(settingsLink) {
         when (val link = settingsLink ?: return@LaunchedEffect) {
-            is SettingsLink.Page, SettingsLink.Search -> {
+            is SettingsLink.Page, SettingsLink.Search, SettingsLink.Home -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
                     current == TopLevel.SETTINGS.route -> Unit
@@ -874,7 +874,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
     }
 
-    val navigateTop: (TopLevel) -> Unit = { dest -> nav.navigateTopLevel(dest.route) }
+    // 1.38 PC 확인(e6dc244a): the 설정 tab always opens on the first screen of settings (the link brings the tab up).
+    val navigateTop: (TopLevel) -> Unit = { dest -> if (dest == TopLevel.SETTINGS) SettingsLinks.home() else nav.navigateTopLevel(dest.route) }
     // [NAV-05] The tab the app opens on: home when the app starts, kept through a turn of the screen with the back stack.
     val startTab = rememberSaveable { home.route }
 

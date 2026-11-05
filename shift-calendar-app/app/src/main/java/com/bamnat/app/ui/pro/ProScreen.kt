@@ -236,11 +236,10 @@ fun ProScreen(onBack: () -> Unit) {
                     }
                     Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // G 1.32 [WTYP-01] The ad promise, in words.
-                    Text(com.bamnat.core.tier.AdRules.PROMISE, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    Text(com.bamnat.core.tier.AdRules.PROMISE, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
                     // 1.38 [EASE-33] The other two promises the store page makes, said here too.
-                    Text(TRUST_LINE, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
+                    // 1.38 PC 확인(e6dc244a) 제안: a promise read before paying, in the body size and the screen's ink.
+                    Text(TRUST_LINE, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
                 }
 
                 if (!gate.live || gate.preview) {
