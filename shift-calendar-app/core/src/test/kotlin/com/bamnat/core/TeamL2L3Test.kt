@@ -113,3 +113,54 @@ class TeamL2L3Test {
         assertTrue("30×31 under 5 s", System.nanoTime() - started < 5_000_000_000L)
     }
 }
+
+/** 1.38 [BOSS-08..10] B2 명세서·공제·지난달 비교. */
+class PayslipTest {
+    private val nov = YearMonth.of(2026, 11)
+    private val place = com.bamnat.core.boss.Workplace("w", "가나다카페", fivePlus = false, payday = 10)
+    private fun staff(ins: com.bamnat.core.boss.Insurance) = com.bamnat.core.boss.StaffMember("s", "이다라", base = 10_320,
+        weekly = java.time.DayOfWeek.entries.take(5).associateWith { com.bamnat.core.work.StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0)) }, insurance = ins)
+
+    @Test
+    fun `a slip has every required item and only the insurance the staff is in`() {
+        val line = com.bamnat.core.boss.PayrollLedger.line(place, staff(com.bamnat.core.boss.Insurance(employment = true)), nov, emptyList())
+        val slip = com.bamnat.core.boss.Payslip.of(place, line)
+        assertTrue(slip.ready)
+        assertEquals(java.time.LocalDate.of(2026, 12, 10), slip.payDate)
+        val names = slip.deductions.map { it.first }
+        assertTrue("고용보험" in names)
+        assertTrue("국민연금" !in names && "건강보험" !in names)
+        assertEquals(slip.gross - slip.deducted, slip.net)
+        assertTrue(slip.text().contains("실지급액"))
+        assertEquals("2026년 11월 임금명세서", slip.doc().title)
+    }
+
+    @Test
+    fun `3_3 percent for a freelancer, nothing for none`() {
+        val biz = com.bamnat.core.boss.Payslip.of(place, com.bamnat.core.boss.PayrollLedger.line(place,
+            staff(com.bamnat.core.boss.Insurance(tax = com.bamnat.core.boss.StaffTax.BIZ)), nov, emptyList()))
+        assertEquals(listOf("원천징수 3.3%"), biz.deductions.map { it.first })
+        val none = com.bamnat.core.boss.Payslip.of(place, com.bamnat.core.boss.PayrollLedger.line(place,
+            staff(com.bamnat.core.boss.Insurance(tax = com.bamnat.core.boss.StaffTax.NONE)), nov, emptyList()))
+        assertEquals(none.gross, none.net)
+    }
+
+    @Test
+    fun `a slip without a payday is not ready and says where to fix it`() {
+        val p = place.copy(payday = null)
+        val slip = com.bamnat.core.boss.Payslip.of(p, com.bamnat.core.boss.PayrollLedger.line(p, staff(com.bamnat.core.boss.Insurance()), nov, emptyList()))
+        assertTrue(!slip.ready)
+        assertEquals("임금지급일", slip.checks.first { !it.ok }.name)
+    }
+
+    @Test
+    fun `last month compare says why`() {
+        val s = staff(com.bamnat.core.boss.Insurance())
+        val now = com.bamnat.core.boss.PayrollLedger.month(place, listOf(s), nov, emptyList())
+        val before = com.bamnat.core.boss.PayrollLedger.month(place, listOf(s), nov.minusMonths(1), emptyList())
+        val row = com.bamnat.core.boss.PayrollCompare.rows(now, before).single()
+        assertTrue(row.before != null)
+        assertTrue(row.why.isNotBlank())
+        assertEquals("지난달 기록 없음", com.bamnat.core.boss.PayrollCompare.rows(now, null).single().why)
+    }
+}

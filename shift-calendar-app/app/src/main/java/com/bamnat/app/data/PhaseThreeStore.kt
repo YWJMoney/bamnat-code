@@ -132,6 +132,18 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         },
     )
 
+    /** [BOSS-10] 지급 체크·명세서 보냄, per staff member of a month; a month not closed keeps a line of its own for it. */
+    fun lines(placeId: String, month: YearMonth): Flow<List<PayrollLineEntity>> = pay.observeLines(placeId, month.toString())
+
+    suspend fun mark(placeId: String, month: YearMonth, line: LedgerLine, paid: Boolean? = null, sent: Boolean? = null) = db.withTransaction {
+        val now = clock()
+        val was = pay.linesOf(placeId, month.toString()).firstOrNull { it.staffId == line.staff.id }
+            ?: PayrollLineEntity(placeId, month.toString(), line.staff.id, line.gross, JSONArray(LedgerCsv.cells(line)).toString(), "[]", "", null, null, null)
+        pay.upsertLines(listOf(was.copy(
+            paidAt = when (paid) { null -> was.paidAt; true -> was.paidAt ?: now; false -> null },
+            slipSentAt = when (sent) { null -> was.slipSentAt; true -> now; false -> null })))
+    }
+
     suspend fun reopen(placeId: String, month: YearMonth, rateVersion: String) =
         pay.upsertMonth(PayrollMonthEntity(placeId, month.toString(), "OPEN", rateVersion, null))
 
@@ -223,9 +235,10 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
                 .map { StaffAllowance(it.optString("name"), it.optLong("amount").coerceAtLeast(0), it.optBoolean("perDay")) }
         }.getOrDefault(emptyList())
 
-        fun encodeInsurance(i: Insurance) = JSONObject().put("pension", i.pension).put("health", i.health).put("employment", i.employment).toString()
+        fun encodeInsurance(i: Insurance) = JSONObject().put("pension", i.pension).put("health", i.health).put("employment", i.employment).put("tax", i.tax.name).toString()
         fun decodeInsurance(t: String): Insurance = runCatching {
-            JSONObject(t).let { Insurance(it.optBoolean("pension"), it.optBoolean("health"), it.optBoolean("employment")) }
+            JSONObject(t).let { Insurance(it.optBoolean("pension"), it.optBoolean("health"), it.optBoolean("employment"),
+                runCatching { com.bamnat.core.boss.StaffTax.valueOf(it.optString("tax", "WAGE")) }.getOrDefault(com.bamnat.core.boss.StaffTax.WAGE)) }
         }.getOrDefault(Insurance())
 
         fun encodeWeekly(m: Map<DayOfWeek, StaffShift>) = JSONObject().apply {

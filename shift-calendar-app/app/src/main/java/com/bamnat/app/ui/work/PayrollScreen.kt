@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.work
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -121,7 +122,20 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
             place.payDate(ym)?.let { Hint("지급일 ${Fmt.monthDay(it)}") }
         }
         if (staff.isEmpty()) Hint("직원을 더하면 평소 근무 요일·시간으로 한 달 급여를 계산해요. 지각·결근·대근이 있던 날만 고치면 돼요.")
-        ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, onEdit = { editing = l.staff }) } }
+        val marks by store.lines(place.id, ym).collectAsStateWithLifecycle(emptyList())
+        val marked = marks.associateBy { it.staffId }
+        ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }) } }
+        // [BOSS-10] 지난달 비교: why a line moved, before a staff member asks.
+        val lastWork by store.work(place.id, ym.minusMonths(1)).collectAsStateWithLifecycle(emptyList())
+        val compare = remember(ledger, lastWork, staff) {
+            com.bamnat.core.boss.PayrollCompare.rows(ledger, PayrollLedger.month(place, staff, ym.minusMonths(1), lastWork))
+        }
+        if (compare.any { it.diff != null && it.diff != 0L }) SectionCard(title = "지난달과 비교") {
+            compare.forEach { r ->
+                ValueLine(r.staff.name.ifBlank { "이름 없음" }, r.diff?.let { (if (it >= 0) "+" else "") + Fmt.won(it) } ?: "-")
+                Hint(r.why)
+            }
+        }
         OutlinedButton(onClick = { editing = StaffMember(UUID.randomUUID().toString(), "", base = RateTable.on(ym.atDay(1)).minimumHourlyWage) },
             enabled = !isClosed && staff.size < 60) { Text("직원 더하기") }
 
@@ -150,8 +164,10 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
 /** One staff member's month: the total, ⚠ signs, and a tap for each line's 근거 and the days that went differently. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, work: List<StaffWork>, closed: Boolean, onEdit: () -> Unit) {
+private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, work: List<StaffWork>, closed: Boolean,
+                           mark: com.bamnat.app.data.db.PayrollLineEntity?, onEdit: () -> Unit) {
     var open by rememberSaveable(l.staff.id) { mutableStateOf(false) }
+    var slip by remember { mutableStateOf(false) }
     var why by remember { mutableStateOf<String?>(null) }
     var day by remember { mutableStateOf<LocalDate?>(null) }
     val warn = LocalCalendarColors.current.warning
@@ -164,6 +180,14 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(if (open) "접기" else "근거 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        // [BOSS-09][BOSS-10] 명세서 and 지급 체크, right on the line.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = { slip = true }, enabled = l.gross > 0) { Text(if (mark?.slipSentAt != null) "명세서 ✓" else "명세서") }
+            val store = LocalContext.current.appContainer.phaseThree
+            val scope = rememberCoroutineScope()
+            FilterChip(selected = mark?.paidAt != null, onClick = { scope.launch { store.mark(place.id, month, l, paid = mark?.paidAt == null) } },
+                label = { Text(if (mark?.paidAt != null) "지급했어요 ✓" else "지급했어요") })
         }
         // [BOSS-05] ⚠ signs, each explaining itself on a tap.
         if (l.warnings.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -186,6 +210,7 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
             }
         }
     }
+    if (slip) PayslipDialog(place, l, month) { slip = false }
     why?.let { AlertDialog(onDismissRequest = { why = null }, confirmButton = { TextButton(onClick = { why = null }) { Text("알겠어요") } }, text = { Text(it) }) }
     day?.let { d -> WorkDayDialog(l.staff, d, work.firstOrNull { it.staffId == l.staff.id && it.date == d }) { day = null } }
 }
@@ -291,6 +316,13 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             FilterChip(selected = s.insurance.employment, onClick = { s = s.copy(insurance = s.insurance.copy(employment = !s.insurance.employment)) }, label = { Text("고용보험") })
             FilterChip(selected = s.insurance == Insurance.ALL, onClick = { s = s.copy(insurance = if (s.insurance == Insurance.ALL) Insurance() else Insurance.ALL) }, label = { Text("모두") })
         }
+        Text("소득세 떼는 법 (명세서)", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.bamnat.core.boss.StaffTax.entries.forEach { t -> FilterChip(selected = s.insurance.tax == t, onClick = { s = s.copy(insurance = s.insurance.copy(tax = t)) }, label = { Text(t.label) }) }
+        }
+        if (s.insurance.tax == com.bamnat.core.boss.StaffTax.BIZ && s.weekly.isNotEmpty()) Text(
+            "정해진 요일·시간에 일하는 직원은 보통 근로자예요. 3.3%는 프리랜서(사업소득)일 때만 맞아요.",
+            style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
         Text("평소 일하는 요일", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             DayOfWeek.entries.forEach { d ->
@@ -353,4 +385,43 @@ private fun DayPick(initial: LocalDate, onDismiss: () -> Unit, onPick: (LocalDat
     com.bamnat.app.ui.components.DatePickerDialog(onDismissRequest = onDismiss, confirmButton = {
         TextButton(onClick = { state.selectedDateMillis?.let { onPick(LocalDate.ofEpochDay(it / 86_400_000L)) } ?: onDismiss() }) { Text("고르기") }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } }) { androidx.compose.material3.DatePicker(state) }
+}
+
+/**
+ * [BOSS-09] 임금명세서 미리보기: the 6 필수 기재사항 ticked one by one (근로기준법 시행령 제27조의2), what comes off, and sending it only
+ * to that staff member, as words or a PDF, through the phone's share sheet. Nothing goes to a server.
+ */
+@Composable
+private fun PayslipDialog(place: Workplace, l: LedgerLine, month: YearMonth, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val store = context.appContainer.phaseThree
+    val scope = rememberCoroutineScope()
+    val slip = remember(place, l) { com.bamnat.core.boss.Payslip.of(place, l) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("${l.staff.name.ifBlank { "직원" }} ${month.monthValue}월 명세서") }, text = {
+        Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            slip.checks.forEach { c ->
+                Text((if (c.ok) "✓ " else "✕ ") + c.name + if (!c.ok && c.fix.isNotBlank()) " · ${c.fix}" else "", style = MaterialTheme.typography.bodySmall,
+                    color = if (c.ok) MaterialTheme.colorScheme.onSurface else LocalCalendarColors.current.warning)
+            }
+            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+            ValueLine("지급 합계", Fmt.won(slip.gross))
+            slip.deductions.forEach { (n, v) -> ValueLine(n, "-" + Fmt.won(v)) }
+            ValueLine("실지급액", Fmt.won(slip.net), strong = true)
+            Hint(PayrollLedger.NOTICE)
+        }
+    }, confirmButton = {
+        Row {
+            TextButton(enabled = slip.ready, onClick = {
+                scope.launch {
+                    runCatching { com.bamnat.app.report.ReportShare.pdf(context, slip.doc(), "임금명세서-${l.staff.name.ifBlank { "직원" }}-$month.pdf") }
+                    store.mark(place.id, month, l, sent = true)
+                }
+            }) { Text("PDF") }
+            TextButton(enabled = slip.ready, onClick = {
+                val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, slip.text()) }
+                runCatching { context.startActivity(android.content.Intent.createChooser(i, "명세서 보내기")) }
+                scope.launch { store.mark(place.id, month, l, sent = true) }
+            }) { Text("글로 보내기") }
+        }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
 }

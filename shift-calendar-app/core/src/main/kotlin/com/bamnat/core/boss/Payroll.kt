@@ -53,7 +53,9 @@ data class Workplace(
 enum class WageForm(val label: String) { HOUR("시급"), MONTH("월급"), DAY("일급") }
 
 /** [BOSS-01] 4대보험 enrolment, each on its own (설계 2-2 직원 추가). 산재 has no employee share and is always on by law. */
-data class Insurance(val pension: Boolean = false, val health: Boolean = false, val employment: Boolean = false) {
+data class Insurance(val pension: Boolean = false, val health: Boolean = false, val employment: Boolean = false,
+                     /** 1.38 [BOSS-08] How income tax comes off the 명세서: 간이세액표, 사업소득 3.3%, or none. */
+                     val tax: StaffTax = StaffTax.WAGE) {
     val any: Boolean get() = pension || health || employment
     val label: String get() = listOfNotNull("국민".takeIf { pension }, "건강".takeIf { health }, "고용".takeIf { employment }).joinToString("·").ifEmpty { "가입 안 함" }
 
@@ -61,6 +63,9 @@ data class Insurance(val pension: Boolean = false, val health: Boolean = false, 
         val ALL = Insurance(true, true, true)
     }
 }
+
+/** 1.38 [BOSS-08] 소득세 떼는 법. 3.3% is for a 사업소득자 (프리랜서) only; an employee's is the 간이세액표 (소득세법 제134조). */
+enum class StaffTax(val label: String) { WAGE("근로소득(간이세액표)"), BIZ("사업소득 3.3%"), NONE("떼지 않음") }
 
 /** [BOSS-01] A fixed allowance paid every month (식대·교통비 같은), or every working day. */
 data class StaffAllowance(val name: String, val amount: Long, val perDay: Boolean = false)
@@ -262,6 +267,10 @@ object PayrollLedger {
             "결근이 있는 주 ${missed.size}번은 주휴수당이 없어요(시행령 제30조: 소정근로일 개근). 결근이 아니라 쉬기로 한 날이면 ‘쉬는 날’로 바꿔 주세요."))
         if (!s.weeklyHolidayPay && s.form == WageForm.HOUR && l.pay?.holidayWeeks.orEmpty().any { it.workedMinutes >= 15 * 60 }) add(LedgerWarning("holiday-off", "주휴수당을 끈 직원이에요",
             "주 15시간 이상 일한 주가 있어요. 그 주는 주휴수당을 줘야 해요(근로기준법 제55조, 시행령 제30조)."))
+        // 1.38 [BOSS-10] 주 52시간 (근로기준법 제53조): a week past it is told, for a 5인 이상 place the law caps.
+        if (place.fivePlus != false) l.pay?.holidayWeeks.orEmpty().filter { it.workedMinutes > 52 * 60 }.takeIf { it.isNotEmpty() }?.let { w ->
+            add(LedgerWarning("week52", "주 52시간을 넘은 주가 있어요", "${w.size}주가 한 주 52시간(근로기준법 제53조)을 넘었어요. 근무를 나눠 주세요."))
+        }
         if (noWork) add(LedgerWarning("empty", "근무가 없어요", "이번 달 일한 날이 없어요. 평소 근무 요일·시간을 넣거나 근무를 고쳐 주세요."))
         l.pay?.warnings.orEmpty().take(2).forEachIndexed { i, w -> add(LedgerWarning("engine-$i", "확인 필요", w)) }
     }

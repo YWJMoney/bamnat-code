@@ -264,6 +264,9 @@ interface PayrollDao {
     @Query("SELECT * FROM payroll_line WHERE workplaceId = :workplaceId AND month = :month")
     fun observeLines(workplaceId: String, month: String): Flow<List<PayrollLineEntity>>
 
+    @Query("SELECT * FROM payroll_line WHERE workplaceId = :workplaceId AND month = :month")
+    suspend fun linesOf(workplaceId: String, month: String): List<PayrollLineEntity>
+
     @Query("SELECT * FROM payroll_month") suspend fun months(): List<PayrollMonthEntity>
     @Query("SELECT * FROM payroll_line") suspend fun lines(): List<PayrollLineEntity>
 
@@ -282,8 +285,10 @@ interface PayrollDao {
     /** 대장 닫기: the month's lines as they are now, and the month CLOSED, in one step. */
     @Transaction
     suspend fun close(month: PayrollMonthEntity, lines: List<PayrollLineEntity>) {
+        // 1.38 [BOSS-10] 지급했어요·명세서 보냄 stay through a second 닫기.
+        val was = linesOf(month.workplaceId, month.month).associateBy { it.staffId }
         deleteLines(month.workplaceId, month.month)
-        if (lines.isNotEmpty()) upsertLines(lines)
+        if (lines.isNotEmpty()) upsertLines(lines.map { l -> was[l.staffId]?.let { w -> l.copy(paidAt = l.paidAt ?: w.paidAt, slipSentAt = l.slipSentAt ?: w.slipSentAt) } ?: l })
         upsertMonth(month)
     }
 
