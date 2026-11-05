@@ -51,6 +51,7 @@ export async function phase3Metrics(env, start, end, now, ev) {
     team: { made: t("team_made"), confirms: t("team_confirm"), confirmPhones: n("team_confirm"), links: t("team_links"), planView: n("plan_view_team"), paid: paidOf("팀") },
     shop: { closed: t("ledger_closed"), closePhones: n("ledger_closed"), slips: t("slip_sent"), planView: n("plan_view_staff"), paid: paidOf("직원") },
     funnel: { manage: n("manage_open"), hintShown: n("manage_hint_shown"), hintOpen: n("manage_hint_open"), planView: n("plan_view_team") + n("plan_view_staff"), buyTap: n("plan_buy_tap"),
+      imports: t("manage_import"), importPhones: n("manage_import"),
       started: list.reduce((s, b) => s + b.started + b.passesBought, 0) },
     errors: t("manage_error"),
   };

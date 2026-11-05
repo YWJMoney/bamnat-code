@@ -75,7 +75,7 @@ export function insightViews(A) {
         }).join("")}</tbody></table></div>`
         : '<p class="meta">아직 팀·직원 요금제 구매가 없어요.</p>'}
       <h3>기능 안내 → 결제</h3><dl class="kv"><dt>팀·가게 관리 열기</dt><dd>${p3.funnel.manage}</dd><dt>기능 안내 보임 → 누름</dt><dd>${p3.funnel.hintShown} → ${p3.funnel.hintOpen} (${rate(p3.funnel.hintOpen, p3.funnel.hintShown)})</dd>
-        <dt>요금제 창 → 결제 누름</dt><dd>${p3.funnel.planView} → ${p3.funnel.buyTap} (${rate(p3.funnel.buyTap, p3.funnel.planView)})</dd><dt>이 기간 새 구독·이용권</dt><dd>${p3.funnel.started}</dd>
+        <dt>요금제 창 → 결제 누름</dt><dd>${p3.funnel.planView} → ${p3.funnel.buyTap} (${rate(p3.funnel.buyTap, p3.funnel.planView)})</dd><dt>이 기간 새 구독·이용권</dt><dd>${p3.funnel.started}</dd><dt>파일·사진 가져오기</dt><dd>${p3.funnel.imports ?? 0}회 · ${p3.funnel.importPhones ?? 0}대</dd>
         <dt>팀·가게 화면 오류</dt><dd>${p3.errors}</dd></dl>
       <p class="hint">휴대폰 수는 날마다 센 합이에요(같은 휴대폰이 이틀이면 2). 구간·구독은 Play 구매 확인, 나머지는 사용 통계에 동의한 휴대폰의 하루 횟수라 서로 다를 수 있어요. 팀·가게 이름, 사람 이름, 금액은 받지 않아요.</p></section>` : "";
     const sh = d.shares;

@@ -304,6 +304,7 @@ export const EVENTS = {
   manage_error: "팀·가게 화면 오류",
   manage_hint_shown: "팀·가게 기능 안내 보임",
   manage_hint_open: "팀·가게 기능 안내 누름",
+  manage_import: "팀·직원 파일 가져오기",
 };
 
 export async function usage(request, env) {

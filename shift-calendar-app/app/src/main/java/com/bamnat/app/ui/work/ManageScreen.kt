@@ -129,11 +129,13 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
                 Text("팀 근무표", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 liveTeams.forEach { t -> key(t.id) { TeamGlanceCard(t, now, onOpen = { teamOpen = t.id }) { teamGlances[t.id] = it } } }
                 OutlinedButton(onClick = { teamsList = true }, modifier = Modifier.fillMaxWidth()) { Text(if (liveTeams.isEmpty()) "팀 만들기" else "팀 목록·새 팀") }
+                if (liveTeams.isEmpty()) Text("지금 쓰는 근무표가 엑셀·PDF·종이 사진이어도 팀 만들기에서 그대로 가져와요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ManagePart.SHOPS -> if (bossOn) {
                 Text("가게", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 livePlaces.forEach { p -> key(p.id) { ShopGlanceCard(p, now, onOpen = { ledgerOpen = true }) { shopGlances[p.id] = it } } }
                 if (livePlaces.isEmpty()) OutlinedButton(onClick = { ledgerOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("급여 대장 시작하기") }
+                if (livePlaces.isEmpty()) Text("직원 명단이 엑셀·PDF·사진이어도 급여 대장에서 한 번에 가져와요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             // 요금제: the band in use, or the free taste, in one line each.

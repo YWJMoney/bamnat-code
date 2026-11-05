@@ -22,6 +22,34 @@ object TeamGridImport {
 
     private fun key(s: String) = s.trim().replace(" ", "").uppercase()
 
+    /** The 인식 갈래's read ([com.bamnat.core.imports.RosterGrid]) as rows to put on a board. */
+    fun rows(grid: com.bamnat.core.imports.RosterGrid): List<Row> = grid.rows.map { Row(it.name, it.role, it.cells, it.doubtful) }
+
+    /** How many cells of the rows each code is on, most first: the 코드 짝짓기 list shows the big ones on top. */
+    fun codeCounts(rows: List<Row>): List<Pair<String, Int>> =
+        rows.flatMap { r -> r.cells.values.filter { it.isNotBlank() } }.groupingBy { it }.eachCount().entries
+            .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key }).map { it.key to it.value }
+
+    /**
+     * The members a row asks for: each row with no member (null in [memberOf], and not [skipped]) a new one after [members],
+     * at most [limit] people on the team. Returns the new members and [memberOf] with their ids in.
+     */
+    fun newMembers(rows: List<Row>, memberOf: List<String?>, skipped: Set<Int>, teamId: String, members: List<TeamMember>, limit: Int = 60,
+                   id: () -> String = { java.util.UUID.randomUUID().toString() }): Pair<List<TeamMember>, List<String?>> {
+        var sort = (members.maxOfOrNull { it.sort } ?: -1) + 1
+        var room = limit - members.size
+        val made = ArrayList<TeamMember>()
+        val ids = rows.indices.map { i ->
+            memberOf.getOrNull(i) ?: if (i in skipped || room <= 0) null else {
+                // "민지 책임" as the 팀 만들기 paste reads it: 책임 is the role and the 책임 skill.
+                val p = TeamPaste.people((rows[i].name + " " + rows[i].role.orEmpty()).trim()).firstOrNull()
+                val m = TeamMember(id(), teamId, p?.name ?: rows[i].name.trim(), p?.role ?: rows[i].role.orEmpty(), p?.skill ?: Skill.REG, sort = sort++)
+                room--; made += m; m.id
+            }
+        }
+        return made to ids
+    }
+
     /**
      * The kind of day each code most likely is: the team's own label or name first, then the words rosters use (휴·OFF·데이·나이트 …).
      * A code not guessed is null: the leader pairs it, or leaves it for the keypad.
