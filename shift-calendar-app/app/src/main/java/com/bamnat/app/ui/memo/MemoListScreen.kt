@@ -975,13 +975,23 @@ private const val MAX_SHIFT_CHIPS = 6
  * anywhere is [onTap] (the look's editor).
  */
 @Composable
-fun MemoLookSample(look: com.bamnat.core.recipe.MemoLook, onTap: () -> Unit) {
+fun MemoLookSample(look: com.bamnat.core.recipe.MemoLook,
+    /** PC 확인 e50bb622 (자영업 장터 그림에 '인수인계'·'월급날'): the two work memos in this kind of work's own words. */
+    style: com.bamnat.core.work.WorkStyle? = null, onTap: () -> Unit) {
+    val (work, workBody, money, moneyBody) = when (style) {
+        com.bamnat.core.work.WorkStyle.DAY -> listOf("회의 메모", "금요일 보고서 마감\n자료는 공유 폴더에", "월급날", "적금 넣기")
+        com.bamnat.core.work.WorkStyle.HOURLY -> listOf("대타 부탁", "토요일 오후 대신 근무\n17시~22시", "알바비 들어오는 날", "적금 넣기")
+        com.bamnat.core.work.WorkStyle.FIELD -> listOf("자재 챙기기", "실리콘 2통, 장갑\n현장 사진 찍기", "일당 받는 날", "통장 확인")
+        com.bamnat.core.work.WorkStyle.BUSINESS -> listOf("재료 주문", "양파 2망, 식용유\n목요일 오전 배송", "카드 정산일", "매출 통장 확인")
+        com.bamnat.core.work.WorkStyle.INVEST -> listOf("매매 일지", "분할 매수 2회차\n손절선 지키기", "배당 들어오는 날", "재투자 정하기")
+        else -> listOf("인수인계", "3층 장비 점검 끝\n다음 근무자에게 열쇠 전달", "월급날", "적금 넣기")
+    }
     val memos = listOf(
         Memo(id = 1, title = "장보기", isChecklist = true, colorIndex = 1,
             checklist = listOf(com.bamnat.core.memo.ChecklistItem("우유"), com.bamnat.core.memo.ChecklistItem("달걀", checked = true), com.bamnat.core.memo.ChecklistItem("두부"))),
-        Memo(id = 2, title = "인수인계", body = "3층 장비 점검 끝\n다음 근무자에게 열쇠 전달", colorIndex = 0),
+        Memo(id = 2, title = work, body = workBody, colorIndex = 0),
         Memo(id = 3, title = "여행 계획", body = "11월 셋째 주 쉬는 날에 바다 보러 가기", colorIndex = 4, pinned = true),
-        Memo(id = 4, title = "월급날", body = "적금 넣기", colorIndex = 6),
+        Memo(id = 4, title = money, body = moneyBody, colorIndex = 6),
     )
     val actions = CardActions({ onTap() }, { onTap() }, {}, {}, {})
     androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.theme.LocalMemoLook provides look) {

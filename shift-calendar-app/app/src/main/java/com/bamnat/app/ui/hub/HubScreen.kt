@@ -182,9 +182,14 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     var folded by remember { mutableStateOf(prefs.getString("todayFolded", null) == today) }
     if (folded) return
     var looked by remember(style, today) { mutableStateOf(false) }
+    // PC 확인 e50bb622 (인터넷 없이 켜면 '아직 작품이 없어요'): when the list could not be had, nothing is said rather than "none".
+    var offline by remember(style, today) { mutableStateOf(false) }
     val item by androidx.compose.runtime.produceState<com.bamnat.app.recipe.RecipeItem?>(null, style, today) {
-        val pool = runCatching { c.recipeApi.picks(style) }.getOrDefault(emptyList())
-            .ifEmpty { runCatching { c.recipeApi.list(style, "hot").items.take(5) }.getOrDefault(emptyList()) }
+        val picks = runCatching { c.recipeApi.picks(style) }
+        val hot = if (picks.getOrNull().isNullOrEmpty()) runCatching { c.recipeApi.list(style, "hot").items.take(5) } else null
+        offline = picks.isFailure && hot?.isFailure != false
+        val pool = picks.getOrDefault(emptyList())
+            .ifEmpty { hot?.getOrDefault(emptyList()).orEmpty() }
             // PC 확인 V40: only what is made for this kind of work (a 교대 theme is no 오늘의 하나 for 알바).
             .filter { !c.recipes.hides(it) && (style == null || it.styles.isEmpty() || style in it.styles) }
         value = pool.takeIf { it.isNotEmpty() }?.let { it[(com.bamnat.core.time.Today.date().dayOfYear) % it.size] }
@@ -193,7 +198,7 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     val r = item
     // PC 확인 V40: nothing for this kind of work yet: one line asking for its first, folded with 오늘은 그만 like the rest.
     if (r == null) {
-        if (!looked || style == null) return
+        if (!looked || style == null || offline) return
         val bigEmpty = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
         val emptyButtons: @Composable () -> Unit = {
             TextButton(onClick = onMake) { Text("만들기") }

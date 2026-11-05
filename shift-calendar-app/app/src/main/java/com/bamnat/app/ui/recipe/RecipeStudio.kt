@@ -247,7 +247,7 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                             // [FREE-06]
                             resolved[PieceKind.MONEY_LOOK]?.let { com.bamnat.app.ui.settings.MoneySample(moneyLookOf(it)) {} }
                         }
-                        TabOrder.MEMOS -> MockMemos(resolved)
+                        TabOrder.MEMOS -> MockMemos(resolved, style)
                         TabOrder.STATS -> MockParts(resolved[PieceKind.CARDS]?.get("stats") as? String, StatsPart.entries.map { Triple(it.id, it.label, it.what) }, bars = true,
                             fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.STATS_PARTS, id, style) })
                         TabOrder.PLAZA -> MockNote(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji.orEmpty() + "마을",
@@ -524,7 +524,7 @@ private fun MockParts(line: String?, parts: List<Triple<String, String, String>>
 
 @Suppress("UNCHECKED_CAST")
 @Composable
-private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
+private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>, style: WorkStyle? = null) {
     val placed = PageLayout.decode(resolved[PieceKind.CARDS]?.get("memo") as? String).arrange(MemoPart.entries.toList()) { it.id }.filter { it.shown }
     placed.forEach { p ->
         when (p.part) {
@@ -532,7 +532,7 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
                 Text("🔍 제목·내용·#태그 찾기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             MemoPart.NOTEBOOKS -> Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("전체", "근무", "개인").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp),
+                listOf("전체", when (style) { WorkStyle.BUSINESS -> "가게"; WorkStyle.INVEST -> "매매"; WorkStyle.FIELD -> "현장"; else -> "근무" }, "개인").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer) }
             }
             else -> Unit
@@ -547,7 +547,7 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
     }
     if (journal.isNotEmpty()) MockCard("📒 투자일지", journal.joinToString(" · "))
     // [FREE-04] The memos in the recipe's 메모장 모양.
-    resolved[PieceKind.MEMO_LOOK]?.let { Box(Modifier.mockPick("memo")) { com.bamnat.app.ui.memo.MemoLookSample(memoLookOf(it)) {} } }
+    resolved[PieceKind.MEMO_LOOK]?.let { Box(Modifier.mockPick("memo")) { com.bamnat.app.ui.memo.MemoLookSample(memoLookOf(it), style) {} } }
 }
 
 /** [FREE-04][FREE-06] A piece's values as the look they write (the same k=v line the settings keep). */

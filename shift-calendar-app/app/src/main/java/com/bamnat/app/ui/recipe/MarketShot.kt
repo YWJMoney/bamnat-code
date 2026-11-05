@@ -58,6 +58,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.flow.first
 
 /**
  * [MKV-01] 1.37 장터 카드 실제 모습 (사용자 2026-11-05 "장터에서 테마나 기능들 보여지는 모습들이 실제로 해당 테마나 기능들의 모습을
@@ -83,6 +84,13 @@ internal object MarketShots {
     private val gate = Semaphore(3)
 
     fun key(item: RecipeItem) = "${item.code}@${item.version}"
+
+    /**
+     * PC 확인 e50bb622 MED-2 (긴 테마 목록을 천천히 내리면 그림을 처음 그릴 때 끊김, Janky 19%): one example phone is drawn live at a time;
+     * the others keep their small picture until it is their turn, and a card only flown past is never drawn.
+     */
+    val drawing = androidx.compose.runtime.mutableIntStateOf(0)
+    const val AT_ONCE = 1
 
     fun shot(key: String): ImageBitmap? = shots.get(key)
     fun keep(key: String, b: ImageBitmap) { shots.put(key, b) }
@@ -175,6 +183,16 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
     var picture by remember(key) { mutableStateOf(MarketShots.shot(key)) }
     val recipe by produceState<Recipe?>(null, key) { if (picture == null) value = MarketShots.recipe(c, item) }
     // Said once for the card: the real look once it is drawn, the small picture while it comes.
+    // MED-2: this card's turn to be drawn live: it has stayed on screen a moment and no other is drawing.
+    var turn by remember(key) { mutableStateOf(false) }
+    if (picture == null && recipe != null) LaunchedEffect(key) {
+        kotlinx.coroutines.delay(150)
+        androidx.compose.runtime.snapshotFlow { MarketShots.drawing.intValue }.first { it < MarketShots.AT_ONCE }
+        MarketShots.drawing.intValue += 1
+        turn = true
+    }
+    if (turn) androidx.compose.runtime.DisposableEffect(key) { onDispose { MarketShots.drawing.intValue -= 1 } }
+    if (turn && picture != null) LaunchedEffect(Unit) { turn = false }
     val said = if (picture != null || recipe != null) "작품 모습" else if (MarketShots.gaveUp(item)) "작품 작은 그림" else "작품 모습 불러오는 중"
     Box(modifier.size(width, height).clip(RoundedCornerShape(width / 10)).clearAndSetSemantics {
         contentDescription = said
@@ -183,14 +201,18 @@ internal fun MarketShot(item: RecipeItem, width: Dp, style: WorkStyle?, onClick:
         val r = recipe
         when {
             p != null -> Image(p, null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds)
-            r != null -> {
+            r != null && turn -> {
                 // Drawn live once; when its fonts and pictures have come in, kept as a picture.
                 val layer = rememberGraphicsLayer()
-                Box(Modifier.fillMaxSize().drawWithContent { layer.record { this@drawWithContent.drawContent() }; drawLayer(layer) }) {
-                    ShotPhone(item, r, shown, width / MarketShots.PHONE_W.dp)
+                // PC 확인 e50bb622 MED-3: a picture of the phone, its letters the example's own size under 아주 크게 too.
+                val d = androidx.compose.ui.platform.LocalDensity.current
+                androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f)) {
+                    Box(Modifier.fillMaxSize().drawWithContent { layer.record { this@drawWithContent.drawContent() }; drawLayer(layer) }) {
+                        ShotPhone(item, r, shown, width / MarketShots.PHONE_W.dp)
+                    }
                 }
                 LaunchedEffect(key) {
-                    kotlinx.coroutines.delay(1_200)
+                    kotlinx.coroutines.delay(700)
                     runCatching { layer.toImageBitmap() }.getOrNull()?.let { MarketShots.keep(key, it); picture = it }
                 }
             }

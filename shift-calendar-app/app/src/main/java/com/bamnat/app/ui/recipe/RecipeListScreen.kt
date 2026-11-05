@@ -472,11 +472,12 @@ private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = 
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 MarketShot(item, maxWidth, style, onClick)
-                if (item.showcase) Text("추천", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.align(Alignment.TopStart).padding(6.dp).clip(RoundedCornerShape(6.dp))
-                        .background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp, vertical = 1.dp))
             }
-            Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // PC 확인 e50bb622: 추천 by the name, not over the picture's own title.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (item.showcase) Badge("추천")
+            }
             if (item.scope == "tab") item.tabs.firstOrNull()?.let { t ->
                 Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만" else " 탭에만"), style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
