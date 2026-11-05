@@ -23,7 +23,8 @@ class ProCatalogTest {
 
     @Test fun theCollectionPutsThisCalendarsFeaturesFirst() {
         val invest = ProCatalog.of(WorkStyle.INVEST)
-        assertEquals(ProCatalog.tiers.size, invest.size)
+        // 1.38: a feature waiting on its 깃발 (Phase 3) is not shown yet.
+        assertEquals(ProCatalog.tiers.keys.count { id -> FeatureRegistry.all.any { it.id == id } }, invest.size)
         val firstOther = invest.indexOfFirst { !it.fits(WorkStyle.INVEST) }
         assertTrue(invest.take(firstOther).all { it.fits(WorkStyle.INVEST) })
         assertTrue("pay comes after for an investor", invest.indexOfFirst { it.id == "pay.slipAudit" } >= firstOther)

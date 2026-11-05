@@ -11,7 +11,7 @@ import com.bamnat.core.work.words
 enum class Place {
     CALENDAR, TODAY, MONEY, AUTO_RECORD, MEMOS, STATS,
     PAY, PATTERN, SHIFT_TYPES, EXTRA_KINDS, WORK_STYLE, CALENDARS, CALENDAR_EDIT, SHOP_DAYS, COMBINED, OWED,
-    SLEEP, DUTY_ROSTER, HEALTH_REPORT, TEAMS, YEAR, ATTENDANCE_IMPORT, COMMUTE, CALENDAR_IMPORT, SHARE, RECEIVE,
+    SLEEP, DUTY_ROSTER, HEALTH_REPORT, TEAMS, LEADER_TEAMS, YEAR, ATTENDANCE_IMPORT, COMMUTE, CALENDAR_IMPORT, SHARE, RECEIVE,
     DIAGNOSTICS, INQUIRY, FEATURES, PRO,
     /** [ONBOARD-04] 추천 기능 한 번에 켜기. */
     RECOMMENDED,
@@ -83,6 +83,8 @@ data class AppFeature(
     val under: String? = null,
     val moment: Moment? = null,
     val tip: String? = null,
+    /** 1.38: the 기능 깃발 the feature waits on ([com.bamnat.core.flags.FlagCatalog] key); while it is off the guide and search leave it out. */
+    val flag: String? = null,
 ) {
     /** For this kind of work; a main calendar from before kinds of work were asked is a shift calendar. */
     fun fits(style: WorkStyle?): Boolean = styles.isEmpty() || (style ?: WorkStyle.SHIFT) in styles
@@ -112,12 +114,27 @@ object FeatureRegistry {
 
     private fun f(
         id: String, req: String, name: String, what: String, styles: Set<WorkStyle>, where: String, route: FeatureRoute,
-        vararg keywords: String, off: Off? = null, under: String? = null, moment: Moment? = null, tip: String? = null,
-    ) = AppFeature(id, req, name, what, styles, where, route, keywords.toList(), off, under, moment, tip)
+        vararg keywords: String, off: Off? = null, under: String? = null, moment: Moment? = null, tip: String? = null, flag: String? = null,
+    ) = AppFeature(id, req, name, what, styles, where, route, keywords.toList(), off, under, moment, tip, flag)
 
     private fun at(place: Place, focus: String? = null) = FeatureRoute(place, focus)
 
-    val all: List<AppFeature> = listOf(
+    /**
+     * 1.38 Phase 3: whether a 깃발 is on this phone now, set by the app ([com.bamnat.core.flags.FlagCatalog] key). A feature resting
+     * on a flag that is off is left out of [all] (기능 찾기, 안내, 모아보기), so nobody is sent to a button that is not there yet.
+     * Until the app sets it, every such feature is left out.
+     */
+    @Volatile var flagOn: ((String) -> Boolean)? = null
+
+    /** Every feature, also the ones waiting on a flag: for [get] and for tests. */
+    val everything: List<AppFeature> get() = EVERYTHING
+
+    val all: List<AppFeature> get() {
+        val on = flagOn
+        return EVERYTHING.filter { f -> f.flag == null || (on != null && on(f.flag)) }
+    }
+
+    private val EVERYTHING: List<AppFeature> = listOf(
         // The guide itself [GUIDE-02][GUIDE-03].
         f("guide.checklist", "GUIDE-02", "이 달력으로 할 수 있는 것", "새 달력이나 일하는 방식을 바꾼 달력에서 처음 며칠 쓸 만한 기능을 골라 보여 줘요",
             ALL, "달력 맨 위 카드", at(Place.FEATURES), "처음", "시작", "체크리스트", "안내 카드", "할 수 있는 것", off = Off.APP),
@@ -825,9 +842,22 @@ object FeatureRegistry {
         f("recipe.creatorPro", "PRF-12", "창작자 프로필 꾸미기", "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프를 써요",
             ALL, "마을 › 맨 위 내 얼굴 › 내 프로필 › 프로필 고치기", at(Place.RECIPES), "표지 그림", "대표 작품", "작품 통계", "창작자", "내 프로필",
             under = "recipe.maker"),
+        // 1.38 Phase 3 (정식 출시일에 켜짐, 사용자 C안).
+        f("team.leader", "TEAM-09", "내가 짜는 팀 근무표", "팀원 이름을 붙여 넣고 팀원×날짜 표를 칠해 확정하면, 팀원마다 자기 근무만 담긴 링크를 보내요",
+            setOf(SHIFT), "달력 › 모든 조 › 내 팀 짜기", at(Place.LEADER_TEAMS), "팀 근무표", "근무표 짜기", "듀티 짜기", "수간호사", "책임간호사", "조장", "팀장",
+            "희망 휴무", "자동 채우기", "공정성", flag = "team.leader"),
+        f("team.more", "GROW-06", "팀 근무표 더 쓰기", "팀을 여러 개 만들고, 빈칸을 규칙·희망 휴무를 지키며 자동으로 채워요",
+            setOf(SHIFT), "달력 › 모든 조 › 내 팀 짜기 › 빈칸 자동 채우기", at(Place.LEADER_TEAMS), "팀 여러 개", "자동 채우기", "자동 근무표",
+            under = "team.leader", flag = "team.leader"),
+        f("boss.payroll", "BOSS-01", "사장님 급여 대장", "직원마다 평소 근무에서 달라진 날만 고치면 주휴·연장·야간까지 계산하고, 임금명세서와 임금대장을 만들어요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장", at(Place.MONEY), "급여 대장", "임금대장", "임금명세서", "명세서 보내기", "알바 급여", "직원 급여",
+            "주휴수당 계산", flag = "boss.payroll"),
+        f("boss.staff", "GROW-06", "급여 대장 직원 늘리기", "급여 대장과 명세서를 직원 네 명부터 써요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 더하기", at(Place.MONEY), "직원 추가", "직원 4명",
+            under = "boss.payroll", flag = "boss.payroll"),
     )
 
-    private val byId: Map<String, AppFeature> = all.associateBy { it.id }
+    private val byId: Map<String, AppFeature> = EVERYTHING.associateBy { it.id }
 
     fun get(id: String): AppFeature? = byId[id]
 

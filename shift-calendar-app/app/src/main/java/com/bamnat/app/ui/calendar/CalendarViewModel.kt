@@ -443,6 +443,19 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         SleepPlan.tips(SleepSchedule.of(snapshot.resolver, date, date.plusDays(1), settings.alarmsEnabled && calendarAlarmsOn.value,
             settings.sleepTargetMinutes, settings.commuteMinutes), date)
 
+    /** 1.38 [P3-01] The flag book as it stands, so a Phase 3 row turned on shows without reopening the day. */
+    val flagStates: StateFlow<Map<String, com.bamnat.core.flags.FlagState>> = container.flags.byKey
+
+    /**
+     * 1.38 [HLTH-01][P3-04] 계획 대 실제: the sleeps planned around [date]'s work against the log, while `health.compare` is on.
+     * Worked out here each time and never stored (Phase 3 설계 2-3).
+     */
+    fun planVsActual(snapshot: ScheduleSnapshot, date: LocalDate, settings: AppSettings, log: List<SleepEntry>): List<com.bamnat.core.sleep.PlanVsActual.Night> {
+        if (!container.flags.on(com.bamnat.core.flags.FlagCatalog.HEALTH_COMPARE) || date.isAfter(Today.date())) return emptyList()
+        return com.bamnat.core.sleep.PlanVsActual.forDay(com.bamnat.core.sleep.PlanVsActual.nights(log, snapshot.resolver, date, date,
+            settings.alarmsEnabled && calendarAlarmsOn.value, settings.sleepTargetMinutes, settings.commuteMinutes), date)
+    }
+
     /** [SLP-14] 오늘의 흐름 at [now]. */
     fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
         // [CAL-13] An added calendar kept from ringing shows no alarm in the day's flow.

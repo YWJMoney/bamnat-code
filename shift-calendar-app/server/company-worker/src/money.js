@@ -12,6 +12,9 @@ export const MONEY = {
   adQuietDays: 3,
   // [MON-06] Days before a trial ends that the app asks for consent (결정 D17: day 23 of 30).
   trialAskDays: 7,
+  // 1.38 [GROW-06] Phase 3 free limits (사용자 2026-11-05: 팀 1개·직원 3명 무료); the app has the same defaults.
+  freeTeams: 1,
+  freeStaff: 3,
   // [MON-09] A code from the developer app ties a phone to an admin for ten minutes, once; two phones each.
   linkMs: 10 * 60 * 1000,
   linkCodesPerHour: 10,
@@ -66,6 +69,7 @@ export async function config(env) {
   return {
     v: 1, billingLive: s.billingLive, launchedAt: launchedAt ? iso(launchedAt) : null, thanksMonths: s.thanksMonths,
     freeFeatures: s.freeFeatures, adQuietDays: MONEY.adQuietDays, trialAskDays: MONEY.trialAskDays,
+    freeTeams: MONEY.freeTeams, freeStaff: MONEY.freeStaff,
     // [SRV-04] 공지 running now (the app picks the ones for its version) and what is switched off.
     notices: notices.filter((n) => n.from <= now && now < n.until).map(noticeView), off: s.off,
     flags: configFlags(s.store, now), policy: configPolicy(s.store), serverTime: iso(now),

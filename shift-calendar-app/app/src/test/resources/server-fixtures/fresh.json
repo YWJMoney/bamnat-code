@@ -8,6 +8,8 @@
     "freeFeatures": [],
     "adQuietDays": 3,
     "trialAskDays": 7,
+    "freeTeams": 1,
+    "freeStaff": 3,
     "notices": [],
     "off": [],
     "flags": {

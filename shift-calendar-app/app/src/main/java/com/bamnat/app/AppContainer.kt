@@ -102,6 +102,8 @@ class AppContainer(context: Context) {
         calendars.repository(id).live.map { s -> com.bamnat.core.memo.MemoRepeat.ShiftOf { d -> s.resolver.shiftIdOn(d) } }
     })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
+    /** 1.38 [P3-01] Phase 3: 리더 팀 근무표와 사업장 급여 대장 (DB 27), used only while their flags are on. */
+    val phaseThree = com.bamnat.app.data.PhaseThreeStore(database)
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
     val consentStore by lazy { com.bamnat.app.data.ConsentStore(appContext) }
     /** [ALRM-04] 증명 사진's reference fingerprints. */
@@ -508,6 +510,8 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.StartupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_MORE) }
         // [STAT-08] 1.31 N4: lookup times from 처리방침 3.5's date on (the `stats.lookup` row turns on by itself that day).
         com.bamnat.app.diag.LookupStats.policyAllows = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_LOOKUP) }
+        // 1.38 Phase 3: the guide and 기능 찾기 show a feature only once its 깃발 is on.
+        com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }
 
     /** [FLAG-07] This phone as the dark-merge rows read it; nothing of it is sent. */

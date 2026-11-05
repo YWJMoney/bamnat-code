@@ -83,7 +83,7 @@ class NxtStartupProvidersTest {
         val pro = Feature.entries.filter { it.minTier == Tier.PRO }
         assertEquals(ProFeatures.NAMES.keys.toList(), pro.map { it.name })
         for (f in pro) assertEquals(ProFeatures.NAMES.getValue(f.name), f.label)
-        assertEquals("팀 근무표 만들기", Feature.TEAM_ROSTER.label)
+        assertEquals("팀 근무표 더 쓰기(팀 여러 개·자동 채우기)", Feature.TEAM_ROSTER.label)
     }
 
     private companion object {

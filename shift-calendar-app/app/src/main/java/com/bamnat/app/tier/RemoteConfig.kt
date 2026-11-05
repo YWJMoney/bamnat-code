@@ -37,6 +37,12 @@ data class LaunchConfig(
     val freeFeatures: Set<Feature> = emptySet(),
     val adQuietDays: Int = AdRules.QUIET_DAYS,
     val trialAskDays: Int = TrialConsent.ASK_BEFORE.toDays().toInt(),
+    /**
+     * 1.38 [GROW-06] Phase 3 free limits, from the server so they move without an update (사용자 2026-11-05: 팀 1개·직원 3명 무료; a
+     * '5명 추가당 월 5,000원' 확장 팩 is still to be talked over, so [Feature.TEAM_ROSTER]/[Feature.BOSS_STAFF] open the rest for now).
+     */
+    val freeTeams: Int = FREE_TEAMS,
+    val freeStaff: Int = FREE_STAFF,
     val fetchedAt: Instant? = null,
     /** [SRV-04] The developer app's notices, shown one at a time over the calendar. */
     val notices: List<AppNotice> = emptyList(),
@@ -72,7 +78,7 @@ data class LaunchConfig(
 
     fun toJson(): JSONObject = JSONObject().put("billingLive", billingLive).put("launchedAt", launchedAt?.toString() ?: JSONObject.NULL)
         .put("thanksMonths", thanksMonths).put("freeFeatures", JSONArray(freeFeatures.map { it.name }))
-        .put("adQuietDays", adQuietDays).put("trialAskDays", trialAskDays).put("fetchedAt", fetchedAt?.toString() ?: JSONObject.NULL)
+        .put("adQuietDays", adQuietDays).put("trialAskDays", trialAskDays).put("freeTeams", freeTeams).put("freeStaff", freeStaff).put("fetchedAt", fetchedAt?.toString() ?: JSONObject.NULL)
         .put("notices", JSONArray(notices.map { n ->
             JSONObject().put("id", n.id).put("title", n.title).put("body", n.body).put("level", if (n.important) "important" else "info")
                 .put("from", Instant.ofEpochMilli(n.from).toString()).put("until", Instant.ofEpochMilli(n.until).toString())
@@ -92,6 +98,10 @@ data class LaunchConfig(
         .put("fetchedElapsed", fetchedElapsed ?: JSONObject.NULL).put("fetchedBoot", fetchedBoot ?: JSONObject.NULL)
 
     companion object {
+        /** 1.38 [GROW-06] 팀 하나·직원 셋은 무료 (사용자 2026-11-05). */
+        const val FREE_TEAMS = 1
+        const val FREE_STAFF = 3
+
         /** The server's answer read strictly: a wrong shape is an error, so the last good answer stays. */
         fun parse(o: JSONObject, now: Instant): LaunchConfig {
             // [FLAG-06] A 1.27 server always sends billingLive; a 1.28 one sends flags (and billingLive for older apps).
@@ -107,6 +117,8 @@ data class LaunchConfig(
                 freeFeatures = names.mapNotNull { n -> Feature.entries.firstOrNull { it.name == n } }.filter { it.minTier > Tier.FREE }.toSet(),
                 adQuietDays = o.optInt("adQuietDays", AdRules.QUIET_DAYS).coerceIn(0, 30),
                 trialAskDays = o.optInt("trialAskDays", TrialConsent.ASK_BEFORE.toDays().toInt()).coerceIn(1, 30),
+                freeTeams = o.optInt("freeTeams", FREE_TEAMS).coerceIn(1, 20),
+                freeStaff = o.optInt("freeStaff", FREE_STAFF).coerceIn(1, 100),
                 fetchedAt = now,
                 notices = o.optJSONArray("notices")?.let { a -> (0 until a.length()).map { notice(a.getJSONObject(it)) } }.orEmpty().take(AppNoticesMax),
                 // A switch of a newer server is skipped; this app has nothing of it to pause.

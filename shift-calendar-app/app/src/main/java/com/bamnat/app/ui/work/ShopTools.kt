@@ -232,7 +232,16 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
     val roster = tools.roster
     val cost = remember(roster, month) { LaborCost.month(roster, month) }
     val sales = remember(book.sales, month) { book.sales.filter { YearMonth.from(it.date) == month }.sumOf { it.sales } }
-    SectionCard(title = "직원 인건비 (${month.monthValue}월)", trailing = { TextButton(onClick = { open = true }) { Text(if (roster.staff.isEmpty()) "근무표 짜기" else "근무표") } }) {
+    // 1.38 [P3-03] 급여 대장 behind `boss.payroll` (꺼진 채 개발, 파일럿 사업장만).
+    val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
+    val payroll = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+    var ledgerOpen by rememberSaveable { mutableStateOf(false) }
+    SectionCard(title = "직원 인건비 (${month.monthValue}월)", trailing = {
+        Row {
+            if (payroll) TextButton(onClick = { ledgerOpen = true }) { Text("급여 대장") }
+            TextButton(onClick = { open = true }) { Text(if (roster.staff.isEmpty()) "근무표 짜기" else "근무표") }
+        }
+    }) {
         if (roster.staff.isEmpty()) {
             Hint("알바생 이름·시급·요일별 시간을 적으면 주휴수당과 4대보험까지 한 달 인건비를 계산하고, 매출 대비 인건비율을 보여 드려요.")
             return@SectionCard
@@ -255,6 +264,7 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
         Hint("근무표대로 셌어요. 야간·휴일 가산과 산재보험은 빠져 있어요. 참고용이에요.", Modifier.padding(top = 6.dp))
     }
     if (open) StaffScreen(calendarId, month) { open = false }
+    if (ledgerOpen) PayrollScreen(roster, month) { ledgerOpen = false }
 }
 
 private val DEFAULT_SHIFT = StaffShift(LocalTime.of(9, 0), LocalTime.of(13, 0))

@@ -3433,7 +3433,7 @@ function adminApp(L, BUILD, M) {
 
   const FLAG_STATE = { forced_off: ["bad", "강제로 끔"], forced_on: ["info", "강제로 켬"], on: ["ok", "켜짐"], waiting: ["warn", "대기"], off: ["", "꺼짐"] };
   const FLAG_SHOW = [["all", "전체"], ["waiting", "대기"], ["on", "켜짐"], ["forced_off", "강제로 끔"], ["cleanup", "정리 대상"]];
-  const FLAG_GROUPS = { money: "결제·광고", type: "근무 유형", law: "법 시행", server: "서버 기능", stats: "사용 통계", free: "무료로 연 프로 기능" };
+  const FLAG_GROUPS = { money: "결제·광고", type: "근무 유형", law: "법 시행", server: "서버 기능", stats: "사용 통계", free: "무료로 연 프로 기능", phase3: "Phase 3(꺼진 채·파일럿)" };
   /** 1.22's 기능 스위치 by their flag (운영 screen's card links each to its flag). */
   const SWITCH_FLAGS = { PLAZA_WRITE: "plaza.write", COMPANY_REPORT: "company.report", INQUIRY_PHOTOS: "inquiry.photos", SHARE_CREATE: "share.create",
     USAGE_STATS: "usage.stats", PLAZA_NEWS: "plaza.news" };
