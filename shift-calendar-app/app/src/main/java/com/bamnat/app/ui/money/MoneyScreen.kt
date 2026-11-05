@@ -605,7 +605,7 @@ fun MoneyScreen(
     }
     // bc7e2d43 PC 확인 LOW-8 (빠른 설정 '돈 적기'를 닫으면 설정 앱이 아니라 밤낮 가계부가 남음): opened from the tile or the widget,
     // closing the sheet goes back to where it was opened.
-    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val activity = androidx.activity.compose.LocalActivity.current
     LaunchedEffect(adding) {
         if (adding == null && fromOutside) { fromOutside = false; activity?.moveTaskToBack(true) }
     }

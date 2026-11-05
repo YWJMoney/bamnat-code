@@ -290,6 +290,8 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             onConfirm = { confirmOff = false; vm.setAlarmsEnabled(false) },
         )
     }
+    // [EASE-17][EASE-21] 1.38: the next alarm, 이번만 끄기 and whether it will ring, before anything else.
+    AlarmTrustCard(settings, onOpenDiagnostics)
     SectionCard(title = null) {
         SwitchRow(
             "알람 사용",
@@ -306,7 +308,7 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         for ((i, t) in ringing.withIndex()) {
             if (i > 0) HorizontalDivider()
             val times = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
-                .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }
+                .joinToString(" · ") { com.bamnat.app.ui.components.alarmClock(t.start!!, it.offsetMinutes) }
             NavRow(t.name, "${Fmt.time(t.start)} 시작 · " + if (times.isEmpty()) "켜진 알람 없음" else "알람 $times", onOpenShiftTypes)
             // [J133-21] 1.33 (실사용 테스트 "야간 알람 2시간 전이 세 단계 안쪽, 빠른 칩에 2시간이 없어요"): the first alarm right here.
             val first = t.alarms.filter { it.enabled }.maxOfOrNull { it.offsetMinutes }
@@ -1254,7 +1256,7 @@ private fun MoveAllAlarmsDialog(ringing: List<com.bamnat.core.model.ShiftType>, 
     val say: (Int) -> String = { m -> when { m > 0 -> "${m}분 일찍"; m < 0 -> "${-m}분 늦게"; else -> "그대로" } }
     val sample = ringing.first()
     fun times(t: com.bamnat.core.model.ShiftType) = t.alarms.filter { it.enabled }.sortedByDescending { it.offsetMinutes }
-        .joinToString(" · ") { Fmt.time(t.start!!.minusMinutes(it.offsetMinutes.toLong())) }.ifEmpty { "켜진 알람 없음" }
+        .joinToString(" · ") { com.bamnat.app.ui.components.alarmClock(t.start!!, it.offsetMinutes) }.ifEmpty { "켜진 알람 없음" }
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("모든 근무 알람 옮기기") },

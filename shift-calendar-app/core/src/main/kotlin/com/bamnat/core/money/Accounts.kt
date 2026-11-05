@@ -39,6 +39,12 @@ data class MoneyAccount(
     val hidden: Boolean = false,
     /** A credit card's bill three days ahead and on the day, like the fixed costs [LEDG-05]. */
     val remind: Boolean = true,
+    /** 1.38 [LEDH-25] 대출·빌린 돈: 연 이자율(%)과 매달 갚는 돈. 0이면 이자 없음·정하지 않음. */
+    val rate: Double = 0.0,
+    val monthlyPay: Long = 0,
+    /** 1.38 [LEDH-27] 카드의 전월 실적 구간(원, 작은 것부터)과 실적에 들지 않는 분류. */
+    val perfTiers: List<Long> = emptyList(),
+    val perfSkip: List<String> = emptyList(),
 ) {
     val isCredit: Boolean get() = type == AccountType.CREDIT
     val isCard: Boolean get() = type == AccountType.CREDIT || type == AccountType.CHECK

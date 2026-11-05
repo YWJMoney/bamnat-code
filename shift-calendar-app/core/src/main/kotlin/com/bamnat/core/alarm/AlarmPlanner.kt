@@ -16,11 +16,13 @@ data class PlannedAlarm(
     val shiftTypeId: Long,
     /** Empty when the day has no shift. */
     val shiftName: String,
-    /** Minutes before the shift start; negative when a hand-set alarm rings after it. */
+    /** Minutes before the shift start; negative when it rings after it (set by hand, or [EASE-18] 다음날). */
     val offsetMinutes: Int,
     val soundUri: String?,
     /** Set by hand for this date from the calendar. */
     val custom: Boolean = false,
+    /** [EASE-20] The shift's colour (ARGB), for the ringing screen; 0 when the day has no shift. */
+    val colorArgb: Long = 0,
 )
 
 /**
@@ -84,6 +86,7 @@ object AlarmPlanner {
                     offsetMinutes = if (start != null) Duration.between(at, date.atTime(start)).toMinutes().toInt() else 0,
                     soundUri = type?.alarmSoundUri,
                     custom = true,
+                    colorArgb = type?.colorArgb ?: 0,
                 )
             }
         } else {
@@ -92,7 +95,7 @@ object AlarmPlanner {
                 val t = e.covered ?: return@flatMap emptyList()
                 val at = e.from ?: return@flatMap emptyList()
                 t.activeAlarms.map { spec ->
-                    val offset = spec.offsetMinutes.coerceIn(0, MAX_OFFSET_MINUTES)
+                    val offset = spec.offsetMinutes.coerceIn(-MAX_OFFSET_MINUTES, MAX_OFFSET_MINUTES) // [EASE-18] below zero: after the start
                     PlannedAlarm(
                         triggerAt = at.minusMinutes(offset.toLong()),
                         shiftDate = date,
@@ -101,12 +104,13 @@ object AlarmPlanner {
                         shiftName = t.name,
                         offsetMinutes = offset,
                         soundUri = t.alarmSoundUri,
+                        colorArgb = t.colorArgb,
                     )
                 }
             }
             if (type == null || start == null) return second.distinctBy { it.triggerAt }.sortedBy { it.triggerAt }
             second + type.activeAlarms.map { spec ->
-                val offset = spec.offsetMinutes.coerceIn(0, MAX_OFFSET_MINUTES)
+                val offset = spec.offsetMinutes.coerceIn(-MAX_OFFSET_MINUTES, MAX_OFFSET_MINUTES) // [EASE-18] below zero: after the start
                 PlannedAlarm(
                     triggerAt = date.atTime(start).minusMinutes(offset.toLong()),
                     shiftDate = date,
@@ -115,6 +119,7 @@ object AlarmPlanner {
                     shiftName = type.name,
                     offsetMinutes = offset,
                     soundUri = type.alarmSoundUri,
+                    colorArgb = type.colorArgb,
                 )
             }
         }
@@ -136,6 +141,6 @@ object AlarmPlanner {
         return RestDay(date, was, alarmsOn(after, date))
     }
 
-    /** Offsets are limited to 24h so the two-day search window above is always enough. */
+    /** Offsets are limited to 24h either way so the two-day search window above is always enough. */
     const val MAX_OFFSET_MINUTES = 24 * 60
 }

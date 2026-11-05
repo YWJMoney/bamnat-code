@@ -24,6 +24,15 @@ class TimeWheelFlingTest {
         assertTrue(WHEEL_MAX_FLING_ROWS <= 2)
     }
 
+    /** 1.37 LOW: a long swipe ends where the finger let go; a short flick still adds its row. */
+    @Test
+    fun longSwipeGetsNoExtraRows() {
+        assertEquals(0, wheelFlingRowsAfterDrag(20_000f, 3))
+        assertEquals(0, wheelFlingRowsAfterDrag(-20_000f, -4))
+        assertEquals(1, wheelFlingRowsAfterDrag(1000f, 1))
+        assertEquals(WHEEL_MAX_FLING_ROWS, wheelFlingRowsAfterDrag(20_000f, 0))
+    }
+
     @Test
     fun changeNoteNamesThePartAndBothTimes() {
         assertEquals("끝 18:30 → 07:30으로 바뀌어요", timeChangeNote("끝", LocalTime.of(18, 30), LocalTime.of(7, 30)))
