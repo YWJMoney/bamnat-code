@@ -328,6 +328,8 @@ interface RecipeApi {
     suspend fun image(device: String, webp: ByteArray): String = throw CompanyException("offline")
     /** The address of a cover picture, for the image loader (the maker sees a waiting one with its device header). */
     fun imageUrl(id: String): String? = null
+    /** 1.38 [STM-06] 밤낮 재료: 운영자가 그린 색 아이콘·배경 중 이 판이 쓸 수 있는 공개된 것. */
+    suspend fun materials(): List<StudioMaterial> = emptyList()
     /** [MAT-06] 1.36 내 글꼴 나누기: an open font (its maker lets others use it, as the user said); the server's id (the phone's). */
     suspend fun fontSend(device: String, id: String, name: String, license: String, ttf: ByteArray, fallback: String? = null): FontSent = throw CompanyException("offline")
     /** [MAT-06] A shared font's name and its file, or null when the server does not have it (or took it down). */
@@ -670,6 +672,10 @@ class RecipeClient(
 
     override suspend fun fontReport(device: String, id: String, why: String) = serverCall {
         call("POST", "/api/recipes/fonts/$id/report", JSONObject().put("device", device).put("why", why)); Unit
+    }
+
+    override suspend fun materials(): List<StudioMaterial> = readCall {
+        call("GET", "/api/recipes/materials?app=${BuildConfig.VERSION_CODE}").optJSONArray("items").objects().mapNotNull(StudioMaterial::parse)
     }
 
     override fun imageUrl(id: String): String? = if (enabled && com.bamnat.core.recipe.Cover.IMAGE.matches(id)) "$baseUrl/api/recipes/images/$id" else null
