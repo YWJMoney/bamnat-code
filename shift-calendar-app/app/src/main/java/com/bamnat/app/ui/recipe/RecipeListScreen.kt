@@ -130,7 +130,7 @@ fun RecipeEntryCard(onOpen: () -> Unit, onMake: () -> Unit, modifier: Modifier =
                         Spacer(Modifier.width(10.dp))
                         Column(Modifier.weight(1f)) {
                             Text(item.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text("좋아요 ${item.likes} · 쓰는 분 ${item.users}", style = MaterialTheme.typography.labelSmall,
+                            Text("좋아요 ${item.likes} · 넣은 분 ${item.users}", style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -172,8 +172,8 @@ internal fun ShowcaseStrip(items: List<RecipeItem>, onItem: (String) -> Unit) {
         items.take(SHOWCASE_SHOWN).forEach { item ->
             OutlinedCard(Modifier.width(168.dp).clickable(onClickLabel = "레시피 보기") { onItem(item.code) }) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // [FREE-08] A theme shows as itself; the rest by their cover.
-                    item.thumb()?.let { ThemeThumb(it, width = 148.dp) } ?: RecipeCover(item.cover, size = 56.dp)
+                    // [MKV-01] 1.37: every work as it really looks (a theme on its calendar, a tab on its page, rules as their notifications).
+                    MarketShot(item, 148.dp, LocalContext.current.appContainer.settingsRepository.current.workStyle, onClick = { onItem(item.code) })
                     Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.heightIn(min = 40.dp))
                     Text(item.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -422,13 +422,14 @@ fun RecipeListScreen(
                     }
                 }
             }
-            // [HUB-04] Themes are picked by eye: two big pictures a row; the rest as rows.
-            if (state.kind == RecipeClient.SCOPE_THEME) items(state.items.chunked(2), key = { row -> row.first().code }) { row ->
+            // [HUB-04] Themes are picked by eye: two big pictures a row. [MKV-01] 1.37 (사용자 2026-11-05 "실제로 해당 테마나 기능들의 모습을"):
+            // 기능별 탭 and 규칙·단추 too, each drawn as it really looks, so every 구간 is picked by eye the same way.
+            items(state.items.chunked(2), key = { row -> row.first().code }) { row ->
                 Row(Modifier.widthIn(max = 640.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    row.forEach { item -> ThemeTile(item, Modifier.weight(1f)) { onOpen(item.code) } }
+                    row.forEach { item -> ThemeTile(item, vm.style, Modifier.weight(1f)) { onOpen(item.code) } }
                     if (row.size == 1) Spacer(Modifier.weight(1f))
                 }
-            } else items(state.items, key = { it.code }) { item -> RecipeRow(item, Modifier.widthIn(max = 640.dp), vm.style) { onOpen(item.code) } }
+            }
             if (state.loading) item { CircularProgressIndicator(Modifier.padding(16.dp)) }
             else if (state.next != null) item { TextButton(onClick = { vm.load(more = true) }) { Text("더 보기") } }
         }
@@ -443,7 +444,8 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
     onClick: () -> Unit) {
     Card(modifier.fillMaxWidth().clickable(onClickLabel = "레시피 보기", onClick = onClick)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            RecipeCover(item.cover)
+            // [MKV-01] 1.37: the work as it really looks, in place of its cover and small swatch.
+            MarketShot(item, 64.dp, style, onClick)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -456,31 +458,40 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // [MKX-01] One tab's: which tab it changes, said once.
                 if (item.scope == "tab") item.tabs.firstOrNull()?.let { t ->
-                    Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "만 바꿔요" else " 탭만 바꿔요"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                    Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만 들어가요" else " 탭에만 들어가요"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                 }
                 Text(buildString {
-                    append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 쓰는 분 ${item.users}")
+                    append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣은 분 ${item.users}")
                     item.kept?.let { append(" · 7일 유지 $it%") }
                     append(" · ").append(RecipeDescribe.styles(com.bamnat.core.recipe.Recipe(item.title, styles = item.styles, pieces = emptyList())))
                 }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            // [FREE-08] The theme itself, to pick by eye.
-            item.thumb()?.let { Spacer(Modifier.width(8.dp)); ThemeThumb(it, width = 84.dp) }
         }
     }
 }
 
-/** [HUB-04] One theme in 장터's grid: the theme drawn large, its name and how many like and wear it. */
+/**
+ * [HUB-04] One work in 장터's grid: the work drawn large, its name and how many like and wear it. [MKV-01] 1.37: the picture is the work
+ * as it really looks ([MarketShot]); a 기능별 탭 says which tab, a 추천 says so.
+ */
 @Composable
-private fun ThemeTile(item: RecipeItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    Card(modifier.clickable(onClickLabel = "테마 보기", onClick = onClick)) {
+private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Card(modifier.clickable(onClickLabel = if (item.scope == "tab") "작품 보기" else "테마 보기", onClick = onClick)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
-                item.thumb()?.let { ThemeThumb(it, width = maxWidth) } ?: RecipeCover(item.cover, size = maxWidth)
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                MarketShot(item, maxWidth, style, onClick)
             }
-            Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // PC 확인 e50bb622: 추천 by the name, not over the picture's own title.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (item.showcase) Badge("추천")
+            }
+            if (item.scope == "tab") item.tabs.firstOrNull()?.let { t ->
+                Text("🧩 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만" else " 탭에만"), style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             // 1.36 [VIL-18] 오래 쓰는 분이 많은 것과 새 창작자의 첫 작품이 눈에 띄게.
-            Text("♥ ${item.likes} · 입은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: ""),
+            Text("♥ ${item.likes} · 넣은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: ""),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (item.newMaker) Text("새 창작자", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         }

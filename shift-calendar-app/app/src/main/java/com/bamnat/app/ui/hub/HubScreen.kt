@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.ui.company.SoftCard
-import com.bamnat.app.ui.recipe.thumb
 import com.bamnat.core.recipe.RecipeDescribe
 import com.bamnat.core.work.WorkStyle
 
@@ -217,9 +216,14 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     var folded by remember { mutableStateOf(prefs.getString("todayFolded", null) == today) }
     if (folded) return
     var looked by remember(style, today) { mutableStateOf(false) }
+    // PC 확인 e50bb622 (인터넷 없이 켜면 '아직 작품이 없어요'): when the list could not be had, nothing is said rather than "none".
+    var offline by remember(style, today) { mutableStateOf(false) }
     val item by androidx.compose.runtime.produceState<com.bamnat.app.recipe.RecipeItem?>(null, style, today) {
-        val pool = runCatching { c.recipeApi.picks(style) }.getOrDefault(emptyList())
-            .ifEmpty { runCatching { c.recipeApi.list(style, "hot").items.take(5) }.getOrDefault(emptyList()) }
+        val picks = runCatching { c.recipeApi.picks(style) }
+        val hot = if (picks.getOrNull().isNullOrEmpty()) runCatching { c.recipeApi.list(style, "hot").items.take(5) } else null
+        offline = picks.isFailure && hot?.isFailure != false
+        val pool = picks.getOrDefault(emptyList())
+            .ifEmpty { hot?.getOrDefault(emptyList()).orEmpty() }
             // PC 확인 V40: only what is made for this kind of work (a 교대 theme is no 오늘의 하나 for 알바).
             .filter { !c.recipes.hides(it) && (style == null || it.styles.isEmpty() || style in it.styles) }
         value = pool.takeIf { it.isNotEmpty() }?.let { it[(com.bamnat.core.time.Today.date().dayOfYear) % it.size] }
@@ -228,7 +232,7 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     val r = item
     // PC 확인 V40: nothing for this kind of work yet: one line asking for its first, folded with 오늘은 그만 like the rest.
     if (r == null) {
-        if (!looked || style == null) return
+        if (!looked || style == null || offline) return
         val bigEmpty = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
         val emptyButtons: @Composable () -> Unit = {
             TextButton(onClick = onMake) { Text("만들기") }
@@ -248,11 +252,15 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
         // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.
         // PC 확인: big enough to see the week, not an icon.
-        r.thumb()?.let { com.bamnat.app.ui.recipe.ThemeThumb(it, width = 88.dp); Spacer(Modifier.padding(start = 8.dp)) }
+        // [MKV-01] 1.37: the work as it really looks, as in 장터.
+        com.bamnat.app.ui.recipe.MarketShot(r, 60.dp, style, onClick = { onRecipe(r.code) }); Spacer(Modifier.padding(start = 8.dp))
         // PC 확인 7b26965a ("아주 크게"에서 제목이 세로로 꺾여요): with big letters the two buttons go under the title.
         val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
         val buttons: @Composable () -> Unit = {
-            TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) { Text("입어 보기") }
+            TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) {
+                // 가계부 PC LOW-2: a work of one tab or of rules (가계부 틀 …) is not a look to wear.
+                Text(if (r.scope == null || r.scope == "theme") "입어 보기" else "살펴보기")
+            }
             TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
         }
         Column(Modifier.weight(1f)) {

@@ -142,7 +142,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         val r = s.recipe
         if (doc == null || r == null) {
             Column(Modifier.fillMaxSize().padding(padding).padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (s.error != null) { Text(s.error!!); TextButton(onClick = vm::load) { Text("다시 해 보기") } } else CircularProgressIndicator()
+                if (s.error != null) {
+                    Text(s.error!!)
+                    // PC 확인 edb46c62 LOW: a work from a newer app cannot open by trying again; only an update helps.
+                    if (!s.error!!.startsWith("새 판 밤낮")) TextButton(onClick = vm::load) { Text("다시 해 보기") }
+                } else CircularProgressIndicator()
             }
             return@Scaffold
         }
@@ -169,7 +173,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         }
                     }
                 }
-                Text("쓰는 분 ${doc.item.users + s.usersPlus}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
+                Text("넣은 분 ${doc.item.users + s.usersPlus}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 VoteRow(s, vm, onDislike = { disliking = true })
                 if (doc.mine) MakerCard(doc, onNewVersion = vm.body()?.let { b -> { onNewVersion(b) } })
@@ -725,7 +729,7 @@ private fun ForkRow(k: com.bamnat.app.recipe.RecipeItem, mineLook: com.bamnat.ap
                 Text(k.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Text("바꾼 곳: $words", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                Text("${k.nick ?: "이름 없음"} · 좋아요 ${k.likes} · 쓰는 분 ${k.users}", style = MaterialTheme.typography.labelSmall,
+                Text("${k.nick ?: "이름 없음"} · 좋아요 ${k.likes} · 넣은 분 ${k.users}", style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

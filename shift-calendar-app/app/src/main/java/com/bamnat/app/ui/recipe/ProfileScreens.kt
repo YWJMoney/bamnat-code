@@ -671,13 +671,13 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
             } else Text(it, style = MaterialTheme.typography.bodyLarge)
         }
             ?: if (mine) Text("한 줄 소개를 적어 보세요 (프로필 고치기)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) else Unit
-        // 숫자 줄: 테마 · 기능별 탭 · 팔로워 · 팔로잉 · 쓰는 분
+        // 숫자 줄: 테마 · 기능별 탭 · 팔로워 · 팔로잉 · 넣은 분
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Count(p.themes.size, "테마")
             Count(p.tabRecipes.size, "기능별 탭")
             Count(p.followers, "팔로워", if (mine) ({ onPeople("followers") }) else null)
             Count(p.followingCount, "팔로잉", if (mine) ({ onPeople("following") }) else null)
-            Count(p.users, "쓰는 분")
+            Count(p.users, "넣은 분")
         }
         if (!p.mine) {
             if (vm.canFollow) {
@@ -721,15 +721,16 @@ private fun Grid(items: List<RecipeItem>, pins: List<String>, empty: String, onO
 internal fun WorkTile(item: RecipeItem, pinned: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Card(modifier.clickable(onClickLabel = "작품 보기", onClick = onClick)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                item.look?.let { ThemeThumb(it, width = maxWidth) } ?: RecipeCover(item.cover, size = maxWidth)
+            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                // [MKV-01] 1.37: the work as it really looks, as in 장터.
+                MarketShot(item, maxWidth, LocalViewerStyle.current, onClick)
                 if (pinned) Text("📌", modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).semantics { contentDescription = "대표 작품" })
             }
             Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val viewer = LocalViewerStyle.current
             Text(buildString {
                 if (item.scope == "tab") item.tabs.firstOrNull()?.let { append("🧩 ").append(marketTabLabel(it, viewer)).append(" · ") }
-                append("♥ ${item.likes} · 쓰는 분 ${item.users}")
+                append("♥ ${item.likes} · 넣은 분 ${item.users}")
             }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -741,7 +742,7 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
     val lines = buildList<Pair<String, (() -> Unit)?>> {
         if (b.newFollowers > 0) add("👤 새 팔로워 ${b.newFollowers}명" + (b.followerFaces.firstOrNull()?.nick?.let { " ($it 님 등)" } ?: "") to onPeople)
         b.milestones.filter { it.key in unseen }.forEach { m ->
-            add((if (m.kind == "users") "🎉 ‘${m.title}’ 쓰는 분 ${m.n}명 넘음" else "❤️ ‘${m.title}’ 좋아요 ${m.n}개 넘음") to { onOpen(m.code) })
+            add((if (m.kind == "users") "🎉 ‘${m.title}’ 넣은 분 ${m.n}명 넘음" else "❤️ ‘${m.title}’ 좋아요 ${m.n}개 넘음") to { onOpen(m.code) })
         }
         b.questions.forEach { (code, title, body) -> add("❓ ‘$title’에 질문: $body" to { onOpen(code) }) }
         b.remixes.forEach { (code, title, parent) -> add("🔁 내 ‘$parent’${com.bamnat.app.ui.Fmt.obj("‘$parent’")} 고친 ‘$title’" to { onOpen(code) }) }
@@ -776,7 +777,7 @@ private fun SetCard(set: MakerSet, works: List<RecipeItem>, mine: Boolean, onOpe
     Card(Modifier.fillMaxWidth().clickable(onClickLabel = "모음 보기", onClick = onOpen)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                items.take(4).forEach { r -> r.look?.let { ThemeThumb(it, width = 64.dp) } ?: RecipeCover(r.cover, size = 64.dp) }
+                items.take(4).forEach { r -> MarketShot(r, 64.dp, viewer, onOpen) }
             }
             Text(set.title, style = MaterialTheme.typography.titleMedium)
             if (set.summary.isNotEmpty()) Text(set.summary, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1317,7 +1318,7 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit
             val st = s.stats
             if (st == null) { Text(s.error ?: "불러오는 중이에요"); if (s.error != null) TextButton(onClick = vm::load) { Text("다시 해 보기") }; return@Column }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Count(st.week, "이번 주 넣은 수"); Count(st.users, "쓰는 분 모두"); Count(st.likes, "좋아요 모두")
+                Count(st.week, "이번 주 넣은 수"); Count(st.users, "넣은 분 모두"); Count(st.likes, "좋아요 모두")
             }
             Text("누가 썼는지는 서버도 몰라요. 작품과 날마다의 수만 세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (st.items.isEmpty()) Text("장터에 공개로 올린 작품이 생기면 여기 보여요")
@@ -1325,7 +1326,7 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit
                 Card(Modifier.fillMaxWidth().clickable(onClickLabel = "작품 보기") { onOpen(i.code) }) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(i.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("쓰는 분 ${i.users} · 이번 주 ${i.week} · 좋아요 ${i.likes} · 안좋아요 ${i.dislikes}" + (i.kept?.let { " · 7일 뒤에도 $it%" } ?: ""),
+                        Text("넣은 분 ${i.users} · 이번 주 ${i.week} · 좋아요 ${i.likes} · 안좋아요 ${i.dislikes}" + (i.kept?.let { " · 7일 뒤에도 $it%" } ?: ""),
                             style = MaterialTheme.typography.bodySmall)
                         if (vm.pro) Bars(i.days) else if (i === st.items.first()) TextButton(onClick = onPro) { Text("프로 꾸미기로 28일 날별 그래프 보기") }
                     }

@@ -193,7 +193,13 @@ internal fun Recipe.piece(kind: PieceKind) = pieces.firstOrNull { it.kind == kin
 @Composable
 internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, onPick: () -> Unit = {},
                        /** [TRY-04] 1.36: one scroll for both sides of 비교, so they move together (R-50). */
-                       scroll: androidx.compose.foundation.ScrollState? = null) {
+                       scroll: androidx.compose.foundation.ScrollState? = null,
+                       /** 장터 카드 실제 모습: drawn first on the screen (the pay page, the widget on a home screen, the alarm screen). */
+                       lead: (@Composable () -> Unit)? = null,
+                       /** With [lead]: the tab's own example is left out. */
+                       only: Boolean = false,
+                       /** False for what is not inside the app (the home screen's widget, the alarm screen): no tab bar. */
+                       bar: Boolean = true) {
     val resolved = remember(r) { r.pieces.associate { p -> p.kind to runCatching { RecipeResolve.piece(r, p, RecipeResolve.answers(r, emptyMap())) }.getOrDefault(p.values) } }
     val corners = resolved[PieceKind.PHOTO_LOOK]?.get("corners") as? String
     @Suppress("UNCHECKED_CAST")
@@ -231,7 +237,8 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                 com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.weight(1f).fillMaxWidth()) {
                 Column(Modifier.fillMaxSize().clickable(onClickLabel = "이 화면 고치기", onClick = onPick).verticalScroll(scroll ?: rememberScrollState()).padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    when (tab) {
+                    lead?.invoke()
+                    if (lead == null || !only) when (tab) {
                         TabOrder.CALENDAR -> MockCalendar(resolved, style)
                         TabOrder.MONEY -> {
                             MockParts(resolved[PieceKind.CARDS]?.get("money") as? String, MoneyPart.entries.map { Triple(it.id, it.label,
@@ -243,7 +250,7 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                             com.bamnat.app.ui.settings.MoneySample(resolved[PieceKind.MONEY_LOOK]?.let(::moneyLookOf) ?: com.bamnat.core.recipe.MoneyLook(),
                                 com.bamnat.app.ui.studio.rememberMyMoney()) {}
                         }
-                        TabOrder.MEMOS -> MockMemos(resolved)
+                        TabOrder.MEMOS -> MockMemos(resolved, style)
                         TabOrder.STATS -> MockParts(resolved[PieceKind.CARDS]?.get("stats") as? String, StatsPart.entries.map { Triple(it.id, it.label, it.what) }, bars = true,
                             fits = { id -> fitsHere(com.bamnat.core.guide.FitSurface.STATS_PARTS, id, style) }, page = TabOrder.STATS)
                         TabOrder.PLAZA -> MockNote(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji.orEmpty() + "마을",
@@ -255,7 +262,7 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                 }
                 // PC 확인 S2 (어두운 한 색에서도 예시 맨 아래 탭 줄만 밝음): the tab bar in the screen's look too, as the phone draws it.
                 val barShape = RoundedCornerShape(bottomStart = 26.dp, bottomEnd = 26.dp)
-                CompositionLocalProvider(com.bamnat.app.ui.theme.LocalScreenLooks provides skin) {
+                if (bar) CompositionLocalProvider(com.bamnat.app.ui.theme.LocalScreenLooks provides skin) {
                 com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.fillMaxWidth().clip(barShape)) {
                 val barPart = blueprint.style("app.tabs")
                 Row(Modifier.fillMaxWidth().partSpot("app.tabs").background(barPart.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.surfaceContainer, barShape).padding(vertical = 6.dp),
@@ -455,11 +462,13 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(d), off = true, blank = true) } }
     val start0 = if (blank != null) first.minusDays((first.dayOfWeek.value % 7).toLong()) else first
     val real = mine?.days ?: blank
+    // PC 확인 7b219467 (알바·현장 예시에 '월급날'·'인수인계'): the example's memos in each kind of work's own words.
     val memos = when (style) {
-        WorkStyle.HOURLY -> listOf(listOf("대타 문의"), emptyList(), listOf("주휴수당 확인"), emptyList(), listOf("친구 생일", "장보기"), emptyList(), listOf("급여일"))
-        WorkStyle.FIELD -> listOf(listOf("자재 주문", "현장 미팅"), emptyList(), listOf("공수 정리"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("대금 받는 날"))
-        WorkStyle.BUSINESS -> listOf(listOf("재료 주문"), emptyList(), listOf("휴무 안내 붙이기"), emptyList(), listOf("카드 매출 입금", "장보기"), emptyList(), listOf("부가세 자료"))
-        WorkStyle.INVEST -> listOf(listOf("실적 발표"), emptyList(), listOf("매매 일지"), emptyList(), listOf("배당 확인", "장보기"), emptyList(), listOf("리밸런싱"))
+        WorkStyle.HOURLY -> listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("대타 부탁"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("알바비 들어오는 날"))
+        WorkStyle.FIELD -> listOf(listOf("자재 챙기기", "택배 오는 날"), emptyList(), listOf("현장 이동"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("일당 받는 날"))
+        WorkStyle.BUSINESS -> listOf(listOf("재료 주문", "택배 오는 날"), emptyList(), listOf("단골 예약"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("카드 정산일"))
+        WorkStyle.INVEST -> listOf(listOf("실적 발표", "택배 오는 날"), emptyList(), listOf("매매 일지"), emptyList(), listOf("가족 모임", "장보기"), emptyList(), listOf("배당 들어오는 날"))
+        WorkStyle.DAY -> listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("주간 회의"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
         else -> listOf(listOf("병원 예약", "택배 오는 날"), emptyList(), listOf("인수인계"), emptyList(), listOf("가족 모임", "장보기", "헬스"), emptyList(), listOf("월급날"))
     }
     val sample = real ?: (0 until 14).map { i ->
@@ -589,7 +598,7 @@ private fun MockParts(line: String?, parts: List<Triple<String, String, String>>
 
 @Suppress("UNCHECKED_CAST")
 @Composable
-private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
+private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>, style: WorkStyle? = null) {
     val placed = PageLayout.decode(resolved[PieceKind.CARDS]?.get("memo") as? String).arrange(MemoPart.entries.toList()) { it.id }.filter { it.shown }
     placed.forEach { p ->
         when (p.part) {
@@ -597,7 +606,7 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
                 Text("🔍 제목·내용·#태그 찾기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             MemoPart.NOTEBOOKS -> Row(Modifier.partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("전체", "근무", "개인").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp),
+                listOf("전체", when (style) { WorkStyle.BUSINESS -> "가게"; WorkStyle.INVEST -> "매매"; WorkStyle.FIELD -> "현장"; else -> "근무" }, "개인").forEach { Text(it, Modifier.background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(horizontal = 8.dp, vertical = 3.dp),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer) }
             }
             else -> Unit
@@ -614,7 +623,7 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>) {
     // [CNV-11] 1.37 always there, so each memo card's parts (카드·제목·내용·날짜) can be picked on the canvas.
     // [CNV-12] My own memos on my phone (pinned first), the example ones for the 올리기 표지.
     val myMemos = com.bamnat.app.ui.studio.rememberMyMemos()
-    Box(Modifier.mockPick("memo")) { com.bamnat.app.ui.memo.MemoLookSample(resolved[PieceKind.MEMO_LOOK]?.let(::memoLookOf) ?: com.bamnat.core.recipe.MemoLook(), myMemos) {} }
+    Box(Modifier.mockPick("memo")) { com.bamnat.app.ui.memo.MemoLookSample(resolved[PieceKind.MEMO_LOOK]?.let(::memoLookOf) ?: com.bamnat.core.recipe.MemoLook(), myMemos, style) {} }
 }
 
 /** [FREE-04][FREE-06] A piece's values as the look they write (the same k=v line the settings keep). */

@@ -207,7 +207,8 @@ fun ThemeDrawer(
             starters.forEach { r ->
                 Column(Modifier.width(112.dp).clickable(onClickLabel = "테마 보기") { trying = Triple(r, "builtin:${r.title}", 0) },
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    swatchOf(r)?.let { ThemeThumb(it, width = 112.dp) }
+                    // [MKV-05] PC 확인 edb46c62 LOW: the same real look as the 장터 cards, not the old small swatch.
+                    BuiltInShot(r, r.title, 112.dp, style, onClick = { trying = Triple(r, "builtin:${r.title}", 0) })
                     Text(r.title, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     // [TAB-05] PC 확인 38d2d8e7: three 전문 달력 start on 목록, so each says how it differs.
                     if (r.title.endsWith("전문 달력") && r.summary.isNotBlank()) Text(r.summary, style = MaterialTheme.typography.labelSmall,
