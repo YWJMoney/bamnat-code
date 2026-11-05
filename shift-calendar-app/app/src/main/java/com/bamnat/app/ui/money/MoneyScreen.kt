@@ -279,7 +279,7 @@ class MoneyViewModel(
 
     /** The month with its wage estimate, off the main thread. */
     suspend fun month(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, month: YearMonth): MonthMoney =
-        withContext(Dispatchers.Default) { book.month(month, payEstimate(style, profile, snapshot, month)) }
+        withContext(Dispatchers.Default) { book.month(month, payEstimate(style, profile, snapshot, month), today = Today.date()) }
 
     /**
      * [LEDG-10] The month against the one before, and its year month by month, each with that
@@ -296,11 +296,11 @@ class MoneyViewModel(
         ).minOrNull()
         val pays = HashMap<YearMonth, Long?>()
         val at = { m: YearMonth ->
-            book.month(m, if (m.isAfter(now) || (since != null && m.isBefore(since))) null else pays.getOrPut(m) { payEstimate(style, profile, snapshot, m) })
+            book.month(m, if (m.isAfter(now) || (since != null && m.isBefore(since))) null else pays.getOrPut(m) { payEstimate(style, profile, snapshot, m) }, today = today)
         }
         val current = at(month)
         // [J133-62] 올해 들어온 돈 is money that came in: this month's pay still to come stays out of it.
-        val year = (1..12).map { YearMonth.of(month.year, it) }.map { m -> if (m == now) book.month(m, null) else at(m) }
+        val year = (1..12).map { YearMonth.of(month.year, it) }.map { m -> if (m == now) book.month(m, null, today = today) else at(m) }
         LedgerAnalysis(current, Reports.month(current, at(month.minusMonths(1)), book, today), Reports.year(month.year, year))
     }
 
@@ -620,7 +620,7 @@ fun MoneyScreen(
     // [UX-10] 1.25 Z (U7): opened again, the month shows with its wage estimate from the first frame, not without it and then with.
     val monthKey = "money:${vm.calendarId}:$month"
     val lastMonth by com.bamnat.app.ui.rememberLast(monthKey, book, style, profile, snapshot, month) { vm.month(book, style, profile, snapshot, month) }
-    val m = lastMonth ?: book.month(month)
+    val m = lastMonth ?: book.month(month, today = today)
     val analysis by com.bamnat.app.ui.rememberLast("money.report:${vm.calendarId}:$month", book, style, profile, snapshot, month,
         page == MoneyViewModel.Page.REPORT) {
         if (page == MoneyViewModel.Page.REPORT) vm.analysis(book, style, profile, snapshot, month, today)

@@ -161,7 +161,8 @@ object MoneyAhead {
                     else -> MoneyFlow(u.date, -c.amount, FlowKind.FIXED_OUT, c.name)
                 }
             }
-        val jobs = book.jobs.filter { it.unpaid > 0 }.mapNotNull { j ->
+        // 1.37 PC 6차: 가계약은 아직 정해진 돈이 아니라 앞으로 들어올 돈에 넣지 않아요.
+        val jobs = book.jobs.filter { it.unpaid > 0 && it.status != JobStatus.TENTATIVE }.mapNotNull { j ->
             val due = j.due ?: j.lastDate
             if (due.isBefore(today) || due.isAfter(until)) null else MoneyFlow(due, j.unpaid, FlowKind.JOB, j.title.ifBlank { j.client })
         }
@@ -176,7 +177,7 @@ object MoneyAhead {
 
     /** [LEDH-01] Late money: jobs and money owed past their promised day. */
     fun late(book: MoneyBook, today: LocalDate): Long =
-        book.jobs.filter { it.unpaid > 0 && (it.due ?: it.lastDate).isBefore(today) }.sumOf { it.unpaid } +
+        book.jobs.filter { it.unpaid > 0 && it.status != JobStatus.TENTATIVE && (it.due ?: it.lastDate).isBefore(today) }.sumOf { it.unpaid } +
             book.receivables.filter { it.left > 0 && it.due?.isBefore(today) == true }.sumOf { it.left }
 
     /**

@@ -98,7 +98,8 @@ fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
             Text(job.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") }
             val span = if (job.days > 1) "${Fmt.shortDate(job.date)}~${Fmt.shortDate(job.lastDate)} (${job.days}일)" else null
-            val line = listOfNotNull(if (showDate && span == null) Fmt.dayTitle(job.date) else null, span, time,
+            // 1.37 PC 6차: 날짜 창에서 일감이 완료인지 확정인지 안 보였어요. 상태를 맨 앞에.
+            val line = listOfNotNull(job.status.label, if (showDate && span == null) Fmt.dayTitle(job.date) else null, span, time,
                 job.client.ifBlank { null }, job.place.ifBlank { null })
                 .joinToString(" · ")
             if (line.isNotEmpty()) {

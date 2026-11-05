@@ -134,8 +134,8 @@ data class Job(
     /** [FLD-03] What the job is worth to the user: its pay, or for a cancelled one only what was already paid. */
     val earned: Long get() = if (cancelled) received else payable
 
-    /** 1.37 PC: the work is done: marked 완료, or its last day has passed (a 가계약 stays to come until it is confirmed). */
-    fun isDone(today: LocalDate): Boolean = !cancelled && (status == JobStatus.DONE || status != JobStatus.TENTATIVE && today.isAfter(lastDate))
+    /** 1.37 PC: the work is done: marked 완료, or its last day has come (today counts) (a 가계약 stays to come until it is confirmed). */
+    fun isDone(today: LocalDate): Boolean = !cancelled && (status == JobStatus.DONE || status != JobStatus.TENTATIVE && !today.isBefore(lastDate))
 
     /** [FLD-03] 입금 완료 follows from the money, not from a step the user picks. */
     val fullyPaid: Boolean get() = !cancelled && amount > 0 && unpaid == 0L
@@ -271,6 +271,10 @@ data class MonthMoney(
     val jobCosts: Long = 0,
     /** 3.3% held back on this month's jobs; already out of [jobEarned]. */
     val jobWithheld: Long = 0,
+    /** 1.37 PC 6차: jobs still to come (오늘 이후·가계약), out of [jobEarned] and [jobOwed] when the month was counted on a day. */
+    val jobAhead: Long = 0,
+    /** Done jobs not paid yet, when counted on a day; null keeps [jobEarned] − [jobReceived]. */
+    private val jobOwedDone: Long? = null,
     val sales: Long,
     val salesCosts: Long,
     val salesDays: Int,
@@ -292,7 +296,7 @@ data class MonthMoney(
     val salesNet: Long get() = sales - salesCosts
     val jobProfit: Long get() = jobEarned - jobCosts
     /** [RECV-04] This month's jobs not yet paid; shown beside 들어온 돈, never inside it. */
-    val jobOwed: Long get() = (jobEarned - jobReceived).coerceAtLeast(0)
+    val jobOwed: Long get() = jobOwedDone ?: (jobEarned - jobReceived).coerceAtLeast(0)
     val income: Long get() = payCounted + jobReceived + salesNet + otherIncome
     /** Ledger spending plus the jobs' materials and other costs. */
     val spent: Long get() = expenses + jobCosts
@@ -312,10 +316,14 @@ object MoneyCalculator {
         jobs: List<Job>,
         sales: List<DailySales>,
         payEstimate: Long? = null,
+        /** 1.37 PC 6차: counted on this day, a job is earned once done or past ([Job.isDone]), as the calendar's 번 돈. */
+        today: LocalDate? = null,
     ): MonthMoney {
         val inMonth = { d: LocalDate -> YearMonth.from(d) == month }
         val e = entries.filter { inMonth(it.date) }
-        val j = jobs.filter { inMonth(it.date) }
+        val all = jobs.filter { inMonth(it.date) }
+        val j = if (today == null) all else all.filter { it.cancelled || it.isDone(today) }
+        val ahead = if (today == null) emptyList() else all.filter { !it.cancelled && !it.isDone(today) }
         val s = sales.filter { inMonth(it.date) }
         val incomes = e.filter { it.kind == MoneyKind.INCOME }
         // [LEDG-11] A split income line counts its 급여 share as pay, the rest as other income ([com.bamnat.core.pay.PayGaps]).
@@ -329,10 +337,13 @@ object MoneyCalculator {
             payRecorded = salary,
             // [FLD-03] A cancelled job adds only the deposit it kept.
             jobEarned = j.sumOf { it.earned },
-            jobReceived = j.sumOf { it.received },
-            jobCount = j.count { !it.cancelled },
+            // Money already in counts whatever the job's state (선금 for a job still to come).
+            jobReceived = all.sumOf { it.received },
+            jobCount = all.count { !it.cancelled },
             jobCosts = j.sumOf { it.costs },
             jobWithheld = j.filter { !it.cancelled }.sumOf { it.withheld },
+            jobAhead = ahead.sumOf { it.payable },
+            jobOwedDone = today?.let { j.sumOf { it.unpaid } },
             sales = s.sumOf { it.sales },
             salesCosts = s.sumOf { it.costs },
             salesDays = s.count { it.sales != 0L || it.costs != 0L },
@@ -376,7 +387,8 @@ object MoneyCalculator {
 
     /** Jobs not fully paid, oldest first, up to [until] (future jobs are not owed yet) [WORK-02]. */
     fun unpaid(jobs: List<Job>, until: LocalDate): List<Job> =
-        jobs.filter { it.unpaid > 0 && !it.date.isAfter(until) }.sortedWith(compareBy({ it.date }, { it.id }))
+        // 1.37 PC 6차: 받을 돈은 끝났거나 마지막 날이 지난 일감만 (달력·통계와 같은 규칙).
+        jobs.filter { it.unpaid > 0 && it.isDone(until) }.sortedWith(compareBy({ it.date }, { it.id }))
 }
 
 /** Everything the user wrote down about money, as screens observe it. */
@@ -415,7 +427,7 @@ data class MoneyBook(
         return if (waiting.isEmpty()) this else copy(entries = seen, pending = pending + waiting)
     }
 
-    fun month(month: YearMonth, payEstimate: Long? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate)
+    fun month(month: YearMonth, payEstimate: Long? = null, today: LocalDate? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate, today)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
     /** [RECV-02] Everything still owed, written down or left on a job. */
     fun owed(today: LocalDate) = Receivables.owed(receivables, jobs, today)
