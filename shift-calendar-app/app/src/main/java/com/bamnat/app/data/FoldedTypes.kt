@@ -49,8 +49,11 @@ class FoldedTypes(context: Context?) {
         val from: com.bamnat.core.work.WorkStyle? = null,
     )
 
-    fun stopped(calendar: String): StoppedCycle? = runCatching {
-        val o = org.json.JSONObject(prefs?.getString(CYCLE + calendar, null) ?: return null)
+    /** 1.37 PC 67d13335: one per kind of work it was stopped from (교대's order and 일근's days are kept apart). */
+    private fun key(calendar: String, style: com.bamnat.core.work.WorkStyle) = "$CYCLE$calendar:${style.name}"
+
+    fun stopped(calendar: String, style: com.bamnat.core.work.WorkStyle): StoppedCycle? = runCatching {
+        val o = org.json.JSONObject(prefs?.getString(key(calendar, style), null) ?: return null)
         val a = o.getJSONArray("was")
         StoppedCycle(java.time.LocalDate.ofEpochDay(o.getLong("on")), from = o.optString("from").let { n ->
             com.bamnat.core.work.WorkStyle.entries.firstOrNull { it.name == n } }, was = (0 until a.length()).mapNotNull { i ->
@@ -62,9 +65,9 @@ class FoldedTypes(context: Context?) {
         })
     }.getOrNull()
 
-    fun stop(calendar: String, cycle: StoppedCycle?) {
+    fun stop(calendar: String, style: com.bamnat.core.work.WorkStyle, cycle: StoppedCycle?) {
         val e = prefs?.edit() ?: return
-        if (cycle == null) e.remove(CYCLE + calendar) else e.putString(CYCLE + calendar, org.json.JSONObject()
+        if (cycle == null) e.remove(key(calendar, style)) else e.putString(key(calendar, style), org.json.JSONObject()
             .put("on", cycle.on.toEpochDay())
             .put("from", cycle.from?.name ?: "")
             .put("was", org.json.JSONArray(cycle.was.mapIndexed { i, p ->

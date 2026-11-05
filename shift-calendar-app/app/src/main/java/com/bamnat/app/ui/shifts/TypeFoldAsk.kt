@@ -42,7 +42,12 @@ object TypeFoldAsk {
      * Said after 접어 두기, with 되돌리기 (the AppRoot snackbar shows it). [patterns]: the repeating schedule as it was, when 접어 두기
      * also stopped it ([stopsCycle]); 되돌리기 puts it back ([undo]).
      */
-    data class Done(val calendar: String, val ids: List<Long>, val message: String, val patterns: List<com.bamnat.core.model.WorkPattern>? = null)
+    data class Done(
+        val calendar: String, val ids: List<Long>, val message: String,
+        val patterns: List<com.bamnat.core.model.WorkPattern>? = null,
+        /** The kind of work whose schedule was stopped. */
+        val from: WorkStyle? = null,
+    )
 
     /**
      * [SETUP-16] 1.37 PC 122d18a0 (현대제철 교대 → 현장, 접어 두기: 달력이 12월까지 주·야·휴를 계속 칠함, 근무 알람 안내도 남음):
@@ -62,6 +67,13 @@ object TypeFoldAsk {
      * 1.37 PC 70710298 (교대 → 알바 → 교대에서 처음 주기가 안 돌아옴): back in 교대, putting the 알바 kinds away stopped the 교대 cycle
      * that had just come back; only the old work's own schedule is stopped.
      */
+    /**
+     * The schedule that goes on after today: the one in use, or one saved from tomorrow (1.37 PC 67d13335: 일근 saved from 11/6 while
+     * today was still the stopped 교대 order, so 일근 → 알바's 접어 두기 did not stop the 월~금).
+     */
+    fun going(patterns: List<com.bamnat.core.model.WorkPattern>, today: java.time.LocalDate): com.bamnat.core.model.WorkPattern? =
+        patterns.filter { it.endDate?.isAfter(today) != false }.maxByOrNull { it.startDate }
+
     fun ownSchedule(style: WorkStyle, pattern: com.bamnat.core.model.WorkPattern?): Boolean = when (style) {
         WorkStyle.SHIFT -> pattern is com.bamnat.core.model.WorkPattern.Rotation
         WorkStyle.INVEST -> false
@@ -72,15 +84,15 @@ object TypeFoldAsk {
     fun undo(c: AppContainer, d: Done) {
         c.foldedTypes.unfold(d.calendar, d.ids)
         val was = d.patterns ?: return
-        c.foldedTypes.stop(d.calendar, null)
+        d.from?.let { c.foldedTypes.stop(d.calendar, it, null) }
         c.appScope.launch { c.calendars.repository(d.calendar).restorePatterns(was) }
     }
 
     /** Stops [calendar]'s cycle after today, keeping it as it was for [resume]. */
-    suspend fun stopCycle(c: AppContainer, calendar: String, was: List<com.bamnat.core.model.WorkPattern>, from: WorkStyle? = null) {
+    suspend fun stopCycle(c: AppContainer, calendar: String, was: List<com.bamnat.core.model.WorkPattern>, from: WorkStyle) {
         val today = com.bamnat.core.time.Today.date()
-        // Stopped twice (현장 → 자영업 with 접어 두기 again): the first one, the cycle before any of it, is the one kept.
-        if (c.foldedTypes.stopped(calendar) == null) c.foldedTypes.stop(calendar, com.bamnat.app.data.FoldedTypes.StoppedCycle(today, was, from))
+        // Stopped twice from the same kind of work: the first one, the schedule before any of it, is the one kept.
+        if (c.foldedTypes.stopped(calendar, from) == null) c.foldedTypes.stop(calendar, from, com.bamnat.app.data.FoldedTypes.StoppedCycle(today, was, from))
         c.calendars.repository(calendar).endPatternsAfter(today)
     }
 
@@ -88,14 +100,19 @@ object TypeFoldAsk {
      * [SETUP-16] 1.37 PC b98f9d1e: back to work with a cycle (교대·일근·알바), the one [stopCycle] stopped comes back as it was, when
      * nothing was changed in it since. The days between went on being the other work's (written by hand, they stay as written).
      */
-    suspend fun resume(c: AppContainer, calendar: String, to: WorkStyle) {
-        val stopped = c.foldedTypes.stopped(calendar) ?: return
-        if (stopped.from == null && stopsCycle(to)) return
+    suspend fun resume(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle) {
         // 1.37 PC 0068727b: only the kind of work it was stopped from takes it back (교대's 주간·야간 are not an 알바's days).
-        if (stopped.from != null && stopped.from != to) return
-        c.foldedTypes.stop(calendar, null)
+        val stopped = c.foldedTypes.stopped(calendar, to) ?: return
+        c.foldedTypes.stop(calendar, to, null)
         val repo = c.calendars.repository(calendar)
-        if (!madeByHand(repo.patterns.first(), stopped)) repo.restorePatterns(stopped.was)
+        val now = repo.patterns.first()
+        if (madeByHand(now, stopped)) return
+        // 1.37 PC 67d13335: the schedule it replaces is kept for its own kind of work too (일근's 월~금 back when 일근 comes back).
+        val today = com.bamnat.core.time.Today.date()
+        if (from != null && from != to && ownSchedule(from, going(now, today)) && c.foldedTypes.stopped(calendar, from) == null) {
+            c.foldedTypes.stop(calendar, from, com.bamnat.app.data.FoldedTypes.StoppedCycle(today, now, from))
+        }
+        repo.restorePatterns(stopped.was)
     }
 
     /**
@@ -116,7 +133,7 @@ object TypeFoldAsk {
     /** Asks when the change from [from] to [to] left kinds of day the old one started with. */
     suspend fun after(c: AppContainer, calendar: String, from: WorkStyle?, to: WorkStyle) {
         if (from == to) return
-        runCatching { resume(c, calendar, to) }
+        runCatching { resume(c, calendar, from, to) }
         val types = c.calendars.repository(calendar).shiftTypes.first()
         // Back to a kind of work: what it starts with comes out of '안 쓰는 종류' by itself.
         val own = com.bamnat.app.data.FoldedTypes.startNames(to)
@@ -141,7 +158,7 @@ fun TypeFoldHost(c: AppContainer) {
         value = c.calendars.repository(a.calendar).patterns.first()
     }
     val stops = TypeFoldAsk.stopsCycle(a.from, a.to) &&
-        TypeFoldAsk.ownSchedule(a.from, com.bamnat.core.schedule.PatternTimeline.on(patterns, com.bamnat.core.time.Today.date()))
+        TypeFoldAsk.ownSchedule(a.from, TypeFoldAsk.going(patterns, com.bamnat.core.time.Today.date()))
     val names = a.types.joinToString("·") { it.name }
     AlertDialog(
         onDismissRequest = { TypeFoldAsk.asking.value = null },
@@ -168,7 +185,7 @@ fun TypeFoldHost(c: AppContainer) {
                 }
                 // Said before the question closes, so the kind-of-work line waiting for it says both (AppRoot).
                 TypeFoldAsk.done.value = TypeFoldAsk.Done(a.calendar, ids,
-                    "${a.from.label} 근무 종류 ${ids.size}개를 접었어요" + if (was != null) " · 근무 주기는 오늘까지예요" else "", was)
+                    "${a.from.label} 근무 종류 ${ids.size}개를 접었어요" + if (was != null) " · 근무 주기는 오늘까지예요" else "", was, a.from)
                 TypeFoldAsk.asking.value = null
             }) { Text("접어 두기") }
         },

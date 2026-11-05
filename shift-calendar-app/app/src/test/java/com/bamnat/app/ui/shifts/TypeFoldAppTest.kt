@@ -81,16 +81,17 @@ class TypeFoldAppTest {
         val day = repo.shiftTypes.first().first { !it.isOff }.id
         val cycle = com.bamnat.core.model.WorkPattern.Rotation(today.minusDays(30), listOf(day, null))
         val next = com.bamnat.core.model.WorkPattern.Rotation(today.plusDays(10), listOf(day, day, null))
+        WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
         repo.restorePatterns(listOf(cycle, next))
         val was = repo.patterns.first()
-        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, was)
+        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, was, WorkStyle.SHIFT)
         assertEquals(today, repo.patterns.first().single().endDate)
         TypeFoldAsk.asking.value = null
         TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.FIELD, WorkStyle.BUSINESS)
         assertEquals(1, repo.patterns.first().size)
         TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.BUSINESS, WorkStyle.SHIFT)
         assertEquals(was, repo.patterns.first())
-        assertEquals(null, c.foldedTypes.stopped(PersonalCalendar.MAIN))
+        assertEquals(null, c.foldedTypes.stopped(PersonalCalendar.MAIN, WorkStyle.SHIFT))
         TypeFoldAsk.asking.value = null
         repo.clearPattern()
     }
@@ -103,7 +104,7 @@ class TypeFoldAppTest {
         val today = com.bamnat.core.time.Today.date()
         val day = repo.shiftTypes.first().first { !it.isOff }.id
         repo.restorePatterns(listOf(com.bamnat.core.model.WorkPattern.Rotation(today.minusDays(30), listOf(day, null))))
-        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, repo.patterns.first())
+        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, repo.patterns.first(), WorkStyle.SHIFT)
         val mine = com.bamnat.core.model.WorkPattern.Rotation(today, listOf(day, day, null, null))
         repo.restorePatterns(listOf(mine))
         TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.FIELD, WorkStyle.SHIFT)
@@ -117,7 +118,7 @@ class TypeFoldAppTest {
         val c = app.container
         val repo = c.calendars.repository(PersonalCalendar.MAIN)
         repo.ensureDefaults()
-        c.foldedTypes.stop(PersonalCalendar.MAIN, null)
+        WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
         val today = com.bamnat.core.time.Today.date()
         val day = repo.shiftTypes.first().first { !it.isOff }.id
         repo.restorePatterns(listOf(com.bamnat.core.model.WorkPattern.Rotation(today.minusDays(30), listOf(day, null))))
@@ -127,7 +128,7 @@ class TypeFoldAppTest {
         TypeFoldAsk.asking.value = null
         TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.BUSINESS, WorkStyle.HOURLY)
         assertTrue("알바는 교대 주기를 되살리지 않아요", repo.patterns.first() != was)
-        assertNotNull(c.foldedTypes.stopped(PersonalCalendar.MAIN))
+        assertNotNull(c.foldedTypes.stopped(PersonalCalendar.MAIN, WorkStyle.SHIFT))
         TypeFoldAsk.asking.value = null
         TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.HOURLY, WorkStyle.SHIFT)
         assertEquals(was, repo.patterns.first())
@@ -140,7 +141,7 @@ class TypeFoldAppTest {
         val c = app.container
         val repo = c.calendars.repository(PersonalCalendar.MAIN)
         repo.ensureDefaults()
-        c.foldedTypes.stop(PersonalCalendar.MAIN, null)
+        WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
         assertTrue(TypeFoldAsk.stopsCycle(WorkStyle.SHIFT, WorkStyle.HOURLY) && !TypeFoldAsk.stopsCycle(WorkStyle.SHIFT, WorkStyle.SHIFT))
         val today = com.bamnat.core.time.Today.date()
         val day = repo.shiftTypes.first().first { !it.isOff }.id
@@ -164,5 +165,36 @@ class TypeFoldAppTest {
         assertTrue(!TypeFoldAsk.ownSchedule(WorkStyle.HOURLY, rotation))
         assertTrue(TypeFoldAsk.ownSchedule(WorkStyle.HOURLY, weekly) && TypeFoldAsk.ownSchedule(WorkStyle.DAY, weekly))
         assertTrue(!TypeFoldAsk.ownSchedule(WorkStyle.SHIFT, weekly) && !TypeFoldAsk.ownSchedule(WorkStyle.HOURLY, null))
+    }
+
+    /** 1.37 PC 67d13335: 일근 (월~금 from tomorrow) → 알바 with 접어 두기 stops the 월~금; back to 일근 brings it, back to 교대 the order. */
+    @Test fun dayWorksDaysAreStoppedAndComeBackOfTheirOwn() = runBlocking {
+        val c = app.container
+        val repo = c.calendars.repository(PersonalCalendar.MAIN)
+        repo.ensureDefaults()
+        WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
+        val today = com.bamnat.core.time.Today.date()
+        val day = repo.shiftTypes.first().first { !it.isOff }.id
+        repo.restorePatterns(listOf(com.bamnat.core.model.WorkPattern.Rotation(today.minusDays(30), listOf(day, null))))
+        val shift = repo.patterns.first()
+        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, shift, WorkStyle.SHIFT)
+        repo.changePatternFrom(com.bamnat.core.model.WorkPattern.Weekly(today.plusDays(1),
+            java.time.DayOfWeek.entries.associateWith { d -> day.takeIf { d.value <= 5 } }), today.plusDays(1))
+        val dayWork = repo.patterns.first()
+        assertTrue(TypeFoldAsk.ownSchedule(WorkStyle.DAY, TypeFoldAsk.going(dayWork, today)))
+        TypeFoldAsk.stopCycle(c, PersonalCalendar.MAIN, dayWork, WorkStyle.DAY)
+        assertTrue("내일부터의 월~금이 멈춰요", TypeFoldAsk.going(repo.patterns.first(), today) == null)
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.HOURLY, WorkStyle.DAY)
+        assertEquals(dayWork, repo.patterns.first())
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.DAY, WorkStyle.SHIFT)
+        assertEquals(shift, repo.patterns.first())
+        TypeFoldAsk.asking.value = null
+        TypeFoldAsk.after(c, PersonalCalendar.MAIN, WorkStyle.SHIFT, WorkStyle.DAY)
+        assertEquals("교대로 갈 때 맡겨 둔 월~금이 돌아와요", dayWork.last(), repo.patterns.first().last())
+        TypeFoldAsk.asking.value = null
+        WorkStyle.entries.forEach { c.foldedTypes.stop(PersonalCalendar.MAIN, it, null) }
+        repo.clearPattern()
     }
 }
