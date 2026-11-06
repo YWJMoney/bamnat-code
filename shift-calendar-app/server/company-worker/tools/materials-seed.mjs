@@ -19,6 +19,13 @@ export function load(out = OUT) {
   const list = JSON.parse(readFileSync(join(out, "목록.json"), "utf8"));
   const problems = [];
   const seen = new Set();
+  // 사용자 결정 2026-11-06: 아이콘은 모두 무료, 배경은 묶음마다 앞쪽 3분의 1(순서대로)만 무료이고 나머지는 광고 한 편(30일)·프로.
+  // 관리자 앱 › 출시 대기 › 밤낮 재료의 '3분의 1 무료'와 같은 셈(ord 순)이에요.
+  const freeBg = new Set();
+  for (const pack of new Set(list.items.filter((m) => m.kind === "bg").map((m) => m.pack))) {
+    const rows = list.items.filter((m) => m.kind === "bg" && m.pack === pack).sort((x, y) => x.ord - y.ord || (x.id < y.id ? -1 : 1));
+    rows.slice(0, Math.ceil(rows.length / 3)).forEach((m) => freeBg.add(m.id));
+  }
   const items = list.items.map((m) => {
     const webp = readFileSync(join(out, m.file));
     const thumb = m.thumb ? readFileSync(join(out, m.thumb)) : null;
@@ -32,7 +39,7 @@ export function load(out = OUT) {
     if (thumb && sha16(thumb) !== m.thumbId) problems.push(`${where}: 미리보기 id가 달라요`);
     if (seen.has(m.id)) problems.push(`${where}: 같은 그림이 또 있어요`);
     seen.add(m.id);
-    return { kind: m.kind, pack: m.pack, name: m.name, ord: m.ord, light: m.light, free: m.free !== false,
+    return { kind: m.kind, pack: m.pack, name: m.name, ord: m.ord, light: m.light, free: m.kind !== "bg" || freeBg.has(m.id),
       webp: webp.toString("base64"), ...(thumb ? { thumb: thumb.toString("base64") } : {}) };
   });
   return { items, problems, license: list.license };
