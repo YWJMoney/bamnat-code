@@ -430,7 +430,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             if (s.log.isEmpty()) com.bamnat.app.ui.components.EmptyState("아직 잠 기록이 없어요",
                 "자기 전에 ‘잠들었어요’, 깨면 ‘깼어요’를 누르거나 아래 ‘기록 추가’로 적어요",
                 com.bamnat.app.ui.components.KaniMood.Point)
-            else if (r.loggedDays < 7) HowItWorks()
+            else if (r.loggedDays < 7) HowItWorks(settings.workStyle)
             WeekTiles(r, target)
             // 1.38 [SLEEP-10][SLEEP-13][SLEEP-20]
             extras?.adapt?.let { AdaptCard(it) }
@@ -538,12 +538,17 @@ private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit
 
 /** [SLP-16] What the taps are for, said where the user first wonders. */
 @Composable
-private fun HowItWorks() {
+private fun HowItWorks(style: com.bamnat.core.work.WorkStyle?) {
     SectionCard(title = "수면 기록은 이렇게 쓰여요") {
         listOf(
             "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 달력 위 오늘의 흐름 카드, 오늘 날짜, 자는 중 알림에 버튼이 있어요.",
             "깜빡했으면 여기서 ‘기록 추가’로 나중에 적어도 돼요. 워치 기록은 설정 > 알림과 잠에서 헬스 커넥트를 켜면 함께 세요.",
-            "기록이 쌓이면 야간 뒤·아침 출근 전·쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요.",
+            // 1.38 사용자 2026-11-06 (교대가 없는 유형에 주·야): 야간 뒤 is said to 교대 only.
+            when (style) {
+                null, com.bamnat.core.work.WorkStyle.SHIFT -> "기록이 쌓이면 야간 뒤·아침 출근 전·쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요."
+                com.bamnat.core.work.WorkStyle.INVEST -> "기록이 쌓이면 평일과 쉬는 날 평균을 따로 보여 줘요."
+                else -> "기록이 쌓이면 일하는 날과 쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요."
+            },
         ).forEachIndexed { i, line ->
             Row(Modifier.padding(vertical = 3.dp)) {
                 Text("${i + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,

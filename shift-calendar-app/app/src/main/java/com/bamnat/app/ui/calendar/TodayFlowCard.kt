@@ -137,8 +137,29 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
         modifier = modifier,
         folded = folded,
         onFold = vm::setFlowFolded,
+        // 1.38 사용자 2026-11-06: 밤샘·첫 야간 rules only where there are nights to work.
+        nights = nightWork(settings.workStyle, snapshot),
     )
 }
+
+/**
+ * 1.38 사용자 2026-11-06 (교대가 없는 유형에 주·야가 보임): whether this calendar works nights, for the words about 야간: 교대 (or not chosen
+ * yet), or any kind it uses that runs past midnight (a 자영업 who made a 야간 영업 of their own).
+ */
+internal fun nightWork(style: com.bamnat.core.work.WorkStyle?, snapshot: ScheduleSnapshot): Boolean =
+    style == null || style == com.bamnat.core.work.WorkStyle.SHIFT || run {
+        val used = snapshot.patterns.flatMap { p ->
+            when (p) {
+                is com.bamnat.core.model.WorkPattern.Rotation -> p.steps
+                is com.bamnat.core.model.WorkPattern.Weekly -> p.steps
+            }
+        }.filterNotNull().toSet()
+        snapshot.shiftTypes.any { t ->
+            val start = t.start
+            val end = t.end
+            t.id in used && !t.isOff && start != null && end != null && !end.isAfter(start)
+        }
+    }
 
 /** [CAL-21] Shorter than this, 오늘의 흐름 starts as one line; a fold's cover screen (905dp) is not. */
 private const val SHORT_SCREEN_DP = 860
@@ -163,6 +184,7 @@ internal fun TodayFlowCard(
     modifier: Modifier = Modifier,
     folded: Boolean = false,
     onFold: (Boolean) -> Unit = {},
+    nights: Boolean = true,
 ) {
     var info by remember { mutableStateOf(false) }
     var askWake by remember { mutableStateOf(false) }
@@ -256,7 +278,7 @@ internal fun TodayFlowCard(
         }
     }
 
-    if (info) FlowInfoSheet(targetMinutes, commuteMinutes, onNumbers, onHide = { info = false; onHide() }, onDismiss = { info = false })
+    if (info) FlowInfoSheet(targetMinutes, commuteMinutes, onNumbers, onHide = { info = false; onHide() }, onDismiss = { info = false }, nights = nights)
     if (askWake && asleepSince != null) {
         WakeTimeDialog(asleepSince, card.from, targetMinutes, onDismiss = { askWake = false }) {
             askWake = false
@@ -393,7 +415,7 @@ private fun stripText(card: TodayFlow.Card): String {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Unit, onHide: () -> Unit, onDismiss: () -> Unit) {
+private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Unit, onHide: () -> Unit, onDismiss: () -> Unit, nights: Boolean = true) {
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
             Text("오늘의 흐름은 이렇게 정해요", style = MaterialTheme.typography.titleLarge)
@@ -410,9 +432,9 @@ private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Un
                     step = 10, format = { if (it == 0) "바로" else HoursFormat.korean(it) }, valueWidth = 104.dp)
             }
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
-            Rule("밤새 일한 뒤", "집에 오자마자 목표만큼, 적어도 6시간 이어서 자요. 다음 근무 알람이 먼저 울리면 거기까지예요.", "안전보건 지침")
+            if (nights) Rule("밤새 일한 뒤", "집에 오자마자 목표만큼, 적어도 6시간 이어서 자요. 다음 근무 알람이 먼저 울리면 거기까지예요.", "안전보건 지침")
             Rule("이른 근무 전날", "알람에서 목표 수면만큼 거꾸로 잠자리 시각을 정해요. 알람이 없으면 근무 1시간 30분 전에 일어나는 걸로 봐요.", "일반 권고")
-            Rule("첫 야간 전", "근무 2시간 30분 전에 끝나는 90분 안쪽 낮잠이에요.", "일반 권고")
+            if (nights) Rule("첫 야간 전", "근무 2시간 30분 전에 끝나는 90분 안쪽 낮잠이에요.", "일반 권고")
             Rule("커피", "잠들기 6시간 전까지만 마셔요.", "근거 수준 낮음")
             Rule("휴식", "휴식 점검을 켜 두면 근무 사이가 11시간보다 짧을 때 작은 줄로 알려 줘요.", null)
             Spacer(Modifier.height(8.dp))

@@ -141,6 +141,12 @@ fun DutyTypingPanel(
     guard: TypingGuard = remember { TypingGuard() },
 ) {
     val types = snap.shiftTypes
+    // 1.38 사용자 2026-11-06 (교대가 없는 유형에 주·야): no key for a kind put away ('안 쓰는 종류'); one this month already has stays.
+    val folded = com.bamnat.app.ui.shifts.foldedHere()
+    val keyTypes = remember(types, folded, initial) {
+        val inMonth = initial.values.mapNotNull { (it as? ShiftOverride.Shift)?.shiftTypeId }.toSet()
+        types.filter { it.id !in folded || it.id in inMonth }
+    }
     val offType = types.firstOrNull { it.isOff }
     val days = month.lengthOfMonth()
     // [EASE-13] 1.38: the keypad's rules are core's [PaintPad] (the same pad the leader's team roster paints with, P3-02).
@@ -219,7 +225,7 @@ fun DutyTypingPanel(
             }
             // The keypad: every kind of day, then back-to-pattern and moving the mark.
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                types.forEach { t ->
+                keyTypes.forEach { t ->
                     FilledTonalButton(onClick = { put(ShiftOverride.Shift(t.id)) },
                         modifier = Modifier.heightIn(min = 52.dp).semantics { contentDescription = "${t.name} 넣기" }) {
                         ShiftBadge(t, size = 22.dp, outlined = t.isOff)

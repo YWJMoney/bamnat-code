@@ -167,10 +167,13 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
     // 1.38 가져오기: names straight from a roster file or photo; the file goes on the board right after 만들기.
     var from by remember { mutableStateOf<Pair<com.bamnat.core.imports.RosterGrid, Boolean>?>(null) }
     var reading by remember { mutableStateOf<String?>(null) }
+    // 1.38 사용자 2026-11-06 (사장님처럼 교대가 없는 유형에 주야가 보임): the team takes the kinds in use, not those put away.
+    val folded = com.bamnat.app.ui.shifts.foldedHere()
+    val kinds = remember(snap, folded) { teamKinds(snap?.shiftTypes.orEmpty(), folded) }
     val pickFile = rememberAnyFilePicker { uri ->
         scope.launch {
             reading = "파일을 읽고 있어요…"
-            val shifts = snap?.shiftTypes.orEmpty().map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
+            val shifts = kinds.map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
             when (val got = com.bamnat.app.imports.ManageImport.roster(context, uri, YearMonth.from(Today.date()).plusMonths(1), shifts, Today.date())) {
                 is com.bamnat.app.imports.ManageImport.Got.Read -> {
                     from = got.value to got.fromPhoto
@@ -195,14 +198,14 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
             Text(if (people.isEmpty()) "단톡방 명단을 그대로 붙여 넣어도 돼요. '민지 책임'처럼 직급은 따로 나눠요."
                 else "${people.size}명: " + people.take(6).joinToString(", ") { it.name } + if (people.size > 6) " …" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("근무 종류는 내 달력의 것(${snap?.shiftTypes?.joinToString(" ") { it.label }.orEmpty()})을 그대로 써요.",
+            Text("근무 종류는 내 달력의 것(${kinds.joinToString(" ") { it.label }})을 그대로 써요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }, confirmButton = {
         TextButton(enabled = name.isNotBlank() && people.isNotEmpty() && snap != null, onClick = {
             val s = snap ?: return@TextButton
             val id = UUID.randomUUID().toString()
-            val shifts = s.shiftTypes.sortedBy { it.sortOrder }.map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
+            val shifts = teamKinds(s.shiftTypes, folded).sortedBy { it.sortOrder }.map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
             scope.launch {
                 c.phaseThree.saveTeam(Team(id, name.trim(), shifts = shifts, createdAt = Today.millis()))
                 c.phaseThree.saveMembers(people.mapIndexed { i, p -> TeamMember(UUID.randomUUID().toString(), id, p.name, p.role, p.skill, sort = i) })
@@ -1051,3 +1054,10 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
         }) { Text("더하기") }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
 }
+
+/**
+ * 1.38 사용자 2026-11-06: the calendar's kinds a new team starts with, without those put away ('안 쓰는 종류', a 자영업's 주간·오후·야간);
+ * all of them when that would leave no kind to work in, so the board can still be painted.
+ */
+internal fun teamKinds(types: List<com.bamnat.core.model.ShiftType>, folded: Set<Long>): List<com.bamnat.core.model.ShiftType> =
+    types.filter { it.id !in folded }.takeIf { kept -> kept.any { !it.isOff } } ?: types

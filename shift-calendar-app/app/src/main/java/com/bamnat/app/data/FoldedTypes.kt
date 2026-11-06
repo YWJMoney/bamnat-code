@@ -78,13 +78,30 @@ class FoldedTypes(context: Context?) {
         e.apply()
     }
 
-    private fun load(): Map<String, Set<Long>> = prefs?.all.orEmpty().filterKeys { !it.startsWith(CYCLE) }.mapNotNull { (k, v) ->
+    /**
+     * 1.38 사용자 2026-11-06 (가게 영업·사장님처럼 교대가 없는 유형에 주·야가 보임): whether [calendar]'s 교대 kinds were already put away
+     * once for [style] ([com.bamnat.app.ui.shifts.TypeFoldAsk.quietShiftKinds]). Once only, so a kind the user takes back out stays out.
+     */
+    fun quieted(calendar: String, style: com.bamnat.core.work.WorkStyle): Boolean = prefs?.getBoolean(quietKey(calendar, style), false) ?: _quiet.contains(quietKey(calendar, style))
+
+    fun markQuiet(calendar: String, style: com.bamnat.core.work.WorkStyle) {
+        _quiet += quietKey(calendar, style)
+        prefs?.edit()?.putBoolean(quietKey(calendar, style), true)?.apply()
+    }
+
+    /** Without a phone's storage (tests), what [markQuiet] marked. */
+    private val _quiet = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    private fun quietKey(calendar: String, style: com.bamnat.core.work.WorkStyle) = "$QUIET$calendar:${style.name}"
+
+    private fun load(): Map<String, Set<Long>> = prefs?.all.orEmpty().filterKeys { !it.startsWith(CYCLE) && !it.startsWith(QUIET) }.mapNotNull { (k, v) ->
         (v as? String)?.split(',')?.mapNotNull { it.toLongOrNull() }?.toSet()?.takeIf { it.isNotEmpty() }?.let { k to it }
     }.toMap()
 
     companion object {
         private const val FILE = "folded_types"
         private const val CYCLE = "cycle:"
+        private const val QUIET = "quiet:"
 
         /** The names of the kinds of day a kind of work starts with (to fold what the old one brought and the new one does not use). */
         fun startNames(style: com.bamnat.core.work.WorkStyle?): Set<String> = when (style) {
