@@ -91,6 +91,8 @@ data class WorkplaceEntity(
     val weekStart: Int,
     val teamId: String?,
     val createdAt: Long,
+    /** 1.38 (DB 29) 계산 단위: each day's work counted up to this many minutes (1·10·30·60). */
+    @androidx.room.ColumnInfo(defaultValue = "1") val minuteUnit: Int = 1,
 )
 
 @Entity(tableName = "staff", indices = [Index("workplaceId")])

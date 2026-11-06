@@ -217,19 +217,19 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         // ---- 사업장 rows ----
 
-        fun WorkplaceEntity.toModel() = Workplace(id, name, fivePlus, payday, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId)
-        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, payday, legalBreaks, weekStart.value, teamId, createdAt)
+        fun WorkplaceEntity.toModel() = Workplace(id, name, fivePlus, payday, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId, minuteUnit.coerceIn(1, 60))
+        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, payday, legalBreaks, weekStart.value, teamId, createdAt, minuteUnit)
 
         fun StaffEntity.toModel() = StaffMember(
             id = id, name = name, form = runCatching { WageForm.valueOf(form) }.getOrDefault(WageForm.HOUR), base = base,
             allowances = decodeAllowances(allowances), hiredOn = hiredOn?.let(LocalDate::ofEpochDay), leftOn = leftOn?.let(LocalDate::ofEpochDay),
             birth = birth?.let(LocalDate::ofEpochDay), job = job, insurance = decodeInsurance(insurance), weeklyHolidayPay = weeklyHolidayPay,
-            weekly = decodeWeekly(weekly), memberId = memberId,
+            weekly = decodeWeekly(weekly), memberId = memberId, dayRates = decodeDayRates(weekly),
         )
 
         fun StaffMember.toEntity(placeId: String, sort: Int) = StaffEntity(
             id, placeId, name, form.name, base, encodeAllowances(allowances), hiredOn?.toEpochDay(), leftOn?.toEpochDay(), birth?.toEpochDay(),
-            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly), memberId, sort,
+            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates), memberId, sort,
         )
 
         fun StaffWorkEntity.toModel(): StaffWork? = runCatching {
@@ -254,9 +254,15 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
                 runCatching { com.bamnat.core.boss.StaffTax.valueOf(it.optString("tax", "WAGE")) }.getOrDefault(com.bamnat.core.boss.StaffTax.WAGE)) }
         }.getOrDefault(Insurance())
 
-        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>) = JSONObject().apply {
+        /** The week as "1".."7" → [start, end] minutes, and 1.38 요일별 시급 as "r1".."r7" → won beside it (no DB change). */
+        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>, rates: Map<DayOfWeek, Long> = emptyMap()) = JSONObject().apply {
             m.forEach { (d, s) -> put(d.value.toString(), JSONArray().put(s.start.hour * 60 + s.start.minute).put(s.end.hour * 60 + s.end.minute)) }
+            rates.forEach { (d, r) -> put("r${d.value}", r) }
         }.toString()
+
+        fun decodeDayRates(t: String): Map<DayOfWeek, Long> = runCatching {
+            JSONObject(t).let { o -> (1..7).mapNotNull { d -> o.optLong("r$d", -1).takeIf { it > 0 }?.let { DayOfWeek.of(d) to it } }.toMap() }
+        }.getOrDefault(emptyMap())
 
         fun decodeWeekly(t: String): Map<DayOfWeek, StaffShift> = runCatching {
             JSONObject(t).let { o ->

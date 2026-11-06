@@ -46,6 +46,11 @@ data class Workplace(
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
     /** [BOSS-02] A 리더 팀 근무표 this place takes its plan from ([com.bamnat.core.team.Team.id]); null for the weekly hours. */
     val teamId: String? = null,
+    /**
+     * 1.38 계산 단위 (경쟁 앱 조사 P3-B-12): each day's work is counted up to this many minutes (1, 10, 30, 60). Only up: 근로시간을
+     * 깎는 절사는 임금 전액 지급(근로기준법 제43조)에 어긋나서, a 7분 늦은 퇴근 is 10분 at 10, never 0.
+     */
+    val minuteUnit: Int = 1,
 ) {
     fun payDate(month: YearMonth): LocalDate? = payday?.let { month.plusMonths(1).atDay(it.coerceAtMost(month.plusMonths(1).lengthOfMonth())) }
 }
@@ -92,6 +97,11 @@ data class StaffMember(
     val weekly: Map<DayOfWeek, StaffShift> = emptyMap(),
     /** [BOSS-02] The same person on the 팀 근무표 ([com.bamnat.core.team.TeamMember.id]), so a day is written once (설계 2-2 139). */
     val memberId: String? = null,
+    /**
+     * 1.38 요일별 시급 (P3-B-12): 시급 for some weekdays ("주말 11,000원"), the others [base]. 통상시급 is the week's 소정근로 임금 over its
+     * hours (시행령 제6조 제2항 제4호), so 가산·주휴 use that; each day's own hours are paid at its own 시급.
+     */
+    val dayRates: Map<DayOfWeek, Long> = emptyMap(),
 ) {
     fun employedOn(d: LocalDate): Boolean = (hiredOn == null || !d.isBefore(hiredOn)) && (leftOn == null || !d.isAfter(leftOn))
 }
@@ -186,14 +196,22 @@ object PayrollLedger {
         rules = CompanyRules(weeklyHolidayPay = s.weeklyHolidayPay),
     )
 
+    /** [Workplace.minuteUnit]: [end] moved later so start → end is a whole number of units (never earlier). */
+    fun roundUp(start: LocalTime?, end: LocalTime?, unit: Int): LocalTime? {
+        if (start == null || end == null || unit <= 1) return end
+        val span = ((end.toSecondOfDay() - start.toSecondOfDay()) / 60).let { if (it <= 0) it + 24 * 60 else it }
+        val up = (span + unit - 1) / unit * unit
+        return start.plusMinutes(up.toLong())
+    }
+
     fun resolver(place: Workplace, s: StaffMember, work: Collection<StaffWork>): ScheduleResolver {
         val types = DayOfWeek.entries.map { d ->
             val shift = s.weekly[d]
-            ShiftType(typeId(d), d.name, d.name.take(1), 0xFF888888, shift?.start, shift?.end, isOff = shift == null)
+            ShiftType(typeId(d), d.name, d.name.take(1), 0xFF888888, shift?.start, roundUp(shift?.start, shift?.end, place.minuteUnit), isOff = shift == null)
         }
         val start = s.hiredOn ?: LocalDate.of(2000, 1, 1)
         val pattern = WorkPattern.Weekly(start, DayOfWeek.entries.associateWith { typeId(it) }, endDate = s.leftOn)
-        val entries = work.filter { it.staffId == s.id }.map { entry(it, s) }
+        val entries = work.filter { it.staffId == s.id }.map { entry(it.copy(end = roundUp(it.start, it.end, place.minuteUnit)), s) }
         return ScheduleResolver(types, listOf(pattern), entries, legalBreaks = place.legalBreaks)
     }
 
@@ -208,10 +226,37 @@ object PayrollLedger {
         WorkKind.OFF -> DayEntry(w.date, override = com.bamnat.core.model.ShiftOverride.Off)
     }
 
+    /** [StaffMember.dayRates]: one weekday's 시급. */
+    fun rateOn(s: StaffMember, d: DayOfWeek): Long = s.dayRates[d] ?: s.base
+
+    /**
+     * 통상시급 with [StaffMember.dayRates]: the usual week's pay over its hours (시행령 제6조 제2항 제4호), to the won. With no usual
+     * week, the plain average of the rates set and [StaffMember.base] for the others.
+     */
+    fun ordinaryHourly(place: Workplace, s: StaffMember): Long {
+        if (s.form != WageForm.HOUR || s.dayRates.isEmpty()) return s.base
+        val mins = s.weekly.mapValues { (_, sh) -> sh.paidMinutes(place.legalBreaks) }.filterValues { it > 0 }
+        if (mins.isEmpty()) return DayOfWeek.entries.map { rateOn(s, it) }.average().toLong()
+        val pay = mins.entries.sumOf { (d, m) -> java.math.BigDecimal.valueOf(rateOn(s, d)).multiply(java.math.BigDecimal.valueOf(m.toLong())) }
+        return pay.divide(java.math.BigDecimal.valueOf(mins.values.sum().toLong()), 0, java.math.RoundingMode.HALF_UP).toLong()
+    }
+
     fun line(place: Workplace, s: StaffMember, month: YearMonth, work: Collection<StaffWork>, calculator: PayCalculator = PayCalculator()): LedgerLine {
         val employed = (1..month.lengthOfMonth()).map(month::atDay).any(s::employedOn)
         val r = resolver(place, s, work)
-        val pay = if (employed) calculator.calculate(profile(place, s), month, r::resolve) else null
+        // 요일별 시급: the engine works at the 통상시급, then each day's hours get the difference to that day's own 시급.
+        val ordinary = ordinaryHourly(place, s)
+        val calcAs = if (ordinary != s.base) s.copy(base = ordinary) else s
+        val pay = if (employed) calculator.calculate(profile(place, calcAs), month, r::resolve).let { p ->
+            if (s.dayRates.isEmpty() || s.form != WageForm.HOUR) p else {
+                val diff = p.minutes.filter { s.employedOn(it.date) }.sumOf { dm ->
+                    (rateOn(s, dm.date.dayOfWeek) - ordinary) * dm.total.worked / 60.0
+                }.let { Math.round(it) }
+                if (diff == 0L) p else p.copy(lines = p.lines + com.bamnat.core.pay.PayLine(LineKind.ALLOWANCE, "요일별 시급 차액", diff,
+                    "요일마다 정한 시급 − 통상시급 ${"%,d".format(ordinary)}원, 그날 일한 시간만큼",
+                    basis = "통상시급 = 주 소정근로 임금 ÷ 주 소정근로시간 (근로기준법 시행령 제6조 제2항 제4호)"))
+            }
+        } else null
         val days = (1..month.lengthOfMonth()).map { r.resolve(month.atDay(it)) }.filter { s.employedOn(it.date) }
         val worked = pay?.minutes.orEmpty()
         val workDays = days.count { it.isWorkDay || it.extras.isNotEmpty() }
@@ -260,7 +305,8 @@ object PayrollLedger {
         val s = l.staff
         val minimum = RateTable.on(l.month.atDay(1)).minimumHourlyWage
         val hourly = when (s.form) {
-            WageForm.HOUR -> s.base
+            // 요일별 시급: the lowest day is the one the 최저임금 has to hold for.
+            WageForm.HOUR -> (s.dayRates.values + s.base).min()
             WageForm.DAY -> s.base / 8
             // 월급 ÷ 209시간 (주 40시간, 주휴 포함), 최저임금법 시행령 제5조 제1항 제3호.
             WageForm.MONTH -> s.base / 209

@@ -32,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TeamEntity::class, TeamMemberEntity::class, TeamCellEntity::class, TeamMonthEntity::class, TeamWishEntity::class,
         WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
     ],
-    version = 28,
+    version = 29,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -71,7 +71,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
-                MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28,
+                MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
             )
 
         /**
@@ -419,6 +419,16 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_27_28 = object : Migration(27, 28) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `memos` ADD COLUMN `skips` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * Version 29 (1.38 갈래 7, 경쟁 앱 조사 P3-B-12): a 사업장's 계산 단위. Only a new column with a default: every 사업장 of version 28
+         * keeps its meaning (1분 단위, as before).
+         */
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `workplace` ADD COLUMN `minuteUnit` INTEGER NOT NULL DEFAULT 1")
             }
         }
 

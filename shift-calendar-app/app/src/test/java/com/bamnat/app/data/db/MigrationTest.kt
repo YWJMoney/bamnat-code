@@ -460,6 +460,7 @@ class MigrationTest {
             db.teamDao().replaceMonth("t", 20759, 20788, listOf(TeamCellEntity("t", "m", 20760, 1, "MANUAL", false)))
             assertEquals(1L, db.teamDao().cells("t", 20759, 20788).single().shiftId)
             db.payrollDao().upsertWorkplace(WorkplaceEntity("p", "우리 카페", true, 10, true, 1, null, 1))
+            assertEquals("29판 계산 단위 기본은 1분", 1, db.payrollDao().workplaces().single().minuteUnit)
             db.payrollDao().upsertStaff(StaffEntity("s", "p", "준호", "HOUR", 10_320, "[]", null, null, null, "", "{}", true, "{}", null, 0))
             db.payrollDao().upsertWork(StaffWorkEntity("s", 20760, "ABSENT", null, null))
             assertEquals("ABSENT", db.payrollDao().work().single().kind)

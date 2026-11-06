@@ -407,6 +407,22 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+        // 1.38 요일별 시급 (P3-B-12): "주말은 11,000원" — each weekday its own, 가산·주휴는 그 주 평균(통상시급)으로.
+        if (s.form == WageForm.HOUR && s.weekly.isNotEmpty()) {
+            var perDay by remember { mutableStateOf(s.dayRates.isNotEmpty()) }
+            SwitchLine("요일마다 시급이 달라요", perDay, { on -> perDay = on; if (!on) s = s.copy(dayRates = emptyMap()) }, "예: 주말만 시급을 더 줄 때")
+            if (perDay) {
+                DayOfWeek.entries.filter { it in s.weekly }.forEach { d ->
+                    AmountField("${Fmt.dayOfWeekShort(d)}요일 시급", amountDigits(s.dayRates[d] ?: s.base), { v ->
+                        val won = v.toAmount()
+                        s = s.copy(dayRates = if (won <= 0 || won == s.base) s.dayRates - d else s.dayRates + (d to won))
+                    })
+                }
+                val avg = com.bamnat.core.boss.PayrollLedger.ordinaryHourly(place ?: Workplace("", ""), s)
+                Hint("가산수당·주휴수당은 한 주 평균 시급(통상시급) ${Fmt.won(avg)}으로 계산하고, 요일마다 일한 시간은 그 요일 시급으로 줘요(근로기준법 시행령 제6조).")
+                if (s.dayRates.values.any { it in 1 until minimum }) Text("최저임금 ${Fmt.won(minimum)}보다 적은 요일이 있어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+            }
+        }
         if (start.name.isNotBlank()) TextButton(onClick = onRemove) {
             Icon(Icons.Outlined.Delete, null, Modifier.size(18.dp)); Text(" 직원 빼기")
         }
@@ -440,6 +456,13 @@ private fun PlaceDialog(start: Workplace, onDismiss: () -> Unit, onSave: (Workpl
         Text("급여 주는 날", style = MaterialTheme.typography.labelLarge)
         com.bamnat.app.ui.components.DayOfMonthPicker(p.payday ?: 10, { p = p.copy(payday = it) })
         SwitchLine("휴게시간 빼고 세기", p.legalBreaks, { p = p.copy(legalBreaks = it) }, "4시간이면 30분, 8시간이면 1시간을 빼요(근로기준법 제54조)")
+        // 1.38 계산 단위 (경쟁 앱 조사 P3-B-12): up only — 깎는 절사는 임금 전액 지급(제43조)에 어긋나요.
+        Text("근무 시간 계산 단위", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf(1, 10, 30, 60).forEach { u -> FilterChip(selected = p.minuteUnit == u, onClick = { p = p.copy(minuteUnit = u) }, label = { Text(if (u == 60) "1시간" else "${u}분") }) }
+        }
+        Hint(if (p.minuteUnit <= 1) "일한 그대로 1분 단위로 세요."
+            else "하루 일한 시간을 ${if (p.minuteUnit == 60) "1시간" else "${p.minuteUnit}분"} 단위로 올려서 세요(13:07 퇴근 → ${com.bamnat.core.boss.PayrollLedger.roundUp(LocalTime.of(9, 0), LocalTime.of(13, 7), p.minuteUnit)?.let(Fmt::time)}). 내려서 깎는 건 근로기준법 제43조(임금 전액 지급)에 어긋나서 고를 수 없어요.")
     }
 }
 
