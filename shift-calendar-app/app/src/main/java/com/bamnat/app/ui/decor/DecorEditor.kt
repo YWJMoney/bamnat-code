@@ -181,7 +181,9 @@ private enum class Pane(val label: String) { ADD("넣기"), EDIT("고치기"), L
 fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> Unit, onUndo: (() -> Unit)? = null,
               advancedIn: Boolean? = null, onAdvanced: (Boolean) -> Unit = {}, focus: Int? = null, onFocused: () -> Unit = {},
               /** [LAY-11] The theme's 규칙 단추 a decoration may press (id to words); empty when it has none. */
-              buttons: List<Pair<String, String>> = emptyList()) {
+              buttons: List<Pair<String, String>> = emptyList(),
+              /** 1.38 PC 스튜디오 확인: each new value opens 넣기 and brings it into view (‘＋ 아이콘·사진’). */
+              addAsk: Int = 0) {
     if (places.isEmpty()) return
     var place by rememberSaveable(places) {
         mutableStateOf(lastPlaces[places]?.takeIf { it in places } ?: decor.items.lastOrNull { it.at in places }?.at ?: places.first())
@@ -190,6 +192,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
     val stageW = screenW()
     var picked by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var pane by rememberSaveable { mutableStateOf(Pane.ADD) }
+    var addJump by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     // [LAY-09] 고급 보기 is the studio's own when it gives one (one switch for 부품·꾸밈 층·층 나무).
     var ownAdvanced by rememberSaveable { mutableStateOf(false) }
     val advanced = advancedIn ?: ownAdvanced
@@ -245,8 +248,12 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("꾸밈 층: 도형·아이콘·이모지·글상자를 마음대로 놓아요. 날짜와 근무는 가리지 않아요", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1.38 PC 스튜디오 확인 (넣기가 판 밑 화면 밖): 넣기로 가는 단추를 맨 위에.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("꾸밈 층: 도형·아이콘·이모지·글상자를 마음대로 놓아요. 날짜와 근무는 가리지 않아요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            androidx.compose.material3.FilledTonalButton(onClick = { pane = Pane.ADD; addJump++ }, modifier = Modifier.heightIn(min = 44.dp)) { Text("＋ 넣기") }
+        }
         com.bamnat.app.ui.components.FoldRow("decor.1") {
             places.forEach { a ->
                 val n = items.count { it.at == a }
@@ -276,6 +283,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         val tabsAt = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
         var shownPane by remember { mutableStateOf(pane) }
         androidx.compose.runtime.LaunchedEffect(pane) { if (pane != shownPane) { shownPane = pane; runCatching { tabsAt.bringIntoView() } } }
+        androidx.compose.runtime.LaunchedEffect(addJump, addAsk) { if (addJump > 0 || addAsk > 0) { pane = Pane.ADD; runCatching { tabsAt.bringIntoView() } } }
         Row(Modifier.bringIntoViewRequester(tabsAt), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Pane.entries.forEach { p ->
                 TextButton(onClick = { pane = p }, modifier = Modifier.heightIn(min = 44.dp)) {
