@@ -38,6 +38,8 @@ class FirstSetup(
     private val today: () -> LocalDate = Today::date,
     /** 1.36 PC C3: where the day of the first setup is kept (null in tests that do not ask). */
     private val prefs: android.content.SharedPreferences? = null,
+    /** 1.38 통합 8차: the app's versionCode, kept with the day so a setup made on an older app is told apart by version, not date. */
+    private val versionCode: Int = com.bamnat.app.BuildConfig.VERSION_CODE,
 ) {
     private val lock = Mutex()
 
@@ -67,7 +69,7 @@ class FirstSetup(
         keepCompany(company(), marked, used)
         settings.update { it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT) }
         drafts.clear()
-        prefs?.edit()?.putString(DAY_KEY, today().toString())?.apply()
+        prefs?.edit()?.putString(DAY_KEY, today().toString())?.putInt(VERSION_KEY, versionCode)?.apply()
         _saved.value = saved
         saved
     }
@@ -80,6 +82,9 @@ class FirstSetup(
 
     /** The day the first setup was saved on this phone (kept since 1.36), or null. */
     fun day(): java.time.LocalDate? = prefs?.getString(DAY_KEY, null)?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+
+    /** The app's versionCode the first setup was saved with (kept since 1.38), or null for a setup made before. */
+    fun version(): Int? = prefs?.takeIf { it.contains(VERSION_KEY) }?.getInt(VERSION_KEY, 0)
 
     /** A save the app was closed in the middle of is finished, never asked again. */
     suspend fun finishInterrupted() {
@@ -145,3 +150,4 @@ class FirstSetup(
 }
 
 private const val DAY_KEY = "first_setup_day"
+private const val VERSION_KEY = "first_setup_version"

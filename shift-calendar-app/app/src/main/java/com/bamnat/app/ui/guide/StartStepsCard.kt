@@ -51,16 +51,37 @@ object StartStepsState {
     /** [J133-52] A company (or its public cycle) was chosen in the first setup, so 회사 고르기 is done already. */
     fun companyPicked(c: AppContainer) = c.appContext.getSharedPreferences(FILE, 0).edit().putBoolean(K_COMPANY, true).apply()
 
-    /** Today's rows for this phone, or null for no card. [hasShifts]: the calendar on screen has days. */
-    /** True when the calendar was set up ([setupDay], null before 1.36) before the app was last updated on [updatedOn]. */
-    internal fun cameByUpdate(setupDay: java.time.LocalDate?, updatedOn: java.time.LocalDate?): Boolean =
-        updatedOn != null && (setupDay == null || setupDay.isBefore(updatedOn))
+    private const val K_UPDATER = "came_by_update"
 
+    /**
+     * True when the calendar came by an update: set up on an app older than [current] ([setupVersion], kept since 1.38), or
+     * set up before 1.38 kept a version and the app was updated since ([updated]). Null while nothing is set up yet.
+     * 1.38 통합 8차 (같은 날 옛 판 설치·덮어 깔기 뒤 시계를 11/11로 옮기면 시작 단계가 다시): versions, not days, so a setup
+     * and an update on one day are told apart and moving the clock changes nothing.
+     */
+    internal fun cameByUpdate(setupVersion: Int?, current: Int, setupDone: Boolean, updated: Boolean): Boolean? = when {
+        setupVersion != null -> setupVersion < current
+        !setupDone -> null
+        else -> updated
+    }
+
+    /** [cameByUpdate] for this phone, decided once and kept, so it never changes afterwards. */
+    fun cameByUpdate(c: AppContainer): Boolean {
+        val p = c.appContext.getSharedPreferences(FILE, 0)
+        if (p.contains(K_UPDATER)) return p.getBoolean(K_UPDATER, false)
+        val v = cameByUpdate(c.firstSetup.version(), com.bamnat.app.BuildConfig.VERSION_CODE,
+            setupDone = c.settingsRepository.current.workStyle != null || c.firstSetup.day() != null, updated = c.updatedAt != null)
+            ?: return false
+        p.edit().putBoolean(K_UPDATER, v).apply()
+        return v
+    }
+
+    /** Today's rows for this phone, or null for no card. [hasShifts]: the calendar on screen has days. */
     fun rows(c: AppContainer, hasShifts: Boolean, style: WorkStyle? = c.settingsRepository.current.workStyle): List<StartSteps.Row>? {
         val s = c.settingsRepository.current
         // 1.38 PC 4a5c3828 (1.36에서 업데이트로 온 사람 달력 맨 위에 시작 단계와 '알림 2개 더 보기'): the steps are for a new phone's
         // first week; a calendar set up before the app was last updated is not new.
-        if (cameByUpdate(c.firstSetup.day(), c.updatedAt?.atZone(Today.zone())?.toLocalDate())) return null
+        if (cameByUpdate(c)) return null
         // [J133-26] 1.33 (실사용 테스트 "식당·현장 달력에 '근무 넣기'·'우리 회사 고르기'"): steps of the calendar on screen's own work.
         // [J133-71] 1.33 (사용자 "알바 파트타임 같은 유형에서 회사 검색같은것은 의미가 없지 않아?"): only 교대·일근 pick a company.
         val companyApplies = c.companyApi.enabled && style?.usesCompany != false
