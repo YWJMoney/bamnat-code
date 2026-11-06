@@ -74,6 +74,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
+import androidx.compose.ui.text.font.FontWeight
 import java.util.UUID
 
 /**
@@ -135,6 +136,24 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                 StatTile("사장님 4대보험", Fmt.won(ledger.employerInsurance), Modifier.weight(1f), caption = "참고")
             }
             ValueLine("인건비 합계", Fmt.won(ledger.total), strong = true)
+            // 1.38 [P3-X-07] 인건비율: the 가계부's 매출 for the month next to it.
+            val book by context.appContainer.moneyRepository.book.collectAsStateWithLifecycle(null)
+            val lastWork by store.work(place.id, ym.minusMonths(1)).collectAsStateWithLifecycle(emptyList())
+            val ratio = remember(book, ledger, lastWork, staff) {
+                book?.let { b ->
+                    val last = PayrollLedger.month(place, staff, ym.minusMonths(1), lastWork).total.takeIf { it > 0 }
+                    com.bamnat.core.boss.LaborRatio.of(ym, ledger.total, b.sales, Today.date(), last)
+                }
+            }
+            ratio?.let { r ->
+                val label = com.bamnat.core.boss.LaborRatio::label
+                val pct = r.percent
+                if (pct != null) {
+                    ValueLine("매출 대비 인건비", label(pct) + " (매출 ${Fmt.won(r.sales)}, ${r.salesDays}일)", strong = true)
+                    r.pacePercent?.let { Hint("지금까지 매출 흐름이면 이달 매출 약 ${Fmt.won(r.paceSales!!)}, 인건비율 약 ${label(it)}") }
+                    r.lastPercent?.let { Hint("지난달 ${label(it)}") }
+                } else if (ledger.total > 0) Hint("가계부에 하루 매출을 적으면 매출 대비 인건비가 여기에 보여요.")
+            }
             place.payDate(ym)?.let { Hint("지급일 ${Fmt.monthDay(it)}") }
         }
         if (staff.isEmpty()) Hint("직원을 더하면 평소 근무 요일·시간으로 한 달 급여를 계산해요. 지각·결근·대근이 있던 날만 고치면 돼요.")
@@ -334,7 +353,7 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
     }
     if (slip) PayslipDialog(place, l, month) { slip = false }
     why?.let { AlertDialog(onDismissRequest = { why = null }, confirmButton = { TextButton(onClick = { why = null }) { Text("알겠어요") } }, text = { Text(it) }) }
-    day?.let { d -> WorkDayDialog(l.staff, d, work.firstOrNull { it.staffId == l.staff.id && it.date == d }, onFind = { day = null; onFind(d) }) { day = null } }
+    day?.let { d -> WorkDayDialog(l.staff, d, work.firstOrNull { it.staffId == l.staff.id && it.date == d }, place = place, work = work, onFind = { day = null; onFind(d) }) { day = null } }
 }
 
 /** The month as day numbers, a changed day marked by its kind's first letter. */
@@ -355,7 +374,8 @@ private fun MonthDays(month: YearMonth, changed: Map<LocalDate, StaffWork>, enab
 /** [BOSS-03] How one day went: a kind, and for 시간 바꿈·지각·조퇴·대근 the hours worked. "평소대로" takes the change off. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, onFind: () -> Unit = {}, onDismiss: () -> Unit) {
+private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, place: Workplace? = null, work: List<StaffWork> = emptyList(),
+                          onFind: () -> Unit = {}, onDismiss: () -> Unit) {
     val app = LocalContext.current.appContainer
     val store = app.phaseThree
     val usual = s.weekly[date.dayOfWeek]
@@ -386,6 +406,22 @@ private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, onFi
                     WorkKind.COVER -> "평소 쉬는 날 대신 일한 날이에요."
                     else -> "일한 시간대로 다시 계산해요."
                 }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 1.38 [P3-X-07] What this change does to the month's 인건비 (주휴·가산·4대보험 사업주 몫까지), as the ledger counts it.
+                if (place != null) {
+                    val delta = remember(kind, start, end, work) {
+                        runCatching {
+                            val month = YearMonth.from(date)
+                            val others = work.filter { it.staffId == s.id && it.date != date }
+                            val w = if (kind in StaffWork.TIMED) StaffWork(s.id, date, kind, start, end) else StaffWork(s.id, date, kind)
+                            val before = PayrollLedger.line(place, s, month, work.filter { it.staffId == s.id }).employerTotal
+                            PayrollLedger.line(place, s, month, others + w).employerTotal - before
+                        }.getOrNull()
+                    }
+                    delta?.takeIf { it != 0L }?.let {
+                        Text("이렇게 저장하면 이달 인건비 ${if (it > 0) "+" else "−"}${Fmt.won(kotlin.math.abs(it))}", style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium)
+                    }
+                }
                 // 1.38 [P3-X-01] 대타 찾기: a day this person was to work and now won't; saved first, then who could come and what it costs.
                 val gap = kind == WorkKind.ABSENT || kind == WorkKind.LEAVE || kind == WorkKind.OFF
                 if (gap && (usual != null || now?.kind in StaffWork.TIMED)) OutlinedButton(onClick = {
