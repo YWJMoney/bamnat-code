@@ -25,6 +25,8 @@
          so Play's review has no permission to ask about; exact alarms already ring through Doze. -->
     <!-- [SLP-08] Read only: sleep sessions a watch or the phone wrote to Health Connect. -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <!-- [SLEEP-09] 1.38, off by default: 밤낮's own sleeps written to Health Connect when the user turns it on. -->
+    <uses-permission android:name="android.permission.health.WRITE_SLEEP" />
     <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- [FEAT-07] 휴대폰 캘린더에 근무 쓰기 (프로): asked only when the user turns it on. -->
@@ -288,6 +290,11 @@
             android:name=".sleep.NoiseService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- [SLEEP-08] 깨우는 구간's start: listens through the measuring; the alarm itself is AlarmReceiver's. -->
+        <receiver
+            android:name=".sleep.SmartWakeReceiver"
+            android:exported="false" />
 
         <!-- [SLEEP-06] 정밀 측정, started by the user's tap. -->
         <service

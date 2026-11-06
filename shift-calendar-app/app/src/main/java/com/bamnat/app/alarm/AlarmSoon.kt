@@ -145,6 +145,20 @@ object AlarmSoon {
         Notifications.post(context, NOTICE_ID, notification)
     }
 
+    /**
+     * 1.38 [SLEEP-08] The on-time ring of an alarm that already rang early in its 깨우는 구간: off like 이번 알람 끄기, without
+     * the '알람을 껐어요' notice (the user is up), and the next alarm planned.
+     */
+    fun skipQuietly(context: Context, at: Long) {
+        if (at <= Today.millis()) return
+        save(context, skippedAll(context) + at)
+        if (!BootAlarms.isLocked(context)) {
+            val c = context.appContainer
+            c.telemetry.event("alarm_smart_early")
+            c.appScope.launch { runCatching { c.rescheduleAlarms() } }
+        }
+    }
+
     /** 다시 켜기: the skipped alarm at [at] rings after all, while it is still ahead; null puts every one back. */
     fun unskip(context: Context, at: Long? = null) {
         save(context, if (at == null || at <= 0) emptyList() else skippedAll(context) - at)

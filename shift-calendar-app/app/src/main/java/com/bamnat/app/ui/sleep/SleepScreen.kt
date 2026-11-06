@@ -85,6 +85,7 @@ import com.bamnat.app.sleep.SleepAutoWatch
 import com.bamnat.app.sleep.SleepRecordService
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.theme.LocalCalendarColors
@@ -200,6 +201,12 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         container.settingsRepository.update { it.copy(noiseMix = mix.encode(), noiseTimerMinutes = minutes) }
     }
 
+    fun setSmartWake(minutes: Int) {
+        container.settingsRepository.update { it.copy(smartWakeMinutes = minutes) }
+        // The window follows the next alarm: plan it again now.
+        container.appScope.launch { container.rescheduleAlarms() }
+    }
+
     fun setNightLook(on: Boolean) = container.settingsRepository.update { it.copy(sleepNightLook = on) }
 
     fun setAuto(on: Boolean) {
@@ -219,7 +226,13 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
-    fun refreshHealth() { viewModelScope.launch { container.healthSleep.refresh(settings.value.healthSleep) } }
+    fun refreshHealth() {
+        viewModelScope.launch {
+            container.healthSleep.refresh(settings.value.healthSleep)
+            // 1.38 [SLEEP-09] 헬스 커넥트에 쓰기: the last 30 days of the app's own sleeps; the same sleep replaces itself.
+            if (settings.value.healthWrite) container.healthSleep.write(container.sleepRepository.recent(days = 30).first())
+        }
+    }
 
     fun add(start: LocalDateTime, end: LocalDateTime) {
         container.appScope.launch {
@@ -343,7 +356,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             // 1.38 [SLEEP-04] 잠드는 소리, next to 잠들었어요.
             SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
             // 1.38 [SLEEP-06][SLEEP-07] 자는 동안 소리, once `sleep.sound` is open.
-            night?.let { n -> SleepNightCard(n.last, n.events, vm::keepClip) }
+            night?.let { n -> SleepNightCard(n.last, n.events, vm::keepClip, settings.smartWakeMinutes, vm::setSmartWake) }
             // Design: an empty sleep screen points at where to start.
             if (s.log.isEmpty()) com.bamnat.app.ui.components.EmptyState("아직 잠 기록이 없어요",
                 "자기 전에 ‘잠들었어요’, 깨면 ‘깼어요’를 누르거나 아래 ‘기록 추가’로 적어요",

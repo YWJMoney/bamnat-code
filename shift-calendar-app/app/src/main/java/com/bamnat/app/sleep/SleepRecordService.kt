@@ -67,6 +67,8 @@ class SleepRecordService : Service(), SensorEventListener {
     private var sensors: SensorManager? = null
     private val moved = ArrayList<Boolean>()
     @Volatile private var movedThisMinute = false
+    /** 1.38 [SLEEP-08] When the phone or the sheets last moved, or a word was said, for 깨우는 구간. */
+    @Volatile private var lastMovedAt: Long? = null
     private var lastAccel: FloatArray? = null
     private var wake: android.os.PowerManager.WakeLock? = null
 
@@ -114,7 +116,7 @@ class SleepRecordService : Service(), SensorEventListener {
                 // Another app's sound is not the night's.
                 if (audio?.isMusicActive == true && NoiseService.playing.value == null) return@SoundDetector
                 events += e
-                if (e.kind == SoundKind.MOVE) movedThisMinute = true
+                if (e.kind == SoundKind.MOVE || e.kind == SoundKind.TALK) { movedThisMinute = true; lastMovedAt = Today.millis(); SmartWake.check(this, lastMovedAt) }
                 _recording.value = Recording(startedAt, events.count { it.kind != SoundKind.MOVE && it.kind != SoundKind.OTHER })
                 keepClip(e, events, clips, ring, written, rate)
             }
@@ -197,7 +199,7 @@ class SleepRecordService : Service(), SensorEventListener {
         val last = lastAccel
         if (last != null) {
             val d = sqrt((v[0] - last[0]) * (v[0] - last[0]) + (v[1] - last[1]) * (v[1] - last[1]) + (v[2] - last[2]) * (v[2] - last[2]))
-            if (d > MOVE_THRESHOLD) movedThisMinute = true
+            if (d > MOVE_THRESHOLD) { movedThisMinute = true; lastMovedAt = Today.millis(); SmartWake.check(this, lastMovedAt) }
         }
         lastAccel = v.copyOf()
     }

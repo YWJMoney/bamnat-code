@@ -80,6 +80,7 @@ class AlarmScheduler(
         _ahead.value = shownAhead(ahead, skips)
         if (plan == null) {
             if (!enabled) _ahead.value = emptyList()
+            com.bamnat.app.sleep.SmartWake.arm(context, null) // 1.38 [SLEEP-08]
             AlarmSoon.schedule(context, null, null, 0)
             AlarmGuard.schedule(context, null)
             AlarmGuard.scheduleBack(context, null, null)
@@ -92,6 +93,8 @@ class AlarmScheduler(
         val triggerAt = plan.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli()
         val exact = setAlarm(triggerAt, operation)
         prefs.edit().putLong(K_PENDING, triggerAt).apply()
+        // 1.38 [SLEEP-08] 깨우는 구간: a separate listening alarm before this one (off by default); the alarm above stays.
+        com.bamnat.app.sleep.SmartWake.arm(context, RingRequest.from(plan, triggerAt))
         AlarmSoon.schedule(context, triggerAt, soonText(plan), soonMinutes())
         AlarmGuard.schedule(context, if (guard()) triggerAt else null)
         // [ALRM-29] The first alarm after a break (no alarm in any calendar for two days) is said the evening before.

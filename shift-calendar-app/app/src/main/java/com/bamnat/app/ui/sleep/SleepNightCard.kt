@@ -39,7 +39,14 @@ import java.time.LocalDateTime
  * listen to first (different kinds, the loudest of each). Kept clips stay past the 7 days.
  */
 @Composable
-internal fun SleepNightCard(last: SleepRecordService.Companion.LastNight?, events: List<SleepEventEntity>, onKeep: (SleepEventEntity, Boolean) -> Unit) {
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+internal fun SleepNightCard(
+    last: SleepRecordService.Companion.LastNight?,
+    events: List<SleepEventEntity>,
+    onKeep: (SleepEventEntity, Boolean) -> Unit,
+    smartWake: Int,
+    onSmartWake: (Int) -> Unit,
+) {
     val context = LocalContext.current
     val recording by SleepRecordService.recording.collectAsStateWithLifecycle()
     var refused by remember { mutableStateOf(false) }
@@ -60,6 +67,16 @@ internal fun SleepNightCard(last: SleepRecordService.Companion.LastNight?, event
                 if (SleepRecordService.permitted(context)) SleepRecordService.start(context) else ask.launch(Manifest.permission.RECORD_AUDIO)
             }, modifier = Modifier.padding(top = 8.dp)) { Text("측정 시작") }
         }
+        // 1.38 [SLEEP-08] 깨우는 구간: only earlier than the alarm, and only while measuring.
+        Text("깨우는 구간 (재는 동안, 알람보다 일찍 얕은 잠일 때)", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            com.bamnat.core.sleep.SmartWakeRule.CHOICES_MINUTES.forEach { m ->
+                com.bamnat.app.ui.components.FilterChip(selected = smartWake == m, onClick = { onSmartWake(m) },
+                    label = { Text(com.bamnat.core.sleep.SmartWakeRule.label(m)) })
+            }
+        }
+        if (smartWake > 0) Text("근무 알람은 정시에 그대로 울려요. 구간 안에 뒤척이면 그때 먼저 깨우고, 정시 알람은 꺼요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (r == null && last != null && last.end.isAfter(Today.dateTime().minusHours(18))) {
             Text("지난밤 ${Fmt.time(last.start.toLocalTime())}–${Fmt.time(last.end.toLocalTime())} · ${last.line}" +
                 if (last.battery >= 0) " · 배터리 ${last.battery}%" else "",

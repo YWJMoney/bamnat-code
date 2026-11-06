@@ -69,7 +69,7 @@ class ZFullBackupTest {
         // 1.32 조사 대조 [WTYP-12][WTYP-16].
         stretchLimitHours = 24, leaveTimeNotice = true,
         // 1.38 [SLEEP-04] 잠드는 소리.
-        noiseMix = "rain:0.60,fan:0.25", noiseTimerMinutes = 60, sleepNightLook = false,
+        noiseMix = "rain:0.60,fan:0.25", noiseTimerMinutes = 60, sleepNightLook = false, smartWakeMinutes = 20,
     )
 
     private fun prefs(name: String) = app.getSharedPreferences(name, Context.MODE_PRIVATE)

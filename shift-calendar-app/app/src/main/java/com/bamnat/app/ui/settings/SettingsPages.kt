@@ -1240,7 +1240,33 @@ private fun HealthSleepRow(vm: SettingsViewModel, on: Boolean) {
         }
     }
     message?.let { Note(it) }
+    HealthWriteRow(vm)
 }
+
+/** 1.38 [SLEEP-09] 헬스 커넥트에 쓰기: 밤낮's sleeps for other health apps, asked for when turned on. */
+@Composable
+private fun HealthWriteRow(vm: SettingsViewModel) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    var message by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val ask = rememberLauncherForActivityResult(
+        androidx.health.connect.client.PermissionController.createRequestPermissionResultContract(),
+    ) { granted ->
+        val ok = granted.containsAll(com.bamnat.app.sleep.HealthSleep.WRITE)
+        vm.update { it.copy(healthWrite = ok) }
+        message = if (ok) null else "수면 쓰기를 허용하지 않아 꺼 두었어요."
+    }
+    SwitchRow(HEALTH_WRITE_ROW, "밤낮에 적은 잠(자동·측정 포함)을 헬스 커넥트에 넣어 다른 건강 앱에서도 보게 해요",
+        settings.healthWrite) { v ->
+        message = null
+        if (!v) vm.update { it.copy(healthWrite = false) }
+        else if (vm.healthSdkStatus() != androidx.health.connect.client.HealthConnectClient.SDK_AVAILABLE) message = "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요."
+        else scope.launch { runCatching { ask.launch(com.bamnat.app.sleep.HealthSleep.WRITE) }.onFailure { message = "헬스 커넥트 허용 화면을 열지 못했어요." } }
+    }
+    message?.let { Note(it) }
+}
+
+internal const val HEALTH_WRITE_ROW = "헬스 커넥트에 수면 쓰기"
 
 /**
  * [DAILY-16] The 시·도 the 광장 시세 card compares in. Without it (and without a rate the user shared), no card
