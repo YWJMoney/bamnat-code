@@ -9,7 +9,7 @@ package com.bamnat.core.imports
  * - only one reading has the day (the others lost it) → that cell, in yellow ([RosterRow.unsure]): likely, but looked at;
  * - readings disagree → the most read one (the anchor's on a tie), in yellow.
  * So a cell one reading lost comes back already filled, and a cell read two ways never goes in without a look
- * (사용자 "모든 사진 인식 부분에 오류나 버그 인식 부정확이 일어나지 않게"). A single reading is returned as it is.
+ * (사용자 "모든 사진 인식 부분에 오류나 버그 인식 부정확이 일어나지 않게"). A single reading is returned as it is, its 조 repeat filled.
  */
 object RosterVote {
     /** Fewest days two lines share before they are taken for the same person's by their cells alone. */
@@ -18,7 +18,8 @@ object RosterVote {
     fun merge(reads: List<RosterPhotoRead>): RosterPhotoRead {
         val usable = reads.filter { it.rows.isNotEmpty() }
         if (usable.isEmpty()) return reads.firstOrNull() ?: RosterPhotoRead(emptyList(), 0.0, emptyList(), RosterPhotoRead.Problem.NO_TEXT)
-        if (usable.size == 1) return usable[0]
+        // [READ-36] One reading (a clean photo read once) gets the repeat too.
+        if (usable.size == 1) return usable[0].let { it.copy(rows = RosterPeriod.fill(it.rows)) }
         val anchor = reads[anchor(reads)]
         val others = usable.filter { it !== anchor }
         val rows = anchor.rows.map { a -> vote(a, others.mapNotNull { match(a, it.rows) }) }

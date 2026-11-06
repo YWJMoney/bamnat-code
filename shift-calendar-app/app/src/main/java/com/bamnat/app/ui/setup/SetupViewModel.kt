@@ -686,6 +686,7 @@ class SetupViewModel(
     fun clearRoster() {
         _roster.value = null
         _rosterAsks.value = emptyList()
+        _sheetKinds.value = null
     }
 
     /** [SETUP-15] The picked line onto the painted days of the roster's month, its leave with it; one undo takes it back. */
@@ -720,6 +721,8 @@ class SetupViewModel(
         if (r.rows.size > 1) rosterRank = i
         _roster.value = r.copy(rows = listOf(row))
         _rosterAsks.value = asks
+        // [READ-36] The sheet's own letters (주·야·비·휴) the setup's kinds do not use: offered as the kinds, once.
+        _sheetKinds.value = com.bamnat.core.imports.SheetKinds.of(r.rows.flatMap { it.raw.values }, current.types)
         val spill = row.outside.keys.sorted()
         _message.value = "${month.monthValue}월 ${days.size}일을 칠했어요" +
             (if (spill.isNotEmpty()) " (${com.bamnat.app.ui.imports.RosterReader.span(spill)} 포함)" else "") +
@@ -735,6 +738,40 @@ class SetupViewModel(
         val main = d.painted.values.filterNotNull().groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
             ?: d.types.firstOrNull { !it.isOff }?.id ?: return emptyMap()
         return dates.filter { d.painted[it] == null }.associateWith { main }
+    }
+
+    private val _sheetKinds = MutableStateFlow<List<com.bamnat.core.schedule.BundleShift>?>(null)
+    /** [READ-36] Kinds named by the roster's own letters, offered once after it is read; null when not. */
+    val sheetKinds: StateFlow<List<com.bamnat.core.schedule.BundleShift>?> = _sheetKinds.asStateFlow()
+
+    fun keepKinds() { _sheetKinds.value = null }
+
+    /**
+     * [READ-36] 1.38 PC 8차: the setup's kinds become the sheet's own (주간 주 · 야간 야 · 비번 비 · 휴무 휴) and the picked line is
+     * read again with them from what each cell said, so 비번 and 휴무 stay apart; days the photo lost are filled from the
+     * 조 repeat again (yellow). The times are the usual ones, to change on the times' step.
+     */
+    fun useSheetKinds() {
+        val kinds = _sheetKinds.value ?: return
+        _sheetKinds.value = null
+        val r = _roster.value ?: return
+        val row = r.rows.singleOrNull() ?: return
+        val before = rosterCodes()
+        update { it.withShifts(com.bamnat.core.setup.SetupDraft.CUSTOM, kinds) }
+        val codes = rosterCodes()
+        val leave = row.cells.filterValues { it is com.bamnat.core.imports.DutyCell.Leave }
+        val read = row.raw.mapNotNull { (d, t) -> codes.read(t)?.first?.let { d to it } }.toMap()
+        // A day yellow only because a common code stood for the old kind (주 → 데이) is the sheet's own word now.
+        val guessed = row.guessed.filter { d ->
+            val t = row.raw[d] ?: return@filter true
+            val old = row.cells[d]
+            !(old != null && before.guessedWork(t, old)) || read[d]?.let { codes.guessedWork(t, it) } != false
+        }.toSet()
+        val again = com.bamnat.core.imports.RosterPeriod.fill(listOf(row.copy(cells = (leave + read).toSortedMap(), guessed = guessed))).first()
+        _roster.value = r.copy(rows = listOf(again))
+        useRosterRow(0)
+        _sheetKinds.value = null
+        _message.value = "근무 종류를 ${kinds.joinToString("·") { it.type.name }}로 맞췄어요. 시간은 ‘이전’의 근무 시간에서 바꿀 수 있어요"
     }
 
     /** [SETUP-15] What a code the setup did not know means: its days painted (or given leave), or left as they are (null). */

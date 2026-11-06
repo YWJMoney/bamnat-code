@@ -180,6 +180,9 @@ class DutyCodes(
         exact[n]?.let { return DutyCell.Shift(it) }
         learned[n]?.let { return it }
         if (aliases.containsKey(n)) return aliases[n] ?: DutyCell.Unknown(token.trim())
+        // [READ-36] 1.38 PC 8차: a one-letter code read a stroke off ("아" for 야, "추" for 주, "취" for 휴): the code it is
+        // nearly, looked at (yellow) like any common code.
+        LOOKALIKE[n]?.let { t -> if (aliases.containsKey(t)) return aliases[t] ?: DutyCell.Unknown(token.trim()) }
         return null
     }
 
@@ -208,9 +211,10 @@ class DutyCodes(
      * [NURS-04] True when [cell] is a kind of work picked from a common code in [token] (주, N, 이브닝) rather than
      * the calendar's own name or short name: the right group, maybe not the user's own kind. Days off never are.
      */
-    fun guessedWork(token: String, cell: DutyCell): Boolean =
-        cell is DutyCell.Shift && types.firstOrNull { it.id == cell.shiftTypeId }?.isOff == false &&
-            codeOf(token).let { !exact.containsKey(it) && !learned.containsKey(it) }
+    fun guessedWork(token: String, cell: DutyCell): Boolean = codeOf(token).let { c ->
+        c in LOOKALIKE && !exact.containsKey(c) && !learned.containsKey(c) ||
+            cell is DutyCell.Shift && types.firstOrNull { it.id == cell.shiftTypeId }?.isOff == false && !exact.containsKey(c) && !learned.containsKey(c)
+    }
 
     /** [ROST-11] The code a token stands for, marks and times taken off: what the code book keeps an answer under. */
     fun codeOf(token: String): String {
@@ -282,6 +286,9 @@ class DutyCodes(
         /** [ROST-04] Full-width letters and digits from a 한글 document (Ｄ, １) read as plain ones (중-7). */
         fun fold(s: String): String = Normalizer.normalize(s, Normalizer.Form.NFKC)
         fun norm(s: String): String = fold(s).replace(STRIP, "").uppercase()
+
+        /** [READ-36] One-letter codes as a photo misreads them, and the code each nearly is. */
+        internal val LOOKALIKE = mapOf("아" to "야", "추" to "주", "츄" to "주", "쥬" to "주", "취" to "휴", "휘" to "휴")
 
         /** [ROST-03] Marks written after a code on rosters: 교육 *, 반 근무 /, 표시 ', 추가 +, △ ○ ※. */
         private const val MARKS = "*/'+△▲○●※#!~`^"
@@ -364,6 +371,18 @@ object DutyRoster {
         // [READ-37] 1.38 PC: a ward's row of weekdays under its dates, misread ("으" for 일), and the row of dates with
         // "이름" beside it came out as two more people ("으 · 16일", "이름|의 · 22일"; 14명 for 12).
         rows.filterNot(::headerLike).takeIf { it.isNotEmpty() }?.let { rows = it }
+        // [READ-36] 1.38 PC 8차 (조 근무표 사진, "3번째 줄 · 18일"): on a sheet whose lines are named (1조, 2조, 김민지), a short
+        // line with no name that says what a named line says on the same days is a piece of that one read twice, never one
+        // more person. (A nameless line of its own, a 손글씨 name lost, stays.)
+        if (rows.count { it.label.isNotBlank() } >= 2) {
+            val most = rows.maxOf { it.cells.size }
+            fun twice(r: RosterRow) = rows.any { o ->
+                o !== r && o.label.isNotBlank() && r.cells.keys.intersect(o.cells.keys).let { shared ->
+                    shared.size >= 5 && shared.count { r.cells[it] == o.cells[it] } * 10 >= shared.size * 8
+                }
+            }
+            rows.filterNot { it.label.isBlank() && it.cells.size * 10 < most * 7 && twice(it) }.takeIf { it.isNotEmpty() }?.let { rows = it }
+        }
         // [GROW-05] 1.38: a month calendar's picture (다른 앱 화면 캡처) is one line of the user's own; its weeks are not
         // several people's lines.
         if (hint == null) CalendarShot.read(clean, codes)?.let { shot -> if (rows.none { it.cells.size > shot.cells.size }) rows = listOf(shot) }

@@ -617,12 +617,32 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
     fixing?.let { day ->
         com.bamnat.app.ui.imports.CellDialog(month.atDay(day), d.types, onDismiss = { fixing = null }) { cell -> vm.fixRosterDay(month.atDay(day), cell); fixing = null }
     }
+    // [READ-36] 1.38 PC 8차: the sheet says 주·야·비·휴 and the setup 데이·나이트·오프: its own letters offered as the kinds, once.
+    val sheetKinds by vm.sheetKinds.collectAsStateWithLifecycle()
+    sheetKinds?.let { kinds ->
+        androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("근무표의 글자로 근무 종류를 맞출까요?", style = MaterialTheme.typography.titleSmall)
+                Text(kinds.joinToString(" · ") { k -> "${k.type.name}(${k.type.label})" + (k.type.start?.let { s -> " ${s.hour}~${k.type.end?.hour ?: ""}시" } ?: "") },
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("지금은 ${d.types.joinToString("·") { it.name }}로 들어가요. 맞추면 비번과 휴무도 따로 남고, 시간은 근무 시간 단계에서 바꿀 수 있어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.bamnat.app.ui.components.Button(onClick = vm::useSheetKinds) { Text("글자대로 맞추기") }
+                    androidx.compose.material3.TextButton(onClick = vm::keepKinds) { Text("지금 그대로") }
+                }
+            }
+        }
+    }
     // [SETUP-15] A code the setup's kinds do not cover: asked here, one at a time, so it goes in with the setup.
     val asks by vm.rosterAsks.collectAsStateWithLifecycle()
     asks.firstOrNull()?.let { (ask, days) ->
         androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
             androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("‘${ask.raw}’(${days.size}일)는 무엇인가요?", style = MaterialTheme.typography.titleSmall,
+                // [READ-36] 1.38 PC 8차: "(1일)" read as the 1st; the days themselves are said ("21일", "3·10·17일 외 2칸").
+                val sorted = days.map { it.dayOfMonth }.sorted()
+                val where = sorted.take(4).joinToString("·") + "일" + if (sorted.size > 4) " 외 ${sorted.size - 4}칸" else ""
+                Text("‘${ask.raw}’로 읽은 칸($where)은 무엇인가요?", style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (!ask.leave) d.types.forEach { t ->
