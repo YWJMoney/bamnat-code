@@ -165,7 +165,7 @@ class AlarmActivity : ComponentActivity() {
                     RingingScreen(
                         title = if (current.recheck) current.title else current.label ?: if (current.shiftName.isBlank()) "알람" else "${current.shiftName} 근무",
                         // 1.38 [SLEEP-08] "얕은 잠이라 12분 일찍 깨웠어요" under the same words when it came early.
-                        subtitle = listOfNotNull(AlarmService.describe(current), com.bamnat.app.sleep.SmartWake.earlyLine(this, current)).joinToString("\n"),
+                        subtitle = listOfNotNull(AlarmService.describe(current), com.bamnat.app.sleep.SmartWake.earlyLine(this, current, AlarmService.ringStartedAt.takeIf { it > 0L } ?: Today.millis())).joinToString("\n"),
                         snoozeMinutes = snoozeMinutes,
                         dismissLabel = if (mission == AlarmMission.NONE) "알람 끄기" else "알람 끄기 · ${mission.label}",
                         onSnooze = { AlarmService.snooze(this@AlarmActivity) },

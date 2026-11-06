@@ -113,10 +113,15 @@ object SmartWake {
         if (rangEarly(context, ring)) AlarmSoon.skipQuietly(context, ring.triggerAtMillis)
     }
 
-    /** The line for the ringing screen when this alarm came early, else null. */
-    fun earlyLine(context: Context, ring: RingRequest): String? {
+    /**
+     * The line for the ringing screen when this alarm came early, else null. PC 12차 (w-8): judged by when the ring began
+     * ([startedAt]), so an early ring keeps its line however long it is shown, and the on-time ring of the same alarm,
+     * begun at its time, has none.
+     */
+    fun earlyLine(context: Context, ring: RingRequest, startedAt: Long = Today.millis()): String? {
+        if (ring.label != null || ring.isSnooze || ring.recheck || startedAt >= ring.triggerAtMillis) return null
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (p.getLong(K_EARLY_AT, 0L) != ring.triggerAtMillis || Today.millis() >= ring.triggerAtMillis) return null
+        if (p.getLong(K_EARLY_AT, 0L) != ring.triggerAtMillis) return null
         return SmartWakeRule.line(p.getLong(K_EARLY_MIN, 0L))
     }
 }

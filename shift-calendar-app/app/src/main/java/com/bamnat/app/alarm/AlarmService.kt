@@ -207,6 +207,8 @@ class AlarmService : Service() {
         phoneLater = null
         // [PROV-06] The mission's 5 minutes count from the first ring, not from a ring that replaced it.
         if (_ringing.value == null) _since.value = Today.millis()
+        // 1.38 [SLEEP-08] PC 12차: whether this ring came early is told by when it began, not by the clock while it is shown.
+        ringStartedAt = Today.millis()
         _ringing.value = ring
         if (!ring.recheck && !BootAlarms.isLocked(this)) WakeCheck.cancel(this)
         // [ALRM-22] A call already on: nothing sounds or opens over it; the ring starts when the call ends.
@@ -621,6 +623,10 @@ class AlarmService : Service() {
         private val _ringing = MutableStateFlow<RingRequest?>(null)
         /** The alarm currently ringing, observed by [AlarmActivity]. */
         val ringing: StateFlow<RingRequest?> = _ringing.asStateFlow()
+
+        /** 1.38 [SLEEP-08] When the ring now ringing began; a ring that replaced another starts its own. */
+        @Volatile var ringStartedAt: Long = 0L
+            private set
 
         private val _since = MutableStateFlow<Long?>(null)
         /** [PROV-06] When the ringing began (epoch ms), for the mission's time limit. */
