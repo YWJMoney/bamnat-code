@@ -111,11 +111,57 @@ object RosterScanner {
             words += back
             reads += DutyRoster.analyse(back, codes)
         }
+        // [READ-35] 1.38: the page read once more band by band, each band a few rows high made bigger, when the vote still has
+        // cells to look at (a lone D·E·N·O the whole page's readings lost is a big letter in its band).
+        if (RosterVote.merge(reads).rows.any { it.doubtful(31).isNotEmpty() } && !ImagePrep.low(context)) {
+            progress(more.size + 2, more.size + 2)
+            strips(context, base, box, letter ?: 0)?.let { band -> words += band; reads += DutyRoster.analyse(band, codes) }
+        }
         val anchor = RosterVote.anchor(reads)
         if (BuildConfig.DEBUG) dump(words, anchor)
         val quality = PhotoQuality.of(stats, letter, first.size, firstRead.tilt)
         val (screen, scale) = ImagePrep.forScreen(base)
         Scan(words[anchor], RosterVote.merge(reads), screen, scale, quality, reads.size)
+    }
+
+    /**
+     * [READ-35] The table read band by band: the paper's light evened out ([PhotoVariants.Kind.FLAT]), cut into bands ~5 letters
+     * high that overlap by half, each made [STRIP_ZOOM]× bigger and read; a word is kept from the band whose middle half it
+     * sits in. Mirror of tools/photo_bench.py `strips`. Null when it could not run (memory, no table found).
+     */
+    private suspend fun strips(context: Context, base: Bitmap, box: android.graphics.Rect?, letter: Int): List<RosterWord>? {
+        if (box == null || letter <= 0) return null
+        val v = ImagePrep.variant(base, PhotoVariants.Kind.FLAT, box) ?: return null
+        try {
+            val flat = v.bitmap
+            val h = flat.height
+            val band = maxOf((letter / v.toBase * 5).toInt(), 24).coerceAtMost(h)
+            val step = band / 2
+            val out = mutableListOf<RosterWord>()
+            var y = 0
+            while (true) {
+                val hh = minOf(band, h - y)
+                val crop = Bitmap.createBitmap(flat, 0, y, flat.width, hh)
+                val zoom = minOf(STRIP_ZOOM, ImagePrep.WORK_SIDE.toFloat() / flat.width).coerceAtLeast(1f)
+                val up = Bitmap.createScaledBitmap(crop, (crop.width * zoom).toInt().coerceAtLeast(1), (crop.height * zoom).toInt().coerceAtLeast(1), true)
+                if (crop !== flat && crop !== up) crop.recycle()
+                val got = runCatching { words(OcrModel.read(context, up)) }.getOrNull().orEmpty()
+                up.recycle()
+                val lo = y + if (y == 0) 0 else band / 4
+                val hi = y + if (y + band >= h) band else band - band / 4
+                for (w in got) {
+                    val t = w.top / zoom + y
+                    val b = w.bottom / zoom + y
+                    if ((t + b) / 2 < lo || (t + b) / 2 >= hi) continue
+                    out += w.copy(left = v.x((w.left / zoom).toInt()), right = v.x((w.right / zoom).toInt()), top = v.y(t.toInt()), bottom = v.y(b.toInt()))
+                }
+                if (y + band >= h || ImagePrep.low(context)) break
+                y += step
+            }
+            return out.takeIf { it.isNotEmpty() }
+        } finally {
+            if (v.bitmap !== base) v.bitmap.recycle()
+        }
     }
 
     /** Words (elements), not lines: a table's cells close together come back as one line. */
@@ -149,4 +195,6 @@ object RosterScanner {
 
     /** From this tilt the leveled photo is read too: ML Kit reads letters turned 1~2° well, a table's columns less so. */
     private const val SECOND_LOOK_TILT = 1.5
+    /** [READ-35] How much bigger each band is read. */
+    private const val STRIP_ZOOM = 2.5f
 }

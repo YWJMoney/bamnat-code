@@ -95,6 +95,36 @@ def variants(a):
     return out
 
 
+def strips(engine, a, letter, zoom=2.5, high=5, start=0):
+    """[READ-35] 1.38: the page read again band by band, each band ~5 letters high made [zoom]× bigger (a lone D·E·N·O the
+    whole page's reading lost or misread is a big letter here). Bands overlap by half; a word is kept from the band whose
+    middle half it sits in, so each is read once. Mirror of the app's RosterScanner strip reading."""
+    f = flat(gray(a))
+    h = f.shape[0]
+    band = max(int(letter * high), 24)
+    step = band // 2
+    out = []
+    y = start
+    while True:
+        crop = f[y:y + band]
+        up = cv2.resize(crop, (int(crop.shape[1] * zoom), int(crop.shape[0] * zoom)), interpolation=cv2.INTER_CUBIC)
+        lo = y + (0 if y == 0 else band // 4)
+        hi = y + (band if y + band >= h else band - band // 4)
+        for l, t, r, b, angle, text in rf.ocr_words(engine, bgr(up)):
+            l, t, r, b = l / zoom, t / zoom + y, r / zoom, b / zoom + y
+            if lo <= (t + b) / 2 < hi:
+                out.append((int(l), int(t), int(r), int(b), angle, text))
+        if y + band >= h:
+            break
+        y += step
+    return out
+
+
+def letter_of(words):
+    hs = sorted(b - t for l, t, r, b, angle, text in words if b > t)
+    return hs[len(hs) // 2] if hs else 20
+
+
 def bgr(g):
     return g if g.ndim == 3 else cv2.cvtColor(g, cv2.COLOR_GRAY2BGR)
 
@@ -252,12 +282,21 @@ def run_roster(engine, args):
         sheet, truth = layout(rng)
         a, where = rf.photograph(sheet, rng, **photo)
         a = harder(a, rng, **after)
-        for vname, (pic, factor) in variants(a).items():
-            if args.images:
-                os.makedirs(args.images, exist_ok=True)
-                cv2.imwrite(os.path.join(args.images, f"{name}.{vname}.jpg"), bgr(pic))
-            read = rf.matched(words_back(engine, pic, factor), sheet, where)
-            rf.write(os.path.join(out, f"{name}.{vname}.tsv"), f"{name} {vname} {photo} {after}", truth, read)
+        if args.variant is None:
+            for vname, (pic, factor) in variants(a).items():
+                if args.images:
+                    os.makedirs(args.images, exist_ok=True)
+                    cv2.imwrite(os.path.join(args.images, f"{name}.{vname}.jpg"), bgr(pic))
+                read = rf.matched(words_back(engine, pic, factor), sheet, where)
+                rf.write(os.path.join(out, f"{name}.{vname}.tsv"), f"{name} {vname} {photo} {after}", truth, read)
+        # [READ-35] the band-by-band reading, its band height from the photo's own letters.
+        letter = letter_of(words_back(engine, a, 1.0))
+        if args.variant in (None, "strips"):
+            read = rf.matched(strips(engine, a, letter), sheet, where)
+            rf.write(os.path.join(out, f"{name}.strips.tsv"), f"{name} strips letter={letter} {photo} {after}", truth, read)
+        if args.variant == "strips2":
+            read = rf.matched(strips(engine, a, letter, zoom=3.5, high=4), sheet, where)
+            rf.write(os.path.join(out, f"{name}.strips2.tsv"), f"{name} strips2 letter={letter} {photo} {after}", truth, read)
         print(name, file=sys.stderr)
 
 
@@ -300,6 +339,7 @@ def main():
     ap.add_argument("--images")
     ap.add_argument("--only")
     ap.add_argument("--kind")
+    ap.add_argument("--variant", help="strips: only the band-by-band reading (the others as they are)")
     args = ap.parse_args()
     engine = rf.Ocr()
     if args.kind in (None, "roster"):

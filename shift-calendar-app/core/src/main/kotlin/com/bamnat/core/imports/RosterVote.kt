@@ -22,7 +22,8 @@ object RosterVote {
         val anchor = reads[anchor(reads)]
         val others = usable.filter { it !== anchor }
         val rows = anchor.rows.map { a -> vote(a, others.mapNotNull { match(a, it.rows) }) }
-        return anchor.copy(rows = folded(rows))
+        // [READ-36] A 조 roster's repeat fills what every reading lost (yellow).
+        return anchor.copy(rows = RosterPeriod.fill(folded(rows)))
     }
 
     /**
