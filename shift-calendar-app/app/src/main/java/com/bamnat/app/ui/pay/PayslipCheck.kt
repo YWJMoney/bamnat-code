@@ -194,6 +194,23 @@ internal fun SlipCheck(
             }
         }
         netIdx.forEach { i -> key(i) { cell(i, read.lines[i]) } }
+        // [READ-38] 1.38 PC 10차 (사용성, 줄이 빠진 사진: '칸 더하기'가 카드 아래라 내려야 보임): when the lines fall short of the
+        // totals the payslip states, the gap is said first, with one tap to the missing line, its amount already in.
+        if (editing != -1) listOfNotNull(
+            read.missingEarning?.let { Triple("지급", SlipRole.ALLOWANCE, it) },
+            read.missingDeduction?.let { Triple("공제", SlipRole.DEDUCTION, it) },
+        ).forEach { (side, role, gap) ->
+            Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("$side 줄이 ${won(gap)}만큼 덜 읽혔어요", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Text("사진에서 안 읽힌 줄이 있어요. 그 줄 이름만 넣으면 돼요(여러 줄이면 금액을 나눠 넣어요).",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    OutlinedButton(onClick = { preset = SlipLine("", role, gap); editing = -1 }, modifier = Modifier.heightIn(min = 48.dp)) {
+                        Text("빠진 $side 줄 더하기 (${won(gap)})")
+                    }
+                }
+            }
+        }
         SlipSums(read)
         // [PHOTO-31] 1.30 AW: the line is fixed in the list, not in a window over it; [PAYIN-02] under the two sides.
         Column(Modifier.bringIntoViewRequester(editorAt)) {

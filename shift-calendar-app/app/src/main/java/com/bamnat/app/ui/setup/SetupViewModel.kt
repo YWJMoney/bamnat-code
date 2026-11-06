@@ -764,17 +764,11 @@ class SetupViewModel(
         val r = _roster.value ?: return
         val row = r.rows.singleOrNull() ?: return
         val before = rosterCodes()
+        val oldRoles = current.roles
+        val oldTypes = current.types
         update { it.withShifts(com.bamnat.core.setup.SetupDraft.CUSTOM, kinds) }
-        val codes = rosterCodes()
-        val leave = row.cells.filterValues { it is com.bamnat.core.imports.DutyCell.Leave }
-        val read = row.raw.mapNotNull { (d, t) -> codes.read(t)?.first?.let { d to it } }.toMap()
-        // A day yellow only because a common code stood for the old kind (주 → 데이) is the sheet's own word now.
-        val guessed = row.guessed.filter { d ->
-            val t = row.raw[d] ?: return@filter true
-            val old = row.cells[d]
-            !(old != null && before.guessedWork(t, old)) || read[d]?.let { codes.guessedWork(t, it) } != false
-        }.toSet()
-        val again = com.bamnat.core.imports.RosterPeriod.fill(listOf(row.copy(cells = (leave + read).toSortedMap(), guessed = guessed))).first()
+        val byRole = current.roles.entries.associate { (id, role) -> role to id }
+        val again = com.bamnat.core.imports.SheetKinds.remap(row, before, rosterCodes(), { id -> oldRoles[id] ?: oldTypes.firstOrNull { it.id == id }?.let(com.bamnat.core.schedule.ShiftRole::guess) }, { byRole[it] })
         _roster.value = r.copy(rows = listOf(again))
         useRosterRow(0)
         _sheetKinds.value = null

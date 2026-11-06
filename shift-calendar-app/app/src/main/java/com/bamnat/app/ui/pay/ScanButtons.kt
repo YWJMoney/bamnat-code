@@ -79,6 +79,8 @@ internal fun ScanButtons(
      * only), so the lines are typed while looking at it; null when there is none to show.
      */
     onEmpty: ((android.graphics.Bitmap?) -> Unit)? = null,
+    /** [READ-41] What the PDF button says: a 체결 캡처 is no 명세서 (PC 10차). */
+    pdfLabel: String = "PDF로 받은 명세서 고르기",
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -194,7 +196,7 @@ internal fun ScanButtons(
             },
         )
         if (onScan != null) TextButton(onClick = { pickPdf.launch(arrayOf("application/pdf")) }, enabled = !reading, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("PDF로 받은 명세서 고르기")
+            Text(pdfLabel)
         }
         if (reading) Row(verticalAlignment = Alignment.CenterVertically) {
             CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
