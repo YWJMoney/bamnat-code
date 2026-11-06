@@ -200,6 +200,11 @@ class DutyRosterTextTest {
         assertEquals(YearMonth.of(2026, 9), DutyRoster.monthIn("2026-09\n1 2 3", near))
         assertEquals(YearMonth.of(2027, 1), DutyRoster.monthIn("1월 근무표", LocalDate.of(2026, 12, 20)))
         assertNull(DutyRoster.monthIn("$days31\n김민지 $month31", near))
+        // [READ-37] 1.38 PC: a ward's number before the year, the title's words out of order as a tilted photo gives them.
+        assertEquals(YearMonth.of(2026, 11), DutyRoster.monthIn("7병동 2026년 11월 근무표", near))
+        assertEquals(YearMonth.of(2026, 11), DutyRoster.monthIn("2026년 7병동 11월 근무표 이름 1 2 3", near))
+        assertEquals(YearMonth.of(2026, 11), DutyRoster.monthIn("2026년 11 월 7병동", near))
+        assertEquals(YearMonth.of(2026, 11), DutyRoster.monthIn("근무표 11월 2026년 7병동 이름 1 2 3", near))
         val row = one("$days31\n김민지 $month31")
         assertEquals(listOf(31), DutyRoster.beyond(row, YearMonth.of(2026, 11)))
         assertTrue(DutyRoster.beyond(row, YearMonth.of(2026, 10)).isEmpty())

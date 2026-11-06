@@ -563,11 +563,13 @@ private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot): String {
     val end = day.end
     val time = if (day.isWorkDay && start != null && end != null) " · ${ExtraText.span(start, end)}" else ""
     return when {
-        day.source == DaySource.OVERRIDE -> {
+        // [READ-37] Without an order every day is put in by hand or from a photo: no "직접 바꿈" on each.
+        day.source == DaySource.OVERRIDE && snapshot.hasPattern -> {
             val pattern = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
             "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""
         }
         day.hasCustomTimes -> "$name$time · 이 날만 시간 바꿈"
+        day.source == DaySource.OVERRIDE -> "$name$time"
         day.source == DaySource.PATTERN -> "$name$time · ${snapshot.backWord}"
         else -> "$name$time"
     }

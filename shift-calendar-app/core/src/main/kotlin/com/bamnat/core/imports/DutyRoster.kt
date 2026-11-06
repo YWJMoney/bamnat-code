@@ -361,6 +361,9 @@ object DutyRoster {
             .sortedWith(compareByDescending<RosterRow> { it.cells.size - it.unknown }.thenBy { it.unknown })
             .distinctBy { it.label to it.cells }
         rows = tidy(rows)
+        // [READ-37] 1.38 PC: a ward's row of weekdays under its dates, misread ("으" for 일), and the row of dates with
+        // "이름" beside it came out as two more people ("으 · 16일", "이름|의 · 22일"; 14명 for 12).
+        rows.filterNot(::headerLike).takeIf { it.isNotEmpty() }?.let { rows = it }
         // [GROW-05] 1.38: a month calendar's picture (다른 앱 화면 캡처) is one line of the user's own; its weeks are not
         // several people's lines.
         if (hint == null) CalendarShot.read(clean, codes)?.let { shot -> if (rows.none { it.cells.size > shot.cells.size }) rows = listOf(shot) }
@@ -458,8 +461,18 @@ object DutyRoster {
      */
     fun monthIn(text: String, near: LocalDate): YearMonth? {
         val t = DutyCodes.fold(text)
-        Regex("""(20\d{2})\s*[년.\-/]\s*(\d{1,2})\s*월?""").find(t)?.let { m ->
+        // [READ-37] 1.38 PC: "7병동 2026년 11월" read as July. The words of a title come in reading order only roughly (a
+        // tilted photo puts "2026년" before "7병동"), so "2026년 7…" is never a month unless 월 follows it; "11월" is.
+        Regex("""(20\d{2})\s*년\s*(\d{1,2})\s*월""").find(t)?.let { m ->
             runCatching { YearMonth.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull()?.let { return it }
+        }
+        Regex("""(?<!\d)(20\d{2})\s*[.\-/]\s*(\d{1,2})(?!\d)""").find(t)?.let { m ->
+            runCatching { YearMonth.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull()?.let { return it }
+        }
+        // A year and, apart from it, a month ("2026년" … "11월"): the first "n월" that is not a day's date ("11월 3일").
+        Regex("""(20\d{2})\s*년""").find(t)?.let { y ->
+            Regex("""(?<![\d.])(\d{1,2})\s*월(?!\s*\d{1,2}\s*일)""").findAll(t).map { it.groupValues[1].toInt() }.firstOrNull { it in 1..12 }
+                ?.let { return YearMonth.of(y.groupValues[1].toInt(), it) }
         }
         val month = Regex("""(?<!\d)(\d{1,2})\s*월\s*(?:근무|듀티|근무표|DUTY|스케줄|일정|당직)""", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)?.toInt()
             ?: t.lines().firstNotNullOfOrNull { line ->
@@ -526,6 +539,28 @@ object DutyRoster {
         while (first > 1 && fit.first - first < 3 && free(first - 1)) first--
         while (last < 31 && last - fit.last < 3 && free(last + 1)) last++
         return fit.copy(first = first, last = last)
+    }
+
+    /** [READ-37] Words over a table's names column: a line beginning with one is the table's head, not a person. */
+    private val HEAD_WORDS = listOf("이름", "성명", "요일", "날짜", "일자", "NAME", "DATE", "DAY")
+
+    /**
+     * [READ-37] A line read as a person's that is the table's head: hardly any of its cells a duty, and most of them a
+     * weekday, a misread one (one or two Hangul letters no code knows) or a number; or "이름"·"요일" at its start and
+     * fewer than half its cells duties. A line of 주·야·비·휴 is all duties and stays.
+     */
+    internal fun headerLike(row: RosterRow): Boolean {
+        val n = row.cells.size
+        if (n == 0) return false
+        fun text(d: Int, c: DutyCell) = row.raw[d] ?: (c as? DutyCell.Unknown)?.raw.orEmpty()
+        val duties = row.cells.count { (d, c) -> c !is DutyCell.Unknown && DutyCodes.norm(text(d, c)) !in WEEKDAYS }
+        val heads = row.cells.count { (d, c) ->
+            val t = DutyCodes.norm(text(d, c))
+            t in WEEKDAYS || c is DutyCell.Unknown && !c.leave && t.isNotEmpty() &&
+                (t.length <= 2 && t.all { it in '가'..'힣' } || t.all(Char::isDigit))
+        }
+        val label = DutyCodes.norm(row.label)
+        return duties * 4 < n && heads * 2 >= n || HEAD_WORDS.any { label.startsWith(it) } && duties * 2 < n
     }
 
     private fun isWeekdayRow(row: List<Placed>): Boolean =

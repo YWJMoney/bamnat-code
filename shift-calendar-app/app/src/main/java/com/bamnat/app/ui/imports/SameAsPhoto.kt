@@ -101,9 +101,11 @@ internal fun stripPlace(scan: RosterScanner.Scan, row: RosterRow, rank: Int, day
     val duties = lines.filter { it.kind == RosterPhotoRead.Kind.DUTIES }.sortedBy { it.top }
     val mine = row.label.takeIf { it.isNotBlank() }?.let { l -> duties.firstOrNull { l in it.text } } ?: duties.getOrNull(rank)
     val dayX = HashMap<Int, Int>()
-    if (dayLine != null) scan.words.filter { w -> w.centerY in dayLine.top..dayLine.bottom }.forEach { w ->
-        val d = w.text.trim().trimEnd('.', '일').toIntOrNull()
-        if (d != null && d in 1..days && d !in dayX) dayX[d] = w.centerX
+    if (dayLine != null) {
+        val found = scan.words.filter { w -> w.centerY in dayLine.top..dayLine.bottom }.mapNotNull { w ->
+            w.text.trim().trimEnd('.', '일').toIntOrNull()?.takeIf { it in 1..days }?.let { it to w.centerX }
+        }
+        dayX.putAll(inOrder(found))
     }
     // Days the photo's row of dates lost: in between the ones read, evenly.
     val known = dayX.toSortedMap()
@@ -121,6 +123,25 @@ internal fun stripPlace(scan: RosterScanner.Scan, row: RosterRow, rank: Int, day
         }
     }
     return StripPlace(dayLine, mine, dayX)
+}
+
+/**
+ * [READ-37] 1.38 PC: "12" read at the 1st's place drew 12일's cell over 1일's and left its own place empty. The dates of
+ * a row stand left to right in order, so of every date read (a date may be read twice), the most that do are kept:
+ * the longest run rising in both date and place. A date out of that order is placed between its neighbours instead.
+ */
+internal fun inOrder(found: List<Pair<Int, Int>>): Map<Int, Int> {
+    val c = found.distinct().sortedWith(compareBy({ it.first }, { it.second }))
+    if (c.isEmpty()) return emptyMap()
+    val best = IntArray(c.size) { 1 }
+    val prev = IntArray(c.size) { -1 }
+    for (i in c.indices) for (j in 0 until i) {
+        if (c[j].first < c[i].first && c[j].second < c[i].second && best[j] + 1 > best[i]) { best[i] = best[j] + 1; prev[i] = j }
+    }
+    var at = best.indices.maxBy { best[it] }
+    val out = HashMap<Int, Int>()
+    while (at >= 0) { out[c[at].first] = c[at].second; at = prev[at] }
+    return out
 }
 
 @Composable

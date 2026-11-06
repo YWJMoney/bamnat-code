@@ -183,6 +183,7 @@ def merged_leave(rng, year, month, people, pattern, size=26, cell=64):
 
 L = rf.LATIN
 N = rf.NAMES
+WARD = N + ["송하린", "문서윤"]
 ROSTER = [
     # name, layout, photo, after
     ("r01-clean", lambda r: rf.horizontal(r, 2026, 11, N[:5], L), dict(), dict()),
@@ -198,6 +199,9 @@ ROSTER = [
     ("r11-korean-screen", lambda r: rf.horizontal(r, 2026, 10, N[:4], rf.KOREAN, cell=80, size=24), dict(angle=1.0, blur=0.6), dict(moire=0.6)),
     ("r12-vertical-dim", lambda r: rf.transposed(r, 2026, 10, N[:4], L), dict(angle=1.5, blur=0.6), dict(dark=0.4)),
     ("r13-hand-shadow", lambda r: rf.horizontal(r, 2026, 10, N[:4], L, face="NanumPenScript-Regular.ttf", size=34, cell=70), dict(angle=2.0, shadow=0.5), dict()),
+    # [READ-37] 1.38 PC: a ward's roster, its title with the ward's number before the year, 이름·요일 over the names.
+    ("r15-ward-clean", lambda r: rf.horizontal(r, 2026, 11, WARD, L, cell=48, size=22, title_text="7병동 2026년 11월", corner=("이름", "요일")), dict(angle=0.6, blur=0.4), dict()),
+    # r17-pc-clean, r18-pc-photo: the 1.38 PC's own photos (release/1.38-빌드/표본/사진/), read by /tmp scripts the same way.
     ("r14-tight-glare", lambda r: rf.horizontal(r, 2026, 12, N[:7], L, cell=46, size=22), dict(angle=-1.2, blur=0.6), dict(glare=0.7)),
 ]
 
