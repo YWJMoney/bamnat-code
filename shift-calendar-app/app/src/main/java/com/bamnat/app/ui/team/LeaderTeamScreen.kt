@@ -257,6 +257,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     var ward by remember(team.id) { mutableStateOf(com.bamnat.app.team.TeamReceiveSync.board(context, team.id)?.url) }
     var wardOn by remember(team.id) { mutableStateOf(ward != null) }
     var seen by remember(team.id, monthText) { mutableStateOf<Map<String, java.time.Instant?>?>(null) }
+    var tiredOn by remember(team.id) { mutableStateOf(com.bamnat.app.team.TeamReceiveSync.tiredBox(context, team.id) != null) }
+    var tired by remember(team.id) { mutableStateOf<com.bamnat.app.share.TiredGot?>(null) }
     var fit by rememberSaveable { mutableStateOf(false) }
     // 1.38 가져오기: the file read (and whether from a photo) waiting for ① 이름 ② 코드, and the cells to check after it.
     var importing by remember { mutableStateOf(startImport) }
@@ -575,6 +577,30 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     }
                 })
             }
+            // 1.38 [SLEEP-15] 피곤해요 합계: members who turn it on in their own app press 피곤해요 in the morning; the leader sees only
+            // how many a day, and nothing at all for a day under 3. Off until the leader turns it on.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("팀 피곤해요 합계 받기", style = MaterialTheme.typography.bodyMedium)
+                    Text("앱을 쓰는 팀원이 스스로 켜면, 아침에 누른 '피곤해요'가 날마다 몇 명인지만 와요. 이름·잠 기록은 오지 않고, 3명 미만인 날은 숫자도 보이지 않아요.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(checked = tiredOn, onCheckedChange = { on ->
+                    tiredOn = on
+                    scope.launch {
+                        if (on) runCatching { com.bamnat.app.team.TeamReceiveSync.tiredOn(c, context, team, active) }
+                            .onFailure { dialog = "인터넷이 될 때 다시 켜 주세요."; tiredOn = false }
+                        else { com.bamnat.app.team.TeamReceiveSync.tiredOff(c, context, team.id, active); tired = null }
+                    }
+                })
+            }
+            if (tiredOn) {
+                LaunchedEffect(team.id) {
+                    com.bamnat.app.team.TeamReceiveSync.tiredBox(context, team.id)?.let { bx -> tired = runCatching { c.shareApi.tiredRead(bx.id, bx.token) }.getOrNull() }
+                }
+                Text(tired?.let { com.bamnat.app.team.TeamReceiveSync.tiredLine(it, Today.date()) }?.let { "최근 7일 피곤해요: $it" }
+                    ?: "최근 7일 피곤해요: 아직 없어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             // 1.38 [P3-L-15] 봤어요: who opened their link since this 확정, and a resend to the others only.
             if (state.state == MonthState.CONFIRMED && active.any { it.linkId != null }) {
                 LaunchedEffect(team.id, monthText, state.version) { seen = com.bamnat.app.team.TeamReceiveSync.seen(c, active) }
@@ -802,6 +828,8 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         updated += m.copy(linkId = st.id, linkToken = st.deleteToken)
         // 봤어요: asking once turns it on for the link, so the first open after this 확정 is kept.
         runCatching { c.shareApi.seen(st.id, st.deleteToken) }
+        // 1.38 [SLEEP-15] a link made after 피곤해요 합계 was turned on joins it.
+        if (st.id != id) com.bamnat.app.team.TeamReceiveSync.tiredBox(c.appContext, team.id)?.let { bx -> runCatching { c.shareApi.tiredTie(st.id, st.deleteToken, bx.id) } }
     }
     c.phaseThree.saveMembers(updated)
     return out
@@ -980,7 +1008,10 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
                 if (m.hiredOn != null) TextButton(onClick = { scope.launch { store.saveMembers(listOf(m.copy(hiredOn = null))) }; hiring = null }) { Text("지우기") }
                 TextButton(onClick = { hiring = null }) { Text("닫기") }
             }
-        }) { androidx.compose.material3.DatePicker(state) }
+        }) {
+            com.bamnat.app.ui.components.YearJump(state)
+            androidx.compose.material3.DatePicker(state)
+        }
     }
     var cutting by remember { mutableStateOf<TeamMember?>(null) }
     cutting?.let { m ->

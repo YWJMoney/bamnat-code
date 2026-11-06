@@ -54,6 +54,12 @@
 // POST   /api/board            1.38 [P3-L-15] {team, month, names:[name], labels:[[label per day]], colors:{label:"#hex"}} -> { id, token, url,
 //                              expiresAt }: 병동 전체 보기, the whole month's table and each day's count per shift, when the leader turns it on
 // PUT    /api/board/:id        header X-Delete-Token, same body -> 204 · DELETE /api/board/:id -> 204 · GET /b/:id the page
+// POST   /api/tired            1.38 [SLEEP-15] {team} -> { id, token }: 피곤해요 합계 받기, a team's box of counts per day (no names)
+// GET    /api/tired/:id        header X-Delete-Token -> { min, days:[{d, n|null}] }: the last 7 days, n null under LIMITS.tiredMin
+// DELETE /api/tired/:id        header X-Delete-Token -> 204
+// PUT    /api/share/:id/tired  header X-Delete-Token, {box: id|null} -> 204: the leader ties a member's link to the box (or unties it)
+// POST   /api/share/:id/tired  the member's app, once a day (KST): adds one to today's count. A day's repeat is marked by a
+//                              hash of the link and the day for 2 days; the leader never sees who.
 // GET    /v/:key               the asked person's page; POST /v/:key/answer form a=yes|no -> the page again
 //                              The admin paths answer 404 until SHARE_ADMIN_TOKEN (20+ characters) is set;
 //                              the company server's 개발자 앱 calls them with the same token.
@@ -139,6 +145,10 @@ export const LIMITS = {
   // 1.38 [P3-L-15] 병동 전체 보기: a ward's month, gone 60 days after the month ends.
   boardPeople: 80,
   boardDaysAfter: 60,
+  // 1.38 [SLEEP-15] 피곤해요 팀 합계: counts per day only, shown to the leader from this many people up, kept this many days.
+  tiredMin: 3,
+  tiredDays: 30,
+  tiredBoxDays: 120,
 };
 
 /** [SRV-05] Why someone reports a link (the page and the app offer the same list). */
@@ -241,6 +251,13 @@ async function route(request, env) {
   if (boardApi && request.method === "DELETE") return boardDelete(request, env, boardApi[1]);
   const boardPage = path.match(/^\/b\/([A-Za-z0-9]{22})$/);
   if (boardPage && (request.method === "GET" || request.method === "HEAD")) return boardView(env, boardPage[1]);
+  if (path === "/api/tired" && request.method === "POST") return tiredCreate(request, env);
+  const tiredApi = path.match(/^\/api\/tired\/([A-Za-z0-9]{22})$/);
+  if (tiredApi && request.method === "GET") return tiredRead(request, env, tiredApi[1]);
+  if (tiredApi && request.method === "DELETE") return tiredDelete(request, env, tiredApi[1]);
+  const tiredLink = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/tired$/);
+  if (tiredLink && request.method === "PUT") return tiredTie(request, env, tiredLink[1]);
+  if (tiredLink && request.method === "POST") return tiredSay(request, env, tiredLink[1]);
   const seenApi = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/seen$/);
   if (seenApi && request.method === "GET") return seenRead(request, env, seenApi[1]);
   if (path === "/api/sign" && request.method === "POST") return signCreate(request, env, url);
@@ -399,13 +416,13 @@ async function read(request, env, id) {
   if (record?.removed) return json({ error: "removed", ...(record.reason ? { reason: record.reason } : {}), at: record.at ?? null }, 410);
   if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
   // [SHR-12] Receivers ask often and download only when the schedule or its end date changed.
-  const tag = `W/"${(await sha256(`${record.updatedAt ?? ""}|${record.expiresAt}`)).slice(0, 20)}"`;
+  const tag = `W/"${(await sha256(`${record.updatedAt ?? ""}|${record.expiresAt}${record.tired ? "|t" : ""}`)).slice(0, 20)}"`;
   const asked = (request.headers.get("if-none-match") || "").split(",").map((t) => t.trim().replace(/^W\//, ""));
   if (asked.includes(tag.replace(/^W\//, ""))) {
     return new Response(null, { status: 304, headers: { etag: tag, "cache-control": "no-store" } });
   }
   await markSeen(env, id, record);
-  const res = json({ schedule: record.schedule, expiresAt: record.expiresAt, updatedAt: record.updatedAt ?? null });
+  const res = json({ schedule: record.schedule, expiresAt: record.expiresAt, updatedAt: record.updatedAt ?? null, ...(record.tired ? { tired: true } : {}) });
   res.headers.set("etag", tag);
   return res;
 }
@@ -1089,6 +1106,85 @@ async function seenRead(request, env, id) {
   return json({ seenAt: at, updatedAt: record.updatedAt ?? null });
 }
 
+// ---- 1.38 [SLEEP-15] 피곤해요 팀 합계 ----
+// Only a number per day is kept. A member's app adds one at most once a day; the leader sees the last week, and a day with
+// fewer than LIMITS.tiredMin is shown without its number, so one tired person cannot be picked out.
+
+const tiredKey = (id) => `tired:${id}`;
+
+async function tiredCreate(request, env) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 4 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const team = cleanText(body?.team, LIMITS.askTeam);
+  if (!team) return json({ error: "bad_team" }, 400);
+  const id = randomId(22);
+  const token = randomId(32);
+  await put(env, tiredKey(id), { team, days: {}, tokenHash: await sha256(token), expiresAt: expiry(LIMITS.tiredBoxDays) });
+  return json({ id, token }, 201);
+}
+
+async function tiredOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(tiredKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+async function tiredRead(request, env, id) {
+  const record = await tiredOwned(request, env, id);
+  if (record instanceof Response) return record;
+  // Reading keeps the box alive while the leader uses it.
+  if (Date.parse(record.expiresAt) - Date.now() < (LIMITS.tiredBoxDays - 7) * 86400 * 1000) await put(env, tiredKey(id), { ...record, expiresAt: expiry(LIMITS.tiredBoxDays) });
+  const days = Array.from({ length: 7 }, (_, i) => kstDay(new Date(Date.now() - i * 86400 * 1000).toISOString())).map((d) => {
+    const n = record.days[d] ?? 0;
+    return { d, n: n >= LIMITS.tiredMin ? n : null };
+  });
+  return json({ min: LIMITS.tiredMin, days });
+}
+
+async function tiredDelete(request, env, id) {
+  const record = await tiredOwned(request, env, id);
+  if (record instanceof Response) return record;
+  await kvDel(env, tiredKey(id));
+  return new Response(null, { status: 204 });
+}
+
+async function tiredTie(request, env, id) {
+  const record = await authorized(request, env, id);
+  if (record instanceof Response) return record;
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const box = body?.box ?? null;
+  if (box !== null && !(typeof box === "string" && /^[A-Za-z0-9]{22}$/.test(box) && (await env.SHARES.get(tiredKey(box))))) return json({ error: "bad_box" }, 400);
+  if ((record.tired ?? null) !== box) {
+    const next = { ...record };
+    if (box) next.tired = box; else delete next.tired;
+    await put(env, id, next);
+  }
+  return new Response(null, { status: 204 });
+}
+
+async function tiredSay(request, env, id) {
+  const record = await env.SHARES.get(id, "json");
+  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || !record.tired) return json({ error: "not_found" }, 404);
+  const box = await env.SHARES.get(tiredKey(record.tired), "json");
+  if (!box || Date.parse(box.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!(await allow(env, request, "td", LIMITS.createsPerHour))) return json({ error: "rate_limited" }, 429);
+  const day = kstDay(new Date().toISOString());
+  const once = `tiredk:${(await sha256(`${env.RATE_SALT || "bamnat"}:${id}:${day}`)).slice(0, 24)}`;
+  if (await env.SHARES.get(once)) return new Response(null, { status: 204 });
+  await kvPut(env, once, "1", { expirationTtl: 2 * 86400 });
+  const keep = kstDay(new Date(Date.now() - LIMITS.tiredDays * 86400 * 1000).toISOString());
+  const days = Object.fromEntries(Object.entries(box.days).filter(([d]) => d > keep));
+  days[day] = (days[day] ?? 0) + 1;
+  await put(env, tiredKey(record.tired), { ...box, days });
+  count(env, "tired");
+  return new Response(null, { status: 204 });
+}
+
 const boardKey = (id) => `board:${id}`;
 
 function boardBody(body) {
@@ -1543,7 +1639,7 @@ async function stats(env, daysParam) {
   }
   const sum = (k) => days.reduce((a, d) => a + d[k], 0);
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
-  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), boards: sum("boards"), approximate: true };
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), boards: sum("boards"), tired: sum("tired"), approximate: true };
 }
 
 // ---- input ----

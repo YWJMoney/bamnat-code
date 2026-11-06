@@ -584,7 +584,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
         }
     }
     if (birthPick) DayPick(s.birth ?: LocalDate.of(2000, 1, 1), onDismiss = { birthPick = false }) { s = s.copy(birth = it); birthPick = false }
-    if (hirePick) DayPick(s.hiredOn ?: Today.date(), onDismiss = { hirePick = false }) { s = s.copy(hiredOn = it); hirePick = false }
+    if (hirePick) DayPick(s.hiredOn ?: Today.date(), onDismiss = { hirePick = false }, years = true) { s = s.copy(hiredOn = it); hirePick = false }
     if (leftPick) DayPick(s.leftOn ?: Today.date(), onDismiss = { leftPick = false }) { s = s.copy(leftOn = it); leftPick = false }
     if (rehirePick) {
         val first = start.leftOn?.plusDays(1)?.let { maxOf(it, Today.date()) } ?: Today.date()
@@ -657,7 +657,7 @@ private fun PlaceDialog(start: Workplace, onDismiss: () -> Unit, onSave: (Workpl
 /** A day picked on Material's calendar. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun DayPick(initial: LocalDate, onDismiss: () -> Unit, after: LocalDate? = null, onPick: (LocalDate) -> Unit) {
+private fun DayPick(initial: LocalDate, onDismiss: () -> Unit, after: LocalDate? = null, years: Boolean = false, onPick: (LocalDate) -> Unit) {
     // [after]: only days later than it can be picked (다시 입사는 퇴사일 다음 날부터).
     val selectable = remember(after) {
         object : androidx.compose.material3.SelectableDates {
@@ -668,7 +668,10 @@ private fun DayPick(initial: LocalDate, onDismiss: () -> Unit, after: LocalDate?
     val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = initial.toEpochDay() * 86_400_000L, selectableDates = selectable)
     com.bamnat.app.ui.components.DatePickerDialog(onDismissRequest = onDismiss, confirmButton = {
         TextButton(onClick = { state.selectedDateMillis?.let { onPick(LocalDate.ofEpochDay(it / 86_400_000L)) } ?: onDismiss() }) { Text("고르기") }
-    }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } }) { androidx.compose.material3.DatePicker(state) }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } }) {
+        if (years) com.bamnat.app.ui.components.YearJump(state)
+        androidx.compose.material3.DatePicker(state)
+    }
 }
 
 /**
