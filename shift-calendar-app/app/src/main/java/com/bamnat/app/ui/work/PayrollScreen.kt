@@ -322,6 +322,10 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
             FilterChip(selected = mark?.paidAt != null, onClick = { scope.launch { store.mark(place.id, month, l, paid = mark?.paidAt == null) } },
                 label = { Text(if (mark?.paidAt != null) "지급했어요 ✓" else "지급했어요") })
         }
+        // 1.38 PC 12차 (6): saved with no usual week and nothing written for the month, the line read '0원' with no why.
+        if (l.gross == 0L && l.staff.weekly.isEmpty() && !closed)
+            Text("일하는 요일이 없어서 0원이에요 · '직원 정보'에서 평소 요일을 고르거나, 근거 보기에서 일한 날을 하루씩 넣으면 계산돼요",
+                style = MaterialTheme.typography.bodySmall, color = warn, modifier = Modifier.clickable(role = Role.Button, onClick = onEdit))
         // 1.38 [P3-X-06] 계약서 없음: 근로계약서는 써서 한 부 줘야 해요(근로기준법 제17조, 어기면 제114조 500만 원 이하 벌금).
         if (com.bamnat.core.boss.StaffContract.lacking(l.staff, minOf(Today.date(), month.atEndOfMonth())) && l.staff.contract?.waiting(Today.millis()) != true)
             Text("계약서 없음 · '계약서'를 누르면 직원 정보로 채워 링크로 서명받아요", style = MaterialTheme.typography.bodySmall, color = warn,
@@ -537,6 +541,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                 })
             }
         }
+        if (s.weekly.isEmpty()) Hint("고르지 않으면 대장에 0원으로 나와요. 요일이 들쭉날쭉하면 비워 두고, 대장의 근거 보기에서 일한 날을 하루씩 넣어요.")
         DayOfWeek.entries.filter { it in s.weekly }.forEach { d ->
             val sh = s.weekly.getValue(d)
             Row(verticalAlignment = Alignment.CenterVertically) {
