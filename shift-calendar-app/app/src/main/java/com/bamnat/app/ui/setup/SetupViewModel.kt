@@ -693,7 +693,8 @@ class SetupViewModel(
         val r = _roster.value ?: return
         val row = r.rows.getOrNull(i) ?: return
         val month = r.month ?: _paintMonth.value
-        val cells = row.cells.filterKeys { it <= month.lengthOfMonth() }.mapKeys { month.atDay(it.key) }
+        // [READ-30] 1.38 PC: a 4주 듀티 file's days in the month before or after go on too.
+        val cells = row.cells.filterKeys { it <= month.lengthOfMonth() }.mapKeys { month.atDay(it.key) } + row.outside
         val days = cells.mapNotNull { (date, cell) ->
             when (cell) {
                 is com.bamnat.core.imports.DutyCell.Shift -> date to cell.shiftTypeId
@@ -715,7 +716,9 @@ class SetupViewModel(
         if (r.rows.size > 1) rosterRank = i
         _roster.value = r.copy(rows = listOf(row))
         _rosterAsks.value = asks
+        val spill = row.outside.keys.sorted()
         _message.value = "${month.monthValue}월 ${days.size}일을 칠했어요" +
+            (if (spill.isNotEmpty()) " (${com.bamnat.app.ui.imports.RosterReader.span(spill)} 포함)" else "") +
             (if (leaves.isNotEmpty()) " · 휴가 ${leaves.size}일도 넣어요" else "") +
             (if (asks.isNotEmpty()) " · 모르는 글자 ${asks.size}개는 아래에서 골라 주세요" else "")
     }

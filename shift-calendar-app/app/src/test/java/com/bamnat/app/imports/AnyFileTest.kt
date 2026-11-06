@@ -71,6 +71,10 @@ class AnyFileTest {
         val r = RosterReader.file(context, uri("x04-cross-month.xlsx"), codes, near)
         assertEquals(YearMonth.of(2026, 11), r.month)
         assertTrue(r.rows.all { it.cells.keys == (1..25).toSet() })
+        // [READ-30] 1.38 PC: and 10/26~31 go with it, not dropped.
+        assertTrue(r.rows.all { it.outside.keys == (26..31).map { d -> LocalDate.of(2026, 10, d) }.toSet() })
+        assertEquals("10월 26~31일", RosterReader.span(r.rows.first().outside.keys))
+        assertEquals("10월 30일, 12월 1~2일", RosterReader.span(listOf(LocalDate.of(2026, 12, 2), LocalDate.of(2026, 10, 30), LocalDate.of(2026, 12, 1))))
     }
 
     @Test fun aRosterFileSharedFromAMessengerOpensTheRoster() {

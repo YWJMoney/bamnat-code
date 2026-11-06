@@ -147,4 +147,28 @@ class FileBenchTest {
             assertTrue("no phone number kept", row.toString().none { false } && !row.toString().contains("010-"))
         }
     }
+
+    /**
+     * [READ-32] 1.38 PC (스캔 PDF on the emulator): the date row read from the 7th on, the first six days' codes left of it and
+     * stuck into the name ("최유리ED"). Now the name is the name, and those days are put back by their place, yellow.
+     */
+    @Test fun aDateRowReadFromTheSeventhKeepsTheNameAndTheFirstDays() {
+        val x = { d: Int -> 200 + 40 * (d - 1) }
+        val word = { t: String, cx: Int, top: Int -> RosterWord(t, cx - 10, top, cx + 10, top + 20) }
+        val want = "DDEENNOODDEENNOODDEENNOODDEENNO".map { it.toString() }
+        val words = buildList {
+            add(word("12월", 100, 10))
+            for (d in 7..30) add(word("$d", x(d), 50))
+            add(RosterWord("최유리", 20, 100, 80, 120))
+            for (d in 1..30) add(word(want[d - 1], x(d), 100))
+            add(RosterWord("이수진D", 20, 140, 90, 160))
+            for (d in 1..30) add(word(want[(d + 2) % 30], x(d), 140))
+        }
+        val read = DutyRoster.analyse(words, codes)
+        val one = read.rows.first { it.label.startsWith("최유리") }
+        assertEquals("최유리", one.label)
+        assertEquals("이수진", read.rows.first { it.label.startsWith("이수진") }.label)
+        for (d in 1..30) assertEquals("day $d", codes.read(want[d - 1])!!.first, one.cells[d])
+        assertTrue("the counted-back days are looked at", (1..3).all { it in one.doubtful(31) })
+    }
 }

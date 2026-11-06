@@ -27,6 +27,13 @@ data class RosterResult(
 )
 
 object RosterReader {
+    /** [READ-30] Dates as the user reads them: "10월 26~31일", "10월 30일, 12월 1~2일". */
+    fun span(dates: Collection<LocalDate>): String = dates.sorted().groupBy { YearMonth.from(it) }.entries.joinToString(", ") { (m, ds) ->
+        val runs = mutableListOf<IntRange>()
+        for (d in ds.map { it.dayOfMonth }) if (runs.isNotEmpty() && runs.last().last == d - 1) runs[runs.size - 1] = runs.last().first..d else runs += d..d
+        "${m.monthValue}월 " + runs.joinToString(",") { if (it.first == it.last) "${it.first}" else "${it.first}~${it.last}" } + "일"
+    }
+
     const val NOTHING = "날짜 줄(1 2 3 …)과 근무 줄을 찾지 못했어요. 표 전체가 반듯하게 나오게 다시 찍어 보세요."
 
     suspend fun photo(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit = { _, _ -> }): RosterResult {
@@ -92,7 +99,9 @@ object RosterReader {
             .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
         val rows = read.people.map { p ->
             val days = p.days.filter { YearMonth.from(it.date) == month }
-            RosterRow(p.name, days.associate { it.date.dayOfMonth to it.cell }, notes = days.mapNotNull { d -> d.note?.let { d.date.dayOfMonth to it } }.toMap())
+            // [READ-30] 1.38 PC: a 4주 듀티's days in the next or last month go in with it, not dropped.
+            val outside = p.days.filter { YearMonth.from(it.date) != month }.associate { it.date to it.cell }
+            RosterRow(p.name, days.associate { it.date.dayOfMonth to it.cell }, notes = days.mapNotNull { d -> d.note?.let { d.date.dayOfMonth to it } }.toMap(), outside = outside)
         }.filter { it.cells.isNotEmpty() }
         return RosterResult(rows, month, RosterFrom.FILE, NOTHING.takeIf { rows.isEmpty() })
     }
@@ -110,7 +119,11 @@ object RosterReader {
         val words = scans.flatMap { it.words }
         val month = DutyRoster.monthIn(words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
         val rows = scans.flatMap { it.read.rows }.distinctBy { DutyCodes.norm(it.label).ifEmpty { it.hashCode().toString() } }
-        return RosterResult(rows, month, RosterFrom.FILE, if (rows.isEmpty()) "스캔한 PDF에서 근무표를 찾지 못했어요. 표가 반듯하게 나온 쪽인지 봐 주세요." else null, scans.firstOrNull())
+        // [READ-32] 1.38 PC: a scan read thinly says what reads every cell instead.
+        val days = (month ?: YearMonth.from(near)).lengthOfMonth()
+        val thin = rows.isNotEmpty() && rows.maxOf { it.cells.size } < days * 0.8
+        return RosterResult(rows, month, RosterFrom.FILE, if (rows.isEmpty()) "스캔한 PDF에서 근무표를 찾지 못했어요. 표가 반듯하게 나온 쪽인지 봐 주세요." else null, scans.firstOrNull(),
+            advice = if (thin) "스캔한 PDF라 다 읽지 못했어요. 원래 엑셀 파일이나 엑셀에서 'PDF로 저장'한 파일을 주시면 모든 칸을 정확히 읽어요." else null)
     }
 
     private const val FILE_FAILED = "이 파일은 읽지 못했어요. 엑셀·CSV·PDF·사진 파일을 골라 주세요."

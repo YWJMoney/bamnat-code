@@ -177,6 +177,8 @@ class DutyRosterViewModel(
         val advice: String? = null,
         /** [READ-13] Reading n of m ("2/5번째로 읽는 중"); m is 0 until known. */
         val step: Pair<Int, Int>? = null,
+        /** [READ-30] 1.38 PC: a 4주 듀티's days in the month before or after go in too, unless the user says no. */
+        val withOutside: Boolean = true,
     ) {
         val row: RosterRow? get() = if (chosen) rows?.getOrNull(picked) else null
         private val days: Int get() = month.lengthOfMonth()
@@ -189,6 +191,10 @@ class DutyRosterViewModel(
             }
         /** Cells that will be written: everything but those still unknown. */
         val writable: Map<Int, DutyCell> get() = cells.filterValues { it !is DutyCell.Unknown }
+        /** [READ-30] The roster's days outside [month] (10/26~31 of a "11월" 4주 듀티), as answered. */
+        val outsideAll: Map<LocalDate, DutyCell> get() = row?.outside.orEmpty().filterKeys { YearMonth.from(it) != month }.mapValues { (_, c) -> resolve(c) }
+        /** Those that will be written: when the user keeps them, and known. */
+        val outside: Map<LocalDate, DutyCell> get() = if (withOutside) outsideAll.filterValues { it !is DutyCell.Unknown } else emptyMap()
         /** [NAV-04] Cells typed or read and not yet put on the calendar: leaving asks first. */
         val unsaved: Boolean get() = applied == null && writable.isNotEmpty()
         /** [NURS-04] Days read with doubt the user has not touched yet, and cells still unknown. */
@@ -209,7 +215,8 @@ class DutyRosterViewModel(
         val beyond: List<Int> get() = row?.let { DutyRoster.beyond(it, month) }.orEmpty()
         /** [ROST-06] The codes still to answer, leave words first: one question at a time. */
         val asks: List<DutyCell.Unknown>
-            get() = cells.values.filterIsInstance<DutyCell.Unknown>().distinctBy { it.raw }.sortedBy { if (it.leave) 0 else 1 }
+            get() = (cells.values + (if (withOutside) outsideAll.values else emptyList())).filterIsInstance<DutyCell.Unknown>()
+                .distinctBy { it.raw }.sortedBy { if (it.leave) 0 else 1 }
 
         fun resolve(c: DutyCell): DutyCell = if (c is DutyCell.Unknown) answers[codeKey(c.raw)] ?: c else c
     }
@@ -232,6 +239,8 @@ class DutyRosterViewModel(
         val list = types.value.ifEmpty { schedule.shiftTypes.first() }
         return DutyCodes(list.map { DutyType(it.id, it.name, it.label, it.isOff, it.start, it.isNight) }, container.dutyCodes.of(calendarId))
     }
+
+    fun keepOutside(yes: Boolean) = _ui.update { it.copy(withOutside = yes) }
 
     fun month(delta: Long) = _ui.update { it.copy(month = it.month.plusMonths(delta), applied = null, cursor = 1, history = emptyList()) }
 
@@ -431,22 +440,24 @@ class DutyRosterViewModel(
     private fun write() {
         val u = _ui.value
         val cells = u.writable
+        val outside = u.outside
         if (cells.isEmpty()) return
         val repo = schedule // an undo stays with the calendar it was made in
         val notes = u.notes
         viewModelScope.launch {
-            val dates = cells.keys.sorted().map { u.month.atDay(it) }
-            val before = repo.updateDays(dates) { e -> DutyRoster.apply(e, cells.getValue(e.date.dayOfMonth)) }
+            val all = cells.mapKeys { u.month.atDay(it.key) } + outside
+            val before = repo.updateDays(all.keys.sorted()) { e -> DutyRoster.apply(e, all.getValue(e.date)) }
             // [ROST-03] "D*", "N-O", "11D": what the roster said besides the code, as that day's memo.
             val memos = notes.mapNotNull { (d, n) -> container.memoRepository.addQuick(u.month.atDay(d), "듀티표 표시: $n", setOf(calendarId)) }
             // [ROST-11] 밤낮이 한 일: what came in, never the roster itself.
-            container.journal.note(JournalKind.ROSTER, rosterDetail(u.month.monthValue, cells.size, u.from))
+            container.journal.note(JournalKind.ROSTER, rosterDetail(u.month.monthValue, all.size, u.from))
             // A roster whose common codes were matched to the user's kinds says something about those kinds.
             if (u.from != RosterFrom.TYPED && u.row?.guessed.orEmpty().any { it in cells && it !in u.edits }) markShiftsInferred()
-            _ui.update { it.copy(applied = cells.size, history = emptyList()) }
+            _ui.update { it.copy(applied = all.size, history = emptyList()) }
             container.proMoments.rosterIn() // 1.32 [PROX-02]
             // [EASE-15] A photo's month says how few cells needed a hand.
             val text = "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요" +
+                (if (outside.isNotEmpty()) " · ${RosterReader.span(outside.keys)}도" else "") +
                 if (u.from == RosterFrom.PHOTO && u.row != null) " · 사진에서 고친 칸 ${u.fixed}개" else ""
             val undo: suspend () -> Unit = {
                 before.forEach { (d, e) -> repo.restoreDay(d, e) }
@@ -615,7 +626,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
             // [PHOTO-09] 1.29: '사진이 달라요' on every photo's result.
             if (ui.from == RosterFrom.PHOTO && !ui.reading) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.ROSTER)
             ui.asks.firstOrNull()?.let { ask -> AskCard(ask, types, onAnswer = { vm.answer(ask.raw, it) }, onNewKind = { newKindFor = ask.raw }) }
-            Notices(ui, snap)
+            Notices(ui, snap, vm::keepOutside)
             val s = snap
             if (s != null) {
                 val shown = remember(s, ui.month, ui.cells) { overlay(s, ui.month, ui.cells) }
@@ -665,14 +676,29 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
 
 /** [ROST-02][ROST-04][NURS-04] What to know before putting the days in, a line each. */
 @Composable
-private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?) {
+private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutside: (Boolean) -> Unit = {}) {
+    // [READ-30] 1.38 PC: a 4주 듀티 across two months says the other month's days go in too, and lets them be left out.
+    val spill = ui.outsideAll.keys
+    if (ui.row != null && spill.isNotEmpty()) {
+        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp)).padding(start = 10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text(if (ui.withOutside) "근무표에 있는 ${RosterReader.span(spill)}도 함께 넣어요" else "${RosterReader.span(spill)}은 넣지 않아요",
+                style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = { onOutside(!ui.withOutside) }) { Text(if (ui.withOutside) "빼기" else "같이 넣기") }
+        }
+        Spacer(Modifier.height(6.dp))
+    }
     val lines = buildList {
-        if (ui.named != null && ui.row != null) add("근무표에 적힌 ${ui.named.monthValue}월로 넣어요")
+        if (ui.named != null && ui.row != null) add("근무표에 적힌 ${ui.named.monthValue}월로 넣어요" + if (ui.outside.isNotEmpty()) " (${ui.named.monthValue}월 ${ui.writable.size}일 + ${ui.outside.size}일)" else "")
         if (ui.beyond.isNotEmpty()) add("${ui.beyond.joinToString(",")}일 칸이 있는데 ${ui.month.monthValue}월은 ${ui.month.lengthOfMonth()}일까지라 그 칸은 빼요")
         if (ui.doubtful.isNotEmpty()) add("노란 칸 ${ui.doubtful.size}개는 확실하지 않아요. 누르고 키로 맞춰 주세요")
         // [EASE-15] How much the photo saved: the cells read, and how few needed a key.
         val read = ui.row?.cells?.size ?: 0
-        if (ui.from == RosterFrom.PHOTO && read > 0) add("사진에서 ${read}칸을 읽었어요" + if (ui.fixed > 0) " · ${ui.fixed}칸 고쳤어요" else "")
+        // [READ-32] 1.38 PC: a scanned PDF says it too, and how many days it left empty (it read from the 7th on).
+        val scanned = ui.from == RosterFrom.FILE && ui.scan != null
+        val empty = ui.month.lengthOfMonth() - ui.cells.size
+        if ((ui.from == RosterFrom.PHOTO || scanned) && read > 0) add((if (scanned) "스캔한 PDF" else "사진") + "에서 ${read}칸을 읽었어요" +
+            (if (ui.fixed > 0) " · ${ui.fixed}칸 고쳤어요" else "") + (if (empty > 0) " · ${empty}일은 비어 있어요. 키로 채워 주세요" else ""))
         // [EASE-15] A photo that read nothing goes straight on by hand: the keys below start on the 1st.
         if (ui.from == RosterFrom.PHOTO && ui.error != null && ui.rows.isNullOrEmpty()) add("아래 키로 ${ui.month.monthValue}월 ${ui.cursor}일부터 바로 이어서 넣을 수 있어요")
         if (ui.notes.isNotEmpty()) add("표시가 붙은 ${ui.notes.size}칸은 그 날 메모로 남겨요")
