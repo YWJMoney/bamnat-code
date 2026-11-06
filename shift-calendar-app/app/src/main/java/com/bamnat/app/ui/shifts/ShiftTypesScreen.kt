@@ -564,6 +564,9 @@ private fun OffsetPickerDialog(
     )
 }
 
+/** [PAYX-49] Names of a kind of day that is training, where the editor points to the 시수 of 연장 휴무일 근무 지정. */
+private val SCHOOLING = Regex("교육|연수|LMS", RegexOption.IGNORE_CASE)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ShiftTypeEditorDialog(
@@ -761,6 +764,15 @@ fun ShiftTypeEditorDialog(
                         // [SHFT-01] This kind of day's own premium, a line of its own in 급여 계산.
                         if (showPremium) ShiftPremiumSection(timed, onChange = { draft = draft.copy(premiumPercent = it) },
                             onBreakPaid = { draft = draft.copy(breakPaid = it) })
+                        // 1.38 [PAYX-49] PC 11차 ("근무 추가 양식에 인정 시수 칸이 없어요"): a 교육 paid on its own 시수 is extra work,
+                        // whose 시수 is set with its pay; a kind of day only names the day. Said where the user looks for it.
+                        if (SCHOOLING.containsMatchIn(draft.name)) Text(
+                            "교육처럼 시수(통상시급을 나누는 시간)가 다른 일은 설정 › 연장 휴무일 근무 지정에서 '교육'을 더해 " +
+                                "급여와 가산 › 시수를 정해요. 근무 종류에는 시수 칸이 없어요.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
 
                         if (showAlarms) SectionCard(title = "알람") {
                             Row(verticalAlignment = Alignment.CenterVertically) {
