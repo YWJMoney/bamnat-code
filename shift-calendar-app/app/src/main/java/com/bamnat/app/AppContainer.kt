@@ -449,6 +449,16 @@ class AppContainer(context: Context) {
     val installedAt: java.time.Instant? by lazy {
         runCatching { java.time.Instant.ofEpochMilli(appContext.packageManager.getPackageInfo(appContext.packageName, 0).firstInstallTime) }.getOrNull()
     }
+    /**
+     * 1.38 PC 4a5c3828 (1.36에서 업데이트로 온 달력 맨 위에 '시작 3단계 중 1개 했어요'): when this app was last put on by an
+     * update, or null when it never was (a fresh install, or a test).
+     */
+    val updatedAt: java.time.Instant? by lazy {
+        runCatching {
+            val info = appContext.packageManager.getPackageInfo(appContext.packageName, 0)
+            info.lastUpdateTime.takeIf { it > 0 && it - info.firstInstallTime > 60_000 }?.let(java.time.Instant::ofEpochMilli)
+        }.getOrNull()
+    }
     /** [MON-02] What the company server says once a day: [FLAG-06] the dark-merge overrides, notices, 처리방침 dates. */
     val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext)
 
