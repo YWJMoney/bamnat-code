@@ -69,14 +69,38 @@ class NScreenshotTest : ScreenshotBase() {
     private fun asking(then: Screen.() -> Unit = {}): Screen.() -> Unit = clean {
         c.asks.clear(PersonalCalendar.MAIN)
         // The question card comes from a flow read off the main thread: wait for it on a slow CI machine.
-        repeat(100) { if (!shows("나중에", exact = true)) { Thread.sleep(20); settle() } }
+        // 1.38 통합 9차: over the calendar it is one line ending in '… ›'.
+        repeat(100) { if (!shows(" ›")) { Thread.sleep(20); settle() } }
         then()
     }
 
-    @Test fun askHomeFolded() = shoot("685_n_ask_home_folded", FOLDED, asking { reveal("나중에", exact = true) })
-    @Test fun askHomeUnfolded() = shoot("686_n_ask_home_unfolded", UNFOLDED, asking { reveal("나중에", exact = true) })
-    @Test fun askHomeBig() = shoot("687_n_ask_home_200", FOLDED, 2f, asking { reveal("나중에", exact = true) })
-    @Test fun askHomeDark() = shoot("688_n_ask_home_dark", FOLDED_NIGHT, asking { reveal("나중에", exact = true) })
+    @Test fun askHomeFolded() = shoot("685_n_ask_home_folded", FOLDED, asking { reveal(" ›") })
+    @Test fun askHomeUnfolded() = shoot("686_n_ask_home_unfolded", UNFOLDED, asking { reveal(" ›") })
+    @Test fun askHomeBig() = shoot("687_n_ask_home_200", FOLDED, 2f, asking { reveal(" ›") })
+    @Test fun askHomeDark() = shoot("688_n_ask_home_dark", FOLDED_NIGHT, asking { reveal(" ›") })
+
+    /**
+     * 1.38 통합 9차 (업데이트로 온 폰에서 며칠 뒤 '급여를 알려 주시면…' 큰 카드가 달력 위를 차지해요): one line, the question alone,
+     * where a tap goes, and an X for 나중에.
+     */
+    @Test fun askIsOneLine() = shoot("688b_n_ask_line", FOLDED) {
+        var opened = 0
+        var later = 0
+        content {
+            androidx.compose.foundation.layout.Column {
+                com.bamnat.app.ui.guide.AskLine(com.bamnat.core.profile.Questions.of(com.bamnat.core.profile.FactKey.BASE_PAY, hasPay = true),
+                    onOpen = { opened++ }, onLater = { later++ })
+                com.bamnat.app.ui.guide.AskLine(com.bamnat.core.profile.Questions.of(com.bamnat.core.profile.FactKey.PAY_DAY, hasPay = true),
+                    onOpen = { opened++ }, onLater = { later++ })
+            }
+        }
+        settle()
+        assertTrue(appears("기본급이 얼마인가요?", exact = true))
+        assertTrue(appears(" 명세서·기본급 넣기 ›", exact = true))
+        assertTrue(appears(" 답하기 ›", exact = true))
+        tapText("급여는 매달 며칠에 들어와요?", exact = true)
+        assertEquals(1, opened)
+    }
 
     @Test fun askAbovePay() = shoot("689_n_ask_pay", FOLDED, payScreen(com.bamnat.app.tier.Tier.PRO, withProfile = true,
         adjust = { it.copy(period = it.period.copy(payDay = null)) }) { vm ->
