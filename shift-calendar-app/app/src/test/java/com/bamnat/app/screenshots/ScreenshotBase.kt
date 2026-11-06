@@ -1293,12 +1293,13 @@ abstract class ScreenshotBase {
         // As the app opens it: with the way to 회사 설정 보내기.
         payScreen(Tier.PRO, withProfile = true) { vm -> com.bamnat.app.ui.pay.PayScreen(vm, onBack = {}, onShareWay = {}) }.invoke(this)
         // 1.27 AJ: two cards under the total ('이것만 넣으면', '명세서와 맞춰 보기') put it further down.
-        tapText("우리 회사 항목 만들기", exact = true, scrolls = 14)
-        tapText("빠지는 돈 (차감)", exact = true)
+        // [PAYX-50] 1.38: '수당 추가' is the one window, its kinds as chips.
+        tapText("수당 추가", exact = true, scrolls = 14)
+        tapText("빠지는 돈", exact = true)
         typeInto("이름 (선택)", "기숙사비")
         typeInto("한 달 금액", "50000")
         repeat(2) { settle() }
-        tapText("만들기", exact = true)
+        tapText("추가", exact = true)
         reveal("만들었어요", exact = false)
     }
 
