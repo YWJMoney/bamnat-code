@@ -505,7 +505,7 @@ class BackupManager(
         guide?.let { root.put("featuresAdded", it.exportAdded()) }
         teams?.let { t -> root.put("teams", JSONObject(t.export() as Map<*, *>)) }
         // 1.38 [P3-01] 리더 팀 근무표 always; 사업장·직원 only in a sealed file.
-        PhaseThreeBackup.putTeams(db, root)
+        PhaseThreeBackup.putTeams(db, root, sealed)
         if (sealed) PhaseThreeBackup.putWorkplaces(db, root)
         dutyCodes()?.let { d -> root.put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
         pro()?.let { root.put("pro", it.toBackup()) }

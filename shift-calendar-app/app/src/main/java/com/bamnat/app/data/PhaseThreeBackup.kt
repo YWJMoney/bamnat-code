@@ -22,16 +22,20 @@ object PhaseThreeBackup {
     const val TEAMS = "leaderTeams"
     const val WORKPLACES = "workplaces"
 
-    suspend fun putTeams(db: AppDatabase, into: JSONObject) {
+    /**
+     * [sealed]: 1.38 보안 검토 — a link's 고치는 열쇠 goes only in a backup sealed with a password; a plain one could otherwise change
+     * every teammate's link in the hands of whoever got the file. Restored without it, the phone keeps the key it has.
+     */
+    suspend fun putTeams(db: AppDatabase, into: JSONObject, sealed: Boolean = true) {
         val d = db.teamDao()
         val teams = d.teams()
         if (teams.isEmpty()) return
         into.put(TEAMS, JSONObject()
             .put("teams", JSONArray().apply { teams.forEach { put(JSONObject().put("id", it.id).put("name", it.name).put("leader", it.leaderName)
-                .put("shifts", it.shifts).put("need", it.need).put("created", it.createdAt).put("archived", it.archived)) } })
+                .put("shifts", it.shifts).put("need", it.need).put("created", it.createdAt).put("archived", it.archived).put("together", it.showTogether)) } })
             .put("members", JSONArray().apply { d.members().forEach { put(JSONObject().put("id", it.id).put("team", it.teamId).put("name", it.name)
                 .put("role", it.role).put("skill", it.skill).putOpt("color", it.colorArgb).put("sort", it.sort).putOpt("linkId", it.linkId)
-                .putOpt("linkToken", it.linkToken).put("active", it.active)) } })
+                .putOpt("linkToken", it.linkToken.takeIf { sealed }).put("active", it.active)) } })
             .put("cells", JSONArray().apply { d.allCells().sortedWith(compareBy({ it.memberId }, { it.epochDay })).forEach {
                 put(JSONArray().put(it.teamId).put(it.memberId).put(it.epochDay).put(it.shiftId).put(it.source).put(it.locked)) } })
             .put("months", JSONArray().apply { d.months().forEach { put(JSONObject().put("team", it.teamId).put("month", it.month).put("state", it.state)
@@ -46,11 +50,12 @@ object PhaseThreeBackup {
         if (places.isEmpty()) return
         into.put(WORKPLACES, JSONObject()
             .put("places", JSONArray().apply { places.forEach { put(JSONObject().put("id", it.id).put("name", it.name).putOpt("fivePlus", it.fivePlus)
-                .putOpt("payday", it.payday).put("breaks", it.legalBreaks).put("weekStart", it.weekStart).putOpt("team", it.teamId).put("created", it.createdAt)) } })
+                .putOpt("payday", it.payday).put("breaks", it.legalBreaks).put("weekStart", it.weekStart).putOpt("team", it.teamId).put("created", it.createdAt).put("unit", it.minuteUnit)) } })
             .put("staff", JSONArray().apply { d.staff().forEach { put(JSONObject().put("id", it.id).put("place", it.workplaceId).put("name", it.name)
                 .put("form", it.form).put("base", it.base).put("allowances", it.allowances).putOpt("hired", it.hiredOn).putOpt("left", it.leftOn)
                 .putOpt("birth", it.birth).put("job", it.job).put("insurance", it.insurance).put("weeklyHoliday", it.weeklyHolidayPay)
-                .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort)) } })
+                .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort).putOpt("clockId", it.clockId).putOpt("clockToken", it.clockToken)) } })
+            .put("punches", JSONArray().apply { d.punches().forEach { put(JSONArray().put(it.staffId).put(it.at).put(it.kind)) } })
             .put("work", JSONArray().apply { d.work().sortedWith(compareBy({ it.staffId }, { it.epochDay })).forEach {
                 put(JSONArray().put(it.staffId).put(it.epochDay).put(it.kind).put(it.startMinute ?: JSONObject.NULL).put(it.endMinute ?: JSONObject.NULL)) } })
             .put("months", JSONArray().apply { d.months().forEach { put(JSONObject().put("place", it.workplaceId).put("month", it.month).put("state", it.state)
@@ -68,7 +73,7 @@ object PhaseThreeBackup {
         val o = root.optJSONObject(TEAMS) ?: return null
         return Teams(
             o.optJSONArray("teams").objs().map { TeamEntity(it.getString("id"), it.optString("name"), it.optString("leader"), it.optString("shifts", "[]"),
-                it.optString("need"), it.optLong("created"), it.optBoolean("archived")) },
+                it.optString("need"), it.optLong("created"), it.optBoolean("archived"), it.optBoolean("together")) },
             o.optJSONArray("members").objs().map { TeamMemberEntity(it.getString("id"), it.getString("team"), it.optString("name"), it.optString("role"),
                 it.optString("skill", "REG"), it.longOrNull("color"), it.optInt("sort"), it.strOrNull("linkId"), it.strOrNull("linkToken"), it.optBoolean("active", true)) },
             o.optJSONArray("cells").arrays().map { TeamCellEntity(it.getString(0), it.getString(1), it.getLong(2), it.getLong(3), it.optString(4, "MANUAL"), it.optBoolean(5)) },
@@ -79,28 +84,35 @@ object PhaseThreeBackup {
         )
     }
 
-    class Places(val places: List<WorkplaceEntity>, val staff: List<StaffEntity>, val work: List<StaffWorkEntity>, val months: List<PayrollMonthEntity>, val lines: List<PayrollLineEntity>)
+    class Places(val places: List<WorkplaceEntity>, val staff: List<StaffEntity>, val work: List<StaffWorkEntity>, val months: List<PayrollMonthEntity>, val lines: List<PayrollLineEntity>,
+                 val punches: List<com.bamnat.app.data.db.StaffPunchEntity> = emptyList())
 
     fun readWorkplaces(root: JSONObject): Places? {
         val o = root.optJSONObject(WORKPLACES) ?: return null
         return Places(
             o.optJSONArray("places").objs().map { WorkplaceEntity(it.getString("id"), it.optString("name"), if (it.has("fivePlus") && !it.isNull("fivePlus")) it.getBoolean("fivePlus") else null,
-                it.intOrNull("payday"), it.optBoolean("breaks", true), it.optInt("weekStart", 1), it.strOrNull("team"), it.optLong("created")) },
+                it.intOrNull("payday"), it.optBoolean("breaks", true), it.optInt("weekStart", 1), it.strOrNull("team"), it.optLong("created"), it.optInt("unit", 1).coerceIn(1, 60)) },
             o.optJSONArray("staff").objs().map { StaffEntity(it.getString("id"), it.getString("place"), it.optString("name"), it.optString("form", "HOUR"),
                 it.optLong("base"), it.optString("allowances", "[]"), it.longOrNull("hired"), it.longOrNull("left"), it.longOrNull("birth"), it.optString("job"),
-                it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort")) },
+                it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort"), it.strOrNull("clockId"), it.strOrNull("clockToken")) },
             o.optJSONArray("work").arrays().map { StaffWorkEntity(it.getString(0), it.getLong(1), it.getString(2),
                 if (it.isNull(3)) null else it.getInt(3), if (it.isNull(4)) null else it.getInt(4)) },
             o.optJSONArray("months").objs().map { PayrollMonthEntity(it.getString("place"), it.getString("month"), it.optString("state", "OPEN"),
                 it.optString("rates"), it.longOrNull("closedAt")) },
             o.optJSONArray("lines").objs().map { PayrollLineEntity(it.getString("place"), it.getString("month"), it.getString("staff"), it.optLong("gross"),
                 it.optString("items", "[]"), it.optString("method", "[]"), it.optString("deduct"), it.longOrNull("net"), it.longOrNull("paidAt"), it.longOrNull("slipSentAt")) },
+            o.optJSONArray("punches").arrays().map { com.bamnat.app.data.db.StaffPunchEntity(it.getString(0), it.getLong(1), it.optString(2, "IN")) },
         )
     }
 
     suspend fun write(db: AppDatabase, teams: Teams?, places: Places?) {
-        teams?.let { db.teamDao().replaceAll(it.teams, it.members, it.cells, it.months, it.wishes) }
-        places?.let { db.payrollDao().replaceAll(it.places, it.staff, it.work, it.months, it.lines) }
+        teams?.let { t ->
+            // A backup without the link keys (not sealed) keeps the keys this phone has for the same links.
+            val had = db.teamDao().members().associateBy { it.id }
+            val members = t.members.map { m -> if (m.linkToken == null) had[m.id]?.takeIf { it.linkId == m.linkId }?.let { m.copy(linkToken = it.linkToken) } ?: m else m }
+            db.teamDao().replaceAll(t.teams, members, t.cells, t.months, t.wishes)
+        }
+        places?.let { db.payrollDao().replaceAll(it.places, it.staff, it.work, it.months, it.lines, it.punches) }
     }
 
     private fun JSONArray?.objs(): List<JSONObject> = this?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }.orEmpty()

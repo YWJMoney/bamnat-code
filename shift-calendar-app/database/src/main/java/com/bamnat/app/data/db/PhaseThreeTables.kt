@@ -27,6 +27,8 @@ data class TeamEntity(
     val need: String,
     val createdAt: Long,
     val archived: Boolean,
+    /** 1.38 (DB 29) 같이 쉬는 사람: each member's link also names who is off with them (the leader turns it on). */
+    @androidx.room.ColumnInfo(defaultValue = "0") val showTogether: Boolean = false,
 )
 
 @Entity(tableName = "team_member", indices = [Index("teamId")])
@@ -91,6 +93,8 @@ data class WorkplaceEntity(
     val weekStart: Int,
     val teamId: String?,
     val createdAt: Long,
+    /** 1.38 (DB 29) 계산 단위: each day's work counted up to this many minutes (1·10·30·60). */
+    @androidx.room.ColumnInfo(defaultValue = "1") val minuteUnit: Int = 1,
 )
 
 @Entity(tableName = "staff", indices = [Index("workplaceId")])
@@ -112,6 +116,19 @@ data class StaffEntity(
     val weekly: String,
     val memberId: String?,
     val sort: Int,
+    /** 1.38 (DB 29) [P3-B-11] 출퇴근 링크 on the share server, and its key (sealed backups only, like any 고치는 열쇠). */
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val clockId: String? = null,
+    @androidx.room.ColumnInfo(defaultValue = "NULL") val clockToken: String? = null,
+)
+
+/** 1.38 (DB 29) [P3-B-11] One press of 출근 or 퇴근 on a staff member's 출퇴근 링크, at the server's time. A 기록 the boss puts in; never pay by itself. */
+@Entity(tableName = "staff_punch", primaryKeys = ["staffId", "at"])
+data class StaffPunchEntity(
+    val staffId: String,
+    /** Epoch milliseconds. */
+    val at: Long,
+    /** IN or OUT. */
+    val kind: String,
 )
 
 /** [BOSS-03] Only the days that went differently from the usual week (설계 139). */
@@ -292,20 +309,32 @@ interface PayrollDao {
         upsertMonth(month)
     }
 
+    @Query("SELECT p.* FROM staff_punch p JOIN staff s ON s.id = p.staffId WHERE s.workplaceId = :workplaceId AND p.at BETWEEN :from AND :to ORDER BY p.at")
+    fun observePunches(workplaceId: String, from: Long, to: Long): Flow<List<StaffPunchEntity>>
+    @Query("SELECT * FROM staff_punch ORDER BY staffId, at") suspend fun punches(): List<StaffPunchEntity>
+    @Query("UPDATE staff SET clockId = NULL, clockToken = NULL WHERE id = :id") suspend fun forgetClock(id: String)
+    @Query("SELECT MAX(at) FROM staff_punch WHERE staffId = :staffId") suspend fun lastPunch(staffId: String): Long?
+    @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE) suspend fun insertPunches(e: List<StaffPunchEntity>): List<Long>
+
     @Transaction
-    suspend fun deleteStaff(id: String) { deleteStaffWork(id); deleteStaffRow(id) }
+    suspend fun deleteStaff(id: String) { deleteStaffWork(id); deleteStaffPunches(id); deleteStaffRow(id) }
+    @Query("DELETE FROM staff_punch WHERE staffId = :id") suspend fun deleteStaffPunches(id: String)
     @Query("DELETE FROM staff_work WHERE staffId = :id") suspend fun deleteStaffWork(id: String)
     @Query("DELETE FROM staff WHERE id = :id") suspend fun deleteStaffRow(id: String)
 
     @Transaction
-    suspend fun replaceAll(places: List<WorkplaceEntity>, staff: List<StaffEntity>, work: List<StaffWorkEntity>, months: List<PayrollMonthEntity>, lines: List<PayrollLineEntity>) {
-        wipeLines(); wipeMonths(); wipeWork(); wipeStaff(); wipePlaces()
+    suspend fun replaceAll(places: List<WorkplaceEntity>, staff: List<StaffEntity>, work: List<StaffWorkEntity>, months: List<PayrollMonthEntity>, lines: List<PayrollLineEntity>,
+                           punches: List<StaffPunchEntity> = emptyList()) {
+        wipeLines(); wipeMonths(); wipeWork(); wipePunches(); wipeStaff(); wipePlaces()
         places.forEach { upsertWorkplace(it) }
         staff.forEach { upsertStaff(it) }
         work.forEach { upsertWork(it) }
         months.forEach { upsertMonth(it) }
         if (lines.isNotEmpty()) upsertLines(lines)
+        if (punches.isNotEmpty()) insertPunches(punches)
     }
+
+    @Query("DELETE FROM staff_punch") suspend fun wipePunches()
 
     @Query("DELETE FROM payroll_line") suspend fun wipeLines()
     @Query("DELETE FROM payroll_month") suspend fun wipeMonths()

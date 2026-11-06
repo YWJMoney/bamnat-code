@@ -47,9 +47,13 @@ class PhaseThreeBackupTest {
         store.saveTeam(Team("t1", "3병동", "수간호사", shifts, need = mapOf(1L to 2)))
         store.saveMembers(listOf(TeamMember("m1", "t1", "김가나", "RN"), TeamMember("m2", "t1", "이다라", linkId = "L1", linkToken = "tok")))
         store.saveBoard("t1", store.boardNow("t1", month).paint("m1", day, 1).paint("m2", day, 4))
-        store.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = false, payday = 10))
-        store.saveStaff(StaffMember("s1", "박마바", base = 10_320, job = "홀", weekly = mapOf(DayOfWeek.MONDAY to com.bamnat.core.work.StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0)))), "w1")
+        store.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = false, payday = 10, minuteUnit = 30))
+        store.saveStaff(StaffMember("s1", "박마바", base = 10_320, job = "홀", dayRates = mapOf(DayOfWeek.SATURDAY to 12_000L), weekly = mapOf(DayOfWeek.MONDAY to com.bamnat.core.work.StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0))),
+            leaves = listOf(com.bamnat.core.boss.StaffLeave(month.atDay(20)))), "w1")
         store.setWork("s1", day, StaffWork("s1", day, WorkKind.LATE, LocalTime.of(10, 0), LocalTime.of(18, 0)))
+        // 1.38 [P3-B-11] 출퇴근 링크와 기록
+        store.saveStaff(store.staff("w1").first().single().copy(clockId = "C1", clockToken = "ctok"), "w1")
+        store.addPunches("s1", listOf(com.bamnat.core.boss.StaffPunch("s1", java.time.Instant.parse("2026-11-03T01:02:00Z"), true)))
     }
 
     @Test fun teamsGoInEveryBackupStaffOnlyWhenSealed() = runBlocking {
@@ -73,8 +77,14 @@ class PhaseThreeBackupTest {
             assertEquals(store.members("t1").first(), again.members("t1").first())
             assertEquals(store.boardNow("t1", month).cells, again.boardNow("t1", month).cells)
             assertEquals(store.workplaces.first(), again.workplaces.first())
+            assertEquals("계산 단위도 그대로", 30, again.workplaces.first().single().minuteUnit)
+            assertEquals("휴직 기간도 그대로", listOf(com.bamnat.core.boss.StaffLeave(month.atDay(20))), again.staff("w1").first().single().leaves)
+            assertEquals("요일별 시급도 그대로", mapOf(DayOfWeek.SATURDAY to 12_000L), again.staff("w1").first().single().dayRates)
             assertEquals(store.staff("w1").first(), again.staff("w1").first())
             assertEquals(store.work("w1", month).first(), again.work("w1", month).first())
+            assertEquals("출퇴근 기록도 그대로", store.punches("w1", month).first(), again.punches("w1", month).first())
+            assertEquals(1, again.punches("w1", month).first().size)
+            assertEquals("ctok", again.staff("w1").first().single().clockToken)
         } finally {
             other.close()
         }
@@ -89,5 +99,13 @@ class PhaseThreeBackupTest {
         assertEquals(listOf("3병동"), store.teamList.first().map { it.name })
         assertEquals(listOf("박마바"), store.staff("w1").first().map { it.name })
         assertEquals(TeamCell("m1", day, 1), store.boardNow("t1", month).cell("m1", day))
+        // 1.38 보안 검토: 암호 없는 백업에는 링크 고치는 열쇠가 없고, 복원해도 이 휴대폰의 열쇠는 그대로예요.
+        assertFalse(JSONObject(plain).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("\"tok\""))
+        // 팀을 지운 뒤라 열쇠가 없어요: 링크는 '새로 만들기'로 다시 받아요. 팀이 남아 있으면 이 휴대폰 열쇠를 그대로 둬요.
+        assertEquals(null, store.members("t1").first().single { it.id == "m2" }.linkToken)
+        store.saveMembers(store.members("t1").first().map { if (it.id == "m2") it.copy(linkToken = "tok") else it })
+        backups.restore(plain)
+        assertEquals("tok", store.members("t1").first().single { it.id == "m2" }.linkToken)
+        assertTrue(JSONObject(backups.exportSealed()).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("\"tok\""))
     }
 }

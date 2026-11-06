@@ -220,7 +220,8 @@ class PayCalculator(
         val base = profile.base.on(month)
         // [PAYX-24] A month joined or left part way: 재직 일수 (or 소정근로일) over the period's, by the company's rule.
         val proration: Pair<Int, Int>? = run {
-            val partial = profile.hireDate?.isAfter(periodStart) == true || profile.leaveDate?.isBefore(periodEnd) == true
+            val partial = profile.hireDate?.isAfter(periodStart) == true || profile.leaveDate?.isBefore(periodEnd) == true ||
+                profile.unpaidDays.any(::inPeriod)
             if (!partial || monthDays.isEmpty()) return@run null
             val employedDays = monthDays.filter { profile.employed(it.date) }
             fun work(d: ResolvedDay) = d.isWorkDay || d.leave != null

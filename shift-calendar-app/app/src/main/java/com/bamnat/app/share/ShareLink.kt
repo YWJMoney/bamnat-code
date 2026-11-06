@@ -555,7 +555,22 @@ interface ShareApi {
 
     /** [SHR-14] Takes [own] out of [code]. */
     suspend fun groupLeave(code: String, own: ShareLinkState) {}
+
+    /** 1.38 [P3-B-11] A staff member's 출퇴근 링크: [name] and [place] are all the page shows. */
+    suspend fun clockCreate(name: String, place: String): ClockLink = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-B-11] The presses on link [id] so far (the server keeps about two months); "not_found" once cut or run out. */
+    suspend fun clockRead(id: String, token: String): List<ClockPress> = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-B-11] Cuts the link (퇴사·끊기). A link the server no longer has counts as cut. */
+    suspend fun clockDelete(id: String, token: String) {}
 }
+
+/** 1.38 [P3-B-11] A 출퇴근 링크 made for one staff member. */
+data class ClockLink(val id: String, val url: String, val token: String)
+
+/** 1.38 [P3-B-11] One press: [inside] true for 출근, at the server's time. */
+data class ClockPress(val at: Instant, val inside: Boolean)
 
 /** [SRV-05] Why a link is reported: the share server's codes and the words for them. */
 enum class ShareReport(val code: String, val label: String) {
@@ -641,6 +656,29 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     override suspend fun groupLeave(code: String, own: ShareLinkState) = withContext(Dispatchers.IO) {
         try {
             request("DELETE", "/api/groups/$code/${own.id}", null, own.deleteToken)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    override suspend fun clockCreate(name: String, place: String): ClockLink = withContext(Dispatchers.IO) {
+        val o = request("POST", "/api/clock", JSONObject().put("name", name).put("place", place), null).body
+        readable { ClockLink(o.getString("id"), o.getString("url"), o.getString("token")) }
+    }
+
+    override suspend fun clockRead(id: String, token: String): List<ClockPress> = withContext(Dispatchers.IO) {
+        val a = request("GET", "/api/clock/$id", null, token).body.optJSONArray("punches") ?: org.json.JSONArray()
+        (0 until a.length()).mapNotNull { i ->
+            val p = a.optJSONObject(i) ?: return@mapNotNull null
+            val at = runCatching { Instant.parse(p.optString("at")) }.getOrNull() ?: return@mapNotNull null
+            when (p.optString("k")) { "in" -> ClockPress(at, true); "out" -> ClockPress(at, false); else -> null }
+        }
+    }
+
+    override suspend fun clockDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/clock/$id", null, token)
         } catch (e: ShareLinkException) {
             if (e.message != "not_found") throw e
         }

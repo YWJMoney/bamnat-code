@@ -263,6 +263,7 @@ class MigrationAllVersionsTest(private val from: Int) {
             "staff" to mapOf("id" to "s1", "workplaceId" to "w1", "name" to "이다라", "form" to "HOUR", "base" to 10320L, "allowances" to "[]", "hiredOn" to 20400L,
                 "leftOn" to null, "birth" to null, "job" to "홀", "insurance" to "{}", "weeklyHolidayPay" to 1, "weekly" to "{}", "memberId" to null, "sort" to 0),
             "staff_work" to mapOf("staffId" to "s1", "epochDay" to 20760L, "kind" to "LATE", "startMinute" to 600, "endMinute" to 1080),
+            "staff_punch" to mapOf("staffId" to "s1", "at" to 1_793_667_720_000L, "kind" to "IN"),
             "payroll_month" to mapOf("workplaceId" to "w1", "month" to "2026-10", "state" to "OPEN", "rateVersion" to "2026", "closedAt" to null),
             "payroll_line" to mapOf("workplaceId" to "w1", "month" to "2026-10", "staffId" to "s1", "gross" to 1_000_000L, "items" to "[]", "method" to "[]",
                 "deduct" to "", "net" to null, "paidAt" to null, "slipSentAt" to null),

@@ -505,6 +505,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
+            NoticeLinks.Target.MANAGE -> { nav.navigate(Routes.MANAGE) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INV-08] An investor notice opens its calendar's 투자 tab, which opens the trade itself.
             NoticeLinks.Target.INVEST, NoticeLinks.Target.INVEST_TRADE -> {
                 // [MCAL-03] No calendar named is the main one; its 투자 tab takes the notice only once it is shown.

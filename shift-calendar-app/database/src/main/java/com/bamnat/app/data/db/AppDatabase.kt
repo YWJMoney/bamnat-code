@@ -30,9 +30,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         EnvelopeEntity::class, EnvelopeMoveEntity::class,
         // 1.38 [P3-01] Version 27: Phase 3 리더 팀 근무표와 사장님 급여 대장 (꺼진 채).
         TeamEntity::class, TeamMemberEntity::class, TeamCellEntity::class, TeamMonthEntity::class, TeamWishEntity::class,
-        WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
+        WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, StaffPunchEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
     ],
-    version = 28,
+    version = 29,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -71,7 +71,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
-                MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28,
+                MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
             )
 
         /**
@@ -419,6 +419,21 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_27_28 = object : Migration(27, 28) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `memos` ADD COLUMN `skips` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * Version 29 (1.38 갈래 7, 경쟁 앱 조사 P3-B-12·P3-L-11): a 사업장's 계산 단위 and a team's 같이 쉬는 사람. Only new columns with
+         * defaults: every 사업장 and team of version 28 keeps its meaning (1분 단위; links name no one else, as before).
+         */
+        val MIGRATION_28_29 = object : Migration(28, 29) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `workplace` ADD COLUMN `minuteUnit` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `showTogether` INTEGER NOT NULL DEFAULT 0")
+                // [P3-B-11] 출퇴근 링크
+                db.execSQL("ALTER TABLE `staff` ADD COLUMN `clockId` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `staff` ADD COLUMN `clockToken` TEXT DEFAULT NULL")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `staff_punch` (`staffId` TEXT NOT NULL, `at` INTEGER NOT NULL, `kind` TEXT NOT NULL, PRIMARY KEY(`staffId`, `at`))")
             }
         }
 

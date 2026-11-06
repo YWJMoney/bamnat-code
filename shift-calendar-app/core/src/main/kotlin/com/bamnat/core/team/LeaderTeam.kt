@@ -22,6 +22,11 @@ data class Team(
     val archived: Boolean = false,
     /** [TEAM-15] People each kind of day needs, by [TeamShift.id] ("D 3명"); the board marks a day short of it. Empty: no check. */
     val need: Map<Long, Int> = emptyMap(),
+    /**
+     * 1.38 같이 쉬는 사람 (경쟁 앱 조사 P3-L-11): each member's link also names who is off on their days off. Off until the leader
+     * turns it on, since it puts teammates' names in each link.
+     */
+    val showTogether: Boolean = false,
 )
 
 /** One kind of day on the board, copied from the leader's calendar when the team is made (and updated with it). */
@@ -112,6 +117,17 @@ data class TeamBoard(val month: YearMonth, val members: List<TeamMember>, val ce
 
     /** One member's days as their own calendar would hold them: what goes in their link (설계 2-1 "그 사람 근무만"). */
     fun daysOf(memberId: String): Map<LocalDate, Long> = days.mapNotNull { d -> cell(memberId, d)?.let { d to it.shiftId } }.toMap()
+
+    /**
+     * 1.38 같이 쉬는 사람: on each of [memberId]'s days off, the other active members off that day, in the team's order. [isOff]
+     * says which kinds are days off.
+     */
+    fun offTogether(memberId: String, isOff: (Long) -> Boolean): Map<LocalDate, List<String>> = days.mapNotNull { d ->
+        val mine = cell(memberId, d)?.shiftId ?: return@mapNotNull null
+        if (!isOff(mine)) return@mapNotNull null
+        val with = members.filter { it.active && it.id != memberId && cell(it.id, d)?.shiftId?.let(isOff) == true }.map { it.name }
+        if (with.isEmpty()) null else d to with
+    }.toMap()
 
     /** [TEAM-13] The cells that differ from [other] (the confirmed board): what a 다시 확정 tells, and what L2 will notify. */
     fun changesFrom(other: TeamBoard): List<Triple<String, LocalDate, Pair<Long?, Long?>>> =
