@@ -240,11 +240,11 @@ object SlipTable {
      * [PHOTO-24] 1.30: with the company's [template] (the payslip the user confirmed before), lines the photo lost are looked
      * for where the template says, and the lines come in its order.
      */
-    fun read(words: List<OcrLine>, template: SlipTemplate? = null): SlipVote.Result = laid(words, template).result
+    fun read(words: List<OcrLine>, template: SlipTemplate? = null, tilt: Double? = null): SlipVote.Result = laid(words, template, tilt).result
 
     /** [read], with where each line stood. */
-    fun laid(words: List<OcrLine>, template: SlipTemplate?): Laid {
-        val rows = rows(words)
+    fun laid(words: List<OcrLine>, template: SlipTemplate?, tilt: Double? = null): Laid {
+        val rows = rows(words, tilt)
         if (rows.isEmpty()) return Laid(SlipVote.Result(PayslipRead(emptyList()), emptySet(), ""), emptyList())
         val text = rows.joinToString("\n") { r -> r.joinToString("  ") { it.text } }
         classify(rows)
@@ -581,7 +581,9 @@ object SlipTable {
         if (LATIN_NAME.matches(t.trim())) return true
         val hangul = t.count { it in '가'..'힣' }
         if (hangul < 2 || t.length > 24 || t.count { it == ' ' } > 3) return false
-        if (t.any { it.isDigit() } || ':' in t || t.endsWith("다") || t.endsWith("요")) return false
+        // [READ-41] Digits in a name's bracket or at its head ("볼링회 (1공장)", "1공장_사택관리비") are the name's.
+        val bare = t.replace(Regex("""\([^()]*\)"""), "").replace(Regex("""^\d{1,2}(?=[가-힣])"""), "")
+        if (bare.any { it.isDigit() } || ':' in t || t.endsWith("다") || t.endsWith("요")) return false
         return !PayslipReader.isHeader(PayslipReader.ocrFix(t.filter { it.isLetter() }))
     }
 
@@ -646,9 +648,11 @@ object SlipTable {
     // ---- placing the words ----
 
     // [PHOTO-27] 1.30: ",500" (an amount cut at its comma) is one piece, put back with the digits before it ([joinRow]); a
-    // date ("2026-10-25") is one piece too, never 2026 and two minus amounts.
+    // date ("2026-10-25") is one piece too, never 2026 and two minus amounts. [READ-41] A name's bracket with 한글 in it
+    // ("(1공장)") is one piece: "(1" was taken for a number and "공장)" for the name (PC 12차 s02); so is a name led by a
+    // digit or two ("1공장_사택관리비"), not a 시간·일·회 count.
     private val PIECE = Regex(
-        """\d{4}[./-]\d{1,2}[./-]\d{1,2}\.?|[(\-−–△▲]?[₩￦]?(?:[,.](?=\d{3}))?[\dOoIl|]?\d[\dOoIl|,.]*(?:\s?(?:원|윈|웜|시간|hr|h|H|분|일|회|%|배|개월|년|월|개|명|호봉))?\)?|[^\s\d]+""",
+        """\([^()\s]*[가-힣][^()\s]*\)|\d{1,2}(?!원|윈|웜|시간|분|일|회|배|개월|년|월|개|명|호봉)[가-힣][^\s\d]*|\d{4}[./-]\d{1,2}[./-]\d{1,2}\.?|[(\-−–△▲]?[₩￦]?(?:[,.](?=\d{3}))?[\dOoIl|]?\d[\dOoIl|,.]*(?:\s?(?:원|윈|웜|시간|hr|h|H|분|일|회|%|배|개월|년|월|개|명|호봉))?\)?|[^\s\d]+""",
     )
 
     /** How wide a letter is in a line's box, to place the pieces of a line read as one. */
@@ -660,7 +664,7 @@ object SlipTable {
         else -> 0.5
     }
 
-    private fun rows(words: List<OcrLine>): List<MutableList<Cell>> {
+    private fun rows(words: List<OcrLine>, tilt: Double? = null): List<MutableList<Cell>> {
         val pieces = mutableListOf<RosterWord>()
         for (w in OcrRows.unmarked(words)) {
             val t = w.text.replace(' ', ' ').replace('：', ':').replace('，', ',')
@@ -684,7 +688,8 @@ object SlipTable {
         val slant = geo.slant(words.map { RosterWord(it.text, it.left, it.top, it.right, it.bottom, angle = it.angle) })
         // [PHOTO-12] With no slopes given, the tilt is found from the names: an amount column sitting half a row lower to the
         // right stacks with the names as well at a slant as level, and the slant was taken (a level screenshot read 2° off).
-        val placed = if (slant != null) geo.level(pieces, slant)
+        val placed = if (tilt != null) geo.level(pieces, tilt)
+            else if (slant != null) geo.level(pieces, slant)
             else geo.level(pieces, geo.tilt(pieces.filter { SlipNumber.parse(it.text) == null }.takeIf { it.size >= 6 } ?: pieces))
         val cells = IdentityHashMap<RosterWord, Cell>()
         placed.forEach { p -> cells[p.word] = Cell(p.text, p.x, p.y, p.w, p.h) }
@@ -975,7 +980,21 @@ object SlipReading {
 
     /** The better of the table and the text reading of one picture. */
     fun best(words: List<OcrLine>, template: SlipTemplate? = null): SlipVote.Result {
-        val table = SlipTable.read(words, template)
+        var table = SlipTable.read(words, template)
+        // [READ-41] 1.38 PC 12차 (s02 off a monitor, ML Kit on the phone): the reader's line slopes said 2~4° where the page leaned
+        // 5°, so each amount sat nearer the next name's row and went to it (휴일연장수당 21,000, 야간 225,420: wrong and quiet,
+        // three lines lost). The page levelled a few other ways too, the one whose lines add up to its totals kept; a tie keeps
+        // the reader's own slope.
+        if (!(SlipVote.adds(table.read) && SlipVote.stated(table.read))) {
+            val angles = words.filter { it.angle != 0f && it.right - it.left > 3 * (it.bottom - it.top) }.map { it.angle.toDouble() }.sorted()
+            val base = angles.getOrNull(angles.size / 2) ?: 0.0
+            var bestScore = score(table.read)
+            for (d in TILT_TRIES) {
+                val other = SlipTable.read(words, template, base + d)
+                val sc = score(other.read)
+                if (sc > bestScore) { bestScore = sc; table = other }
+            }
+        }
         val text = OcrRows.join(words)
         val asText = PayslipReader.read(text)
         // A name a stroke off (교퉁비) put right, as the table does.
@@ -1024,4 +1043,7 @@ object SlipReading {
     }
 
     private val TOTALS = setOf(SlipRole.GROSS, SlipRole.TOTAL, SlipRole.DEDUCTION_TOTAL, SlipRole.NET)
+
+    /** [READ-41] Other levels tried, in degrees from the reader's slope (a page off a monitor leans more than its letters say). */
+    private val TILT_TRIES = listOf(-3.0, -2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0)
 }

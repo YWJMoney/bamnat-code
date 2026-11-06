@@ -97,6 +97,8 @@ data class RosterRow(
      * readings of one photo share the photo's pixels, so a line is matched by place when people share a rota.
      */
     val y: Int = 0,
+    /** [READ-41] Days the photo had nothing on that the line's repeat filled ([RosterPeriod.fill]): yellow, and said so. */
+    val filled: Set<Int> = emptySet(),
 ) {
     val unknown: Int get() = cells.values.count { it is DutyCell.Unknown }
 

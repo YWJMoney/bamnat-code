@@ -47,16 +47,23 @@ object RosterPeriod {
             val period = of(sure, last) ?: of(row.cells.filterValues { it !is DutyCell.Unknown }, last) ?: return@map row
             val cells = row.cells.toMutableMap()
             val guessed = row.guessed.toMutableSet()
+            val filled = row.filled.toMutableSet()
             // Only between the first and last day the line was read on: past its ends a 조 roster may turn (Y9, a real
             // roster whose 31일 broke the repeat), and a guess there would only look like a reading.
             val span = row.cells.filterValues { it !is DutyCell.Unknown }.keys
-            for (d in (span.minOrNull() ?: 1)..(span.maxOrNull() ?: 0)) {
+            val first = span.minOrNull() ?: 1
+            val end = span.maxOrNull() ?: 0
+            for (d in first..end) {
                 val want = period.at.getValue((d - 1) % period.length)
                 val now = cells[d]
-                val fill = now == null || now is DutyCell.Unknown || (replaceDoubtful && d in doubt && now != want)
-                if (fill && now != want) { cells[d] = want; guessed += d }
+                // [READ-41] 1.38 PC 12차: 1조's 3일 read 야 and 비 alike and the anchor's 비 was kept, then 휴 by the sheet's own
+                // letters. A cell the readings split on, inside the line (not its first or last two days, where Y9's repeat broke),
+                // takes what the repeat says, yellow.
+                val split = d in row.unsure && d in (first + 2)..(end - 2) && want !is DutyCell.Unknown
+                val fill = now == null || now is DutyCell.Unknown || (replaceDoubtful && d in doubt && now != want) || split && now != want
+                if (fill && now != want) { cells[d] = want; guessed += d; if (now == null || now is DutyCell.Unknown) filled += d }
             }
-            if (cells == row.cells) row else row.copy(cells = cells.toSortedMap(), guessed = guessed)
+            if (cells == row.cells) row else row.copy(cells = cells.toSortedMap(), guessed = guessed, filled = filled)
         }
     }
 }
