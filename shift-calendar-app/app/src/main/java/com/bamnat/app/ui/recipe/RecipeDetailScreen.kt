@@ -231,7 +231,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
                 if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    Text(if (s.applying) "넣는 중…" else "입어 보고 고르기")
+                    // 7차 통합 347b7c37 PC 제안 (넣은 뒤에도 '입어 보고 고르기'로 남아요): once in, it says so and offers another look.
+                    Text(when { s.applying -> "넣는 중…"; s.appliedAt != null -> (if (doc.item.scope == "tab") "✓ 넣은 작품 · 다시 입어 보기" else "✓ 입은 테마 · 다시 입어 보기"); else -> "입어 보고 고르기" })
                 } else Button(onClick = { confirming = true }, enabled = chosen > 0 && ready,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     // PC D15 (사용성 낮): 규칙·단추만 있는 작품은 실제로 들어가는 수로 ('고른 1개'인데 규칙 2개가 들어갔어요).

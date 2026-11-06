@@ -156,7 +156,7 @@ fun HubScreen(
                         }
                     }
                 }
-                PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.bar(MaterialTheme.colorScheme.surface)) {
+                PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface)) {
                     HubSection.entries.forEach { s ->
                         // 사용자 2026-11-03: the 장터 tab pressed again while on it goes back to the top of its list.
                         Tab(selected = section == s, onClick = { if (s == HubSection.SHARE && section != s) shareKind = null; if (section == s) reselect++; section = s }, text = { Text(s.label) })

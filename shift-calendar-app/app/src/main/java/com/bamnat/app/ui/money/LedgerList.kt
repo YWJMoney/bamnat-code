@@ -595,7 +595,7 @@ private fun LedgerRow(
         ).joinToString(" · ")
         val said = listOf(e.title, signedWon(e).replace("-", "마이너스 "), caption).joinToString(", ")
         Surface(
-            color = if (selected) com.bamnat.app.ui.components.Selection.container else MaterialTheme.colorScheme.surface,
+            color = if (selected) com.bamnat.app.ui.components.Selection.container else com.bamnat.app.ui.theme.PhotoGround.row(MaterialTheme.colorScheme.surface),
             modifier = Modifier.fillMaxWidth()
                 .combinedClickable(
                     onClick = { if (selecting) onToggle() else actions.open(e) },

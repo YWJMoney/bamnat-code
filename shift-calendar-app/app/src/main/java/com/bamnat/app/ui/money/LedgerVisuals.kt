@@ -181,7 +181,9 @@ fun FitText(text: String, style: TextStyle, color: Color, modifier: Modifier = M
 /** A round tinted badge with a picture in it, as tall as a two-line row. */
 @Composable
 fun IconAvatar(icon: ImageVector, tint: Color, size: Dp = 40.dp, modifier: Modifier = Modifier) {
-    Box(modifier.size(size).clip(CircleShape).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
+    // 7차 통합 347b7c37 PC 제안 (사진 바탕에서 보라·노랑 아이콘이 노을과 섞여요): on a picture the circle first gets the opaque veil.
+    val ground = if (com.bamnat.app.ui.theme.PhotoGround.on()) com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface) else Color.Transparent
+    Box(modifier.size(size).clip(CircleShape).background(ground).background(tint.copy(alpha = 0.16f)), contentAlignment = Alignment.Center) {
         Icon(icon, null, tint = tint, modifier = Modifier.size(size * 0.5f))
     }
 }
