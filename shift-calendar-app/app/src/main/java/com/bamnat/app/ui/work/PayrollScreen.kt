@@ -149,7 +149,9 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
             calls.filter { it.taken == null && it.token != null }.forEach { k -> runCatching { com.bamnat.app.boss.BossCallSync.pull(context.appContainer, place.id, k.id) } }
         }
         calls.forEach { k -> key(k.id) { BossCallCard(place, k, staff, work) } }
-        ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }, onFind = { d -> finding = l.staff.id to d }) } }
+        val leaves by store.leaveDays(place.id).collectAsStateWithLifecycle(emptyMap())
+        ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }, onFind = { d -> finding = l.staff.id to d },
+            leaveLeft = com.bamnat.core.leave.LeaveLeft.forStaff(place.fivePlus, l.staff.hiredOn, leaves[l.staff.id].orEmpty(), minOf(Today.date(), ym.atEndOfMonth()))) } }
         finding?.let { (id, d) -> BossCoverDialog(place, staff, work, id, d, onDismiss = { finding = null }) }
         // 1.38 퇴사자: 이 달에 없는 사람도 기록은 3년 남아요(근로기준법 제42조). 눌러서 보거나 다시 입사시켜요.
         val gone = staff.filter { s -> ledger.lines.none { it.staff.id == s.id } }
@@ -264,7 +266,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, work: List<StaffWork>, closed: Boolean,
-                           mark: com.bamnat.app.data.db.PayrollLineEntity?, onEdit: () -> Unit, onFind: (LocalDate) -> Unit = {}) {
+                           mark: com.bamnat.app.data.db.PayrollLineEntity?, onEdit: () -> Unit, onFind: (LocalDate) -> Unit = {},
+                           leaveLeft: com.bamnat.core.leave.LeaveLeft.Left? = null) {
     var open by rememberSaveable(l.staff.id) { mutableStateOf(false) }
     var slip by remember { mutableStateOf(false) }
     var why by remember { mutableStateOf<String?>(null) }
@@ -289,6 +292,11 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
             val scope = rememberCoroutineScope()
             FilterChip(selected = mark?.paidAt != null, onClick = { scope.launch { store.mark(place.id, month, l, paid = mark?.paidAt == null) } },
                 label = { Text(if (mark?.paidAt != null) "지급했어요 ✓" else "지급했어요") })
+        }
+        // 1.38 [P3-X-05] 연차 남은 날, from the hire date (제60조), less the 연차 days marked here.
+        leaveLeft?.let { lf ->
+            Hint("연차 남은 ${com.bamnat.core.leave.LeaveAccrual.days(lf.left)} (생긴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.made)} · 쓴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.used)})" +
+                (lf.nextOn?.let { " · ${Fmt.monthDay(it)}에 ${com.bamnat.core.leave.LeaveAccrual.days(lf.nextDays)} 더" } ?: ""))
         }
         // [BOSS-11] 4대보험 the law leaves out, with why (공식 대조 G2·G3·G6).
         val rules = remember(place, l.staff, month) { com.bamnat.core.boss.InsuranceRules.of(place, l.staff, month) }

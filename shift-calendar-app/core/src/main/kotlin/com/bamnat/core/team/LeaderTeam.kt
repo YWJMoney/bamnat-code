@@ -62,6 +62,8 @@ data class TeamMember(
     val linkId: String? = null,
     val linkToken: String? = null,
     val active: Boolean = true,
+    /** 1.38 [P3-X-05] 입사일, for 연차 남은 날 on the 신청 링크; null when the leader has not set it. */
+    val hiredOn: java.time.LocalDate? = null,
 )
 
 enum class CellSource { MANUAL, COPY, PHOTO, AUTO }

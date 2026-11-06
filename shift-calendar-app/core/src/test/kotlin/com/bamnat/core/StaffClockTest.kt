@@ -52,6 +52,7 @@ class StaffClockTest {
         assertEquals("1분만 일한 것으로 보여요. 잘못 누른 거라면 넣지 마세요", StaffClock.shortNote(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(9, 1)))
         assertEquals(null, StaffClock.shortNote(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(10, 0)))
         assertEquals(null, StaffClock.shortNote(java.time.LocalTime.of(22, 0), java.time.LocalTime.of(6, 0)))
+        assertEquals("19:14:50~19:15:10도 보이는 대로 1분", "1분만 일한 것으로 보여요. 잘못 누른 거라면 넣지 마세요", StaffClock.shortNote(java.time.LocalTime.of(19, 14, 50), java.time.LocalTime.of(19, 15, 10)))
         assertEquals(null, StaffClock.shortNote(null, java.time.LocalTime.of(6, 0)))
     }
 }

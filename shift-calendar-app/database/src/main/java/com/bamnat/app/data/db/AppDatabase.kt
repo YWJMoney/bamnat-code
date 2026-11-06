@@ -443,6 +443,7 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `team` ADD COLUMN `ask` TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE `team` ADD COLUMN `calls` TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE `team` ADD COLUMN `swap` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `team_member` ADD COLUMN `hiredOn` INTEGER")
                 db.execSQL("ALTER TABLE `workplace` ADD COLUMN `calls` TEXT NOT NULL DEFAULT ''")
             }
         }

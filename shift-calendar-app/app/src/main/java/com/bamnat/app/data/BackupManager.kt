@@ -33,6 +33,8 @@ data class BackupSummary(
     val calendars: Int = 0,
     /** [BACK-01] Photos in the file and about how many bytes they take. */
     val photos: Int = 0, val photoBytes: Long = 0,
+    /** 1.38 PC 9차: 팀 근무표 and 사업장 (팀·팀원·직원), so the restore says it replaces them too. */
+    val teams: Int = 0, val teamMembers: Int = 0, val places: Int = 0, val staff: Int = 0,
 )
 
 class BackupException(message: String) : Exception(message)
@@ -625,6 +627,10 @@ class BackupManager(
             calendars = root.optJSONArray("calendars")?.length() ?: 0,
             photos = stagedFor(json)?.photos?.size ?: BackupPhotos.count(root.optJSONObject("photos")).count,
             photoBytes = stagedFor(json)?.photos?.values?.sumOf { it.length() } ?: BackupPhotos.count(root.optJSONObject("photos")).bytes,
+            teams = root.optJSONObject(PhaseThreeBackup.TEAMS)?.optJSONArray("teams")?.length() ?: 0,
+            teamMembers = root.optJSONObject(PhaseThreeBackup.TEAMS)?.optJSONArray("members")?.length() ?: 0,
+            places = root.optJSONObject(PhaseThreeBackup.WORKPLACES)?.optJSONArray("places")?.length() ?: 0,
+            staff = root.optJSONObject(PhaseThreeBackup.WORKPLACES)?.optJSONArray("staff")?.length() ?: 0,
         )
     }
 

@@ -1470,6 +1470,9 @@ internal fun restoreMessage(s: BackupSummary): String {
         if (s.calendars > 0) add("추가한 달력 ${s.calendars}개")
         // [BACK-01] Receipt and contract photos.
         if (s.photos > 0) add("사진 ${s.photos}장(${com.bamnat.app.ui.settings.photoMegabytes(s.photoBytes)})")
+        // 1.38 PC 9차: 팀·사업장 too.
+        if (s.teams > 0) add("팀 근무표 ${s.teams}개(팀원 ${s.teamMembers}명)")
+        if (s.places > 0) add("사업장 ${s.places}곳(직원 ${s.staff}명)")
     }
     val saved = if (s.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(s.exportedAtMillis).toLocalDate())} 저장)" else ""
     return "들어 있는 것: ${parts.joinToString(", ")}$saved.\n" +

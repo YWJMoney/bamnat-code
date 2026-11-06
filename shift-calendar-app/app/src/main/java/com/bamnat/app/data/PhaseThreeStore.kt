@@ -147,6 +147,12 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     fun work(placeId: String, month: YearMonth): Flow<List<StaffWork>> =
         pay.observeWork(placeId, month.atDay(1).toEpochDay(), month.atEndOfMonth().toEpochDay()).map { l -> l.mapNotNull { it.toModel() } }
 
+    /** 1.38 [P3-X-05] Every 연차 day each staff member took, for 연차 남은 날. */
+    fun leaveDays(placeId: String): Flow<Map<String, Map<LocalDate, Double>>> =
+        pay.observeWork(placeId, Long.MIN_VALUE, Long.MAX_VALUE).map { l ->
+            l.mapNotNull { it.toModel() }.filter { it.kind == com.bamnat.core.boss.WorkKind.LEAVE }.groupBy { it.staffId }.mapValues { (_, w) -> w.associate { it.date to 1.0 } }
+        }
+
     fun payrollMonth(placeId: String, month: YearMonth): Flow<PayrollMonthEntity?> = pay.observeMonth(placeId, month.toString())
 
     suspend fun saveWorkplace(p: Workplace) = pay.upsertWorkplace(p.toEntity(pay.workplaces().firstOrNull { it.id == p.id }?.createdAt ?: clock()))
@@ -302,8 +308,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
                 closed = o.optBoolean("closed"), openedAt = o.optLong("opened"), syncedAt = if (o.has("synced") && !o.isNull("synced")) o.getLong("synced") else null)
         }.getOrNull()
         fun TeamMemberEntity.toModel() = TeamMember(id, teamId, name, role, runCatching { Skill.valueOf(skill) }.getOrDefault(Skill.REG),
-            colorArgb, sort, linkId, linkToken, active)
-        fun TeamMember.toEntity() = TeamMemberEntity(id, teamId, name, role, skill.name, colorArgb, sort, linkId, linkToken, active)
+            colorArgb, sort, linkId, linkToken, active, hiredOn?.let(LocalDate::ofEpochDay))
+        fun TeamMember.toEntity() = TeamMemberEntity(id, teamId, name, role, skill.name, colorArgb, sort, linkId, linkToken, active, hiredOn?.toEpochDay())
         fun TeamCellEntity.toModel() = TeamCell(memberId, LocalDate.ofEpochDay(epochDay), shiftId,
             runCatching { CellSource.valueOf(source) }.getOrDefault(CellSource.MANUAL), locked)
         fun TeamCell.toEntity(teamId: String) = TeamCellEntity(teamId, memberId, date.toEpochDay(), shiftId, source.name, locked)

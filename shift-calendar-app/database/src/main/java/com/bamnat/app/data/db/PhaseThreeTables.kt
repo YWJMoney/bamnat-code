@@ -50,6 +50,8 @@ data class TeamMemberEntity(
     val linkId: String?,
     val linkToken: String?,
     val active: Boolean,
+    /** 1.38 (DB 30) [P3-X-05] 입사일 as an epoch day, null when not set. */
+    val hiredOn: Long? = null,
 )
 
 @Entity(tableName = "team_cell", primaryKeys = ["memberId", "epochDay"], indices = [Index(value = ["teamId", "epochDay"])])

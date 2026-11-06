@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 30,
-    "identityHash": "151ea8fbb743b795c005142092dda3f3",
+    "identityHash": "7f5ea7fea0001681ab09c91d3e15f5cd",
     "entities": [
       {
         "tableName": "shift_types",
@@ -2687,7 +2687,7 @@
       },
       {
         "tableName": "team_member",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `teamId` TEXT NOT NULL, `name` TEXT NOT NULL, `role` TEXT NOT NULL, `skill` TEXT NOT NULL, `colorArgb` INTEGER, `sort` INTEGER NOT NULL, `linkId` TEXT, `linkToken` TEXT, `active` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `teamId` TEXT NOT NULL, `name` TEXT NOT NULL, `role` TEXT NOT NULL, `skill` TEXT NOT NULL, `colorArgb` INTEGER, `sort` INTEGER NOT NULL, `linkId` TEXT, `linkToken` TEXT, `active` INTEGER NOT NULL, `hiredOn` INTEGER, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -2745,6 +2745,11 @@
             "columnName": "active",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "hiredOn",
+            "columnName": "hiredOn",
+            "affinity": "INTEGER"
           }
         ],
         "primaryKey": {
@@ -3315,7 +3320,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '151ea8fbb743b795c005142092dda3f3')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7f5ea7fea0001681ab09c91d3e15f5cd')"
     ]
   }
 }
