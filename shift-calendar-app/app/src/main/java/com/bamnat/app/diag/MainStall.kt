@@ -69,7 +69,7 @@ object MainStall {
                         // size on purpose is no stop; it stays on the trail, marked, and is no note for the 멈춤 card.
                         val redraw = redrawFrom.let { it > 0 && now - it <= REDRAW_GRACE_MS }
                         noted = if (redraw) File("") else runCatching { write(app, late, frames, Today.millis()) }.getOrNull() ?: File("")
-                        Trail.add(com.bamnat.core.diag.StopTrail.Kind.STALL, "at=${where(frames)} ${Trail.memoryNow()}${if (redraw) " ${com.bamnat.core.diag.StopTrail.REDRAW_MARK}$redrawWhy" else ""}")
+                        Trail.add(com.bamnat.core.diag.StopTrail.Kind.STALL, "${upSince(since)} at=${where(frames)} ${Trail.memoryNow()}${if (redraw) " ${com.bamnat.core.diag.StopTrail.REDRAW_MARK}$redrawWhy" else ""}")
                     } else if (late < STALL_MS && noted != null) {
                         // [STAB-11] How long it really lasted, on the note and the trail.
                         val ms = answeredAt - since
@@ -94,7 +94,7 @@ object MainStall {
                         // 1.36 PC A21: the screen made again at a new text size (the activity remade) takes long to draw on purpose.
                         val redraw = redrawFrom.let { it > 0 && now - it <= REDRAW_GRACE_MS }
                         Trail.add(com.bamnat.core.diag.StopTrail.Kind.NO_DRAW,
-                            "ms=${now - waiting} main=${if (free) "free" else "busy"} focus=${if (focused) 1 else 0} at=${where(frames)}" +
+                            "${upSince(waiting)} ms=${now - waiting} main=${if (free) "free" else "busy"} focus=${if (focused) 1 else 0} at=${where(frames)}" +
                                 if (redraw) " ${com.bamnat.core.diag.StopTrail.REDRAW_MARK}$redrawWhy" else "")
                     }
                     if (++ticks % MEMORY_EVERY_TICKS == 0) Trail.add(com.bamnat.core.diag.StopTrail.Kind.MEMORY, Trail.memoryNow())
@@ -105,6 +105,10 @@ object MainStall {
             } catch (_: InterruptedException) { }
         }, "bamnat-stall").apply { isDaemon = true; priority = Thread.MIN_PRIORITY; start() }
     }
+
+    /** [StopTrail.UP_MARK]: how long the process had run at [uptime] (SystemClock), whatever the wall clock says. */
+    private fun upSince(uptime: Long): String =
+        com.bamnat.core.diag.StopTrail.UP_MARK + (uptime - android.os.Process.getStartUptimeMillis()).coerceAtLeast(0)
 
     fun stop() {
         watcher?.interrupt()

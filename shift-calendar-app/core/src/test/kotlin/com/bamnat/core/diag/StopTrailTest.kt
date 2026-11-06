@@ -66,6 +66,10 @@ class StopTrailTest {
         assertEquals(0L, StopTrail.askAboutStuckAt(listOf(Line(now, Kind.LAYOUT, "w=914 h=411"), Line(now + 5_000, Kind.NO_DRAW, "ms=3000"))))
         // Slow to draw right after the app started (PC C22) is the start.
         assertEquals(0L, StopTrail.askAboutStuckAt(listOf(start, Line(now + 25_000, Kind.NO_DRAW, "ms=3000"))))
+        // 1.38 PC 9차: the clock moved between START and the stall; the stall's own uptime says it was the start.
+        assertEquals(0L, StopTrail.askAboutStuckAt(listOf(start, Line(now + 6 * 86_400_000L, Kind.NO_DRAW, "up=3200 ms=3000"))))
+        assertEquals(now + 86_400_000L, StopTrail.askAboutStuckAt(listOf(start, Line(now + 86_400_000L, Kind.NO_DRAW, "up=95000 ms=3000"))))
+        assertEquals(3200L, StopTrail.upOf("up=3200 at=x"))
     }
 
     @Test fun aRealFreezeIsStillAskedAbout() {
