@@ -27,6 +27,26 @@ data class AskRules(
     val showNames: Boolean = false,
 )
 
+/**
+ * 1.38 [P3-L-14] The round a team is taking requests by, as the leader's phone keeps it: the server's round [id] and its key
+ * [token] (null after a backup without a password, like a 팀원 링크's), each member's link ([links] by member id), and what the
+ * last read brought besides the requests: the members' lines ([notes]) and who has opened their link ([seen]).
+ */
+data class AskRound(
+    val id: String,
+    val token: String?,
+    val month: YearMonth,
+    val rules: AskRules,
+    val links: Map<String, String>,
+    val notes: Map<String, String> = emptyMap(),
+    val seen: Set<String> = emptySet(),
+    val closed: Boolean = false,
+    val openedAt: Long = 0,
+    val syncedAt: Long? = null,
+) {
+    fun open(now: Long): Boolean = !closed && (rules.closesAt == null || now < rules.closesAt)
+}
+
 object TeamAsk {
     enum class No(val text: String) {
         CLOSED("신청이 마감됐어요"),

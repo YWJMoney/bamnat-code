@@ -29,6 +29,8 @@ data class TeamEntity(
     val archived: Boolean,
     /** 1.38 (DB 29) 같이 쉬는 사람: each member's link also names who is off with them (the leader turns it on). */
     @androidx.room.ColumnInfo(defaultValue = "0") val showTogether: Boolean = false,
+    /** 1.38 (DB 30) [P3-L-14] 신청 받기: the round as JSON ([com.bamnat.app.data.PhaseThreeStore.encodeAsk]); "" for none. */
+    @androidx.room.ColumnInfo(defaultValue = "") val ask: String = "",
 )
 
 @Entity(tableName = "team_member", indices = [Index("teamId")])
@@ -75,10 +77,10 @@ data class TeamWishEntity(
     val teamId: String,
     val memberId: String,
     val epochDay: Long,
-    /** OFF, WORK or AVOID_NIGHT. */
+    /** OFF, WORK or AVOID_NIGHT; 1.38 also LEAVE, HALF, EDU and SHIFT:<id> ([com.bamnat.core.team.WishKind.code]). */
     val kind: String,
     val receivedAt: Long,
-    /** How it came: LEADER (typed), TEXT (a pasted line). */
+    /** How it came: LEADER (typed), TEXT (a pasted line), 1.38 LINK (a member's 신청 링크; [receivedAt] is when they asked). */
     val via: String,
 )
 
@@ -235,6 +237,9 @@ interface TeamDao {
     @Query("DELETE FROM team_wish WHERE memberId = :memberId AND epochDay = :epochDay") suspend fun deleteWish(memberId: String, epochDay: Long)
     @Query("DELETE FROM team_wish WHERE teamId = :id") suspend fun deleteTeamWishes(id: String)
     @Query("DELETE FROM team_wish WHERE memberId = :id") suspend fun deleteMemberWishes(id: String)
+    /** 1.38 [P3-L-14] The requests a round brought before, so a request a member took back goes too. */
+    @Query("DELETE FROM team_wish WHERE teamId = :teamId AND epochDay BETWEEN :from AND :to AND via = :via")
+    suspend fun deleteWishesVia(teamId: String, from: Long, to: Long, via: String)
 
     /** Backup: every team row goes back in one step. */
     @Transaction

@@ -27,6 +27,8 @@ data class Team(
      * turns it on, since it puts teammates' names in each link.
      */
     val showTogether: Boolean = false,
+    /** 1.38 [P3-L-14] 신청 받기 now open or last run (DB 30 `team.ask`); null before the first. */
+    val ask: AskRound? = null,
 )
 
 /** One kind of day on the board, copied from the leader's calendar when the team is made (and updated with it). */

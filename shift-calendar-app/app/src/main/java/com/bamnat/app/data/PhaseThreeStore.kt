@@ -77,12 +77,28 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     /** [TEAM-19] The month's 희망 휴무. */
     fun wishes(teamId: String, month: YearMonth): Flow<List<com.bamnat.core.team.TeamWish>> =
         teams.observeWishes(teamId, month.atDay(1).toEpochDay(), month.atEndOfMonth().toEpochDay()).map { l ->
-            l.mapNotNull { e -> runCatching { com.bamnat.core.team.TeamWish(e.memberId, LocalDate.ofEpochDay(e.epochDay), com.bamnat.core.team.WishKind.valueOf(e.kind)) }.getOrNull() }
+            l.mapNotNull { e ->
+                val (kind, shift) = com.bamnat.core.team.WishKind.parse(e.kind) ?: return@mapNotNull null
+                com.bamnat.core.team.TeamWish(e.memberId, LocalDate.ofEpochDay(e.epochDay), kind, shift, e.receivedAt.takeIf { e.via == VIA_LINK })
+            }
         }
 
     /** [TEAM-19] Wishes in: one a member and day, the newest wins. [via] is LEADER or TEXT. */
     suspend fun addWishes(teamId: String, list: List<com.bamnat.core.team.TeamWish>, via: String) =
-        teams.upsertWishes(list.map { com.bamnat.app.data.db.TeamWishEntity(teamId, it.memberId, it.date.toEpochDay(), it.kind.name, clock(), via) })
+        teams.upsertWishes(list.map { com.bamnat.app.data.db.TeamWishEntity(teamId, it.memberId, it.date.toEpochDay(), it.kind.code(it.shiftId), it.at ?: clock(), via) })
+
+    /**
+     * 1.38 [P3-L-14] What a 신청 링크 round brought, in place of what it brought before (a request taken back goes too). A request
+     * the leader typed or pasted for the same member and day stays: the leader's hand wins.
+     */
+    suspend fun putLinkWishes(teamId: String, month: YearMonth, list: List<com.bamnat.core.team.TeamWish>) = db.withTransaction {
+        val from = month.atDay(1).toEpochDay()
+        val to = month.atEndOfMonth().toEpochDay()
+        teams.deleteWishesVia(teamId, from, to, VIA_LINK)
+        val mine = teams.wishes().filter { it.teamId == teamId && it.epochDay in from..to }.map { it.memberId to it.epochDay }.toSet()
+        teams.upsertWishes(list.filter { (it.memberId to it.date.toEpochDay()) !in mine }
+            .map { com.bamnat.app.data.db.TeamWishEntity(teamId, it.memberId, it.date.toEpochDay(), it.kind.code(it.shiftId), it.at ?: clock(), VIA_LINK) })
+    }
 
     suspend fun removeWish(memberId: String, date: LocalDate) = teams.deleteWish(memberId, date.toEpochDay())
 
@@ -191,8 +207,41 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     companion object {
         // ---- 팀 rows ----
 
-        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need), showTogether)
-        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived, showTogether)
+        const val VIA_LINK = "LINK"
+
+        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need), showTogether, decodeAsk(ask))
+        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived, showTogether, encodeAsk(ask))
+
+        /** 1.38 [P3-L-14] A 신청 받기 round as the `team.ask` column keeps it; [withToken] false leaves its key out (a plain backup). */
+        fun encodeAsk(a: com.bamnat.core.team.AskRound?, withToken: Boolean = true): String = if (a == null) "" else JSONObject()
+            .put("id", a.id).putOpt("token", a.token.takeIf { withToken }).put("month", a.month.toString())
+            .put("rules", JSONObject().put("weekday", a.rules.weekdayCap).put("weekend", a.rules.weekendCap).put("person", a.rules.perPerson)
+                .putOpt("closesAt", a.rules.closesAt).put("kinds", JSONArray(a.rules.kinds.map { it.name })).put("firstCome", a.rules.firstCome)
+                .put("holidays", JSONArray(a.rules.holidays.map { it.toString() })).put("blocked", JSONArray(a.rules.blocked.map { it.toString() }))
+                .put("names", a.rules.showNames))
+            // In the order the server numbered the members (its requests say "m": 0, 1, …).
+            .put("links", JSONArray().apply { a.links.forEach { (k, v) -> put(JSONArray().put(k).put(v)) } }).put("notes", JSONObject(a.notes)).put("seen", JSONArray(a.seen.toList()))
+            .put("closed", a.closed).put("opened", a.openedAt).putOpt("synced", a.syncedAt).toString()
+
+        fun decodeAsk(t: String): com.bamnat.core.team.AskRound? = if (t.isBlank()) null else runCatching {
+            val o = JSONObject(t)
+            val r = o.getJSONObject("rules")
+            fun strings(a: JSONArray?) = a?.let { x -> (0 until x.length()).map { x.getString(it) } }.orEmpty()
+            fun map(m: JSONObject?) = m?.let { x -> x.keys().asSequence().associateWith { x.getString(it) } }.orEmpty()
+            com.bamnat.core.team.AskRound(
+                id = o.getString("id"), token = o.optString("token").takeIf { it.isNotEmpty() }, month = YearMonth.parse(o.getString("month")),
+                rules = com.bamnat.core.team.AskRules(
+                    weekdayCap = r.optInt("weekday", 2), weekendCap = r.optInt("weekend", 3), perPerson = r.optInt("person", 0),
+                    closesAt = if (r.has("closesAt") && !r.isNull("closesAt")) r.getLong("closesAt") else null,
+                    kinds = strings(r.optJSONArray("kinds")).mapNotNull { k -> com.bamnat.core.team.WishKind.entries.firstOrNull { it.name == k } }.toSet(),
+                    firstCome = r.optBoolean("firstCome", true),
+                    holidays = strings(r.optJSONArray("holidays")).map(LocalDate::parse).toSet(),
+                    blocked = strings(r.optJSONArray("blocked")).map(LocalDate::parse).toSet(),
+                    showNames = r.optBoolean("names")),
+                links = o.optJSONArray("links")?.let { x -> (0 until x.length()).mapNotNull { x.optJSONArray(it) }.associateTo(LinkedHashMap()) { it.getString(0) to it.getString(1) } }.orEmpty(),
+                notes = map(o.optJSONObject("notes")), seen = strings(o.optJSONArray("seen")).toSet(),
+                closed = o.optBoolean("closed"), openedAt = o.optLong("opened"), syncedAt = if (o.has("synced") && !o.isNull("synced")) o.getLong("synced") else null)
+        }.getOrNull()
         fun TeamMemberEntity.toModel() = TeamMember(id, teamId, name, role, runCatching { Skill.valueOf(skill) }.getOrDefault(Skill.REG),
             colorArgb, sort, linkId, linkToken, active)
         fun TeamMember.toEntity() = TeamMemberEntity(id, teamId, name, role, skill.name, colorArgb, sort, linkId, linkToken, active)

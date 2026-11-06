@@ -44,7 +44,11 @@ class PhaseThreeBackupTest {
     private suspend fun fill() {
         ScheduleRepository(db).ensureDefaults()
         val shifts = listOf(TeamShift(1, "D", "데이", 0xFF2196F3, false, LocalTime.of(7, 0), LocalTime.of(15, 0)), TeamShift(4, "O", "오프", 0xFF9E9E9E, true))
-        store.saveTeam(Team("t1", "3병동", "수간호사", shifts, need = mapOf(1L to 2)))
+        // 1.38 [P3-L-14] 신청 받기 round, its key, and a request a member made by link (근무 희망 D).
+        store.saveTeam(Team("t1", "3병동", "수간호사", shifts, need = mapOf(1L to 2), ask = com.bamnat.core.team.AskRound("R1", "atok", month,
+            com.bamnat.core.team.AskRules(closesAt = 5_000L, holidays = setOf(month.atDay(25))), linkedMapOf("m1" to "https://s.example/a/K1", "m2" to "https://s.example/a/K2"),
+            notes = mapOf("m1" to "NN 뒤 off"), seen = setOf("m1"), openedAt = 1L, syncedAt = 2L)))
+        store.putLinkWishes("t1", month, listOf(com.bamnat.core.team.TeamWish("m1", month.atDay(9), com.bamnat.core.team.WishKind.SHIFT, shiftId = 1, at = 1_234L)))
         store.saveMembers(listOf(TeamMember("m1", "t1", "김가나", "RN"), TeamMember("m2", "t1", "이다라", linkId = "L1", linkToken = "tok")))
         store.saveBoard("t1", store.boardNow("t1", month).paint("m1", day, 1).paint("m2", day, 4))
         store.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = false, payday = 10, minuteUnit = 30))
@@ -74,6 +78,9 @@ class PhaseThreeBackupTest {
             BackupManager(other, SettingsRepository(context)).restore(sealed)
             val again = PhaseThreeStore(other)
             assertEquals(store.teamList.first(), again.teamList.first())
+            assertEquals("신청 받기 열쇠도 그대로(암호 백업)", "atok", again.teamList.first().single().ask?.token)
+            assertEquals("링크로 받은 근무 희망도 그대로", store.wishes("t1", month).first(), again.wishes("t1", month).first())
+            assertEquals(com.bamnat.core.team.TeamWish("m1", month.atDay(9), com.bamnat.core.team.WishKind.SHIFT, shiftId = 1, at = 1_234L), again.wishes("t1", month).first().single())
             assertEquals(store.members("t1").first(), again.members("t1").first())
             assertEquals(store.boardNow("t1", month).cells, again.boardNow("t1", month).cells)
             assertEquals(store.workplaces.first(), again.workplaces.first())
@@ -101,11 +108,16 @@ class PhaseThreeBackupTest {
         assertEquals(TeamCell("m1", day, 1), store.boardNow("t1", month).cell("m1", day))
         // 1.38 보안 검토: 암호 없는 백업에는 링크 고치는 열쇠가 없고, 복원해도 이 휴대폰의 열쇠는 그대로예요.
         assertFalse(JSONObject(plain).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("\"tok\""))
+        assertFalse("신청 받기 열쇠도 암호 없는 백업에는 없어요", JSONObject(plain).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("atok"))
+        assertEquals("팀을 지운 뒤라 신청 열쇠도 없어요", null, store.teamList.first().single().ask?.token)
+        assertEquals("R1", store.teamList.first().single().ask?.id)
         // 팀을 지운 뒤라 열쇠가 없어요: 링크는 '새로 만들기'로 다시 받아요. 팀이 남아 있으면 이 휴대폰 열쇠를 그대로 둬요.
         assertEquals(null, store.members("t1").first().single { it.id == "m2" }.linkToken)
         store.saveMembers(store.members("t1").first().map { if (it.id == "m2") it.copy(linkToken = "tok") else it })
+        store.saveTeam(store.teamList.first().single().let { it.copy(ask = it.ask?.copy(token = "atok")) })
         backups.restore(plain)
         assertEquals("tok", store.members("t1").first().single { it.id == "m2" }.linkToken)
+        assertEquals("남아 있는 신청 열쇠는 그대로", "atok", store.teamList.first().single().ask?.token)
         assertTrue(JSONObject(backups.exportSealed()).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("\"tok\""))
     }
 }
