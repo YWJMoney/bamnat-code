@@ -180,7 +180,7 @@ internal object SettingsIndex {
         screen(W.title, "근무 주기", SettingsGo.PATTERN, "순서", "패턴", "로테이션", "주주야야", "시작일", "요일", "교대 순서",
             "공휴일 쉬기", "격주 토요일", "격주"), // [SCHED-04]
         screen(W.title, "근무 종류와 시간", SettingsGo.SHIFT_TYPES, "주간", "야간", "근무 시간", "출근 시간", "색", "아이콘", "근무 전 알람", "휴게"),
-        screen(W.title, "연장 휴무일 근무 지정", SettingsGo.EXTRA_KINDS, "잔업", "특근", "대근", "연장", "휴일 근무", "가산"),
+        screen(W.title, "연장 휴무일 근무 지정", SettingsGo.EXTRA_KINDS, "잔업", "특근", "대근", "연장", "휴일 근무", "가산", "교육", "교육 시수", "근무별 시수"),
         // [SHFT-06][SHFT-07][DAYW-06][DAYW-07]
         screen(W.title, "한 달 근무 넣기", SettingsGo.DUTY_ROSTER, "듀티표", "듀티표 넣기", "직접 입력", "키패드", "반차", "근무표 사진", "글자 인식", "사진으로 입력", "간호사", "한 달 입력",
             // [IMPORT-03]

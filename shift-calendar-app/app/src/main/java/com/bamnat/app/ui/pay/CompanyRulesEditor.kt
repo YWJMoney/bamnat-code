@@ -491,7 +491,7 @@ fun CompanyRulesEditor(
                 OutlinedButton(onClick = { if (draft != saved) vm.update { draft }; onOpenKinds() }, modifier = Modifier.padding(top = 4.dp)) {
                     Text("종류·시간·가산 정하기")
                 }
-                Hint(say("대근 8시간에 기본급 10% + 야간 가산 50%처럼 회사 방식이 있으면 종류마다 체크해요.") + if (draft != saved) " 여기서 바꾼 내용은 저장하고 넘어가요." else "")
+                Hint(say("대근 8시간에 기본급 10% + 야간 가산 50%처럼 회사 방식이 있으면 종류마다 체크해요. 교육처럼 시수가 다른 일은 종류마다 시수도 따로 정해요.") + if (draft != saved) " 여기서 바꾼 내용은 저장하고 넘어가요." else "")
             }
 
             // [PAYS-06] Anything the choices above cannot say, in the company's own words; the total above follows each one.

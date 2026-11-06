@@ -177,7 +177,7 @@ object SetupFacts {
             "FIXED_PER_TIME" -> "1회 정액 (금액은 각자 넣어요)"
             "FIXED_PER_HOUR" -> "시간당 정액 (금액은 각자 넣어요)"
             "PERCENT_OF_BASE" -> "${if (cover > 0) hours(cover) else "한 번"}에 기본급 ${pct(percent)}" + if (e["premiums"] == true) " + 법정 가산" else ""
-            "HOURLY_RATE" -> "통상시급 × ${pct(num(e["multiplier"]) ?: 1.5)}"
+            "HOURLY_RATE" -> "통상시급${hoursNote(e)} × ${pct(num(e["multiplier"]) ?: 1.5)}"
             "TIERED" -> "시간 구간별 가산 " + (e["dayTiers"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>()
                 .joinToString(", ") { "${hours((it["min"] as? Number)?.toInt() ?: 0)}부터 +${pct(num(it["premium"]) ?: 0.0)}" }
             else -> {
@@ -186,7 +186,7 @@ object SetupFacts {
                     "BASE_SHARE" -> "${hours(unitMin)}에 기본급 ${pct(percent)}"
                     "PER_HOUR" -> "시간당 정액 (금액은 각자)"
                     "PER_TIME" -> "1회 정액 (금액은 각자)" + if (cover > 0) " ${hours(cover)}까지" else ""
-                    else -> "통상시급"
+                    else -> "통상시급${hoursNote(e)}"
                 }
                 val adds = (e["adds"] as? List<*>).orEmpty().filterIsInstance<Map<*, *>>().filter { it["on"] == true }.map { a ->
                     val scope = a["scope"] as? String ?: ""
@@ -203,6 +203,9 @@ object SetupFacts {
             }
         }
     }
+
+    /** [PAYX-49] " (243시간 기준)" for a kind with a 시수 of its own, as the server's hoursNote. */
+    private fun hoursNote(e: Map<*, *>): String = (e["hours"] as? Number)?.toInt()?.takeIf { it > 0 }?.let { " (${it}시간 기준)" }.orEmpty()
 
     private fun itemText(i: Map<*, *>): String {
         val types = (i["types"] as? List<*>).orEmpty().filterIsInstance<String>()

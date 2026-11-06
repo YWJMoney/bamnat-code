@@ -338,10 +338,12 @@ class ExtraKindsViewModel(
     /** [EXTRA-08] 통상시급 and 기본급 this pay month, for the editor to say what an hour of the work comes to. */
     fun money(profile: PayProfile, snapshot: ScheduleSnapshot, today: LocalDate): UnitMoney {
         val month = profile.period.monthOf(today)
-        val hourly = calculator.calculate(profile.named(snapshot.kinds), month, snapshot.resolver::resolve).ordinaryHourly
+        val named = profile.named(snapshot.kinds)
+        val hourly = calculator.calculate(named, month, snapshot.resolver::resolve).ordinaryHourly
         val base = profile.base.on(month).value
         return when (profile.wageType) {
-            WageType.MONTHLY -> UnitMoney(hourly, base, "기본급")
+            // [PAYX-49] What a kind with its own 시수 is divided by, as the engine has it.
+            WageType.MONTHLY -> UnitMoney(hourly, base, "기본급", PayCalculator.ordinaryForHours(named, month), profile.monthlyHours)
             WageType.HOURLY -> UnitMoney(hourly, base * profile.monthlyHours, "시급 × ${profile.monthlyHours}시간")
             // [PAYS-03] 일당 ÷ 1일 소정근로시간 is the 시급, as the calculator has it.
             WageType.DAILY -> UnitMoney(hourly, Math.round(base * 60.0 / profile.dailyHours.coerceIn(1, 8 * 60)) * profile.monthlyHours,
@@ -423,6 +425,9 @@ private fun templates(kinds: ExtraKinds, types: List<ShiftType>): List<KindTempl
         }
         add(KindTemplate("특근", "09:00 – 18:00 · 휴게 1시간",
             kind("특근", "특", ExtraTiming.Band(LocalTime.of(9, 0), LocalTime.of(18, 0), 60, LocalTime.of(12, 0)))))
+        // 1.38 [PAYX-49] 사용자 2026-11-06: 교육은 본 근무와 시수가 달라요(연장 180시간, 교육 243시간). Not a shift for 식대·야간 수당.
+        add(KindTemplate("교육", "09:00 – 13:00 · 시수를 따로 정할 수 있어요",
+            kind("교육", "교", ExtraTiming.Band(LocalTime.of(9, 0), LocalTime.of(13, 0))).copy(countsAsShift = false)))
     }.filter { it.title.replace(" ", "") !in names } +
         KindTemplate("직접 만들기", "이름과 시간을 처음부터 정해요", kind("", "", ExtraTiming.Band(LocalTime.of(9, 0), LocalTime.of(18, 0), 60, LocalTime.of(12, 0))))
 }
