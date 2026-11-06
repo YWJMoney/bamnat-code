@@ -193,6 +193,9 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
     var picked by remember { mutableStateOf<Set<Int>>(emptySet()) }
     var pane by rememberSaveable { mutableStateOf(Pane.ADD) }
     var addJump by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // 6차 통합 2eb28e83 PC 확인 (‘＋ 아이콘·사진’을 누르면 꾸밈 판이 먼저 나와 아이콘 칸을 보려면 더 내려야 해요): asked for 넣기, the 판 folds
+    // so the library stands right under the header; it opens again once something is put in or picked, to be moved there.
+    var stageOpen by rememberSaveable { mutableStateOf(addAsk == 0) }
     // [LAY-09] 고급 보기 is the studio's own when it gives one (one switch for 부품·꾸밈 층·층 나무).
     var ownAdvanced by rememberSaveable { mutableStateOf(false) }
     val advanced = advancedIn ?: ownAdvanced
@@ -241,6 +244,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
             on = if (place == Decor.CELL) "d" + com.bamnat.core.time.Today.date().dayOfMonth else null)
         onChange(null, Decor(items + item))
         picked = setOf(items.size)
+        stageOpen = true
         if (place == Decor.CELL) {
             pane = Pane.EDIT
             said = "${quoted(item)}${eul(item.label)} 매달 ${com.bamnat.core.time.Today.date().dayOfMonth}일 칸에 넣었어요. 아래 ‘어느 날에 붙일까요’에서 바꿔요"
@@ -252,7 +256,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("꾸밈 층: 도형·아이콘·이모지·글상자를 마음대로 놓아요. 날짜와 근무는 가리지 않아요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            androidx.compose.material3.FilledTonalButton(onClick = { pane = Pane.ADD; addJump++ }, modifier = Modifier.heightIn(min = 44.dp)) { Text("＋ 넣기") }
+            androidx.compose.material3.FilledTonalButton(onClick = { pane = Pane.ADD; stageOpen = false; addJump++ }, modifier = Modifier.heightIn(min = 44.dp)) { Text("＋ 넣기") }
         }
         com.bamnat.app.ui.components.FoldRow("decor.1") {
             places.forEach { a ->
@@ -261,7 +265,9 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
                     label = { Text(Decor.anchorLabel(a) + if (n > 0) " $n" else "") })
             }
         }
-        Stage(items, place, picked, advanced, magnet, loupe,
+        if (!stageOpen) androidx.compose.material3.OutlinedButton(onClick = { stageOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+            Text("꾸밈 판 펼치기" + if (items.count { it.at == place } > 0) " (${items.count { it.at == place }}개)" else "")
+        } else Stage(items, place, picked, advanced, magnet, loupe,
             onPick = { i -> picked = when { i == null -> if (many) picked else emptySet(); many -> if (i in picked) picked - i else picked + i; else -> setOf(i) }
                 if (i != null) pane = Pane.EDIT },
             onMove = { label, next -> onChange(label, Decor(next)) })
@@ -283,7 +289,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         val tabsAt = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
         var shownPane by remember { mutableStateOf(pane) }
         androidx.compose.runtime.LaunchedEffect(pane) { if (pane != shownPane) { shownPane = pane; runCatching { tabsAt.bringIntoView() } } }
-        androidx.compose.runtime.LaunchedEffect(addJump, addAsk) { if (addJump > 0 || addAsk > 0) { pane = Pane.ADD; runCatching { tabsAt.bringIntoView() } } }
+        androidx.compose.runtime.LaunchedEffect(addJump, addAsk) { if (addJump > 0 || addAsk > 0) { pane = Pane.ADD; if (addAsk > 0) stageOpen = false; runCatching { tabsAt.bringIntoView() } } }
         Row(Modifier.bringIntoViewRequester(tabsAt), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             Pane.entries.forEach { p ->
                 TextButton(onClick = { pane = p }, modifier = Modifier.heightIn(min = 44.dp)) {
@@ -296,7 +302,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         HorizontalDivider()
         when (pane) {
             Pane.ADD -> Library(place, { k, g -> add(k, g) }, onPhoto = { id, aspect -> add(DecorKind.PHOTO, id, aspect) },
-                onMaterial = { m -> add(DecorKind.PHOTO, m.id, m.aspect, icon = m.isIcon) })
+                onMaterial = { m -> add(DecorKind.PHOTO, m.id, m.aspect, icon = m.isIcon) }, iconAsk = addAsk)
             Pane.EDIT -> if (picked.isEmpty()) Text("판에서 꾸밈을 누르거나, 레이어에서 골라요", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             else ItemEditor(items, picked, place, advanced, ::set, buttons,
@@ -555,8 +561,10 @@ private fun DrawScope.backdrop(place: String, box: Rect, measurer: androidx.comp
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: (String, Float) -> Unit,
-                    onMaterial: (com.bamnat.app.recipe.StudioMaterial) -> Unit) {
-    var kind by rememberSaveable { mutableStateOf(DecorKind.SHAPE) }
+                    onMaterial: (com.bamnat.app.recipe.StudioMaterial) -> Unit, iconAsk: Int = 0) {
+    var kind by rememberSaveable { mutableStateOf(if (iconAsk > 0) DecorKind.ICON else DecorKind.SHAPE) }
+    // ‘＋ 아이콘·사진’ opens on 아이콘 (밤낮 색 아이콘 첫 줄), not on 도형.
+    androidx.compose.runtime.LaunchedEffect(iconAsk) { if (iconAsk > 0) kind = DecorKind.ICON }
     var q by rememberSaveable { mutableStateOf("") }
     var words by rememberSaveable { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
