@@ -909,6 +909,7 @@ private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: Sch
                     step = 10,
                     max = (span - 10).coerceAtLeast(0),
                     dialogTitle = "휴게 시간",
+                    format = com.bamnat.core.hours.HoursFormat::breakText,
                 )
             }
             if (t.breakMinutes > 0) {

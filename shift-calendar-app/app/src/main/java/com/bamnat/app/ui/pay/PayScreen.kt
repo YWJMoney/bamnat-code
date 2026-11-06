@@ -1473,7 +1473,7 @@ private fun LeaveCard(vm: PayViewModel, snapshot: ScheduleSnapshot, month: YearM
         // 넘는 알바에게도 생겨요. Nothing written yet, an 알바 is told that, and under 5 nothing shows.
         if (hourly && !fiveOrMore) return
         SectionCard(title = "연차", trailing = { TextButton(onClick = onOpenLeave) { Text("연차 화면") } }) {
-            Text((if (hourly) "5명 이상 근무지에서 주 15시간 넘게 일하면 알바도 연차가 생겨요. " else "") +
+            Text((if (hourly) "5명 이상 근무지에서 주 15시간 이상 일하면 알바도 연차가 생겨요. " else "") +
                 "입사일을 넣으면 연차를 법대로 세고, 쓴 날과 없어질 날을 알려 드려요. 달력에서 날을 길게 눌러 연차·반차를 넣어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

@@ -450,6 +450,10 @@ internal fun CustomItemDialog(
  * [ITEM-06][FIN130-08] Whether calendar [calendar]'s pay comes from a company's way (광장): its pay way in use, or a coworkers'
  * setup it uses. That calendar's own, so an added calendar's item never follows 내 달력's company.
  */
+/** 12차 빈틈 3: the word for where the user works, '가게' for an 알바 ([com.bamnat.core.work.WorkStyle.HOURLY]), '회사' otherwise. */
+internal fun workplaceWord(style: com.bamnat.core.work.WorkStyle?): String =
+    if (style == com.bamnat.core.work.WorkStyle.HOURLY) "가게" else "회사"
+
 internal fun payFromCompany(c: com.bamnat.app.AppContainer, calendar: String): Boolean =
     c.companyOf(calendar).let { s -> s.payWays.way.value != null || s.store.applied.value != null }
 
@@ -498,6 +502,8 @@ internal fun CustomItemDialog(
             .also { d -> if (editing == null && editingItem == null) d.mine = fromCompany }
     }
     val isEdit = editing != null || editingItem != null
+    // 12차 빈틈 3: an 알바's workplace is a 가게, not a 회사.
+    val place = remember(calendar) { workplaceWord(runCatching { context.appContainer.scopeOf(calendar).currentSettings().workStyle }.getOrNull()) }
     // A 1.32 [FIX132-03] A new allowance counts in every month, as the old '수당 추가' made it; a change starts this month.
     val start = if (isEdit) profile.period.start(month) else com.bamnat.core.pay.BulkEditPlanner.EARLIEST
     val base = remember(profile, editing) { if (editing == null) profile else profile.copy(customRules = profile.customRules.filterNot { it.id == editing.id }) }
@@ -518,7 +524,7 @@ internal fun CustomItemDialog(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(if (isEdit) "항목 고치기" else if (oneWindow) "수당 추가" else "우리 회사 항목 만들기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        title = { Text(if (isEdit) "항목 고치기" else if (oneWindow) "수당 추가" else "우리 $place 항목 만들기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = {
                             if (pickBack) IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "종류 다시 고르기") }
                             else IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
@@ -583,8 +589,8 @@ private fun GapBanner(gap: Long) {
                 style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
             Text(
-                if (gap > 0) "회사만 주는 수당이 있나 봐요. 그 항목을 만들면 금액을 차이에 맞춰 채워 둘게요."
-                else "회사가 빼는 돈(차감)이 있나 봐요. 그 항목을 만들면 금액을 차이에 맞춰 채워 둘게요.",
+                if (gap > 0) "따로 주는 수당이 있나 봐요. 그 항목을 만들면 금액을 차이에 맞춰 채워 둘게요."
+                else "따로 빼는 돈(차감)이 있나 봐요. 그 항목을 만들면 금액을 차이에 맞춰 채워 둘게요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer,
             )
         }

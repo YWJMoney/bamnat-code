@@ -160,7 +160,11 @@ class PayViewModel(
         // [CALI-04] 1.30 BB: the calendar's own company (1.29: the main calendar's only).
         val company = container.companyOf(calendarId)
         val asked = company.autoShare.saved()
-        if (invite && !asked && company.store.applied.value == null && company.payWays.way.value == null &&
+        // 12차 빈틈 3 (PC 12차): not for an 알바 that only put in its 시급, which is nothing to share yet. Its ask waits for
+        // something made (MADE) or checked (명세서와 맞음).
+        val onlyWage = settings.value.workStyle == com.bamnat.core.work.WorkStyle.HOURLY && !fromSlip &&
+            profile.items.isEmpty() && profile.customRules.isEmpty()
+        if (invite && !asked && !onlyWage && company.store.applied.value == null && company.payWays.way.value == null &&
             com.bamnat.app.company.ShareAskGate.open(container.appContext)) _shareMoment.value =
             if (fromSlip) com.bamnat.app.ui.company.ShareMoment.PAYSLIP else com.bamnat.app.ui.company.ShareMoment.PAY
         // [J133-85] The calendar uses a company's shifts from the 광장 and that version has no pay way: the first one, offered.

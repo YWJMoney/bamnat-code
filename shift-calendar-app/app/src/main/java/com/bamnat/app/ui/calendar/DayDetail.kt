@@ -739,6 +739,7 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
             step = 10,
             max = 12 * 60,
             dialogTitle = "휴게 시간",
+            format = com.bamnat.core.hours.HoursFormat::breakText,
         )
     }
     // [EASE-26] 조퇴·연장: the day's end earlier or later by a tap, the start kept.
