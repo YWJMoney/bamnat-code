@@ -205,7 +205,18 @@ fun LedgerListPane(
     val pickBoard: (com.bamnat.core.money.LedgerBoard) -> Unit = { b ->
         container.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews.decode(it.tabViews).copy(money = b).encode()) }
     }
-    var pickedDay by remember(month) { mutableStateOf<LocalDate?>(null) }
+    // 1.38 PC 7차: 기간이 이 달보다 길면 달력은 그 안의 달을 따로 넘겨요(처음엔 보고 있던 달).
+    var calMonth by remember(month, view.period) { mutableStateOf(month) }
+    val calWithin: ClosedRange<YearMonth>? = remember(view.period, month, shown) {
+        if (view.period == LedgerPeriod.MONTH) null else {
+            val (from, to) = view.period.range(month)
+            val dates = shown.map { it.date }
+            val start = (from ?: dates.minOrNull())?.let(YearMonth::from) ?: month
+            val end = (to ?: dates.maxOrNull())?.let(YearMonth::from) ?: month
+            minOf(start, month)..maxOf(end, month)
+        }
+    }
+    var pickedDay by remember(month, calMonth) { mutableStateOf<LocalDate?>(null) }
     var tableSort by remember { mutableStateOf("date" to true) }
     val list: @Composable (Modifier) -> Unit = { modifier ->
         Column(modifier) {
@@ -233,7 +244,8 @@ fun LedgerListPane(
                 if ((shown.isNotEmpty() || board == com.bamnat.core.money.LedgerBoard.CAL) && board != com.bamnat.core.money.LedgerBoard.LIST) item(key = "board-${board.key}") {
                     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                         when (board) {
-                            com.bamnat.core.money.LedgerBoard.CAL -> LedgerMonthGrid(month, shown, pickedDay) { pickedDay = if (pickedDay == it) null else it }
+                            com.bamnat.core.money.LedgerBoard.CAL -> LedgerMonthGrid(if (calWithin == null) month else calMonth, shown, pickedDay,
+                                { pickedDay = if (pickedDay == it) null else it }, calWithin, { calMonth = it })
                             com.bamnat.core.money.LedgerBoard.BOARD -> LedgerCategoryBoard(shown, actions::open)
                             com.bamnat.core.money.LedgerBoard.TABLE -> LedgerTable(shown, tableSort, { tableSort = it }, actions::open)
                             com.bamnat.core.money.LedgerBoard.LIST -> Unit

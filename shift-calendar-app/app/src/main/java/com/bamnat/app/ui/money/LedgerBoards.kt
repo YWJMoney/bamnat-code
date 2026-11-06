@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -68,7 +70,9 @@ private fun signedText(e: MoneyEntry): Pair<String, Color> = when (e.kind) {
 
 /** [TAB-06] 가계부 달력: the month with each day's money out (and in) in its cell; a tap picks the day for the lines under it. */
 @Composable
-internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: LocalDate?, onPick: (LocalDate) -> Unit) {
+internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: LocalDate?, onPick: (LocalDate) -> Unit,
+    /** 1.38 PC 7차: with a period longer than the month, the months it holds, and where ‹ › go. Null for 이 달. */
+    within: ClosedRange<YearMonth>? = null, onMonth: (YearMonth) -> Unit = {}) {
     val days = remember(shown, month) { LedgerBoard.days(shown, month) }
     val first = month.atDay(1).with(TemporalAdjusters.previousOrSame(DayOfWeek.SUNDAY))
     val weeks = (0 until 6).map { w -> (0 until 7).map { first.plusDays((w * 7 + it).toLong()) } }.filter { wk -> wk.any { YearMonth.from(it) == month } }
@@ -76,6 +80,21 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     val today = com.bamnat.core.time.Today.date()
     Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal"), RoundedCornerShape(10.dp))), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (within != null) {
+            // 기간을 '전체'로 골라도 달력은 한 달씩: 그 기간 안의 달을 여기서 넘겨요.
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.IconButton(onClick = { onMonth(month.minusMonths(1)) }, enabled = month > within.start) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달")
+                }
+                Text("${month.year}년 ${month.monthValue}월", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center, modifier = Modifier.weight(1f).semantics { heading() })
+                androidx.compose.material3.IconButton(onClick = { onMonth(month.plusMonths(1)) }, enabled = month < within.endInclusive) {
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달")
+                }
+            }
+            Text("달력은 한 달씩 보여요. 화살표로 고른 기간 안의 달을 넘겨요.", style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp))
+        }
         Row(Modifier.fillMaxWidth()) {
             for (d in listOf("일", "월", "화", "수", "목", "금", "토")) Text(d, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
