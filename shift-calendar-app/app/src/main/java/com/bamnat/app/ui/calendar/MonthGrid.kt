@@ -657,7 +657,7 @@ private fun DayCell(
             append(", ").append(ExtraText.name(e))
             if (e.entry.hasTimes || e.covered != null) append(" ").append(HoursFormat.korean(e.minutes))
         }
-        if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) append(", 직접 바꿈")
+        if (day.source == DaySource.OVERRIDE && snapshot.hasPattern || day.hasCustomTimes) append(", 직접 바꿈")
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
         if (hasMemo) append(", 메모 있음")
@@ -795,7 +795,7 @@ private fun DayCell(
             parts = cellParts,
             view = view, cellLook = cellLook, filled = tint?.takeIf { cellLook?.mark == "fill" || cellLook?.bg != null } ?: cellFillGround(cellLook), date = date, isToday = isToday, numberColor = numberColor, weekendLine = weekendLine, dateSize = dateSize, footerSize = footerSize,
             todayColor = look.today, holidayName = holidayName, hasMemo = hasMemo, alarmOff = day.alarmSkipped,
-            marks = remember(day, jobs) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null) },
+            marks = remember(day, jobs, snapshot.hasPattern) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern) },
             barColor = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)?.colorArgb?.asColor()
                 ?.takeIf { !jobFirst && fullLeave == null && badgeKind == null && !(hourly != null && hourlyRange != null) && !(quietWorkDays && DayWork.isRoutine(day)) },
             dayMark = dayMark,
@@ -832,7 +832,7 @@ private fun DayCell(
                 // then the kinds of extra work, a part-day leave, a day changed by hand. What does not fit
                 // is still read out and shown under the calendar.
                 val jobCorner = if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null
-                val marks = remember(day, jobCorner) { cornerMarks(day, jobCorner) }
+                val marks = remember(day, jobCorner, snapshot.hasPattern) { cornerMarks(day, jobCorner, snapshot.hasPattern) }
                 val alarmOff = day.alarmSkipped
                 val topEnd = marks.firstOrNull()
                 val topStart = if (alarmOff) null else marks.getOrNull(1)
@@ -1066,7 +1066,7 @@ internal sealed interface Corner {
 }
 
 /** The corner marks of a day, in order; 알람 꺼짐 has its own place and is not among them. */
-private fun cornerMarks(day: ResolvedDay, job: Boolean? = null): List<Corner> = buildList {
+private fun cornerMarks(day: ResolvedDay, job: Boolean? = null, pattern: Boolean = true): List<Corner> = buildList {
     day.entry?.attendance?.let { add(Corner.Attend(it)) }
     job?.let { add(Corner.Job(it)) }
     // [EXTRA-01] On a day off whose only work is extra work, the first kind is the day's badge, not a corner.
@@ -1074,7 +1074,8 @@ private fun cornerMarks(day: ResolvedDay, job: Boolean? = null): List<Corner> = 
     val kindIsBadge = !day.isWorkDay && day.coveredShift == null && kinds.isNotEmpty() && day.leave == null
     (if (kindIsBadge) kinds.drop(1) else kinds).forEach { add(Corner.Kind(it)) }
     day.leave?.takeIf { !it.isFullDay }?.let { add(Corner.PartLeave(it)) }
-    if (day.source == DaySource.OVERRIDE || day.hasCustomTimes) add(Corner.Changed)
+    // [READ-37] 1.38 PC: without an order (매달 근무표) every day is put in by hand or from a photo: no dot on each one.
+    if (day.source == DaySource.OVERRIDE && pattern || day.hasCustomTimes) add(Corner.Changed)
 }
 
 @Composable

@@ -160,6 +160,11 @@ class DutyRosterViewModel(
         val from: RosterFrom = RosterFrom.TYPED,
         /** [ROST-04] The month the roster named, when it did. */
         val named: YearMonth? = null,
+        /**
+         * [READ-37] 1.38 PC: the month on screen before a roster named another ("7병동 2026년 11월" read as July moved the
+         * screen without a word): asked "사진에서 7월로 읽었어요. 맞나요?" until answered.
+         */
+        val movedFrom: YearMonth? = null,
         val history: List<Map<Int, DutyCell?>> = emptyList(),
         /**
          * [READ-05] False while a roster of several lines waits for "어느 줄(조)이 내 것인가요?": nothing goes on the calendar
@@ -209,6 +214,19 @@ class DutyRosterViewModel(
                 val read = row?.cells ?: return 0
                 return edits.count { (d, c) -> d in read && c != null && resolve(read.getValue(d)) != c }
             }
+        /**
+         * [READ-37] 1.38 PC: a blurred photo read to the 16th and left the rest empty with no mark. Days a photo or scan
+         * left empty are marked on the month like the doubtful ones, and the run at the end is said with what to do.
+         */
+        val missing: Set<Int>
+            get() = if (row == null || !(from == RosterFrom.PHOTO || from == RosterFrom.FILE && scan != null)) emptySet()
+            else (1..days).toSet() - cells.keys
+        /** The last day read before an empty run of 5 days or more to the month's end, or null. */
+        val readUpTo: Int?
+            get() {
+                val last = cells.keys.maxOrNull() ?: return null
+                return last.takeIf { days - it >= 5 && (it + 1..days).all { d -> d in missing } }
+            }
         /** [ROST-03] What the roster said besides the code, for the days it stays on. */
         val notes: Map<Int, String> get() = row?.notes.orEmpty().filterKeys { it <= days && it !in edits && it in writable }
         /** [ROST-04] Days of the roster this month has not (31일 on a 30-day month). */
@@ -241,6 +259,13 @@ class DutyRosterViewModel(
     }
 
     fun keepOutside(yes: Boolean) = _ui.update { it.copy(withOutside = yes) }
+
+    /** [READ-37] The month the roster named is right (true), or the one on screen before was (false). */
+    fun monthRight(yes: Boolean) = _ui.update {
+        val back = it.movedFrom
+        if (yes || back == null) it.copy(movedFrom = null)
+        else it.copy(month = back, named = null, movedFrom = null, applied = null, cursor = 1, history = emptyList())
+    }
 
     fun month(delta: Long) = _ui.update { it.copy(month = it.month.plusMonths(delta), applied = null, cursor = 1, history = emptyList()) }
 
@@ -345,6 +370,7 @@ class DutyRosterViewModel(
                     edits = if (rows.isEmpty()) it.edits else emptyMap(), error = r.error, from = r.from, advice = r.advice,
                     // [ROST-04] The month the roster names wins over the one on screen (중-6).
                     month = r.month ?: it.month, named = r.month, cursor = 1, history = emptyList(),
+                    movedFrom = if (r.month != null && r.month != it.month) it.month else null,
                     scan = r.scan ?: it.scan.takeIf { r.from == RosterFrom.PHOTO },
                 )
             }
@@ -633,6 +659,10 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 }
             }
             // [READ-17] 사진과 내용이 같은가요? — the photo's dates and line over what was read, each cell fixed on its own.
+            // [READ-37] A roster that moved the screen to another month asks once; the other month is one tap back.
+            val moved = ui.movedFrom
+            val named = ui.named
+            if (moved != null && named != null && !ui.reading) MonthMovedCard(named, moved, ui.from, vm::monthRight)
             val scanned = ui.scan
             val mine = ui.row
             if (scanned != null && mine != null && ui.from == RosterFrom.PHOTO && !ui.reading) SameAsPhotoCard(
@@ -665,7 +695,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                         onQuickAction = { _, _ -> },
                         onPaint = if (ui.lastKey != null) ({ ds -> vm.paint(ds.filter { YearMonth.from(it) == ui.month }.map { it.dayOfMonth }) }) else null,
                         quickMenu = false,
-                        marked = ui.doubtful.map { ui.month.atDay(it) }.toSet(),
+                        marked = (ui.doubtful + ui.missing).map { ui.month.atDay(it) }.toSet(),
                         modifier = Modifier.heightIn(min = cellHeight * 5),
                     )
                 }
@@ -688,6 +718,23 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     newKindFor?.let { raw ->
         NewKindDialog(raw, onDismiss = { newKindFor = null }) { name, range -> vm.newKind(raw, name, range); newKindFor = null }
     }
+}
+
+/** [READ-37] "사진에서 7월로 읽었어요. 맞나요?" with the month the screen was on as the other answer. */
+@Composable
+private fun MonthMovedCard(named: YearMonth, before: YearMonth, from: RosterFrom, onAnswer: (Boolean) -> Unit) {
+    val what = when (from) { RosterFrom.PHOTO -> "사진"; RosterFrom.FILE -> "파일"; else -> "근무표" }
+    val name = if (named.year == before.year) "${named.monthValue}월" else Fmt.month(named)
+    val other = if (named.year == before.year) "${before.monthValue}월" else Fmt.month(before)
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(12.dp)).padding(start = 12.dp, top = 8.dp, end = 4.dp)
+        .semantics { liveRegion = LiveRegionMode.Polite }) {
+        Text("${what}에서 ${name}로 읽었어요. 맞나요?", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = { onAnswer(false) }) { Text("${other}이에요") }
+            TextButton(onClick = { onAnswer(true) }) { Text("맞아요") }
+        }
+    }
+    Spacer(Modifier.height(6.dp))
 }
 
 /** [ROST-02][ROST-04][NURS-04] What to know before putting the days in, a line each. */
@@ -713,8 +760,12 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
         // [READ-32] 1.38 PC: a scanned PDF says it too, and how many days it left empty (it read from the 7th on).
         val scanned = ui.from == RosterFrom.FILE && ui.scan != null
         val empty = ui.month.lengthOfMonth() - ui.cells.size
+        val upTo = ui.readUpTo
         if ((ui.from == RosterFrom.PHOTO || scanned) && read > 0) add((if (scanned) "스캔한 PDF" else "사진") + "에서 ${read}칸을 읽었어요" +
-            (if (ui.fixed > 0) " · ${ui.fixed}칸 고쳤어요" else "") + (if (empty > 0) " · ${empty}일은 비어 있어요. 키로 채워 주세요" else ""))
+            (if (ui.fixed > 0) " · ${ui.fixed}칸 고쳤어요" else "") + (if (empty > 0 && upTo == null) " · 노란 빈칸 ${empty}일은 키로 채워 주세요" else ""))
+        // [READ-37] Read only to the 16th: say where it stopped, and that a sharper photo or the keys fill the rest.
+        if (upTo != null) add("${upTo}일까지만 읽었어요. ${upTo + 1}~${ui.month.lengthOfMonth()}일은 비어 있어요. " +
+            (if (scanned) "더 선명한 파일을 고르거나" else "밝은 곳에서 표 전체가 화면에 차게 다시 찍거나") + " 아래 키로 채워 주세요")
         // [EASE-15] A photo that read nothing goes straight on by hand: the keys below start on the 1st.
         if (ui.from == RosterFrom.PHOTO && ui.error != null && ui.rows.isNullOrEmpty()) add("아래 키로 ${ui.month.monthValue}월 ${ui.cursor}일부터 바로 이어서 넣을 수 있어요")
         if (ui.notes.isNotEmpty()) add("표시가 붙은 ${ui.notes.size}칸은 그 날 메모로 남겨요")

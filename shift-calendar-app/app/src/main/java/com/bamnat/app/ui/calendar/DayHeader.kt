@@ -505,7 +505,9 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
         }
         if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.WARNING))
         // [EASE-12] A changed shift has its own line ("원래 → 새 근무"); the token stays for changed times.
-        if (day.source == DaySource.OVERRIDE && !snapshot.hasPattern || day.hasCustomTimes) add(DayToken(if (day.source == DaySource.OVERRIDE) "직접 바꿈" else "이 날만 시간 바꿈", DayToken.Tone.ACCENT))
+        // [READ-37] 1.38 PC: on a calendar without an order (매달 근무표) every day is put in by hand or from a photo, so
+        // "직접 바꿈" said nothing on each of them; only a day's own times are worth a word there.
+        if (day.hasCustomTimes) add(DayToken("이 날만 시간 바꿈", DayToken.Tone.ACCENT))
         // [NOTE-06] The first memo's title, cut to one line, and how many more there are.
         dayMemos.firstOrNull()?.let { first ->
             val title = first.title.ifBlank { first.preview }.lineSequence().firstOrNull().orEmpty().trim()

@@ -1,0 +1,4 @@
+rule	HOLIDAY	0.5	false
+rule	OVERTIME	0.5	false
+rule	HOLIDAY	1.0	true
+rule	NIGHT	0.5	false

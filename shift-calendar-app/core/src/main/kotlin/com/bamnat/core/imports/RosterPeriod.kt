@@ -27,8 +27,9 @@ object RosterPeriod {
             if (classes.size < p || classes.values.any { it.size < PER_CLASS }) continue
             val at = classes.mapValues { (_, cs) -> cs.groupingBy { it.value }.eachCount().maxBy { it.value }.key }
             val off = sure.count { (d, c) -> at.getValue((d - 1) % p) != c }
-            // A period that only says "the same thing every day" says nothing.
-            if (at.values.toSet().size < 2) return null
+            // A period that only says "the same thing every day" says nothing; a longer one may (1.38 PC 8차: 1조's
+            // 주야야비휴주 read as 야 on most odd and even days alike stopped the search at 2, and its blanks stayed blank).
+            if (at.values.toSet().size < 2) continue
             if (off <= maxOf(1.0, sure.size * SLACK) && classes.values.all { it.size >= PER_CLASS + if (off > 0) 1 else 0 }) return Period(p, at)
         }
         return null
