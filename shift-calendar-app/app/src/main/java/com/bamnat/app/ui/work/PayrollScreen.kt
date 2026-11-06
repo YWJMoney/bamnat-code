@@ -33,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -401,6 +402,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
         }
         AmountField(when (s.form) { WageForm.HOUR -> "시급"; WageForm.MONTH -> "월급"; WageForm.DAY -> "일급" }, amountDigits(s.base), { s = s.copy(base = it.toAmount()) })
         if (s.form == WageForm.HOUR && s.base in 1 until minimum) Text("최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+        oddWage(s.form, s.base, minimum)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         OutlinedTextField(s.job, { s = s.copy(job = it.take(20)) }, label = { Text("하는 일 (예: 홀, 주방)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("입사일", modifier = Modifier.weight(1f))
@@ -472,11 +474,17 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             var perDay by remember { mutableStateOf(s.dayRates.isNotEmpty()) }
             SwitchLine("요일마다 시급이 달라요", perDay, { on -> perDay = on; if (!on) s = s.copy(dayRates = emptyMap()) }, "예: 주말만 시급을 더 줄 때")
             if (perDay) {
+                // 1.38 PC 8차: 비운 칸은 비운 채로 두고(그 요일은 기본 시급), 기본 시급이 다시 들어와 커서를 밀지 않아요.
+                val dayText = remember { mutableStateMapOf<DayOfWeek, String>() }
                 DayOfWeek.entries.filter { it in s.weekly }.forEach { d ->
-                    AmountField("${Fmt.dayOfWeekShort(d)}요일 시급", amountDigits(s.dayRates[d] ?: s.base), { v ->
+                    val text = dayText[d] ?: amountDigits(s.dayRates[d] ?: s.base)
+                    AmountField("${Fmt.dayOfWeekShort(d)}요일 시급", text, { v ->
+                        dayText[d] = v
                         val won = v.toAmount()
                         s = s.copy(dayRates = if (won <= 0 || won == s.base) s.dayRates - d else s.dayRates + (d to won))
                     })
+                    if (text.isEmpty()) Hint("비워 두면 기본 시급 ${Fmt.won(s.base)}으로 계산해요")
+                    oddWage(WageForm.HOUR, text.toAmount(), minimum)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 }
                 val avg = com.bamnat.core.boss.PayrollLedger.ordinaryHourly(place ?: Workplace("", ""), s)
                 Hint("가산수당·주휴수당은 한 주 평균 시급(통상시급) ${Fmt.won(avg)}으로 계산하고, 요일마다 일한 시간은 그 요일 시급으로 줘요(근로기준법 시행령 제6조).")
@@ -688,4 +696,15 @@ private fun ClockCard(staff: List<StaffMember>, punches: List<com.bamnat.core.bo
             if (open.isNotEmpty()) Hint("퇴근을 안 누른 날 ${open.size}일은 넣지 않았어요: " + open.joinToString(", ") { (n, d) -> "$n ${Fmt.monthDay(d.date)}" })
         }
     }
+}
+
+/**
+ * 1.38 PC 8차 (시급 1,200,010,320원이 경고 없이 대장에 49,479,528,856원으로): a wage far beyond any real one is told at once.
+ * 시급·일급은 최저임금의 10배·100배(약 10만·100만 원), 월급은 3천만 원을 넘으면 물어요. 막지는 않아요(입력은 사장님 몫).
+ */
+internal fun oddWage(form: WageForm, amount: Long, minimum: Long): String? {
+    val limit = when (form) { WageForm.HOUR -> minimum * 10; WageForm.DAY -> minimum * 100; WageForm.MONTH -> 30_000_000L }
+    if (amount <= limit) return null
+    val word = when (form) { WageForm.HOUR -> "시급"; WageForm.DAY -> "일급"; WageForm.MONTH -> "월급" }
+    return "$word ${Fmt.won(amount)}이 맞나요? 보통보다 아주 커요. 숫자를 한 번 더 봐 주세요"
 }

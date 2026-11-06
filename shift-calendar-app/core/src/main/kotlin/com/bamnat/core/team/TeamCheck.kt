@@ -68,8 +68,9 @@ object TeamCheck {
     /**
      * 1.38 PC 1차 (58 signs, most of them 책임자 없음, hid the N→D): the card's lines. Each RULE and WEEK_HOURS sign keeps its own line;
      * SHORT and NO_CHARGE are told once each, with how many and the first days ("책임자 없는 근무 32번 · 1일 N, 2일 D …").
+     * [charges] is how many active 책임자 the team has; with only one, the 책임자 line says one more makes it shorter.
      */
-    fun summary(signs: List<Sign>, dayWords: (LocalDate) -> String = { "${it.dayOfMonth}일" }): List<Line> {
+    fun summary(signs: List<Sign>, dayWords: (LocalDate) -> String = { "${it.dayOfMonth}일" }, charges: Int = 0): List<Line> {
         val byKind = signs.groupBy { it.kind }
         return ORDER.flatMap { k ->
             val list = byKind[k].orEmpty().sortedBy { it.date }
@@ -79,7 +80,9 @@ object TeamCheck {
                 else -> {
                     val head = if (k == Kind.SHORT) "인원이 모자란 날 ${list.map { it.date }.distinct().size}일" else "책임자 없는 근무 ${list.size}번"
                     val some = list.take(4).joinToString(", ") { "${dayWords(it.date)} ${it.text.removeSuffix(" 책임자 없음")}" }
-                    listOf(Line(k, "$head · $some" + if (list.size > 4) " …" else "", list.size, list.first().date))
+                    // 1.38 PC 8차: one 책임자 can't be on every shift, so the line says how it goes away.
+                    val tip = if (k == Kind.NO_CHARGE && charges == 1) " · 책임자를 한 명 더 정하면 줄어요" else ""
+                    listOf(Line(k, "$head · $some" + (if (list.size > 4) " …" else "") + tip, list.size, list.first().date))
                 }
             }
         }
