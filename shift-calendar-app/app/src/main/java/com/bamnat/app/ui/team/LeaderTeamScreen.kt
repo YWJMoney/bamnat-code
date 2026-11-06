@@ -444,6 +444,15 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             busy?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             Text("팀원은 앱이 없어도 링크로 자기 근무를 봐요. 앱이 있으면 내 달력에 넣을 수 있어요. 고친 뒤 다시 확정하면 같은 링크가 바뀌어요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 1.38 같이 쉬는 사람 (경쟁 앱 조사 P3-L-11): off until the leader turns it on — it puts teammates' names in each link.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("팀원 링크에 같이 쉬는 사람 보이기", style = MaterialTheme.typography.bodyMedium)
+                    Text("쉬는 날마다 그날 같이 쉬는 팀원 이름이 보여요. 이름이 다른 팀원 링크에도 들어가니 팀에서 괜찮을 때 켜요. 다음 확정·링크 보내기부터 들어가요.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(checked = team.showTogether, onCheckedChange = { on -> scope.launch { store.saveTeam(team.copy(showTogether = on)) } })
+            }
             Spacer(Modifier.heightIn(min = 24.dp))
         }
         when (dialog) {
@@ -577,8 +586,11 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
     val updated = ArrayList<TeamMember>()
     for (m in members) {
         val entries = b.daysOf(m.id).map { (d, id) -> DayEntry(d, ShiftOverride.Shift(id)) }
+        // 1.38 같이 쉬는 사람 (P3-L-11): only when the leader turned it on; the day's line under the member's own day off.
+        val off = team.shifts.filter { it.isOff }.map { it.id }.toSet()
+        val together = if (team.showTogether) b.offTogether(m.id) { it in off }.mapValues { (_, n) -> "같이 쉬어요: " + n.joinToString(", ") } else emptyMap()
         val payload = ShareLinkPayload.build(ScheduleSnapshot(shiftTypes = types, patterns = emptyList(), entries = entries), b.month.atDay(1),
-            "${team.name} ${m.name}", ttlDays = 90)
+            "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together)
         val id = m.linkId
         val token = m.linkToken
         val st = if (id != null && token != null) runCatching {

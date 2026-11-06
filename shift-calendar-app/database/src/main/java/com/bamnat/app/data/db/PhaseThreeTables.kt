@@ -27,6 +27,8 @@ data class TeamEntity(
     val need: String,
     val createdAt: Long,
     val archived: Boolean,
+    /** 1.38 (DB 29) 같이 쉬는 사람: each member's link also names who is off with them (the leader turns it on). */
+    @androidx.room.ColumnInfo(defaultValue = "0") val showTogether: Boolean = false,
 )
 
 @Entity(tableName = "team_member", indices = [Index("teamId")])

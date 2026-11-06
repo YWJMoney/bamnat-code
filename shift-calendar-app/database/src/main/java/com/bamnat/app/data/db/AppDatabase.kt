@@ -423,12 +423,13 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * Version 29 (1.38 갈래 7, 경쟁 앱 조사 P3-B-12): a 사업장's 계산 단위. Only a new column with a default: every 사업장 of version 28
-         * keeps its meaning (1분 단위, as before).
+         * Version 29 (1.38 갈래 7, 경쟁 앱 조사 P3-B-12·P3-L-11): a 사업장's 계산 단위 and a team's 같이 쉬는 사람. Only new columns with
+         * defaults: every 사업장 and team of version 28 keeps its meaning (1분 단위; links name no one else, as before).
          */
         val MIGRATION_28_29 = object : Migration(28, 29) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `workplace` ADD COLUMN `minuteUnit` INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `showTogether` INTEGER NOT NULL DEFAULT 0")
             }
         }
 

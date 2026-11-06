@@ -99,6 +99,14 @@ class TeamL2L3Test {
     }
 
     @Test
+    fun `off together names the others off on my days off only`() {
+        val b = TeamBoard(nov, people(3)).paint("m0", nov.atDay(1), 4).paint("m1", nov.atDay(1), 4).paint("m2", nov.atDay(1), 1)
+            .paint("m0", nov.atDay(2), 1).paint("m1", nov.atDay(2), 4)
+        val t = b.offTogether("m0") { it == 4L }
+        assertEquals(mapOf(nov.atDay(1) to listOf("간호1")), t)
+    }
+
+    @Test
     fun `too few people is told as short, never forced`() {
         val plan = TeamAuto.fill(team(mapOf(1L to 3)), TeamBoard(nov, people(2)))
         assertEquals(nov.lengthOfMonth(), plan.short.size)

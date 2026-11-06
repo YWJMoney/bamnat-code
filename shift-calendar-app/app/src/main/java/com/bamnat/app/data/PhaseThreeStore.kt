@@ -172,8 +172,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     companion object {
         // ---- 팀 rows ----
 
-        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need))
-        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived)
+        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need), showTogether)
+        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived, showTogether)
         fun TeamMemberEntity.toModel() = TeamMember(id, teamId, name, role, runCatching { Skill.valueOf(skill) }.getOrDefault(Skill.REG),
             colorArgb, sort, linkId, linkToken, active)
         fun TeamMember.toEntity() = TeamMemberEntity(id, teamId, name, role, skill.name, colorArgb, sort, linkId, linkToken, active)

@@ -28,7 +28,7 @@ object PhaseThreeBackup {
         if (teams.isEmpty()) return
         into.put(TEAMS, JSONObject()
             .put("teams", JSONArray().apply { teams.forEach { put(JSONObject().put("id", it.id).put("name", it.name).put("leader", it.leaderName)
-                .put("shifts", it.shifts).put("need", it.need).put("created", it.createdAt).put("archived", it.archived)) } })
+                .put("shifts", it.shifts).put("need", it.need).put("created", it.createdAt).put("archived", it.archived).put("together", it.showTogether)) } })
             .put("members", JSONArray().apply { d.members().forEach { put(JSONObject().put("id", it.id).put("team", it.teamId).put("name", it.name)
                 .put("role", it.role).put("skill", it.skill).putOpt("color", it.colorArgb).put("sort", it.sort).putOpt("linkId", it.linkId)
                 .putOpt("linkToken", it.linkToken).put("active", it.active)) } })
@@ -68,7 +68,7 @@ object PhaseThreeBackup {
         val o = root.optJSONObject(TEAMS) ?: return null
         return Teams(
             o.optJSONArray("teams").objs().map { TeamEntity(it.getString("id"), it.optString("name"), it.optString("leader"), it.optString("shifts", "[]"),
-                it.optString("need"), it.optLong("created"), it.optBoolean("archived")) },
+                it.optString("need"), it.optLong("created"), it.optBoolean("archived"), it.optBoolean("together")) },
             o.optJSONArray("members").objs().map { TeamMemberEntity(it.getString("id"), it.getString("team"), it.optString("name"), it.optString("role"),
                 it.optString("skill", "REG"), it.longOrNull("color"), it.optInt("sort"), it.strOrNull("linkId"), it.strOrNull("linkToken"), it.optBoolean("active", true)) },
             o.optJSONArray("cells").arrays().map { TeamCellEntity(it.getString(0), it.getString(1), it.getLong(2), it.getLong(3), it.optString(4, "MANUAL"), it.optBoolean(5)) },

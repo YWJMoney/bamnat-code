@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 29,
-    "identityHash": "6645a997029c9545e464263a5bef3f9d",
+    "identityHash": "8f6ef3cc33b854c4439f880ae6cfa1c8",
     "entities": [
       {
         "tableName": "shift_types",
@@ -2605,7 +2605,7 @@
       },
       {
         "tableName": "team",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `leaderName` TEXT NOT NULL, `shifts` TEXT NOT NULL, `need` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `archived` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `leaderName` TEXT NOT NULL, `shifts` TEXT NOT NULL, `need` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `archived` INTEGER NOT NULL, `showTogether` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -2648,6 +2648,13 @@
             "columnName": "archived",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "showTogether",
+            "columnName": "showTogether",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -3237,7 +3244,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6645a997029c9545e464263a5bef3f9d')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '8f6ef3cc33b854c4439f880ae6cfa1c8')"
     ]
   }
 }
