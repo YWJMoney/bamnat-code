@@ -1204,7 +1204,7 @@ private fun AlarmReadyCard(
                         context.appContainer.calendars.get(com.bamnat.app.data.PersonalCalendar.MAIN)?.name?.let { "$it " }.orEmpty()
                     val line = when {
                         !settings.alarmsEnabled -> "근무 알람도 이 날 알람도 울리지 않아요"
-                        next == null -> if (com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(settings.workStyle)) "${settings.workStyle.words().types}에서 시작 전 알람을 켜면 울려요"
+                        next == null -> if (com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(settings.workStyle)) (if (settings.workStyle == com.bamnat.core.work.WorkStyle.INVEST) "투자 알람에서 알람을 켜면 울려요" else "${settings.workStyle.words().types}에서 시작 전 알람을 켜면 울려요")
                             else "근무 종류에서 근무 전 알람을 켜면 울려요"
                         else -> AlarmScheduler.millisToLocal(next.triggerAtMillis).let { at ->
                             "다음 알람 ${Fmt.dayTitle(at.toLocalDate())} ${Fmt.time(at.toLocalTime())} · " + owner + next.plan.shiftName.ifBlank { "이 날 알람" }
