@@ -90,7 +90,7 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
                         val worked = YearMonth.from(d.date).minusMonths(2)  // 일한 달 → 다음 달 지급 → 그다음 달 10일
                         TextButton(onClick = {
                             scope.launch {
-                                val l = ledgerOf(worked)
+                                val l = ledgerOf(worked).let { f -> f.copy(lines = f.lines.filter { it.staff.hiredOn != null }) }
                                 runCatching { com.bamnat.app.report.ReportShare.csv(context, BossFilings.withheldCsv(place, worked, BossFilings.withheld(place, l)),
                                     "원천세-${place.name}-$worked.csv", "${place.name} ${Fmt.month(worked)}분 원천세 표") }
                             }
@@ -108,6 +108,10 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (due.size > open.take(4).size) TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "모두 보기 (${due.size})") }
+        }
+        BossFilings.noHireDate(staff, today).takeIf { it.isNotEmpty() }?.let { l ->
+            Text("입사일이 없는 ${l.joinToString(", ") { it.name.ifBlank { "직원" } }}님은 지난달 신고에서 뺐어요. 직원 정보에 입사일을 넣으면 맞춰 드려요.",
+                style = MaterialTheme.typography.bodySmall, color = warn)
         }
         Hint("금액은 대장과 같은 계산이고 참고예요. 반기별 납부·일용근로자는 따로 확인해요. 주민등록번호는 앱에 없어 신고할 때 넣어요.")
     }

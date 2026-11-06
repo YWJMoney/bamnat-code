@@ -97,6 +97,8 @@ internal fun ContractDialog(place: Workplace, staff: StaffMember, onEditStaff: (
                 if (draft.missing.isNotEmpty()) {
                     Text("직원 정보에 없는 것: " + draft.missing.joinToString(", "), style = MaterialTheme.typography.bodyMedium, color = warn)
                     TextButton(onClick = onEditStaff) { Text("직원 정보에서 채우기") }
+                    // PC 10차(중): a contract with blanks is not sent to sign; the PDF can still be printed and filled by hand.
+                    Hint("빈 것을 채우면 서명 링크를 보낼 수 있어요. 종이에 손으로 채울 거면 'PDF로 인쇄'를 써요.")
                 }
                 Hint("직원 정보로 채웠어요. 근로기준법 제17조가 적으라고 한 것(임금·소정근로시간·휴일·연차, 단시간은 요일별 시간)을 다 담았어요. 보내기 전에 읽어 봐 주세요.")
                 draft.items.forEachIndexed { i, it ->
@@ -108,7 +110,7 @@ internal fun ContractDialog(place: Workplace, staff: StaffMember, onEditStaff: (
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 when {
                     showDraft -> {
-                        OutlinedButton(enabled = !busy && app.shareApi.enabled && draft.missing.none { it.startsWith("이름") }, onClick = {
+                        OutlinedButton(enabled = !busy && app.shareApi.enabled && draft.missing.isEmpty(), onClick = {
                             busy = true
                             scope.launch {
                                 runCatching { BossContractSync.send(app, place, staff) }

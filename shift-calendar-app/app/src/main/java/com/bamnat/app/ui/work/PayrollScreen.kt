@@ -173,7 +173,9 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         if (staff.isNotEmpty()) FilingsCard(place, staff, work)
         val leaves by store.leaveDays(place.id).collectAsStateWithLifecycle(emptyMap())
         // 1.38 [P3-X-06] 계약서 서명 기다림: read once when the ledger opens.
-        LaunchedEffect(place.id) { runCatching { com.bamnat.app.boss.BossContractSync.pullWaiting(context.appContainer, staff) } }
+        // PC 10차: keyed on who is waiting (the first frame's list is empty, so a key on the place alone read nobody).
+        val waitingIds = staff.filter { it.contract?.waiting(Today.millis()) == true }.map { it.id }
+        LaunchedEffect(place.id, waitingIds) { if (waitingIds.isNotEmpty()) runCatching { com.bamnat.app.boss.BossContractSync.pullWaiting(context.appContainer, staff) } }
         ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }, onFind = { d -> finding = l.staff.id to d },
             onContract = { contracting = l.staff.id },
             leaveLeft = com.bamnat.core.leave.LeaveLeft.forStaff(place.fivePlus, l.staff.hiredOn, leaves[l.staff.id].orEmpty(), minOf(Today.date(), ym.atEndOfMonth()))) } }

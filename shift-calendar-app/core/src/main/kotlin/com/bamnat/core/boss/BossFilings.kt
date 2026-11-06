@@ -64,7 +64,10 @@ object BossFilings {
             val taxDay = YearMonth.from(paid).plusMonths(1).atDay(10)
             val bizDay = YearMonth.from(paid).plusMonths(1).atEndOfMonth()
             if (!inside(paid) && !inside(taxDay) && !inside(bizDay)) continue
-            val ledger = ledgerOf(worked)
+            // PC 10차(중): a staff member with no 입사일 counts as always employed in the ledger; a month before this one is not
+            // filed for them (they may have just been added), and the card asks for the date instead.
+            val full = ledgerOf(worked)
+            val ledger = if (worked < YearMonth.from(today)) full.copy(lines = full.lines.filter { it.staff.hiredOn != null }) else full
             val lines = ledger.lines.filter { it.gross > 0 }
             if (lines.isEmpty()) continue
             val w = withheld(place, ledger)
@@ -122,6 +125,9 @@ object BossFilings {
         }
         return out.sortedWith(compareBy({ it.date }, { it.kind.ordinal }))
     }
+
+    /** Staff with no 입사일: the past months' 신고 leaves them out until it is put in. */
+    fun noHireDate(staff: List<StaffMember>, today: LocalDate): List<StaffMember> = staff.filter { it.hiredOn == null && it.employedOn(today) }
 
     /** 제출할 표: 원천세 of a paid month, one row per person, for 홈택스 입력 or the 세무사. */
     fun withheldCsv(place: Workplace, worked: YearMonth, rows: List<Withheld>): String = buildString {

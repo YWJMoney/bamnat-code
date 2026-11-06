@@ -113,7 +113,9 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? 
     // 1.38 가져오기: a team made from a file opens with that file waiting for ① 이름 ② 코드.
     var madeFrom by remember { mutableStateOf<Pair<com.bamnat.core.imports.RosterGrid, Boolean>?>(null) }
     val open = teams?.firstOrNull { it.id == openId }
-    if (open != null) { TeamBoardScreen(open, onBack = { madeFrom = null; if (startTeam != null) onBack() else openId = null }, startImport = madeFrom); return }
+    // PC 10차(낮음): with two or more teams, 뒤로 from a team goes to the team list first (표 이름 목록), not past it; with one, there is no list to see.
+    val several = teams.orEmpty().count { !it.archived } >= 2
+    if (open != null) { TeamBoardScreen(open, onBack = { madeFrom = null; if (startTeam != null && !several) onBack() else openId = null }, startImport = madeFrom); return }
     Scaffold(topBar = {
         TopAppBar(title = { Text("내가 짜는 팀 근무표") },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
