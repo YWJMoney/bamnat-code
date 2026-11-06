@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -755,7 +756,7 @@ class AppContainer(context: Context) {
         if (!on) usageStats.clear()
     }
 
-    @OptIn(FlowPreview::class)
+    @OptIn(FlowPreview::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     fun start() {
         // [FLAG-07] Every dark-merge row is looked at again now that the container is whole; no job of its own.
         flags.refresh()
@@ -823,6 +824,38 @@ class AppContainer(context: Context) {
                     DayNoticeScheduler.reschedule(appContext, it, settingsRepository.current)
                     // [SLEEP-01] Listening for sleep follows the setting, the flag and the permission.
                     com.bamnat.app.sleep.SleepAutoWatch.sync(appContext)
+                }
+        }
+        // 1.38 사용자 2026-11-06: a calendar of 현장·자영업·투자 work keeps 주간·오후·야간 put away until the user brings one back
+        // ([com.bamnat.app.ui.shifts.TypeFoldAsk.quietShiftKinds]); once the kind of work is known and the kinds are there.
+        keep("quietKinds") {
+            // 첫 설정 갈래 확인 (일근 → 처음 설정 다시 받기로 교대: 접힌 주간·야간이 새 순서에 들어감): a kind put away that the 근무 순서
+            // going on now uses is out again, so the 칠하기 줄 and chips offer it. A schedule stopped by 접어 두기 ends today and is not going.
+            // Only a 순서 newly saved counts (a kind folded on purpose under one already going stays as the user left it).
+            launch {
+                var last: Pair<String, Set<Long>>? = null
+                calendars.active.flatMapLatest { id -> calendars.repository(id).patterns.map { id to it } }.collect { (id, patterns) ->
+                    val inUse = com.bamnat.app.ui.shifts.TypeFoldAsk.goingKinds(patterns, com.bamnat.core.time.Today.date())
+                    val before = last?.takeIf { it.first == id }?.second
+                    last = id to inUse
+                    if (before == null) return@collect
+                    val added = inUse - before
+                    if (added.any { it in foldedTypes.of(id) }) foldedTypes.unfold(id, added)
+                }
+            }
+            combine(calendars.active, calendars.calendars, settingsRepository.settings.map { it.workStyle }.distinctUntilChanged()) { id, _, main ->
+                id to calendars.styleOf(id, main)
+            }.distinctUntilChanged()
+                // A setup saves its 근무 order before or right after the kind of work: looked at once that has settled.
+                .debounce(1_500)
+                .flatMapLatest { (id, style) ->
+                    if (!com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(style) || calendars.get(id)?.ready == false) kotlinx.coroutines.flow.emptyFlow()
+                    else calendars.repository(id).shiftTypes.map { Triple(id, style, it.isNotEmpty()) }
+                }
+                .distinctUntilChanged()
+                .collect { (id, style, any) ->
+                    if (any) runCatching { com.bamnat.app.ui.shifts.TypeFoldAsk.quietShiftKinds(this@AppContainer, id, style) }
+                        .onFailure { android.util.Log.w("AppContainer", "quiet kinds of $id", it) }
                 }
         }
         // [PROV-03] A day's backup owed when the app opens goes now; the job keeps it going while closed.

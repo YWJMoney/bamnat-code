@@ -455,7 +455,9 @@ fun CalendarScreen(
         } else null
     }
     // [CAL-38] The extra-work stamps quick input offers, from the calendar's own kinds and shifts.
-    val stamps = remember(snap.kinds, snap.shiftTypes) { ExtraText.stampChoices(snap.kinds, snap.shiftTypes) }
+    // 1.38 사용자 2026-11-06: no 주간·야간 대근 stamp of a kind put away ('안 쓰는 종류', 현장·자영업·투자 start so).
+    val foldedKinds = com.bamnat.app.ui.shifts.foldedHere()
+    val stamps = remember(snap.kinds, snap.shiftTypes, foldedKinds) { ExtraText.stampChoices(snap.kinds, snap.shiftTypes.filter { it.id !in foldedKinds }) }
     // [HRLY-02][HRLY-03] An 알바 calendar's cells show times and pay, and each week its 주휴.
     val hourlyCells = remember(settings.workStyle, payProfile) {
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.HOURLY) null
@@ -2520,9 +2522,12 @@ private fun PaintBar(
                     Text(" 이번 달 전부 넣기", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            // 1.38 사용자 2026-11-06 (교대가 없는 유형에 주·야): kinds put away ('안 쓰는 종류') are not offered to paint with.
+            val folded = com.bamnat.app.ui.shifts.foldedHere()
+            val paintTypes = remember(snapshot.shiftTypes, folded) { snapshot.shiftTypes.filter { it.id !in folded } }
             val keys: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
                 // The chips say what a tap on the calendar will do, for TalkBack.
-                for (type in snapshot.shiftTypes) {
+                for (type in paintTypes) {
                     val t = PaintTool.Shift(type.id)
                     FilterChip(
                         selected = tool == t && mark == null && stamp == null,

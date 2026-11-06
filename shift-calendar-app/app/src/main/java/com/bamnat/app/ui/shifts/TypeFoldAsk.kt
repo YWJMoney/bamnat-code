@@ -48,6 +48,51 @@ object TypeFoldAsk {
     val asking = MutableStateFlow<Ask?>(null)
 
     /**
+     * 1.38 사용자 2026-11-06 ("가게 영업이나 사장님 등 교대 근무를 하지 않는 유형에 주야 같은 부분이 보여지고 있는데 … 특별히 따로 만들지
+     * 않는 이상 기본값으로는 보여지지 않아야"): work without 교대 (일근·알바·현장·자영업·투자) has no 주간·오후·야간. The ones every
+     * calendar starts with ([com.bamnat.app.data.DefaultShiftTypes]) and the other kinds of work's own (일근, 오전 알바 …), less this
+     * kind of work's own, are put away ('안 쓰는 종류') while nothing uses them, so no chip, keypad, 칠하기 줄, 대근 도장 or 근무 순서
+     * offers them. Nothing is deleted: 근무 종류와 시간 › 안 쓰는 종류 › 다시 쓰기 brings one back, and a kind the user makes is never
+     * touched. Once per calendar and kind of work.
+     */
+    fun quietStyle(style: WorkStyle?): Boolean = style != null && style != WorkStyle.SHIFT
+
+    /** The names of the 교대·일근·알바 kinds; [quietKinds] keeps the calendar's own kind of work's. */
+    val shiftKindNames: Set<String> by lazy {
+        com.bamnat.app.data.DefaultShiftTypes.all().filter { !it.isOff }.map { it.name }.toSet() +
+            com.bamnat.app.data.FoldedTypes.startNames(WorkStyle.SHIFT) + com.bamnat.app.data.FoldedTypes.startNames(WorkStyle.DAY) +
+            com.bamnat.app.data.FoldedTypes.startNames(WorkStyle.HOURLY)
+    }
+
+    /** The kinds of [types] a [quietStyle] calendar puts away: 교대·일근·알바 ones that no day and no 근무 순서 uses ([used]). */
+    fun quietKinds(style: WorkStyle, types: List<ShiftType>, folded: Set<Long>, used: (Long) -> Boolean): List<Long> {
+        val names = shiftKindNames - com.bamnat.app.data.FoldedTypes.startNames(style)
+        return types.filter { !it.isOff && it.name in names && it.id !in folded && !used(it.id) }.map { it.id }
+    }
+
+    /** The kinds the 근무 순서 going on after [today] uses (one ended by 접어 두기 is not going). */
+    fun goingKinds(patterns: List<com.bamnat.core.model.WorkPattern>, today: java.time.LocalDate): Set<Long> =
+        patterns.filter { it.endDate?.isAfter(today) != false }.flatMap { p ->
+            when (p) {
+                is com.bamnat.core.model.WorkPattern.Rotation -> p.steps
+                is com.bamnat.core.model.WorkPattern.Weekly -> p.steps
+            }
+        }.filterNotNull().toSet()
+
+    /** Puts [calendar]'s unused 교대 kinds away for [style], once ([quietStyle]). */
+    suspend fun quietShiftKinds(c: AppContainer, calendar: String, style: WorkStyle?) {
+        if (style == null || !quietStyle(style) || c.foldedTypes.quieted(calendar, style)) return
+        val repo = c.calendars.repository(calendar)
+        val types = repo.shiftTypes.first()
+        // Not seeded yet (the very first start): asked again when they are.
+        if (types.isEmpty()) return
+        val usage = types.associate { it.id to repo.shiftTypeUse(it.id) }
+        val ids = quietKinds(style, types, c.foldedTypes.of(calendar)) { id -> usage[id]?.let { it.days > 0 || it.inPattern } ?: true }
+        if (ids.isNotEmpty()) c.foldedTypes.fold(calendar, ids)
+        c.foldedTypes.markQuiet(calendar, style)
+    }
+
+    /**
      * Said after 접어 두기, with 되돌리기 (the AppRoot snackbar shows it). [patterns]: the repeating schedule as it was, when 접어 두기
      * also stopped it ([stopsCycle]); 되돌리기 puts it back ([undo]).
      */
