@@ -251,6 +251,10 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     var planAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var plans by remember { mutableStateOf<List<TeamAuto.Plan>?>(null) }
     var resent by remember { mutableStateOf<Pair<Int, List<Pair<TeamMember, String>>>?>(null) }
+    // 1.38 [P3-L-15] 병동 전체 보기 (on when this phone holds the team's table link) and 봤어요.
+    var ward by remember(team.id) { mutableStateOf(com.bamnat.app.team.TeamReceiveSync.board(context, team.id)?.url) }
+    var wardOn by remember(team.id) { mutableStateOf(ward != null) }
+    var seen by remember(team.id, monthText) { mutableStateOf<Map<String, java.time.Instant?>?>(null) }
     var fit by rememberSaveable { mutableStateOf(false) }
     // 1.38 가져오기: the file read (and whether from a photo) waiting for ① 이름 ② 코드, and the cells to check after it.
     var importing by remember { mutableStateOf(startImport) }
@@ -523,7 +527,10 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     val m = if (again) state else store.confirm(team.id, b, state)
                     if (!again) c.telemetry.event(com.bamnat.core.stats.UsageEvent.TEAM_CONFIRM.key)
                     if (need.verdict == com.bamnat.core.tier.WorkPlanRules.Verdict.FREE) store.keepFreeMonth(month)
-                    val made = runCatching { links(c, team, b, active) }
+                    val made = runCatching { links(c, team, b, active, if (state.state == MonthState.CONFIRMED && !again) was else emptyMap()) }
+                    // 1.38 [P3-L-15] 병동 전체 보기, when on: the table link follows each 확정.
+                    if (made.isSuccess && wardOn) runCatching { com.bamnat.app.team.TeamReceiveSync.putBoard(c, context, team, b, active) }
+                        .onSuccess { ward = it.url }.onFailure { dialog = "병동 전체 표는 인터넷이 될 때 다시 확정을 눌러 주세요." }
                     busy = null
                     // 1.38 PC 1차: after 다시 확정 the links are the same ones, only their days changed: say so, and offer to send anyway.
                     made.onFailure { c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "team_links") }
@@ -548,6 +555,40 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 androidx.compose.material3.Switch(checked = team.showTogether, onCheckedChange = { on -> scope.launch { store.saveTeam(team.copy(showTogether = on)) } })
+            }
+            // 1.38 [P3-L-15] 병동 전체 보기: one more link with everyone's month and each day's count, only when the leader turns it on.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("병동 전체 표 링크도 같이 보내기", style = MaterialTheme.typography.bodyMedium)
+                    Text("링크 하나에 모두의 한 달과 날마다 근무별 인원이 보여요. 이름이 다 들어가니 팀에서 괜찮을 때 켜요. 확정할 때마다 같은 주소가 새로 바뀌고, 끄면 바로 지워요.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ward?.let { u -> TextButton(onClick = { send(context, "${team.name} ${Fmt.month(month)} 병동 전체 근무표\n$u", "병동 전체 표 보내기") }) { Text("병동 전체 표 보내기") } }
+                }
+                androidx.compose.material3.Switch(checked = wardOn, onCheckedChange = { on ->
+                    wardOn = on
+                    if (!on) scope.launch { com.bamnat.app.team.TeamReceiveSync.dropBoard(c, context, team.id); ward = null }
+                    else if (state.state == MonthState.CONFIRMED) scope.launch {
+                        runCatching { com.bamnat.app.team.TeamReceiveSync.putBoard(c, context, team, b, active) }.onSuccess { ward = it.url }
+                            .onFailure { dialog = "인터넷이 될 때 다시 켜 주세요."; wardOn = false }
+                    }
+                })
+            }
+            // 1.38 [P3-L-15] 봤어요: who opened their link since this 확정, and a resend to the others only.
+            if (state.state == MonthState.CONFIRMED && active.any { it.linkId != null }) {
+                LaunchedEffect(team.id, monthText, state.version) { seen = com.bamnat.app.team.TeamReceiveSync.seen(c, active) }
+                seen?.let { got ->
+                    val withLink = active.filter { it.id in got }
+                    val not = withLink.filter { got[it.id] == null }
+                    Text("${state.version}판 링크를 본 사람 ${withLink.size - not.size}/${withLink.size}명" + if (not.isNotEmpty()) " · 아직: " + not.joinToString(", ") { it.name } else " · 모두 봤어요",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (not.isNotEmpty()) OutlinedButton(onClick = {
+                            send(context, "${team.name} ${Fmt.month(month)} 근무표가 나왔어요(바뀐 날은 그 날에 적혀 있어요).\n" +
+                                not.mapNotNull { m -> com.bamnat.app.team.TeamReceiveSync.url(m)?.let { "${m.name}: $it" } }.joinToString("\n"), "안 본 사람에게 보내기")
+                        }) { Text("안 본 ${not.size}명에게만 보내기") }
+                        TextButton(onClick = { scope.launch { seen = com.bamnat.app.team.TeamReceiveSync.seen(c, active) } }) { Text("다시 보기") }
+                    }
+                }
             }
             Spacer(Modifier.heightIn(min = 24.dp))
         }
@@ -666,7 +707,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
         AlertDialog(onDismissRequest = { linksFor = null }, title = { Text("팀원 링크") }, text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("한 사람씩 보내거나, 모두 한 번에 단톡방에 보낼 수 있어요. 링크마다 그 사람 근무만 보여요.", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = { send(context, list.joinToString("\n") { (m, u) -> "${m.name}: $u" }, "${team.name} ${Fmt.month(month)} 근무표") }) { Text("모두 한 번에 보내기") }
+                OutlinedButton(onClick = { send(context, list.joinToString("\n") { (m, u) -> "${m.name}: $u" } + (ward?.let { "\n병동 전체: $it" } ?: ""), "${team.name} ${Fmt.month(month)} 근무표") }) { Text("모두 한 번에 보내기") }
                 list.forEach { (m, url) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(m.name, modifier = Modifier.weight(1f))
@@ -725,7 +766,10 @@ private fun Keypad(team: Team, b: TeamBoard, m: TeamMember, month: YearMonth, cu
 }
 
 /** 확정: each member a link of their own days only (설계 2-1 "그 사람 근무만"), the same link again after the first time. */
-private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoard, members: List<TeamMember>): List<Pair<TeamMember, String>> {
+private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoard, members: List<TeamMember>,
+                          was: Map<Pair<String, LocalDate>, Long> = emptyMap()): List<Pair<TeamMember, String>> {
+    // 1.38 [P3-L-15] 다시 확정: each changed day says so on the member's link ("바뀜: D→E").
+    val changed = com.bamnat.core.team.TeamReceive.changes(team, b, was)
     val types = team.shifts.map { it.asType() }
     val out = ArrayList<Pair<TeamMember, String>>()
     val updated = ArrayList<TeamMember>()
@@ -733,7 +777,9 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         val entries = b.daysOf(m.id).map { (d, id) -> DayEntry(d, ShiftOverride.Shift(id)) }
         // 1.38 같이 쉬는 사람 (P3-L-11): only when the leader turned it on; the day's line under the member's own day off.
         val off = team.shifts.filter { it.isOff }.map { it.id }.toSet()
-        val together = if (team.showTogether) b.offTogether(m.id) { it in off }.mapValues { (_, n) -> "같이 쉬어요: " + n.joinToString(", ") } else emptyMap()
+        val together = com.bamnat.core.team.TeamReceive.merge(
+            if (team.showTogether) b.offTogether(m.id) { it in off }.mapValues { (_, n) -> "같이 쉬어요: " + n.joinToString(", ") } else emptyMap(),
+            changed[m.id].orEmpty())
         val payload = ShareLinkPayload.build(ScheduleSnapshot(shiftTypes = types, patterns = emptyList(), entries = entries), b.month.atDay(1),
             "${team.name} ${m.name}", ttlDays = 90, options = com.bamnat.app.share.ShareOptions(memos = together.isNotEmpty()), memos = together)
         val id = m.linkId
@@ -743,6 +789,8 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         }.getOrElse { c.shareApi.create(payload) } else c.shareApi.create(payload)
         out += m to st.url
         updated += m.copy(linkId = st.id, linkToken = st.deleteToken)
+        // 봤어요: asking once turns it on for the link, so the first open after this 확정 is kept.
+        runCatching { c.shareApi.seen(st.id, st.deleteToken) }
     }
     c.phaseThree.saveMembers(updated)
     return out

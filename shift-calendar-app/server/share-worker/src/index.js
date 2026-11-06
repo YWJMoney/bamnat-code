@@ -49,6 +49,11 @@
 // GET    /api/sign/:id         header X-Delete-Token -> { seenAt, signed:{name, at}|null, expiresAt }
 // DELETE /api/sign/:id         header X-Delete-Token -> 204: the boss's app takes it down once it has the signature
 // GET    /k/:key               the staff member's page: the contract, a name box and 동의; POST /k/:key/sign form name, agree=1
+// GET    /api/share/:id/seen   1.38 [P3-L-15] header X-Delete-Token -> { seenAt, updatedAt }: when the link was last opened since its
+//                              last change (the page or the app). The first ask turns it on for that link; nothing but the time is kept.
+// POST   /api/board            1.38 [P3-L-15] {team, month, names:[name], labels:[[label per day]], colors:{label:"#hex"}} -> { id, token, url,
+//                              expiresAt }: 병동 전체 보기, the whole month's table and each day's count per shift, when the leader turns it on
+// PUT    /api/board/:id        header X-Delete-Token, same body -> 204 · DELETE /api/board/:id -> 204 · GET /b/:id the page
 // GET    /v/:key               the asked person's page; POST /v/:key/answer form a=yes|no -> the page again
 //                              The admin paths answer 404 until SHARE_ADMIN_TOKEN (20+ characters) is set;
 //                              the company server's 개발자 앱 calls them with the same token.
@@ -131,6 +136,9 @@ export const LIMITS = {
   signTitle: 40,
   signBody: 600,
   signDays: 30,
+  // 1.38 [P3-L-15] 병동 전체 보기: a ward's month, gone 60 days after the month ends.
+  boardPeople: 80,
+  boardDaysAfter: 60,
 };
 
 /** [SRV-05] Why someone reports a link (the page and the app offer the same list). */
@@ -197,7 +205,7 @@ export const APP_ADS_TXT = "google.com, pub-4920911396563628, DIRECT, f08c47fec0
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/w/") || path.startsWith("/api/swap/") || path.startsWith("/k/") || path.startsWith("/api/sign/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
+  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/w/") || path.startsWith("/api/swap/") || path.startsWith("/k/") || path.startsWith("/b/") || path.startsWith("/api/sign/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
   }
@@ -227,6 +235,14 @@ async function route(request, env) {
   const swapPage = path.match(/^\/w\/([A-Za-z0-9]{22})(\/ask|\/cancel|\/reply)?$/);
   if (swapPage && !swapPage[2] && (request.method === "GET" || request.method === "HEAD")) return swapView(env, swapPage[1], null);
   if (swapPage && swapPage[2] && request.method === "POST") return swapPress(request, env, swapPage[1], swapPage[2].slice(1));
+  if (path === "/api/board" && request.method === "POST") return boardCreate(request, env, url);
+  const boardApi = path.match(/^\/api\/board\/([A-Za-z0-9]{22})$/);
+  if (boardApi && request.method === "PUT") return boardUpdate(request, env, boardApi[1]);
+  if (boardApi && request.method === "DELETE") return boardDelete(request, env, boardApi[1]);
+  const boardPage = path.match(/^\/b\/([A-Za-z0-9]{22})$/);
+  if (boardPage && (request.method === "GET" || request.method === "HEAD")) return boardView(env, boardPage[1]);
+  const seenApi = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/seen$/);
+  if (seenApi && request.method === "GET") return seenRead(request, env, seenApi[1]);
   if (path === "/api/sign" && request.method === "POST") return signCreate(request, env, url);
   const signApi = path.match(/^\/api\/sign\/([A-Za-z0-9]{22})$/);
   if (signApi && request.method === "GET") return signRead(request, env, signApi[1]);
@@ -336,7 +352,7 @@ async function view(request, env, id) {
   if (!record || Date.parse(record.expiresAt) < Date.now()) {
     return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>`), 404);
   }
-  if (request.method === "GET") count(env, "views");
+  if (request.method === "GET") { count(env, "views"); await markSeen(env, id, record); }
   // [SHR-02] On Android the page offers the app, which keeps it as a 받은 달력 next to the user's own.
   const android = /Android/i.test(request.headers.get("user-agent") || "");
   return html(renderSchedule(record.schedule, record.expiresAt, android ? id : null, id));
@@ -388,6 +404,7 @@ async function read(request, env, id) {
   if (asked.includes(tag.replace(/^W\//, ""))) {
     return new Response(null, { status: 304, headers: { etag: tag, "cache-control": "no-store" } });
   }
+  await markSeen(env, id, record);
   const res = json({ schedule: record.schedule, expiresAt: record.expiresAt, updatedAt: record.updatedAt ?? null });
   res.headers.set("etag", tag);
   return res;
@@ -1051,6 +1068,105 @@ async function callView(env, key, said, status = 200, known = null) {
   return html(page(record.title, body), status);
 }
 
+// ---- 1.38 [P3-L-15] 봤어요 and 병동 전체 보기 ----
+// 봤어요: a link the leader asks about keeps the time it was first opened after each change (one write per change at most).
+
+const seenKey = (id) => `seen:${id}`;
+
+async function markSeen(env, id, record) {
+  if (!record.watch) return;
+  const seen = await env.SHARES.get(seenKey(id), "json");
+  if (seen && Date.parse(seen.at) >= Date.parse(record.updatedAt ?? 0)) return;
+  await put(env, seenKey(id), { at: new Date().toISOString(), expiresAt: record.expiresAt });
+}
+
+async function seenRead(request, env, id) {
+  const record = await authorized(request, env, id);
+  if (record instanceof Response) return record;
+  if (!record.watch) await put(env, id, { ...record, watch: true });
+  const seen = await env.SHARES.get(seenKey(id), "json");
+  const at = seen && Date.parse(seen.at) >= Date.parse(record.updatedAt ?? 0) ? seen.at : null;
+  return json({ seenAt: at, updatedAt: record.updatedAt ?? null });
+}
+
+const boardKey = (id) => `board:${id}`;
+
+function boardBody(body) {
+  const team = cleanText(body?.team, LIMITS.askTeam);
+  if (!team || !isMonth(body?.month)) return null;
+  const [y, m] = body.month.split("-").map(Number);
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const names = Array.isArray(body?.names) ? body.names.map((n) => cleanText(n, LIMITS.askName)) : [];
+  if (names.length === 0 || names.length > LIMITS.boardPeople || names.some((n) => !n)) return null;
+  const grid = swapBoard({ labels: body?.labels }, names.length, days);
+  if (!grid) return null;
+  const colors = {};
+  for (const [k, v] of Object.entries(body?.colors && typeof body.colors === "object" ? body.colors : {}).slice(0, LIMITS.askShifts * 2)) {
+    const label = cleanText(k, LIMITS.askShiftLabel);
+    if (label && isColor(v)) colors[label] = v;
+  }
+  const end = Date.UTC(y, m, 1) + LIMITS.boardDaysAfter * 86400 * 1000;
+  return { team, month: body.month, names, rows: grid.rows, colors, expiresAt: new Date(end).toISOString() };
+}
+
+async function boardCreate(request, env, url) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 64 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const board = boardBody(body);
+  if (!board || Date.parse(board.expiresAt) < Date.now()) return json({ error: "bad_board" }, 400);
+  const id = randomId(22);
+  const token = randomId(32);
+  await put(env, boardKey(id), { ...board, tokenHash: await sha256(token), updatedAt: new Date().toISOString() });
+  count(env, "boards");
+  return json({ id, token, url: `${url.origin}/b/${id}`, expiresAt: board.expiresAt }, 201);
+}
+
+async function boardOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(boardKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+async function boardUpdate(request, env, id) {
+  const record = await boardOwned(request, env, id);
+  if (record instanceof Response) return record;
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 64 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const board = boardBody(body);
+  if (!board) return json({ error: "bad_board" }, 400);
+  await put(env, boardKey(id), { ...board, tokenHash: record.tokenHash, updatedAt: new Date().toISOString() });
+  return new Response(null, { status: 204 });
+}
+
+async function boardDelete(request, env, id) {
+  const record = await boardOwned(request, env, id);
+  if (record instanceof Response) return record;
+  await kvDel(env, boardKey(id));
+  return new Response(null, { status: 204 });
+}
+
+async function boardView(env, id) {
+  const record = await env.SHARES.get(boardKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return html(page("병동 표가 없어요", `<p class="empty">이 표는 끝났거나 리더가 거뒀어요.</p>`), 404);
+  const [y, m] = record.month.split("-").map(Number);
+  const days = record.rows[0]?.length ?? 0;
+  const wd = (d) => new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const head = Array.from({ length: days }, (_, i) => { const w = wd(i + 1); return `<th class="${w === 0 ? "sun" : w === 6 ? "sat" : ""}">${i + 1}</th>`; }).join("");
+  const chip = (l) => l ? `<span class="chip" style="background:${record.colors[l] ?? "#5b5f73"}">${esc(l)}</span>` : "";
+  const body = record.rows.map((r, p) => `<tr><th class="who">${esc(record.names[p])}</th>${r.map((l) => `<td>${chip(l)}</td>`).join("")}</tr>`).join("");
+  // Each day's count per shift, in the order the shifts first appear.
+  const order = [...new Set(record.rows.flat().filter(Boolean))];
+  const counts = order.map((l) => `<tr><th class="who">${chip(l)}</th>${Array.from({ length: days }, (_, d) => `<td>${record.rows.filter((r) => r[d] === l).length || ""}</td>`).join("")}</tr>`).join("");
+  const html_ = `<h1>${esc(record.team)} ${m}월 근무표</h1><p class="muted">리더가 확정한 표예요. 바뀌면 이 주소 그대로 새로 보여요.</p>
+<div class="wide"><table class="ward"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody><tfoot><tr><th class="who">날마다</th><td colspan="${days}"></td></tr>${counts}</tfoot></table></div>
+<p class="foot muted">이름과 근무 글자만 있어요. ${record.month.slice(0, 4)}년 ${m}월이 끝나고 ${LIMITS.boardDaysAfter}일 뒤에 지워져요.</p>`;
+  return html(page(`${record.team} ${m}월 근무표`, html_));
+}
+
 // ---- 1.38 [P3-X-06] 근로계약서 링크 서명 ----
 // The boss's phone writes the contract's items; the staff member reads them on a plain page and signs by typing their name.
 // The server keeps the contract only while it waits (30 days at most) and the app deletes it once it has read the signature.
@@ -1427,7 +1543,7 @@ async function stats(env, daysParam) {
   }
   const sum = (k) => days.reduce((a, d) => a + d[k], 0);
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
-  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), approximate: true };
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), boards: sum("boards"), approximate: true };
 }
 
 // ---- input ----
@@ -1909,6 +2025,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .cell.picked{outline:2px solid var(--sat)}a.cell{color:inherit;text-decoration:none}.full{color:var(--sun);font-weight:700}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:16px}.picks{display:flex;flex-wrap:wrap;gap:8px}.picks form{margin:0}
 .pick{min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:15px;cursor:pointer}.pick.on{background:var(--sat);color:#fff;border-color:var(--sat)}
+.wide{overflow-x:auto;margin:0 -16px;padding:0 16px}.ward{border-collapse:collapse;font-size:12px}.ward th,.ward td{border:1px solid var(--line);padding:2px;text-align:center;min-width:26px}.ward .who{position:sticky;left:0;background:var(--bg);text-align:left;white-space:nowrap;padding:2px 6px;z-index:1}.ward .chip{min-width:20px;padding:0 3px;font-size:11px}
 .sign label{display:block;margin:12px 0}.sign input[name=name]{width:100%;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:17px}.sign input[type=checkbox]{width:22px;height:22px;vertical-align:middle;margin-right:6px}.sign button{width:100%;min-height:56px;border-radius:16px;border:none;background:#2f7d5b;color:#fff;font-size:18px;font-weight:800}
 .bad{background:var(--card);border:2px solid var(--sun);border-radius:12px;padding:12px 14px;font-weight:700}.rule{font-size:14px}.small{font-size:12px}
 .note{display:flex;gap:8px}.note input{flex:1;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px}.note button{min-height:44px;padding:8px 14px;border-radius:999px;border:none;background:var(--today);color:#15192B;font-weight:700}
