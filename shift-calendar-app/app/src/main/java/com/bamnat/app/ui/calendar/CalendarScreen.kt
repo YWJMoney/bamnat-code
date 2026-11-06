@@ -173,6 +173,9 @@ import androidx.compose.material.icons.filled.Today
 internal const val PAGE_COUNT = 2400
 /** [CAL-01] Alarm warnings show while an alarm is due within this many days. */
 private const val ALARM_WARNING_DAYS = 7L
+
+/** [ALRM-25] 1.38 PC 9차: notifications off; an alarm still sounds but its screen does not show, so nothing stops it on the lock screen. */
+internal const val NOTICE_OFF_LINE = "알림이 꺼져 있어 알람이 소리만 나요"
 /** [CAL-51] Under this many dp tall (360×640, 320×568) the summary is one line and the parts above the month fold into the notices. */
 private const val LOW_SCREEN_DP = 700
 /** [CAL-51] Under this many dp tall a phone is on its side: the bars share one row, only the 알림 line shows, cells are short. */
@@ -1083,7 +1086,8 @@ fun CalendarScreen(
             !settings.alarmsEnabled -> "알람이 모두 꺼져 있어요" to { AlarmWarningLine("알람이 모두 꺼져 있어요", "켜기", { vm.setAlarmsEnabled(true) }, linePlace) }
             // [REL-11][SLP-15] Without notifications an alarm still sounds, but nothing on the lock
             // screen stops it. Asked here, where it is needed, instead of on the first start.
-            !notificationsAllowed -> "알림을 허용해야 알람을 끌 수 있어요" to { AlarmWarningLine("알림을 허용해야 알람을 끌 수 있어요", "허용", askNotifications, linePlace) }
+            // 1.38 PC 9차: the app's window that said why (화면이 안 뜨고 소리만) is gone, so the line says it.
+            !notificationsAllowed -> NOTICE_OFF_LINE to { AlarmWarningLine(NOTICE_OFF_LINE, "허용", askNotifications, linePlace) }
             // [REL-12] Android 14+ can block the full-screen alarm; then only a small notification shows.
             !fullScreenAllowed -> "잠금 화면에 알람 화면이 안 떠요" to { AlarmWarningLine("잠금 화면에 알람 화면이 안 떠요", "허용", {
                 if (android.os.Build.VERSION.SDK_INT >= 34) SystemSettings.open(context,

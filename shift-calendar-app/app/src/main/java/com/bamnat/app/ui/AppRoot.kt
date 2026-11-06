@@ -1063,7 +1063,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         if (showNav && topLevel != null) ShiftLookBand()
                         if (showNav && topLevel == TopLevel.CALENDAR) LookUndoBand()
                         RingingBanner()
-                        AlarmNoticeAsk()
+                        // 1.38 PC 9차 (EASE-03 '끼어드는 창 0'): the window asking to allow notifications is gone; the calendar's red alarm
+                        // line says it ("알림이 꺼져 있어 알람이 소리만 나요 · 허용") wherever an alarm comes within a week.
                         AppNavHost(
                             nav = nav,
                             container = container,
@@ -2239,55 +2240,6 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.SENT -> Routes.companySent()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,
     SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT, SettingsGo.COMMUTE -> null
-}
-
-/**
- * [ALRM-25] 1.36 빌드 8 (F-106: 알림을 끈 폰은 알람이 소리만 나고 화면이 안 떠요, Android가 막아요): with a shift alarm on and
- * notifications off, the app asks once (and again a week after 나중에), saying why; 알람 설정 keeps its red line.
- */
-@Composable
-private fun AlarmNoticeAsk() {
-    val context = LocalContext.current
-    val c = context.appContainer
-    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle(c.settingsRepository.current)
-    var canPost by remember { mutableStateOf(com.bamnat.app.alarm.Notifications.canPost(context)) }
-    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-        canPost = com.bamnat.app.alarm.Notifications.canPost(context)
-    }
-    val prefs = remember { context.getSharedPreferences("device", android.content.Context.MODE_PRIVATE) }
-    var later by remember { mutableStateOf(prefs.getLong("alarm_notice_later", 0L)) }
-    // 빌드 10 (허용했다가 설정에서 다시 끄면 창이 안 떠요): '나중에' waits a week only until notifications are allowed; once they are,
-    // turning them off again asks on the next open.
-    androidx.compose.runtime.LaunchedEffect(canPost) {
-        if (canPost && later != 0L) { later = 0L; prefs.edit().remove("alarm_notice_later").apply() }
-    }
-    // 빌드 9·10 (투자 폰, 알람을 켜지 않은 알바 폰에도 '근무 알람이 울려도…' 창): only when an alarm is really set to ring.
-    val upcoming by c.alarmScheduler.upcoming.collectAsStateWithLifecycle()
-    val alarmsOn = settings.alarmsEnabled && upcoming != null
-    // 빌드 10 S11 (첫 설정 끝 '예상 급여도 볼까요?' 시트와 겹쳐요): one at a time, after the first setup's own sheets.
-    val setupSheet by c.firstSetup.saved.collectAsStateWithLifecycle()
-    val leadAsking by c.leadShare.step.collectAsStateWithLifecycle()
-    if (setupSheet != null || leadAsking != null) return
-    // 1.36 PC C3: not on the day of the first setup; the calendar's own line about it is there meanwhile.
-    if (c.firstSetup.quietToday()) return
-    // 1.36 U21: not while the user is painting days or making a look; once they are done.
-    val busy by com.bamnat.app.ui.components.HandsBusy.busy.collectAsStateWithLifecycle()
-    if (busy) return
-    if (canPost || !alarmsOn || com.bamnat.core.time.Today.millis() - later < 7 * 86_400_000L) return
-    // 1.36 PC Z9 (앱을 다시 열 때마다 알림 허용 창이 또 떠요): the app left with the window up (홈, 다른 앱) never reached 나중에, so
-    // the next open asked again. Having been shown counts: not again for a day however it was left (read once, so this window stays).
-    val shownAt = remember { prefs.getLong("alarm_notice_shown", 0L) }
-    if (com.bamnat.core.time.Today.millis() - shownAt < 86_400_000L) return
-    androidx.compose.runtime.LaunchedEffect(Unit) { prefs.edit().putLong("alarm_notice_shown", com.bamnat.core.time.Today.millis()).apply() }
-    val ask = com.bamnat.app.ui.components.rememberNotificationAsk()
-    fun putOff() { later = com.bamnat.core.time.Today.millis(); prefs.edit().putLong("alarm_notice_later", later).apply() }
-    AlertDialog(
-        onDismissRequest = ::putOff,
-        title = { Text("알람 화면을 띄우려면 알림 허용이 필요해요") },
-        text = { Text("알림이 꺼져 있으면 근무 알람이 울려도 화면이 뜨지 않고 소리만 나요. 잠금 화면에서 바로 끄고 다시 울림을 누르려면 알림을 허용해 주세요.") },
-        confirmButton = { TextButton(onClick = { putOff(); ask() }) { Text("허용하기") } },
-        dismissButton = { TextButton(onClick = ::putOff) { Text("나중에") } },
-    )
 }
 
 /**
