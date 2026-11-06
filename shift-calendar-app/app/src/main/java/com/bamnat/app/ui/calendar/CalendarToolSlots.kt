@@ -13,6 +13,8 @@ internal object CalendarToolSlots {
     const val TYPE_MONTH = "typeMonth"
     /** [EASE-25] 오늘부터 하루 밀기 (and 순서 다시 맞추기, the same window). */
     const val PUSH = "push"
+    /** 1.38 PC 11차: 내가 짜는 팀 근무표 (team.leader), not behind 모든 조, which a 매달 근무표 calendar cannot open. */
+    const val LEADER = "leaderTeams"
     const val SHARE = "share"
     const val YEAR = "year"
     const val RECEIVE = "receive"
@@ -40,6 +42,7 @@ internal object CalendarToolSlots {
             if (fit.teamsReady) addAll(orderTools)
             add(Slot(TYPE_MONTH, "이번 달 전부 넣기", enabled = received == null && fit.hasShiftTypes,
                 note = received ?: "근무 종류를 먼저 만들어요".takeIf { !fit.hasShiftTypes }))
+            if (fit.leader) add(Slot(LEADER, "내 팀 근무표 짜기"))
             add(Slot(SHARE, "근무표 공유"))
             add(Slot(YEAR, "1년 달력"))
             if (fit.receive) add(Slot(RECEIVE, "동료 근무표 받기"))
@@ -62,4 +65,6 @@ internal data class ToolFit(
     val teamsReady: Boolean = true,
     /** [EASE-25] Today is under a rotating order, which a day can be pushed in. */
     val pushReady: Boolean = true,
+    /** 1.38 [P3-02] `team.leader` is on: 내 팀 근무표 짜기 is a tool of its own. */
+    val leader: Boolean = false,
 )

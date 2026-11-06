@@ -525,6 +525,14 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             val changes = remember(b, was, state) { if (state.state == MonthState.CONFIRMED) b.changesFrom(TeamBoard(month, b.members, was.mapValues { (k, v) -> com.bamnat.core.team.TeamCell(k.first, k.second, v) })) else emptyList() }
             Button(onClick = {
                 scope.launch {
+                    // 1.38 PC 11차: a member with no day filled has nothing to share (the server refuses an empty link), so say who
+                    // before 확정 instead of confirming and then blaming the internet.
+                    val blank = active.filter { b.daysOf(it.id).isEmpty() }
+                    if (blank.isNotEmpty()) {
+                        dialog = blank.joinToString(", ") { it.name } + "님은 이달 칸이 모두 비어 있어요. 근무나 오프를 칠한 뒤 확정해 주세요. " +
+                            "이달 쉬는 팀원이면 '팀원'에서 그 사람을 빼며 '쉼으로 두기'를 고르면 링크에서 빠져요."
+                        return@launch
+                    }
                     // 1.38 Phase 3 요금: the first confirmed month is free; after it the 팀 요금제 band that holds the team.
                     val need = c.featureGate.state.value.teamConfirm(store.confirmedMonths(), month, active.size)
                     if (!need.allowed) { planAsk = need; return@launch }
@@ -542,7 +550,14 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     // 1.38 PC 1차: after 다시 확정 the links are the same ones, only their days changed: say so, and offer to send anyway.
                     made.onFailure { c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "team_links") }
                     made.onSuccess { c.telemetry.event(com.bamnat.core.stats.UsageEvent.TEAM_LINKS.key) }
-                    made.onSuccess { l -> if (state.state == MonthState.CONFIRMED && !again) resent = m.version to l else linksFor = l }.onFailure { dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + "링크는 인터넷이 될 때 다시 눌러 주세요." }
+                    made.onSuccess { l -> if (state.state == MonthState.CONFIRMED && !again) resent = m.version to l else linksFor = l }.onFailure { e ->
+                        val why = when ((e as? com.bamnat.app.share.ShareLinkException)?.message) {
+                            "days" -> "칸이 모두 빈 팀원이 있어 링크를 못 만들었어요. 칠한 뒤 다시 눌러 주세요."
+                            "paused", "rate_limited" -> "링크 만들기가 잠시 멈췄어요. 조금 뒤에 다시 눌러 주세요."
+                            else -> "링크는 인터넷이 될 때 다시 눌러 주세요."
+                        }
+                        dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + why
+                    }
                 }
             }, enabled = busy == null, modifier = Modifier.fillMaxWidth()) {
                 Text(when {
