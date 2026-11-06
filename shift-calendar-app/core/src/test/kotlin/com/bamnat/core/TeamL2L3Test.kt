@@ -137,7 +137,11 @@ class TeamL2L3Test {
         assertTrue("연속 근무 6일까지: ${best.maxRun}", best.maxRun <= 6)
         assertEquals(0, best.danger)
         assertEquals(0, best.board.empty)
-        assertTrue("시간이 고르게: ${best.hourSpread}", best.hourSpread <= 33)
+        assertTrue("시간이 고르게: ${best.hourSpread}", best.hourSpread <= 22)
+        // PC 6db1056b: 나이트가 넷에게 15번·둘에게 0번이던 것 → 고르게, 안끼리 서로 달라요.
+        assertTrue("나이트 고르게: ${best.spread}", best.spread <= 3)
+        assertTrue(plans.size >= 2)
+        assertEquals(plans.size, plans.map { listOf(it.shortPeople, it.short.size, it.hourSpread, it.spread, it.maxRun) }.distinct().size)
         // 평균 주 51시간이 필요한 인원: 빠듯함을 미리 알려요.
         assertEquals(51.3, TeamAuto.weekHoursNeeded(t, board), 0.1)
     }
