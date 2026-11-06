@@ -92,6 +92,11 @@ data class RosterRow(
      * date, so they go in too instead of being dropped.
      */
     val outside: Map<java.time.LocalDate, DutyCell> = emptyMap(),
+    /**
+     * [READ-41] Where the line stands in the photo, top to bottom (the middle of its words, level), 0 when not known: the
+     * readings of one photo share the photo's pixels, so a line is matched by place when people share a rota.
+     */
+    val y: Int = 0,
 ) {
     val unknown: Int get() = cells.values.count { it is DutyCell.Unknown }
 
@@ -626,7 +631,9 @@ object DutyRoster {
             }
             if (read.cells.size >= min) {
                 carried[h] = fit
-                out += RosterRow(read.label, read.cells.toSortedMap(), read.guessed, read.notes, read.unsure, line = i, raw = read.raws)
+                val ys = row.map { it.y }.sorted()
+                out += RosterRow(read.label, read.cells.toSortedMap(), read.guessed, read.notes, read.unsure, line = i, raw = read.raws,
+                    y = ys[ys.size / 2].toInt())
             }
         }
         return out
@@ -820,7 +827,7 @@ object DutyRoster {
                 guessed = first.guessed + second.guessed.filter { it !in first.cells },
                 notes = second.notes + first.notes,
                 unsure = first.unsure + second.unsure.filter { it !in first.cells },
-                line = n.line, raw = second.raw + first.raw)
+                line = n.line, raw = second.raw + first.raw, y = n.y)
             out[out.indexOf(n)] = merged
             out.remove(u)
         }
@@ -860,7 +867,7 @@ object DutyRoster {
         val named = rows.filter { it.label.isNotBlank() }.groupBy { it.label }.map { (label, parts) ->
             RosterRow(label, parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } },
                 parts.flatMap { it.guessed }.toSet(), parts.reversed().fold(emptyMap()) { acc, r -> acc + r.notes },
-                parts.flatMap { it.unsure }.toSet(), line = parts.first().line,
+                parts.flatMap { it.unsure }.toSet(), line = parts.first().line, y = parts.first().y,
                 // [READ-19] 1.27: the words as read, for 고친 것 배우기 (two halves of one person kept them apart).
                 raw = parts.reversed().fold(emptyMap()) { acc, r -> acc + r.raw })
         }
@@ -868,7 +875,7 @@ object DutyRoster {
         // Two blank lines whose days do not overlap are one person's two halves.
         val joined = if (blank.size == 2 && blank[0].cells.keys.intersect(blank[1].cells.keys).isEmpty()) {
             listOf(RosterRow("", (blank[0].cells + blank[1].cells).toSortedMap(), blank[0].guessed + blank[1].guessed, blank[0].notes + blank[1].notes,
-                blank[0].unsure + blank[1].unsure, line = blank[0].line, raw = blank[0].raw + blank[1].raw))
+                blank[0].unsure + blank[1].unsure, line = blank[0].line, raw = blank[0].raw + blank[1].raw, y = blank[0].y))
         } else blank
         return named + joined
     }

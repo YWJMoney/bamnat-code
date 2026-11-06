@@ -93,4 +93,18 @@ class RosterTeamPhotoTest {
         val again = com.bamnat.core.imports.SheetKinds.remap(voted, codes, after, { oldRole[it] }, { byRole[it] })
         for (d in 1..30) assertEquals("1조 ${d}일", after.match(code(0, d)), again.cells[d])
     }
+
+    @Test fun aWordThatSitsADayOffDoesNotTurnTheDays() {
+        // 1.38 PC 11차: the anchor reading lost 2·3·6·8·9일 in its date line, so its words sat a day off the cells.
+        val read = RosterVote.merge(listOf(DutyRoster.analyse(words(), codes)))
+        val row = read.rows.first { it.label == "1조" }
+        val shifted = row.copy(raw = row.raw.mapKeys { it.key + 1 })
+        val kinds = com.bamnat.core.imports.SheetKinds.of(read.rows.flatMap { it.raw.values }, emptyList())!!
+        val newTypes = kinds.mapIndexed { i, k -> k.type.copy(id = -(i + 1L)) }
+        val after = DutyCodes(newTypes.map { DutyType(it.id, it.name, it.label, it.isOff, it.start, it.label == "야") })
+        val byRole = kinds.mapIndexed { i, k -> k.role to -(i + 1L) }.toMap()
+        val oldRole = mapOf(1L to com.bamnat.core.schedule.ShiftRole.DAY, 3L to com.bamnat.core.schedule.ShiftRole.NIGHT, 4L to com.bamnat.core.schedule.ShiftRole.OFF)
+        val again = com.bamnat.core.imports.SheetKinds.remap(shifted, codes, after, { oldRole[it] }, { byRole[it] })
+        for (d in 1..30) assertEquals("1조 ${d}일", after.match(code(0, d)), again.cells[d])
+    }
 }

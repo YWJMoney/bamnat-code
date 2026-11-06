@@ -73,6 +73,32 @@ internal fun PhotoThumb(photo: Bitmap, modifier: Modifier = Modifier.fillMaxWidt
 }
 
 /**
+ * [READ-41] 1.38 PC 11차: 무엇을 읽었는지 보기 for a payslip or rules photo, the lines as the phone read them (in memory only),
+ * so a line the screen lost can be told from a line the photo lost.
+ */
+@Composable
+internal fun ReadTextButton(text: String) {
+    if (text.isBlank()) return
+    var open by remember { mutableStateOf(false) }
+    TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("무엇을 읽었는지 보기") }
+    if (open) Dialog(onDismissRequest = { open = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize()) {
+            Column(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("무엇을 읽었는지", style = MaterialTheme.typography.titleMedium)
+                Text("사진에서 읽은 글 그대로예요. 여기에 없는 줄은 사진에서 못 읽은 줄이에요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(text.trim(), style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { open = false }) { Text("닫기") } }
+            }
+        }
+    }
+}
+
+/**
  * [READ-18] 1.27 순번 447: the lines read from a payslip, "사진과 내용이 같은가요?" under them. '네, 같아요' takes them as looked
  * at; '다른 곳이 있어요' makes each line a button that fixes only that line ([SlipLineEditor], under it), with 줄 더하기. Lines read
  * two ways ([unsure], by index) are yellow until looked at. [onChange] gets the payslip and the lines still to look at.
