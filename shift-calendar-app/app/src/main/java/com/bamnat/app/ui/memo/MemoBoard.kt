@@ -59,6 +59,12 @@ import com.bamnat.core.memo.MemoPhotos.Board
 import com.bamnat.core.memo.MemoPhotos.BoardItem
 import com.bamnat.core.memo.MemoPhotos.BoardKind
 import kotlin.math.roundToInt
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.focus.focusRequester
+import com.bamnat.app.ui.components.FilterChip
 
 /**
  * [MPH-07] 1.38 자유 판 (사용자 2026-11-05 "파워포인트나 한글처럼 자유자재의 메모"): a board inside the memo where photos, text boxes and
@@ -86,6 +92,13 @@ internal fun MemoBoardBlock(
     val latest by rememberUpdatedState(board)
     var editing by remember { mutableStateOf<Int?>(null) }
     var stickers by remember { mutableStateOf(false) }
+    // [MPH-07] 0 더하기 · 1 조각 · 2 판; a piece picked opens 조각.
+    var tab by remember(chosen) { mutableIntStateOf(0) }
+    LaunchedEffect(picked) { if (picked != null) tab = 1 else if (tab == 1) tab = 0 }
+    // (PC 확인 4a5c3828) The keyboard goes down while a board is worked on, so the board is in sight.
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    LaunchedEffect(chosen) { if (chosen) { focusManager.clearFocus(); keyboard?.hide() } }
     fun put(b: Board) { live = b; onChange(b) }
     fun item(i: Int) = live.items.getOrNull(i)
     fun change(i: Int, f: (BoardItem) -> BoardItem) {
@@ -126,67 +139,81 @@ internal fun MemoBoardBlock(
             }
         }
         MemoToolPanel(chosen) { Column {
+            // (PC 확인 4a5c3828) Five rows of tools and the keyboard hid the board: the tools are in three tabs, a row or two each.
             Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                FlowRow(Modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                    val full = live.items.size >= MemoPhotos.MAX_BOARD_ITEMS
-                    TextButton(enabled = !full, onClick = {
-                        put(live.copy(items = live.items + BoardItem(BoardKind.TEXT, "글", 500, 500, 400)))
-                        picked = live.items.lastIndex; editing = live.items.lastIndex
-                    }) { Text("+ 글상자") }
-                    TextButton(enabled = !full, onClick = onAddPhoto) { Text("+ 사진") }
-                    TextButton(enabled = !full, onClick = { stickers = true }) { Text("+ 스티커") }
+                Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     val p = picked?.let { i -> item(i)?.let { i to it } }
-                    if (p != null) {
-                        val (i, it) = p
-                        if (it.kind == BoardKind.TEXT) {
-                            TextButton(onClick = { editing = i }) { Text("글 고치기") }
-                            TextButton(onClick = { change(i) { x -> x.copy(size = x.size + 2) } }) { Text("가+") }
-                            TextButton(onClick = { change(i) { x -> x.copy(size = x.size - 2) } }) { Text("가−") }
-                            TextButton(onClick = { change(i) { x -> x.copy(ink = nextInk(x.ink)) } }) { Text("글자 색") }
-                            TextButton(onClick = { change(i) { x -> x.copy(fill = nextFill(x.fill)) } }) { Text("바탕 색") }
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(0 to "더하기", 1 to "조각", 2 to "판").forEach { (k, label) ->
+                            FilterChip(selected = tab == k, enabled = k != 1 || p != null, onClick = { tab = k }, label = { Text(label) })
                         }
-                        TextButton(onClick = { change(i) { x -> x.copy(w = x.w + 80) } }) { Text("크게") }
-                        TextButton(onClick = { change(i) { x -> x.copy(w = x.w - 80) } }) { Text("작게") }
-                        TextButton(onClick = { change(i) { x -> x.copy(rot = x.rot + 15) } }) { Text("↻ 돌리기") }
-                        // 1.38 통합(GestureAlternativesTest): 끌어 옮기기 대신 버튼으로도 한 칸(5%)씩.
-                        TextButton(onClick = { change(i) { x -> x.copy(x = x.x - 50) } }) { Text("← 왼쪽") }
-                        TextButton(onClick = { change(i) { x -> x.copy(x = x.x + 50) } }) { Text("오른쪽 →") }
-                        TextButton(onClick = { change(i) { x -> x.copy(y = x.y - 50) } }) { Text("↑ 올리기") }
-                        TextButton(onClick = { change(i) { x -> x.copy(y = x.y + 50) } }) { Text("↓ 내리기") }
-                        TextButton(enabled = i < live.items.lastIndex, onClick = {
-                            val l = live.items.toMutableList(); val x = l.removeAt(i); l.add(i + 1, x); put(live.copy(items = l)); picked = i + 1
-                        }) { Text("앞으로") }
-                        TextButton(enabled = i > 0, onClick = {
-                            val l = live.items.toMutableList(); val x = l.removeAt(i); l.add(i - 1, x); put(live.copy(items = l)); picked = i - 1
-                        }) { Text("뒤로") }
-                        TextButton(enabled = !full, onClick = {
-                            put(live.copy(items = live.items + it.copy(x = it.x + 40, y = it.y + 40).fixed())); picked = live.items.lastIndex
-                        }) { Text("복제") }
-                        TextButton(onClick = { put(live.copy(items = live.items.filterIndexed { j, _ -> j != i })); picked = null }) {
-                            Text("조각 지우기", color = MaterialTheme.colorScheme.error)
-                        }
-                    } else {
-                        TextButton(onClick = { put(live.copy(ratio = live.ratio + 25)) }) { Text("판 길게") }
-                        TextButton(onClick = { put(live.copy(ratio = (live.ratio - 25).coerceAtLeast(MemoPhotos.MIN_RATIO))) }) { Text("판 짧게") }
-                        TextButton(enabled = canUp, onClick = { onMove(-1) }) { Text("↑ 위로") }
-                        TextButton(enabled = canDown, onClick = { onMove(1) }) { Text("↓ 아래로") }
-                        TextButton(onClick = onRemove) { Text("판 빼기", color = MaterialTheme.colorScheme.error) }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = onChoose) { Text("완료") }
                     }
-                    TextButton(onClick = onChoose) { Text("완료") }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                        val full = live.items.size >= MemoPhotos.MAX_BOARD_ITEMS
+                        when {
+                            tab == 1 && p != null -> {
+                                val (i, it) = p
+                                if (it.kind == BoardKind.TEXT) {
+                                    TextButton(onClick = { editing = i }) { Text("글 고치기") }
+                                    TextButton(onClick = { change(i) { x -> x.copy(size = x.size + 2) } }) { Text("가+") }
+                                    TextButton(onClick = { change(i) { x -> x.copy(size = x.size - 2) } }) { Text("가−") }
+                                    TextButton(onClick = { change(i) { x -> x.copy(ink = nextInk(x.ink)) } }) { Text("글자 색") }
+                                    TextButton(onClick = { change(i) { x -> x.copy(fill = nextFill(x.fill)) } }) { Text("바탕 색") }
+                                }
+                                TextButton(onClick = { change(i) { x -> x.copy(w = x.w + 80) } }) { Text("크게") }
+                                TextButton(onClick = { change(i) { x -> x.copy(w = x.w - 80) } }) { Text("작게") }
+                                TextButton(onClick = { change(i) { x -> x.copy(rot = x.rot + 15) } }) { Text("↻ 돌리기") }
+                                TextButton(enabled = i < live.items.lastIndex, onClick = {
+                                    val l = live.items.toMutableList(); val x = l.removeAt(i); l.add(i + 1, x); put(live.copy(items = l)); picked = i + 1
+                                }) { Text("앞으로") }
+                                TextButton(enabled = i > 0, onClick = {
+                                    val l = live.items.toMutableList(); val x = l.removeAt(i); l.add(i - 1, x); put(live.copy(items = l)); picked = i - 1
+                                }) { Text("뒤로") }
+                                TextButton(enabled = !full, onClick = {
+                                    put(live.copy(items = live.items + duplicateOf(it))); picked = live.items.lastIndex
+                                }) { Text("복제") }
+                                TextButton(onClick = { put(live.copy(items = live.items.filterIndexed { j, _ -> j != i })); picked = null }) {
+                                    Text("조각 지우기", color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            tab == 2 -> {
+                                TextButton(onClick = { put(live.copy(ratio = live.ratio + 25)) }) { Text("판 길게") }
+                                TextButton(onClick = { put(live.copy(ratio = (live.ratio - 25).coerceAtLeast(MemoPhotos.MIN_RATIO))) }) { Text("판 짧게") }
+                                TextButton(enabled = canUp, onClick = { onMove(-1) }) { Text("↑ 위로") }
+                                TextButton(enabled = canDown, onClick = { onMove(1) }) { Text("↓ 아래로") }
+                                TextButton(onClick = onRemove) { Text("판 빼기", color = MaterialTheme.colorScheme.error) }
+                            }
+                            else -> {
+                                TextButton(enabled = !full, onClick = {
+                                    // (PC 확인 4a5c3828) An empty box, so what is typed is all there is (a '글' already in it ran on).
+                                    put(live.copy(items = live.items + BoardItem(BoardKind.TEXT, "", 500, 500, 400)))
+                                    picked = live.items.lastIndex; editing = live.items.lastIndex
+                                }) { Text("+ 글상자") }
+                                TextButton(enabled = !full, onClick = onAddPhoto) { Text("+ 사진") }
+                                TextButton(enabled = !full, onClick = { stickers = true }) { Text("+ 스티커") }
+                            }
+                        }
+                    }
                 }
             }
             Text(
-                if (picked == null) "조각을 누르면 고를 수 있어요. 고른 조각은 한 손가락으로 옮기고, 두 손가락으로 키우고 돌려요"
-                else "한 손가락으로 옮기고, 두 손가락으로 벌리면 커지고 돌리면 돌아가요. 글상자는 두 번 누르면 글을 고쳐요",
+                if (picked == null) "조각을 누르면 고를 수 있어요" else "한 손가락으로 옮기고, 두 손가락으로 키우고 돌려요. 글상자는 두 번 눌러 고쳐요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 4.dp, start = 4.dp),
+                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp, start = 4.dp),
             )
         } }
     }
     editing?.let { i ->
         val it = item(i)
-        if (it == null) editing = null else TextBoxDialog(it.text, onDone = { t -> change(i) { x -> x.copy(text = t) }; editing = null }, onDismiss = { editing = null })
+        // A box left empty is taken away again, never an invisible piece.
+        fun dropIfEmpty() { if (item(i)?.text.isNullOrBlank()) { put(live.copy(items = live.items.filterIndexed { j, _ -> j != i })); picked = null } }
+        if (it == null) editing = null else TextBoxDialog(it.text,
+            onDone = { t -> change(i) { x -> x.copy(text = t) }; dropIfEmpty(); editing = null },
+            onDismiss = { dropIfEmpty(); editing = null })
     }
     if (stickers) StickerDialog(onPick = { e ->
         stickers = false
@@ -274,6 +301,17 @@ private suspend fun androidx.compose.ui.input.pointer.PointerInputScope.awaitEac
     }
 }
 
+/**
+ * (PC 확인 4a5c3828) 복제 sits clearly beside the piece it copies (it was almost on top of it): moved by about a piece's width, back the
+ * other way near the board's edge.
+ */
+private fun duplicateOf(it: BoardItem): BoardItem {
+    val dx = (it.w / 2).coerceIn(100, 300)
+    val x = if (it.x + dx <= 950) it.x + dx else it.x - dx
+    val y = if (it.y + 100 <= 950) it.y + 100 else it.y - 100
+    return it.copy(x = x, y = y).fixed()
+}
+
 private val INKS = listOf(null, 0xFF212121L, 0xFFE53935L, 0xFF1E88E5L, 0xFF43A047L, 0xFFFB8C00L, 0xFF8E24AAL, 0xFFFFFFFFL)
 private val FILLS = listOf(null, 0xFFFFF59DL, 0xFFFFCDD2L, 0xFFBBDEFBL, 0xFFC8E6C9L, 0xFFFFFFFFL, 0xCC000000L)
 
@@ -283,12 +321,14 @@ private fun nextFill(c: Long?) = FILLS[(FILLS.indexOf(c) + 1).mod(FILLS.size)]
 @Composable
 private fun TextBoxDialog(text: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
     var t by remember { mutableStateOf(text) }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("글상자") },
         text = {
-            OutlinedTextField(t, { t = it.take(MemoPhotos.MAX_ITEM_TEXT) }, modifier = Modifier.fillMaxWidth().height(160.dp),
-                label = { Text("글") })
+            OutlinedTextField(t, { t = it.take(MemoPhotos.MAX_ITEM_TEXT) }, modifier = Modifier.fillMaxWidth().height(160.dp)
+                .focusRequester(focus), placeholder = { Text("글상자에 쓸 글") })
         },
         confirmButton = { TextButton(onClick = { onDone(t) }) { Text("확인") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
