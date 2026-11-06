@@ -118,7 +118,9 @@ test("[ADMUX-01] every screen opens without an error and without a style attribu
   const t = await signedIn(env);
   // AN 1.28: the six hubs' tabs, and the 1.27 addresses that now lead to them (inbox, ops, settings).
   for (const s of ["home", "desk", "inquiries", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
-    "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "inbox", "ops", "settings", "more"]) {
+    "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "inbox", "ops", "settings", "more",
+    // 1.38 [ADM3] 새 화면들.
+    "flow", "cockpit", "incident", "reviews", "requests", "launch", "materials", "health", "money", "errors", "backup", "keys", "growth"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
     assert.ok(main.textContent.trim().length > 10, `${s} shows something`);
@@ -246,12 +248,11 @@ test("[ADMUX-03] this device's choices: colours, text size, bottom tabs", async 
     box.dispatchEvent(new t.window.Event("change", { bubbles: true }));
     await t.settle();
   };
-  // AN 1.28 [ADMUX-30] 오늘 and three hubs: a fourth takes the place of the one there longest (문의, the first after 오늘).
-  await flip("insight", true);
-  assert.match(t.text("#toast"), /오늘과 3개까지라 문의 대신 분석/);
-  assert.ok(!t.$('.tabs [data-nav="ask"]'));
-  assert.ok(t.$('.tabs [data-nav="insight"]'), "분석 is a bottom tab now");
-  assert.deepEqual(JSON.parse(t.window.localStorage.getItem("bamnat-admin-prefs")).tabs, ["plaza", "release", "insight"]);
+  // 1.38 [ADM3] 허브가 다섯이라 모두 아래 탭에 있어요: 고를 것이 없고 그렇다고 알려 줘요.
+  assert.equal(typeof flip, "function");
+  assert.ok(!t.$('[data-change="pref-tab"]'), "nothing to pick");
+  assert.match(t.text("#main"), /허브 5개가 모두 아래 탭에 있어요/);
+  assert.deepEqual(t.$$(".tabs [data-nav]").map((a) => a.dataset.nav), ["today", "ask", "release", "insight", "manage"]);
 });
 
 test("[ADMIN-15] the join page asks for its invite with the token in the body", async () => {
@@ -412,7 +413,9 @@ test("[ADMUX-13] 지표: two dates ask the server for that period and the number
   const { env } = await world();
   const u = await asOwner(env, t);
   await u.go("#/metrics");
-  assert.match(u.text("#main .meta"), /\(28일\)/);
+  // 1.38 [ADM3] 지표는 '숫자' 허브의 첫 탭이라 위에 '지금 기다리는 것' 줄이 올 수 있어요.
+  const meta = () => u.$$("#main .meta").map((e) => e.textContent).join(" ");
+  assert.match(meta(), /\(28일\)/);
   for (const sec of ["활성", "광장", "문의", "오류", "원격 갱신"]) assert.match(u.text("#main"), new RegExp(sec), `${sec} section`);
   const to = u.$("#mt-to").value;
   const from = new Date(Date.parse(to) - 2 * 864e5).toISOString().slice(0, 10);
@@ -420,12 +423,12 @@ test("[ADMUX-13] 지표: two dates ask the server for that period and the number
   el.value = from;
   el.dispatchEvent(new u.window.Event("change", { bubbles: true }));
   await u.settle(30);
-  assert.match(u.text("#main .meta"), /\(3일\)/);
+  assert.match(meta(), /\(3일\)/);
   assert.match(u.window.location.hash, new RegExp(`from=${from}`));
   assert.ok(u.$('#main [data-act="metric-clear"]'));
   await u.click('#main [data-act="metric-clear"]');
   await u.settle(30);
-  assert.match(u.text("#main .meta"), /\(28일\)/);
+  assert.match(meta(), /\(28일\)/);
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
 });
@@ -600,25 +603,25 @@ const bottom = (t) => t.$$(".tabs [data-nav]").map((a) => a.dataset.nav);
 test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs they may use", async () => {
   const s = await world();
   const t = await signedIn(s.env);
-  assert.deepEqual(sideHubs(t), ["today", "ask", "plaza", "release", "insight", "manage"]);
-  assert.deepEqual(bottom(t), ["today", "ask", "plaza", "release", "more"]);
+  // 1.38 [ADM3] 다섯 허브(오늘·사람과 글·출시·숫자·관리)가 모두 아래 탭에 들어가요.
+  assert.deepEqual(sideHubs(t), ["today", "ask", "release", "insight", "manage"]);
+  assert.deepEqual(bottom(t), ["today", "ask", "release", "insight", "manage"]);
   // A hub's tabs sit under the title, and in the sidebar under the open hub.
   await t.go("#/review");
-  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "recipes", "companies", "shares", "adopt"]);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"]);
   assert.equal(t.$("#hubtabs [aria-current]").dataset.tab, "review");
-  assert.ok(t.$('.side li[data-hub="plaza"].open .subnav a[data-tab="adopt"]'));
-  assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "plaza");
-  // 1.38 [DESK-03] 오늘 has 운영 장부 (할 일함·정리함 in one) beside it now; 분석 sits under 더 보기 on the phone, which is lit there.
+  assert.ok(t.$('.side li[data-hub="ask"].open .subnav a[data-tab="companies"]'));
+  assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "ask");
   await t.go("#/home");
-  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "flow", "desk"]);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "desk", "flow", "cockpit", "incident"]);
   await t.go("#/metrics");
-  assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "more");
+  assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "insight");
   // 민지 answers questions only: 오늘, 문의 (without 답 목표, which is 설정's) and 관리 (내 계정 only).
   const u = await asMember(s);
   assert.deepEqual(sideHubs(u), ["today", "ask", "manage"]);
   assert.deepEqual(bottom(u), ["today", "ask", "manage"], "every hub fits: no 더 보기");
   await u.go("#/inquiries");
-  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "growth", "dev", "templates"]);
+  assert.deepEqual(u.$$("#hubtabs a").map((a) => a.dataset.tab), ["inquiries", "dev", "reviews", "growth", "templates"]);
   await u.go("#/account");
   assert.ok(u.$("#hubtabs").hidden, "관리 has one tab for 민지");
   // A tab 민지 cannot use goes to 오늘.
@@ -629,10 +632,10 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   // 준호 looks after 광장 only (검토, 토론, 회사 보기): 문의 is gone and 광장 shows just those tabs.
   const plaza = { ...SUPPORT, inquiries: "none", dev: "none", review: "edit", community: "edit", companies: "view" };
   const v = await asMember(s, plaza, "", "junho@example.com", 41);
-  assert.deepEqual(sideHubs(v), ["today", "plaza", "manage"]);
+  assert.deepEqual(sideHubs(v), ["today", "ask", "release", "manage"]);
   await v.go("#/review");
-  assert.deepEqual(v.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "versions", "community", "recipes", "companies"]);
-  assert.equal(Number(v.text('.tabs [data-badge="hub:plaza"]')), 1, "the one report");
+  assert.deepEqual(v.$$("#hubtabs a").map((a) => a.dataset.tab), ["review", "community", "recipes", "versions", "companies"]);
+  assert.equal(Number(v.text('.tabs [data-badge="hub:ask"]')), 1, "the one report");
   await v.go("#/inquiries");
   assert.equal(v.window.location.hash, "#/home");
   assert.deepEqual([...t.errors, ...u.errors, ...v.errors], []);
@@ -687,10 +690,12 @@ test("[ADMUX-34] menu numbers: each thing counted once, 더 보기 only its own 
   const t = await signedIn(s.env);
   const badge = (k) => Number(t.text(`.tabs [data-badge="hub:${k}"]`) || 0);
   const side = (k) => Number(t.text(`.side [data-badge="hub:${k}"]`) || 0);
-  assert.equal(badge("ask"), 3, "three questions wait");
-  assert.equal(badge("plaza"), 1, "one report");
-  assert.equal(side("today"), 0, "오늘 adds nothing of its own: its list is the others' things");
-  assert.equal(badge("more"), side("insight") + side("manage"));
+  // 1.38 [ADM3] 문의와 광장이 '사람과 글' 하나: 문의 셋과 제보 하나.
+  assert.equal(badge("ask"), 4, "three questions and one report");
+  // 오늘's number is how many things 주의 필요 lists (1.38 [ADM3-04]: the test server has no 알림 키·Play 계정, so 'setting missing' is one).
+  assert.equal(side("today"), t.$$("#main .alert-list li").length, "오늘 counts only its 주의 필요");
+  assert.match(t.text("#main .alert-list"), /꼭 필요한 설정/);
+  assert.equal(badge("manage"), side("manage"));
   // The strip on 문의 says what waits, and opens it filtered.
   await t.go("#/inquiries");
   const strip = t.$("#waiting a");
@@ -702,7 +707,7 @@ test("[ADMUX-34] menu numbers: each thing counted once, 더 보기 only its own 
   t.$("#reply").value = "고쳤어요. 업데이트해 주세요";
   t.$('form[data-form="reply"]').requestSubmit(t.$('form[data-form="reply"] [data-close="1"]'));
   await t.settle(40);
-  assert.equal(badge("ask"), 2);
+  assert.equal(badge("ask"), 3);
   assert.deepEqual(t.errors, []);
 });
 
@@ -750,21 +755,21 @@ test("[ADMUX-33] 오늘's 할 일: the filters live in the address, and 바로 �
   assert.deepEqual(t.errors, []);
 });
 
-test("[ADMUX-36] 1~6 open the hubs, [ and ] the tabs, and the palette knows the old names", async () => {
+test("[ADMUX-36] 1~5 open the hubs, [ and ] the tabs, and the palette knows the old names", async () => {
   const { env } = await world();
   const t = await signedIn(env);
   await t.key("2");
   assert.equal(t.window.location.hash, "#/inquiries");
   await t.key("]");
-  assert.equal(t.window.location.hash, "#/growth", "스튜디오 요구 sits next to 문의 (정리함 is in 운영 장부 now)");
+  assert.equal(t.window.location.hash, "#/dev", "개발사항 sits next to 문의");
   await t.key("[");
   await t.key("[");
-  assert.equal(t.window.location.hash, "#/sla", "round to the hub's last tab");
-  await t.key("4");
-  assert.equal(t.window.location.hash, "#/flags");
+  assert.equal(t.window.location.hash, "#/templates", "round to the hub's last tab");
+  await t.key("3");
+  assert.equal(t.window.location.hash, "#/launch", "출시 opens on 출시 점검표");
   // A hub opens on the tab it was left on.
   await t.key("2");
-  assert.equal(t.window.location.hash, "#/sla");
+  assert.equal(t.window.location.hash, "#/templates");
   await t.key("g");
   await t.key("b");
   assert.equal(t.window.location.hash, "#/home");
@@ -777,7 +782,7 @@ test("[ADMUX-36] 1~6 open the hubs, [ and ] the tabs, and the palette knows the 
     assert.equal(t.window.location.hash, to, word);
   }
   await t.key("?");
-  assert.match(t.text("dialog"), /1~6/);
+  assert.match(t.text("dialog"), /1~5/);
   assert.deepEqual(t.errors, []);
 });
 
@@ -814,9 +819,9 @@ test("[ADMUX-35] bottom tabs and saved views kept on this device from 1.27 move 
   const now = JSON.parse(t.window.localStorage.getItem("bamnat-admin-prefs"));
   assert.equal(now.v, 2);
   assert.equal(now.theme, "dark");
-  assert.deepEqual(now.tabs, ["plaza", "release", "insight"]);
+  assert.deepEqual(now.tabs, ["ask", "release", "manage"]);
   assert.deepEqual(now.views.map((v) => v.hash), ["#/home?view=mine", "#/inquiries?status=answered"]);
-  assert.deepEqual(bottom(t), ["today", "plaza", "release", "insight", "more"]);
+  assert.deepEqual(bottom(t), ["today", "ask", "release", "insight", "manage"]);
   assert.deepEqual(t.errors, []);
 });
 // AN 1.28 끝

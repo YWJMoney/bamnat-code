@@ -237,6 +237,12 @@ export function adminLib() {
     chores: { month: "" },
     // AM 1.28 [ADMUX-21][ADMUX-25] 기능 관리: which state, words, list or timeline.
     flags: { show: "all", q: "", view: "" },
+    // 1.38 [ADM3] 새 화면의 보기와 기간.
+    reviews: { show: "open" },
+    requests: { show: "open" },
+    errors: { show: "open" },
+    health: { days: "14" },
+    money: { days: "28" },
   };
 
   /** "#/inquiries/abc?status=open&q=알람" as { name, id, params }; params hold only known filters. */
@@ -284,16 +290,19 @@ export function adminLib() {
     return p;
   }
 
-  // ---- [ADMUX-30] six hubs (1.28 통합계획 2-2) ----
+  // ---- [ADMUX-30] hubs; 1.38 [ADM3] 6 → 5, 일하는 순서대로 (보고서 5장) ----
 
-  /** The six hubs and their tabs (each tab is a route), in the order they show; 1~6 on a keyboard. */
+  /**
+   * The five hubs and their tabs (each tab is a route), in the order they show; 1~5 on a keyboard. 1.38 [ADM3]: 문의와 광장은 '사람과 글'
+   * 하나로(사람이 보낸 것은 한 곳), 분석은 '숫자'(지표·판 건강·돈·오류), 활동 기록·답 목표·채택 규칙은 관리로. 다섯이라 휴대폰 아래 막대에
+   * 모두 들어가 '더 보기'가 없어요. 옛 주소(#/inquiries 등)는 화면 이름이 그대로라 그대로 열려요.
+   */
   const HUBS = [
-    { key: "today", label: "오늘", icon: "home", tabs: ["home", "flow", "desk"] },
-    { key: "ask", label: "문의", icon: "inquiries", tabs: ["inquiries", "growth", "dev", "templates", "sla"] },
-    { key: "plaza", label: "광장", icon: "community", tabs: ["review", "versions", "community", "recipes", "companies", "shares", "adopt"] },
-    { key: "release", label: "출시", icon: "release", tabs: ["flags", "types", "notices", "chores", "gates"] },
-    { key: "insight", label: "분석", icon: "metrics", tabs: ["metrics", "effects", "audit"] },
-    { key: "manage", label: "관리", icon: "admins", tabs: ["admins", "keys", "rewards", "server", "account"] },
+    { key: "today", label: "오늘", icon: "home", tabs: ["home", "desk", "flow", "cockpit", "incident"] },
+    { key: "ask", label: "사람과 글", icon: "inquiries", tabs: ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"] },
+    { key: "release", label: "출시", icon: "release", tabs: ["launch", "flags", "materials", "types", "notices", "chores", "gates"] },
+    { key: "insight", label: "숫자", icon: "metrics", tabs: ["metrics", "health", "money", "errors", "effects"] },
+    { key: "manage", label: "관리", icon: "admins", tabs: ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"] },
   ];
 
   /**
@@ -340,6 +349,17 @@ export function adminLib() {
     // [ADMUX-32] 친구 초대 규칙 moved here from 설정; it is the settings area, so either opens the tab.
     rewards: { label: "보상", area: ["rewards", "settings"], badge: (o, me) => (can(me, "rewards") ? o.owed ?? 0 : 0), strip: "드릴 보상", old: "설정 친구 초대 rewards" },
     server: { label: "서버 상태", owner: true, old: "설정 서버 상태 server" },
+    // 1.38 [ADM3] 새 탭들.
+    cockpit: { label: "Claude 조종석", area: "inquiries", old: "Claude 조종석 보류 답 멈추기 열쇠 한 일 cockpit" },
+    incident: { label: "사고", owner: true, badge: (o) => o.incidentOpen ?? 0, strip: "사고", old: "사고 장애 급증 incident 오류 급증 비정상 종료" },
+    reviews: { label: "스토어 리뷰", area: "inquiries", badge: (o) => o.reviewsWaiting ?? 0, strip: "리뷰 답", old: "스토어 리뷰 Play 리뷰 별점 답 reviews" },
+    requests: { label: "데이터 요청", owner: true, badge: (o) => o.requestsOpen ?? 0, strip: "데이터 요청", old: "데이터 요청 개인정보 열람 삭제 환불 법 신고 기한 requests" },
+    launch: { label: "출시 점검표", area: "ops", badge: (o) => o.releaseOpen ?? 0, count: false, old: "출시 점검표 출시 날 체크리스트 런북 Play 올림 launch release" },
+    materials: { label: "스튜디오 재료", area: "community", old: "스튜디오 재료 잠금 아이콘 배경 무료 광고 materials" },
+    health: { label: "판 건강", area: "metrics", old: "판 건강 판별 비교 비정상 종료 ANR 바꾼 것 health versions crash" },
+    money: { label: "돈", owner: true, old: "돈 매출 구독 해지 이용권 환불 가격표 money revenue" },
+    errors: { label: "오류 묶음", owner: true, badge: (o) => o.errorsNew ?? 0, strip: "새 오류", old: "오류 묶음 서버 오류 500 errors sentry" },
+    backup: { label: "백업", owner: true, old: "백업 되돌리기 Time Travel R2 backup" },
     account: { label: "내 계정·이 기기", old: "설정 이 기기 알림 화면 색 테마 글자 크기 아래 탭 소리 저장한 보기 앱 설치 단축키 비밀번호 로그아웃 account settings" },
   };
 
@@ -636,7 +656,7 @@ export function adminLib() {
   /** The list of keys for the ? screen, as [keys, what]. */
   const KEYS = [
     ["Ctrl+K", "찾기·이동(명령 팔레트)"], ["/", "검색칸으로"], ["j / k", "다음·이전 줄"], ["Enter", "고른 줄 열기"],
-    ["Esc · Backspace", "뒤로"], ["1~6", "허브: 오늘·문의·광장·출시·분석·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
+    ["Esc · Backspace", "뒤로"], ["1~5", "허브: 오늘·사람과 글·출시·숫자·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
     ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
     ["1~9 (문의 답 칸)", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
     ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g k · g e", "할 일함·스튜디오 요구로"], ["g i · g d", "문의·개발사항으로"],
@@ -1188,6 +1208,30 @@ export function adminLib() {
   }
   // ---- AT 1.29 끝 ----
 
+  // ---- 1.38 [ADM3-07] 활동 기록의 되돌리기 ----
+
+  /**
+   * 되돌릴 수 있는 일이면 그것을 되돌리는 화면({label, to}), 아니면 null. 되돌리기는 그 화면의 단추로 해요(이유·확인을 다시 거치게):
+   * 기능 강제·조건·판 범위, 공지, 채택·답 목표·초대 설정, 가격표, 오류 상태, 출시 점검표 단계, 데이터 요청, 개발사항 상태, 문의 닫기.
+   */
+  function undoPlace(action, target) {
+    const t = String(target ?? "");
+    const enc = encodeURIComponent;
+    if (/^flag_(force_on|force_off|conditions|range|clear)$/.test(action) && t) return { label: "기능 화면에서 되돌리기", to: `#/flags/${enc(t)}` };
+    if (/^(switch_on|switch_off|flag_policy)$/.test(action)) return { label: "기능 관리에서 되돌리기", to: "#/flags" };
+    if (/^notice_(add|edit|remove)$/.test(action)) return { label: "공지에서 되돌리기", to: "#/notices" };
+    if (action === "settings") return { label: "채택 규칙에서 되돌리기", to: "#/adopt" };
+    if (action === "sla") return { label: "답 목표에서 되돌리기", to: "#/sla" };
+    if (action === "invite_settings") return { label: "보상에서 되돌리기", to: "#/rewards" };
+    if (action === "price_table") return { label: "가격표에서 되돌리기", to: "#/money" };
+    if (action === "error_state") return { label: "오류 묶음에서 되돌리기", to: "#/errors" };
+    if (action === "release_step" && /^\d+\.\d+\.\d+$/.test(t)) return { label: "점검표에서 되돌리기", to: `#/launch/${t}` };
+    if (action === "data_request_close") return { label: "데이터 요청에서 다시 열기", to: "#/requests?show=done" };
+    if (/^dev_(status|delete)$/.test(action) && /^d[A-Za-z0-9]{15}$/.test(t)) return { label: "개발사항에서 되돌리기", to: `#/dev/${t}` };
+    if (/^inquiry_(status|close)$/.test(action) && /^[A-Za-z0-9]{22}$/.test(t)) return { label: "문의에서 다시 열기", to: `#/inquiries/${t}` };
+    return null;
+  }
+
   // ---- AX 1.30 시작 ----
 
   /**
@@ -1350,7 +1394,7 @@ export function adminLib() {
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
-    paletteFilter, sequencer, appVersion,
+    paletteFilter, sequencer, appVersion, undoPlace,
     // AM 1.28 [FLAG-21][ADMUX-23][ADMUX-24]
     evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
     WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
