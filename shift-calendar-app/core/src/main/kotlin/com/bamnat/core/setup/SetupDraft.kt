@@ -86,6 +86,11 @@ data class SetupDraft(
     val later: Boolean = false,
     /** The save has started; on the next start it is finished, never asked again. */
     val committing: Boolean = false,
+    /**
+     * 1.38 PC 12.1 (직원이 받은 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the 근무표 link the setup was filled from, its
+     * title; the summary names it and starts with one press. Empty for any other setup.
+     */
+    val linkTitle: String = "",
 ) {
     val workTypes: List<ShiftType> get() = types.filter { !it.isOff && it.hasTimes }
 

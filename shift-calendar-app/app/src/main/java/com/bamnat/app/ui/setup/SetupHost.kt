@@ -380,7 +380,7 @@ private fun primaryFor(d: SetupDraft, vm: SetupViewModel, onLongShifts: (List<Sh
         onClick = vm::confirmToday,
     )
     SetupStep.ALARM -> Primary("다음", onClick = vm::next)
-    SetupStep.SUMMARY -> Primary("저장하고 달력 보기", onClick = vm::save)
+    SetupStep.SUMMARY -> Primary(if (d.linkTitle.isNotBlank()) "이 근무표로 시작" else "저장하고 달력 보기", onClick = vm::save)
 }
 
 private fun orderHint(d: SetupDraft): String? = when {

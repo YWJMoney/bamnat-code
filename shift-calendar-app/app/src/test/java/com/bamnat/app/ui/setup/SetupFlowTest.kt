@@ -487,4 +487,47 @@ class SetupFlowTest {
         assertEquals("밤을 넘기는 근무는 시작한 날로 쳐요. 어제(11/5) 09:00에 시작한 당번이 아직 이어지고 있어요.", earlyNote(duty to true, 8, day))
         assertEquals("지금은 새벽이라, 어젯밤 시작한 근무는 어제(11/5) 근무로 쳐요.", earlyNote(duty to true, 5, day))
     }
+
+    /** 1.38 PC 12.1: a new phone opened from a 근무표 link (a coworker's or a 팀 리더's) starts from it in one press. */
+    @Test fun aLinkStartsTheCalendarWithItsOwnWorkAndDays() = runBlocking {
+        fun day(d: Int, type: Long?) = com.bamnat.app.share.SharedDay(today.plusDays(d.toLong()), type, null, null, null, emptyList(), null)
+        val schedule = com.bamnat.app.share.SharedSchedule(
+            "3병동 김간호",
+            listOf(
+                com.bamnat.app.share.SharedType(1, "데이", "D", 0xFF2196F3, "07:00-15:00", false, null),
+                com.bamnat.app.share.SharedType(2, "나이트", "N", 0xFF673AB7, "22:00-07:00", false, null),
+                com.bamnat.app.share.SharedType(3, "오프", "O", 0xFF9E9E9E, null, true, null),
+            ),
+            mapOf(today to day(0, 1), today.plusDays(1) to day(1, 2), today.plusDays(2) to day(2, 3), today.minusMonths(2) to day(-61, 1)),
+            emptyList(), emptySet(),
+        )
+        val d = LinkStart.draft(schedule, today)!!
+        // Nothing asked again: the names are checked on the summary.
+        assertEquals(SetupStep.SUMMARY, d.step)
+        assertTrue(d.rosterMonthly)
+        assertEquals("3병동 김간호", d.linkTitle)
+        // A month before this one is not the new calendar's.
+        assertEquals(3, d.painted.size)
+        assertEquals(d, com.bamnat.app.data.SetupDraftCodec.decode(com.bamnat.app.data.SetupDraftCodec.encode(d)))
+        c.setupDrafts.save(d)
+        val vm = vm()
+        assertEquals(SetupStep.SUMMARY, draft.step)
+        vm.save()
+        waitFor("the save") { c.settingsRepository.current.setupDone && c.setupDrafts.draft.value == null }
+        assertTrue(c.settingsRepository.current.rosterMonthly)
+        val snap = c.scheduleRepository.snapshot.first()
+        assertEquals("데이", snap.resolver.resolve(today).shiftType?.name)
+        assertEquals("나이트", snap.resolver.resolve(today.plusDays(1)).shiftType?.name)
+        assertEquals("오프", snap.resolver.resolve(today.plusDays(2)).shiftType?.name)
+    }
+
+    @Test fun aLinkWithoutTimesAsksTheTimesOnly() {
+        val schedule = com.bamnat.app.share.SharedSchedule(
+            "팀", listOf(com.bamnat.app.share.SharedType(1, "주간", "주", 0xFF2196F3, null, false, null)),
+            emptyMap(), emptyList(), emptySet(),
+        )
+        val d = LinkStart.draft(schedule, today)!!
+        assertEquals(SetupStep.TIMES, d.step)
+        assertFalse(d.timesConfirmed)
+    }
 }

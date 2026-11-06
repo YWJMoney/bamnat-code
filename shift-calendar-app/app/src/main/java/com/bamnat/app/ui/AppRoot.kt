@@ -387,9 +387,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     // 1.38 PC 11차: opened from a teammate's 근무표 link on a new phone, the first screen names it and offers the
                     // matching start (매달 나오는 근무표) in one tap.
                     val waitingLink by container.received.opening.collectAsStateWithLifecycle()
-                    val waitingTitle by produceState<String?>(null, waitingLink) {
-                        value = waitingLink?.let { id -> runCatching { container.shareApi.read(id).schedule.optString("title") }.getOrNull()?.takeIf { it.isNotBlank() }?.take(40) }
+                    val waitingSchedule by produceState<com.bamnat.app.share.SharedSchedule?>(null, waitingLink) {
+                        value = waitingLink?.let { id -> runCatching { com.bamnat.app.share.SharedSchedule.parse(container.shareApi.read(id).schedule) }.getOrNull() }
                     }
+                    val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
+                    // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
+                    val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
                     // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
                     // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
                     val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
@@ -405,7 +408,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
                         onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } },
-                        linkWaiting = waitingLink != null, linkTitle = waitingTitle)
+                        linkWaiting = waitingLink != null, linkTitle = waitingTitle,
+                        onLinkStart = linkDraft?.let { draft -> {
+                            sizeSeen()
+                            com.bamnat.app.ui.onboarding.QuietStart.apply(container, com.bamnat.core.work.WorkStyle.SHIFT)
+                            container.telemetry.event("setup_link", if (draft.step == com.bamnat.core.setup.SetupStep.SUMMARY) "ready" else "times")
+                            container.setupDrafts.save(draft)
+                        } })
                     return
                 }
                 // 1.36 W4: before 1.36 the recommended-features page came here, between "무슨 일 하세요?" and the setup. A phone

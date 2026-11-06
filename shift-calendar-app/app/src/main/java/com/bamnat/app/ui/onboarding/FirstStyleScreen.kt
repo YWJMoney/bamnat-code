@@ -40,7 +40,9 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                      /** [SETUP-17] '나중에 할게요': an example calendar to look around first; the first write asks again. */
                      onLater: (() -> Unit)? = null,
                      /** 1.38 PC 11차: the app was opened from a shared 근무표 link on a new phone; say it waits for the calendar. */
-                     linkWaiting: Boolean = false, linkTitle: String? = null) {
+                     linkWaiting: Boolean = false, linkTitle: String? = null,
+                     /** 1.38 PC 12.1: the setup filled from the link (its kinds, times and days); null while it cannot be read. */
+                     onLinkStart: (() -> Unit)? = null) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Box(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), contentAlignment = Alignment.TopCenter) {
             Column(
@@ -64,10 +66,11 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(linkTitle?.let { "‘$it’ 근무표를 받았어요" } ?: "받은 근무표 링크가 있어요",
                             style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Text("매달 받는 근무표로 바로 시작하면, 첫 설정을 마친 뒤 달력에서 이 근무표를 열어 내 달력에 넣을지 물어봐요. 다른 일이면 아래에서 골라요.",
+                        Text(if (onLinkStart != null) "근무 이름과 시간, 근무한 날을 이 근무표에서 그대로 가져와요. 다음 화면에서 이름만 확인하면 시작해요. 다른 일이면 아래에서 골라요."
+                            else "매달 받는 근무표로 바로 시작하면, 첫 설정을 마친 뒤 달력에서 이 근무표를 열어 내 달력에 넣을지 물어봐요. 다른 일이면 아래에서 골라요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        androidx.compose.material3.Button(onClick = { onPick(FirstStyle(com.bamnat.core.work.WorkStyle.SHIFT, roster = true)) },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("근무표가 매달 나와요 · 이걸로 시작") }
+                        androidx.compose.material3.Button(onClick = { onLinkStart?.invoke() ?: onPick(FirstStyle(com.bamnat.core.work.WorkStyle.SHIFT, roster = true)) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (onLinkStart != null) "이 근무표로 시작" else "근무표가 매달 나와요 · 이걸로 시작") }
                     }
                 }
                 StepHeader(FIRST_QUESTION, "적거나 고른 일에 맞는 기능만 켜고, 다음 질문도 그 일에 맞춰 물어요. 적은 말은 이 휴대폰에만 있어요.")
