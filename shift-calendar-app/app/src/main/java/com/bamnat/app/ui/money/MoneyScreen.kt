@@ -852,7 +852,7 @@ fun MoneyScreen(
             // At very large text the tab has no room for the 프로 mark (the cards inside still carry it),
             // and the title gives its room to the month: the 가계부 tab below already says where this is.
             val roomy = LocalDensity.current.fontScale < 1.3f
-            Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(top = 12.dp).then(com.bamnat.app.ui.theme.PhotoGround.head()).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (roomy) {
                     FitText(com.bamnat.core.work.moneyTab(style), MaterialTheme.typography.headlineSmall, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).semantics { heading() })
                 } else {

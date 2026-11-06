@@ -475,7 +475,7 @@ private fun PayResult(
                 modifier = m.then(com.bamnat.app.ui.parts.partSpotModifier("pay.head")))
             else Spacer(m)
         }
-        Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(headPart.copy(ink = null), RoundedCornerShape(0.dp)))) {
+        Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.theme.PhotoGround.head()).then(com.bamnat.app.ui.parts.PartMods.box(headPart.copy(ink = null), RoundedCornerShape(0.dp)))) {
         if (stack) who(Modifier)
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (stack) Spacer(Modifier.weight(1f)) else who(Modifier.weight(1f))

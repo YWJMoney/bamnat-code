@@ -203,7 +203,7 @@ private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (I
 internal fun RecordsTab(state: InvestState, open: (InvestSheet) -> Unit) {
     var month by rememberSaveable { mutableStateOf(YearMonth.from(state.today).toString()) }
     val ym = YearMonth.parse(month)
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(com.bamnat.app.ui.theme.PhotoGround.head(), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = { month = ym.minusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
         com.bamnat.app.ui.calendar.MonthJumpTitle(ym, { month = it.toString() }, Modifier.weight(1f)) // 1.32 [WTYP-21]
         IconButton(onClick = { month = ym.plusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }

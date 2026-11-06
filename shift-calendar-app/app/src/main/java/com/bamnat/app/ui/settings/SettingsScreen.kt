@@ -915,7 +915,7 @@ private fun SettingsSearchField(query: String, onQuery: (String) -> Unit, focusR
         // TalkBack names the field once the example has gone.
         modifier = Modifier.fillMaxWidth().let { m -> focusRequester?.let { m.focusRequester(it) } ?: m }.semantics { contentDescription = "설정 찾기" },
         placeholder = { com.bamnat.app.ui.HintText("설정 찾기 (예: 알람 소리, 백업)", "설정 찾기") },
-        leadingIcon = { Icon(Icons.Filled.Search, null) },
+        leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
         trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { onQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") } }) else null,
         singleLine = true,
         shape = MaterialTheme.shapes.extraLarge,
