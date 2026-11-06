@@ -524,6 +524,8 @@ data class ReceivedShare(
     val updatedAt: Instant?,
     /** [SHR-12] The server's tag for this version, asked with next time so an unchanged link is not downloaded again. */
     val etag: String? = null,
+    /** 1.38 [P3-L-18] The leader turned on 피곤해요 합계 for this link: the member's app may offer 피곤해요 팀에 알리기 ([ShareApi.tiredSay]). */
+    val tired: Boolean = false,
 )
 
 /** [MKT-09][SHR-02] The link server; tests and screenshots use a fake. */
@@ -624,7 +626,27 @@ interface ShareApi {
     suspend fun boardUpdate(id: String, token: String, team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) {}
 
     suspend fun boardDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-L-18] 피곤해요 합계 받기: a team's box of counts per day, no names. */
+    suspend fun tiredCreate(team: String): TiredBox = throw ShareLinkException("unsupported")
+
+    /** The last 7 days (today first); a count is null under [TiredGot.min] people. */
+    suspend fun tiredRead(id: String, token: String): TiredGot = throw ShareLinkException("unsupported")
+
+    suspend fun tiredDelete(id: String, token: String) {}
+
+    /** The leader ties a member's link to the box, or unties it with null. */
+    suspend fun tiredTie(linkId: String, linkToken: String, box: String?) {}
+
+    /**
+     * The member's app, from a received link whose [ReceivedShare.tired] is true: one more 피곤해요 today (KST), counted once a
+     * day however often it is pressed. Nothing but the press goes: no mood, sleep time or name. Throws not_found when untied.
+     */
+    suspend fun tiredSay(shareId: String) {}
 }
+
+data class TiredBox(val id: String, val token: String)
+data class TiredGot(val min: Int, val days: List<Pair<java.time.LocalDate, Int?>>)
 
 data class SignMade(val id: String, val token: String, val url: String, val expiresAt: Instant)
 data class SignGot(val seenAt: Instant?, val signedName: String?, val signedAt: Instant?)
@@ -710,7 +732,7 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         readable {
             ReceivedShare(o.getJSONObject("schedule"), Instant.parse(o.getString("expiresAt")),
                 o.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }?.let { runCatching { Instant.parse(it) }.getOrNull() },
-                reply.etag)
+                reply.etag, o.optBoolean("tired", false))
         }
     }
 
@@ -885,6 +907,35 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     override suspend fun boardDelete(id: String, token: String) = withContext(Dispatchers.IO) {
         try { request("DELETE", "/api/board/$id", null, token) } catch (e: ShareLinkException) { if (e.message != "not_found") throw e }
         Unit
+    }
+
+    override suspend fun tiredCreate(team: String): TiredBox = withContext(Dispatchers.IO) {
+        val o = request("POST", "/api/tired", JSONObject().put("team", team), null).body
+        readable { TiredBox(o.getString("id"), o.getString("token")) }
+    }
+
+    override suspend fun tiredRead(id: String, token: String): TiredGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/tired/$id", null, token).body
+        readable {
+            val a = o.getJSONArray("days")
+            TiredGot(o.optInt("min", 3), (0 until a.length()).map { i ->
+                val d = a.getJSONObject(i)
+                java.time.LocalDate.parse(d.getString("d")) to (if (d.isNull("n")) null else d.getInt("n"))
+            })
+        }
+    }
+
+    override suspend fun tiredDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try { request("DELETE", "/api/tired/$id", null, token) } catch (e: ShareLinkException) { if (e.message != "not_found") throw e }
+        Unit
+    }
+
+    override suspend fun tiredTie(linkId: String, linkToken: String, box: String?) = withContext(Dispatchers.IO) {
+        request("PUT", "/api/share/$linkId/tired", JSONObject().put("box", box ?: JSONObject.NULL), linkToken); Unit
+    }
+
+    override suspend fun tiredSay(shareId: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$shareId/tired", null, null); Unit
     }
 
     override suspend fun signDelete(id: String, token: String) = withContext(Dispatchers.IO) {

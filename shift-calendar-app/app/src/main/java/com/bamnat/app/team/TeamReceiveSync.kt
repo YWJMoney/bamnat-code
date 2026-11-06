@@ -53,4 +53,39 @@ object TeamReceiveSync {
     }.toMap()
 
     fun url(m: TeamMember): String? = m.linkId?.let { com.bamnat.app.BuildConfig.SHARE_BASE_URL.trimEnd('/') + "/s/" + it }
+
+    // ---- 1.38 [P3-L-18] 피곤해요 합계 받기: counts per day from members who press 피곤해요 in their own app, never who ----
+
+    private fun tiredKey(teamId: String) = "tired:$teamId"
+
+    fun tiredBox(c: Context, teamId: String): com.bamnat.app.share.TiredBox? = runCatching {
+        prefs(c).getString(tiredKey(teamId), null)?.let { JSONObject(it) }?.let { com.bamnat.app.share.TiredBox(it.getString("id"), it.getString("token")) }
+    }.getOrNull()
+
+    /** On: a box for the team, and every member link that exists tied to it (a link made later is tied by [tieTired]). */
+    suspend fun tiredOn(app: AppContainer, context: Context, team: Team, members: List<TeamMember>): com.bamnat.app.share.TiredBox {
+        val box = tiredBox(context, team.id) ?: app.shareApi.tiredCreate(team.name.take(30)).also {
+            prefs(context).edit().putString(tiredKey(team.id), JSONObject().put("id", it.id).put("token", it.token).toString()).apply()
+        }
+        tieTired(app, box.id, members)
+        return box
+    }
+
+    suspend fun tieTired(app: AppContainer, box: String?, members: List<TeamMember>) {
+        members.forEach { m -> val id = m.linkId; val t = m.linkToken; if (id != null && t != null) runCatching { app.shareApi.tiredTie(id, t, box) } }
+    }
+
+    suspend fun tiredOff(app: AppContainer, context: Context, teamId: String, members: List<TeamMember>) {
+        tiredBox(context, teamId)?.let { b -> tieTired(app, null, members); runCatching { app.shareApi.tiredDelete(b.id, b.token) } }
+        prefs(context).edit().remove(tiredKey(teamId)).apply()
+    }
+
+    /** The last 7 days as one line: "오늘 4명 · 어제 3명 미만 · …"; null while nobody has said so this week. */
+    fun tiredLine(got: com.bamnat.app.share.TiredGot, today: java.time.LocalDate): String? {
+        if (got.days.isEmpty()) return null
+        val name = { d: java.time.LocalDate -> when (d) { today -> "오늘"; today.minusDays(1) -> "어제"; else -> "${d.monthValue}/${d.dayOfMonth}" } }
+        val shown = got.days.filter { it.second != null }
+        val todayPart = got.days.firstOrNull { it.first == today }?.let { (d, n) -> "${name(d)} ${n?.let { "${it}명" } ?: "${got.min}명 미만"}" }
+        return listOfNotNull(todayPart).plus(shown.filter { it.first != today }.map { (d, n) -> "${name(d)} ${n}명" }).joinToString(" · ")
+    }
 }
