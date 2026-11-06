@@ -74,9 +74,9 @@ class AdAndLicenseRulesTest {
         assertFalse(com.bamnat.core.tier.AdRules.sdkMayStart(true, true, installed, installed.plusSeconds(86_400L * 30)))
         // The SDK's own measurement waits for MobileAds.initialize, so nothing goes before the switch.
         assertTrue(File(main, "AndroidManifest.xml").readText().contains("com.google.android.gms.ads.DELAY_APP_MEASUREMENT_INIT"))
-        // Google's test units are for debug builds only; a release without ids has no ads at all.
+        // Google's test units are for debug builds only (always, 1.38 E1); a release without ids has no ads at all.
         val ids = read("ads/Ads.kt")
-        assertTrue(ids.contains("ifBlank { if (BuildConfig.DEBUG) TEST_REWARDED else \"\" }"))
+        assertTrue(ids.contains("if (BuildConfig.DEBUG) TEST_REWARDED else BuildConfig.ADMOB_REWARDED"))
         // Such a release leaves out the advertising ID permissions the SDK brings (no 광고 ID declaration needed).
         val noAdId = File("src/noAdId/AndroidManifest.xml").readText()
         for (p in listOf("com.google.android.gms.permission.AD_ID", "android.permission.ACCESS_ADSERVICES_AD_ID")) {
