@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -79,13 +81,18 @@ internal fun AskSetupDialog(month: YearMonth, members: Int, onDismiss: () -> Uni
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(12, 18, 24).forEach { h -> FilterChip(selected = closeHour == h, onClick = { closeHour = h }, label = { Text(if (h == 24) "자정" else "${h}시") }) }
             }
-            Text("받을 신청", style = MaterialTheme.typography.labelLarge)
+            // PC 10차(중): which kinds are on was not plain; each on chip has a ✓ and the line says how many, and none on is said.
+            Text("받을 신청 · 켜진 ${kinds.size}가지(누르면 켜고 꺼요)", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ASK_KINDS.forEach { k ->
-                    FilterChip(selected = k in kinds, onClick = { kinds = if (k in kinds) kinds - k else kinds + k },
+                    val on = k in kinds
+                    FilterChip(selected = on, onClick = { kinds = if (on) kinds - k else kinds + k },
+                        leadingIcon = if (on) { { androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Check, null, Modifier.size(18.dp)) } } else null,
                         label = { Text(if (k == WishKind.SHIFT) "근무 희망(D·E·N)" else k.short) })
                 }
             }
+            if (kinds.isEmpty()) Text("하나도 켜지 않으면 팀원이 신청할 수 없어요.", style = MaterialTheme.typography.labelSmall,
+                color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
             Text("자리가 다 찬 날", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(selected = firstCome, onClick = { firstCome = true }, label = { Text("먼저 신청한 순(종이처럼)") })
