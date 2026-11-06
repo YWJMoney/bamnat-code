@@ -112,7 +112,7 @@ object FillSheetReader {
     private val DATE_SHORT = Regex("(?<![\\d.,$])(0?[1-9]|1[0-2])[./](0?[1-9]|[12]\\d|3[01])(?![\\d.,])(?=\\s*(?:\\([월화수목금토일]\\))?\\s*(?:\\d{1,2}:\\d{2}|$))", RegexOption.MULTILINE)
     private val MONEY_ONLY = Regex("\\$?\\s*$NUM\\s*(?:원|KRW|USD)?")
     private val WEEKDAY = Regex("[(（][월화수목금토일][)）]")
-    private val CODE_KR = Regex("(?<![\\d,.])(\\d{6})(?![\\d,.])")
+    private val CODE_KR = Regex("(?<![\\d,.])(\\d{6})(?![\\d,.]|\\s*원)")
     private val CODE_COIN = Regex("([A-Z0-9]{2,10})[-/](?:KRW|USDT)|(?:KRW|USDT)[-/]([A-Z0-9]{2,10})")
     private val TICKER = Regex("(?<![A-Za-z])([A-Z]{1,5})(?![A-Za-z])")
     private val NUMBER = Regex("(?<![\\d.,:])\\$?$NUM(?![\\d:])")
@@ -155,10 +155,38 @@ object FillSheetReader {
         }
         // A period between groups of three, with no other decimal after it, is a thousands mark in 원.
         t = Regex("(?<![\\d.])(\\d{1,3}(?:\\.\\d{3}){1,3})(?=\\s*(?:원|KRW))").replace(t) { it.value.replace(".", ",") }
+        return labels(t)
+    }
+
+    /**
+     * [READ-38] 1.38: a 체결 화면's own words as a small or photographed screen reads them a stroke off ("객결란가", "책결수량",
+     * "채결금에", "182300월", a side line "너드체를" for 매도 체결, "수해를" for 매수 체결): put back, so each fill is read and then
+     * checked against 수량 × 단가 = 금액 as always. Only whole label words and a 원 after a long number change.
+     */
+    internal fun labels(text: String): String {
+        var t = text
+        t = Regex("[가-힣]결\\s*[단란탄딘]\\s*가").replace(t, "체결단가")
+        t = Regex("[가-힣]결\\s*수\\s*[량랑냥]").replace(t, "체결수량")
+        t = Regex("[가-힣]결\\s*금\\s*[액에어엑앸]").replace(t, "체결금액")
+        t = Regex("[체채처제개재][결절걸길]\\s*내\\s*역").replace(t, "체결내역")
+        // "182300월": 원 read as 월 after a number of four digits or more (a month is 1~12).
+        t = Regex("(?<=\\d{4}|\\d,\\d{3})\\s?[월윌윈웜](?![가-힣])").replace(t, "원")
+        t = t.lines().joinToString("\n") { line ->
+            val l = line.trim()
+            if (SIDE.containsMatchIn(l)) line
+            else if (JUNK_HEAD.containsMatchIn(l) && !LABELS.containsMatchIn(l)) JUNK_HEAD.replace(l, "")
+            else SIDE_LINE.find(l)?.let { m -> (if (m.groupValues[1] == "수") "매수 체결" else "매도 체결") + l.substring(m.range.last + 1) } ?: line
+        }
         return t
     }
 
+    /** A side line read a stroke off: 매 lost or misread, 체결 as 체를·해를. 수 is 매수, 도·드 is 매도. */
+    private val SIDE_LINE = Regex("^[매내너메]?\\s*([수도드])\\s*[체처채재해개제]\\s*[결를길걸절](?=\\s|$)")
+
     private enum class Lead { WHEN, NAME, NAMED, AMOUNT }
+
+    /** A name line whose first letters were read as a digit and a mark ("3:하이닉스", "5하이니스" for SK하이닉스). */
+    private val JUNK_HEAD = Regex("^\\d{1,2}\\s*[:;.,'·]?\\s*(?=[가-힣]{3,}\\s*$)")
 
     /** [INVA-03] A day and time alone on its line ("2026.10.27 09:12", "10월 27일", "10.27(월)"). */
     private fun whenOnly(line: String): Boolean {
@@ -361,6 +389,23 @@ object FillSheetReader {
             // Agreeing numbers found by the check are as good as labelled ones; anything else stays a guess.
             if (q != null && p != null && a != null && FillMath.agrees(q!!, p!!, a!!)) guessed.clear()
         }
+        // [READ-38] 1.38: labels and numbers out of step (a small capture's rows joined one off: "매도 체결 12주 / 체결수량
+        // 182300원"): when what the labels gave does not add up, the quantity said with its unit (12주, 0.37684 ETH), else the
+        // labelled one, with two more of the card's numbers that make 수량 × 단가 = 금액 to the won, is the fill, shown and asked
+        // (the card's day and time may be a row off too). Only on a card with labels (a table's columns have their own check
+        // above), and the quantity is never swapped for the price.
+        if (columns == null && (qtyL != null || priceL != null || amountL != null) && q != null && p != null &&
+            (a == null || !FillMath.agrees(q!!, p!!, a!!))) {
+            val nums = (listOfNotNull(qtyL, priceL, amountL) + loose).distinct()
+            val unit = Regex("(?<![\\d.,:])$NUM[ \\t]*주(?![ \\t]*당)").find(all)?.let { num(it.groupValues[1]) }
+                ?: Regex("(?<![\\d.,:])$NUM[ \\t]*([A-Z]{2,6})(?![A-Za-z/\\-])").findAll(all).firstOrNull { it.groupValues[2] !in NOT_COINS }?.let { num(it.groupValues[1]) }
+            listOf(unit ?: q!!).firstNotNullOfOrNull { qq ->
+                val others = nums.filter { it != qq }
+                others.firstNotNullOfOrNull { pp ->
+                    others.firstOrNull { aa -> aa != pp && (qq >= 1) == (aa >= pp) && FillMath.agrees(qq, pp, aa) }?.let { Triple(qq, pp, it) }
+                }
+            }?.let { t -> q = t.first; p = t.second; a = t.third; guessed += setOf(Field.QUANTITY, Field.PRICE, Field.AMOUNT) }
+        }
         var fromAmount = false
         if (p == null && q != null && a != null) { p = FillMath.round(a!! / q!!); fromAmount = true }
         val quantity = q ?: return null
@@ -385,7 +430,10 @@ object FillSheetReader {
         if (amount > 0 && price > 0 && !FillMath.agrees(quantity, price, amount)) unsure += setOf(Field.PRICE, Field.AMOUNT)
         // A share is never a fraction on a Korean screen: a decimal there is a misread.
         if (market == Market.KR_STOCK && quantity != Math.floor(quantity)) unsure += Field.QUANTITY
-        return Fill(side, name, krCode ?: coinCode ?: ticker.orEmpty(), quantity, price, amount, market, date ?: section, time, unsure, fromAmount)
+        // [READ-38] A well-known name read a stroke off ("키아", "삼성건자", "하이닉스" with its SK lost): put right, and asked.
+        val known = if (market == Market.KR_STOCK) KnownStocks.near(name) else null
+        if (known != null) unsure += Field.NAME
+        return Fill(side, known ?: name, krCode ?: coinCode ?: ticker.orEmpty(), quantity, price, amount, market, date ?: section, time, unsure, fromAmount)
     }
 
     /** A price and an amount among the loose numbers that agree with quantity [q]. */
@@ -494,5 +542,32 @@ object FillMatcher {
             if (abs(pick.sumOf { it.quantity } - quantity) < 1e-9) return pick
         }
         return null
+    }
+}
+
+/**
+ * [READ-38] 1.38: the most traded Korean shares by their usual names (public listings), so a name a small or photographed
+ * 체결 화면 reads a stroke off is put back. Only a name that is not one of them and is one letter part from exactly one (or
+ * the same with its two Latin letters lost) changes, and the screen asks about it.
+ */
+internal object KnownStocks {
+    val NAMES = listOf(
+        "삼성전자", "SK하이닉스", "LG에너지솔루션", "삼성바이오로직스", "현대차", "기아", "셀트리온", "NAVER", "카카오", "POSCO홀딩스",
+        "KB금융", "신한지주", "LG화학", "삼성SDI", "현대모비스", "삼성물산", "카카오뱅크", "하나금융지주", "삼성생명", "LG전자",
+        "SK이노베이션", "SK텔레콤", "KT", "한국전력", "크래프톤", "HMM", "삼성전기", "고려아연", "한화에어로스페이스", "에코프로",
+        "에코프로비엠", "포스코퓨처엠", "두산에너빌리티", "HD현대중공업", "엔씨소프트", "대한항공", "아모레퍼시픽", "카카오페이",
+        "삼성화재", "우리금융지주", "기업은행", "메리츠금융지주", "롯데케미칼", "넷마블", "하이브", "CJ제일제당", "한미반도체",
+        "알테오젠", "삼성중공업", "한화오션", "LG디스플레이", "SK스퀘어", "삼성SDS", "현대건설", "LG이노텍", "HD한국조선해양",
+    )
+
+    fun near(name: String): String? {
+        if (name.isEmpty() || name in NAMES || !name.any { it in '가'..'힣' }) return null
+        val j = com.bamnat.core.pay.SlipLexicon.jamo(name)
+        val found = NAMES.filter { k ->
+            k.length == name.length && com.bamnat.core.pay.SlipLexicon.distance(com.bamnat.core.pay.SlipLexicon.jamo(k), j) <= 1 ||
+                name.length >= 3 && k.length - name.length in 1..2 && k.substring(0, k.length - name.length).all { it in 'A'..'Z' } &&
+                com.bamnat.core.pay.SlipLexicon.distance(com.bamnat.core.pay.SlipLexicon.jamo(k.substring(k.length - name.length)), j) <= 1
+        }
+        return found.singleOrNull()
     }
 }
