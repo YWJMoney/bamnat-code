@@ -741,10 +741,12 @@ fun CalendarScreen(
             // 1.38 PC 4a5c3828 (자영업·투자 달력에 '가족·연인과 근무 같이 보기'): 투자 has no days to see together; a shop's are its 영업일.
             onTogether = if (shareLinks && viewingReceived == null && !togetherDone && togetherStyle != com.bamnat.core.work.WorkStyle.INVEST) ({ together = true }) else null,
             togetherShop = togetherStyle == com.bamnat.core.work.WorkStyle.BUSINESS,
+            togetherField = togetherStyle == com.bamnat.core.work.WorkStyle.FIELD,
         )
     }
     if (together) TogetherSheet(
         shop = togetherStyle == com.bamnat.core.work.WorkStyle.BUSINESS,
+        field = togetherStyle == com.bamnat.core.work.WorkStyle.FIELD,
         onSend = { together = false; shareCalendar() },
         onTake = if (received.enabled) ({ together = false; adding = "" }) else null,
         onDismiss = { together = false },

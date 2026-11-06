@@ -50,6 +50,9 @@ class MainActivity : ComponentActivity() {
         )
         enableEdgeToEdge()
         com.bamnat.app.ui.theme.AppFonts.init(this)
+        // 1.38 PC 12차 충돌(11-12 22:00, 켠 지 4초): Fmt's 가리기 state was first made inside the first composition's snapshot and
+        // then read from another one ("Reading a state that was created after the snapshot was taken"). Made here, outside any.
+        com.bamnat.app.ui.Fmt.masked
         setContent { shown.value?.let { Content(it) } }
         // 1.32.1 [STAB-10][STAB-11] 멈춤 관찰: the screen made again (a Fold, a theme) and every draw of the window.
         com.bamnat.app.diag.Trail.add(com.bamnat.core.diag.StopTrail.Kind.MADE,
@@ -126,7 +129,9 @@ class MainActivity : ComponentActivity() {
         }
         // G 1.32 [WTYP-07] 오전/오후로 보기: every time on screen is written by Fmt, so the root is drawn again on a change.
         com.bamnat.app.ui.Fmt.clock12 = settings.clock12
-        com.bamnat.app.ui.Fmt.masked = settings.hideAmounts // 1.37 [LEDH-22]
+        // 1.37 [LEDH-22] 가리기, set here so the first frame is already hidden (a SideEffect would show amounts for one frame).
+        // Its state is made in onCreate, outside any snapshot (1.38 PC 12차 충돌).
+        com.bamnat.app.ui.Fmt.masked = settings.hideAmounts
         val photoLook = androidx.compose.runtime.remember(settings.photoLook) { com.bamnat.core.recipe.PhotoLook.decode(settings.photoLook) }
         // [STU-37] 1.36 근무에 따라 바뀌는 모양: 야간 근무 중·쉬는 날의 화면 색과 달력 색 over the usual ones.
         val shiftLooks = androidx.compose.runtime.remember(settings.shiftLooks) { com.bamnat.core.recipe.ShiftLooks.decode(settings.shiftLooks) }
