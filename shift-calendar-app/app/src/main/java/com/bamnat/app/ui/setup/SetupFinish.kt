@@ -171,7 +171,9 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     SummaryCard("근무 형태", styleTitle(d), onFix = { vm.fix(SetupStep.STYLE) })
     val source = d.source
     if ((source != null || d.companyName.isNotBlank()) && SetupStep.COMPANY in d.steps) {
-        SummaryCard("회사", companyLine(d, source), onFix = { vm.fix(SetupStep.COMPANY) })
+        // 1.38 통합 7차 347b7c37 (직접 만든 순서에도 '3조 2교대로 시작'): an order of the user's own is said so.
+        val own = remember(d.source, d.rotation) { d.rotation.isNotEmpty() && vm.sourceOrder(d)?.let { it != d.rotation } == true }
+        SummaryCard("회사", companyLine(d, source, own), onFix = { vm.fix(SetupStep.COMPANY) })
     }
     SummaryCard(
         "근무 시간",
@@ -257,11 +259,11 @@ private fun SummaryCard(title: String, text: String, onFix: () -> Unit, extra: (
     }
 }
 
-private fun companyLine(d: SetupDraft, source: SetupSource?): String = buildList {
+private fun companyLine(d: SetupDraft, source: SetupSource?, ownOrder: Boolean = false): String = buildList {
     // [J133-26] Said once: the name is the company picked, so its line says it already.
     if (d.companyName.isNotBlank() && (source == null || source.kind == SetupSource.Kind.TEMPLATE || source.name.trim() != d.companyName.trim())) add(d.companyName.trim())
     when (source?.kind) {
-        SetupSource.Kind.TEMPLATE -> add("${source.name}${Fmt.ro(source.name)} 시작 (업종 일반형)")
+        SetupSource.Kind.TEMPLATE -> add(if (ownOrder) "내가 만든 순서 (근무 시간은 ${source.name} 업종 일반형)" else "${source.name}${Fmt.ro(source.name)} 시작 (업종 일반형)")
         SetupSource.Kind.SERVER -> add("같은 회사 설정: ${source.name}${source.dept.takeIf { it.isNotBlank() }?.let { " · $it" } ?: ""}")
         SetupSource.Kind.FILE -> add("동료가 보낸 설정" + source.name.takeIf { it.isNotBlank() }?.let { ": $it" }.orEmpty())
         SetupSource.Kind.PUBLIC -> add(

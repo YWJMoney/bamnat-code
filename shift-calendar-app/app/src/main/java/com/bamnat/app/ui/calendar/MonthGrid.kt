@@ -282,6 +282,8 @@ fun MonthGrid(
     cutDays: Set<LocalDate> = emptySet(),
     /** 1.32 [WTYP-11] 희망 오프 days: a small ♡ at the top right. */
     wishDays: Set<LocalDate> = emptySet(),
+    /** [EASE-04] 1.38 월급날 (근무·급여 › 규칙): a small '급여' at the top left. */
+    payDays: Set<LocalDate> = emptySet(),
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -407,6 +409,7 @@ fun MonthGrid(
                         wishOff = date in wishDays,
                         fieldJobs = cells.field[date],
                         cardDue = date in cardDue,
+                        payDay = date in payDays,
                         onLongPress = onLongPress?.let { f -> { f(date) } },
                         isRangeStart = date == rangeFrom,
                         hourly = hourly,
@@ -548,6 +551,8 @@ private fun DayCell(
     fieldJobs: List<com.bamnat.core.money.Job>? = null,
     /** [SHOP-02] A card deposit is expected this day. */
     cardDue: Boolean = false,
+    /** [EASE-04] 1.38 The month's pay arrives this day. */
+    payDay: Boolean = false,
     hourly: HourlyCells? = null,
     holidayWeekDone: Boolean = false,
     /** [DAYW-01] Leave out the badge of a working day that just follows the pattern; TalkBack still says it. */
@@ -659,6 +664,7 @@ private fun DayCell(
         fieldUnitsText(fieldJobs)?.let { append(", ").append(it) }
         fieldJobs?.filter { it.status == com.bamnat.core.money.JobStatus.TENTATIVE || it.cancelled }?.forEach { append(", ‘${it.title}’ ${it.status.label}") }
         if (cardDue) append(", 카드 입금 예정")
+        if (payDay) append(", 급여일")
         span?.let { append(", ‘${it.title}’ ${it.days}일 중 ${it.nth}일째") }
         money?.let { m ->
             if (m.jobs > 0 && (span == null || m.jobs > 1)) append(", 일감 ${m.jobs}건")
@@ -839,6 +845,7 @@ private fun DayCell(
                 topStart?.let { Box(Modifier.align(Alignment.TopStart)) { CornerMark(it, dots) } }
                 if (invest?.hasEvent(date) == true && topStart == null && !alarmOff) com.bamnat.app.ui.invest.InvestEventDot(Modifier.align(Alignment.TopStart))
                 else if (cardDue && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart))
+                else if (payDay && topStart == null && !alarmOff) CardDueMark(Modifier.align(Alignment.TopStart), "급여")
                 else if (holidayWeekDone && topStart == null && !alarmOff) HolidayWeekCheck(Modifier.align(Alignment.TopStart).padding(start = 2.dp))
             }
             dayMark(22.dp)

@@ -140,9 +140,9 @@ internal fun rememberCardDue(money: MoneyBook): Set<LocalDate> {
     }
 }
 
-/** [SHOP-02] The small 입금 mark on a day a card deposit is expected. */
+/** [SHOP-02] The small 입금 mark on a day a card deposit is expected; [EASE-04] '급여' on a 월급날. */
 @Composable
-internal fun CardDueMark(modifier: Modifier = Modifier) {
-    Text("입금", fontSize = 8.sp, lineHeight = 9.sp, maxLines = 1, fontWeight = FontWeight.Bold,
+internal fun CardDueMark(modifier: Modifier = Modifier, text: String = "입금") {
+    Text(text, fontSize = 8.sp, lineHeight = 9.sp, maxLines = 1, fontWeight = FontWeight.Bold,
         color = com.bamnat.app.ui.theme.LocalCalendarColors.current.income, modifier = modifier)
 }

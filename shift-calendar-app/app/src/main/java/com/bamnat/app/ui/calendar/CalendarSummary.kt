@@ -306,7 +306,17 @@ internal fun CalendarViewSwitch(listView: Boolean, onListView: (Boolean) -> Unit
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapshot, onDismiss: () -> Unit) {
+internal fun CalendarLegendSheet(
+    focus: CalendarFocus,
+    snapshot: ScheduleSnapshot,
+    onDismiss: () -> Unit,
+    /** [EASE-04] A 월급날 is entered, so the cells show '급여'. */
+    payDayOn: Boolean = false,
+    /** [EASE-04] The 업종 whose 기념일 the cells show, or null when off or none. */
+    orgGroup: String? = null,
+    /** [EASE-04] This calendar counts pay at all (not 현장·자영업·투자), so the 급여일 row or where to turn it on is said. */
+    payShown: Boolean = false,
+) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -325,7 +335,18 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                 Box(Modifier.size(width = 30.dp, height = 24.dp).clip(RoundedCornerShape(6.dp)).background(scheme.primary.copy(alpha = 0.08f))
                     .border(2.dp, scheme.primary, RoundedCornerShape(6.dp)))
             }
-            LegendRow("공휴일·일요일", "빨간 날짜와 공휴일 이름") { Text("9", color = cal.sunday, fontWeight = FontWeight.Bold) }
+            LegendRow("공휴일·일요일", "빨간 날짜와 공휴일 이름 · 쉬는 날이에요") { Text("9", color = cal.sunday, fontWeight = FontWeight.Bold) }
+            // [EASE-04] 1.38 (통합 7차): 업종 기념일 next to 공휴일, so the two are told apart; where to turn it on when off.
+            val orgDays = com.bamnat.core.plaza.IndustryGroups.byKey(orgGroup)?.days.orEmpty()
+            if (orgDays.isNotEmpty()) {
+                LegendRow("업종 기념일", "날짜 밑 강조색 글자 · ${orgDays.first().name}처럼 업종의 날이고, 공휴일과 달리 쉬는 날은 아니에요") {
+                    Text(orgDays.first().name, color = scheme.primary, fontSize = 10.sp, maxLines = 1)
+                }
+            } else if (focus == CalendarFocus.SHIFTS) {
+                LegendRow("업종 기념일", "꺼져 있어요 · 설정 › 화면과 글자 › 우리 업종 기념일에서 켜면 소방의 날 같은 날이 강조색 글자로 보여요") {
+                    Text("기념일", color = scheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1)
+                }
+            }
             when (focus) {
                 CalendarFocus.SHIFTS -> {
                     val types = snapshot.shiftTypes.take(6)
@@ -346,6 +367,11 @@ internal fun CalendarLegendSheet(focus: CalendarFocus, snapshot: ScheduleSnapsho
                         Text("+2h", color = cal.holidayWork, fontWeight = FontWeight.Bold, style = NumberStyle)
                     }
                     LegendRow("출퇴근 기록", "모서리 표시: 지각·조퇴는 주황, 결근은 빨강") { AttendanceMark(com.bamnat.core.model.Attendance.ABSENT) }
+                    if (payShown) {
+                        LegendRow("급여일", if (payDayOn) "왼쪽 위 '급여' 글자: 월급이 들어오는 날" else "월급날을 아직 넣지 않았어요 · 설정 › 근무·급여 › 월급날·정산 기간에서 월급날을 넣으면 그날 칸에 '급여'가 붙어요") {
+                            CardDueMark(text = "급여")
+                        }
+                    }
                     LegendRow("주휴 ✓", "알바: 주 15시간 넘고 결근 없는 주의 마지막 날") { HolidayWeekCheck() }
                     LegendRow("주 시간 넘음", "왼쪽 빨간 막대: 그 주 근무가 한도를 넘었어요") {
                         Box(Modifier.size(width = 4.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(cal.warning))

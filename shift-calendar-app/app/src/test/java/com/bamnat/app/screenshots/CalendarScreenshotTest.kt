@@ -308,6 +308,31 @@ class CalendarScreenshotTest : ScreenshotBase() {
     @Test fun calListShift() = shoot("302_folded_list_view", FOLDED) { pickListBoard() }
     // [CAL-06] What every mark means, in the calendar's own kind of work.
     @Test fun calLegendShift() = shoot("305_folded_legend_shift", FOLDED) { tapText("달력 표시 안내", exact = true, scrolls = 0) }
+    /** [EASE-04] 1.38 (통합 7차): the 급여일 and 업종 기념일 marks are said, and told apart from 공휴일. */
+    @Test fun calLegendSaysPayAndOrgDays() {
+        val c = app.container
+        runBlocking {
+            c.payStore.save(com.bamnat.app.ui.pay.PayViewModel(c).sampleProfile().copy(period = com.bamnat.core.pay.PayPeriod(payDay = 25)), keepUndo = false)
+        }
+        c.settingsRepository.update { it.copy(orgDayGroup = "fire", orgDaysOn = true) }
+        try {
+            shoot("305b_folded_legend_pay_org", FOLDED) {
+                assertTrue("the 월급날 cell says 급여", appears("급여일"))
+                tapText("달력 표시 안내", exact = true, scrolls = 0)
+                assertTrue(appears("업종 기념일", exact = true))
+                assertTrue(appears("공휴일과 달리 쉬는 날은 아니에요"))
+                reveal("왼쪽 위 '급여' 글자")
+            }
+        } finally {
+            runBlocking { c.payStore.save(null, keepUndo = false) }
+            c.settingsRepository.update { it.copy(orgDayGroup = "", orgDaysOn = true) }
+        }
+    }
+    /** [EASE-04] With no 월급날 and no 업종, the sheet says where each is turned on. */
+    @Test fun calLegendSaysWhereToTurnOn() = shoot("305c_folded_legend_turn_on", FOLDED) {
+        tapText("달력 표시 안내", exact = true, scrolls = 0)
+        assertTrue(appears("우리 업종 기념일에서 켜면"))
+    }
     /** [CAL-09] A long press starts a range; the next tap ends it. */
     @Test fun calPaintRange() = shoot("308_folded_paint_range", FOLDED) {
         tapText("빠른 입력", exact = true)
