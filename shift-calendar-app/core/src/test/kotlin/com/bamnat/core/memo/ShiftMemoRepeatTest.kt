@@ -100,6 +100,10 @@ class ShiftMemoRepeatTest {
         assertTrue(cards.any { it.sentence == "만약 월·화·수·목·금요일이면 → 영업하는 날이에요" })
         assertTrue(cards.none { it.cond == "야간 날이면" })
         assertTrue(cards.any { it.cond == "주간 날이면" })
+        // 1.38 PC 12.1: work without 교대 lists only the alarms that ring.
+        val ringing = RuleCards.of(listOf(weekly), listOf(day, night, off), start, ringingOnly = true).filter { it.group == RuleCards.Group.ALARM }
+        assertTrue(ringing.isNotEmpty() && ringing.all { it.on })
+        assertTrue(RuleCards.of(listOf(weekly), listOf(day, night, off), start, alarmsOn = false, ringingOnly = true).none { it.group == RuleCards.Group.ALARM })
     }
 
     @Test fun aDayTakenOffIsNotOneOfItsDays() {
