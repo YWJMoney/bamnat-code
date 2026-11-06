@@ -521,6 +521,10 @@ private fun NoticesPage(
             warning = warning(settings.sleepingNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(sleepingNotice = on) }
         }
+        // 1.38 [SLEEP-01] Only once the `sleep.auto` flag is open (처리방침 새 판 뒤).
+        if (remember { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }) {
+            com.bamnat.app.ui.sleep.SleepAutoSwitch(settings.sleepAuto) { on -> vm.update { it.copy(sleepAuto = on) } }
+        }
         // [FEAT-18] Phones have no lock-screen widgets; this quiet notice stands in for one.
         SwitchRow("잠금 화면 오늘 근무", "오늘과 내일 근무를 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요", settings.todayShiftNotice,
             warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->

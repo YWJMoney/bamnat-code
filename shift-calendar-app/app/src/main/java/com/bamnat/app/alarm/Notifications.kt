@@ -76,6 +76,10 @@ object Notifications {
     const val BEDTIME_ID = 7311
     const val COMMUTE_ID = 7312
     const val SLEEPING_ID = 7313
+    /** [SLEEP-01] 자동으로 잡은 잠, 맞나요? */
+    const val SLEEP_AUTO_ID = 7314
+    /** [SLEEP-04] 잠드는 소리, while it plays. */
+    const val NOISE_ID = 7315
     const val LEAVE_ID = 7201
     const val SHARE_ID = 7202
     const val PRO_ID = 7203

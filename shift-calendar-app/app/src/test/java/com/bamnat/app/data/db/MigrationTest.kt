@@ -438,6 +438,32 @@ class MigrationTest {
      * 1.38 [P3-01] A version 25 phone goes up through 26 (가계부) to 27 (Phase 3) with its data as it was, and the new 팀·사업장
      * tables start empty and take rows: a team with its cells and a 사업장 with a staff member and a changed day.
      */
+    /** 1.38 [SLEEP-01][SLEEP-03][SLEEP-07] (DB 31): taps stay taps, and the morning answers and sound events start empty. */
+    @Test
+    fun version30SleepGoesTo31() = runBlocking {
+        val name = "migration-30-31.db"
+        context.deleteDatabase(name)
+        val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+        val sql = createTables(file, 30)
+        sql.execSQL("INSERT INTO sleep_logs (id, startMillis, endMillis) VALUES (1, 1000, 25000000)")
+        sql.version = 30
+        sql.close()
+
+        val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+            .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val dao = db.sleepDao()
+            assertEquals(SleepLogEntity.SOURCE_TAP, dao.all().single().source)
+            assertTrue(dao.allChecks().isEmpty() && dao.allEvents().isEmpty())
+            dao.insertAuto(30_000_000, 50_000_000)
+            assertEquals(listOf(SleepLogEntity.SOURCE_TAP, SleepLogEntity.SOURCE_AUTO), dao.all().sortedBy { it.id }.map { it.source })
+            dao.insertCheck(SleepCheckEntity(startMillis = 1000, endMillis = 25_000_000, mood = 4, tags = "caffeine", note = null, atMillis = 1))
+            assertEquals(4, dao.allChecks().single().mood)
+        } finally {
+            db.close()
+        }
+    }
+
     @Test
     fun version25GoesUpThrough26To27() = runBlocking {
         val name = "migration-25-27.db"

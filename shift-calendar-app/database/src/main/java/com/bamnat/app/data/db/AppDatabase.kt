@@ -31,8 +31,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 1.38 [P3-01] Version 27: Phase 3 리더 팀 근무표와 사장님 급여 대장 (꺼진 채).
         TeamEntity::class, TeamMemberEntity::class, TeamCellEntity::class, TeamMonthEntity::class, TeamWishEntity::class,
         WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, StaffPunchEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
+        // 1.38 [SLEEP-03][SLEEP-07] Version 31: 아침 한 장과 밤 소리.
+        SleepCheckEntity::class, SleepEventEntity::class,
     ],
-    version = 30,
+    version = 31,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -72,6 +74,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
                 MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
+                MIGRATION_30_31,
             )
 
         /**
@@ -446,6 +449,22 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `team_member` ADD COLUMN `hiredOn` INTEGER")
                 db.execSQL("ALTER TABLE `workplace` ADD COLUMN `calls` TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE `staff` ADD COLUMN `contract` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /**
+         * 1.38 (DB 31, 수면 갈래) [SLEEP-01][SLEEP-03][SLEEP-07]: where a sleep came from ("tap" for every sleep so far), 아침 한 장
+         * answers and the night's sounds. A new column with a default and new tables only: every row of version 30 keeps its meaning.
+         */
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `sleep_logs` ADD COLUMN `source` TEXT NOT NULL DEFAULT 'tap'")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `sleep_checks` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startMillis` INTEGER NOT NULL, " +
+                    "`endMillis` INTEGER NOT NULL, `mood` INTEGER, `tags` TEXT NOT NULL DEFAULT '', `note` TEXT, `atMillis` INTEGER NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sleep_checks_endMillis` ON `sleep_checks` (`endMillis`)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `sleep_events` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startMillis` INTEGER NOT NULL, " +
+                    "`endMillis` INTEGER NOT NULL, `kind` TEXT NOT NULL, `level` REAL NOT NULL, `file` TEXT, `keep` INTEGER NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_sleep_events_startMillis` ON `sleep_events` (`startMillis`)")
             }
         }
 

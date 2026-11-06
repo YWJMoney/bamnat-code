@@ -68,6 +68,8 @@ class ZFullBackupTest {
         payDepositNotice = false, calendarOnly = true, statsByPayPeriod = true, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true, shiftPreviewNotice = !s.shiftPreviewNotice, shiftPreviewHour = 7, moneyChallenge = "NO_SPEND|20000",
         // 1.32 조사 대조 [WTYP-12][WTYP-16].
         stretchLimitHours = 24, leaveTimeNotice = true,
+        // 1.38 [SLEEP-04] 잠드는 소리.
+        noiseMix = "rain:0.60,fan:0.25", noiseTimerMinutes = 60,
     )
 
     private fun prefs(name: String) = app.getSharedPreferences(name, Context.MODE_PRIVATE)
@@ -126,6 +128,27 @@ class ZFullBackupTest {
         // The repeating money lines know how far they were written, read again without restarting the app.
         assertEquals(mapOf(5L to LocalDate.of(2026, 10, 25)), marks.all())
         c.settingsRepository.update { AppSettings() }
+    }
+
+    /** 1.38 [SLEEP-01][SLEEP-03][SLEEP-07][SLEEP-19] 자동 꼬리표, 아침 답과 소리 사건(파일 없이) go to a new phone. */
+    @Test fun sleepSourceMorningAnswersAndEventsComeBack() = runBlocking {
+        val dao = c.database.sleepDao()
+        dao.clear(); dao.clearChecks(); dao.clearEvents()
+        dao.insert(com.bamnat.app.data.db.SleepLogEntity(startMillis = 1_000, endMillis = 25_000_000))
+        dao.insertAuto(30_000_000, 55_000_000)
+        dao.insertCheck(com.bamnat.app.data.db.SleepCheckEntity(startMillis = 30_000_000, endMillis = 55_000_000, mood = 2, tags = "caffeine,noise", note = "더웠음", atMillis = 9))
+        dao.insertEvent(com.bamnat.app.data.db.SleepEventEntity(startMillis = 40_000_000, endMillis = 40_004_000, kind = "snore", level = 0.4f, file = "clip.m4a", keep = true))
+        val file = c.backupManager.export()
+        dao.clear(); dao.clearChecks(); dao.clearEvents()
+
+        c.backupManager.restore(file)
+
+        assertEquals(listOf("tap", "auto"), dao.all().sortedBy { it.startMillis }.map { it.source })
+        val check = dao.allChecks().single()
+        assertEquals(listOf<Any?>(2, "caffeine,noise", "더웠음"), listOf(check.mood, check.tags, check.note))
+        val event = dao.allEvents().single()
+        // The sound itself stays on the old phone; the time and kind travel.
+        assertEquals(listOf<Any?>("snore", null), listOf(event.kind, event.file))
     }
 
     /** [J133B-05] 1.33 빌드 9 확인: a company taken after the backup goes when the backup is put back; the phone's own keys stay. */

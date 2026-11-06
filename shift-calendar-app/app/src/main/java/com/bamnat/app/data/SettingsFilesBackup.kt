@@ -189,6 +189,7 @@ class SettingsFilesBackup(
             "hideAmounts" to "금액 가리기는 이 휴대폰을 남에게 보일 때 쓰는 것",
             "defaultAlarmSound" to "알람 소리 파일은 이 휴대폰에 있는 것",
             "healthSleep" to "헬스 커넥트 권한은 새 휴대폰에서 다시 받아요",
+            "sleepAuto" to "잠 자동으로 잡기(활동 인식 권한)는 새 휴대폰에서 다시 켜요",
             "previewTier" to "개발용 등급 미리 보기",
             "swapCoversAnswered" to "옛 대근 고치기 질문, 복원한 기록에는 다시 물어요",
             "reviewDue" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
@@ -264,6 +265,8 @@ class SettingsFilesBackup(
             "alarm_soon" to "‘이번 알람 끄기’는 이 휴대폰에 곧 울릴 알람 하나의 것",
             "wake_check" to "깼는지 확인 중인 알람, 이 휴대폰에서 울린 것",
             "quiet_hold" to "자는 동안 미뤄 둔 알림, 이 휴대폰의 것",
+            // 1.38 [SLEEP-01] 휴대폰이 본 잠 조각·끈 알람·믿음 횟수는 이 휴대폰 센서의 것, 넣은 잠은 수면 기록으로 가요.
+            "sleep_auto" to "자동으로 잡은 잠 조각은 이 휴대폰 센서의 것, 넣은 잠은 수면 기록으로 가요",
             "photo_mission" to "증명 사진 지문은 이 휴대폰의 사진",
             "calendar_import:chosen" to "고른 휴대폰 캘린더 번호는 이 휴대폰의 것",
             "launch_config" to "회사 서버가 알려 주는 출시 설정, 새 휴대폰이 다시 받아요",

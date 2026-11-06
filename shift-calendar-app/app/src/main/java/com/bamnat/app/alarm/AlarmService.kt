@@ -128,6 +128,8 @@ class AlarmService : Service() {
                     if (minutes > 0 && !ring.recheck && ring.label == null && !allOff && !AlarmsOff.isOff(this)) WakeCheck.schedule(this, ring, minutes)
                     // [ALRM-16] 1.31 N3: the day at a glance, after a shift alarm (not a memo's schedule).
                     if (ring.label == null && !ring.recheck) AfterAlarmCard.postSoon(this)
+                    // [SLEEP-01] The alarm turned off is the likely end of a sleep the phone saw.
+                    if (ring.label == null && !ring.recheck) com.bamnat.app.sleep.SleepAutoWatch.alarmOff(this)
                 }
                 if (allOff) AlarmsOff.turnOff(this, ring)
                 finish()

@@ -158,6 +158,8 @@ class SystemEventReceiver : BroadcastReceiver() {
                 // 1.32 [WTYP-11][WTYP-29] 희망 오프 마감, 코인 12월 31일.
                 com.bamnat.app.calendar.DateNoticeAlarm.reschedule(context, com.bamnat.app.calendar.DateNoticeAlarm.gather(container))
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)
+                // [SLEEP-01] Sleep updates do not survive a reboot or an update.
+                com.bamnat.app.sleep.SleepAutoWatch.sync(context)
                 // [MON-06] The trial's question before it turns paid.
                 com.bamnat.app.tier.TrialNotice.reschedule(context, container.proStore.current)
                 com.bamnat.app.tier.EndNotice.reschedule(context, container.proStore.current)
