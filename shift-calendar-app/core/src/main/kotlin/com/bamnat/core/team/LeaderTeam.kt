@@ -31,6 +31,8 @@ data class Team(
     val ask: AskRound? = null,
     /** 1.38 [P3-X-01] 결원 메우기 asks still open or just settled (DB 30 `team.calls`). */
     val calls: List<TeamCall> = emptyList(),
+    /** 1.38 [P3-X-02] 바꾸기 요청 links of a confirmed month, null when none is open. */
+    val swap: SwapRound? = null,
 )
 
 /** One kind of day on the board, copied from the leader's calendar when the team is made (and updated with it). */

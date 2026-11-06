@@ -284,6 +284,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
         busy = null
     }
     LaunchedEffect(round?.id) { if (round?.token != null) runCatching { com.bamnat.app.team.TeamAskSync.pull(c, team) } }
+    // 1.38 [P3-X-02] 바꾸기 요청 of this month, read again each time the board opens.
+    val swap = team.swap?.takeIf { it.month == month }
+    LaunchedEffect(swap?.id) { if (swap?.token != null) runCatching { com.bamnat.app.team.TeamSwapSync.pull(c, team) } }
     // 1.38 [P3-X-01] 결원 메우기: the gap being filled, and this month's asks (read again each time the board opens).
     var coverGap by remember { mutableStateOf<com.bamnat.core.team.TeamCover.Gap?>(null) }
     val calls = team.calls.filter { YearMonth.from(it.gap.date) == month }
@@ -460,9 +463,37 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     onTake = { m -> change { com.bamnat.core.team.TeamCover.apply(team, it, k.gap, m.id) }; scope.launch { com.bamnat.app.team.TeamCallSync.take(c, team, k.id, m.id) } },
                     onEnd = { scope.launch { com.bamnat.app.team.TeamCallSync.end(c, team, k.id) } })
             }
+            if (swap != null) SwapCard(team, swap, b, settings.rules, busy != null,
+                onDecide = { ask, yes ->
+                    val after = if (yes) com.bamnat.core.team.TeamSwap.apply(b, ask) else b
+                    if (yes) change { com.bamnat.core.team.TeamSwap.apply(it, ask) }
+                    scope.launch {
+                        busy = "링크에 알리고 있어요…"
+                        runCatching { com.bamnat.app.team.TeamSwapSync.decide(c, store.teamNow(team.id) ?: team, ask, yes, after, settings.rules, prevBoard) }
+                            .onFailure { dialog = if (yes) "표는 바꿨어요. 인터넷이 될 때 '고친 표 올리기'를 눌러 팀원 링크에도 알려 주세요." else "인터넷이 될 때 다시 눌러 주세요." }
+                        busy = null
+                    }
+                },
+                onPull = { scope.launch { busy = "요청을 가져오고 있어요…"; runCatching { com.bamnat.app.team.TeamSwapSync.pull(c, team) }.onFailure { e ->
+                    dialog = if (e.message == "not_found") "바꾸기 링크가 서버에 없어요. 끝났거나 지워졌어요." else "인터넷이 될 때 다시 가져와 주세요." }; busy = null } },
+                onSend = { send(context, com.bamnat.app.team.TeamSwapSync.message(team, swap, b.members), "근무 바꾸기 링크 보내기") },
+                onRefresh = { scope.launch { busy = "고친 표를 올리고 있어요…"; runCatching { com.bamnat.app.team.TeamSwapSync.refresh(c, team, b, settings.rules, prevBoard) }
+                    .onSuccess { dialog = "팀원 링크에 고친 표와 바꿀 수 있는 날을 새로 올렸어요." }.onFailure { dialog = "인터넷이 될 때 다시 눌러 주세요." }; busy = null } },
+                onEnd = { scope.launch { com.bamnat.app.team.TeamSwapSync.end(c, team) } })
             // The month's tools.
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (round == null) OutlinedButton(onClick = { asking = true }) { Text("근무 신청 받기") }
+                // 1.38 [P3-X-02]: once the month is painted, members trade days from their own links.
+                if (swap == null && b.cells.isNotEmpty()) OutlinedButton(enabled = busy == null, onClick = {
+                    scope.launch {
+                        busy = "바꿀 수 있는 날을 찾고 있어요…"
+                        val members = swapPeople(b)
+                        runCatching { com.bamnat.app.team.TeamSwapSync.open(c, store.teamNow(team.id) ?: team, b, members, settings.rules, prevBoard) }
+                            .onSuccess { t -> t.swap?.let { send(context, com.bamnat.app.team.TeamSwapSync.message(t, it, members), "근무 바꾸기 링크 보내기") } }
+                            .onFailure { dialog = "바꾸기 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
+                        busy = null
+                    }
+                }) { Text("바꾸기 요청 받기") }
                 OutlinedButton(onClick = { scope.launch { val last = store.boardNow(team.id, month.minusMonths(1)); change { TeamCopy.nextMonth(last, it) } } }) { Text("지난달 이어 칠하기") }
                 OutlinedButton(onClick = {
                     scope.launch {

@@ -458,6 +458,7 @@ class MigrationTest {
             db.teamDao().upsertTeam(TeamEntity("t", "7병동 A팀", "", "[]", "", 1, false))
             assertEquals("30판 신청 받기는 처음엔 없음", "", db.teamDao().teams().single().ask)
             assertEquals("30판 결원 요청도 처음엔 없음", "", db.teamDao().teams().single().calls)
+            assertEquals("30판 바꾸기 요청도 처음엔 없음", "", db.teamDao().teams().single().swap)
             db.teamDao().upsertMembers(listOf(TeamMemberEntity("m", "t", "민지", "책임", "CHARGE", null, 0, null, null, true)))
             db.teamDao().replaceMonth("t", 20759, 20788, listOf(TeamCellEntity("t", "m", 20760, 1, "MANUAL", false)))
             assertEquals(1L, db.teamDao().cells("t", 20759, 20788).single().shiftId)

@@ -37,6 +37,12 @@
 // GET    /api/call/:id         header X-Delete-Token -> { answers:[{p, a:"yes"|"no", at}], seen:[p], taken }
 // PUT    /api/call/:id         header X-Delete-Token, {taken: p|null, closed} -> 204: who the leader chose; the pages say so
 // DELETE /api/call/:id         header X-Delete-Token -> 204
+// POST   /api/swap             1.38 [P3-X-02] {team, month, people:[name], labels:[[label per day]], ok:{p:{day:[q]}}}
+//                              -> { id, token, expiresAt, people:[{name,key,url}] }: 바꾸기 요청, who may trade which day worked out on the phone
+// GET    /api/swap/:id         header X-Delete-Token -> { asks:[{p, q, d, state, at}], seen:[p], closed }
+// PUT    /api/swap/:id         header X-Delete-Token, {labels?, ok?, closed?, decide?:[{p, d, state:"done"|"denied"}]} -> 204
+// DELETE /api/swap/:id         header X-Delete-Token -> 204
+// GET    /w/:key               a member's page: asks to them, theirs, and the days they may trade; POST /w/:key/ask|cancel|reply
 // GET    /v/:key               the asked person's page; POST /v/:key/answer form a=yes|no -> the page again
 //                              The admin paths answer 404 until SHARE_ADMIN_TOKEN (20+ characters) is set;
 //                              the company server's 개발자 앱 calls them with the same token.
@@ -180,7 +186,7 @@ export const APP_ADS_TXT = "google.com, pub-4920911396563628, DIRECT, f08c47fec0
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
+  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/w/") || path.startsWith("/api/swap/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
   }
@@ -202,6 +208,14 @@ async function route(request, env) {
   const askPage = path.match(/^\/a\/([A-Za-z0-9]{22})(\/pick|\/note)?$/);
   if (askPage && !askPage[2] && (request.method === "GET" || request.method === "HEAD")) return askView(env, askPage[1], url.searchParams.get("d"), null);
   if (askPage && askPage[2] && request.method === "POST") return askPost(request, env, askPage[1], askPage[2].slice(1));
+  if (path === "/api/swap" && request.method === "POST") return swapCreate(request, env, url);
+  const swapApi = path.match(/^\/api\/swap\/([A-Za-z0-9]{22})$/);
+  if (swapApi && request.method === "GET") return swapRead(request, env, swapApi[1]);
+  if (swapApi && request.method === "PUT") return swapChange(request, env, swapApi[1], url);
+  if (swapApi && request.method === "DELETE") return swapDelete(request, env, swapApi[1]);
+  const swapPage = path.match(/^\/w\/([A-Za-z0-9]{22})(\/ask|\/cancel|\/reply)?$/);
+  if (swapPage && !swapPage[2] && (request.method === "GET" || request.method === "HEAD")) return swapView(env, swapPage[1], null);
+  if (swapPage && swapPage[2] && request.method === "POST") return swapPress(request, env, swapPage[1], swapPage[2].slice(1));
   if (path === "/api/call" && request.method === "POST") return callCreate(request, env, url);
   const callApi = path.match(/^\/api\/call\/([A-Za-z0-9]{22})$/);
   if (callApi && request.method === "GET") return callRead(request, env, callApi[1]);
@@ -1008,6 +1022,225 @@ async function callView(env, key, said, status = 200, known = null) {
   return html(page(record.title, body), status);
 }
 
+// ---- 1.38 [P3-X-02] 바꾸기 요청 ----
+// The leader's phone works out who may trade which day (the board's own checks) and puts that list here with each person's
+// row of labels. A member asks from their link, the other says yes or no on theirs, and the leader approves in the app.
+
+const swapKey = (id) => `swap:${id}`;
+const swapPersonKey = (key) => `swapm:${key}`;
+const swapAskKey = (id, p) => `swapr:${id}:${p}`;
+const SWAP_STATES = ["asked", "yes", "no", "cancel", "done", "denied"];
+const swapOpen = (s) => s === "asked" || s === "yes";
+
+/** The leader's list of rows and allowed trades, checked to its shape: {labels:[[label per day]], ok:{p:{day:[q]}}}. */
+function swapBoard(body, people, days) {
+  const labels = Array.isArray(body?.labels) ? body.labels : null;
+  if (!labels || labels.length !== people) return null;
+  const rows = [];
+  for (const row of labels) {
+    if (!Array.isArray(row) || row.length !== days) return null;
+    const r = row.map((l) => (l == null || l === "" ? "" : cleanText(l, LIMITS.askShiftLabel)));
+    if (r.some((l) => l == null)) return null;
+    rows.push(r);
+  }
+  const ok = {};
+  const src = body?.ok && typeof body.ok === "object" ? body.ok : {};
+  for (const [pk, daysMap] of Object.entries(src)) {
+    const p = Number(pk);
+    if (!Number.isInteger(p) || p < 0 || p >= people || !daysMap || typeof daysMap !== "object") return null;
+    for (const [dk, qs] of Object.entries(daysMap)) {
+      const d = Number(dk);
+      if (!Number.isInteger(d) || d < 1 || d > days || !Array.isArray(qs) || qs.length > people) return null;
+      if (qs.some((q) => !Number.isInteger(q) || q < 0 || q >= people || q === p)) return null;
+      (ok[p] ??= {})[d] = [...new Set(qs)];
+    }
+  }
+  return { rows, ok };
+}
+
+async function swapCreate(request, env, url) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const team = cleanText(body?.team, LIMITS.askTeam);
+  const month = typeof body?.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(body.month) ? body.month : null;
+  const names = Array.isArray(body?.people) ? body.people.map((n) => cleanText(n, LIMITS.askName)) : [];
+  if (!team || !month || names.length < 2 || names.length > LIMITS.askMembers || names.some((n) => !n)) return json({ error: "bad_swap" }, 400);
+  const days = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const board = swapBoard(body, names.length, days);
+  if (!board) return json({ error: "bad_swap" }, 400);
+  const id = randomId(22);
+  const token = randomId(32);
+  const people = names.map((name) => ({ name, key: randomId(22) }));
+  // Until a week after the month ends, never more than the 신청 받기 cap.
+  const end = Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1) + 7 * 86400 * 1000;
+  const expiresAt = new Date(Math.min(end, Date.now() + LIMITS.askTtlDays * 86400 * 1000)).toISOString();
+  if (Date.parse(expiresAt) <= Date.now()) return json({ error: "bad_swap" }, 400);
+  const record = { team, month, people, rows: board.rows, ok: board.ok, tokenHash: await sha256(token), expiresAt, closed: false };
+  await put(env, swapKey(id), record);
+  for (let i = 0; i < people.length; i++) await put(env, swapPersonKey(people[i].key), { id, p: i, expiresAt });
+  count(env, "swaps");
+  return json({ id, token, expiresAt, people: people.map((x) => ({ name: x.name, key: x.key, url: `${url.origin}/w/${x.key}` })) }, 201);
+}
+
+async function swapOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(swapKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+async function swapRead(request, env, id) {
+  const record = await swapOwned(request, env, id);
+  if (record instanceof Response) return record;
+  const asks = [];
+  const seen = [];
+  for (let p = 0; p < record.people.length; p++) {
+    const mine = await env.SHARES.get(swapAskKey(id, p), "json");
+    if (!mine) continue;
+    if (mine.seenAt) seen.push(p);
+    for (const a of mine.asks ?? []) asks.push({ p, q: a.q, d: a.d, state: a.state, at: a.at });
+  }
+  return json({ asks, seen, closed: record.closed, expiresAt: record.expiresAt });
+}
+
+async function swapChange(request, env, id, url) {
+  const record = await swapOwned(request, env, id);
+  if (record instanceof Response) return record;
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  if (body?.labels !== undefined) {
+    const days = record.rows[0]?.length ?? 0;
+    const board = swapBoard(body, record.people.length, days);
+    if (!board) return json({ error: "bad_swap" }, 400);
+    record.rows = board.rows;
+    record.ok = board.ok;
+  }
+  if (typeof body?.closed === "boolean") record.closed = body.closed;
+  await put(env, swapKey(id), record);
+  // The leader's word on asks: {decide:[{p, d, state:"done"|"denied"}]}.
+  const decide = Array.isArray(body?.decide) ? body.decide.slice(0, 100) : [];
+  for (const x of decide) {
+    if (!Number.isInteger(x?.p) || x.p < 0 || x.p >= record.people.length || !Number.isInteger(x?.d) || (x.state !== "done" && x.state !== "denied")) return json({ error: "bad_swap" }, 400);
+    const mine = await env.SHARES.get(swapAskKey(id, x.p), "json");
+    const ask = mine?.asks?.find((a) => a.d === x.d && swapOpen(a.state));
+    if (!ask) continue;
+    ask.state = x.state;
+    ask.decidedAt = new Date().toISOString();
+    await put(env, swapAskKey(id, x.p), { ...mine, expiresAt: record.expiresAt });
+  }
+  return new Response(null, { status: 204 });
+}
+
+async function swapDelete(request, env, id) {
+  const record = await swapOwned(request, env, id);
+  if (record instanceof Response) return record;
+  for (let p = 0; p < record.people.length; p++) {
+    await kvDel(env, swapAskKey(id, p));
+    await kvDel(env, swapPersonKey(record.people[p].key));
+  }
+  await kvDel(env, swapKey(id));
+  return new Response(null, { status: 204 });
+}
+
+async function swapFind(env, key) {
+  const link = await env.SHARES.get(swapPersonKey(key), "json");
+  if (!link) return null;
+  const record = await env.SHARES.get(swapKey(link.id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return null;
+  return { id: link.id, p: link.p, record };
+}
+
+const swapGone = () => html(page("바꾸기가 끝났어요", `<p class="empty">이 바꾸기 링크는 끝났거나 리더가 지웠어요.</p>`), 404);
+
+/** [P3-X-02] A member's press: ask (d, q), cancel (d), or reply to someone else's ask (from, d, a=yes|no). */
+async function swapPress(request, env, key, what) {
+  const found = await swapFind(env, key);
+  if (!found) return swapGone();
+  if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
+  const { id, p, record } = found;
+  const form = new URLSearchParams((await request.text()).slice(0, 128));
+  const d = Number(form.get("d"));
+  const days = record.rows[0]?.length ?? 0;
+  if (!Number.isInteger(d) || d < 1 || d > days) return swapView(env, key, { bad: "고를 수 없는 날이에요" }, 400, found);
+  if (record.closed) return swapView(env, key, { bad: "리더가 바꾸기를 닫았어요" }, 409, found);
+  const now = new Date().toISOString();
+  if (what === "reply") {
+    const from = Number(form.get("from"));
+    const a = form.get("a");
+    if (!Number.isInteger(from) || from < 0 || from >= record.people.length || (a !== "yes" && a !== "no")) return swapView(env, key, { bad: "고를 수 없는 답이에요" }, 400, found);
+    const theirs = await env.SHARES.get(swapAskKey(id, from), "json");
+    const ask = theirs?.asks?.find((x) => x.d === d && x.q === p && swapOpen(x.state));
+    if (!ask) return swapView(env, key, { bad: "이미 끝난 요청이에요" }, 409, found);
+    ask.state = a;
+    ask.answeredAt = now;
+    await put(env, swapAskKey(id, from), { ...theirs, expiresAt: record.expiresAt });
+    count(env, "swapAnswers");
+    return swapView(env, key, { ok: a === "yes" ? "좋다고 전했어요. 리더가 승인하면 근무표에 바로 반영돼요." : "어렵다고 전했어요." }, 200, found);
+  }
+  const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
+  const asks = mine.asks ?? [];
+  if (what === "cancel") {
+    const ask = asks.find((x) => x.d === d && swapOpen(x.state));
+    if (!ask) return swapView(env, key, { bad: "거둘 요청이 없어요" }, 409, found);
+    ask.state = "cancel";
+    await put(env, swapAskKey(id, p), { ...mine, asks, expiresAt: record.expiresAt });
+    return swapView(env, key, { ok: "요청을 거뒀어요." }, 200, found);
+  }
+  const q = Number(form.get("q"));
+  if (!Number.isInteger(q) || !(record.ok?.[p]?.[d] ?? []).includes(q)) return swapView(env, key, { bad: "이 날은 그분과 바꿀 수 없어요" }, 400, found);
+  if (asks.some((x) => x.d === d && swapOpen(x.state))) return swapView(env, key, { bad: "이 날은 이미 요청했어요. 거두고 다시 해 주세요" }, 409, found);
+  if (asks.filter((x) => swapOpen(x.state)).length >= 5) return swapView(env, key, { bad: "한 번에 다섯 개까지 요청할 수 있어요" }, 409, found);
+  // Old answered asks drop off first so the list stays small.
+  const kept = asks.filter((x) => swapOpen(x.state) || x.state === "done").slice(-20);
+  kept.push({ d, q, state: "asked", at: now });
+  await put(env, swapAskKey(id, p), { ...mine, asks: kept, expiresAt: record.expiresAt });
+  count(env, "swapAsks");
+  return swapView(env, key, { ok: `${record.people[q].name}님께 요청했어요. 그분 링크에 바로 보여요.` }, 200, found);
+}
+
+async function swapView(env, key, said, status = 200, known = null) {
+  const found = known ?? await swapFind(env, key);
+  if (!found) return swapGone();
+  const { id, p, record } = found;
+  const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
+  if (!mine.seenAt) await put(env, swapAskKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
+  const me = record.people[p].name;
+  const name = (q) => esc(record.people[q]?.name ?? "?");
+  const y = Number(record.month.slice(0, 4));
+  const m = Number(record.month.slice(5, 7));
+  const dayName = (d) => `${m}/${d}(${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]})`;
+  const label = (q, d) => esc(record.rows[q]?.[d - 1] || "·");
+  const word = { asked: "답 기다림", yes: "상대가 좋대요 · 리더 승인 기다림", no: "상대가 어렵대요", cancel: "거둠", done: "리더가 승인했어요", denied: "리더가 거절했어요" };
+  // Asks to me: everyone else's lists (a ward is at most 80 people, read once per open).
+  const incoming = [];
+  for (let o = 0; o < record.people.length; o++) {
+    if (o === p) continue;
+    const theirs = await env.SHARES.get(swapAskKey(id, o), "json");
+    for (const a of theirs?.asks ?? []) if (a.q === p && a.state !== "cancel") incoming.push({ from: o, ...a });
+  }
+  const inHtml = incoming.length === 0 ? "" : `<h2>받은 요청</h2>` + incoming.map((a) => `<div class="panel"><p><b>${name(a.from)}</b>님: ${dayName(a.d)} 그분 ${label(a.from, a.d)} ↔ 내 ${label(p, a.d)}</p>` +
+    (a.state === "asked" && !record.closed ? `<div class="picks"><form method="post" action="/w/${key}/reply"><input type="hidden" name="from" value="${a.from}"><input type="hidden" name="d" value="${a.d}"><input type="hidden" name="a" value="yes"><button class="pick on">좋아요</button></form>` +
+      `<form method="post" action="/w/${key}/reply"><input type="hidden" name="from" value="${a.from}"><input type="hidden" name="d" value="${a.d}"><input type="hidden" name="a" value="no"><button class="pick">어려워요</button></form></div>`
+      : `<p class="muted">${esc(word[a.state] ?? "")}</p>`) + `</div>`).join("");
+  const sent = (mine.asks ?? []).filter((a) => a.state !== "cancel");
+  const sentHtml = sent.length === 0 ? "" : `<h2>보낸 요청</h2>` + sent.map((a) => `<div class="panel"><p>${dayName(a.d)} 내 ${label(p, a.d)} ↔ <b>${name(a.q)}</b>님 ${label(a.q, a.d)} · ${esc(word[a.state] ?? "")}</p>` +
+    (swapOpen(a.state) && !record.closed ? `<form method="post" action="/w/${key}/cancel"><input type="hidden" name="d" value="${a.d}"><button class="pick">요청 거두기</button></form>` : "") + `</div>`).join("");
+  const options = record.ok?.[p] ?? {};
+  const busyDays = new Set(sent.filter((a) => swapOpen(a.state)).map((a) => a.d));
+  const rows = Object.keys(options).map(Number).sort((a, b) => a - b).filter((d) => !busyDays.has(d) && options[d].length > 0);
+  const pickHtml = record.closed ? `<p class="muted">리더가 바꾸기를 닫았어요.</p>` : rows.length === 0 ? `<p class="muted">지금 규칙에 맞게 바꿀 수 있는 날이 없어요.</p>` :
+    rows.map((d) => `<div class="panel"><p><b>${dayName(d)}</b> 내 ${label(p, d)}</p><form method="post" action="/w/${key}/ask"><input type="hidden" name="d" value="${d}">` +
+      `<select name="q">${options[d].map((q) => `<option value="${q}">${name(q)} (${label(q, d)})</option>`).join("")}</select> <button class="pick on">바꾸기 요청</button></form></div>`).join("");
+  const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
+  const body = `<h1>${esc(record.team)} ${m}월 근무 바꾸기</h1><p class="muted">${esc(me)}님 · 근무 규칙(쉬는 시간·주 52시간)에 맞는 사람만 보여요</p>${saidHtml}${inHtml}${sentHtml}
+<h2>바꿀 수 있는 날</h2>${pickHtml}
+<p class="foot muted">고른 날·상대·답과 누른 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>`;
+  return html(page(`${record.team} 근무 바꾸기`, body), status);
+}
+
 function groupCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   // 32 letters divide 256, so every letter is equally likely.
@@ -1069,7 +1302,7 @@ async function stats(env, daysParam) {
   }
   const sum = (k) => days.reduce((a, d) => a + d[k], 0);
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
-  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), approximate: true };
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), approximate: true };
 }
 
 // ---- input ----

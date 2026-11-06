@@ -226,8 +226,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         const val VIA_LINK = "LINK"
 
-        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need), showTogether, decodeAsk(ask), decodeCalls(calls))
-        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived, showTogether, encodeAsk(ask), encodeCalls(calls))
+        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need), showTogether, decodeAsk(ask), decodeCalls(calls), decodeSwap(swap))
+        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived, showTogether, encodeAsk(ask), encodeCalls(calls), encodeSwap(swap))
 
         /** 1.38 [P3-X-01] 결원 메우기 asks; [withToken] false leaves their keys out (a plain backup). */
         fun encodeCalls(l: List<com.bamnat.core.team.TeamCall>, withToken: Boolean = true): String = if (l.isEmpty()) "" else JSONArray().apply {
@@ -252,6 +252,24 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
                     strings(o.optJSONArray("seen")).toSet(), o.optString("taken").takeIf { it.isNotEmpty() }, o.optLong("created"), o.optLong("expires"))
             }
         }.getOrDefault(emptyList())
+
+        /** 1.38 [P3-X-02] A 바꾸기 round as the `team.swap` column keeps it; [withToken] false leaves its key out (a plain backup). */
+        fun encodeSwap(r: com.bamnat.core.team.SwapRound?, withToken: Boolean = true): String = if (r == null) "" else JSONObject()
+            .put("id", r.id).putOpt("token", r.token.takeIf { withToken }).put("month", r.month.toString())
+            .put("people", JSONArray(r.people)).put("links", JSONArray(r.links))
+            .put("asks", JSONArray().apply { r.asks.forEach { a -> put(JSONObject().put("f", a.from).put("t", a.to).put("d", a.date.toString()).put("s", a.state.name).put("at", a.at)) } })
+            .put("opened", r.openedAt).putOpt("synced", r.syncedAt).toString()
+
+        fun decodeSwap(t: String): com.bamnat.core.team.SwapRound? = if (t.isBlank()) null else runCatching {
+            val o = JSONObject(t)
+            fun strings(x: JSONArray?) = x?.let { y -> (0 until y.length()).map { y.getString(it) } }.orEmpty()
+            val asks = o.optJSONArray("asks")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }.orEmpty().mapNotNull { x ->
+                val st = com.bamnat.core.team.TeamSwap.State.entries.firstOrNull { it.name == x.optString("s") } ?: return@mapNotNull null
+                com.bamnat.core.team.TeamSwap.Ask(x.getString("f"), x.getString("t"), LocalDate.parse(x.getString("d")), st, x.optLong("at"))
+            }
+            com.bamnat.core.team.SwapRound(o.getString("id"), o.optString("token").takeIf { it.isNotEmpty() }, YearMonth.parse(o.getString("month")),
+                strings(o.optJSONArray("people")), strings(o.optJSONArray("links")), asks, o.optLong("opened"), if (o.has("synced")) o.optLong("synced") else null)
+        }.getOrNull()
 
         /** 1.38 [P3-L-14] A 신청 받기 round as the `team.ask` column keeps it; [withToken] false leaves its key out (a plain backup). */
         fun encodeAsk(a: com.bamnat.core.team.AskRound?, withToken: Boolean = true): String = if (a == null) "" else JSONObject()

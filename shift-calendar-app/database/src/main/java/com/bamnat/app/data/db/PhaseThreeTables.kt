@@ -33,6 +33,8 @@ data class TeamEntity(
     @androidx.room.ColumnInfo(defaultValue = "") val ask: String = "",
     /** 1.38 (DB 30) [P3-X-01] 결원 메우기 asks as JSON; "" for none. */
     @androidx.room.ColumnInfo(defaultValue = "") val calls: String = "",
+    /** 1.38 (DB 30) [P3-X-02] 바꾸기 요청 round as JSON, "" when none. */
+    @androidx.room.ColumnInfo(defaultValue = "") val swap: String = "",
 )
 
 @Entity(tableName = "team_member", indices = [Index("teamId")])
