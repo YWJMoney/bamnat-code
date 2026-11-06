@@ -94,4 +94,12 @@ class AnyFileTest {
         assertEquals(3_433_520L, r.net)
         assertTrue(scan.slip.sure)
     }
+
+    /** [READ-34] A payslip PDF shared as a roster says it is a payslip and where it goes, instead of "날짜를 찾지 못했어요". */
+    @Test fun aPayslipSharedAsARosterSaysWhereItGoes() = runBlocking {
+        val r = RosterReader.file(context, uri("slip-s01-side.pdf"), codes, near)
+        assertEquals(RosterReader.PAYSLIP_HERE, r.error)
+        // A roster PDF is still a roster.
+        assertNull(RosterReader.file(context, uri("p01-pdf.pdf"), codes, near).error)
+    }
 }

@@ -34,6 +34,14 @@ object RosterReader {
         "${m.monthValue}월 " + runs.joinToString(",") { if (it.first == it.last) "${it.first}" else "${it.first}~${it.last}" } + "일"
     }
 
+    /** [READ-34] A file whose words read as a payslip: a 지급 총액 and at least three amount lines. */
+    fun isPayslip(sheets: List<Sheets.Sheet>): Boolean = sheets.any { sh ->
+        val r = com.bamnat.core.pay.PayslipReader.read(sh.rows.joinToString("\n") { it.joinToString(" ") })
+        r.gross != null && r.lines.count { it.amount != null } >= 3
+    }
+
+    const val PAYSLIP_HERE = "이 파일은 근무표가 아니라 급여명세서예요. 급여 화면의 '명세서로 채우기'에서 'PDF로 받은 명세서 고르기'로 넣으면 모든 줄을 그대로 읽어요."
+
     const val NOTHING = "날짜 줄(1 2 3 …)과 근무 줄을 찾지 못했어요. 표 전체가 반듯하게 나오게 다시 찍어 보세요."
 
     suspend fun photo(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit = { _, _ -> }): RosterResult {
@@ -92,8 +100,12 @@ object RosterReader {
     /** [READ-30] Sheets read as a roster: the sheet that holds it, the month most of its days are in. */
     fun table(sheets: List<Sheets.Sheet>, codes: DutyCodes, near: LocalDate, fromPdf: Boolean = false): RosterResult {
         val read = runCatching { RosterSheet.readBook(sheets, codes, near = near) }.getOrNull()
-            ?: return RosterResult(emptyList(), null, RosterFrom.FILE,
-                if (fromPdf) "PDF에서 날짜와 근무를 찾지 못했어요. 표가 든 쪽인지 봐 주세요." else "날짜와 근무를 찾지 못했어요. 첫 줄에 1 2 3 … 날짜가 있거나, 날짜·근무 열이 있는 표면 돼요.")
+            ?: return RosterResult(emptyList(), null, RosterFrom.FILE, when {
+                // [READ-34] 1.38: a payslip shared from 카카오톡 lands here (a shared PDF opens 한 달 근무 넣기): said where it goes.
+                isPayslip(sheets) -> PAYSLIP_HERE
+                fromPdf -> "PDF에서 날짜와 근무를 찾지 못했어요. 표가 든 쪽인지 봐 주세요."
+                else -> "날짜와 근무를 찾지 못했어요. 첫 줄에 1 2 3 … 날짜가 있거나, 날짜·근무 열이 있는 표면 돼요."
+            })
         // The month the file has most days of.
         val month = read.people.flatMap { p -> p.days.map { YearMonth.from(it.date) } }
             .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
