@@ -102,7 +102,9 @@ class TeamL2L3Test {
     fun `too few people is told as short, never forced`() {
         val plan = TeamAuto.fill(team(mapOf(1L to 3)), TeamBoard(nov, people(2)))
         assertEquals(nov.lengthOfMonth(), plan.short.size)
-        assertTrue(plan.short.values.all { it[1L] == 1 })
+        // Two people never make three; past six days in a row they rest too, so some days lack two (rules before the head count).
+        assertTrue(plan.short.values.all { (it[1L] ?: 0) >= 1 })
+        assertEquals(0, plan.danger)
     }
 
     @Test
@@ -111,6 +113,33 @@ class TeamL2L3Test {
         val started = System.nanoTime()
         TeamAuto.plans(t, TeamBoard(YearMonth.of(2026, 12), (0 until 30).map { TeamMember("p$it", "t", "사람$it", sort = it) }))
         assertTrue("30×31 under 5 s", System.nanoTime() - started < 5_000_000_000L)
+    }
+
+    /**
+     * 1.38 PC 2차 (4a5c3828, L5-09·10): 6명·주간 2·야간 2(11시간씩)·희망 휴무 5개. 1안이 '부족 없음'으로 24일 연속·주 84시간을 만들었어요.
+     * 이제 위험(52시간·연속·휴식)이 없는 안이 맨 위이고, 모자라면 부족으로 알려요.
+     */
+    @Test
+    fun `auto fill keeps 52 hours and runs before the head count`() {
+        val two = listOf(
+            TeamShift(1, "D", "주간", 0xFF2196F3, false, LocalTime.of(7, 0), LocalTime.of(18, 0)),
+            TeamShift(3, "N", "야간", 0xFF673AB7, false, LocalTime.of(19, 0), LocalTime.of(6, 0)),
+            TeamShift(4, "O", "휴무", 0xFF9E9E9E, true),
+        )
+        val t = Team("t", "6명", shifts = two, need = mapOf(1L to 2, 3L to 2))
+        val ppl = listOf("하늘", "도윤", "민지", "준호", "서연", "지훈").mapIndexed { i, n -> TeamMember("m$i", "t", n, sort = i) }
+        val wishes = listOf(TeamWish("m2", nov.atDay(3)), TeamWish("m3", nov.atDay(8)), TeamWish("m4", nov.atDay(12)), TeamWish("m5", nov.atDay(20)), TeamWish("m0", nov.atDay(25)))
+        val board = TeamBoard(nov, ppl)
+        val plans = TeamAuto.plans(t, board, wishes)
+        val best = plans.first()
+        val signs = TeamCheck.check(t, best.board)
+        assertEquals("주 52시간 넘김 없음", 0, signs.count { it.kind == TeamCheck.Kind.WEEK_HOURS })
+        assertTrue("연속 근무 6일까지: ${best.maxRun}", best.maxRun <= 6)
+        assertEquals(0, best.danger)
+        assertEquals(0, best.board.empty)
+        assertTrue("시간이 고르게: ${best.hourSpread}", best.hourSpread <= 33)
+        // 평균 주 51시간이 필요한 인원: 빠듯함을 미리 알려요.
+        assertEquals(51.3, TeamAuto.weekHoursNeeded(t, board), 0.1)
     }
 }
 

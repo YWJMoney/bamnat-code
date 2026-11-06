@@ -481,12 +481,24 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     plans?.let { list ->
         AlertDialog(onDismissRequest = { plans = null }, title = { Text("빈칸 자동 채우기") }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("칠한 칸과 잠근 칸은 그대로 두고 빈칸만 채워요. 마음에 드는 안을 고르세요.", style = MaterialTheme.typography.bodySmall)
+                Text("칠한 칸과 잠근 칸은 그대로 두고 빈칸만 채워요. 주 52시간·연속 근무·휴식을 먼저 지키고, 그래도 모자란 날은 부족으로 남겨요.",
+                    style = MaterialTheme.typography.bodySmall)
+                // 1.38 PC 2차: what the need asks of each person, said before any 안, so a short 안 is not a surprise.
+                val asks = remember(team, b) { b?.let { TeamAuto.weekHoursNeeded(team, it) } ?: 0.0 }
+                if (asks > TeamCheck.WEEK_LIMIT_MINUTES / 60.0) Text("이 인원으로 근무별 인원을 다 채우면 한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 주 52시간을 지킬 수 없어요. 사람을 더하거나 근무별 인원을 줄여 주세요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                else if (asks > 48) Text("한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 빠듯해요. 52시간과 휴식을 지키느라 부족한 날이 생길 수 있어요.",
+                    style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
                 list.forEachIndexed { i, p ->
-                    val short = p.short.values.sumOf { it.values.sum() }
                     OutlinedButton(onClick = { change { p.board }; plans = null }, modifier = Modifier.fillMaxWidth()) {
-                        Text("${i + 1}안 · ${p.filled}칸 · " + (if (short > 0) "부족 ${short}명·${p.short.size}일" else "부족 없음") +
-                            " · 희망 ${p.wishesKept}/${p.wishesKept + p.wishesMissed} · 나이트 차이 ${p.spread}")
+                        Column(Modifier.fillMaxWidth()) {
+                            Text("${i + 1}안 · ${p.filled}칸 · " + (if (p.shortPeople > 0) "부족 ${p.shortPeople}명·${p.short.size}일" else "부족 없음"),
+                                style = MaterialTheme.typography.bodyMedium)
+                            Text((if (p.danger > 0) "⚠ " + listOfNotNull(p.overWeeks.takeIf { it > 0 }?.let { "52시간 넘김 ${it}건" }, p.ruleSigns.takeIf { it > 0 }?.let { "규칙 ${it}건" }).joinToString(" · ") + " · "
+                                else "위험 없음 · ") + "최대 연속 ${p.maxRun}일 · 시간 차이 ${p.hourSpread}시간 · 희망 ${p.wishesKept}/${p.wishesKept + p.wishesMissed} · 나이트 차이 ${p.spread}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (p.danger > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
                 if (team.need.isEmpty()) Text("‘근무별 인원’을 정하면 그 수만큼 채워요. 정하지 않으면 쉬는 날로만 채워요.",
