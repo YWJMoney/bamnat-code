@@ -93,6 +93,15 @@ class ShiftMemoRepeatTest {
         assertEquals("만약 날마다 → 주야휴휴 순서로 4일마다 돌아요", rot.first().sentence)
     }
 
+    /** 1.38 PC 11차 식당 둘러보기: a shop's days read 영업, and a kind put away gets no alarm card. */
+    @Test fun aShopReadsItsOwnWordsAndSkipsKindsPutAway() {
+        val weekly = WorkPattern.Weekly.fromSteps(start, listOf(1L, 1L, 1L, 1L, 1L, null, null), holidaysOff = true)
+        val cards = RuleCards.of(listOf(weekly), listOf(day, night, off), start, hidden = setOf(night.id), workDayLine = "영업하는 날이에요")
+        assertTrue(cards.any { it.sentence == "만약 월·화·수·목·금요일이면 → 영업하는 날이에요" })
+        assertTrue(cards.none { it.cond == "야간 날이면" })
+        assertTrue(cards.any { it.cond == "주간 날이면" })
+    }
+
     @Test fun aDayTakenOffIsNotOneOfItsDays() {
         val weekly = Memo(id = 1, date = start, title = "분리수거", repeat = "W1", skips = setOf(start.plusWeeks(1)))
         assertEquals(listOf(start, start.plusWeeks(2)), MemoRepeat.datesIn(weekly, start, start.plusWeeks(2)))

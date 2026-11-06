@@ -287,10 +287,11 @@ fun foldedHere(): Set<Long> {
 }
 
 /** 1.36 PC 재검토 (현장은 제목만 '일정'이고 안은 '근무'): what a kind of day is called in [style]'s own words. */
-fun dayKindNoun(style: WorkStyle?): String = if (style == WorkStyle.FIELD) "일정" else "근무"
+// 1.38 PC 11차 식당 둘러보기 ('근무 추가'): a shop's kinds of day are 영업·단축영업.
+fun dayKindNoun(style: WorkStyle?): String = when (style) { WorkStyle.FIELD -> "일정"; WorkStyle.BUSINESS -> "영업"; else -> "근무" }
 
 /** "일정이" / "근무가". */
-fun dayKindSubject(style: WorkStyle?): String = if (style == WorkStyle.FIELD) "일정이" else "근무가"
+fun dayKindSubject(style: WorkStyle?): String = when (style) { WorkStyle.FIELD -> "일정이"; WorkStyle.BUSINESS -> "영업이"; else -> "근무가" }
 
 /** Where the kinds of day are set, as the settings row says it ("설정 › 일정 종류"). */
 fun dayKindsPlace(style: WorkStyle?): String = "설정 › " + style.words().types
