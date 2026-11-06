@@ -129,6 +129,25 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
     suspend fun deleteStaff(id: String) = pay.deleteStaff(id)
 
+    /** 1.38 [P3-B-11] 출퇴근 기록 of a place in [month] (by the press's day in Korea, a night's 퇴근 the next morning included). */
+    fun punches(placeId: String, month: YearMonth): Flow<List<com.bamnat.core.boss.StaffPunch>> {
+        val z = com.bamnat.core.boss.StaffClock.ZONE
+        val from = month.atDay(1).atStartOfDay(z).toInstant().toEpochMilli()
+        val to = month.plusMonths(1).atDay(1).atTime(12, 0).atZone(z).toInstant().toEpochMilli()
+        return pay.observePunches(placeId, from, to).map { l -> l.map { com.bamnat.core.boss.StaffPunch(it.staffId, java.time.Instant.ofEpochMilli(it.at), it.kind == "IN") } }
+    }
+
+    /** 1.38 [P3-B-11] Keeps [got] and returns the presses this phone had not seen yet (the ones to tell the boss). */
+    suspend fun addPunches(staffId: String, got: List<com.bamnat.core.boss.StaffPunch>): List<com.bamnat.core.boss.StaffPunch> {
+        val rows = got.map { com.bamnat.app.data.db.StaffPunchEntity(staffId, it.at.toEpochMilli(), if (it.inside) "IN" else "OUT") }
+        val ids = pay.insertPunches(rows)
+        return got.filterIndexed { i, _ -> ids.getOrNull(i)?.let { it != -1L } == true }
+    }
+
+    suspend fun allStaff(): List<StaffMember> = pay.staff().map { it.toModel() }
+
+    suspend fun forgetClock(staffId: String) = pay.forgetClock(staffId)
+
     /** [BOSS-03] A day that went differently; null puts the day back to the usual week. */
     suspend fun setWork(staffId: String, date: LocalDate, work: StaffWork?) {
         if (work == null) pay.deleteWork(staffId, date.toEpochDay()) else pay.upsertWork(work.toEntity())
@@ -224,12 +243,13 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
             id = id, name = name, form = runCatching { WageForm.valueOf(form) }.getOrDefault(WageForm.HOUR), base = base,
             allowances = decodeAllowances(allowances), hiredOn = hiredOn?.let(LocalDate::ofEpochDay), leftOn = leftOn?.let(LocalDate::ofEpochDay),
             birth = birth?.let(LocalDate::ofEpochDay), job = job, insurance = decodeInsurance(insurance), weeklyHolidayPay = weeklyHolidayPay,
-            weekly = decodeWeekly(weekly), memberId = memberId, dayRates = decodeDayRates(weekly),
+            weekly = decodeWeekly(weekly), memberId = memberId, dayRates = decodeDayRates(weekly), leaves = decodeLeaves(weekly),
+            clockId = clockId, clockToken = clockToken,
         )
 
         fun StaffMember.toEntity(placeId: String, sort: Int) = StaffEntity(
             id, placeId, name, form.name, base, encodeAllowances(allowances), hiredOn?.toEpochDay(), leftOn?.toEpochDay(), birth?.toEpochDay(),
-            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates), memberId, sort,
+            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates, leaves), memberId, sort, clockId, clockToken,
         )
 
         fun StaffWorkEntity.toModel(): StaffWork? = runCatching {
@@ -255,10 +275,18 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         }.getOrDefault(Insurance())
 
         /** The week as "1".."7" → [start, end] minutes, and 1.38 요일별 시급 as "r1".."r7" → won beside it (no DB change). */
-        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>, rates: Map<DayOfWeek, Long> = emptyMap()) = JSONObject().apply {
+        /** 1.38: the 요일별 시급 ("r1".."r7") and 휴직 기간 ("leaves": [[start, end|null]] epoch days) ride in the same column, so no new table. */
+        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>, rates: Map<DayOfWeek, Long> = emptyMap(), leaves: List<com.bamnat.core.boss.StaffLeave> = emptyList()) = JSONObject().apply {
             m.forEach { (d, s) -> put(d.value.toString(), JSONArray().put(s.start.hour * 60 + s.start.minute).put(s.end.hour * 60 + s.end.minute)) }
             rates.forEach { (d, r) -> put("r${d.value}", r) }
+            if (leaves.isNotEmpty()) put("leaves", JSONArray().apply { leaves.forEach { put(JSONArray().put(it.start.toEpochDay()).put(it.end?.toEpochDay() ?: JSONObject.NULL)) } })
         }.toString()
+
+        fun decodeLeaves(t: String): List<com.bamnat.core.boss.StaffLeave> = runCatching {
+            val a = JSONObject(t).optJSONArray("leaves") ?: return@runCatching emptyList()
+            (0 until a.length()).mapNotNull { i -> a.optJSONArray(i)?.let { p ->
+                com.bamnat.core.boss.StaffLeave(LocalDate.ofEpochDay(p.getLong(0)), if (p.isNull(1)) null else LocalDate.ofEpochDay(p.getLong(1))) } }
+        }.getOrDefault(emptyList())
 
         fun decodeDayRates(t: String): Map<DayOfWeek, Long> = runCatching {
             JSONObject(t).let { o -> (1..7).mapNotNull { d -> o.optLong("r$d", -1).takeIf { it > 0 }?.let { DayOfWeek.of(d) to it } }.toMap() }

@@ -22,11 +22,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +67,7 @@ import com.bamnat.core.pay.RateTable
 import com.bamnat.core.time.Today
 import com.bamnat.core.work.StaffRoster
 import com.bamnat.core.work.StaffShift
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -97,6 +100,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
     val ym = YearMonth.parse(month)
     var editing by remember { mutableStateOf<StaffMember?>(null) }
     var settings by remember { mutableStateOf(false) }
+    var rehireAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     ToolScreen("급여 대장", onClose) {
         if (place == null) { Hint("사업장을 준비하고 있어요…"); return@ToolScreen }
         val staff by store.staff(place.id).collectAsStateWithLifecycle(emptyList())
@@ -124,7 +128,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
-                StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${staff.size}명")
+                StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${ledger.lines.size}명")
                 StatTile("사장님 4대보험", Fmt.won(ledger.employerInsurance), Modifier.weight(1f), caption = "참고")
             }
             ValueLine("인건비 합계", Fmt.won(ledger.total), strong = true)
@@ -133,7 +137,23 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         if (staff.isEmpty()) Hint("직원을 더하면 평소 근무 요일·시간으로 한 달 급여를 계산해요. 지각·결근·대근이 있던 날만 고치면 돼요.")
         val marks by store.lines(place.id, ym).collectAsStateWithLifecycle(emptyList())
         val marked = marks.associateBy { it.staffId }
+        // 1.38 [P3-B-11] 출퇴근 기록: the days the presses say went differently, put in only when the boss ticks them.
+        val punches by store.punches(place.id, ym).collectAsStateWithLifecycle(emptyList())
+        LaunchedEffect(place.id) { runCatching { com.bamnat.app.boss.StaffClockJob.check(context.appContainer) } }
+        if (!isClosed) ClockCard(staff, punches, work, place) { rows -> scope.launch { rows.forEach { store.setWork(it.staffId, it.date, it) } } }
         ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }) } }
+        // 1.38 퇴사자: 이 달에 없는 사람도 기록은 3년 남아요(근로기준법 제42조). 눌러서 보거나 다시 입사시켜요.
+        val gone = staff.filter { s -> ledger.lines.none { it.staff.id == s.id } }
+        if (gone.isNotEmpty()) {
+            var showGone by rememberSaveable { mutableStateOf(false) }
+            TextButton(onClick = { showGone = !showGone }) { Text((if (showGone) "접기 · " else "") + "이 달에 없는 직원 ${gone.size}명 (퇴사·입사 전)") }
+            if (showGone) gone.forEach { g ->
+                TextButton(onClick = { editing = g }) {
+                    Text(g.name + (g.leftOn?.let { " · ${Fmt.shortFullDate(it)} 퇴사" } ?: g.hiredOn?.let { " · ${Fmt.shortFullDate(it)} 입사" } ?: ""),
+                        style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
         // [BOSS-10] 지난달 비교: why a line moved, before a staff member asks.
         val lastWork by store.work(place.id, ym.minusMonths(1)).collectAsStateWithLifecycle(emptyList())
         val compare = remember(ledger, lastWork, staff) {
@@ -148,7 +168,9 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         // 1.38 Phase 3 요금: 3 staff are the free taste; from the fourth the 직원 요금제 band that holds them. Staff already in always stay
         // and their pay is worked out and exported as before, plan or not.
         val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
-        val next = gate.staff(staff.size + 1)
+        // 1.38 결정: 이번 달 일하는 사람만 세요. 퇴사·휴직한 사람의 기록은 그대로 두고 인원에서만 빠져요.
+        val counted = staff.count { it.countsFor(java.time.YearMonth.from(Today.date())) }
+        val next = gate.staff(counted + 1)
         var ask by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
         OutlinedButton(onClick = {
             if (!next.allowed) { ask = next; return@OutlinedButton }
@@ -176,23 +198,23 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         reading?.let { Hint(it) }
         importing?.let { (lines, photo) ->
             // How many more fit now: the free 3, or the band held.
-            val room = (1..200).takeWhile { gate.staff(staff.size + it).allowed }.size
+            val room = (1..200).takeWhile { gate.staff(counted + it).allowed }.size
             StaffImportDialog(lines, photo, room, onDismiss = { importing = null }) { add, over ->
                 importing = null
                 scope.launch {
                     add.forEach { store.saveStaff(it.member, place.id) }
                     context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key)
                     reading = "${add.size}명을 더했어요." + if (add.any { it.check.isNotEmpty() }) " 노란 ‘확인’이 있던 사람은 이름을 눌러 한 번 봐 주세요." else ""
-                    if (over) ask = gate.staff(staff.size + add.size + 1)
+                    if (over) ask = gate.staff(counted + add.size + 1)
                 }
             }
         }
         val hold = gate.hold(com.bamnat.core.tier.WorkPlanKind.STAFF)
         if (gate.live) Hint(when {
-            hold != null && hold.cap < Int.MAX_VALUE -> "직원 요금제 ${hold.cap}명 구간 · 지금 ${staff.size}명"
-            hold != null -> "직원 ${staff.size}명"
-            else -> "직원 ${gate.plans.freeStaff}명까지 무료예요 · 지금 ${staff.size}명"
-        })
+            hold != null && hold.cap < Int.MAX_VALUE -> "직원 요금제 ${hold.cap}명 구간 · 지금 ${counted}명"
+            hold != null -> "직원 ${counted}명"
+            else -> "직원 ${gate.plans.freeStaff}명까지 무료예요 · 지금 ${counted}명"
+        } + if (staff.size > counted) " (퇴사·휴직 ${staff.size - counted}명은 세지 않아요)" else "")
         ask?.let { com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.STAFF, it, onDismiss = { ask = null }) }
 
         if (ledger.lines.isNotEmpty()) SectionCard(title = "이번 달 마무리") {
@@ -212,8 +234,18 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
     editing?.let { s ->
         StaffDialog(s, place, onDismiss = { editing = null }, onSave = { n ->
             place?.let { p -> scope.launch { store.saveStaff(n, p.id) } }; editing = null
-        }, onRemove = { place?.let { scope.launch { store.deleteStaff(s.id) } }; editing = null })
+        }, onRemove = { place?.let { scope.launch { store.deleteStaff(s.id) } }; editing = null }, onRehire = { day ->
+            // 1.38 다시 입사: a new 재직 기간 as its own line, so the old one's 임금대장·퇴직 정산 stay as they were.
+            editing = null
+            place?.let { p -> scope.launch {
+                val count = store.staff(p.id).first().count { it.countsFor(java.time.YearMonth.from(Today.date())) }
+                val need = context.appContainer.featureGate.state.value.staff(count + 1)
+                if (!need.allowed) rehireAsk = need
+                else store.saveStaff(s.copy(id = UUID.randomUUID().toString(), hiredOn = day, leftOn = null, leaves = emptyList()), p.id)
+            } }
+        })
     }
+    rehireAsk?.let { com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.STAFF, it, onDismiss = { rehireAsk = null }) }
     if (settings && place != null) PlaceDialog(place, onDismiss = { settings = false }) { p -> scope.launch { store.saveWorkplace(p) }; settings = false }
 }
 
@@ -349,11 +381,16 @@ private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, onDi
 /** [BOSS-02] 직원 정보: name, 시급·월급·일급, 입사일·업무 (임금대장 칸), 주휴·4대보험 and the usual week. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> Unit, onSave: (StaffMember) -> Unit, onRemove: () -> Unit) {
+private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> Unit, onSave: (StaffMember) -> Unit, onRemove: () -> Unit, onRehire: (LocalDate) -> Unit = {}) {
     var s by remember { mutableStateOf(start) }
     var picking by remember { mutableStateOf<Pair<DayOfWeek, Boolean>?>(null) }
     var hirePick by remember { mutableStateOf(false) }
     var birthPick by remember { mutableStateOf(false) }
+    var leftPick by remember { mutableStateOf(false) }
+    var rehirePick by remember { mutableStateOf(false) }
+    var removeAsk by remember { mutableStateOf(false) }
+    // 휴직: (index, true = 시작) being picked; index == leaves.size is a new one.
+    var leavePick by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
     val minimum = RateTable.on(Today.date()).minimumHourlyWage
     ToolScreen(s.name.ifBlank { "새 직원" }, onDismiss, action = "저장", actionEnabled = s.name.isNotBlank(), onAction = { onSave(s) }) {
         OutlinedTextField(s.name, { s = s.copy(name = it.take(20)) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -369,6 +406,29 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             Text("입사일", modifier = Modifier.weight(1f))
             TextButton(onClick = { hirePick = true }) { Text(s.hiredOn?.let(Fmt::shortFullDate) ?: "고르기") }
         }
+        // 1.38 퇴사·휴직 (사용자 2026-11-06): 지우지 않고 날짜로 남겨요. 그 뒤 달은 대장·요금 인원에서 빠지고, 지난 기록은 그대로예요.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("퇴사일 (마지막 근무일)", modifier = Modifier.weight(1f))
+            if (s.leftOn != null) TextButton(onClick = { s = s.copy(leftOn = null) }) { Text("지우기") }
+            TextButton(onClick = { leftPick = true }) { Text(s.leftOn?.let(Fmt::shortFullDate) ?: "없음") }
+        }
+        if (s.leftOn != null) {
+            Hint("퇴사한 달은 마지막 근무일까지만 계산하고(월급은 날수만큼), 다음 달부터는 대장과 직원 요금제 인원에서 빠져요. 기록은 3년 남아요.")
+            if (start.leftOn != null && start.name.isNotBlank()) OutlinedButton(onClick = { rehirePick = true }) { Text("다시 입사하기") }
+        }
+        Text("휴직 (무급으로 쉬는 기간)", style = MaterialTheme.typography.labelLarge)
+        s.leaves.forEachIndexed { i, l ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { leavePick = i to true }) { Text(Fmt.shortFullDate(l.start)) }
+                Text("~")
+                TextButton(onClick = { leavePick = i to false }) { Text(l.end?.let(Fmt::shortFullDate) ?: "쉬는 중") }
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { s = s.copy(leaves = s.leaves.filterIndexed { j, _ -> j != i }) }) { Text("빼기") }
+            }
+        }
+        TextButton(onClick = { leavePick = s.leaves.size to true }) { Text("+ 휴직 기간 더하기") }
+        if (s.leaves.isNotEmpty()) Hint("휴직한 날은 임금을 주지 않고(월급은 날수만큼 빼요), 입사일·근속은 이어져요. 한 달 내내 휴직이면 그달 직원 요금제 인원에서 빠져요.")
+        if (start.name.isNotBlank() && place != null) ClockLinkLine(s, place) { s = it }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("생년월일 (선택)", modifier = Modifier.weight(1f))
             TextButton(onClick = { birthPick = true }) { Text(s.birth?.let(Fmt::shortFullDate) ?: "고르기") }
@@ -423,7 +483,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                 if (s.dayRates.values.any { it in 1 until minimum }) Text("최저임금 ${Fmt.won(minimum)}보다 적은 요일이 있어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
             }
         }
-        if (start.name.isNotBlank()) TextButton(onClick = onRemove) {
+        if (start.name.isNotBlank()) TextButton(onClick = { removeAsk = true }) {
             Icon(Icons.Outlined.Delete, null, Modifier.size(18.dp)); Text(" 직원 빼기")
         }
         Hint("이름·생년월일·입사일·하는 일은 임금대장 칸이에요(근로기준법 시행령 제27조). 생년월일과 입사일을 넣으면 나이·근무 기간에 따른 4대보험 가입 대상도 저절로 맞춰요. 주민등록번호는 묻지 않아요. 직원 정보는 이 휴대폰에만 있고, 백업은 암호를 걸어야 들어가요.")
@@ -438,6 +498,28 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
     }
     if (birthPick) DayPick(s.birth ?: LocalDate.of(2000, 1, 1), onDismiss = { birthPick = false }) { s = s.copy(birth = it); birthPick = false }
     if (hirePick) DayPick(s.hiredOn ?: Today.date(), onDismiss = { hirePick = false }) { s = s.copy(hiredOn = it); hirePick = false }
+    if (leftPick) DayPick(s.leftOn ?: Today.date(), onDismiss = { leftPick = false }) { s = s.copy(leftOn = it); leftPick = false }
+    if (rehirePick) DayPick(Today.date(), onDismiss = { rehirePick = false }) { rehirePick = false; onRehire(it) }
+    leavePick?.let { (i, isStart) ->
+        val l = s.leaves.getOrNull(i)
+        DayPick((if (isStart) l?.start else l?.end) ?: Today.date(), onDismiss = { leavePick = null }) { d ->
+            val next = when {
+                l == null -> com.bamnat.core.boss.StaffLeave(d)
+                isStart -> l.copy(start = d, end = l.end?.takeIf { !it.isBefore(d) })
+                else -> l.copy(end = d.takeIf { !it.isBefore(l.start) } ?: l.start)
+            }
+            s = s.copy(leaves = (if (l == null) s.leaves + next else s.leaves.mapIndexed { j, o -> if (j == i) next else o }).sortedBy { it.start })
+            leavePick = null
+        }
+    }
+    if (removeAsk) com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { removeAsk = false }, title = { Text("${start.name} 빼기") }, text = {
+        Text("임금대장은 3년 보관해야 해요(근로기준법 제42조). 지우면 이 사람의 근무·급여 기록이 지난달까지 모두 사라져요. 그만둔 거라면 '퇴사 처리'로 두면 기록은 남고 다음 달부터 인원에서 빠져요.",
+            style = MaterialTheme.typography.bodyMedium)
+    }, confirmButton = {
+        TextButton(onClick = { removeAsk = false; onSave(s.copy(leftOn = s.leftOn ?: Today.date())) }) { Text("퇴사 처리") }
+    }, dismissButton = {
+        TextButton(onClick = { removeAsk = false; onRemove() }) { Text("그래도 지우기", color = MaterialTheme.colorScheme.error) }
+    })
 }
 
 /** [BOSS-01] 사업장 설정: the name, 5인 이상 once (설계 P3-D7: asked once, never guessed), 지급일 and the legal break. */
@@ -514,4 +596,96 @@ private fun PayslipDialog(place: Workplace, l: LedgerLine, month: YearMonth, onD
             }) { Text("글로 보내기") }
         }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
+}
+
+/**
+ * 1.38 [P3-B-11] 출퇴근 링크 in the staff window: made, sent or cut. Saved at once (the key must not be lost if the window is closed
+ * without 저장). The page has only 출근·퇴근 buttons; no location, no app needed on the staff member's phone.
+ */
+@Composable
+private fun ClockLinkLine(s: StaffMember, place: Workplace, onChange: (StaffMember) -> Unit) {
+    val c = LocalContext.current.appContainer
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var note by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    Text("출퇴근 링크 (위치 없이)", style = MaterialTheme.typography.labelLarge)
+    val id = s.clockId
+    val token = s.clockToken
+    if (id == null || token == null) {
+        OutlinedButton(enabled = !busy && c.shareApi.enabled, onClick = {
+            busy = true
+            scope.launch {
+                runCatching { c.shareApi.clockCreate(s.name.take(20), place.name.take(30)) }.onSuccess { link ->
+                    val next = s.copy(clockId = link.id, clockToken = link.token)
+                    c.phaseThree.saveStaff(next, place.id)
+                    onChange(next)
+                    com.bamnat.app.boss.StaffClockJob.schedule(context)
+                    sendClock(context, s.name, link.url)
+                    note = null
+                }.onFailure { note = "인터넷이 안 돼 링크를 만들지 못했어요. 연결한 뒤 다시 눌러 주세요." }
+                busy = false
+            }
+        }) { Text("출퇴근 링크 만들어 보내기") }
+        Hint("직원이 링크에서 출근·퇴근을 누르면 사장님 휴대폰에 알림이 와요. 위치·전화번호는 받지 않고 누른 시각만 와요. 넣을지는 사장님이 골라요.")
+    } else {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { sendClock(context, s.name, com.bamnat.app.BuildConfig.SHARE_BASE_URL.trimEnd('/') + "/c/" + id) }) { Text("링크 다시 보내기") }
+            TextButton(enabled = !busy, onClick = {
+                busy = true
+                scope.launch {
+                    runCatching { c.shareApi.clockDelete(id, token) }.onSuccess {
+                        val next = s.copy(clockId = null, clockToken = null)
+                        c.phaseThree.saveStaff(next, place.id)
+                        onChange(next)
+                        note = "링크를 끊었어요. 그 주소로는 더 누를 수 없어요."
+                    }.onFailure { note = "인터넷이 안 돼 링크를 끊지 못했어요. 연결한 뒤 다시 눌러 주세요." }
+                    busy = false
+                }
+            }) { Text("링크 끊기") }
+        }
+        Hint("퇴사일이 지나면 링크는 저절로 끊어요. 링크가 다른 사람에게 갔으면 끊고 새로 만들어 주세요.")
+    }
+    note?.let { Hint(it) }
+}
+
+private fun sendClock(context: android.content.Context, name: String, url: String) {
+    val text = "${name}님 출퇴근 링크예요. 출근·퇴근할 때 열어서 단추만 눌러 주세요(위치는 보내지 않아요).\n$url"
+    val i = android.content.Intent(android.content.Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(android.content.Intent.EXTRA_TEXT, text) }
+    runCatching { context.startActivity(android.content.Intent.createChooser(i, "출퇴근 링크 보내기").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
+
+/**
+ * 1.38 [P3-B-11] 출퇴근 기록 → 대장: the days the presses say went differently from the usual week (지각·조퇴·다른 시간), each ticked to
+ * put in. Days the boss already wrote, days missing a 퇴근, and days that went as usual are left out (2분까지는 평소대로 봐요).
+ */
+@Composable
+private fun ClockCard(staff: List<StaffMember>, punches: List<com.bamnat.core.boss.StaffPunch>, work: List<StaffWork>, place: Workplace, onPut: (List<StaffWork>) -> Unit) {
+    if (punches.isEmpty()) return
+    val byStaff = punches.groupBy { it.staffId }
+    val rows = remember(staff, punches, work) {
+        staff.flatMap { s ->
+            val days = com.bamnat.core.boss.StaffClock.days(byStaff[s.id].orEmpty())
+            com.bamnat.core.boss.StaffClock.suggest(s, days, work.filter { it.staffId == s.id }.map { it.date }.toSet(), graceMinutes = 2)
+        }.sortedBy { it.date }
+    }
+    val open = remember(staff, punches) {
+        staff.flatMap { s -> com.bamnat.core.boss.StaffClock.days(byStaff[s.id].orEmpty()).filter { it.start != null && it.end == null }.map { s.name to it } }
+    }
+    SectionCard(title = "출퇴근 기록") {
+        if (rows.isEmpty()) Hint("기록 ${punches.size}개 · 평소와 다른 날이 없어요." + if (open.isNotEmpty()) " 퇴근을 아직 안 누른 날 ${open.size}일." else "")
+        else {
+            val on = remember(rows) { mutableStateListOf<Boolean>().apply { addAll(rows.map { true }) } }
+            rows.forEachIndexed { i, r ->
+                val name = staff.firstOrNull { it.id == r.staffId }?.name.orEmpty()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = on[i], onCheckedChange = { on[i] = it })
+                    Text("$name · ${Fmt.monthDay(r.date)} ${r.kind.label} ${r.start?.let(Fmt::time)}~${r.end?.let(Fmt::time)}", style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            OutlinedButton(enabled = on.any { it }, onClick = { onPut(rows.filterIndexed { i, _ -> on[i] }) }) { Text("고른 ${on.count { it }}일 대장에 넣기") }
+            Hint("직원이 출퇴근 링크에서 누른 시각이에요. 넣은 뒤에도 그날을 눌러 고칠 수 있어요." + if (place.minuteUnit > 1) " 계산 단위 ${place.minuteUnit}분으로 올려 계산해요." else "")
+            if (open.isNotEmpty()) Hint("퇴근을 안 누른 날 ${open.size}일은 넣지 않았어요: " + open.joinToString(", ") { (n, d) -> "$n ${Fmt.monthDay(d.date)}" })
+        }
+    }
 }

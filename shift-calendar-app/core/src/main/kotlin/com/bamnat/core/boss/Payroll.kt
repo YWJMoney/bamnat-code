@@ -102,8 +102,28 @@ data class StaffMember(
      * hours (시행령 제6조 제2항 제4호), so 가산·주휴 use that; each day's own hours are paid at its own 시급.
      */
     val dayRates: Map<DayOfWeek, Long> = emptyMap(),
+    /** 1.38 휴직: 무급으로 쉬는 기간들. 재직은 이어지고(입사일·근속 그대로), 그 날들은 임금을 주지 않아요. */
+    val leaves: List<StaffLeave> = emptyList(),
+    /** 1.38 [P3-B-11] The 출퇴근 링크 on the share server and its key, null until the boss makes one. */
+    val clockId: String? = null,
+    val clockToken: String? = null,
 ) {
     fun employedOn(d: LocalDate): Boolean = (hiredOn == null || !d.isBefore(hiredOn)) && (leftOn == null || !d.isAfter(leftOn))
+    fun onLeave(d: LocalDate): Boolean = leaves.any { it.covers(d) }
+    /** Working on [d]: employed and not on 휴직. What the 직원 요금제 counts. */
+    fun workingOn(d: LocalDate): Boolean = employedOn(d) && !onLeave(d)
+    fun workingIn(month: YearMonth): Boolean = (1..month.lengthOfMonth()).any { workingOn(month.atDay(it)) }
+    /**
+     * 1.38 직원 요금제 인원 (사용자 결정 2026-11-06 "그달 일하는 사람만 셈"): 그달 전에 퇴사했거나 그달 내내 휴직이면 세지 않아요.
+     * 그달 뒤에 들어올 사람은 세요(미리 더해 둔 사람).
+     */
+    fun countsFor(month: YearMonth): Boolean = leftOn?.isBefore(month.atDay(1)) != true &&
+        !(1..month.lengthOfMonth()).all { onLeave(month.atDay(it)) }
+}
+
+/** 1.38 휴직 한 번: [start]부터 [end]까지(둘 다 포함), [end] null이면 아직 쉬는 중. */
+data class StaffLeave(val start: LocalDate, val end: LocalDate? = null) {
+    fun covers(d: LocalDate): Boolean = !d.isBefore(start) && (end == null || !d.isAfter(end))
 }
 
 /** [BOSS-03] How a day went against the usual week (설계 1-3 `staff_work.kind`): only the days that differ are written (139). */
@@ -190,6 +210,12 @@ object PayrollLedger {
                 if (a.perDay) Cadence.PER_WORK_DAY else Cadence.MONTHLY)
         },
         hireDate = s.hiredOn,
+        // 1.38 퇴사·휴직: the 월급 of a month left or rested part way is cut to the days worked (it was a whole month before).
+        leaveDate = s.leftOn,
+        unpaidDays = s.leaves.flatMap { l ->
+            val to = l.end ?: s.leftOn ?: l.start.plusYears(3)
+            generateSequence(l.start) { it.plusDays(1) }.takeWhile { !it.isAfter(to) }.toList()
+        }.toSet(),
         fiveOrMoreEmployees = place.fivePlus != false,
         weekStart = place.weekStart,
         legalBreaks = place.legalBreaks,
@@ -249,7 +275,7 @@ object PayrollLedger {
         val calcAs = if (ordinary != s.base) s.copy(base = ordinary) else s
         val pay = if (employed) calculator.calculate(profile(place, calcAs), month, r::resolve).let { p ->
             if (s.dayRates.isEmpty() || s.form != WageForm.HOUR) p else {
-                val diff = p.minutes.filter { s.employedOn(it.date) }.sumOf { dm ->
+                val diff = p.minutes.filter { s.workingOn(it.date) }.sumOf { dm ->
                     (rateOn(s, dm.date.dayOfWeek) - ordinary) * dm.total.worked / 60.0
                 }.let { Math.round(it) }
                 if (diff == 0L) p else p.copy(lines = p.lines + com.bamnat.core.pay.PayLine(LineKind.ALLOWANCE, "요일별 시급 차액", diff,
@@ -257,7 +283,7 @@ object PayrollLedger {
                     basis = "통상시급 = 주 소정근로 임금 ÷ 주 소정근로시간 (근로기준법 시행령 제6조 제2항 제4호)"))
             }
         } else null
-        val days = (1..month.lengthOfMonth()).map { r.resolve(month.atDay(it)) }.filter { s.employedOn(it.date) }
+        val days = (1..month.lengthOfMonth()).map { r.resolve(month.atDay(it)) }.filter { s.workingOn(it.date) }
         val worked = pay?.minutes.orEmpty()
         val workDays = days.count { it.isWorkDay || it.extras.isNotEmpty() }
         // 1.38 PC 1차: hours worked on a 휴일 are hours worked too (10월 22일 근무가 160시간으로 보이고 지난달 비교가 거꾸로 말하던 것).

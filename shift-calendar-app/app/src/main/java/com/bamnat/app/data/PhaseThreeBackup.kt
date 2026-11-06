@@ -54,7 +54,8 @@ object PhaseThreeBackup {
             .put("staff", JSONArray().apply { d.staff().forEach { put(JSONObject().put("id", it.id).put("place", it.workplaceId).put("name", it.name)
                 .put("form", it.form).put("base", it.base).put("allowances", it.allowances).putOpt("hired", it.hiredOn).putOpt("left", it.leftOn)
                 .putOpt("birth", it.birth).put("job", it.job).put("insurance", it.insurance).put("weeklyHoliday", it.weeklyHolidayPay)
-                .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort)) } })
+                .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort).putOpt("clockId", it.clockId).putOpt("clockToken", it.clockToken)) } })
+            .put("punches", JSONArray().apply { d.punches().forEach { put(JSONArray().put(it.staffId).put(it.at).put(it.kind)) } })
             .put("work", JSONArray().apply { d.work().sortedWith(compareBy({ it.staffId }, { it.epochDay })).forEach {
                 put(JSONArray().put(it.staffId).put(it.epochDay).put(it.kind).put(it.startMinute ?: JSONObject.NULL).put(it.endMinute ?: JSONObject.NULL)) } })
             .put("months", JSONArray().apply { d.months().forEach { put(JSONObject().put("place", it.workplaceId).put("month", it.month).put("state", it.state)
@@ -83,7 +84,8 @@ object PhaseThreeBackup {
         )
     }
 
-    class Places(val places: List<WorkplaceEntity>, val staff: List<StaffEntity>, val work: List<StaffWorkEntity>, val months: List<PayrollMonthEntity>, val lines: List<PayrollLineEntity>)
+    class Places(val places: List<WorkplaceEntity>, val staff: List<StaffEntity>, val work: List<StaffWorkEntity>, val months: List<PayrollMonthEntity>, val lines: List<PayrollLineEntity>,
+                 val punches: List<com.bamnat.app.data.db.StaffPunchEntity> = emptyList())
 
     fun readWorkplaces(root: JSONObject): Places? {
         val o = root.optJSONObject(WORKPLACES) ?: return null
@@ -92,13 +94,14 @@ object PhaseThreeBackup {
                 it.intOrNull("payday"), it.optBoolean("breaks", true), it.optInt("weekStart", 1), it.strOrNull("team"), it.optLong("created"), it.optInt("unit", 1).coerceIn(1, 60)) },
             o.optJSONArray("staff").objs().map { StaffEntity(it.getString("id"), it.getString("place"), it.optString("name"), it.optString("form", "HOUR"),
                 it.optLong("base"), it.optString("allowances", "[]"), it.longOrNull("hired"), it.longOrNull("left"), it.longOrNull("birth"), it.optString("job"),
-                it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort")) },
+                it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort"), it.strOrNull("clockId"), it.strOrNull("clockToken")) },
             o.optJSONArray("work").arrays().map { StaffWorkEntity(it.getString(0), it.getLong(1), it.getString(2),
                 if (it.isNull(3)) null else it.getInt(3), if (it.isNull(4)) null else it.getInt(4)) },
             o.optJSONArray("months").objs().map { PayrollMonthEntity(it.getString("place"), it.getString("month"), it.optString("state", "OPEN"),
                 it.optString("rates"), it.longOrNull("closedAt")) },
             o.optJSONArray("lines").objs().map { PayrollLineEntity(it.getString("place"), it.getString("month"), it.getString("staff"), it.optLong("gross"),
                 it.optString("items", "[]"), it.optString("method", "[]"), it.optString("deduct"), it.longOrNull("net"), it.longOrNull("paidAt"), it.longOrNull("slipSentAt")) },
+            o.optJSONArray("punches").arrays().map { com.bamnat.app.data.db.StaffPunchEntity(it.getString(0), it.getLong(1), it.optString(2, "IN")) },
         )
     }
 
@@ -109,7 +112,7 @@ object PhaseThreeBackup {
             val members = t.members.map { m -> if (m.linkToken == null) had[m.id]?.takeIf { it.linkId == m.linkId }?.let { m.copy(linkToken = it.linkToken) } ?: m else m }
             db.teamDao().replaceAll(t.teams, members, t.cells, t.months, t.wishes)
         }
-        places?.let { db.payrollDao().replaceAll(it.places, it.staff, it.work, it.months, it.lines) }
+        places?.let { db.payrollDao().replaceAll(it.places, it.staff, it.work, it.months, it.lines, it.punches) }
     }
 
     private fun JSONArray?.objs(): List<JSONObject> = this?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }.orEmpty()

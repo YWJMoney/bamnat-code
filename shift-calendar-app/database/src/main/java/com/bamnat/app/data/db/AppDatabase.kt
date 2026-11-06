@@ -30,7 +30,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         EnvelopeEntity::class, EnvelopeMoveEntity::class,
         // 1.38 [P3-01] Version 27: Phase 3 리더 팀 근무표와 사장님 급여 대장 (꺼진 채).
         TeamEntity::class, TeamMemberEntity::class, TeamCellEntity::class, TeamMonthEntity::class, TeamWishEntity::class,
-        WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
+        WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, StaffPunchEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
     ],
     version = 29,
     exportSchema = true,
@@ -430,6 +430,10 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `workplace` ADD COLUMN `minuteUnit` INTEGER NOT NULL DEFAULT 1")
                 db.execSQL("ALTER TABLE `team` ADD COLUMN `showTogether` INTEGER NOT NULL DEFAULT 0")
+                // [P3-B-11] 출퇴근 링크
+                db.execSQL("ALTER TABLE `staff` ADD COLUMN `clockId` TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE `staff` ADD COLUMN `clockToken` TEXT DEFAULT NULL")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `staff_punch` (`staffId` TEXT NOT NULL, `at` INTEGER NOT NULL, `kind` TEXT NOT NULL, PRIMARY KEY(`staffId`, `at`))")
             }
         }
 

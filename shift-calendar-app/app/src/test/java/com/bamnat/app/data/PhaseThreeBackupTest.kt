@@ -48,8 +48,12 @@ class PhaseThreeBackupTest {
         store.saveMembers(listOf(TeamMember("m1", "t1", "김가나", "RN"), TeamMember("m2", "t1", "이다라", linkId = "L1", linkToken = "tok")))
         store.saveBoard("t1", store.boardNow("t1", month).paint("m1", day, 1).paint("m2", day, 4))
         store.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = false, payday = 10, minuteUnit = 30))
-        store.saveStaff(StaffMember("s1", "박마바", base = 10_320, job = "홀", dayRates = mapOf(DayOfWeek.SATURDAY to 12_000L), weekly = mapOf(DayOfWeek.MONDAY to com.bamnat.core.work.StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0)))), "w1")
+        store.saveStaff(StaffMember("s1", "박마바", base = 10_320, job = "홀", dayRates = mapOf(DayOfWeek.SATURDAY to 12_000L), weekly = mapOf(DayOfWeek.MONDAY to com.bamnat.core.work.StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0))),
+            leaves = listOf(com.bamnat.core.boss.StaffLeave(month.atDay(20)))), "w1")
         store.setWork("s1", day, StaffWork("s1", day, WorkKind.LATE, LocalTime.of(10, 0), LocalTime.of(18, 0)))
+        // 1.38 [P3-B-11] 출퇴근 링크와 기록
+        store.saveStaff(store.staff("w1").first().single().copy(clockId = "C1", clockToken = "ctok"), "w1")
+        store.addPunches("s1", listOf(com.bamnat.core.boss.StaffPunch("s1", java.time.Instant.parse("2026-11-03T01:02:00Z"), true)))
     }
 
     @Test fun teamsGoInEveryBackupStaffOnlyWhenSealed() = runBlocking {
@@ -74,9 +78,13 @@ class PhaseThreeBackupTest {
             assertEquals(store.boardNow("t1", month).cells, again.boardNow("t1", month).cells)
             assertEquals(store.workplaces.first(), again.workplaces.first())
             assertEquals("계산 단위도 그대로", 30, again.workplaces.first().single().minuteUnit)
+            assertEquals("휴직 기간도 그대로", listOf(com.bamnat.core.boss.StaffLeave(month.atDay(20))), again.staff("w1").first().single().leaves)
             assertEquals("요일별 시급도 그대로", mapOf(DayOfWeek.SATURDAY to 12_000L), again.staff("w1").first().single().dayRates)
             assertEquals(store.staff("w1").first(), again.staff("w1").first())
             assertEquals(store.work("w1", month).first(), again.work("w1", month).first())
+            assertEquals("출퇴근 기록도 그대로", store.punches("w1", month).first(), again.punches("w1", month).first())
+            assertEquals(1, again.punches("w1", month).first().size)
+            assertEquals("ctok", again.staff("w1").first().single().clockToken)
         } finally {
             other.close()
         }

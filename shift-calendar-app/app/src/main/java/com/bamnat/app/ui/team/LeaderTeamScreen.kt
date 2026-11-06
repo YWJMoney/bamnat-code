@@ -676,23 +676,54 @@ private fun FairDialog(team: Team, b: TeamBoard, onDismiss: () -> Unit) {
     }, confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
 }
 
-/** 팀원: add by pasting, 책임 on or off, rest or take out (their cells go with them). */
+/**
+ * 1.38 보안 검토: cuts [m]'s 근무 링크 on the server, so a person who rests or leaves no longer sees the team's days.
+ * True when there is nothing left to cut. A link restored without its key (암호 없는 백업) can't be cut from here; it ends by itself in 90 days.
+ */
+internal suspend fun cutLink(c: com.bamnat.app.AppContainer, m: TeamMember): Boolean {
+    val id = m.linkId ?: return true
+    val token = m.linkToken
+    if (token != null) runCatching { c.shareApi.delete(ShareLinkState(id, "", token, Today.instant(), m.name)) }.getOrElse { return false }
+    c.phaseThree.saveMembers(listOf(m.copy(linkId = null, linkToken = null)))
+    return true
+}
+
+/** 팀원: add by pasting, 책임 on or off, rest or take out (their cells go with them), and each one's link cut when they rest or leave. */
 @Composable
 private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -> Unit) {
-    val store = LocalContext.current.appContainer.phaseThree
+    val c = LocalContext.current.appContainer
+    val store = c.phaseThree
     val scope = rememberCoroutineScope()
     var add by rememberSaveable { mutableStateOf("") }
+    var note by remember { mutableStateOf<String?>(null) }
+    val offline = "인터넷이 안 돼 링크를 끊지 못했어요. 연결한 뒤 다시 눌러 주세요."
+    fun rest(m: TeamMember) = scope.launch {
+        val cut = cutLink(c, m)
+        store.saveMembers(listOf(m.copy(active = false, linkId = if (cut) null else m.linkId, linkToken = if (cut) null else m.linkToken)))
+        note = if (!cut) "${m.name}님을 쉼으로 두었어요. " + offline else if (m.linkId != null) "${m.name}님을 쉼으로 두고 근무 링크를 끊었어요. 복귀하면 다음 확정 때 새 링크를 보내요." else null
+    }
     // 1.38 검토(데이터 보존): taking someone out deletes their days in every month, confirmed ones too; ask first and offer 쉼, which keeps them.
     var removing by remember { mutableStateOf<TeamMember?>(null) }
     removing?.let { m ->
         AlertDialog(onDismissRequest = { removing = null }, title = { Text("${m.name} 빼기") }, text = {
-            Text("빼면 ${m.name}의 칠한 칸이 지난달·확정한 달까지 모두 지워져요. 그만두거나 쉬는 거라면 '쉼'으로 두면 지난 근무표가 그대로 남아요.",
+            Text("빼면 ${m.name}의 칠한 칸이 지난달·확정한 달까지 모두 지워지고, 근무 링크도 바로 끊겨요. 그만두거나 쉬는 거라면 '쉼'으로 두면 지난 근무표가 그대로 남아요(링크는 끊겨요).",
                 style = MaterialTheme.typography.bodyMedium)
         }, confirmButton = {
-            TextButton(onClick = { scope.launch { store.saveMembers(listOf(m.copy(active = false))) }; removing = null }) { Text("쉼으로 두기") }
+            TextButton(onClick = { rest(m); removing = null }) { Text("쉼으로 두기") }
         }, dismissButton = {
-            TextButton(onClick = { scope.launch { store.removeMember(m.id) }; removing = null }) { Text("그래도 지우기", color = MaterialTheme.colorScheme.error) }
+            TextButton(onClick = {
+                scope.launch { if (cutLink(c, m)) { store.removeMember(m.id); note = null } else note = "${m.name}님을 빼지 않았어요. " + offline }
+                removing = null
+            }) { Text("그래도 지우기", color = MaterialTheme.colorScheme.error) }
         })
+    }
+    var cutting by remember { mutableStateOf<TeamMember?>(null) }
+    cutting?.let { m ->
+        AlertDialog(onDismissRequest = { cutting = null }, title = { Text("${m.name} 링크 새로 만들기") }, text = {
+            Text("지금 링크를 끊어요. 링크가 다른 사람에게 갔을 때 쓰세요. 다음에 확정해 보낼 때 ${m.name}님에게 새 링크가 가요.", style = MaterialTheme.typography.bodyMedium)
+        }, confirmButton = {
+            TextButton(onClick = { scope.launch { note = if (cutLink(c, m)) "${m.name}님의 링크를 끊었어요. 다음 확정 때 새 링크가 가요." else offline }; cutting = null }) { Text("링크 끊기") }
+        }, dismissButton = { TextButton(onClick = { cutting = null }) { Text("그만두기") } })
     }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("팀원 ${members.count { it.active }}명") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -701,10 +732,14 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
                     Text(m.name + if (!m.active) " (쉬는 중)" else "", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     FilterChip(selected = m.skill == Skill.CHARGE, onClick = { scope.launch { store.saveMembers(listOf(m.copy(skill = if (m.skill == Skill.CHARGE) Skill.REG else Skill.CHARGE))) } },
                         label = { Text("책임") })
-                    TextButton(onClick = { scope.launch { store.saveMembers(listOf(m.copy(active = !m.active))) } }) { Text(if (m.active) "쉼" else "복귀") }
+                    TextButton(onClick = { if (m.active) rest(m) else scope.launch { store.saveMembers(listOf(m.copy(active = true))) } }) { Text(if (m.active) "쉼" else "복귀") }
                     TextButton(onClick = { removing = m }) { Text("빼기") }
                 }
+                if (m.linkId != null) TextButton(onClick = { cutting = m }, modifier = Modifier.padding(start = 0.dp)) {
+                    Text("링크 끊고 새로 만들기", style = MaterialTheme.typography.labelSmall)
+                }
             }
+            note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
             OutlinedTextField(add, { add = it.take(1000) }, label = { Text("더할 이름 (한 줄에 한 명)") }, minLines = 2, modifier = Modifier.fillMaxWidth())
         }
     }, confirmButton = {

@@ -19,6 +19,11 @@
 // POST   /api/groups/:code     {link, token} -> { code, expiresAt, links }: adds one's own link to a group
 // DELETE /api/groups/:code/:id header X-Delete-Token -> 204: takes one's own link out
 // GET    /api/groups/:code     -> { code, expiresAt, links: [id…] }: the links still open, nothing else
+// POST   /api/clock            1.38 [P3-B-11] {name, place, ttlDays} -> { id, url, token, expiresAt }: a staff member's 출퇴근 링크
+// GET    /api/clock/:id        header X-Delete-Token -> { punches: [{k:"in"|"out", at}], expiresAt }: the boss's app reads them
+// DELETE /api/clock/:id        header X-Delete-Token -> 204: 퇴사·끊기
+// GET    /c/:id                the staff member's page: 출근·퇴근 buttons (a plain form, no script, no location)
+// POST   /c/:id/punch          form k=in|out -> the page again, with the time written
 //                              The admin paths answer 404 until SHARE_ADMIN_TOKEN (20+ characters) is set;
 //                              the company server's 개발자 앱 calls them with the same token.
 //
@@ -73,6 +78,14 @@ export const LIMITS = {
   groupsPerHour: 10,
   // [SRV-08] .ics: calendar apps may keep it this long.
   icsMaxAge: 300,
+  // 1.38 [P3-B-11] 출퇴근 링크: the punches kept (about two months of two a day), the same button again within this many seconds
+  // counts once, and the presses one network may make in an hour (a shop's Wi-Fi with a few people stays far under it).
+  clockPunches: 160,
+  clockSameSeconds: 60,
+  clockPerHour: 60,
+  clockTtlDays: 400,
+  clockName: 20,
+  clockPlace: 30,
 };
 
 /** [SRV-05] Why someone reports a link (the page and the app offer the same list). */
@@ -139,13 +152,20 @@ export const APP_ADS_TXT = "google.com, pub-4920911396563628, DIRECT, f08c47fec0
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/api/share/") || path.startsWith("/api/groups/"))) {
+  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
   }
   if (path === "/api/share" && request.method === "POST") return create(request, env, url);
   if (path === "/api/groups" || path.startsWith("/api/groups/")) return groups(request, env, path);
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
+  if (path === "/api/clock" && request.method === "POST") return clockCreate(request, env, url);
+  const clockApi = path.match(/^\/api\/clock\/([A-Za-z0-9]{22})$/);
+  if (clockApi && request.method === "GET") return clockRead(request, env, clockApi[1]);
+  if (clockApi && request.method === "DELETE") return clockDelete(request, env, clockApi[1]);
+  const clockPage = path.match(/^\/c\/([A-Za-z0-9]{22})(\/punch)?$/);
+  if (clockPage && !clockPage[2] && (request.method === "GET" || request.method === "HEAD")) return clockView(env, clockPage[1], null);
+  if (clockPage && clockPage[2] && request.method === "POST") return clockPunch(request, env, clockPage[1]);
   const reported = path.match(/^\/(api\/share|s)\/([A-Za-z0-9]{16,32})\/report$/);
   if (reported && request.method === "POST") return report(request, env, reported[2], reported[1] === "s");
   const api = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})$/);
@@ -499,6 +519,92 @@ async function groupLeave(request, env, code, id) {
   return new Response(null, { status: 204 });
 }
 
+// ---- 1.38 [P3-B-11] 출퇴근 링크 ----
+// A staff member presses 출근 or 퇴근 on a page the boss sent them; the boss's app reads the times and tells the boss. Only the
+// press's server time is kept: no location, no address, no device. Anyone holding the link can press it, like a paper sheet on the
+// wall, so the app shows them as 기록 for the boss to put in, never as pay by themselves.
+
+const clockKey = (id) => `clock:${id}`;
+
+async function clockCreate(request, env, url) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 2048)); } catch { return json({ error: "bad_json" }, 400); }
+  const name = cleanText(body?.name, LIMITS.clockName);
+  const place = cleanText(body?.place ?? "", LIMITS.clockPlace);
+  if (!name || place == null) return json({ error: "bad_name" }, 400);
+  const days = Number.isInteger(body?.ttlDays) ? Math.min(Math.max(body.ttlDays, 7), LIMITS.clockTtlDays) : LIMITS.clockTtlDays;
+  const id = randomId(22);
+  const token = randomId(32);
+  const record = { name, place, tokenHash: await sha256(token), expiresAt: expiry(days), punches: [] };
+  await put(env, clockKey(id), record);
+  count(env, "clocks");
+  return json({ id, url: `${url.origin}/c/${id}`, token, expiresAt: record.expiresAt }, 201);
+}
+
+async function clockOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(clockKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+async function clockRead(request, env, id) {
+  const record = await clockOwned(request, env, id);
+  if (record instanceof Response) return record;
+  return json({ punches: record.punches, expiresAt: record.expiresAt });
+}
+
+async function clockDelete(request, env, id) {
+  const record = await clockOwned(request, env, id);
+  if (record instanceof Response) return record;
+  await kvDel(env, clockKey(id));
+  return new Response(null, { status: 204 });
+}
+
+const KST = 9 * 3600 * 1000;
+const kstTime = (iso) => new Date(Date.parse(iso) + KST).toISOString().slice(11, 16);
+const kstDay = (iso) => new Date(Date.parse(iso) + KST).toISOString().slice(0, 10);
+
+async function clockPunch(request, env, id) {
+  const record = await env.SHARES.get(clockKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return clockView(env, id, null);
+  const form = new URLSearchParams((await request.text()).slice(0, 256));
+  const k = form.get("k");
+  if (k !== "in" && k !== "out") return clockView(env, id, null, 400);
+  if (!(await allow(env, request, "cp", LIMITS.clockPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
+  const now = new Date().toISOString();
+  const last = record.punches[record.punches.length - 1];
+  // A second press of the same button within a minute (a double tap, a page sent again) is the same press.
+  if (!(last && last.k === k && Date.now() - Date.parse(last.at) < LIMITS.clockSameSeconds * 1000)) {
+    record.punches = [...record.punches, { k, at: now }].slice(-LIMITS.clockPunches);
+    await put(env, clockKey(id), record);
+    count(env, "punches");
+  }
+  return clockView(env, id, { k, at: last && last.k === k && Date.now() - Date.parse(last.at) < LIMITS.clockSameSeconds * 1000 ? last.at : now }, 200, record);
+}
+
+async function clockView(env, id, done, status = 200, known = null) {
+  const record = known ?? await env.SHARES.get(clockKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) {
+    return html(page("링크가 없어요", `<p class="empty">이 출퇴근 링크는 끝났거나 사장님이 끊었어요. 새 링크는 사장님께 받아 주세요.</p>`), 404);
+  }
+  const today = kstDay(new Date().toISOString());
+  const todays = record.punches.filter((p) => kstDay(p.at) === today);
+  const said = done ? `<p class="done">${done.k === "in" ? "출근" : "퇴근"} ${kstTime(done.at)} 기록했어요. 사장님 휴대폰에 알려요.</p>` : "";
+  const list = todays.length
+    ? `<ul class="punches">${todays.map((p) => `<li><span>${p.k === "in" ? "출근" : "퇴근"}</span><span>${kstTime(p.at)}</span></li>`).join("")}</ul>`
+    : `<p class="muted">오늘 기록이 아직 없어요.</p>`;
+  const button = (k, label) => `<form method="post" action="/c/${id}/punch"><input type="hidden" name="k" value="${k}"><button class="${k}">${label}</button></form>`;
+  const body = `<h1>${esc(record.name)}님 출퇴근</h1>${record.place ? `<p class="muted">${esc(record.place)}</p>` : ""}${said}
+<div class="buttons">${button("in", "출근")}${button("out", "퇴근")}</div>
+<h2>오늘 (${today.slice(5).replace("-", "/")})</h2>${list}
+<p class="foot muted">누른 시각만 사장님에게 가요. 위치·전화번호·기기 정보는 보내지 않아요. 잘못 눌렀으면 사장님께 말해 주세요. 사장님이 확인한 뒤 급여에 넣어요.</p>`;
+  return html(page(`${record.name}님 출퇴근`, body), status);
+}
+
 function groupCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   // 32 letters divide 256, so every letter is equally likely.
@@ -560,7 +666,7 @@ async function stats(env, daysParam) {
   }
   const sum = (k) => days.reduce((a, d) => a + d[k], 0);
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
-  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), approximate: true };
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), approximate: true };
 }
 
 // ---- input ----
@@ -1037,5 +1143,8 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li:first-child{border-top:none}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
 .legend li{display:flex;align-items:center;gap:6px}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px}.empty{margin-top:40px}
+.buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
+.buttons .in{background:#2f7d5b}.buttons .out{background:#3b5bdb}.done{background:var(--card);border:2px solid var(--today);border-radius:12px;padding:12px 14px;font-weight:700}
+.punches{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.punches li{display:flex;justify-content:space-between;padding:12px 14px;border-top:1px solid var(--line)}.punches li:first-child{border-top:none}
 </style></head><body><main>${body}</main></body></html>`;
 }

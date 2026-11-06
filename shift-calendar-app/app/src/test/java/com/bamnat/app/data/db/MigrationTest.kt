@@ -464,7 +464,11 @@ class MigrationTest {
             db.payrollDao().upsertStaff(StaffEntity("s", "p", "준호", "HOUR", 10_320, "[]", null, null, null, "", "{}", true, "{}", null, 0))
             db.payrollDao().upsertWork(StaffWorkEntity("s", 20760, "ABSENT", null, null))
             assertEquals("ABSENT", db.payrollDao().work().single().kind)
+            assertEquals("29판 출퇴근 링크는 처음엔 없음", null, db.payrollDao().staff().single().clockId)
+            db.payrollDao().insertPunches(listOf(StaffPunchEntity("s", 1_000L, "IN"), StaffPunchEntity("s", 1_000L, "IN")))
+            assertEquals("같은 기록은 한 번", 1, db.payrollDao().punches().size)
             db.payrollDao().deleteStaff("s")
+            assertTrue("직원을 지우면 출퇴근 기록도", db.payrollDao().punches().isEmpty())
             assertTrue(db.payrollDao().work().isEmpty())
         } finally {
             db.close()
