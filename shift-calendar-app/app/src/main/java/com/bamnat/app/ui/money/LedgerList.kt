@@ -474,7 +474,7 @@ private fun DayHeader(date: LocalDate, expense: Long, income: Long) {
     val dayShape = day.shape(androidx.compose.foundation.shape.RoundedCornerShape(0.dp))
     Row(
         Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(day.copy(fill = null, paint = null, pad = null, padX = null, padY = null), dayShape))
-            .background(day.fillColor ?: if (band) MaterialTheme.colorScheme.primaryContainer else com.bamnat.app.ui.theme.PhotoGround.bar(MaterialTheme.colorScheme.surface), dayShape)
+            .background(day.fillColor ?: if (band) MaterialTheme.colorScheme.primaryContainer else com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface), dayShape)
             .then(day.paint?.let { Modifier.fillWith(it, dayShape) } ?: Modifier)
             .padding(horizontal = (day.padH ?: 16).dp, vertical = (day.padV ?: if (look.dayHead == "big") 10 else 8).dp)
             .semantics(mergeDescendants = true) { heading() },

@@ -3,6 +3,7 @@ package com.bamnat.app.ui.theme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 
 /**
@@ -19,4 +20,17 @@ object PhotoGround {
     @Composable
     fun bar(normal: Color = MaterialTheme.colorScheme.background): Color =
         if (!on()) normal else if (MaterialTheme.colorScheme.onSurface.luminance() > 0.5f) Color.Black.copy(alpha = 0.62f) else Color.White.copy(alpha = 0.84f)
+
+    /**
+     * 6차 통합 2eb28e83 PC 확인 (칩 줄 바탕이 반투명이라 아래로 지나가는 카드가 아직 비쳐 칩 글자와 겹쳐요): a bar that a list scrolls
+     * under (붙는 칩 줄, 가계부 날짜 머리) is opaque on a picture: the photo's average with the veil laid on it, so no card shows through
+     * and the words, chosen for that ground, still read.
+     */
+    @Composable
+    fun solid(normal: Color = MaterialTheme.colorScheme.background): Color {
+        if (!on()) return normal
+        val veil = bar(normal)
+        val ground = com.bamnat.app.ui.decor.LocalPhotoGround.current?.copy(alpha = 1f) ?: veil.copy(alpha = 1f)
+        return lerp(ground, veil.copy(alpha = 1f), veil.alpha)
+    }
 }

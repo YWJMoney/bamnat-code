@@ -505,14 +505,15 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         runCatching { studioPrefs.edit().putString("areaUses", AreaRank.encode(areaUses)).putString("lastArea", a.name).apply() }
     }
     // [CNV-04] A tool of an area in the 더 보기 판, the example staying in view above it.
-    fun openTool(a: Area, t: Tool) {
+    /** 1.38: ‘＋ 아이콘·사진’ asks the 꾸밈 층 to open on 넣기 (판 접고 아이콘 칸), scrolled into view; any other way in sets it back to 0. */
+    var decorAdd by remember { mutableIntStateOf(0) }
+    fun openTool(a: Area, t: Tool, addIcons: Boolean = false) {
         if (a != area) { area = a; lookIndex = 0; if (a.detailOnly) detail = true }
         tool = if (t in a.tools) t else a.tools.first()
+        decorAdd = if (addIcons) decorAdd + 1 else 0
         panelMode = PanelMode.TOOL; panel = true
     }
     fun openPanel(m: PanelMode) { panelMode = m; panel = true }
-    /** 1.38: ‘＋ 아이콘·사진’ asks the 꾸밈 층 to open on 넣기, scrolled into view. */
-    var decorAdd by remember { mutableIntStateOf(0) }
     // [CNV-03] A part or card picked on the example (or in the 층 list, or a name in the bar): its first quick tool opens at once,
     // so a tap and a colour are all it takes (사용자 "유닛 클릭하고 색상선택시 색상이 입혀지게").
     fun selectPart(id: String?) {
@@ -762,7 +763,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 label = { Text("＋ 카드 넣기" + if (toAdd.hidden.isEmpty()) "" else " ${toAdd.hidden.size}") })
                         // 1.38 PC 스튜디오 확인 (재료까지 5단계): 꾸밈 층의 넣기(아이콘·밤낮 재료·사진)로 바로.
                         if (Tool.DECOR in area.tools)
-                            FilterChip(selected = false, onClick = { openTool(area, Tool.DECOR); decorAdd++ }, label = { Text("＋ 아이콘·사진") })
+                            FilterChip(selected = false, onClick = { openTool(area, Tool.DECOR, addIcons = true) }, label = { Text("＋ 아이콘·사진") })
                         // PC 확인 1.37 A5 (앱 전체에서 보관함이 화면 밖): with something kept, 보관함 comes first.
                         area.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.sortedBy { if (it == Tool.BOX && kept.isNotEmpty()) 0 else 1 }.forEach { t ->
                             FilterChip(selected = panel && panelMode == PanelMode.TOOL && t == tool, onClick = { openTool(area, t) },
