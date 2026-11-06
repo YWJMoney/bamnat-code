@@ -52,8 +52,15 @@ object StartStepsState {
     fun companyPicked(c: AppContainer) = c.appContext.getSharedPreferences(FILE, 0).edit().putBoolean(K_COMPANY, true).apply()
 
     /** Today's rows for this phone, or null for no card. [hasShifts]: the calendar on screen has days. */
+    /** True when the calendar was set up ([setupDay], null before 1.36) before the app was last updated on [updatedOn]. */
+    internal fun cameByUpdate(setupDay: java.time.LocalDate?, updatedOn: java.time.LocalDate?): Boolean =
+        updatedOn != null && (setupDay == null || setupDay.isBefore(updatedOn))
+
     fun rows(c: AppContainer, hasShifts: Boolean, style: WorkStyle? = c.settingsRepository.current.workStyle): List<StartSteps.Row>? {
         val s = c.settingsRepository.current
+        // 1.38 PC 4a5c3828 (1.36에서 업데이트로 온 사람 달력 맨 위에 시작 단계와 '알림 2개 더 보기'): the steps are for a new phone's
+        // first week; a calendar set up before the app was last updated is not new.
+        if (cameByUpdate(c.firstSetup.day(), c.updatedAt?.atZone(Today.zone())?.toLocalDate())) return null
         // [J133-26] 1.33 (실사용 테스트 "식당·현장 달력에 '근무 넣기'·'우리 회사 고르기'"): steps of the calendar on screen's own work.
         // [J133-71] 1.33 (사용자 "알바 파트타임 같은 유형에서 회사 검색같은것은 의미가 없지 않아?"): only 교대·일근 pick a company.
         val companyApplies = c.companyApi.enabled && style?.usesCompany != false

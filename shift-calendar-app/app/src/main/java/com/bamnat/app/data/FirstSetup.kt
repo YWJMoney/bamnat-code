@@ -78,6 +78,9 @@ class FirstSetup(
      */
     fun quietToday(): Boolean = prefs?.getString(DAY_KEY, null) == today().toString()
 
+    /** The day the first setup was saved on this phone (kept since 1.36), or null. */
+    fun day(): java.time.LocalDate? = prefs?.getString(DAY_KEY, null)?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+
     /** A save the app was closed in the middle of is finished, never asked again. */
     suspend fun finishInterrupted() {
         val d = drafts.draft.value ?: return
