@@ -45,4 +45,12 @@ class TeamSignSummaryTest {
         assertEquals(30, lines[2].count)
         assertEquals("책임자 없는 근무 30번 · 1일 D, 2일 D, 3일 D, 4일 D …", lines[2].text)
     }
+
+    /** 1.38 PC 8차: with one 책임자 the line says how it gets shorter; with two or more it doesn't. */
+    @Test fun oneChargeGetsTheTip() {
+        val d = java.time.LocalDate.of(2026, 11, 1)
+        val signs = listOf(com.bamnat.core.team.TeamCheck.Sign(com.bamnat.core.team.TeamCheck.Kind.NO_CHARGE, d, null, "N 책임자 없음"))
+        assertEquals("책임자 없는 근무 1번 · 1일 N · 책임자를 한 명 더 정하면 줄어요", com.bamnat.core.team.TeamCheck.summary(signs, charges = 1).single().text)
+        assertEquals("책임자 없는 근무 1번 · 1일 N", com.bamnat.core.team.TeamCheck.summary(signs, charges = 2).single().text)
+    }
 }

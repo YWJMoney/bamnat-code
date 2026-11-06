@@ -388,7 +388,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             if (swapFrom != null) Text("${Fmt.monthDay(swapFrom!!.second)} 같은 날 다른 사람 칸을 누르면 맞바꿔요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             if (signs.isNotEmpty()) SectionCard(title = "확인할 것 ${signs.size}") {
                 // 1.38 PC 1차: danger first, 부족·책임자 없음 one line each, so an N→D is never under 50 notes.
-                val lines = remember(signs) { TeamCheck.summary(signs) { Fmt.monthDay(it) } }
+                val charges = active.count { it.skill == Skill.CHARGE }
+                val lines = remember(signs, charges) { TeamCheck.summary(signs, { Fmt.monthDay(it) }, charges) }
                 var all by remember { mutableStateOf(false) }
                 lines.take(if (all) lines.size else 6).forEach { l ->
                     val danger = l.kind == TeamCheck.Kind.RULE || l.kind == TeamCheck.Kind.WEEK_HOURS

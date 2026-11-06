@@ -78,10 +78,18 @@ fun AmountField(
     allowZero: Boolean = false,
     enabled: Boolean = true,
 ) {
+    // 1.38 PC 8차: a String value lost the cursor (맨 앞으로) whenever the screen put other digits in (지우면 기본값이 돌아올 때),
+    // and typing went in front of them (12000 → 1,200,010,320). The field keeps its own cursor; digits from outside put it at the end.
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))) }
+    val shown = if (field.text == digits) field else androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))
     OutlinedTextField(
         enabled = enabled,
-        value = digits,
-        onValueChange = { v -> onChange(amountInput(v, allowZero)) },
+        value = shown,
+        onValueChange = { v ->
+            val kept = amountInput(v.text, allowZero)
+            field = if (kept == v.text) v else androidx.compose.ui.text.input.TextFieldValue(kept, androidx.compose.ui.text.TextRange(kept.length))
+            onChange(kept)
+        },
         label = { Text(label) },
         textStyle = textStyle ?: androidx.compose.material3.LocalTextStyle.current,
         suffix = { Text("원") },
