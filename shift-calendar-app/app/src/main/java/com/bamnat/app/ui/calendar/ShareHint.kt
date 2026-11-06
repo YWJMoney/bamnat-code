@@ -101,7 +101,7 @@ internal fun ShareHintCard(onShare: () -> Unit, onClose: () -> Unit, modifier: M
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun TogetherSheet(onSend: () -> Unit, onTake: (() -> Unit)?, onDismiss: () -> Unit, shop: Boolean = false) {
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
             // 1.38 PC 4a5c3828: a shop's calendar says 영업일, not 근무.

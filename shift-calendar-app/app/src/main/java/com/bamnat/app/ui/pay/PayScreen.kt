@@ -1004,7 +1004,7 @@ private fun UnknownsSheet(
     onEdit: (ValueTarget) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
