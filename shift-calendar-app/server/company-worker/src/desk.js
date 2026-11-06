@@ -109,6 +109,9 @@ async function shipTargets(env, v) {
   return [...out.values()];
 }
 
+/** 1.38 [ADM3-14] 출시 날 점검표: [v]가 나간 뒤에도 아직 답을 기다리는 묶인 문의. */
+export const shipWaiting = (env, v) => shipTargets(env, v);
+
 /** 1.37 [ADM2-10] 묶인 문의에 '고친 판이 나왔어요'를 보냈다고 적어요(판을 저장할 때 다시 보내지 않게). */
 export async function markTold(env, item, inquiries, now) {
   if (!inquiries.length) return;
@@ -272,11 +275,14 @@ const keyDayOf = (now) => new Date(now + 9 * HOUR).toISOString().slice(0, 10);
 const KEY_GET = [/^\/desk$/, /^\/flow$/, /^\/me$/, /^\/badges$/, /^\/inquiries$/, /^\/inquiries\/[A-Za-z0-9]{22}$/, /^\/inquiries\/sort$/, /^\/inquiries\/handoff$/,
   /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}$/, /^\/templates$/,
   // 1.38 [DESK-02] 운영 장부(줄·CSV·기록): 열쇠의 권한(문의·개발사항) 안의 줄만 보여요.
-  /^\/ledger$/, /^\/ledger\.csv$/, /^\/ledger\/log$/];
+  /^\/ledger$/, /^\/ledger\.csv$/, /^\/ledger\/log$/,
+  // 1.38 [ADM3-18][ADM3-31] 스토어 리뷰 읽기(초안만 적고 보내기는 사람), Claude 조종석, 사람 옆 패널(결제 칸 없이), 개발사항 이야기.
+  /^\/reviews$/, /^\/cockpit$/, /^\/person$/, /^\/story\/d[A-Za-z0-9]{15}$/];
 const KEY_POST = [/^\/inquiries\/[A-Za-z0-9]{22}\/(reply|status|assign|notes)$/, /^\/inquiries\/sort\/apply$/, /^\/inquiries\/handoff\/(mark|result)$/,
   /^\/dev$/, /^\/dev\/d[A-Za-z0-9]{15}(\/links|\/links\/remove|\/notes|\/reply)?$/, /^\/desk\/ship$/,
   // 1.38 [DESK-02][DESK-03] 장부 줄의 상태(보는 중·기다림·끝, 이유와 함께)·되돌리기·한 줄 요약.
-  /^\/ledger\/(state|undo|summary)$/];
+  /^\/ledger\/(state|undo|summary)$/,
+  /^\/reviews\/[A-Za-z0-9_:.-]{4,120}\/draft$/];
 export const keyAllows = (path, method) => (method === "GET" ? KEY_GET : method === "POST" ? KEY_POST : []).some((r) => r.test(path));
 
 /** 'Claude' 관리자: 문의와 개발사항만, 처리까지. 기록에는 'Claude'로 남아요. */

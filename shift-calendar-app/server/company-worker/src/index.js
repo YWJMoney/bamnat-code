@@ -93,7 +93,10 @@ import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
-import { LEDGER_SCHEMA, ledgerRoute } from "./ledger.js";
+import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
+// 1.38 [ADM3] 관리자 앱 개편: 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석.
+import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
+import { flushWatch, pruneWatch, recordError, recordRequest, runJobs } from "./ops-watch.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -214,15 +217,29 @@ export const OWNER = { id: "owner", name: "최고 관리자", email: "", owner: 
 
 export default {
   async fetch(request, env, ctx) {
+    // 1.38 [ADM3-19] 응답 속도와 [ADM3-13] 오류 묶음: /api/ 요청마다 걸린 시간과 500을 세요.
+    const started = Date.now();
+    let status = 200;
     try {
-      return await route(request, env, ctx);
+      const res = await route(request, env, ctx);
+      status = res?.status ?? 200;
+      return res;
     } catch (e) {
-      if (e instanceof Refuse) return json({ error: e.code, field: e.field }, e.status);
+      if (e instanceof Refuse) {
+        status = e.status;
+        return json({ error: e.code, field: e.field }, e.status);
+      }
+      status = 500;
       console.error(e && e.stack ? e.stack : String(e));
       // [ADMUX-16] 지표 › 오류 counts these; a count that cannot be written changes nothing.
       if (env.DB) await countError(env).catch(() => {});
+      if (env.DB) await recordError(env, new URL(request.url).pathname, e).catch(() => {});
       return json({ error: "server" }, 500);
     } finally {
+      if (env.DB) {
+        recordRequest(env, new URL(request.url).pathname, status, Date.now() - started);
+        ctx?.waitUntil?.(flushWatch(env, Date.now()).catch(() => {}));
+      }
       if (env.DB) ctx?.waitUntil?.(flushMeter(env, Date.now()).catch(() => {}));
       // AN 1.28 [ADMUX-37] Anything sent may change what the developer app's badges count.
       // R131 1.31 [ADMX-13] Only writes to what the badges count: before 1.31 every write did (usage counts, votes, joins too), so
@@ -239,15 +256,27 @@ export default {
       ctx.waitUntil(ready(env).then(() => releaseHeld(env, Date.now())));
       return;
     }
-    ctx.waitUntil(ready(env).then(() => prune(env, Date.now())).then(() => stopUnconsentedTrials(env, Date.now()))
-      .then(() => recheckLapsed(env, Date.now())).then(() => autoRest(env, Date.now())).then(() => syncShareSwitch(env))
-      // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
-      .then(() => flagTick(env, Date.now())).then(() => alertTick(env, Date.now())).then(() => digestTick(env, Date.now())) // R131 1.31 [ADMX-14]
-      .then(() => growthTick(env, Date.now())) // 1.36 [GRW-02][GRW-03][GRW-05]
-      .then(() => releaseHeld(env, Date.now())) // 1.38 [DESK-09]
-      .finally(badgesChanged)); // AX 1.30 [ADMX-10]
+    // 1.38 [ADM3-05] 단계마다 따로: 한 단계가 실패해도 다음 단계가 돌고, 관리 › 서버 상태에 단계마다 마지막 성공·실패가 남아요.
+    ctx.waitUntil(ready(env).then(() => runJobs(env, hourlySteps(env), Date.now())).finally(badgesChanged)); // AX 1.30 [ADMX-10]
   },
 };
+
+/** 1.38 [ADM3-05] 매시 17분 작업의 단계(이름은 ops-watch.js JOB_NAMES). 순서는 1.37까지와 같아요. */
+export const hourlySteps = (env) => [
+  ["prune", () => prune(env, Date.now())],
+  ["trials", () => stopUnconsentedTrials(env, Date.now())],
+  ["lapsed", () => recheckLapsed(env, Date.now())],
+  ["rest", () => autoRest(env, Date.now())],
+  ["share", () => syncShareSwitch(env)],
+  // AM 1.28 [FLAG-25][FLAG-28] flags turning on by date, the launch, the day-before news.
+  ["flags", () => flagTick(env, Date.now())],
+  ["alerts", () => alertTick(env, Date.now())],
+  ["digest", () => digestTick(env, Date.now())], // R131 1.31 [ADMX-14], 1.38 [ADM3-30] 아침·저녁
+  ["growth", () => growthTick(env, Date.now())], // 1.36 [GRW-02][GRW-03][GRW-05]
+  ["held", () => releaseHeld(env, Date.now())], // 1.38 [DESK-09]
+  ["watch", () => flushWatch(env, Date.now(), true).then(() => pruneWatch(env, Date.now()))], // 1.38 [ADM3-19]
+  ...opsSteps(env, () => playVitals(env, Date.now())),
+];
 
 /**
  * Deletes what the server only keeps for a while: network hashes after two hours, spent limits, sign-ins,
@@ -769,6 +798,8 @@ const SCHEMA = [
   ...DESK_SCHEMA,
   // 1.38 [DESK-02] 운영 장부 줄 번호와 요약 (ledger.js).
   ...LEDGER_SCHEMA,
+  // 1.38 [ADM3]
+  ...OPS_SCHEMA,
   // 1.36 [PUSH-01] 문의 답 바로 알리기 (fcm.js).
   ...FCM_SCHEMA,
 ];
@@ -4455,6 +4486,9 @@ function secretIssue(env, name, least) {
  * "owner" for managing admins and anything not listed, so a new route stays the owner's until it is.
  */
 function areaFor(path) {
+  // 1.38 [ADM3] 새 길은 admin-ops.js가 정해요.
+  const ops = opsArea(path);
+  if (ops !== undefined) return ops;
   if (path === "/overview" || path === "/inbox" || path === "/logout" || path === "/me" || path.startsWith("/me/")) return null;
   // S 1.32 [SECX-01] 휴대폰 미리 보기: phonePreviews checks owner, or flags:edit on the admin's own phone.
   if (/^\/devices\/d[A-Za-z0-9]{15}\/previews$/.test(path)) return null;
@@ -4713,6 +4747,9 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/shares" && method === "GET") return shareReports(env);
   m = path.match(/^\/shares\/([A-Za-z0-9]{16,32})\/remove$/);
   if (m && method === "POST") return removeShare(request, env, m[1], now);
+  // 1.38 [ADM3] 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석·이야기.
+  const ops = await opsRoute(request, env, url, path, method, now, () => playVitals(env, Date.now()));
+  if (ops) return ops;
   return json({ error: "not_found" }, 404);
 }
 
@@ -4874,6 +4911,11 @@ const PUSH_KINDS = {
   spike: { label: "문제 신고·서버 오류 급증", area: ["inquiries", "metrics"] },
   // R131 1.31 [ADMX-14] 하루 3분 정리: at 9 in the morning (KST) one push with what is waiting today; it opens 큐 모드.
   daily: { label: "아침 9시 오늘 할 일(답할 문의·정할 판·가려진 글 수)", area: ["inquiries", "review", "community"] },
+  // 1.38 [ADM3-30] 저녁 9시 오늘 정리, [ADM3-32] 사고, [ADM3-16] 데이터 요청 기한, [ADM3-18] 낮은 별점 리뷰.
+  evening: { label: "저녁 9시 오늘 정리(끝낸 것·남은 것·내일로)", area: ["inquiries", "review", "community"] },
+  incident: { label: "사고(서버 오류·문제 신고 급증, 정기 작업 실패)", area: "owner" },
+  requests: { label: "데이터 요청(개인정보·환불·법) 기한", area: "owner" },
+  reviews: { label: "새 스토어 리뷰(별 1~2개는 바로)", area: "owner" },
 };
 const PUSH = { perAdmin: 5, hosts: /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.apple\.com)$/ };
 
@@ -4911,27 +4953,51 @@ export async function alertTick(env, now) {
  */
 export async function digestTick(env, now) {
   const keys = pushReady(env);
-  if (!keys || new Date(now + 9 * HOUR).getUTCHours() !== DIGEST_HOUR) return { sent: 0 };
+  const hour = new Date(now + 9 * HOUR).getUTCHours();
+  if (!keys || (hour !== DIGEST_HOUR && hour !== EVENING_HOUR)) return { sent: 0 };
+  // 1.38 [ADM3-30] 저녁 9시에는 오늘 정리(끝낸 것·남은 것·기한 넘음), 따로 'evening'을 고른 사람에게.
+  const evening = hour === EVENING_HOUR;
+  const kind = evening ? "evening" : "daily";
+  const mark = evening ? "evening_digest" : "daily_digest";
   const day = kstDay(now);
-  if ((await one(env, "SELECT value FROM settings WHERE key = 'daily_digest'"))?.value === day) return { sent: 0 };
-  await run(env, "INSERT INTO settings (key, value) VALUES ('daily_digest', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", day);
+  if ((await one(env, "SELECT value FROM settings WHERE key = ?", mark))?.value === day) return { sent: 0 };
+  await run(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", mark, day);
   const rows = await all(env, `SELECT s.*, a.perms, a.status, a.name, a.email FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin
-    WHERE (',' || s.kinds || ',') LIKE '%,daily,%'`);
+    WHERE (',' || s.kinds || ',') LIKE ?`, `%,${kind},%`);
   const byAdmin = new Map();
   for (const r of rows) {
     const actor = r.admin === OWNER.id ? OWNER : r.status === "active" ? { id: r.admin, name: r.name, email: r.email, owner: false, perms: readPerms(r.perms) } : null;
-    if (!actor || !mayGet(actor, "daily") || quietNow(r.quiet_from, r.quiet_to, now)) continue;
+    if (!actor || !mayGet(actor, kind) || quietNow(r.quiet_from, r.quiet_to, now)) continue;
     if (!byAdmin.has(r.admin)) byAdmin.set(r.admin, { actor, subs: [] });
     byAdmin.get(r.admin).subs.push(r);
   }
   let sent = 0;
   for (const { actor, subs } of byAdmin.values()) {
-    const text = digestText(await badges(env, actor, now));
+    let text;
+    if (evening) {
+      const l = await ledgerQuery(env, actor, now, new URLSearchParams({ view: "today" })).catch(() => null);
+      text = l ? eveningText(l.counts) : null;
+    } else {
+      text = digestText(await badges(env, actor, now));
+      // 1.38 [ADM3-30] 주인에게는 어제 돈·새 오류·리뷰·데이터 요청·사고도 한 줄에.
+      const extra = actor.owner ? await morningExtra(env, now).catch(() => "") : "";
+      if (extra) text = text ? `${text} · ${extra}` : `${extra}. 눌러서 살펴봐요`;
+    }
     if (!text) continue;
-    sent += (await deliver(env, keys, subs, { tag: "daily", title: "오늘 할 일", body: text, url: "/admin/?start=queue" }, now)).sent ?? 0;
+    sent += (await deliver(env, keys, subs, { tag: kind, title: evening ? "오늘 정리" : "오늘 할 일", body: text,
+      url: evening ? "/admin/#/desk?view=today" : "/admin/?start=queue" }, now)).sent ?? 0;
   }
   return { sent };
 }
+
+/** 1.38 [ADM3-30] 저녁 정리 한 줄: 끝낸 것, 아직 오늘 할 것, 기한 넘은 것. 아무것도 없으면 null. */
+export function eveningText(c) {
+  if (!c || (!c.doneToday && !c.today && !c.late)) return null;
+  return `오늘 끝냄 ${c.doneToday ?? 0} · 남은 오늘 할 것 ${c.today ?? 0} · 기한 넘음 ${c.late ?? 0}${c.late ? ". 내일 아침 맨 위에 있어요" : ". 수고했어요"}`;
+}
+
+/** 1.38 [ADM3-30] 저녁 정리 시각(한국 시간). */
+export const EVENING_HOUR = 21;
 
 /** The KST hour of [digestTick]. */
 export const DIGEST_HOUR = 9;
@@ -5489,6 +5555,8 @@ const BADGE_SQL = {
   phones: ["owner", "SELECT COUNT(*) AS n FROM admin_devices WHERE status = 'pending'"],
   // AT 1.29 [ADMCP-04] 문제 신고 not closed that nobody copied for development yet (오늘's tile and 문의's strip).
   bugsUncopied: ["inquiries", "SELECT COUNT(*) AS n FROM inquiries WHERE kind = 'bug' AND copied_at IS NULL AND status != 'closed'"],
+  // 1.38 [ADM3] 오류·데이터 요청·사고·리뷰·출시 점검표(admin-ops.js).
+  ...OPS_BADGE_SQL,
 };
 
 // AN 1.28 시작
@@ -5563,6 +5631,8 @@ async function today(env, actor, now) {
     q.rules = ["SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0"];
     q.versionConflicts = [BADGE_SQL.versionConflicts[1]]; // AX 1.30 [ADMX-01] 정할 판 for 주의 필요
   }
+  // 1.38 [ADM3] 주인의 주의 필요(설정·정기 작업·새 오류·데이터 요청·사고·낮은 별점)도 같은 batch로.
+  if (actor.owner) Object.assign(q, OPS_ALERT_SQL(now));
   // AX 1.30 [ADMX-01][ADMX-07] Seven days of each count for the tiles' lines and the alerts, in the same trip.
   Object.assign(q, trendQueries({ inquiries: can(actor, "inquiries"), review: can(actor, "review"), community: can(actor, "community"),
     metrics: can(actor, "metrics") }, start));
@@ -5585,6 +5655,8 @@ async function today(env, actor, now) {
   // AX 1.30 [ADMX-01][ADMX-07] trend: 7 days per count (today last); alerts: what needs a look now (주의 필요).
   out.trend = trendFrom(got, start);
   out.alerts = alertsFrom({ trend: out.trend, todo: out.todo.items, now, versions: got.versionConflicts?.[0]?.n ?? 0, shape: got.ax_shape?.[0]?.n ?? 0 });
+  // 1.38 [ADM3-04][ADM3-05][ADM3-13][ADM3-16][ADM3-32] 주인에게는 설정 빠짐·정기 작업·새 오류·데이터 요청·사고가 맨 위에.
+  if (actor.owner) out.alerts = [...opsAlertsFrom(env, got, now), ...out.alerts];
   if (got.versionConflicts) out.versionConflicts = got.versionConflicts[0].n;
   return out;
 }
