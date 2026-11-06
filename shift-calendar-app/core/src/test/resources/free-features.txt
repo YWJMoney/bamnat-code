@@ -267,3 +267,4 @@ money.cardPerf
 money.firstFill
 money.shiftPreview
 money.challenge
+view.kani
