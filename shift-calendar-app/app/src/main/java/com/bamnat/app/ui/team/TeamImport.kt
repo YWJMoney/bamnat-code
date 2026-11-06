@@ -48,7 +48,9 @@ fun rememberAnyFilePicker(onPicked: (Uri) -> Unit): () -> Unit {
 }
 
 /** What the leader chose: row i's member (null: new or not put in), the rows left out, and each code's kind of day. */
-data class TeamImportChoice(val memberOf: List<String?>, val skipped: Set<Int>, val codes: Map<String, Long?>)
+data class TeamImportChoice(val memberOf: List<String?>, val skipped: Set<Int>, val codes: Map<String, Long?>,
+                            /** 1.38 [P3-L-17] 신청으로 넣기 (종이 신청표): each code's request ([com.bamnat.core.team.WishKind.code]); null puts 근무 in. */
+                            val wishCodes: Map<String, String?>? = null)
 
 private const val NEW = "+new"
 private const val SKIP = "-skip"
@@ -74,9 +76,23 @@ fun TeamImportDialog(
     val newCount = pick.count { it == NEW }
     val unpaired = counts.count { codes[it.first] == null }
     val doubt = grid.doubtfulCount
+    // 1.38 [P3-L-17] 종이 신청표: a sheet with a few 휴·연·교 per person opens as 신청; the leader can switch.
+    var asWishes by remember(rows) { mutableStateOf(TeamGridImport.looksLikeRequests(rows, grid.days.size, shifts)) }
+    val wishCodes = remember(rows) { mutableStateMapOf<String, String?>().apply { putAll(TeamGridImport.guessWishes(counts.map { it.first }, shifts)) } }
+    val wishChoices = remember(shifts) {
+        listOf(com.bamnat.core.team.WishKind.OFF, com.bamnat.core.team.WishKind.LEAVE, com.bamnat.core.team.WishKind.HALF, com.bamnat.core.team.WishKind.EDU,
+            com.bamnat.core.team.WishKind.AVOID_NIGHT, com.bamnat.core.team.WishKind.WORK).map { it.code(null) to it.short } +
+            shifts.filter { !it.isOff }.map { com.bamnat.core.team.WishKind.SHIFT.code(it.id) to "${it.label} 원해요" }
+    }
     AlertDialog(onDismissRequest = {}, properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-        title = { Text("${Fmt.month(grid.month)} 근무표 가져오기") }, text = {
+        title = { Text("${Fmt.month(grid.month)} " + if (asWishes) "신청표 가져오기" else "근무표 가져오기") }, text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = !asWishes, onClick = { asWishes = false }, label = { Text("근무표로 넣기") })
+                    FilterChip(selected = asWishes, onClick = { asWishes = true }, label = { Text("신청으로 넣기 (종이 신청표)") })
+                }
+                if (asWishes) Text("사람마다 쉬고 싶은 날·연차·교육을 적은 신청표로 읽었어요. 표에는 칠하지 않고 신청으로 넣어서, 자동 채우기가 지키고 공정성 장부의 '신청 지킴'에 들어가요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("${rows.size}명 · ${grid.days.size}일을 읽었어요." + (if (doubt > 0) " 자신 없는 칸 ${doubt}개는 넣은 뒤 먼저 보여 드려요." else ""),
                     style = MaterialTheme.typography.bodyMedium)
                 if (fromPhoto) Text("사진에서 읽은 표예요. 넣은 뒤 노란 테두리 칸만 원본과 맞춰 보면 돼요.",
@@ -116,9 +132,19 @@ fun TeamImportDialog(
 
                 HorizontalDivider()
                 Text("② 코드 짝짓기", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                Text("파일에 쓰인 글자마다 우리 팀 근무를 골라요. 한 번 고르면 같은 글자 칸 모두에 들어가요.",
+                Text(if (asWishes) "적힌 글자마다 어떤 신청인지 골라요. 한 번 고르면 같은 글자 칸 모두에 들어가요." else "파일에 쓰인 글자마다 우리 팀 근무를 골라요. 한 번 고르면 같은 글자 칸 모두에 들어가요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                counts.forEach { (code, n) ->
+                if (asWishes) counts.forEach { (code, n) ->
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text("‘$code’ · ${n}칸" + if (wishCodes[code] == null) " · 넣지 않음" else "", style = MaterialTheme.typography.bodyMedium,
+                            color = if (wishCodes[code] == null) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurface)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            wishChoices.forEach { (k, label) -> FilterChip(selected = wishCodes[code] == k, onClick = { wishCodes[code] = k }, label = { Text(label) }) }
+                            FilterChip(selected = wishCodes[code] == null, onClick = { wishCodes[code] = null }, label = { Text("넣지 않기") })
+                        }
+                    }
+                }
+                if (!asWishes) counts.forEach { (code, n) ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text("‘$code’ · ${n}칸" + if (codes[code] == null) " · 아직 비워 둠" else "", style = MaterialTheme.typography.bodyMedium,
                             color = if (codes[code] == null) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurface)
@@ -128,14 +154,15 @@ fun TeamImportDialog(
                         }
                     }
                 }
-                Text("이미 칠한 칸은 파일 것으로 바뀌고, 잠근 칸은 그대로예요. 넣은 뒤 마음에 안 들면 위의 되돌리기 한 번이면 모두 돌아가요." +
+                if (!asWishes) Text("이미 칠한 칸은 파일 것으로 바뀌고, 잠근 칸은 그대로예요. 넣은 뒤 마음에 안 들면 위의 되돌리기 한 번이면 모두 돌아가요." +
                     if (unpaired > 0) " 비워 둔 코드 ${unpaired}가지 칸은 확인할 칸으로 남겨요." else "",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
             }
         }, confirmButton = {
             TextButton(enabled = pick.any { it != SKIP }, onClick = {
-                onApply(TeamImportChoice(pick.map { if (it == NEW || it == SKIP) null else it }, pick.withIndex().filter { it.value == SKIP }.map { it.index }.toSet(), codes.toMap()))
-            }) { Text("근무표에 넣기") }
+                onApply(TeamImportChoice(pick.map { if (it == NEW || it == SKIP) null else it }, pick.withIndex().filter { it.value == SKIP }.map { it.index }.toSet(), codes.toMap(),
+                    wishCodes.toMap().takeIf { asWishes }))
+            }) { Text(if (asWishes) "신청으로 넣기" else "근무표에 넣기") }
         }, dismissButton = { TextButton(onClick = onDismiss) { Text("그만두기") } })
 }
 

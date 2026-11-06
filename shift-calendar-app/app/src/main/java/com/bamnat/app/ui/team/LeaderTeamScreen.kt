@@ -657,6 +657,15 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 val cur = board ?: return@launch
                 val (made, ids) = com.bamnat.core.team.TeamGridImport.newMembers(rows, choice.memberOf, choice.skipped, team.id, cur.members)
                 if (made.isNotEmpty()) store.saveMembers(made)
+                // 1.38 [P3-L-17] 종이 신청표: the cells go in as 신청, the board stays as it is.
+                choice.wishCodes?.let { wc ->
+                    val list = com.bamnat.core.team.TeamGridImport.wishes(rows, ids, wc, Today.millis())
+                    store.addWishes(team.id, list, "PAPER")
+                    c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key, if (photo) "team_wish_photo" else "team_wish_file")
+                    dialog = "신청 ${list.size}개를 ${list.map { it.memberId }.toSet().size}명에게 넣었어요" + (if (made.isNotEmpty()) "(새 팀원 ${made.size}명)" else "") +
+                        ". '신청·희망'에서 보고 고칠 수 있고, 빈칸 자동 채우기가 지켜요."
+                    return@launch
+                }
                 var applied: com.bamnat.core.team.TeamGridImport.Applied? = null
                 // One change, so one 되돌리기 takes the whole file back (the new members stay, with nothing painted).
                 change { it0 -> com.bamnat.core.team.TeamGridImport.apply(it0.copy(members = it0.members + made.filter { m -> it0.members.none { o -> o.id == m.id } }), rows, ids, choice.codes).also { applied = it }.board }
