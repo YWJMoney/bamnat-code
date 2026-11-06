@@ -1031,11 +1031,13 @@ a.chip{text-decoration:none;color:inherit;padding:.4rem .8rem}
 details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;cursor:pointer}
 
 @media (max-width:719.98px){.flow-cols{grid-template-columns:minmax(0,1fr)}}
+.tabs{overflow:hidden}
 /* 접은 화면(좁은 폰): 아래 탭 다섯 칸이 잘리지 않게, 숫자 칸 두 줄, 표는 옆으로 밀어 보기 */
 @media (max-width:420px){
   .tab .nav-label{font-size:.68rem;letter-spacing:-.02em}
   .tab svg{padding:.22rem min(.8rem,2.4vw)}
   .main{padding-left:.75rem;padding-right:.75rem}
+  .filterbar,.pile-strip,.timebar{margin-left:-.75rem;margin-right:-.75rem;padding-left:.75rem;padding-right:.75rem}
   .card{padding:.85rem .85rem}
   .card-head{flex-wrap:wrap;gap:.35rem .5rem}
   .launch-steps>li{gap:.55rem;padding:.65rem .25rem}
@@ -1064,4 +1066,26 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
   .split .cols{grid-template-columns:minmax(0,1.7fr) minmax(19rem,1fr)}
   .cols>aside{position:sticky;top:4.75rem;max-height:calc(100dvh - 6rem);overflow:auto}
 }
+
+/* 1.38 [ADM3-02] 휴대폰 장부 머리 접기: 숫자 칸은 아래 보기 칸과 같은 숫자라 숨기고, 보기·종류는 옆으로 미는 한 줄, 찾기 줄도 한 줄. 첫 화면에 줄이 3개 넘게 보여요. */
+@media (max-width:599.98px){
+  .ledger-view .lg-tiles{display:none}
+  .ledger-view .segmented.wrap,.lg-card>nav.chips{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-left:-.25rem;margin-right:-.25rem;padding:0 .25rem}
+  .ledger-view .segmented.wrap::-webkit-scrollbar,.lg-card>nav.chips::-webkit-scrollbar{display:none}
+  .ledger-view .segmented.wrap .seg,.lg-card>nav.chips .chip{flex:0 0 auto;white-space:nowrap}
+  .lg-card>nav.chips{margin-bottom:.5rem}
+  .lg-bar{flex-wrap:wrap}.lg-bar input[type=search]{flex-basis:100%}
+  .lg-bar input[type=search]{flex:1 1 auto}
+  .lg-bar select{max-width:5.5rem}
+  .lg-bar .btn{padding-left:.55rem;padding-right:.55rem;white-space:nowrap}
+  .lg-hint{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;margin:.25rem 0 .5rem}
+}
+.stage-strip{display:flex;align-items:center;gap:.3rem;overflow-x:auto;scrollbar-width:none;margin:0 0 .75rem;padding:.15rem 0}
+.stage-strip::-webkit-scrollbar{display:none}
+.stage-strip a{flex:0 0 auto;display:inline-flex;align-items:baseline;gap:.35rem;padding:.35rem .7rem;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:inherit;text-decoration:none;font-size:.8rem;font-weight:700}
+.stage-strip a b{font-size:.92rem}
+.stage-strip a.zero{color:var(--faint)}
+.stage-strip a.next{border-color:var(--accent);background:var(--accent-soft)}
+.stage-strip a.stuck{border-color:color-mix(in srgb,var(--bad) 45%,var(--line));color:var(--bad)}
+.stage-strip .sep{color:var(--faint);flex:none}
 `;

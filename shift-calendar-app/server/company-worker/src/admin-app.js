@@ -765,6 +765,10 @@ function adminApp(L, BUILD, M) {
         api(`/person?inquiry=${encodeURIComponent(id)}`).then((d) => { S.data.person = { for: id, d }; }, () => { S.data.person = { for: id, d: null }; })
           .then(() => { if (S.route.name === "inquiries" && S.route.id === id) render({ keepScroll: true }); });
       }
+      // 1.38 [ADM3-10] 장부 맨 위 단계 막대(흐름 한 줄).
+      if (name === "desk" && can("inquiries")) {
+        api("/flow").then(keep((d) => { S.data.flowStrip = d; if (S.route.name === "desk") render({ keepScroll: true }); })).catch(() => {});
+      }
       if (name === "dev" && id && can("dev") && S.data.story?.id !== id) {
         api(`/story/${encodeURIComponent(id)}`).then(keep((d) => { S.data.story = d; if (S.route.name === "dev" && S.route.id === id) render({ keepScroll: true }); })).catch(() => {});
       }
@@ -1094,7 +1098,7 @@ function adminApp(L, BUILD, M) {
   const VIEWS = {
     home: () => V.homeView(),
     // 1.38 [DESK-02][DESK-03] 운영 장부(정리함·할 일함을 하나로), [GRW-04] 스튜디오 요구.
-    desk: () => V.ledgerView(),
+    desk: () => V.stageStrip() + V.ledgerView(),
     // 1.37 [ADM2-01] 흐름, [ADM2-03] 운영 열쇠.
     flow: () => V.flowView(),
     keys: () => V.keysView(),
@@ -2796,9 +2800,9 @@ function adminApp(L, BUILD, M) {
    */
   function movedView() {
     const rows = [
-      ["adopt", "자동 채택·맞았어요 비율·채택 보상·상한", "광장 › 채택 규칙"],
+      ["adopt", "자동 채택·맞았어요 비율·채택 보상·상한", "관리 › 채택 규칙"],
       ["rewards", "친구 초대 보상 규칙", "관리 › 보상"],
-      ["sla", "문의 답 목표", "문의 › 답 목표"],
+      ["sla", "문의 답 목표", "관리 › 답 목표"],
       ["account", "이 기기(화면 색·글자 크기·아래 탭·소리)·이 기기 알림·앱으로 설치·단축키", "관리 › 내 계정·이 기기"],
       ["server", "서버 상태", "관리 › 서버 상태"],
       ["flags", "기능 스위치·정식 출시(결제·광고 조건과 정식 출시일)", "출시 › 기능 관리"],
@@ -2880,6 +2884,7 @@ function adminApp(L, BUILD, M) {
         ${m.owner ? '<p class="hint">Cloudflare의 ADMIN_PASSWORD로 로그인했어요. 모든 화면을 쓰고 관리자를 초대·승인해요.</p>'
           : `<dl class="kv"><dt>메일</dt><dd>${esc(m.email)}</dd></dl><p class="label">권한</p><div class="perm-sum">${permPills(m.perms, m.areas ?? {})}</div>`}
       </section>
+      ${V.passkeyCard()}
       ${can("audit") ? `<section class="card"><h2>내가 한 일</h2><p class="hint">오늘 ${done}건 처리했어요(로그인은 빼고).</p>
         <div class="actions start"><a class="btn" href="${L.routeHash("audit", null, { actor: "me" })}">내 활동 기록 보기</a></div></section>`
         : `<section class="card"><h2>내가 한 일</h2><p class="hint">오늘 ${done}건 처리했어요(로그인은 빼고).</p></section>`}
@@ -2971,6 +2976,7 @@ function adminApp(L, BUILD, M) {
         <p class="error" role="alert">${esc(S.error)}</p>
         <button class="btn primary wide" type="submit"${usable ? "" : " disabled"}>로그인</button>
         ${S.needCode ? '<button class="btn ghost wide" type="button" data-act="login-restart">비밀번호부터 다시</button>' : ""}
+        ${!S.needCode && V.passkeyOk() ? '<button class="btn wide" type="button" data-act="passkey-login">지문·얼굴(패스키)로 들어오기</button>' : ""}
       </form>
       ${owner ? "" : '<p class="alt">계정은 최고 관리자가 보낸 초대 링크로만 만들 수 있어요.</p>'}
       ${owner && h && !(h.database && h.password && h.salt) ? `<section class="card"><h2>서버 준비</h2>${healthList()}</section>` : ""}
@@ -3927,6 +3933,18 @@ function adminApp(L, BUILD, M) {
       }, "primary");
     },
     "flag-cond": ({ key }) => openFlagConditions(key),
+    // 1.38 [ADM3-01] 패스키로 들어오기.
+    "passkey-login": async () => {
+      S.error = "";
+      try {
+        if (await V.passkeyAssert()) await enter();
+      } catch (e) {
+        S.error = e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 나중에 다시 해 주세요."
+          : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
+          : e.name === "NotAllowedError" || e.name === "AbortError" ? "" : "패스키로 들어오지 못했어요. 비밀번호로 들어와 내 계정에서 패스키를 다시 만들어 주세요.";
+        render();
+      }
+    },
     // 1.38 [ADM3-17] 단계 출시: 'rollout N%' 한 줄을 넣거나 바꾸고(100이면 빼요), '이 앱 판 이상만'은 'app >= 번호' 한 줄.
     "flag-rollout": ({ key }) => {
       const box = document.getElementById("flag-cond");

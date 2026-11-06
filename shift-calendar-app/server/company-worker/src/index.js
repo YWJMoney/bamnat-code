@@ -96,6 +96,8 @@ import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./des
 import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
 // 1.38 [ADM3] 관리자 앱 개편: 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석.
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
+// 1.38 [ADM3-01] 패스키(지문) 로그인.
+import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
 import { flushWatch, pruneWatch, recordError, recordRequest, runJobs } from "./ops-watch.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
@@ -800,6 +802,7 @@ const SCHEMA = [
   ...LEDGER_SCHEMA,
   // 1.38 [ADM3]
   ...OPS_SCHEMA,
+  ...PASSKEY_SCHEMA,
   // 1.36 [PUSH-01] 문의 답 바로 알리기 (fcm.js).
   ...FCM_SCHEMA,
 ];
@@ -4538,6 +4541,9 @@ export async function admin(request, env, url) {
     if (request.headers.get("x-admin") !== "1" || (origin && origin !== url.origin)) return json({ error: "forbidden" }, 403);
   }
   if (path === "/login" && method === "POST") return login(request, env, now);
+  // 1.38 [ADM3-01] 패스키: 도전값 받기, 서명으로 들어오기.
+  if (path === "/passkey/start" && method === "POST") return passkeyStart(env, url, now);
+  if (path === "/passkey/login" && method === "POST") return passkeyLogin(request, env, url, now);
   // [ADMIN-15] The invite token goes in the body, out of logs and history. [ADMUX-11] The 1.23 GET /join?t= is gone
   // (the developer app has used POST /join/info since 1.23).
   if (path === "/join/info" && method === "POST") return inviteInfo(request, env, url, now);
@@ -4587,6 +4593,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/me/link-code" && method === "POST") return linkCode(env, actor, now);
   if (path === "/me/password" && method === "POST") return changePassword(request, env, actor, session.token, now);
   // R131 1.31 [ADMX-16] 두 번째 확인: see whether it is on, start it (a new secret), confirm it with a code, turn it off with one.
+  if (path === "/me/passkeys" || path.startsWith("/me/passkeys/")) {
+    if (env.actor?.key) return json({ error: "no_permission" }, 403);
+    const r = await passkeyMine(request, env, url, path, method, actor, now);
+    if (r) return r;
+  }
   if (path === "/me/2fa" && method === "GET") return json(await secondView(env, actor));
   if (path === "/me/2fa" && method === "POST") return secondChange(request, env, actor, now);
   // [ADMIN-19] This browser's web push.
@@ -4828,6 +4839,34 @@ async function login(request, env, now) {
     ...(account ? [stmt(env, "UPDATE admins SET last_login = ? WHERE id = ?", now, account.id)] : []),
   ]);
   await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "");
+  return json({ ok: true }, 200, { "set-cookie": cookie(token, LIMITS.sessionMs / 1000) });
+}
+
+/**
+ * 1.38 [ADM3-01] 패스키로 들어오기: 비밀번호와 같은 잠금(같은 곳에서 여러 번 틀리면 1시간)을 쓰고, 맞으면 같은 세션을 열어요.
+ * 패스키는 기기와 지문(또는 얼굴) 두 가지라 두 번째 확인 코드는 묻지 않아요. 멈춘 관리자의 패스키는 들어오지 못해요.
+ */
+async function passkeyLogin(request, env, url, now) {
+  const net = await network(request, env, now);
+  const key = `login|${net.login}`;
+  const row = await one(env, "SELECT count, expires FROM counters WHERE key = ? AND expires > ?", key, now);
+  if ((row?.count ?? 0) >= LIMITS.loginFailures) return json({ error: "locked", until: iso(row.expires) }, 429);
+  const got = await passkeyCheck(request, env, url, now);
+  const account = got && got.admin !== OWNER.id ? await one(env, "SELECT * FROM admins WHERE id = ?", got.admin) : null;
+  if (!got || (got.admin !== OWNER.id && !account)) {
+    await allow(env, key, Infinity, LIMITS.lockMs, now);
+    await audit(env, now, "login_failed", "passkey");
+    return json({ error: "wrong" }, 401);
+  }
+  if (account && account.status !== "active") return json({ error: account.status === "pending" ? "pending" : "suspended" }, 403);
+  const token = randomId(40);
+  await batch(env, [
+    stmt(env, "DELETE FROM counters WHERE key = ?", key),
+    stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
+    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at) VALUES (?, ?, ?, ?)", await sha256(`session|${token}`), got.admin, now + LIMITS.sessionMs, now),
+    ...(account ? [stmt(env, "UPDATE admins SET last_login = ? WHERE id = ?", now, account.id)] : []),
+  ]);
+  await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "", `패스키 ${got.name}`);
   return json({ ok: true }, 200, { "set-cookie": cookie(token, LIMITS.sessionMs / 1000) });
 }
 

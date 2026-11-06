@@ -334,6 +334,44 @@ export function opsViews(A) {
         ${e.ref ? `<a class="btn small ghost" href="${L.routeHash("inquiries", e.ref, {})}">문의</a>` : ""}</li>`).join("")}</ol></details>`;
   }
 
+  // ---- [ADM3-10] 장부 위의 단계 막대: 흐름(문의에서 출시까지)을 장부 맨 위 한 줄로 ----
+
+  function stageStrip() {
+    const d = S.data.flowStrip;
+    if (!d?.stages?.length) return "";
+    return `<nav class="stage-strip" aria-label="문의에서 출시까지">${d.stages.map((x) => `<a href="${href("flow")}" class="${x.stuck ? "stuck" : x.n ? "" : "zero"}${x.key === d.next ? " next" : ""}" title="${esc(x.hint ?? "")}">
+      <span>${esc(x.name)}</span><b>${x.n}</b></a>`).join('<span class="sep" aria-hidden="true">›</span>')}</nav>`;
+  }
+
+  // ---- [ADM3-01] 패스키(지문·얼굴) ----
+
+  const b64 = {
+    enc: (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+    dec: (t) => Uint8Array.from(atob(t.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((t.length + 3) % 4)), (c) => c.charCodeAt(0)),
+  };
+  const passkeyOk = () => typeof window !== "undefined" && Boolean(window.PublicKeyCredential && navigator.credentials?.create);
+
+  /** 로그인 화면: 서버 도전값으로 이 기기 패스키에 서명을 받아 그대로 보내요. 성공하면 true. */
+  async function passkeyAssert() {
+    const o = await api("/passkey/start", "POST", {});
+    const cred = await navigator.credentials.get({ publicKey: { challenge: b64.dec(o.challenge), rpId: o.rpId, userVerification: "required", timeout: 60000 } });
+    if (!cred) return false;
+    const r = cred.response;
+    await api("/passkey/login", "POST", { id: cred.id, clientDataJSON: b64.enc(r.clientDataJSON), authenticatorData: b64.enc(r.authenticatorData), signature: b64.enc(r.signature) });
+    return true;
+  }
+
+  function passkeyCard() {
+    const d = S.data.passkeys;
+    const on = passkeyOk();
+    return `<section class="card"><div class="card-head"><h2>패스키(지문·얼굴)</h2>${d?.items.length ? `<span class="pill ok">${d.items.length}개</span>` : ""}</div>
+      <p class="hint">비밀번호 대신 이 휴대폰의 지문이나 얼굴로 들어와요. 기기에 남는 열쇠와 지문 두 가지라 두 번째 확인 코드를 묻지 않아요. 비밀번호 로그인도 그대로 돼요.</p>
+      ${d?.items.length ? `<ul class="rows">${d.items.map((k) => `<li><div class="row"><span class="row-main"><b>${esc(k.name)}</b><small>${esc(dayOf(k.createdAt))} 만듦${k.lastAt ? ` · 마지막 ${esc(agoMs(k.lastAt))}` : " · 아직 안 씀"}</small></span>
+        <button class="btn small danger" type="button" data-act="passkey-delete" data-id="${esc(k.id)}">지우기</button></div></li>`).join("")}</ul>` : ""}
+      ${on ? `<div class="actions start"><button class="btn primary small" type="button" data-act="passkey-add"${d && d.items.length >= d.max ? " disabled" : ""}>이 기기 패스키 만들기</button></div>`
+        : '<p class="meta">이 브라우저는 패스키를 쓸 수 없어요. 휴대폰의 Chrome·삼성 인터넷에서 관리자 앱을 열어 주세요.</p>'}</section>`;
+  }
+
   // ---- [ADM3-32] 맨 위 빨간 띠 ----
 
   function incidentBanner() {
@@ -356,6 +394,7 @@ export function opsViews(A) {
     money: () => [[`/money?days=${S.moneyDays ?? 28}`, "money"], ...(can("metrics") ? [[`/changes?from=${Date.now() - (S.moneyDays ?? 28) * 864e5}`, "changes"]] : [])],
     errors: () => [[`/watch/errors?status=${S.errorsShow ?? "open"}`, "errors"], ...(can("metrics") ? [[`/changes?from=${Date.now() - 14 * 864e5}`, "changes"]] : [])],
     server: () => (S.me?.owner ? [["/watch/health", "watch"]] : []),
+    account: () => [["/me/passkeys", "passkeys"]],
   };
   const has = {
     incident: () => S.data.incident, cockpit: () => S.data.cockpit, reviews: () => S.data.storeReviews, requests: () => S.data.requests, backup: () => S.data.backup,
@@ -381,6 +420,27 @@ export function opsViews(A) {
   };
 
   const actions = {
+    "passkey-add": async () => {
+      const o = await act(() => api("/me/passkeys/start", "POST", {}));
+      if (!o) return;
+      let cred;
+      try {
+        cred = await navigator.credentials.create({ publicKey: { challenge: b64.dec(o.challenge), rp: { id: o.rpId, name: "밤낮 관리자" },
+          user: { id: b64.dec(o.user.id), name: o.user.name, displayName: o.user.displayName }, pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+          authenticatorSelection: { userVerification: "required", residentKey: "required" }, attestation: "none", timeout: 60000,
+          excludeCredentials: o.exclude.map((id) => ({ type: "public-key", id: b64.dec(id) })) } });
+      } catch {
+        toast("패스키를 만들지 않았어요");
+        return;
+      }
+      if (!cred) return;
+      const name = /Android/.test(navigator.userAgent) ? "안드로이드 휴대폰" : /iPhone|iPad/.test(navigator.userAgent) ? "아이폰" : "이 컴퓨터";
+      if (await act(() => api("/me/passkeys", "POST", { name, clientDataJSON: b64.enc(cred.response.clientDataJSON), attestationObject: b64.enc(cred.response.attestationObject) }),
+        "패스키를 만들었어요. 다음부터 지문으로 들어와요")) reload("passkeys");
+    },
+    "passkey-delete": ({ id }) => confirmBox("이 패스키를 지울까요?", "이 기기로 지문 로그인을 못 해요. 휴대폰의 패스키 목록에서도 지워 주세요.", "지우기", async () => {
+      if (await act(() => api(`/me/passkeys/${id}/delete`, "POST", {}), "지웠어요")) reload("passkeys");
+    }),
     "incident-open": () => openDialog(`<form data-form="incident-open"><h2>사고를 직접 열까요?</h2><p>신호가 기준을 넘지 않았지만 문제가 커 보일 때 열어요. 다른 관리자에게도 맨 위 빨간 띠가 보여요.</p>
       <div class="fieldset"><label for="io-note">무엇이 보이는지</label><textarea id="io-note" name="note" maxlength="300" required></textarea></div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">열기</button></div></form>`),
@@ -505,5 +565,5 @@ export function opsViews(A) {
     },
   };
 
-  return { opsViews: views, opsLoads: loads, opsHas: has, watchBoard, personPanel, storyCard, incidentBanner, materialsTab, actions, forms };
+  return { opsViews: views, opsLoads: loads, opsHas: has, stageStrip, passkeyCard, passkeyAssert, passkeyOk, watchBoard, personPanel, storyCard, incidentBanner, materialsTab, actions, forms };
 }
