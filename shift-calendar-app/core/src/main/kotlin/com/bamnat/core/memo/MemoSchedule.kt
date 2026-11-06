@@ -56,6 +56,17 @@ object MemoTime {
         return Found(at, phrase)
     }
 
+    /**
+     * 1.38 [FLOW-08] The clock time written in [memo] as it falls on [day], past or not (the day's story shows what was, too):
+     * a repeating memo on each of its days, a memo with a date written next to the time on that date. Null for no time.
+     */
+    fun timeOn(memo: Memo, day: LocalDate): LocalDateTime? {
+        val text = (sequenceOf(memo.title, memo.text) + memo.checklist.asSequence().map { it.text }).joinToString("\n")
+        val time = findTime(text) ?: return null
+        val date = if (memo.repeat.isNotEmpty()) day else findDate(text, memo.date ?: day)?.first ?: day
+        return date.atTime(time.time).plusDays(time.nextDay)
+    }
+
     private class Time(val time: LocalTime, val nextDay: Long, val phrase: String)
 
     private fun findTime(text: String): Time? {
