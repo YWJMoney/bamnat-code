@@ -38,7 +38,8 @@ fun WhatsNewDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("${releases.first().versionName}에서 새로 생긴 것") },
+        // 1.38 PC 4a5c3828: from 1.36.1 two versions show at once, each with its own heading, so the title stays plain.
+        title = { Text(if (releases.size > 1) "새로 생긴 것" else "${releases.first().versionName}에서 새로 생긴 것") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 // 1.38 [EASE-32] Said first: the user asked, and this version is the answer.
