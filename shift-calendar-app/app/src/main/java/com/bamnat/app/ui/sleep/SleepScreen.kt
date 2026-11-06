@@ -82,6 +82,9 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.UndoMessage
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.sleep.SleepAutoWatch
+import com.bamnat.app.sleep.SleepRecordService
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.theme.LocalCalendarColors
@@ -155,6 +158,25 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         val sleep = com.bamnat.core.sleep.SleepMorning.latest(log, now)
         Morning(offers, sleep, sleep?.let { com.bamnat.core.sleep.SleepMorning.checkFor(it, checks) }, autoFlag, autoOn)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /** 1.38 [SLEEP-06][SLEEP-07] The last measured night and its sounds; null while `sleep.sound` is off. */
+    data class Night(val last: SleepRecordService.Companion.LastNight?, val events: List<com.bamnat.app.data.db.SleepEventEntity>)
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val night: StateFlow<Night?> = combine(com.bamnat.app.sleep.SleepRecordService.recording, container.flags.byKey) { rec, f ->
+        rec to (f[com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND]?.on == true)
+    }.flatMapLatest { (_, on) ->
+        if (!on) kotlinx.coroutines.flow.flowOf(null)
+        else {
+            val last = SleepRecordService.lastNight(container.appContext)
+            if (last == null) kotlinx.coroutines.flow.flowOf(Night(null, emptyList()))
+            else container.sleepRepository.events(last.start, last.end.plusMinutes(1)).map { Night(last, it) }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun keepClip(e: com.bamnat.app.data.db.SleepEventEntity, keep: Boolean) {
+        container.appScope.launch { container.sleepRepository.keepClip(e.id, keep) }
+    }
 
     fun acceptAuto(s: com.bamnat.core.sleep.SleepAuto.Segment, start: LocalDateTime = s.start, end: LocalDateTime = s.end) {
         container.appScope.launch {
@@ -268,6 +290,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
     val settings by vm.settings.collectAsStateWithLifecycle()
     val health by vm.health.collectAsStateWithLifecycle()
     val morning by vm.morning.collectAsStateWithLifecycle()
+    val night by vm.night.collectAsStateWithLifecycle()
     var fixing by remember { mutableStateOf<com.bamnat.core.sleep.SleepAuto.Segment?>(null) }
     var editing by remember { mutableStateOf<SleepEntry?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
@@ -319,6 +342,8 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             NowCard(s.log.firstOrNull { it.end == null && !it.imported }, onAsleep = vm::fellAsleep, onAwake = vm::wokeUp)
             // 1.38 [SLEEP-04] 잠드는 소리, next to 잠들었어요.
             SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
+            // 1.38 [SLEEP-06][SLEEP-07] 자는 동안 소리, once `sleep.sound` is open.
+            night?.let { n -> SleepNightCard(n.last, n.events, vm::keepClip) }
             // Design: an empty sleep screen points at where to start.
             if (s.log.isEmpty()) com.bamnat.app.ui.components.EmptyState("아직 잠 기록이 없어요",
                 "자기 전에 ‘잠들었어요’, 깨면 ‘깼어요’를 누르거나 아래 ‘기록 추가’로 적어요",

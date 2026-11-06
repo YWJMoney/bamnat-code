@@ -80,6 +80,8 @@ object Notifications {
     const val SLEEP_AUTO_ID = 7314
     /** [SLEEP-04] 잠드는 소리, while it plays. */
     const val NOISE_ID = 7315
+    /** [SLEEP-06] 자는 동안 소리 재는 중. */
+    const val SLEEP_RECORD_ID = 7316
     const val LEAVE_ID = 7201
     const val SHARE_ID = 7202
     const val PRO_ID = 7203

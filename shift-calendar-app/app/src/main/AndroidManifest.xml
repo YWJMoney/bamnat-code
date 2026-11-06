@@ -16,6 +16,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
     <!-- [SLEEP-04] 잠드는 소리: made on the phone as it plays, on the media stream, started by the user. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- [SLEEP-06] 정밀 측정 only, off until the user taps 측정 시작 and allows the microphone: sounds are sorted on the phone,
+         short clips stay on the phone for 7 days, nothing is sent. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- [ALRM-15] 1.31 R9: no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS. 알람 점검 opens the phone's own list of apps (no permission),
          so Play's review has no permission to ask about; exact alarms already ring through Doze. -->
@@ -284,6 +288,12 @@
             android:name=".sleep.NoiseService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- [SLEEP-06] 정밀 측정, started by the user's tap. -->
+        <service
+            android:name=".sleep.SleepRecordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
 
         <!-- [SLEEP-01] Sleep pieces from Play services (it holds the PendingIntent), and 맞아요·아니에요 on the notice. -->
         <receiver

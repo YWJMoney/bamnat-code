@@ -95,6 +95,24 @@ class SleepRepository(
 
     suspend fun unanswer(id: Long) = dao.deleteCheck(id)
 
+    // ---- 1.38 [SLEEP-07] 소리 사건 ----
+
+    /** The night's sounds between [from] and [to]. */
+    fun events(from: LocalDateTime, to: LocalDateTime): Flow<List<com.bamnat.app.data.db.SleepEventEntity>> =
+        dao.observeEvents(millis(from), millis(to))
+
+    suspend fun addEvents(events: List<com.bamnat.app.data.db.SleepEventEntity>) = events.forEach { dao.insertEvent(it) }
+
+    /** 보관: a clip the user kept stays past the 7 days. */
+    suspend fun keepClip(id: Long, keep: Boolean) = dao.keepEvent(id, keep)
+
+    /** The clips past [days] days and not kept: the files go (by [delete]), the times and kinds stay. Returns how many. */
+    suspend fun dropOldClips(days: Long, delete: (String) -> Unit): Int {
+        val old = dao.oldClips(clock() - days * DAY_MILLIS)
+        old.forEach { e -> e.file?.let(delete); dao.dropClip(e.id) }
+        return old.size
+    }
+
     private fun SleepCheckEntity.toModel() = SleepCheck(id, local(startMillis), local(endMillis), SleepMood.of(mood), SleepTag.decode(tags), note)
 
     private fun SleepLogEntity.toModel() = SleepEntry(id, local(startMillis), endMillis?.let(::local), auto = source == SleepLogEntity.SOURCE_AUTO)
