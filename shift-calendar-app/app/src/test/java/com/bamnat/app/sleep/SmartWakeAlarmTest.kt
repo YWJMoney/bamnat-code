@@ -41,15 +41,27 @@ class SmartWakeAlarmTest {
     private val day = LocalDate.of(2026, 11, 2)
     private fun millis(t: LocalDateTime) = t.atZone(zone).toInstant().toEpochMilli()
 
+    /**
+     * CI 12차: [AlarmSoon.unskip] plans the alarms again on the app's own scope, at whatever the clock is then; run from here
+     * it raced a test's own planning (with the real clock, after the test's days) and left no next alarm. The skips are
+     * cleared where they are kept instead, with nothing planned behind the test's back.
+     */
+    private fun clearSkips() {
+        app.createDeviceProtectedStorageContext().getSharedPreferences("alarm_soon", android.content.Context.MODE_PRIVATE).edit().clear().commit()
+        app.getSharedPreferences("smart_wake", android.content.Context.MODE_PRIVATE).edit().clear().commit()
+    }
+
     @Before fun setUp() {
         shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         Notifications.createChannels(app)
         AlarmsOff.turnOn(app)
-        AlarmSoon.unskip(app)
+        clearSkips()
+        // The app's own first planning, at the real clock, is over before a test plans its days.
+        com.bamnat.app.alarm.AppSettled.alarms(app)
     }
 
     @After fun tearDown() = runBlocking {
-        AlarmSoon.unskip(app)
+        clearSkips()
         c.settingsRepository.update { it.copy(smartWakeMinutes = 0) }
         Today.reset()
     }

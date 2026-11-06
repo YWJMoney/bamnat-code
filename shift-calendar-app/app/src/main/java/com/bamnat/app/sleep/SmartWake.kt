@@ -53,7 +53,11 @@ object SmartWake {
     fun arm(context: Context, ring: RingRequest?) {
         runCatching {
             val am = context.getSystemService(AlarmManager::class.java) ?: return
-            val minutes = if (BootAlarms.isLocked(context)) 0 else context.appContainer.settingsRepository.current.smartWakeMinutes
+            // Never builds or waits for the app's container from inside the alarm's planning (CI: a scheduler made on its own
+            // pulled the container in and raced its first planning); before it is ready the window is left as it was.
+            val minutes = if (BootAlarms.isLocked(context)) 0
+                else (context.applicationContext as? com.bamnat.app.BamnatApp)?.readyContainer()?.settingsRepository?.current?.smartWakeMinutes
+                    ?: return
             val from = ring?.takeIf { it.label == null && !it.isSnooze }?.let { SmartWakeRule.windowStart(it.triggerAtMillis, minutes) }
             if (ring == null || from == null || from <= Today.millis()) {
                 am.cancel(intent(context, null))
