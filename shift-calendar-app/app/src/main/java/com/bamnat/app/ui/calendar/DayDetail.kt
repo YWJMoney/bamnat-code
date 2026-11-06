@@ -195,6 +195,8 @@ fun DayPanel(
      * inside a scroll has no height to measure against.
      */
     scrollGroups: Boolean = true,
+    /** 1.38 [FLOW-08] '이 날부터 하루 밀기' on the work card: the realign dialog the calendar's long press opens. */
+    onRealign: ((LocalDate) -> Unit)? = null,
 ) {
     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
     Column(modifier) {
@@ -207,7 +209,7 @@ fun DayPanel(
             (if (scrollGroups) Modifier.weight(1f, fill = false).imePadding().verticalScroll(rememberScrollState()) else Modifier)
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding),
         ) {
-            DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds)
+            DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds, onRealign)
         }
     }
 }
@@ -230,6 +232,7 @@ private fun DayGroups(
     onOpenShiftTypes: () -> Unit,
     onOpenPay: () -> Unit,
     onOpenExtraKinds: () -> Unit,
+    onRealign: ((LocalDate) -> Unit)? = null,
 ) {
     val date = day.date
     val cal = LocalCalendarColors.current
@@ -262,6 +265,37 @@ private fun DayGroups(
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     // [EASE-10] The kinds of work are open in the header above; here only when the header has none (a 현장·가게 day asked for them).
     val headChips = shiftChipsInHead(day, snapshot, style)
+    // 1.38 [FLOW-08] 내 하루 이야기: shifts (last night's too), alarms, sleep, money and memos of the day on one line,
+    // only when it says more than the work card (a sleep, money or memo on it).
+    val sleepLog by vm.sleepLog.collectAsStateWithLifecycle()
+    val story = remember(snapshot, date, sleepLog, dayBook, memos, tips, settings.dayStory, settings.alarmsEnabled, calendarAlarms) {
+        if (!settings.dayStory) null else runCatching {
+            val ring = settings.alarmsEnabled && calendarAlarms
+            val alarmsAround = if (!ring) emptyList() else listOf(date, date.plusDays(1))
+                .flatMap { com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snapshot.resolver, it) }
+            val near = sleepLog.filter { it.start.toLocalDate() in date.minusDays(1)..date }
+            val items = com.bamnat.core.design.DayStoryItems.of(date, snapshot.resolver, alarmsAround, near, tips, dayBook.entries,
+                com.bamnat.core.memo.MemoStory.items(memos, date))
+            items.takeIf { com.bamnat.core.design.DayStoryItems.worthShowing(com.bamnat.core.design.DayStory.arrange(date, it)) }
+        }.getOrNull()
+    }
+    story?.let { events ->
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerLowest,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        ) {
+            Column(Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 4.dp)) {
+                Text("하루 이야기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 6.dp).semantics { heading() })
+                com.bamnat.app.ui.components.StoryLine(
+                    day = date, events = events, now = Today.dateTime(),
+                    onOpen = { e -> com.bamnat.core.memo.MemoStory.memoIdOf(e)?.let { onOpenMemo(it, date) } },
+                    shiftColor = day.shiftType?.let { Color((it.colorArgb or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
 
     // [DAY-04] The user's own order, else the one that fits the work style.
     val order = remember(settings.dayGroupOrder, moneyFirst) { G.order(settings.dayGroupOrder, moneyFirst) }
@@ -301,7 +335,13 @@ private fun DayGroups(
                             summary = workSummary(day, snapshot),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
-                        ) { WorkContent(day, snapshot, vm, showChips = !headChips) }
+                        ) {
+                            WorkContent(day, snapshot, vm, showChips = !headChips)
+                            // 1.38 [FLOW-08] The order drifted from this day on (a team moved a day): realign it from here.
+                            if (onRealign != null && snapshot.resolver.patternOn(date) is com.bamnat.core.model.WorkPattern.Rotation) {
+                                TextButton(onClick = { onRealign(date) }) { Text("이 날부터 하루 밀기·순서 맞추기") }
+                            }
+                        }
                     }
                     G.EXTRA -> {
                         val names = day.extras.map(ExtraText::name)

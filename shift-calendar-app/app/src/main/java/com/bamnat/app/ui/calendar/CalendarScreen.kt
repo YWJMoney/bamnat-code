@@ -1659,6 +1659,7 @@ fun CalendarScreen(
             bottomPadding = bottom,
             weekNote = weekNote,
             compact = wide,
+            onRealign = { realigning = it }, // 1.38 [FLOW-08]
         )
     }
 

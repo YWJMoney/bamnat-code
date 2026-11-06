@@ -272,3 +272,4 @@ sleep.morning
 sleep.adapt
 sleep.challenge
 sleep.dnd
+day.story

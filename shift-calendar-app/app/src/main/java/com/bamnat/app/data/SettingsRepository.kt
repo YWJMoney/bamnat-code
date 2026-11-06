@@ -40,6 +40,8 @@ data class AppSettings(
     /** 1.38 [FLOW-26] 칸이, the app's little calendar-day friend, where it shows (first setup's end, empty screens, the
      *  morning card, the night screen). 설정 › 화면 › 칸이 보이기 turns it off everywhere. */
     val showKani: Boolean = true,
+    /** 1.38 [FLOW-08] 내 하루 이야기: the day's shifts, sleep, money and memos on one time line at the top of the day view. */
+    val dayStory: Boolean = true,
     /**
      * [CYC-04] 1.38: the 업종 묶음 whose law-named days (소방의 날…) the calendar shows ([com.bamnat.core.plaza.IndustryGroups]);
      * set when a public cycle of that 업종 is put on the calendar, or picked in 설정 › 달력. Empty: none.
@@ -380,6 +382,7 @@ class SettingsRepository(context: Context) {
             showHoursInCells = prefs.getBoolean(K_CELL_HOURS, d.showHoursInCells),
             showLunar = prefs.getBoolean(K_LUNAR, d.showLunar),
             showKani = prefs.getBoolean(K_KANI, d.showKani),
+            dayStory = prefs.getBoolean(K_DAY_STORY, d.dayStory),
             orgDayGroup = prefs.getString(K_ORG_GROUP, null) ?: d.orgDayGroup,
             orgDaysOn = prefs.getBoolean(K_ORG_ON, d.orgDaysOn),
             reviewDue = prefs.getBoolean(K_REVIEW_DUE, false),
@@ -514,6 +517,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_CELL_HOURS, s.showHoursInCells)
             .putBoolean(K_LUNAR, s.showLunar)
             .putBoolean(K_KANI, s.showKani)
+            .putBoolean(K_DAY_STORY, s.dayStory)
             .putString(K_ORG_GROUP, s.orgDayGroup)
             .putBoolean(K_ORG_ON, s.orgDaysOn)
             .putBoolean(K_REVIEW_DUE, s.reviewDue)
@@ -707,6 +711,7 @@ class SettingsRepository(context: Context) {
         const val K_CELL_HOURS = "cell_hours"
         const val K_LUNAR = "lunar"
         const val K_KANI = "kani"
+        const val K_DAY_STORY = "day_story"
         const val K_ORG_GROUP = "org_day_group"
         const val K_ORG_ON = "org_days_on"
         const val K_REVIEW_DUE = "review_due"

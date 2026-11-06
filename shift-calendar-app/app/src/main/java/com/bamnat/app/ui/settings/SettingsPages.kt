@@ -724,6 +724,9 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         // 1.38 [FLOW-26] 칸이: on by default; off leaves the words alone everywhere it would show.
         SwitchRow("칸이 보이기", "첫 설정을 마칠 때, 빈 화면, 아침 카드, 밤 화면에 달력 칸 모양 친구 칸이가 나와요. 끄면 글자만 보여요",
             settings.showKani) { on -> vm.update { it.copy(showKani = on) } }
+        // 1.38 [FLOW-08] 내 하루 이야기 줄.
+        SwitchRow("하루 이야기 줄", "날짜를 열면 맨 위에 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 끄면 지금처럼 묶음 카드만 보여요",
+            settings.dayStory) { on -> vm.update { it.copy(dayStory = on) } }
         // [NAV-07] 1.26 AD: which tab the app opens on and the tabs' order, without the long press.
         TabOrderRow(settings) { order -> vm.update { it.copy(tabOrder = order) } }
         // [CVW-07] 1.35 앱 동작: this section and the day's taps, shared as one piece.
