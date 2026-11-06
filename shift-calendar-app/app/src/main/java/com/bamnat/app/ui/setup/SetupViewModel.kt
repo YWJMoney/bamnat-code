@@ -387,6 +387,9 @@ class SetupViewModel(
         val text = PublicCycleFiles.text(cycle, codes)
         val roster = if (current.style == WorkStyle.SHIFT) cycle.roster else null
         useShared(SetupSource(SetupSource.Kind.PUBLIC, text, id = cycle.id, name = cycle.company, dept = cycle.formKey), text, roster)
+        // 1.38 통합 10차 (첫 설정에서 '우리 회사 근무표 올리기'로 만든 순서가 '설정 이어가기'로 끝나고 올라가지 않아요): pressing 올리기 was
+        // the ask, so the summary's box starts ticked for it (it can be unticked there); a row of the list starts unticked (994c2328).
+        shareCycle.value = cycle.id.isEmpty()
         c.telemetry.event("setup_public", if (cycle.id.isEmpty()) "provided" else cycle.orderState.name.lowercase())
     }
 
@@ -864,7 +867,8 @@ class SetupViewModel(
                     // [PLAZA-14] 1.27 AH: a cycle from a company search is shared for the calendar it went into. [EASE-03] 1.38 PC 994c2328:
                     // asked on the summary (one box), not in a window over the new calendar.
                     d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
-                        c.leadShare.afterSetup(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN), shareCycle.value)
+                        c.leadShare.afterSetup(com.bamnat.app.company.LeadShare.Pick(s.name, s.text, calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN,
+                            firstGiven = s.id.isNullOrEmpty()), shareCycle.value)
                     }
                     c.telemetry.event("setup_done", buildString {
                         append(d.style?.name)

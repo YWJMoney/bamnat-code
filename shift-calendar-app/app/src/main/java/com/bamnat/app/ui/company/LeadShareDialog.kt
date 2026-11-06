@@ -57,7 +57,8 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
                 when (step) {
                     is Step.Ask -> "이 정보를 다른 사람이 사용해도 될까요?"
                     is Step.Working -> "나누는 중이에요"
-                    is Step.Made -> "이제 ‘${step.name}’의 대표 주기가 됐어요!"
+                    // 1.38 통합 10차 (올린 뒤에도 '대표 주기가 됐어요!'): a table put up by '우리 회사 근무표 올리기' says it was put up.
+                    is Step.Made -> if (step.pick.firstGiven) "‘${step.name}’ 근무표를 올렸어요" else "이제 ‘${step.name}’의 대표 주기가 됐어요!"
                     is Step.Agreed -> "같은 주기가 이미 있어요"
                     is Step.NeedSite -> "어느 사업장에서 일하세요?"
                     is Step.Waiting -> "나눴어요"
@@ -81,7 +82,8 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
                         Text("‘$company’ 광장에 보내고 있어요")
                     }
                     is Step.Made -> {
-                        Text("회사 찾기에서 ‘${step.name}’을 찾는 분께 바로 맨 위에 보여요. 맞아요가 쌓이면 더 믿을 수 있게 돼요.",
+                        Text(if (step.pick.firstGiven) "같은 회사 분이 회사 찾기에서 ‘${step.name}’을 찾으면 지금 바로 맨 위에서 쓸 수 있어요. 맞아요가 쌓이면 더 믿을 수 있게 돼요."
+                            else "회사 찾기에서 ‘${step.name}’을 찾는 분께 바로 맨 위에 보여요. 맞아요가 쌓이면 더 믿을 수 있게 돼요.",
                             style = MaterialTheme.typography.bodyLarge)
                         if (step.pick.firstGiven) PublicLaterLine()
                     }

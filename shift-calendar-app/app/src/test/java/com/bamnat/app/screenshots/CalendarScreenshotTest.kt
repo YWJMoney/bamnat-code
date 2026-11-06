@@ -333,6 +333,10 @@ class CalendarScreenshotTest : ScreenshotBase() {
         tapText("달력 표시 안내", exact = true, scrolls = 0)
         assertTrue(appears("켜러 가기", exact = true))
         assertTrue(appears("켜면 소방의 날 같은 날이"))
+        // 1.38 통합 10차: with no pay set, the 월급날 comes with the pay setup, and the row says so (was '월급날 넣기' to a screen without it).
+        reveal("급여 설정하기", exact = true)
+        assertTrue(appears("급여를 설정하면 월급날도 넣을 수 있어요", exact = false))
+        assertTrue(gone("월급날 넣기", exact = true))
     }
     /** 1.38 통합 8차 (안내의 '설정 › 근무·급여 › 월급날·정산 기간'이 실제 자리와 달라요): '월급날 넣기' opens the 월급날 itself. */
     @Test fun calLegendOpensThePayday() {
