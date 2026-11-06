@@ -127,6 +127,22 @@ class ContrastTest {
             kinds[com.bamnat.app.ui.theme.SettingsKind.ALERT]?.toSet())
     }
 
+    /** 1.38 [DSG-03] The meaning colours (good, caution, danger) are text too: 4.5:1 on the page, cards and sheets. */
+    @Test fun meaningColoursAreReadable() {
+        val out = mutableListOf<String>()
+        for ((theme, s, m) in listOf(Triple("light", LightColors, com.bamnat.app.ui.theme.BamnatColors.Light),
+            Triple("dark", DarkColors, com.bamnat.app.ui.theme.BamnatColors.Dark))) {
+            for ((bg, c) in listOf("surface" to s.surface, "lowest" to s.surfaceContainerLowest, "low" to s.surfaceContainerLow,
+                    "container" to s.surfaceContainer)) {
+                for ((name, fg) in listOf("good" to m.good, "caution" to m.caution, "danger" to m.danger)) {
+                    val r = ratio(fg, c)
+                    if (r < TEXT) out += "$theme $name on $bg %.2f".format(r)
+                }
+            }
+        }
+        assertEquals(emptyList<String>(), out)
+    }
+
     @Test fun theRatioIsWcags() {
         assertEquals(21.0, ratio(Color.Black, Color.White), 0.01)
         assertEquals(1.0, ratio(Color.White, Color.White), 0.001)

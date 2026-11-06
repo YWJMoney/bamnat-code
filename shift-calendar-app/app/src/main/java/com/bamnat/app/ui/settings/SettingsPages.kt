@@ -709,6 +709,9 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         }
         // [CVW-08] 1.35 앱 강조색: buttons, the picked tab and what is selected, over the app's own blue.
         AccentRow(settings.accentColor) { c -> vm.update { it.copy(accentColor = c) } }
+        // 1.38 [FLOW-26] 칸이: on by default; off leaves the words alone everywhere it would show.
+        SwitchRow("칸이 보이기", "첫 설정을 마칠 때, 빈 화면, 아침 카드, 밤 화면에 달력 칸 모양 친구 칸이가 나와요. 끄면 글자만 보여요",
+            settings.showKani) { on -> vm.update { it.copy(showKani = on) } }
         // [NAV-07] 1.26 AD: which tab the app opens on and the tabs' order, without the long press.
         TabOrderRow(settings) { order -> vm.update { it.copy(tabOrder = order) } }
         // [CVW-07] 1.35 앱 동작: this section and the day's taps, shared as one piece.

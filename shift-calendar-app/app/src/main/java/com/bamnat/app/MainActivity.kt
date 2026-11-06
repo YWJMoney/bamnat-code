@@ -166,7 +166,9 @@ class MainActivity : ComponentActivity() {
                     { id: String, date: java.time.LocalDate? -> com.bamnat.app.ui.decor.DecorTap.press(container, id, date ?: com.bamnat.core.time.Today.date()); Unit }
                 },
                 // [MAT-07] 1.36 움직임, stopped by 움직임 끄기 or the phone's own 'remove animations'.
-                com.bamnat.app.ui.theme.LocalMotion provides motion, com.bamnat.app.ui.theme.LocalMotionOff provides motion.off) {
+                com.bamnat.app.ui.theme.LocalMotion provides motion, com.bamnat.app.ui.theme.LocalMotionOff provides motion.off,
+                // [FLOW-26] 1.38 설정 › 화면 › 칸이 보이기.
+                com.bamnat.app.ui.components.LocalShowKani provides settings.showKani) {
                 val ground = androidx.compose.runtime.remember(screensNow) { com.bamnat.core.recipe.ScreenLooks.decode(screensNow).of(com.bamnat.core.recipe.ScreenLooks.ALL).ground }
                     ?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.MaterialTheme.colorScheme.background
                 com.bamnat.app.ui.theme.WearTransition(screensNow, ground, motion) {
