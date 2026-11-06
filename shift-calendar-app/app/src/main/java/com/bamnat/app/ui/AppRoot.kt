@@ -382,6 +382,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val exit = remember { ExitGuard() }
                     androidx.activity.compose.BackHandler { exit.press(context) }
                     val shown by container.settingsRepository.settings.collectAsStateWithLifecycle()
+                    // 1.38 PC 11차: opened from a teammate's 근무표 link on a new phone, the first screen names it and offers the
+                    // matching start (매달 나오는 근무표) in one tap.
+                    val waitingLink by container.received.opening.collectAsStateWithLifecycle()
+                    val waitingTitle by produceState<String?>(null, waitingLink) {
+                        value = waitingLink?.let { id -> runCatching { container.shareApi.read(id).schedule.optString("title") }.getOrNull()?.takeIf { it.isNotBlank() }?.take(40) }
+                    }
                     // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
                     // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
                     val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
@@ -396,7 +402,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         firstStyleKey = it.key
                     }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
                         onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
-                        textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
+                        textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } },
+                        linkWaiting = waitingLink != null, linkTitle = waitingTitle)
                     return
                 }
                 // 1.36 W4: before 1.36 the recommended-features page came here, between "무슨 일 하세요?" and the setup. A phone

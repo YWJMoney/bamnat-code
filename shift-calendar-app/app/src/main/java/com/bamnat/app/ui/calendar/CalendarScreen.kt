@@ -1007,7 +1007,8 @@ fun CalendarScreen(
             // [NAV-03] Which tiles this kind of calendar has at all, so the others keep their places while one waits.
             toolFit = ToolFit(teams = settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT, receive = received.enabled,
                 viewingReceived = viewingReceived != null, hasShiftTypes = snap.shiftTypes.isNotEmpty(), teamsReady = openTeams != null || viewingReceived != null,
-                pushReady = snap.resolver.patternOn(today) is com.bamnat.core.model.WorkPattern.Rotation),
+                pushReady = snap.resolver.patternOn(today) is com.bamnat.core.model.WorkPattern.Rotation,
+                leader = context.appContainer.flags.byKey.collectAsStateWithLifecycle().value[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true),
             onPushToday = { realigning = today }, // [EASE-25]
         ) }
         if (sideways) {
@@ -2117,6 +2118,7 @@ private fun CalendarHeader(
             CalendarTool(label, slot.icon(), id = slot.id, onClick = when (slot.id) {
                 CalendarToolSlots.EDIT -> onEditCalendar
                 CalendarToolSlots.TEAMS -> onOpenTeams
+                CalendarToolSlots.LEADER -> ({ com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.LEADER_TEAMS)) })
                 CalendarToolSlots.TYPE_MONTH -> onTypeMonth
                 CalendarToolSlots.PUSH -> onPushToday
                 CalendarToolSlots.SHARE -> onShare
@@ -2187,6 +2189,7 @@ internal data class CalendarTool(
 private fun CalendarToolSlots.Slot.icon(): androidx.compose.ui.graphics.vector.ImageVector = when (id) {
     CalendarToolSlots.EDIT -> Icons.Outlined.Edit
     CalendarToolSlots.TEAMS -> Icons.Outlined.Groups
+    CalendarToolSlots.LEADER -> Icons.Outlined.Groups
     CalendarToolSlots.TYPE_MONTH -> Icons.Outlined.Keyboard
     CalendarToolSlots.PUSH -> Icons.Filled.Autorenew
     CalendarToolSlots.SHARE -> Icons.Filled.Share
