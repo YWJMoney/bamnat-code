@@ -406,7 +406,7 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         tapText("입어 보고 고르기", exact = true)
         settle()
-        tapText("고른 모양 ${parts.size}개 넣기", exact = true)
+        tapText("이 테마 입기", exact = true)  // 1.38 PC 스튜디오: all ticked says it in one word
         settle()
         assertTrue(appears("이렇게 바뀌어요", exact = true))
         assertTrue("단추와 같은 수", appears("모양 ${parts.size}개", exact = true))
@@ -418,9 +418,9 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("닫기", exact = true, scrolls = 0)
         settle()
         assertTrue(gone("이렇게 바뀌어요", exact = true))
-        assertTrue("입어 보기가 남아요", appears("고른 모양 ${parts.size}개 넣기", exact = true))
+        assertTrue("입어 보기가 남아요", appears("이 테마 입기", exact = true))
         // 넣기 closes both.
-        tapText("고른 모양 ${parts.size}개 넣기", exact = true)
+        tapText("이 테마 입기", exact = true)  // 1.38 PC 스튜디오: all ticked says it in one word
         settle()
         tapText("넣기", exact = true, scrolls = 0)
         settle()

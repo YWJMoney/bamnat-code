@@ -96,8 +96,9 @@ class CalendarKindsTest {
         val vm = CalendarViewModel(c)
         val msgs = messagesOf(vm)
         val day = LocalDate.of(2026, 11, 10)
+        val shiftId = dayShiftId() // made first: the list below is read after the defaults exist
         val id = runBlocking {
-            val t = c.scheduleRepository.shiftTypes.first().first { it.id == dayShiftId() }
+            val t = c.scheduleRepository.shiftTypes.first().first { it.id == shiftId }
             c.scheduleRepository.saveShiftType(t.copy(alarmEnabled = true, alarms = listOf(com.bamnat.core.model.AlarmSpec(60))))
             c.settingsRepository.update { it.copy(alarmsEnabled = true) }
             c.scheduleRepository.setOverride(day, ShiftOverride.Off)
