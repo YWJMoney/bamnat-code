@@ -285,7 +285,7 @@ private fun RulesCard(profile: PayProfile?, hasPay: Boolean, onEditRules: () -> 
     // [LEAVE-14] 1.36 S11: the hire date right here, so it counts without the pay setup first.
     if (profile == null) {
         SectionCard(title = "세는 방법") {
-            DateField("입사일", null, { d -> if (d != null && !d.isAfter(Today.date())) vm.setHire(d) }, clearable = false)
+            DateField("입사일", null, { d -> if (d != null && !d.isAfter(Today.date())) vm.setHire(d) }, clearable = false, years = true)
             Hint("입사일만 넣어도 근로기준법대로 세어요(5인 이상 사업장 기준). 급여 설정을 하면 회사 규칙에 맞춰 더 자세히 세요.")
         }
         return
@@ -293,7 +293,7 @@ private fun RulesCard(profile: PayProfile?, hasPay: Boolean, onEditRules: () -> 
     val policy = profile.rules.leave
     val hire = profile.hireDate
     SectionCard(title = "세는 방법", trailing = { if (hasPay) TextButton(onClick = onEditRules) { Text("바꾸기") } }) {
-        if (policy.auto) DateField("입사일", hire, { d -> if (d == null || !d.isAfter(Today.date())) vm.setHire(d) })
+        if (policy.auto) DateField("입사일", hire, { d -> if (d == null || !d.isAfter(Today.date())) vm.setHire(d) }, years = true)
         Text(
             when {
                 !policy.auto -> "직접 넣은 날만 세요"
