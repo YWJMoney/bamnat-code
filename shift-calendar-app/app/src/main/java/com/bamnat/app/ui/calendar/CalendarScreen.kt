@@ -1205,7 +1205,7 @@ fun CalendarScreen(
             // [EASE-03] 1.38: the question card waits for the day after the first setup too (its 시작 단계 waits already).
             if (guideHere && askOn && startRows == null && !c31.firstSetup.quietToday()) add(Notice("ask", "질문 1개") {
                 com.bamnat.app.ui.guide.AskArea(context.appContainer, activeCalendar.id, settings.workStyle,
-                    com.bamnat.core.profile.AskPlace.Home, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), today = today,
+                    com.bamnat.core.profile.AskPlace.Home, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), today = today, compact = true,
                     moments = remember(snap, moneyBook, payProfile, settings.workStyle, today) {
                         com.bamnat.core.guide.GuideMoments.of(com.bamnat.app.ui.guide.factsOf(settings.workStyle, Today.dateTime(), snap, moneyBook, payProfile, settings.weekStart))
                     })
