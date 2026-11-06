@@ -321,7 +321,7 @@ fun RecipeListScreen(
             stickyHeader(key = "chips") { Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
                 val logicOnly = state.kind == RecipeClient.SCOPE_LOGIC
                 val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
-                androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
+                androidx.compose.material3.Surface(color = com.bamnat.app.ui.theme.PhotoGround.bar(), modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
                 Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Pinned: the three 구간 as one small row, since their big cards have scrolled away.
                     val tabChips: @Composable () -> Unit = {
