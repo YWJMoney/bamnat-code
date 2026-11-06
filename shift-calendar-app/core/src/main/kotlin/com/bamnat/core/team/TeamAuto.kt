@@ -100,9 +100,11 @@ object TeamAuto {
         if (off != null) wishes.filter { it.kind == WishKind.OFF }.forEach { w -> if (b.cell(w.memberId, w.date) == null) b = b.paint(w.memberId, w.date, off.id, CellSource.AUTO) }
         val count = HashMap<Pair<String, Long>, Int>()
         val minutes = HashMap<String, Int>()
+        val weekends = HashMap<String, Int>()
         val week = HashMap<Pair<String, LocalDate>, Int>()
         fun note(m: String, d: LocalDate, id: Long) {
             count.merge(m to id, 1, Int::plus)
+            if (types[id]?.isOff == false && d.dayOfWeek.value >= 6) weekends.merge(m, 1, Int::plus)
             types[id]?.let { val min = TeamCheck.minutesOf(it); minutes.merge(m, min, Int::plus); week.merge(m to weekOf(d), min, Int::plus) }
         }
         b.cells.values.forEach { note(it.memberId, it.date, it.shiftId) }
@@ -120,13 +122,25 @@ object TeamAuto {
             val had = before.getOrPut(m.id) { signs(trial, m.id) }
             return (signs(trial.paint(m.id, d, id, CellSource.AUTO), m.id) - had).isNotEmpty()
         }
+        // 1.38 PC 6db1056b (나이트 15번 넷·0번 둘, 네 안이 같음): one score for who takes a kind — the hours so far, each of that kind
+        // already taken as a half shift more (so nights and evenings go round), weekends worked the same, and per 안 [seed] a small
+        // different nudge so each 안 is really another way. (Nights first each day was tried: it spread nights but left 38 short, not 16.)
+        val jitter = java.util.Random(seed * 7919L + 1)
+        val nudge = active.associate { it.id to if (seed == 0) 0.0 else jitter.nextDouble() * 6.0 }
+        fun score(m: TeamMember, d: LocalDate, s: TeamShift): Double {
+            val hours = (minutes[m.id] ?: 0) / 60.0
+            val kind = (count[m.id to s.id] ?: 0) * (TeamCheck.minutesOf(s) / 60.0) * (if (DutyCheck.isNight(s.asType())) 1.5 else 0.5)
+            val weekend = if (d.dayOfWeek.value >= 6) (weekends[m.id] ?: 0) * 6.0 else 0.0
+            return hours + kind + weekend + (nudge[m.id] ?: 0.0)
+        }
+        val order = work
         for (d in board.days) {
-            for (s in work) {
+            for (s in order) {
                 val need = team.need[s.id] ?: continue
                 var have = active.count { b.cell(it.id, d)?.shiftId == s.id }
                 while (have < need) {
                     val pick = active.filter { b.cell(it.id, d) == null && !breaks(it, d, s.id, b) }
-                        .sortedWith(compareBy<TeamMember>({ if (wish[it.id to d]?.kind == WishKind.WORK) 0 else 1 }, { minutes[it.id] ?: 0 }, { count[it.id to s.id] ?: 0 }))
+                        .sortedWith(compareBy<TeamMember>({ if (wish[it.id to d]?.kind == WishKind.WORK) 0 else 1 }, { score(it, d, s) }))
                         .firstOrNull() ?: break
                     b = b.paint(pick.id, d, s.id, CellSource.AUTO); note(pick.id, d, s.id); before.remove(pick.id); have++
                 }
@@ -159,10 +173,12 @@ object TeamAuto {
      * [TEAM-20] A few orders, best first: no danger (52시간·연속·휴식) first, then the fewest short, wishes kept, the evenest hours
      * and nights. A plan only adds what the board's own signs did not have, so a leader's painted danger counts in every 안 alike.
      */
-    fun plans(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), tries: Int = 4): List<Plan> =
+    fun plans(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), tries: Int = 8, keep: Int = 4): List<Plan> =
         (0 until tries).map { fill(team, board, wishes, rules, it) }
-            .distinctBy { it.board.cells }
-            .sortedWith(compareBy({ it.danger }, { it.shortPeople }, { -it.wishesKept }, { it.hourSpread }, { it.spread }))
+            .sortedWith(compareBy({ it.danger }, { it.shortPeople }, { -it.wishesKept }, { it.hourSpread + it.spread * 4 }))
+            // 1.38 PC 6db1056b: 안 that read the same on their line are one choice, not four.
+            .distinctBy { listOf(it.danger, it.shortPeople, it.short.size, it.wishesKept, it.hourSpread, it.spread, it.maxRun) }
+            .take(keep)
 
     /**
      * The hours the month asks of each person on average: [Team.need] × each kind's hours over the active members, a week.
