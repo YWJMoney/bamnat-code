@@ -324,6 +324,37 @@ object TodayFlow {
         )
     }
 
+    /**
+     * 1.38 [FLOW-06] (흐름·디자인 계획 3-3): the card's one number, the time left to what comes next: "퇴근까지" during work,
+     * "알람까지" asleep, else the next work, sleep or nap on the strip ("출근까지 2시간 10분", "잘 시간까지 40분"). None for
+     * a warning (an alarm turned off, a missed wake tap), which leads with its own words, or when nothing comes in 24 hours.
+     */
+    data class Countdown(val label: String, val minutes: Long) {
+        /** "2시간 10분", "2시간", "40분", or "곧" under a minute. */
+        val time: String get() = when {
+            minutes < 1 -> "곧"
+            minutes < 60 -> "${minutes}분"
+            minutes % 60 == 0L -> "${minutes / 60}시간"
+            else -> "${minutes / 60}시간 ${minutes % 60}분"
+        }
+    }
+
+    fun countdown(card: Card): Countdown? {
+        val now = card.from
+        fun left(t: LocalDateTime) = java.time.Duration.between(now, t).toMinutes()
+        return when (card.state) {
+            State.ALARM_OFF, State.FORGOT_WAKE -> null
+            State.SLEEPING -> card.alarms.firstOrNull()?.let { Countdown("알람까지", left(it)) }
+            else -> {
+                val working = card.segments.firstOrNull { it.part == Part.WORK && !it.from.isAfter(now) && it.to.isBefore(card.to) }
+                if (working != null) Countdown("퇴근까지", left(working.to))
+                else card.segments.firstOrNull { it.from.isAfter(now) }?.let { n ->
+                    Countdown(when (n.part) { Part.WORK -> "출근까지"; Part.SLEEP -> "잘 시간까지"; Part.NAP -> "낮잠까지" }, left(n.from))
+                }
+            }
+        }?.takeIf { it.minutes >= 0 }
+    }
+
     /** Times and days as the card says them. */
     private class Words(val today: LocalDate) {
         fun hm(x: LocalDateTime) = "%02d:%02d".format(x.hour, x.minute)

@@ -256,7 +256,8 @@ fun LedgerListPane(
                     item(key = "empty") {
                         when {
                             book.entries.isEmpty() -> LedgerEmpty(Icons.AutoMirrored.Outlined.ReceiptLong, "아직 적은 돈이 없어요",
-                                "‘돈 적기’를 누르거나 위 ⋮ > 자동 기록을 켜면 여기에 쌓여요.", action = "돈 적기", onAction = onAdd)
+                                "‘돈 적기’를 누르거나 위 ⋮ > 자동 기록을 켜면 여기에 쌓여요.", action = "돈 적기", onAction = onAdd,
+                                kani = com.bamnat.app.ui.components.KaniMood.Point)
                             view.narrowed -> LedgerEmpty(Icons.Outlined.SearchOff, "조건에 맞는 기록이 없어요",
                                 "기간을 넓히거나 조건을 지워 보세요.", action = "조건 지우기", onAction = { onView(view.copy(filter = LedgerFilter())) })
                             else -> LedgerEmpty(Icons.AutoMirrored.Outlined.ReceiptLong, "이 기간에 적은 돈이 없어요",

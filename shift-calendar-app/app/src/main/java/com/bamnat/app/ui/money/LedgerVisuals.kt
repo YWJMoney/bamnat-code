@@ -77,6 +77,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -197,9 +198,13 @@ fun ProPill(modifier: Modifier = Modifier, locked: Boolean = false) = com.bamnat
 
 /** [LEDG-15] What an empty part of the ledger says, with the one thing to do next. */
 @Composable
-fun LedgerEmpty(icon: ImageVector, title: String, message: String, modifier: Modifier = Modifier, action: String? = null, onAction: () -> Unit = {}) {
+fun LedgerEmpty(icon: ImageVector, title: String, message: String, modifier: Modifier = Modifier, action: String? = null, onAction: () -> Unit = {},
+    /** 1.38 [DSG-09] Nothing written yet (not a filter that hides lines): 칸이 shows the way instead of the icon, unless it is turned off. */
+    kani: com.bamnat.app.ui.components.KaniMood? = null) {
     Column(modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        IconAvatar(icon, MaterialTheme.colorScheme.primary, size = 64.dp)
+        if (kani != null && com.bamnat.app.ui.components.LocalShowKani.current) com.bamnat.app.ui.components.Kani(kani,
+            night = MaterialTheme.colorScheme.surface.luminance() < 0.5f, size = 72.dp)
+        else IconAvatar(icon, MaterialTheme.colorScheme.primary, size = 64.dp)
         Spacer(Modifier.height(14.dp))
         Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
         Spacer(Modifier.height(6.dp))

@@ -226,4 +226,23 @@ class TodayFlowTest {
         val without = SleepPlan.tips(SleepSchedule.of(r, start, start, alarmsOn = false), start)
         assertEquals(at(3, 0, 30), without.single { it.kind == SleepPlan.Kind.BEDTIME }.at)
     }
+
+    /** 1.38 [FLOW-06] The card's one number: time left to what comes next, none for a warning. */
+    @Test
+    fun `the card leads with the time left to what comes next`() {
+        // 11/3 10:00: the nap at 15:00 is the next thing on the strip.
+        assertEquals(TodayFlow.Countdown("낮잠까지", 300), TodayFlow.countdown(flow(at(3, 10))))
+        // 11/3 18:00: the night at 19:00.
+        val leaving = TodayFlow.countdown(flow(at(3, 18)))!!
+        assertEquals("출근까지", leaving.label)
+        assertEquals("1시간", leaving.time)
+        // During the night, the end of it.
+        assertEquals(TodayFlow.Countdown("퇴근까지", 360), TodayFlow.countdown(flow(at(4, 1))))
+        assertEquals("6시간", TodayFlow.Countdown("퇴근까지", 360).time)
+        assertEquals("2시간 10분", TodayFlow.Countdown("출근까지", 130).time)
+        assertEquals("곧", TodayFlow.Countdown("출근까지", 0).time)
+        // An alarm turned off leads with its warning, not a number.
+        val off = flow(at(3, 10), alarmsOn = false)
+        if (off.state == State.ALARM_OFF) assertNull(TodayFlow.countdown(off))
+    }
 }

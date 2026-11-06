@@ -65,6 +65,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -165,9 +167,25 @@ internal fun TodayFlowCard(
     var opened by rememberSaveable { mutableStateOf(false) }
     val cal = LocalCalendarColors.current
     val warning = card.state == TodayFlow.State.ALARM_OFF || card.state == TodayFlow.State.FORGOT_WAKE
+    // 1.38 [FLOW-07] The same one card wears the time of day: work, the night's sleep and a day off each have their own
+    // colour, so the calendar's top tells which part of the day this is before a word is read (no card is added, EASE-03).
+    val face = when {
+        warning -> cal.warningContainer
+        card.state == TodayFlow.State.ON_SHIFT -> MaterialTheme.colorScheme.primaryContainer
+        card.state == TodayFlow.State.SLEEPING || card.state == TodayFlow.State.SLEEP_TIME -> cal.sleepContainer
+        card.state == TodayFlow.State.REST_DAY -> MaterialTheme.colorScheme.secondaryContainer
+        else -> MaterialTheme.colorScheme.surfaceContainerHigh
+    }
+    val countdown = remember(card) { TodayFlow.countdown(card) }
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = if (warning) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+        color = face,
+        contentColor = when (face) {
+            MaterialTheme.colorScheme.primaryContainer -> MaterialTheme.colorScheme.onPrimaryContainer
+            cal.sleepContainer -> cal.onSleepContainer
+            MaterialTheme.colorScheme.secondaryContainer -> MaterialTheme.colorScheme.onSecondaryContainer
+            else -> MaterialTheme.colorScheme.onSurface
+        },
         // 1.36 첫 실행 멈춤 (PC 확인 C12, TodayFlowCard animateContentSize): no size animation while the first month fills the
         // screen; folding and unfolding afterwards still move smoothly.
         modifier = modifier.fillMaxWidth().then(if (FirstMonth.settled.value) Modifier.animateContentSize() else Modifier),
@@ -195,6 +213,14 @@ internal fun TodayFlowCard(
             // The buttons sit beside the headline only; the line under it runs the full width.
             Box {
                 Column(Modifier.padding(top = 12.dp, end = 12.dp)) {
+                    // 1.38 [FLOW-06] One number first: "출근까지 2시간 10분", the words of what to do under it.
+                    countdown?.let { cd ->
+                        Text(androidx.compose.ui.text.buildAnnotatedString {
+                            withStyle(androidx.compose.ui.text.SpanStyle(fontSize = 0.6f.em, fontWeight = FontWeight.Medium)) { append(cd.label + " ") }
+                            append(com.bamnat.app.ui.components.numberWithUnit(cd.time))
+                        }, style = MaterialTheme.typography.headlineSmall.merge(com.bamnat.app.ui.theme.NumberStyle).copy(fontWeight = FontWeight.Bold),
+                            modifier = Modifier.padding(start = 32.dp, end = 84.dp, bottom = 2.dp))
+                    }
                     Row {
                         Icon(stateIcon(card), null, tint = if (warning) cal.warning else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 1.dp, end = 10.dp).size(22.dp))
