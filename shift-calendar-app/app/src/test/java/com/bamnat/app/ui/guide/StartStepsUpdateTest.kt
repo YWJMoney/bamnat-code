@@ -39,6 +39,17 @@ class StartStepsUpdateTest {
         assertEquals(true, StartStepsState.cameByUpdate(null, now, setupDone = true, updated = true))
     }
 
+    /** 1.38 통합 9차: a template ('3조 2교대 일반형') is no company, so 우리 회사 고르기 stays on the first week's card. */
+    @Test fun onlyACompanysOwnSetupDoesTheCompanyStep() {
+        fun src(kind: com.bamnat.core.setup.SetupSource.Kind, name: String) = com.bamnat.core.setup.SetupSource(kind, "", name = name)
+        assertFalse(StartStepsState.fromCompany(src(com.bamnat.core.setup.SetupSource.Kind.TEMPLATE, "3조 2교대 일반형")))
+        assertFalse(StartStepsState.fromCompany(null))
+        assertFalse(StartStepsState.fromCompany(src(com.bamnat.core.setup.SetupSource.Kind.FILE, "")))
+        assertTrue(StartStepsState.fromCompany(src(com.bamnat.core.setup.SetupSource.Kind.SERVER, "예시정밀")))
+        assertTrue(StartStepsState.fromCompany(src(com.bamnat.core.setup.SetupSource.Kind.PUBLIC, "예시정밀")))
+        assertTrue(StartStepsState.fromCompany(src(com.bamnat.core.setup.SetupSource.Kind.FILE, "예시정밀")))
+    }
+
     @Test fun nothingIsDecidedBeforeTheSetup() {
         assertNull(StartStepsState.cameByUpdate(null, now, setupDone = false, updated = true))
         assertEquals(false, StartStepsState.cameByUpdate(null, now, setupDone = true, updated = false))

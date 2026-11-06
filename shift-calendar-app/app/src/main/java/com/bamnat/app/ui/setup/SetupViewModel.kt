@@ -823,7 +823,7 @@ class SetupViewModel(
                     val cal = calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
                     c.asks.set(cal, com.bamnat.core.profile.AskScheduler.rest(c.asks.of(cal), today))
                     // [J133-52] The setup came from a company: the first week's card does not ask for one again.
-                    if (d.source?.name?.isNotBlank() == true) com.bamnat.app.ui.guide.StartStepsState.companyPicked(c)
+                    if (com.bamnat.app.ui.guide.StartStepsState.fromCompany(d.source)) com.bamnat.app.ui.guide.StartStepsState.companyPicked(c)
                     // [PLAZA-14] 1.27 AH: a cycle from a company search is shared for the calendar it went into. [EASE-03] 1.38 PC 994c2328:
                     // asked on the summary (one box), not in a window over the new calendar.
                     d.source?.takeIf { it.kind == SetupSource.Kind.PUBLIC }?.let { s ->
