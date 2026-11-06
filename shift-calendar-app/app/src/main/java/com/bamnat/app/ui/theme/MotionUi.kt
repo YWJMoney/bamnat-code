@@ -111,3 +111,24 @@ fun Modifier.todayMotion(kind: String?, tint: Color): Modifier = if (kind == nul
         else -> Modifier
     }
 }
+
+/**
+ * 1.38 [DSG-08] (흐름·디자인 계획 4장): the app moves in three ways only. A bar or ring fills (0.8 s), a card opens
+ * (260 ms), a number counts up (0.6 s). With 움직임 끄기 or the phone's 애니메이션 삭제 on, each is 0 and things simply appear.
+ */
+object BamnatMotion {
+    const val FILL_MS = 800
+    const val OPEN_MS = 260
+    const val COUNT_MS = 600
+
+    @Composable fun fill(): Int = ms(FILL_MS)
+    @Composable fun open(): Int = ms(OPEN_MS)
+    @Composable fun count(): Int = ms(COUNT_MS)
+
+    /** A tween of [fill], [open] or [count]'s length, for animate*AsState. */
+    @Composable fun <T> spec(millis: Int): androidx.compose.animation.core.FiniteAnimationSpec<T> =
+        tween(durationMillis = millis, easing = FastOutSlowInEasing)
+
+    /** 0 when 움직임 끄기 or the phone's 애니메이션 삭제 is on ([LocalMotionOff], set from both in MainActivity). */
+    @Composable private fun ms(full: Int): Int = if (LocalMotionOff.current) 0 else full
+}

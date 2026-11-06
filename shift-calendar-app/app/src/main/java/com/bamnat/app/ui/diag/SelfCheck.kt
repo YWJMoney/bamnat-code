@@ -282,7 +282,7 @@ fun ConsentSummarySheet(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val c = context.appContainer
     val lines = remember { ConsentSummary.lines(ConsentSummary.facts(context, c)) }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         ConsentSummaryList(lines, Modifier.navigationBarsPadding()) { onDismiss(); ConsentSummary.change(context, it) }
     }
 }

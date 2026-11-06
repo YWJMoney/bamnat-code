@@ -129,7 +129,7 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             TextButton(onClick = { feeOpen = true }) { Text("수수료율 바꾸기") }
         }
-        if (feeOpen) com.bamnat.app.ui.components.AppSheet(onDismissRequest = { feeOpen = false }) {
+        if (feeOpen) com.bamnat.app.ui.components.AppSheet(onDismissRequest = { feeOpen = false }, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
             Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 24.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
                 com.bamnat.app.ui.work.ShopMoneySettings(calendarId)
             }

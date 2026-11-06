@@ -16,6 +16,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -381,3 +382,37 @@ val MemoPaletteDark: List<Color> = listOf(
     Color.Unspecified, Color(0xFF4A3F12), Color(0xFF4D2E14), Color(0xFF4D2230),
     Color(0xFF332A5C), Color(0xFF1E335C), Color(0xFF16443B), Color(0xFF2E4119),
 )
+
+/**
+ * 1.38 [DSG-03] (흐름·디자인 계획 4장): two meaning colours and danger, the same everywhere a number is judged. Green is
+ * good, orange asks for care, red is kept for danger only (an alarm that will not ring, a rule broken), so red stays
+ * loud. Each sits at 4.5:1 or more on the page, cards and sheets of its own mode (ContrastTest), and none is a shift
+ * colour's twin. A studio look can hand its own set down with [LocalBamnatColors].
+ */
+enum class Tone { Plain, Good, Caution, Danger }
+
+@Immutable
+data class BamnatColors(val good: Color, val caution: Color, val danger: Color) {
+    companion object {
+        val Light = BamnatColors(good = Color(0xFF1B7A4C), caution = Color(0xFFA65400), danger = Color(0xFFC62828))
+        val Dark = BamnatColors(good = Color(0xFF6FD3A0), caution = Color(0xFFFFB25C), danger = Color(0xFFFF8A80))
+    }
+}
+
+/** A studio look's own meaning colours; null keeps [BamnatColors.Light]/[BamnatColors.Dark] by the page's brightness. */
+val LocalBamnatColors = staticCompositionLocalOf<BamnatColors?> { null }
+
+/** `MaterialTheme.bamnat.good` etc.: read where a value is judged good, careful or dangerous. */
+val MaterialTheme.bamnat: BamnatColors
+    @Composable @androidx.compose.runtime.ReadOnlyComposable
+    get() = LocalBamnatColors.current
+        ?: if (colorScheme.surface.luminance() < 0.5f) BamnatColors.Dark else BamnatColors.Light
+
+/** The colour a [Tone] is written in; [Tone.Plain] is the page's own text colour. */
+@Composable @androidx.compose.runtime.ReadOnlyComposable
+fun Tone.color(): Color = when (this) {
+    Tone.Plain -> MaterialTheme.colorScheme.onSurface
+    Tone.Good -> MaterialTheme.bamnat.good
+    Tone.Caution -> MaterialTheme.bamnat.caution
+    Tone.Danger -> MaterialTheme.bamnat.danger
+}

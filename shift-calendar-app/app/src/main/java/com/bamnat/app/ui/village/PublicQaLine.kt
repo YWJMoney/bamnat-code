@@ -72,7 +72,7 @@ fun PublicQaSheet(items: List<PublicQa>, onAsk: () -> Unit, onDismiss: () -> Uni
         val q = query.trim()
         if (q.isEmpty()) items else items.filter { it.question.contains(q, ignoreCase = true) || it.answer.contains(q, ignoreCase = true) }
     }
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         LazyColumn(Modifier.fillMaxWidth().navigationBarsPadding(), verticalArrangement = Arrangement.spacedBy(0.dp)) {
             item {
                 Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 130 130" role="img" aria-label="칸이 쉬는 날"><title>칸이 쉬는 날</title>
+<defs><clipPath id="boff138d"><rect x="21" y="24" width="88" height="88" rx="24"/></clipPath></defs>
+<g fill="none" stroke="#C9D1F5" stroke-width="4" stroke-linecap="round"><path d="M20 80q-9 6-7 15" /><path d="M110 80q9 6 7 15" /></g>
+<ellipse cx="49" cy="116" rx="11" ry="5" fill="#C9D1F5"/><ellipse cx="81" cy="116" rx="11" ry="5" fill="#C9D1F5"/>
+<rect x="21" y="24" width="88" height="88" rx="24" fill="#F7F1E6"/>
+<g clip-path="url(#boff138d)"><rect x="21" y="24" width="88" height="27" fill="#43B58A"/></g>
+<path d="M84 41c0-6 5-10 10-10c0 6-4 10-10 10z" fill="#E6FFF2"/><path d="M84 41l6-6" stroke="#43B58A" stroke-width="1.6" stroke-linecap="round"/>
+<rect x="21" y="24" width="88" height="88" rx="24" fill="none" stroke="#C9D1F5" stroke-width="3.5"/>
+<rect x="44" y="14" width="9" height="20" rx="4.5" fill="#C9D1F5"/><rect x="77" y="14" width="9" height="20" rx="4.5" fill="#C9D1F5"/>
+<ellipse cx="38" cy="88" rx="6.5" ry="3.8" fill="#FF9EA0" opacity=".7"/><ellipse cx="92" cy="88" rx="6.5" ry="3.8" fill="#FF9EA0" opacity=".7"/>
+<g fill="#15192B" stroke="#15192B" stroke-linecap="round" stroke-linejoin="round"><path d="M45 76h12" stroke-width="3.5"/><path d="M73 76h12" stroke-width="3.5"/><path d="M57 86q8 7 16 0" stroke-width="3.5" fill="none"/></g>
+</svg>
