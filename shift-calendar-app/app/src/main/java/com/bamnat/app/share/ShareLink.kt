@@ -613,6 +613,17 @@ interface ShareApi {
     suspend fun signRead(id: String, token: String): SignGot = throw ShareLinkException("unsupported")
 
     suspend fun signDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-L-15] When the link was opened since its last change (null: not yet). The first ask turns it on for that link. */
+    suspend fun seen(id: String, token: String): Instant? = null
+
+    /** 1.38 [P3-L-15] 병동 전체 보기: the month's table, a row of labels per name ("" for none). */
+    suspend fun boardCreate(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>): SignMade =
+        throw ShareLinkException("unsupported")
+
+    suspend fun boardUpdate(id: String, token: String, team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) {}
+
+    suspend fun boardDelete(id: String, token: String) {}
 }
 
 data class SignMade(val id: String, val token: String, val url: String, val expiresAt: Instant)
@@ -851,6 +862,29 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             SignGot(o.optString("seenAt").takeIf { !o.isNull("seenAt") && it.isNotEmpty() }?.let(Instant::parse),
                 sg?.optString("name"), sg?.optString("at")?.takeIf { it.isNotEmpty() }?.let(Instant::parse))
         }
+    }
+
+    override suspend fun seen(id: String, token: String): Instant? = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/share/$id/seen", null, token).body
+        readable { o.optString("seenAt").takeIf { !o.isNull("seenAt") && it.isNotEmpty() }?.let(Instant::parse) }
+    }
+
+    private fun boardBody(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) =
+        JSONObject().put("team", team).put("month", month.toString()).put("names", org.json.JSONArray(names))
+            .put("labels", org.json.JSONArray().apply { labels.forEach { put(org.json.JSONArray(it)) } }).put("colors", JSONObject(colors as Map<*, *>))
+
+    override suspend fun boardCreate(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>): SignMade =
+        withContext(Dispatchers.IO) {
+            val o = request("POST", "/api/board", boardBody(team, month, names, labels, colors), null).body
+            readable { SignMade(o.getString("id"), o.getString("token"), o.getString("url"), Instant.parse(o.getString("expiresAt"))) }
+        }
+
+    override suspend fun boardUpdate(id: String, token: String, team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) =
+        withContext(Dispatchers.IO) { request("PUT", "/api/board/$id", boardBody(team, month, names, labels, colors), token); Unit }
+
+    override suspend fun boardDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try { request("DELETE", "/api/board/$id", null, token) } catch (e: ShareLinkException) { if (e.message != "not_found") throw e }
+        Unit
     }
 
     override suspend fun signDelete(id: String, token: String) = withContext(Dispatchers.IO) {
