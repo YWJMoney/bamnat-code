@@ -22,7 +22,11 @@ object PhaseThreeBackup {
     const val TEAMS = "leaderTeams"
     const val WORKPLACES = "workplaces"
 
-    suspend fun putTeams(db: AppDatabase, into: JSONObject) {
+    /**
+     * [sealed]: 1.38 보안 검토 — a link's 고치는 열쇠 goes only in a backup sealed with a password; a plain one could otherwise change
+     * every teammate's link in the hands of whoever got the file. Restored without it, the phone keeps the key it has.
+     */
+    suspend fun putTeams(db: AppDatabase, into: JSONObject, sealed: Boolean = true) {
         val d = db.teamDao()
         val teams = d.teams()
         if (teams.isEmpty()) return
@@ -31,7 +35,7 @@ object PhaseThreeBackup {
                 .put("shifts", it.shifts).put("need", it.need).put("created", it.createdAt).put("archived", it.archived).put("together", it.showTogether)) } })
             .put("members", JSONArray().apply { d.members().forEach { put(JSONObject().put("id", it.id).put("team", it.teamId).put("name", it.name)
                 .put("role", it.role).put("skill", it.skill).putOpt("color", it.colorArgb).put("sort", it.sort).putOpt("linkId", it.linkId)
-                .putOpt("linkToken", it.linkToken).put("active", it.active)) } })
+                .putOpt("linkToken", it.linkToken.takeIf { sealed }).put("active", it.active)) } })
             .put("cells", JSONArray().apply { d.allCells().sortedWith(compareBy({ it.memberId }, { it.epochDay })).forEach {
                 put(JSONArray().put(it.teamId).put(it.memberId).put(it.epochDay).put(it.shiftId).put(it.source).put(it.locked)) } })
             .put("months", JSONArray().apply { d.months().forEach { put(JSONObject().put("team", it.teamId).put("month", it.month).put("state", it.state)
@@ -99,7 +103,12 @@ object PhaseThreeBackup {
     }
 
     suspend fun write(db: AppDatabase, teams: Teams?, places: Places?) {
-        teams?.let { db.teamDao().replaceAll(it.teams, it.members, it.cells, it.months, it.wishes) }
+        teams?.let { t ->
+            // A backup without the link keys (not sealed) keeps the keys this phone has for the same links.
+            val had = db.teamDao().members().associateBy { it.id }
+            val members = t.members.map { m -> if (m.linkToken == null) had[m.id]?.takeIf { it.linkId == m.linkId }?.let { m.copy(linkToken = it.linkToken) } ?: m else m }
+            db.teamDao().replaceAll(t.teams, members, t.cells, t.months, t.wishes)
+        }
         places?.let { db.payrollDao().replaceAll(it.places, it.staff, it.work, it.months, it.lines) }
     }
 

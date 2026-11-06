@@ -91,5 +91,13 @@ class PhaseThreeBackupTest {
         assertEquals(listOf("3병동"), store.teamList.first().map { it.name })
         assertEquals(listOf("박마바"), store.staff("w1").first().map { it.name })
         assertEquals(TeamCell("m1", day, 1), store.boardNow("t1", month).cell("m1", day))
+        // 1.38 보안 검토: 암호 없는 백업에는 링크 고치는 열쇠가 없고, 복원해도 이 휴대폰의 열쇠는 그대로예요.
+        assertFalse(JSONObject(plain).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("\"tok\""))
+        // 팀을 지운 뒤라 열쇠가 없어요: 링크는 '새로 만들기'로 다시 받아요. 팀이 남아 있으면 이 휴대폰 열쇠를 그대로 둬요.
+        assertEquals(null, store.members("t1").first().single { it.id == "m2" }.linkToken)
+        store.saveMembers(store.members("t1").first().map { if (it.id == "m2") it.copy(linkToken = "tok") else it })
+        backups.restore(plain)
+        assertEquals("tok", store.members("t1").first().single { it.id == "m2" }.linkToken)
+        assertTrue(JSONObject(backups.exportSealed()).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("\"tok\""))
     }
 }
