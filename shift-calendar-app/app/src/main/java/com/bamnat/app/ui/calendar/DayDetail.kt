@@ -304,12 +304,16 @@ private fun DayGroups(
     val shiftData = snapshot.hasPattern || day.shiftType != null || day.hasCustomTimes || day.extras.isNotEmpty() ||
         day.leave != null || day.source == DaySource.OVERRIDE
     val showShifts = !moneyFirst || shiftData || groups.isOpen(SHIFTS_KEY, false)
-    val showLeave = showShifts && (day.leave != null || day.isWorkDay && day.shiftType?.hasTimes == true)
+    // 1.38 PC 11차 식당 둘러보기: an owner has no 추가 근무 or 휴가 of their own (no wages, no 연차); one already written still shows.
+    val owner = style == com.bamnat.core.work.WorkStyle.BUSINESS || style == com.bamnat.core.work.WorkStyle.INVEST
+    val showLeave = showShifts && (day.leave != null || !owner && day.isWorkDay && day.shiftType?.hasTimes == true)
+    val showExtra = showShifts && (!owner || day.extras.isNotEmpty())
     val showBody = rest.isNotEmpty() || settings.sleepTips && (tips.isNotEmpty() || date == today)
     val showRecord = changes.isNotEmpty() || day.entry != null
     val visible = order.filter {
         when (it) {
-            G.WORK, G.EXTRA -> showShifts
+            G.WORK -> showShifts
+            G.EXTRA -> showExtra
             G.LEAVE -> showLeave
             G.BODY -> showBody
             G.RECORD -> showRecord

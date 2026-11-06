@@ -238,7 +238,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val ruleCards: StateFlow<List<com.bamnat.core.guide.RuleCards.Card>> = kotlinx.coroutines.flow.combine(
         container.calendars.active.flatMapLatest { id ->
             kotlinx.coroutines.flow.combine(
-                container.calendars.repository(id).live,
+                // 1.38 PC 11차: with the kinds put away here, which get no alarm card.
+                kotlinx.coroutines.flow.combine(container.calendars.repository(id).live, container.foldedTypes.state) { live, f -> live to f[id].orEmpty() },
                 container.calendars.pay(id).profile,
                 // The repeating memos of this calendar; a 근무마다 memo only where it goes by this calendar's kinds of day.
                 container.memoRepository.memosFor(id).map { list ->
@@ -251,8 +252,14 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         },
         container.settingsRepository.settings,
     ) { (s, p, m), st ->
-        com.bamnat.core.guide.RuleCards.of(s.patterns, s.shiftTypes, com.bamnat.core.time.Today.date(), p?.customRules.orEmpty(),
-            com.bamnat.core.formula.Logic.decode(st.logic), alarmsOn = st.alarmsEnabled, memos = m)
+        com.bamnat.core.guide.RuleCards.of(s.first.patterns, s.first.shiftTypes, com.bamnat.core.time.Today.date(), p?.customRules.orEmpty(),
+            com.bamnat.core.formula.Logic.decode(st.logic), alarmsOn = st.alarmsEnabled, memos = m, hidden = s.second,
+            workDayLine = when (st.workStyle) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업하는 날이에요"
+                com.bamnat.core.work.WorkStyle.DAY, com.bamnat.core.work.WorkStyle.HOURLY -> "출근하는 날이에요"
+                com.bamnat.core.work.WorkStyle.FIELD -> "일하는 날이에요"
+                else -> "근무하는 날이에요"
+            })
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
@@ -1197,7 +1204,8 @@ private fun AlarmReadyCard(
                         context.appContainer.calendars.get(com.bamnat.app.data.PersonalCalendar.MAIN)?.name?.let { "$it " }.orEmpty()
                     val line = when {
                         !settings.alarmsEnabled -> "근무 알람도 이 날 알람도 울리지 않아요"
-                        next == null -> "근무 종류에서 근무 전 알람을 켜면 울려요"
+                        next == null -> if (com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(settings.workStyle)) "${settings.workStyle.words().types}에서 시작 전 알람을 켜면 울려요"
+                            else "근무 종류에서 근무 전 알람을 켜면 울려요"
                         else -> AlarmScheduler.millisToLocal(next.triggerAtMillis).let { at ->
                             "다음 알람 ${Fmt.dayTitle(at.toLocalDate())} ${Fmt.time(at.toLocalTime())} · " + owner + next.plan.shiftName.ifBlank { "이 날 알람" }
                         }
