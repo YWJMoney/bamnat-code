@@ -246,6 +246,18 @@ class PayCodecTest {
      * [PHOTO-05] 1.29 limits (근속, 한도, 횟수, 기간) and 통상임금의 n% survive a round trip. A limited rule is stored inside a kind
      * 1.28 does not know, so an older version drops it instead of paying it with no limit.
      */
+    @Test fun monthlyAmountsByMonthRoundTrip() {
+        // [PAYX-52] 사택관리비: 50,000 usually, its own amount in two months.
+        val nov = java.time.YearMonth.of(2026, 11)
+        val house = com.bamnat.core.pay.CustomRule("h", "사택관리비", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.Monthly(50_000),
+            deduct = true, byMonth = mapOf(nov to 83_000L, nov.plusMonths(1) to 41_000L))
+        val p = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000))), customRules = listOf(house))
+        assertEquals(listOf(house), PayCodec.decode(PayCodec.encode(p)).customRules)
+        // None kept: nothing written, so an older version reads the same rule.
+        assertEquals(false, PayCodec.encode(p.copy(customRules = listOf(house.copy(byMonth = emptyMap()))))
+            .getJSONArray("customRules").getJSONObject(0).has("byMonth"))
+    }
+
     @Test fun limitedRulesRoundTrip() {
         val rules = listOf(
             com.bamnat.core.pay.CustomRule("t", "근속수당", com.bamnat.core.pay.RuleWhen(), com.bamnat.core.pay.RulePay.Monthly(50_000),

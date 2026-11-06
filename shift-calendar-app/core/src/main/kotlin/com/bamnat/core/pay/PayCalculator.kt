@@ -733,7 +733,9 @@ class PayCalculator(
             if (!rule.on || !rule.pay.monthly) continue
             if (!rule.inPeriod(month) || rule.tenureOk(month, profile.hireDate) != true) continue
             val (whole, formula) = when (val pay = rule.pay) {
-                is RulePay.Monthly -> pay.amount to "매달 ${won(pay.amount)}"
+                // [PAYX-52] A month with its own amount (사택관리비 이번 달 83,000원) says so.
+                is RulePay.Monthly -> rule.byMonth[month]?.let { it to "${month.monthValue}월 금액 ${won(it)} (보통 ${won(pay.amount)})" }
+                    ?: (pay.amount to "매달 ${won(pay.amount)}")
                 is RulePay.OfBaseMonthly -> (monthlyBase * pay.share).roundToLong() to
                     "$baseLabel ${won(monthlyBase)} × ${ExtraRule.percent(pay.share)}"
                 // [PHOTO-05] 통상임금 월액: 기본급 and the monthly allowances that count (bonuses left out, they follow it).

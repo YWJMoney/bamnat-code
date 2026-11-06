@@ -385,6 +385,8 @@ object PayCodec {
             .put("from", w.from?.toString() ?: JSONObject.NULL).put("to", w.to?.toString() ?: JSONObject.NULL)
             .put("over", w.overMinutes).put("min", w.minMinutes)
             .put("pay", pay)
+            // [PAYX-52] A version before 1.38 reads the usual amount for every month.
+            .also { o -> if (r.byMonth.isNotEmpty()) o.put("byMonth", JSONObject().apply { r.byMonth.forEach { (m, v) -> put(m.toString(), v) } }) }
     }
 
     /** A rule this version cannot read (a newer kind of pay) is dropped rather than failing the file. */
@@ -429,6 +431,10 @@ object PayCodec {
             capPerMonth = limits?.optLong("cap", 0)?.coerceAtLeast(0) ?: 0,
             maxTimes = limits?.optInt("times", 0)?.coerceIn(0, 31) ?: 0,
             from = month("since"), until = month("until"),
+            byMonth = o.optJSONObject("byMonth")?.let { b ->
+                b.keys().asSequence().mapNotNull { k -> runCatching { java.time.YearMonth.parse(k) to b.getLong(k).coerceAtLeast(0) }.getOrNull() }
+                    .toMap()
+            }.orEmpty().takeIf { pay is RulePay.Monthly }.orEmpty(),
         )
     }.getOrNull()
 

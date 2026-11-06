@@ -160,6 +160,20 @@ class PayRulesTest {
     }
 
     @Test
+    fun `R7b PAYX-52 a monthly deduction can be its own amount in one month`() {
+        // 사택관리비 usually 50,000, November's bill 83,000.
+        val house = CustomRule("h", "사택관리비", RuleWhen(), RulePay.Monthly(50_000), deduct = true,
+            byMonth = mapOf(nov to 83_000L, nov.plusMonths(1) to 41_000L))
+        assertEquals(-83_000, added(with(house), sixDays()))
+        val line = pay(with(house), sixDays()).lines.single { it.label == "사택관리비 (차감)" }
+        assertEquals("11월 금액 83,000원 (보통 50,000원) 차감", line.formula)
+        assertEquals(83_000L, house.monthlyAmount(nov))
+        assertEquals(50_000L, house.monthlyAmount(nov.minusMonths(1)))
+        // Not a 매달 amount: nothing of its own.
+        assertEquals(null, CustomRule("s", "근속", RuleWhen(), RulePay.OfBaseMonthly(0.05)).monthlyAmount(nov))
+    }
+
+    @Test
     fun `R8 PAYS-07 a payslip line named like an item the user made is not missing from the app`() {
         val p = with(CustomRule("m", "자격수당", RuleWhen(), RulePay.Monthly(50_000)))
         val total = pay(p, sixDays()).total

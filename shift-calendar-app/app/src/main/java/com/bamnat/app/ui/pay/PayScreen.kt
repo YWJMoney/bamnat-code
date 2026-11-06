@@ -436,6 +436,7 @@ private fun PayResult(
     // [PAYS-07] 우리 회사 항목 만들기, a rule made before being changed, and the item just made.
     var building by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<com.bamnat.core.pay.CustomRule?>(null) }
+    var monthAmountFor by remember { mutableStateOf<com.bamnat.core.pay.CustomRule?>(null) }
     var justMade by remember { mutableStateOf<MadeItem?>(null) }
     // [PAYS-11] A 추정 badge tapped: what to put in so it goes away.
     var estimate by remember { mutableStateOf<EstimateHint?>(null) }
@@ -748,9 +749,10 @@ private fun PayResult(
                     onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
                     onRemove = { vm.removeItem(item.id) },
                     onEstimate = { estimate = Estimates.forValue(profile, month, item) },
-                    // Only on allowances that may be 비과세, so the list does not grow a switch per line.
+                    // 비과세 (식대 등), on every 매달 수당.
                     taxFree = (!item.taxable).takeIf {
-                        item.cadence == Cadence.MONTHLY && !item.isFixedOvertime && (!item.taxable || com.bamnat.core.pay.TakeHome.looksNonTaxable(item.name))
+                        // [PAYX-52] 1.38 PC 12.1: every 매달 수당, since a payslip's 비과세 lines go past the names the app knows.
+                        item.cadence == Cadence.MONTHLY && !item.isFixedOvertime && !item.isPercent
                     },
                     onTaxFree = { on -> vm.updateItem(item.id) { it.copy(taxable = !on) } },
                 )
@@ -761,6 +763,8 @@ private fun PayResult(
                 Text("직접 만든 항목", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
                 profile.customRules.forEach { rule ->
                     CustomRuleRow(rule, shiftNames, unlocked,
+                        // [PAYX-52] A 매달 amount (사택관리비) can be its own in this month.
+                        month = result.month, onThisMonth = if (rule.pay is com.bamnat.core.pay.RulePay.Monthly) ({ monthAmountFor = rule }) else null,
                         onEdit = if (ItemKind.of(rule) != null) ({ editingRule = rule }) else null,
                         onOn = { vm.setCustomRuleOn(rule.id, it) },
                         onRemove = { vm.removeCustomRule(rule.id) })
@@ -893,6 +897,15 @@ private fun PayResult(
         onMatch = { checking = false; matching = true },
         onEdit = { target -> checking = false; editTarget = target },
         onDismiss = { checking = false })
+    monthAmountFor?.let { r ->
+        AmountDialog("${r.name} ${result.month.monthValue}월 금액", "${result.month.monthValue}월 금액",
+            hint = "이번 달만 이 금액으로 계산해요. 다른 달은 보통 금액 ${won((r.pay as? com.bamnat.core.pay.RulePay.Monthly)?.amount ?: 0)} 그대로예요. " +
+                "보통 금액을 넣으면 되돌려요.",
+            onDismiss = { monthAmountFor = null }) { amount ->
+            vm.setRuleMonth(r.id, result.month, amount)
+            monthAmountFor = null
+        }
+    }
     amountFor?.let { m ->
         AmountDialog("${m.name} 금액", if (m.times == null) "한 달 금액" else "1회 금액", onDismiss = { amountFor = null }) { amount ->
             vm.setItemAmount(m.id, amount, result.month)
@@ -1079,13 +1092,18 @@ private fun effectText(e: com.bamnat.core.pay.UnknownEffect): String = when {
 
 /** [PAYS-01] An amount for an allowance that had none. */
 @Composable
-private fun AmountDialog(title: String, label: String, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
+private fun AmountDialog(title: String, label: String, hint: String? = null, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
     var amount by remember { mutableStateOf<Long?>(null) }
     val huge = rememberHugeCheck()
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { MoneyField(label, amount, { amount = it }) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MoneyField(label, amount, { amount = it })
+                hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+        },
         confirmButton = { Button(onClick = { amount?.let { a -> huge.run(a) { onSave(a) } } }, enabled = (amount ?: 0) > 0) { Text("넣기") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
@@ -1259,7 +1277,7 @@ private fun ValueRow(
         }
         if (taxFree != null && onTaxFree != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("세금 없는 돈 (식대 등, 월 20만 원까지)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                Text("세금 없는 돈 (비과세: 식대·자가운전보조금 등, 월 20만 원까지)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 Switch(checked = taxFree, onCheckedChange = onTaxFree, enabled = enabled)
             }
         }

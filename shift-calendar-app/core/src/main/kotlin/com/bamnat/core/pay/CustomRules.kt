@@ -148,7 +148,15 @@ data class CustomRule(
     /** [PHOTO-05] The months it applies in (2026년 7월부터, 12월까지); null is open on that side. */
     val from: java.time.YearMonth? = null,
     val until: java.time.YearMonth? = null,
+    /**
+     * [PAYX-52] 1.38 PC 12.1 (사택관리비처럼 달마다 금액이 다른 공제): a [RulePay.Monthly] amount of its own for these months; the
+     * others pay [RulePay.Monthly.amount]. Kept on the phone only.
+     */
+    val byMonth: Map<java.time.YearMonth, Long> = emptyMap(),
 ) {
+    /** [PAYX-52] What a [RulePay.Monthly] rule comes to in [month]: that month's own amount, or the usual one. */
+    fun monthlyAmount(month: java.time.YearMonth): Long? = (pay as? RulePay.Monthly)?.let { byMonth[month] ?: it.amount }
+
     /** [PHOTO-05] Needs the hire date to know whether it is paid. */
     val needsTenure: Boolean get() = minTenureMonths > 0 || maxTenureMonths > 0
 

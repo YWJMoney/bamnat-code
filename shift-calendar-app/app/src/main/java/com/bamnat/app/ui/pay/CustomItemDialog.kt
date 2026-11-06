@@ -224,7 +224,9 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
      */
     var fixedOtHours by mutableStateOf(0)
     /** [PAYX-50] 비과세 as the item had it when changed; null guesses from the name (식대·차량유지비). */
-    var taxable: Boolean? = null
+    var taxable by mutableStateOf<Boolean?>(null)
+    /** [PAYX-52] A 매달 rule's own amounts by month, kept when it is changed. */
+    var byMonth: Map<YearMonth, Long> = emptyMap()
 
     /** [PAYX-50] A 매달 allowance with an amount (not a rule, not a percent): the one that can be a 고정 연장수당. */
     val asksFixedOt: Boolean get() = kind == ItemKind.MONTHLY && !asRule && !hasLimits
@@ -245,6 +247,7 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
         minTenureMonths = minYears * 12, maxTenureMonths = if (maxYears > minYears) maxYears * 12 else 0,
         capPerMonth = cap?.takeIf { it > 0 && !rule.pay.monthly } ?: 0, maxTimes = if (rule.pay.monthly) 0 else maxTimes,
         from = since, until = until?.takeIf { s -> since == null || !s.isBefore(since) },
+        byMonth = if (rule.pay is RulePay.Monthly) byMonth else emptyMap(),
     )
 
     /** The share the percent field holds, 50 → 0.5; null when it is not a number above 0. */
@@ -387,6 +390,7 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
                 name = rule.name
                 source = rule.source
                 asRule = true
+                byMonth = rule.byMonth
                 when (val p = rule.pay) {
                     is RulePay.PerTime -> amount = p.amount
                     is RulePay.PerHour -> amount = p.amount
@@ -715,6 +719,8 @@ internal fun ColumnScope.FormStep(
         }
         ItemKind.DEDUCT -> {
             Hint("명세서 지급 칸에서 빠지는 돈만 넣어요. 세금과 4대보험은 넣지 않아도 돼요. 앱은 세금 떼기 전 금액을 계산해요.")
+            // [PAYX-52] 1.38 PC 12.1: 사택관리비처럼 달마다 다른 돈.
+            if (draft.deductWay == DeductWay.MONTHLY) Hint("사택관리비처럼 달마다 금액이 다르면 보통 금액을 넣어 두고, 만든 뒤 급여 화면의 이 줄에서 ‘○월만 금액 다르게’로 그달 금액을 넣어요.")
             TermLink("차감")
         }
         ItemKind.MONTHLY, ItemKind.PER_DAY -> if (!draft.asRule && !draft.hasLimits) {
@@ -726,6 +732,13 @@ internal fun ColumnScope.FormStep(
             ) { if (draft.fixedOtHours == 0) draft.ordinary = it }
             TermLink("통상임금")
             if (fixedOt && draft.asksFixedOt) FixedOtChips(draft)
+            // [PAYX-52] 1.38 PC 12.1: 비과세 for any 매달 수당, not only the names the app knows (식대 등).
+            if (kind == ItemKind.MONTHLY && draft.fixedOtHours == 0) {
+                val guess = !com.bamnat.core.pay.TakeHome.looksNonTaxable(draft.name.trim().ifEmpty { kind.defaultName })
+                Toggle("세금 없는 돈 (비과세)", "식대·자가운전보조금·보육수당·연구보조비처럼 명세서에 비과세로 적힌 수당이면 켜요. 항목마다 월 20만 원까지 세금에서 빼고 어림해요." +
+                    if (draft.taxable == null && !guess) " 이름을 보고 켜 두었어요." else "",
+                    !(draft.taxable ?: guess)) { draft.taxable = !it }
+            }
         }
         else -> Unit
     }
@@ -1033,6 +1046,9 @@ internal fun MadeNotice(made: MadeItem, onUndo: (() -> Unit)?) {
 internal fun CustomRuleRow(
     rule: CustomRule, shiftNames: Map<Long, String>, enabled: Boolean,
     onEdit: (() -> Unit)?, onOn: (Boolean) -> Unit, onRemove: () -> Unit,
+    /** [PAYX-52] The month on screen, and its own amount for a 매달 rule (사택관리비); null leaves the button out. */
+    month: YearMonth? = null,
+    onThisMonth: (() -> Unit)? = null,
 ) {
     Row(
         Modifier.fillMaxWidth().clickable(enabled = enabled && onEdit != null, onClickLabel = "고치기") { onEdit?.invoke() }.padding(vertical = 6.dp),
@@ -1044,6 +1060,13 @@ internal fun CustomRuleRow(
             // The way it is paid (or taken off), and that a tap changes it, as the alarm rows say it.
             Text(rule.describe(shiftNames) + if (enabled && onEdit != null) " · 눌러서 고치기" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (month != null && onThisMonth != null) {
+                val own = rule.byMonth[month]
+                TextButton(onClick = onThisMonth, enabled = enabled, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp),
+                    modifier = Modifier.heightIn(min = 40.dp)) {
+                    Text(if (own != null) "${month.monthValue}월은 ${won(own)} · 바꾸기" else "${month.monthValue}월만 금액 다르게")
+                }
+            }
         }
         Switch(checked = rule.on, onCheckedChange = onOn, enabled = enabled,
             modifier = Modifier.semantics { contentDescription = "‘${rule.name}’ ${if (rule.on) "켜짐" else "꺼짐"}" })

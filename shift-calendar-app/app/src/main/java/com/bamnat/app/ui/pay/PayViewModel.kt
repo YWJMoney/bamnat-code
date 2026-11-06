@@ -616,6 +616,17 @@ class PayViewModel(
         }
     }
 
+    /**
+     * [PAYX-52] A 매달 rule's own amount for [month] (사택관리비 이번 달 83,000원); the usual amount again takes the month's own away.
+     */
+    fun setRuleMonth(id: String, month: YearMonth, amount: Long) = update { p ->
+        p.copy(customRules = p.customRules.map { r ->
+            val usual = (r.pay as? com.bamnat.core.pay.RulePay.Monthly)?.amount
+            if (r.id != id || usual == null) r
+            else r.copy(byMonth = if (amount == usual) r.byMonth - month else r.byMonth + (month to amount))
+        })
+    }
+
     fun setCustomRuleOn(id: String, on: Boolean) = update { p -> p.copy(customRules = p.customRules.map { if (it.id == id) it.copy(on = on) else it }) }
 
     fun removeCustomRule(id: String) = update { p -> p.copy(customRules = p.customRules.filterNot { it.id == id }) }

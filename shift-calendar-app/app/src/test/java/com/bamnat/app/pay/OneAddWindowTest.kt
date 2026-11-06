@@ -40,6 +40,22 @@ class OneAddWindowTest {
         assertEquals(0, item.fixedOvertimeMinutes)
     }
 
+    @Test fun anyMonthlyAllowanceCanBeMadeTaxFree() {
+        // [PAYX-52] 교통비 is taxed unless the payslip says otherwise; the switch says so.
+        assertTrue((draft(ItemKind.MONTHLY, "교통비", 100_000).made(start) as MadeItem.Item).item.taxable)
+        val free = draft(ItemKind.MONTHLY, "교통비", 100_000).apply { taxable = false }.made(start) as MadeItem.Item
+        assertFalse(free.item.taxable)
+        assertFalse((draft(ItemKind.MONTHLY, "연구보조비", 200_000).made(start) as MadeItem.Item).item.taxable)
+    }
+
+    @Test fun aChangedMonthlyDeductionKeepsItsMonths() {
+        val nov = java.time.YearMonth.of(2026, 11)
+        val rule = CustomRule("h", "사택관리비", com.bamnat.core.pay.RuleWhen(), RulePay.Monthly(50_000), deduct = true, byMonth = mapOf(nov to 83_000L))
+        val again = ItemDraft.of(rule)!!.apply { amount = 55_000 }.made(start) as MadeItem.Rule
+        assertEquals(mapOf(nov to 83_000L), again.rule.byMonth)
+        assertEquals(RulePay.Monthly(55_000), again.rule.pay)
+    }
+
     @Test fun anAllowanceWithNoAmountGoesInAsUnknown() {
         val d = draft(ItemKind.MONTHLY, "자격수당")
         assertNull(d.made(start))
