@@ -2013,7 +2013,10 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
   const until = new Date(Date.parse(expiresAt) + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const title = schedule.title ? `${schedule.title}의 근무표` : "근무표";
   const payKind = Object.hasOwn(PAY_KINDS, schedule.payKind ?? "") ? schedule.payKind : "pay";
+  // 1.38 PC 11차 (18): a kind ticked but with nothing in it (no day has a memo) is not listed as sent.
+  const present = { jobs: (d) => d.jobs?.length, leaveKinds: (d) => d.leave, extras: (d) => d.extras?.length, memos: (d) => d.memo };
   const shows = Object.keys(SHOW_NAMES).filter((k) => (schedule.shows ?? []).includes(k))
+    .filter((k) => !present[k] || schedule.days.some((d) => present[k](d)))
     .map((k) => (k === "pay" ? PAY_KINDS[payKind] : SHOW_NAMES[k]));
   const has = shows.length ? `<p class="muted">근무와 함께 보낸 것: ${esc(shows.join(", "))}</p>` : "";
   // [SHR-20] The page never shows the setup itself: only that the app takes it.

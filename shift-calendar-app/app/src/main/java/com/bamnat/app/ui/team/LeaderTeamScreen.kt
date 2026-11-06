@@ -509,6 +509,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 OutlinedButton(onClick = { scope.launch { val last = store.boardNow(team.id, month.minusMonths(1)); change { TeamCopy.nextMonth(last, it) } } }) { Text("지난달 이어 칠하기") }
                 OutlinedButton(onClick = {
                     scope.launch {
+                        // 1.38 PC 11차 (23): with no 근무별 인원 the fill can only put days off ("1안 · 부족 없음" meant nothing), so the
+                        // numbers are asked first.
+                        if (team.need.values.none { it > 0 }) { dialog = "need"; return@launch }
                         val need = c.featureGate.state.value.teamConfirm(store.confirmedMonths(), month, active.size)
                         if (!need.allowed) { planAsk = need; return@launch }
                         // 1.38 [P3-X-04]: the 6 months before lean the fill, so nights and weekends even out across months too.
@@ -865,6 +868,8 @@ private fun NeedDialog(team: Team, onDismiss: () -> Unit, onSave: (Team) -> Unit
     AlertDialog(onDismissRequest = onDismiss, title = { Text("근무별 인원") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("날마다 꼭 있어야 하는 사람 수예요. 모자란 날은 날짜가 주황색이 되고, 자동 채우기가 이 수만큼 채워요.", style = MaterialTheme.typography.bodySmall)
+            if (team.need.values.none { it > 0 }) Text("빈칸 자동 채우기는 이 수를 먼저 정해야 써요. 근무마다 하루에 몇 명이 있어야 하는지 정해 주세요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             team.shifts.filter { !it.isOff }.forEach { s ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("${s.label} ${s.name}", modifier = Modifier.weight(1f))
