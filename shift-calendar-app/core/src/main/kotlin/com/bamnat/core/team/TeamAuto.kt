@@ -123,7 +123,8 @@ object TeamAuto {
         return word?.let { w -> offs.firstOrNull { it.label.contains(w) || it.name.contains(w) } } ?: offs.firstOrNull()
     }
 
-    fun fill(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), seed: Int = 0, prev: TeamBoard? = null): Plan {
+    fun fill(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), seed: Int = 0, prev: TeamBoard? = null,
+             past: Map<String, TeamLedger.Past> = emptyMap()): Plan {
         val types = team.shifts.associateBy { it.id }
         val asTypes = types.mapValues { it.value.asType() }
         val off = team.shifts.firstOrNull { it.isOff }
@@ -171,7 +172,11 @@ object TeamAuto {
             val hours = (minutes[m.id] ?: 0) / 60.0
             val kind = (count[m.id to s.id] ?: 0) * (TeamCheck.minutesOf(s) / 60.0) * (if (DutyCheck.isNight(s.asType())) 1.5 else 0.5)
             val weekend = if (d.dayOfWeek.value >= 6) (weekends[m.id] ?: 0) * 6.0 else 0.0
-            return hours + kind + weekend + (nudge[m.id] ?: 0.0)
+            // 1.38 [P3-X-04] 지난 달들: more nights or weekends than the team so far weighs the same as that many more this month.
+            val owed = past[m.id]?.let { p ->
+                (if (DutyCheck.isNight(s.asType())) p.nights * (TeamCheck.minutesOf(s) / 60.0) * 1.5 else 0.0) + (if (d.dayOfWeek.value >= 6) p.weekends * 6.0 else 0.0)
+            } ?: 0.0
+            return hours + kind + weekend + owed + (nudge[m.id] ?: 0.0)
         }
         val order = work
         for (d in board.days) {
@@ -222,8 +227,9 @@ object TeamAuto {
      * [TEAM-20] A few orders, best first: no danger (52시간·연속·휴식) first, then the fewest short, wishes kept, the evenest hours
      * and nights. A plan only adds what the board's own signs did not have, so a leader's painted danger counts in every 안 alike.
      */
-    fun plans(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), tries: Int = 8, keep: Int = 4, prev: TeamBoard? = null): List<Plan> =
-        (0 until tries).map { fill(team, board, wishes, rules, it, prev) }
+    fun plans(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), tries: Int = 8, keep: Int = 4, prev: TeamBoard? = null,
+              past: Map<String, TeamLedger.Past> = emptyMap()): List<Plan> =
+        (0 until tries).map { fill(team, board, wishes, rules, it, prev, past) }
             .sortedWith(compareBy({ it.danger }, { it.shortPeople }, { -it.wishesKept }, { it.hourSpread + it.spread * 4 }))
             // 1.38 PC 6db1056b: 안 that read the same on their line are one choice, not four.
             .distinctBy { listOf(it.danger, it.shortPeople, it.short.size, it.wishesKept, it.hourSpread, it.spread, it.maxRun) }

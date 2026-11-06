@@ -89,6 +89,7 @@ import com.bamnat.core.team.TeamWishText
 import com.bamnat.core.team.WishKind
 import com.bamnat.core.time.Today
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
@@ -499,7 +500,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     scope.launch {
                         val need = c.featureGate.state.value.teamConfirm(store.confirmedMonths(), month, active.size)
                         if (!need.allowed) { planAsk = need; return@launch }
-                        plans = TeamAuto.plans(team, b, wishes, rules, prev = prevBoard)
+                        // 1.38 [P3-X-04]: the 6 months before lean the fill, so nights and weekends even out across months too.
+                        val past = com.bamnat.core.team.TeamLedger.past(com.bamnat.core.team.TeamLedger.of(team, b.members, ledgerMonths(store, team, month, 6)))
+                        plans = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { TeamAuto.plans(team, b, wishes, rules, prev = prevBoard, past = past) }
                     }
                 }, enabled = b.empty > 0) { Text("빈칸 자동 채우기") }
                 OutlinedButton(onClick = { dialog = "need" }) { Text("근무별 인원") }
@@ -552,7 +555,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             null -> Unit
             "need" -> NeedDialog(team, onDismiss = { dialog = null }) { scope.launch { store.saveTeam(it) }; dialog = null }
             "wish" -> WishDialog(team, month, active, wishes, onDismiss = { dialog = null })
-            "fair" -> FairDialog(team, b, onDismiss = { dialog = null })
+            "fair" -> FairDialog(team, b, month, onDismiss = { dialog = null })
             "askEnd" -> AlertDialog(onDismissRequest = { dialog = null }, title = { Text("신청 끝내기") }, text = {
                 Text("서버에 있는 신청과 팀원 신청 링크를 지워요. 이미 가져온 신청은 이 휴대폰 표에 그대로 남아요. 끝내기 전에 한 번 더 가져올게요.")
             }, confirmButton = {
@@ -797,25 +800,70 @@ private fun WishDialog(team: Team, month: YearMonth, members: List<TeamMember>, 
 
 /** [TEAM-17] 공정성 표: nights, weekends and offs side by side, the most and least marked. */
 @Composable
-private fun FairDialog(team: Team, b: TeamBoard, onDismiss: () -> Unit) {
-    val rows = remember(team, b) { TeamCheck.fairness(team, b) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("공정성 표") }, text = {
+private fun FairDialog(team: Team, b: TeamBoard, month: YearMonth, onDismiss: () -> Unit) {
+    // 1.38 [P3-X-04] 공정성 장부: this month as it is now, or the 3·6·12 months before it added up (신청 지킨 비율과 함께).
+    val store = LocalContext.current.appContainer.phaseThree
+    var span by rememberSaveable { mutableStateOf(0) }
+    var past by remember { mutableStateOf<List<com.bamnat.core.team.TeamLedger.Row>?>(null) }
+    LaunchedEffect(span, b.members) {
+        past = null
+        if (span > 0) past = com.bamnat.core.team.TeamLedger.of(team, b.members, ledgerMonths(store, team, month, span, withThis = b))
+    }
+    val now = remember(team, b) { TeamCheck.fairness(team, b) }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("공정성 장부") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            Row { listOf("이름", "나이트", "주말", "쉼", "시간").forEach { Text(it, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f)) } }
-            val maxN = rows.maxOfOrNull { it.nights } ?: 0
-            val minN = rows.minOfOrNull { it.nights } ?: 0
-            rows.forEach { r ->
-                Row {
-                    Text(r.member.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
-                    Text("${r.nights}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
-                        color = if (maxN - minN >= 2 && (r.nights == maxN || r.nights == minN)) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning else Color.Unspecified)
-                    Text("${r.weekends}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    Text("${r.offs}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    Text("${r.minutes / 60}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf(0 to "이번 달", 3 to "3달", 6 to "6달", 12 to "12달").forEach { (n, l) -> FilterChip(selected = span == n, onClick = { span = n }, label = { Text(l) }) }
+            }
+            if (span == 0) {
+                Row { listOf("이름", "나이트", "주말", "쉼", "시간").forEach { Text(it, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f)) } }
+                val maxN = now.maxOfOrNull { it.nights } ?: 0
+                val minN = now.minOfOrNull { it.nights } ?: 0
+                now.forEach { r ->
+                    Row {
+                        Text(r.member.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
+                        Text("${r.nights}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
+                            color = if (maxN - minN >= 2 && (r.nights == maxN || r.nights == minN)) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning else Color.Unspecified)
+                        Text("${r.weekends}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text("${r.offs}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text("${r.minutes / 60}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    }
+                }
+            } else {
+                val rows = past
+                if (rows == null) Text("지난 달들을 모으고 있어요…", style = MaterialTheme.typography.bodySmall)
+                else {
+                    Text("이번 달까지 ${span}달, 한 달 평균이에요. 자동 채우기는 지난 6달을 보고 많이 한 사람에게 덜 넣어요.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row { listOf("이름", "나이트", "주말", "공휴일", "신청 지킴").forEach { Text(it, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f)) } }
+                    val per = rows.filter { it.months > 0 }.map { it.nights.toDouble() / it.months }
+                    val hi = per.maxOrNull() ?: 0.0
+                    val lo = per.minOrNull() ?: 0.0
+                    rows.forEach { r ->
+                        fun avg(x: Int) = if (r.months == 0) "-" else "%.1f".format(x.toDouble() / r.months)
+                        val n = if (r.months == 0) 0.0 else r.nights.toDouble() / r.months
+                        Row {
+                            Text(r.member.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
+                            Text(avg(r.nights), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
+                                color = if (hi - lo >= 1.5 && r.months > 0 && (n == hi || n == lo)) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning else Color.Unspecified)
+                            Text(avg(r.weekends), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            Text(avg(r.holidays), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                            Text(r.keptPercent?.let { "$it%" } ?: "-", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
             }
         }
     }, confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
+}
+
+/** 1.38 [P3-X-04] The [n] months up to [month] (this one as [withThis] when given, else before it), with each month's 신청 and 공휴일. */
+internal suspend fun ledgerMonths(store: com.bamnat.app.data.PhaseThreeStore, team: Team, month: YearMonth, n: Int, withThis: TeamBoard? = null):
+    List<com.bamnat.core.team.TeamLedger.Month> = (if (withThis != null) 0 until n else 1..n).map { k ->
+    val m = month.minusMonths(k.toLong())
+    val board = if (k == 0 && withThis != null) withThis else store.boardNow(team.id, m)
+    val holidays = (1..m.lengthOfMonth()).map(m::atDay).filter(com.bamnat.core.holiday.KoreanHolidays::isHoliday).toSet()
+    com.bamnat.core.team.TeamLedger.Month(board, store.wishes(team.id, m).first(), holidays)
 }
 
 /**
