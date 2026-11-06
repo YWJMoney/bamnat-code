@@ -120,8 +120,8 @@ object WorkPlanRules {
     /** The words on the ask, in the user's terms. */
     fun words(kind: WorkPlanKind, need: Need, table: WorkPlanTable): String = when (need.verdict) {
         Verdict.OPEN, Verdict.FREE -> ""
-        Verdict.PLAN -> if (kind == WorkPlanKind.TEAM) "첫 달 확정까지는 무료였어요. 이어서 확정하려면 ${kind.title}이 필요해요(${need.count}명이면 ${need.band?.cap}명 구간)."
-            else "직원 ${table.freeStaff}명까지는 무료예요. ${need.count}명째부터 ${kind.title}이 필요해요(${need.band?.cap}명 구간)."
+        Verdict.PLAN -> if (kind == WorkPlanKind.TEAM) "첫 달 확정까지는 무료였어요. 이어서 확정하려면 ${kind.title}${com.bamnat.core.text.Josa.iga(kind.title)} 필요해요(${need.count}명이면 ${need.band?.cap}명 구간)."
+            else "직원 ${table.freeStaff}명까지는 무료예요. ${need.count}명째부터 ${kind.title}${com.bamnat.core.text.Josa.iga(kind.title)} 필요해요(${need.band?.cap}명 구간)."
         Verdict.BIGGER -> "지금 구간보다 ${kind.who}이 많아요(${need.count}명). ${need.band?.cap}명 구간으로 바꾸면 남은 기간은 Play가 비례 계산해요."
         Verdict.CONTACT -> "${table.max(kind)}명이 넘는 곳은 문의로 따로 맞춰 드려요. 설정 › 문의하기에 인원을 적어 주세요."
     }

@@ -100,3 +100,11 @@ test("askCheck says what core TeamAsk.check says", () => {
   assert.equal(askCheck({ ...r, closesAt: 100 }, "2026-12", [], { m: "a", d: "2026-12-07", k: "OFF" }, 100), "신청이 마감됐어요");
   assert.equal(askCheck({ ...r, blocked: ["2026-12-07"] }, "2026-12", [], { m: "a", d: "2026-12-07", k: "OFF" }, 0), "이 날은 신청을 받지 않아요");
 });
+
+test("1.38 [P3-X-05] 남은 연차: shown on the page, and no more 연차 asked than that", async () => {
+  assert.equal(askCheck(r0(), "2026-12", [{ m: 0, d: "2026-12-02", k: "LEAVE" }], { m: 0, d: "2026-12-03", k: "LEAVE" }, 0, 1), "남은 연차보다 많아요");
+  assert.equal(askCheck(r0(), "2026-12", [{ m: 0, d: "2026-12-02", k: "HALF" }], { m: 0, d: "2026-12-03", k: "HALF" }, 0, 1), null);
+  assert.equal(askCheck(r0(), "2026-12", [{ m: 0, d: "2026-12-02", k: "LEAVE" }], { m: 0, d: "2026-12-02", k: "LEAVE" }, 0, 1), null, "같은 날 바꾸기는 두 번 세지 않아요");
+  assert.equal(askCheck(r0(), "2026-12", [], { m: 0, d: "2026-12-03", k: "LEAVE" }, 0, null), null, "입사일이 없으면 제한 없음");
+});
+function r0() { return { weekdayCap: 0, weekendCap: 0, perPerson: 0, closesAt: null, kinds: ["OFF", "LEAVE", "HALF"], firstCome: true, holidays: [], blocked: [], showNames: false }; }

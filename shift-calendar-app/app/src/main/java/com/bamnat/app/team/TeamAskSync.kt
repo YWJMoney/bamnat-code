@@ -16,7 +16,7 @@ import java.time.YearMonth
 object TeamAskSync {
     suspend fun open(c: AppContainer, team: Team, month: YearMonth, rules: AskRules, members: List<TeamMember>): Team {
         team.ask?.takeIf { it.token != null }?.let { old -> runCatching { c.shareApi.askDelete(old.id, old.token!!) } }
-        val made = c.shareApi.askCreate(team.name, month, rules, team.shifts.filter { !it.isOff }, members.map { it.name })
+        val made = c.shareApi.askCreate(team.name, month, rules, team.shifts.filter { !it.isOff }, members.map { it.name }, leaveLeft(c, team, month, members))
         val round = AskRound(made.id, made.token, month, rules, members.map { it.id }.zip(made.urls).toMap(LinkedHashMap()), openedAt = Today.millis())
         val next = c.phaseThree.updateTeam(team.id) { it.copy(ask = round) } ?: team.copy(ask = round)
         c.phaseThree.putLinkWishes(team.id, month, emptyList())
@@ -48,6 +48,22 @@ object TeamAskSync {
         val round = team.ask ?: return team
         round.token?.let { c.shareApi.askDelete(round.id, it) }
         return c.phaseThree.updateTeam(team.id) { t -> if (t.ask?.id == round.id) t.copy(ask = null) else t } ?: team
+    }
+
+    /**
+     * 1.38 [P3-X-05] 남은 연차 per member on the 1st of [month]: the law's leave from their 입사일 less the 연차·반차 painted on the
+     * team's boards of the two years before (a shift named 연차 or 반차). Null for a member without an 입사일.
+     */
+    suspend fun leaveLeft(c: AppContainer, team: Team, month: YearMonth, members: List<TeamMember>): List<Double?> {
+        if (members.none { it.hiredOn != null }) return members.map { null }
+        val leaveIds = team.shifts.filter { it.label.contains("연차") || it.name.contains("연차") }.map { it.id }.toSet()
+        val halfIds = team.shifts.filter { it.label.contains("반차") || it.name.contains("반차") }.map { it.id }.toSet()
+        val boards = (1..24L).map { c.phaseThree.boardNow(team.id, month.minusMonths(it)) }
+        return members.map { m ->
+            val hire = m.hiredOn ?: return@map null
+            val used = boards.flatMap { b -> b.days.mapNotNull { d -> b.cell(m.id, d)?.shiftId?.let { id -> if (id in leaveIds) d to 1.0 else if (id in halfIds) d to 0.5 else null } } }.toMap()
+            com.bamnat.core.leave.LeaveLeft.of(hire, used, month.atDay(1)).left
+        }
     }
 
     /** The message that sends every member their link at once (메신저 한 번에). */

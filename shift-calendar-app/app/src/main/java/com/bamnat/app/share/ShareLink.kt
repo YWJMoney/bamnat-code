@@ -566,7 +566,8 @@ interface ShareApi {
     suspend fun clockDelete(id: String, token: String) {}
 
     /** 1.38 [P3-L-13] Opens a 근무 신청 round: a link per name in [names], in that order. */
-    suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>): AskMade =
+    suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>,
+                          leave: List<Double?> = emptyList()): AskMade =
         throw ShareLinkException("unsupported")
 
     /** 1.38 [P3-L-13] What the members asked so far; "not_found" once the round is gone. */
@@ -739,7 +740,8 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         Unit
     }
 
-    override suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>): AskMade =
+    override suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>,
+                                   leave: List<Double?>): AskMade =
         withContext(Dispatchers.IO) {
             val r = JSONObject().put("weekdayCap", rules.weekdayCap).put("weekendCap", rules.weekendCap).put("perPerson", rules.perPerson)
                 .put("closesAt", rules.closesAt ?: JSONObject.NULL).put("kinds", org.json.JSONArray(rules.kinds.map { it.name })).put("firstCome", rules.firstCome)
@@ -748,6 +750,7 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             val body = JSONObject().put("team", team).put("month", month.toString()).put("rules", r)
                 .put("shifts", org.json.JSONArray(shifts.map { JSONObject().put("id", it.id).put("label", it.label.take(4)).put("color", "#%06X".format(it.colorArgb and 0xFFFFFF)) }))
                 .put("members", org.json.JSONArray(names))
+            if (leave.any { it != null }) body.put("leave", org.json.JSONArray(leave.map { it ?: JSONObject.NULL }))
             val o = request("POST", "/api/ask", body, null).body
             readable {
                 val m = o.getJSONArray("members")

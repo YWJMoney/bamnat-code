@@ -879,6 +879,7 @@ internal suspend fun cutLink(c: com.bamnat.app.AppContainer, m: TeamMember): Boo
 }
 
 /** 팀원: add by pasting, 책임 on or off, rest or take out (their cells go with them), and each one's link cut when they rest or leave. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
@@ -907,6 +908,21 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
             }) { Text("그래도 지우기", color = MaterialTheme.colorScheme.error) }
         })
     }
+    var hiring by remember { mutableStateOf<TeamMember?>(null) }
+    hiring?.let { m ->
+        val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = (m.hiredOn ?: com.bamnat.core.time.Today.date()).toEpochDay() * 86_400_000L)
+        com.bamnat.app.ui.components.DatePickerDialog(onDismissRequest = { hiring = null }, confirmButton = {
+            TextButton(onClick = {
+                state.selectedDateMillis?.let { ms -> scope.launch { store.saveMembers(listOf(m.copy(hiredOn = LocalDate.ofEpochDay(ms / 86_400_000L)))) } }
+                hiring = null
+            }) { Text("고르기") }
+        }, dismissButton = {
+            Row {
+                if (m.hiredOn != null) TextButton(onClick = { scope.launch { store.saveMembers(listOf(m.copy(hiredOn = null))) }; hiring = null }) { Text("지우기") }
+                TextButton(onClick = { hiring = null }) { Text("닫기") }
+            }
+        }) { androidx.compose.material3.DatePicker(state) }
+    }
     var cutting by remember { mutableStateOf<TeamMember?>(null) }
     cutting?.let { m ->
         AlertDialog(onDismissRequest = { cutting = null }, title = { Text("${m.name} 링크 새로 만들기") }, text = {
@@ -924,6 +940,10 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
                         label = { Text("책임") })
                     TextButton(onClick = { if (m.active) rest(m) else scope.launch { store.saveMembers(listOf(m.copy(active = true))) } }) { Text(if (m.active) "쉼" else "복귀") }
                     TextButton(onClick = { removing = m }) { Text("빼기") }
+                }
+                // 1.38 [P3-X-05]: 입사일 → 남은 연차 on the 신청 링크.
+                TextButton(onClick = { hiring = m }) {
+                    Text(m.hiredOn?.let { "입사 ${it.year}.${it.monthValue}.${it.dayOfMonth} · 바꾸기" } ?: "입사일 넣기(연차 남은 날 계산)", style = MaterialTheme.typography.labelSmall)
                 }
                 if (m.linkId != null) TextButton(onClick = { cutting = m }, modifier = Modifier.padding(start = 0.dp)) {
                     Text("링크 끊고 새로 만들기", style = MaterialTheme.typography.labelSmall)

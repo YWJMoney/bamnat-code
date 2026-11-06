@@ -694,11 +694,15 @@ const askWeekend = (rules, d) => { const w = new Date(d + "T00:00:00Z").getUTCDa
 const askCap = (rules, d) => (askWeekend(rules, d) ? rules.weekendCap : rules.weekdayCap);
 
 /** The same words as core TeamAsk.check: why a request cannot be taken, or null. [all]: [{m, d, k}] of the round. */
-export function askCheck(rules, month, all, w, now) {
+/** 1.38 [P3-X-05] 연차 days a request list takes: 연차 1, 반차 0.5. */
+const leaveTaken = (ws) => ws.reduce((n, w) => n + (w.k === "LEAVE" ? 1 : w.k === "HALF" ? 0.5 : 0), 0);
+
+export function askCheck(rules, month, all, w, now, leaveLeft = null) {
   if (rules.closesAt != null && now >= rules.closesAt) return "신청이 마감됐어요";
   if (!isDate(w.d) || !w.d.startsWith(month)) return "이 달 날짜가 아니에요";
   if (!rules.kinds.includes(w.k)) return "이 신청은 받지 않아요";
   if (rules.blocked.includes(w.d)) return "이 날은 신청을 받지 않아요";
+  if (leaveLeft != null && (w.k === "LEAVE" || w.k === "HALF") && leaveTaken(all.filter((o) => o.m === w.m && o.d !== w.d)) + leaveTaken([w]) > leaveLeft) return "남은 연차보다 많아요";
   if (!ASK_KINDS[w.k][1]) return null;
   const others = all.filter((o) => !(o.m === w.m && o.d === w.d));
   const cap = askCap(rules, w.d);
@@ -723,7 +727,12 @@ async function askCreate(request, env, url) {
   const id = randomId(22);
   const token = randomId(32);
   const days = Number.isInteger(body?.ttlDays) ? Math.min(Math.max(body.ttlDays, 7), LIMITS.askTtlDays) : LIMITS.askTtlDays;
-  const members = names.map((name) => ({ name, key: randomId(22) }));
+  // 1.38 [P3-X-05] 남은 연차 per member, worked out on the leader's phone from the 입사일 (null: not set).
+  const leave = Array.isArray(body?.leave) ? body.leave : [];
+  const members = names.map((name, i) => {
+    const l = leave[i];
+    return { name, key: randomId(22), ...(typeof l === "number" && Number.isFinite(l) && l >= 0 && l <= 60 ? { leave: Math.round(l * 100) / 100 } : {}) };
+  });
   const record = { team, month, rules, shifts, members, tokenHash: await sha256(token), expiresAt: expiry(days), closed: false };
   await put(env, askKey(id), record);
   for (let i = 0; i < members.length; i++) await put(env, askMemberKey(members[i].key), { id, m: i, expiresAt: record.expiresAt });
@@ -822,7 +831,7 @@ async function askPost(request, env, key, what) {
       if (k === "SHIFT" && !record.shifts.some((x) => x.id === s)) said = { bad: "고를 수 없는 근무예요" };
       else {
         const all = (await askAll(env, id, record)).wishes;
-        const no = askCheck(record.rules, record.month, all, { m, d, k }, Date.now());
+        const no = askCheck(record.rules, record.month, all, { m, d, k }, Date.now(), record.members[m].leave ?? null);
         if (no) said = { bad: no };
         else {
           const at = mine.wishes.find((w) => w.d === d && ASK_KINDS[w.k]?.[1] && ASK_KINDS[k][1])?.at ?? new Date().toISOString();
@@ -872,7 +881,9 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
   const closes = rules.closesAt != null ? (() => { const t = new Date(rules.closesAt + KST).toISOString(); const left = rules.closesAt - Date.now();
     return `마감 ${Number(t.slice(5, 7))}/${Number(t.slice(8, 10))} ${t.slice(11, 16)}${left > 0 ? ` (${left > 86400000 ? `${Math.floor(left / 86400000)}일` : `${Math.max(1, Math.floor(left / 3600000))}시간`} 남음)` : ""}`; })() : "";
   const restMine = mine.wishes.filter((w) => ASK_KINDS[w.k]?.[1]).length;
-  const rule = [capLine ? `쉬는 신청은 ${capLine}까지${rules.firstCome ? "(먼저 신청한 순)" : "(넘치면 리더가 공정하게 정해요)"}` : "",
+  const myLeave = record.members[m].leave;
+  const leaveLine = myLeave != null ? `남은 연차 ${myLeave}일${leaveTaken(mine.wishes) ? ` (이번 신청 뒤 ${Math.round((myLeave - leaveTaken(mine.wishes)) * 100) / 100}일)` : ""}` : "";
+  const rule = [capLine ? `쉬는 신청은 ${capLine}까지${rules.firstCome ? "(먼저 신청한 순)" : "(넘치면 리더가 공정하게 정해요)"}` : "", leaveLine,
     rules.perPerson ? `한 사람 ${rules.perPerson}일까지 (지금 ${restMine}일)` : "", closes].filter(Boolean).join(" · ");
   let panel = "";
   if (day && isDate(day) && day.startsWith(month)) {

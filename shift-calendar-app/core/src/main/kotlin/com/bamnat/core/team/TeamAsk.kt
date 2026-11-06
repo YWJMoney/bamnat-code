@@ -55,6 +55,7 @@ object TeamAsk {
         MONTH("이 달 날짜가 아니에요"),
         DAY_FULL("이 날은 자리가 다 찼어요"),
         MINE_FULL("신청할 수 있는 날을 다 썼어요"),
+        LEAVE_OUT("남은 연차보다 많아요"),
     }
 
     fun weekend(r: AskRules, d: LocalDate): Boolean = d.dayOfWeek == DayOfWeek.SATURDAY || d.dayOfWeek == DayOfWeek.SUNDAY || d in r.holidays
@@ -69,11 +70,16 @@ object TeamAsk {
      * Why [w] cannot be taken now, or null when it can. [all] is every request of the round; [w]'s member's own request for the
      * same day is replaced, so changing 오프 to 연차 never counts twice.
      */
-    fun check(r: AskRules, month: YearMonth, all: List<TeamWish>, w: TeamWish, now: Long): No? {
+    /** 1.38 [P3-X-05] 연차 days [ws] take: 연차 1, 반차 0.5. */
+    fun leaveTaken(ws: List<TeamWish>): Double = ws.sumOf { if (it.kind == WishKind.LEAVE) 1.0 else if (it.kind == WishKind.HALF) 0.5 else 0.0 }
+
+    fun check(r: AskRules, month: YearMonth, all: List<TeamWish>, w: TeamWish, now: Long, leaveLeft: Double? = null): No? {
         if (r.closesAt != null && now >= r.closesAt) return No.CLOSED
         if (YearMonth.from(w.date) != month) return No.MONTH
         if (w.kind !in r.kinds) return No.KIND
         if (w.date in r.blocked) return No.BLOCKED
+        if (leaveLeft != null && (w.kind == WishKind.LEAVE || w.kind == WishKind.HALF) &&
+            leaveTaken(all.filter { it.memberId == w.memberId && it.date != w.date }) + leaveTaken(listOf(w)) > leaveLeft) return No.LEAVE_OUT
         if (!w.kind.rests) return null
         val others = all.filterNot { it.memberId == w.memberId && it.date == w.date }
         val cap = cap(r, w.date)
