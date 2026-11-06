@@ -195,7 +195,7 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft, header: Boolean = t
     )
     if (custom) {
         val today = remember(d.types) { vm.questionDate(d) }
-        RotationEditor(d, types, onChange = vm::setRotation, today = today, onToday = { step -> vm.answerToday(today, step) })
+        RotationEditor(d, types, onChange = vm::setRotation, today = today, realToday = vm.today, onToday = { step -> vm.answerToday(today, step) })
     }
 }
 
@@ -220,7 +220,7 @@ internal fun orderLine(steps: List<Long?>, types: Map<Long, ShiftType>): String 
 @Composable
 private fun RotationEditor(
     d: SetupDraft, types: Map<Long, ShiftType>, onChange: (List<Long?>) -> Unit,
-    today: java.time.LocalDate, onToday: (Int) -> Unit = {},
+    today: java.time.LocalDate, onToday: (Int) -> Unit = {}, realToday: java.time.LocalDate = today,
 ) {
     var picked by rememberSaveable { mutableStateOf<Int?>(null) }
     val steps = d.rotation
@@ -287,7 +287,7 @@ private fun RotationEditor(
             if (steps.isNotEmpty()) {
                 Text(orderLine(steps, types), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 // [EASE-14] The order repeated over the months at once, and today's place in it.
-                OrderPreview(steps, types, today, todayStep, onToday = { s -> todayStep = s; startChosen = true; onToday(s) })
+                OrderPreview(steps, types, today, todayStep, onToday = { s -> todayStep = s; startChosen = true; onToday(s) }, realToday = realToday)
             }
         }
     }

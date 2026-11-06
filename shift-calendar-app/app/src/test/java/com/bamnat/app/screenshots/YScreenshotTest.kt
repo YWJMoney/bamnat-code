@@ -122,6 +122,16 @@ class YScreenshotTest : ScreenshotBase() {
         assertTrue(d!!.rosterMonthly)
     })
 
+    /** 1.38 통합 6차 2eb28e83: in the small hours the order preview names the day it rings (어제), not 오늘. */
+    @Test fun theOrderPreviewNamesTheAskedDay() = shoot("898c_y_order_yesterday", PHONE_393) {
+        val d = com.bamnat.core.model.ShiftType(1, "주간", "주", 0xFF1E88E5, java.time.LocalTime.of(7, 0), java.time.LocalTime.of(19, 0))
+        val asked = java.time.LocalDate.of(2026, 11, 5)
+        content { com.bamnat.app.ui.setup.OrderPreview(listOf(1L, null), mapOf(1L to d), asked, 0, onToday = {}, realToday = asked.plusDays(1)) }
+        assertTrue(appears("어제(", exact = false))
+        assertTrue(gone("오늘은", exact = true))
+        assertTrue(appears("다음 단계에서 어제 근무를 한 번 더 확인해요.", exact = true))
+    }
+
     /** 1.38 PC 4a5c3828: a shop's 같이 보기 is its 영업일, never 가족·연인과 근무. */
     @Test fun aShopsTogetherSheetSaysItsDays() = shoot("898b_y_together_shop", PHONE_393) {
         content { com.bamnat.app.ui.calendar.TogetherSheet(onSend = {}, onTake = null, onDismiss = {}, shop = true) }
