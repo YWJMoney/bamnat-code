@@ -30,14 +30,43 @@ object TeamCheck {
         return if (m <= 0) m + 24 * 60 else m
     }
 
-    fun check(team: Team, board: TeamBoard, rules: RestRules = RestRules()): List<Sign> {
+    /** 1.38 병동 신청표 (사용자 2026-11-06): how many days of last month are read with this one, like the paper's "NN off" margin. */
+    const val CARRY_DAYS = 7
+
+    /** The last [CARRY_DAYS] of [prev] for [memberId], to read before the month (null when there is no last month). */
+    fun carry(prev: TeamBoard?, memberId: String, asTypes: Map<Long, ShiftType>): List<Pair<LocalDate, ShiftType?>> =
+        prev?.days?.takeLast(CARRY_DAYS)?.map { d -> d to prev.cell(memberId, d)?.shiftId?.let(asTypes::get) }.orEmpty()
+
+    /** "NN off" of the paper: the labels of the last [n] days of [prev] for [memberId] ("·" for an empty day); "" with no last month. */
+    fun tail(team: Team, prev: TeamBoard?, memberId: String, n: Int = 4): String {
+        val types = team.shifts.associateBy { it.id }
+        return prev?.days?.takeLast(n)?.joinToString("") { d -> prev.cell(memberId, d)?.shiftId?.let(types::get)?.label?.take(2) ?: "·" }.orEmpty()
+    }
+
+    /**
+     * [DutyCheck] over [carry] then [days], told only for the month: a run that began last month is told on the 1st
+     * (11/28 N, 11/29 N, 12/1 D is an N→D the paper's margin was there to catch).
+     */
+    fun withCarry(carry: List<Pair<LocalDate, ShiftType?>>, days: List<Pair<LocalDate, ShiftType?>>, rules: RestRules): List<DutyCheck.Warning> {
+        if (carry.isEmpty()) return DutyCheck.check(days, rules)
+        val first = days.firstOrNull()?.first ?: return emptyList()
+        return DutyCheck.check(carry + days, rules).mapNotNull { w ->
+            when {
+                !w.date.isBefore(first) -> w
+                (w.kind == DutyCheck.Kind.LONG_RUN || w.kind == DutyCheck.Kind.MANY_NIGHTS) && days.first().second?.isOff == false -> w.copy(date = first)
+                else -> null
+            }
+        }
+    }
+
+    fun check(team: Team, board: TeamBoard, rules: RestRules = RestRules(), prev: TeamBoard? = null): List<Sign> {
         val types = team.shifts.associateBy { it.id }
         val asTypes = types.mapValues { it.value.asType() }
         val out = ArrayList<Sign>()
         val active = board.members.filter { it.active }
         for (m in active) {
             val days = board.days.map { d -> d to board.cell(m.id, d)?.shiftId?.let(asTypes::get) }
-            DutyCheck.check(days, rules).forEach { w -> out += Sign(Kind.RULE, w.date, m.id, "${m.name}: ${w.text}") }
+            withCarry(carry(prev, m.id, asTypes), days, rules).forEach { w -> out += Sign(Kind.RULE, w.date, m.id, "${m.name}: ${w.text}") }
             // 주 52시간, Monday weeks that start in the month.
             board.days.map { it.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) }.distinct().forEach { mon ->
                 val week = (0..6).map { mon.plusDays(it.toLong()) }

@@ -7,9 +7,34 @@ import java.time.LocalDate
 import java.time.YearMonth
 
 /** 1.38 [P3-04][TEAM-19] 희망 휴무 (순번 491, 설계 1-3 `team_wish`): what a member asked for one day. */
-enum class WishKind(val label: String) { OFF("쉬고 싶어요"), WORK("일하고 싶어요"), AVOID_NIGHT("나이트 빼 주세요") }
+/**
+ * What a member asks for a day. 1.38 병동 신청표 (사용자 2026-11-06, 종이 "off·연차·오전·D·N"): 연차, 반차, 교육, and one kind of
+ * work ([TeamWish.shiftId]) besides 쉬기·일하기·나이트 빼기. [rests]: the day is asked off, so it counts toward the day's 상한.
+ */
+enum class WishKind(val label: String, val short: String, val rests: Boolean) {
+    OFF("쉬고 싶어요", "오프", true), WORK("일하고 싶어요", "근무", false), AVOID_NIGHT("나이트 빼 주세요", "N빼기", false),
+    LEAVE("연차", "연차", true), HALF("반차", "반차", false), EDU("교육", "교육", true), SHIFT("이 근무 원해요", "희망", false);
 
-data class TeamWish(val memberId: String, val date: LocalDate, val kind: WishKind = WishKind.OFF)
+    /** How it is kept in a row: the name, and the kind of work after a colon for [SHIFT] ("SHIFT:3"). */
+    fun code(shiftId: Long?): String = if (this == SHIFT && shiftId != null) "$name:$shiftId" else name
+
+    companion object {
+        /** [code] back; null for a kind this version does not know (a newer app's row is skipped, not misread). */
+        fun parse(code: String): Pair<WishKind, Long?>? {
+            val k = entries.firstOrNull { it.name == code.substringBefore(':') } ?: return null
+            return k to code.substringAfter(':', "").toLongOrNull()
+        }
+    }
+}
+
+/**
+ * [shiftId]: the kind of work a [WishKind.SHIFT] asks for. [at]: when it was asked (서버 시각, 선착순의 근거). [note]: the member's
+ * one line for the month ("NN off 원해요").
+ */
+data class TeamWish(
+    val memberId: String, val date: LocalDate, val kind: WishKind = WishKind.OFF,
+    val shiftId: Long? = null, val at: Long? = null, val note: String? = null,
+)
 
 /**
  * [TEAM-19] 희망 휴무 without a server (설계 L2 "링크·QR·파일" of which the 파일·글 way needs no 처리방침 3.3): a member's app writes
@@ -22,13 +47,14 @@ object TeamWishText {
     fun write(month: YearMonth, wishes: List<TeamWish>, name: String = ""): String = buildString {
         append(TAG); if (name.isNotBlank()) append(' ').append(name)
         append(' ').append(month.monthValue).append("월")
-        WishKind.entries.forEach { k ->
+        WishKind.entries.filter { it in WORD }.forEach { k ->
             val days = wishes.filter { it.kind == k && YearMonth.from(it.date) == month }.map { it.date.dayOfMonth }.sorted()
             if (days.isNotEmpty()) append(' ').append(days.joinToString(" ")).append(' ').append(WORD.getValue(k)).append(" /")
         }
     }.trimEnd(' ', '/')
 
-    private val WORD = mapOf(WishKind.OFF to "쉬고", WishKind.WORK to "일하고", WishKind.AVOID_NIGHT to "나이트 빼고")
+    private val WORD = mapOf(WishKind.OFF to "쉬고", WishKind.WORK to "일하고", WishKind.AVOID_NIGHT to "나이트 빼고",
+        WishKind.LEAVE to "연차", WishKind.HALF to "반차", WishKind.EDU to "교육")
 
     /**
      * Each line of [text] for the member whose name it holds (the longest name found wins, so "민지2" is not "민지"); a line
@@ -44,10 +70,13 @@ object TeamWishText {
             // Numbers wait until a kind word says what they are ("3 7 쉬고 20 나이트 빼고"); numbers left at the end are 쉬는 날.
             val pending = ArrayList<Int>()
             fun flush(k: WishKind) { pending.filter { it in 1..month.lengthOfMonth() }.forEach { out += TeamWish(who, month.atDay(it), k) }; pending.clear() }
-            Regex("""(\d{1,2})\s*월|(\d{1,2})|나이트\s*빼|야간\s*빼|일하고|근무하고|쉬고|휴무|오프|(?i:off)""").findAll(body).forEach { m ->
+            Regex("""(\d{1,2})\s*월|(\d{1,2})|나이트\s*빼|야간\s*빼|일하고|근무하고|쉬고|휴무|오프|연차|반차|교육|(?i:off)""").findAll(body).forEach { m ->
                 when {
                     m.groupValues[1].isNotEmpty() -> Unit
                     m.groupValues[2].isNotEmpty() -> pending += m.groupValues[2].toInt()
+                    m.value == "연차" -> flush(WishKind.LEAVE)
+                    m.value == "반차" -> flush(WishKind.HALF)
+                    m.value == "교육" -> flush(WishKind.EDU)
                     m.value.startsWith("나이트") || m.value.startsWith("야간") -> flush(WishKind.AVOID_NIGHT)
                     m.value.startsWith("일하") || m.value.startsWith("근무") -> flush(WishKind.WORK)
                     else -> flush(WishKind.OFF)
@@ -87,7 +116,14 @@ object TeamAuto {
 
     private fun weekOf(d: LocalDate): LocalDate = d.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
 
-    fun fill(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), seed: Int = 0): Plan {
+    /** The kind of day a resting wish is painted with: the team's own 연차·교육 day when it has one, else its off day. */
+    fun restShift(team: Team, kind: WishKind): TeamShift? {
+        val offs = team.shifts.filter { it.isOff }
+        val word = when (kind) { WishKind.LEAVE -> "연차"; WishKind.EDU -> "교육"; else -> null }
+        return word?.let { w -> offs.firstOrNull { it.label.contains(w) || it.name.contains(w) } } ?: offs.firstOrNull()
+    }
+
+    fun fill(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), seed: Int = 0, prev: TeamBoard? = null): Plan {
         val types = team.shifts.associateBy { it.id }
         val asTypes = types.mapValues { it.value.asType() }
         val off = team.shifts.firstOrNull { it.isOff }
@@ -96,8 +132,11 @@ object TeamAuto {
         val wish = wishes.associateBy { it.memberId to it.date }
         var b = board
         val startEmpty = board.empty
-        // Wishes for a day off land first, where the cell is still empty.
-        if (off != null) wishes.filter { it.kind == WishKind.OFF }.forEach { w -> if (b.cell(w.memberId, w.date) == null) b = b.paint(w.memberId, w.date, off.id, CellSource.AUTO) }
+        // Wishes for a day off (오프·연차·교육) land first, where the cell is still empty.
+        wishes.filter { it.kind.rests }.forEach { w ->
+            val s = restShift(team, w.kind) ?: return@forEach
+            if (b.cell(w.memberId, w.date) == null) b = b.paint(w.memberId, w.date, s.id, CellSource.AUTO)
+        }
         val count = HashMap<Pair<String, Long>, Int>()
         val minutes = HashMap<String, Int>()
         val weekends = HashMap<String, Int>()
@@ -109,14 +148,15 @@ object TeamAuto {
         }
         b.cells.values.forEach { note(it.memberId, it.date, it.shiftId) }
         fun row(trial: TeamBoard, m: String) = board.days.map { it to trial.cell(m, it)?.shiftId?.let(asTypes::get) }
+        val carried = board.members.associate { it.id to TeamCheck.carry(prev, it.id, asTypes) }
         // The member's signs now, kept while their row does not change, so each try is checked against what it adds.
         // The text too, so a run already too long that grows ("7일 연속" → "8일 연속") counts as new.
         val before = HashMap<String, Set<String>>()
-        fun signs(trial: TeamBoard, m: String) = DutyCheck.check(row(trial, m), rules).map { "${it.kind} ${it.date} ${it.text}" }.toSet()
+        fun signs(trial: TeamBoard, m: String) = TeamCheck.withCarry(carried[m].orEmpty(), row(trial, m), rules).map { "${it.kind} ${it.date} ${it.text}" }.toSet()
         fun breaks(m: TeamMember, d: LocalDate, id: Long, trial: TeamBoard): Boolean {
             val w = wish[m.id to d]
             val t = types.getValue(id)
-            if (w?.kind == WishKind.OFF) return true
+            if (w?.kind?.rests == true) return true
             if (w?.kind == WishKind.AVOID_NIGHT && DutyCheck.isNight(t.asType())) return true
             if ((week[m.id to weekOf(d)] ?: 0) + TeamCheck.minutesOf(t) > TeamCheck.WEEK_LIMIT_MINUTES) return true
             val had = before.getOrPut(m.id) { signs(trial, m.id) }
@@ -140,24 +180,33 @@ object TeamAuto {
                 var have = active.count { b.cell(it.id, d)?.shiftId == s.id }
                 while (have < need) {
                     val pick = active.filter { b.cell(it.id, d) == null && !breaks(it, d, s.id, b) }
-                        .sortedWith(compareBy<TeamMember>({ if (wish[it.id to d]?.kind == WishKind.WORK) 0 else 1 }, { score(it, d, s) }))
+                        .sortedWith(compareBy<TeamMember>({ wish[it.id to d].let { w -> if (w?.kind == WishKind.WORK || (w?.kind == WishKind.SHIFT && w.shiftId == s.id)) 0 else 1 } }, { score(it, d, s) }))
                         .firstOrNull() ?: break
                     b = b.paint(pick.id, d, s.id, CellSource.AUTO); note(pick.id, d, s.id); before.remove(pick.id); have++
                 }
             }
             if (off != null) active.forEach { m -> if (b.cell(m.id, d) == null) { b = b.paint(m.id, d, off.id, CellSource.AUTO); before.remove(m.id) } }
         }
-        return measure(team, board, b, startEmpty, wishes, rules)
+        return measure(team, board, b, startEmpty, wishes, rules, prev)
+    }
+
+    /** Whether [w] is kept by the cell [c] (null: nothing painted there). 반차 asks nothing of the board, so it is always kept. */
+    fun kept(team: Team, w: TeamWish, c: TeamShift?): Boolean = when (w.kind) {
+        WishKind.OFF -> c?.isOff == true
+        WishKind.LEAVE, WishKind.EDU -> c?.isOff == true
+        WishKind.WORK -> c != null && !c.isOff
+        WishKind.AVOID_NIGHT -> c != null && !DutyCheck.isNight(c.asType())
+        WishKind.SHIFT -> c != null && c.id == w.shiftId
+        WishKind.HALF -> true
     }
 
     /** How a filled board stands: short days, wishes, and the dangers the 안 line shows before the leader picks it. */
-    fun measure(team: Team, start: TeamBoard, b: TeamBoard, startEmpty: Int, wishes: List<TeamWish>, rules: RestRules): Plan {
+    fun measure(team: Team, start: TeamBoard, b: TeamBoard, startEmpty: Int, wishes: List<TeamWish>, rules: RestRules, prev: TeamBoard? = null): Plan {
         val types = team.shifts.associateBy { it.id }
         val active = b.members.filter { it.active }
         val nights = active.map { m -> b.days.count { d -> b.cell(m.id, d)?.shiftId?.let(types::get)?.let { DutyCheck.isNight(it.asType()) } == true } }
-        val kept = wishes.count { w -> val c = b.cell(w.memberId, w.date)?.shiftId?.let(types::get)
-            when (w.kind) { WishKind.OFF -> c?.isOff == true; WishKind.WORK -> c != null && !c.isOff; WishKind.AVOID_NIGHT -> c != null && !DutyCheck.isNight(c.asType()) } }
-        val signs = TeamCheck.check(team, b, rules)
+        val kept = wishes.count { w -> kept(team, w, b.cell(w.memberId, w.date)?.shiftId?.let(types::get)) }
+        val signs = TeamCheck.check(team, b, rules, prev)
         val runs = active.map { m ->
             var best = 0; var cur = 0
             b.days.forEach { d -> if (b.cell(m.id, d)?.shiftId?.let(types::get)?.isOff == false) { cur++; best = maxOf(best, cur) } else cur = 0 }
@@ -173,8 +222,8 @@ object TeamAuto {
      * [TEAM-20] A few orders, best first: no danger (52시간·연속·휴식) first, then the fewest short, wishes kept, the evenest hours
      * and nights. A plan only adds what the board's own signs did not have, so a leader's painted danger counts in every 안 alike.
      */
-    fun plans(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), tries: Int = 8, keep: Int = 4): List<Plan> =
-        (0 until tries).map { fill(team, board, wishes, rules, it) }
+    fun plans(team: Team, board: TeamBoard, wishes: List<TeamWish> = emptyList(), rules: RestRules = RestRules(), tries: Int = 8, keep: Int = 4, prev: TeamBoard? = null): List<Plan> =
+        (0 until tries).map { fill(team, board, wishes, rules, it, prev) }
             .sortedWith(compareBy({ it.danger }, { it.shortPeople }, { -it.wishesKept }, { it.hourSpread + it.spread * 4 }))
             // 1.38 PC 6db1056b: 안 that read the same on their line are one choice, not four.
             .distinctBy { listOf(it.danger, it.shortPeople, it.short.size, it.wishesKept, it.hourSpread, it.spread, it.maxRun) }
