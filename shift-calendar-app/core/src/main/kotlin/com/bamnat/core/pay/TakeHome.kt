@@ -169,7 +169,13 @@ object TakeHome {
      * 6세 이하 보육수당). A new allowance named so starts as 비과세, and only these show the switch.
      */
     fun looksNonTaxable(name: String): Boolean =
-        listOf("식대", "식비", "중식", "석식", "자가운전", "차량유지", "보육", "육아").any { it in name.replace(" ", "") }
+        NON_TAXABLE_WORDS.any { it in name.replace(" ", "") }
+
+    /**
+     * The words of [looksNonTaxable]. [PAYX-52] 1.38 PC 12.1: 연구보조비·연구활동비 (시행령 제12조 제12호), 벽지수당 (제12조 제9호),
+     * 취재수당 (제12조 제11호) too, each up to 월 20만 원 like 식대.
+     */
+    val NON_TAXABLE_WORDS = listOf("식대", "식비", "중식", "석식", "자가운전", "차량유지", "보육", "육아", "연구보조", "연구활동", "벽지", "취재")
 
     /**
      * [PAYX-23] 국민연금 is estimated on this month's pay, but the 공단 sets 기준소득월액 once a year from last year's
