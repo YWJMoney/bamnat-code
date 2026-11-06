@@ -237,6 +237,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
             place?.let { p -> scope.launch { store.saveStaff(n, p.id) } }; editing = null
         }, onRemove = { place?.let { scope.launch { store.deleteStaff(s.id) } }; editing = null }, onRehire = { day ->
             // 1.38 다시 입사: a new 재직 기간 as its own line, so the old one's 임금대장·퇴직 정산 stay as they were.
+            // 1.38 PC 8차: never on or before the 퇴사일 (두 재직 기간이 겹치던 것); the picker stops it too.
+            if (s.leftOn?.let { !day.isAfter(it) } == true) return@StaffDialog
             editing = null
             place?.let { p -> scope.launch {
                 val count = store.staff(p.id).first().count { it.countsFor(java.time.YearMonth.from(Today.date())) }
@@ -264,8 +266,10 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
         Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(Fmt.won(l.gross), style = MaterialTheme.typography.titleMedium)
-                Text("${l.workDays}일 · ${com.bamnat.core.hours.HoursFormat.korean(l.workMinutes)}" +
-                    (if (l.employerInsurance > 0) " · 4대보험 ${Fmt.won(l.employerInsurance)}" else ""),
+                // 1.38 PC 8차: a 월급 직원 with no usual week has no days to count; '0일 · 0시간' read as nothing paid.
+                val counted = if (l.workDays > 0 || l.workMinutes > 0) "${l.workDays}일 · ${com.bamnat.core.hours.HoursFormat.korean(l.workMinutes)}" else null
+                val insured = if (l.employerInsurance > 0) "4대보험 ${Fmt.won(l.employerInsurance)}" else null
+                if (counted != null || insured != null) Text(listOfNotNull(counted, insured).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(if (open) "접기" else "근거 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -393,11 +397,14 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
     // 휴직: (index, true = 시작) being picked; index == leaves.size is a new one.
     var leavePick by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
     val minimum = RateTable.on(Today.date()).minimumHourlyWage
-    ToolScreen(s.name.ifBlank { "새 직원" }, onDismiss, action = "저장", actionEnabled = s.name.isNotBlank(), onAction = { onSave(s) }) {
+    // 1.38 PC 8차: 뒤로·닫기 asks before what was typed is thrown away.
+    var quitAsk by remember { mutableStateOf(false) }
+    val close = { if (s != start) quitAsk = true else onDismiss() }
+    ToolScreen(s.name.ifBlank { "새 직원" }, close, action = "저장", actionEnabled = s.name.isNotBlank(), onAction = { onSave(s) }) {
         OutlinedTextField(s.name, { s = s.copy(name = it.take(20)) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             WageForm.entries.forEach { f ->
-                FilterChip(selected = s.form == f, onClick = { s = s.copy(form = f) }, label = { Text(when (f) { WageForm.HOUR -> "시급"; WageForm.MONTH -> "월급"; WageForm.DAY -> "일급" }) })
+                FilterChip(selected = s.form == f, onClick = { if (f != s.form) s = s.copy(form = f, base = if (f == start.form) start.base else 0L, dayRates = if (f == WageForm.HOUR) s.dayRates else emptyMap()) }, label = { Text(when (f) { WageForm.HOUR -> "시급"; WageForm.MONTH -> "월급"; WageForm.DAY -> "일급" }) })
             }
         }
         AmountField(when (s.form) { WageForm.HOUR -> "시급"; WageForm.MONTH -> "월급"; WageForm.DAY -> "일급" }, amountDigits(s.base), { s = s.copy(base = it.toAmount()) })
@@ -507,7 +514,17 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
     if (birthPick) DayPick(s.birth ?: LocalDate.of(2000, 1, 1), onDismiss = { birthPick = false }) { s = s.copy(birth = it); birthPick = false }
     if (hirePick) DayPick(s.hiredOn ?: Today.date(), onDismiss = { hirePick = false }) { s = s.copy(hiredOn = it); hirePick = false }
     if (leftPick) DayPick(s.leftOn ?: Today.date(), onDismiss = { leftPick = false }) { s = s.copy(leftOn = it); leftPick = false }
-    if (rehirePick) DayPick(Today.date(), onDismiss = { rehirePick = false }) { rehirePick = false; onRehire(it) }
+    if (rehirePick) {
+        val first = start.leftOn?.plusDays(1)?.let { maxOf(it, Today.date()) } ?: Today.date()
+        DayPick(first, onDismiss = { rehirePick = false }, after = start.leftOn) { rehirePick = false; onRehire(it) }
+    }
+    if (quitAsk) com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { quitAsk = false }, title = { Text("저장하지 않고 나갈까요?") }, text = {
+        Text("넣던 내용이 사라져요.", style = MaterialTheme.typography.bodyMedium)
+    }, confirmButton = {
+        TextButton(onClick = { quitAsk = false; onSave(s) }, enabled = s.name.isNotBlank()) { Text("저장") }
+    }, dismissButton = {
+        TextButton(onClick = { quitAsk = false; onDismiss() }) { Text("나가기", color = MaterialTheme.colorScheme.error) }
+    })
     leavePick?.let { (i, isStart) ->
         val l = s.leaves.getOrNull(i)
         DayPick((if (isStart) l?.start else l?.end) ?: Today.date(), onDismiss = { leavePick = null }) { d ->
@@ -535,7 +552,16 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
 @Composable
 private fun PlaceDialog(start: Workplace, onDismiss: () -> Unit, onSave: (Workplace) -> Unit) {
     var p by remember { mutableStateOf(start) }
-    ToolScreen("사업장 설정", onDismiss, action = "저장", actionEnabled = p.name.isNotBlank(), onAction = { onSave(p) }) {
+    // 같은 구조(직원 창과 같은 1.38 PC 8차): 바꾼 것이 있으면 나가기 전에 물어요.
+    var quitAsk by remember { mutableStateOf(false) }
+    if (quitAsk) com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { quitAsk = false }, title = { Text("저장하지 않고 나갈까요?") }, text = {
+        Text("바꾼 내용이 사라져요.", style = MaterialTheme.typography.bodyMedium)
+    }, confirmButton = {
+        TextButton(onClick = { quitAsk = false; onSave(p) }, enabled = p.name.isNotBlank()) { Text("저장") }
+    }, dismissButton = {
+        TextButton(onClick = { quitAsk = false; onDismiss() }) { Text("나가기", color = MaterialTheme.colorScheme.error) }
+    })
+    ToolScreen("사업장 설정", { if (p != start) quitAsk = true else onDismiss() }, action = "저장", actionEnabled = p.name.isNotBlank(), onAction = { onSave(p) }) {
         OutlinedTextField(p.name, { p = p.copy(name = it.take(20)) }, label = { Text("사업장 이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Text("늘 일하는 사람이 5명 이상인가요?", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -559,8 +585,15 @@ private fun PlaceDialog(start: Workplace, onDismiss: () -> Unit, onSave: (Workpl
 /** A day picked on Material's calendar. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun DayPick(initial: LocalDate, onDismiss: () -> Unit, onPick: (LocalDate) -> Unit) {
-    val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = initial.toEpochDay() * 86_400_000L)
+private fun DayPick(initial: LocalDate, onDismiss: () -> Unit, after: LocalDate? = null, onPick: (LocalDate) -> Unit) {
+    // [after]: only days later than it can be picked (다시 입사는 퇴사일 다음 날부터).
+    val selectable = remember(after) {
+        object : androidx.compose.material3.SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long) = after == null || LocalDate.ofEpochDay(utcTimeMillis / 86_400_000L).isAfter(after)
+            override fun isSelectableYear(year: Int) = after == null || year >= after.year
+        }
+    }
+    val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = initial.toEpochDay() * 86_400_000L, selectableDates = selectable)
     com.bamnat.app.ui.components.DatePickerDialog(onDismissRequest = onDismiss, confirmButton = {
         TextButton(onClick = { state.selectedDateMillis?.let { onPick(LocalDate.ofEpochDay(it / 86_400_000L)) } ?: onDismiss() }) { Text("고르기") }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } }) { androidx.compose.material3.DatePicker(state) }
@@ -683,12 +716,16 @@ private fun ClockCard(staff: List<StaffMember>, punches: List<com.bamnat.core.bo
     SectionCard(title = "출퇴근 기록") {
         if (rows.isEmpty()) Hint("기록 ${punches.size}개 · 평소와 다른 날이 없어요." + if (open.isNotEmpty()) " 퇴근을 아직 안 누른 날 ${open.size}일." else "")
         else {
-            val on = remember(rows) { mutableStateListOf<Boolean>().apply { addAll(rows.map { true }) } }
+            val on = remember(rows) { mutableStateListOf<Boolean>().apply { addAll(rows.map { com.bamnat.core.boss.StaffClock.shortNote(it.start, it.end) == null }) } }
             rows.forEachIndexed { i, r ->
                 val name = staff.firstOrNull { it.id == r.staffId }?.name.orEmpty()
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     androidx.compose.material3.Checkbox(checked = on[i], onCheckedChange = { on[i] = it })
-                    Text("$name · ${Fmt.monthDay(r.date)} ${r.kind.label} ${r.start?.let(Fmt::time)}~${r.end?.let(Fmt::time)}", style = MaterialTheme.typography.bodyMedium)
+                    Column {
+                        Text("$name · ${Fmt.monthDay(r.date)} ${r.kind.label} ${r.start?.let(Fmt::time)}~${r.end?.let(Fmt::time)}", style = MaterialTheme.typography.bodyMedium)
+                        // 1.38 PC 8차: 출근·퇴근을 바로 이어 누른 날(1분 근무)은 실수일 수 있어요.
+                        com.bamnat.core.boss.StaffClock.shortNote(r.start, r.end)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning) }
+                    }
                 }
             }
             OutlinedButton(enabled = on.any { it }, onClick = { onPut(rows.filterIndexed { i, _ -> on[i] }) }) { Text("고른 ${on.count { it }}일 대장에 넣기") }

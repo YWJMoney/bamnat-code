@@ -204,7 +204,8 @@ object PayrollLedger {
     fun profile(place: Workplace, s: StaffMember): PayProfile = PayProfile(
         occupation = Occupation.PART_TIME,
         wageType = when (s.form) { WageForm.HOUR -> WageType.HOURLY; WageForm.MONTH -> WageType.MONTHLY; WageForm.DAY -> WageType.DAILY },
-        base = ValueTimeline(listOf(DatedValue(s.hiredOn ?: LocalDate.of(2000, 1, 1), s.base))),
+        // 1.38 PC 8차: dated from the hire day, a 월급 joined on 11/20 read 0원 for November (the month asks the value on the 1st).
+        base = ValueTimeline(listOf(DatedValue(LocalDate.of(2000, 1, 1), s.base))),
         items = s.allowances.mapIndexed { i, a ->
             PayItem("staff-$i", a.name, ValueTimeline(listOf(DatedValue(LocalDate.of(2000, 1, 1), a.amount))),
                 if (a.perDay) Cadence.PER_WORK_DAY else Cadence.MONTHLY)

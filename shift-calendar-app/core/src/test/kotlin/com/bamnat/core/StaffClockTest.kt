@@ -46,4 +46,12 @@ class StaffClockTest {
         assertEquals(listOf(2, 9, 3, 7), rows.map { it.date.dayOfMonth })
         assertEquals("문 앞 3분은 지각이 아니게", 0, StaffClock.suggest(s, listOf(StaffClock.Day(LocalDate.of(2026, 11, 2), LocalTime.of(9, 3), LocalTime.of(18, 0))), emptySet(), graceMinutes = 5).size)
     }
+
+    /** 1.38 PC 8차: 1분 근무 is told, an hour is not, a night across 0시 is not. */
+    @Test fun shortDaysAreTold() {
+        assertEquals("1분만 일한 것으로 보여요. 잘못 누른 거라면 넣지 마세요", StaffClock.shortNote(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(9, 1)))
+        assertEquals(null, StaffClock.shortNote(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(10, 0)))
+        assertEquals(null, StaffClock.shortNote(java.time.LocalTime.of(22, 0), java.time.LocalTime.of(6, 0)))
+        assertEquals(null, StaffClock.shortNote(null, java.time.LocalTime.of(6, 0)))
+    }
 }
