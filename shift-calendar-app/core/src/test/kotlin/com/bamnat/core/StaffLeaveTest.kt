@@ -41,6 +41,17 @@ class StaffLeaveTest {
         assertEquals("15일 퇴사면 반", 1_500_000L, base(PayrollLedger.line(place, s.copy(leftOn = month.atDay(15)), month, emptyList())))
     }
 
+    /** 1.38 PC 8차: 11/20·11/2에 들어온 월급 3,000,000원 직원의 11월이 0원이던 것. 평소 요일이 없어도 달력 일수로 일할해요. */
+    @Test fun monthlyJoinedMidMonthIsProrated() {
+        val s = StaffMember("s", "신입", form = WageForm.MONTH, base = 3_000_000)
+        val base = { l: LedgerLine -> l.pay!!.lines.first { it.kind == com.bamnat.core.pay.LineKind.BASE }.amount }
+        assertEquals(1_100_000L, base(PayrollLedger.line(place, s.copy(hiredOn = month.atDay(20)), month, emptyList())))
+        assertEquals(2_900_000L, base(PayrollLedger.line(place, s.copy(hiredOn = month.atDay(2)), month, emptyList())))
+        assertEquals(3_000_000L, base(PayrollLedger.line(place, s.copy(hiredOn = month.atDay(20)), month.plusMonths(1), emptyList())))
+        val hourly = StaffMember("h", "알바", base = 10_320, hiredOn = month.atDay(20), weekly = week)
+        assertTrue(PayrollLedger.line(place, hourly, month, emptyList()).pay!!.total > 0)
+    }
+
     @Test fun workingCountsOnlyThoseNotLeftOrResting() {
         val s = StaffMember("s", "가", hiredOn = LocalDate.of(2026, 1, 1))
         assertTrue(s.workingIn(month))
