@@ -22,4 +22,19 @@ object AppSettled {
         Thread.sleep(400)
         shadowOf(Looper.getMainLooper()).idle()
     }
+
+    /** Waits until the app has planned nothing for [quietMillis] (a planning set off by a test's own change, debounced). */
+    fun quiet(app: BamnatApp, quietMillis: Long = 800, timeoutMillis: Long = 10_000) {
+        val c = runBlocking { app.awaitContainer() }
+        val until = System.nanoTime() + timeoutMillis * 1_000_000
+        var seen = c.alarmScheduler.plannings
+        var since = System.nanoTime()
+        while (System.nanoTime() < until) {
+            shadowOf(Looper.getMainLooper()).idle()
+            Thread.sleep(20)
+            val now = c.alarmScheduler.plannings
+            if (now != seen) { seen = now; since = System.nanoTime() }
+            else if (System.nanoTime() - since >= quietMillis * 1_000_000) return
+        }
+    }
 }
