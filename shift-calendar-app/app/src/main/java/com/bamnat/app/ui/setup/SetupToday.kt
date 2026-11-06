@@ -109,7 +109,7 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
         // 1.38 통합 7차: '오늘로 답할게요' asks about today, so 쉬는 날'이면'.
         "근무표에서 ${day} 칸을 보고 골라 주세요. 쉬는 날${if (date == today) "이면" else "이었으면"} 휴무를 고르면 돼요.",
     )
-    if (early) EarlyHoursNote(todayBased, today, onToday = { vm.answerForToday(!todayBased) })
+    if (early) EarlyHoursNote(todayBased, today, earlyNote(vm.earlyBecause(d), vm.hourNow(), today), onToday = { vm.answerForToday(!todayBased) })
 
     val source = d.source
     // [SETUP-14] These answers survive folding and unfolding.
@@ -174,15 +174,29 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
     }
 }
 
+/**
+ * 1.38 통합 8차 (09:41에 소방 당번으로 첫 설정하면 '지금은 새벽이라'): why the question is yesterday's, said by the shift, and
+ * '새벽' only in the small hours.
+ */
+internal fun earlyNote(because: Pair<com.bamnat.core.model.ShiftType, Boolean>?, hour: Int, today: LocalDate): String {
+    val yesterday = "어제(${Fmt.shortDate(today.minusDays(1))})"
+    val t = because?.first
+    if (t == null || hour < SMALL_HOURS_END) return "지금은 새벽이라, 어젯밤 시작한 근무는 $yesterday 근무로 쳐요."
+    val still = if (because.second) "아직 이어지고 있어요" else "막 끝났어요"
+    return "밤을 넘기는 근무는 시작한 날로 쳐요. $yesterday ${t.start}에 시작한 ${t.name}${Fmt.iga(t.name)} $still."
+}
+
+private const val SMALL_HOURS_END = 6
+
 /** [SETUP-01] In the small hours a night shift that began last night is yesterday's work. */
 @Composable
-private fun EarlyHoursNote(todayBased: Boolean, today: LocalDate, onToday: () -> Unit) {
+private fun EarlyHoursNote(todayBased: Boolean, today: LocalDate, earlyText: String, onToday: () -> Unit) {
     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Bedtime, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
             Text(
                 if (todayBased) "오늘(${Fmt.shortDate(today)}) 기준으로 묻고 있어요."
-                else "지금은 새벽이라, 어젯밤 시작한 근무는 어제(${Fmt.shortDate(today.minusDays(1))}) 근무로 쳐요.",
+                else earlyText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 modifier = Modifier.padding(start = 10.dp).weight(1f),

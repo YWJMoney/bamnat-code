@@ -443,4 +443,14 @@ class SetupFlowTest {
         assertEquals(SetupStep.SUMMARY, draft.step)
         assertEquals(30, draft.alarmMinutes)
     }
+
+    /** 1.38 통합 8차 (09:41에 소방 당번으로 첫 설정하면 '지금은 새벽이라'): the note says why by the shift; '새벽' only before 6. */
+    @Test fun theEarlyNoteSaysTheShiftNotTheDawn() {
+        val day = java.time.LocalDate.of(2026, 11, 6)
+        val duty = com.bamnat.core.model.ShiftType(id = 1, name = "당번", label = "당", colorArgb = 0,
+            start = java.time.LocalTime.of(9, 0), end = java.time.LocalTime.of(9, 0))
+        assertEquals("밤을 넘기는 근무는 시작한 날로 쳐요. 어제(11/5) 09:00에 시작한 당번이 막 끝났어요.", earlyNote(duty to false, 9, day))
+        assertEquals("밤을 넘기는 근무는 시작한 날로 쳐요. 어제(11/5) 09:00에 시작한 당번이 아직 이어지고 있어요.", earlyNote(duty to true, 8, day))
+        assertEquals("지금은 새벽이라, 어젯밤 시작한 근무는 어제(11/5) 근무로 쳐요.", earlyNote(duty to true, 5, day))
+    }
 }

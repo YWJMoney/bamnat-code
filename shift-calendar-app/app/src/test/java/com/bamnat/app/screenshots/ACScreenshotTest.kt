@@ -257,6 +257,23 @@ class ACScreenshotTest : ScreenshotBase() {
         settle()
         tapText("주야비휴")
     }
+    /**
+     * 1.38 통합 8차 [CYC-03] (올리기로 들어왔는데 마지막 단추가 '달력에 넣기'이고 오늘 며칠째인지도 물어요): from '우리 회사 근무표
+     * 올리기' the sheet puts the table up and leaves the calendar as it is; '내 달력에도 넣기' brings back the calendar's way.
+     */
+    @Test fun anUploadLeavesTheCalendarAsItIs() = shoot("1012b_ac_upload_only", PHONE_393) {
+        content {
+            com.bamnat.app.ui.company.PublicApplySheet(PublicCycles.provided("시험제조", "4조2교대"), onDismiss = {}, onPay = {}, onShare = {}, uploadOnly = true)
+        }
+        settle()
+        assertTrue(appears("올리기만 할게요 (내 달력은 그대로)", exact = true))
+        assertTrue(gone("달력에 넣기", exact = true))
+        tapText("주주휴휴야야휴휴", exact = false)
+        reveal("내 달력은 그대로예요")
+        assertTrue("no 'which day is today' while only putting it up", gone("오늘이 몇 번째 날인지 골라 주세요", exact = true))
+        tapText("내 달력에도 넣기", exact = true)
+        assertTrue(appears("달력에 넣기", exact = true))
+    }
     @Test fun sheetDark() = shoot("1012_ac_sheet_dark", PHONE_393_NIGHT) {
         content { com.bamnat.app.ui.company.PublicApplySheet(gsEps, onDismiss = {}, onPay = {}, onShare = {}) }
         settle()

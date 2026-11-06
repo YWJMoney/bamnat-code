@@ -20,7 +20,16 @@ import org.json.JSONObject
  */
 class LeadShare(private val c: AppContainer) {
     /** What was picked: the company as the user named it, the cycle as a company settings file, the calendar it went into. */
-    data class Pick(val company: String, val file: String, val cal: String = PersonalCalendar.MAIN)
+    data class Pick(
+        val company: String,
+        val file: String,
+        val cal: String = PersonalCalendar.MAIN,
+        /**
+         * 1.38 통합 8차 [CYC-03]: a table not in the public list (처음 제공, '우리 회사 근무표 올리기'): coworkers find it at once,
+         * the public list only after the review, which the dialog says apart.
+         */
+        val firstGiven: Boolean = false,
+    )
 
     sealed interface Step {
         val pick: Pick
@@ -52,6 +61,17 @@ class LeadShare(private val c: AppContainer) {
         if (c.companyStore.autoShare.value != true && !ShareAskGate.open(c.appContext)) return
         if (c.companyStore.autoShare.value == true) go(pick, null) else _step.value = Step.Ask(pick)
         c.telemetry.event("lead_share", "offer")
+    }
+
+    /**
+     * 1.38 통합 8차 [CYC-03] ('우리 회사 근무표 올리기'로 왔는데 달력에 넣기만 있어요): the user asked to put it up, so it is asked
+     * (or sent, after an earlier yes) even after a no to another share ask; false when there is no server to send it to.
+     */
+    fun upload(pick: Pick): Boolean {
+        if (!c.companyApi.enabled || CompanyText.norm(pick.company).length < 2) return false
+        if (c.companyStore.autoShare.value == true) go(pick, null) else _step.value = Step.Ask(pick)
+        c.telemetry.event("lead_share", "upload")
+        return true
     }
 
     /**

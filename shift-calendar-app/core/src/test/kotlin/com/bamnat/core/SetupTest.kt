@@ -45,6 +45,17 @@ class SetupTest {
         assertEquals(today, TodayQuestion.questionDate(at(3), ShiftBundles.weekday.map { it.type }))
     }
 
+    /** 1.38 통합 8차: the shift that makes the question yesterday's is named, so the note says it instead of '새벽'. */
+    @Test fun `the shift that makes it yesterday is the one ending latest that is still on or just ended`() {
+        val duty = ShiftBundles.byKey(ShiftBundles.DUTY)!!.shifts.map { it.type }
+        val because = TodayQuestion.becauseOf(at(9, 41), duty)!!
+        assertTrue(because.end!!.hour == 9)
+        assertNull(TodayQuestion.becauseOf(at(10, 30), duty))
+        val two = twoShift().types
+        assertEquals("야간", TodayQuestion.becauseOf(at(3), two)?.name)
+        assertNull(TodayQuestion.becauseOf(at(8), two))
+    }
+
     @Test fun `the second night of a 2-day night run puts step 0 three days back`() {
         val d = twoShift("DDNNOOOO")
         val night = d.types.first { it.name == "야간" }.id
