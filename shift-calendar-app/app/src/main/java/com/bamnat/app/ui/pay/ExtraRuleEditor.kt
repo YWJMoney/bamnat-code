@@ -58,7 +58,18 @@ import java.time.LocalTime
 import kotlin.math.abs
 
 /** [EXTRA-08] 통상시급 and 기본급 this month, so the editor can say what an hour of the work comes to. */
-data class UnitMoney(val hourly: Long, val monthlyBase: Long, val baseLabel: String)
+data class UnitMoney(
+    val hourly: Long,
+    val monthlyBase: Long,
+    val baseLabel: String,
+    /** [PAYX-49] 통상임금 a kind's own 시수 divides ([PayCalculator.ordinaryForHours]); null for 시급·일급, which have none. */
+    val ordinaryForHours: Double? = null,
+    /** [PAYX-49] The 시수 every other work uses (급여 설정의 월 소정근로시간). */
+    val profileHours: Int = 209,
+) {
+    /** [PAYX-49] 통상시급 at [hours], the engine's rounding; [hourly] when null or there is no 시수. */
+    fun hourlyAt(hours: Int?): Long = hours?.takeIf { it > 0 }?.let { h -> ordinaryForHours?.let { Math.round(it / h) } } ?: hourly
+}
 
 /** [EXTRA-08] The hours a premium is paid on, in words: "이 일 8시간 넘는 시간", "19~23시". */
 internal fun scopeText(s: PremiumScope, nightLabel: String): String = when (s) {
@@ -108,6 +119,7 @@ private fun ExtraRule.payKey(): List<Any?> = listOf(
     amount.takeIf { unit == PayUnit.PER_HOUR || unit == PayUnit.PER_TIME },
     coverMinutes.takeIf { unit == PayUnit.PER_TIME },
     minMinutes,
+    monthlyHours,
     Premium.BUILT_IN.map { k -> premium(k)?.takeIf { it.on } ?: Premium.builtIn(k, 0.0) },
     premiums.filter { it.custom },
 )
@@ -181,6 +193,7 @@ internal fun ExtraRuleEditor(
                 Toggle("구간을 그날 첫 근무부터 세기", "끄면 이 근무를 시작한 때부터 8시간·4시간 구간을 세요. 켜면 그날 앞선 근무 시간까지 이어서 세요",
                     rule.tiersFromDayStart) { onChange(rule.copy(tiersFromDayStart = it)) }
             }
+            if (rule.usesHourly) OwnHours(rule, money) { onChange(rule.copy(monthlyHours = it)) }
             Hint("이 방식대로 계속 계산해요. 연장·야간 같은 가산을 하나씩 고르려면 새로 정해 주세요.")
             OutlinedButton(onClick = { onChange(start.copy(bonus = rule.bonus, minMinutes = rule.minMinutes)) }, modifier = Modifier.padding(top = 4.dp)) {
                 Text("가산 하나씩 고르기")
@@ -200,6 +213,7 @@ internal fun ExtraRuleEditor(
             }
         }
         UnitNumbers(shown, money, ::set)
+        if (shown.unit == PayUnit.ORDINARY || shown.unit == PayUnit.PER_TIME) OwnHours(shown, money) { set(shown.copy(monthlyHours = it)) }
 
         Label("가산 · 체크한 것만 더해요")
         for (key in Premium.BUILT_IN) {
@@ -309,6 +323,41 @@ private fun UnitNumbers(r: ExtraRule, money: UnitMoney?, set: (ExtraRule) -> Uni
                 " 가산은 통상시급에 붙어요.")
         }
     }
+}
+
+/**
+ * 1.38 [PAYX-49] 이 일만의 시수: the hours 통상임금 is divided by for this work, when the company pays it on another 시수 than the
+ * rest (사용자 2026-11-06: 연장·휴일 180시수, 교육 243시수). Monthly pay only; the app cannot tell it from a payslip alone.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun OwnHours(r: ExtraRule, money: UnitMoney?, set: (Int?) -> Unit) {
+    val m = money?.takeIf { it.ordinaryForHours != null } ?: return
+    var typing by rememberSaveable { mutableStateOf(false) }
+    val own = r.monthlyHours
+    val choices = ExtraRule.HOURS_CHOICES.filter { it != m.profileHours }
+    Label("시수 · 통상시급을 몇 시간으로 나누나요?")
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        FilterChip(selected = own == null, onClick = { typing = false; set(null) }, label = { Text("다른 근무와 같이 ${m.profileHours}시간") })
+        choices.forEach { h ->
+            FilterChip(selected = own == h, onClick = { typing = false; set(h) }, label = { Text("${h}시간") })
+        }
+        FilterChip(selected = typing || own != null && own !in choices, onClick = { typing = true },
+            label = { Text("직접") })
+    }
+    if (typing || own != null && own !in choices) {
+        StepperRow("시수", Modifier.padding(top = 4.dp)) {
+            CountStepper(own ?: m.profileHours, { set(it.takeIf { h -> h != m.profileHours }) }, name = "시수",
+                range = ExtraRule.HOURS_RANGE, format = { "${it}시간" })
+        }
+    }
+    val example = if (m.profileHours == 243) 209 else 243
+    Hint(
+        if (own == null) "교육처럼 이 일만 회사가 다른 시수로 계산하면 골라요. 예: 다른 근무는 ${m.profileHours}시간인데 교육은 ${example}시간이면 " +
+            "1시간에 ${Fmt.won(m.hourlyAt(example))}(지금 ${Fmt.won(m.hourly)})."
+        else "이 일은 통상임금 ÷ ${own}시간 = 1시간 ${Fmt.won(m.hourlyAt(own))}으로 계산해요. 다른 근무는 ${m.profileHours}시간 ${Fmt.won(m.hourly)} 그대로예요. " +
+            "가산도 이 단가에 붙어요.",
+    )
 }
 
 /** One premium: the box ticks it, the chip shows and changes its rate. */

@@ -1445,6 +1445,8 @@ function extraRule(raw, say) {
     unitMin: int(e.unitMin ?? 480, 30, 1440, "rules"),
     adds: given(e.adds) ? list(e.adds, 10, "rules").map((p) => premium(p, say)) : [],
   };
+  // 1.38 [PAYX-49] 이 일만의 시수 (교육 243시간 while 연장 is 180): a company rule, so it is shared; left out when it follows 월 소정.
+  if (given(e.hours)) out.hours = int(e.hours, 100, 300, "rules");
   if (given(e.dayTiers)) out.dayTiers = tiers(e.dayTiers);
   if (given(e.nightTiers)) out.nightTiers = tiers(e.nightTiers);
   return out;
@@ -1725,11 +1727,11 @@ function ruleText(e) {
     case "FIXED_PER_TIME": return "1회 정액 (금액은 각자 넣어요)";
     case "FIXED_PER_HOUR": return "시간당 정액 (금액은 각자 넣어요)";
     case "PERCENT_OF_BASE": return `${e.cover > 0 ? hours(e.cover) : "한 번"}에 기본급 ${pct(e.percent)}${e.premiums ? " + 법정 가산" : ""}`;
-    case "HOURLY_RATE": return `통상시급 × ${pct(e.multiplier)}`;
+    case "HOURLY_RATE": return `통상시급${hoursNote(e)} × ${pct(e.multiplier)}`;
     case "TIERED": return `시간 구간별 가산 ${(e.dayTiers ?? []).map((t) => `${hours(t.min)}부터 +${pct(t.premium)}`).join(", ")}`.trim();
     default: {
       const unit = {
-        ORDINARY: "통상시급",
+        ORDINARY: `통상시급${hoursNote(e)}`,
         BASE_SHARE: `${hours(e.unitMin)}에 기본급 ${pct(e.percent)}`,
         PER_HOUR: "시간당 정액 (금액은 각자)",
         PER_TIME: `1회 정액 (금액은 각자)${e.cover > 0 ? ` ${hours(e.cover)}까지` : ""}`,
@@ -1738,6 +1740,11 @@ function ruleText(e) {
       return [unit, ...adds].join(" + ") + (e.min > 0 ? ` · 최소 ${hours(e.min)}` : "");
     }
   }
+}
+
+/** [PAYX-49] " (243시간 기준)" for a kind with a 시수 of its own. */
+function hoursNote(e) {
+  return e.hours > 0 ? ` (${e.hours}시간 기준)` : "";
 }
 
 function scopeText(scope) {

@@ -510,3 +510,17 @@ test("without a database the server says so", async () => {
   const health = await call("GET", "/api/admin/health");
   assert.deepEqual(health.data, { database: false, password: true, salt: true, why: { password: null, salt: null } });
 });
+
+test("1.38 PAYX-49: a kind's own 시수 is kept and said, and changes the fingerprint", async () => {
+  const s = setup();
+  s.pay.rules.extra[101] = { ...s.pay.rules.extra[101], basis: "UNIT", hours: 243,
+    adds: [{ key: "overtime", name: "연장 가산", rate: 0.5, on: true, scope: "law", offDays: false }] };
+  const clean = cleanSetup(s);
+  assert.equal(clean.pay.rules.extra[101].hours, 243);
+  assert.equal(cleanSetup(setup()).pay.rules.extra[101].hours, undefined);
+  const lines = Object.fromEntries(words(clean));
+  assert.ok(Object.values(lines).includes("통상시급 (243시간 기준) + 연장 가산 50%"), JSON.stringify(lines));
+  const other = setup();
+  other.pay.rules.extra[101] = { ...s.pay.rules.extra[101], hours: 226 };
+  assert.notEqual(await fingerprint(cleanSetup(other)), await fingerprint(clean));
+});

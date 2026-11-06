@@ -564,6 +564,8 @@ object PayCodec {
         .put("unit", e.unit.name).put("unitMin", e.unitMinutes).put("adds", premiums(e.premiums))
         // [PAYX-21] Left out when off so older files stay the same.
         .apply { if (e.tiersFromDayStart) put("tiersFromDay", true) }
+        // 1.38 [PAYX-49] 이 일만의 시수, left out when it follows the profile's.
+        .apply { e.monthlyHours?.let { put("hours", it) } }
 
     private fun extraRule(e: JSONObject): ExtraRule = ExtraRule(
         // A basis this version does not know (a newer file) is paid by law rather than guessed.
@@ -582,6 +584,7 @@ object PayCodec {
         unitMinutes = e.optInt("unitMin", 8 * 60).coerceIn(30, 24 * 60),
         premiums = e.optJSONArray("adds")?.let(::premiums).orEmpty(),
         tiersFromDayStart = e.optBoolean("tiersFromDay", false),
+        monthlyHours = e.optInt("hours", 0).takeIf { it in ExtraRule.HOURS_RANGE },
     )
 
     private fun leavePolicy(l: LeavePolicy): JSONObject = JSONObject().put("auto", l.auto).put("basis", l.basis.name)
