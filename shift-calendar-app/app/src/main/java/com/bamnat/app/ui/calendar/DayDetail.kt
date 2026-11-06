@@ -199,8 +199,10 @@ fun DayPanel(
     onRealign: ((LocalDate) -> Unit)? = null,
 ) {
     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
+    // 1.38 PC 12차 유형별 빈틈 9: with the day's story up, the head's '메모 · …' token said the same thing again above it.
+    var storyUp by remember(date) { mutableStateOf(false) }
     Column(modifier) {
-        DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp), compact = compact)
+        DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp), compact = compact, memoToken = !storyUp)
         weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
         // [RUL-03] 1.36 단추 on the day screen (스튜디오·받은 테마).
         com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.DAY, date, Modifier.padding(bottom = 4.dp))
@@ -209,7 +211,8 @@ fun DayPanel(
             (if (scrollGroups) Modifier.weight(1f, fill = false).imePadding().verticalScroll(rememberScrollState()) else Modifier)
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding),
         ) {
-            DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds, onRealign)
+            DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds, onRealign,
+                onStory = { storyUp = it })
         }
     }
 }
@@ -233,6 +236,8 @@ private fun DayGroups(
     onOpenPay: () -> Unit,
     onOpenExtraKinds: () -> Unit,
     onRealign: ((LocalDate) -> Unit)? = null,
+    /** Whether the day's story line is up (the head then leaves out its memo token). */
+    onStory: (Boolean) -> Unit = {},
 ) {
     val date = day.date
     val cal = LocalCalendarColors.current
@@ -279,6 +284,8 @@ private fun DayGroups(
             items.takeIf { com.bamnat.core.design.DayStoryItems.worthShowing(com.bamnat.core.design.DayStory.arrange(date, it)) }
         }.getOrNull()
     }
+    val storyShown = story != null
+    LaunchedEffect(storyShown) { onStory(storyShown) }
     story?.let { events ->
         Surface(
             shape = MaterialTheme.shapes.large,
