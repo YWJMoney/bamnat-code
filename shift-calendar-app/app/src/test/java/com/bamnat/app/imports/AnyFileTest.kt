@@ -83,4 +83,15 @@ class AnyFileTest {
         val photo = Intent(Intent.ACTION_SEND).setType("image/jpeg").putExtra(Intent.EXTRA_STREAM, Uri.parse("content://x/a.jpg"))
         assertTrue(IncomingRoster.sharedOf(photo) is IncomingRoster.Shared.Photo)
     }
+
+    /** [READ-34] 1.38: a payslip PDF (an ERP's, drawn line by line) read from its own letters, every line and total, nothing asked. */
+    @Test fun aPayslipPdfIsReadFromItsLetters() = runBlocking {
+        val scan = com.bamnat.app.pay.PayslipScanner.scanPdf(context, uri("slip-s04-drawn.pdf"))
+        val r = scan.slip.read
+        assertEquals(YearMonth.of(2026, 10), r.month)
+        assertEquals(15, r.lines.size)
+        assertEquals(3_844_030L, r.gross)
+        assertEquals(3_433_520L, r.net)
+        assertTrue(scan.slip.sure)
+    }
 }
