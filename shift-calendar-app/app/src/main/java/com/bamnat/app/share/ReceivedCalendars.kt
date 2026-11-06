@@ -56,6 +56,8 @@ data class SharedSchedule(
     val look: com.bamnat.core.recipe.Recipe? = null,
     /** 1.37 [SHR-32] The sender's 근무 설정 (근무 꾸미기·알람 시각 틀·근무 주기), to pick from; never pay. */
     val kit: com.bamnat.core.recipe.Recipe? = null,
+    /** 1.38 [SLEEP-11] 지금 자는 중 as the sender's app last sent it; shown only while [SleepNow.shownAt]. */
+    val sleepNow: SleepNow? = null,
 ) {
     private val byId = types.associateBy { it.id }
     fun type(id: Long?): SharedType? = id?.let(byId::get)
@@ -113,7 +115,8 @@ data class SharedSchedule(
             return SharedSchedule(o.optString("title"), types, days, pay, shows, com.bamnat.core.work.MoneyShare.ofKey(o.str("payKind")),
                 ShareAudience.of(o.str("audience")), setup,
                 // 1.37 [SHR-31][SHR-32] Read as any recipe: what the codec refuses, or a kit's pay, is left out.
-                com.bamnat.core.recipe.ShareKit.readLook(o.str("look")), com.bamnat.core.recipe.ShareKit.readKit(o.str("kit")))
+                com.bamnat.core.recipe.ShareKit.readLook(o.str("look")), com.bamnat.core.recipe.ShareKit.readKit(o.str("kit")),
+                SleepNow.of(o.optJSONObject("sleepNow")))
         }
 
         private fun JSONArray?.objects(): List<JSONObject> =

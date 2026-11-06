@@ -165,6 +165,8 @@ data class AppSettings(
     val smartWakeMinutes: Int = 0,
     /** 1.38 [SLEEP-09] 헬스 커넥트에 쓰기, off by default. */
     val healthWrite: Boolean = false,
+    /** 1.38 [SLEEP-12] 자는 동안 방해 금지, off by default (needs 방해 금지 접근). */
+    val sleepDnd: Boolean = false,
     /** [EXTRA-05] The user answered the offer to turn old shift-swap 대근 into 대근 with times. */
     val swapCoversAnswered: Boolean = false,
     /** [EXTRA-05] The user saw what the law would pay for work on days off and chose. */
@@ -429,6 +431,7 @@ class SettingsRepository(context: Context) {
             sleepNightLook = prefs.getBoolean(K_SLEEP_NIGHT_LOOK, d.sleepNightLook),
             smartWakeMinutes = prefs.getInt(K_SMART_WAKE, d.smartWakeMinutes),
             healthWrite = prefs.getBoolean(K_HEALTH_WRITE, d.healthWrite),
+            sleepDnd = prefs.getBoolean(K_SLEEP_DND, d.sleepDnd),
             swapCoversAnswered = prefs.getBoolean(K_SWAP_COVERS, d.swapCoversAnswered),
             restDayCompared = prefs.getBoolean(K_REST_COMPARED, d.restDayCompared),
             // [CAL-20] PREVIEW of 1.17 and before is now 바로 크게 with the card switch apart; the card starts off.
@@ -562,6 +565,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_NIGHT_LOOK, s.sleepNightLook)
             .putInt(K_SMART_WAKE, s.smartWakeMinutes)
             .putBoolean(K_HEALTH_WRITE, s.healthWrite)
+            .putBoolean(K_SLEEP_DND, s.sleepDnd)
             .putBoolean(K_SWAP_COVERS, s.swapCoversAnswered)
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
             .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
@@ -756,6 +760,7 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_NIGHT_LOOK = "sleep_night_look"
         const val K_SMART_WAKE = "smart_wake"
         const val K_HEALTH_WRITE = "health_write"
+        const val K_SLEEP_DND = "sleep_dnd"
         const val K_SWAP_COVERS = "swap_covers_answered"
         const val K_REST_COMPARED = "rest_day_compared"
     }

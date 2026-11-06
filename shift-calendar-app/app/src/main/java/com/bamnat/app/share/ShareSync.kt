@@ -68,6 +68,9 @@ class ShareSync(
             c.featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.ICS_FEED) }.distinctUntilChanged(),
             // 1.36: links kept open while 프로 lasts, and back to 90 days at most when it ends.
             c.featureGate.state.map { it.keepsLinks }.distinctUntilChanged(),
+            // 1.38 [SLEEP-11] 지금 자는 중: a sleep that opens or ends, and the next alarm while it is open.
+            combine(c.sleepRepository.recent(days = 2).map { l -> l.firstOrNull { it.end == null && !it.imported }?.id }.distinctUntilChanged(),
+                c.alarmScheduler.upcoming.map { it?.triggerAtMillis }.distinctUntilChanged()) { a, b -> a to b },
         ) + ShareLinkKey.all(PersonalCalendar.MAIN).map { c.shareLinksOf(it).link }
         combine(reads) { Unit }.debounce(DEBOUNCE_MILLIS).collect {
             // [PROV-04] Each of a calendar's links, the first first.

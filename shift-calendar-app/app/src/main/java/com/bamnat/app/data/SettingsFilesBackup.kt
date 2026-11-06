@@ -190,6 +190,8 @@ class SettingsFilesBackup(
             "defaultAlarmSound" to "알람 소리 파일은 이 휴대폰에 있는 것",
             "healthSleep" to "헬스 커넥트 권한은 새 휴대폰에서 다시 받아요",
             "sleepAuto" to "잠 자동으로 잡기(활동 인식 권한)는 새 휴대폰에서 다시 켜요",
+            "sleepDnd" to "방해 금지 접근은 새 휴대폰에서 다시 허용해요",
+            "healthWrite" to "헬스 커넥트 쓰기 허용은 새 휴대폰에서 다시 물어요",
             "previewTier" to "개발용 등급 미리 보기",
             "swapCoversAnswered" to "옛 대근 고치기 질문, 복원한 기록에는 다시 물어요",
             "reviewDue" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
@@ -266,7 +268,7 @@ class SettingsFilesBackup(
             "wake_check" to "깼는지 확인 중인 알람, 이 휴대폰에서 울린 것",
             "quiet_hold" to "자는 동안 미뤄 둔 알림, 이 휴대폰의 것",
             // 1.38 [SLEEP-01] 휴대폰이 본 잠 조각·끈 알람·믿음 횟수는 이 휴대폰 센서의 것, 넣은 잠은 수면 기록으로 가요.
-            "healthWrite" to "헬스 커넥트 쓰기 허용은 새 휴대폰에서 다시 물어요",
+            "sleep_dnd" to "밤낮이 켠 방해 금지 표시는 이 휴대폰의 것",
             "sleep_auto" to "자동으로 잡은 잠 조각은 이 휴대폰 센서의 것, 넣은 잠은 수면 기록으로 가요",
             "sleep_record" to "지난밤 측정 요약(배터리 사용량)은 이 휴대폰의 것, 소리 사건은 수면 기록으로 가요",
             "sleep_challenge" to "회복 도전 시작일은 이 휴대폰의 것, 새 휴대폰에서 다시 시작해요",

@@ -646,6 +646,27 @@ test("[SHR-31][SHR-32] 1.37: a link may carry the sharer's 테마 and 근무 설
   assert.equal(validate(sample).schedule.look, undefined);
 });
 
+test("1.38 [SLEEP-11] a link may say 지금 자는 중 with two times only, and the page never shows it", async () => {
+  const since = Date.UTC(2026, 10, 6, 14, 0);
+  const wakeAt = since + 7 * 3600 * 1000;
+  const ok = validate({ ...sample, sleepNow: { since, wakeAt } });
+  assert.deepEqual(ok.schedule.sleepNow, { since, wakeAt });
+  assert.deepEqual(validate({ ...sample, sleepNow: { since } }).schedule.sleepNow, { since });
+  // Nothing rides along, and the times make sense.
+  assert.equal(validate({ ...sample, sleepNow: { since, wakeAt, where: "home" } }).error, "sleep_now");
+  assert.equal(validate({ ...sample, sleepNow: { since: "x" } }).error, "sleep_now");
+  assert.equal(validate({ ...sample, sleepNow: { since, wakeAt: since - 1 } }).error, "sleep_now");
+  assert.equal(validate({ ...sample, sleepNow: { since, wakeAt: since + 21 * 3600 * 1000 } }).error, "sleep_now");
+  assert.equal(validate({ ...sample, sleepNow: [since] }).error, "sleep_now");
+  const html = renderSchedule(ok.schedule, new Date(Date.now() + 86400000).toISOString());
+  assert.ok(!/자는 중/.test(html));
+  const env = { SHARES: memoryKv() };
+  const made = await (await call(env, "POST", "/api/share", { ...sample, sleepNow: { since, wakeAt } })).json();
+  const got = await (await call(env, "GET", `/api/share/${made.id}`)).json();
+  assert.deepEqual(got.schedule.sleepNow, { since, wakeAt });
+  assert.equal(validate(sample).schedule.sleepNow, undefined);
+});
+
 test("app-ads.txt names the AdMob publisher and robots.txt lets crawlers read only it", async () => {
   const env = { SHARES: memoryKv() };
   const ads = await call(env, "GET", "/app-ads.txt");

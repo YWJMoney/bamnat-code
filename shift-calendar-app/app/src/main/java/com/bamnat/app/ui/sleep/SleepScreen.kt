@@ -161,7 +161,8 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** 1.38 [SLEEP-06][SLEEP-07] The last measured night and its sounds; null while `sleep.sound` is off. */
-    data class Night(val last: SleepRecordService.Companion.LastNight?, val events: List<com.bamnat.app.data.db.SleepEventEntity>)
+    data class Night(val last: SleepRecordService.Companion.LastNight?, val events: List<com.bamnat.app.data.db.SleepEventEntity>,
+        val work: List<TimelineSpan> = emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val night: StateFlow<Night?> = combine(com.bamnat.app.sleep.SleepRecordService.recording, container.flags.byKey) { rec, f ->
@@ -171,7 +172,15 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         else {
             val last = SleepRecordService.lastNight(container.appContext)
             if (last == null) kotlinx.coroutines.flow.flowOf(Night(null, emptyList()))
-            else container.sleepRepository.events(last.start, last.end.plusMinutes(1)).map { Night(last, it) }
+            else container.sleepRepository.events(last.start, last.end.plusMinutes(1)).map { ev ->
+                // [SLEEP-21] The work around that night, on the same axis.
+                val resolver = container.scheduleRepository.snapshot.first().resolver
+                val work = (last.start.toLocalDate().minusDays(1)..last.end.toLocalDate()).let { r ->
+                    generateSequence(r.start) { it.plusDays(1) }.takeWhile { !it.isAfter(r.endInclusive) }.toList()
+                }.flatMap { com.bamnat.core.sleep.SleepSchedule.work(resolver.resolve(it)) }
+                    .map { TimelineSpan(it.from, it.to, work = true, color = it.colorArgb?.let { c -> androidx.compose.ui.graphics.Color(c.toInt()) }) }
+                Night(last, ev, work)
+            }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -379,7 +388,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             // 1.38 [SLEEP-04] 잠드는 소리, next to 잠들었어요.
             SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
             // 1.38 [SLEEP-06][SLEEP-07] 자는 동안 소리, once `sleep.sound` is open.
-            night?.let { n -> SleepNightCard(n.last, n.events, vm::keepClip, settings.smartWakeMinutes, vm::setSmartWake) }
+            night?.let { n -> SleepNightCard(n.last, n.events, vm::keepClip, settings.smartWakeMinutes, vm::setSmartWake, n.work) }
             // Design: an empty sleep screen points at where to start.
             if (s.log.isEmpty()) com.bamnat.app.ui.components.EmptyState("아직 잠 기록이 없어요",
                 "자기 전에 ‘잠들었어요’, 깨면 ‘깼어요’를 누르거나 아래 ‘기록 추가’로 적어요",

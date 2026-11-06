@@ -17,6 +17,7 @@ class GestureAlternativesTest {
     /** File → how the same thing is done without the gesture. */
     private val allowed = mapOf(
         "ShiftTypesScreen.kt" to "끌어서 순서 바꾸기 → 옆의 ‘위로 옮기기·아래로 옮기기’ 버튼",
+        "NightTimeline.kt" to "잠 그래프의 소리 점 누르기 → 아래 '들어 볼 소리' 줄의 듣기 단추, 그래프 설명(contentDescription)",
         "BarChart.kt" to "막대 누르면 말풍선 → 그래프 전체 값을 읽어 주는 설명(contentDescription)",
         "CalendarScreen.kt" to "주 보기 밀어 넘기기 → 머리의 이전·다음 주 버튼",
         "DayHeader.kt" to "하루 시트 밀어 넘기기 → 머리의 이전·다음 날 버튼",

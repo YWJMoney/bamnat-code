@@ -46,6 +46,7 @@ internal fun SleepNightCard(
     onKeep: (SleepEventEntity, Boolean) -> Unit,
     smartWake: Int,
     onSmartWake: (Int) -> Unit,
+    work: List<TimelineSpan> = emptyList(),
 ) {
     val context = LocalContext.current
     val recording by SleepRecordService.recording.collectAsStateWithLifecycle()
@@ -81,6 +82,17 @@ internal fun SleepNightCard(
             Text("지난밤 ${Fmt.time(last.start.toLocalTime())}–${Fmt.time(last.end.toLocalTime())} · ${last.line}" +
                 if (last.battery >= 0) " · 배터리 ${last.battery}%" else "",
                 style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp))
+            // [SLEEP-21] The night on an hour scale, the work on the same axis; a dot plays its sound.
+            var dotPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
+            DisposableEffect(last.start) { onDispose { dotPlayer?.release() } }
+            NightTimeline(last.start.minusHours(1), last.end.plusHours(1),
+                work + TimelineSpan(last.start, last.end, work = false),
+                events.filter { SoundKind.of(it.kind) != SoundKind.OTHER }.map { TimelineDot(local(it.startMillis), SoundKind.of(it.kind), it.id) }) { id ->
+                events.firstOrNull { it.id == id }?.file?.let { f ->
+                    dotPlayer?.release()
+                    dotPlayer = runCatching { MediaPlayer().apply { setDataSource(SleepRecordService.clip(context, f).path); prepare(); start() } }.getOrNull()
+                }
+            }
             val withClip = events.filter { it.file != null }
             val listen = ClipPicker.listen(withClip.map { it.toEvent() }).mapNotNull { e -> withClip.firstOrNull { it.startMillis == e.startMillis } }
             if (listen.isNotEmpty()) {
