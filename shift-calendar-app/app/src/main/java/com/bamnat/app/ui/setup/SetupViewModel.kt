@@ -856,6 +856,11 @@ class SetupViewModel(
                     // [J133-51] The day the calendar was set up: no question cards or tips on top of it.
                     val cal = calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
                     c.asks.set(cal, com.bamnat.core.profile.AskScheduler.rest(c.asks.of(cal), today))
+                    // 1.38 통합 11차 (식당 운영: 영업일을 정하기 전까지 모든 칸이 '쉬는 날'): [EASE-09] keeps the calendar first, so the shop
+                    // opens every day 10~22 at once; 영업일·정기휴무 changes it whenever the user wants.
+                    if (d.style == WorkStyle.BUSINESS && c.calendars.get(cal)?.shop == null)
+                        runCatching { com.bamnat.app.ui.work.ShopKeeper.apply(c, cal, com.bamnat.core.work.ShopRules()) }
+                            .onFailure { android.util.Log.w("Setup", "shop days", it) }
                     // [J133-52] The setup came from a company: the first week's card does not ask for one again.
                     if (com.bamnat.app.ui.guide.StartStepsState.fromCompany(d.source)) com.bamnat.app.ui.guide.StartStepsState.companyPicked(c)
                     // [PLAZA-14] 1.27 AH: a cycle from a company search is shared for the calendar it went into. [EASE-03] 1.38 PC 994c2328:
