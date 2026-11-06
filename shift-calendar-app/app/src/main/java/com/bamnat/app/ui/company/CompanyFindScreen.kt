@@ -181,7 +181,7 @@ fun CompanyFindScreen(
                     value = query,
                     onValueChange = { vm.query.value = it.take(40) },
                     placeholder = { Text("회사 이름이나 초성 (예: 예시정밀, ㅇㅅㅈㅁ)") },
-                    leadingIcon = { Icon(Icons.Outlined.Search, null) },
+                    leadingIcon = { Icon(Icons.Outlined.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
                     trailingIcon = {
                         if (query.isNotEmpty()) IconButton(onClick = { vm.query.value = "" }) { Icon(Icons.Filled.Close, "지우기") }
                     },

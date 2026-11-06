@@ -187,7 +187,7 @@ fun MemoListScreen(
                         onValueChange = vm::setQuery,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                         placeholder = { Text("제목, 내용, #태그 검색") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
                         trailingIcon = {
                             Row {
                                 if (state.query.isNotEmpty()) {

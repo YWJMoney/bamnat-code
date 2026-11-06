@@ -702,7 +702,7 @@ internal fun MemoCalendarView(
     val undated = remember(memos) { memos.count { MemoView.dayOf(it) == null } }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp), contentPadding = PaddingValues(bottom = 160.dp)) {
         item(key = "head") {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.theme.PhotoGround.head()), verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.IconButton(onClick = { month = ym.minusMonths(1).toString(); picked = null }) {
                     Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달")
                 }

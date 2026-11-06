@@ -348,7 +348,7 @@ private fun SearchRow(view: LedgerView, onView: (LedgerView) -> Unit, onFilter: 
             singleLine = true,
             placeholder = { Text("기록 찾기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
             supportingText = null,
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
+            leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
             trailingIcon = {
                 if (view.filter.query.isNotEmpty()) IconButton(onClick = { onView(view.copy(filter = view.filter.copy(query = ""))) }) {
                     Icon(Icons.Filled.Close, "찾는 말 지우기")

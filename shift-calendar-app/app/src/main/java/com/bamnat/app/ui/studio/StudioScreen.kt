@@ -511,6 +511,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         if (a != area) { area = a; lookIndex = 0; if (a.detailOnly) detail = true }
         tool = if (t in a.tools) t else a.tools.first()
         decorAdd = if (addIcons) decorAdd + 1 else 0
+        // 8차 통합 e690bef6 PC (작은 판에서 '＋ 아이콘·사진'을 누르면 아이콘 첫 줄이 화면 밖): it opens the panel big.
+        if (addIcons && !panelBig) setPanelBig(true)
         panelMode = PanelMode.TOOL; panel = true
     }
     fun openPanel(m: PanelMode) { panelMode = m; panel = true }

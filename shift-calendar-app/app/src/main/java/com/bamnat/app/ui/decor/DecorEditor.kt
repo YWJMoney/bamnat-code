@@ -267,16 +267,16 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
                     label = { Text(Decor.anchorLabel(a) + if (n > 0) " $n" else "") })
             }
         }
-        if (!stageOpen) androidx.compose.material3.OutlinedButton(onClick = { stageOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
-            Text("꾸밈 판 펼치기" + if (items.count { it.at == place } > 0) " (${items.count { it.at == place }}개)" else "")
-        } else {
-            Stage(items, place, picked, advanced, magnet, loupe,
-                onPick = { i -> picked = when { i == null -> if (many) picked else emptySet(); many -> if (i in picked) picked - i else picked + i; else -> setOf(i) }
-                    if (i != null) pane = Pane.EDIT },
-                onMove = { label, next -> onChange(label, Decor(next)) })
-            // 7차 통합 347b7c37 PC 제안 (펼친 뒤 접는 단추가 없어요): 접기 right under the 판, where 펼치기 stood.
-            TextButton(onClick = { stageOpen = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) { Text("꾸밈 판 접기") }
+        // 8차 통합 e690bef6 PC (접기가 판 밑이라 두 번 내려야 보이고, 접으면 펼치기 줄이 화면 밖으로): one 접기·펼치기 line above the 판, so it
+        // stays under the finger whichever way it goes; nothing above it changes height.
+        val shown = items.count { it.at == place }
+        androidx.compose.material3.OutlinedButton(onClick = { stageOpen = !stageOpen }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+            Text(if (stageOpen) "꾸밈 판 접기 ▲" else "꾸밈 판 펼치기 ▼" + if (shown > 0) " (${shown}개)" else "")
         }
+        if (stageOpen) Stage(items, place, picked, advanced, magnet, loupe,
+            onPick = { i -> picked = when { i == null -> if (many) picked else emptySet(); many -> if (i in picked) picked - i else picked + i; else -> setOf(i) }
+                if (i != null) pane = Pane.EDIT },
+            onMove = { label, next -> onChange(label, Decor(next)) })
         if (stageOpen) com.bamnat.app.ui.components.FoldRow("decor.2", what = "보기 도구") {
             FilterChip(selected = magnet, onClick = { magnet = !magnet }, label = { Text("🧲 자석") })
             FilterChip(selected = loupe, onClick = { loupe = !loupe }, label = { Text("🔍 돋보기") })
