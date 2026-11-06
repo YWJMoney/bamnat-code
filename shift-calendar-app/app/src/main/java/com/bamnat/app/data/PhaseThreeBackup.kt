@@ -32,10 +32,14 @@ object PhaseThreeBackup {
         if (teams.isEmpty()) return
         into.put(TEAMS, JSONObject()
             .put("teams", JSONArray().apply { teams.forEach { put(JSONObject().put("id", it.id).put("name", it.name).put("leader", it.leaderName)
-                .put("shifts", it.shifts).put("need", it.need).put("created", it.createdAt).put("archived", it.archived).put("together", it.showTogether)) } })
+                .put("shifts", it.shifts).put("need", it.need).put("created", it.createdAt).put("archived", it.archived).put("together", it.showTogether)
+                // 1.38 [P3-L-14] 신청 받기: like a 팀원 링크, its key only in a sealed backup.
+                .put("ask", if (sealed) it.ask else PhaseThreeStore.encodeAsk(PhaseThreeStore.decodeAsk(it.ask), withToken = false))
+                .put("calls", if (sealed) it.calls else PhaseThreeStore.encodeCalls(PhaseThreeStore.decodeCalls(it.calls), withToken = false))
+                .put("swap", if (sealed) it.swap else PhaseThreeStore.encodeSwap(PhaseThreeStore.decodeSwap(it.swap), withToken = false))) } })
             .put("members", JSONArray().apply { d.members().forEach { put(JSONObject().put("id", it.id).put("team", it.teamId).put("name", it.name)
                 .put("role", it.role).put("skill", it.skill).putOpt("color", it.colorArgb).put("sort", it.sort).putOpt("linkId", it.linkId)
-                .putOpt("linkToken", it.linkToken.takeIf { sealed }).put("active", it.active)) } })
+                .putOpt("linkToken", it.linkToken.takeIf { sealed }).put("active", it.active).putOpt("hired", it.hiredOn)) } })
             .put("cells", JSONArray().apply { d.allCells().sortedWith(compareBy({ it.memberId }, { it.epochDay })).forEach {
                 put(JSONArray().put(it.teamId).put(it.memberId).put(it.epochDay).put(it.shiftId).put(it.source).put(it.locked)) } })
             .put("months", JSONArray().apply { d.months().forEach { put(JSONObject().put("team", it.teamId).put("month", it.month).put("state", it.state)
@@ -50,11 +54,11 @@ object PhaseThreeBackup {
         if (places.isEmpty()) return
         into.put(WORKPLACES, JSONObject()
             .put("places", JSONArray().apply { places.forEach { put(JSONObject().put("id", it.id).put("name", it.name).putOpt("fivePlus", it.fivePlus)
-                .putOpt("payday", it.payday).put("breaks", it.legalBreaks).put("weekStart", it.weekStart).putOpt("team", it.teamId).put("created", it.createdAt).put("unit", it.minuteUnit)) } })
+                .putOpt("payday", it.payday).put("breaks", it.legalBreaks).put("weekStart", it.weekStart).putOpt("team", it.teamId).put("created", it.createdAt).put("unit", it.minuteUnit).put("calls", it.calls)) } })
             .put("staff", JSONArray().apply { d.staff().forEach { put(JSONObject().put("id", it.id).put("place", it.workplaceId).put("name", it.name)
                 .put("form", it.form).put("base", it.base).put("allowances", it.allowances).putOpt("hired", it.hiredOn).putOpt("left", it.leftOn)
                 .putOpt("birth", it.birth).put("job", it.job).put("insurance", it.insurance).put("weeklyHoliday", it.weeklyHolidayPay)
-                .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort).putOpt("clockId", it.clockId).putOpt("clockToken", it.clockToken)) } })
+                .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort).putOpt("clockId", it.clockId).putOpt("clockToken", it.clockToken).put("contract", it.contract)) } })
             .put("punches", JSONArray().apply { d.punches().forEach { put(JSONArray().put(it.staffId).put(it.at).put(it.kind)) } })
             .put("work", JSONArray().apply { d.work().sortedWith(compareBy({ it.staffId }, { it.epochDay })).forEach {
                 put(JSONArray().put(it.staffId).put(it.epochDay).put(it.kind).put(it.startMinute ?: JSONObject.NULL).put(it.endMinute ?: JSONObject.NULL)) } })
@@ -73,9 +77,9 @@ object PhaseThreeBackup {
         val o = root.optJSONObject(TEAMS) ?: return null
         return Teams(
             o.optJSONArray("teams").objs().map { TeamEntity(it.getString("id"), it.optString("name"), it.optString("leader"), it.optString("shifts", "[]"),
-                it.optString("need"), it.optLong("created"), it.optBoolean("archived"), it.optBoolean("together")) },
+                it.optString("need"), it.optLong("created"), it.optBoolean("archived"), it.optBoolean("together"), it.optString("ask"), it.optString("calls"), it.optString("swap")) },
             o.optJSONArray("members").objs().map { TeamMemberEntity(it.getString("id"), it.getString("team"), it.optString("name"), it.optString("role"),
-                it.optString("skill", "REG"), it.longOrNull("color"), it.optInt("sort"), it.strOrNull("linkId"), it.strOrNull("linkToken"), it.optBoolean("active", true)) },
+                it.optString("skill", "REG"), it.longOrNull("color"), it.optInt("sort"), it.strOrNull("linkId"), it.strOrNull("linkToken"), it.optBoolean("active", true), it.longOrNull("hired")) },
             o.optJSONArray("cells").arrays().map { TeamCellEntity(it.getString(0), it.getString(1), it.getLong(2), it.getLong(3), it.optString(4, "MANUAL"), it.optBoolean(5)) },
             o.optJSONArray("months").objs().map { TeamMonthEntity(it.getString("team"), it.getString("month"), it.optString("state", "DRAFT"), it.optInt("version"),
                 it.longOrNull("confirmedAt"), it.optString("confirmed")) },
@@ -91,10 +95,10 @@ object PhaseThreeBackup {
         val o = root.optJSONObject(WORKPLACES) ?: return null
         return Places(
             o.optJSONArray("places").objs().map { WorkplaceEntity(it.getString("id"), it.optString("name"), if (it.has("fivePlus") && !it.isNull("fivePlus")) it.getBoolean("fivePlus") else null,
-                it.intOrNull("payday"), it.optBoolean("breaks", true), it.optInt("weekStart", 1), it.strOrNull("team"), it.optLong("created"), it.optInt("unit", 1).coerceIn(1, 60)) },
+                it.intOrNull("payday"), it.optBoolean("breaks", true), it.optInt("weekStart", 1), it.strOrNull("team"), it.optLong("created"), it.optInt("unit", 1).coerceIn(1, 60), it.optString("calls")) },
             o.optJSONArray("staff").objs().map { StaffEntity(it.getString("id"), it.getString("place"), it.optString("name"), it.optString("form", "HOUR"),
                 it.optLong("base"), it.optString("allowances", "[]"), it.longOrNull("hired"), it.longOrNull("left"), it.longOrNull("birth"), it.optString("job"),
-                it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort"), it.strOrNull("clockId"), it.strOrNull("clockToken")) },
+                it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort"), it.strOrNull("clockId"), it.strOrNull("clockToken"), it.optString("contract")) },
             o.optJSONArray("work").arrays().map { StaffWorkEntity(it.getString(0), it.getLong(1), it.getString(2),
                 if (it.isNull(3)) null else it.getInt(3), if (it.isNull(4)) null else it.getInt(4)) },
             o.optJSONArray("months").objs().map { PayrollMonthEntity(it.getString("place"), it.getString("month"), it.optString("state", "OPEN"),
@@ -110,7 +114,25 @@ object PhaseThreeBackup {
             // A backup without the link keys (not sealed) keeps the keys this phone has for the same links.
             val had = db.teamDao().members().associateBy { it.id }
             val members = t.members.map { m -> if (m.linkToken == null) had[m.id]?.takeIf { it.linkId == m.linkId }?.let { m.copy(linkToken = it.linkToken) } ?: m else m }
-            db.teamDao().replaceAll(t.teams, members, t.cells, t.months, t.wishes)
+            // The same for a 신청 받기 round's key.
+            val hadTeams = db.teamDao().teams().associateBy { it.id }
+            val teams = t.teams.map { n ->
+                // 결원 메우기 asks: the phone's key for the same ask.
+                val hadCalls = hadTeams[n.id]?.calls?.let(PhaseThreeStore::decodeCalls).orEmpty().associateBy { it.id }
+                val calls = PhaseThreeStore.decodeCalls(n.calls).map { c -> if (c.token == null) c.copy(token = hadCalls[c.id]?.token) else c }
+                val withCalls = (if (calls.isEmpty()) n else n.copy(calls = PhaseThreeStore.encodeCalls(calls)))
+                    .let { x ->
+                        // 바꾸기 round: the phone's key for the same round.
+                        val sw = PhaseThreeStore.decodeSwap(x.swap)?.takeIf { it.token == null } ?: return@let x
+                        val mine = hadTeams[n.id]?.swap?.let(PhaseThreeStore::decodeSwap)?.takeIf { it.id == sw.id }?.token ?: return@let x
+                        x.copy(swap = PhaseThreeStore.encodeSwap(sw.copy(token = mine)))
+                    }
+                val ask = PhaseThreeStore.decodeAsk(n.ask) ?: return@map withCalls
+                if (ask.token != null) return@map withCalls
+                val mine = hadTeams[n.id]?.ask?.let(PhaseThreeStore::decodeAsk)?.takeIf { it.id == ask.id }?.token ?: return@map withCalls
+                withCalls.copy(ask = PhaseThreeStore.encodeAsk(ask.copy(token = mine)))
+            }
+            db.teamDao().replaceAll(teams, members, t.cells, t.months, t.wishes)
         }
         places?.let { db.payrollDao().replaceAll(it.places, it.staff, it.work, it.months, it.lines, it.punches) }
     }

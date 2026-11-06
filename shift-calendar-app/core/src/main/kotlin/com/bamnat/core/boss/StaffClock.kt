@@ -53,8 +53,10 @@ object StaffClock {
     /** 1.38 PC 8차 (1분 근무가 그대로 체크돼 있던 것): the note for a day under [SHORT_MINUTES], else null. */
     fun shortNote(start: LocalTime?, end: LocalTime?): String? {
         if (start == null || end == null) return null
-        val m = ((end.toSecondOfDay() - start.toSecondOfDay()) / 60).let { if (it < 0) it + 24 * 60 else it }
-        return if (m < SHORT_MINUTES) "${m}분만 일한 것으로 보여요. 잘못 누른 거라면 넣지 마세요" else null
+        // 1.38 PC 9차: by the minutes the card shows (19:14~19:15 is 1분), not the seconds behind them.
+        val m = (end.hour * 60 + end.minute - (start.hour * 60 + start.minute)).let { if (it < 0) it + 24 * 60 else it }
+        if (m >= SHORT_MINUTES) return null
+        return (if (m == 0) "출근과 퇴근이 같은 분에 눌렸어요" else "${m}분만 일한 것으로 보여요") + ". 잘못 누른 거라면 넣지 마세요"
     }
 
     /**

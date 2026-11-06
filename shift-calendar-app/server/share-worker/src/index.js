@@ -24,6 +24,32 @@
 // DELETE /api/clock/:id        header X-Delete-Token -> 204: 퇴사·끊기
 // GET    /c/:id                the staff member's page: 출근·퇴근 buttons (a plain form, no script, no location)
 // POST   /c/:id/punch          form k=in|out -> the page again, with the time written
+// POST   /api/ask              1.38 [P3-L-13] {team, month, rules, shifts, members:[name]} -> { id, token, members:[{name,key,url}] }:
+//                              a 근무 신청 round, a link per member (병동 종이 신청표 "평일 2명, 주말 3명")
+// GET    /api/ask/:id          header X-Delete-Token -> { wishes:[{m, d, k, s?, at}], notes:[{m, note}], seen:[m] }
+// PUT    /api/ask/:id          header X-Delete-Token, {closesAt?, closed?} -> 204: 마감을 바꾸거나 닫기
+// DELETE /api/ask/:id          header X-Delete-Token -> 204: the round and every member's requests are gone
+// GET    /a/:key[?d=YYYY-MM-DD] the member's page: the month, each day's room ("1/2"), their own requests (a plain form, no script)
+// POST   /a/:key/pick          form d, k (OFF|LEAVE|HALF|EDU|WORK|AVOID_NIGHT|SHIFT|none), s -> the page again
+// POST   /a/:key/note          form note -> the page again
+// POST   /api/call             1.38 [P3-X-01] {team, title, detail, people:[name], hours} -> { id, token, people:[{name,key,url}] }:
+//                              a yes/no ask to some people (결원 메우기: "12/7 나이트 대신 들어갈 수 있나요?")
+// GET    /api/call/:id         header X-Delete-Token -> { answers:[{p, a:"yes"|"no", at}], seen:[p], taken }
+// PUT    /api/call/:id         header X-Delete-Token, {taken: p|null, closed} -> 204: who the leader chose; the pages say so
+// DELETE /api/call/:id         header X-Delete-Token -> 204
+// POST   /api/swap             1.38 [P3-X-02] {team, month, people:[name], labels:[[label per day]], ok:{p:{day:[q]}}}
+//                              -> { id, token, expiresAt, people:[{name,key,url}] }: 바꾸기 요청, who may trade which day worked out on the phone
+// GET    /api/swap/:id         header X-Delete-Token -> { asks:[{p, q, d, state, at}], seen:[p], closed }
+// PUT    /api/swap/:id         header X-Delete-Token, {labels?, ok?, closed?, decide?:[{p, d, state:"done"|"denied"}]} -> 204
+// DELETE /api/swap/:id         header X-Delete-Token -> 204
+// GET    /w/:key               a member's page: asks to them, theirs, and the days they may trade; POST /w/:key/ask|cancel|reply
+// POST   /api/sign             1.38 [P3-X-06] {place, staff, title, items:[{t, b}], days} -> { id, token, url, expiresAt }: a 근로계약서 to
+//                              read and sign by typing one's name. Kept only while it is being signed (30 days at most); the
+//                              signed copy lives on the boss's phone and in the PDF.
+// GET    /api/sign/:id         header X-Delete-Token -> { seenAt, signed:{name, at}|null, expiresAt }
+// DELETE /api/sign/:id         header X-Delete-Token -> 204: the boss's app takes it down once it has the signature
+// GET    /k/:key               the staff member's page: the contract, a name box and 동의; POST /k/:key/sign form name, agree=1
+// GET    /v/:key               the asked person's page; POST /v/:key/answer form a=yes|no -> the page again
 //                              The admin paths answer 404 until SHARE_ADMIN_TOKEN (20+ characters) is set;
 //                              the company server's 개발자 앱 calls them with the same token.
 //
@@ -86,6 +112,25 @@ export const LIMITS = {
   clockTtlDays: 400,
   clockName: 20,
   clockPlace: 30,
+  // 1.38 [P3-L-13] 근무 신청 받기: a ward, its people, a month of requests each, a line each; gone 60 days after it opens at most.
+  askMembers: 80,
+  askName: 20,
+  askTeam: 30,
+  askShifts: 12,
+  askShiftLabel: 4,
+  askNote: 60,
+  askTtlDays: 60,
+  askPerHour: 300,
+  // 1.38 [P3-X-01] 결원 메우기: a few lines of what is asked, to at most a ward; open a week at most.
+  callPeople: 40,
+  callTitle: 40,
+  callDetail: 120,
+  callHours: 168,
+  // 1.38 [P3-X-06] 근로계약서 링크: the items the app writes (StaffContract), a month at most.
+  signItems: 16,
+  signTitle: 40,
+  signBody: 600,
+  signDays: 30,
 };
 
 /** [SRV-05] Why someone reports a link (the page and the app offer the same list). */
@@ -152,7 +197,7 @@ export const APP_ADS_TXT = "google.com, pub-4920911396563628, DIRECT, f08c47fec0
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
+  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/w/") || path.startsWith("/api/swap/") || path.startsWith("/k/") || path.startsWith("/api/sign/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
   }
@@ -166,6 +211,37 @@ async function route(request, env) {
   const clockPage = path.match(/^\/c\/([A-Za-z0-9]{22})(\/punch)?$/);
   if (clockPage && !clockPage[2] && (request.method === "GET" || request.method === "HEAD")) return clockView(env, clockPage[1], null);
   if (clockPage && clockPage[2] && request.method === "POST") return clockPunch(request, env, clockPage[1]);
+  if (path === "/api/ask" && request.method === "POST") return askCreate(request, env, url);
+  const askApi = path.match(/^\/api\/ask\/([A-Za-z0-9]{22})$/);
+  if (askApi && request.method === "GET") return askRead(request, env, askApi[1]);
+  if (askApi && request.method === "PUT") return askChange(request, env, askApi[1]);
+  if (askApi && request.method === "DELETE") return askDelete(request, env, askApi[1]);
+  const askPage = path.match(/^\/a\/([A-Za-z0-9]{22})(\/pick|\/note)?$/);
+  if (askPage && !askPage[2] && (request.method === "GET" || request.method === "HEAD")) return askView(env, askPage[1], url.searchParams.get("d"), null);
+  if (askPage && askPage[2] && request.method === "POST") return askPost(request, env, askPage[1], askPage[2].slice(1));
+  if (path === "/api/swap" && request.method === "POST") return swapCreate(request, env, url);
+  const swapApi = path.match(/^\/api\/swap\/([A-Za-z0-9]{22})$/);
+  if (swapApi && request.method === "GET") return swapRead(request, env, swapApi[1]);
+  if (swapApi && request.method === "PUT") return swapChange(request, env, swapApi[1], url);
+  if (swapApi && request.method === "DELETE") return swapDelete(request, env, swapApi[1]);
+  const swapPage = path.match(/^\/w\/([A-Za-z0-9]{22})(\/ask|\/cancel|\/reply)?$/);
+  if (swapPage && !swapPage[2] && (request.method === "GET" || request.method === "HEAD")) return swapView(env, swapPage[1], null);
+  if (swapPage && swapPage[2] && request.method === "POST") return swapPress(request, env, swapPage[1], swapPage[2].slice(1));
+  if (path === "/api/sign" && request.method === "POST") return signCreate(request, env, url);
+  const signApi = path.match(/^\/api\/sign\/([A-Za-z0-9]{22})$/);
+  if (signApi && request.method === "GET") return signRead(request, env, signApi[1]);
+  if (signApi && request.method === "DELETE") return signDelete(request, env, signApi[1]);
+  const signPage = path.match(/^\/k\/([A-Za-z0-9]{22})(\/sign)?$/);
+  if (signPage && !signPage[2] && (request.method === "GET" || request.method === "HEAD")) return signView(env, signPage[1], null);
+  if (signPage && signPage[2] && request.method === "POST") return signPost(request, env, signPage[1]);
+  if (path === "/api/call" && request.method === "POST") return callCreate(request, env, url);
+  const callApi = path.match(/^\/api\/call\/([A-Za-z0-9]{22})$/);
+  if (callApi && request.method === "GET") return callRead(request, env, callApi[1]);
+  if (callApi && request.method === "PUT") return callChange(request, env, callApi[1]);
+  if (callApi && request.method === "DELETE") return callDelete(request, env, callApi[1]);
+  const callPage = path.match(/^\/v\/([A-Za-z0-9]{22})(\/answer)?$/);
+  if (callPage && !callPage[2] && (request.method === "GET" || request.method === "HEAD")) return callView(env, callPage[1], null);
+  if (callPage && callPage[2] && request.method === "POST") return callAnswer(request, env, callPage[1]);
   const reported = path.match(/^\/(api\/share|s)\/([A-Za-z0-9]{16,32})\/report$/);
   if (reported && request.method === "POST") return report(request, env, reported[2], reported[1] === "s");
   const api = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})$/);
@@ -605,6 +681,691 @@ async function clockView(env, id, done, status = 200, known = null) {
   return html(page(`${record.name}님 출퇴근`, body), status);
 }
 
+// ---- 1.38 [P3-L-13] 근무 신청 받기 ----
+// The ward's paper sheet ("12월중 근무, 평일 2명, 주말 3명 신청") as a link per member: they tap a day, see how many asked it, and
+// the leader's app reads the round with its key. Each member's requests are their own key, so two people asking at once do not
+// write over each other; a day's room is read across them (KV is eventually consistent, so the last seat can go twice: the time
+// asked is kept and the leader's app orders by it, core TeamAsk.order). Kept: the team's and members' names as the leader wrote
+// them, the days and kinds asked, a line each, when. Never a reason (병가 is not a kind members can ask), no address, no device.
+
+const askKey = (id) => `ask:${id}`;
+const askMemberKey = (key) => `askm:${key}`;
+const askWishKey = (id, m) => `askw:${id}:${m}`;
+export const ASK_KINDS = { OFF: ["오프", true], LEAVE: ["연차", true], HALF: ["반차", false], EDU: ["교육", true], WORK: ["근무", false], AVOID_NIGHT: ["나이트 빼기", false], SHIFT: ["희망", false] };
+
+function askRules(r, month) {
+  const n = (v, max) => (Number.isInteger(v) && v >= 0 && v <= max ? v : null);
+  const inMonth = (d) => isDate(d) && d.startsWith(month);
+  if (!r || typeof r !== "object") return null;
+  const kinds = Array.isArray(r.kinds) ? r.kinds.filter((k) => k in ASK_KINDS) : [];
+  const days = (a) => (Array.isArray(a) ? [...new Set(a.filter(inMonth))].slice(0, 31) : []);
+  const rules = {
+    weekdayCap: n(r.weekdayCap ?? 0, LIMITS.askMembers), weekendCap: n(r.weekendCap ?? 0, LIMITS.askMembers), perPerson: n(r.perPerson ?? 0, 31),
+    closesAt: r.closesAt == null ? null : Number.isFinite(r.closesAt) ? r.closesAt : NaN,
+    kinds, firstCome: r.firstCome !== false, holidays: days(r.holidays), blocked: days(r.blocked), showNames: r.showNames === true,
+  };
+  if (rules.weekdayCap == null || rules.weekendCap == null || rules.perPerson == null || Number.isNaN(rules.closesAt) || kinds.length === 0) return null;
+  return rules;
+}
+
+const askWeekend = (rules, d) => { const w = new Date(d + "T00:00:00Z").getUTCDay(); return w === 0 || w === 6 || rules.holidays.includes(d); };
+const askCap = (rules, d) => (askWeekend(rules, d) ? rules.weekendCap : rules.weekdayCap);
+
+/** The same words as core TeamAsk.check: why a request cannot be taken, or null. [all]: [{m, d, k}] of the round. */
+/** 1.38 [P3-X-05] 연차 days a request list takes: 연차 1, 반차 0.5. */
+const leaveTaken = (ws) => ws.reduce((n, w) => n + (w.k === "LEAVE" ? 1 : w.k === "HALF" ? 0.5 : 0), 0);
+
+export function askCheck(rules, month, all, w, now, leaveLeft = null) {
+  if (rules.closesAt != null && now >= rules.closesAt) return "신청이 마감됐어요";
+  if (!isDate(w.d) || !w.d.startsWith(month)) return "이 달 날짜가 아니에요";
+  if (!rules.kinds.includes(w.k)) return "이 신청은 받지 않아요";
+  if (rules.blocked.includes(w.d)) return "이 날은 신청을 받지 않아요";
+  if (leaveLeft != null && (w.k === "LEAVE" || w.k === "HALF") && leaveTaken(all.filter((o) => o.m === w.m && o.d !== w.d)) + leaveTaken([w]) > leaveLeft) return "남은 연차보다 많아요";
+  if (!ASK_KINDS[w.k][1]) return null;
+  const others = all.filter((o) => !(o.m === w.m && o.d === w.d));
+  const cap = askCap(rules, w.d);
+  if (rules.firstCome && cap > 0 && others.filter((o) => o.d === w.d && ASK_KINDS[o.k]?.[1]).length >= cap) return "이 날은 자리가 다 찼어요";
+  if (rules.perPerson > 0 && others.filter((o) => o.m === w.m && ASK_KINDS[o.k]?.[1]).length >= rules.perPerson) return "신청할 수 있는 날을 다 썼어요";
+  return null;
+}
+
+async function askCreate(request, env, url) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 16 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const team = cleanText(body?.team, LIMITS.askTeam);
+  const month = isMonth(body?.month) ? body.month : null;
+  const rules = month ? askRules(body?.rules, month) : null;
+  const names = Array.isArray(body?.members) ? body.members.map((m) => cleanText(m, LIMITS.askName)) : [];
+  const shifts = Array.isArray(body?.shifts) ? body.shifts.slice(0, LIMITS.askShifts).map((x) => ({ id: Number.isInteger(x?.id) ? x.id : null, label: cleanText(x?.label, LIMITS.askShiftLabel), color: isColor(x?.color) ? x.color : "#888888" })) : [];
+  if (!team || !month || !rules || names.length === 0 || names.length > LIMITS.askMembers || names.some((n) => !n) || shifts.some((x) => x.id == null || !x.label)) {
+    return json({ error: "bad_round" }, 400);
+  }
+  const id = randomId(22);
+  const token = randomId(32);
+  const days = Number.isInteger(body?.ttlDays) ? Math.min(Math.max(body.ttlDays, 7), LIMITS.askTtlDays) : LIMITS.askTtlDays;
+  // 1.38 [P3-X-05] 남은 연차 per member, worked out on the leader's phone from the 입사일 (null: not set).
+  const leave = Array.isArray(body?.leave) ? body.leave : [];
+  const members = names.map((name, i) => {
+    const l = leave[i];
+    return { name, key: randomId(22), ...(typeof l === "number" && Number.isFinite(l) && l >= 0 && l <= 60 ? { leave: Math.round(l * 100) / 100 } : {}) };
+  });
+  const record = { team, month, rules, shifts, members, tokenHash: await sha256(token), expiresAt: expiry(days), closed: false };
+  await put(env, askKey(id), record);
+  for (let i = 0; i < members.length; i++) await put(env, askMemberKey(members[i].key), { id, m: i, expiresAt: record.expiresAt });
+  count(env, "asks");
+  return json({ id, token, expiresAt: record.expiresAt, members: members.map((m) => ({ name: m.name, key: m.key, url: `${url.origin}/a/${m.key}` })) }, 201);
+}
+
+async function askOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(askKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+/** Every member's requests of a round, as [{m, d, k, s?, at}], and the members' lines. */
+async function askAll(env, id, record) {
+  const wishes = [];
+  const notes = [];
+  const seen = [];
+  for (let m = 0; m < record.members.length; m++) {
+    const mine = await env.SHARES.get(askWishKey(id, m), "json");
+    if (!mine) continue;
+    for (const w of mine.wishes ?? []) wishes.push({ m, ...w });
+    if (mine.note) notes.push({ m, note: mine.note });
+    if (mine.seenAt) seen.push(m);
+  }
+  return { wishes, notes, seen };
+}
+
+async function askRead(request, env, id) {
+  const record = await askOwned(request, env, id);
+  if (record instanceof Response) return record;
+  const all = await askAll(env, id, record);
+  return json({ ...all, closed: record.closed, closesAt: record.rules.closesAt, expiresAt: record.expiresAt });
+}
+
+async function askChange(request, env, id) {
+  const record = await askOwned(request, env, id);
+  if (record instanceof Response) return record;
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  if (body?.closesAt !== undefined) {
+    if (body.closesAt !== null && !Number.isFinite(body.closesAt)) return json({ error: "bad_round" }, 400);
+    record.rules.closesAt = body.closesAt;
+  }
+  if (typeof body?.closed === "boolean") record.closed = body.closed;
+  await put(env, askKey(id), record);
+  return new Response(null, { status: 204 });
+}
+
+async function askDelete(request, env, id) {
+  const record = await askOwned(request, env, id);
+  if (record instanceof Response) return record;
+  for (let m = 0; m < record.members.length; m++) {
+    await kvDel(env, askWishKey(id, m));
+    await kvDel(env, askMemberKey(record.members[m].key));
+  }
+  await kvDel(env, askKey(id));
+  return new Response(null, { status: 204 });
+}
+
+async function askFind(env, key) {
+  const link = await env.SHARES.get(askMemberKey(key), "json");
+  if (!link) return null;
+  const record = await env.SHARES.get(askKey(link.id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return null;
+  return { id: link.id, m: link.m, record };
+}
+
+const askGone = () => html(page("링크가 없어요", `<p class="empty">이 신청 링크는 끝났거나 리더가 지웠어요. 새 링크는 리더에게 받아 주세요.</p>`), 404);
+const askOpen = (record) => !record.closed && !(record.rules.closesAt != null && Date.now() >= record.rules.closesAt);
+
+async function askPost(request, env, key, what) {
+  const found = await askFind(env, key);
+  if (!found) return askGone();
+  if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
+  const { id, m, record } = found;
+  const form = new URLSearchParams((await request.text()).slice(0, 512));
+  const mine = (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
+  let said = null;
+  if (!askOpen(record)) said = { bad: "신청이 마감됐어요" };
+  else if (what === "note") {
+    const note = cleanText(form.get("note") ?? "", LIMITS.askNote);
+    if (note == null) said = { bad: `한 줄은 ${LIMITS.askNote}자까지예요` };
+    else { mine.note = note; said = { ok: note ? "한 줄을 남겼어요" : "한 줄을 지웠어요" }; }
+  } else {
+    const d = form.get("d") ?? "";
+    const k = form.get("k") ?? "";
+    if (k === "none") {
+      mine.wishes = mine.wishes.filter((w) => w.d !== d);
+      said = { ok: `${d.slice(5).replace("-", "/")} 신청을 지웠어요` };
+    } else if (!(k in ASK_KINDS)) said = { bad: "고를 수 없는 신청이에요" };
+    else {
+      const s = k === "SHIFT" ? Number.parseInt(form.get("s") ?? "", 10) : null;
+      if (k === "SHIFT" && !record.shifts.some((x) => x.id === s)) said = { bad: "고를 수 없는 근무예요" };
+      else {
+        const all = (await askAll(env, id, record)).wishes;
+        const no = askCheck(record.rules, record.month, all, { m, d, k }, Date.now(), record.members[m].leave ?? null);
+        if (no) said = { bad: no };
+        else {
+          const at = mine.wishes.find((w) => w.d === d && ASK_KINDS[w.k]?.[1] && ASK_KINDS[k][1])?.at ?? new Date().toISOString();
+          mine.wishes = [...mine.wishes.filter((w) => w.d !== d), { d, k, ...(s != null ? { s } : {}), at }].sort((a, b) => a.d.localeCompare(b.d)).slice(0, 31);
+          said = { ok: `${d.slice(5).replace("-", "/")} ${k === "SHIFT" ? record.shifts.find((x) => x.id === s).label : ASK_KINDS[k][0]} 신청했어요` };
+        }
+      }
+    }
+  }
+  if (said.ok) { await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt }); count(env, "askPicks"); }
+  return askView(env, key, what === "pick" ? form.get("d") : null, said, said.bad ? 409 : 200, found, mine);
+}
+
+async function askView(env, key, day, said, status = 200, known = null, mineKnown = null) {
+  const found = known ?? await askFind(env, key);
+  if (!found) return askGone();
+  const { id, m, record } = found;
+  const { rules, month } = record;
+  const all = await askAll(env, id, record);
+  const mine = mineKnown ?? (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
+  if (!mine.seenAt) { mine.seenAt = new Date().toISOString(); await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt }); }
+  const me = record.members[m].name;
+  const open = askOpen(record);
+  const [y, mo] = month.split("-").map(Number);
+  const length = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const firstDow = new Date(Date.UTC(y, mo - 1, 1)).getUTCDay();
+  const iso = (n) => `${month}-${String(n).padStart(2, "0")}`;
+  const rests = (d) => all.wishes.filter((w) => w.d === d && ASK_KINDS[w.k]?.[1]);
+  const label = (w) => (w.k === "SHIFT" ? record.shifts.find((x) => x.id === w.s)?.label ?? "희망" : ASK_KINDS[w.k]?.[0] ?? "");
+  const today = kstDay(new Date().toISOString());
+  const cells = [];
+  for (let i = 0; i < firstDow; i++) cells.push(`<div class="cell blank"></div>`);
+  for (let n = 1; n <= length; n++) {
+    const d = iso(n);
+    const dow = (firstDow + n - 1) % 7;
+    const cap = askCap(rules, d);
+    const taken = rests(d).length;
+    const my = mine.wishes.find((w) => w.d === d);
+    const room = rules.blocked.includes(d) ? `<span class="leave">받지 않음</span>`
+      : cap > 0 ? `<span class="leave${taken >= cap ? " full" : ""}">${taken >= cap ? "마감 " : ""}${taken}/${cap}</span>` : taken ? `<span class="leave">${taken}명</span>` : "";
+    const chip = my ? `<span class="chip" style="background:${ASK_KINDS[my.k]?.[1] ? "#d14343" : "#3b5bdb"}">${esc(label(my))}</span>` : "";
+    const cls = `cell${d === day ? " picked" : ""}${d === today ? " today" : ""}`;
+    cells.push(`<a class="${cls}" href="/a/${key}?d=${d}#pick"><span class="num ${dow === 0 || rules.holidays.includes(d) ? "sun" : dow === 6 ? "sat" : ""}">${n}</span>${chip}${room}</a>`);
+  }
+  const heads = ["일", "월", "화", "수", "목", "금", "토"].map((w, i) => `<div class="wd ${i === 0 ? "sun" : i === 6 ? "sat" : ""}">${w}</div>`).join("");
+  const capLine = [rules.weekdayCap ? `평일 하루 ${rules.weekdayCap}명` : "", rules.weekendCap ? `주말·공휴일 하루 ${rules.weekendCap}명` : ""].filter(Boolean).join(", ");
+  const closes = rules.closesAt != null ? (() => { const t = new Date(rules.closesAt + KST).toISOString(); const left = rules.closesAt - Date.now();
+    return `마감 ${Number(t.slice(5, 7))}/${Number(t.slice(8, 10))} ${t.slice(11, 16)}${left > 0 ? ` (${left > 86400000 ? `${Math.floor(left / 86400000)}일` : `${Math.max(1, Math.floor(left / 3600000))}시간`} 남음)` : ""}`; })() : "";
+  const restMine = mine.wishes.filter((w) => ASK_KINDS[w.k]?.[1]).length;
+  const myLeave = record.members[m].leave;
+  const leaveLine = myLeave != null ? `남은 연차 ${myLeave}일${leaveTaken(mine.wishes) ? ` (이번 신청 뒤 ${Math.round((myLeave - leaveTaken(mine.wishes)) * 100) / 100}일)` : ""}` : "";
+  const rule = [capLine ? `쉬는 신청은 ${capLine}까지${rules.firstCome ? "(먼저 신청한 순)" : "(넘치면 리더가 공정하게 정해요)"}` : "", leaveLine,
+    rules.perPerson ? `한 사람 ${rules.perPerson}일까지 (지금 ${restMine}일)` : "", closes].filter(Boolean).join(" · ");
+  let panel = "";
+  if (day && isDate(day) && day.startsWith(month)) {
+    const my = mine.wishes.find((w) => w.d === day);
+    const who = rests(day);
+    const names = rules.showNames && who.length ? `<p class="muted">신청한 사람: ${who.map((w) => esc(record.members[w.m]?.name ?? "")).join(", ")}</p>` : "";
+    const btn = (k, text, s = null, on = false) => `<form method="post" action="/a/${key}/pick"><input type="hidden" name="d" value="${day}"><input type="hidden" name="k" value="${k}">${s != null ? `<input type="hidden" name="s" value="${s}">` : ""}<button class="pick${on ? " on" : ""}">${esc(text)}</button></form>`;
+    const choices = open && !rules.blocked.includes(day) ? [
+      ...rules.kinds.filter((k) => k !== "SHIFT").map((k) => btn(k, ASK_KINDS[k][0], null, my?.k === k)),
+      ...(rules.kinds.includes("SHIFT") ? record.shifts.map((x) => btn("SHIFT", `${x.label} 원해요`, x.id, my?.k === "SHIFT" && my?.s === x.id)) : []),
+      ...(my ? [btn("none", "신청 지우기")] : []),
+    ].join("") : `<p class="muted">${open ? "이 날은 신청을 받지 않아요." : "신청이 마감됐어요."}</p>`;
+    const cap = askCap(rules, day);
+    panel = `<section id="pick" class="panel"><h2>${Number(day.slice(5, 7))}/${Number(day.slice(8, 10))} ${["일", "월", "화", "수", "목", "금", "토"][new Date(day + "T00:00:00Z").getUTCDay()]}요일</h2>
+<p>${cap > 0 ? `쉬는 신청 ${who.length}/${cap}명${who.length >= cap ? " · 자리가 다 찼어요" : ` · ${cap - who.length}자리 남음`}` : `쉬는 신청 ${who.length}명`}</p>${names}<div class="picks">${choices}</div></section>`;
+  }
+  const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
+  const list = mine.wishes.length ? `<ul class="punches">${mine.wishes.map((w) => `<li><span>${Number(w.d.slice(5, 7))}/${Number(w.d.slice(8, 10))}</span><span>${esc(label(w))}</span></li>`).join("")}</ul>` : `<p class="muted">아직 신청한 날이 없어요. 달력에서 날을 눌러 주세요.</p>`;
+  const note = open ? `<form method="post" action="/a/${key}/note" class="note"><input name="note" maxlength="${LIMITS.askNote}" value="${esc(mine.note ?? "")}" placeholder="예: NN 뒤 off 원해요"><button>남기기</button></form>
+<p class="muted small">건강·가족 사정 같은 이유는 적지 말아 주세요. 필요하면 리더에게 직접 말해 주세요.</p>` : mine.note ? `<p>${esc(mine.note)}</p>` : "";
+  const body = `<h1>${esc(record.team)} ${mo}월 근무 신청</h1><p class="muted">${esc(me)}님 · ${open ? "신청 받는 중" : "마감"}</p>
+<p class="rule">${esc(rule)}</p>${saidHtml}<div class="grid">${heads}${cells.join("")}</div>${panel}
+<h2>내 신청 ${mine.wishes.length}일</h2>${list}<h2>리더에게 한 줄</h2>${note}
+<p class="foot muted">신청한 날·종류·한 줄·신청한 시각만 리더에게 가요. 다른 사람에게는 날마다 몇 명이 신청했는지만 보여요${rules.showNames ? "(리더가 이름도 보이게 했어요)" : ""}. 위치·전화번호·기기 정보는 보내지 않아요. 근무표가 확정되면 리더가 근무표 링크를 보내 줘요.</p>`;
+  return html(page(`${record.team} ${mo}월 근무 신청`, body), status);
+}
+
+// ---- 1.38 [P3-X-01] 결원 메우기 (and the other yes/no asks of a team) ----
+// The leader's app asks a few people one thing ("12/7(월) 나이트 22:00~07:00, 대신 들어갈 수 있나요?"); each answers on their own
+// page, the app reads the answers and the leader picks one, and every page then says who is coming. Each answer is its own key,
+// so two people answering at once do not write over each other. Kept: the team's name, what was asked, the names asked, the answers
+// and when. Nothing else.
+
+const callKey = (id) => `call:${id}`;
+const callPersonKey = (key) => `callm:${key}`;
+const callAnswerKey = (id, p) => `calla:${id}:${p}`;
+
+async function callCreate(request, env, url) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 8 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const team = cleanText(body?.team, LIMITS.askTeam);
+  const title = cleanText(body?.title, LIMITS.callTitle);
+  const detail = cleanText(body?.detail ?? "", LIMITS.callDetail);
+  const names = Array.isArray(body?.people) ? body.people.map((n) => cleanText(n, LIMITS.askName)) : [];
+  if (!team || !title || detail == null || names.length === 0 || names.length > LIMITS.callPeople || names.some((n) => !n)) return json({ error: "bad_call" }, 400);
+  const hours = Number.isInteger(body?.hours) ? Math.min(Math.max(body.hours, 1), LIMITS.callHours) : 48;
+  const id = randomId(22);
+  const token = randomId(32);
+  const people = names.map((name) => ({ name, key: randomId(22) }));
+  const record = { team, title, detail, people, tokenHash: await sha256(token), expiresAt: new Date(Date.now() + hours * 3600 * 1000).toISOString(), taken: null, closed: false };
+  await put(env, callKey(id), record);
+  for (let i = 0; i < people.length; i++) await put(env, callPersonKey(people[i].key), { id, p: i, expiresAt: record.expiresAt });
+  count(env, "calls");
+  return json({ id, token, expiresAt: record.expiresAt, people: people.map((x) => ({ name: x.name, key: x.key, url: `${url.origin}/v/${x.key}` })) }, 201);
+}
+
+async function callOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(callKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+async function callRead(request, env, id) {
+  const record = await callOwned(request, env, id);
+  if (record instanceof Response) return record;
+  const answers = [];
+  const seen = [];
+  for (let p = 0; p < record.people.length; p++) {
+    const a = await env.SHARES.get(callAnswerKey(id, p), "json");
+    if (!a) continue;
+    if (a.seenAt) seen.push(p);
+    if (a.a) answers.push({ p, a: a.a, at: a.at });
+  }
+  return json({ answers, seen, taken: record.taken, closed: record.closed, expiresAt: record.expiresAt });
+}
+
+async function callChange(request, env, id) {
+  const record = await callOwned(request, env, id);
+  if (record instanceof Response) return record;
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 512)); } catch { return json({ error: "bad_json" }, 400); }
+  if (body?.taken !== undefined) {
+    if (body.taken !== null && !(Number.isInteger(body.taken) && body.taken >= 0 && body.taken < record.people.length)) return json({ error: "bad_call" }, 400);
+    record.taken = body.taken;
+  }
+  if (typeof body?.closed === "boolean") record.closed = body.closed;
+  await put(env, callKey(id), record);
+  return new Response(null, { status: 204 });
+}
+
+async function callDelete(request, env, id) {
+  const record = await callOwned(request, env, id);
+  if (record instanceof Response) return record;
+  for (let p = 0; p < record.people.length; p++) {
+    await kvDel(env, callAnswerKey(id, p));
+    await kvDel(env, callPersonKey(record.people[p].key));
+  }
+  await kvDel(env, callKey(id));
+  return new Response(null, { status: 204 });
+}
+
+async function callFind(env, key) {
+  const link = await env.SHARES.get(callPersonKey(key), "json");
+  if (!link) return null;
+  const record = await env.SHARES.get(callKey(link.id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return null;
+  return { id: link.id, p: link.p, record };
+}
+
+const callGone = () => html(page("요청이 끝났어요", `<p class="empty">이 요청은 끝났거나 리더가 지웠어요.</p>`), 404);
+
+async function callAnswer(request, env, key) {
+  const found = await callFind(env, key);
+  if (!found) return callGone();
+  if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
+  const { id, p, record } = found;
+  const form = new URLSearchParams((await request.text()).slice(0, 64));
+  const a = form.get("a");
+  if (a !== "yes" && a !== "no") return callView(env, key, { bad: "고를 수 없는 답이에요" }, 400, found);
+  if (record.closed || record.taken != null) return callView(env, key, { bad: "이미 정해졌어요" }, 409, found);
+  const mine = (await env.SHARES.get(callAnswerKey(id, p), "json")) ?? {};
+  await put(env, callAnswerKey(id, p), { ...mine, a, at: new Date().toISOString(), expiresAt: record.expiresAt });
+  count(env, "callAnswers");
+  return callView(env, key, { ok: a === "yes" ? "들어갈 수 있다고 전했어요. 리더가 정하면 이 페이지와 근무표 링크에 나와요." : "어렵다고 전했어요. 고마워요." }, 200, found);
+}
+
+async function callView(env, key, said, status = 200, known = null) {
+  const found = known ?? await callFind(env, key);
+  if (!found) return callGone();
+  const { id, p, record } = found;
+  const mine = (await env.SHARES.get(callAnswerKey(id, p), "json")) ?? {};
+  if (!mine.seenAt) await put(env, callAnswerKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
+  const me = record.people[p].name;
+  const done = record.taken != null;
+  const state = done ? (record.taken === p ? `<p class="done">${esc(me)}님이 들어가기로 정해졌어요. 고마워요!</p>` : `<p class="muted">다른 분이 들어가기로 정해졌어요. 답해 줘서 고마워요.</p>`)
+    : record.closed ? `<p class="muted">요청이 닫혔어요.</p>`
+    : `<div class="buttons"><form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="yes"><button class="in">들어갈 수 있어요</button></form>` +
+      `<form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="no"><button class="out">어려워요</button></form></div>` +
+      (mine.a ? `<p class="muted">지금 답: ${mine.a === "yes" ? "들어갈 수 있어요" : "어려워요"} (바꿀 수 있어요)</p>` : "");
+  const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
+  const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.team)} · ${esc(me)}님께</p>${record.detail ? `<p>${esc(record.detail)}</p>` : ""}${saidHtml}${state}
+<p class="foot muted">답과 답한 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>`;
+  return html(page(record.title, body), status);
+}
+
+// ---- 1.38 [P3-X-06] 근로계약서 링크 서명 ----
+// The boss's phone writes the contract's items; the staff member reads them on a plain page and signs by typing their name.
+// The server keeps the contract only while it waits (30 days at most) and the app deletes it once it has read the signature.
+
+const signKey = (id) => `sign:${id}`;
+const signPageKey = (key) => `signk:${key}`;
+const sameName = (a, b) => a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
+
+async function signCreate(request, env, url) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 24 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const place = cleanText(body?.place, LIMITS.clockPlace);
+  const staff = cleanText(body?.staff, LIMITS.askName);
+  const title = cleanText(body?.title, LIMITS.signTitle);
+  const raw = Array.isArray(body?.items) ? body.items : [];
+  // The body keeps its line breaks (one line per weekday, 임금 parts); any other control character goes.
+  const lines = (v) => { if (typeof v !== "string") return null; const x = v.replace(/\r/g, "").replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, "").trim(); return x.length > LIMITS.signBody ? null : x; };
+  const items = raw.map((i) => ({ t: cleanText(i?.t, LIMITS.signTitle), b: lines(i?.b ?? "") }));
+  if (!place || !staff || !title || items.length === 0 || items.length > LIMITS.signItems || items.some((i) => !i.t || i.b == null)) return json({ error: "bad_sign" }, 400);
+  const days = Number.isInteger(body?.days) ? Math.min(Math.max(body.days, 1), LIMITS.signDays) : 14;
+  const id = randomId(22);
+  const key = randomId(22);
+  const token = randomId(32);
+  const record = { place, staff, title, items, key, tokenHash: await sha256(token), expiresAt: new Date(Date.now() + days * 86400 * 1000).toISOString(), seenAt: null, signed: null };
+  await put(env, signKey(id), record);
+  await put(env, signPageKey(key), { id, expiresAt: record.expiresAt });
+  count(env, "signs");
+  return json({ id, token, key, url: `${url.origin}/k/${key}`, expiresAt: record.expiresAt }, 201);
+}
+
+async function signOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(signKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+async function signRead(request, env, id) {
+  const record = await signOwned(request, env, id);
+  if (record instanceof Response) return record;
+  return json({ seenAt: record.seenAt, signed: record.signed, expiresAt: record.expiresAt });
+}
+
+async function signDelete(request, env, id) {
+  const record = await signOwned(request, env, id);
+  if (record instanceof Response) return record;
+  await kvDel(env, signPageKey(record.key));
+  await kvDel(env, signKey(id));
+  return new Response(null, { status: 204 });
+}
+
+async function signFind(env, key) {
+  const link = await env.SHARES.get(signPageKey(key), "json");
+  if (!link) return null;
+  const record = await env.SHARES.get(signKey(link.id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return null;
+  return { id: link.id, record };
+}
+
+const signGone = () => html(page("계약서 링크가 없어요", `<p class="empty">이 계약서 링크는 끝났거나 사장님이 거뒀어요. 서명했다면 사장님께 PDF를 받아 주세요.</p>`), 404);
+
+async function signPost(request, env, key) {
+  const found = await signFind(env, key);
+  if (!found) return signGone();
+  if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
+  const { id, record } = found;
+  if (record.signed) return signView(env, key, { bad: "이미 서명했어요" }, 409, found);
+  const form = new URLSearchParams((await request.text()).slice(0, 256));
+  const name = cleanText(form.get("name") ?? "", LIMITS.askName) ?? "";
+  if (form.get("agree") !== "1") return signView(env, key, { bad: "내용을 읽고 동의에 표시해 주세요" }, 400, found);
+  if (!name || !sameName(name, record.staff)) return signView(env, key, { bad: `계약서에 적힌 이름(${record.staff})과 같게 써 주세요` }, 400, found);
+  record.signed = { name, at: new Date().toISOString() };
+  await put(env, signKey(id), record);
+  count(env, "signed");
+  return signView(env, key, { ok: "서명했어요. 사장님이 서명한 계약서 PDF를 보내 드려요." }, 200, found);
+}
+
+async function signView(env, key, said, status = 200, known = null) {
+  const found = known ?? await signFind(env, key);
+  if (!found) return signGone();
+  const { id, record } = found;
+  if (!record.seenAt) { record.seenAt = new Date().toISOString(); await put(env, signKey(id), record); }
+  const items = record.items.map((i, n) => `<h2>${n + 1}. ${esc(i.t)}</h2>${i.b ? `<p>${esc(i.b).replace(/\n/g, "<br>")}</p>` : ""}`).join("");
+  const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
+  const form = record.signed
+    ? `<p class="done">${esc(record.signed.name)}님이 ${kstDay(record.signed.at)} ${kstTime(record.signed.at)}에 서명했어요.</p>`
+    : `<form class="sign panel" method="post" action="/k/${key}/sign"><label>이름 <input name="name" maxlength="${LIMITS.askName}" autocomplete="name" required></label>
+<label><input type="checkbox" name="agree" value="1" required> 위 내용을 읽었고 동의해요</label><button class="in">서명하기</button></form>`;
+  const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.place)} · ${esc(record.staff)}님</p>${saidHtml}${items}${form}
+<p class="foot muted">이름과 서명한 시각만 사장님 앱에 가요. 서명한 계약서는 사장님 휴대폰과 PDF에만 남고, 이 페이지는 사장님이 받은 뒤나 ${kstDay(record.expiresAt)}에 지워져요.</p>`;
+  return html(page(record.title, body), status);
+}
+
+// ---- 1.38 [P3-X-02] 바꾸기 요청 ----
+// The leader's phone works out who may trade which day (the board's own checks) and puts that list here with each person's
+// row of labels. A member asks from their link, the other says yes or no on theirs, and the leader approves in the app.
+
+const swapKey = (id) => `swap:${id}`;
+const swapPersonKey = (key) => `swapm:${key}`;
+const swapAskKey = (id, p) => `swapr:${id}:${p}`;
+const SWAP_STATES = ["asked", "yes", "no", "cancel", "done", "denied"];
+const swapOpen = (s) => s === "asked" || s === "yes";
+
+/** The leader's list of rows and allowed trades, checked to its shape: {labels:[[label per day]], ok:{p:{day:[q]}}}. */
+function swapBoard(body, people, days) {
+  const labels = Array.isArray(body?.labels) ? body.labels : null;
+  if (!labels || labels.length !== people) return null;
+  const rows = [];
+  for (const row of labels) {
+    if (!Array.isArray(row) || row.length !== days) return null;
+    const r = row.map((l) => (l == null || l === "" ? "" : cleanText(l, LIMITS.askShiftLabel)));
+    if (r.some((l) => l == null)) return null;
+    rows.push(r);
+  }
+  const ok = {};
+  const src = body?.ok && typeof body.ok === "object" ? body.ok : {};
+  for (const [pk, daysMap] of Object.entries(src)) {
+    const p = Number(pk);
+    if (!Number.isInteger(p) || p < 0 || p >= people || !daysMap || typeof daysMap !== "object") return null;
+    for (const [dk, qs] of Object.entries(daysMap)) {
+      const d = Number(dk);
+      if (!Number.isInteger(d) || d < 1 || d > days || !Array.isArray(qs) || qs.length > people) return null;
+      if (qs.some((q) => !Number.isInteger(q) || q < 0 || q >= people || q === p)) return null;
+      (ok[p] ??= {})[d] = [...new Set(qs)];
+    }
+  }
+  return { rows, ok };
+}
+
+async function swapCreate(request, env, url) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const team = cleanText(body?.team, LIMITS.askTeam);
+  const month = typeof body?.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(body.month) ? body.month : null;
+  const names = Array.isArray(body?.people) ? body.people.map((n) => cleanText(n, LIMITS.askName)) : [];
+  if (!team || !month || names.length < 2 || names.length > LIMITS.askMembers || names.some((n) => !n)) return json({ error: "bad_swap" }, 400);
+  const days = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0)).getUTCDate();
+  const board = swapBoard(body, names.length, days);
+  if (!board) return json({ error: "bad_swap" }, 400);
+  const id = randomId(22);
+  const token = randomId(32);
+  const people = names.map((name) => ({ name, key: randomId(22) }));
+  // Until a week after the month ends, never more than the 신청 받기 cap.
+  const end = Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1) + 7 * 86400 * 1000;
+  const expiresAt = new Date(Math.min(end, Date.now() + LIMITS.askTtlDays * 86400 * 1000)).toISOString();
+  if (Date.parse(expiresAt) <= Date.now()) return json({ error: "bad_swap" }, 400);
+  const record = { team, month, people, rows: board.rows, ok: board.ok, tokenHash: await sha256(token), expiresAt, closed: false };
+  await put(env, swapKey(id), record);
+  for (let i = 0; i < people.length; i++) await put(env, swapPersonKey(people[i].key), { id, p: i, expiresAt });
+  count(env, "swaps");
+  return json({ id, token, expiresAt, people: people.map((x) => ({ name: x.name, key: x.key, url: `${url.origin}/w/${x.key}` })) }, 201);
+}
+
+async function swapOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(swapKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+async function swapRead(request, env, id) {
+  const record = await swapOwned(request, env, id);
+  if (record instanceof Response) return record;
+  const asks = [];
+  const seen = [];
+  for (let p = 0; p < record.people.length; p++) {
+    const mine = await env.SHARES.get(swapAskKey(id, p), "json");
+    if (!mine) continue;
+    if (mine.seenAt) seen.push(p);
+    for (const a of mine.asks ?? []) asks.push({ p, q: a.q, d: a.d, state: a.state, at: a.at });
+  }
+  return json({ asks, seen, closed: record.closed, expiresAt: record.expiresAt });
+}
+
+async function swapChange(request, env, id, url) {
+  const record = await swapOwned(request, env, id);
+  if (record instanceof Response) return record;
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  if (body?.labels !== undefined) {
+    const days = record.rows[0]?.length ?? 0;
+    const board = swapBoard(body, record.people.length, days);
+    if (!board) return json({ error: "bad_swap" }, 400);
+    record.rows = board.rows;
+    record.ok = board.ok;
+  }
+  if (typeof body?.closed === "boolean") record.closed = body.closed;
+  await put(env, swapKey(id), record);
+  // The leader's word on asks: {decide:[{p, d, state:"done"|"denied"}]}.
+  const decide = Array.isArray(body?.decide) ? body.decide.slice(0, 100) : [];
+  for (const x of decide) {
+    if (!Number.isInteger(x?.p) || x.p < 0 || x.p >= record.people.length || !Number.isInteger(x?.d) || (x.state !== "done" && x.state !== "denied")) return json({ error: "bad_swap" }, 400);
+    const mine = await env.SHARES.get(swapAskKey(id, x.p), "json");
+    const ask = mine?.asks?.find((a) => a.d === x.d && swapOpen(a.state));
+    if (!ask) continue;
+    ask.state = x.state;
+    ask.decidedAt = new Date().toISOString();
+    await put(env, swapAskKey(id, x.p), { ...mine, expiresAt: record.expiresAt });
+  }
+  return new Response(null, { status: 204 });
+}
+
+async function swapDelete(request, env, id) {
+  const record = await swapOwned(request, env, id);
+  if (record instanceof Response) return record;
+  for (let p = 0; p < record.people.length; p++) {
+    await kvDel(env, swapAskKey(id, p));
+    await kvDel(env, swapPersonKey(record.people[p].key));
+  }
+  await kvDel(env, swapKey(id));
+  return new Response(null, { status: 204 });
+}
+
+async function swapFind(env, key) {
+  const link = await env.SHARES.get(swapPersonKey(key), "json");
+  if (!link) return null;
+  const record = await env.SHARES.get(swapKey(link.id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return null;
+  return { id: link.id, p: link.p, record };
+}
+
+const swapGone = () => html(page("바꾸기가 끝났어요", `<p class="empty">이 바꾸기 링크는 끝났거나 리더가 지웠어요.</p>`), 404);
+
+/** [P3-X-02] A member's press: ask (d, q), cancel (d), or reply to someone else's ask (from, d, a=yes|no). */
+async function swapPress(request, env, key, what) {
+  const found = await swapFind(env, key);
+  if (!found) return swapGone();
+  if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
+  const { id, p, record } = found;
+  const form = new URLSearchParams((await request.text()).slice(0, 128));
+  const d = Number(form.get("d"));
+  const days = record.rows[0]?.length ?? 0;
+  if (!Number.isInteger(d) || d < 1 || d > days) return swapView(env, key, { bad: "고를 수 없는 날이에요" }, 400, found);
+  if (record.closed) return swapView(env, key, { bad: "리더가 바꾸기를 닫았어요" }, 409, found);
+  const now = new Date().toISOString();
+  if (what === "reply") {
+    const from = Number(form.get("from"));
+    const a = form.get("a");
+    if (!Number.isInteger(from) || from < 0 || from >= record.people.length || (a !== "yes" && a !== "no")) return swapView(env, key, { bad: "고를 수 없는 답이에요" }, 400, found);
+    const theirs = await env.SHARES.get(swapAskKey(id, from), "json");
+    const ask = theirs?.asks?.find((x) => x.d === d && x.q === p && swapOpen(x.state));
+    if (!ask) return swapView(env, key, { bad: "이미 끝난 요청이에요" }, 409, found);
+    ask.state = a;
+    ask.answeredAt = now;
+    await put(env, swapAskKey(id, from), { ...theirs, expiresAt: record.expiresAt });
+    count(env, "swapAnswers");
+    return swapView(env, key, { ok: a === "yes" ? "좋다고 전했어요. 리더가 승인하면 근무표에 바로 반영돼요." : "어렵다고 전했어요." }, 200, found);
+  }
+  const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
+  const asks = mine.asks ?? [];
+  if (what === "cancel") {
+    const ask = asks.find((x) => x.d === d && swapOpen(x.state));
+    if (!ask) return swapView(env, key, { bad: "거둘 요청이 없어요" }, 409, found);
+    ask.state = "cancel";
+    await put(env, swapAskKey(id, p), { ...mine, asks, expiresAt: record.expiresAt });
+    return swapView(env, key, { ok: "요청을 거뒀어요." }, 200, found);
+  }
+  const q = Number(form.get("q"));
+  if (!Number.isInteger(q) || !(record.ok?.[p]?.[d] ?? []).includes(q)) return swapView(env, key, { bad: "이 날은 그분과 바꿀 수 없어요" }, 400, found);
+  if (asks.some((x) => x.d === d && swapOpen(x.state))) return swapView(env, key, { bad: "이 날은 이미 요청했어요. 거두고 다시 해 주세요" }, 409, found);
+  if (asks.filter((x) => swapOpen(x.state)).length >= 5) return swapView(env, key, { bad: "한 번에 다섯 개까지 요청할 수 있어요" }, 409, found);
+  // Old answered asks drop off first so the list stays small.
+  const kept = asks.filter((x) => swapOpen(x.state) || x.state === "done").slice(-20);
+  kept.push({ d, q, state: "asked", at: now });
+  await put(env, swapAskKey(id, p), { ...mine, asks: kept, expiresAt: record.expiresAt });
+  count(env, "swapAsks");
+  return swapView(env, key, { ok: `${record.people[q].name}님께 요청했어요. 그분 링크에 바로 보여요.` }, 200, found);
+}
+
+async function swapView(env, key, said, status = 200, known = null) {
+  const found = known ?? await swapFind(env, key);
+  if (!found) return swapGone();
+  const { id, p, record } = found;
+  const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
+  if (!mine.seenAt) await put(env, swapAskKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
+  const me = record.people[p].name;
+  const name = (q) => esc(record.people[q]?.name ?? "?");
+  const y = Number(record.month.slice(0, 4));
+  const m = Number(record.month.slice(5, 7));
+  const dayName = (d) => `${m}/${d}(${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]})`;
+  const label = (q, d) => esc(record.rows[q]?.[d - 1] || "·");
+  const word = { asked: "답 기다림", yes: "상대가 좋대요 · 리더 승인 기다림", no: "상대가 어렵대요", cancel: "거둠", done: "리더가 승인했어요", denied: "리더가 거절했어요" };
+  // Asks to me: everyone else's lists (a ward is at most 80 people, read once per open).
+  const incoming = [];
+  for (let o = 0; o < record.people.length; o++) {
+    if (o === p) continue;
+    const theirs = await env.SHARES.get(swapAskKey(id, o), "json");
+    for (const a of theirs?.asks ?? []) if (a.q === p && a.state !== "cancel") incoming.push({ from: o, ...a });
+  }
+  const inHtml = incoming.length === 0 ? "" : `<h2>받은 요청</h2>` + incoming.map((a) => `<div class="panel"><p><b>${name(a.from)}</b>님: ${dayName(a.d)} 그분 ${label(a.from, a.d)} ↔ 내 ${label(p, a.d)}</p>` +
+    (a.state === "asked" && !record.closed ? `<div class="picks"><form method="post" action="/w/${key}/reply"><input type="hidden" name="from" value="${a.from}"><input type="hidden" name="d" value="${a.d}"><input type="hidden" name="a" value="yes"><button class="pick on">좋아요</button></form>` +
+      `<form method="post" action="/w/${key}/reply"><input type="hidden" name="from" value="${a.from}"><input type="hidden" name="d" value="${a.d}"><input type="hidden" name="a" value="no"><button class="pick">어려워요</button></form></div>`
+      : `<p class="muted">${esc(word[a.state] ?? "")}</p>`) + `</div>`).join("");
+  const sent = (mine.asks ?? []).filter((a) => a.state !== "cancel");
+  const sentHtml = sent.length === 0 ? "" : `<h2>보낸 요청</h2>` + sent.map((a) => `<div class="panel"><p>${dayName(a.d)} 내 ${label(p, a.d)} ↔ <b>${name(a.q)}</b>님 ${label(a.q, a.d)} · ${esc(word[a.state] ?? "")}</p>` +
+    (swapOpen(a.state) && !record.closed ? `<form method="post" action="/w/${key}/cancel"><input type="hidden" name="d" value="${a.d}"><button class="pick">요청 거두기</button></form>` : "") + `</div>`).join("");
+  const options = record.ok?.[p] ?? {};
+  const busyDays = new Set(sent.filter((a) => swapOpen(a.state)).map((a) => a.d));
+  const rows = Object.keys(options).map(Number).sort((a, b) => a - b).filter((d) => !busyDays.has(d) && options[d].length > 0);
+  const pickHtml = record.closed ? `<p class="muted">리더가 바꾸기를 닫았어요.</p>` : rows.length === 0 ? `<p class="muted">지금 규칙에 맞게 바꿀 수 있는 날이 없어요.</p>` :
+    rows.map((d) => `<div class="panel"><p><b>${dayName(d)}</b> 내 ${label(p, d)}</p><form method="post" action="/w/${key}/ask"><input type="hidden" name="d" value="${d}">` +
+      `<select name="q">${options[d].map((q) => `<option value="${q}">${name(q)} (${label(q, d)})</option>`).join("")}</select> <button class="pick on">바꾸기 요청</button></form></div>`).join("");
+  const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
+  const body = `<h1>${esc(record.team)} ${m}월 근무 바꾸기</h1><p class="muted">${esc(me)}님 · 근무 규칙(쉬는 시간·주 52시간)에 맞는 사람만 보여요</p>${saidHtml}${inHtml}${sentHtml}
+<h2>바꿀 수 있는 날</h2>${pickHtml}
+<p class="foot muted">고른 날·상대·답과 누른 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>`;
+  return html(page(`${record.team} 근무 바꾸기`, body), status);
+}
+
 function groupCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   // 32 letters divide 256, so every letter is equally likely.
@@ -666,7 +1427,7 @@ async function stats(env, daysParam) {
   }
   const sum = (k) => days.reduce((a, d) => a + d[k], 0);
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
-  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), approximate: true };
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), approximate: true };
 }
 
 // ---- input ----
@@ -1145,6 +1906,12 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .legend li{display:flex;align-items:center;gap:6px}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px}.empty{margin-top:40px}
 .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
 .buttons .in{background:#2f7d5b}.buttons .out{background:#3b5bdb}.done{background:var(--card);border:2px solid var(--today);border-radius:12px;padding:12px 14px;font-weight:700}
+.cell.picked{outline:2px solid var(--sat)}a.cell{color:inherit;text-decoration:none}.full{color:var(--sun);font-weight:700}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:16px}.picks{display:flex;flex-wrap:wrap;gap:8px}.picks form{margin:0}
+.pick{min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:15px;cursor:pointer}.pick.on{background:var(--sat);color:#fff;border-color:var(--sat)}
+.sign label{display:block;margin:12px 0}.sign input[name=name]{width:100%;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:17px}.sign input[type=checkbox]{width:22px;height:22px;vertical-align:middle;margin-right:6px}.sign button{width:100%;min-height:56px;border-radius:16px;border:none;background:#2f7d5b;color:#fff;font-size:18px;font-weight:800}
+.bad{background:var(--card);border:2px solid var(--sun);border-radius:12px;padding:12px 14px;font-weight:700}.rule{font-size:14px}.small{font-size:12px}
+.note{display:flex;gap:8px}.note input{flex:1;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px}.note button{min-height:44px;padding:8px 14px;border-radius:999px;border:none;background:var(--today);color:#15192B;font-weight:700}
 .punches{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.punches li{display:flex;justify-content:space-between;padding:12px 14px;border-top:1px solid var(--line)}.punches li:first-child{border-top:none}
 </style></head><body><main>${body}</main></body></html>`;
 }

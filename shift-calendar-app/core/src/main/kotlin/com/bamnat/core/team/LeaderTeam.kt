@@ -27,6 +27,12 @@ data class Team(
      * turns it on, since it puts teammates' names in each link.
      */
     val showTogether: Boolean = false,
+    /** 1.38 [P3-L-14] 신청 받기 now open or last run (DB 30 `team.ask`); null before the first. */
+    val ask: AskRound? = null,
+    /** 1.38 [P3-X-01] 결원 메우기 asks still open or just settled (DB 30 `team.calls`). */
+    val calls: List<TeamCall> = emptyList(),
+    /** 1.38 [P3-X-02] 바꾸기 요청 links of a confirmed month, null when none is open. */
+    val swap: SwapRound? = null,
 )
 
 /** One kind of day on the board, copied from the leader's calendar when the team is made (and updated with it). */
@@ -56,6 +62,8 @@ data class TeamMember(
     val linkId: String? = null,
     val linkToken: String? = null,
     val active: Boolean = true,
+    /** 1.38 [P3-X-05] 입사일, for 연차 남은 날 on the 신청 링크; null when the leader has not set it. */
+    val hiredOn: java.time.LocalDate? = null,
 )
 
 enum class CellSource { MANUAL, COPY, PHOTO, AUTO }

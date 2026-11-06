@@ -32,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TeamEntity::class, TeamMemberEntity::class, TeamCellEntity::class, TeamMonthEntity::class, TeamWishEntity::class,
         WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, StaffPunchEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
     ],
-    version = 29,
+    version = 30,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -71,7 +71,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16,
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
-                MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29,
+                MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
             )
 
         /**
@@ -434,6 +434,18 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `staff` ADD COLUMN `clockId` TEXT DEFAULT NULL")
                 db.execSQL("ALTER TABLE `staff` ADD COLUMN `clockToken` TEXT DEFAULT NULL")
                 db.execSQL("CREATE TABLE IF NOT EXISTS `staff_punch` (`staffId` TEXT NOT NULL, `at` INTEGER NOT NULL, `kind` TEXT NOT NULL, PRIMARY KEY(`staffId`, `at`))")
+            }
+        }
+
+        /** 1.38 (DB 30, 갈래7) [P3-L-14] 신청 받기 and [P3-X-01] 결원 메우기: the team's round and asks as JSON. "" for every team so far. */
+        val MIGRATION_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `ask` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `calls` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `swap` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `team_member` ADD COLUMN `hiredOn` INTEGER")
+                db.execSQL("ALTER TABLE `workplace` ADD COLUMN `calls` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `staff` ADD COLUMN `contract` TEXT NOT NULL DEFAULT ''")
             }
         }
 

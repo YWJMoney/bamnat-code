@@ -51,6 +51,8 @@ data class Workplace(
      * 깎는 절사는 임금 전액 지급(근로기준법 제43조)에 어긋나서, a 7분 늦은 퇴근 is 10분 at 10, never 0.
      */
     val minuteUnit: Int = 1,
+    /** 1.38 [P3-X-01] 대타 요청 on their way (the same yes/no link as the 리더's 결원 메우기; [TeamCall.gap] is the staff id and day). */
+    val calls: List<com.bamnat.core.team.TeamCall> = emptyList(),
 ) {
     fun payDate(month: YearMonth): LocalDate? = payday?.let { month.plusMonths(1).atDay(it.coerceAtMost(month.plusMonths(1).lengthOfMonth())) }
 }
@@ -107,6 +109,8 @@ data class StaffMember(
     /** 1.38 [P3-B-11] The 출퇴근 링크 on the share server and its key, null until the boss makes one. */
     val clockId: String? = null,
     val clockToken: String? = null,
+    /** 1.38 [P3-X-06] 근로계약서: as sent, its sign link and the signature; null until the boss makes one. */
+    val contract: StaffContract.Sent? = null,
 ) {
     fun employedOn(d: LocalDate): Boolean = (hiredOn == null || !d.isBefore(hiredOn)) && (leftOn == null || !d.isAfter(leftOn))
     fun onLeave(d: LocalDate): Boolean = leaves.any { it.covers(d) }
@@ -238,17 +242,26 @@ object PayrollLedger {
         }
         val start = s.hiredOn ?: LocalDate.of(2000, 1, 1)
         val pattern = WorkPattern.Weekly(start, DayOfWeek.entries.associateWith { typeId(it) }, endDate = s.leftOn)
-        val entries = work.filter { it.staffId == s.id }.map { entry(it.copy(end = roundUp(it.start, it.end, place.minuteUnit)), s) }
+        val entries = work.filter { it.staffId == s.id }.map { entry(it.copy(end = roundUp(it.start, it.end, place.minuteUnit)), s, place.legalBreaks) }
         return ScheduleResolver(types, listOf(pattern), entries, legalBreaks = place.legalBreaks)
     }
 
-    private fun entry(w: StaffWork, s: StaffMember): DayEntry = when (w.kind) {
+    /**
+     * 1.38 [P3-X-01] 검토(정확성): a 대근 on a day off is paid as extra work, which the legal break (제54조) did not reach, so 10~18시
+     * 대타 was paid 8시간 while the same 10~18시 in the week was 7.5시간. The place's break now applies to it the same way.
+     */
+    private fun extra(w: StaffWork, breaks: Boolean): ExtraEntry {
+        val span = if (w.start != null && w.end != null) com.bamnat.core.work.StaffShift(w.start, w.end).spanMinutes else 0
+        return ExtraEntry(ExtraKind.COVER_ID, w.start, w.end, breakMinutes = if (breaks) com.bamnat.core.schedule.LegalBreak.minutesFor(span) else 0)
+    }
+
+    private fun entry(w: StaffWork, s: StaffMember, breaks: Boolean): DayEntry = when (w.kind) {
         WorkKind.NORMAL -> if (s.weekly[w.date.dayOfWeek] != null) DayEntry(w.date, customStart = w.start, customEnd = w.end)
-            else DayEntry(w.date, extras = listOf(ExtraEntry(ExtraKind.COVER_ID, w.start, w.end)))
+            else DayEntry(w.date, extras = listOf(extra(w, breaks)))
         WorkKind.LATE -> DayEntry(w.date, customStart = w.start, customEnd = w.end, attendance = Attendance.LATE)
         WorkKind.EARLY -> DayEntry(w.date, customStart = w.start, customEnd = w.end, attendance = Attendance.EARLY)
         WorkKind.ABSENT -> DayEntry(w.date, attendance = Attendance.ABSENT)
-        WorkKind.COVER -> DayEntry(w.date, extras = listOf(ExtraEntry(ExtraKind.COVER_ID, w.start, w.end)))
+        WorkKind.COVER -> DayEntry(w.date, extras = listOf(extra(w, breaks)))
         WorkKind.LEAVE -> DayEntry(w.date, leave = Leave())
         WorkKind.OFF -> DayEntry(w.date, override = com.bamnat.core.model.ShiftOverride.Off)
     }

@@ -15,6 +15,7 @@ import com.bamnat.core.boss.Insurance
 import com.bamnat.core.boss.LedgerCsv
 import com.bamnat.core.boss.LedgerLine
 import com.bamnat.core.boss.StaffAllowance
+import com.bamnat.core.boss.StaffContract
 import com.bamnat.core.boss.StaffMember
 import com.bamnat.core.boss.StaffWork
 import com.bamnat.core.boss.WageForm
@@ -70,6 +71,16 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
     suspend fun saveTeam(t: Team) = teams.upsertTeam(t.toEntity())
 
+    suspend fun teamNow(id: String): Team? = teams.teamById(id)?.toModel()
+
+    /**
+     * 1.38 검토(데이터 보존): the team row as it is now, changed by [f] and written back in one go, so 신청 가져오기 and 결원 답 가져오기
+     * running at once never write over each other's part of the row with a copy read before.
+     */
+    suspend fun updateTeam(id: String, f: (Team) -> Team): Team? = db.withTransaction {
+        teams.teamById(id)?.toModel()?.let(f)?.also { teams.upsertTeam(it.toEntity()) }
+    }
+
     suspend fun saveMembers(list: List<TeamMember>) = teams.upsertMembers(list.map { it.toEntity() })
 
     suspend fun removeMember(id: String) = db.withTransaction { teams.deleteMemberCells(id); teams.deleteMemberWishes(id); teams.deleteMember(id) }
@@ -77,12 +88,28 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     /** [TEAM-19] The month's 희망 휴무. */
     fun wishes(teamId: String, month: YearMonth): Flow<List<com.bamnat.core.team.TeamWish>> =
         teams.observeWishes(teamId, month.atDay(1).toEpochDay(), month.atEndOfMonth().toEpochDay()).map { l ->
-            l.mapNotNull { e -> runCatching { com.bamnat.core.team.TeamWish(e.memberId, LocalDate.ofEpochDay(e.epochDay), com.bamnat.core.team.WishKind.valueOf(e.kind)) }.getOrNull() }
+            l.mapNotNull { e ->
+                val (kind, shift) = com.bamnat.core.team.WishKind.parse(e.kind) ?: return@mapNotNull null
+                com.bamnat.core.team.TeamWish(e.memberId, LocalDate.ofEpochDay(e.epochDay), kind, shift, e.receivedAt.takeIf { e.via == VIA_LINK })
+            }
         }
 
     /** [TEAM-19] Wishes in: one a member and day, the newest wins. [via] is LEADER or TEXT. */
     suspend fun addWishes(teamId: String, list: List<com.bamnat.core.team.TeamWish>, via: String) =
-        teams.upsertWishes(list.map { com.bamnat.app.data.db.TeamWishEntity(teamId, it.memberId, it.date.toEpochDay(), it.kind.name, clock(), via) })
+        teams.upsertWishes(list.map { com.bamnat.app.data.db.TeamWishEntity(teamId, it.memberId, it.date.toEpochDay(), it.kind.code(it.shiftId), it.at ?: clock(), via) })
+
+    /**
+     * 1.38 [P3-L-14] What a 신청 링크 round brought, in place of what it brought before (a request taken back goes too). A request
+     * the leader typed or pasted for the same member and day stays: the leader's hand wins.
+     */
+    suspend fun putLinkWishes(teamId: String, month: YearMonth, list: List<com.bamnat.core.team.TeamWish>) = db.withTransaction {
+        val from = month.atDay(1).toEpochDay()
+        val to = month.atEndOfMonth().toEpochDay()
+        teams.deleteWishesVia(teamId, from, to, VIA_LINK)
+        val mine = teams.wishes().filter { it.teamId == teamId && it.epochDay in from..to }.map { it.memberId to it.epochDay }.toSet()
+        teams.upsertWishes(list.filter { (it.memberId to it.date.toEpochDay()) !in mine }
+            .map { com.bamnat.app.data.db.TeamWishEntity(teamId, it.memberId, it.date.toEpochDay(), it.kind.code(it.shiftId), it.at ?: clock(), VIA_LINK) })
+    }
 
     suspend fun removeWish(memberId: String, date: LocalDate) = teams.deleteWish(memberId, date.toEpochDay())
 
@@ -121,11 +148,34 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     fun work(placeId: String, month: YearMonth): Flow<List<StaffWork>> =
         pay.observeWork(placeId, month.atDay(1).toEpochDay(), month.atEndOfMonth().toEpochDay()).map { l -> l.mapNotNull { it.toModel() } }
 
+    /** 1.38 [P3-X-05] Every 연차 day each staff member took, for 연차 남은 날. */
+    fun leaveDays(placeId: String): Flow<Map<String, Map<LocalDate, Double>>> =
+        pay.observeWork(placeId, Long.MIN_VALUE, Long.MAX_VALUE).map { l ->
+            l.mapNotNull { it.toModel() }.filter { it.kind == com.bamnat.core.boss.WorkKind.LEAVE }.groupBy { it.staffId }.mapValues { (_, w) -> w.associate { it.date to 1.0 } }
+        }
+
     fun payrollMonth(placeId: String, month: YearMonth): Flow<PayrollMonthEntity?> = pay.observeMonth(placeId, month.toString())
 
     suspend fun saveWorkplace(p: Workplace) = pay.upsertWorkplace(p.toEntity(pay.workplaces().firstOrNull { it.id == p.id }?.createdAt ?: clock()))
 
-    suspend fun saveStaff(s: StaffMember, placeId: String, sort: Int = 0) = pay.upsertStaff(s.toEntity(placeId, sort))
+    suspend fun workplaceNow(id: String): Workplace? = pay.workplaces().firstOrNull { it.id == id }?.toModel()
+
+    /** The place as it is now, changed by [f] in one go (대타 요청 and 사업장 설정 never write over each other). */
+    suspend fun updateWorkplace(id: String, f: (Workplace) -> Workplace): Workplace? = db.withTransaction {
+        pay.workplaces().firstOrNull { it.id == id }?.let { e -> f(e.toModel()).also { pay.upsertWorkplace(it.toEntity(e.createdAt)) } }
+    }
+
+    /** The row as edited; its 근로계약서 stays as the phone has it (only [updateContract] changes that, so a pull and an edit never clash). */
+    suspend fun saveStaff(s: StaffMember, placeId: String, sort: Int = 0) = db.withTransaction {
+        val kept = pay.contractOf(s.id)
+        pay.upsertStaff(s.toEntity(placeId, sort).let { e -> if (kept != null) e.copy(contract = kept) else e })
+    }
+
+    /** 1.38 [P3-X-06] The staff member's 근로계약서 as it is now, changed by [f] in one go; null clears it. */
+    suspend fun updateContract(staffId: String, f: (StaffContract.Sent?) -> StaffContract.Sent?): StaffContract.Sent? = db.withTransaction {
+        val now = pay.contractOf(staffId) ?: return@withTransaction null
+        f(decodeContract(now)).also { pay.setContract(staffId, encodeContract(it)) }
+    }
 
     suspend fun deleteStaff(id: String) = pay.deleteStaff(id)
 
@@ -191,11 +241,86 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     companion object {
         // ---- 팀 rows ----
 
-        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need), showTogether)
-        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived, showTogether)
+        const val VIA_LINK = "LINK"
+
+        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need), showTogether, decodeAsk(ask), decodeCalls(calls), decodeSwap(swap))
+        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived, showTogether, encodeAsk(ask), encodeCalls(calls), encodeSwap(swap))
+
+        /** 1.38 [P3-X-01] 결원 메우기 asks; [withToken] false leaves their keys out (a plain backup). */
+        fun encodeCalls(l: List<com.bamnat.core.team.TeamCall>, withToken: Boolean = true): String = if (l.isEmpty()) "" else JSONArray().apply {
+            l.forEach { c ->
+                put(JSONObject().put("id", c.id).putOpt("token", c.token.takeIf { withToken })
+                    .put("gap", JSONObject().put("m", c.gap.memberId).put("d", c.gap.date.toString()).put("s", c.gap.shiftId))
+                    .put("people", JSONArray(c.people)).put("urls", JSONArray(c.urls))
+                    .put("answers", JSONObject(c.answers.mapValues { it.value })).put("seen", JSONArray(c.seen.toList()))
+                    .putOpt("taken", c.taken).put("created", c.createdAt).put("expires", c.expiresAt))
+            }
+        }.toString()
+
+        fun decodeCalls(t: String): List<com.bamnat.core.team.TeamCall> = if (t.isBlank()) emptyList() else runCatching {
+            val a = JSONArray(t)
+            fun strings(x: JSONArray?) = x?.let { y -> (0 until y.length()).map { y.getString(it) } }.orEmpty()
+            (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { o ->
+                val g = o.getJSONObject("gap")
+                com.bamnat.core.team.TeamCall(o.getString("id"), o.optString("token").takeIf { it.isNotEmpty() },
+                    com.bamnat.core.team.TeamCover.Gap(g.getString("m"), LocalDate.parse(g.getString("d")), g.getLong("s")),
+                    strings(o.optJSONArray("people")), strings(o.optJSONArray("urls")),
+                    o.optJSONObject("answers")?.let { x -> x.keys().asSequence().associateWith { x.getBoolean(it) } }.orEmpty(),
+                    strings(o.optJSONArray("seen")).toSet(), o.optString("taken").takeIf { it.isNotEmpty() }, o.optLong("created"), o.optLong("expires"))
+            }
+        }.getOrDefault(emptyList())
+
+        /** 1.38 [P3-X-02] A 바꾸기 round as the `team.swap` column keeps it; [withToken] false leaves its key out (a plain backup). */
+        fun encodeSwap(r: com.bamnat.core.team.SwapRound?, withToken: Boolean = true): String = if (r == null) "" else JSONObject()
+            .put("id", r.id).putOpt("token", r.token.takeIf { withToken }).put("month", r.month.toString())
+            .put("people", JSONArray(r.people)).put("links", JSONArray(r.links))
+            .put("asks", JSONArray().apply { r.asks.forEach { a -> put(JSONObject().put("f", a.from).put("t", a.to).put("d", a.date.toString()).put("s", a.state.name).put("at", a.at)) } })
+            .put("opened", r.openedAt).putOpt("synced", r.syncedAt).toString()
+
+        fun decodeSwap(t: String): com.bamnat.core.team.SwapRound? = if (t.isBlank()) null else runCatching {
+            val o = JSONObject(t)
+            fun strings(x: JSONArray?) = x?.let { y -> (0 until y.length()).map { y.getString(it) } }.orEmpty()
+            val asks = o.optJSONArray("asks")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONObject(it) } }.orEmpty().mapNotNull { x ->
+                val st = com.bamnat.core.team.TeamSwap.State.entries.firstOrNull { it.name == x.optString("s") } ?: return@mapNotNull null
+                com.bamnat.core.team.TeamSwap.Ask(x.getString("f"), x.getString("t"), LocalDate.parse(x.getString("d")), st, x.optLong("at"))
+            }
+            com.bamnat.core.team.SwapRound(o.getString("id"), o.optString("token").takeIf { it.isNotEmpty() }, YearMonth.parse(o.getString("month")),
+                strings(o.optJSONArray("people")), strings(o.optJSONArray("links")), asks, o.optLong("opened"), if (o.has("synced")) o.optLong("synced") else null)
+        }.getOrNull()
+
+        /** 1.38 [P3-L-14] A 신청 받기 round as the `team.ask` column keeps it; [withToken] false leaves its key out (a plain backup). */
+        fun encodeAsk(a: com.bamnat.core.team.AskRound?, withToken: Boolean = true): String = if (a == null) "" else JSONObject()
+            .put("id", a.id).putOpt("token", a.token.takeIf { withToken }).put("month", a.month.toString())
+            .put("rules", JSONObject().put("weekday", a.rules.weekdayCap).put("weekend", a.rules.weekendCap).put("person", a.rules.perPerson)
+                .putOpt("closesAt", a.rules.closesAt).put("kinds", JSONArray(a.rules.kinds.map { it.name })).put("firstCome", a.rules.firstCome)
+                .put("holidays", JSONArray(a.rules.holidays.map { it.toString() })).put("blocked", JSONArray(a.rules.blocked.map { it.toString() }))
+                .put("names", a.rules.showNames))
+            // In the order the server numbered the members (its requests say "m": 0, 1, …).
+            .put("links", JSONArray().apply { a.links.forEach { (k, v) -> put(JSONArray().put(k).put(v)) } }).put("notes", JSONObject(a.notes)).put("seen", JSONArray(a.seen.toList()))
+            .put("closed", a.closed).put("opened", a.openedAt).putOpt("synced", a.syncedAt).toString()
+
+        fun decodeAsk(t: String): com.bamnat.core.team.AskRound? = if (t.isBlank()) null else runCatching {
+            val o = JSONObject(t)
+            val r = o.getJSONObject("rules")
+            fun strings(a: JSONArray?) = a?.let { x -> (0 until x.length()).map { x.getString(it) } }.orEmpty()
+            fun map(m: JSONObject?) = m?.let { x -> x.keys().asSequence().associateWith { x.getString(it) } }.orEmpty()
+            com.bamnat.core.team.AskRound(
+                id = o.getString("id"), token = o.optString("token").takeIf { it.isNotEmpty() }, month = YearMonth.parse(o.getString("month")),
+                rules = com.bamnat.core.team.AskRules(
+                    weekdayCap = r.optInt("weekday", 2), weekendCap = r.optInt("weekend", 3), perPerson = r.optInt("person", 0),
+                    closesAt = if (r.has("closesAt") && !r.isNull("closesAt")) r.getLong("closesAt") else null,
+                    kinds = strings(r.optJSONArray("kinds")).mapNotNull { k -> com.bamnat.core.team.WishKind.entries.firstOrNull { it.name == k } }.toSet(),
+                    firstCome = r.optBoolean("firstCome", true),
+                    holidays = strings(r.optJSONArray("holidays")).map(LocalDate::parse).toSet(),
+                    blocked = strings(r.optJSONArray("blocked")).map(LocalDate::parse).toSet(),
+                    showNames = r.optBoolean("names")),
+                links = o.optJSONArray("links")?.let { x -> (0 until x.length()).mapNotNull { x.optJSONArray(it) }.associateTo(LinkedHashMap()) { it.getString(0) to it.getString(1) } }.orEmpty(),
+                notes = map(o.optJSONObject("notes")), seen = strings(o.optJSONArray("seen")).toSet(),
+                closed = o.optBoolean("closed"), openedAt = o.optLong("opened"), syncedAt = if (o.has("synced") && !o.isNull("synced")) o.getLong("synced") else null)
+        }.getOrNull()
         fun TeamMemberEntity.toModel() = TeamMember(id, teamId, name, role, runCatching { Skill.valueOf(skill) }.getOrDefault(Skill.REG),
-            colorArgb, sort, linkId, linkToken, active)
-        fun TeamMember.toEntity() = TeamMemberEntity(id, teamId, name, role, skill.name, colorArgb, sort, linkId, linkToken, active)
+            colorArgb, sort, linkId, linkToken, active, hiredOn?.let(LocalDate::ofEpochDay))
+        fun TeamMember.toEntity() = TeamMemberEntity(id, teamId, name, role, skill.name, colorArgb, sort, linkId, linkToken, active, hiredOn?.toEpochDay())
         fun TeamCellEntity.toModel() = TeamCell(memberId, LocalDate.ofEpochDay(epochDay), shiftId,
             runCatching { CellSource.valueOf(source) }.getOrDefault(CellSource.MANUAL), locked)
         fun TeamCell.toEntity(teamId: String) = TeamCellEntity(teamId, memberId, date.toEpochDay(), shiftId, source.name, locked)
@@ -236,21 +361,39 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         // ---- 사업장 rows ----
 
-        fun WorkplaceEntity.toModel() = Workplace(id, name, fivePlus, payday, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId, minuteUnit.coerceIn(1, 60))
-        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, payday, legalBreaks, weekStart.value, teamId, createdAt, minuteUnit)
+        fun WorkplaceEntity.toModel() = Workplace(id, name, fivePlus, payday, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId, minuteUnit.coerceIn(1, 60), decodeCalls(calls))
+        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, payday, legalBreaks, weekStart.value, teamId, createdAt, minuteUnit, encodeCalls(calls))
 
         fun StaffEntity.toModel() = StaffMember(
             id = id, name = name, form = runCatching { WageForm.valueOf(form) }.getOrDefault(WageForm.HOUR), base = base,
             allowances = decodeAllowances(allowances), hiredOn = hiredOn?.let(LocalDate::ofEpochDay), leftOn = leftOn?.let(LocalDate::ofEpochDay),
             birth = birth?.let(LocalDate::ofEpochDay), job = job, insurance = decodeInsurance(insurance), weeklyHolidayPay = weeklyHolidayPay,
             weekly = decodeWeekly(weekly), memberId = memberId, dayRates = decodeDayRates(weekly), leaves = decodeLeaves(weekly),
-            clockId = clockId, clockToken = clockToken,
+            clockId = clockId, clockToken = clockToken, contract = decodeContract(contract),
         )
 
         fun StaffMember.toEntity(placeId: String, sort: Int) = StaffEntity(
             id, placeId, name, form.name, base, encodeAllowances(allowances), hiredOn?.toEpochDay(), leftOn?.toEpochDay(), birth?.toEpochDay(),
             job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates, leaves), memberId, sort, clockId, clockToken,
+            encodeContract(contract),
         )
+
+        fun encodeContract(c: StaffContract.Sent?): String = c?.let {
+            JSONObject().put("title", it.title).put("items", JSONArray().apply { it.items.forEach { i -> put(JSONObject().put("t", i.title).put("b", i.body)) } })
+                .put("sent", it.sentAt).putOpt("id", it.linkId).putOpt("token", it.token).putOpt("url", it.url).putOpt("expires", it.expiresAt)
+                .putOpt("seen", it.seenAt).putOpt("name", it.signedName).putOpt("signed", it.signedAt).put("paper", it.paper)
+                .apply { if (it.past.isNotEmpty()) put("past", JSONArray().apply { it.past.forEach { p -> put(JSONObject(encodeContract(p))) } }) }.toString()
+        }.orEmpty()
+
+        fun decodeContract(t: String): StaffContract.Sent? = if (t.isBlank()) null else runCatching {
+            val o = JSONObject(t)
+            fun str(k: String) = o.optString(k).takeIf { o.has(k) && !o.isNull(k) && it.isNotEmpty() }
+            fun num(k: String) = if (o.has(k) && !o.isNull(k)) o.getLong(k) else null
+            val a = o.optJSONArray("items") ?: JSONArray()
+            StaffContract.Sent(o.optString("title"), (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { StaffContract.Item(it.optString("t"), it.optString("b")) },
+                o.optLong("sent"), str("id"), str("token"), str("url"), num("expires"), num("seen"), str("name"), num("signed"), o.optBoolean("paper"),
+                o.optJSONArray("past")?.let { p -> (0 until p.length()).mapNotNull { p.optJSONObject(it)?.let { x -> decodeContract(x.toString()) } } }.orEmpty())
+        }.getOrNull()
 
         fun StaffWorkEntity.toModel(): StaffWork? = runCatching {
             StaffWork(staffId, LocalDate.ofEpochDay(epochDay), WorkKind.valueOf(kind),

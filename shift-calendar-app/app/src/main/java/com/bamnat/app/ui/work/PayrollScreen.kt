@@ -102,6 +102,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
     var editing by remember { mutableStateOf<StaffMember?>(null) }
     var settings by remember { mutableStateOf(false) }
     var rehireAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
+    var finding by remember { mutableStateOf<Pair<String, LocalDate>?>(null) }
+    var contracting by remember { mutableStateOf<String?>(null) }
     ToolScreen("급여 대장", onClose) {
         if (place == null) { Hint("사업장을 준비하고 있어요…"); return@ToolScreen }
         val staff by store.staff(place.id).collectAsStateWithLifecycle(emptyList())
@@ -124,8 +126,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                 Text("사장님 빼고 일하는 사람(가족 아닌 직원·알바 모두)이 평소 몇 명인가요? 지금 대장엔 ${staff.size}명이 있어요.",
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = false, onClick = { scope.launch { store.saveWorkplace(place.copy(fivePlus = true)) } }, label = { Text("5명 이상") })
-                    FilterChip(selected = false, onClick = { scope.launch { store.saveWorkplace(place.copy(fivePlus = false)) } }, label = { Text("5명 미만") })
+                    FilterChip(selected = false, onClick = { scope.launch { store.updateWorkplace(place.id) { it.copy(fivePlus = true) } } }, label = { Text("5명 이상") })
+                    FilterChip(selected = false, onClick = { scope.launch { store.updateWorkplace(place.id) { it.copy(fivePlus = false) } } }, label = { Text("5명 미만") })
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
@@ -142,7 +144,20 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         val punches by store.punches(place.id, ym).collectAsStateWithLifecycle(emptyList())
         LaunchedEffect(place.id) { runCatching { com.bamnat.app.boss.StaffClockJob.check(context.appContainer) } }
         if (!isClosed) ClockCard(staff, punches, work, place) { rows -> scope.launch { rows.forEach { store.setWork(it.staffId, it.date, it) } } }
-        ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }) } }
+        // 1.38 [P3-X-01] 대타 요청 of this month, above the lines they change.
+        val calls = place.calls.filter { YearMonth.from(it.gap.date) == ym }
+        LaunchedEffect(calls.filter { it.taken == null }.map { it.id }) {
+            calls.filter { it.taken == null && it.token != null }.forEach { k -> runCatching { com.bamnat.app.boss.BossCallSync.pull(context.appContainer, place.id, k.id) } }
+        }
+        calls.forEach { k -> key(k.id) { BossCallCard(place, k, staff, work) } }
+        val leaves by store.leaveDays(place.id).collectAsStateWithLifecycle(emptyMap())
+        // 1.38 [P3-X-06] 계약서 서명 기다림: read once when the ledger opens.
+        LaunchedEffect(place.id) { runCatching { com.bamnat.app.boss.BossContractSync.pullWaiting(context.appContainer, staff) } }
+        ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }, onFind = { d -> finding = l.staff.id to d },
+            onContract = { contracting = l.staff.id },
+            leaveLeft = com.bamnat.core.leave.LeaveLeft.forStaff(place.fivePlus, l.staff.hiredOn, leaves[l.staff.id].orEmpty(), minOf(Today.date(), ym.atEndOfMonth()))) } }
+        finding?.let { (id, d) -> BossCoverDialog(place, staff, work, id, d, onDismiss = { finding = null }) }
+        contracting?.let { id -> staff.firstOrNull { it.id == id }?.let { s -> key(id) { ContractDialog(place, s, onEditStaff = { contracting = null; editing = s }) { contracting = null } } } }
         // 1.38 퇴사자: 이 달에 없는 사람도 기록은 3년 남아요(근로기준법 제42조). 눌러서 보거나 다시 입사시켜요.
         val gone = staff.filter { s -> ledger.lines.none { it.staff.id == s.id } }
         if (gone.isNotEmpty()) {
@@ -249,14 +264,15 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         })
     }
     rehireAsk?.let { com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.STAFF, it, onDismiss = { rehireAsk = null }) }
-    if (settings && place != null) PlaceDialog(place, onDismiss = { settings = false }) { p -> scope.launch { store.saveWorkplace(p) }; settings = false }
+    if (settings && place != null) PlaceDialog(place, onDismiss = { settings = false }) { p -> scope.launch { store.updateWorkplace(p.id) { now -> p.copy(calls = now.calls) } }; settings = false }
 }
 
 /** One staff member's month: the total, ⚠ signs, and a tap for each line's 근거 and the days that went differently. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, work: List<StaffWork>, closed: Boolean,
-                           mark: com.bamnat.app.data.db.PayrollLineEntity?, onEdit: () -> Unit) {
+                           mark: com.bamnat.app.data.db.PayrollLineEntity?, onEdit: () -> Unit, onFind: (LocalDate) -> Unit = {}, onContract: () -> Unit = {},
+                           leaveLeft: com.bamnat.core.leave.LeaveLeft.Left? = null) {
     var open by rememberSaveable(l.staff.id) { mutableStateOf(false) }
     var slip by remember { mutableStateOf(false) }
     var why by remember { mutableStateOf<String?>(null) }
@@ -277,10 +293,20 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
         // [BOSS-09][BOSS-10] 명세서 and 지급 체크, right on the line.
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { slip = true }, enabled = l.gross > 0) { Text(if (mark?.slipSentAt != null) "명세서 ✓" else "명세서") }
+            TextButton(onClick = onContract) { Text(contractLabel(l.staff)) }
             val store = LocalContext.current.appContainer.phaseThree
             val scope = rememberCoroutineScope()
             FilterChip(selected = mark?.paidAt != null, onClick = { scope.launch { store.mark(place.id, month, l, paid = mark?.paidAt == null) } },
                 label = { Text(if (mark?.paidAt != null) "지급했어요 ✓" else "지급했어요") })
+        }
+        // 1.38 [P3-X-06] 계약서 없음: 근로계약서는 써서 한 부 줘야 해요(근로기준법 제17조, 어기면 제114조 500만 원 이하 벌금).
+        if (com.bamnat.core.boss.StaffContract.lacking(l.staff, minOf(Today.date(), month.atEndOfMonth())) && l.staff.contract?.waiting(Today.millis()) != true)
+            Text("계약서 없음 · '계약서'를 누르면 직원 정보로 채워 링크로 서명받아요", style = MaterialTheme.typography.bodySmall, color = warn,
+                modifier = Modifier.clickable(role = Role.Button, onClick = onContract))
+        // 1.38 [P3-X-05] 연차 남은 날, from the hire date (제60조), less the 연차 days marked here.
+        leaveLeft?.let { lf ->
+            Hint("연차 남은 ${com.bamnat.core.leave.LeaveAccrual.days(lf.left)} (생긴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.made)} · 쓴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.used)})" +
+                (lf.nextOn?.let { " · ${Fmt.monthDay(it)}에 ${com.bamnat.core.leave.LeaveAccrual.days(lf.nextDays)} 더" } ?: ""))
         }
         // [BOSS-11] 4대보험 the law leaves out, with why (공식 대조 G2·G3·G6).
         val rules = remember(place, l.staff, month) { com.bamnat.core.boss.InsuranceRules.of(place, l.staff, month) }
@@ -308,7 +334,7 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
     }
     if (slip) PayslipDialog(place, l, month) { slip = false }
     why?.let { AlertDialog(onDismissRequest = { why = null }, confirmButton = { TextButton(onClick = { why = null }) { Text("알겠어요") } }, text = { Text(it) }) }
-    day?.let { d -> WorkDayDialog(l.staff, d, work.firstOrNull { it.staffId == l.staff.id && it.date == d }) { day = null } }
+    day?.let { d -> WorkDayDialog(l.staff, d, work.firstOrNull { it.staffId == l.staff.id && it.date == d }, onFind = { day = null; onFind(d) }) { day = null } }
 }
 
 /** The month as day numbers, a changed day marked by its kind's first letter. */
@@ -329,7 +355,7 @@ private fun MonthDays(month: YearMonth, changed: Map<LocalDate, StaffWork>, enab
 /** [BOSS-03] How one day went: a kind, and for 시간 바꿈·지각·조퇴·대근 the hours worked. "평소대로" takes the change off. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, onDismiss: () -> Unit) {
+private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, onFind: () -> Unit = {}, onDismiss: () -> Unit) {
     val app = LocalContext.current.appContainer
     val store = app.phaseThree
     val usual = s.weekly[date.dayOfWeek]
@@ -360,6 +386,12 @@ private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, onDi
                     WorkKind.COVER -> "평소 쉬는 날 대신 일한 날이에요."
                     else -> "일한 시간대로 다시 계산해요."
                 }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 1.38 [P3-X-01] 대타 찾기: a day this person was to work and now won't; saved first, then who could come and what it costs.
+                val gap = kind == WorkKind.ABSENT || kind == WorkKind.LEAVE || kind == WorkKind.OFF
+                if (gap && (usual != null || now?.kind in StaffWork.TIMED)) OutlinedButton(onClick = {
+                    app.appScope.launch { store.setWork(s.id, date, StaffWork(s.id, date, kind)); }
+                    onFind()
+                }) { Text("저장하고 대신 일할 사람 찾기") }
             }
         },
         confirmButton = {

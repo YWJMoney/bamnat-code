@@ -29,6 +29,12 @@ data class TeamEntity(
     val archived: Boolean,
     /** 1.38 (DB 29) 같이 쉬는 사람: each member's link also names who is off with them (the leader turns it on). */
     @androidx.room.ColumnInfo(defaultValue = "0") val showTogether: Boolean = false,
+    /** 1.38 (DB 30) [P3-L-14] 신청 받기: the round as JSON ([com.bamnat.app.data.PhaseThreeStore.encodeAsk]); "" for none. */
+    @androidx.room.ColumnInfo(defaultValue = "") val ask: String = "",
+    /** 1.38 (DB 30) [P3-X-01] 결원 메우기 asks as JSON; "" for none. */
+    @androidx.room.ColumnInfo(defaultValue = "") val calls: String = "",
+    /** 1.38 (DB 30) [P3-X-02] 바꾸기 요청 round as JSON, "" when none. */
+    @androidx.room.ColumnInfo(defaultValue = "") val swap: String = "",
 )
 
 @Entity(tableName = "team_member", indices = [Index("teamId")])
@@ -44,6 +50,8 @@ data class TeamMemberEntity(
     val linkId: String?,
     val linkToken: String?,
     val active: Boolean,
+    /** 1.38 (DB 30) [P3-X-05] 입사일 as an epoch day, null when not set. */
+    val hiredOn: Long? = null,
 )
 
 @Entity(tableName = "team_cell", primaryKeys = ["memberId", "epochDay"], indices = [Index(value = ["teamId", "epochDay"])])
@@ -75,10 +83,10 @@ data class TeamWishEntity(
     val teamId: String,
     val memberId: String,
     val epochDay: Long,
-    /** OFF, WORK or AVOID_NIGHT. */
+    /** OFF, WORK or AVOID_NIGHT; 1.38 also LEAVE, HALF, EDU and SHIFT:<id> ([com.bamnat.core.team.WishKind.code]). */
     val kind: String,
     val receivedAt: Long,
-    /** How it came: LEADER (typed), TEXT (a pasted line). */
+    /** How it came: LEADER (typed), TEXT (a pasted line), 1.38 LINK (a member's 신청 링크; [receivedAt] is when they asked). */
     val via: String,
 )
 
@@ -95,6 +103,8 @@ data class WorkplaceEntity(
     val createdAt: Long,
     /** 1.38 (DB 29) 계산 단위: each day's work counted up to this many minutes (1·10·30·60). */
     @androidx.room.ColumnInfo(defaultValue = "1") val minuteUnit: Int = 1,
+    /** 1.38 (DB 30) [P3-X-01] 대타 요청, the same JSON as [TeamEntity.calls]. */
+    @androidx.room.ColumnInfo(defaultValue = "") val calls: String = "",
 )
 
 @Entity(tableName = "staff", indices = [Index("workplaceId")])
@@ -119,6 +129,8 @@ data class StaffEntity(
     /** 1.38 (DB 29) [P3-B-11] 출퇴근 링크 on the share server, and its key (sealed backups only, like any 고치는 열쇠). */
     @androidx.room.ColumnInfo(defaultValue = "NULL") val clockId: String? = null,
     @androidx.room.ColumnInfo(defaultValue = "NULL") val clockToken: String? = null,
+    /** 1.38 (DB 30) [P3-X-06] 근로계약서 as sent, its sign link and key, and the signature, as JSON ('' for none). */
+    @androidx.room.ColumnInfo(defaultValue = "''") val contract: String = "",
 )
 
 /** 1.38 (DB 29) [P3-B-11] One press of 출근 or 퇴근 on a staff member's 출퇴근 링크, at the server's time. A 기록 the boss puts in; never pay by itself. */
@@ -174,6 +186,9 @@ interface TeamDao {
 
     @Query("SELECT * FROM team ORDER BY createdAt")
     suspend fun teams(): List<TeamEntity>
+
+    @Query("SELECT * FROM team WHERE id = :id")
+    suspend fun teamById(id: String): TeamEntity?
 
     @Query("SELECT * FROM team_member WHERE teamId = :teamId ORDER BY sort")
     fun observeMembers(teamId: String): Flow<List<TeamMemberEntity>>
@@ -235,6 +250,9 @@ interface TeamDao {
     @Query("DELETE FROM team_wish WHERE memberId = :memberId AND epochDay = :epochDay") suspend fun deleteWish(memberId: String, epochDay: Long)
     @Query("DELETE FROM team_wish WHERE teamId = :id") suspend fun deleteTeamWishes(id: String)
     @Query("DELETE FROM team_wish WHERE memberId = :id") suspend fun deleteMemberWishes(id: String)
+    /** 1.38 [P3-L-14] The requests a round brought before, so a request a member took back goes too. */
+    @Query("DELETE FROM team_wish WHERE teamId = :teamId AND epochDay BETWEEN :from AND :to AND via = :via")
+    suspend fun deleteWishesVia(teamId: String, from: Long, to: Long, via: String)
 
     /** Backup: every team row goes back in one step. */
     @Transaction
@@ -313,6 +331,8 @@ interface PayrollDao {
     fun observePunches(workplaceId: String, from: Long, to: Long): Flow<List<StaffPunchEntity>>
     @Query("SELECT * FROM staff_punch ORDER BY staffId, at") suspend fun punches(): List<StaffPunchEntity>
     @Query("UPDATE staff SET clockId = NULL, clockToken = NULL WHERE id = :id") suspend fun forgetClock(id: String)
+    @Query("UPDATE staff SET contract = :contract WHERE id = :id") suspend fun setContract(id: String, contract: String)
+    @Query("SELECT contract FROM staff WHERE id = :id") suspend fun contractOf(id: String): String?
     @Query("SELECT MAX(at) FROM staff_punch WHERE staffId = :staffId") suspend fun lastPunch(staffId: String): Long?
     @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE) suspend fun insertPunches(e: List<StaffPunchEntity>): List<Long>
 

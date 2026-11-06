@@ -498,6 +498,7 @@ private fun healthNote(state: com.bamnat.app.sleep.HealthSleep.State): String? =
  * [SLP-16] A sleep written or corrected by hand: the night it ended on, when it began and ended.
  * The end may be the next day of the start; an open sleep ([initial] with no end) may stay open.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SleepEditDialog(
     initial: SleepEntry?,
@@ -511,7 +512,21 @@ private fun SleepEditDialog(
     var end by rememberSaveable { mutableStateOf((initial?.end?.toLocalTime() ?: LocalTime.of(7, 0)).toString()) }
     var open by rememberSaveable { mutableStateOf(initial != null && initial.end == null) }
     var picking by remember { mutableStateOf<String?>(null) }
+    var pickDay by remember { mutableStateOf(false) }
     val wakeDate = LocalDate.parse(wake)
+    if (pickDay) {
+        val last = now.toLocalDate()
+        val state = androidx.compose.material3.rememberDatePickerState(initialSelectedDateMillis = wakeDate.toEpochDay() * 86_400_000L,
+            selectableDates = remember(last) {
+                object : androidx.compose.material3.SelectableDates {
+                    override fun isSelectableDate(utcTimeMillis: Long) = !LocalDate.ofEpochDay(utcTimeMillis / 86_400_000L).isAfter(last)
+                    override fun isSelectableYear(year: Int) = year <= last.year
+                }
+            })
+        com.bamnat.app.ui.components.DatePickerDialog(onDismissRequest = { pickDay = false }, confirmButton = {
+            TextButton(onClick = { state.selectedDateMillis?.let { wake = LocalDate.ofEpochDay(it / 86_400_000L).toString() }; pickDay = false }) { Text("고르기") }
+        }, dismissButton = { TextButton(onClick = { pickDay = false }) { Text("닫기") } }) { androidx.compose.material3.DatePicker(state) }
+    }
     val endTime = LocalTime.parse(end)
     val startTime = LocalTime.parse(start)
     // A start later in the day than the end began the evening before.
@@ -532,7 +547,9 @@ private fun SleepEditDialog(
                         FilterChip(selected = wakeDate == d, onClick = { wake = d.toString() },
                             label = { Text(when (d) { today -> "오늘"; today.minusDays(1) -> "어제"; else -> Fmt.shortDate(d) }) })
                     }
-                    if (wakeDate.isBefore(now.toLocalDate().minusDays(2))) FilterChip(selected = true, onClick = {}, label = { Text(Fmt.shortDate(wakeDate)) })
+                    // 1.38 PC 9차: any earlier day too (지난주 기록을 나중에 넣을 때).
+                    FilterChip(selected = wakeDate.isBefore(now.toLocalDate().minusDays(2)), onClick = { pickDay = true },
+                        label = { Text(if (wakeDate.isBefore(now.toLocalDate().minusDays(2))) Fmt.shortDate(wakeDate) else "다른 날") })
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { picking = "start" }, modifier = Modifier.weight(1f)) {

@@ -564,7 +564,74 @@ interface ShareApi {
 
     /** 1.38 [P3-B-11] Cuts the link (퇴사·끊기). A link the server no longer has counts as cut. */
     suspend fun clockDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-L-13] Opens a 근무 신청 round: a link per name in [names], in that order. */
+    suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>,
+                          leave: List<Double?> = emptyList()): AskMade =
+        throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-L-13] What the members asked so far; "not_found" once the round is gone. */
+    suspend fun askRead(id: String, token: String): AskGot = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-L-13] 마감·다시 열기 ([closed]) or a new 마감 시각 ([closesAt], epoch millis; null for none). */
+    suspend fun askChange(id: String, token: String, closed: Boolean? = null, closesAt: Long? = null, clearCloses: Boolean = false) {}
+
+    /** 1.38 [P3-L-13] Ends the round: the members' requests on the server go with it. Gone already counts as done. */
+    suspend fun askDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-X-01] A yes/no ask to [people] (결원 메우기), open [hours]. */
+    suspend fun callCreate(team: String, title: String, detail: String, people: List<String>, hours: Int): CallMade = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-X-01] The answers so far by person index (true: 들어갈 수 있어요), who opened it, and who was chosen. */
+    suspend fun callRead(id: String, token: String): CallGot = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-X-01] Who the leader chose (person index), so every page says so; null takes it back. */
+    suspend fun callTake(id: String, token: String, taken: Int?) {}
+
+    suspend fun callDelete(id: String, token: String) {}
+
+    /**
+     * 1.38 [P3-X-02] 바꾸기 요청 links for [month]: each person's row of labels ([labels], "" for none) and who may trade which day
+     * ([ok]: person index → day of month → person indexes), worked out on this phone.
+     */
+    suspend fun swapCreate(team: String, month: java.time.YearMonth, people: List<String>, labels: List<List<String>>, ok: Map<Int, Map<Int, List<Int>>>): CallMade =
+        throw ShareLinkException("unsupported")
+
+    suspend fun swapRead(id: String, token: String): SwapGot = throw ShareLinkException("unsupported")
+
+    /** New rows and trades after the board changed, and/or the leader's word on asks ([decide]: person, day, approved). */
+    suspend fun swapChange(id: String, token: String, labels: List<List<String>>? = null, ok: Map<Int, Map<Int, List<Int>>>? = null,
+                           decide: List<Triple<Int, Int, Boolean>> = emptyList(), closed: Boolean? = null) {}
+
+    suspend fun swapDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-X-06] A 근로계약서 for [staff] to read and sign by typing their name; open [days] (30 at most). */
+    suspend fun signCreate(place: String, staff: String, title: String, items: List<com.bamnat.core.boss.StaffContract.Item>, days: Int): SignMade =
+        throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-X-06] Whether it was opened and signed; "not_found" once it is gone. */
+    suspend fun signRead(id: String, token: String): SignGot = throw ShareLinkException("unsupported")
+
+    suspend fun signDelete(id: String, token: String) {}
 }
+
+data class SignMade(val id: String, val token: String, val url: String, val expiresAt: Instant)
+data class SignGot(val seenAt: Instant?, val signedName: String?, val signedAt: Instant?)
+
+/** 1.38 [P3-X-02] One read: asks by person index ([p] asked [q] about day [d]), and who opened their link. */
+data class SwapGot(val asks: List<SwapAsk>, val seen: Set<Int>, val closed: Boolean)
+data class SwapAsk(val p: Int, val q: Int, val d: Int, val state: String, val at: Instant)
+
+data class CallMade(val id: String, val token: String, val urls: List<String>, val expiresAt: Instant)
+data class CallGot(val answers: Map<Int, Boolean>, val seen: Set<Int>, val taken: Int?)
+
+/** 1.38 [P3-L-13] A round opened: its [id] and key, and each member's link in the order asked. */
+data class AskMade(val id: String, val token: String, val urls: List<String>)
+
+/** 1.38 [P3-L-13] One read of a round: requests by member index ([AskWish.m]), the members' lines and who opened their link. */
+data class AskGot(val wishes: List<AskWish>, val notes: Map<Int, String>, val seen: Set<Int>, val closed: Boolean)
+
+data class AskWish(val m: Int, val date: java.time.LocalDate, val kind: com.bamnat.core.team.WishKind, val shiftId: Long?, val at: Instant)
 
 /** 1.38 [P3-B-11] A 출퇴근 링크 made for one staff member. */
 data class ClockLink(val id: String, val url: String, val token: String)
@@ -679,6 +746,161 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     override suspend fun clockDelete(id: String, token: String) = withContext(Dispatchers.IO) {
         try {
             request("DELETE", "/api/clock/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    override suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>,
+                                   leave: List<Double?>): AskMade =
+        withContext(Dispatchers.IO) {
+            val r = JSONObject().put("weekdayCap", rules.weekdayCap).put("weekendCap", rules.weekendCap).put("perPerson", rules.perPerson)
+                .put("closesAt", rules.closesAt ?: JSONObject.NULL).put("kinds", org.json.JSONArray(rules.kinds.map { it.name })).put("firstCome", rules.firstCome)
+                .put("holidays", org.json.JSONArray(rules.holidays.sorted().map { it.toString() })).put("blocked", org.json.JSONArray(rules.blocked.sorted().map { it.toString() }))
+                .put("showNames", rules.showNames)
+            val body = JSONObject().put("team", team).put("month", month.toString()).put("rules", r)
+                .put("shifts", org.json.JSONArray(shifts.map { JSONObject().put("id", it.id).put("label", it.label.take(4)).put("color", "#%06X".format(it.colorArgb and 0xFFFFFF)) }))
+                .put("members", org.json.JSONArray(names))
+            if (leave.any { it != null }) body.put("leave", org.json.JSONArray(leave.map { it ?: JSONObject.NULL }))
+            val o = request("POST", "/api/ask", body, null).body
+            readable {
+                val m = o.getJSONArray("members")
+                AskMade(o.getString("id"), o.getString("token"), (0 until m.length()).map { m.getJSONObject(it).getString("url") })
+            }
+        }
+
+    override suspend fun askRead(id: String, token: String): AskGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/ask/$id", null, token).body
+        readable {
+            val w = o.optJSONArray("wishes") ?: org.json.JSONArray()
+            val wishes = (0 until w.length()).mapNotNull { i ->
+                val x = w.optJSONObject(i) ?: return@mapNotNull null
+                val kind = com.bamnat.core.team.WishKind.entries.firstOrNull { it.name == x.optString("k") } ?: return@mapNotNull null
+                val date = runCatching { java.time.LocalDate.parse(x.optString("d")) }.getOrNull() ?: return@mapNotNull null
+                AskWish(x.optInt("m", -1), date, kind, if (x.has("s")) x.optLong("s") else null, runCatching { Instant.parse(x.optString("at")) }.getOrElse { Today.instant() })
+            }
+            val n = o.optJSONArray("notes") ?: org.json.JSONArray()
+            val notes = (0 until n.length()).mapNotNull { n.optJSONObject(it) }.associate { it.optInt("m", -1) to it.optString("note") }
+            val s = o.optJSONArray("seen") ?: org.json.JSONArray()
+            AskGot(wishes, notes, (0 until s.length()).map { s.optInt(it, -1) }.toSet(), o.optBoolean("closed"))
+        }
+    }
+
+    override suspend fun askChange(id: String, token: String, closed: Boolean?, closesAt: Long?, clearCloses: Boolean) = withContext(Dispatchers.IO) {
+        val body = JSONObject()
+        closed?.let { body.put("closed", it) }
+        if (clearCloses) body.put("closesAt", JSONObject.NULL) else closesAt?.let { body.put("closesAt", it) }
+        request("PUT", "/api/ask/$id", body, token)
+        Unit
+    }
+
+    override suspend fun askDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/ask/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    override suspend fun callCreate(team: String, title: String, detail: String, people: List<String>, hours: Int): CallMade = withContext(Dispatchers.IO) {
+        val o = request("POST", "/api/call", JSONObject().put("team", team).put("title", title).put("detail", detail)
+            .put("people", org.json.JSONArray(people)).put("hours", hours), null).body
+        readable {
+            val p = o.getJSONArray("people")
+            CallMade(o.getString("id"), o.getString("token"), (0 until p.length()).map { p.getJSONObject(it).getString("url") }, Instant.parse(o.getString("expiresAt")))
+        }
+    }
+
+    override suspend fun callRead(id: String, token: String): CallGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/call/$id", null, token).body
+        readable {
+            val a = o.optJSONArray("answers") ?: org.json.JSONArray()
+            val s = o.optJSONArray("seen") ?: org.json.JSONArray()
+            CallGot((0 until a.length()).mapNotNull { a.optJSONObject(it) }.associate { it.optInt("p", -1) to (it.optString("a") == "yes") },
+                (0 until s.length()).map { s.optInt(it, -1) }.toSet(), if (o.isNull("taken")) null else o.optInt("taken"))
+        }
+    }
+
+    override suspend fun callTake(id: String, token: String, taken: Int?) = withContext(Dispatchers.IO) {
+        request("PUT", "/api/call/$id", JSONObject().put("taken", taken ?: JSONObject.NULL), token)
+        Unit
+    }
+
+    override suspend fun callDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/call/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    override suspend fun signCreate(place: String, staff: String, title: String, items: List<com.bamnat.core.boss.StaffContract.Item>, days: Int): SignMade =
+        withContext(Dispatchers.IO) {
+            val o = request("POST", "/api/sign", JSONObject().put("place", place).put("staff", staff).put("title", title).put("days", days)
+                .put("items", org.json.JSONArray().apply { items.forEach { put(JSONObject().put("t", it.title).put("b", it.body)) } }), null).body
+            readable { SignMade(o.getString("id"), o.getString("token"), o.getString("url"), Instant.parse(o.getString("expiresAt"))) }
+        }
+
+    override suspend fun signRead(id: String, token: String): SignGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/sign/$id", null, token).body
+        readable {
+            val sg = o.optJSONObject("signed")
+            SignGot(o.optString("seenAt").takeIf { !o.isNull("seenAt") && it.isNotEmpty() }?.let(Instant::parse),
+                sg?.optString("name"), sg?.optString("at")?.takeIf { it.isNotEmpty() }?.let(Instant::parse))
+        }
+    }
+
+    override suspend fun signDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/sign/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    private fun swapBody(labels: List<List<String>>?, ok: Map<Int, Map<Int, List<Int>>>?): JSONObject = JSONObject().apply {
+        labels?.let { l -> put("labels", org.json.JSONArray().apply { l.forEach { put(org.json.JSONArray(it)) } }) }
+        ok?.let { o -> put("ok", JSONObject().apply { o.forEach { (p, days) -> put(p.toString(), JSONObject().apply { days.forEach { (d, qs) -> put(d.toString(), org.json.JSONArray(qs)) } }) } }) }
+    }
+
+    override suspend fun swapCreate(team: String, month: java.time.YearMonth, people: List<String>, labels: List<List<String>>, ok: Map<Int, Map<Int, List<Int>>>): CallMade =
+        withContext(Dispatchers.IO) {
+            val o = request("POST", "/api/swap", swapBody(labels, ok).put("team", team).put("month", month.toString()).put("people", org.json.JSONArray(people)), null).body
+            readable {
+                val p = o.getJSONArray("people")
+                CallMade(o.getString("id"), o.getString("token"), (0 until p.length()).map { p.getJSONObject(it).getString("url") }, Instant.parse(o.getString("expiresAt")))
+            }
+        }
+
+    override suspend fun swapRead(id: String, token: String): SwapGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/swap/$id", null, token).body
+        readable {
+            val a = o.optJSONArray("asks") ?: org.json.JSONArray()
+            val s = o.optJSONArray("seen") ?: org.json.JSONArray()
+            SwapGot((0 until a.length()).mapNotNull { a.optJSONObject(it) }.map {
+                SwapAsk(it.optInt("p", -1), it.optInt("q", -1), it.optInt("d"), it.optString("state"), runCatching { Instant.parse(it.optString("at")) }.getOrElse { Today.instant() })
+            }, (0 until s.length()).map { s.optInt(it, -1) }.toSet(), o.optBoolean("closed"))
+        }
+    }
+
+    override suspend fun swapChange(id: String, token: String, labels: List<List<String>>?, ok: Map<Int, Map<Int, List<Int>>>?,
+                                    decide: List<Triple<Int, Int, Boolean>>, closed: Boolean?) = withContext(Dispatchers.IO) {
+        val body = swapBody(labels, ok)
+        if (decide.isNotEmpty()) body.put("decide", org.json.JSONArray().apply {
+            decide.forEach { (p, d, yes) -> put(JSONObject().put("p", p).put("d", d).put("state", if (yes) "done" else "denied")) }
+        })
+        closed?.let { body.put("closed", it) }
+        request("PUT", "/api/swap/$id", body, token)
+        Unit
+    }
+
+    override suspend fun swapDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/swap/$id", null, token)
         } catch (e: ShareLinkException) {
             if (e.message != "not_found") throw e
         }
