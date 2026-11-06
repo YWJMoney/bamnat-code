@@ -217,6 +217,7 @@ today.flow
 trash.records
 view.clock12
 view.compact
+view.kani
 view.textSize
 wear.nextShift
 widget.countdown
