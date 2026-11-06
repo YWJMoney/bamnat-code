@@ -121,6 +121,8 @@ class AlarmService : Service() {
                 val how = intent?.getStringExtra(EXTRA_HOW)?.takeIf { it.isNotEmpty() }
                 // [ALRM-09] 오늘 모두 끄기 on a mission alarm, now that the mission is done (or was given up after 5 minutes).
                 val allOff = intent?.action == ACTION_DISMISS && ring != null && _allOffAfterMission.value && how != null
+                // 1.38 [SLEEP-08] An early ring in its 깨우는 구간, turned off: its on-time ring is off now too, quietly.
+                if (intent?.action == ACTION_DISMISS && ring != null && !BootAlarms.isLocked(this)) com.bamnat.app.sleep.SmartWake.offEarly(this, ring)
                 if (intent?.action == ACTION_DISMISS && ring != null && !BootAlarms.isLocked(this)) {
                     appContainer.telemetry.event(DiagEvents.ALARM_DISMISSED, listOfNotNull(how, if (allOff) "all_off" else null, offDetail(ring)).joinToString(" "))
                     // [PROV-07] A few minutes on, 일어났나요?; once per alarm, never for a memo's schedule.
@@ -669,7 +671,8 @@ class AlarmService : Service() {
          * banner's 끄기 and 다시 울림 stay for every later time.
          */
         fun openScreenOnce(ring: RingRequest): Boolean {
-            val key = ring.triggerAtMillis to ring.isSnooze
+            // 1.38 [SLEEP-08] An early ring in its 깨우는 구간 is its own: left ringing out, the on-time ring opens the screen again.
+            val key = (if (Today.millis() < ring.triggerAtMillis) -ring.triggerAtMillis else ring.triggerAtMillis) to ring.isSnooze
             if (openedFor == key || screenShownAt != 0L && screenHiddenAt < screenShownAt) return false
             openedFor = key
             return true

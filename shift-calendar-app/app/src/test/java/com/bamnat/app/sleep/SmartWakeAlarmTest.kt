@@ -89,4 +89,50 @@ class SmartWakeAlarmTest {
         assertEquals(millis(day.plusDays(1).atTime(6, 0)), c.alarmScheduler.upcoming.value!!.triggerAtMillis)
         assertEquals(millis(day.plusDays(1).atTime(6, 0)) - 20 * 60_000L, windowAlarm()!!.triggerAtTime)
     }
+
+    /**
+     * PC 11차 (최상): rung early in the window, the alarm was silenced because its on-time ring had been marked off first, and
+     * nothing rang at all. Now the early ring is not silenced, the on-time ring stands until the early one is turned off, and
+     * only then is it off.
+     */
+    @Test fun anEarlyRingRingsAndTheOnTimeOneGoesOnlyWhenItIsTurnedOff() = runBlocking {
+        Today.fix(day.atTime(5, 40).atZone(zone))
+        mornings()
+        c.settingsRepository.update { it.copy(smartWakeMinutes = 30) }
+        c.rescheduleAlarms()
+        val six = millis(day.atTime(6, 0))
+        val ring = c.alarmScheduler.upcoming.value!!.let { u -> com.bamnat.app.alarm.RingRequest.from(u.plan, u.triggerAtMillis) }
+        assertEquals(six, ring.triggerAtMillis)
+
+        SmartWake.ringEarly(app, ring)
+        val started = shadowOf(app).nextStartedService
+        assertEquals(com.bamnat.app.alarm.AlarmService::class.java.name, started.component!!.className)
+        assertEquals("the early ring is not silenced", false, AlarmSoon.silences(app, ring))
+        assertTrue(SmartWake.rangEarly(app, ring))
+        assertEquals("the on-time ring still stands", six, c.alarmScheduler.upcoming.value!!.triggerAtMillis)
+        assertEquals("얕은 잠이라 20분 일찍 깨웠어요", SmartWake.earlyLine(app, ring))
+
+        // Turned off: now the on-time ring of the same alarm is off, and tomorrow's is next.
+        SmartWake.offEarly(app, ring)
+        assertTrue(AlarmSoon.isSkipped(app, six))
+        c.rescheduleAlarms()
+        assertEquals(millis(day.plusDays(1).atTime(6, 0)), c.alarmScheduler.upcoming.value!!.triggerAtMillis)
+    }
+
+    @Test fun anEarlyRingLeftRingingKeepsTheOnTimeOne() = runBlocking {
+        Today.fix(day.atTime(5, 40).atZone(zone))
+        mornings()
+        c.settingsRepository.update { it.copy(smartWakeMinutes = 30) }
+        c.rescheduleAlarms()
+        val six = millis(day.atTime(6, 0))
+        val ring = c.alarmScheduler.upcoming.value!!.let { u -> com.bamnat.app.alarm.RingRequest.from(u.plan, u.triggerAtMillis) }
+        SmartWake.ringEarly(app, ring)
+        // Nobody turned it off; at 6:00 the on-time ring is not silenced and says nothing about being early.
+        Today.fix(day.atTime(6, 0).atZone(zone))
+        assertEquals(false, AlarmSoon.silences(app, ring))
+        assertEquals(false, SmartWake.rangEarly(app, ring))
+        assertNull(SmartWake.earlyLine(app, ring))
+        SmartWake.offEarly(app, ring)
+        assertEquals(false, AlarmSoon.isSkipped(app, six))
+    }
 }

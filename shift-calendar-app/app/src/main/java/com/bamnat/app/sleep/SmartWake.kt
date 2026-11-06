@@ -21,7 +21,9 @@ import com.bamnat.core.time.Today
  *    window's start that only listens.
  * 2. Armed and cleared from [com.bamnat.app.alarm.AlarmScheduler.reschedule], so a skipped (AlarmSoon) or turned-off
  *    (AlarmsOff) alarm never has a window.
- * 3. Rung in the window: the on-time ring of the same alarm is turned off quietly ([AlarmSoon.skipQuietly]).
+ * 3. Rung in the window and turned off by the user: the on-time ring of the same alarm is turned off quietly
+ *    ([AlarmSoon.skipQuietly], from [AlarmService]'s dismiss). Not before: PC 11차 found the early ring itself silenced when
+ *    the on-time one was marked off first, and an early ring nobody turned off leaves the on-time one to ring.
  * 4. Locked after a reboot: no window.
  * 5. The same ringing screen and [RingRequest]; only a line under it says why it came early.
  * 6. Off by default (0 minutes): nothing is armed and the alarm tests see no change.
@@ -38,6 +40,8 @@ object SmartWake {
 
     @Volatile private var watching: RingRequest? = null
     @Volatile private var watchMinutes = 0
+    /** Times something moved while the window listens, the last [SmartWakeRule.LIGHT_WITHIN_MILLIS] only. */
+    private val moves = ArrayDeque<Long>()
 
     private fun intent(context: Context, ring: RingRequest?): PendingIntent {
         val i = Intent(context, SmartWakeReceiver::class.java).setAction(ACTION_WINDOW)
@@ -65,29 +69,50 @@ object SmartWake {
     internal fun windowOpened(context: Context, ring: RingRequest) {
         if (BootAlarms.isLocked(context) || AlarmsOff.isOff(context) || AlarmSoon.isSkipped(context, ring.triggerAtMillis)) return
         if (SleepRecordService.recording.value == null) return
+        synchronized(moves) { moves.clear() }
         watching = ring
         watchMinutes = context.appContainer.settingsRepository.current.smartWakeMinutes
     }
 
     /** From the measuring, after each minute or movement: rings now when the sleep is light. */
-    internal fun check(context: Context, lastMovedAt: Long?) {
+    internal fun check(context: Context, movedAt: Long?) {
         val ring = watching ?: return
         val now = Today.millis()
         if (now >= ring.triggerAtMillis) { watching = null; return }
-        if (!SmartWakeRule.wakeNow(now, ring.triggerAtMillis, watchMinutes, lastMovedAt)) return
+        val recent = synchronized(moves) {
+            if (movedAt != null) moves.addLast(movedAt)
+            while (moves.isNotEmpty() && now - moves.first() > SmartWakeRule.LIGHT_WITHIN_MILLIS) moves.removeFirst()
+            moves.toList()
+        }
+        if (!SmartWakeRule.wakeNow(now, ring.triggerAtMillis, watchMinutes, recent)) return
         watching = null
+        ringEarly(context, ring, now)
+    }
+
+    /** Rings [ring] now, before its time; its on-time ring stands until this one is turned off. */
+    internal fun ringEarly(context: Context, ring: RingRequest, now: Long = Today.millis()) {
         val early = (ring.triggerAtMillis - now) / 60_000
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-            .putLong(K_EARLY_AT, ring.triggerAtMillis).putLong(K_EARLY_MIN, early).apply()
-        // The on-time ring of this alarm is done: quietly, no '알람을 껐어요' notice.
-        AlarmSoon.skipQuietly(context, ring.triggerAtMillis)
+            .putLong(K_EARLY_AT, ring.triggerAtMillis).putLong(K_EARLY_MIN, early).commit()
+        if (!BootAlarms.isLocked(context)) runCatching { context.appContainer.telemetry.event("alarm_smart_ring", "$early") }
+        // The on-time ring stays until this one is turned off ([offEarly]).
         AlarmService.start(context, ring)
+    }
+
+    /** [ring] is ringing before its time because of the window. */
+    fun rangEarly(context: Context, ring: RingRequest, now: Long = Today.millis()): Boolean =
+        ring.label == null && !ring.isSnooze && now < ring.triggerAtMillis &&
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(K_EARLY_AT, 0L) == ring.triggerAtMillis
+
+    /** From AlarmService's dismiss: the user is up, so the on-time ring of the same alarm is off, quietly. */
+    fun offEarly(context: Context, ring: RingRequest) {
+        if (rangEarly(context, ring)) AlarmSoon.skipQuietly(context, ring.triggerAtMillis)
     }
 
     /** The line for the ringing screen when this alarm came early, else null. */
     fun earlyLine(context: Context, ring: RingRequest): String? {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        if (p.getLong(K_EARLY_AT, 0L) != ring.triggerAtMillis) return null
+        if (p.getLong(K_EARLY_AT, 0L) != ring.triggerAtMillis || Today.millis() >= ring.triggerAtMillis) return null
         return SmartWakeRule.line(p.getLong(K_EARLY_MIN, 0L))
     }
 }

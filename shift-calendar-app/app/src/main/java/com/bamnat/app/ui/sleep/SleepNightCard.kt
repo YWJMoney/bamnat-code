@@ -59,6 +59,9 @@ internal fun SleepNightCard(
         val r = recording
         if (r != null) {
             Text("${Fmt.time(local(r.startedAt).toLocalTime())}부터 재는 중 · 들린 소리 ${r.events}번", style = MaterialTheme.typography.bodyMedium)
+            // PC 실사용(경쟁 앱이 짧은 측정을 끝에 와서야 거절): what a short night gives is said while measuring, not after.
+            Text("휴대폰이 15분 넘게 가만히 있어야 잠든 때를 알아요. 소리는 그 전부터 남겨요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = { SleepRecordService.stop(context) }, modifier = Modifier.padding(top = 8.dp)) { Text("측정 끝") }
         } else {
             Text("머리맡에 두고 ‘측정 시작’을 누르면 코골이·잠꼬대·기침·이갈이를 시간과 함께 남겨요. 휴대폰 안에서만 듣고, 짧은 소리는 7일 뒤 지워요.",
