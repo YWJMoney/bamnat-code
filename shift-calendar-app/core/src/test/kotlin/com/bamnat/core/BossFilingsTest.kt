@@ -53,4 +53,14 @@ class BossFilingsTest {
         assertTrue(csv.contains("최사아,,사업소득,"))
         assertTrue(csv.lines().last { it.isNotBlank() }.contains("합계"))
     }
+
+    // PC 10차(중): someone added today with no 입사일 is not in last month's 원천세.
+    @Test fun noHireDateIsLeftOutOfPastMonths() {
+        val c = StaffMember("c", "새직원", base = 10_320, weekly = week)
+        val all = listOf(c)
+        val due = BossFilings.upcoming(place, all, LocalDate.of(2026, 11, 12), ledgerOf = { m -> PayrollLedger.month(place, all, m, emptyList()) })
+        assertTrue("10월 지급분 원천세 없음", due.none { it.kind == BossFilings.Kind.WITHHOLD })
+        assertTrue("10월분 급여 없음", due.none { it.key.endsWith(":2026-10") })
+        assertEquals(listOf("c"), BossFilings.noHireDate(all, LocalDate.of(2026, 11, 12)).map { it.id })
+    }
 }
