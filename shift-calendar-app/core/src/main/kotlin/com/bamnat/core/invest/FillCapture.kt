@@ -427,6 +427,9 @@ object FillSheetReader {
         if (nameAt > 0 && nameAt == record.lastIndex && record.size > 2 && looksLikeName(record[nameAt]) &&
             record.indexOfFirst { SIDE.containsMatchIn(it) } < nameAt) unsure += Field.NAME
         if (price <= 0) unsure += Field.PRICE
+        // [READ-38] A price worked out from the amount while the card says 단가 itself: that label held something else (rows
+        // one off), so the price is a guess. A Korean share's price is whole won.
+        if (fromAmount && (Regex("단가|체결가|가격|평균가").containsMatchIn(all) || market == Market.KR_STOCK && price != Math.floor(price))) unsure += Field.PRICE
         if (amount > 0 && price > 0 && !FillMath.agrees(quantity, price, amount)) unsure += setOf(Field.PRICE, Field.AMOUNT)
         // A share is never a fraction on a Korean screen: a decimal there is a misread.
         if (market == Market.KR_STOCK && quantity != Math.floor(quantity)) unsure += Field.QUANTITY
