@@ -1,24 +1,71 @@
 package com.bamnat.app.ui.guide
 
-import java.time.LocalDate
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.app.BamnatApp
+import com.bamnat.app.BuildConfig
+import com.bamnat.core.time.Today
+import java.time.ZoneId
+import java.time.ZonedDateTime
+import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
 
-/** 1.38 PC 4a5c3828: the first week's 시작 단계 is for a new phone, not for a calendar that came by an update. */
+/**
+ * 1.38 PC 4a5c3828, 통합 8차: the first week's 시작 단계 is for a new phone, not for a calendar that came by an update. Told by the
+ * versionCode the first setup was saved with, never by dates, and decided once.
+ */
+@RunWith(AndroidJUnit4::class)
 class StartStepsUpdateTest {
-    private val day = LocalDate.of(2026, 11, 6)
+    private val now = BuildConfig.VERSION_CODE
+    private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
+    private val zone = ZoneId.of("Asia/Seoul")
 
-    @Test fun aFreshInstallSeesTheSteps() = assertFalse(StartStepsState.cameByUpdate(day, null))
+    @After fun clock() = Today.reset()
 
-    @Test fun aCalendarSetUpBeforeTheUpdateDoesNot() {
-        assertTrue(StartStepsState.cameByUpdate(day.minusDays(3), day))
-        // Set up before 1.36 kept the day: an update is enough.
-        assertTrue(StartStepsState.cameByUpdate(null, day))
+    @Test fun aSetupOnThisAppIsNew() {
+        assertEquals(false, StartStepsState.cameByUpdate(now, now, setupDone = true, updated = false))
+        // Set up and updated (to this very app) on the same day: still new.
+        assertEquals(false, StartStepsState.cameByUpdate(now, now, setupDone = true, updated = true))
     }
 
-    @Test fun aSetupOnOrAfterTheUpdateDayIsNew() {
-        assertFalse(StartStepsState.cameByUpdate(day, day))
-        assertFalse(StartStepsState.cameByUpdate(day.plusDays(1), day))
+    @Test fun aSetupOnAnOlderAppCameByUpdate() {
+        assertEquals(true, StartStepsState.cameByUpdate(now - 1, now, setupDone = true, updated = true))
+        // 1.36·1.37 kept no version: set up and updated since is an update, whatever the days.
+        assertEquals(true, StartStepsState.cameByUpdate(null, now, setupDone = true, updated = true))
+    }
+
+    @Test fun nothingIsDecidedBeforeTheSetup() {
+        assertNull(StartStepsState.cameByUpdate(null, now, setupDone = false, updated = true))
+        assertEquals(false, StartStepsState.cameByUpdate(null, now, setupDone = true, updated = false))
+    }
+
+    /** Old app put on and updated the same day (11/6), the clock then moved +5 and +6 days: the steps stay away. */
+    @Test fun anUpdaterStaysAnUpdaterWhenTheClockMoves() {
+        val c = app.container
+        val first = c.appContext.getSharedPreferences("device", 0)
+        first.edit().putString("first_setup_day", "2026-11-06").putInt("first_setup_version", now - 1).commit()
+        listOf(6, 11, 12).forEach { d ->
+            Today.fix(ZonedDateTime.of(2026, 11, d, 9, 0, 0, 0, zone))
+            assertTrue("11/$d", StartStepsState.cameByUpdate(c))
+            assertNull("11/$d", StartStepsState.rows(c, hasShifts = true))
+        }
+        // Decided once: what the setup says later changes nothing.
+        first.edit().putInt("first_setup_version", now).commit()
+        assertTrue(StartStepsState.cameByUpdate(c))
+    }
+
+    /** A new phone set up on this app sees the steps, on the day after and five days on. */
+    @Test fun aNewPhoneKeepsItsSteps() {
+        val c = app.container
+        c.appContext.getSharedPreferences("device", 0).edit().putString("first_setup_day", "2026-11-06").putInt("first_setup_version", now).commit()
+        listOf(7, 11).forEach { d ->
+            Today.fix(ZonedDateTime.of(2026, 11, d, 9, 0, 0, 0, zone))
+            assertFalse("11/$d", StartStepsState.cameByUpdate(c))
+        }
     }
 }
