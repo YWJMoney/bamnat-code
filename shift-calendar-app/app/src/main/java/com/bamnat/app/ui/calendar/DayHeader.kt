@@ -573,7 +573,9 @@ private fun QuickChips(
             val (on, off0) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day).partition { ExtraText.indexOf(day, it) >= 0 }
             // [CAL-37] The kinds used in the last 60 days first; a new user gets their kind of work's usual order.
             val used = snapshot.entries.filter { !it.date.isBefore(today.minusDays(QuickOrder.DAYS.toLong())) }.flatMap { e -> e.extras.map { it.kindId } }
-            val off = QuickOrder.extras(off0, { it.kind.id }, used, settings.workStyle.takeIf { !day.isWorkDay })
+            // [PAYX-51] The kind made last comes first until it is first used.
+            val everUsed = snapshot.entries.flatMapTo(HashSet()) { e -> e.extras.map { it.kindId } }
+            val off = QuickOrder.extras(off0, { it.kind.id }, used, settings.workStyle.takeIf { !day.isWorkDay }, everUsed)
             on + off.take((QUICK_EXTRAS - on.size).coerceAtLeast(0))
         }
     }

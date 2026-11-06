@@ -41,6 +41,7 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
@@ -145,6 +146,8 @@ fun PayScreen(
     vm: PayViewModel,
     onBack: () -> Unit,
     onOpenExtraKinds: () -> Unit = {},
+    /** [PAYX-51] 연장 휴무일 근무 지정 opened at '교육', its 시수 in view. */
+    onOpenSchooling: () -> Unit = onOpenExtraKinds,
     /** [LEAVE-06] The 연차 screen of this calendar. */
     onOpenLeave: () -> Unit = {},
     /** 1.36 PC 급여 검토 W6: 근무 유형 (휴게 시작 시각), from the note that says it was guessed; null leaves the button out. */
@@ -337,7 +340,7 @@ fun PayScreen(
                 }
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
-                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { rulesLeave = 0; closeRules() }, onOpenKinds = onOpenExtraKinds, focus = rulesFocus, leaveAsk = rulesLeave, style = workStyle)
+                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { rulesLeave = 0; closeRules() }, onOpenKinds = onOpenExtraKinds, onOpenSchooling = onOpenSchooling, focus = rulesFocus, leaveAsk = rulesLeave, style = workStyle)
                 }
                 // [FREE-07] 1.35 급여 모양 of this kind of work; the figures and their 예상·추정 marks show whatever it says.
                 else -> androidx.compose.runtime.CompositionLocalProvider(LocalPayLook provides
@@ -345,7 +348,7 @@ fun PayScreen(
                     PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, onEditRulesAt = { f -> rulesFocus = f; editingRules = true }, top = top,
                     onDetailed = { detailedFrom = DetailedStart(profile); editingSetup = true },
                     underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, onOpenShiftTypes = onOpenShiftTypes, startMatching = startMatching,
-                    focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true })
+                    focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true }, onOpenSchooling = onOpenSchooling)
                 }
             }
             // [PAYIN-05] What the last save did, with 되돌리기.
@@ -376,6 +379,7 @@ private fun PayResult(
     focusUsed: Boolean = false,
     onFocusUsed: () -> Unit = {},
     onEditRulesAt: (PayFocus) -> Unit = { onEditRules() },
+    onOpenSchooling: (() -> Unit)? = null,
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     // U 1.32 [UX132-03] 결과 · 내 급여 값 · 회사 규칙 · 도구.
@@ -816,6 +820,11 @@ private fun PayResult(
                 // [PAYG-05] 1.30 BA: 자세히 고치기 next to 처음부터 설정 (1.29 had it only on the easy setup's last page).
                 TextButton(onClick = onDetailed) { Icon(Icons.Filled.Tune, null); Text(" 자세히 고치기") }
                 TextButton(onClick = onEditSetup) { Icon(Icons.Filled.Edit, null); Text(" 처음부터 설정") }
+                // [PAYX-51] 1.38 PC 12차 (교육 시수까지 여섯 번 들어가야 했어요): one tap to '교육' with its 시수, for a 월급제 only (the 시수
+                // divides a monthly 통상임금). The kind is made from its ready one when there is none.
+                if (onOpenSchooling != null && profile.wageType == WageType.MONTHLY) {
+                    TextButton(onClick = onOpenSchooling, enabled = unlocked) { Icon(Icons.Filled.Schedule, null); Text(" 교육 시수 정하기") }
+                }
             }
         }
 

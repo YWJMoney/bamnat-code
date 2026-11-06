@@ -34,8 +34,18 @@ object QuickOrder {
      * [extraRank] for [style]; equal ones keep their order. A null [style] ranks by use only (a working day,
      * whose 잔업 next to the shift already comes first).
      */
-    fun <T> extras(items: List<T>, kindOf: (T) -> Long, used: List<Long>, style: WorkStyle?): List<T> {
+    fun <T> extras(items: List<T>, kindOf: (T) -> Long, used: List<Long>, style: WorkStyle?, everUsed: Set<Long>? = null): List<T> {
         val counts = used.groupingBy { it }.eachCount()
-        return items.sortedWith(compareByDescending<T> { counts[kindOf(it)] ?: 0 }.thenBy { if (style == null) 0 else extraRank(style, kindOf(it)) })
+        val sorted = items.sortedWith(compareByDescending<T> { counts[kindOf(it)] ?: 0 }.thenBy { if (style == null) 0 else extraRank(style, kindOf(it)) })
+        val fresh = everUsed?.let { newest(items.map(kindOf), it) } ?: return sorted
+        return sorted.filter { kindOf(it) == fresh } + sorted.filter { kindOf(it) != fresh }
     }
+
+    /**
+     * [PAYX-51] 1.38 PC 12차 ('교육'을 만들었는데 달력 칸 칩에는 '+4'를 눌러야 나왔어요): the kind the user made last, while it has
+     * never been put on a day ([everUsed]), comes first, so what was just made is there to tap. Ids grow, so the newest is the
+     * largest made one ([ExtraKind.FIRST_CUSTOM_ID] on). Once used it takes its place by use like the rest.
+     */
+    fun newest(kindIds: List<Long>, everUsed: Set<Long>): Long? =
+        kindIds.filter { it >= ExtraKind.FIRST_CUSTOM_ID }.maxOrNull()?.takeIf { it !in everUsed }
 }

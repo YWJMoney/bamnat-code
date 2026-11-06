@@ -220,8 +220,10 @@ private object Routes {
     const val LEAVE = "leave?calendar={calendar}"
     fun leave(calendar: String = PersonalCalendar.MAIN) = "leave?calendar=$calendar"
     /** [MCAL-06] How extra work is paid, in one calendar's pay; without one, the main calendar's. */
-    const val EXTRA_KINDS = "extra_kinds?calendar={calendar}"
-    fun extraKinds(calendar: String = PersonalCalendar.MAIN) = "extra_kinds?calendar=$calendar"
+    const val EXTRA_KINDS = "extra_kinds?calendar={calendar}&start={start}"
+    /** [PAYX-51] [start]: a kind to open at once by its name (교육), made from its ready kind when there is none. */
+    fun extraKinds(calendar: String = PersonalCalendar.MAIN, start: String? = null) =
+        "extra_kinds?calendar=$calendar" + (start?.let { "&start=" + android.net.Uri.encode(it) } ?: "")
     const val MEMO = "memo/{id}?date={date}&checklist={checklist}&notebook={notebook}"
 
     /** [notebook]: opened from the memo tab, so a new memo goes into the notebook shown there. */
@@ -1566,6 +1568,7 @@ private fun AppNavHost(
             CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) }, focus = payFocus,
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
+                onOpenSchooling = { nav.navigate(Routes.extraKinds(calendar, SCHOOLING_KIND)) { launchSingleTop = true } },
                 onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
                 onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
                 top = {
@@ -2015,10 +2018,13 @@ private fun AppNavHost(
         composable(Routes.RECOMMENDED) {
             com.bamnat.app.ui.onboarding.RecommendedScreen(container, firstStart = false, onDone = { nav.popFrom(Routes.RECOMMENDED) })
         }
-        composable(Routes.EXTRA_KINDS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+        composable(Routes.EXTRA_KINDS, arguments = listOf(
+            navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
+            navArgument("start") { type = NavType.StringType; nullable = true; defaultValue = null },
+        )) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "extra_kinds_$calendar") { ExtraKindsViewModel(it, calendar) }
-            ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },
+            ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) }, start = entry.arguments?.getString("start"),
                 // Back to the pay screen when it opened this one, so the stack does not grow.
                 onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } })
         }
@@ -2035,7 +2041,8 @@ private fun AppNavHost(
         )) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "shifts_$calendar") { ShiftsViewModel(it, calendar) }
-            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) }, editId = entry.arguments?.getLong("edit") ?: 0L)
+            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) }, editId = entry.arguments?.getLong("edit") ?: 0L,
+                onOpenSchooling = { nav.navigate(Routes.extraKinds(calendar, SCHOOLING_KIND)) { launchSingleTop = true } })
         }
         composable(
             Routes.PATTERN,
@@ -2126,6 +2133,9 @@ private fun TabLabel(text: String, twoLineRoom: Boolean = false, part: com.bamna
 }
 
 /** A two-word tab name takes two lines from this text scale, each [TWO_LINE_SIZE] of the others' size in [TWO_LINE_HEIGHT] of room. */
+/** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장 휴무일 근무 지정's ready '교육'). */
+internal const val SCHOOLING_KIND = "교육"
+
 private const val TWO_LINE_FROM = 1.5f
 private const val TWO_LINE_SIZE = 0.8f
 private const val TWO_LINE_HEIGHT = 0.9f

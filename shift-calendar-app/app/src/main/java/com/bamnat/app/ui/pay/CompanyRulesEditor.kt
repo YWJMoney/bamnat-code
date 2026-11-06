@@ -97,6 +97,8 @@ fun CompanyRulesEditor(
     month: YearMonth,
     onClose: () -> Unit,
     onOpenKinds: () -> Unit,
+    /** [PAYX-51] 연장 휴무일 근무 지정 opened at '교육', its 시수 in view. */
+    onOpenSchooling: () -> Unit = onOpenKinds,
     /** Opened for one value (설정 찾기 '월급날', the 근무시간 chip): scrolled to it and lit for a moment. */
     focus: PayFocus? = null,
     /** PC 736fb7a6 (규칙을 바꾸고 뒤로 가면 말없이 버려짐): the screen's ← or back, counted; with changes it asks first. */
@@ -492,8 +494,13 @@ fun CompanyRulesEditor(
                         }
                     }
                 }
-                OutlinedButton(onClick = { if (draft != saved) vm.update { draft }; onOpenKinds() }, modifier = Modifier.padding(top = 4.dp)) {
-                    Text("종류·시간·가산 정하기")
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { if (draft != saved) vm.update { draft }; onOpenKinds() }, modifier = Modifier.padding(top = 4.dp)) {
+                        Text("종류·시간·가산 정하기")
+                    }
+                    // [PAYX-51] 1.38 PC 12차: straight to '교육' and its 시수 (made from the ready kind when there is none).
+                    if (draft.wageType == WageType.MONTHLY) TextButton(onClick = { if (draft != saved) vm.update { draft }; onOpenSchooling() },
+                        modifier = Modifier.padding(top = 4.dp)) { Text("교육 시수 정하기") }
                 }
                 Hint(say("대근 8시간에 기본급 10% + 야간 가산 50%처럼 회사 방식이 있으면 종류마다 체크해요. 교육처럼 시수가 다른 일은 종류마다 시수도 따로 정해요.") + if (draft != saved) " 여기서 바꾼 내용은 저장하고 넘어가요." else "")
             }
