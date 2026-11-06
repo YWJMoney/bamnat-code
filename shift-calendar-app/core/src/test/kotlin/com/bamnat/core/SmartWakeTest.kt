@@ -12,14 +12,19 @@ class SmartWakeTest {
     private val alarm = 10 * 3_600_000L
     private val min = 60_000L
 
-    @Test fun ringsEarlyOnlyInsideTheWindowAndOnlyAfterAMove() {
-        assertTrue(SmartWakeRule.wakeNow(alarm - 12 * min, alarm, 20, alarm - 12 * min - 10_000))
-        assertFalse("before the window", SmartWakeRule.wakeNow(alarm - 25 * min, alarm, 20, alarm - 25 * min))
-        assertFalse("nothing moved", SmartWakeRule.wakeNow(alarm - 12 * min, alarm, 20, null))
-        assertFalse("moved long ago", SmartWakeRule.wakeNow(alarm - 12 * min, alarm, 20, alarm - 18 * min))
-        assertFalse("the alarm is about to ring anyway", SmartWakeRule.wakeNow(alarm - 30_000, alarm, 20, alarm - 40_000))
-        assertFalse("off", SmartWakeRule.wakeNow(alarm - 5 * min, alarm, 0, alarm - 5 * min))
-        assertFalse("never after the alarm", SmartWakeRule.wakeNow(alarm + min, alarm, 20, alarm + min))
+    @Test fun ringsEarlyOnlyInsideTheWindowAndOnlyAfterMovingTwice() {
+        val now = alarm - 12 * min
+        assertTrue(SmartWakeRule.wakeNow(now, alarm, 20, listOf(now - 40_000, now - 10_000)))
+        assertFalse("one move is not a light sleep (PC 11차)", SmartWakeRule.wakeNow(now, alarm, 20, listOf(now)))
+        assertFalse("a shake's readings in one second are one move", SmartWakeRule.wakeNow(now, alarm, 20, listOf(now - 900, now - 500, now)))
+        assertFalse("moves before the window do not count",
+            SmartWakeRule.wakeNow(alarm - 20 * min + 30_000, alarm, 20, listOf(alarm - 20 * min - 30_000, alarm - 20 * min + 30_000)))
+        assertFalse("before the window", SmartWakeRule.wakeNow(alarm - 25 * min, alarm, 20, listOf(alarm - 25 * min - 10_000, alarm - 25 * min)))
+        assertFalse("nothing moved", SmartWakeRule.wakeNow(now, alarm, 20, emptyList()))
+        assertFalse("moved long ago", SmartWakeRule.wakeNow(now, alarm, 20, listOf(alarm - 18 * min, alarm - 17 * min)))
+        assertFalse("the alarm is about to ring anyway", SmartWakeRule.wakeNow(alarm - 30_000, alarm, 20, listOf(alarm - 60_000, alarm - 40_000)))
+        assertFalse("off", SmartWakeRule.wakeNow(now, alarm, 0, listOf(now - 10_000, now)))
+        assertFalse("never after the alarm", SmartWakeRule.wakeNow(alarm + min, alarm, 20, listOf(alarm + min - 10_000, alarm + min)))
     }
 
     @Test fun wordsAndWindow() {
