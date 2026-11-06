@@ -21,8 +21,11 @@ export const use = (key) => { USED.add(key); return mid(key); };
 export const ALL_KEYS = LIST.map((m) => m.key);
 
 // ---- 꾸밈 층의 재료 그림 ----
-/** A colour icon on the calendar's head (달 이름 줄), at x/y per mille of the part. */
-export const headPic = (key, o = {}) => ({ photo: use(key), at: "cal.head", x: o.x ?? 930, y: o.y ?? 500, w: o.w ?? 28, h: o.h ?? 28, ...(o.rot ? { rot: o.rot } : {}) });
+/**
+ * A colour icon for the calendar's top. 1.38 PC 스튜디오 확인: 달력 머리 오른쪽(x 930)은 오늘·도구·통계 단추와 겹쳐서, 요일 줄의 글자 사이
+ * (수·목 사이 x 571, 둘째는 화·수 사이 x 286)에 작게 놓아요. 요일 글자는 칸 가운데라 그 사이가 비어 있어요.
+ */
+export const headPic = (key, o = {}) => ({ photo: use(key), at: "cal.week", x: o.x ? 286 : 571, y: 500, w: 18, h: 18, ...(o.rot ? { rot: o.rot } : {}) });
 /** A colour icon on the days of [on] (오늘·근무 종류·공휴일·요일·날짜), top right of the cell. */
 export const cellPic = (key, on, o = {}) => ({ photo: use(key), at: "cal.cell", ...(on ? { on } : {}), x: o.x ?? 800, y: o.y ?? 220, w: o.w ?? 14, h: o.h ?? 14,
   ...(o.alpha ? { alpha: o.alpha } : {}) });

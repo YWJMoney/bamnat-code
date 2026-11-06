@@ -21,7 +21,8 @@ for (const [file, mod] of [["theme.json", "./themes.mjs"], ["tab-calendar.json",
 
 // 이미 장터에 있는 제목은 쓰지 않아요(같은 제목은 그 작품의 새 판이 돼요).
 const taken = new Set();
-for (const f of readdirSync(RECIPES).filter((x) => x.endsWith(".json"))) {
+// 이 작품들 자신(market-138-studio.json)과 옛 작품 새 판(같은 제목이 맞아요)은 빼요.
+for (const f of readdirSync(RECIPES).filter((x) => x.endsWith(".json") && !["market-138-studio.json", "market-138-refresh.json"].includes(x))) {
   const v = JSON.parse(readFileSync(join(RECIPES, f), "utf8"));
   for (const e of Array.isArray(v) ? v : v.items ?? []) { const r = e.recipe ?? e; if (r?.title) taken.add(r.title); }
 }

@@ -24,7 +24,7 @@ const BY_EMOJI = {
   "🗂️": "clipboard", "🏖️": "plane", "🌸": "blossom", "⏰": "alarm", "✏️": "pencil", "🔀": "wallet", "🏪": "store", "🔁": "calcheck",
   "🧾": "receipt", "🧮": "calculator", "🧰": "wrench", "🗺️": "mappin", "📜": "book", "🦉": "owl", "💅": "sparkles",
 };
-const TAB_AT = { "기능·달력": "cal.head", "기능·메모": "bg.memo", "기능·가계부": "bg.money", "기능·근무급여": "bg.stats", "기능·위젯": "widget" };
+const TAB_AT = { "기능·달력": "cal.week", "기능·메모": "bg.memo", "기능·가계부": "bg.money", "기능·근무급여": "bg.stats", "기능·위젯": "widget" };
 
 const hex = (s) => [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16));
 const argb = (s) => hex("#" + s.slice(2));
@@ -74,9 +74,9 @@ for (const x of old) {
     const H = (h) => "FF" + h.slice(1).toUpperCase();
     r.pieces.unshift({ kind: "screenLook", screens: `all~bg:${H(p.bg)}|ph:${use(key)}|dm:${p.dark ? 15 : 0}|cd:${H(p.card)}|ik:${H(p.ink)}|ac:${H(p.accent)}` });
   }
-  const at = TAB_AT[j.sec] ?? "cal.head";
+  const at = TAB_AT[j.sec] ?? "cal.week";
   const icon = BY_EMOJI[r.cover?.emoji] ?? (at === "widget" ? "calendar" : "star");
-  const item = at === "cal.head" ? { photo: use(icon), at, x: 930, y: 500, w: 28, h: 28 }
+  const item = at === "cal.week" ? { photo: use(icon), at, x: 571, y: 500, w: 18, h: 18 }
     : at === "widget" ? { photo: use(icon), at, x: 905, y: 140, w: 22, h: 22 }
     : { photo: use(icon), at, x: 880, y: 70, w: 52, h: 52, rot: 8 };
   const dec = r.pieces.find((q) => q.kind === "decor");
