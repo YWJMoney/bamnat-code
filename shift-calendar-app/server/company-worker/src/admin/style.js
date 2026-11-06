@@ -968,4 +968,100 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
   .lg-row .c-ov small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .lg-table.picking .lg-head,.lg-table.picking .lg-row{grid-template-columns:1.5rem 4.2rem 5.5rem minmax(11rem,1.6fr) minmax(7rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
 }
+
+/* ---- 1.38 [ADM3] 새 화면들과 갤럭시 폴드(접은 화면 ~344–412px, 편 화면 ~690–884px)·데스크톱 ---- */
+.alert-list li>span{flex:1;min-width:0;padding:.5rem 0}
+.banner.bad{background:var(--bad-bg);color:var(--bad)}
+.incident-band{justify-content:flex-start;text-align:left;text-decoration:none;gap:.5rem}
+.incident-band svg{flex:none;width:1.15rem;height:1.15rem}
+.incident-band span{flex:1;min-width:0}
+.incident-open{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
+.day-bars circle.mark{fill:var(--gold);stroke:var(--surface);stroke-width:1.5}
+.key.mark{background:var(--gold);border-radius:50%}
+.table-wrap{overflow-x:auto;margin:.25rem 0 .5rem;-webkit-overflow-scrolling:touch}
+.grid-table{width:100%;border-collapse:collapse;font-size:.86rem;font-variant-numeric:tabular-nums}
+.grid-table th,.grid-table td{padding:.45rem .55rem;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+.grid-table th:first-child,.grid-table td:first-child{text-align:left;position:sticky;left:0;background:var(--surface)}
+.grid-table thead th{font-size:.75rem;color:var(--muted);font-weight:800}
+.grid-table tr.bad th,.grid-table tr.bad td{color:var(--bad)}
+.grid-table input{width:6.5rem;min-height:2.5rem;text-align:right}
+.stars{color:var(--gold);letter-spacing:.05em;font-size:1rem}
+.stars .off{color:var(--line-strong)}
+.review-list{display:grid;gap:.75rem}
+.review-list>li{list-style:none}
+.review-card{margin:0}
+.review-card.low{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
+.review-card>p{margin:.35rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.review-card .bubble{display:block;max-width:none}
+.review-card textarea{width:100%}
+.launch-steps{list-style:none;margin:.5rem 0 0;padding:0;display:grid;gap:.25rem}
+.launch-steps>li{display:flex;align-items:flex-start;gap:.75rem;padding:.75rem .5rem;border-radius:var(--r-sm)}
+.launch-steps>li+li{border-top:1px solid var(--line)}
+.launch-steps>li.next{background:var(--accent-soft)}
+.launch-steps>li.done .step-no{background:var(--ok-bg);color:var(--ok)}
+.launch-steps>li.done b,.launch-steps>li.skipped b{color:var(--muted)}
+.launch-steps .step-main{flex:1;min-width:0}
+.launch-steps .step-main p{margin:.2rem 0 0;font-size:.86rem}
+.launch-steps .actions{margin-top:.5rem}
+.chip.on{background:var(--accent-soft);color:var(--accent)}
+a.chip{text-decoration:none;color:inherit;padding:.4rem .8rem}
+.person h3{font-size:.86rem;margin:.75rem 0 .25rem}
+.person .lines{margin:.5rem 0}
+.person .chips{margin:.35rem 0}
+.person .rows .row{padding:.5rem .25rem}
+.person.skeleton{min-height:12rem}
+.held-row{flex-wrap:wrap}
+.held-row .row-main b{white-space:pre-wrap;font-weight:600}
+.err-group{border-radius:var(--r-sm)}
+.err-group>summary{list-style:none;cursor:pointer}
+.err-group>summary::-webkit-details-marker{display:none}
+.err-group .row-side{display:flex;align-items:center;gap:.5rem}
+.err-sample{margin:.25rem .5rem .5rem;padding:.6rem .75rem;background:var(--soft);border-radius:var(--r-sm);font-size:.78rem;white-space:pre-wrap;overflow-wrap:anywhere;max-height:14rem;overflow:auto}
+.story summary{cursor:pointer;display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline}
+.timeline{list-style:none;margin:.75rem 0 0;padding:0 0 0 .5rem;border-left:2px solid var(--line);display:grid;gap:.6rem}
+.timeline li{display:flex;align-items:flex-start;gap:.6rem;padding-left:.5rem}
+.timeline li>span:nth-child(2){flex:1;min-width:0;display:grid}
+.timeline small{color:var(--muted);font-size:.78rem}
+.timeline .ev-ship .pill{background:var(--gold-soft);color:var(--gold)}
+.timeline .ev-ask .pill{background:var(--info-bg);color:var(--info)}
+.undo-link{font-size:.8rem;font-weight:800;margin-left:.35rem;white-space:nowrap}
+.rollout-pick{margin:.25rem 0 .75rem}
+.rollout-pick .chips{margin:.35rem 0 0}
+.rows.wrap .row-main b,.person .rows .row-main b,.held-row .row-main b{white-space:normal;overflow:visible;text-overflow:clip}
+details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;cursor:pointer}
+
+@media (max-width:719.98px){.flow-cols{grid-template-columns:minmax(0,1fr)}}
+/* 접은 화면(좁은 폰): 아래 탭 다섯 칸이 잘리지 않게, 숫자 칸 두 줄, 표는 옆으로 밀어 보기 */
+@media (max-width:420px){
+  .tab .nav-label{font-size:.68rem;letter-spacing:-.02em}
+  .tab svg{padding:.22rem min(.8rem,2.4vw)}
+  .main{padding-left:.75rem;padding-right:.75rem}
+  .card{padding:.85rem .85rem}
+  .card-head{flex-wrap:wrap;gap:.35rem .5rem}
+  .launch-steps>li{gap:.55rem;padding:.65rem .25rem}
+  .held-row .row-side{width:100%;justify-content:flex-end}
+  .segmented{overflow-x:auto;flex-wrap:nowrap;scrollbar-width:none}
+  .segmented::-webkit-scrollbar{display:none}
+  .grid-table input{width:5.25rem}
+}
+/* 편 화면(폴드 안쪽 가로 ~840–1023px): 문의 목록과 열린 문의를 나란히(두 칸), 오른쪽 칸 아래로 사람 패널. 세로(~690px)는 한 칸이 더 읽기 좋아요. */
+@media (min-width:720px) and (max-width:1023.98px){
+  .flow-cols{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+  .tiles.core{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media (min-width:840px) and (max-width:1023.98px){
+  .split{display:grid;grid-template-columns:minmax(13rem,15rem) minmax(0,1fr);gap:.85rem;align-items:start}
+  .split>.pane-list .row{flex-wrap:wrap;gap:.25rem .5rem}
+  .split>.pane-list .row-side{width:100%;justify-content:flex-start}
+  .split>.pane-list .row>svg{display:none}
+  .split>.pane-list{display:block;position:sticky;top:4.25rem;max-height:calc(100dvh - 5.5rem);overflow:auto;border-radius:var(--r-lg)}
+  .split>.pane-list .rows{margin:0}
+  .split .row[aria-current=true]{background:var(--accent-soft)}
+  .split .cols{display:block}
+}
+/* 데스크톱: 세 칸(메뉴 · 목록 · 열린 것), 넓으면 사람 패널이 오른쪽에 붙어 있어요. */
+@media (min-width:1440px){
+  .split .cols{grid-template-columns:minmax(0,1.7fr) minmax(19rem,1fr)}
+  .cols>aside{position:sticky;top:4.75rem;max-height:calc(100dvh - 6rem);overflow:auto}
+}
 `;

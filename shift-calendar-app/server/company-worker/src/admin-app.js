@@ -402,6 +402,8 @@ function adminApp(L, BUILD, M) {
   const can = (area, level = "view") => L.can(S.me, area, level);
   const visible = (n) => (n.owner ? S.me?.owner : n.area ? can(n.area) : true);
   const wide = () => matchMedia("(min-width:1024px)").matches;
+  // 1.38 [ADM3] 두 칸(목록 옆에 열린 것)은 갤럭시 폴드를 가로로 편 화면(~840px)부터.
+  const twoPane = () => matchMedia("(min-width:840px)").matches;
   /** [ADMUX-02] A screen's address; a list keeps the filters it has now, so 뒤로 lands where the admin was. */
   const href = (name, id) => L.routeHash(name, id ?? null, id ? {} : paramsOf(name));
   const routeKey = () => `${S.route.name}/${S.route.id ?? ""}`;
@@ -686,7 +688,7 @@ function adminApp(L, BUILD, M) {
       // The reason words (검토, 토론), the 채택 settings and answer targets, once.
       if (!S.basics && ["review", "community", "adopt", "sla", "versions"].includes(name)) jobs.push(loadBasics());
       if (name === "review") jobs.push(api("/queue").then(keep((d) => { S.data.queue = d; })));
-      if (name === "inquiries" && (!id || wide())) jobs.push(loadInquiries(n));
+      if (name === "inquiries" && (!id || twoPane())) jobs.push(loadInquiries(n));
       if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then(keep((d) => { S.data.inquiry = d; })));
       if (name === "dev" && !id) jobs.push(loadDev(n));
       // 1.35 [INBOX-01][INBOX-05] 정리함 and what is ready to go to Claude.
@@ -1515,7 +1517,7 @@ function adminApp(L, BUILD, M) {
     const detail = !q || q.id !== S.route.id ? skeleton(2) : inquiryDetail(q);
     // [ADMIN-16] On a wide screen the list stays beside the open question.
     const list = S.data.inquiries?.inquiries;
-    if (!wide() || !list?.length) return detail;
+    if (!twoPane() || !list?.length) return detail;
     return `<div class="split"><nav class="pane-list card" aria-label="문의 목록"><ul class="rows">${list.map((x) => inquiryRow(x, { compact: true })).join("")}</ul>
       ${moreButton(S.data.inquiries.next, "inquiries-more", S.data.inquiries.total, list.length)}</nav><div class="pane-main">${detail}</div></div>`;
   }
@@ -2782,7 +2784,9 @@ function adminApp(L, BUILD, M) {
 
   /** [ADMUX-32] 관리 › 서버 상태 (the owner's): what the server has and lacks. */
   function serverView() {
-    return `${V.watchBoard()}<section class="card"><h2>서버 상태</h2>${S.server ? healthList(S.server) + integrityPart(S.server.integrity) : skeleton(1)}
+    // 1.38 [ADM3-04] 주인은 위 '서버 설정' 판이 꼭 필요·있으면 좋음을 다 보여 줘서, 여기서는 무결성 확인만.
+    const watch = Boolean(S.me?.owner && S.data.watch);
+    return `${V.watchBoard()}<section class="card"><h2>${watch ? "무결성·회사 수" : "서버 상태"}</h2>${S.server ? (watch ? "" : healthList(S.server)) + integrityPart(S.server.integrity) : skeleton(1)}
         <p class="meta">회사 ${S.data.today?.companies ?? S.overview?.companies ?? "–"} · 쓰는 규칙 ${S.data.today?.rules ?? S.overview?.rules ?? "–"} · 앱 판 ${esc(BUILD)}</p></section>`;
   }
 

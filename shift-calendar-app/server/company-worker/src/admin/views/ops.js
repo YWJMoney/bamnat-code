@@ -25,7 +25,7 @@ export function opsViews(A) {
    * 날마다 막대 하나, 아래에 '이날 바꾼 것' 점(ADM3-33). 색만으로 나누지 않게 점마다 title과 아래 목록을 같이 둬요.
    * [days] 'YYYY-MM-DD' 목록, [values] 같은 길이, [marks] {day, text}.
    */
-  function dayBars(days, values, marks = [], label = "날마다") {
+  function dayBars(days, values, marks = [], label = "날마다", fmt = (d) => d.slice(5).replace("-", ".")) {
     const n = Math.max(1, days.length);
     const W = 560;
     const H = 120;
@@ -39,11 +39,11 @@ export function opsViews(A) {
       const h = ((H - 30) * v) / top;
       const x = i * band + (band - bw) / 2;
       const mk = byDay.get(d);
-      return `<g><rect class="bar-in" x="${x}" y="${H - 18 - h}" width="${bw}" height="${h}" rx="2"><title>${esc(d.slice(5))} ${v}</title></rect>
+      return `<g><rect class="bar-in" x="${x}" y="${H - 18 - h}" width="${bw}" height="${h}" rx="2"><title>${esc(fmt(d))} ${v}</title></rect>
         ${mk ? `<circle class="mark" cx="${x + bw / 2}" cy="${H - 8}" r="4"><title>${esc(d.slice(5))} ${esc(mk.join(" · "))}</title></circle>` : ""}</g>`;
     }).join("");
     const ticks = [0, Math.floor(n / 2), n - 1].filter((v, i, a) => a.indexOf(v) === i && days[v])
-      .map((i) => `<text x="${i * band + band / 2}" y="${H}" text-anchor="middle">${esc(days[i].slice(5).replace("-", "."))}</text>`).join("");
+      .map((i) => `<text x="${i === 0 ? 0 : i === n - 1 ? W : i * band + band / 2}" y="${H}" text-anchor="${i === 0 ? "start" : i === n - 1 ? "end" : "middle"}">${esc(fmt(days[i]))}</text>`).join("");
     return `<figure class="week-chart day-bars"><svg viewBox="0 0 ${W} ${H + 2}" role="img" aria-label="${esc(label)} 막대">${bars}${ticks}</svg>
       ${marks.length ? `<figcaption><span class="key mark"></span>이날 바꾼 것 ${marks.length}개</figcaption>` : ""}</figure>`;
   }
@@ -275,12 +275,12 @@ export function opsViews(A) {
     if (!S.me?.owner) return "";
     if (!d) return skeleton(2);
     const s = d.setup;
-    const setup = `<section class="card${s.missing.length ? " setup-card" : ""}">${head("서버 설정", s.missing.length ? `꼭 필요 ${s.missing.length}개 빠짐` : "꼭 필요한 것은 다 있어요",
+    const setup = `<section class="card${s.missing.length ? " setup-card" : ""}">${head("서버 상태와 설정", s.missing.length ? `꼭 필요 ${s.missing.length}개 빠짐` : "꼭 필요한 것은 다 있어요",
         s.missing.length ? '<span class="pill bad">빠짐</span>' : '<span class="pill ok">정상</span>')}
-      <ul class="rows">${s.items.map((i) => `<li><div class="row"><span class="row-main"><b>${esc(i.what)}</b><small>${esc(i.key)}${i.ok ? "" : ` · 없으면: ${esc(i.lose)}`}</small></span>
+      <ul class="rows wrap">${s.items.map((i) => `<li><div class="row"><span class="row-main"><b>${esc(i.what)}</b><small>${esc(i.key)}${i.ok ? "" : ` · 없으면: ${esc(i.lose)}`}</small></span>
         <span class="pill ${i.ok ? "ok" : i.need === "must" ? "bad" : "warn"}">${i.ok ? "있음" : i.need === "must" ? "꼭 필요" : "있으면 좋음"}</span></div></li>`).join("")}</ul>
       <p class="hint">값은 Cloudflare › Workers › bamnat-company › 설정 › 변수 및 비밀에 넣어요. 값은 이 화면에 보이지 않아요.</p></section>`;
-    const jobs = `<section class="card">${head("정기 작업", "매시 단계마다 따로 돌아요")}${d.jobs.length ? `<ul class="rows">${d.jobs.map((j) => {
+    const jobs = `<section class="card">${head("정기 작업", "매시 단계마다 따로 돌아요")}${d.jobs.length ? `<ul class="rows wrap">${d.jobs.map((j) => {
       const [name, tone] = JOB_TONE[j.state] ?? [j.state, ""];
       return `<li><div class="row"><span class="row-main"><b>${esc(j.name)}</b><small>${j.okAt ? `마지막 성공 ${esc(agoMs(j.okAt))}` : "성공 기록 없음"}${j.ms ? ` · ${j.ms}ms` : ""} · ${j.runs}번 중 실패 ${j.fails}${j.error ? ` · ${esc(j.error)}` : ""}</small></span>
         <span class="pill ${tone}">${name}</span></div></li>`;
@@ -293,7 +293,7 @@ export function opsViews(A) {
       ${tile("공유 서버", d.share ? (d.share.ok ? "살아 있음" : "답 없음") : "—", d.share ? `${d.share.ms}ms` : "SHARE_BASE_URL 없음", d.share && !d.share.ok ? "hot" : "")}</div>`;
     const slow = d.speed.routes.length ? `<details class="data-table" data-key="slow-routes"><summary>느린 길 ${d.speed.routes.length}개</summary><div class="table-wrap"><table class="grid-table"><thead><tr><th scope="col">길</th><th scope="col">번</th><th scope="col">중간</th><th scope="col">느린 5%</th><th scope="col">오류</th></tr></thead>
       <tbody>${d.speed.routes.map((r) => `<tr><th scope="row" class="mono">${esc(r.key)}</th><td>${r.n}</td><td>${r.p50}ms</td><td>${r.p95}ms</td><td>${r.err}</td></tr>`).join("")}</tbody></table></div></details>` : "";
-    return `${tiles}${setup}${jobs}<section class="card">${head("응답 속도", "24시간")}${dayBars(d.speed.hours.map((h) => String(h.key)), d.speed.hours.map((h) => h.p95), [], "시간마다 느린 5%")}${slow}</section>`;
+    return `${tiles}${setup}${jobs}<section class="card">${head("응답 속도", "24시간")}${dayBars(d.speed.hours.map((h) => String(h.key)), d.speed.hours.map((h) => h.p95), [], "시간마다 느린 5%", (k) => `${String(k).slice(8, 10)}일 ${String(k).slice(11, 13)}시`)}${slow}</section>`;
   }
 
   // ---- [ADM3-11] 사람 옆 패널 ----
