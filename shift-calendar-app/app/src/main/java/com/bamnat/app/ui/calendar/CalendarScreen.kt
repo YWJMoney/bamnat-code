@@ -467,6 +467,8 @@ fun CalendarScreen(
     val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
     // [CAL-06] The month on screen in the kind of work's own figures; pay is worked out off the main thread.
     // 1.32 [CALX-06] The month's days and hours over the 급여 기간 when 통계 counts by it, so both say the same.
+    // [EASE-04] 1.38 월급날 '급여' on the cells, where the pay is counted (not 현장·자영업·투자).
+    val payShown = focus == com.bamnat.core.work.CalendarFocus.SHIFTS && settings.workStyle?.usesPayEngine != false
     val payRange = payProfile?.period?.takeIf { settings.statsByPayPeriod && it.endDay != null && focus == com.bamnat.core.work.CalendarFocus.SHIFTS }
         ?.let { com.bamnat.core.hours.StatsRange.of(com.bamnat.core.hours.StatsRange.Mode.PAY, visibleMonth, today, it) }
     val overview = remember(snap, visibleMonth, focus, moneyBook, payRange) {
@@ -1591,6 +1593,8 @@ fun CalendarScreen(
                         },
                         // 1.32 [WTYP-11] 희망 오프 ♡, unless it is off in 기능 켜고 끄기.
                         wishDays = if (stamping || !wishShown) emptySet() else wishOff.days,
+                        // [EASE-04] 1.38 월급날 '급여', where the pay is counted.
+                        payDays = payDaysOn(payProfile?.period, pageToMonth(baseMonth, page)).takeUnless { stamping || !payShown }.orEmpty(),
                     )
                 }
                 }
@@ -1903,7 +1907,9 @@ fun CalendarScreen(
             },
         )
     }
-    if (legendOpen) CalendarLegendSheet(focus, snap, onDismiss = { legendOpen = false })
+    if (legendOpen) CalendarLegendSheet(focus, snap, onDismiss = { legendOpen = false },
+        payDayOn = payShown && payProfile?.period?.payDay != null, orgGroup = orgGroupOf(settings),
+        payShown = payShown)
 }
 
 /** [DAY-01][DAY-03] The whole day over the calendar, open at once, with its own snackbar for undo. */

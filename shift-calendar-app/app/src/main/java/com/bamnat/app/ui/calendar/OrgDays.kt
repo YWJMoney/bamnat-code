@@ -27,3 +27,10 @@ fun rememberOrgGroup(settings: com.bamnat.app.data.SettingsRepository, cycle: co
     val g = cycle.group.takeIf { it.days.isNotEmpty() } ?: return
     settings.update { s -> if (s.orgDayGroup.isEmpty()) s.copy(orgDayGroup = g.key) else s }
 }
+
+/**
+ * [EASE-04] 1.38 The 월급날 that fall on [m]'s six-week grid (the month before and after too), for the '급여' mark; empty
+ * when no 월급날 was entered.
+ */
+fun payDaysOn(period: com.bamnat.core.pay.PayPeriod?, m: java.time.YearMonth): Set<LocalDate> =
+    if (period?.payDay == null) emptySet() else (-2L..1L).mapNotNull { period.payDate(m.plusMonths(it)) }.toSet()

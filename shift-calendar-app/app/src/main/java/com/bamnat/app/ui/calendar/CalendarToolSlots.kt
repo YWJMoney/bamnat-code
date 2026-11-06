@@ -28,17 +28,23 @@ internal object CalendarToolSlots {
         val received = "받은 달력을 보는 중".takeIf { fit.viewingReceived }
         return buildList {
             add(Slot(EDIT, "달력 고치기", enabled = received == null, note = received))
-            if (fit.teams) add(Slot(TEAMS, "모든 조 보기", enabled = fit.teamsReady && received == null,
-                note = received ?: "근무 순서를 정하면 써요".takeIf { !fit.teamsReady }))
-            // [EASE-25] 1.38: a shift worker's order slipped by a day, put right from the tools as well as a day's long press.
-            if (fit.teams) add(Slot(PUSH, "오늘부터 하루 밀기", enabled = fit.pushReady && received == null,
-                note = received ?: "근무 순서를 정하면 써요".takeIf { !fit.pushReady }))
+            // [EASE-04] 1.38 (통합 7차): a calendar with no order (매달 근무표) starts with what it can use now; the two
+            // tools that need an order wait after 근무 주기 설정, where the order is made.
+            val orderTools = buildList {
+                if (fit.teams) add(Slot(TEAMS, "모든 조 보기", enabled = fit.teamsReady && received == null,
+                    note = received ?: "근무 순서를 정하면 써요".takeIf { !fit.teamsReady }))
+                // [EASE-25] 1.38: a shift worker's order slipped by a day, put right from the tools as well as a day's long press.
+                if (fit.teams) add(Slot(PUSH, "오늘부터 하루 밀기", enabled = fit.pushReady && received == null,
+                    note = received ?: "근무 순서를 정하면 써요".takeIf { !fit.pushReady }))
+            }
+            if (fit.teamsReady) addAll(orderTools)
             add(Slot(TYPE_MONTH, "이번 달 전부 넣기", enabled = received == null && fit.hasShiftTypes,
                 note = received ?: "근무 종류를 먼저 만들어요".takeIf { !fit.hasShiftTypes }))
             add(Slot(SHARE, "근무표 공유"))
             add(Slot(YEAR, "1년 달력"))
             if (fit.receive) add(Slot(RECEIVE, "동료 근무표 받기"))
             add(Slot(PATTERN, "근무 주기 설정"))
+            if (!fit.teamsReady) addAll(orderTools)
             add(Slot(ADD, "새 달력 만들기"))
             add(Slot(CUSTOMIZE, "카드 배치", enabled = received == null, note = received))
             add(Slot(VIEW_SETTINGS, "달력 보기 설정", away = true))

@@ -58,7 +58,13 @@ internal fun stepOn(d: SetupDraft, date: LocalDate): Int? {
     return Math.floorMod(ChronoUnit.DAYS.between(anchor, date), d.rotation.size.toLong()).toInt()
 }
 
-/** "오늘(10/18)은 야간 둘째 날이에요. 내일부터 휴무 4일이에요." */
+/** "내일(10/19)": a near day with its date; a far one says its date already. */
+private fun dated(date: LocalDate, today: LocalDate): String {
+    val word = relativeDay(date, today)
+    return if (word.contains('/')) word else "$word(${Fmt.shortDate(date)})"
+}
+
+/** "오늘(10/18)은 야간 둘째 날이에요. 내일(10/19)부터 휴무 4일이에요." */
 internal fun todaySentence(d: SetupDraft, date: LocalDate, today: LocalDate): String? {
     val step = stepOn(d, date) ?: return null
     val steps = d.rotation
@@ -72,9 +78,16 @@ internal fun todaySentence(d: SetupDraft, date: LocalDate, today: LocalDate): St
     val (inDays, next) = change
     val nextName = nameOf(steps[next], types)
     val nextLen = TodayQuestion.runPosition(steps, next).second
-    val from = relativeDay(date.plusDays(inDays.toLong()), today)
+    // 1.38 통합 7차 347b7c37 ('내일부터 야간 2일'에 날짜가 없어요; 새벽엔 오늘 근무도): each day with its date, and in the small
+    // hours, when the question is about 어제, today's own shift said too unless the change is today.
+    val changeOn = date.plusDays(inDays.toLong())
+    val from = dated(changeOn, today)
     val second = if (nextLen > 1) "${from}부터 $nextName ${nextLen}일이에요." else "$from${Fmt.eun(from)} $nextName${Fmt.ieyo(nextName)}."
-    return "$first $second"
+    val todayLine = if (date != today && changeOn != today && today.isAfter(date)) stepOn(d, today)?.let { s ->
+        val n = nameOf(steps[s], types)
+        "오늘(${Fmt.shortDate(today)})은 $n${Fmt.ieyo(n)}."
+    } else null
+    return listOfNotNull(first, todayLine, second).joinToString(" ")
 }
 
 /** A chosen answer, so a plain day off (null) can be told from no answer yet. */
@@ -93,7 +106,8 @@ internal fun TodayStep(vm: SetupViewModel, d: SetupDraft) {
     val day = relativeDay(date, today)
     StepHeader(
         "$day(${Fmt.shortDate(date)}) 무슨 근무${if (date == today) "예요" else "였어요"}?",
-        "근무표에서 ${day} 칸을 보고 골라 주세요. 쉬는 날이었으면 휴무를 고르면 돼요.",
+        // 1.38 통합 7차: '오늘로 답할게요' asks about today, so 쉬는 날'이면'.
+        "근무표에서 ${day} 칸을 보고 골라 주세요. 쉬는 날${if (date == today) "이면" else "이었으면"} 휴무를 고르면 돼요.",
     )
     if (early) EarlyHoursNote(todayBased, today, onToday = { vm.answerForToday(!todayBased) })
 

@@ -372,7 +372,11 @@ class SetupFlowTest {
         // Same 조: the coworker's start date as it is; today is the first night.
         vm.sameTeam()
         assertEquals(today.minusDays(2), draft.anchor)
-        assertEquals("오늘(10/18)은 야간 첫째 날이에요. 모레부터 휴무 4일이에요.", todaySentence(draft, today, today))
+        assertEquals("오늘(10/18)은 야간 첫째 날이에요. 모레(10/20)부터 휴무 4일이에요.", todaySentence(draft, today, today))
+        // 1.38 통합 7차: in the small hours (asked about 어제) today's own shift is said too, and the change with its date.
+        val small = todaySentence(draft, today.plusDays(2), today.plusDays(3))!!
+        assertTrue(small, small.startsWith("어제(10/20)는 휴무 첫째 날이에요. 오늘(10/21)은 휴무예요."))
+        assertTrue(small, small.contains("10/24"))
         // Another 조: asked like any other order.
         vm.clearToday()
         vm.answerToday(today, 0)
