@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.background
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -155,7 +156,7 @@ fun HubScreen(
                         }
                     }
                 }
-                PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = MaterialTheme.colorScheme.surface) {
+                PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.bar(MaterialTheme.colorScheme.surface)) {
                     HubSection.entries.forEach { s ->
                         // 사용자 2026-11-03: the 장터 tab pressed again while on it goes back to the top of its list.
                         Tab(selected = section == s, onClick = { if (s == HubSection.SHARE && section != s) shareKind = null; if (section == s) reselect++; section = s }, text = { Text(s.label) })
@@ -248,7 +249,13 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
         }
         return
     }
-    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp).heightIn(min = 48.dp)
+    // 1.38 PC 스튜디오 확인 ('오늘의 하나'·'입어 보기' 보라 글자가 사진 바탕에서 옅어요): on a picture the row stands on a veil, words in full ink.
+    val photo = com.bamnat.app.ui.theme.PhotoGround.on()
+    val accent = if (photo) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
+    val linkColors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = accent)
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)
+        .then(if (photo) Modifier.background(com.bamnat.app.ui.theme.PhotoGround.bar(), androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).padding(horizontal = 8.dp) else Modifier)
+        .heightIn(min = 48.dp)
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
         // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.
         // PC 확인: big enough to see the week, not an icon.
@@ -257,14 +264,14 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
         // PC 확인 7b26965a ("아주 크게"에서 제목이 세로로 꺾여요): with big letters the two buttons go under the title.
         val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
         val buttons: @Composable () -> Unit = {
-            TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }) {
+            TextButton(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = r.code; onRecipe(r.code) }, colors = linkColors) {
                 // 가계부 PC LOW-2: a work of one tab or of rules (가계부 틀 …) is not a look to wear.
                 Text(if (r.scope == null || r.scope == "theme") "입어 보기" else "살펴보기")
             }
-            TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }) { Text("오늘은 그만") }
+            TextButton(onClick = { prefs.edit().putString("todayFolded", today).apply(); folded = true }, colors = linkColors) { Text("오늘은 그만") }
         }
         Column(Modifier.weight(1f)) {
-            Text("오늘의 하나", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text("오늘의 하나", style = MaterialTheme.typography.labelMedium, color = accent, fontWeight = if (photo) androidx.compose.ui.text.font.FontWeight.Bold else null)
             Text(r.title, style = MaterialTheme.typography.bodyMedium, maxLines = if (big) 2 else 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             if (big) androidx.compose.foundation.layout.FlowRow { buttons() }
         }
