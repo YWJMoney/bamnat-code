@@ -81,6 +81,9 @@ enum class ShareMoment {
     FIXED;
 
     val title: String get() = com.bamnat.core.plaza.ShareAsk.Moment.valueOf(name).title
+
+    /** 12차 빈틈 3: the title in an 알바's words (가게, not 회사). */
+    fun titleFor(shop: Boolean): String = com.bamnat.core.plaza.ShareAsk.Moment.valueOf(name).titleFor(shop)
 }
 
 /**
@@ -117,6 +120,10 @@ fun ShareWayCard(
     // Only when there is a server: the terms come from it, and a phone without one asks nothing.
     val terms = if (companyOn) appViewModel { CompanyNudgeViewModel(it) }.terms.collectAsStateWithLifecycle().value else null
     fun close(remember: () -> Unit) { remember(); shown = false; onClosed() }
+    // 12차 빈틈 3: an 알바's workplace is a 가게.
+    val calendar = LocalCompanyCalendar.current
+    val shop = remember(calendar) { runCatching { container.scopeOf(calendar).currentSettings().workStyle }.getOrNull() == com.bamnat.core.work.WorkStyle.HOURLY }
+    val place = if (shop) "가게" else "회사"
 
     SoftCard(highlighted = true, modifier = modifier) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -124,21 +131,26 @@ fun ShareWayCard(
                 Icon(Icons.Filled.Groups, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    moment.title,
+                    moment.titleFor(shop),
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f).semantics { heading() },
                 )
             }
-            Reason("같은 회사 동료는 회사를 고르기만 하면 1분 만에 맞는 급여를 봐요")
-            Reason(
-                if (moment == ShareMoment.MATCHED) "명세서로 맞춰 본 설정은 2점이라 더 빨리 채택되고, 채택되면 광장에 ‘채택’ 표시가 붙어요"
-                else "같은 회사 분들이 맞다고 하면 채택되고, 광장에 ‘채택’ 표시가 붙어 모두가 써요",
-            )
+            if (companyOn) {
+                Reason("같은 $place 동료는 ${place}를 고르기만 하면 1분 만에 맞는 급여를 봐요")
+                Reason(
+                    if (moment == ShareMoment.MATCHED) "명세서로 맞춰 본 설정은 2점이라 더 빨리 채택되고, 채택되면 광장에 ‘채택’ 표시가 붙어요"
+                    else "같은 $place 분들이 맞다고 하면 채택되고, 광장에 ‘채택’ 표시가 붙어 모두가 써요",
+                )
+            } else {
+                // 12차 빈틈 3: no company on this calendar, so only 말로 알려 주기: no 광장·동료 promises it cannot keep.
+                Reason("말로 알려 주시면 개발자가 보고 같은 방식의 분들이 바로 쓰게 앱에 넣어요")
+            }
             Reason("금액·이름·연락처는 보내지 않아요")
             rewardLine(terms)?.let { RewardPill(it) }
             if (notInFile) {
                 Text(
-                    "직접 만든 항목은 아직 회사 설정 파일에 담기지 않아요. ‘말로 알려 주기’로 보내 주시면 개발자가 보고 넣어요.",
+                    "직접 만든 항목은 아직 $place 설정 파일에 담기지 않아요. ‘말로 알려 주기’로 보내 주시면 개발자가 보고 넣어요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -146,8 +158,8 @@ fun ShareWayCard(
             val askFirst = askOn && (notInFile || !canShare)
             val share: @Composable (Boolean) -> Unit = { primary ->
                 val onClick = { close(memory::later); onShare?.invoke(); Unit }
-                if (primary) Button(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) { Text("회사 설정 보내기") }
-                else OutlinedButton(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) { Text("회사 설정 보내기") }
+                if (primary) Button(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) { Text("$place 설정 보내기") }
+                else OutlinedButton(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) { Text("$place 설정 보내기") }
             }
             val ask: @Composable (Boolean) -> Unit = { primary ->
                 if (primary) Button(onClick = { asking = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("말로 알려 주기") }

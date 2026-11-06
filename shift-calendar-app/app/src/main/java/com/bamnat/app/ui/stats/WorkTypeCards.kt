@@ -137,7 +137,10 @@ internal fun WorkTypeMoreCards(
         FeatureCard("pay.tenure", calendarId) { TenureCard(t) }
     }
     // [LEAVE-04] 징검다리 for every kind of work that takes leave.
-    if (style == null || style == WorkStyle.DAY || style == WorkStyle.SHIFT || style == WorkStyle.HOURLY) {
+    // 12차 빈틈 2: not for a 5인 미만 workplace, which has no 연차 by law (연차 화면 says so). The 연차 화면 still shows it
+    // when the company gave days.
+    val takesLeave = profile?.fiveOrMoreEmployees != false
+    if (takesLeave && (style == null || style == WorkStyle.DAY || style == WorkStyle.SHIFT || style == WorkStyle.HOURLY)) {
         FeatureCard("day.bridges", calendarId) { BridgeCard(snapshot, style) }
     }
 }

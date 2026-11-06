@@ -728,6 +728,7 @@ fun ShiftTypeEditorDialog(
                                     step = 10,
                                     max = 12 * 60,
                                     dialogTitle = "휴게 시간",
+                                    format = com.bamnat.core.hours.HoursFormat::breakText,
                                 )
                             }
                             // 순번 285: 근로기준법 제54조 asks for 30 minutes from 4 hours and an hour from 8; say so, never block.

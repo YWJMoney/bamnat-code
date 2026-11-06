@@ -198,6 +198,17 @@ internal val YearMonthSaver = androidx.compose.runtime.saveable.Saver<YearMonth?
 )
 /** [CAL-15] The floating button's height and the room it keeps from the screen's edge. */
 private val FAB_HEIGHT = 56.dp
+
+/**
+ * 12.1: the month grid's rows the FAB must not sit on, counted from the top: up to the row of the month's last day, or the row
+ * before when that day is in the left half (the FAB rests at the right, over next month's faded days then).
+ */
+internal fun fabKeepRows(month: YearMonth, weekStart: java.time.DayOfWeek): Int {
+    val first = month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
+    val index = java.time.temporal.ChronoUnit.DAYS.between(first, month.atEndOfMonth()).toInt()
+    val row = index / 7
+    return if (index % 7 < 4) row else row + 1
+}
 private val FAB_MARGIN = 16.dp
 /** [CAL-15] Between the month's last row and the button riding under it. */
 private val FAB_DOCK_GAP = 8.dp
@@ -778,6 +789,8 @@ fun CalendarScreen(
     // [DAILY-09] Where the month starts in the window, so the half above a fold's hinge can open on it.
     var gridTop by remember { mutableFloatStateOf(Float.NaN) }
     var fabAreaBottom by remember { mutableFloatStateOf(Float.NaN) }
+    // How far down the month the FAB may not go: the rows with this month's days where the FAB rests (the right side).
+    var ownRowsPx by remember { mutableFloatStateOf(Float.NaN) }
     val docking = paint == null && !listView && !(weekOnly && !wide)
     val density = androidx.compose.ui.platform.LocalDensity.current
     val fabLift = with(density) { (FAB_MARGIN + FAB_HEIGHT).toPx() }
@@ -808,7 +821,19 @@ fun CalendarScreen(
     // first look tells what it is.
     val fabExpanded by remember { derivedStateOf { fabDrop.value > 0.5f || pageScroll.value == 0 || !pageScroll.canScrollForward } }
     // Below the screen's edge with the month, it is not there for TalkBack either.
-    val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f } }
+    // 12.1 화면 사진(오늘의 흐름 한 줄이 달력 위로 오며 달력이 내려감, 큰 글씨에서 '빠른 입력'이 21~24일을 가림): where the
+    // month is longer than the room above the FAB, it steps aside while it would sit on this month's own days, and comes back
+    // once the page goes on past them. Next month's faded days in the last row may go under it.
+    val fabOnDays by remember(fabLift) {
+        derivedStateOf {
+            if (!docking || ownRowsPx.isNaN() || gridTop.isNaN() || fabAreaBottom.isNaN()) false
+            else {
+                val top = fabAreaBottom - fabLift + fabDrop.value
+                top < gridTop + ownRowsPx && top + fabHeight > gridTop
+            }
+        }
+    }
+    val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f || fabOnDays } }
     // PC 8eae2521 (근무 0개: 안내 카드의 '빠른 입력'과 떠 있는 '빠른 입력' 두 개, 떠 있는 것이 날짜 칸을 가림): while the empty
     // calendar's start card is up, its own button is the one way in.
     var startCardShown by remember { mutableStateOf(false) }
@@ -1518,6 +1543,9 @@ fun CalendarScreen(
             ) {
                 // [CAL-51] On its side a phone keeps its cells as short as they hold, so weeks show under the bars.
                 val cellHeight = calView.cellHeight(maxWidth, sideways) + cellTextGrowth()
+                val coverRows = fabKeepRows(visibleMonth, settings.weekStart)
+                val ownPx = if (showList) Float.NaN else with(density) { cellHeight.toPx() } * coverRows
+                androidx.compose.runtime.SideEffect { ownRowsPx = ownPx }
                 // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
                 val stamping = mark != null || (paint != null && paint != PaintTool.Pick)
                 val memoCounts = remember(datedMemos) { datedMemos.groupingBy { it.date!! }.eachCount() }

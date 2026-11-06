@@ -387,7 +387,7 @@ internal fun CalendarLegendSheet(
                             CardDueMark(text = "급여")
                         }
                     }
-                    LegendRow("주휴 ✓", "알바: 주 15시간 넘고 결근 없는 주의 마지막 날") { HolidayWeekCheck() }
+                    LegendRow("주휴 ✓", "알바: 주 15시간 이상, 결근 없는 주의 마지막 날") { HolidayWeekCheck() }
                     LegendRow("주 시간 넘음", "왼쪽 빨간 막대: 그 주 근무가 한도를 넘었어요") {
                         Box(Modifier.size(width = 4.dp, height = 22.dp).clip(RoundedCornerShape(2.dp)).background(cal.warning))
                     }

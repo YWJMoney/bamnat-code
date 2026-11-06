@@ -248,7 +248,9 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
             }
             item { PayoutCard(s, profile, gate, vm, promotion, snapshot) }
             if (s != null) snapshot?.let { snap -> item { PlanCard(s, snap, style, profile) } }
-            snapshot?.let { snap -> item { BridgesCard(snap, style, left = s?.afterPlanned) } }
+            // 12차 빈틈 2: a 5인 미만 workplace has no 연차 by law, so 길게 쉬기 shows only when the company gave some.
+            val bridgesFit = profile?.fiveOrMoreEmployees != false || (s?.afterPlanned ?: 0.0) > 0.0
+            if (bridgesFit) snapshot?.let { snap -> item { BridgesCard(snap, style, left = s?.afterPlanned) } }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }

@@ -19,6 +19,17 @@ object ShareAsk {
         MADE("우리 회사 방식, 동료에게도 알려 줄까요?"),
         /** [PAYIN-08] 1.37 B8: the pay setup was put right (명세서·회사 규칙에 맞춰 고침). Rules only, never an amount. */
         FIXED("고친 계산 방식, 같은 회사 분들께도 알려 드릴까요? 금액은 빼고 규칙만 보내요"),
+        ;
+
+        /**
+         * 12차 빈틈 3 (PC 12차, 알바): the title for a 가게 ([shop]): 회사 → 가게, and no 광장 promise in the pay one, which an
+         * 알바 without its 가게 on the plaza can only send in words.
+         */
+        fun titleFor(shop: Boolean): String = when {
+            !shop -> title
+            this == PAY -> "직접 맞춘 급여 방식, 같은 가게 분들께도 알려 줄까요?"
+            else -> title.replace("회사", "가게")
+        }
     }
 
     private const val DAY = 24L * 60 * 60 * 1000
