@@ -321,6 +321,29 @@ class SetupFlowTest {
         assertTrue(draft.painted.isEmpty())
     }
 
+    /** 1.38 통합 11차: 월·수·금 13~18시 with the usual 30 minutes' break is 13시간 30분 a week, and the summary says the break decides 주휴. */
+    @Test fun theSummarySaysTheBreakTakesTheWeekUnderFifteenHours() {
+        fun week(breakMinutes: Int, days: Int) = SetupDraft(style = WorkStyle.HOURLY,
+            types = listOf(com.bamnat.core.model.ShiftType(1, "오후 알바", "후", 0xFF000000, java.time.LocalTime.of(13, 0), java.time.LocalTime.of(18, 0),
+                breakMinutes = breakMinutes)),
+            weekly = List(7) { i -> if (i % 2 == 0 && i / 2 < days) 1L else null })
+        val note = weeklyHolidayNote(week(30, 3))!!
+        assertTrue(note, note.startsWith("쉬는 시간을 빼면 주 13시간 30분이라"))
+        assertTrue(note, "1시간 30분 모자라요" in note)
+        assertEquals("주 15시간 일해요 · 주 15시간 이상이라 주휴수당을 받아요", weeklyHolidayNote(week(0, 3)))
+        assertTrue(weeklyHolidayNote(week(0, 2))!!.startsWith("주 10시간이라"))
+        assertNull(weeklyHolidayNote(week(30, 3).copy(style = WorkStyle.DAY)))
+    }
+
+    /** 1.38 통합 11차: a shop's calendar opens every day at once (was '쉬는 날' everywhere until 영업일 was set). */
+    @Test fun aShopIsOpenEveryDayFromTheSetup() = runBlocking {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.BUSINESS)
+        waitFor("the shop days") { c.calendars.get(com.bamnat.app.data.PersonalCalendar.MAIN)?.shop != null }
+        waitFor("the 영업 days") { runBlocking { c.scheduleRepository.snapshot.first().resolver.resolve(today).shiftType?.name == "영업" } }
+        assertEquals("영업", c.scheduleRepository.snapshot.first().resolver.resolve(today.plusDays(3)).shiftType?.name)
+    }
+
     /** 1.38 통합 10차: a table made by '우리 회사 근무표 올리기' in the setup is to be put up (box ticked); a row of the list is not. */
     @Test fun anUploadInTheSetupIsTickedToGoUp() {
         val vm = vm()

@@ -63,7 +63,7 @@ fun CycleBrowser(
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (group == null) {
             Text("업종으로 찾기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-            Text("이름을 몰라도 돼요. 업종 → 회사 → 직무를 누르면 시간과 순서까지 채워요.", style = MaterialTheme.typography.bodySmall,
+            Text("이름을 몰라도 돼요. 업종 → 회사 → 직무를 누르면 근무와 순서를 채워요. 공개되지 않은 시간은 흔한 시간으로 넣어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 groups.forEach { (g, n) ->

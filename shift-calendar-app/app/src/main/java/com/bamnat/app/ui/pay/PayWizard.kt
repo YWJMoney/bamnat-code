@@ -731,8 +731,9 @@ private fun WageStep(s: PaySetupState, onSlip: () -> Unit, onPick: (Wage) -> Uni
     }
     StepTitle("급여를 어떻게 받나요?", "계약서나 급여명세서에 적힌 대로 골라 주세요. 나중에 언제든 바꿀 수 있어요.")
     Wage.entries.forEach { w -> ChoiceCard(w.title, w.subtitle, s.wageChosen && s.wage == w) { onPick(w) } }
-    // Out of scope, said plainly [PAY-07].
-    Text("공무원·소방·경찰 수당은 아직 계산하지 않아요.", style = MaterialTheme.typography.bodySmall,
+    // [PAY-07] 1.38 통합 11차 (마법사는 '공무원 수당 규정으로 받아요', 여기는 '아직 계산하지 않아요'): 공무원 pay is counted since
+    // [JOB-01]; this page says where it is picked.
+    Text("공무원·경찰·소방도 계산해요. 수당 장의 직군에서 고르면 공무원 수당 규정을 따라요.", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 

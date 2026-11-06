@@ -23,8 +23,15 @@ object PublicSetup {
     const val AFTER = "비번"
 
     fun plan(cycle: PublicCycle, codes: String): Plan {
-        val work = cycle.shiftsFor(codes).map { it.toShiftType() }
-        val byCode = cycle.shiftsFor(codes).associate { it.code to it.name }
+        // 1.38 통합 11차 (근무표를 병원이 짜는 3교대 줄: 순서도 시간도 공개되지 않아 근무가 '휴무'뿐): a row with no work in [codes]
+        // brings its own shifts, or else its form's usual ones, so there is always work to paint.
+        val workCodes = when {
+            codes.any { it in PublicCycle.WORK } -> codes
+            cycle.shifts.isNotEmpty() -> cycle.shifts.joinToString("") { it.code.toString() }
+            else -> PublicCycles.usualWork(cycle.formKey)
+        }
+        val work = cycle.shiftsFor(workCodes).map { it.toShiftType() }
+        val byCode = cycle.shiftsFor(workCodes).associate { it.code to it.name }
         val off = ShiftType(0, OFF, "휴", 0xFF8E9AAF, null, null, isOff = true)
         val after = ShiftType(0, AFTER, "비", 0xFFB59F84, null, null, isOff = true).takeIf { 'B' in codes }
         val names = codes.map { c ->
