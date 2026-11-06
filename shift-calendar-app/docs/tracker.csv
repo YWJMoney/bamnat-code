@@ -1998,3 +1998,6 @@ P3-TR-01,1.38 경쟁 앱 조사 제안: 체험 끝 3일 전 알림(해지 단추
 P3-LV-01,"1.38 퇴사·휴직·다시 입사(사용자 2026-11-06), 직원 요금제 인원은 그달 일하는 사람만(사용자 결정)",1.38,진행 중,정식 출시일에 켬(사용자 2026-11-05 C안),"shift-calendar-app/docs/plans/1.38-개발계획.md 3장, PR #214"
 P3-SC-01,"1.38 보안 검토: 팀원 쉼·빼기 때 링크 끊기, 링크 새로 만들기, 고치는 열쇠는 암호 백업에만",1.38,진행 중,정식 출시일에 켬(사용자 2026-11-05 C안),"shift-calendar-app/docs/plans/1.38-개발계획.md 3장, PR #214"
 P3-WB-01,"1.38 출시 조건: 팀원 링크 웹 보기 품질(휴대폰·데스크톱 폭, 다크 모드, 끊긴 링크 안내) 실제 브라우저 확인",1.38,진행 중,정식 출시일에 켬(사용자 2026-11-05 C안),"shift-calendar-app/docs/plans/1.38-개발계획.md 3장, PR #214"
+READ-34,"1.38 급여명세서 PDF: 명세서 화면 'PDF로 받은 명세서 고르기', 글자 든 PDF는 PdfText → SlipReading, 스캔 PDF는 쪽마다 사진처럼 읽어 합침",1.38,진행 중,,"tools/slip_pdf_bench.py → SlipPdfBenchTest 6종 83/83(1.37: PDF 고를 수 없음), 조용히 틀림 0; AnyFileTest.aPayslipPdfIsReadFromItsLetters"
+READ-35,"1.38 근무표 사진 줄 띠 재인식: 합의에 노란 칸이 남으면 표를 띠로 잘라(반씩 겹침) 크게 두 번 더 읽어 합의에 더함",1.38,진행 중,,"app RosterScanner.strips; tools/photo_bench.py strips·strips2; PhotoBenchTest 2134 → 2190, 조용히 틀림 0; 명세서 사진엔 효과 없어 넣지 않음"
+READ-36,"1.38 조 근무표 반복 주기: 읽힌 칸이 한 주기로 반복되면 읽힌 범위 안 빠진 칸을 주기대로 노란 칸으로(읽힌 칸은 바꾸지 않음)",1.38,진행 중,,"core RosterPeriod, RosterVote.merge; PhotoBenchTest +9(r11 114 → 121·124), RosterReadsY9Test(실제 사진) 그대로"
