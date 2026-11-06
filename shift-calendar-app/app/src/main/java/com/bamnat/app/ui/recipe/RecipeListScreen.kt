@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -318,11 +319,18 @@ fun RecipeListScreen(
                     }
                 }
             }
-            stickyHeader(key = "chips") { Column(Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
+            // 7차 통합 347b7c37 PC 제안 (칩 줄 판이 화면보다 좁아 좌우로 사진이 보여요): the pinned row's ground runs past the list's 16dp side
+            // padding to the screen's edges; its chips stay in the 640dp column.
+            stickyHeader(key = "chips") { Column(Modifier.fillMaxWidth().layout { m, c ->
+                val side = 16.dp.roundToPx()
+                val p = m.measure(c.copy(minWidth = c.maxWidth + 2 * side, maxWidth = c.maxWidth + 2 * side))
+                layout(c.maxWidth, p.height) { p.place(-side, 0) }
+            }) {
                 val logicOnly = state.kind == RecipeClient.SCOPE_LOGIC
                 val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
-                androidx.compose.material3.Surface(color = com.bamnat.app.ui.theme.PhotoGround.solid(), modifier = Modifier.widthIn(max = 640.dp).fillMaxWidth()) {
-                Column(Modifier.padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                androidx.compose.material3.Surface(color = com.bamnat.app.ui.theme.PhotoGround.solid(), modifier = Modifier.fillMaxWidth()) {
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp), contentAlignment = Alignment.TopCenter) {
+                Column(Modifier.widthIn(max = 640.dp).fillMaxWidth().padding(vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Pinned: the three 구간 as one small row, since their big cards have scrolled away.
                     val tabChips: @Composable () -> Unit = {
                         val now = state.kind.orEmpty().removePrefix(RecipeClient.SCOPE_TAB)
@@ -367,6 +375,7 @@ fun RecipeListScreen(
                             FilterChip(selected = state.allStyles, onClick = { vm.allStyles(!state.allStyles) }, label = { Text("다른 유형도") })
                         }
                     }
+                }
                 }
                 }
                 if (pinned) androidx.compose.material3.HorizontalDivider()

@@ -254,8 +254,10 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // 1.38 PC 스튜디오 확인 (넣기가 판 밑 화면 밖): 넣기로 가는 단추를 맨 위에.
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("꾸밈 층: 도형·아이콘·이모지·글상자를 마음대로 놓아요. 날짜와 근무는 가리지 않아요", style = MaterialTheme.typography.bodySmall,
+            // 7차 통합 347b7c37 PC 제안 (판이 접혀도 안내·자석 줄 때문에 아이콘 첫 줄이 화면 밖): folded, the long line and 보기 도구 step aside.
+            if (stageOpen) Text("꾸밈 층: 도형·아이콘·이모지·글상자를 마음대로 놓아요. 날짜와 근무는 가리지 않아요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            else Text("아이콘·사진을 골라 넣어요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             androidx.compose.material3.FilledTonalButton(onClick = { pane = Pane.ADD; stageOpen = false; addJump++ }, modifier = Modifier.heightIn(min = 44.dp)) { Text("＋ 넣기") }
         }
         com.bamnat.app.ui.components.FoldRow("decor.1") {
@@ -267,11 +269,15 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         }
         if (!stageOpen) androidx.compose.material3.OutlinedButton(onClick = { stageOpen = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
             Text("꾸밈 판 펼치기" + if (items.count { it.at == place } > 0) " (${items.count { it.at == place }}개)" else "")
-        } else Stage(items, place, picked, advanced, magnet, loupe,
-            onPick = { i -> picked = when { i == null -> if (many) picked else emptySet(); many -> if (i in picked) picked - i else picked + i; else -> setOf(i) }
-                if (i != null) pane = Pane.EDIT },
-            onMove = { label, next -> onChange(label, Decor(next)) })
-        com.bamnat.app.ui.components.FoldRow("decor.2", what = "보기 도구") {
+        } else {
+            Stage(items, place, picked, advanced, magnet, loupe,
+                onPick = { i -> picked = when { i == null -> if (many) picked else emptySet(); many -> if (i in picked) picked - i else picked + i; else -> setOf(i) }
+                    if (i != null) pane = Pane.EDIT },
+                onMove = { label, next -> onChange(label, Decor(next)) })
+            // 7차 통합 347b7c37 PC 제안 (펼친 뒤 접는 단추가 없어요): 접기 right under the 판, where 펼치기 stood.
+            TextButton(onClick = { stageOpen = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) { Text("꾸밈 판 접기") }
+        }
+        if (stageOpen) com.bamnat.app.ui.components.FoldRow("decor.2", what = "보기 도구") {
             FilterChip(selected = magnet, onClick = { magnet = !magnet }, label = { Text("🧲 자석") })
             FilterChip(selected = loupe, onClick = { loupe = !loupe }, label = { Text("🔍 돋보기") })
             FilterChip(selected = many, onClick = { many = !many; if (!many && picked.size > 1) picked = setOf(picked.first()) }, label = { Text("여러 개 고르기") })
@@ -571,7 +577,8 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
         com.bamnat.app.ui.components.FoldRow("decor.3") {
             DecorKind.entries.forEach { k -> FilterChip(selected = k == kind, onClick = { kind = k }, label = { Text(k.label) }) }
         }
-        if (kind != DecorKind.TEXT && kind != DecorKind.PHOTO) OutlinedTextField(q, { q = it.take(20) }, Modifier.fillMaxWidth(), singleLine = true,
+        // 7차 통합 347b7c37 PC 제안 (아이콘 그림이 찾기 칸 아래라 한 번 더 내려야 해요): 아이콘's own search sits under the 밤낮 색 아이콘.
+        if (kind != DecorKind.TEXT && kind != DecorKind.PHOTO && kind != DecorKind.ICON) OutlinedTextField(q, { q = it.take(20) }, Modifier.fillMaxWidth(), singleLine = true,
             label = { Text(when (kind) { DecorKind.EMOJI -> "이모지 찾기 (예: 달, 돈, 하트)"; else -> "찾기 (예: 별, 하트, 달)" }) })
         val ink = MaterialTheme.colorScheme.onSurface
         val accent = MaterialTheme.colorScheme.primary
@@ -589,6 +596,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
                 // 1.38 [STM-06] 밤낮 색 아이콘 first while nothing is searched; the line icons (색을 바꿔 쓰는) follow.
                 if (q.isBlank()) { MaterialShelf(com.bamnat.app.recipe.StudioMaterial.ICON, onMaterial); HorizontalDivider()
                     Text("선 아이콘 (색을 골라 써요)", style = MaterialTheme.typography.titleSmall) }
+                OutlinedTextField(q, { q = it.take(20) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("선 아이콘 찾기 (예: 별, 하트, 달)") })
                 GlyphGrid(DecorGlyphs.search(DecorGlyphs.ICON_LIST, q)) { g ->
                     Box(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.ICON, g.id) },
                         contentAlignment = Alignment.Center) {

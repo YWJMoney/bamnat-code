@@ -205,7 +205,7 @@ fun MemoListScreen(
                     MemoPart.FOLD -> Unit
                 }
             }
-            PrimaryTabRow(selectedTabIndex = state.tab.ordinal, containerColor = Color.Transparent) {
+            PrimaryTabRow(selectedTabIndex = state.tab.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(Color.Transparent)) {
                 for (tab in MemoTab.entries) {
                     val count = if (tab == MemoTab.CALENDAR) state.calendarCount else state.generalCount
                     Tab(

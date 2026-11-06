@@ -33,4 +33,12 @@ object PhotoGround {
         val ground = com.bamnat.app.ui.decor.LocalPhotoGround.current?.copy(alpha = 1f) ?: veil.copy(alpha = 1f)
         return lerp(ground, veil.copy(alpha = 1f), veil.alpha)
     }
+
+    /**
+     * 7차 통합 347b7c37 PC 제안 (어두운 사진에서 빨간 금액이 창 위에 겹쳐요): a list line on a picture (가계부 한 줄) stands on a thicker
+     * veil than a bar, so its coloured amount reads over the photo's bright and dark spots alike.
+     */
+    @Composable
+    fun row(normal: Color = MaterialTheme.colorScheme.surface): Color =
+        if (!on()) normal else if (MaterialTheme.colorScheme.onSurface.luminance() > 0.5f) Color.Black.copy(alpha = 0.74f) else Color.White.copy(alpha = 0.9f)
 }

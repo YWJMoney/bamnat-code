@@ -72,7 +72,7 @@ internal fun PayTabRow(tab: PayTab, onTab: (PayTab) -> Unit, style: com.bamnat.c
                 }
             }
         } else {
-            PrimaryTabRow(selectedTabIndex = tab.ordinal) {
+            PrimaryTabRow(selectedTabIndex = tab.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface)) {
                 PayTab.entries.forEach { t ->
                     // The content form of Tab grows with its text (the text form is a fixed 48dp and cuts a second line).
                     Tab(selected = t == tab, onClick = { onTab(t) }, modifier = Modifier.heightIn(min = 48.dp)) {
