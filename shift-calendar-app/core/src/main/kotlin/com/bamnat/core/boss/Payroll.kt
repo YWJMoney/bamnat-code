@@ -109,6 +109,8 @@ data class StaffMember(
     /** 1.38 [P3-B-11] The 출퇴근 링크 on the share server and its key, null until the boss makes one. */
     val clockId: String? = null,
     val clockToken: String? = null,
+    /** 1.38 [P3-X-06] 근로계약서: as sent, its sign link and the signature; null until the boss makes one. */
+    val contract: StaffContract.Sent? = null,
 ) {
     fun employedOn(d: LocalDate): Boolean = (hiredOn == null || !d.isBefore(hiredOn)) && (leftOn == null || !d.isAfter(leftOn))
     fun onLeave(d: LocalDate): Boolean = leaves.any { it.covers(d) }

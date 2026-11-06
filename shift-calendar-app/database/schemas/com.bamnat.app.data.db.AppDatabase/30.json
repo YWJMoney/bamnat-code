@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 30,
-    "identityHash": "7f5ea7fea0001681ab09c91d3e15f5cd",
+    "identityHash": "7d6d48d7d3b1842a8800d3d746b4954a",
     "entities": [
       {
         "tableName": "shift_types",
@@ -3013,7 +3013,7 @@
       },
       {
         "tableName": "staff",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `workplaceId` TEXT NOT NULL, `name` TEXT NOT NULL, `form` TEXT NOT NULL, `base` INTEGER NOT NULL, `allowances` TEXT NOT NULL, `hiredOn` INTEGER, `leftOn` INTEGER, `birth` INTEGER, `job` TEXT NOT NULL, `insurance` TEXT NOT NULL, `weeklyHolidayPay` INTEGER NOT NULL, `weekly` TEXT NOT NULL, `memberId` TEXT, `sort` INTEGER NOT NULL, `clockId` TEXT DEFAULT NULL, `clockToken` TEXT DEFAULT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `workplaceId` TEXT NOT NULL, `name` TEXT NOT NULL, `form` TEXT NOT NULL, `base` INTEGER NOT NULL, `allowances` TEXT NOT NULL, `hiredOn` INTEGER, `leftOn` INTEGER, `birth` INTEGER, `job` TEXT NOT NULL, `insurance` TEXT NOT NULL, `weeklyHolidayPay` INTEGER NOT NULL, `weekly` TEXT NOT NULL, `memberId` TEXT, `sort` INTEGER NOT NULL, `clockId` TEXT DEFAULT NULL, `clockToken` TEXT DEFAULT NULL, `contract` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -3112,6 +3112,13 @@
             "columnName": "clockToken",
             "affinity": "TEXT",
             "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "contract",
+            "columnName": "contract",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
           }
         ],
         "primaryKey": {
@@ -3320,7 +3327,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7f5ea7fea0001681ab09c91d3e15f5cd')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7d6d48d7d3b1842a8800d3d746b4954a')"
     ]
   }
 }

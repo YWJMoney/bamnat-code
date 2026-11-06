@@ -58,7 +58,7 @@ object PhaseThreeBackup {
             .put("staff", JSONArray().apply { d.staff().forEach { put(JSONObject().put("id", it.id).put("place", it.workplaceId).put("name", it.name)
                 .put("form", it.form).put("base", it.base).put("allowances", it.allowances).putOpt("hired", it.hiredOn).putOpt("left", it.leftOn)
                 .putOpt("birth", it.birth).put("job", it.job).put("insurance", it.insurance).put("weeklyHoliday", it.weeklyHolidayPay)
-                .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort).putOpt("clockId", it.clockId).putOpt("clockToken", it.clockToken)) } })
+                .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort).putOpt("clockId", it.clockId).putOpt("clockToken", it.clockToken).put("contract", it.contract)) } })
             .put("punches", JSONArray().apply { d.punches().forEach { put(JSONArray().put(it.staffId).put(it.at).put(it.kind)) } })
             .put("work", JSONArray().apply { d.work().sortedWith(compareBy({ it.staffId }, { it.epochDay })).forEach {
                 put(JSONArray().put(it.staffId).put(it.epochDay).put(it.kind).put(it.startMinute ?: JSONObject.NULL).put(it.endMinute ?: JSONObject.NULL)) } })
@@ -98,7 +98,7 @@ object PhaseThreeBackup {
                 it.intOrNull("payday"), it.optBoolean("breaks", true), it.optInt("weekStart", 1), it.strOrNull("team"), it.optLong("created"), it.optInt("unit", 1).coerceIn(1, 60), it.optString("calls")) },
             o.optJSONArray("staff").objs().map { StaffEntity(it.getString("id"), it.getString("place"), it.optString("name"), it.optString("form", "HOUR"),
                 it.optLong("base"), it.optString("allowances", "[]"), it.longOrNull("hired"), it.longOrNull("left"), it.longOrNull("birth"), it.optString("job"),
-                it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort"), it.strOrNull("clockId"), it.strOrNull("clockToken")) },
+                it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort"), it.strOrNull("clockId"), it.strOrNull("clockToken"), it.optString("contract")) },
             o.optJSONArray("work").arrays().map { StaffWorkEntity(it.getString(0), it.getLong(1), it.getString(2),
                 if (it.isNull(3)) null else it.getInt(3), if (it.isNull(4)) null else it.getInt(4)) },
             o.optJSONArray("months").objs().map { PayrollMonthEntity(it.getString("place"), it.getString("month"), it.optString("state", "OPEN"),

@@ -129,6 +129,8 @@ data class StaffEntity(
     /** 1.38 (DB 29) [P3-B-11] 출퇴근 링크 on the share server, and its key (sealed backups only, like any 고치는 열쇠). */
     @androidx.room.ColumnInfo(defaultValue = "NULL") val clockId: String? = null,
     @androidx.room.ColumnInfo(defaultValue = "NULL") val clockToken: String? = null,
+    /** 1.38 (DB 30) [P3-X-06] 근로계약서 as sent, its sign link and key, and the signature, as JSON ('' for none). */
+    @androidx.room.ColumnInfo(defaultValue = "''") val contract: String = "",
 )
 
 /** 1.38 (DB 29) [P3-B-11] One press of 출근 or 퇴근 on a staff member's 출퇴근 링크, at the server's time. A 기록 the boss puts in; never pay by itself. */
@@ -329,6 +331,8 @@ interface PayrollDao {
     fun observePunches(workplaceId: String, from: Long, to: Long): Flow<List<StaffPunchEntity>>
     @Query("SELECT * FROM staff_punch ORDER BY staffId, at") suspend fun punches(): List<StaffPunchEntity>
     @Query("UPDATE staff SET clockId = NULL, clockToken = NULL WHERE id = :id") suspend fun forgetClock(id: String)
+    @Query("UPDATE staff SET contract = :contract WHERE id = :id") suspend fun setContract(id: String, contract: String)
+    @Query("SELECT contract FROM staff WHERE id = :id") suspend fun contractOf(id: String): String?
     @Query("SELECT MAX(at) FROM staff_punch WHERE staffId = :staffId") suspend fun lastPunch(staffId: String): Long?
     @androidx.room.Insert(onConflict = androidx.room.OnConflictStrategy.IGNORE) suspend fun insertPunches(e: List<StaffPunchEntity>): List<Long>
 

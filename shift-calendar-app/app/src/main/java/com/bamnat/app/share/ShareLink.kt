@@ -604,7 +604,19 @@ interface ShareApi {
                            decide: List<Triple<Int, Int, Boolean>> = emptyList(), closed: Boolean? = null) {}
 
     suspend fun swapDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-X-06] A 근로계약서 for [staff] to read and sign by typing their name; open [days] (30 at most). */
+    suspend fun signCreate(place: String, staff: String, title: String, items: List<com.bamnat.core.boss.StaffContract.Item>, days: Int): SignMade =
+        throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-X-06] Whether it was opened and signed; "not_found" once it is gone. */
+    suspend fun signRead(id: String, token: String): SignGot = throw ShareLinkException("unsupported")
+
+    suspend fun signDelete(id: String, token: String) {}
 }
+
+data class SignMade(val id: String, val token: String, val url: String, val expiresAt: Instant)
+data class SignGot(val seenAt: Instant?, val signedName: String?, val signedAt: Instant?)
 
 /** 1.38 [P3-X-02] One read: asks by person index ([p] asked [q] about day [d]), and who opened their link. */
 data class SwapGot(val asks: List<SwapAsk>, val seen: Set<Int>, val closed: Boolean)
@@ -819,6 +831,31 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     override suspend fun callDelete(id: String, token: String) = withContext(Dispatchers.IO) {
         try {
             request("DELETE", "/api/call/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    override suspend fun signCreate(place: String, staff: String, title: String, items: List<com.bamnat.core.boss.StaffContract.Item>, days: Int): SignMade =
+        withContext(Dispatchers.IO) {
+            val o = request("POST", "/api/sign", JSONObject().put("place", place).put("staff", staff).put("title", title).put("days", days)
+                .put("items", org.json.JSONArray().apply { items.forEach { put(JSONObject().put("t", it.title).put("b", it.body)) } }), null).body
+            readable { SignMade(o.getString("id"), o.getString("token"), o.getString("url"), Instant.parse(o.getString("expiresAt"))) }
+        }
+
+    override suspend fun signRead(id: String, token: String): SignGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/sign/$id", null, token).body
+        readable {
+            val sg = o.optJSONObject("signed")
+            SignGot(o.optString("seenAt").takeIf { !o.isNull("seenAt") && it.isNotEmpty() }?.let(Instant::parse),
+                sg?.optString("name"), sg?.optString("at")?.takeIf { it.isNotEmpty() }?.let(Instant::parse))
+        }
+    }
+
+    override suspend fun signDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/sign/$id", null, token)
         } catch (e: ShareLinkException) {
             if (e.message != "not_found") throw e
         }

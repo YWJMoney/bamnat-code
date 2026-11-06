@@ -64,6 +64,11 @@ class PhaseThreeBackupTest {
         store.setWork("s1", day, StaffWork("s1", day, WorkKind.LATE, LocalTime.of(10, 0), LocalTime.of(18, 0)))
         // 1.38 [P3-B-11] 출퇴근 링크와 기록
         store.saveStaff(store.staff("w1").first().single().copy(clockId = "C1", clockToken = "ctok"), "w1")
+        // 1.38 [P3-X-06] 근로계약서: one signed before, one waiting on its link. An edit of the row leaves it alone.
+        val signed = com.bamnat.core.boss.StaffContract.Sent("근로계약서", listOf(com.bamnat.core.boss.StaffContract.Item("임금", "시급 10,320원\n지급일 10일")), 1L, signedAt = 2L, signedName = "박마바")
+        store.updateContract("s1") { signed.replacedBy(com.bamnat.core.boss.StaffContract.Sent("근로계약서", signed.items, 3L, "K1", "ktok2", "https://s.example/k/K", 9L)) }
+        store.saveStaff(store.staff("w1").first().single().copy(job = "주방", contract = null), "w1")
+        assertEquals("직원 정보를 고쳐도 계약서는 그대로", "ktok2", store.staff("w1").first().single().contract?.token)
         store.addPunches("s1", listOf(com.bamnat.core.boss.StaffPunch("s1", java.time.Instant.parse("2026-11-03T01:02:00Z"), true)))
     }
 
@@ -104,6 +109,10 @@ class PhaseThreeBackupTest {
             assertEquals("출퇴근 기록도 그대로", store.punches("w1", month).first(), again.punches("w1", month).first())
             assertEquals(1, again.punches("w1", month).first().size)
             assertEquals("ctok", again.staff("w1").first().single().clockToken)
+            val contract = again.staff("w1").first().single().contract
+            assertEquals("계약서와 지난 서명도 그대로", store.staff("w1").first().single().contract, contract)
+            assertEquals(listOf(2L), contract?.past?.map { it.signedAt })
+            assertEquals("시급 10,320원\n지급일 10일", contract?.items?.single()?.body)
         } finally {
             other.close()
         }

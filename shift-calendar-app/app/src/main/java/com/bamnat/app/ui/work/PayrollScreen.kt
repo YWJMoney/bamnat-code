@@ -103,6 +103,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
     var settings by remember { mutableStateOf(false) }
     var rehireAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var finding by remember { mutableStateOf<Pair<String, LocalDate>?>(null) }
+    var contracting by remember { mutableStateOf<String?>(null) }
     ToolScreen("급여 대장", onClose) {
         if (place == null) { Hint("사업장을 준비하고 있어요…"); return@ToolScreen }
         val staff by store.staff(place.id).collectAsStateWithLifecycle(emptyList())
@@ -150,9 +151,13 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         }
         calls.forEach { k -> key(k.id) { BossCallCard(place, k, staff, work) } }
         val leaves by store.leaveDays(place.id).collectAsStateWithLifecycle(emptyMap())
+        // 1.38 [P3-X-06] 계약서 서명 기다림: read once when the ledger opens.
+        LaunchedEffect(place.id) { runCatching { com.bamnat.app.boss.BossContractSync.pullWaiting(context.appContainer, staff) } }
         ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }, onFind = { d -> finding = l.staff.id to d },
+            onContract = { contracting = l.staff.id },
             leaveLeft = com.bamnat.core.leave.LeaveLeft.forStaff(place.fivePlus, l.staff.hiredOn, leaves[l.staff.id].orEmpty(), minOf(Today.date(), ym.atEndOfMonth()))) } }
         finding?.let { (id, d) -> BossCoverDialog(place, staff, work, id, d, onDismiss = { finding = null }) }
+        contracting?.let { id -> staff.firstOrNull { it.id == id }?.let { s -> key(id) { ContractDialog(place, s, onEditStaff = { contracting = null; editing = s }) { contracting = null } } } }
         // 1.38 퇴사자: 이 달에 없는 사람도 기록은 3년 남아요(근로기준법 제42조). 눌러서 보거나 다시 입사시켜요.
         val gone = staff.filter { s -> ledger.lines.none { it.staff.id == s.id } }
         if (gone.isNotEmpty()) {
@@ -266,7 +271,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, work: List<StaffWork>, closed: Boolean,
-                           mark: com.bamnat.app.data.db.PayrollLineEntity?, onEdit: () -> Unit, onFind: (LocalDate) -> Unit = {},
+                           mark: com.bamnat.app.data.db.PayrollLineEntity?, onEdit: () -> Unit, onFind: (LocalDate) -> Unit = {}, onContract: () -> Unit = {},
                            leaveLeft: com.bamnat.core.leave.LeaveLeft.Left? = null) {
     var open by rememberSaveable(l.staff.id) { mutableStateOf(false) }
     var slip by remember { mutableStateOf(false) }
@@ -288,11 +293,16 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
         // [BOSS-09][BOSS-10] 명세서 and 지급 체크, right on the line.
         Row(verticalAlignment = Alignment.CenterVertically) {
             TextButton(onClick = { slip = true }, enabled = l.gross > 0) { Text(if (mark?.slipSentAt != null) "명세서 ✓" else "명세서") }
+            TextButton(onClick = onContract) { Text(contractLabel(l.staff)) }
             val store = LocalContext.current.appContainer.phaseThree
             val scope = rememberCoroutineScope()
             FilterChip(selected = mark?.paidAt != null, onClick = { scope.launch { store.mark(place.id, month, l, paid = mark?.paidAt == null) } },
                 label = { Text(if (mark?.paidAt != null) "지급했어요 ✓" else "지급했어요") })
         }
+        // 1.38 [P3-X-06] 계약서 없음: 근로계약서는 써서 한 부 줘야 해요(근로기준법 제17조, 어기면 제114조 500만 원 이하 벌금).
+        if (com.bamnat.core.boss.StaffContract.lacking(l.staff, minOf(Today.date(), month.atEndOfMonth())) && l.staff.contract?.waiting(Today.millis()) != true)
+            Text("계약서 없음 · '계약서'를 누르면 직원 정보로 채워 링크로 서명받아요", style = MaterialTheme.typography.bodySmall, color = warn,
+                modifier = Modifier.clickable(role = Role.Button, onClick = onContract))
         // 1.38 [P3-X-05] 연차 남은 날, from the hire date (제60조), less the 연차 days marked here.
         leaveLeft?.let { lf ->
             Hint("연차 남은 ${com.bamnat.core.leave.LeaveAccrual.days(lf.left)} (생긴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.made)} · 쓴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.used)})" +

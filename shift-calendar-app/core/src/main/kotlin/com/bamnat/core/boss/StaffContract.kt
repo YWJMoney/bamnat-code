@@ -15,6 +15,36 @@ object StaffContract {
     data class Item(val title: String, val body: String)
     data class Contract(val items: List<Item>, val missing: List<String>, val shortTime: Boolean)
 
+    /**
+     * The contract as it went to the staff member (kept as sent, so the signed PDF says what they read even after the row changes),
+     * the sign link while it waits, and the signature. [paper]: the boss marked a paper contract as signed instead.
+     */
+    data class Sent(
+        val title: String,
+        val items: List<Item>,
+        val sentAt: Long,
+        val linkId: String? = null,
+        val token: String? = null,
+        val url: String? = null,
+        val expiresAt: Long? = null,
+        val seenAt: Long? = null,
+        val signedName: String? = null,
+        val signedAt: Long? = null,
+        val paper: Boolean = false,
+        /** Signed contracts this one replaced (시급·시간이 바뀌어 새로 쓴 것), oldest first; kept so each PDF can be made again. */
+        val past: List<Sent> = emptyList(),
+    ) {
+        val signed: Boolean get() = signedAt != null
+
+        /** [next] in place of this one: a signed one is kept in [past] (the last ten), a waiting or unsigned one is dropped. */
+        fun replacedBy(next: Sent): Sent = next.copy(past = if (signed) (past + copy(past = emptyList(), linkId = null, token = null, url = null)).takeLast(10) else past)
+        /** Waiting on the link: sent, not signed, not past its day ([now] millis). */
+        fun waiting(now: Long): Boolean = !signed && linkId != null && (expiresAt == null || now < expiresAt)
+    }
+
+    /** 계약서 없음 on the ledger: a staff member still working with no signed contract. */
+    fun lacking(s: StaffMember, on: LocalDate): Boolean = s.contract?.signed != true && s.employedOn(on)
+
     private val days = listOf("월", "화", "수", "목", "금", "토", "일")
     private fun day(d: DayOfWeek) = days[d.value - 1]
     private fun date(d: LocalDate) = "${d.year}년 ${d.monthValue}월 ${d.dayOfMonth}일"
@@ -67,14 +97,30 @@ object StaffContract {
         return Contract(items, missing, shortTime)
     }
 
-    fun doc(place: Workplace, s: StaffMember, c: Contract, signedName: String? = null, signedAt: String? = null): ReportDoc = ReportDoc(
-        title = if (c.shortTime) "단시간 근로자 근로계약서" else "근로계약서",
+    fun title(c: Contract) = if (c.shortTime) "단시간 근로자 근로계약서" else "근로계약서"
+
+    /** The contract to read before it is signed: the boss's PDF to print, or the preview. */
+    fun doc(place: Workplace, s: StaffMember, c: Contract): ReportDoc = doc(place, s, title(c), c.items, "근로자 ________ (서명)")
+
+    /** The contract as it went out ([sent]) and how it was signed; [zone] for the time written on it. */
+    fun doc(place: Workplace, s: StaffMember, sent: Sent, zone: java.time.ZoneId = java.time.ZoneId.of("Asia/Seoul")): ReportDoc {
+        val at = sent.signedAt?.let { java.time.Instant.ofEpochMilli(it).atZone(zone) }
+        val line = when {
+            at == null -> "근로자 ________ (서명)"
+            sent.paper -> "근로자 ${s.name} — 종이 계약서에 서명함 (${date(at.toLocalDate())} 받음)"
+            else -> "근로자 ${sent.signedName ?: s.name} — 링크에서 읽고 이름을 써서 동의함 (${date(at.toLocalDate())} %02d:%02d)".format(at.hour, at.minute)
+        }
+        return doc(place, s, sent.title, sent.items, line)
+    }
+
+    private fun doc(place: Workplace, s: StaffMember, title: String, items: List<Item>, signLine: String): ReportDoc = ReportDoc(
+        title = title,
         blocks = buildList {
             add(ReportDoc.Facts(listOfNotNull("사업주" to place.name, "근로자" to s.name.ifBlank { "________" },
                 s.birth?.let { "생년월일" to "${it.year}.${it.monthValue}.${it.dayOfMonth}" })))
-            c.items.forEachIndexed { i, it -> add(ReportDoc.Heading("${i + 1}. ${it.title}")); add(ReportDoc.Paragraph(it.body)) }
+            items.forEachIndexed { i, it -> add(ReportDoc.Heading("${i + 1}. ${it.title}")); add(ReportDoc.Paragraph(it.body)) }
             add(ReportDoc.Heading("서명"))
-            add(ReportDoc.Paragraph(if (signedName != null) "근로자 ${signedName} — 링크에서 읽고 이름을 써서 동의함 ($signedAt)" else "근로자 ________ (서명)"))
+            add(ReportDoc.Paragraph(signLine))
             add(ReportDoc.Paragraph("사업주 ${place.name} ________ (서명)"))
             add(ReportDoc.Paragraph("밤낮 앱이 직원 정보로 채운 계약서예요. 보내기 전에 사장님이 내용을 확인해요.", small = true))
         },

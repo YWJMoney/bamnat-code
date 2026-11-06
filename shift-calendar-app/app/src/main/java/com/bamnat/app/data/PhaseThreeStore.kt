@@ -15,6 +15,7 @@ import com.bamnat.core.boss.Insurance
 import com.bamnat.core.boss.LedgerCsv
 import com.bamnat.core.boss.LedgerLine
 import com.bamnat.core.boss.StaffAllowance
+import com.bamnat.core.boss.StaffContract
 import com.bamnat.core.boss.StaffMember
 import com.bamnat.core.boss.StaffWork
 import com.bamnat.core.boss.WageForm
@@ -164,7 +165,17 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         pay.workplaces().firstOrNull { it.id == id }?.let { e -> f(e.toModel()).also { pay.upsertWorkplace(it.toEntity(e.createdAt)) } }
     }
 
-    suspend fun saveStaff(s: StaffMember, placeId: String, sort: Int = 0) = pay.upsertStaff(s.toEntity(placeId, sort))
+    /** The row as edited; its 근로계약서 stays as the phone has it (only [updateContract] changes that, so a pull and an edit never clash). */
+    suspend fun saveStaff(s: StaffMember, placeId: String, sort: Int = 0) = db.withTransaction {
+        val kept = pay.contractOf(s.id)
+        pay.upsertStaff(s.toEntity(placeId, sort).let { e -> if (kept != null) e.copy(contract = kept) else e })
+    }
+
+    /** 1.38 [P3-X-06] The staff member's 근로계약서 as it is now, changed by [f] in one go; null clears it. */
+    suspend fun updateContract(staffId: String, f: (StaffContract.Sent?) -> StaffContract.Sent?): StaffContract.Sent? = db.withTransaction {
+        val now = pay.contractOf(staffId) ?: return@withTransaction null
+        f(decodeContract(now)).also { pay.setContract(staffId, encodeContract(it)) }
+    }
 
     suspend fun deleteStaff(id: String) = pay.deleteStaff(id)
 
@@ -358,13 +369,31 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
             allowances = decodeAllowances(allowances), hiredOn = hiredOn?.let(LocalDate::ofEpochDay), leftOn = leftOn?.let(LocalDate::ofEpochDay),
             birth = birth?.let(LocalDate::ofEpochDay), job = job, insurance = decodeInsurance(insurance), weeklyHolidayPay = weeklyHolidayPay,
             weekly = decodeWeekly(weekly), memberId = memberId, dayRates = decodeDayRates(weekly), leaves = decodeLeaves(weekly),
-            clockId = clockId, clockToken = clockToken,
+            clockId = clockId, clockToken = clockToken, contract = decodeContract(contract),
         )
 
         fun StaffMember.toEntity(placeId: String, sort: Int) = StaffEntity(
             id, placeId, name, form.name, base, encodeAllowances(allowances), hiredOn?.toEpochDay(), leftOn?.toEpochDay(), birth?.toEpochDay(),
             job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates, leaves), memberId, sort, clockId, clockToken,
+            encodeContract(contract),
         )
+
+        fun encodeContract(c: StaffContract.Sent?): String = c?.let {
+            JSONObject().put("title", it.title).put("items", JSONArray().apply { it.items.forEach { i -> put(JSONObject().put("t", i.title).put("b", i.body)) } })
+                .put("sent", it.sentAt).putOpt("id", it.linkId).putOpt("token", it.token).putOpt("url", it.url).putOpt("expires", it.expiresAt)
+                .putOpt("seen", it.seenAt).putOpt("name", it.signedName).putOpt("signed", it.signedAt).put("paper", it.paper)
+                .apply { if (it.past.isNotEmpty()) put("past", JSONArray().apply { it.past.forEach { p -> put(JSONObject(encodeContract(p))) } }) }.toString()
+        }.orEmpty()
+
+        fun decodeContract(t: String): StaffContract.Sent? = if (t.isBlank()) null else runCatching {
+            val o = JSONObject(t)
+            fun str(k: String) = o.optString(k).takeIf { o.has(k) && !o.isNull(k) && it.isNotEmpty() }
+            fun num(k: String) = if (o.has(k) && !o.isNull(k)) o.getLong(k) else null
+            val a = o.optJSONArray("items") ?: JSONArray()
+            StaffContract.Sent(o.optString("title"), (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { StaffContract.Item(it.optString("t"), it.optString("b")) },
+                o.optLong("sent"), str("id"), str("token"), str("url"), num("expires"), num("seen"), str("name"), num("signed"), o.optBoolean("paper"),
+                o.optJSONArray("past")?.let { p -> (0 until p.length()).mapNotNull { p.optJSONObject(it)?.let { x -> decodeContract(x.toString()) } } }.orEmpty())
+        }.getOrNull()
 
         fun StaffWorkEntity.toModel(): StaffWork? = runCatching {
             StaffWork(staffId, LocalDate.ofEpochDay(epochDay), WorkKind.valueOf(kind),

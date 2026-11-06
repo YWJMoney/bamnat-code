@@ -40,4 +40,34 @@ class StaffContractTest {
         val c = StaffContract.of(place.copy(payday = null), s.copy(job = "", hiredOn = null, weekly = emptyMap()))
         assertEquals(listOf("입사일(근로 시작일)", "하는 일(업무)", "평소 근무 요일·시간", "급여 지급일(사업장 설정)"), c.missing)
     }
+
+    @Test fun signedCopyKeepsWhatWasSentAndTheLedgerKnows() {
+        val c = StaffContract.of(place, s)
+        val sent = StaffContract.Sent(StaffContract.title(c), c.items, sentAt = 0, linkId = "x", token = "t", expiresAt = 10_000)
+        assertTrue(sent.waiting(5_000))
+        assertFalse("기한 지남", sent.waiting(10_000))
+        assertTrue(StaffContract.lacking(s.copy(contract = sent), LocalDate.of(2026, 11, 20)))
+        // 2026-11-03 09:05 KST
+        val at = java.time.ZonedDateTime.of(2026, 11, 3, 9, 5, 0, 0, java.time.ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli()
+        val signed = sent.copy(signedName = "박마바", signedAt = at, linkId = null, token = null)
+        assertFalse(StaffContract.lacking(s.copy(contract = signed), LocalDate.of(2026, 11, 20)))
+        assertFalse("퇴사한 사람은 표시 안 함", StaffContract.lacking(s.copy(leftOn = LocalDate.of(2026, 11, 10)), LocalDate.of(2026, 11, 20)))
+        // The row changes after: the PDF still says what was signed.
+        val doc = StaffContract.doc(place, s.copy(base = 12_000), signed)
+        val text = doc.blocks.filterIsInstance<com.bamnat.core.report.ReportDoc.Paragraph>().joinToString("\n") { it.text }
+        assertTrue(text.contains("시급 10,320원"))
+        assertTrue(text.contains("근로자 박마바 — 링크에서 읽고 이름을 써서 동의함 (2026년 11월 3일 09:05)"))
+        val paper = StaffContract.doc(place, s, sent.copy(signedAt = at, paper = true))
+        assertTrue(paper.blocks.filterIsInstance<com.bamnat.core.report.ReportDoc.Paragraph>().any { it.text.contains("종이 계약서에 서명함") })
+    }
+
+    @Test fun aNewContractKeepsTheSignedOne() {
+        val c = StaffContract.of(place, s)
+        val first = StaffContract.Sent("근로계약서", c.items, sentAt = 1, signedAt = 2, signedName = "박마바")
+        val waiting = first.replacedBy(StaffContract.Sent("근로계약서", c.items, sentAt = 3, linkId = "x", token = "t"))
+        assertEquals(listOf(2L), waiting.past.map { it.signedAt })
+        // An unsigned one replaced again is not kept.
+        val again = waiting.replacedBy(StaffContract.Sent("근로계약서", c.items, sentAt = 4, linkId = "y", token = "u"))
+        assertEquals(1, again.past.size)
+    }
 }

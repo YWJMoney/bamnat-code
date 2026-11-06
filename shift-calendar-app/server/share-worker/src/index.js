@@ -43,6 +43,12 @@
 // PUT    /api/swap/:id         header X-Delete-Token, {labels?, ok?, closed?, decide?:[{p, d, state:"done"|"denied"}]} -> 204
 // DELETE /api/swap/:id         header X-Delete-Token -> 204
 // GET    /w/:key               a member's page: asks to them, theirs, and the days they may trade; POST /w/:key/ask|cancel|reply
+// POST   /api/sign             1.38 [P3-X-06] {place, staff, title, items:[{t, b}], days} -> { id, token, url, expiresAt }: a 근로계약서 to
+//                              read and sign by typing one's name. Kept only while it is being signed (30 days at most); the
+//                              signed copy lives on the boss's phone and in the PDF.
+// GET    /api/sign/:id         header X-Delete-Token -> { seenAt, signed:{name, at}|null, expiresAt }
+// DELETE /api/sign/:id         header X-Delete-Token -> 204: the boss's app takes it down once it has the signature
+// GET    /k/:key               the staff member's page: the contract, a name box and 동의; POST /k/:key/sign form name, agree=1
 // GET    /v/:key               the asked person's page; POST /v/:key/answer form a=yes|no -> the page again
 //                              The admin paths answer 404 until SHARE_ADMIN_TOKEN (20+ characters) is set;
 //                              the company server's 개발자 앱 calls them with the same token.
@@ -120,6 +126,11 @@ export const LIMITS = {
   callTitle: 40,
   callDetail: 120,
   callHours: 168,
+  // 1.38 [P3-X-06] 근로계약서 링크: the items the app writes (StaffContract), a month at most.
+  signItems: 16,
+  signTitle: 40,
+  signBody: 600,
+  signDays: 30,
 };
 
 /** [SRV-05] Why someone reports a link (the page and the app offer the same list). */
@@ -186,7 +197,7 @@ export const APP_ADS_TXT = "google.com, pub-4920911396563628, DIRECT, f08c47fec0
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/w/") || path.startsWith("/api/swap/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
+  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/w/") || path.startsWith("/api/swap/") || path.startsWith("/k/") || path.startsWith("/api/sign/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
   }
@@ -216,6 +227,13 @@ async function route(request, env) {
   const swapPage = path.match(/^\/w\/([A-Za-z0-9]{22})(\/ask|\/cancel|\/reply)?$/);
   if (swapPage && !swapPage[2] && (request.method === "GET" || request.method === "HEAD")) return swapView(env, swapPage[1], null);
   if (swapPage && swapPage[2] && request.method === "POST") return swapPress(request, env, swapPage[1], swapPage[2].slice(1));
+  if (path === "/api/sign" && request.method === "POST") return signCreate(request, env, url);
+  const signApi = path.match(/^\/api\/sign\/([A-Za-z0-9]{22})$/);
+  if (signApi && request.method === "GET") return signRead(request, env, signApi[1]);
+  if (signApi && request.method === "DELETE") return signDelete(request, env, signApi[1]);
+  const signPage = path.match(/^\/k\/([A-Za-z0-9]{22})(\/sign)?$/);
+  if (signPage && !signPage[2] && (request.method === "GET" || request.method === "HEAD")) return signView(env, signPage[1], null);
+  if (signPage && signPage[2] && request.method === "POST") return signPost(request, env, signPage[1]);
   if (path === "/api/call" && request.method === "POST") return callCreate(request, env, url);
   const callApi = path.match(/^\/api\/call\/([A-Za-z0-9]{22})$/);
   if (callApi && request.method === "GET") return callRead(request, env, callApi[1]);
@@ -1033,6 +1051,102 @@ async function callView(env, key, said, status = 200, known = null) {
   return html(page(record.title, body), status);
 }
 
+// ---- 1.38 [P3-X-06] 근로계약서 링크 서명 ----
+// The boss's phone writes the contract's items; the staff member reads them on a plain page and signs by typing their name.
+// The server keeps the contract only while it waits (30 days at most) and the app deletes it once it has read the signature.
+
+const signKey = (id) => `sign:${id}`;
+const signPageKey = (key) => `signk:${key}`;
+const sameName = (a, b) => a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
+
+async function signCreate(request, env, url) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 24 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const place = cleanText(body?.place, LIMITS.clockPlace);
+  const staff = cleanText(body?.staff, LIMITS.askName);
+  const title = cleanText(body?.title, LIMITS.signTitle);
+  const raw = Array.isArray(body?.items) ? body.items : [];
+  // The body keeps its line breaks (one line per weekday, 임금 parts); any other control character goes.
+  const lines = (v) => { if (typeof v !== "string") return null; const x = v.replace(/\r/g, "").replace(/[\u0000-\u0009\u000b-\u001f\u007f]/g, "").trim(); return x.length > LIMITS.signBody ? null : x; };
+  const items = raw.map((i) => ({ t: cleanText(i?.t, LIMITS.signTitle), b: lines(i?.b ?? "") }));
+  if (!place || !staff || !title || items.length === 0 || items.length > LIMITS.signItems || items.some((i) => !i.t || i.b == null)) return json({ error: "bad_sign" }, 400);
+  const days = Number.isInteger(body?.days) ? Math.min(Math.max(body.days, 1), LIMITS.signDays) : 14;
+  const id = randomId(22);
+  const key = randomId(22);
+  const token = randomId(32);
+  const record = { place, staff, title, items, key, tokenHash: await sha256(token), expiresAt: new Date(Date.now() + days * 86400 * 1000).toISOString(), seenAt: null, signed: null };
+  await put(env, signKey(id), record);
+  await put(env, signPageKey(key), { id, expiresAt: record.expiresAt });
+  count(env, "signs");
+  return json({ id, token, key, url: `${url.origin}/k/${key}`, expiresAt: record.expiresAt }, 201);
+}
+
+async function signOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(signKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+async function signRead(request, env, id) {
+  const record = await signOwned(request, env, id);
+  if (record instanceof Response) return record;
+  return json({ seenAt: record.seenAt, signed: record.signed, expiresAt: record.expiresAt });
+}
+
+async function signDelete(request, env, id) {
+  const record = await signOwned(request, env, id);
+  if (record instanceof Response) return record;
+  await kvDel(env, signPageKey(record.key));
+  await kvDel(env, signKey(id));
+  return new Response(null, { status: 204 });
+}
+
+async function signFind(env, key) {
+  const link = await env.SHARES.get(signPageKey(key), "json");
+  if (!link) return null;
+  const record = await env.SHARES.get(signKey(link.id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return null;
+  return { id: link.id, record };
+}
+
+const signGone = () => html(page("계약서 링크가 없어요", `<p class="empty">이 계약서 링크는 끝났거나 사장님이 거뒀어요. 서명했다면 사장님께 PDF를 받아 주세요.</p>`), 404);
+
+async function signPost(request, env, key) {
+  const found = await signFind(env, key);
+  if (!found) return signGone();
+  if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
+  const { id, record } = found;
+  if (record.signed) return signView(env, key, { bad: "이미 서명했어요" }, 409, found);
+  const form = new URLSearchParams((await request.text()).slice(0, 256));
+  const name = cleanText(form.get("name") ?? "", LIMITS.askName) ?? "";
+  if (form.get("agree") !== "1") return signView(env, key, { bad: "내용을 읽고 동의에 표시해 주세요" }, 400, found);
+  if (!name || !sameName(name, record.staff)) return signView(env, key, { bad: `계약서에 적힌 이름(${record.staff})과 같게 써 주세요` }, 400, found);
+  record.signed = { name, at: new Date().toISOString() };
+  await put(env, signKey(id), record);
+  count(env, "signed");
+  return signView(env, key, { ok: "서명했어요. 사장님이 서명한 계약서 PDF를 보내 드려요." }, 200, found);
+}
+
+async function signView(env, key, said, status = 200, known = null) {
+  const found = known ?? await signFind(env, key);
+  if (!found) return signGone();
+  const { id, record } = found;
+  if (!record.seenAt) { record.seenAt = new Date().toISOString(); await put(env, signKey(id), record); }
+  const items = record.items.map((i, n) => `<h2>${n + 1}. ${esc(i.t)}</h2>${i.b ? `<p>${esc(i.b).replace(/\n/g, "<br>")}</p>` : ""}`).join("");
+  const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
+  const form = record.signed
+    ? `<p class="done">${esc(record.signed.name)}님이 ${kstDay(record.signed.at)} ${kstTime(record.signed.at)}에 서명했어요.</p>`
+    : `<form class="sign panel" method="post" action="/k/${key}/sign"><label>이름 <input name="name" maxlength="${LIMITS.askName}" autocomplete="name" required></label>
+<label><input type="checkbox" name="agree" value="1" required> 위 내용을 읽었고 동의해요</label><button class="in">서명하기</button></form>`;
+  const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.place)} · ${esc(record.staff)}님</p>${saidHtml}${items}${form}
+<p class="foot muted">이름과 서명한 시각만 사장님 앱에 가요. 서명한 계약서는 사장님 휴대폰과 PDF에만 남고, 이 페이지는 사장님이 받은 뒤나 ${kstDay(record.expiresAt)}에 지워져요.</p>`;
+  return html(page(record.title, body), status);
+}
+
 // ---- 1.38 [P3-X-02] 바꾸기 요청 ----
 // The leader's phone works out who may trade which day (the board's own checks) and puts that list here with each person's
 // row of labels. A member asks from their link, the other says yes or no on theirs, and the leader approves in the app.
@@ -1313,7 +1427,7 @@ async function stats(env, daysParam) {
   }
   const sum = (k) => days.reduce((a, d) => a + d[k], 0);
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
-  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), approximate: true };
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), approximate: true };
 }
 
 // ---- input ----
@@ -1795,6 +1909,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .cell.picked{outline:2px solid var(--sat)}a.cell{color:inherit;text-decoration:none}.full{color:var(--sun);font-weight:700}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:16px}.picks{display:flex;flex-wrap:wrap;gap:8px}.picks form{margin:0}
 .pick{min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:15px;cursor:pointer}.pick.on{background:var(--sat);color:#fff;border-color:var(--sat)}
+.sign label{display:block;margin:12px 0}.sign input[name=name]{width:100%;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:17px}.sign input[type=checkbox]{width:22px;height:22px;vertical-align:middle;margin-right:6px}.sign button{width:100%;min-height:56px;border-radius:16px;border:none;background:#2f7d5b;color:#fff;font-size:18px;font-weight:800}
 .bad{background:var(--card);border:2px solid var(--sun);border-radius:12px;padding:12px 14px;font-weight:700}.rule{font-size:14px}.small{font-size:12px}
 .note{display:flex;gap:8px}.note input{flex:1;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px}.note button{min-height:44px;padding:8px 14px;border-radius:999px;border:none;background:var(--today);color:#15192B;font-weight:700}
 .punches{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.punches li{display:flex;justify-content:space-between;padding:12px 14px;border-top:1px solid var(--line)}.punches li:first-child{border-top:none}
