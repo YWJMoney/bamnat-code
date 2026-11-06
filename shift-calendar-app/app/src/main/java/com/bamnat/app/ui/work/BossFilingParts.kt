@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -26,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.appContainer
 import com.bamnat.app.ui.Fmt
+import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.boss.BossFilings

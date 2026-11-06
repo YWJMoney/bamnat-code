@@ -9,6 +9,7 @@ import com.bamnat.core.team.TeamShift
 import java.time.LocalDate
 import java.time.YearMonth
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,5 +68,23 @@ class TeamGridImportTest {
     @Test fun theBigCodesAreListedFirst() {
         val rows = listOf(Row("a", null, mapOf(d(1) to "D", d(2) to "D", d(3) to "N1")), Row("b", null, mapOf(d(1) to "D", d(2) to "", d(3) to "N1", d(4) to "O")))
         assertEquals(listOf("D" to 3, "N1" to 2, "O" to 1), TeamGridImport.codeCounts(rows))
+    }
+
+    // 1.38 [P3-L-17] 종이 신청표: a few days each, 휴·연·교·N빼, read as 신청.
+    @Test fun aRequestSheetIsReadAsRequests() {
+        val sheet = listOf(
+            TeamGridImport.Row("김민지", cells = mapOf(month.atDay(3) to "휴", month.atDay(4) to "연", month.atDay(20) to "교")),
+            TeamGridImport.Row("이준호", cells = mapOf(month.atDay(24) to "OFF", month.atDay(25) to "N빼")),
+            TeamGridImport.Row("서연", cells = mapOf(month.atDay(10) to "D")),
+        )
+        assertTrue(TeamGridImport.looksLikeRequests(sheet, 31, shifts))
+        val full = listOf(TeamGridImport.Row("김민지", cells = (1..31).associate { month.atDay(it) to if (it % 4 == 0) "O" else "D" }))
+        assertFalse("다 칠한 근무표는 근무표로", TeamGridImport.looksLikeRequests(full, 31, shifts))
+        val codes = TeamGridImport.guessWishes(listOf("휴", "연", "교", "OFF", "N빼", "D"), shifts)
+        assertEquals("OFF", codes["휴"]); assertEquals("LEAVE", codes["연"]); assertEquals("EDU", codes["교"]); assertEquals("AVOID_NIGHT", codes["N빼"])
+        assertTrue(codes["D"]!!.startsWith("SHIFT:"))
+        val w = TeamGridImport.wishes(sheet, listOf("m1", "m2", null), codes, at = 7)
+        assertEquals(5, w.size)
+        assertEquals(com.bamnat.core.team.TeamWish("m1", month.atDay(4), com.bamnat.core.team.WishKind.LEAVE, null, 7), w.first { it.date == month.atDay(4) })
     }
 }

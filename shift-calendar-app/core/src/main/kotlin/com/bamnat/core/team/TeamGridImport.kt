@@ -63,6 +63,54 @@ object TeamGridImport {
             else DAY_WORDS.entries.firstOrNull { k in it.value }?.key?.let { d -> shifts.firstOrNull { !it.isOff && key(it.label) == d }?.id }
     }
 
+    // ---- 1.38 [P3-L-17] 종이 신청표: the ward's request sheet photographed, its cells read as 신청 instead of 근무 ----
+
+    private val LEAVE_WORDS = setOf("연", "연차", "V", "VA", "AL", "휴가", "연가")
+    private val HALF_WORDS = setOf("반", "반차", "H", "HD", "½")
+    private val EDU_WORDS = setOf("교", "교육", "EDU", "연수", "학회", "세미나")
+    private val NO_NIGHT_WORDS = setOf("N빼", "N빼기", "NX", "X N", "노나이트", "N제외", "N불가")
+    private val WORK_WORDS = setOf("근", "근무", "W", "출")
+
+    /**
+     * Each code as a request ([WishKind.code], with the shift for [WishKind.SHIFT]); null for one not guessed. 휴·OFF are 쉬고 싶어요, 연·V
+     * 연차, 교 교육, N빼 나이트 빼기, and the team's own labels "이 근무 원해요".
+     */
+    fun guessWishes(codes: Collection<String>, shifts: List<TeamShift>): Map<String, String?> = codes.distinct().associateWith { code ->
+        val k = key(code)
+        when {
+            k.isEmpty() -> null
+            k in LEAVE_WORDS -> WishKind.LEAVE.code(null)
+            k in HALF_WORDS -> WishKind.HALF.code(null)
+            k in EDU_WORDS -> WishKind.EDU.code(null)
+            k in NO_NIGHT_WORDS -> WishKind.AVOID_NIGHT.code(null)
+            k in WORK_WORDS -> WishKind.WORK.code(null)
+            k in OFF_WORDS -> WishKind.OFF.code(null)
+            else -> guessCodes(listOf(code), shifts)[code]?.let { id ->
+                if (shifts.firstOrNull { it.id == id }?.isOff == true) WishKind.OFF.code(null) else WishKind.SHIFT.code(id)
+            }
+        }
+    }
+
+    /**
+     * A request sheet rather than a 근무표: most rows have only a few days written (사람마다 한 달에 몇 칸), and most of what is
+     * written reads as a request (휴·연·교 …). The dialog opens on 신청 then; the leader can switch.
+     */
+    fun looksLikeRequests(rows: List<Row>, days: Int, shifts: List<TeamShift>): Boolean {
+        if (rows.isEmpty() || days <= 0) return false
+        val sparse = rows.count { it.cells.size <= days * 0.4 } >= rows.size * 0.7
+        val all = rows.flatMap { it.cells.values }
+        if (all.isEmpty()) return false
+        val asWish = guessWishes(all.toSet(), shifts)
+        val requestish = all.count { asWish[it]?.substringBefore(':') in setOf("OFF", "LEAVE", "HALF", "EDU", "AVOID_NIGHT") }
+        return sparse && requestish >= all.size * 0.6
+    }
+
+    /** The requests of the rows, each code by [codes] (null: not put in). */
+    fun wishes(rows: List<Row>, memberOf: List<String?>, codes: Map<String, String?>, at: Long): List<TeamWish> = rows.flatMapIndexed { i, r ->
+        val id = memberOf.getOrNull(i) ?: return@flatMapIndexed emptyList()
+        r.cells.mapNotNull { (d, code) -> codes[code]?.let(WishKind::parse)?.let { (k, s) -> TeamWish(id, d, k, s, at) } }
+    }
+
     /** Which member each row is: the same name (spaces and case aside, roles taken off), else null to be added. */
     fun matchNames(rows: List<Row>, members: List<TeamMember>): List<String?> {
         val used = HashSet<String>()
