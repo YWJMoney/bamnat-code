@@ -97,9 +97,11 @@ private fun AppSettings.lineParts(): List<PageLayout.Placed<CalendarPart>> {
 /**
  * [EASE-01] 1.38: the parts when the user has not placed them: the fixed lines (질문 카드, 밤낮이 한 일) still over the month, then
  * the month, then the day and today's cards and the month's numbers under it.
+ * 1.38 통합 12차 사용성 제안 (새로 깐 폰에서 오늘의 흐름이 달력 아래라 '카드가 사라졌다'로 읽혀요): 오늘의 흐름 is looked at every day, so
+ * it stays over the month as one line ([TodayFlowSection] starts it folded here) and opens on a tap; the month still fits.
  */
 internal val CALENDAR_FIRST: List<CalendarPart> = listOf(
-    CalendarPart.ASK, CalendarPart.JOURNAL, CalendarPart.MONTH, CalendarPart.DAY_CARD, CalendarPart.TODAY_FLOW, CalendarPart.TODAY_WORK,
+    CalendarPart.ASK, CalendarPart.JOURNAL, CalendarPart.TODAY_FLOW, CalendarPart.MONTH, CalendarPart.DAY_CARD, CalendarPart.TODAY_WORK,
     CalendarPart.SUMMARY, CalendarPart.COUNTS, CalendarPart.HOURS, CalendarPart.REST, CalendarPart.MEMOS,
 )
 

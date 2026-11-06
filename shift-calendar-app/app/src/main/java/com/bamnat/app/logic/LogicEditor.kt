@@ -337,7 +337,10 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
     /** PC D10: the other rules, so a new one with the same name gets '(2)'; PC D11: one that does the same is asked about once. */
     others: List<LogicRule> = emptyList()) {
     val taken = others.map { it.name }.toSet()
-    var r by remember { mutableStateOf(start ?: LogicRule("", RuleTrigger.START, min = -60, role = "night", act = LogicAct(LogicVerb.NOTIFY, notifyWords(RuleTrigger.START, "night")))) }
+    // 1.38 PC 11차 식당 둘러보기 ('야간'이 가게에 보임): a new rule starts on 야간 for 교대 only, on any work elsewhere.
+    val style = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle
+    val firstRole = if (style == null || style == com.bamnat.core.work.WorkStyle.SHIFT) "night" else null
+    var r by remember { mutableStateOf(start ?: LogicRule("", RuleTrigger.START, min = -60, role = firstRole, act = LogicAct(LogicVerb.NOTIFY, notifyWords(RuleTrigger.START, firstRole)))) }
     var tried by remember { mutableStateOf<String?>(null) }
     // PC D11 (사용성 낮): the key of a rule already asked about ("같은 일을 하는 규칙이 이미 있어요"), so the second 저장 saves.
     var askedSame by remember { mutableStateOf<String?>(null) }

@@ -305,11 +305,19 @@ object FlagCatalog {
      * 정식 출시일, the effective day of 처리방침 [PolicyConsent.LAUNCH_VERSION] as the server's calendar has it, so moving that day in
      * the admin app moves them all. Nothing here sends new data, so no consent hold of its own; force-off in the admin app still rests one.
      */
-    private val phase3Launch: List<Condition> = listOf(Condition.Date(policy = PolicyConsent.LAUNCH_VERSION))
+    private val phase3Launch: List<Condition> = listOf(Condition.Date(policy = PHASE3_POLICY))
+
+    /**
+     * 1.38 출시 점검 E2 (마무리 때 사용자 결정 D2): the 처리방침 판 whose 시행일 opens the Phase 3 and 수면 rows. Now 3.1 (정식 출시일,
+     * 기본 11-12). If 1.38 ships after that day, these rows would open before the new 처리방침 판 that names them takes effect; then
+     * set this to that 판 (e.g. "3.12", 판 id as the admin app's 처리방침 일정 has it), re-export the catalog
+     * (`BAMNAT_WRITE_FLAG_CATALOG=1 … FlagCatalogExportTest`) and run the company-worker tests. One line moves all six rows.
+     */
+    const val PHASE3_POLICY: String = PolicyConsent.LAUNCH_VERSION
 
     val TEAM_LEADER_FLAG = Flag(
         TEAM_LEADER, "리더 팀 근무표",
-        what = "달력 › 모든 조 › 위 막대 ‘내 팀 짜기’에서 팀을 만들고 팀원×날짜 표를 칠해요(단톡방 명단 붙여 넣기·지난달 이어 칠하기·맞바꾸기·바로 검사·희망 휴무·빈칸 자동 채우기). 확정하면 팀원마다 그 사람 근무만 담은 근무표 링크를 만들어요. 팀 표는 리더 휴대폰에만 있어요.",
+        what = "달력 › 도구 › ‘내 팀 근무표 짜기’(모든 조 위 막대에도 있어요)에서 팀을 만들고 팀원×날짜 표를 칠해요(단톡방 명단 붙여 넣기·지난달 이어 칠하기·맞바꾸기·바로 검사·희망 휴무·빈칸 자동 채우기). 확정하면 팀원마다 그 사람 근무만 담은 근무표 링크를 만들어요. 팀 표는 리더 휴대폰에만 있어요.",
         whyOff = "정식 출시일(처리방침 3.1 시행일, 관리자 앱 처리방침 날짜로 옮겨요)에 다른 기능과 함께 켜져요(사용자 2026-11-05 C안). 그 전에는 미리 보기를 받은 관리자 휴대폰에만 보여요.",
         basis = Basis(decision = "P3-D1·P3-D2·P3-D5", requirement = "TEAM-09", note = "Phase 3 M24 L1(순번 482~488)"),
         conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,

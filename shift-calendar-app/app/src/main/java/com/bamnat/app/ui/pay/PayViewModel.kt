@@ -381,17 +381,6 @@ class PayViewModel(
     fun setRaise(target: ValueTarget, rule: RaiseRule?) =
         update { it.withTimeline(target, timelineOf(it, target).copy(raise = rule)) }
 
-    /** [PAYS-01] With no [amount] the allowance is 금액 모름: left out of the total and listed until it is known. */
-    fun addItem(name: String, amount: Long?, cadence: Cadence, ordinary: Boolean, from: YearMonth, fixedOvertimeMinutes: Int = 0) = update { p ->
-        val id = "item-" + System.currentTimeMillis()  // real clock: an id, not a time
-        // A 1.32 [FIX132-03] A new allowance counts in every month (1.31 started it this month, so earlier months lacked it).
-        val value = if (amount == null) ValueTimeline() else ValueTimeline(listOf(DatedValue(com.bamnat.core.pay.BulkEditPlanner.EARLIEST, amount)))
-        p.copy(items = p.items + PayItem(id, name.trim().ifEmpty { "수당" }, value, cadence,
-            ordinary = ordinary, fixedOvertimeMinutes = fixedOvertimeMinutes,
-            taxable = !(cadence == Cadence.MONTHLY && fixedOvertimeMinutes == 0 && com.bamnat.core.pay.TakeHome.looksNonTaxable(name))),
-            estimatedFields = if (amount == null) p.estimatedFields + Unknowns.item(id) else p.estimatedFields)
-    }
-
     /** [PAYS-01] The amount of an allowance that was 금액 모름, from [month]'s pay period on. */
     fun setItemAmount(id: String, amount: Long, month: YearMonth) = update { p ->
         val from = p.period.start(month)
@@ -611,7 +600,10 @@ class PayViewModel(
     /** [PAYS-07] Keeps an item the user made; a rule made before keeps its place in the list. */
     internal fun saveMade(made: MadeItem) = update { p ->
         when (made) {
-            is MadeItem.Item -> p.copy(items = p.items.filterNot { it.id == made.item.id } + made.item)
+            // [PAYX-50] An allowance put in as 금액 모름 is listed to be asked, as the old '수당 추가' did; one with an amount is not.
+            is MadeItem.Item -> p.copy(items = p.items.filterNot { it.id == made.item.id } + made.item,
+                estimatedFields = if (made.item.amount.entries.isEmpty() && !made.item.isPercent) p.estimatedFields + Unknowns.item(made.item.id)
+                else p.estimatedFields - Unknowns.item(made.item.id))
             is MadeItem.Rule -> {
                 val i = p.customRules.indexOfFirst { it.id == made.rule.id }
                 p.copy(customRules = if (i >= 0) p.customRules.toMutableList().also { it[i] = made.rule }

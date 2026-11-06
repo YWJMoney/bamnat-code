@@ -176,7 +176,11 @@ fun CompanyRulesEditor(
                 }) { Text("확인") }
             },
             dismissButton = { TextButton(onClick = { pickHire = false }) { Text("취소") } },
-        ) { DatePicker(state = state, title = { Text("입사일", Modifier.padding(start = 24.dp, top = 16.dp)) }) }
+        ) {
+            // 1.38 PC 12차 t-b2: 설정 찾기 › 입사일(연차) also gets the 해 칩 (#243), so a hire years ago is two taps, not months of arrows.
+            com.bamnat.app.ui.components.YearJump(state)
+            DatePicker(state = state, title = { Text("입사일", Modifier.padding(start = 24.dp, top = 16.dp)) })
+        }
     }
 
     if (pickLeave) {

@@ -169,7 +169,7 @@ private fun WorkPage(
     Note("일하는 방식을 바꿔도 적어 둔 기록은 그대로 남아요.")
     // [EASE-27] Every rule of this calendar as a sentence card, with where to change it.
     val rules by vm.ruleCards.collectAsStateWithLifecycle()
-    RuleCardsSection(rules) { where ->
+    RuleCardsSection(rules, work.workStyle) { where ->
         when (where) {
             com.bamnat.core.guide.RuleCards.Where.PATTERN -> onOpenPattern()
             com.bamnat.core.guide.RuleCards.Where.SHIFT_TYPES -> onOpenShiftTypes()
@@ -189,19 +189,22 @@ internal const val RULE_CARDS_ROW = "내 규칙 한눈에"
  * show; the rest open with '모두 보기'.
  */
 @Composable
-private fun RuleCardsSection(cards: List<com.bamnat.core.guide.RuleCards.Card>, onEdit: (com.bamnat.core.guide.RuleCards.Where) -> Unit) {
+private fun RuleCardsSection(cards: List<com.bamnat.core.guide.RuleCards.Card>, style: WorkStyle?, onEdit: (com.bamnat.core.guide.RuleCards.Where) -> Unit) {
     if (cards.isEmpty()) return
+    // 1.38 PC 11차 식당 둘러보기 ('근무·알람·수당이…'가 가게에): the words of this kind of work.
+    val noun = com.bamnat.app.ui.shifts.dayKindNoun(style)
+    val pays = cards.any { it.group == com.bamnat.core.guide.RuleCards.Group.PAY } || style?.usesPayEngine != false
     var all by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val shown = if (all) cards else cards.take(RULES_FOLDED)
     SectionCard(title = RULE_CARDS_ROW, modifier = Modifier.focusMark(RULE_CARDS_ROW)) {
-        Text("근무·알람·수당이 언제 어떻게 바뀌는지 한 줄씩 모았어요. 고치기를 누르면 그 규칙이 있는 화면이 열려요.",
+        Text("$noun·알람${if (pays) "·수당" else ""}이 언제 어떻게 바뀌는지 한 줄씩 모았어요. 고치기를 누르면 그 규칙이 있는 화면이 열려요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         var group: com.bamnat.core.guide.RuleCards.Group? = null
         for (c in shown) {
             if (c.group != group) {
                 group = c.group
-                Text(c.group.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                Text(if (c.group == com.bamnat.core.guide.RuleCards.Group.SHIFT) noun else c.group.label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 16.dp, top = 10.dp, bottom = 2.dp).semantics { heading() })
             }
             androidx.compose.material3.Surface(
@@ -300,11 +303,15 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             settings.alarmsEnabled,
         ) { on -> if (on) vm.setAlarmsEnabled(true) else confirmOff = true }
     }
-    SectionCard(title = "근무별 알람") {
-        val ringing = snapshot?.shiftTypes.orEmpty().filter { it.alarmEnabled && !it.isOff && it.start != null }
+    // 1.38 PC 11차 식당 둘러보기 (영업일을 저장해도 야간 알람이 남음): kinds put away ('안 쓰는 종류') ring nowhere to be set.
+    val foldedKinds = com.bamnat.app.ui.shifts.foldedHere()
+    val quiet = com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(settings.workStyle)
+    SectionCard(title = if (quiet) "시작 전 알람" else "근무별 알람") {
+        val ringing = snapshot?.shiftTypes.orEmpty().filter { it.alarmEnabled && !it.isOff && it.start != null && it.id !in foldedKinds }
         if (ringing.isEmpty()) {
-            Note("근무 전 알람이 켜진 근무가 없어요.")
-            NavRow("근무 종류에서 알람 켜기", "근무마다 몇 분 전에 울릴지 정해요", onOpenShiftTypes)
+            Note(if (quiet) "시작 전 알람이 켜진 ${com.bamnat.app.ui.shifts.dayKindSubject(settings.workStyle)} 없어요." else "근무 전 알람이 켜진 근무가 없어요.")
+            if (quiet) NavRow(if (settings.workStyle == WorkStyle.INVEST) "알람 켜기" else "${settings.workStyle.words().types}에서 알람 켜기", "몇 분 전에 울릴지 정해요", onOpenShiftTypes)
+            else NavRow("근무 종류에서 알람 켜기", "근무마다 몇 분 전에 울릴지 정해요", onOpenShiftTypes)
         }
         for ((i, t) in ringing.withIndex()) {
             if (i > 0) HorizontalDivider()
@@ -346,7 +353,7 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         SwitchRow("점점 크게", "작은 소리로 시작해 20초 동안 커져요", settings.gradualVolume) { v -> vm.update { it.copy(gradualVolume = v) } }
     }
     // [PROV-06][PROV-07] 확실하게 깨우기 (프로).
-    SureAlarmCard(vm, settings, snapshot?.shiftTypes.orEmpty().filter { it.alarmEnabled && !it.isOff && it.start != null })
+    SureAlarmCard(vm, settings, snapshot?.shiftTypes.orEmpty().filter { it.alarmEnabled && !it.isOff && it.start != null && it.id !in foldedKinds })
     SectionCard(title = "울리는 방식") {
         ChoiceRow("다시 울림 간격", "알람에서 ‘다시 울림’을 누르면 이만큼 뒤에 다시 울려요",
             listOf(3, 5, 10, 15, 20).map { it to "${it}분" }, settings.snoozeMinutes) { m -> vm.update { it.copy(snoozeMinutes = m) } }
@@ -502,18 +509,20 @@ private fun NoticesPage(
         Note("근무 알람을 켜고 끄는 것과 소리는 설정 › 알람에서 정해요.")
     }
     val planned = settings.workStyle?.usesPayEngine != false
+    // 1.38 PC 11차 식당 둘러보기 (퇴근길 안전: 야간, 52시간이 가게에 보임): what follows a 근무표 shows where there is one, and 퇴근길 안전
+    // (the end of a night) to 교대 only; one already on still shows wherever, so it can be turned off.
+    val nights = settings.workStyle == null || settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT
     SectionCard(title = "하루 안내") {
-        if (!planned) Note("교대·일근·시급 근무에서 근무 시간에 맞춰 와요.")
-        SwitchRow("하루 브리핑", "근무 전에 커피·낮잠·잘 시간을 소리 없이 한 번 알려 줘요", settings.briefing, enabled = planned,
+        if (planned || settings.briefing) SwitchRow("하루 브리핑", if (nights) "근무 전에 커피·낮잠·잘 시간을 소리 없이 한 번 알려 줘요" else "출근 전에 오늘 근무와 잘 시간을 소리 없이 한 번 알려 줘요", settings.briefing, enabled = planned || settings.briefing,
             warning = warning(settings.briefing, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(briefing = on) }
         }
-        SwitchRow("퇴근길 안전", "야간이 끝날 때 한 번 소리로 알려 줘요. 10분 넘게 늦어지면 운전 중일 수 있어 보내지 않아요",
-            settings.commuteNotice, enabled = planned,
+        if (planned && nights || settings.commuteNotice) SwitchRow("퇴근길 안전", "야간이 끝날 때 한 번 소리로 알려 줘요. 10분 넘게 늦어지면 운전 중일 수 있어 보내지 않아요",
+            settings.commuteNotice, enabled = planned || settings.commuteNotice,
             warning = warning(settings.commuteNotice, Notifications.COMMUTE_CHANNEL_ID), onFix = fix(Notifications.COMMUTE_CHANNEL_ID)) { on ->
             set(on) { it.copy(commuteNotice = on) }
         }
-        SwitchRow("잘 준비", "근무 전날 밤, 잘 시간 30분 전에 소리 없이 알려 줘요", settings.bedtimeNotice, enabled = planned,
+        if (planned || settings.bedtimeNotice) SwitchRow("잘 준비", "근무 전날 밤, 잘 시간 30분 전에 소리 없이 알려 줘요", settings.bedtimeNotice, enabled = planned || settings.bedtimeNotice,
             warning = warning(settings.bedtimeNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(bedtimeNotice = on) }
         }
@@ -564,7 +573,7 @@ private fun NoticesPage(
             }
         }
         // [ALRM-16] 1.31 N3
-        SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
+        if (planned || settings.afterAlarmCard) SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
             settings.afterAlarmCard, warning = warning(settings.afterAlarmCard, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(afterAlarmCard = on) }
         }
@@ -585,7 +594,9 @@ private fun NoticesPage(
             warning = warning(settings.leaveNotice, Notifications.LEAVE_CHANNEL_ID), onFix = fix(Notifications.LEAVE_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveNotice = on) }
         }
-        Note("일감 시작 전 알림은 일감마다 정해요.")
+        // 1.38 PC 11차: 일감 is a 현장's work or an employee's 부업, not a shop's or a trader's.
+        if (settings.workStyle != com.bamnat.core.work.WorkStyle.BUSINESS && settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST)
+            Note("일감 시작 전 알림은 일감마다 정해요.")
     }
     // [COMM-10] The plaza's news once a day; [SRV-10] since 1.23 밤낮 소식 with answers, notices and received schedules.
     SectionCard(title = "소식") {

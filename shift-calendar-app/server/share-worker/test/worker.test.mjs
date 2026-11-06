@@ -238,7 +238,7 @@ test("without 휴가 종류 ticked a leave keeps only how much of the day it tak
 });
 
 test("the page shows ticked parts, escaped", async () => {
-  const html = renderSchedule(validate({ ...full, days: [{ date: "2026-11-01", type: 1, memo: "<img src=x>" }, ...full.days.slice(1)] }).schedule,
+  const html = renderSchedule(validate({ ...full, days: [{ ...full.days[0], memo: "<img src=x>" }, ...full.days.slice(1)] }).schedule,
     new Date(Date.now() + 86400000).toISOString());
   assert.match(html, /근무와 함께 보낸 것: 휴가 종류, 연장·휴무일 근무, 메모, 급여/);
   assert.match(html, /병가/);
@@ -247,6 +247,10 @@ test("the page shows ticked parts, escaped", async () => {
   assert.ok(!html.includes("<img"));
   assert.match(html, /&lt;img src=x&gt;/);
   assert.ok(!html.includes("intent://"), "no app button unless asked");
+  // 1.38 PC 11차: memos ticked but none in the month is not listed as sent.
+  const none = renderSchedule(validate({ ...full, days: full.days.map(({ memo, ...d }) => d).filter((d) => d.type) }).schedule,
+    new Date(Date.now() + 86400000).toISOString());
+  assert.match(none, /근무와 함께 보낸 것: 휴가 종류, 연장·휴무일 근무, 급여/);
 });
 
 test("Android visitors get a button into the app", async () => {
