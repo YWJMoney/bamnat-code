@@ -144,7 +144,23 @@ object PayslipScanner {
         }
         val (tilt, keystone) = OcrRows.lean(firstLines)
         val quality = PhotoQuality.of(plan.stats, letter, words(firstLines), tilt, scanned = scanned, keystone = keystone)
+        if (com.bamnat.app.BuildConfig.DEBUG) dump(boxes)
         put(texts, ImagePrep.forScreen(photo).first, quality, boxes, templates).also { it.turn = kept }
+    }
+
+    /**
+     * [READ-41] Debug builds only: each reading's words with their boxes, in the shape of a slip-screen `.tsv` fixture, so a
+     * payslip read wrongly on the emulator can be replayed here exactly (`adb logcat -s BamnatOcr`). Nothing in release.
+     */
+    private fun dump(reads: List<List<OcrLine>>) {
+        reads.forEachIndexed { i, ws ->
+            android.util.Log.d("BamnatOcr", "# slip read $i of ${reads.size}")
+            ws.chunked(20).forEach { part ->
+                android.util.Log.d("BamnatOcr", part.joinToString("\n") { w ->
+                    "word\t${w.left}\t${w.top}\t${w.right}\t${w.bottom}\t${"%.2f".format(java.util.Locale.ROOT, w.angle)}\t${w.text}"
+                })
+            }
+        }
     }
 
     /**

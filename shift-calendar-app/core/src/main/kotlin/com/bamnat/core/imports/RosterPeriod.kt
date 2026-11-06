@@ -42,7 +42,9 @@ object RosterPeriod {
             val doubt = row.doubtful(last)
             // The cells read, a common code's guess (주 → 데이) among them: the period is in what was read, its meaning aside.
             val sure = row.cells.filter { (d, c) -> c !is DutyCell.Unknown && d !in row.unsure }
-            val period = of(sure, last) ?: return@map row
+            // [READ-41] PC 11차: 1조 read two ways on 11 days had too few sure ones on some step of its 6 (5·18일 stayed
+            // blank); then every cell read, the vote's pick on the doubtful ones, must keep the repeat as tightly.
+            val period = of(sure, last) ?: of(row.cells.filterValues { it !is DutyCell.Unknown }, last) ?: return@map row
             val cells = row.cells.toMutableMap()
             val guessed = row.guessed.toMutableSet()
             // Only between the first and last day the line was read on: past its ends a 조 roster may turn (Y9, a real

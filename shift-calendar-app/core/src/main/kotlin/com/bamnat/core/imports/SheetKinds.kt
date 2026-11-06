@@ -41,49 +41,58 @@ object SheetKinds {
     }
 
     /**
-     * [READ-40] The picked [row] in the new kinds. A cell is read again from what the photo said there ([RosterRow.raw]); a
-     * cell with no word of its own (put together from several readings, filled from the repeat) keeps its part (주간 stays
-     * 주간) by [oldRole] → [newId]. A day off with no word could be 비번 or 휴무: the 조 repeat says which, else 휴무, in yellow.
-     * 1.38 PC 10차: reading again from the words alone left most days empty (8일부터 모두 쉬는 날).
+     * [READ-40] The picked [row] in the new kinds. A work day keeps its part (주간 stays 주간) by [oldRole] → [newId]; a cell the
+     * old kinds could not read is read again from what the photo said there ([RosterRow.raw]). A day off is 비번 right after a
+     * 야간·당번, else 휴무, yellow where the day's own word does not say the same.
+     * 1.38 PC 10차: reading again from the words alone left most days empty (8일부터 모두 쉬는 날). PC 11차: a word can sit a day
+     * off (the anchor reading's date line lost 2·3·6·8·9일), which put 비 on a 야 day and 휴 on 비 days.
      */
     fun remap(row: RosterRow, before: DutyCodes, after: DutyCodes, oldRole: (Long) -> ShiftRole?, newId: (ShiftRole) -> Long?): RosterRow {
+        val roleOf = ShiftRole.entries.mapNotNull { r -> newId(r)?.let { it to r } }.toMap()
         val cells = sortedMapOf<Int, DutyCell>()
         val offs = HashSet<Int>()
         val guessed = HashSet<Int>()
+        // What a day's own word says, read in the new kinds (비 or 휴 for a day off).
+        val own = HashMap<Int, ShiftRole>()
         for ((d, cell) in row.cells) {
             val word = row.raw[d]
             val again = word?.let { after.read(it)?.first }
-            if (again != null) {
-                cells[d] = again
-                // Yellow only for what is still a guess in the new kinds (the old 주 → 데이 guess is the sheet's own word now).
-                if (d in row.guessed && !(before.guessedWork(word, cell) && !after.guessedWork(word, again))) guessed += d
-                continue
-            }
-            when (cell) {
-                is DutyCell.Shift -> {
-                    val role = oldRole(cell.shiftTypeId)
-                    if (role == null || role.isOff) offs += d
-                    else newId(role)?.let { cells[d] = DutyCell.Shift(it); if (d in row.guessed) guessed += d } ?: run { offs += d }
+            (again as? DutyCell.Shift)?.let { a -> roleOf[a.shiftTypeId]?.let { own[d] = it } }
+            val role = (cell as? DutyCell.Shift)?.let { oldRole(it.shiftTypeId) }
+            when {
+                // 1.38 PC 11차: a day's word is the anchor reading's, put under a day by its own date line (2·3·6·8·9일 lost
+                // there), so it can sit a day off. The cell put together from every reading keeps its part: 야간 stays 야간.
+                role != null && !role.isOff && newId(role) != null -> {
+                    cells[d] = DutyCell.Shift(newId(role)!!)
+                    if (d in row.guessed) guessed += d
                 }
-                DutyCell.Off -> offs += d
+                role != null || cell == DutyCell.Off -> offs += d
+                cell is DutyCell.Shift && again != null -> {
+                    cells[d] = again
+                    if (d in row.guessed && !(before.guessedWork(word, cell) && !after.guessedWork(word, again))) guessed += d
+                }
+                cell is DutyCell.Shift -> offs += d
+                cell is DutyCell.Unknown && again != null -> { cells[d] = again; guessed += d }
                 else -> { cells[d] = cell; if (d in row.guessed) guessed += d }
             }
         }
-        // An off day with no word of its own (a day the vote or the period filled) takes the off kind its place in the old
-        // line's repeat says (주주야야비휴: the 비 or the 휴 of a day read on the same step), yellow; else 휴무, yellow.
-        val lastDay = row.cells.keys.maxOrNull() ?: 0
-        val period = RosterPeriod.of(row.cells.filter { (d, c) -> c !is DutyCell.Unknown && d !in row.unsure }, lastDay)
-        if (period != null) {
-            val offIds = ShiftRole.entries.filter { it.isOff }.mapNotNull(newId).toSet()
-            val fromWord = cells.filterKeys { row.raw[it] != null }
-            for (d in offs.toList()) {
-                val e = fromWord.entries.firstOrNull { (e, c) -> (e - d) % period.length == 0 && c is DutyCell.Shift && c.shiftTypeId in offIds }
-                if (e != null) { cells[d] = e.value; guessed += d; offs -= d }
+        // A day off: 비번 the day after a 야간 or 당번 when the sheet has 비번, 휴무 otherwise; that is what 비 means, and it
+        // does not hang on which word sat over the day. With the day before unknown, the day's own word, else 휴무. Yellow
+        // unless the day's own word says the same.
+        val afterDuty = newId(ShiftRole.AFTER_DUTY)
+        val rest = newId(ShiftRole.OFF)?.let { DutyCell.Shift(it) } ?: DutyCell.Off
+        for (d in offs.sorted()) {
+            val prev = (cells[d - 1] as? DutyCell.Shift)?.let { roleOf[it.shiftTypeId] }
+            val mine = own[d]?.takeIf { it.isOff }
+            val pick = when {
+                afterDuty == null -> ShiftRole.OFF
+                prev == ShiftRole.NIGHT || prev == ShiftRole.DUTY -> ShiftRole.AFTER_DUTY
+                prev != null -> ShiftRole.OFF
+                else -> mine ?: ShiftRole.OFF
             }
+            cells[d] = if (pick == ShiftRole.AFTER_DUTY) DutyCell.Shift(afterDuty!!) else rest
+            if (mine != pick || d in row.guessed) guessed += d
         }
-        val filled = RosterPeriod.fill(listOf(row.copy(cells = cells, guessed = guessed))).first()
-        val rest = offs.filter { it !in filled.cells }
-        val off = newId(ShiftRole.OFF)?.let { DutyCell.Shift(it) } ?: DutyCell.Off
-        return filled.copy(cells = (filled.cells + rest.associateWith { off }).toSortedMap(), guessed = filled.guessed + rest)
+        return RosterPeriod.fill(listOf(row.copy(cells = cells, guessed = guessed))).first()
     }
 }
