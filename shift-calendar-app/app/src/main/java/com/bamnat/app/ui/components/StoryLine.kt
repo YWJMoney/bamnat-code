@@ -90,8 +90,12 @@ private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOp
         e.end?.let { append("–"); if (line.intoTomorrow) append("내일 "); append(hm(it)) }
     }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-        Text(hm(line.from), style = MaterialTheme.typography.labelMedium.merge(NumberStyle), modifier = Modifier.width(48.dp).padding(top = 12.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1.38 PC 12차 유형별 빈틈 9: last night's shift began yesterday, so its own time with "어제" over it, not the day's 00:00.
+        Column(Modifier.width(48.dp).padding(top = 12.dp)) {
+            if (line.fromYesterday) Text("어제", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(hm(if (line.fromYesterday) e.start else line.from), style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         Box(Modifier.width(20.dp).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
             if (!last) Box(Modifier.padding(top = 14.dp).width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
             Box(Modifier.padding(top = 12.dp).size(12.dp).background(dot, CircleShape))
