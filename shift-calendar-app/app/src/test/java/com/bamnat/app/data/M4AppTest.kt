@@ -150,8 +150,8 @@ class M4AppTest {
         settings.update { it.copy(extraKinds = ExtraKinds(ExtraKinds.DEFAULTS + cover)) }
         val store = PayStore(context)
         store.save(PayProfile(Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(today, 2_508_000))),
-            rules = CompanyRules(extra = mapOf(101L to ExtraRule(ExtraBasis.PERCENT_OF_BASE, percentOfBase = 0.1, coverMinutes = 480, legalPremiums = true)),
-                publicHolidayAs = 101L)))
+            rules = CompanyRules(extra = mapOf(101L to ExtraRule(ExtraBasis.PERCENT_OF_BASE, percentOfBase = 0.1, coverMinutes = 480, legalPremiums = true,
+                monthlyHours = 243)), publicHolidayAs = 101L)))
         val file = CompanyShare(schedule, store, settings, today = { today }).export("2공장", withAmounts = false)
         assertEquals(listOf("잔업", "특근", "대근", "야간 대근"), CompanyShare(schedule, store, settings).summarize(file).extraKinds)
 
@@ -175,6 +175,9 @@ class M4AppTest {
             assertEquals(ExtraTiming.AsShift(theirNight), added.timing)
             val rules = store.profile.value!!.rules
             assertEquals(ExtraBasis.PERCENT_OF_BASE, rules.extra.getValue(102L).basis)
+            // 1.38 [PAYX-49] The kind's own 시수 is the company's, so it goes with the file; their own kind has none.
+            assertEquals(243, rules.extra.getValue(102L).monthlyHours)
+            assertEquals(null, rules.extra.getValue(101L).monthlyHours)
             assertEquals(102L, rules.publicHolidayAs)
             // Their own kind keeps its rule.
             assertEquals(10_000L, rules.extra.getValue(101L).amount)

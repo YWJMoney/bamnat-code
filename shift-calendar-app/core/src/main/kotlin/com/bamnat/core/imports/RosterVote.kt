@@ -1,5 +1,7 @@
 package com.bamnat.core.imports
 
+import kotlin.math.abs
+
 /**
  * [READ-13] 1.27 순번 446: one roster photo read several ways ([PhotoVariants]) and the readings put together cell by cell.
  *
@@ -22,9 +24,33 @@ object RosterVote {
         if (usable.size == 1) return usable[0].let { it.copy(rows = RosterPeriod.fill(it.rows)) }
         val anchor = reads[anchor(reads)]
         val others = usable.filter { it !== anchor }
-        val rows = anchor.rows.map { a -> vote(a, others.mapNotNull { match(a, it.rows) }) }
+        val gap = gap(anchor.rows)
+        val taken = HashSet<RosterRow>()
+        val rows = anchor.rows.map { a -> vote(a, others.mapNotNull { o -> match(a, o.rows, gap)?.also { taken += it } }) }.toMutableList()
+        // A nameless line named by the others' readings keeps no name another line has (1조 and 4조 share a rota).
+        anchor.rows.forEachIndexed { i, a ->
+            if (a.label.isBlank() && rows[i].label.isNotBlank() && rows.indices.any { j -> j != i && key(rows[j].label) == key(rows[i].label) }) rows[i] = rows[i].copy(label = "")
+        }
+        rows += missed(anchor.rows, others.map { o -> o.rows.filter { it !in taken } }, gap)
+        rows.sortBy { if (it.y > 0) it.y else Int.MAX_VALUE }
         // [READ-36] A 조 roster's repeat fills what every reading lost (yellow).
-        return anchor.copy(rows = RosterPeriod.fill(folded(rows)))
+        return anchor.copy(rows = RosterPeriod.fill(pieces(folded(rows))))
+    }
+
+    /**
+     * [READ-41] 1.38 PC 11차 (조-근무표-빈칸6.png on ML Kit): one reading broke 1조's line in two, and the nameless piece
+     * matched a different line in each other reading, so it came out as '3번째 줄 · 18일' whose days the readings mostly
+     * disagree on. Among named lines, a nameless one with fewer than a third of its days read alike, or under half the days
+     * a named line has, is no one's line.
+     */
+    fun pieces(rows: List<RosterRow>): List<RosterRow> {
+        val named = rows.filter { it.label.isNotBlank() }
+        if (named.size < 2) return rows
+        val usual = named.map { it.cells.size }.sorted()[named.size / 2]
+        return rows.filterNot { r ->
+            val known = r.cells.filterValues { it !is DutyCell.Unknown }.keys
+            r.label.isBlank() && ((known - r.unsure).size * 3 < r.cells.size || known.size * 2 < usual)
+        }
     }
 
     /**
@@ -69,15 +95,49 @@ object RosterVote {
 
     private fun key(label: String) = DutyCodes.norm(label)
 
-    /** [a]'s line in another reading: the same name, else the line whose cells agree with it most (at least 60%). */
-    fun match(a: RosterRow, rows: List<RosterRow>): RosterRow? {
-        if (a.label.isNotBlank()) rows.firstOrNull { it.label.isNotBlank() && key(it.label) == key(a.label) }?.let { return it }
-        return rows.mapNotNull { r ->
+    /** [READ-41] The usual step between the lines in the photo (pixels), 0 when the lines' places are not known. */
+    fun gap(rows: List<RosterRow>): Int {
+        val ys = rows.map { it.y }.filter { it > 0 }.sorted()
+        val steps = ys.zipWithNext { a, b -> b - a }.filter { it > 0 }.sorted()
+        return steps.getOrNull(steps.size / 2) ?: 0
+    }
+
+    /** Whether [r] stands where [a] does (within half a line), or either place is unknown. */
+    private fun near(a: RosterRow, r: RosterRow, gap: Int) = gap <= 0 || a.y <= 0 || r.y <= 0 || abs(a.y - r.y) * 2 <= gap
+
+    /**
+     * [a]'s line in another reading: the same name, else the line whose cells agree with it most (at least 60%). [READ-41]
+     * PC 11차 (a 병동 듀티 where three people share each rota): the line in the same place of the photo, not another
+     * person's with the same days.
+     */
+    fun match(a: RosterRow, rows: List<RosterRow>, gap: Int = 0): RosterRow? {
+        if (a.label.isNotBlank()) rows.firstOrNull { it.label.isNotBlank() && key(it.label) == key(a.label) && near(a, it, gap) }?.let { return it }
+        return rows.filter { near(a, it, gap) }.mapNotNull { r ->
             val shared = a.cells.keys.intersect(r.cells.keys)
             if (shared.size < MIN_SHARED) return@mapNotNull null
             val same = shared.count { a.cells[it] == r.cells[it] }
             (r to same.toDouble() / shared.size).takeIf { it.second >= 0.6 }
-        }.maxByOrNull { it.second }?.first
+        }.maxWithOrNull(compareBy<Pair<RosterRow, Double>> { it.second }.thenBy { -abs(a.y - it.first.y) })?.first
+    }
+
+    /**
+     * [READ-41] PC 11차: lines the anchor reading lost (12 people came out as 10) that other readings kept, named and in a
+     * place no anchor line stands, seen in at least two readings: put together like the others.
+     */
+    private fun missed(anchor: List<RosterRow>, left: List<List<RosterRow>>, gap: Int): List<RosterRow> {
+        if (gap <= 0) return emptyList()
+        val out = mutableListOf<RosterRow>()
+        val names = anchor.map { key(it.label) }.filter { it.isNotEmpty() }.toSet()
+        val pool = left.mapIndexed { i, rs -> rs.filter { r -> r.y > 0 && r.label.isNotBlank() && key(r.label) !in names && anchor.none { near(it, r, gap) } }.map { i to it } }.flatten()
+        val used = HashSet<RosterRow>()
+        for ((i, r) in pool.sortedByDescending { it.second.cells.size }) {
+            if (r in used || out.any { near(it, r, gap) }) continue
+            val same = pool.filter { (j, o) -> j != i && o !in used && near(r, o, gap) }.groupBy { it.first }.map { (_, os) -> os.minBy { abs(it.second.y - r.y) }.second }
+            if (same.isEmpty()) continue
+            used += r; used += same
+            out += vote(r, same)
+        }
+        return out
     }
 
     /**
@@ -88,6 +148,19 @@ object RosterVote {
         val top = sorted.firstOrNull() ?: return false
         val second = sorted.getOrNull(1) ?: 0
         return top >= 2 && (second == 0 || top >= 3 * second)
+    }
+
+    /**
+     * [READ-41] PC 11차: the line's name as most readings read it, a whole name (2~4 글자) before a piece of one (정 for
+     * 정하늘); the anchor's own name on a tie.
+     */
+    fun label(all: List<RosterRow>): String {
+        val names = all.map { it.label.trim() }.filter { it.isNotBlank() }
+        if (names.isEmpty()) return all.first().label
+        fun whole(n: String) = n.length in 2..4 && n.all { it in '가'..'힣' }
+        val counts = names.groupingBy { key(it) }.eachCount()
+        val best = names.maxWith(compareBy<String> { whole(it) }.thenBy { counts.getValue(key(it)) }.thenBy { it == all.first().label.trim() })
+        return best
     }
 
     /** [a] with each day decided by all the readings of that line. */
@@ -117,6 +190,6 @@ object RosterVote {
             // A doubt any reading had about the word it read there (a word of the other alphabet, a lone 0) stays.
             if (known.any { (r, c) -> c == pick && d in r.guessed }) guessed += d
         }
-        return a.copy(cells = cells, unsure = unsure, guessed = guessed, notes = a.notes.filterKeys { cells[it] == a.cells[it] })
+        return a.copy(label = label(all), cells = cells, unsure = unsure, guessed = guessed, notes = a.notes.filterKeys { cells[it] == a.cells[it] })
     }
 }
