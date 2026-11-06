@@ -23,13 +23,22 @@ object OcrRows {
     /**
      * [PHOTO-12] 1.29 AQ: words that stand at another slant than the page's are a watermark across it (화학 공장 명세서 사진,
      * 사용자 2026-10-27: 사번·날짜·IP가 20° 기울어 몇 번씩 찍힘), never part of the table: their dates and numbers were read as
-     * amounts. The page's slant is the middle one of its long lines; a word more than 8° off it is left out.
+     * amounts. The page's slant is the middle one of its long lines; a word more than 8° off it is left out, unless its box
+     * is level.
      */
     fun unmarked(lines: List<OcrLine>): List<OcrLine> {
         val long = lines.filter { it.right - it.left > 3 * it.height }.map { it.angle.toDouble() }.sorted()
         if (long.size < 3) return lines
         val page = long[long.size / 2]
-        return lines.filter { kotlin.math.abs(it.angle - page) <= 8.0 }
+        val level = lines.filter { kotlin.math.abs(it.angle - page) <= 8.0 }
+        // [READ-41] 1.38 PC 12차 (s03): ML Kit put 상조회 and 노동조합 on a line with the watermark and gave them its slope, so they
+        // went with it. A word at a watermark's slope whose box is as flat as the page's letters stands level: the slope would
+        // have made a box that wide that much taller.
+        val letter = level.map { it.height }.sorted().let { if (it.isEmpty()) return level else it[it.size / 2] }
+        return lines.filter { l ->
+            val off = kotlin.math.abs(l.angle - page)
+            off <= 8.0 || l.height <= 1.4 * letter && (l.right - l.left) * kotlin.math.sin(Math.toRadians(off)) > 0.5 * letter
+        }
     }
 
     /**

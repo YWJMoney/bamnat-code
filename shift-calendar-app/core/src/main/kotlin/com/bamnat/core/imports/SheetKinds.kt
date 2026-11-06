@@ -25,7 +25,8 @@ object SheetKinds {
         if (words.size < 8) return null
         val roles = words.mapNotNull { w -> LETTERS[DutyCodes.LOOKALIKE[w] ?: w] }
         // Most of the sheet is these letters (a few 연차, 교육 aside), each said at least twice.
-        if (roles.size * 10 < words.size * 8) return null
+        // [READ-41] 70%: a phone's reading of a 조 roster keeps bits of lines ("공", "은피") among its letters (PC 12차).
+        if (roles.size * 10 < words.size * 7) return null
         val kinds = roles.groupingBy { it }.eachCount().filterValues { it >= 2 }.keys
         if (kinds.size < 2 || kinds.none { !it.isOff }) return null
         // The setup already says them: nothing to change.
