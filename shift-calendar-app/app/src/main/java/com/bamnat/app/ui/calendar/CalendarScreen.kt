@@ -718,6 +718,7 @@ fun CalendarScreen(
         ?: calendarRows.firstOrNull { it.key == com.bamnat.app.data.CalendarKey.Mine(activeCalendar.id) } ?: CalendarRow.Mine(activeCalendar, null)
     // 1.38 [EASE-30] 같이 보기 goes once this calendar has a link out; the faces take its place once one is taken in.
     var together by remember { mutableStateOf(false) }
+    val togetherStyle = activeCalendar.style ?: settings.workStyle
     val togetherDone = remember(activeCalendar.id, showShare) { context.appContainer.hasShareLink(activeCalendar.id) }
     // [UX-03] Always there: whose calendar this is (a tap opens the switcher, where a coworker's calendar
     // is taken in too) and 공유, on every screen size.
@@ -730,10 +731,13 @@ fun CalendarScreen(
             onPick = pickCalendar,
             onShare = shareCalendar,
             // 1.38 [EASE-30] Until a link went out or another calendar sits beside this one.
-            onTogether = if (shareLinks && viewingReceived == null && !togetherDone) ({ together = true }) else null,
+            // 1.38 PC 4a5c3828 (자영업·투자 달력에 '가족·연인과 근무 같이 보기'): 투자 has no days to see together; a shop's are its 영업일.
+            onTogether = if (shareLinks && viewingReceived == null && !togetherDone && togetherStyle != com.bamnat.core.work.WorkStyle.INVEST) ({ together = true }) else null,
+            togetherShop = togetherStyle == com.bamnat.core.work.WorkStyle.BUSINESS,
         )
     }
     if (together) TogetherSheet(
+        shop = togetherStyle == com.bamnat.core.work.WorkStyle.BUSINESS,
         onSend = { together = false; shareCalendar() },
         onTake = if (received.enabled) ({ together = false; adding = "" }) else null,
         onDismiss = { together = false },

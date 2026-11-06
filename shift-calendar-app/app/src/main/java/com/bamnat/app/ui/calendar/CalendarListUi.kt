@@ -186,6 +186,8 @@ fun CalendarIdentityBar(
      * on the first calendar, both without an account. Null hides it.
      */
     onTogether: (() -> Unit)? = null,
+    /** A shop's calendar: its 같이 보기 is the 영업일's. */
+    togetherShop: Boolean = false,
 ) {
     BoxWithConstraints(modifier.fillMaxWidth()) {
     // Two faces beside 공유 on a cover screen or with large text, three where there is room.
@@ -253,7 +255,7 @@ fun CalendarIdentityBar(
             if (faces.isEmpty() && onTogether != null && !small) {
                 Surface(
                     onClick = onTogether, shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = "가족·연인과 근무 같이 보기" },
+                    modifier = Modifier.padding(start = 4.dp).heightIn(min = 40.dp).semantics { contentDescription = if (togetherShop) "영업일 같이 보기" else "가족·연인과 근무 같이 보기" },
                 ) {
                     Row(Modifier.padding(start = 10.dp, end = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Add, null, Modifier.size(18.dp))

@@ -122,6 +122,13 @@ class YScreenshotTest : ScreenshotBase() {
         assertTrue(d!!.rosterMonthly)
     })
 
+    /** 1.38 PC 4a5c3828: a shop's 같이 보기 is its 영업일, never 가족·연인과 근무. */
+    @Test fun aShopsTogetherSheetSaysItsDays() = shoot("898b_y_together_shop", PHONE_393) {
+        content { com.bamnat.app.ui.calendar.TogetherSheet(onSend = {}, onTake = null, onDismiss = {}, shop = true) }
+        assertTrue(appears("영업일 같이 보기", exact = true))
+        assertTrue(gone("가족·연인과 근무 같이 보기", exact = true))
+    }
+
     @Test fun anUnknownJobFallsBackToTheCards() = shoot("897_y_job_unknown", FOLDED, firstScreen {
         typeInto("하는 일", "우주비행사아저씨")
         assertTrue(appears("맞는 일을 찾지 못했어요"))
