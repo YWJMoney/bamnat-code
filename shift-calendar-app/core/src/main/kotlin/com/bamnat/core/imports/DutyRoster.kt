@@ -430,6 +430,18 @@ object DutyRoster {
     }
 
     /**
+     * [READ-30] 1.38 PC (x03): the kind of work a roster line has most of. A day the roster gives 연차 is a working day taken
+     * off, whatever the user's own order says of it, so a leave on a day the calendar has as a rest day is put on this shift
+     * (the leave then counts and is paid, as the roster means). Null when the line has no work.
+     */
+    fun mainShift(cells: Collection<DutyCell>): Long? =
+        cells.filterIsInstance<DutyCell.Shift>().groupingBy { it.shiftTypeId }.eachCount().maxByOrNull { it.value }?.key
+
+    /** [READ-30] [cell]'s leave on [entry], a rest day on the calendar, made a day of [shiftTypeId] work taken off. */
+    fun leaveOnRest(entry: DayEntry, cell: DutyCell.Leave, shiftTypeId: Long): DayEntry =
+        entry.copy(override = ShiftOverride.Shift(shiftTypeId), leave = cell.leave)
+
+    /**
      * [ROST-02] What [cells] would overwrite on a calendar whose days are [entries]: days with leave, or with a
      * kind of work the user changed by hand, that the roster puts something else on (하 '덮어쓰기 안내').
      */

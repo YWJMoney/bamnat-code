@@ -171,4 +171,21 @@ class FileBenchTest {
         for (d in 1..30) assertEquals("day $d", codes.read(want[d - 1])!!.first, one.cells[d])
         assertTrue("the counted-back days are looked at", (1..3).all { it in one.doubtful(31) })
     }
+
+    /**
+     * [READ-30] 1.38 PC (x03 병합 연차): a roster's 연차 on a day the user's own order has off goes on as that day's main
+     * work taken off, so it counts as leave instead of "근무가 없는 날".
+     */
+    @Test fun aRostersLeaveOnARestDayCountsAsLeave() {
+        val date = LocalDate.of(2026, 11, 10)
+        val main = DutyRoster.mainShift(listOf(DutyCell.Shift(1), DutyCell.Shift(1), DutyCell.Shift(2), DutyCell.Off, DutyCell.Leave()))
+        assertEquals(1L, main)
+        val rest = com.bamnat.core.model.DayEntry(date, override = com.bamnat.core.model.ShiftOverride.Off)
+        // As before, apply alone keeps the rest day, and the leave means nothing on it.
+        val plain = com.bamnat.core.schedule.ScheduleResolver(Fixtures.all, emptyList(), listOf(DutyRoster.apply(rest, DutyCell.Leave())))
+        assertEquals(null, plain.resolve(date).leave)
+        val e = DutyRoster.leaveOnRest(rest, DutyCell.Leave(), main!!)
+        val day = com.bamnat.core.schedule.ScheduleResolver(Fixtures.all, emptyList(), listOf(e)).resolve(date)
+        assertTrue(day.leave != null && day.leaveMinutes > 0)
+    }
 }

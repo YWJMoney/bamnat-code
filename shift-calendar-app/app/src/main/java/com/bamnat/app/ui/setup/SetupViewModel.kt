@@ -584,7 +584,7 @@ class SetupViewModel(
         when (cell) {
             is com.bamnat.core.imports.DutyCell.Shift -> update { it.copy(painted = it.painted + (date to cell.shiftTypeId), leaves = it.leaves - date) }
             com.bamnat.core.imports.DutyCell.Off -> update { it.copy(painted = it.painted + (date to null), leaves = it.leaves - date) }
-            is com.bamnat.core.imports.DutyCell.Leave -> update { it.copy(leaves = it.leaves + (date to cell.leave)) }
+            is com.bamnat.core.imports.DutyCell.Leave -> update { d -> d.copy(painted = d.painted + leaveWork(d, listOf(date)), leaves = d.leaves + (date to cell.leave)) }
             else -> Unit
         }
     }
@@ -711,7 +711,11 @@ class SetupViewModel(
         }
         _paintUndo.value = current.painted
         leavesUndo = current.leaves
-        update { it.copy(painted = it.painted + days, leaves = it.leaves - days.keys + leaves) }
+        // [READ-30] 1.38 PC (x03): the roster's 연차 is a working day taken off: painted with the line's main work, so the
+        // leave counts, instead of a blank day the leave means nothing on.
+        val main = com.bamnat.core.imports.DutyRoster.mainShift(cells.values) ?: current.types.firstOrNull { !it.isOff }?.id
+        val leaveDays = if (main == null) emptyMap() else leaves.keys.filter { it !in days }.associateWith { main }
+        update { it.copy(painted = it.painted + days + leaveDays, leaves = it.leaves - days.keys + leaves) }
         _paintMonth.value = month
         if (r.rows.size > 1) rosterRank = i
         _roster.value = r.copy(rows = listOf(row))
@@ -723,6 +727,16 @@ class SetupViewModel(
             (if (asks.isNotEmpty()) " · 모르는 글자 ${asks.size}개는 아래에서 골라 주세요" else "")
     }
 
+    /**
+     * [READ-30] Leave [dates] with no work painted yet: the work they take off, the month's most painted kind (the roster's
+     * main shift), so the leave counts.
+     */
+    private fun leaveWork(d: com.bamnat.core.setup.SetupDraft, dates: List<LocalDate>): Map<LocalDate, Long?> {
+        val main = d.painted.values.filterNotNull().groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+            ?: d.types.firstOrNull { !it.isOff }?.id ?: return emptyMap()
+        return dates.filter { d.painted[it] == null }.associateWith { main }
+    }
+
     /** [SETUP-15] What a code the setup did not know means: its days painted (or given leave), or left as they are (null). */
     fun answerRosterCode(raw: String, cell: com.bamnat.core.imports.DutyCell?) {
         val ask = _rosterAsks.value.firstOrNull { it.first.raw == raw } ?: return
@@ -731,7 +745,7 @@ class SetupViewModel(
         when (cell) {
             is com.bamnat.core.imports.DutyCell.Shift -> update { it.copy(painted = it.painted + dates.associateWith { cell.shiftTypeId }, leaves = it.leaves - dates.toSet()) }
             com.bamnat.core.imports.DutyCell.Off -> update { it.copy(painted = it.painted + dates.associateWith { null }, leaves = it.leaves - dates.toSet()) }
-            is com.bamnat.core.imports.DutyCell.Leave -> update { it.copy(leaves = it.leaves + dates.associateWith { cell.leave }) }
+            is com.bamnat.core.imports.DutyCell.Leave -> update { d -> d.copy(painted = d.painted + leaveWork(d, dates), leaves = d.leaves + dates.associateWith { cell.leave }) }
             else -> Unit
         }
     }
