@@ -2,6 +2,8 @@ package com.bamnat.app.ui.calendar
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -74,6 +76,7 @@ fun ImageShareSheet(
     var holidays by rememberSaveable { mutableStateOf(true) }
     var legend by rememberSaveable { mutableStateOf(true) }
     var name by rememberSaveable { mutableStateOf(startName) }
+    var sending by androidx.compose.runtime.remember { mutableStateOf(false) }
     val notes = androidx.compose.runtime.remember(memos, month) { MonthImage.notes(memos, month) }
     val hasMemo = notes.values.any { it.memo != null }
     val hasSticker = notes.values.any { it.sticker != null }
@@ -92,8 +95,13 @@ fun ImageShareSheet(
             Text("${month.monthValue}월 사진으로 보내기", style = MaterialTheme.typography.titleLarge)
             Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                 val bmp = preview
-                if (bmp != null) Image(bmp, "보낼 사진 미리보기", contentScale = ContentScale.FillWidth,
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).clip(RoundedCornerShape(12.dp)))
+                // The whole picture inside the frame (PC 5차: FillWidth under a height cap cut off the title and the 이름표).
+                if (bmp != null) Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                    Image(bmp, "보낼 사진 미리보기", contentScale = ContentScale.Fit,
+                        modifier = Modifier.heightIn(max = 420.dp)
+                            .aspectRatio(bmp.width.toFloat() / bmp.height.coerceAtLeast(1), matchHeightConstraintsFirst = true)
+                            .clip(RoundedCornerShape(8.dp)))
+                }
                 else Spacer(Modifier.fillMaxWidth().heightIn(min = 200.dp))
             }
             Text("사진에 같이 넣을 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
@@ -110,13 +118,20 @@ fun ImageShareSheet(
                 label = { Text("제목에 넣을 이름 (선택)") }, placeholder = { Text("예: 민지") },
                 supportingText = { Text("‘${name.trim().ifEmpty { "민지" }}의 ${month.monthValue}월 근무표’로 보여요") },
                 modifier = Modifier.fillMaxWidth())
+            // PC 5차(6db1056b): the share window did not come. Closing the sheet at the tap took this sheet's scope with it
+            // and cancelled the drawing before the window could open; the sheet now closes once the window is asked for.
             Button(onClick = {
-                scope.launch { runCatching { MonthImage.share(context, snapshot, month, weekStart, look, notes) } }
-                onSent(); onDismiss()
-            }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                sending = true
+                scope.launch {
+                    val sent = runCatching { MonthImage.share(context, snapshot, month, weekStart, look, notes) }
+                    sending = false
+                    if (sent.isSuccess) { onSent(); onDismiss() }
+                    else android.widget.Toast.makeText(context, "사진을 만들지 못했어요. 다시 눌러 주세요", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }, enabled = !sending, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                 Icon(Icons.Outlined.Image, null, Modifier.size(20.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("이 사진 보내기")
+                Text(if (sending) "사진 만드는 중…" else "이 사진 보내기")
             }
         }
     }

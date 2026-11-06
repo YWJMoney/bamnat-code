@@ -293,8 +293,8 @@ private fun MonthDays(month: YearMonth, changed: Map<LocalDate, StaffWork>, enab
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, onDismiss: () -> Unit) {
-    val store = LocalContext.current.appContainer.phaseThree
-    val scope = rememberCoroutineScope()
+    val app = LocalContext.current.appContainer
+    val store = app.phaseThree
     val usual = s.weekly[date.dayOfWeek]
     var kind by remember { mutableStateOf(now?.kind ?: WorkKind.LATE) }
     var start by remember { mutableStateOf(now?.start ?: usual?.start ?: LocalTime.of(9, 0)) }
@@ -328,12 +328,13 @@ private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, onDi
         confirmButton = {
             TextButton(onClick = {
                 val w = if (kind in StaffWork.TIMED) StaffWork(s.id, date, kind, start, end) else StaffWork(s.id, date, kind)
-                scope.launch { store.setWork(s.id, date, w) }; onDismiss()
+                // 1.38 PC 5차(같은 구조): the dialog's own scope ends when it closes and could drop the save; the app's does not.
+                app.appScope.launch { store.setWork(s.id, date, w) }; onDismiss()
             }, enabled = kind !in StaffWork.TIMED || start != end) { Text("저장") }
         },
         dismissButton = {
             Row {
-                if (now != null) TextButton(onClick = { scope.launch { store.setWork(s.id, date, null) }; onDismiss() }) { Text("평소대로") }
+                if (now != null) TextButton(onClick = { app.appScope.launch { store.setWork(s.id, date, null) }; onDismiss() }) { Text("평소대로") }
                 TextButton(onClick = onDismiss) { Text("닫기") }
             }
         },

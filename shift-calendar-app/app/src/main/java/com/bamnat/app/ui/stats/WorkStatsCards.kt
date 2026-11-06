@@ -185,17 +185,18 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                 val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
                 TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
                     if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT) && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@TextButton }
+                    // 1.38 PC 5차(사진으로 보내기와 같은 구조): closing at the tap ended this dialog's scope and the file was never
+                    // shared. The dialog closes once the share window has been asked for.
                     scope.launch {
                         runCatching {
                             com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.ClientStatementDoc.doc(statement, sender.trim(), Today.date()),
                                 "bamnat-거래내역서-${statement.month}.pdf")
                         }
+                        onDismiss()
                     }
-                    onDismiss()
                 }) { Text(if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) "PDF (프로)" else "PDF") }
                 TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
-                    scope.launch { runCatching { StatementImage.share(context, statement, sender.trim()) } }
-                    onDismiss()
+                    scope.launch { runCatching { StatementImage.share(context, statement, sender.trim()) }; onDismiss() }
                 }) { Text("사진으로 보내기") }
             }
         },

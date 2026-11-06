@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.EventRepeat
 import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
 import com.bamnat.app.ui.components.AlertDialog
@@ -1027,6 +1028,8 @@ private val SHORTCUTS = listOf(
     Triple("근무표 공유", "근무표 공유", Icons.Outlined.Share),
     Triple("알람음", "알람 소리", Icons.Outlined.MusicNote),
     Triple("백업 저장", "백업", Icons.Outlined.SettingsBackupRestore),
+    // 1.38 PC 5차: 위젯 미리보기는 '화면과 글자' 안에만 있어 첫 화면에서 찾을 수 없었어요. 미리보기 바로 아래 줄로 가요.
+    Triple("위젯에 메모 보이기", "위젯", Icons.Outlined.Widgets),
     // [RUL-06] 1.36 PC 1차 확인: 규칙은 설정 › 알람 맨 아래에만 있어 찾기 어려웠어요.
     Triple(com.bamnat.app.logic.LOGIC_ROW, "규칙·단추", Icons.Outlined.Rule),
 )
@@ -1099,6 +1102,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
             }
             else -> "비움"
         },
+        "위젯",
     ).joinToString(" · ")
     SettingsPage.DATA -> "백업 저장 · 불러오기 · 캘린더 가져오기·내보내기"
     SettingsPage.PRIVACY -> "처리방침 · 권한 확인 · 앱 잠금 · 약관 · 밤낮 ${BuildConfig.VERSION_NAME}"
