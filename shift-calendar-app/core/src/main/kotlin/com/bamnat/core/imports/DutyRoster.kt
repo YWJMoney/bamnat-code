@@ -8,6 +8,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /*
  * [SHFT-06] A month's duty roster (듀티표) read from a photo on the phone, or from text pasted from
@@ -86,6 +87,11 @@ data class RosterRow(
      * teaches the code book what that word means on their rosters ([RosterLearn]). In memory only, never saved.
      */
     val raw: Map<Int, String> = emptyMap(),
+    /**
+     * [READ-30] 1.38 PC: a 4주 듀티 file's days outside [cells]' month (10/26~31 of a "11월" roster that runs 10/26~11/25), by
+     * date, so they go in too instead of being dropped.
+     */
+    val outside: Map<java.time.LocalDate, DutyCell> = emptyMap(),
 ) {
     val unknown: Int get() = cells.values.count { it is DutyCell.Unknown }
 
@@ -308,6 +314,8 @@ class DutyCodes(
 }
 
 object DutyRoster {
+    /** [READ-32] A 2~5 letter 한글 name and the Latin codes OCR stuck to its end ("최유리ED"). */
+    private val NAME_CODES = Regex("""^([가-힣]{2,5})[A-Za-z]{1,4}$""")
     // [NURS-03] "1", "1일", "01", and a day with its weekday in one cell: "1(월)". "1월" is a month, never a day.
     // [ROST-04] A date in the row of days too, as a spreadsheet copies it (중-7): "10/1", "10.1", "10월1일", "10-1".
     private val DAY_TOKEN = Regex("""^(?:(\d{1,2})\s*[/.\-월]\s*)?(\d{1,2})일?(?:\((?:월|화|수|목|금|토|일)\))?$""")
@@ -590,9 +598,23 @@ object DutyRoster {
                 }
                 continue
             }
+            val read = codes.read(w.text)
+            // [READ-32] 1.38 PC (스캔 PDF "최유리ED", 7일부터): when the date row was read from a later day on, the first days'
+            // codes stand left of it. Each is put on the day its place says, counted back from the first day read, and
+            // looked at (yellow); never taken into the name.
+            if (leftOfDays && read != null && fit.first > 1 && label.any { it in '가'..'힣' }) {
+                val back = (firstX - w.x) / fit.step(fit.first)
+                val d = fit.first - back.roundToInt()
+                if (d in 1 until fit.first && abs(back - back.roundToInt()) <= 0.45 && d !in cells) {
+                    cells[d] = read.first
+                    guessed += d
+                    off[d] = 1.0
+                    raws[d] = w.text.trim()
+                }
+                continue
+            }
             val near = if (leftOfDays) null else fit.day(w.x)
             val aligned = near != null && near.second <= 0.45
-            val read = codes.read(w.text)
             val cell = read?.first ?: if (codes.looksLikeCode(w.text) && aligned) DutyCell.Unknown(w.text.trim()) else null
             when {
                 cell != null && aligned -> {
@@ -614,6 +636,8 @@ object DutyRoster {
             }
         }
         if (label.isBlank()) label.append(rightLabel)
+        // [READ-32] 1.38 PC: "이수진D", "정다은N": a 한글 name with Latin codes stuck at its end is the name alone.
+        NAME_CODES.matchEntire(label.toString())?.groupValues?.get(1)?.let { name -> label.setLength(0); label.append(name) }
         // [READ-03] A cell far from its column's middle may be the next day's: one to look at.
         val unsure = off.filter { (d, miss) -> miss > 0.3 && d in cells }.keys
         // [READ-13] 1.27: a line written in 한글 codes (주·야·비·휴) with one Latin word ("OF" for 야, the bench's dim 조 표)
