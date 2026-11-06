@@ -203,6 +203,42 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         Extras(com.bamnat.core.sleep.ShiftAdapt.stepFor(today, work), com.bamnat.core.sleep.SleepCauses.find(checks), challenge)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** 1.38 [SLEEP-22] 바꾼 것 전후: the day the user marked and what they changed, with the 7 days on each side. */
+    data class Mark(val day: LocalDate, val what: String, val result: com.bamnat.core.sleep.BeforeAfter.Result?)
+
+    private val markDay = kotlinx.coroutines.flow.MutableStateFlow(SleepChallengeStore.mark(container.appContext))
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val mark: StateFlow<Mark?> = markDay.flatMapLatest { m ->
+        if (m == null) kotlinx.coroutines.flow.flowOf(null)
+        else {
+            val (day, what) = m
+            val from = day.minusDays(com.bamnat.core.sleep.BeforeAfter.DAYS + 1).atStartOfDay()
+            val to = day.plusDays(com.bamnat.core.sleep.BeforeAfter.DAYS + 1).atStartOfDay()
+            combine(container.sleepRepository.events(from, to), container.sleepRepository.checks(days = 120), state) { events, checks, st ->
+                val zone = Today.zone()
+                fun local(ms: Long) = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), zone)
+                // A measured night is a sleep with sounds heard in it; its snoring by the morning it ended.
+                val snore = st?.log.orEmpty().filter { it.end != null && !it.end!!.isBefore(from) && it.start.isBefore(to) }.mapNotNull { e ->
+                    val inside = events.filter { ev -> local(ev.startMillis).let { t -> !t.isBefore(e.start) && t.isBefore(e.end) } }
+                    if (inside.isEmpty()) null
+                    else e.end!!.toLocalDate() to com.bamnat.core.sleep.SoundSummary.of(inside.map { ev ->
+                        com.bamnat.core.sleep.SoundEvent(ev.startMillis, ev.endMillis, com.bamnat.core.sleep.SoundKind.of(ev.kind), ev.level)
+                    }).snoreMinutes
+                }.toMap()
+                val mood = checks.mapNotNull { c -> c.mood?.let { c.end.toLocalDate() to it.value } }.toMap()
+                Mark(day, what, com.bamnat.core.sleep.BeforeAfter.compare(day, snore, mood))
+            }
+        }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun markChange(what: String) {
+        val day = Today.date()
+        SleepChallengeStore.setMark(container.appContext, day, what)
+        markDay.value = day to what
+    }
+    fun clearMark() { SleepChallengeStore.setMark(container.appContext, null, null); markDay.value = null }
+
     fun startChallenge() { challengeStart.value = SleepChallengeStore.begin(container.appContext, Today.date()) }
     fun stopChallenge() { SleepChallengeStore.end(container.appContext); challengeStart.value = null }
 
@@ -336,6 +372,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
     val morning by vm.morning.collectAsStateWithLifecycle()
     val night by vm.night.collectAsStateWithLifecycle()
     val extras by vm.extras.collectAsStateWithLifecycle()
+    val mark by vm.mark.collectAsStateWithLifecycle()
     var fixing by remember { mutableStateOf<com.bamnat.core.sleep.SleepAuto.Segment?>(null) }
     var editing by remember { mutableStateOf<SleepEntry?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
@@ -402,6 +439,8 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             Groups(r, target)
             s.compare?.let { PlanCompare(it) }
             extras?.let { e -> ChallengeCard(e.challenge, vm::startChallenge, vm::stopChallenge) }
+            // 1.38 [SLEEP-22] 바꾼 것 전후 비교.
+            if (s.log.isNotEmpty()) BeforeAfterCard(mark, vm::markChange, vm::clearMark)
         }
         val history: @Composable ColumnScope.() -> Unit = {
             Bars(s.log, s.today, target)
@@ -757,7 +796,7 @@ private fun SleepEditDialog(
     }
 }
 
-/** 1.38 [SLEEP-20] When the user began 회복 도전, on this phone. */
+/** 1.38 [SLEEP-20] When the user began 회복 도전, and [SLEEP-22] the day they marked a change, on this phone. */
 internal object SleepChallengeStore {
     private const val PREFS = "sleep_challenge"
     private const val K_START = "start"
@@ -765,4 +804,10 @@ internal object SleepChallengeStore {
     fun start(c: android.content.Context): LocalDate? = prefs(c).getString(K_START, null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
     fun begin(c: android.content.Context, day: LocalDate): LocalDate { prefs(c).edit().putString(K_START, day.toString()).apply(); return day }
     fun end(c: android.content.Context) = prefs(c).edit().remove(K_START).apply()
+    fun mark(c: android.content.Context): Pair<LocalDate, String>? {
+        val day = prefs(c).getString("mark_day", null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
+        return day to prefs(c).getString("mark_what", null).orEmpty()
+    }
+    fun setMark(c: android.content.Context, day: LocalDate?, what: String?) =
+        prefs(c).edit().apply { if (day == null) remove("mark_day").remove("mark_what") else putString("mark_day", day.toString()).putString("mark_what", what) }.apply()
 }
