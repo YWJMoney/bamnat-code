@@ -32,6 +32,12 @@
 // GET    /a/:key[?d=YYYY-MM-DD] the member's page: the month, each day's room ("1/2"), their own requests (a plain form, no script)
 // POST   /a/:key/pick          form d, k (OFF|LEAVE|HALF|EDU|WORK|AVOID_NIGHT|SHIFT|none), s -> the page again
 // POST   /a/:key/note          form note -> the page again
+// POST   /api/call             1.38 [P3-X-01] {team, title, detail, people:[name], hours} -> { id, token, people:[{name,key,url}] }:
+//                              a yes/no ask to some people (결원 메우기: "12/7 나이트 대신 들어갈 수 있나요?")
+// GET    /api/call/:id         header X-Delete-Token -> { answers:[{p, a:"yes"|"no", at}], seen:[p], taken }
+// PUT    /api/call/:id         header X-Delete-Token, {taken: p|null, closed} -> 204: who the leader chose; the pages say so
+// DELETE /api/call/:id         header X-Delete-Token -> 204
+// GET    /v/:key               the asked person's page; POST /v/:key/answer form a=yes|no -> the page again
 //                              The admin paths answer 404 until SHARE_ADMIN_TOKEN (20+ characters) is set;
 //                              the company server's 개발자 앱 calls them with the same token.
 //
@@ -103,6 +109,11 @@ export const LIMITS = {
   askNote: 60,
   askTtlDays: 60,
   askPerHour: 300,
+  // 1.38 [P3-X-01] 결원 메우기: a few lines of what is asked, to at most a ward; open a week at most.
+  callPeople: 40,
+  callTitle: 40,
+  callDetail: 120,
+  callHours: 168,
 };
 
 /** [SRV-05] Why someone reports a link (the page and the app offer the same list). */
@@ -169,7 +180,7 @@ export const APP_ADS_TXT = "google.com, pub-4920911396563628, DIRECT, f08c47fec0
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
-  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
+  if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
   }
@@ -191,6 +202,14 @@ async function route(request, env) {
   const askPage = path.match(/^\/a\/([A-Za-z0-9]{22})(\/pick|\/note)?$/);
   if (askPage && !askPage[2] && (request.method === "GET" || request.method === "HEAD")) return askView(env, askPage[1], url.searchParams.get("d"), null);
   if (askPage && askPage[2] && request.method === "POST") return askPost(request, env, askPage[1], askPage[2].slice(1));
+  if (path === "/api/call" && request.method === "POST") return callCreate(request, env, url);
+  const callApi = path.match(/^\/api\/call\/([A-Za-z0-9]{22})$/);
+  if (callApi && request.method === "GET") return callRead(request, env, callApi[1]);
+  if (callApi && request.method === "PUT") return callChange(request, env, callApi[1]);
+  if (callApi && request.method === "DELETE") return callDelete(request, env, callApi[1]);
+  const callPage = path.match(/^\/v\/([A-Za-z0-9]{22})(\/answer)?$/);
+  if (callPage && !callPage[2] && (request.method === "GET" || request.method === "HEAD")) return callView(env, callPage[1], null);
+  if (callPage && callPage[2] && request.method === "POST") return callAnswer(request, env, callPage[1]);
   const reported = path.match(/^\/(api\/share|s)\/([A-Za-z0-9]{16,32})\/report$/);
   if (reported && request.method === "POST") return report(request, env, reported[2], reported[1] === "s");
   const api = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})$/);
@@ -867,6 +886,128 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
   return html(page(`${record.team} ${mo}월 근무 신청`, body), status);
 }
 
+// ---- 1.38 [P3-X-01] 결원 메우기 (and the other yes/no asks of a team) ----
+// The leader's app asks a few people one thing ("12/7(월) 나이트 22:00~07:00, 대신 들어갈 수 있나요?"); each answers on their own
+// page, the app reads the answers and the leader picks one, and every page then says who is coming. Each answer is its own key,
+// so two people answering at once do not write over each other. Kept: the team's name, what was asked, the names asked, the answers
+// and when. Nothing else.
+
+const callKey = (id) => `call:${id}`;
+const callPersonKey = (key) => `callm:${key}`;
+const callAnswerKey = (id, p) => `calla:${id}:${p}`;
+
+async function callCreate(request, env, url) {
+  if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
+  if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 8 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const team = cleanText(body?.team, LIMITS.askTeam);
+  const title = cleanText(body?.title, LIMITS.callTitle);
+  const detail = cleanText(body?.detail ?? "", LIMITS.callDetail);
+  const names = Array.isArray(body?.people) ? body.people.map((n) => cleanText(n, LIMITS.askName)) : [];
+  if (!team || !title || detail == null || names.length === 0 || names.length > LIMITS.callPeople || names.some((n) => !n)) return json({ error: "bad_call" }, 400);
+  const hours = Number.isInteger(body?.hours) ? Math.min(Math.max(body.hours, 1), LIMITS.callHours) : 48;
+  const id = randomId(22);
+  const token = randomId(32);
+  const people = names.map((name) => ({ name, key: randomId(22) }));
+  const record = { team, title, detail, people, tokenHash: await sha256(token), expiresAt: new Date(Date.now() + hours * 3600 * 1000).toISOString(), taken: null, closed: false };
+  await put(env, callKey(id), record);
+  for (let i = 0; i < people.length; i++) await put(env, callPersonKey(people[i].key), { id, p: i, expiresAt: record.expiresAt });
+  count(env, "calls");
+  return json({ id, token, expiresAt: record.expiresAt, people: people.map((x) => ({ name: x.name, key: x.key, url: `${url.origin}/v/${x.key}` })) }, 201);
+}
+
+async function callOwned(request, env, id) {
+  const token = request.headers.get("x-delete-token") || "";
+  const record = await env.SHARES.get(callKey(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
+  if (!token || (await sha256(token)) !== record.tokenHash) return json({ error: "forbidden" }, 403);
+  return record;
+}
+
+async function callRead(request, env, id) {
+  const record = await callOwned(request, env, id);
+  if (record instanceof Response) return record;
+  const answers = [];
+  const seen = [];
+  for (let p = 0; p < record.people.length; p++) {
+    const a = await env.SHARES.get(callAnswerKey(id, p), "json");
+    if (!a) continue;
+    if (a.seenAt) seen.push(p);
+    if (a.a) answers.push({ p, a: a.a, at: a.at });
+  }
+  return json({ answers, seen, taken: record.taken, closed: record.closed, expiresAt: record.expiresAt });
+}
+
+async function callChange(request, env, id) {
+  const record = await callOwned(request, env, id);
+  if (record instanceof Response) return record;
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 512)); } catch { return json({ error: "bad_json" }, 400); }
+  if (body?.taken !== undefined) {
+    if (body.taken !== null && !(Number.isInteger(body.taken) && body.taken >= 0 && body.taken < record.people.length)) return json({ error: "bad_call" }, 400);
+    record.taken = body.taken;
+  }
+  if (typeof body?.closed === "boolean") record.closed = body.closed;
+  await put(env, callKey(id), record);
+  return new Response(null, { status: 204 });
+}
+
+async function callDelete(request, env, id) {
+  const record = await callOwned(request, env, id);
+  if (record instanceof Response) return record;
+  for (let p = 0; p < record.people.length; p++) {
+    await kvDel(env, callAnswerKey(id, p));
+    await kvDel(env, callPersonKey(record.people[p].key));
+  }
+  await kvDel(env, callKey(id));
+  return new Response(null, { status: 204 });
+}
+
+async function callFind(env, key) {
+  const link = await env.SHARES.get(callPersonKey(key), "json");
+  if (!link) return null;
+  const record = await env.SHARES.get(callKey(link.id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return null;
+  return { id: link.id, p: link.p, record };
+}
+
+const callGone = () => html(page("요청이 끝났어요", `<p class="empty">이 요청은 끝났거나 리더가 지웠어요.</p>`), 404);
+
+async function callAnswer(request, env, key) {
+  const found = await callFind(env, key);
+  if (!found) return callGone();
+  if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
+  const { id, p, record } = found;
+  const form = new URLSearchParams((await request.text()).slice(0, 64));
+  const a = form.get("a");
+  if (a !== "yes" && a !== "no") return callView(env, key, { bad: "고를 수 없는 답이에요" }, 400, found);
+  if (record.closed || record.taken != null) return callView(env, key, { bad: "이미 정해졌어요" }, 409, found);
+  const mine = (await env.SHARES.get(callAnswerKey(id, p), "json")) ?? {};
+  await put(env, callAnswerKey(id, p), { ...mine, a, at: new Date().toISOString(), expiresAt: record.expiresAt });
+  count(env, "callAnswers");
+  return callView(env, key, { ok: a === "yes" ? "들어갈 수 있다고 전했어요. 리더가 정하면 이 페이지와 근무표 링크에 나와요." : "어렵다고 전했어요. 고마워요." }, 200, found);
+}
+
+async function callView(env, key, said, status = 200, known = null) {
+  const found = known ?? await callFind(env, key);
+  if (!found) return callGone();
+  const { id, p, record } = found;
+  const mine = (await env.SHARES.get(callAnswerKey(id, p), "json")) ?? {};
+  if (!mine.seenAt) await put(env, callAnswerKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
+  const me = record.people[p].name;
+  const done = record.taken != null;
+  const state = done ? (record.taken === p ? `<p class="done">${esc(me)}님이 들어가기로 정해졌어요. 고마워요!</p>` : `<p class="muted">다른 분이 들어가기로 정해졌어요. 답해 줘서 고마워요.</p>`)
+    : record.closed ? `<p class="muted">요청이 닫혔어요.</p>`
+    : `<div class="buttons"><form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="yes"><button class="in">들어갈 수 있어요</button></form>` +
+      `<form method="post" action="/v/${key}/answer"><input type="hidden" name="a" value="no"><button class="out">어려워요</button></form></div>` +
+      (mine.a ? `<p class="muted">지금 답: ${mine.a === "yes" ? "들어갈 수 있어요" : "어려워요"} (바꿀 수 있어요)</p>` : "");
+  const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
+  const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.team)} · ${esc(me)}님께</p>${record.detail ? `<p>${esc(record.detail)}</p>` : ""}${saidHtml}${state}
+<p class="foot muted">답과 답한 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>`;
+  return html(page(record.title, body), status);
+}
+
 function groupCode() {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   // 32 letters divide 256, so every letter is equally likely.
@@ -928,7 +1069,7 @@ async function stats(env, daysParam) {
   }
   const sum = (k) => days.reduce((a, d) => a + d[k], 0);
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
-  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), approximate: true };
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), approximate: true };
 }
 
 // ---- input ----

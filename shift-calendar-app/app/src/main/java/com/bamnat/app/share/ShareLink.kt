@@ -577,7 +577,21 @@ interface ShareApi {
 
     /** 1.38 [P3-L-13] Ends the round: the members' requests on the server go with it. Gone already counts as done. */
     suspend fun askDelete(id: String, token: String) {}
+
+    /** 1.38 [P3-X-01] A yes/no ask to [people] (결원 메우기), open [hours]. */
+    suspend fun callCreate(team: String, title: String, detail: String, people: List<String>, hours: Int): CallMade = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-X-01] The answers so far by person index (true: 들어갈 수 있어요), who opened it, and who was chosen. */
+    suspend fun callRead(id: String, token: String): CallGot = throw ShareLinkException("unsupported")
+
+    /** 1.38 [P3-X-01] Who the leader chose (person index), so every page says so; null takes it back. */
+    suspend fun callTake(id: String, token: String, taken: Int?) {}
+
+    suspend fun callDelete(id: String, token: String) {}
 }
+
+data class CallMade(val id: String, val token: String, val urls: List<String>, val expiresAt: Instant)
+data class CallGot(val answers: Map<Int, Boolean>, val seen: Set<Int>, val taken: Int?)
 
 /** 1.38 [P3-L-13] A round opened: its [id] and key, and each member's link in the order asked. */
 data class AskMade(val id: String, val token: String, val urls: List<String>)
@@ -750,6 +764,39 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     override suspend fun askDelete(id: String, token: String) = withContext(Dispatchers.IO) {
         try {
             request("DELETE", "/api/ask/$id", null, token)
+        } catch (e: ShareLinkException) {
+            if (e.message != "not_found") throw e
+        }
+        Unit
+    }
+
+    override suspend fun callCreate(team: String, title: String, detail: String, people: List<String>, hours: Int): CallMade = withContext(Dispatchers.IO) {
+        val o = request("POST", "/api/call", JSONObject().put("team", team).put("title", title).put("detail", detail)
+            .put("people", org.json.JSONArray(people)).put("hours", hours), null).body
+        readable {
+            val p = o.getJSONArray("people")
+            CallMade(o.getString("id"), o.getString("token"), (0 until p.length()).map { p.getJSONObject(it).getString("url") }, Instant.parse(o.getString("expiresAt")))
+        }
+    }
+
+    override suspend fun callRead(id: String, token: String): CallGot = withContext(Dispatchers.IO) {
+        val o = request("GET", "/api/call/$id", null, token).body
+        readable {
+            val a = o.optJSONArray("answers") ?: org.json.JSONArray()
+            val s = o.optJSONArray("seen") ?: org.json.JSONArray()
+            CallGot((0 until a.length()).mapNotNull { a.optJSONObject(it) }.associate { it.optInt("p", -1) to (it.optString("a") == "yes") },
+                (0 until s.length()).map { s.optInt(it, -1) }.toSet(), if (o.isNull("taken")) null else o.optInt("taken"))
+        }
+    }
+
+    override suspend fun callTake(id: String, token: String, taken: Int?) = withContext(Dispatchers.IO) {
+        request("PUT", "/api/call/$id", JSONObject().put("taken", taken ?: JSONObject.NULL), token)
+        Unit
+    }
+
+    override suspend fun callDelete(id: String, token: String) = withContext(Dispatchers.IO) {
+        try {
+            request("DELETE", "/api/call/$id", null, token)
         } catch (e: ShareLinkException) {
             if (e.message != "not_found") throw e
         }

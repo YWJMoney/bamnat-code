@@ -34,7 +34,8 @@ object PhaseThreeBackup {
             .put("teams", JSONArray().apply { teams.forEach { put(JSONObject().put("id", it.id).put("name", it.name).put("leader", it.leaderName)
                 .put("shifts", it.shifts).put("need", it.need).put("created", it.createdAt).put("archived", it.archived).put("together", it.showTogether)
                 // 1.38 [P3-L-14] 신청 받기: like a 팀원 링크, its key only in a sealed backup.
-                .put("ask", if (sealed) it.ask else PhaseThreeStore.encodeAsk(PhaseThreeStore.decodeAsk(it.ask), withToken = false))) } })
+                .put("ask", if (sealed) it.ask else PhaseThreeStore.encodeAsk(PhaseThreeStore.decodeAsk(it.ask), withToken = false))
+                .put("calls", if (sealed) it.calls else PhaseThreeStore.encodeCalls(PhaseThreeStore.decodeCalls(it.calls), withToken = false))) } })
             .put("members", JSONArray().apply { d.members().forEach { put(JSONObject().put("id", it.id).put("team", it.teamId).put("name", it.name)
                 .put("role", it.role).put("skill", it.skill).putOpt("color", it.colorArgb).put("sort", it.sort).putOpt("linkId", it.linkId)
                 .putOpt("linkToken", it.linkToken.takeIf { sealed }).put("active", it.active)) } })
@@ -75,7 +76,7 @@ object PhaseThreeBackup {
         val o = root.optJSONObject(TEAMS) ?: return null
         return Teams(
             o.optJSONArray("teams").objs().map { TeamEntity(it.getString("id"), it.optString("name"), it.optString("leader"), it.optString("shifts", "[]"),
-                it.optString("need"), it.optLong("created"), it.optBoolean("archived"), it.optBoolean("together"), it.optString("ask")) },
+                it.optString("need"), it.optLong("created"), it.optBoolean("archived"), it.optBoolean("together"), it.optString("ask"), it.optString("calls")) },
             o.optJSONArray("members").objs().map { TeamMemberEntity(it.getString("id"), it.getString("team"), it.optString("name"), it.optString("role"),
                 it.optString("skill", "REG"), it.longOrNull("color"), it.optInt("sort"), it.strOrNull("linkId"), it.strOrNull("linkToken"), it.optBoolean("active", true)) },
             o.optJSONArray("cells").arrays().map { TeamCellEntity(it.getString(0), it.getString(1), it.getLong(2), it.getLong(3), it.optString(4, "MANUAL"), it.optBoolean(5)) },
@@ -115,10 +116,14 @@ object PhaseThreeBackup {
             // The same for a 신청 받기 round's key.
             val hadTeams = db.teamDao().teams().associateBy { it.id }
             val teams = t.teams.map { n ->
-                val ask = PhaseThreeStore.decodeAsk(n.ask) ?: return@map n
-                if (ask.token != null) return@map n
-                val mine = hadTeams[n.id]?.ask?.let(PhaseThreeStore::decodeAsk)?.takeIf { it.id == ask.id }?.token ?: return@map n
-                n.copy(ask = PhaseThreeStore.encodeAsk(ask.copy(token = mine)))
+                // 결원 메우기 asks: the phone's key for the same ask.
+                val hadCalls = hadTeams[n.id]?.calls?.let(PhaseThreeStore::decodeCalls).orEmpty().associateBy { it.id }
+                val calls = PhaseThreeStore.decodeCalls(n.calls).map { c -> if (c.token == null) c.copy(token = hadCalls[c.id]?.token) else c }
+                val withCalls = if (calls.isEmpty()) n else n.copy(calls = PhaseThreeStore.encodeCalls(calls))
+                val ask = PhaseThreeStore.decodeAsk(n.ask) ?: return@map withCalls
+                if (ask.token != null) return@map withCalls
+                val mine = hadTeams[n.id]?.ask?.let(PhaseThreeStore::decodeAsk)?.takeIf { it.id == ask.id }?.token ?: return@map withCalls
+                withCalls.copy(ask = PhaseThreeStore.encodeAsk(ask.copy(token = mine)))
             }
             db.teamDao().replaceAll(teams, members, t.cells, t.months, t.wishes)
         }

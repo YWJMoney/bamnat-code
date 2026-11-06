@@ -437,10 +437,11 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /** 1.38 (DB 30, 갈래7) [P3-L-14] 신청 받기: the team's round as JSON. "" for every team so far: no round yet. */
+        /** 1.38 (DB 30, 갈래7) [P3-L-14] 신청 받기 and [P3-X-01] 결원 메우기: the team's round and asks as JSON. "" for every team so far. */
         val MIGRATION_29_30 = object : Migration(29, 30) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `team` ADD COLUMN `ask` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `team` ADD COLUMN `calls` TEXT NOT NULL DEFAULT ''")
             }
         }
 

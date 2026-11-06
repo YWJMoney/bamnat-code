@@ -70,6 +70,16 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
     suspend fun saveTeam(t: Team) = teams.upsertTeam(t.toEntity())
 
+    suspend fun teamNow(id: String): Team? = teams.teamById(id)?.toModel()
+
+    /**
+     * 1.38 검토(데이터 보존): the team row as it is now, changed by [f] and written back in one go, so 신청 가져오기 and 결원 답 가져오기
+     * running at once never write over each other's part of the row with a copy read before.
+     */
+    suspend fun updateTeam(id: String, f: (Team) -> Team): Team? = db.withTransaction {
+        teams.teamById(id)?.toModel()?.let(f)?.also { teams.upsertTeam(it.toEntity()) }
+    }
+
     suspend fun saveMembers(list: List<TeamMember>) = teams.upsertMembers(list.map { it.toEntity() })
 
     suspend fun removeMember(id: String) = db.withTransaction { teams.deleteMemberCells(id); teams.deleteMemberWishes(id); teams.deleteMember(id) }
@@ -209,8 +219,32 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         const val VIA_LINK = "LINK"
 
-        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need), showTogether, decodeAsk(ask))
-        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived, showTogether, encodeAsk(ask))
+        fun TeamEntity.toModel() = Team(id, name, leaderName, decodeShifts(shifts), createdAt, archived, decodeNeed(need), showTogether, decodeAsk(ask), decodeCalls(calls))
+        fun Team.toEntity() = TeamEntity(id, name, leaderName, encodeShifts(shifts), encodeNeed(need), createdAt, archived, showTogether, encodeAsk(ask), encodeCalls(calls))
+
+        /** 1.38 [P3-X-01] 결원 메우기 asks; [withToken] false leaves their keys out (a plain backup). */
+        fun encodeCalls(l: List<com.bamnat.core.team.TeamCall>, withToken: Boolean = true): String = if (l.isEmpty()) "" else JSONArray().apply {
+            l.forEach { c ->
+                put(JSONObject().put("id", c.id).putOpt("token", c.token.takeIf { withToken })
+                    .put("gap", JSONObject().put("m", c.gap.memberId).put("d", c.gap.date.toString()).put("s", c.gap.shiftId))
+                    .put("people", JSONArray(c.people)).put("urls", JSONArray(c.urls))
+                    .put("answers", JSONObject(c.answers.mapValues { it.value })).put("seen", JSONArray(c.seen.toList()))
+                    .putOpt("taken", c.taken).put("created", c.createdAt).put("expires", c.expiresAt))
+            }
+        }.toString()
+
+        fun decodeCalls(t: String): List<com.bamnat.core.team.TeamCall> = if (t.isBlank()) emptyList() else runCatching {
+            val a = JSONArray(t)
+            fun strings(x: JSONArray?) = x?.let { y -> (0 until y.length()).map { y.getString(it) } }.orEmpty()
+            (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { o ->
+                val g = o.getJSONObject("gap")
+                com.bamnat.core.team.TeamCall(o.getString("id"), o.optString("token").takeIf { it.isNotEmpty() },
+                    com.bamnat.core.team.TeamCover.Gap(g.getString("m"), LocalDate.parse(g.getString("d")), g.getLong("s")),
+                    strings(o.optJSONArray("people")), strings(o.optJSONArray("urls")),
+                    o.optJSONObject("answers")?.let { x -> x.keys().asSequence().associateWith { x.getBoolean(it) } }.orEmpty(),
+                    strings(o.optJSONArray("seen")).toSet(), o.optString("taken").takeIf { it.isNotEmpty() }, o.optLong("created"), o.optLong("expires"))
+            }
+        }.getOrDefault(emptyList())
 
         /** 1.38 [P3-L-14] A 신청 받기 round as the `team.ask` column keeps it; [withToken] false leaves its key out (a plain backup). */
         fun encodeAsk(a: com.bamnat.core.team.AskRound?, withToken: Boolean = true): String = if (a == null) "" else JSONObject()

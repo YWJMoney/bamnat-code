@@ -18,8 +18,7 @@ object TeamAskSync {
         team.ask?.takeIf { it.token != null }?.let { old -> runCatching { c.shareApi.askDelete(old.id, old.token!!) } }
         val made = c.shareApi.askCreate(team.name, month, rules, team.shifts.filter { !it.isOff }, members.map { it.name })
         val round = AskRound(made.id, made.token, month, rules, members.map { it.id }.zip(made.urls).toMap(LinkedHashMap()), openedAt = Today.millis())
-        val next = team.copy(ask = round)
-        c.phaseThree.saveTeam(next)
+        val next = c.phaseThree.updateTeam(team.id) { it.copy(ask = round) } ?: team.copy(ask = round)
         c.phaseThree.putLinkWishes(team.id, month, emptyList())
         return next
     }
@@ -32,28 +31,23 @@ object TeamAskSync {
         val ids = round.links.keys.toList()
         val wishes = got.wishes.mapNotNull { w -> ids.getOrNull(w.m)?.let { TeamWish(it, w.date, w.kind, w.shiftId, w.at.toEpochMilli()) } }
         c.phaseThree.putLinkWishes(team.id, round.month, wishes)
-        val next = team.copy(ask = round.copy(
+        val read = round.copy(
             notes = got.notes.mapNotNull { (m, n) -> ids.getOrNull(m)?.let { it to n } }.filter { it.second.isNotBlank() }.toMap(),
-            seen = got.seen.mapNotNull(ids::getOrNull).toSet(), closed = got.closed, syncedAt = Today.millis()))
-        c.phaseThree.saveTeam(next)
-        return next
+            seen = got.seen.mapNotNull(ids::getOrNull).toSet(), closed = got.closed, syncedAt = Today.millis())
+        return c.phaseThree.updateTeam(team.id) { t -> if (t.ask?.id == round.id) t.copy(ask = read) else t }
     }
 
     suspend fun close(c: AppContainer, team: Team, closed: Boolean): Team {
         val round = team.ask ?: return team
         round.token?.let { c.shareApi.askChange(round.id, it, closed = closed) }
-        val next = team.copy(ask = round.copy(closed = closed))
-        c.phaseThree.saveTeam(next)
-        return next
+        return c.phaseThree.updateTeam(team.id) { t -> t.ask?.takeIf { it.id == round.id }?.let { a -> t.copy(ask = a.copy(closed = closed)) } ?: t } ?: team
     }
 
     /** Ends the round: the server forgets every request; what was read stays in the month's 희망 on this phone. */
     suspend fun end(c: AppContainer, team: Team): Team {
         val round = team.ask ?: return team
         round.token?.let { c.shareApi.askDelete(round.id, it) }
-        val next = team.copy(ask = null)
-        c.phaseThree.saveTeam(next)
-        return next
+        return c.phaseThree.updateTeam(team.id) { t -> if (t.ask?.id == round.id) t.copy(ask = null) else t } ?: team
     }
 
     /** The message that sends every member their link at once (메신저 한 번에). */

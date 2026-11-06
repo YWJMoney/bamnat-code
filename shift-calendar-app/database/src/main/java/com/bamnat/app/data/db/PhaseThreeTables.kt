@@ -31,6 +31,8 @@ data class TeamEntity(
     @androidx.room.ColumnInfo(defaultValue = "0") val showTogether: Boolean = false,
     /** 1.38 (DB 30) [P3-L-14] 신청 받기: the round as JSON ([com.bamnat.app.data.PhaseThreeStore.encodeAsk]); "" for none. */
     @androidx.room.ColumnInfo(defaultValue = "") val ask: String = "",
+    /** 1.38 (DB 30) [P3-X-01] 결원 메우기 asks as JSON; "" for none. */
+    @androidx.room.ColumnInfo(defaultValue = "") val calls: String = "",
 )
 
 @Entity(tableName = "team_member", indices = [Index("teamId")])
@@ -176,6 +178,9 @@ interface TeamDao {
 
     @Query("SELECT * FROM team ORDER BY createdAt")
     suspend fun teams(): List<TeamEntity>
+
+    @Query("SELECT * FROM team WHERE id = :id")
+    suspend fun teamById(id: String): TeamEntity?
 
     @Query("SELECT * FROM team_member WHERE teamId = :teamId ORDER BY sort")
     fun observeMembers(teamId: String): Flow<List<TeamMemberEntity>>

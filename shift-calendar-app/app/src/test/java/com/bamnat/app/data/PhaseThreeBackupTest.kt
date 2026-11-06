@@ -47,7 +47,10 @@ class PhaseThreeBackupTest {
         // 1.38 [P3-L-14] 신청 받기 round, its key, and a request a member made by link (근무 희망 D).
         store.saveTeam(Team("t1", "3병동", "수간호사", shifts, need = mapOf(1L to 2), ask = com.bamnat.core.team.AskRound("R1", "atok", month,
             com.bamnat.core.team.AskRules(closesAt = 5_000L, holidays = setOf(month.atDay(25))), linkedMapOf("m1" to "https://s.example/a/K1", "m2" to "https://s.example/a/K2"),
-            notes = mapOf("m1" to "NN 뒤 off"), seen = setOf("m1"), openedAt = 1L, syncedAt = 2L)))
+            notes = mapOf("m1" to "NN 뒤 off"), seen = setOf("m1"), openedAt = 1L, syncedAt = 2L),
+            // 1.38 [P3-X-01] 결원 메우기 요청과 그 답
+            calls = listOf(com.bamnat.core.team.TeamCall("C1", "ktok", com.bamnat.core.team.TeamCover.Gap("m1", month.atDay(7), 1), listOf("m2"),
+                listOf("https://s.example/v/V1"), answers = mapOf("m2" to true), seen = setOf("m2"), createdAt = 3L, expiresAt = 4L))))
         store.putLinkWishes("t1", month, listOf(com.bamnat.core.team.TeamWish("m1", month.atDay(9), com.bamnat.core.team.WishKind.SHIFT, shiftId = 1, at = 1_234L)))
         store.saveMembers(listOf(TeamMember("m1", "t1", "김가나", "RN"), TeamMember("m2", "t1", "이다라", linkId = "L1", linkToken = "tok")))
         store.saveBoard("t1", store.boardNow("t1", month).paint("m1", day, 1).paint("m2", day, 4))
@@ -79,6 +82,8 @@ class PhaseThreeBackupTest {
             val again = PhaseThreeStore(other)
             assertEquals(store.teamList.first(), again.teamList.first())
             assertEquals("신청 받기 열쇠도 그대로(암호 백업)", "atok", again.teamList.first().single().ask?.token)
+            assertEquals("결원 요청 열쇠도 그대로(암호 백업)", "ktok", again.teamList.first().single().calls.single().token)
+            assertEquals(mapOf("m2" to true), again.teamList.first().single().calls.single().answers)
             assertEquals("링크로 받은 근무 희망도 그대로", store.wishes("t1", month).first(), again.wishes("t1", month).first())
             assertEquals(com.bamnat.core.team.TeamWish("m1", month.atDay(9), com.bamnat.core.team.WishKind.SHIFT, shiftId = 1, at = 1_234L), again.wishes("t1", month).first().single())
             assertEquals(store.members("t1").first(), again.members("t1").first())
@@ -111,13 +116,17 @@ class PhaseThreeBackupTest {
         assertFalse("신청 받기 열쇠도 암호 없는 백업에는 없어요", JSONObject(plain).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("atok"))
         assertEquals("팀을 지운 뒤라 신청 열쇠도 없어요", null, store.teamList.first().single().ask?.token)
         assertEquals("R1", store.teamList.first().single().ask?.id)
+        assertFalse("결원 요청 열쇠도 암호 없는 백업에는 없어요", JSONObject(plain).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("ktok"))
+        assertEquals("C1", store.teamList.first().single().calls.single().id)
+        assertEquals(null, store.teamList.first().single().calls.single().token)
         // 팀을 지운 뒤라 열쇠가 없어요: 링크는 '새로 만들기'로 다시 받아요. 팀이 남아 있으면 이 휴대폰 열쇠를 그대로 둬요.
         assertEquals(null, store.members("t1").first().single { it.id == "m2" }.linkToken)
         store.saveMembers(store.members("t1").first().map { if (it.id == "m2") it.copy(linkToken = "tok") else it })
-        store.saveTeam(store.teamList.first().single().let { it.copy(ask = it.ask?.copy(token = "atok")) })
+        store.saveTeam(store.teamList.first().single().let { it.copy(ask = it.ask?.copy(token = "atok"), calls = it.calls.map { k -> k.copy(token = "ktok") }) })
         backups.restore(plain)
         assertEquals("tok", store.members("t1").first().single { it.id == "m2" }.linkToken)
         assertEquals("남아 있는 신청 열쇠는 그대로", "atok", store.teamList.first().single().ask?.token)
+        assertEquals("남아 있는 결원 요청 열쇠도 그대로", "ktok", store.teamList.first().single().calls.single().token)
         assertTrue(JSONObject(backups.exportSealed()).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("\"tok\""))
     }
 }

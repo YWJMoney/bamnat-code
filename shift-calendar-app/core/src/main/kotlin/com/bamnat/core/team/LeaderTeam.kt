@@ -29,6 +29,8 @@ data class Team(
     val showTogether: Boolean = false,
     /** 1.38 [P3-L-14] 신청 받기 now open or last run (DB 30 `team.ask`); null before the first. */
     val ask: AskRound? = null,
+    /** 1.38 [P3-X-01] 결원 메우기 asks still open or just settled (DB 30 `team.calls`). */
+    val calls: List<TeamCall> = emptyList(),
 )
 
 /** One kind of day on the board, copied from the leader's calendar when the team is made (and updated with it). */

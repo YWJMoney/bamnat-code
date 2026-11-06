@@ -284,6 +284,12 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
         busy = null
     }
     LaunchedEffect(round?.id) { if (round?.token != null) runCatching { com.bamnat.app.team.TeamAskSync.pull(c, team) } }
+    // 1.38 [P3-X-01] 결원 메우기: the gap being filled, and this month's asks (read again each time the board opens).
+    var coverGap by remember { mutableStateOf<com.bamnat.core.team.TeamCover.Gap?>(null) }
+    val calls = team.calls.filter { YearMonth.from(it.gap.date) == month }
+    LaunchedEffect(calls.filter { it.taken == null }.map { it.id }) {
+        calls.filter { it.taken == null && it.token != null }.forEach { k -> runCatching { com.bamnat.app.team.TeamCallSync.pull(c, store.teamNow(team.id) ?: team, k.id) } }
+    }
 
     Scaffold(topBar = {
         TopAppBar(title = { Text(team.name) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
@@ -405,7 +411,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 }
             }
             if (current != null) Keypad(team, b, current, month, cursor, onCursor = { cursor = it }, onMember = { member = it }, change = ::change,
-                swapping = swapFrom != null, onSwap = { swapFrom = if (swapFrom == null) current.id to month.atDay(cursor) else null })
+                swapping = swapFrom != null, onSwap = { swapFrom = if (swapFrom == null) current.id to month.atDay(cursor) else null },
+                onCover = { gap -> coverGap = gap })
             // 1.38 가져오기 ③: the cells read without being sure, or with a code not paired, one after another.
             if (checkCells.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("확인할 칸 ${checkCells.size}개", style = MaterialTheme.typography.bodyMedium, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning,
@@ -443,6 +450,15 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     onSend = { send(context, com.bamnat.app.team.TeamAskSync.message(team, round, active), "근무 신청 링크 보내기") },
                     onClose = { close -> scope.launch { runCatching { com.bamnat.app.team.TeamAskSync.close(c, team, close) }.onFailure { dialog = "인터넷이 될 때 다시 눌러 주세요." } } },
                     onEnd = { dialog = "askEnd" })
+            }
+            // 1.38 [P3-X-01] 결원 메우기: each ask of the month, settled ones until closed.
+            calls.forEach { k ->
+                CallCard(team, k, b.members, busy != null,
+                    onPull = { scope.launch { busy = "답을 가져오고 있어요…"; runCatching { com.bamnat.app.team.TeamCallSync.pull(c, team, k.id) }.onFailure { e ->
+                        dialog = if (e.message == "not_found") "요청이 서버에 없어요. 기한이 지났거나 거둔 요청이에요." else "인터넷이 될 때 다시 가져와 주세요." }; busy = null } },
+                    onSend = { send(context, com.bamnat.app.team.TeamCallSync.message(team, k, b.members), "대신 근무 요청 보내기") },
+                    onTake = { m -> change { com.bamnat.core.team.TeamCover.apply(team, it, k.gap, m.id) }; scope.launch { com.bamnat.app.team.TeamCallSync.take(c, team, k.id, m.id) } },
+                    onEnd = { scope.launch { com.bamnat.app.team.TeamCallSync.end(c, team, k.id) } })
             }
             // The month's tools.
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -521,6 +537,27 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             }, dismissButton = { TextButton(onClick = { dialog = null }) { Text("닫기") } })
             "members" -> MembersDialog(team, b.members, onDismiss = { dialog = null })
             else -> AlertDialog(onDismissRequest = { dialog = null }, confirmButton = { TextButton(onClick = { dialog = null }) { Text("알겠어요") } }, text = { Text(dialog!!) })
+        }
+    }
+    coverGap?.let { gap ->
+        val now = board
+        if (now != null) {
+            val list = remember(gap, now, wishes, prev, settings.rules) {
+                com.bamnat.core.team.TeamCover.candidates(team, now, gap, settings.rules, wishes, prev?.takeIf { it.cells.isNotEmpty() })
+            }
+            CoverDialog(team, gap, now.members.firstOrNull { it.id == gap.memberId }, list, busy != null, onDismiss = { coverGap = null },
+                onPut = { m -> coverGap = null; change { com.bamnat.core.team.TeamCover.apply(team, it, gap, m.id) }
+                    dialog = "${m.name}님을 넣었어요. 되돌리기로 바로 물릴 수 있어요. 확정을 다시 누르면 두 사람 링크도 고쳐져요." },
+                onAsk = { people ->
+                    coverGap = null
+                    scope.launch {
+                        busy = "요청 링크를 만들고 있어요…"
+                        runCatching { com.bamnat.app.team.TeamCallSync.open(c, store.teamNow(team.id) ?: team, gap, people) }
+                            .onSuccess { (t, k) -> send(context, com.bamnat.app.team.TeamCallSync.message(t, k, now.members), "대신 근무 요청 보내기") }
+                            .onFailure { dialog = "요청 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
+                        busy = null
+                    }
+                })
         }
     }
     planAsk?.let { com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.TEAM, it, onDismiss = { planAsk = null }) }
@@ -614,7 +651,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun Keypad(team: Team, b: TeamBoard, m: TeamMember, month: YearMonth, cursor: Int, onCursor: (Int) -> Unit, onMember: (String) -> Unit,
-                   change: ((TeamBoard) -> TeamBoard) -> Unit, swapping: Boolean, onSwap: () -> Unit) {
+                   change: ((TeamBoard) -> TeamBoard) -> Unit, swapping: Boolean, onSwap: () -> Unit,
+                   onCover: (com.bamnat.core.team.TeamCover.Gap) -> Unit) {
     val days = month.lengthOfMonth()
     val active = b.members.filter { it.active }
     fun pad() = PaintPad.open(days, b.daysOf(m.id).mapKeys { it.key.dayOfMonth }).tap(cursor)
@@ -645,6 +683,9 @@ private fun Keypad(team: Team, b: TeamBoard, m: TeamMember, month: YearMonth, cu
                 Text(if (cell?.locked == true) "잠금 풀기" else "이 칸 잠그기")
             }
             TextButton(onClick = onSwap) { Text(if (swapping) "맞바꾸기 그만" else "맞바꾸기") }
+            // 1.38 [P3-X-01]: this person cannot come on a working day; who could, best first.
+            val work = cell?.shiftId?.let { id -> team.shifts.firstOrNull { it.id == id && !it.isOff } }
+            if (work != null) TextButton(onClick = { onCover(com.bamnat.core.team.TeamCover.Gap(m.id, month.atDay(cursor), work.id)) }) { Text("결원 메우기") }
         }
     }
 }

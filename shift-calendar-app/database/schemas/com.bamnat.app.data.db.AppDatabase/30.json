@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 30,
-    "identityHash": "6c5a8b844f5f1392f567966a55b3f8d7",
+    "identityHash": "7ac89cae04ad5fad8b3eacf01558c9f4",
     "entities": [
       {
         "tableName": "shift_types",
@@ -2605,7 +2605,7 @@
       },
       {
         "tableName": "team",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `leaderName` TEXT NOT NULL, `shifts` TEXT NOT NULL, `need` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `archived` INTEGER NOT NULL, `showTogether` INTEGER NOT NULL DEFAULT 0, `ask` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `leaderName` TEXT NOT NULL, `shifts` TEXT NOT NULL, `need` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, `archived` INTEGER NOT NULL, `showTogether` INTEGER NOT NULL DEFAULT 0, `ask` TEXT NOT NULL DEFAULT '', `calls` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -2659,6 +2659,13 @@
           {
             "fieldPath": "ask",
             "columnName": "ask",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "calls",
+            "columnName": "calls",
             "affinity": "TEXT",
             "notNull": true,
             "defaultValue": "''"
@@ -3294,7 +3301,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '6c5a8b844f5f1392f567966a55b3f8d7')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7ac89cae04ad5fad8b3eacf01558c9f4')"
     ]
   }
 }
