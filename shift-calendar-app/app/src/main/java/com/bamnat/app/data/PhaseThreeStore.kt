@@ -151,6 +151,13 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
     suspend fun saveWorkplace(p: Workplace) = pay.upsertWorkplace(p.toEntity(pay.workplaces().firstOrNull { it.id == p.id }?.createdAt ?: clock()))
 
+    suspend fun workplaceNow(id: String): Workplace? = pay.workplaces().firstOrNull { it.id == id }?.toModel()
+
+    /** The place as it is now, changed by [f] in one go (대타 요청 and 사업장 설정 never write over each other). */
+    suspend fun updateWorkplace(id: String, f: (Workplace) -> Workplace): Workplace? = db.withTransaction {
+        pay.workplaces().firstOrNull { it.id == id }?.let { e -> f(e.toModel()).also { pay.upsertWorkplace(it.toEntity(e.createdAt)) } }
+    }
+
     suspend fun saveStaff(s: StaffMember, placeId: String, sort: Int = 0) = pay.upsertStaff(s.toEntity(placeId, sort))
 
     suspend fun deleteStaff(id: String) = pay.deleteStaff(id)
@@ -319,8 +326,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         // ---- 사업장 rows ----
 
-        fun WorkplaceEntity.toModel() = Workplace(id, name, fivePlus, payday, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId, minuteUnit.coerceIn(1, 60))
-        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, payday, legalBreaks, weekStart.value, teamId, createdAt, minuteUnit)
+        fun WorkplaceEntity.toModel() = Workplace(id, name, fivePlus, payday, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId, minuteUnit.coerceIn(1, 60), decodeCalls(calls))
+        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, payday, legalBreaks, weekStart.value, teamId, createdAt, minuteUnit, encodeCalls(calls))
 
         fun StaffEntity.toModel() = StaffMember(
             id = id, name = name, form = runCatching { WageForm.valueOf(form) }.getOrDefault(WageForm.HOUR), base = base,

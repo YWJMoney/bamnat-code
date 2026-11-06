@@ -54,7 +54,8 @@ class PhaseThreeBackupTest {
         store.putLinkWishes("t1", month, listOf(com.bamnat.core.team.TeamWish("m1", month.atDay(9), com.bamnat.core.team.WishKind.SHIFT, shiftId = 1, at = 1_234L)))
         store.saveMembers(listOf(TeamMember("m1", "t1", "김가나", "RN"), TeamMember("m2", "t1", "이다라", linkId = "L1", linkToken = "tok")))
         store.saveBoard("t1", store.boardNow("t1", month).paint("m1", day, 1).paint("m2", day, 4))
-        store.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = false, payday = 10, minuteUnit = 30))
+        store.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = false, payday = 10, minuteUnit = 30,
+            calls = listOf(com.bamnat.core.team.TeamCall("B1", "btok", com.bamnat.core.team.TeamCover.Gap("s1", month.atDay(7), 0), listOf("s1"), listOf("https://s.example/v/V2")))))
         store.saveStaff(StaffMember("s1", "박마바", base = 10_320, job = "홀", dayRates = mapOf(DayOfWeek.SATURDAY to 12_000L), weekly = mapOf(DayOfWeek.MONDAY to com.bamnat.core.work.StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0))),
             leaves = listOf(com.bamnat.core.boss.StaffLeave(month.atDay(20)))), "w1")
         store.setWork("s1", day, StaffWork("s1", day, WorkKind.LATE, LocalTime.of(10, 0), LocalTime.of(18, 0)))
@@ -90,6 +91,7 @@ class PhaseThreeBackupTest {
             assertEquals(store.boardNow("t1", month).cells, again.boardNow("t1", month).cells)
             assertEquals(store.workplaces.first(), again.workplaces.first())
             assertEquals("계산 단위도 그대로", 30, again.workplaces.first().single().minuteUnit)
+            assertEquals("대타 요청도 그대로", "btok", again.workplaces.first().single().calls.single().token)
             assertEquals("휴직 기간도 그대로", listOf(com.bamnat.core.boss.StaffLeave(month.atDay(20))), again.staff("w1").first().single().leaves)
             assertEquals("요일별 시급도 그대로", mapOf(DayOfWeek.SATURDAY to 12_000L), again.staff("w1").first().single().dayRates)
             assertEquals(store.staff("w1").first(), again.staff("w1").first())

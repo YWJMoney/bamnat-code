@@ -99,6 +99,8 @@ data class WorkplaceEntity(
     val createdAt: Long,
     /** 1.38 (DB 29) 계산 단위: each day's work counted up to this many minutes (1·10·30·60). */
     @androidx.room.ColumnInfo(defaultValue = "1") val minuteUnit: Int = 1,
+    /** 1.38 (DB 30) [P3-X-01] 대타 요청, the same JSON as [TeamEntity.calls]. */
+    @androidx.room.ColumnInfo(defaultValue = "") val calls: String = "",
 )
 
 @Entity(tableName = "staff", indices = [Index("workplaceId")])
