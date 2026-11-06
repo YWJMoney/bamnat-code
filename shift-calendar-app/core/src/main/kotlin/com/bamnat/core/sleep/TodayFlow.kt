@@ -36,7 +36,7 @@ object TodayFlow {
         NEXT,
     }
 
-    enum class Action { ASLEEP, AWAKE, AWAKE_AT, ALARM_ON }
+    enum class Action { ASLEEP, AWAKE, AWAKE_AT, ALARM_ON, /** 1.38 [SLEEP-23] 낮잠 자기: 잠들었어요 with a wake at [Card.napUntil]. */ NAP }
 
     enum class Part { WORK, SLEEP, NAP }
 
@@ -66,6 +66,8 @@ object TodayFlow {
         val line: String?,
         /** When the card may read differently next, so the widget can be redrawn then. */
         val changesAt: LocalDateTime,
+        /** 1.38 [SLEEP-23] For [Action.NAP], when the nap ends (its wake). */
+        val napUntil: LocalDateTime? = null,
     )
 
     const val SPAN_HOURS = 24L
@@ -90,6 +92,7 @@ object TodayFlow {
         /** The detail already says the rest is short, so the rest sign need not. */
         val saysShort: Boolean = false,
         val compact: Boolean = false,
+        val napUntil: LocalDateTime? = null,
     )
 
     fun of(
@@ -221,7 +224,7 @@ object TodayFlow {
             }
             plan.naps.firstOrNull { n -> !now.isBefore(n.from.minusMinutes(PROMPT_MINUTES)) && now.isBefore(n.to) && !slept(n.from, n.to) }?.let { n ->
                 return@run Pick(State.NAP, "${t.hm(n.from)} 낮잠 ${n.minutes}분", "첫 야간 전 낮잠 시간이에요 · ${t.hm(n.to)}엔 일어나요",
-                    line = "낮잠 ${t.span(n.from, n.to)}")
+                    action = Action.NAP, actionDate = n.to.toLocalDate(), line = "낮잠 ${t.span(n.from, n.to)}", napUntil = n.to)
             }
             val wokeAt = woke?.end
             val sleptMinutes = woke?.minutes ?: 0
@@ -321,6 +324,7 @@ object TodayFlow {
             compact = pick.compact,
             line = pick.line,
             changesAt = changesAt,
+            napUntil = pick.napUntil,
         )
     }
 
