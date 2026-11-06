@@ -233,7 +233,7 @@ object FeatureRegistry {
         f("sleep.shareNow", "SLEEP-11", "지금 자는 중 알리기", "근무표 링크를 받은 가족에게 ‘몇 시부터 자는 중 · 몇 시에 일어나요’ 한 줄을 보여 줘요",
             ALL, "달력 › 공유 › 링크 › 지금 자는 중", at(Place.SHARE), "자는 중", "전화 하지 마", "가족 알림", "낮잠 중",
             under = "share.link", flag = "sleep.share"),
-        f("today.flow", "SLP-14", "오늘의 흐름", "달력 맨 위에 지금 할 일 하나와 잘 시간·다음 근무를 보여 줘요",
+        f("today.flow", "SLP-14", "오늘의 흐름", "달력 위에 한 줄로 지금 할 일과 잘 시간·다음 근무를 보여 줘요. 누르면 펼쳐져요",
             PAID, "설정 › 알림과 잠 › 오늘의 흐름 보기", at(Place.SETTINGS_NOTICES, "오늘의 흐름 보기"), "잘 시간", "카페인", "낮잠", "오늘 카드",
             off = Off.ELSEWHERE),
 
