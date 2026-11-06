@@ -269,6 +269,7 @@ class SettingsFilesBackup(
             "healthWrite" to "헬스 커넥트 쓰기 허용은 새 휴대폰에서 다시 물어요",
             "sleep_auto" to "자동으로 잡은 잠 조각은 이 휴대폰 센서의 것, 넣은 잠은 수면 기록으로 가요",
             "sleep_record" to "지난밤 측정 요약(배터리 사용량)은 이 휴대폰의 것, 소리 사건은 수면 기록으로 가요",
+            "sleep_challenge" to "회복 도전 시작일은 이 휴대폰의 것, 새 휴대폰에서 다시 시작해요",
             "smart_wake" to "깨우는 구간에서 일찍 울린 알람 표시는 이 휴대폰에서 울린 것",
             "photo_mission" to "증명 사진 지문은 이 휴대폰의 사진",
             "calendar_import:chosen" to "고른 휴대폰 캘린더 번호는 이 휴대폰의 것",

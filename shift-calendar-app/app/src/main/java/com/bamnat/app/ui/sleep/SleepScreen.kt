@@ -175,6 +175,28 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** 1.38 [SLEEP-10][SLEEP-13][SLEEP-20] 적응 한 줄, 원인 찾기, 회복 도전. */
+    data class Extras(val adapt: com.bamnat.core.sleep.ShiftAdapt.Step?, val causes: List<com.bamnat.core.sleep.SleepCauses.Finding>,
+        val challenge: com.bamnat.core.sleep.RecoveryChallenge.Progress?)
+
+    private val challengeStart = kotlinx.coroutines.flow.MutableStateFlow(SleepChallengeStore.start(container.appContext))
+
+    val extras: StateFlow<Extras?> = combine(
+        container.scheduleRepository.live, container.sleepRepository.checks(days = 90), state, challengeStart,
+    ) { snapshot, checks, st, start ->
+        val today = Today.date()
+        val work = (-4L..com.bamnat.core.sleep.ShiftAdapt.LEAD_DAYS.toLong() + 1).flatMap { com.bamnat.core.sleep.SleepSchedule.work(snapshot.resolver.resolve(today.plusDays(it))) }
+        val challenge = start?.let { from ->
+            val s = settings.value
+            com.bamnat.core.sleep.RecoveryChallenge.progress(from, com.bamnat.core.sleep.PlanVsActual.nights(st?.log.orEmpty(), snapshot.resolver,
+                from, today, s.alarmsEnabled, s.sleepTargetMinutes, s.commuteMinutes), today)
+        }
+        Extras(com.bamnat.core.sleep.ShiftAdapt.stepFor(today, work), com.bamnat.core.sleep.SleepCauses.find(checks), challenge)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    fun startChallenge() { challengeStart.value = SleepChallengeStore.begin(container.appContext, Today.date()) }
+    fun stopChallenge() { SleepChallengeStore.end(container.appContext); challengeStart.value = null }
+
     fun keepClip(e: com.bamnat.app.data.db.SleepEventEntity, keep: Boolean) {
         container.appScope.launch { container.sleepRepository.keepClip(e.id, keep) }
     }
@@ -304,6 +326,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
     val health by vm.health.collectAsStateWithLifecycle()
     val morning by vm.morning.collectAsStateWithLifecycle()
     val night by vm.night.collectAsStateWithLifecycle()
+    val extras by vm.extras.collectAsStateWithLifecycle()
     var fixing by remember { mutableStateOf<com.bamnat.core.sleep.SleepAuto.Segment?>(null) }
     var editing by remember { mutableStateOf<SleepEntry?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
@@ -363,9 +386,13 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
                 com.bamnat.app.ui.components.KaniMood.Point)
             else if (r.loggedDays < 7) HowItWorks()
             WeekTiles(r, target)
+            // 1.38 [SLEEP-10][SLEEP-13][SLEEP-20]
+            extras?.adapt?.let { AdaptCard(it) }
             if (r.findings.isNotEmpty()) Findings(r.findings)
+            extras?.let { CausesCard(it.causes) }
             Groups(r, target)
             s.compare?.let { PlanCompare(it) }
+            extras?.let { e -> ChallengeCard(e.challenge, vm::startChallenge, vm::stopChallenge) }
         }
         val history: @Composable ColumnScope.() -> Unit = {
             Bars(s.log, s.today, target)
@@ -719,4 +746,14 @@ private fun SleepEditDialog(
         "start" -> TimePickerDialog("잠든 시각", startTime, onDismiss = { picking = null }) { start = it.toString(); picking = null }
         "end" -> TimePickerDialog("깬 시각", endTime, onDismiss = { picking = null }) { end = it.toString(); open = false; picking = null }
     }
+}
+
+/** 1.38 [SLEEP-20] When the user began 회복 도전, on this phone. */
+internal object SleepChallengeStore {
+    private const val PREFS = "sleep_challenge"
+    private const val K_START = "start"
+    private fun prefs(c: android.content.Context) = c.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+    fun start(c: android.content.Context): LocalDate? = prefs(c).getString(K_START, null)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    fun begin(c: android.content.Context, day: LocalDate): LocalDate { prefs(c).edit().putString(K_START, day.toString()).apply(); return day }
+    fun end(c: android.content.Context) = prefs(c).edit().remove(K_START).apply()
 }
