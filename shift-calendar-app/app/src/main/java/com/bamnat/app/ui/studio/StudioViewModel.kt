@@ -515,7 +515,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         // PC D4: 규칙·단추만 얹은 것은 테마가 아니라서 입히기가 그 테마 기간·광고를 따르지 않아요 (출처는 레시피에 남아요).
         val logicOnly = LookParts.partUnit(r) == LookParts.LOGIC
         val writesOff = !k.own && r.pieces.any { p -> p.kind == com.bamnat.core.recipe.PieceKind.LOGIC && com.bamnat.core.formula.Logic.from(p.values).writingRules.isNotEmpty() }
-        val tail = if (!logicOnly) "" else if (writesOff) ". 메모·가계부를 바꾸는 규칙은 꺼진 채로 들어가요. 입힌 뒤 설정 › 수식·규칙·버튼에서 켜요" else ". 입히면 규칙이 켜져요"
+        val tail = if (!logicOnly) "" else if (writesOff) ". 메모·가계부를 바꾸는 규칙은 꺼진 채로 들어가요. 입힌 뒤 설정 › 알람 › 수식·규칙·버튼에서 켜요" else ". 입히면 규칙이 켜져요"
         _state.value = s.copy(layered = s.layered + k, sources = if (k.own || logicOnly) s.sources else s.sources + (k.from to k.fromTitle),
             // PC 9차 사용성 제안 (얹기 안내가 두 줄로 길어요): a single part says its own name, and the rest in a few words.
             said = (if (logicOnly) "${quoted(k.title)}${com.bamnat.app.ui.Fmt.obj(k.title)} 얹었어요" + tail

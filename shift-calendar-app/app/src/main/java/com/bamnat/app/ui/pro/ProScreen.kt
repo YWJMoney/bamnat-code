@@ -157,7 +157,7 @@ fun proDisclosures(plans: List<Plan>, today: LocalDate): List<String> {
             "고른 요금제의 금액이 결제돼요. 끝나기 7일 전에 계속 쓸지 따로 여쭤보고, 답이 없으면 3일 전에 해지 단추와 함께 한 번 더 알려요." else null,
         "해지는 언제든 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 이미 낸 기간이 끝날 때까지 프로를 써요.",
         "결제한 날부터 7일 안에는 청약철회(환불)를 요청할 수 있어요. 이미 쓰기 시작한 디지털 콘텐츠는 법에 따라 철회가 제한될 수 있어요(전자상거래법 제17조 제2항). " +
-            "Google Play 환불 요청이나 설정 › 문의하기로 접수해요.",
+            "Google Play 환불 요청이나 설정 › 도움말과 문의 › 문의하기로 접수해요.",
         "구독하면 이용약관과 개인정보처리방침에 동의하는 거예요.",
         // 1.36 [MON-12] Who sells it, as the 전자상거래법 asks on the screen that sells.
         com.bamnat.app.ui.settings.SellerInfo.SHORT,

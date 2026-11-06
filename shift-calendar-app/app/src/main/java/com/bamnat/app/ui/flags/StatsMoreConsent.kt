@@ -55,7 +55,7 @@ fun StatsMoreNotice(modifier: Modifier = Modifier) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(STATS_MORE_TITLE, style = MaterialTheme.typography.titleMedium)
             Text(STATS_MORE_BODY, style = MaterialTheme.typography.bodyMedium)
-            Text("설정 › 개인정보 › 사용 통계에서 언제든 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall,
+            Text("설정 › 개인정보·앱 정보 › 사용 통계 보내기에서 언제든 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { answer(c, true); asks = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("동의") }

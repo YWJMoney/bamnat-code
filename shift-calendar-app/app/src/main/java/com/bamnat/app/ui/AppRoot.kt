@@ -907,7 +907,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             if (com.bamnat.app.ui.shifts.TypeFoldAsk.done.value != d) return@collect
             com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
             snackbar.currentSnackbarData?.dismiss()
-            val r = snackbar.showSnackbar("${d.message} · 설정 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+            val r = snackbar.showSnackbar("${d.message} · 설정 › 내 근무 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)
             if (r == SnackbarResult.ActionPerformed) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, d)
         }
     }

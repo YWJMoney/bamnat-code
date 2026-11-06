@@ -31,7 +31,7 @@ fun RateHintLine(profile: PayProfile?, onOpenRates: () -> Unit) {
     val hint = RateHint.of(groups, profile.wageType, profile.base.on(Today.month()).value, who) ?: return
     SectionCard(title = "광장 시세와 견주기") {
         Text(hint.text(Plaza.unit(unit), Plaza.region(hint.group.region)), style = MaterialTheme.typography.bodyMedium)
-        Text("같은 직군(${Plaza.job(hint.group.job)})·지역·${Plaza.unit(unit)}끼리 휴대폰 안에서만 견줘요. 설정 › 급여와 연차에서 끌 수 있어요.",
+        Text("같은 직군(${Plaza.job(hint.group.job)})·지역·${Plaza.unit(unit)}끼리 휴대폰 안에서만 견줘요. 설정 › 급여와 연차 › 광장 시세와 내 단가 견주기에서 끌 수 있어요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         TextButton(onClick = onOpenRates) { Text("광장 시세 보기") }
     }
