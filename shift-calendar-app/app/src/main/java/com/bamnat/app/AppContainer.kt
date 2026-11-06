@@ -859,6 +859,8 @@ class AppContainer(context: Context) {
                         !show -> SleepingNotice.cancel(appContext)
                     }
                     openId = open?.id
+                    // 1.38 [SLEEP-12] 자는 동안 방해 금지 follows the open sleep (off by default).
+                    com.bamnat.app.sleep.SleepDnd.follow(appContext, open != null, settingsRepository.current.sleepDnd)
                     QuietHold.release(appContext)
                 }
         }

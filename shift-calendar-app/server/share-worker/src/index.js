@@ -1783,7 +1783,25 @@ export function validate(body) {
     if (kit === null) return { error: "kit" };
     schedule.kit = kit;
   }
+  // 1.38 [SLEEP-11] 지금 자는 중: only when the sleeper ticked it, two times (epoch millis) and nothing else. The app shows it to the
+  // receiver while it is fresh; the web page (/s/:id) never shows it.
+  if (body.sleepNow != null) {
+    const s = sleepNow(body.sleepNow);
+    if (s === null) return { error: "sleep_now" };
+    schedule.sleepNow = s;
+  }
   return { schedule, ttlDays };
+}
+
+/** 1.38 [SLEEP-11] {since, wakeAt?} in epoch millis: since first, the wake within 20 hours of it. Null refuses it. */
+function sleepNow(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  const keys = Object.keys(v);
+  if (keys.some((k) => k !== "since" && k !== "wakeAt")) return null;
+  if (!Number.isSafeInteger(v.since) || v.since <= 0) return null;
+  if (v.wakeAt == null) return { since: v.since };
+  if (!Number.isSafeInteger(v.wakeAt) || v.wakeAt <= v.since || v.wakeAt - v.since > 20 * 3600 * 1000) return null;
+  return { since: v.since, wakeAt: v.wakeAt };
 }
 
 /**

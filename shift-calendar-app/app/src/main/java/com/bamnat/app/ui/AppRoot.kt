@@ -530,7 +530,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 NoticeLinks.consume(target)
             }
             NoticeLinks.Target.LEAVE -> { nav.navigate(Routes.leave()) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.SLEEP -> { nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.SLEEP -> {
+                // 1.38 [SLEEP-05] The bedtime notice's 측정 시작: the app is in front now, so the microphone may start.
+                if (NoticeLinks.payload.value == com.bamnat.app.sleep.SleepRecordService.FROM_NOTICE &&
+                    com.bamnat.app.sleep.SleepRecordService.allowed(nav.context)) com.bamnat.app.sleep.SleepRecordService.start(nav.context)
+                nav.navigate(Routes.SLEEP) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.OWED -> { nav.navigate(Routes.OWED) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.DUTY_ROSTER -> { nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }; NoticeLinks.consume(target) }

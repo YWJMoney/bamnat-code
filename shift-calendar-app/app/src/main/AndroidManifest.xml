@@ -19,6 +19,8 @@
     <!-- [SLEEP-06] 정밀 측정 only, off until the user taps 측정 시작 and allows the microphone: sounds are sorted on the phone,
          short clips stay on the phone for 7 days, nothing is sent. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- [SLEEP-12] 자는 동안 방해 금지 only, off by default: the user grants 방해 금지 접근 in the phone's settings. -->
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- [ALRM-15] 1.31 R9: no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS. 알람 점검 opens the phone's own list of apps (no permission),

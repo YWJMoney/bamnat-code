@@ -43,6 +43,26 @@ data class ShareLinkState(
     val from: YearMonth? = null,
 )
 
+/**
+ * 1.38 [SLEEP-11] 지금 자는 중 as a link carries it: when the sleep began and the next alarm, in epoch millis. The receiver shows it only
+ * while it is fresh ([shownAt]): not once the wake is 2 hours past, nor 16 hours after the start.
+ */
+data class SleepNow(val since: Long, val wakeAt: Long? = null) {
+    fun shownAt(now: Long): Boolean =
+        now - since in 0..FRESH_MILLIS && (wakeAt == null || now <= wakeAt + PAST_WAKE_MILLIS)
+
+    companion object {
+        const val FRESH_MILLIS = 16 * 3_600_000L
+        const val PAST_WAKE_MILLIS = 2 * 3_600_000L
+
+        fun of(o: JSONObject?): SleepNow? {
+            if (o == null) return null
+            val since = o.optLong("since", 0L).takeIf { it > 0 } ?: return null
+            return SleepNow(since, o.optLong("wakeAt", 0L).takeIf { it > since })
+        }
+    }
+}
+
 /** [SHR-01] What a link carries besides the shifts; all off until the sharer ticks them. */
 data class ShareOptions(
     val leaveKinds: Boolean = false,
@@ -60,6 +80,8 @@ data class ShareOptions(
     val look: Boolean = false,
     /** 1.37 [SHR-32] The sharer's 근무 설정 (근무 꾸미기·알람 시각 틀·근무 주기), never 급여 규칙 or an amount; from 3.11. */
     val kit: Boolean = false,
+    /** 1.38 [SLEEP-11] 지금 자는 중: while a sleep is open the link says since when and the next alarm, nothing else (`sleep.share`). */
+    val sleepNow: Boolean = false,
 ) {
     /** The server's names for the ticked parts, in its order. */
     val shows: List<String>
@@ -76,8 +98,9 @@ data class ShareOptions(
     val sendsSetup: Boolean get() = setup && audience == ShareAudience.COWORKER
 
     companion object {
-        fun of(shows: Collection<String>, audience: ShareAudience? = null, setup: Boolean = false, look: Boolean = false, kit: Boolean = false) =
-            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows, audience, setup, look, kit)
+        fun of(shows: Collection<String>, audience: ShareAudience? = null, setup: Boolean = false, look: Boolean = false, kit: Boolean = false,
+               sleepNow: Boolean = false) =
+            ShareOptions("leaveKinds" in shows, "extras" in shows, "memos" in shows, "pay" in shows, "jobs" in shows, audience, setup, look, kit, sleepNow)
 
         /**
          * [SHR-20] 1.33 (계획 690~694): what each way sends at first. 동료: the 연장·휴무일 근무 and the company setup, never
@@ -261,6 +284,8 @@ object ShareLinkPayload {
         look: String? = null,
         /** 1.37 [SHR-32] The 근무 설정 as a recipe's text ([ShareContent.kitFile]); sent only with [ShareOptions.kit]. */
         kit: String? = null,
+        /** 1.38 [SLEEP-11] The open sleep's start and the next alarm (epoch millis); sent only with [ShareOptions.sleepNow]. */
+        sleepNow: SleepNow? = null,
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -338,6 +363,10 @@ object ShareLinkPayload {
             // 1.37 [SHR-31][SHR-32] A server from before 1.37 refuses neither: it drops what it does not know.
             if (options.look && look != null && look.length <= LOOK_CHARS) put("look", look)
             if (options.kit && kit != null && kit.length <= KIT_CHARS) put("kit", kit)
+            if (options.sleepNow && sleepNow != null) put("sleepNow", JSONObject().apply {
+                put("since", sleepNow.since)
+                if (sleepNow.wakeAt != null && sleepNow.wakeAt > sleepNow.since) put("wakeAt", sleepNow.wakeAt)
+            })
             if (options.pay && pay.isNotEmpty()) put("payKind", payKind.key)
             if (options.pay && pay.isNotEmpty()) put("pay", JSONArray().apply {
                 pay.take(6).forEach { p ->
@@ -498,11 +527,12 @@ class ShareLinkStore(
 
     /** [SHR-01] What the sharer ticked last time, used again for the next link and for 고치기. */
     fun options(): ShareOptions = ShareOptions.of(prefs.getStringSet("shows", emptySet()).orEmpty(),
-        ShareAudience.of(prefs.getString("audience", null)), prefs.getBoolean("setup", false), prefs.getBoolean("look", false), prefs.getBoolean("kit", false))
+        ShareAudience.of(prefs.getString("audience", null)), prefs.getBoolean("setup", false), prefs.getBoolean("look", false), prefs.getBoolean("kit", false),
+        prefs.getBoolean("sleepNow", false))
 
     fun saveOptions(o: ShareOptions) {
         if (!retired) prefs.edit().putStringSet("shows", o.shows.toSet()).putString("audience", o.audience?.key).putBoolean("setup", o.setup)
-            .putBoolean("look", o.look).putBoolean("kit", o.kit).apply()
+            .putBoolean("look", o.look).putBoolean("kit", o.kit).putBoolean("sleepNow", o.sleepNow).apply()
     }
 
     /**

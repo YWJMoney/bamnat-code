@@ -62,3 +62,29 @@ internal fun ChallengeCard(progress: RecoveryChallenge.Progress?, onStart: () ->
         }
     }
 }
+
+/** 1.38 [SLEEP-22] 바꾼 것 전후: one tap marks today's change; the 7 days before and after are compared once 3 nights are on each side. */
+@Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+internal fun BeforeAfterCard(mark: SleepViewModel.Mark?, onMark: (String) -> Unit, onClear: () -> Unit) {
+    SectionCard(title = "바꾼 것 전후 비교") {
+        if (mark == null) {
+            Text("오늘 바꾼 것을 눌러 두면, 그 전 7일과 뒤 7일의 코골이 시간과 아침 기분을 견줘 드려요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 6.dp)) {
+                BEFORE_AFTER_CHOICES.forEach { w ->
+                    com.bamnat.app.ui.components.FilterChip(selected = false, onClick = { onMark(w) }, label = { Text(w) })
+                }
+            }
+            return@SectionCard
+        }
+        Text("‘${mark.what.ifEmpty { "바꾼 것" }}’ ${mark.day.monthValue}월 ${mark.day.dayOfMonth}일부터", style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(mark.result?.line ?: "앞뒤로 ${com.bamnat.core.sleep.BeforeAfter.MIN_NIGHTS}밤 이상 기록이 쌓이면 견줘 드려요",
+                style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            TextButton(onClick = onClear) { Text("지우기") }
+        }
+    }
+}
+
+internal val BEFORE_AFTER_CHOICES = listOf("새 베개", "옆으로 자기", "커피 줄이기", "술 줄이기", "방 어둡게", "운동 시작", "그 밖의 것")

@@ -35,8 +35,25 @@ object ShareContent {
             val open = lookInLink(c)
             val look = if (options.look && open) lookFile(c, title) else null
             val kit = if (options.kit && open) kitFile(c, calendar, title, withCycle = setup == null) else null
-            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit)
+            val sleep = if (options.sleepNow && calendar == PersonalCalendar.MAIN) sleepNow(c) else null
+            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep)
         }
+
+    /** 1.38 [SLEEP-11] Whether a link may say 지금 자는 중 (`sleep.share`, from the 처리방침 date). */
+    fun sleepInLink(c: AppContainer): Boolean =
+        runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SHARE) }.getOrDefault(false)
+
+    /** 1.38 [SLEEP-11] The open sleep (not an imported one) and the next alarm, or null while awake. */
+    suspend fun sleepNow(c: AppContainer): SleepNow? {
+        if (!sleepInLink(c)) return null
+        val now = Today.dateTime()
+        val open = c.sleepRepository.recent(days = 2).first().firstOrNull {
+            val m = java.time.Duration.between(it.start, now).toMinutes()
+            it.end == null && !it.imported && m >= 0 && m < com.bamnat.core.sleep.SleepDebt.MAX_SLEEP_MINUTES
+        } ?: return null
+        val since = open.start.atZone(Today.zone()).toInstant().toEpochMilli()
+        return SleepNow(since, c.alarmScheduler.upcoming.value?.triggerAtMillis?.takeIf { it > since })
+    }
 
     /**
      * [SHR-20] 1.33: a coworker's link carries the company setup only from 처리방침 3.7's date (`share.setup`, LEGAL), and only

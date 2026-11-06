@@ -486,6 +486,30 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     val healthSleepState: StateFlow<com.bamnat.app.sleep.HealthSleep.State> = container.healthSleep.state
     /** [SLP-08] Reads Health Connect again while the day view is on screen. */
     fun refreshHealthSleep(enabled: Boolean) { viewModelScope.launch { container.healthSleep.refresh(enabled) } }
+    /**
+     * 1.38 [SLEEP-23] 낮잠 자기: 잠들었어요 now, and the wake at [until] with the day's alarms ([com.bamnat.core.sleep.NapAlarm]), so it
+     * rings like a work alarm. One undo takes back both.
+     */
+    fun napNow(until: java.time.LocalDateTime) = gate(WriteKind.SLEEP) {
+        container.appScope.launch {
+            val schedule = this@CalendarViewModel.schedule
+            val asleep = container.sleepRepository.fellAsleep()
+            val date = until.toLocalDate()
+            val ringing = container.settingsRepository.current.alarmsEnabled
+            val merged = if (!ringing) null else com.bamnat.core.sleep.NapAlarm.merge(date,
+                com.bamnat.core.alarm.AlarmPlanner.alarmsOn(schedule.snapshot.first().resolver, date).map { it.triggerAt }, until)
+            val before = merged?.let { schedule.setDayAlarms(date, it) }
+            val at = Fmt.time(until.toLocalTime())
+            _messages.emit(UndoMessage(
+                if (!ringing) "낮잠 자는 중이에요 · 근무 알람이 꺼져 있어서 ${at}에 깨우지 않아요"
+                else "낮잠 자는 중이에요 · ${at}에 깨워요",
+            ) {
+                if (asleep.started) container.sleepRepository.delete(asleep.entry.id)
+                before?.let { schedule.restoreDay(date, it) }
+            })
+        }
+    }
+
     /** [SLP-06][SLP-14] "잠들었어요", said back with a way to take it back. */
     fun fellAsleep() = gate(WriteKind.SLEEP) {
         container.appScope.launch {

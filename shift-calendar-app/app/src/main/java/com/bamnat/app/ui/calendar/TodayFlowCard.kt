@@ -127,6 +127,8 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
                 TodayFlow.Action.AWAKE -> vm.wokeUp()
                 TodayFlow.Action.ALARM_ON -> date?.let { vm.setAlarmSkipped(it, false, announce = true) }
                 TodayFlow.Action.AWAKE_AT -> Unit // asks for the time first, below
+                // 1.38 [SLEEP-23] 낮잠 자기: asleep now, and a wake alarm at the nap's end.
+                TodayFlow.Action.NAP -> card.napUntil?.let(vm::napNow) ?: vm.fellAsleep()
             }
         },
         onWokeAt = { vm.wokeUp(it) },
@@ -274,13 +276,14 @@ private fun ActionButton(action: TodayFlow.Action, modifier: Modifier = Modifier
         TodayFlow.Action.AWAKE -> "깼어요" to Icons.Outlined.WbSunny
         TodayFlow.Action.AWAKE_AT -> "깬 시각 적기" to Icons.Outlined.Schedule
         TodayFlow.Action.ALARM_ON -> "알람 켜기" to Icons.Outlined.Alarm
+        TodayFlow.Action.NAP -> "낮잠 자기" to Icons.Outlined.Bedtime
     }
     val content: @Composable () -> Unit = {
         Icon(icon, null, Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
         Text(label, maxLines = 1)
     }
-    if (action == TodayFlow.Action.ASLEEP) {
+    if (action == TodayFlow.Action.ASLEEP || action == TodayFlow.Action.NAP) {
         val cal = LocalCalendarColors.current
         FilledTonalButton(onClick = onClick, modifier = modifier, contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
             colors = ButtonDefaults.filledTonalButtonColors(containerColor = cal.sleepContainer, contentColor = cal.onSleepContainer)) { content() }

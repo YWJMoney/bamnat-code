@@ -53,7 +53,9 @@ class TodayFlowTest {
         assertEquals("오늘 · 야간 19:00–07:00", card.caption)
         assertEquals("15:00 낮잠 90분", card.headline)
         assertEquals("첫 야간 전 낮잠 시간이에요 · 16:30엔 일어나요", card.detail)
-        assertNull(card.action)
+        // 1.38 [SLEEP-23] 낮잠 자기, waking at the nap's end.
+        assertEquals(TodayFlow.Action.NAP, card.action)
+        assertEquals(at(3, 16, 30), card.napUntil)
         assertEquals("낮잠 15:00–16:30", card.line)
         // The strip: nap, the alarm, the night, and the sleep after it up to the strip's end.
         assertEquals(listOf(Part.NAP, Part.WORK, Part.SLEEP), card.segments.map { it.part })

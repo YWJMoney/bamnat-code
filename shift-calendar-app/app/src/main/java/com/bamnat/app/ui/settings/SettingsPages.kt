@@ -525,6 +525,14 @@ private fun NoticesPage(
         if (remember { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }) {
             com.bamnat.app.ui.sleep.SleepAutoSwitch(settings.sleepAuto) { on -> vm.update { it.copy(sleepAuto = on) } }
         }
+        // 1.38 [SLEEP-12] 자는 동안 방해 금지.
+        val dndOk = remember(refresh) { com.bamnat.app.sleep.SleepDnd.permitted(context) }
+        SwitchRow(SLEEP_DND_ROW, "‘잠들었어요’부터 ‘깼어요’까지 휴대폰을 ‘중요한 알림만’으로 둬요. 근무 알람은 그대로 울리고, 휴대폰 방해 금지에서 고른 사람 전화도 와요",
+            settings.sleepDnd, warning = if (settings.sleepDnd && !dndOk) "‘방해 금지 접근’을 허용해야 바뀌어요" else null, fixLabel = "허용",
+            onFix = { runCatching { context.startActivity(com.bamnat.app.sleep.SleepDnd.accessIntent()) } }) { on ->
+            vm.update { it.copy(sleepDnd = on) }
+            if (on && !dndOk) runCatching { context.startActivity(com.bamnat.app.sleep.SleepDnd.accessIntent()) }
+        }
         // [FEAT-18] Phones have no lock-screen widgets; this quiet notice stands in for one.
         SwitchRow("잠금 화면 오늘 근무", "오늘과 내일 근무를 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요", settings.todayShiftNotice,
             warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
@@ -1267,6 +1275,7 @@ private fun HealthWriteRow(vm: SettingsViewModel) {
 }
 
 internal const val HEALTH_WRITE_ROW = "헬스 커넥트에 수면 쓰기"
+internal const val SLEEP_DND_ROW = "자는 동안 방해 금지"
 
 /**
  * [DAILY-16] The 시·도 the 광장 시세 card compares in. Without it (and without a rate the user shared), no card
