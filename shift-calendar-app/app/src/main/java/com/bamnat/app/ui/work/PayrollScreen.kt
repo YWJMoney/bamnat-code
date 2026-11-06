@@ -169,6 +169,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
             calls.filter { it.taken == null && it.token != null }.forEach { k -> runCatching { com.bamnat.app.boss.BossCallSync.pull(context.appContainer, place.id, k.id) } }
         }
         calls.forEach { k -> key(k.id) { BossCallCard(place, k, staff, work) } }
+        // 1.38 [P3-X-08] 다가올 신고·지급
+        if (staff.isNotEmpty()) FilingsCard(place, staff, work)
         val leaves by store.leaveDays(place.id).collectAsStateWithLifecycle(emptyMap())
         // 1.38 [P3-X-06] 계약서 서명 기다림: read once when the ledger opens.
         LaunchedEffect(place.id) { runCatching { com.bamnat.app.boss.BossContractSync.pullWaiting(context.appContainer, staff) } }
