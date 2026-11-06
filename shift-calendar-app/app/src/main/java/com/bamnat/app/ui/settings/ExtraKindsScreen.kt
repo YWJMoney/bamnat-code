@@ -98,6 +98,7 @@ import com.bamnat.app.ui.calendar.timePresets
 import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.components.MinutesStepper
 import com.bamnat.app.ui.components.SectionCard
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.components.asColor
@@ -439,7 +440,14 @@ private fun templates(kinds: ExtraKinds, types: List<ShiftType>): List<KindTempl
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExtraKindsScreen(vm: ExtraKindsViewModel, onBack: () -> Unit, onOpenPay: () -> Unit) {
+fun ExtraKindsScreen(
+    vm: ExtraKindsViewModel, onBack: () -> Unit, onOpenPay: () -> Unit,
+    /**
+     * [PAYX-51] 1.38 PC 12차 (교육 시수까지 여섯 번): a kind to open at once by its name, made from its ready kind when there
+     * is none, its 급여와 가산 in view: 급여 › 회사 규칙 › '교육 시수 정하기' is then one tap.
+     */
+    start: String? = null,
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val profile by vm.profile.collectAsStateWithLifecycle()
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
@@ -449,6 +457,18 @@ fun ExtraKindsScreen(vm: ExtraKindsViewModel, onBack: () -> Unit, onOpenPay: () 
     val kinds = settings.extraKinds
     var adding by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+    var started by rememberSaveable { mutableStateOf(start == null) }
+    var focusPay by remember { mutableStateOf(false) }
+    val startSnap = snapshot
+    LaunchedEffect(started, startSnap != null) {
+        if (started || startSnap == null) return@LaunchedEffect
+        started = true
+        val norm = start!!.replace(" ", "")
+        val have = kinds.kinds.firstOrNull { it.name.replace(" ", "") == norm }
+        if (have != null) vm.open(have)
+        else templates(kinds, startSnap.shiftTypes).firstOrNull { it.title.replace(" ", "") == norm }?.let(vm::openNew) ?: return@LaunchedEffect
+        focusPay = true
+    }
 
     LaunchedEffect(vm) {
         vm.messages.collect { m ->
@@ -518,7 +538,7 @@ fun ExtraKindsScreen(vm: ExtraKindsViewModel, onBack: () -> Unit, onOpenPay: () 
             )
         }
         edit?.let { e ->
-            KindEditor(e, vm, kinds, profile, snap, payUnlocked = true, onOpenPay = onOpenPay)
+            KindEditor(e, vm, kinds, profile, snap, payUnlocked = true, onOpenPay = onOpenPay, focusPay = focusPay)
         }
     }
 }
@@ -622,7 +642,15 @@ private fun KindEditor(
     snapshot: ScheduleSnapshot,
     payUnlocked: Boolean,
     onOpenPay: () -> Unit,
+    /** [PAYX-51] Opened for its 시수: 급여와 가산 is brought into view once. */
+    focusPay: Boolean = false,
 ) {
+    val payView = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    LaunchedEffect(focusPay) {
+        if (!focusPay) return@LaunchedEffect
+        kotlinx.coroutines.delay(300)
+        payView.bringIntoView()
+    }
     val draft = edit.draft
     val kind = draft.kind
     fun setKind(k: ExtraKind) = vm.edit { it.copy(kind = k) }
@@ -704,6 +732,36 @@ private fun KindEditor(
                         TimingContent(kind, timed, snapshot, onTiming = ::setTiming, onPick = { picking = it })
                     }
 
+                    SectionCard(title = "급여와 가산", modifier = Modifier.bringIntoViewRequester(payView)) {
+                        when {
+                            profile == null -> {
+                                Hint("급여 계산을 설정하면 ${kind.name.ifBlank { "이 일" }}${Fmt.obj(kind.name.ifBlank { "이 일" })} 회사가 주는 방식대로 계산하고 금액도 미리 볼 수 있어요.")
+                                OutlinedButton(onClick = { close(); onOpenPay() }, modifier = Modifier.padding(top = 4.dp)) { Text("급여 계산 설정하기") }
+                            }
+                            else -> {
+                                val start = remember(profile, kind.offDay) { lawStart(kind, profile, today) }
+                                val legal = legalText(kind, profile, nightLabel)
+                                Label("회사는 ${kind.name.ifBlank { "이 일" }}${Fmt.obj(kind.name.ifBlank { "이 일" })} 어떻게 계산하나요?")
+                                ExtraRuleEditor(draft.rule, start, legal, nightLabel, money, profile.fiveOrMoreEmployees) { r ->
+                                    vm.edit { d ->
+                                        // [EXTRA-08] The 휴무일 box now says what a day off adds, so the kind follows the company's day-off rule.
+                                        val k = if (r.basis == ExtraBasis.UNIT && d.rule.basis != ExtraBasis.UNIT) d.kind.copy(offDay = OffDayTreatment.BY_DAY) else d.kind
+                                        d.copy(kind = k, rule = r)
+                                    }
+                                }
+                                // [PAYX-11][EXTRA-07] A 대근 for several shifts can pay each its own way.
+                                val covered = (kind.timing as? ExtraTiming.AsShift)?.takeIf { it.shiftTypeId == null }?.shifts(timed).orEmpty()
+                                val listed = (covered + timed.filter { it.id in draft.byShift }).distinct()
+                                if (listed.isNotEmpty() && (covered.size > 1 || draft.byShift.isNotEmpty())) {
+                                    PerShiftRules(kind.name.ifBlank { "이 일" }, listed, draft.rule, start, draft.byShift, legal, nightLabel, money,
+                                        profile.fiveOrMoreEmployees) { m -> vm.edit { it.copy(byShift = m) } }
+                                }
+                            }
+                        }
+                    }
+
+                    // [PAYX-51] 1.38 PC 12차: under 급여와 가산, so the box going away (a 시수 or premium ticked makes the way the
+                    // company's) moves nothing above what was just tapped; over it, the page jumped.
                     // [EXTRA-08] With the company's own premiums the 휴무일 box says what a day off adds instead.
                     if ((kind.timing is ExtraTiming.Band || kind.timing is ExtraTiming.AsShift) && draft.rule.basis != ExtraBasis.UNIT) {
                         SectionCard(title = "쉬는 날에 하면") {
@@ -731,34 +789,6 @@ private fun KindEditor(
                                 }
                             }
                             Hint("법으로 쉬는 날(휴무일) 근무는 휴일근로가 아니에요. 회사 규칙은 급여 계산 → 회사 규칙에서 한 번에 정해요.")
-                        }
-                    }
-
-                    SectionCard(title = "급여와 가산") {
-                        when {
-                            profile == null -> {
-                                Hint("급여 계산을 설정하면 ${kind.name.ifBlank { "이 일" }}${Fmt.obj(kind.name.ifBlank { "이 일" })} 회사가 주는 방식대로 계산하고 금액도 미리 볼 수 있어요.")
-                                OutlinedButton(onClick = { close(); onOpenPay() }, modifier = Modifier.padding(top = 4.dp)) { Text("급여 계산 설정하기") }
-                            }
-                            else -> {
-                                val start = remember(profile, kind.offDay) { lawStart(kind, profile, today) }
-                                val legal = legalText(kind, profile, nightLabel)
-                                Label("회사는 ${kind.name.ifBlank { "이 일" }}${Fmt.obj(kind.name.ifBlank { "이 일" })} 어떻게 계산하나요?")
-                                ExtraRuleEditor(draft.rule, start, legal, nightLabel, money, profile.fiveOrMoreEmployees) { r ->
-                                    vm.edit { d ->
-                                        // [EXTRA-08] The 휴무일 box now says what a day off adds, so the kind follows the company's day-off rule.
-                                        val k = if (r.basis == ExtraBasis.UNIT && d.rule.basis != ExtraBasis.UNIT) d.kind.copy(offDay = OffDayTreatment.BY_DAY) else d.kind
-                                        d.copy(kind = k, rule = r)
-                                    }
-                                }
-                                // [PAYX-11][EXTRA-07] A 대근 for several shifts can pay each its own way.
-                                val covered = (kind.timing as? ExtraTiming.AsShift)?.takeIf { it.shiftTypeId == null }?.shifts(timed).orEmpty()
-                                val listed = (covered + timed.filter { it.id in draft.byShift }).distinct()
-                                if (listed.isNotEmpty() && (covered.size > 1 || draft.byShift.isNotEmpty())) {
-                                    PerShiftRules(kind.name.ifBlank { "이 일" }, listed, draft.rule, start, draft.byShift, legal, nightLabel, money,
-                                        profile.fiveOrMoreEmployees) { m -> vm.edit { it.copy(byShift = m) } }
-                                }
-                            }
                         }
                     }
 
