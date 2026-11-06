@@ -287,7 +287,7 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
     if (confirmOff) {
         ConfirmDialog(
             title = "알람을 모두 끌까요?",
-            message = "근무 알람도 이 날 알람도 울리지 않아요. 알람 설정은 그대로 남아서 다시 켜면 돌아와요.",
+            message = "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람도 이 날 알람도 울리지 않아요. 알람 설정은 그대로 남아서 다시 켜면 돌아와요.",
             confirmLabel = "모두 끄기",
             destructive = true,
             onDismiss = { confirmOff = false },
@@ -299,7 +299,7 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
     SectionCard(title = null) {
         SwitchRow(
             "알람 사용",
-            if (settings.alarmsEnabled) "근무 알람과 이 날 알람이 울려요" else "모든 알람이 꺼져 있어요. 알람 설정은 그대로 남아요",
+            if (settings.alarmsEnabled) "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람과 이 날 알람이 울려요" else "모든 알람이 꺼져 있어요. 알람 설정은 그대로 남아요",
             settings.alarmsEnabled,
         ) { on -> if (on) vm.setAlarmsEnabled(true) else confirmOff = true }
     }
@@ -332,7 +332,7 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         // [SET-05] Every shift's alarms earlier or later at once, instead of opening each shift (G.md P21).
         var moving by rememberSaveable { mutableStateOf(false) }
         if (ringing.isNotEmpty()) HorizontalDivider()
-        NavRow(MOVE_ALL_ALARMS_ROW, if (ringing.isEmpty()) "알람이 켜진 근무가 생기면 쓸 수 있어요" else "예: 모든 근무 알람을 10분 일찍") {
+        NavRow(MOVE_ALL_ALARMS_ROW, if (ringing.isEmpty()) "알람이 켜진 ${com.bamnat.app.ui.shifts.dayKindSubject(settings.workStyle)} 생기면 쓸 수 있어요" else "예: 모든 ${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람을 10분 일찍") {
             if (ringing.isNotEmpty()) moving = true
         }
         if (moving) MoveAllAlarmsDialog(ringing, onDismiss = { moving = false }) { minutes ->
@@ -496,17 +496,17 @@ private fun NoticesPage(
     if (!canPost) {
         WarningBanner(
             title = "알림이 꺼져 있어 아무 알림도 오지 않아요",
-            message = "근무 알람이 울려도 알람 화면이 뜨지 않고 소리만 나요. 끄려면 앱을 열어야 해요.",
+            message = "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람이 울려도 알람 화면이 뜨지 않고 소리만 나요. 끄려면 앱을 열어야 해요.",
             action = "허용",
             onAction = askNotifications,
         )
     }
-    SectionCard(title = "근무 알람") {
+    SectionCard(title = "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람") {
         PermissionRow(ok = canPost && Notifications.ALARM_CHANNEL_ID !in off, title = "울릴 때 잠금 화면에 크게 떠요", fixLabel = "켜기") {
             if (!canPost) askNotifications() else SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID)
         }
         // [SET-02] The alarm's own switches are in 설정 › 알람 only.
-        Note("근무 알람을 켜고 끄는 것과 소리는 설정 › 알람에서 정해요.")
+        Note("${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람을 켜고 끄는 것과 소리는 설정 › 알람에서 정해요.")
     }
     val planned = settings.workStyle?.usesPayEngine != false
     // 1.38 PC 11차 식당 둘러보기 (퇴근길 안전: 야간, 52시간이 가게에 보임): what follows a 근무표 shows where there is one, and 퇴근길 안전
@@ -536,16 +536,20 @@ private fun NoticesPage(
         }
         // 1.38 [SLEEP-12] 자는 동안 방해 금지.
         val dndOk = remember(refresh) { com.bamnat.app.sleep.SleepDnd.permitted(context) }
-        SwitchRow(SLEEP_DND_ROW, "‘잠들었어요’부터 ‘깼어요’까지 휴대폰을 ‘중요한 알림만’으로 둬요. 근무 알람은 그대로 울리고, 휴대폰 방해 금지에서 고른 사람 전화도 와요",
+        SwitchRow(SLEEP_DND_ROW, "‘잠들었어요’부터 ‘깼어요’까지 휴대폰을 ‘중요한 알림만’으로 둬요. 근무 알람은 그대로 울리고, 휴대폰 방해 금지에서 고른 사람 전화도 와요".replace("근무 알람", "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람"),
             settings.sleepDnd, warning = if (settings.sleepDnd && !dndOk) "‘방해 금지 접근’을 허용해야 바뀌어요" else null, fixLabel = "허용",
             onFix = { runCatching { context.startActivity(com.bamnat.app.sleep.SleepDnd.accessIntent()) } }) { on ->
             vm.update { it.copy(sleepDnd = on) }
             if (on && !dndOk) runCatching { context.startActivity(com.bamnat.app.sleep.SleepDnd.accessIntent()) }
         }
         // [FEAT-18] Phones have no lock-screen widgets; this quiet notice stands in for one.
-        SwitchRow("잠금 화면 오늘 근무", "오늘과 내일 근무를 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요", settings.todayShiftNotice,
-            warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
-            set(on) { it.copy(todayShiftNotice = on) }
+        // 1.38 PC 12.1: a shop's lock screen shows 오늘 영업 (설정 찾기 still lands here by the old name).
+        val lockWord = com.bamnat.app.ui.shifts.lockNoun(settings.workStyle)
+        Column(Modifier.focusMark("잠금 화면 오늘 근무")) {
+            SwitchRow("잠금 화면 오늘 $lockWord", "오늘과 내일 $lockWord${Fmt.obj(lockWord)} 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요", settings.todayShiftNotice,
+                warning = warning(settings.todayShiftNotice, Notifications.TODAY_CHANNEL_ID), onFix = fix(Notifications.TODAY_CHANNEL_ID)) { on ->
+                set(on) { it.copy(todayShiftNotice = on) }
+            }
         }
         // 1.38 [EASE-29] What the lock screen will say, with my today and tomorrow.
         LockNoticePreview()
@@ -573,7 +577,8 @@ private fun NoticesPage(
             }
         }
         // [ALRM-16] 1.31 N3
-        if (planned || settings.afterAlarmCard) SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
+        // 1.38 PC 12.1: on by default, so 'or on' kept it on a shop's page; work without a 근무표 gets no card at all (AfterAlarmCard).
+        if (planned) SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
             settings.afterAlarmCard, warning = warning(settings.afterAlarmCard, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(afterAlarmCard = on) }
         }
@@ -621,7 +626,7 @@ private fun NoticesPage(
         } else Note("문의 답도 이제 바로 알리지 않아요. 답은 설정 › 도움말과 문의 › 내 문의에서 볼 수 있어요")
     }
     SectionCard(title = "자는 동안") {
-        SwitchRow("자는 동안 미루기", "자는 동안 생긴 돈·연차 알림은 깨고 30분 뒤에 보내요. 밤낮·마을 소식은 근무 중에 생겨도 근무 끝나고 30분 뒤에 와요. 근무 알람과 일감 알림은 그대로 와요",
+        SwitchRow("자는 동안 미루기", "자는 동안 생긴 돈·연차 알림은 깨고 30분 뒤에 보내요. 밤낮·마을 소식은 근무 중에 생겨도 근무 끝나고 30분 뒤에 와요. ${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람과 일감 알림은 그대로 와요",
             settings.quietWhileAsleep) { on -> vm.update { it.copy(quietWhileAsleep = on) } }
     }
 }

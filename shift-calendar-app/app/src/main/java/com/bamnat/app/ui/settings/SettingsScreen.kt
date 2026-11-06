@@ -254,6 +254,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     ) { (s, p, m), st ->
         com.bamnat.core.guide.RuleCards.of(s.first.patterns, s.first.shiftTypes, com.bamnat.core.time.Today.date(), p?.customRules.orEmpty(),
             com.bamnat.core.formula.Logic.decode(st.logic), alarmsOn = st.alarmsEnabled, memos = m, hidden = s.second,
+            ringingOnly = com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(st.workStyle),
             workDayLine = when (st.workStyle) {
                 com.bamnat.core.work.WorkStyle.BUSINESS -> "영업하는 날이에요"
                 com.bamnat.core.work.WorkStyle.DAY, com.bamnat.core.work.WorkStyle.HOURLY -> "출근하는 날이에요"
@@ -1091,7 +1092,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
             (if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "마감 뒤" else "퇴근길").takeIf { s.commuteNotice && style != com.bamnat.core.work.WorkStyle.INVEST },
             "잘 준비".takeIf { s.bedtimeNotice },
             "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice && style?.usesCompany != false },
-        ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck && style?.usesPayEngine != false })
+        ).ifEmpty { listOf("${com.bamnat.app.ui.shifts.alarmNoun(style)} 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck && style?.usesPayEngine != false })
     ).joinToString(" · ")
     // [J133-71] 1.33: 회사 설정 only where the work has a company; 연차 not for 알바's few hours a week.
     SettingsPage.PAY -> when {
@@ -1203,7 +1204,7 @@ private fun AlarmReadyCard(
                     val owner = if (active == com.bamnat.app.data.PersonalCalendar.MAIN) "" else
                         context.appContainer.calendars.get(com.bamnat.app.data.PersonalCalendar.MAIN)?.name?.let { "$it " }.orEmpty()
                     val line = when {
-                        !settings.alarmsEnabled -> "근무 알람도 이 날 알람도 울리지 않아요"
+                        !settings.alarmsEnabled -> "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람도 이 날 알람도 울리지 않아요"
                         next == null -> if (com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(settings.workStyle)) (if (settings.workStyle == com.bamnat.core.work.WorkStyle.INVEST) "투자 알람에서 알람을 켜면 울려요" else "${settings.workStyle.words().types}에서 시작 전 알람을 켜면 울려요")
                             else "근무 종류에서 근무 전 알람을 켜면 울려요"
                         else -> AlarmScheduler.millisToLocal(next.triggerAtMillis).let { at ->
