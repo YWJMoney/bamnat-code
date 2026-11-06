@@ -229,7 +229,7 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
         val c = LocalContext.current.appContainer
         if (remember(s.name) { c.leadShare.canAsk(s.name) }) {
             val on by vm.shareCycle.collectAsStateWithLifecycle()
-            ShareCycleLine(s.name, on) { vm.shareCycle.value = it }
+            ShareCycleLine(s.name, on, upload = s.id.isNullOrEmpty()) { vm.shareCycle.value = it }
         }
     }
     // [EASE-05][ONBOARD-05] 1.38: the first-start page is gone, so its one yes that goes to a server is here, on the first setup only,
@@ -390,7 +390,7 @@ fun CompanyPayWaiting(calendar: String, modifier: Modifier = Modifier) {
 
 /** [EASE-03] The summary's one box for sharing the picked public cycle with others at [company]. */
 @Composable
-private fun ShareCycleLine(company: String, on: Boolean, onChange: (Boolean) -> Unit) {
+private fun ShareCycleLine(company: String, on: Boolean, upload: Boolean = false, onChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp)
             .toggleable(value = on, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = onChange).padding(vertical = 6.dp),
@@ -399,7 +399,10 @@ private fun ShareCycleLine(company: String, on: Boolean, onChange: (Boolean) -> 
     ) {
         androidx.compose.material3.Checkbox(checked = on, onCheckedChange = null)
         Column(Modifier.weight(1f)) {
-            Text("‘$company’ 다른 분들도 이 근무주기를 쓰게 나누기 (선택)", style = MaterialTheme.typography.bodyLarge)
+            Text(if (upload) "‘$company’ 근무표 올리기 · 같은 회사 분이 바로 써요" else "‘$company’ 다른 분들도 이 근무주기를 쓰게 나누기 (선택)",
+                style = MaterialTheme.typography.bodyLarge)
+            if (upload) Text("공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요. 올리지 않으려면 체크를 풀어요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("근무 이름·시간·순서만 나눠요. 급여 금액, 이름, 연락처, 사진은 보내지 않아요. 설정 › 개인정보·앱 정보에서 바꿔요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

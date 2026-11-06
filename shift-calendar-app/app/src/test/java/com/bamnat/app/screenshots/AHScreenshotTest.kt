@@ -188,7 +188,10 @@ class AHScreenshotTest : ScreenshotBase() {
         dialog(LeadShare.Step.Ask(up))
         assertTrue(appears("올리지 않을게요", exact = true))
         dialog(LeadShare.Step.Made(up, "(주)예시정밀", "c1"))
-        assertTrue(appears("회사 찾기에서 ‘(주)예시정밀’을 찾는 분께 바로 맨 위에 보여요", exact = false))
+        // 1.38 통합 10차: a table put up says it was put up, not '대표 주기가 됐어요!'.
+        assertTrue(appears("‘(주)예시정밀’ 근무표를 올렸어요", exact = true))
+        assertTrue(gone("대표 주기가 됐어요", exact = false))
+        assertTrue(appears("지금 바로 맨 위에서 쓸 수 있어요", exact = false))
         assertTrue(appears("공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요.", exact = true))
         // Not in the public list before the review: the list is the reviewed file only.
         assertTrue(com.bamnat.core.plaza.PublicCycles.search("(주)예시정밀").none { it.company == "(주)예시정밀" })

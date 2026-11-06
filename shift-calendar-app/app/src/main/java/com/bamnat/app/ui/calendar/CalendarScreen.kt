@@ -1913,7 +1913,7 @@ fun CalendarScreen(
     }
     if (legendOpen) CalendarLegendSheet(focus, snap, onDismiss = { legendOpen = false },
         payDayOn = payShown && payProfile?.period?.payDay != null, orgGroup = orgGroupOf(settings),
-        payShown = payShown)
+        payShown = payShown, hasPay = payProfile != null)
 }
 
 /** [DAY-01][DAY-03] The whole day over the calendar, open at once, with its own snackbar for undo. */

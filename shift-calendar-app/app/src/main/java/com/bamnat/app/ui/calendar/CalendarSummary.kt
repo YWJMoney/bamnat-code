@@ -316,6 +316,11 @@ internal fun CalendarLegendSheet(
     orgGroup: String? = null,
     /** [EASE-04] This calendar counts pay at all (not 현장·자영업·투자), so the 급여일 row or where to turn it on is said. */
     payShown: Boolean = false,
+    /**
+     * 1.38 통합 10차 (급여를 안 넣었으면 '월급날 넣기'가 회사 급여 방식 찾기로 가서 월급날 칸이 없어요): the pay is set, so its
+     * 월급날 can be put in on its own; without it the pay setup comes first and says so.
+     */
+    hasPay: Boolean = true,
 ) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val cal = LocalCalendarColors.current
@@ -370,8 +375,15 @@ internal fun CalendarLegendSheet(
                     }
                     LegendRow("출퇴근 기록", "모서리 표시: 지각·조퇴는 주황, 결근은 빨강") { AttendanceMark(com.bamnat.core.model.Attendance.ABSENT) }
                     if (payShown) {
-                        LegendRow("급여일", if (payDayOn) "왼쪽 위 '급여' 글자: 월급이 들어오는 날" else "월급날을 아직 넣지 않았어요 · 넣으면 그날 칸에 '급여'가 붙어요",
-                            action = if (payDayOn) null else "월급날 넣기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.PAY_PERIOD) }) {
+                        LegendRow("급여일", when {
+                            payDayOn -> "왼쪽 위 '급여' 글자: 월급이 들어오는 날"
+                            hasPay -> "월급날을 아직 넣지 않았어요 · 넣으면 그날 칸에 '급여'가 붙어요"
+                            else -> "급여를 설정하면 월급날도 넣을 수 있어요 · 그날 칸에 '급여'가 붙어요"
+                        }, action = when {
+                            payDayOn -> null
+                            hasPay -> "월급날 넣기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.PAY_PERIOD) }
+                            else -> "급여 설정하기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.PAY) }
+                        }) {
                             CardDueMark(text = "급여")
                         }
                     }
