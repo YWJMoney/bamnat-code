@@ -95,7 +95,7 @@ def variants(a):
     return out
 
 
-def strips(engine, a, letter, zoom=2.5, high=5, start=0):
+def strips(engine, a, letter, zoom=2.5, high=5, start=0, reader=None):
     """[READ-35] 1.38: the page read again band by band, each band ~5 letters high made [zoom]× bigger (a lone D·E·N·O the
     whole page's reading lost or misread is a big letter here). Bands overlap by half; a word is kept from the band whose
     middle half it sits in, so each is read once. Mirror of the app's RosterScanner strip reading."""
@@ -110,7 +110,7 @@ def strips(engine, a, letter, zoom=2.5, high=5, start=0):
         up = cv2.resize(crop, (int(crop.shape[1] * zoom), int(crop.shape[0] * zoom)), interpolation=cv2.INTER_CUBIC)
         lo = y + (0 if y == 0 else band // 4)
         hi = y + (band if y + band >= h else band - band // 4)
-        for l, t, r, b, angle, text in rf.ocr_words(engine, bgr(up)):
+        for l, t, r, b, angle, text in (reader or rf.ocr_words)(engine, bgr(up)):
             l, t, r, b = l / zoom, t / zoom + y, r / zoom, b / zoom + y
             if lo <= (t + b) / 2 < hi:
                 out.append((int(l), int(t), int(r), int(b), angle, text))
@@ -319,12 +319,19 @@ def run_lines(engine, args, kind, cases, truth_of):
         sheet = layout()
         a, where = rf.photograph(sheet, rng, **photo)
         a = harder(a, rng, **after)
-        for vname, (pic, factor) in variants(a).items():
-            if args.images:
-                os.makedirs(args.images, exist_ok=True)
-                cv2.imwrite(os.path.join(args.images, f"{name}.{vname}.jpg"), bgr(pic))
-            read = pf.matched(lines_back(engine, pic, factor), sheet, where)
-            write_lines(os.path.join(out, f"{name}.{vname}.tsv"), f"{name} {vname} {photo} {after}", truth_of(name), read)
+        if args.variant is None:
+            for vname, (pic, factor) in variants(a).items():
+                if args.images:
+                    os.makedirs(args.images, exist_ok=True)
+                    cv2.imwrite(os.path.join(args.images, f"{name}.{vname}.jpg"), bgr(pic))
+                read = pf.matched(lines_back(engine, pic, factor), sheet, where)
+                write_lines(os.path.join(out, f"{name}.{vname}.tsv"), f"{name} {vname} {photo} {after}", truth_of(name), read)
+        if args.variant == "strips-try":
+            # [READ-35] tried 2026-11-06: the band-by-band reading of a payslip read no more lines (40/48 either way), so the
+            # app does not do it for payslips and the bench keeps no such file.
+            letter = letter_of(lines_back(engine, a, 1.0))
+            read = pf.matched(strips(engine, a, letter, reader=lambda e, pic: pf.lines_of(e, pic)), sheet, where)
+            write_lines(os.path.join(out, f"{name}.strips.tsv"), f"{name} strips letter={letter} {photo} {after}", truth_of(name), read)
         print(name, file=sys.stderr)
 
 
