@@ -305,7 +305,15 @@ object FlagCatalog {
      * 정식 출시일, the effective day of 처리방침 [PolicyConsent.LAUNCH_VERSION] as the server's calendar has it, so moving that day in
      * the admin app moves them all. Nothing here sends new data, so no consent hold of its own; force-off in the admin app still rests one.
      */
-    private val phase3Launch: List<Condition> = listOf(Condition.Date(policy = PolicyConsent.LAUNCH_VERSION))
+    private val phase3Launch: List<Condition> = listOf(Condition.Date(policy = PHASE3_POLICY))
+
+    /**
+     * 1.38 출시 점검 E2 (마무리 때 사용자 결정 D2): the 처리방침 판 whose 시행일 opens the Phase 3 and 수면 rows. Now 3.1 (정식 출시일,
+     * 기본 11-12). If 1.38 ships after that day, these rows would open before the new 처리방침 판 that names them takes effect; then
+     * set this to that 판 (e.g. "3.12", 판 id as the admin app's 처리방침 일정 has it), re-export the catalog
+     * (`BAMNAT_WRITE_FLAG_CATALOG=1 … FlagCatalogExportTest`) and run the company-worker tests. One line moves all six rows.
+     */
+    const val PHASE3_POLICY: String = PolicyConsent.LAUNCH_VERSION
 
     val TEAM_LEADER_FLAG = Flag(
         TEAM_LEADER, "리더 팀 근무표",
