@@ -97,11 +97,11 @@ async function seed() {
     const day = kst(Date.now() - i * 864e5);
     const phones = 30 + ((i * 7) % 23) + (i < 29 ? 8 : 0);
     const newer = i < 10 ? Math.round(phones * 0.7) : 0;
-    await run("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.24.0', ?)", day, newer);
-    await run("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.23.0', ?)", day, phones - newer);
+    await run("INSERT OR IGNORE INTO usage_days (day, app, phones) VALUES (?, '1.24.0', ?)", day, newer);
+    await run("INSERT OR IGNORE INTO usage_days (day, app, phones) VALUES (?, '1.23.0', ?)", day, phones - newer);
     for (const [event, share] of [["open", 0.9], ["pay_view", 0.35], ["share_made", 0.08], ["plaza_apply", 0.05], ["inquiry", 0.02], ["backup", 0.1]]) {
       const n = Math.max(1, Math.round(phones * share));
-      await run("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
+      await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.23.0', ?, ?, ?, ?)", day, event, Math.round(n / 3), n, n);
     }
   }
   // 1.38 Phase 3 분석판: a few days of 팀·가게 events and made-up 팀·직원 요금제 purchases, so the card has something on it.
@@ -110,7 +110,7 @@ async function seed() {
     for (const [event, n] of [["manage_open", 6], ["team_made", i % 4 === 0 ? 1 : 0], ["team_confirm", i % 3 === 0 ? 2 : 0], ["team_links", i % 3 === 0 ? 2 : 0],
       ["ledger_closed", i % 7 === 0 ? 1 : 0], ["slip_sent", i % 7 === 0 ? 3 : 0], ["plan_view_team", 2], ["plan_view_staff", 1], ["plan_buy_tap", i % 2],
       ["manage_hint_shown", 5], ["manage_hint_open", 1]]) {
-      if (n) await run("INSERT INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.38.0', ?, ?, ?, ?)", day, event, n, n, n);
+      if (n) await run("INSERT OR IGNORE INTO usage_events (day, app, event, phones, total, recent) VALUES (?, '1.38.0', ?, ?, ?, ?)", day, event, n, n, n);
     }
   }
   for (const [i, product, plan, trial, renew] of [[1, "bamnat_team", "c15-yearly", 1, 1], [2, "bamnat_team", "c15-monthly", 0, 1], [3, "bamnat_team", "c30-yearly", 0, 1],
@@ -128,8 +128,10 @@ async function seed() {
     const id = `seedQ${String(i).padStart(17, "0")}`;
     const kind = kinds[i % kinds.length];
     const app = i < 8 ? "1.24.0 (35)" : "1.23.0 (34)";
-    await run(`INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, rating) VALUES (?, ?, ?, ?, 'answered', 0, ?, ?, ?)`,
+    // A second --seed on a kept database (--db): the made-up rows are there already, so they are kept, not added twice.
+    const made = await run(`INSERT OR IGNORE INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, rating) VALUES (?, ?, ?, ?, 'answered', 0, ?, ?, ?)`,
       id, `seed-device-q${i}`, kind, JSON.stringify({ app }), at, at, i % 4 === 0 ? -1 : i % 3 === 0 ? null : 1);
+    if (!made.meta?.changes) continue;
     await run("INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, `지난 문의 ${i + 1}`, at);
     await run("INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', '확인했어요', 'owner', ?)", id, at + ((i * 97) % 600 + 20) * 60e3);
   }
@@ -139,7 +141,7 @@ async function seed() {
     await run("INSERT OR IGNORE INTO uses (company_id, grp, device, at) VALUES (?, ?, ?, ?)", a.company.id, a.setup, `seed-device-u${i}`, Date.now() - (i % 25 + 1) * 864e5);
   }
   // [ADMUX-16] A few requests the server could not answer.
-  for (const i of [3, 11, 12]) await run("INSERT INTO counters (key, count, expires) VALUES (?, ?, ?)", `errors|${kst(Date.now() - i * 864e5)}`, i % 4 + 1, Date.now() + 400 * 864e5);
+  for (const i of [3, 11, 12]) await run("INSERT OR IGNORE INTO counters (key, count, expires) VALUES (?, ?, ?)", `errors|${kst(Date.now() - i * 864e5)}`, i % 4 + 1, Date.now() + 400 * 864e5);
   await seedRecipes(run);
   console.log("seeded: 5 market works without days (알바 2·현장·가게·교대), 3 자랑 글 with a card, 이달의 주제 for 알바·가게·교대, 예시정밀 v1·v2 and a third version waiting, 2 waiting elsewhere, 1 turned down, 1 way the app cannot set, a talk with 2 flagged posts, 26 questions, 56 days of usage");
 }
