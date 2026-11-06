@@ -147,4 +147,35 @@ class SmartWakeAlarmTest {
         SmartWake.offEarly(app, ring)
         assertEquals(false, AlarmSoon.isSkipped(app, six))
     }
+
+    /**
+     * PC 12차 (w-8): the second morning's early ring had no 'N분 일찍' line. The line is judged by when the ring began, so it
+     * stays while the early ring is shown past its time, and the next night's early ring has its own.
+     */
+    @Test fun eachMorningsEarlyRingKeepsItsOwnLine() = runBlocking {
+        Today.fix(day.atTime(5, 40).atZone(zone))
+        mornings()
+        c.settingsRepository.update { it.copy(smartWakeMinutes = 30) }
+        c.rescheduleAlarms()
+        val first = c.alarmScheduler.upcoming.value!!.let { u -> com.bamnat.app.alarm.RingRequest.from(u.plan, u.triggerAtMillis) }
+        val began = Today.millis()
+        SmartWake.ringEarly(app, first)
+        // Still on the screen after its time: the line stays.
+        Today.fix(day.atTime(6, 1).atZone(zone))
+        assertEquals("얕은 잠이라 20분 일찍 깨웠어요", SmartWake.earlyLine(app, first, began))
+        // The on-time ring of the same alarm, begun at 6:00, says nothing about being early.
+        assertNull(SmartWake.earlyLine(app, first, millis(day.atTime(6, 0))))
+        Today.fix(day.atTime(5, 41).atZone(zone))
+        SmartWake.offEarly(app, first)
+        c.rescheduleAlarms()
+
+        // The next night, measured on without being ended: its early ring has its own line.
+        Today.fix(day.plusDays(1).atTime(5, 50).atZone(zone))
+        c.rescheduleAlarms()
+        val second = c.alarmScheduler.upcoming.value!!.let { u -> com.bamnat.app.alarm.RingRequest.from(u.plan, u.triggerAtMillis) }
+        assertEquals(millis(day.plusDays(1).atTime(6, 0)), second.triggerAtMillis)
+        SmartWake.ringEarly(app, second)
+        assertEquals("얕은 잠이라 10분 일찍 깨웠어요", SmartWake.earlyLine(app, second, Today.millis()))
+        assertNull("yesterday's is not today's", SmartWake.earlyLine(app, first, Today.millis()))
+    }
 }
