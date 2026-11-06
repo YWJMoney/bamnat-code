@@ -446,7 +446,12 @@ class DutyRosterViewModel(
         val notes = u.notes
         viewModelScope.launch {
             val all = cells.mapKeys { u.month.atDay(it.key) } + outside
-            val before = repo.updateDays(all.keys.sorted()) { e -> DutyRoster.apply(e, all.getValue(e.date)) }
+            // [READ-30] 1.38 PC (x03): 연차 on the roster is a working day taken off, even where the user's own order has a rest day.
+            val restLeave = restLeave(u, all, snapshot.value ?: repo.snapshot.first(), types.value.ifEmpty { repo.shiftTypes.first() })
+            val before = repo.updateDays(all.keys.sorted()) { e ->
+                val c = all.getValue(e.date)
+                restLeave[e.date]?.let { id -> DutyRoster.leaveOnRest(e, c as DutyCell.Leave, id) } ?: DutyRoster.apply(e, c)
+            }
             // [ROST-03] "D*", "N-O", "11D": what the roster said besides the code, as that day's memo.
             val memos = notes.mapNotNull { (d, n) -> container.memoRepository.addQuick(u.month.atDay(d), "듀티표 표시: $n", setOf(calendarId)) }
             // [ROST-11] 밤낮이 한 일: what came in, never the roster itself.
@@ -471,6 +476,12 @@ class DutyRosterViewModel(
         }
     }
 
+    /** [READ-30] Leave days of [all] that are rest days on the calendar now, with the shift each is put on. */
+    private fun restLeave(u: Ui, all: Map<LocalDate, DutyCell>, snap: ScheduleSnapshot, list: List<ShiftType>): Map<LocalDate, Long> {
+        val id = leaveShift(u, list) ?: return emptyMap()
+        return all.filter { (d, c) -> c is DutyCell.Leave && !snap.resolver.resolve(d).isWorkDay }.mapValues { id }
+    }
+
     fun runUndo(m: UndoMessage) { m.undo?.let { u -> container.appScope.launch { u() } } }
 
     /** [REST-01] The same 근무표 점검 기준 as the calendar. */
@@ -485,16 +496,21 @@ class DutyRosterViewModel(
         private val NEW_COLORS = listOf(0xFF7E57C2, 0xFF26A69A, 0xFFEF6C00, 0xFF5C6BC0, 0xFF8D6E63)
         private val keyCodes = DutyCodes(emptyList())
         fun codeKey(raw: String): String = keyCodes.codeOf(raw)
+        /** [READ-30] The shift a roster's leave on a rest day is put on: the line's most common work, else the first kind of work. */
+        fun leaveShift(u: Ui, list: List<ShiftType>): Long? = DutyRoster.mainShift(u.writable.values + u.outside.values) ?: list.firstOrNull { !it.isOff }?.id
     }
 }
 
 /** [ROST-01] The month as it will be: the calendar's days with the cells about to go on them. */
-internal fun overlay(snap: ScheduleSnapshot, month: YearMonth, cells: Map<Int, DutyCell>): ScheduleSnapshot {
+internal fun overlay(snap: ScheduleSnapshot, month: YearMonth, cells: Map<Int, DutyCell>, leaveOn: Long? = null): ScheduleSnapshot {
     if (cells.isEmpty()) return snap
     val byDate = snap.entries.associateBy { it.date }.toMutableMap()
     cells.forEach { (d, c) ->
         val date = month.atDay(d)
-        byDate[date] = DutyRoster.apply(byDate[date] ?: com.bamnat.core.model.DayEntry(date), c)
+        val e = byDate[date] ?: com.bamnat.core.model.DayEntry(date)
+        // [READ-30] As it will be written: the roster's 연차 on a rest day is that shift taken off.
+        byDate[date] = if (c is DutyCell.Leave && leaveOn != null && !snap.resolver.resolve(date).isWorkDay) DutyRoster.leaveOnRest(e, c, leaveOn)
+            else DutyRoster.apply(e, c)
     }
     return snap.copy(entries = byDate.values.toList())
 }
@@ -629,7 +645,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
             Notices(ui, snap, vm::keepOutside)
             val s = snap
             if (s != null) {
-                val shown = remember(s, ui.month, ui.cells) { overlay(s, ui.month, ui.cells) }
+                val shown = remember(s, ui.month, ui.cells) { overlay(s, ui.month, ui.cells, DutyRosterViewModel.leaveShift(ui, s.shiftTypes)) }
                 val calculator = remember(shown) { WorkHoursCalculator(shown.resolver) }
                 WeekdayHeader(vm.weekStart, Modifier.padding(start = com.bamnat.app.ui.calendar.WEEK_BAR_SPACE))
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -708,7 +724,12 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
             // Leave only counts on a day with work to take off (FEAT-10): say so before it quietly counts nothing.
             val idle = ui.writable.filterValues { it is DutyCell.Leave }.keys.sorted()
                 .filter { !snap.resolver.resolve(ui.month.atDay(it)).isWorkDay }
-            if (idle.isNotEmpty()) add("${idle.joinToString(",")}일은 근무가 없는 날이라 휴가 일수로 세지 않아요")
+            // [READ-30] 1.38 PC (x03): the roster's 연차 wins. It goes on as a working day taken off, so it counts and is paid.
+            if (idle.isNotEmpty()) {
+                val name = DutyRosterViewModel.leaveShift(ui, snap.shiftTypes)?.let { id -> snap.shiftTypes.firstOrNull { it.id == id }?.name }
+                add("${idle.joinToString(",")}일은 내 근무 순서로는 쉬는 날이지만 근무표대로 연차로 넣어요" +
+                    (name?.let { " ('$it' 근무를 쉰 날로, 휴가 일수에 세요)" } ?: ""))
+            }
         }
     }
     if (lines.isEmpty()) return

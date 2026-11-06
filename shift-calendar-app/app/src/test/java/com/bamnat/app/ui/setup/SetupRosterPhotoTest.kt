@@ -118,7 +118,9 @@ class SetupRosterPhotoTest {
         assertTrue(draft.painted.isEmpty())
         vm.useRosterRow(1)
         assertEquals(nov, vm.paintMonth.value)
-        assertEquals(28, draft.painted.size)
+        // [READ-30] 1.38: 28 work and rest days, and the 연차 day painted with the line's main work so the leave counts.
+        assertEquals(29, draft.painted.size)
+        assertTrue(draft.painted[nov.atDay(12)] != null)
         assertEquals(LeaveKind.ANNUAL, draft.leaves[nov.atDay(12)]?.kind)
         // 교육 is not one of the bundle's kinds: asked here, then painted as the answer.
         val ask = vm.rosterAsks.value.single()

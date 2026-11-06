@@ -310,7 +310,9 @@ class SetupFlowTest {
         waitFor("the roster read") { vm.roster.value != null && draft.painted.isNotEmpty() }
         val nov = java.time.YearMonth.of(2026, 11)
         assertEquals(nov, vm.paintMonth.value)
-        assertEquals((1..8).filter { it != 6 }.map { nov.atDay(it) }.toSet(), draft.painted.keys)
+        // [READ-30] 1.38: the 연차 day is painted too, with the line's main work, so the leave counts on it.
+        assertEquals((1..8).map { nov.atDay(it) }.toSet(), draft.painted.keys)
+        assertEquals(draft.types.first { it.name == "데이" }.id, draft.painted[nov.atDay(6)])
         assertEquals(draft.types.first { it.name == "데이" }.id, draft.painted[nov.atDay(1)])
         // O is the bundle's own 오프, as painting it by hand would be.
         assertEquals(draft.types.first { it.isOff }.id, draft.painted[nov.atDay(7)])
