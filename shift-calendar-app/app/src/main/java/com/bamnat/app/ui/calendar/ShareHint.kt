@@ -100,14 +100,17 @@ internal fun ShareHintCard(onShare: () -> Unit, onClose: () -> Unit, modifier: M
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-internal fun TogetherSheet(onSend: () -> Unit, onTake: (() -> Unit)?, onDismiss: () -> Unit) {
+internal fun TogetherSheet(onSend: () -> Unit, onTake: (() -> Unit)?, onDismiss: () -> Unit, shop: Boolean = false) {
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp).navigationBarsPadding(),
             verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(12.dp)) {
-            Text("가족·연인과 근무 같이 보기", style = MaterialTheme.typography.titleLarge)
-            Text("가입이나 로그인 없이 링크 하나로 돼요. 받은 근무는 내 달력 옆에 두고, 같이 쉬는 날이 바로 보여요.",
+            // 1.38 PC 4a5c3828: a shop's calendar says 영업일, not 근무.
+            Text(if (shop) "영업일 같이 보기" else "가족·연인과 근무 같이 보기", style = MaterialTheme.typography.titleLarge)
+            Text(if (shop) "가입이나 로그인 없이 링크 하나로 돼요. 가족·직원이 가게 문 여는 날과 쉬는 날을 바로 봐요."
+                else "가입이나 로그인 없이 링크 하나로 돼요. 받은 근무는 내 달력 옆에 두고, 같이 쉬는 날이 바로 보여요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TogetherRow(Icons.Outlined.Share, "내 근무 보내기", "링크는 앱이 없어도 브라우저로 열려요. 메모·급여는 빼고 보내요", onSend)
+            TogetherRow(Icons.Outlined.Share, if (shop) "영업일 보내기" else "내 근무 보내기",
+                if (shop) "링크는 앱이 없어도 브라우저로 열려요. 매출·메모는 빼고 보내요" else "링크는 앱이 없어도 브라우저로 열려요. 메모·급여는 빼고 보내요", onSend)
             if (onTake != null) TogetherRow(Icons.Outlined.CalendarMonth, "상대 근무 받아 보기",
                 "받은 링크를 붙여 넣으면 내 달력과 바꿔 가며 봐요", onTake)
         }
