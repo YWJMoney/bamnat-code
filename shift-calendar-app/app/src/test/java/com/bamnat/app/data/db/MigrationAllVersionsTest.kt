@@ -209,6 +209,9 @@ class MigrationAllVersionsTest(private val from: Int) {
             "category_rules" to mapOf("merchant" to "가나다카페", "category" to "카페"),
             "day_changes" to mapOf("id" to 1, "epochDay" to 20001, "atMillis" to 5, "text" to "야간으로 바꿈"),
             "sleep_logs" to mapOf("id" to 1, "startMillis" to 1000, "endMillis" to 9000),
+            // 1.38 [SLEEP-03][SLEEP-07] (DB 31).
+            "sleep_checks" to mapOf("id" to 1, "startMillis" to 1000, "endMillis" to 9000, "mood" to 4, "tags" to "caffeine", "note" to null, "atMillis" to 9100),
+            "sleep_events" to mapOf("id" to 1, "startMillis" to 3000, "endMillis" to 3500, "kind" to "snore", "level" to 0.4, "file" to null, "keep" to 0),
             "receivables" to mapOf("id" to 1, "who" to "가나다화학", "title" to "잔금", "amount" to 300000, "epochDay" to 20760, "dueEpochDay" to 20790,
                 "kind" to "OTHER", "note" to "", "countAsIncome" to 1, "closedEpochDay" to null, "createdAt" to 1),
             "receivable_payments" to mapOf("id" to 1, "receivableId" to 1, "epochDay" to 20767, "amount" to 100000, "entryId" to null),

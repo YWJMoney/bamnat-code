@@ -75,6 +75,8 @@ object DayNoticeScheduler {
             .setTimeoutAfter(left)
         // Read at a glance on the lock screen, without unlocking on the way home.
         if (commute) builder.setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+        // 1.38 [SLEEP-05] 잘 준비: the sleep sound first, then 잠들었어요.
+        if (n.kind == DayNotices.Kind.BEDTIME) builder.addAction(0, "소리 켜기", NoiseService.startIntent(context, 3408))
         if (n.kind != DayNotices.Kind.BRIEFING) builder.addAction(SleepActions.asleep(context))
         Notifications.post(context, id(n.kind), builder.build())
     }

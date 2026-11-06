@@ -14,11 +14,19 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+    <!-- [SLEEP-04] 잠드는 소리: made on the phone as it plays, on the media stream, started by the user. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- [SLEEP-06] 정밀 측정 only, off until the user taps 측정 시작 and allows the microphone: sounds are sorted on the phone,
+         short clips stay on the phone for 7 days, nothing is sent. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <!-- [ALRM-15] 1.31 R9: no REQUEST_IGNORE_BATTERY_OPTIMIZATIONS. 알람 점검 opens the phone's own list of apps (no permission),
          so Play's review has no permission to ask about; exact alarms already ring through Doze. -->
     <!-- [SLP-08] Read only: sleep sessions a watch or the phone wrote to Health Connect. -->
     <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <!-- [SLEEP-09] 1.38, off by default: 밤낮's own sleeps written to Health Connect when the user turns it on. -->
+    <uses-permission android:name="android.permission.health.WRITE_SLEEP" />
     <!-- [IMPORT-01] Read only, asked when the user opens 캘린더에서 가져오기; nothing read leaves the phone. -->
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <!-- [FEAT-07] 휴대폰 캘린더에 근무 쓰기 (프로): asked only when the user turns it on. -->
@@ -31,6 +39,9 @@
     <!-- [LOCK-01] 앱 잠금 only, off by default: the phone's own fingerprint/face/PIN prompt. The app never
          sees the fingerprint or face; Android only says whether it matched. -->
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- [SLEEP-01] 잠 자동으로 잡기 only, off by default and asked when the user turns it on: Play services says when the
+         phone lay still in the dark (no microphone). The pieces stay on the phone. -->
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
@@ -272,6 +283,31 @@
         <!-- [SLP-15] 잠들었어요·깼어요 on a notice, usable from the lock screen. -->
         <receiver
             android:name=".sleep.SleepActionReceiver"
+            android:exported="false" />
+
+        <!-- [SLEEP-04] 잠드는 소리 (no files; the timer fades it out). -->
+        <service
+            android:name=".sleep.NoiseService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- [SLEEP-08] 깨우는 구간's start: listens through the measuring; the alarm itself is AlarmReceiver's. -->
+        <receiver
+            android:name=".sleep.SmartWakeReceiver"
+            android:exported="false" />
+
+        <!-- [SLEEP-06] 정밀 측정, started by the user's tap. -->
+        <service
+            android:name=".sleep.SleepRecordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
+        <!-- [SLEEP-01] Sleep pieces from Play services (it holds the PendingIntent), and 맞아요·아니에요 on the notice. -->
+        <receiver
+            android:name=".sleep.SleepSegmentReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".sleep.SleepAutoActionReceiver"
             android:exported="false" />
 
         <!-- [SLP-15] Money and 연차 notices held while the user sleeps come 30 minutes after waking. -->

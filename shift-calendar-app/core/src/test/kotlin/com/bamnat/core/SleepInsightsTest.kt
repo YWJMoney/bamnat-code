@@ -70,6 +70,30 @@ class SleepInsightsTest {
         assertEquals(280L, SleepInsights.afterNightAverage(log, resolver, today))
     }
 
+    /** 1.38 [SLEEP-02] A split sleep after a night is one rest: 3h + 2h after getting up for an hour, not a short sleep and a nap. */
+    @Test
+    fun aSplitSleepCountsAsOneRest() {
+        val split = listOf(
+            sleep(at(4, 8), at(4, 11)), sleep(at(4, 12), at(4, 14)),      // after the night, split: 5h
+            sleep(at(5, 8), at(5, 13)),                                    // after the night, 5h
+            sleep(at(5, 18), at(5, 18, 40)),                               // a nap 5 hours later: its own
+        )
+        val r = SleepInsights.report(split, resolver, LocalDate.of(2026, 11, 6), targetMinutes = 420)
+        val afterNight = r.group(Context.AFTER_NIGHT)!!
+        assertEquals(2, afterNight.count)
+        assertEquals(300, afterNight.averageMinutes)
+        assertEquals(1, r.splitRests)
+        assertEquals(1, r.naps)
+        assertEquals(300L, SleepInsights.afterNightAverage(split, resolver, LocalDate.of(2026, 11, 6)))
+        // Work between two sleeps keeps them apart however close: before the 19:00 night on the 3rd and after it.
+        val apart = SleepInsights.report(listOf(sleep(at(3, 15), at(3, 17, 30)), sleep(at(4, 8), at(4, 13))), resolver,
+            LocalDate.of(2026, 11, 4), targetMinutes = 420)
+        assertEquals(1, apart.naps)
+        assertEquals(0, apart.splitRests)
+        // Counted before the next work: the 24 hours before 11/7 07:00.
+        assertEquals(8 * 60L + 30, SleepInsights.sleptBefore(log, at(7, 7))) // 6h before the day shift and the last 2h30 of the day-off sleep
+    }
+
     @Test
     fun aFewLogsAskForMoreAndNothingIsClaimed() {
         val r = SleepInsights.report(log.take(1), resolver, LocalDate.of(2026, 11, 4), targetMinutes = 420)

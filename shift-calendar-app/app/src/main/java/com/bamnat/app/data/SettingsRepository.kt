@@ -154,6 +154,17 @@ data class AppSettings(
     val commuteMinutes: Int = 60,
     /** [SLP-08] Read sleep sessions from Health Connect; off until the user allows it. */
     val healthSleep: Boolean = false,
+    /** 1.38 [SLEEP-01] Let the phone notice sleep by itself (activity recognition); off until the user turns it on. */
+    val sleepAuto: Boolean = false,
+    /** 1.38 [SLEEP-04] The last 잠드는 소리 mix ("brown:0.50,rain:0.35") and its timer in minutes (0: until stopped). */
+    val noiseMix: String = "",
+    val noiseTimerMinutes: Int = 30,
+    /** 1.38 [DSG-07] 밤 색: the sleep screen turns warm and dark from 22:00 to 06:00 and while a sleep is open. */
+    val sleepNightLook: Boolean = true,
+    /** 1.38 [SLEEP-08] 깨우는 구간 in minutes before the alarm, 0 off (default); listens only while the night is measured. */
+    val smartWakeMinutes: Int = 0,
+    /** 1.38 [SLEEP-09] 헬스 커넥트에 쓰기, off by default. */
+    val healthWrite: Boolean = false,
     /** [EXTRA-05] The user answered the offer to turn old shift-swap 대근 into 대근 with times. */
     val swapCoversAnswered: Boolean = false,
     /** [EXTRA-05] The user saw what the law would pay for work on days off and chose. */
@@ -412,6 +423,12 @@ class SettingsRepository(context: Context) {
             sleepTargetMinutes = prefs.getInt(K_SLEEP_TARGET, d.sleepTargetMinutes),
             commuteMinutes = prefs.getInt(K_COMMUTE, d.commuteMinutes),
             healthSleep = prefs.getBoolean(K_HEALTH_SLEEP, d.healthSleep),
+            sleepAuto = prefs.getBoolean(K_SLEEP_AUTO, d.sleepAuto),
+            noiseMix = prefs.getString(K_NOISE_MIX, d.noiseMix) ?: d.noiseMix,
+            noiseTimerMinutes = prefs.getInt(K_NOISE_TIMER, d.noiseTimerMinutes),
+            sleepNightLook = prefs.getBoolean(K_SLEEP_NIGHT_LOOK, d.sleepNightLook),
+            smartWakeMinutes = prefs.getInt(K_SMART_WAKE, d.smartWakeMinutes),
+            healthWrite = prefs.getBoolean(K_HEALTH_WRITE, d.healthWrite),
             swapCoversAnswered = prefs.getBoolean(K_SWAP_COVERS, d.swapCoversAnswered),
             restDayCompared = prefs.getBoolean(K_REST_COMPARED, d.restDayCompared),
             // [CAL-20] PREVIEW of 1.17 and before is now 바로 크게 with the card switch apart; the card starts off.
@@ -539,6 +556,12 @@ class SettingsRepository(context: Context) {
             .putInt(K_SLEEP_TARGET, s.sleepTargetMinutes)
             .putInt(K_COMMUTE, s.commuteMinutes)
             .putBoolean(K_HEALTH_SLEEP, s.healthSleep)
+            .putBoolean(K_SLEEP_AUTO, s.sleepAuto)
+            .putString(K_NOISE_MIX, s.noiseMix)
+            .putInt(K_NOISE_TIMER, s.noiseTimerMinutes)
+            .putBoolean(K_SLEEP_NIGHT_LOOK, s.sleepNightLook)
+            .putInt(K_SMART_WAKE, s.smartWakeMinutes)
+            .putBoolean(K_HEALTH_WRITE, s.healthWrite)
             .putBoolean(K_SWAP_COVERS, s.swapCoversAnswered)
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
             .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
@@ -727,6 +750,12 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_TARGET = "sleep_target"
         const val K_COMMUTE = "commute_minutes"
         const val K_HEALTH_SLEEP = "health_sleep"
+        const val K_SLEEP_AUTO = "sleep_auto"
+        const val K_NOISE_MIX = "noise_mix"
+        const val K_NOISE_TIMER = "noise_timer"
+        const val K_SLEEP_NIGHT_LOOK = "sleep_night_look"
+        const val K_SMART_WAKE = "smart_wake"
+        const val K_HEALTH_WRITE = "health_write"
         const val K_SWAP_COVERS = "swap_covers_answered"
         const val K_REST_COMPARED = "rest_day_compared"
     }

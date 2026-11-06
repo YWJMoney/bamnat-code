@@ -33,6 +33,11 @@ object SystemSettings {
         context, Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
     )
 
+    /** 1.38 [SLEEP-01] The app's own page, where a refused permission is given again. */
+    fun app(context: Context) = open(
+        context, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
+    )
+
     /** One kind of notice, where the user turned it off. */
     fun channel(context: Context, channelId: String) = open(
         context, Intent(Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)

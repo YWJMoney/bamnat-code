@@ -815,11 +815,15 @@ class AppContainer(context: Context) {
         // [SLP-15] 하루 브리핑, 퇴근길 and 잘 준비 follow the schedule, the alarms and their settings.
         keep("notices") {
             val reads = settingsRepository.settings.map {
-                listOf(it.briefing, it.commuteNotice, it.bedtimeNotice, it.sleepTargetMinutes, it.commuteMinutes, it.alarmsEnabled, it.workStyle)
+                listOf(it.briefing, it.commuteNotice, it.bedtimeNotice, it.sleepTargetMinutes, it.commuteMinutes, it.alarmsEnabled, it.workStyle, it.sleepAuto)
             }.distinctUntilChanged()
             combine(scheduleRepository.live, reads) { snapshot, _ -> snapshot }
                 .debounce(500)
-                .collect { DayNoticeScheduler.reschedule(appContext, it, settingsRepository.current) }
+                .collect {
+                    DayNoticeScheduler.reschedule(appContext, it, settingsRepository.current)
+                    // [SLEEP-01] Listening for sleep follows the setting, the flag and the permission.
+                    com.bamnat.app.sleep.SleepAutoWatch.sync(appContext)
+                }
         }
         // [PROV-03] A day's backup owed when the app opens goes now; the job keeps it going while closed.
         keep("autobackup") {

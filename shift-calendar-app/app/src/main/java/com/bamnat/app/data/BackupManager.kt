@@ -498,7 +498,23 @@ class BackupManager(
         putMoney(db, root)
         // [SLP-06] The sleep log goes with the rest of the user's data.
         root.put("sleep", JSONArray().apply {
-            db.sleepDao().all().forEach { l -> put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)) }
+            db.sleepDao().all().forEach { l ->
+                put(JSONObject().put("start", l.startMillis).putOpt("end", l.endMillis)
+                    // 1.38 [SLEEP-01] Only a sleep the phone noticed says so; a tap stays as before.
+                    .apply { if (l.source != com.bamnat.app.data.db.SleepLogEntity.SOURCE_TAP) put("source", l.source) })
+            }
+        })
+        // 1.38 [SLEEP-03][SLEEP-07] 아침 한 장 and the night's sounds (counts and times; the clips stay on this phone).
+        root.put("sleepChecks", JSONArray().apply {
+            db.sleepDao().allChecks().forEach { c ->
+                put(JSONObject().put("start", c.startMillis).put("end", c.endMillis).putOpt("mood", c.mood).put("tags", c.tags)
+                    .putOpt("note", c.note).put("at", c.atMillis))
+            }
+        })
+        root.put("sleepEvents", JSONArray().apply {
+            db.sleepDao().allEvents().forEach { e ->
+                put(JSONObject().put("start", e.startMillis).put("end", e.endMillis).put("kind", e.kind).put("level", e.level.toDouble()))
+            }
         })
         payStore?.let { putPay(it, root) }
         root.putOpt("workTools", workTools?.export(PersonalCalendar.MAIN))
@@ -557,6 +573,7 @@ class BackupManager(
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
                 .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes)
+                .put("noiseMix", s.noiseMix).put("noiseTimer", s.noiseTimerMinutes).put("sleepNightLook", s.sleepNightLook).put("smartWake", s.smartWakeMinutes) // 1.38 [SLEEP-04][DSG-07]
                 // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22.
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
                 .put("plazaRules", s.plazaRulesAgreed)
@@ -931,7 +948,18 @@ class BackupManager(
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->
-            com.bamnat.app.data.db.SleepLogEntity(startMillis = o.getLong("start"), endMillis = if (o.has("end") && !o.isNull("end")) o.getLong("end") else null)
+            com.bamnat.app.data.db.SleepLogEntity(startMillis = o.getLong("start"), endMillis = if (o.has("end") && !o.isNull("end")) o.getLong("end") else null,
+                source = o.optString("source", com.bamnat.app.data.db.SleepLogEntity.SOURCE_TAP))
+        }
+        // 1.38 [SLEEP-03][SLEEP-07] An older backup has none: the phone's own stay.
+        val sleepChecks = root.optJSONArray("sleepChecks")?.objects()?.map { o ->
+            com.bamnat.app.data.db.SleepCheckEntity(startMillis = o.getLong("start"), endMillis = o.getLong("end"),
+                mood = if (o.has("mood") && !o.isNull("mood")) o.getInt("mood") else null, tags = o.optString("tags"),
+                note = o.optStringOrNull("note"), atMillis = o.optLong("at"))
+        }
+        val sleepEvents = root.optJSONArray("sleepEvents")?.objects()?.map { o ->
+            com.bamnat.app.data.db.SleepEventEntity(startMillis = o.getLong("start"), endMillis = o.getLong("end"), kind = o.getString("kind"),
+                level = o.optDouble("level").toFloat())
         }
         val money = readMoney(root)
         // Read before anything changes, so a broken pay part leaves the phone as it was.
@@ -951,6 +979,8 @@ class BackupManager(
             writeMoney(db, money)
             // Backups from before version 11 carry no sleep log; the one on the phone then stays.
             sleep?.let { list -> db.sleepDao().clear(); list.forEach { db.sleepDao().insert(it) } }
+            sleepChecks?.let { list -> db.sleepDao().clearChecks(); list.forEach { db.sleepDao().insertCheck(it) } }
+            sleepEvents?.let { list -> db.sleepDao().clearEvents(); list.forEach { db.sleepDao().insertEvent(it) } }
             db.memoDao().clear()
             writeSchedule(db, schedule)
             memos.forEach { db.memoDao().restore(it) }
@@ -1125,6 +1155,10 @@ class BackupManager(
                     moneyNotices = o.optBoolean("moneyNotices", s.moneyNotices),
                     leaveNotice = o.optBoolean("leaveNotice", s.leaveNotice),
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
+                    noiseMix = o.optString("noiseMix", s.noiseMix),
+                    noiseTimerMinutes = o.optInt("noiseTimer", s.noiseTimerMinutes).coerceIn(0, 8 * 60),
+                    sleepNightLook = o.optBoolean("sleepNightLook", s.sleepNightLook),
+                    smartWakeMinutes = o.optInt("smartWake", s.smartWakeMinutes).coerceIn(0, 30),
                     commuteMinutes = o.optInt("commute", s.commuteMinutes).coerceIn(0, MAX_COMMUTE_MINUTES),
                     // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22; older backups keep what this phone has.
                     shareUsageStats = o.optBoolean("usageStats", s.shareUsageStats),

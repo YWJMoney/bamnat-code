@@ -45,6 +45,12 @@ object FlagCatalog {
     const val BOSS_PAYROLL = "boss.payroll"
     /** 1.38 [P3-01][HLTH-01] Phase 3 M23 계획 대 실제 잠, shipped off. */
     const val HEALTH_COMPARE = "health.compare"
+    /** 1.38 [SLEEP-01][SLEEP-12] 잠 자동으로 잡기(활동 인식)와 잘 시간 방해 금지. */
+    const val SLEEP_AUTO = "sleep.auto"
+    /** 1.38 [SLEEP-06][SLEEP-07] 밤 소리 측정과 클립(마이크, 휴대폰 안에서만). */
+    const val SLEEP_SOUND = "sleep.sound"
+    /** 1.38 [SLEEP-11] 공유한 달력에 '지금 자는 중'. */
+    const val SLEEP_SHARE = "sleep.share"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -326,6 +332,30 @@ object FlagCatalog {
         conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
     )
 
+    val SLEEP_AUTO_FLAG = Flag(
+        SLEEP_AUTO, "잠 자동으로 잡기",
+        what = "설정 › 알림과 잠에서 켜면 휴대폰이 빛과 움직임으로 알아챈 잠(Google Play 서비스 수면 감지)을 아침에 ‘맞나요?’로 물어 수면 기록에 넣어요. 잘 시간 방해 금지도 여기에 묶여요. 휴대폰 안에서만 쓰고 보내지 않아요.",
+        whyOff = "활동 인식 권한과 방해 금지 접근을 새로 쓰니 처리방침 새 판 시행일(정식 출시일)에 켜져요(사용자 2026-11-06 수면 도약 승인).",
+        basis = Basis(requirement = "SLEEP-01", note = "1.38 수면 도약 S1·S3"),
+        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+    )
+
+    val SLEEP_SOUND_FLAG = Flag(
+        SLEEP_SOUND, "밤 소리 측정",
+        what = "밤 화면에서 ‘측정 시작’을 누르면 마이크로 코골이·잠꼬대·이갈이·기침을 휴대폰 안에서 알아채 짧은 소리만 남겨요(기본 7일 뒤 지움). 소리와 기록은 휴대폰 밖으로 나가지 않아요.",
+        whyOff = "마이크 사용을 처리방침 새 판에 적고 시행일(정식 출시일)에 켜져요(사용자 2026-11-06 수면 도약 승인).",
+        basis = Basis(requirement = "SLEEP-06", note = "1.38 수면 도약 S2"),
+        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+    )
+
+    val SLEEP_SHARE_FLAG = Flag(
+        SLEEP_SHARE, "지금 자는 중 나누기",
+        what = "달력을 공유한 사람에게 ‘지금 자는 중 · 14:10쯤 깸’ 한 줄을 보여 줘요. 공유 링크마다 켜고 끌 수 있어요.",
+        whyOff = "공유 서버로 잠 상태(자는 중·깰 시각)를 새로 보내니 처리방침 새 판 시행일(정식 출시일)에 켜져요(사용자 2026-11-06 수면 도약 승인).",
+        basis = Basis(requirement = "SLEEP-11", note = "1.38 수면 도약 S3"),
+        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
@@ -338,7 +368,8 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG) +
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
+        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

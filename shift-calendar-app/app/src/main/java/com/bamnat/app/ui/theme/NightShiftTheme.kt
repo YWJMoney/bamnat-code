@@ -49,3 +49,57 @@ fun rememberShiftLookMode(looks: com.bamnat.core.recipe.ShiftLooks, container: A
         snapshot?.let { com.bamnat.core.schedule.ShiftLookMode.at(now, it.resolver::resolve) } ?: com.bamnat.core.recipe.ShiftLooks.Mode.NORMAL
     }
 }
+
+/**
+ * 1.38 [DSG-07][SLEEP-18] 밤 색: dark and warm, little blue, for the sleep screen at night and the night screen (FLOW-13).
+ * Text keeps 4.5:1 on the surface (ContrastTest); the reds are soft so nothing glares in a dark room.
+ */
+object NightPalette {
+    val scheme: androidx.compose.material3.ColorScheme = androidx.compose.material3.darkColorScheme(
+        primary = androidx.compose.ui.graphics.Color(0xFFFFB38A),
+        onPrimary = androidx.compose.ui.graphics.Color(0xFF3A1600),
+        primaryContainer = androidx.compose.ui.graphics.Color(0xFF4A2A1C),
+        onPrimaryContainer = androidx.compose.ui.graphics.Color(0xFFFFDBC9),
+        secondary = androidx.compose.ui.graphics.Color(0xFFE0B9A4),
+        onSecondary = androidx.compose.ui.graphics.Color(0xFF2E1A10),
+        background = androidx.compose.ui.graphics.Color(0xFF120C0A),
+        onBackground = androidx.compose.ui.graphics.Color(0xFFEAD9D0),
+        surface = androidx.compose.ui.graphics.Color(0xFF120C0A),
+        onSurface = androidx.compose.ui.graphics.Color(0xFFEAD9D0),
+        surfaceVariant = androidx.compose.ui.graphics.Color(0xFF2A201B),
+        onSurfaceVariant = androidx.compose.ui.graphics.Color(0xFFC9B4A9),
+        surfaceContainer = androidx.compose.ui.graphics.Color(0xFF1C1411),
+        surfaceContainerHigh = androidx.compose.ui.graphics.Color(0xFF261B17),
+        surfaceContainerHighest = androidx.compose.ui.graphics.Color(0xFF30241F),
+        surfaceContainerLow = androidx.compose.ui.graphics.Color(0xFF17100D),
+        outline = androidx.compose.ui.graphics.Color(0xFF8F7A70),
+        outlineVariant = androidx.compose.ui.graphics.Color(0xFF4A3B34),
+    )
+
+    /** Whether [now] is in the night hours the sleep screen goes dark for. */
+    fun isNight(now: LocalDateTime, sleeping: Boolean): Boolean = sleeping || now.hour >= 22 || now.hour < 6
+}
+
+/**
+ * 1.38 [DSG-07] Whether the sleep screen should be in [NightPalette] now: on unless the user turned 밤 색 off, from 22:00 to
+ * 06:00 and while a sleep is open. Checked once a minute, on the minute.
+ */
+@Composable
+fun rememberNightMode(enabled: Boolean, sleeping: Boolean): Boolean {
+    if (!enabled) return false
+    val now by produceState(Today.dateTime()) {
+        while (true) {
+            delay(60_000L - Today.millis() % 60_000L)
+            value = Today.dateTime()
+        }
+    }
+    return NightPalette.isNight(now, sleeping)
+}
+
+/** The sleep screen's content in [NightPalette] when [night]; the app's own colours otherwise. */
+@Composable
+fun NightSurface(night: Boolean, content: @Composable () -> Unit) {
+    if (!night) return content()
+    androidx.compose.material3.MaterialTheme(colorScheme = NightPalette.scheme, typography = androidx.compose.material3.MaterialTheme.typography,
+        shapes = androidx.compose.material3.MaterialTheme.shapes, content = content)
+}

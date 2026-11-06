@@ -2,7 +2,7 @@
   "at": "2026-11-28T03:00:00Z",
   "body": {
     "v": 1,
-    "app": "1.37.0",
+    "app": "1.38.0",
     "days": [
       {
         "day": "2026-11-27",
@@ -29,6 +29,9 @@
       "recipe.talk",
       "recipe.vote",
       "share.setup",
+      "sleep.auto",
+      "sleep.share",
+      "sleep.sound",
       "stats.more",
       "team.leader",
       "type.business",
