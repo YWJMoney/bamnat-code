@@ -147,6 +147,13 @@ class SetupViewModel(
     /** In the small hours, when the question would be about yesterday unless the user says otherwise. */
     fun earlyHours(d: SetupDraft): Boolean = TodayQuestion.questionDate(now(), d.types) != today
 
+    /** 1.38 통합 8차: the overnight shift that makes the question yesterday's, and whether it is still on now. */
+    fun earlyBecause(d: SetupDraft): Pair<com.bamnat.core.model.ShiftType, Boolean>? =
+        TodayQuestion.becauseOf(now(), d.types)?.let { t -> t to now().toLocalTime().isBefore(t.end!!) }
+
+    /** The hour now, for saying 새벽 only in the small hours. */
+    fun hourNow(): Int = now().hour
+
     fun answerForToday(on: Boolean) {
         _todayBased.value = on
         update { it.copy(anchor = null, todayConfirmed = false) }

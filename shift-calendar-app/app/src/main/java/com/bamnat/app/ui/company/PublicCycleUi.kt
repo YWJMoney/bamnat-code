@@ -202,6 +202,8 @@ fun PublicCycleSection(
     var more by rememberSaveable(query) { mutableStateOf(false) }
     var open by remember { mutableStateOf<PublicCycle?>(null) }
     var uploading by rememberSaveable { mutableStateOf(false) }
+    // 1.38 통합 8차: the sheet opened by '우리 회사 근무표 올리기' puts the table up first; the user's calendar only when asked.
+    var uploaded by remember { mutableStateOf(false) }
     val hits = remember(query, form, group) { PublicCycles.search(query, form = form, group = group) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (browse && query.trim().length < 2) {
@@ -267,12 +269,13 @@ fun PublicCycleSection(
     if (uploading) {
         UploadCycleDialog(query.trim(), onDismiss = { uploading = false }) { name, formKey ->
             uploading = false
+            uploaded = true
             open = PublicCycles.provided(name, formKey)
         }
     }
     open?.let { c ->
-        PublicApplySheet(c, onDismiss = { open = null }, onPay = { open = null; onPay() }, onShare = { open = null; onShare() },
-            pick = onPick?.let { p -> { codes: String -> open = null; p(c, codes) } })
+        PublicApplySheet(c, onDismiss = { open = null; uploaded = false }, onPay = { open = null; onPay() }, onShare = { open = null; onShare() },
+            pick = onPick?.let { p -> { codes: String -> open = null; p(c, codes) } }, uploadOnly = uploaded)
     }
 }
 
@@ -329,9 +332,16 @@ fun PublicApplySheet(
     pick: ((String) -> Unit)? = null,
     /** [SPAT-07] 1.27 AH: the calendar it goes into (an added one from its own setup). [CALI-03] Else the screen's calendar. */
     calendar: String = LocalCompanyCalendar.current,
+    /**
+     * 1.38 통합 8차 [CYC-03] (올리기로 들어왔는데 마지막 단추가 '달력에 넣기'이고 오늘 며칠째인지도 물어요): opened by '우리 회사 근무표
+     * 올리기', the table is put up and the user's own calendar stays as it is; '내 달력에도 넣기' is the way to put it in too.
+     */
+    uploadOnly: Boolean = false,
 ) {
     val c = LocalContext.current.appContainer
     val scope = rememberCoroutineScope()
+    var alsoMine by rememberSaveable(cycle.id, cycle.company) { mutableStateOf(false) }
+    val upOnly = uploadOnly && pick == null && !alsoMine
     val candidates = remember(cycle) { CycleOrders.candidates(cycle) }
     var codes by rememberSaveable(cycle.id, cycle.company) { mutableStateOf(if (cycle.orderState == OrderState.NONE) "" else cycle.codes) }
     var editing by rememberSaveable(cycle.id) { mutableStateOf(false) }
@@ -340,7 +350,7 @@ fun PublicApplySheet(
     var done by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val weekly = cycle.weekly || (cycle.formKey in CycleOrders.WEEKLY_FORMS && codes.length == 7)
-    val needsToday = !weekly && codes.isNotEmpty() && pick == null
+    val needsToday = !weekly && codes.isNotEmpty() && pick == null && !upOnly
     val ready = (codes.any { it in PublicCycle.WORK } || cycle.roster) && (!needsToday || today != null)
 
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -391,11 +401,26 @@ fun PublicApplySheet(
                 }
                 if (codes.isNotEmpty() && weekly) Text("월요일부터 이 요일대로 넣어요.", style = MaterialTheme.typography.bodySmall)
             }
-            Text(if (pick != null) "시간은 다음 화면에서 고칠 수 있어요. 급여 금액은 넣지도 가져오지도 않아요."
-                else "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요. 급여 금액은 넣지도 가져오지도 않아요.",
+            Text(when {
+                    pick != null -> "시간은 다음 화면에서 고칠 수 있어요. 급여 금액은 넣지도 가져오지도 않아요."
+                    upOnly -> "근무 이름·시간·순서만 올려요. 내 달력은 그대로예요. 회사 찾기에서 같은 회사 분께 바로 보이고, 공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요."
+                    else -> "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요. 급여 금액은 넣지도 가져오지도 않아요."
+                },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (!done) {
+        if (!done && upOnly) {
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+            Button(
+                onClick = {
+                    val sent = c.leadShare.upload(com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar, firstGiven = cycle.id.isEmpty()))
+                    if (sent) onDismiss() else error = "지금은 올릴 수 없어요. 인터넷에 연결된 뒤 다시 눌러 주세요"
+                },
+                enabled = ready,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+            ) { Text("올리기만 할게요 (내 달력은 그대로)") }
+            TextButton(onClick = { alsoMine = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("내 달력에도 넣기") }
+            if (!ready) Text("순서를 먼저 골라 주세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else if (!done) {
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
             Button(
                 onClick = {
@@ -409,7 +434,9 @@ fun PublicApplySheet(
                                     // [CYC-04] 1.38 업종 기념일.
                                     com.bamnat.app.ui.calendar.rememberOrgGroup(c.settingsRepository, cycle)
                                     // [PLAZA-14] 1.27 AH: once, "이 정보를 다른 사람이 사용해도 될까요?" (AH-D6).
-                                    c.leadShare.offer(com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar))
+                                    val pickNow = com.bamnat.app.company.LeadShare.Pick(cycle.company, PublicCycleFiles.text(cycle, codes), calendar, firstGiven = cycle.id.isEmpty())
+                                    // 1.38 통합 8차: came to put it up, so asked even after a no to another share ask.
+                                    if (uploadOnly) c.leadShare.upload(pickNow) else c.leadShare.offer(pickNow)
                                 }
                                 .onFailure { error = "달력에 넣지 못했어요. 한 번 더 눌러 주세요" }
                             busy = false

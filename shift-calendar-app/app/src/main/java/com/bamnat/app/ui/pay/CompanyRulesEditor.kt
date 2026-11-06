@@ -259,7 +259,7 @@ fun CompanyRulesEditor(
                     }
                 }
                 Hint(rules.hoursException.note + " 근무시간 화면의 한도 경고가 이 기준으로 바뀌어요." +
-                    if (rules.hoursException.weeklyHours == null) " 한 주씩 정한 한도가 없어서, 주별 막대는 설정 › 근무시간 경고의 값으로 보여 줘요." else "")
+                    if (rules.hoursException.weeklyHours == null) " 한 주씩 정한 한도가 없어서, 주별 막대는 설정 › 알림과 잠 › 한 주 근무 경고의 값으로 보여 줘요." else "")
                 if (SetupQuestion.BREAK_PAY in askedKinds || rules.breakPay != BreakPay.UNPAID) {
                     // [PAYS-03] 근로기준법 제54조: a break is free time; 대기 under direction is work (제50조 제3항).
                     Label("휴게 시간")

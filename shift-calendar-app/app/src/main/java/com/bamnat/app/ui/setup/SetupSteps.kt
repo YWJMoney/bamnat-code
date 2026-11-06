@@ -251,6 +251,22 @@ internal fun CompanyStep(
         ChoiceCard(title = t.name, subtitle = t.summary, selected = false, onClick = { vm.pickTemplate(t) })
     }
     FileCard("동료가 보낸 회사 설정 파일이 있어요", "근무 시간과 순서를 그대로 가져와요", onOpenFile)
+    // 1.38 통합 8차 (PC가 업종 목록 끝까지 내려도 '우리 회사 근무표 올리기'를 못 찾음): [CYC-03][CYC-09] the same button as at the
+    // end of 회사 찾기's public list, at the end of this list too; what is made opens like a public row.
+    if (onSearch != null) {
+        var uploading by rememberSaveable { mutableStateOf(false) }
+        OutlinedButton(onClick = { uploading = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Icon(Icons.Filled.Edit, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("우리 회사 근무표 올리기")
+        }
+        if (uploading) {
+            com.bamnat.app.ui.company.UploadCycleDialog(name.trim(), onDismiss = { uploading = false }) { n, formKey ->
+                uploading = false
+                orderFor = com.bamnat.core.plaza.PublicCycles.provided(n, formKey)
+            }
+        }
+    }
 }
 
 /**

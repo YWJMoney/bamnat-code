@@ -343,7 +343,9 @@ internal fun CalendarLegendSheet(
                     Text(orgDays.first().name, color = scheme.primary, fontSize = 10.sp, maxLines = 1)
                 }
             } else if (focus == CalendarFocus.SHIFTS) {
-                LegendRow("업종 기념일", "꺼져 있어요 · 설정 › 화면과 글자 › 우리 업종 기념일에서 켜면 소방의 날 같은 날이 강조색 글자로 보여요") {
+                // 1.38 통합 8차 (안내의 경로와 실제 자리가 달라요): the place opens from here, no path to follow.
+                LegendRow("업종 기념일", "꺼져 있어요 · 켜면 소방의 날 같은 날이 날짜 밑에 강조색 글자로 보여요",
+                    action = "켜러 가기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.CALENDAR, "우리 업종 기념일") }) {
                     Text("기념일", color = scheme.onSurfaceVariant, fontSize = 10.sp, maxLines = 1)
                 }
             }
@@ -368,7 +370,8 @@ internal fun CalendarLegendSheet(
                     }
                     LegendRow("출퇴근 기록", "모서리 표시: 지각·조퇴는 주황, 결근은 빨강") { AttendanceMark(com.bamnat.core.model.Attendance.ABSENT) }
                     if (payShown) {
-                        LegendRow("급여일", if (payDayOn) "왼쪽 위 '급여' 글자: 월급이 들어오는 날" else "월급날을 아직 넣지 않았어요 · 설정 › 근무·급여 › 월급날·정산 기간에서 월급날을 넣으면 그날 칸에 '급여'가 붙어요") {
+                        LegendRow("급여일", if (payDayOn) "왼쪽 위 '급여' 글자: 월급이 들어오는 날" else "월급날을 아직 넣지 않았어요 · 넣으면 그날 칸에 '급여'가 붙어요",
+                            action = if (payDayOn) null else "월급날 넣기" to { onDismiss(); com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.PAY_PERIOD) }) {
                             CardDueMark(text = "급여")
                         }
                     }
@@ -424,16 +427,20 @@ internal fun CalendarLegendSheet(
 }
 
 @Composable
-private fun LegendRow(title: String, text: String, mark: @Composable () -> Unit) {
+private fun LegendRow(title: String, text: String, action: Pair<String, () -> Unit>? = null, mark: @Composable () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).semantics(mergeDescendants = true) {},
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).then(if (action == null) Modifier.semantics(mergeDescendants = true) {} else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.width(52.dp), contentAlignment = Alignment.Center) { mark() }
         Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).semantics(mergeDescendants = true) {}) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // 1.38 통합 8차: a mark that is off opens the place it is turned on, in one tap.
+        action?.let { (label, go) ->
+            androidx.compose.material3.TextButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text(label) }
         }
     }
 }

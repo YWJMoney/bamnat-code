@@ -33,6 +33,12 @@ class SettingsSearchTest {
         assertEquals("워치·휴대폰 수면 기록 함께 보기", first("갤럭시 워치"))
     }
 
+    /** 1.38 통합 8차 (설정 찾기 '월급날'이 월급날 없는 급여 계산 설정으로 가요): the 월급날 words go to the 월급날 itself. */
+    @Test fun paydayWordsGoToThePayday() {
+        for (q in listOf("월급날", "급여일", "월급 들어오는 날")) assertEquals(q, "월급날·정산 기간", first(q))
+        assertEquals("우리 업종 기념일", first("소방의 날"))
+    }
+
     /** [MAT-05] PC 확인 4·5차: 글꼴 finds the studio's three fonts, 앱 전체 first. */
     @Test fun fontFindsTheStudiosFonts() {
         val titles = SettingsIndex.search("글꼴").map { it.title }
