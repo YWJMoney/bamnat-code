@@ -330,6 +330,7 @@ fun PayScreen(
                         suggestedOccupation = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) Occupation.PART_TIME else null,
                         companyFind = companyFind,
                         leaveAsk = wizardLeave,
+                        effectOf = vm::effectOf,
                     )
                     }
                     }
@@ -423,7 +424,6 @@ private fun PayResult(
     var plazaAsk by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
     var amountFor by remember { mutableStateOf<com.bamnat.core.pay.MissingItem?>(null) }
-    var addingItem by remember { mutableStateOf(false) }
     var addingBonus by remember { mutableStateOf(false) }
     // [PAYR-08] Once closed, never opened again by itself on this phone (notes/1.22-285/D.md M12).
     val hintContext = androidx.compose.ui.platform.LocalContext.current
@@ -764,9 +764,6 @@ private fun PayResult(
             }
             MakeItemCard(enabled = unlocked) { building = true }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = { addingItem = true }, enabled = unlocked) {
-                    Icon(Icons.Filled.Add, null); Text(" 수당 추가")
-                }
                 OutlinedButton(onClick = { addingBonus = true }, enabled = unlocked) {
                     Icon(Icons.Filled.Add, null); Text(" 상여금 추가")
                 }
@@ -880,6 +877,8 @@ private fun PayResult(
         onDismiss = { building = false; editingRule = null },
         onSave = { made -> vm.saveMade(made); if (editingRule == null) justMade = made; building = false; editingRule = null },
         editing = editingRule,
+        // [PAYX-50] 1.38: '수당 추가' is this one window, its kinds as chips; changing a rule stays as it was.
+        oneWindow = editingRule == null,
     )
     if (checking && range != null) UnknownsSheet(vm, range, profile, result.month,
         onMatch = { checking = false; matching = true },
@@ -900,10 +899,6 @@ private fun PayResult(
     if (addingBonus) AddBonusDialog(onDismiss = { addingBonus = false }) { name, months, percent, amount, ordinary, festivals, before ->
         vm.addBonus(name, months, percent, amount, ordinary, month, festivals, before)
         addingBonus = false
-    }
-    if (addingItem) AddItemDialog(onDismiss = { addingItem = false }, allowUnknownAmount = true) { name, amount, cadence, ordinary, fixedOt ->
-        vm.addItem(name, amount, cadence, ordinary, month, fixedOt)
-        addingItem = false
     }
 }
 
