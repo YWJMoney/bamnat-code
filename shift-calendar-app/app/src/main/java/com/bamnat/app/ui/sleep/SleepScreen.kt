@@ -178,6 +178,8 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         container.settingsRepository.update { it.copy(noiseMix = mix.encode(), noiseTimerMinutes = minutes) }
     }
 
+    fun setNightLook(on: Boolean) = container.settingsRepository.update { it.copy(sleepNightLook = on) }
+
     fun setAuto(on: Boolean) {
         // The notices job follows the setting and subscribes or lets go (SleepAutoWatch.sync).
         container.settingsRepository.update { it.copy(sleepAuto = on) }
@@ -250,6 +252,18 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val state by vm.state.collectAsStateWithLifecycle()
+    // 1.38 [DSG-07] Warm and dark at night and while asleep, so opening the screen in bed does not glare.
+    val sleeping = state?.log?.any { it.end == null && !it.imported } == true
+    com.bamnat.app.ui.theme.NightSurface(com.bamnat.app.ui.theme.rememberNightMode(settings.sleepNightLook, sleeping)) {
+        SleepScreenBody(vm, wide, onBack)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val health by vm.health.collectAsStateWithLifecycle()
@@ -305,7 +319,11 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
             NowCard(s.log.firstOrNull { it.end == null && !it.imported }, onAsleep = vm::fellAsleep, onAwake = vm::wokeUp)
             // 1.38 [SLEEP-04] 잠드는 소리, next to 잠들었어요.
             SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
-            if (r.loggedDays < 7) HowItWorks()
+            // Design: an empty sleep screen points at where to start.
+            if (s.log.isEmpty()) com.bamnat.app.ui.components.EmptyState("아직 잠 기록이 없어요",
+                "자기 전에 ‘잠들었어요’, 깨면 ‘깼어요’를 누르거나 아래 ‘기록 추가’로 적어요",
+                com.bamnat.app.ui.components.KaniMood.Point)
+            else if (r.loggedDays < 7) HowItWorks()
             WeekTiles(r, target)
             if (r.findings.isNotEmpty()) Findings(r.findings)
             Groups(r, target)
@@ -315,6 +333,10 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit) {
             Bars(s.log, s.today, target)
             Records(s.log, r, s.today) { e -> if (!e.imported) editing = e }
             morning?.takeIf { it.autoShown }?.let { m -> SectionCard(title = null) { SleepAutoSwitch(m.autoOn, vm::setAuto) } }
+            SectionCard(title = null) {
+                com.bamnat.app.ui.settings.SwitchRow("밤에는 어두운 색", "밤 10시~아침 6시와 자는 중에는 이 화면을 눈부시지 않은 어두운 색으로 보여 줘요",
+                    settings.sleepNightLook) { on -> vm.setNightLook(on) }
+            }
             healthNote(health)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -500,36 +522,22 @@ private fun Bars(log: List<SleepEntry>, today: LocalDate, target: Int) {
     val byDay = log.filter { (it.minutes ?: 0) in 1..SleepDebt.MAX_SLEEP_MINUTES }.groupBy { it.wakeDate }
         .mapValues { (_, l) -> l.sumOf { it.minutes!! } }
     val values = days.map { byDay[it] ?: 0L }
-    val max = maxOf(values.maxOrNull() ?: 0, target.toLong() + 60).coerceAtLeast(1)
-    val primary = MaterialTheme.colorScheme.primary
-    val short = LocalCalendarColors.current.warning
-    val line = MaterialTheme.colorScheme.outline
-    val empty = MaterialTheme.colorScheme.surfaceContainerHigh
-    val described = days.zip(values).filter { it.second > 0 }
-        .joinToString(", ") { (d, v) -> "${Fmt.shortDate(d)} ${SleepInsights.hours(v)}" }
+    // 1.38 [DSG-04] 그래프 규칙: one colour, the longest (잘 잠) and the shortest (부족) only, the target dashed.
+    val bars = days.zip(values).map { (d, v) ->
+        com.bamnat.app.ui.components.ChartBar(
+            label = if (d == today) "오늘" else Fmt.shortDate(d), value = v.toDouble(),
+            tone = when {
+                v <= 0 -> com.bamnat.app.ui.theme.Tone.Plain
+                v < target - SleepInsights.SHORT_MINUTES -> com.bamnat.app.ui.theme.Tone.Caution
+                v >= target -> com.bamnat.app.ui.theme.Tone.Good
+                else -> com.bamnat.app.ui.theme.Tone.Plain
+            },
+            text = if (v <= 0) "기록 없음" else SleepInsights.hours(v),
+        )
+    }
     SectionCard(title = "최근 2주") {
-        Canvas(Modifier.fillMaxWidth().height(120.dp).semantics { contentDescription = "최근 2주 수면: " + described.ifEmpty { "기록 없음" } }) {
-            val gap = 6.dp.toPx()
-            val w = (size.width - gap * (days.size - 1)) / days.size
-            values.forEachIndexed { i, v ->
-                val h = if (v == 0L) 4.dp.toPx() else size.height * v / max
-                drawRoundRect(
-                    color = if (v == 0L) empty else if (v < target - SleepInsights.SHORT_MINUTES) short else primary,
-                    topLeft = Offset(i * (w + gap), size.height - h), size = Size(w, h), cornerRadius = CornerRadius(4.dp.toPx()),
-                )
-            }
-            val y = size.height - size.height * target / max
-            drawLine(line, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f)))
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-            Text(Fmt.shortDate(days.first()), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f))
-            Text("점선 목표 ${SleepInsights.hours(target.toLong())}", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.weight(1f))
-            Text("오늘", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
+        com.bamnat.app.ui.components.BarChart(bars,
+            com.bamnat.app.ui.components.Baseline(target.toDouble(), "점선 목표 ${SleepInsights.hours(target.toLong())}"))
     }
 }
 

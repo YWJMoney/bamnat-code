@@ -85,8 +85,13 @@ internal fun MorningCard(
     var mood by remember(check) { mutableStateOf(check?.mood) }
     var tags by remember(check) { mutableStateOf(check?.tags.orEmpty()) }
     SectionCard(title = "잘 잤어요?") {
-        Text(title + if (sleep.auto) " · 자동" else "", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            // Design: 기지개 while asking, 기본 once a mood is picked.
+            if (com.bamnat.app.ui.components.LocalShowKani.current) com.bamnat.app.ui.components.Kani(
+                if (mood == null) com.bamnat.app.ui.components.KaniMood.Stretch else com.bamnat.app.ui.components.KaniMood.Basic, size = 48.dp)
+            Text(title + if (sleep.auto) " · 자동" else "", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             SleepMood.entries.forEach { m ->
                 FilterChip(selected = mood == m, onClick = {

@@ -159,6 +159,8 @@ data class AppSettings(
     /** 1.38 [SLEEP-04] The last 잠드는 소리 mix ("brown:0.50,rain:0.35") and its timer in minutes (0: until stopped). */
     val noiseMix: String = "",
     val noiseTimerMinutes: Int = 30,
+    /** 1.38 [DSG-07] 밤 색: the sleep screen turns warm and dark from 22:00 to 06:00 and while a sleep is open. */
+    val sleepNightLook: Boolean = true,
     /** [EXTRA-05] The user answered the offer to turn old shift-swap 대근 into 대근 with times. */
     val swapCoversAnswered: Boolean = false,
     /** [EXTRA-05] The user saw what the law would pay for work on days off and chose. */
@@ -420,6 +422,7 @@ class SettingsRepository(context: Context) {
             sleepAuto = prefs.getBoolean(K_SLEEP_AUTO, d.sleepAuto),
             noiseMix = prefs.getString(K_NOISE_MIX, d.noiseMix) ?: d.noiseMix,
             noiseTimerMinutes = prefs.getInt(K_NOISE_TIMER, d.noiseTimerMinutes),
+            sleepNightLook = prefs.getBoolean(K_SLEEP_NIGHT_LOOK, d.sleepNightLook),
             swapCoversAnswered = prefs.getBoolean(K_SWAP_COVERS, d.swapCoversAnswered),
             restDayCompared = prefs.getBoolean(K_REST_COMPARED, d.restDayCompared),
             // [CAL-20] PREVIEW of 1.17 and before is now 바로 크게 with the card switch apart; the card starts off.
@@ -550,6 +553,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_AUTO, s.sleepAuto)
             .putString(K_NOISE_MIX, s.noiseMix)
             .putInt(K_NOISE_TIMER, s.noiseTimerMinutes)
+            .putBoolean(K_SLEEP_NIGHT_LOOK, s.sleepNightLook)
             .putBoolean(K_SWAP_COVERS, s.swapCoversAnswered)
             .putBoolean(K_REST_COMPARED, s.restDayCompared)
             .putString(K_PHONE_DAY_VIEW, s.phoneDayView.name)
@@ -741,6 +745,7 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_AUTO = "sleep_auto"
         const val K_NOISE_MIX = "noise_mix"
         const val K_NOISE_TIMER = "noise_timer"
+        const val K_SLEEP_NIGHT_LOOK = "sleep_night_look"
         const val K_SWAP_COVERS = "swap_covers_answered"
         const val K_REST_COMPARED = "rest_day_compared"
     }
