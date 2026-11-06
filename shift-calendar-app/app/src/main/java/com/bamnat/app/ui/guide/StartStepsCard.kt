@@ -49,6 +49,14 @@ object StartStepsState {
     fun dismiss(c: AppContainer) = c.appContext.getSharedPreferences(FILE, 0).edit().putBoolean(K_DISMISSED, true).apply()
 
     /** [J133-52] A company (or its public cycle) was chosen in the first setup, so 회사 고르기 is done already. */
+    /**
+     * [J133-52] The first setup's source is a company's own (on the server, a public cycle, or a coworker's file naming one). 1.38 통합
+     * 9차 (새로 깐 교대 폰, '3조 2교대 일반형'에서 직접 만들기 → 시작 단계가 아예 안 나옴): a template has a name too, but it is no
+     * company, so 우리 회사 고르기 is still to do.
+     */
+    internal fun fromCompany(source: com.bamnat.core.setup.SetupSource?): Boolean =
+        source != null && source.kind != com.bamnat.core.setup.SetupSource.Kind.TEMPLATE && source.name.isNotBlank()
+
     fun companyPicked(c: AppContainer) = c.appContext.getSharedPreferences(FILE, 0).edit().putBoolean(K_COMPANY, true).apply()
 
     private const val K_UPDATER = "came_by_update"
