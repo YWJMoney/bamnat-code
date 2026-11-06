@@ -74,8 +74,16 @@ object SlipLexicon {
      * [READ-38] A name no list holds, as a photo of a screen reads it a stroke off in the words payslips use for clubs and
      * dues (불링희 → 볼링회, 한맥산약희 → 한맥산악회, 노통조합 → 노동조합, 예지흘련 → 예지훈련). Only whole known words change.
      */
+    /**
+     * [READ-38] 1.38 PC 10차: a Roman numeral after a name (기본급I, 기본급II) read as "!", "l" or "|": put back as I, so
+     * the line is named as on the slip.
+     */
+    fun roman(name: String): String = ROMAN.replace(name) { m -> "I".repeat(m.value.length) }
+
+    private val ROMAN = Regex("(?<=[가-힣])[!|lIi]{1,3}$")
+
     fun tidyName(name: String): String {
-        var t = name
+        var t = roman(name)
         for ((wrong, right) in NAME_FIXES) t = t.replace(wrong, right)
         return t
     }
@@ -300,7 +308,7 @@ object SlipTable {
         for (f in found) {
             val hit = f.label.hit ?: continue
             if (f.amount == null && f.minutes == null) continue
-            val name = if (hit.distance > 0) hit.name else if (f.label.guessed) SlipLexicon.tidyName(f.label.text) else f.label.text
+            val name = if (hit.distance > 0) hit.name else if (f.label.guessed) SlipLexicon.tidyName(f.label.text) else SlipLexicon.roman(f.label.text)
             if (f.doubt || hit.distance > 0 || f.label.guessed || f.under && f.label.text.length <= 1) unsure += lines.size
             lines += SlipLine(name, hit.role, f.amount, f.minutes, rows[f.row].joinToString("  ") { it.text })
             spots += Spot(f.label.x, f.label.y, f.at?.x, f.at?.y, f.label.h)

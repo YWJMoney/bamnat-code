@@ -79,4 +79,18 @@ class RosterTeamPhotoTest {
         assertEquals(null, com.bamnat.core.imports.SheetKinds.of(raws, kinds.map { it.type }))
         assertEquals(null, com.bamnat.core.imports.SheetKinds.of((1..30).map { listOf("D", "E", "N", "O")[it % 4] }, hospital))
     }
+
+    @Test fun aLineReadAgainInTheSheetsKindsKeepsEveryDay() {
+        val read = RosterVote.merge(listOf(DutyRoster.analyse(words(), codes)))
+        val row = read.rows.first { it.label == "1조" }
+        // As several readings put it together: the words of only the first week kept.
+        val voted = row.copy(raw = row.raw.filterKeys { it <= 7 })
+        val kinds = com.bamnat.core.imports.SheetKinds.of(read.rows.flatMap { it.raw.values }, emptyList())!!
+        val newTypes = kinds.mapIndexed { i, k -> k.type.copy(id = -(i + 1L)) }
+        val after = DutyCodes(newTypes.map { DutyType(it.id, it.name, it.label, it.isOff, it.start, it.label == "야") })
+        val byRole = kinds.mapIndexed { i, k -> k.role to -(i + 1L) }.toMap()
+        val oldRole = mapOf(1L to com.bamnat.core.schedule.ShiftRole.DAY, 3L to com.bamnat.core.schedule.ShiftRole.NIGHT, 4L to com.bamnat.core.schedule.ShiftRole.OFF)
+        val again = com.bamnat.core.imports.SheetKinds.remap(voted, codes, after, { oldRole[it] }, { byRole[it] })
+        for (d in 1..30) assertEquals("1조 ${d}일", after.match(code(0, d)), again.cells[d])
+    }
 }

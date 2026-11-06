@@ -297,9 +297,12 @@ object RuleText {
     private fun formulaRow(line: String, c: String): List<RuleFinding>? {
         // [READ-38] 1.38 사용자 사진(모니터의 계산 방법 표): 해당 read as 해탕, "× 1.5 × (" as "체15 8", "× 0.5" as "/05".
         val at = Regex("해[당탕닿땅댱]\\s*(시간|일수|시)|(근로|근무)시간수?(?=\\d|×|x)").find(c) ?: return null
-        if (!Regex("통상[임엄]금|통상시급|기준급|시급|시수").containsMatchIn(c)) return null
+        if (!Regex("통상[임엄][금긍극]|통상시급|기준급|시급|시수").containsMatchIn(c)) return null
         if (at.value.endsWith("일수")) return emptyList()
-        val head = c.substring(0, at.range.first).replace(Regex("^[유후흐흑육훼]일"), "휴일").replace(Regex("^[아얀야]간"), "야간")
+        // [READ-38] 1.38 PC 10차 (사용자 사진, 휴일 8시간 넘는 몫이 빠짐): 휴일 read as 휴밀·휴닐, 연장 as 연잠·언장·연정; a 휴밀연장
+        // read 연장 alone would have been a wrong 연장 100%.
+        val head = c.substring(0, at.range.first).replace(Regex("^[휴유후흐흑육훼][일밀닐길]"), "휴일").replace(Regex("^[아얀야]간"), "야간")
+            .replace(Regex("[연언][장잠정잔]"), "연장")
         val rest = c.substring(at.range.last + 1)
         val times = timesRe.find(rest)?.groupValues?.get(1)?.toDouble() ?: garbledTimes(rest) ?: return emptyList()
         val (target, over8h) = when {
@@ -320,7 +323,8 @@ object RuleText {
      * left for the user rather than read wrong.
      */
     internal fun garbledTimes(rest: String): Double? {
-        val seg = rest.split(Regex("통상|기준급|시급|시수|\\(")).first()
+        // A 2 between its × marks read as the letter z ("× z ×").
+        val seg = rest.split(Regex("통상|기준급|시급|시수|\\(")).first().replace(Regex("(?<=[×xX*\\s])[zZ](?=[×xX*\\s]|$)"), "2")
         val digits = Regex("""\d+(?:\.\d+)?""").findAll(seg).map { it.value }.toList()
         for (d in digits) {
             val v = when {
