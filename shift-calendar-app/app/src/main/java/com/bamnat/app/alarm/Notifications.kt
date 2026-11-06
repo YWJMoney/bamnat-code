@@ -169,7 +169,7 @@ object Notifications {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
         val pro = NotificationChannel(PRO_CHANNEL_ID, "구독 안내", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "1개월 무료 체험이 유료로 바뀌기 7일 전에 계속 쓸지 한 번 여쭤봐요"
+            description = "무료 체험이 유료로 바뀌기 7일 전에 계속 쓸지 여쭤보고, 답이 없으면 3일 전에 한 번 더 알려요"
             group = GROUP_MONEY
         }
         val backup = NotificationChannel(BACKUP_CHANNEL_ID, "자동 백업", NotificationManager.IMPORTANCE_DEFAULT).apply {

@@ -81,6 +81,8 @@ data class ProState(
     val thanksSeen: Boolean = false,
     /** [MON-06] The trial whose day-23 notice went out, by its start. */
     val trialNoticeFor: Instant? = null,
+    /** 1.38 (경쟁 앱 조사: 체험 뒤 자동 결제 불만): the trial whose last notice, 3 days before it turns paid, went out. */
+    val trialFinalFor: Instant? = null,
     /** [SRV-07] The trial answer still to send. */
     val pendingConsent: PendingConsent? = null,
     /** 1.36 841: each 1년 이용권 bought (Play's order id) and when; they stack ([com.bamnat.core.tier.YearPass.until]). */
@@ -160,6 +162,7 @@ class ProStore(context: Context) {
     fun claimLater(code: String?) = edit { it.copy(pendingClaim = code) }
     fun thanksSeen() = edit { it.copy(thanksSeen = true) }
     fun trialNoticed(start: Instant) = edit { it.copy(trialNoticeFor = start) }
+    fun trialFinalNoticed(start: Instant) = edit { it.copy(trialFinalFor = start) }
     /** 841: a 1년 이용권 Play reports, by its order; the same order twice counts once. */
     fun addYearPass(order: String, at: Instant) { if (current.yearPasses[order] != at) edit { it.copy(yearPasses = it.yearPasses + (order to at)) } }
     fun endNoticed(end: Instant) = edit { it.copy(endNoticeFor = end) }
@@ -228,7 +231,7 @@ class ProStore(context: Context) {
             .put("dayPass", s.dayPass?.toString() ?: JSONObject.NULL)
             .put("trialAnswer", s.trialAnswer ?: JSONObject.NULL).put("trialAnswerAt", s.trialAnswerAt.json())
             .put("code", s.code ?: JSONObject.NULL).put("pendingClaim", s.pendingClaim ?: JSONObject.NULL)
-            .put("thanksSeen", s.thanksSeen).put("trialNoticeFor", s.trialNoticeFor.json())
+            .put("thanksSeen", s.thanksSeen).put("trialNoticeFor", s.trialNoticeFor.json()).put("trialFinalFor", s.trialFinalFor.json())
             .put("yearPasses", JSONObject().apply { s.yearPasses.forEach { (k, v) -> put(k, v.toString()) } })
             .put("endNoticeFor", s.endNoticeFor.json())
             .put("work", JSONObject().apply { s.work.forEach { (k, r) -> put(k, subJson(r)) } })
@@ -248,7 +251,7 @@ class ProStore(context: Context) {
             dayPass = o.text("dayPass")?.let(LocalDate::parse),
             trialAnswer = o.text("trialAnswer"), trialAnswerAt = o.instant("trialAnswerAt"),
             code = o.text("code"), pendingClaim = o.text("pendingClaim"),
-            thanksSeen = o.optBoolean("thanksSeen"), trialNoticeFor = o.instant("trialNoticeFor"),
+            thanksSeen = o.optBoolean("thanksSeen"), trialNoticeFor = o.instant("trialNoticeFor"), trialFinalFor = o.instant("trialFinalFor"),
             yearPasses = o.optJSONObject("yearPasses")?.let { m -> m.keys().asSequence().mapNotNull { k -> runCatching { k to Instant.parse(m.getString(k)) }.getOrNull() }.toMap() }.orEmpty(),
             endNoticeFor = o.instant("endNoticeFor"),
             pendingConsent = o.optJSONObject("pendingConsent")?.let { q ->

@@ -154,7 +154,7 @@ fun proDisclosures(plans: List<Plan>, today: LocalDate): List<String> {
     return listOfNotNull(
         "결제는 Google Play 계정으로 해요. " + (if (prices.isNotEmpty()) "$prices, " else "") + "월 요금제는 매달, 연 요금제는 매년 같은 날 자동으로 결제돼요.",
         if (plans.any { it.trial }) "1개월 무료 체험은 연 요금제를 처음 구독하는 분께 한 번이에요. 오늘 시작하면 ${trialEnd.monthValue}월 ${trialEnd.dayOfMonth}일부터 " +
-            "고른 요금제의 금액이 결제돼요. 끝나기 7일 전에 계속 쓸지 따로 여쭤봐요." else null,
+            "고른 요금제의 금액이 결제돼요. 끝나기 7일 전에 계속 쓸지 따로 여쭤보고, 답이 없으면 3일 전에 해지 단추와 함께 한 번 더 알려요." else null,
         "해지는 언제든 Play 스토어 › 결제 및 정기 결제에서 해요. 해지해도 이미 낸 기간이 끝날 때까지 프로를 써요.",
         "결제한 날부터 7일 안에는 청약철회(환불)를 요청할 수 있어요. 이미 쓰기 시작한 디지털 콘텐츠는 법에 따라 철회가 제한될 수 있어요(전자상거래법 제17조 제2항). " +
             "Google Play 환불 요청이나 설정 › 문의하기로 접수해요.",

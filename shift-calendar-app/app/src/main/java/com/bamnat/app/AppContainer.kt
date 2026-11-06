@@ -949,7 +949,7 @@ class AppContainer(context: Context) {
         // [MON-06] The trial's notice follows the subscription and the user's answer; 840·841: so does the 7-days-before notice of a
         // yearly renewal or a 1년 이용권's end (one job, inside the start's budget [PERF-10]).
         keep("trialnotice") {
-            proStore.state.map { listOf(it.sub, it.consentAt, it.trialNoticeFor, it.yearPassUntil, it.endNoticeFor) }.distinctUntilChanged()
+            proStore.state.map { listOf(it.sub, it.consentAt, it.trialNoticeFor, it.trialFinalFor, it.yearPassUntil, it.endNoticeFor) }.distinctUntilChanged()
                 .collect {
                     com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current)
                     com.bamnat.app.tier.EndNotice.reschedule(appContext, proStore.current)

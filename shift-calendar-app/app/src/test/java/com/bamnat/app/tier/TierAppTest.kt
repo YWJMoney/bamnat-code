@@ -340,6 +340,13 @@ class TierAppTest {
         TrialNotice.reschedule(context, ProState(sub = sub, trialAnswer = "keep", trialAnswerAt = Instant.parse("2027-03-26T00:00:00Z")), zone,
             Instant.parse("2027-03-26T01:00:00Z"))
         assertNull("답했으면 알림은 지워요", shadowOf(am).nextScheduledAlarm)
+        // 1.38: the 7-day notice gone out and still no answer → one more, 3 days before, with 구독 관리·해지.
+        TrialNotice.reschedule(context, ProState(sub = sub, trialNoticeFor = sub.purchasedAt), zone, Instant.parse("2027-03-26T01:00:00Z"))
+        assertEquals(end.minus(TrialNotice.FINAL_BEFORE).toEpochMilli(), shadowOf(am).nextScheduledAlarm!!.triggerAtTime)
+        TrialNotice.reschedule(context, ProState(sub = sub, trialNoticeFor = sub.purchasedAt, trialFinalFor = sub.purchasedAt), zone, Instant.parse("2027-03-26T01:00:00Z"))
+        assertNull("두 번까지만", shadowOf(am).nextScheduledAlarm)
+        assertEquals("팀 요금제", TrialNotice.nameOf("bamnat_team"))
+        assertEquals("밤낮 프로", TrialNotice.nameOf("bamnat_pro"))
     }
 
     @Test fun theTrialQuestionSaysTheDayAndThePrice() {
@@ -361,7 +368,7 @@ class TierAppTest {
         val all = lines.joinToString("\n")
         assertTrue(all, all.contains("월 4,990원, 연 39,000원"))
         assertTrue("체험이 끝나는 날과 그 뒤 결제", all.contains("4월 10일부터 고른 요금제의 금액이 결제돼요"))
-        assertTrue("7일 전에 따로 물어요", all.contains("끝나기 7일 전에 계속 쓸지 따로 여쭤봐요"))
+        assertTrue("7일 전에 따로 물어요", all.contains("끝나기 7일 전에 계속 쓸지 따로 여쭤보고")); assertTrue("3일 전 한 번 더", all.contains("3일 전에 해지 단추와 함께"))
         assertTrue("해지 방법", all.contains("Play 스토어 › 결제 및 정기 결제"))
         assertTrue("청약철회와 그 제한", all.contains("7일 안에는 청약철회") && all.contains("전자상거래법 제17조 제2항"))
         assertTrue("약관 동의", all.contains("이용약관과 개인정보처리방침"))
