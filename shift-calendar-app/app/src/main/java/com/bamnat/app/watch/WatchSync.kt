@@ -66,7 +66,14 @@ object WatchSync {
         val alarmToday = com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snap.resolver, today).any { it.triggerAt.isAfter(nowTime) }
         // 1.38 [LEDH-14] 워치로 돈 적기: the main 가계부's most used spending categories of the last 60 days.
         val moneyCategories = runCatching { com.bamnat.app.watch.WatchMoneyIn.categories(c.calendars.money(PersonalCalendar.MAIN).book.first(), today) }.getOrDefault(emptyList())
-        fun payload(at: LocalDateTime, sent: Long) = WatchPayload(days, at, alarmAt, label, name, sentAtMillis = sent, moneyCategories = moneyCategories,
+        // 1.38 [SLEEP-14] 워치 타일의 오늘 잘 시간: the same line as the 오늘의 흐름 widget.
+        val sleepLine = runCatching {
+            if (!settings.sleepTips || settings.workStyle?.usesPayEngine == false || snap.isEmpty) null
+            else com.bamnat.core.sleep.TodayFlow.of(nowTime, snap.resolver, settings.alarmsEnabled,
+                com.bamnat.core.sleep.SleepMerge.merge(c.sleepRepository.recent(days = 2).first(), c.healthSleep.sleeps.value),
+                settings.sleepTargetMinutes, settings.commuteMinutes, settings.restCheck, settings.strictRest).line
+        }.getOrNull().orEmpty()
+        fun payload(at: LocalDateTime, sent: Long) = WatchPayload(days, at, alarmAt, label, name, sentAtMillis = sent, moneyCategories = moneyCategories, sleepLine = sleepLine,
             weekStart = settings.weekStart.value, weekMinutes = week.totalMinutes, weekLimitMinutes = settings.limits.legalWeeklyHours * 60,
             clock = clock, alarmToday = alarmToday, ringOnWatch = settings.watchAlarm != com.bamnat.app.data.AppSettings.WATCH_ALARM_OFF)
         val sameDays = WatchDays.encode(payload(LocalDateTime.of(2000, 1, 1, 0, 0), 0))

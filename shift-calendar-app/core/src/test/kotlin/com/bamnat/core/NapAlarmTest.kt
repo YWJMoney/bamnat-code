@@ -23,4 +23,14 @@ class NapAlarmTest {
     @Test fun aDayWithNoAlarmsGetsOnlyTheWake() {
         assertEquals(listOf(DayAlarm(LocalTime.of(16, 0))), NapAlarm.merge(day, emptyList(), day.atTime(16, 0)))
     }
+
+    /** 1.38 [SLEEP-14] The watch tile's sleep line goes over and back; an older phone's payload has none. */
+    @Test fun theWatchGetsTheSleepLine() {
+        val p = com.bamnat.core.work.WatchPayload(emptyList(), day.atTime(9, 0), moneyCategories = listOf("식비"), sleepLine = "잘 시간 08:00–15:00")
+        val back = com.bamnat.core.work.WatchDays.decode(com.bamnat.core.work.WatchDays.encode(p))!!
+        assertEquals("잘 시간 08:00–15:00", back.sleepLine)
+        assertEquals(listOf("식비"), back.moneyCategories)
+        val old = com.bamnat.core.work.WatchDays.encode(p).lines().first().split('\t').take(13).joinToString("\t")
+        assertEquals("", com.bamnat.core.work.WatchDays.decode(old)!!.sleepLine)
+    }
 }
