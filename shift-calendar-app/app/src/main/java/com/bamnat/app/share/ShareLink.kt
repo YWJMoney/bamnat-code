@@ -524,7 +524,7 @@ data class ReceivedShare(
     val updatedAt: Instant?,
     /** [SHR-12] The server's tag for this version, asked with next time so an unchanged link is not downloaded again. */
     val etag: String? = null,
-    /** 1.38 [SLEEP-15] The leader turned on 피곤해요 합계 for this link: the member's app may offer 피곤해요 팀에 알리기 ([ShareApi.tiredSay]). */
+    /** 1.38 [P3-L-18] The leader turned on 피곤해요 합계 for this link: the member's app may offer 피곤해요 팀에 알리기 ([ShareApi.tiredSay]). */
     val tired: Boolean = false,
 )
 
@@ -627,7 +627,7 @@ interface ShareApi {
 
     suspend fun boardDelete(id: String, token: String) {}
 
-    /** 1.38 [SLEEP-15] 피곤해요 합계 받기: a team's box of counts per day, no names. */
+    /** 1.38 [P3-L-18] 피곤해요 합계 받기: a team's box of counts per day, no names. */
     suspend fun tiredCreate(team: String): TiredBox = throw ShareLinkException("unsupported")
 
     /** The last 7 days (today first); a count is null under [TiredGot.min] people. */

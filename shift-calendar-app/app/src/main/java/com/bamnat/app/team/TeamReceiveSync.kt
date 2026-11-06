@@ -54,7 +54,7 @@ object TeamReceiveSync {
 
     fun url(m: TeamMember): String? = m.linkId?.let { com.bamnat.app.BuildConfig.SHARE_BASE_URL.trimEnd('/') + "/s/" + it }
 
-    // ---- 1.38 [SLEEP-15] 피곤해요 합계 받기: counts per day from members who press 피곤해요 in their own app, never who ----
+    // ---- 1.38 [P3-L-18] 피곤해요 합계 받기: counts per day from members who press 피곤해요 in their own app, never who ----
 
     private fun tiredKey(teamId: String) = "tired:$teamId"
 

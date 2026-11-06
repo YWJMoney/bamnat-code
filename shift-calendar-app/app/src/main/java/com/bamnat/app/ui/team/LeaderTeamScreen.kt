@@ -577,7 +577,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     }
                 })
             }
-            // 1.38 [SLEEP-15] 피곤해요 합계: members who turn it on in their own app press 피곤해요 in the morning; the leader sees only
+            // 1.38 [P3-L-18] 피곤해요 합계: members who turn it on in their own app press 피곤해요 in the morning; the leader sees only
             // how many a day, and nothing at all for a day under 3. Off until the leader turns it on.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -828,7 +828,7 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
         updated += m.copy(linkId = st.id, linkToken = st.deleteToken)
         // 봤어요: asking once turns it on for the link, so the first open after this 확정 is kept.
         runCatching { c.shareApi.seen(st.id, st.deleteToken) }
-        // 1.38 [SLEEP-15] a link made after 피곤해요 합계 was turned on joins it.
+        // 1.38 [P3-L-18] a link made after 피곤해요 합계 was turned on joins it.
         if (st.id != id) com.bamnat.app.team.TeamReceiveSync.tiredBox(c.appContext, team.id)?.let { bx -> runCatching { c.shareApi.tiredTie(st.id, st.deleteToken, bx.id) } }
     }
     c.phaseThree.saveMembers(updated)

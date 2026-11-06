@@ -1,4 +1,4 @@
-// 1.38 [SLEEP-15] 피곤해요 팀 합계: a number per day, no names, hidden under LIMITS.tiredMin.
+// 1.38 [P3-L-18] 피곤해요 팀 합계: a number per day, no names, hidden under LIMITS.tiredMin.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker, { readsForget, LIMITS } from "../src/index.js";

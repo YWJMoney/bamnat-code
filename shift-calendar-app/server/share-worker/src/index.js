@@ -54,7 +54,7 @@
 // POST   /api/board            1.38 [P3-L-15] {team, month, names:[name], labels:[[label per day]], colors:{label:"#hex"}} -> { id, token, url,
 //                              expiresAt }: 병동 전체 보기, the whole month's table and each day's count per shift, when the leader turns it on
 // PUT    /api/board/:id        header X-Delete-Token, same body -> 204 · DELETE /api/board/:id -> 204 · GET /b/:id the page
-// POST   /api/tired            1.38 [SLEEP-15] {team} -> { id, token }: 피곤해요 합계 받기, a team's box of counts per day (no names)
+// POST   /api/tired            1.38 [P3-L-18] {team} -> { id, token }: 피곤해요 합계 받기, a team's box of counts per day (no names)
 // GET    /api/tired/:id        header X-Delete-Token -> { min, days:[{d, n|null}] }: the last 7 days, n null under LIMITS.tiredMin
 // DELETE /api/tired/:id        header X-Delete-Token -> 204
 // PUT    /api/share/:id/tired  header X-Delete-Token, {box: id|null} -> 204: the leader ties a member's link to the box (or unties it)
@@ -145,7 +145,7 @@ export const LIMITS = {
   // 1.38 [P3-L-15] 병동 전체 보기: a ward's month, gone 60 days after the month ends.
   boardPeople: 80,
   boardDaysAfter: 60,
-  // 1.38 [SLEEP-15] 피곤해요 팀 합계: counts per day only, shown to the leader from this many people up, kept this many days.
+  // 1.38 [P3-L-18] 피곤해요 팀 합계: counts per day only, shown to the leader from this many people up, kept this many days.
   tiredMin: 3,
   tiredDays: 30,
   tiredBoxDays: 120,
@@ -1106,7 +1106,7 @@ async function seenRead(request, env, id) {
   return json({ seenAt: at, updatedAt: record.updatedAt ?? null });
 }
 
-// ---- 1.38 [SLEEP-15] 피곤해요 팀 합계 ----
+// ---- 1.38 [P3-L-18] 피곤해요 팀 합계 ----
 // Only a number per day is kept. A member's app adds one at most once a day; the leader sees the last week, and a day with
 // fewer than LIMITS.tiredMin is shown without its number, so one tired person cannot be picked out.
 
