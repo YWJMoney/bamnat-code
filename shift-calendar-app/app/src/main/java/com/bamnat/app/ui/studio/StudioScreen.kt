@@ -511,6 +511,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         panelMode = PanelMode.TOOL; panel = true
     }
     fun openPanel(m: PanelMode) { panelMode = m; panel = true }
+    /** 1.38: ‘＋ 아이콘·사진’ asks the 꾸밈 층 to open on 넣기, scrolled into view. */
+    var decorAdd by remember { mutableIntStateOf(0) }
     // [CNV-03] A part or card picked on the example (or in the 층 list, or a name in the bar): its first quick tool opens at once,
     // so a tap and a colour are all it takes (사용자 "유닛 클릭하고 색상선택시 색상이 입혀지게").
     fun selectPart(id: String?) {
@@ -758,6 +760,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         if (!detail && toAdd.page !== PageCards.NONE)
                             FilterChip(selected = panel && panelMode == PanelMode.CARDS, onClick = { openPanel(PanelMode.CARDS) },
                                 label = { Text("＋ 카드 넣기" + if (toAdd.hidden.isEmpty()) "" else " ${toAdd.hidden.size}") })
+                        // 1.38 PC 스튜디오 확인 (재료까지 5단계): 꾸밈 층의 넣기(아이콘·밤낮 재료·사진)로 바로.
+                        if (Tool.DECOR in area.tools)
+                            FilterChip(selected = false, onClick = { openTool(area, Tool.DECOR); decorAdd++ }, label = { Text("＋ 아이콘·사진") })
                         // PC 확인 1.37 A5 (앱 전체에서 보관함이 화면 밖): with something kept, 보관함 comes first.
                         area.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.sortedBy { if (it == Tool.BOX && kept.isNotEmpty()) 0 else 1 }.forEach { t ->
                             FilterChip(selected = panel && panelMode == PanelMode.TOOL && t == tool, onClick = { openTool(area, t) },
@@ -1064,7 +1069,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                         Tool.DECOR -> com.bamnat.app.ui.decor.DecorTool(decor, area.decorPlaces, { label, nd ->
                                             if (label == null) vm.change { it.copy(decor = nd.encode()) } else vm.changeMerged(label) { it.copy(decor = nd.encode()) }
                                         }, vm::undo, advancedIn = studioAdvanced, onAdvanced = { studioAdvanced = it }, focus = decorFocus, onFocused = { decorFocus = null },
-                                            buttons = remember(d) { com.bamnat.app.ui.decor.DecorTap.buttons(d) })
+                                            buttons = remember(d) { com.bamnat.app.ui.decor.DecorTap.buttons(d) }, addAsk = decorAdd)
                                         // [MAT-05] 1.36 앱 전체 글꼴: every screen's text, 화면마다 따로는 ‘색·배경’에서.
                                         Tool.FONT -> {
                                             val all = looks.looks[ScreenLooks.ALL] ?: ScreenLook()
