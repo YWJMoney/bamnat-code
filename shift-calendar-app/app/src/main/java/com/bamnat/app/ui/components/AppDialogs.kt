@@ -101,7 +101,10 @@ fun DatePickerDialog(
         tonalElevation = tonalElevation,
         colors = colors,
         properties = properties,
-    ) { CompositionLocalProvider(LocalDensity provides d) { content() } }
+    ) {
+        // 1.38 PC 11차: Material's dialog puts content in a Box, so a row above the picker (YearJump) was drawn under it.
+        CompositionLocalProvider(LocalDensity provides d) { androidx.compose.foundation.layout.Column { content() } }
+    }
 }
 
 @Composable
