@@ -86,6 +86,7 @@ import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from 
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
+import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
@@ -526,6 +527,9 @@ async function routeOnce(request, env, url, ctx) {
     // 1.36 [GRW-05] 모두의 도구.
     const tools = await growthRoute(request, env, path, url);
     if (tools) return tools;
+    // 1.38 [STM-01] 밤낮 재료(운영자 색 아이콘·배경).
+    const mats = await materialRoute(recipeDeps, request, env, path, url);
+    if (mats) return mats;
     const more = await communityRoute(recipeDeps, request, env, path, url);
     if (more) return more;
     // 1.36 [MAT-06] 내 글꼴 나누기.
@@ -747,6 +751,8 @@ const SCHEMA = [
   ...INTEGRITY_SCHEMA,
   // 1.36 [MAT-06] 나눈 글꼴 (recipe-fonts.js).
   ...FONT_SCHEMA,
+  // 1.38 [STM-01] 밤낮 재료.
+  ...MATERIAL_SCHEMA,
   // 1.36 [PSH-01] 프로 나눔 1인: a buyer's install, its one-time code and the one install it gave 프로 to.
   `CREATE TABLE IF NOT EXISTS pro_shares (owner TEXT PRIMARY KEY, code TEXT UNIQUE, code_at INTEGER, guest TEXT UNIQUE, guest_at INTEGER)`,
   // 1.36 [LIM-10] 쓰기 제한: no daily cap; strikes (posts or recipes hidden) restrict an install for a while (write-limits.js).
@@ -4666,6 +4672,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
     if (more) return more;
     const font = await fontAdmin(recipeDeps, request, env, path, url, now);
     if (font) return font;
+    const mats = await materialAdmin(recipeDeps, request, env, path, url, now);
+    if (mats) return mats;
     const res = await recipeAdmin(recipeDeps, request, env, path, url, now, actorName(env));
     if (res) return res;
   }

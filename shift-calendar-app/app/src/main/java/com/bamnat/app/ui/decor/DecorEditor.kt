@@ -214,7 +214,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         onChange(label, Decor(items.mapIndexed { i, it -> if (i in which) f(it) else it }))
     }
     DecorPhotos.Load(decor.images)
-    fun add(kind: DecorKind, glyph: String, aspect: Float? = null) {
+    fun add(kind: DecorKind, glyph: String, aspect: Float? = null, icon: Boolean = false) {
         if (items.size >= Decor.MAX) { said = "꾸밈은 ${Decor.MAX}개까지 넣을 수 있어요. 레이어에서 안 쓰는 것을 지워 주세요"; return }
         if (place == Decor.CELL && items.count { it.at == Decor.CELL } >= Decor.MAX_CELL) {
             said = "달력 칸에는 ${Decor.MAX_CELL}개까지예요(칸마다 그려서 달력 넘김이 느려지지 않게)"; return
@@ -224,13 +224,13 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         val sp = startPlace(place, kind, n, stageW).let { st ->
             // [LAY-10] A photo keeps its own shape, its long side the place's size.
             if (kind != DecorKind.PHOTO || aspect == null) st else {
-                val long = photoSide(place)
+                val long = if (icon) iconSide(place) else photoSide(place)
                 if (aspect >= 1f) st.copy(w = long, h = (long / aspect).roundToInt().coerceAtLeast(2)) else st.copy(w = (long * aspect).roundToInt().coerceAtLeast(2), h = long)
             }
         }
         // PC 확인 C6 1.36 (배경 사진은 화면을 채우게): a photo put on a screen's background fills the screen at first.
-        val item = DecorItem(kind, glyph, place, x = sp.x, y = sp.y, w = sp.w, h = sp.h, r = if (kind == DecorKind.PHOTO) 8 else 0,
-            full = kind == DecorKind.PHOTO && (place == Decor.APP || place.startsWith("bg.")),
+        val item = DecorItem(kind, glyph, place, x = sp.x, y = sp.y, w = sp.w, h = sp.h, r = if (kind == DecorKind.PHOTO && !icon) 8 else 0,
+            full = kind == DecorKind.PHOTO && !icon && (place == Decor.APP || place.startsWith("bg.")),
             fill = if (kind == DecorKind.SHAPE) DEFAULT_FILLS[n % DEFAULT_FILLS.size] else null,
             fillA = if (glyph == "tape") 70 else 100,
             size = if (kind == DecorKind.TEXT) (when (place) { Decor.CELL -> 8.0; Decor.HEAD -> 11.0; else -> 14.0 }) else 14.0,
@@ -287,7 +287,8 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         }
         HorizontalDivider()
         when (pane) {
-            Pane.ADD -> Library(place, { k, g -> add(k, g) }, onPhoto = { id, aspect -> add(DecorKind.PHOTO, id, aspect) })
+            Pane.ADD -> Library(place, { k, g -> add(k, g) }, onPhoto = { id, aspect -> add(DecorKind.PHOTO, id, aspect) },
+                onMaterial = { m -> add(DecorKind.PHOTO, m.id, m.aspect, icon = m.isIcon) })
             Pane.EDIT -> if (picked.isEmpty()) Text("판에서 꾸밈을 누르거나, 레이어에서 골라요", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             else ItemEditor(items, picked, place, advanced, ::set, buttons,
@@ -545,7 +546,8 @@ private fun DrawScope.backdrop(place: String, box: Rect, measurer: androidx.comp
 /** 요소 모음: 도형·아이콘·이모지·글상자, each found by its words. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: (String, Float) -> Unit) {
+private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: (String, Float) -> Unit,
+                    onMaterial: (com.bamnat.app.recipe.StudioMaterial) -> Unit) {
     var kind by rememberSaveable { mutableStateOf(DecorKind.SHAPE) }
     var q by rememberSaveable { mutableStateOf("") }
     var words by rememberSaveable { mutableStateOf("") }
@@ -567,10 +569,15 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
                     }
                 }
             }
-            DecorKind.ICON -> GlyphGrid(DecorGlyphs.search(DecorGlyphs.ICON_LIST, q)) { g ->
-                Box(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.ICON, g.id) },
-                    contentAlignment = Alignment.Center) {
-                    DecorIcons.of(g.id)?.let { Icon(it, g.label.substringBefore(' '), tint = ink, modifier = Modifier.size(28.dp)) }
+            DecorKind.ICON -> {
+                // 1.38 [STM-06] 밤낮 색 아이콘 first while nothing is searched; the line icons (색을 바꿔 쓰는) follow.
+                if (q.isBlank()) { MaterialShelf(com.bamnat.app.recipe.StudioMaterial.ICON, onMaterial); HorizontalDivider()
+                    Text("선 아이콘 (색을 골라 써요)", style = MaterialTheme.typography.titleSmall) }
+                GlyphGrid(DecorGlyphs.search(DecorGlyphs.ICON_LIST, q)) { g ->
+                    Box(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.ICON, g.id) },
+                        contentAlignment = Alignment.Center) {
+                        DecorIcons.of(g.id)?.let { Icon(it, g.label.substringBefore(' '), tint = ink, modifier = Modifier.size(28.dp)) }
+                    }
                 }
             }
             DecorKind.EMOJI -> {
@@ -583,7 +590,13 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
                     }
                 }
             }
-            DecorKind.PHOTO -> PhotoAdd(onPhoto)
+            DecorKind.PHOTO -> {
+                Text("내 사진", style = MaterialTheme.typography.titleSmall)
+                PhotoAdd(onPhoto)
+                HorizontalDivider()
+                // 1.38 [STM-06] 밤낮 배경: pictures made for a screen's background, ready to put on.
+                MaterialShelf(com.bamnat.app.recipe.StudioMaterial.BG, onMaterial)
+            }
             DecorKind.TEXT -> {
                 OutlinedTextField(words, { words = it.take(Decor.MAX_TEXT) }, Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text("넣을 글 (${Decor.MAX_TEXT}자까지)") })
@@ -893,6 +906,11 @@ internal fun eul(w: String): String {
 
 /** An item's name in a sentence: a text box's own words already stand in quotes. */
 private fun quoted(i: DecorItem): String = if (i.kind == DecorKind.TEXT) i.label else "‘${i.label}’"
+
+/** 1.38 [STM-06] A 밤낮 색 아이콘's side when it is put on [place], dp (smaller than a photo, like a sticker). */
+private fun iconSide(place: String): Int = when (place) {
+    Decor.CELL -> 14; Decor.WEEK -> 16; Decor.HEAD -> 28; Decor.WIDGET -> 40; else -> 64
+}
 
 /** [LAY-10] A photo's long side when it is put on [place], dp. */
 private fun photoSide(place: String): Int = when (place) {

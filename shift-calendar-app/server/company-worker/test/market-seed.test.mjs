@@ -101,3 +101,21 @@ test("[MKS-03] 출시 대기 lists a whole batch past 200 (267 in 1.36) and its 
   assert.equal(pub.status, 200, JSON.stringify(pub.data));
   assert.equal((await call("GET", "/api/admin/recipes?tab=official", undefined, admin)).data.items.length, 200);
 });
+
+test("[STM-09] 판 정리: 운영자 작품을 제목으로 한 번에 숨기고(dry는 세기만), 사용자 작품·없는 제목은 건드리지 않아요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  for (const title of ["옛 알람 하나", "옛 위젯 하나", "남길 작품"]) {
+    assert.equal((await call("POST", "/api/admin/recipes", { recipe: recipe(title) }, admin)).status, 201);
+  }
+  const dry = await call("POST", "/api/admin/recipes/hide-titles", { titles: ["옛 알람 하나", "옛 위젯 하나", "없는 작품"], dry: true }, admin);
+  assert.deepEqual([dry.data.hidden, dry.data.found, dry.data.missing], [0, 2, ["없는 작품"]]);
+  assert.equal(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=52")).length, 3);
+  const out = await call("POST", "/api/admin/recipes/hide-titles", { titles: ["옛 알람 하나", "옛 위젯 하나"], note: "1.38 장터 정리" }, admin);
+  assert.equal(out.data.hidden, 2);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=52")), ["남길 작품"]);
+  assert.equal((await call("GET", "/api/admin/recipes?tab=hidden", undefined, admin)).data.items.length, 2);
+  assert.equal((await call("POST", "/api/admin/recipes/hide-titles", { titles: [] }, admin)).status, 400);
+  assert.equal((await call("POST", "/api/admin/recipes/hide-titles", { titles: ["남길 작품"] })).status >= 400, true);
+});

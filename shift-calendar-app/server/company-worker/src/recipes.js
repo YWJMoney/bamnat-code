@@ -1902,6 +1902,29 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     const n = await releaseWaiting(d, env, now, where, args, actorName);
     return d.json({ released: n });
   }
+  // 1.38 [STM-09] 판이 바뀌며 내리는 운영자 작품을 제목으로 한 번에 숨겨요(지우지 않음, 하나씩 '보이기'로 되돌려요). dry: 몇 개인지만.
+  if (path === "/recipes/hide-titles" && method === "POST") {
+    const body = await d.readJson(request, 64 * 1024);
+    const titles = Array.isArray(body?.titles) ? body.titles.filter((t) => typeof t === "string" && t.trim()).slice(0, 300) : [];
+    if (titles.length === 0) return d.json({ error: "titles" }, 400);
+    const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
+    const skels = [...new Set(titles.map(nameSkeleton))];
+    const found = [];
+    for (let i = 0; i < skels.length; i += 90) {
+      const part = skels.slice(i, i + 90);
+      found.push(...await d.all(env, `SELECT code, title, state FROM recipes WHERE owner = 'operator' AND state IN ('visible', 'waiting')
+        AND title_skel IN (${part.map(() => "?").join(",")})`, ...part));
+    }
+    const known = new Set(found.map((r) => nameSkeleton(r.title)));
+    const missing = titles.filter((t) => !known.has(nameSkeleton(t)));
+    if (body.dry !== true && found.length) {
+      await d.batch(env, found.flatMap((r) => [
+        d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ? WHERE code = ?", now, note, r.code),
+        act(r.code, "hide", note || "판 정리"),
+      ]));
+    }
+    return d.json({ hidden: body.dry === true ? 0 : found.length, found: found.length, missing });
+  }
   const m = path.match(/^\/recipes\/([2-9A-HJ-NP-Z]{8})\/(approve|return|hide|show|delete|official|showcase)$/);
   if (m && method === "POST") {
     const [, code, what] = m;

@@ -161,7 +161,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     Column(Modifier.weight(1f)) {
                         Text(r.title, style = MaterialTheme.typography.titleLarge)
                         if (r.summary.isNotEmpty()) Text(r.summary, style = MaterialTheme.typography.bodyMedium)
-                        Text(listOfNotNull(doc.item.nick?.let { "만든 분 $it" } ?: "만든 분 이름 없음", "v${doc.item.version}",
+                        Text(listOfNotNull(doc.item.nick?.let { "만든 분 $it" } ?: if (doc.item.official) "만든 분 밤낮" else "만든 분 이름 없음", "v${doc.item.version}",
                             RecipeDescribe.styles(r)).joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         // [RCX-05] The maker's page: their recipes, badges and 팔로우.
@@ -267,6 +267,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 if (tryOn) {
                     val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
+                    val allParts = remember(r) { com.bamnat.core.recipe.LookParts.of(r).size }
                     TryOnScreen(r, vm.style, onDismiss = { tryOn = false },
                         onKeep = { ids -> vm.keep(ids) }, onToStudio = onToStudio,
                         extra = if (others.isEmpty()) null else { {
@@ -295,12 +296,22 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                             // its own names (근무 꾸미기·알람 묶음), as the list above shows them, and counted only when there are many.
                             val names = others.filter { it.on }.map { it.kind.label }
                             val rest = if (names.size <= 2) names.joinToString("·") else "함께 넣을 것 ${names.size}개"
-                            Text(when {
-                                n == 0 -> "넣을 것을 골라 주세요"
-                                fn == 0 -> "고른 모양 ${picked.size}개 넣기"
-                                picked.isEmpty() -> "$rest 넣기"
-                                else -> "모양 ${picked.size}개 · $rest 넣기"
-                            })
+                            val detail = when {
+                                n == 0 -> null
+                                fn == 0 -> "고른 모양 ${picked.size}개"
+                                picked.isEmpty() -> rest
+                                else -> "모양 ${picked.size}개 · $rest"
+                            }
+                            // 1.38 PC 스튜디오 확인 (중): '모양 27개 · 앱 동작 넣기'가 어려워요. 다 고른 채면 한마디로, 무엇이 들어가는지는 작게.
+                            val whole = n > 0 && picked.size == allParts && others.all { it.on }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(when {
+                                    n == 0 -> "넣을 것을 골라 주세요"
+                                    whole -> if (doc.item.scope == "tab") "이 작품 그대로 넣기" else "이 테마 입기"
+                                    else -> "$detail 넣기"
+                                })
+                                if (whole && detail != null) Text(detail, style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }

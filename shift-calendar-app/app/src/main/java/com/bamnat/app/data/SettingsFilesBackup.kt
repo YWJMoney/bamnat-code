@@ -208,6 +208,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 1.38 [STM-06] 밤낮 재료: 광고로 연 묶음(30일)과 재료 표시, 이 휴대폰에서 본 광고의 것.
+            "studio_materials" to "광고로 30일 연 재료 묶음과 재료 표시, 이 휴대폰의 것",
             // 1.38 [EASE-29] 홈 화면 위젯 목록에 내 근무 그림을 올린 날: 이 휴대폰의 런처 일이라 옮기지 않아요.
             "widget_previews" to "홈 화면 위젯 목록에 내 근무 그림을 올린 날(하루 한 번), 이 휴대폰의 것",
             // [CNV-13] 1.37 펼쳐 보기: which sliding rows were opened, a matter of this screen's width.

@@ -200,6 +200,8 @@ object LookImages {
 
     /** The phone's picture [id] sent for a recipe; the server's id for it. */
     suspend fun upload(c: AppContainer, id: String): String {
+        // 1.38 [STM-06] 밤낮 재료 is on the server already, under this id.
+        if (StudioMaterials.isMaterial(c.appContext, id)) return id
         val bytes = withContext(Dispatchers.IO) { file(c.appContext, id).readBytes() }
         val server = c.recipeApi.image(c.companyStore.device, bytes)
         // Kept under the server's id too, so the recipe and this phone point at the same file.
