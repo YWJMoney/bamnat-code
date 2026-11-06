@@ -7,7 +7,6 @@ import com.bamnat.core.team.TeamCall
 import com.bamnat.core.team.TeamCover
 import com.bamnat.core.team.TeamMember
 import com.bamnat.core.time.Today
-import java.time.ZoneId
 
 /**
  * 1.38 [P3-X-01] 결원 메우기 between the leader's phone and the share server: ask a few people at once "이날 대신 들어갈 수 있나요?",
@@ -17,7 +16,7 @@ import java.time.ZoneId
 object TeamCallSync {
     /** How long a link answers: until the end of the day of the gap, at least 3 hours, at most a week (the server's cap). */
     fun hours(gap: TeamCover.Gap, now: Long = Today.millis()): Int {
-        val end = gap.date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
+        val end = gap.date.plusDays(1).atStartOfDay(Today.zone()).toInstant().toEpochMilli()
         return (((end - now) / 3_600_000L).toInt() + 1).coerceIn(3, 168)
     }
 
