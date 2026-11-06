@@ -115,8 +115,11 @@ object SlipRules {
         val first = run(p)
         val nights = days.count { it.isWorkDay && isNightShift(it) }
         val workDays = days.count { it.isWorkDay }
+        val schooling = schooling(days)
         for ((name, amount) in slip.allowances) {
             if (p.items.any { norm(it.name) == norm(name) } || p.customRules.any { norm(it.name) == norm(name) }) continue
+            // [READ-41] A 교육 line with 교육 on the calendar is that work's pay (step 4), not a monthly allowance besides it.
+            if (schooling.isNotEmpty() && isSchooling(name)) continue
             val role = read.lines.firstOrNull { it.name == name }?.role
             val item = if (role == SlipRole.BONUS) {
                 PayItem(id(name), name, ValueTimeline(listOf(DatedValue(start, amount))), Cadence.BONUS, months = setOf(month.monthValue))
@@ -195,6 +198,9 @@ object SlipRules {
             }
         }
 
+        // 4-1. [READ-41] 교육 paid as a line of its own: the 시수 it was paid on, offered (never put in).
+        hints += schoolingHours(p, month, days, read)
+
         // 5. The 빨간날 choice that comes closest, when a shift fell on one.
         if (holidayShifts.isNotEmpty() && p.fiveOrMoreEmployees) {
             val candidates = buildList {
@@ -224,6 +230,42 @@ object SlipRules {
         hints += matched.hints.map { it.text }
         val total = run(matched.profile).total
         return SlipRulesResult(month, matched.profile, changes, total, slip.gross, hints)
+    }
+
+    /** [READ-41] A payslip line paid for 교육 (안전교육, LMS, 교육수당). */
+    fun isSchooling(name: String): Boolean = Regex("교육|LMS|lms|연수").containsMatchIn(name)
+
+    /** [READ-41] The month's 교육: extra work of a kind named 교육 (1.38 PAYX-49), by kind, in minutes. */
+    private fun schooling(days: List<ResolvedDay>): Map<com.bamnat.core.model.ExtraKind, Int> =
+        days.flatMap { it.extras }.filter { "교육" in it.kind.name && it.minutes > 0 }.groupBy { it.kind }.mapValues { (_, es) -> es.sumOf { it.minutes } }
+
+    /**
+     * [READ-41] 1.38 (교육 시수 갈래 PR #245, 사용자 2026-11-06 "교육은 243시수"): a payslip's 교육 line and the month's 교육 on the
+     * calendar say what 시수 the company pays 교육 on: 통상임금 ÷ (금액 ÷ 시간 ÷ 배율), near one of [ExtraRule.HOURS_CHOICES]. Said as
+     * a hint only, never put in: the line may hold other money (a 교육비, a 수당 besides the hours), so the user decides.
+     */
+    fun schoolingHours(p: PayProfile, month: YearMonth, days: List<ResolvedDay>, read: PayslipRead): List<String> {
+        val lines = read.lines.filter { it.amount != null && it.amount > 0 && it.role in setOf(SlipRole.ALLOWANCE, SlipRole.EXTRA_WORK) && isSchooling(it.name) }
+        if (lines.isEmpty()) return emptyList()
+        val worked = schooling(days)
+        val names = lines.joinToString("·") { "‘${it.name}’" }
+        if (worked.isEmpty()) return listOf("명세서의 $names 줄은 교육 시간에 받은 돈 같아요. 교육한 날을 달력에 추가 근무 ‘교육’으로 넣으면 함께 계산해요")
+        val ordinary = PayCalculator.ordinaryForHours(p, month) ?: return emptyList()
+        val (kind, minutes) = worked.entries.maxBy { it.value }
+        val amount = lines.sumOf { it.amount!! }
+        val perHour = amount / (minutes / 60.0)
+        val rule = p.rules.extra[kind.id]
+        val now = rule?.monthlyHours ?: p.monthlyHours
+        // 배율: 1배 (교육은 대개 가산 없이), 1.5배 (연장으로 주는 회사).
+        val found = listOf(1.0, 1.5).mapNotNull { m ->
+            val h = ordinary / (perHour / m)
+            ExtraRule.HOURS_CHOICES.minBy { abs(it - h) }.takeIf { abs(it - h) <= it * 0.03 }?.let { it to m }
+        }.firstOrNull() ?: return emptyList()
+        val (hours, m) = found
+        if (hours == now) return emptyList()
+        val rate = if (m == 1.0) "" else " ${PayCalculator.pct(m)}"
+        return listOf("명세서의 $names ${won(amount)}을 이달 ${kind.name} ${PayCalculator.hours(minutes)}으로 나누면, ${kind.name}은 통상임금 ÷ ${hours}시간${rate}으로 계산한 것 같아요" +
+            " (지금 ${now}시간). 맞으면 설정 › 추가 근무 종류 › ${kind.name} › 급여와 가산에서 시수를 ${hours}시간으로 골라 주세요")
     }
 
     /**
