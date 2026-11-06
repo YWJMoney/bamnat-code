@@ -1963,7 +1963,6 @@ BOSS-11,"1.38 M25 4대보험 가입 대상 자동 판단(주 15시간 미만·�
 GROW-07,"1.38 Phase 3 요금: 팀 요금제(15·30·50·100명)·직원 요금제(5·10·20·50명) 구간 구독(월·연, 연에만 1개월 체험)과 1년 이용권, 개인 프로 포함, 팀원 무료, 첫 달 확정·직원 3명 무료, 구간 바꾸기는 Play 비례, 상한 넘으면 문의, 구간·표시 가격 원격 값",1.38,진행 중,정식 출시일에 결제와 함께(사용자 2026-11-05 20:22),"core/tier/WorkPlans.kt, 계획 프로젝트 문서 Phase 3 완성 계획 8장"
 GROW-08,"1.38 검토: 1년 이용권이 프로 화면에 안 나오던 것(늦게 만드는 결제가 이용권을 넘기지 않음) 고침",1.38,진행 중,,"app/billing/Billing.kt DeferredBilling"
 TEAM-21,"1.38 검토: 바뀐 칸 없이 링크만 다시 보내면 확정 판 번호가 오르던 것 고침",1.38,진행 중,정식 출시일에 켬(사용자 2026-11-05 C안),"app/ui/team/LeaderTeamScreen.kt"
-<<<<<<< HEAD
 ALRM-29,"1.38 사용자 요청(2026-11-05 '휴가 표시하면 알람도 끌까요? 물어보기, 대근·대타 땐 맞춰 둔 알람이 켜지게, 달력 상호작용을 키우자'): 쉬는 날이 근무·대근이 되면 그 근무 알람을 울리고, 쉬는 날일 때 꺼 둔 알람은 다시 켜며 알림 줄에 ' · 06:00 알람이 울려요'·' · 꺼 뒀던 06:00 알람을 켰어요'. 근무 바꾸기·오전 반차로 알람이 옮겨지면 ' · 알람 05:30 → 09:30'. 이틀 넘게 알람이 없던 뒤(휴가·연휴) 첫 알람은 전날 저녁에 '내일부터 다시 근무예요' 알림과 이번만 끄기(알람 지킴이 스위치). 휴가·휴무로 바꿀 때 묻기는 ALRM-20 그대로",1.38,진행 중,,"코드 고침·PC 확인 전(브랜치 claude/project-thread-sbsson). AlarmPlanner.workDay·afterBreak, CalendarViewModel.workDayAlarms·workAlarmWords, AlarmGuard.onBack"
 MGR-01,"1.38 관리 화면(팀·가게 관리): 리더·사장님 일을 개인 화면과 따로 한곳에. 할 일 모음(위험·확정 전·대장 닫기·지급·명세서·5인 여부, 급한 것 먼저), 팀마다 이번 달·다음 달, 가게 지난달 대장, 요금제, 기록 지키기. 설정 › 더 보기 › 팀·가게 관리",1.38,진행 중,정식 출시일에 켬(사용자 2026-11-05 C안),"core/manage/ManageDesk.kt, app/ui/work/ManageScreen.kt, ManageDeskTest, p3_8_manage"
 MGR-02,"1.38 급여 대장: 5인 이상 여부를 아직 안 골랐으면 대장 위에서 한 번에 고르기(그때까지는 덜 주지 않게 가산 넣음)",1.38,진행 중,정식 출시일에 켬(사용자 2026-11-05 C안),"app/ui/work/PayrollScreen.kt"
@@ -1982,7 +1981,6 @@ READ-31,"1.38 리더·사장님 관리 화면용 결과(갈래7 P3 M24·M25): �
 READ-32,"1.38 PDF: 글자가 든 PDF는 그림이 아니라 파일의 글자와 위치를 그대로 읽어 표로(엑셀·한글·듀티 프로그램이 저장한 것), 스캔 PDF는 쪽마다 그림으로 렌더링해 사진처럼 읽기. 휴대폰 안에서만",1.38,진행 중,,"core imports/PdfText(객체·객체 스트림, Flate·ASCII85, ToUnicode, 글자 폭, 폼 XObject), app AnyFile.render(PdfRenderer); FileBenchTest p01·p02 100%, p03 스캔 223/360(RapidOCR, 조용히 틀림 0)"
 READ-33,"1.38 폭이 고르지 않은 칸(1~9일이 좁은 인쇄 표·자동 맞춤 엑셀·PDF 사진): 날짜 줄 숫자가 선 자리를 그대로 칸으로(DayFit.knots), 줄마다 이동·늘임 맞춤",1.38,진행 중,,"core RosterGeometry.knotted, DutyRoster.gridRows; FileBenchTest p03 0 → 223/360, PhotoBenchTest 변화 없음(2134/2269, 조용히 틀림 0)"
 MGR-05,"1.38 직원 명단 가져오기: 엑셀·CSV·글자 PDF는 표로, 사진·스캔 PDF는 글자 위치로 칸을 맞춰(WordTable) 이름·형태·금액·요일·시간·담당·입사일을 읽음. 연락처·주민번호·계좌는 읽지 않음, 같은 이름은 두 번 넣지 않음, 직원 요금제 범위만큼만 더하고 넘으면 요금제 창, 확인할 것은 노란 글씨",1.38,진행 중,정식 출시일에 켬(사용자 2026-11-05 C안),"core/boss/StaffImport.kt, core/imports/WordTable.kt, app/imports/ManageImport.kt, ui/work/StaffImportDialog.kt, StaffImportTest"
-=======
 STM-01,"1.38 밤낮 재료: 직접 그린 색 아이콘 200·배경 100(webp, 남의 그림·AI 그림 없음)",1.38,진행 중,,"tools/materials/make.py, tools/materials/out/목록.json"
 STM-02,"1.38 서버 studio_materials: 출시 대기 → 공개, 그림은 작품 그림처럼 1.36 앱도 받음",1.38,진행 중,,"server/company-worker/src/studio-materials.js"
 STM-03,"1.38 휴대폰 재료 목록 GET /api/recipes/materials?app=",1.38,진행 중,,"server/company-worker/src/studio-materials.js"
@@ -1993,4 +1991,3 @@ STM-07,"1.38 장터 테마 100(배경 한 장마다, 유형별 72 + 모든 유�
 STM-08,"1.38 장터 기능별 300(달력·메모·가계부·근무급여·위젯·알람·부품·규칙)",1.38,진행 중,1.38 출시 날 공개,"docs/recipes/market-138-studio/make/"
 STM-09,"1.38 옛 장터 작품 정리: 내림 171·새 판 110·그대로 58, hide-titles",1.38,진행 중,1.38 출시 날 사용자 확인 뒤,"docs/plans/1.38-옛장터작품-정리.md, server/company-worker/src/recipes.js"
 STM-10,"1.38 관리자 앱 출시 대기 › 밤낮 재료(공개·숨기기, 무료·광고 나누기)",1.38,진행 중,,"server/company-worker/src/admin-app.js"
->>>>>>> origin/claude/project-thread-q8lylu
