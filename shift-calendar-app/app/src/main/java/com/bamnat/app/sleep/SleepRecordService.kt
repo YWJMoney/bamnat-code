@@ -252,6 +252,9 @@ class SleepRecordService : Service(), SensorEventListener {
         /** The flag open (처리방침 새 판 뒤) and the microphone given. */
         fun allowed(context: Context): Boolean = context.appContainer.flags.on(FlagCatalog.SLEEP_SOUND) && permitted(context)
 
+        /** 1.38 [SLEEP-05] The payload of the bedtime notice's 측정 시작, which opens the app and starts there. */
+        const val FROM_NOTICE = "record"
+
         fun start(context: Context) = ContextCompat.startForegroundService(context, Intent(context, SleepRecordService::class.java))
 
         fun stop(context: Context) {
