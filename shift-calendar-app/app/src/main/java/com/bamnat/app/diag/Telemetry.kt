@@ -20,6 +20,9 @@ class Telemetry(
     fun event(name: String, detail: String = "") {
         @Suppress("NAME_SHADOWING") val detail = cleanDetail(detail)
         log.append(name, detail)
+        // 1.38 PC 11차 (roster_read를 logcat에서 못 찾음): debug builds also print each event, so a PC check can time a step with
+        // `adb logcat -s BamnatEvent`. The detail is codes and numbers only (cleanDetail), as in the on-device log.
+        if (com.bamnat.app.BuildConfig.DEBUG) runCatching { android.util.Log.i("BamnatEvent", "$name $detail") }
         if (sinks.isNotEmpty() && settings.current.shareUsageStats) {
             for (sink in sinks) runCatching { sink.send(name, detail) }
         }
