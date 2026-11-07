@@ -192,3 +192,42 @@ test("[CARE] the suggested next step goes 경고 → 의견 3일 → 마을 7일
   assert.deepEqual(careNext([{ kind: "community", at: now - DAY }], now), { kind: "community", days: 30 });
   assert.deepEqual(careNext([{ kind: "community", at: now - (CARE.keepDays + 1) * DAY }], now), { kind: "warn" });
 });
+
+test("[CARE] 조사 ①③⑧: the 안내 says what, by which rule and if it was explained; a hidden post can ask to be shown; the same post twice waits", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server({ plaza: true });
+  const h = await signIn(call);
+  const { say, standing } = await talk(call);
+  const appeal = (target, text, n = 2) => call("POST", "/api/community/appeal", { device: device(n), target, text }, from(n));
+  // Before 3.12 a 해명 is an ordinary 문의, and a post twice is fine.
+  const id = (await say(2, "다들 일을 너무 못하네요")).data.id;
+  assert.equal((await say(2, "다들 일을 너무 못하네요")).status, 201);
+  await call("POST", `/api/admin/posts/${id}`, { action: "hide", reason: "abuse" }, h);
+  assert.equal((await appeal(`post:${id}`, "같이 고쳐 보자는 뜻이었어요. 다시 봐 주세요.")).status, 409);
+  await careOnNow(call, h);
+  // ⑧ The same words again within ten minutes wait; later they go.
+  const again = await say(3, "야간 끝나고 바로 자는 게 좋아요");
+  assert.equal(again.status, 201);
+  const twice = await say(3, "야간 끝나고 바로 자는 게 좋아요");
+  assert.deepEqual([twice.status, twice.data.error], [409, "repeat"]);
+  t.mock.timers.tick(11 * 60e3);
+  assert.equal((await say(3, "야간 끝나고 바로 자는 게 좋아요")).status, 201);
+  // ① What the app shows: what about, checked by a person, which rule, how long to wait for an answer.
+  await call("POST", "/api/admin/care/warn", { post: id, reason: "abuse", note: "다른 분을 탓하는 말이 신고됐어요" }, h);
+  let s = (await standing(2)).data;
+  assert.deepEqual([s.warning.about, s.warning.checked, s.warning.rule, s.warning.appeal, s.answerHours], ["post", true, "광장 운영 규칙 6항", undefined, 48]);
+  // ③ The hidden post asks to be shown (only its own phone, only while hidden); accepted, it is shown and its strike goes.
+  assert.equal((await appeal(`post:${id}`, "같이 고쳐 보자는 뜻이었어요. 다시 봐 주세요.", 3)).status, 404);
+  const sent = await appeal(`post:${id}`, "같이 고쳐 보자는 뜻이었어요. 다시 봐 주세요.");
+  assert.equal(sent.status, 201, JSON.stringify(sent.data));
+  const q = (await call("GET", `/api/admin/inquiries/${sent.data.inquiry}`, undefined, h)).data;
+  assert.deepEqual([q.appeal.about.kind, q.appeal.about.status, q.appeal.about.body], ["post", "hidden", "다들 일을 너무 못하네요"]);
+  assert.match(q.messages[0].text, /^\[다시 보여 주세요\] 가려진 글/);
+  await call("POST", `/api/admin/care/appeal/${sent.data.inquiry}`, { result: "accepted" }, h);
+  const shown = (await call("GET", "/api/admin/posts?status=all", undefined, h)).data.posts.find((p) => p.id === id);
+  assert.equal(shown.status, "shown");
+  // A 해명 on the 경고 shows as waiting until the operator decides.
+  await appeal(s.warning.id, "다른 분을 탓하려던 게 아니었어요. 미안해요.");
+  s = (await standing(2)).data;
+  assert.deepEqual(s.warning.appeal, { result: null });
+});

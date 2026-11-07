@@ -13,7 +13,7 @@
 // This file does not import index.js (tools/bundle.mjs puts it in one file); what it needs comes in as [d].
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
-import { careGate } from "./community-care.js";
+import { careGate, careRepeat } from "./community-care.js";
 import { addStrike, confirmStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 import { FORMULA, formulaProblem, formulaTextProblem } from "./formula.js";
 import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
@@ -1709,7 +1709,7 @@ async function talkPost(d, env, request, code) {
   const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
   // 1.39 [CARE-02] 의견 쉬기·마을 쉬기 중이면 글을 쉬어 가요.
-  const held = await careGate(d, env, dev, "opinion", now);
+  const held = (await careGate(d, env, dev, "opinion", now)) ?? (await careRepeat(d, env, dev, t, now));
   if (held) return held;
   const net = await d.network(request, env, now);
   const hit = (await writeLimitHit(d, env, dev, "rtalk", now)) ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "rtalk", 300, now)));

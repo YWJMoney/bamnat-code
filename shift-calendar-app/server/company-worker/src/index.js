@@ -84,8 +84,8 @@ import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
-import { CARE_SCHEMA, careAppeal, careAppealDecide, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS } from "./community-care.js";
-import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, confirmStrike, limitJson, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeAllowance, writeLeft, writeLimitHit } from "./write-limits.js";
+import { CARE_SCHEMA, careAppeal, careAppealDecide, careRepeat, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS } from "./community-care.js";
+import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, confirmStrike, limitJson, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeAllowance, writeLeft, writeLimitHit, writeRules } from "./write-limits.js";
 import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
 import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
@@ -2377,7 +2377,7 @@ async function roomPost(request, env, body) {
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
   // 1.39 [CARE-02] 의견 쉬기·마을 쉬기 중이면 글을 쉬어 가요.
-  const held = await careGate(recipeDeps, env, dev, "opinion", now);
+  const held = (await careGate(recipeDeps, env, dev, "opinion", now)) ?? (await careRepeat(recipeDeps, env, dev, text, now));
   if (held) return held;
   const net = await network(request, env, now);
   // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; the network's stays.
@@ -2461,6 +2461,7 @@ async function careAdmin(request, env, url, path, method, now) {
     const body = await readJson(request, 256);
     const out = await careAppealDecide(recipeDeps, env, ap[1], body.result, now);
     if (out.error) return json(out, out.error === "not_found" ? 404 : 400);
+    if (out.post) await moderatePost(env, out.post, { action: "show" }, now);
     await audit(env, now, out.result === "accepted" ? "care_appeal_accept" : "care_appeal_keep", ap[1]);
     return json(out);
   }
@@ -3939,7 +3940,7 @@ async function post(request, env) {
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
   // 1.39 [CARE-02] 의견 쉬기·마을 쉬기 중이면 글을 쉬어 가요.
-  const held = await careGate(recipeDeps, env, dev, "opinion", now);
+  const held = (await careGate(recipeDeps, env, dev, "opinion", now)) ?? (await careRepeat(recipeDeps, env, dev, text, now));
   if (held) return held;
   const c = await talkable(env, body.company, body.setup);
   if (!c) return json({ error: "not_found" }, 404);
@@ -4811,7 +4812,7 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
   // 1.36 [LIM-10] 신고 누적 쓰기 제한: who is restricted (or was, in 30 days), the rules, and 풀기.
-  if (path === "/write-limits" && method === "GET") return json({ rules: WRITE_LIMITS, items: await restrictions(recipeDeps, env, now) });
+  if (path === "/write-limits" && method === "GET") return json({ rules: await writeRules(recipeDeps, env, now), items: await restrictions(recipeDeps, env, now) });
   m = path.match(/^\/write-limits\/([0-9a-f]{12})\/lift$/);
   if (m && method === "POST") {
     const out = await liftLimit(recipeDeps, env, m[1], now);
@@ -4887,6 +4888,13 @@ async function signedRoute(request, env, url, path, method, now, session) {
   if (path === "/shares" && method === "GET") return shareReports(env);
   m = path.match(/^\/shares\/([A-Za-z0-9]{16,32})\/remove$/);
   if (m && method === "POST") return removeShare(request, env, m[1], now);
+  // 1.39 [CARE-08] 팀·사장님 링크(병동 표·근무 신청·결원·바꾸기·근로계약서·출퇴근): 내용 읽기, 내리기.
+  m = path.match(/^\/shares\/([bavwkc])\/([A-Za-z0-9]{22})(\/remove)?$/);
+  if (m && method === "GET" && !m[3]) {
+    if (!shareAdmin(env)) return json({ error: "share_server" }, 409);
+    return json(await shareCall(env, "GET", `/api/admin/link/${m[1]}/${m[2]}`));
+  }
+  if (m && method === "POST" && m[3]) return removeTeamLink(request, env, m[1], m[2], now);
   // 1.38 [ADM3] 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석·이야기.
   const ops = await opsRoute(request, env, url, path, method, now, () => playVitals(env, Date.now()));
   if (ops) return ops;
@@ -7428,7 +7436,17 @@ async function shareReports(env) {
   if (!shareAdmin(env)) return json({ connected: false, reports: [] });
   const data = await shareCall(env, "GET", "/api/admin/reports");
   const s = shareAdmin(env);
-  return json({ connected: true, reports: (data.reports ?? []).map((r) => ({ ...r, url: `${s.base}/s/${r.id}` })) });
+  // 1.39 [CARE-08] A team link's page needs its member key, which the server does not keep: the admin app reads its words instead.
+  return json({ connected: true, reports: (data.reports ?? []).map((r) => ({ ...r, ...((r.kind ?? "s") === "s" ? { url: `${s.base}/s/${r.id}` } : {}) })) });
+}
+
+async function removeTeamLink(request, env, kind, id, now) {
+  const body = await readJson(request, 1024);
+  const reason = plainText(body.reason ?? "운영 규칙 위반", 60, "reason", true);
+  if (!shareAdmin(env)) return json({ error: "share_server" }, 409);
+  await shareCall(env, "DELETE", `/api/admin/link/${kind}/${id}`, { reason });
+  await audit(env, now, "share_remove", `${kind}:${id}`, reason);
+  return shareReports(env);
 }
 
 async function removeShare(request, env, id, now) {

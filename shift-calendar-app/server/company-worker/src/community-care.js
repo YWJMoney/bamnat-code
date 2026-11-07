@@ -18,6 +18,8 @@ export const CARE = {
   keepDays: 180,
   /** 운영자 한 줄. */
   noteMax: 200,
+  /** 1.39 조사 ⑧: 같은 글을 이 시간 안에 또(같은 곳이든 다른 곳이든) 쓰면 쉬어 가요. */
+  repeatMinutes: 10,
 };
 
 /** 이유 코드와 관리자 앱의 이름. 앱은 코드로 부드러운 문장을 골라요(CommunityCare.kt). */
@@ -82,21 +84,50 @@ export async function careGate(d, env, dev, scope, now) {
   return d.json({ error: "muted", until: isoOf(h.until), hold: { scope: h.kind, until: isoOf(h.until), reason: h.reason } }, 403);
 }
 
-/** 앱이 마을을 열 때: 읽지 않은 경고 하나(가장 최근), 지금 쉬기. */
+/**
+ * 1.39 조사 ⑧ 같은 글 반복: 마을 돌봄이 켜져 있고, 같은 휴대폰이 똑같은 글을 [CARE.repeatMinutes]분 안에 이미 썼으면 409 "repeat".
+ * 이미 있는 글과 견주기만 하고, 글의 지문 같은 새 기록은 남기지 않아요. 아니면 null.
+ */
+export async function careRepeat(d, env, dev, text, now) {
+  if (!dev || !(await careOn(d, env, now))) return null;
+  const same = await d.one(env, "SELECT 1 AS x FROM posts WHERE device = ? AND body = ? AND created_at > ? LIMIT 1", dev, text, now - CARE.repeatMinutes * 60000);
+  return same ? d.json({ error: "repeat", field: "body", minutes: CARE.repeatMinutes }, 409) : null;
+}
+
+/**
+ * 앱이 마을을 열 때: 읽지 않은 경고 하나(가장 최근), 지금 쉬기, 신고 누적 제한의 해명 상태.
+ * 1.39 조사 ① '이유서 한 장'(DSA 17조 모양): 무엇에 대한 것인지(about: post|talk|recipe|request|…), 사람이 확인했는지(checked),
+ * 어떤 약속인지(rule), 언제까지인지, 해명을 보냈는지(appeal {result: null 기다림 | accepted | kept})와 답 약속(answerHours).
+ */
 export async function careStanding(d, env, dev, now) {
   if (!dev) return {};
-  const [warn, hold] = await Promise.all([
+  const [warn, hold, limit] = await Promise.all([
     d.one(env, `SELECT id, reason, note, at, by, ref FROM care_notes WHERE device = ? AND kind = 'warn' AND seen_at IS NULL AND lifted_at IS NULL AND at > ?
       ORDER BY at DESC LIMIT 1`, dev, now - CARE.showDays * DAY),
     activeHold(d, env, dev, now),
+    d.one(env, "SELECT since FROM write_limits WHERE device = ? AND until > ?", dev, now),
   ]);
+  const keys = [warn?.id, hold?.id, limit ? `limit:${limit.since}` : null].filter(Boolean);
+  const appeals = keys.length
+    ? await d.all(env, `SELECT target, result FROM care_appeals WHERE device = ? AND target IN (${keys.map(() => "?").join(", ")})`, dev, ...keys) : [];
+  const appealOf = (key) => { const a = appeals.find((x) => x.target === key); return a ? { appeal: { result: a.result ?? null } } : {}; };
+  const sheet = (r) => ({
+    ...(r.ref ? { about: r.ref.split(":")[0] } : {}),
+    // 저절로 가는 안내도 운영자가 확인해 가린 글에서만 생겨요(신고만으로 가려진 것은 세지 않아요).
+    checked: true, rule: RULE,
+    ...appealOf(r.id),
+  });
   return {
-    ...(warn ? { warning: { id: warn.id, reason: warn.reason, ...(warn.note ? { note: warn.note } : {}), by: warn.by, at: isoOf(warn.at),
-      ...(warn.ref ? { about: warn.ref.split(":")[0] } : {}) } } : {}),
+    ...(warn ? { warning: { id: warn.id, reason: warn.reason, ...(warn.note ? { note: warn.note } : {}), by: warn.by, at: isoOf(warn.at), ...sheet(warn) } } : {}),
     ...(hold ? { hold: { id: hold.id, scope: hold.kind, reason: hold.reason, ...(hold.note ? { note: hold.note } : {}), days: hold.days,
-      since: isoOf(hold.at), until: isoOf(hold.until) } } : {}),
+      since: isoOf(hold.at), until: isoOf(hold.until), ...sheet(hold) } } : {}),
+    ...(limit ? { limitAppeal: appealOf(`limit:${limit.since}`).appeal ?? null } : {}),
+    ...(warn || hold || limit ? { answerHours: APPEAL.answerHours } : {}),
   };
 }
+
+/** 앱 안내 창이 가리키는 약속(광장 운영 규칙의 경고·쉬기 항). */
+const RULE = "광장 운영 규칙 6항";
 
 /** 경고를 읽었어요(확인했어요). 그 휴대폰의 것만. */
 export async function careSeen(d, env, dev, id, now) {
@@ -287,6 +318,14 @@ async function appealTarget(d, env, dev, target, now) {
     const l = await d.one(env, "SELECT step, since, until FROM write_limits WHERE device = ? AND until > ?", dev, now);
     return l ? { kind: "limit", key: `limit:${l.since}`, text: `신고 누적 쓰기 제한 ${l.step}단계(${new Date(l.until).toISOString().slice(0, 10)}까지)` } : null;
   }
+  // 1.39 조사 ③(4): 신고로(또는 운영자가) 가려진 내 글을 '다시 보여 주세요'. 받아들이면 글이 다시 보이고 그 건은 세지 않아요.
+  const post = typeof target === "string" ? target.match(/^post:(p[A-Za-z0-9]{15})$/) : null;
+  if (post) {
+    const p = await d.one(env, "SELECT id, body, status FROM posts WHERE id = ? AND device = ?", post[1], dev);
+    if (!p || p.status !== "hidden") return null;
+    const head = [...p.body.replace(/\s+/g, " ")].slice(0, 40).join("");
+    return { kind: "post", key: `post:${p.id}`, text: `가려진 글 다시 보여 주세요 · “${head}${[...p.body].length > 40 ? "…" : ""}”`, repost: true };
+  }
   if (typeof target !== "string" || !/^c[A-Za-z0-9]{15}$/.test(target)) return null;
   const r = await d.one(env, "SELECT * FROM care_notes WHERE id = ? AND device = ? AND lifted_at IS NULL", target, dev);
   if (!r || (r.kind !== "warn" && (r.until ?? 0) <= now)) return null;
@@ -299,13 +338,15 @@ async function appealTarget(d, env, dev, target, now) {
  * { inquiry, answerHours }. [makeInquiry] index.js가 문의를 만드는 함수(문의 한도·알림을 그대로 따라요).
  */
 export async function careAppeal(d, env, dev, body, now, makeInquiry) {
+  // 해명 기록(care_appeals)은 처리방침 3.12의 '마을 경고·쉬기' 줄과 함께 시작해요. 그 전에는 보통 문의로 받아요.
+  if (!(await careOn(d, env, now))) return { error: "off", status: 409 };
   const t = await appealTarget(d, env, dev, body.target, now);
   if (!t) return { error: "not_found", status: 404 };
   const text = typeof body.text === "string" ? body.text.normalize("NFC").replace(/\r\n?/g, "\n").trim() : "";
   if ([...text].length < APPEAL.min || [...text].length > APPEAL.max) return { error: "text", status: 400 };
   const had = await d.one(env, "SELECT inquiry_id FROM care_appeals WHERE device = ? AND target = ?", dev, t.key);
   if (had) return { error: "already", inquiry: had.inquiry_id, status: 409 };
-  const made = await makeInquiry(`[해명] ${t.text}\n\n${text}`);
+  const made = await makeInquiry(`[${t.repost ? "다시 보여 주세요" : "해명"}] ${t.text}\n\n${text}`);
   if (made.error) return made;
   await d.run(env, "INSERT INTO care_appeals (id, device, target, inquiry_id, at) VALUES (?, ?, ?, ?, ?)", `a${d.randomId(15)}`, dev, t.key, made.id, now);
   return { inquiry: made.id, answerHours: APPEAL.answerHours };
@@ -316,7 +357,10 @@ export async function careAppealOf(d, env, inquiryId, now) {
   const a = await d.one(env, "SELECT * FROM care_appeals WHERE inquiry_id = ?", inquiryId);
   if (!a) return null;
   let about = null;
-  if (a.target.startsWith("limit:")) {
+  if (a.target.startsWith("post:")) {
+    const p = await d.one(env, "SELECT id, status, hide_reason, body FROM posts WHERE id = ?", a.target.slice(5));
+    about = p ? { kind: "post", id: p.id, status: p.status, hideReason: p.hide_reason, body: [...p.body].slice(0, 300).join("") } : { kind: "gone" };
+  } else if (a.target.startsWith("limit:")) {
     const l = await d.one(env, "SELECT step, since, until FROM write_limits WHERE device = ?", a.device);
     about = { kind: "limit", step: l?.step ?? null, until: isoOf(l?.until), active: Boolean(l && String(l.since) === a.target.slice(6) && l.until > now) };
   } else {
@@ -335,6 +379,11 @@ export async function careAppealDecide(d, env, inquiryId, result, now) {
   const a = await d.one(env, "SELECT * FROM care_appeals WHERE inquiry_id = ?", inquiryId);
   if (!a) return { error: "not_found" };
   const stmts = [d.stmt(env, "UPDATE care_appeals SET result = ?, decided_at = ? WHERE id = ?", result, now, a.id)];
+  if (result === "accepted" && a.target.startsWith("post:")) {
+    // 글을 다시 보이게 하는 것은 index.js가 운영자의 '다시 보이기'(moderatePost show)로 해요: 신고·세는 건·제한이 함께 풀려요.
+    await d.batch(env, stmts);
+    return { id: a.id, result, post: a.target.slice(5) };
+  }
   if (result === "accepted") {
     if (a.target.startsWith("limit:")) {
       const since = Number(a.target.slice(6));

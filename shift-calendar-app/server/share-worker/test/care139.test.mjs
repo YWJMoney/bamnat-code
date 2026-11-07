@@ -55,6 +55,11 @@ test("[CARE-07][CARE-08] a 근로계약서 page has the report form; a report is
   const list = (await (await call(env, "/api/admin/reports", { headers: bearer })).json()).reports;
   assert.equal(list.length, 1);
   assert.deepEqual([list[0].id, list[0].kind, list[0].name, list[0].count, list[0].reasons.scam], [id, "k", "근로계약서", 1, 1]);
+  // The operator reads the words before deciding; no key or token comes with them.
+  const peek = await (await call(env, `/api/admin/link/k/${id}`, { headers: bearer })).json();
+  assert.match(peek.text, /단시간 근로자 근로계약서/);
+  assert.match(peek.text, /시급 10,320원/);
+  assert.equal(peek.text.includes(key), false);
   assert.equal((await call(env, `/api/admin/link/k/${id}`, { method: "DELETE", headers: bearer, body: JSON.stringify({ reason: "입금을 요구하는 가짜 계약서" }) })).status, 204);
   const down = await call(env, `/k/${key}`);
   assert.equal(down.status, 410);

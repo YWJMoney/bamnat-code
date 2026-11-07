@@ -15,6 +15,7 @@
 //                              (s 근무표, b 병동 표, a 근무 신청, v 결원, w 바꾸기, k 근로계약서, c 출퇴근)
 // POST   /(b|a|v|w|k|c)/:key/report  1.39 [CARE-07] the team pages' own form -> a thank-you page
 // DELETE /api/admin/link/:kind/:id    1.39 [CARE-08] takes a team link down: its content goes at once, its pages say why (410)
+// GET    /api/admin/link/:kind/:id    1.39 [CARE-08] the words in it, for the operator to judge a report (no keys or tokens)
 // DELETE /api/admin/share/:id  takes a link down: the page then says it was removed (410)
 // GET    /api/admin/stats?days=  links made, pages seen, reports and take-downs per day [STAT-04]
 // PUT    /api/admin/flags      [SRV-08] {createOff}: the company server's 근무표 링크 새로 만들기 switch
@@ -541,6 +542,7 @@ async function admin(request, env, url) {
   // 1.39 [CARE-08] 팀·사장님 링크 내리기(종류별).
   const team = path.match(/^\/link\/([bavwkc])\/([A-Za-z0-9]{22})$/);
   if (team && request.method === "DELETE") return teamTakeDown(request, env, team[1], team[2]);
+  if (team && request.method === "GET") return teamPeek(env, team[1], team[2]);
   if (path === "/stats" && request.method === "GET") return json(await stats(env, url.searchParams.get("days")));
   if (path === "/flags" && request.method === "PUT") {
     let body = {};
@@ -673,6 +675,25 @@ async function teamTakeDown(request, env, kind, id) {
   if (record) await kvDel(env, k.main(id));
   await kvDel(env, `report:${kind}:${id}`);
   return new Response(null, { status: 204 });
+}
+
+/**
+ * GET /api/admin/link/:kind/:id: what the operator reads before taking a reported team link down. Only the words people typed (titles, notes,
+ * 계약 항목), never a key, token, hash or address; 600 characters at most.
+ */
+async function teamPeek(env, kind, id) {
+  const record = await env.SHARES.get(TEAM_KINDS[kind].main(id), "json");
+  if (!record) return json({ error: "not_found" }, 404);
+  const words = [];
+  const walk = (v, key = "") => {
+    if (words.join(" · ").length > 600) return;
+    if (/token|key|hash|secret|ip|pin|sig|url|id$/i.test(key)) return;
+    if (typeof v === "string") { if (v.trim() && !/^\d{4}-\d{2}-\d{2}T/.test(v)) words.push(v.trim()); return; }
+    if (Array.isArray(v)) { for (const x of v) walk(x, key); return; }
+    if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, k);
+  };
+  walk(record);
+  return json({ kind, name: TEAM_KINDS[kind].name, text: words.join(" · ").slice(0, 600), expiresAt: record.expiresAt ?? null });
 }
 
 function teamDownPage(down) {
