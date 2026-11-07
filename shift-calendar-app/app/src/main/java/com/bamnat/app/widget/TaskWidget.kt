@@ -11,6 +11,8 @@ import androidx.glance.GlanceTheme
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
+import androidx.glance.semantics.contentDescription
+import androidx.glance.semantics.semantics
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
@@ -170,7 +172,7 @@ private fun TaskHead(title: String, add: androidx.glance.action.Action) {
             Spacer(GlanceModifier.width(6.dp))
             Box(
                 GlanceModifier.background(GlanceTheme.colors.primaryContainer).cornerRadius(16.dp).padding(horizontal = 12.dp, vertical = 4.dp)
-                    .widgetBox(plus, 16).clickable(add),
+                    .widgetBox(plus, 16).clickable(add).semantics { contentDescription = "할 일 쓰기" },
                 contentAlignment = Alignment.Center,
             ) {
                 Text("＋", style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = wsp(16), fontWeight = FontWeight.Bold).widgetLetters(plus), maxLines = 1)
@@ -190,7 +192,9 @@ private fun TaskRow(row: TaskList.Row, today: LocalDate) {
     val faint = if (row.done) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.onSurface
     Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp).widgetBox(line), verticalAlignment = Alignment.CenterVertically) {
         // A wide target for a thumb on the home screen: the circle sits in 36 dp.
-        Box(GlanceModifier.width(36.dp).height(36.dp).clickable(toggle), contentAlignment = Alignment.Center) {
+        // TalkBack reads what the circle does, not "○" (조사 보완 11-07: 위젯 글자 읽기).
+        val said = if (row.done) "끝냄 취소: ${row.text}" else "끝내기: ${row.text}"
+        Box(GlanceModifier.width(36.dp).height(36.dp).clickable(toggle).semantics { contentDescription = said }, contentAlignment = Alignment.Center) {
             Text(if (row.done) "✓" else "○",
                 style = TextStyle(color = when { row.done -> GlanceTheme.colors.primary; row.kind == TaskList.Kind.LATE -> GlanceTheme.colors.error
                     else -> GlanceTheme.colors.onSurfaceVariant }, fontSize = wsp(18), fontWeight = FontWeight.Bold).widgetLetters(check),

@@ -17,7 +17,6 @@ import android.os.Build
 import androidx.compose.foundation.layout.Column
 import com.bamnat.app.alarm.AlarmService
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.material3.TextButton
@@ -1156,7 +1155,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                     androidx.compose.foundation.layout.Box {
                                         WigglingIcon(tabEdit.editing, index) { SlotIcon(look.icon, look.badge, look.dot, group = look.members?.size ?: 0) }
                                         look.members?.let { m ->
-                                            GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null })
+                                            GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null }, beside = true)
                                         }
                                     }
                                 },
@@ -2298,7 +2297,7 @@ private fun TabLabel(text: String, part: com.bamnat.core.recipe.PartStyle = com.
     // line, whole, its letters no bigger than at [TAB_SCALE_MAX] (the bar is as wide as the phone, not the text), and a long one shrinks to fit.
     val density = androidx.compose.ui.platform.LocalDensity.current
     val capped = if (density.fontScale > TAB_SCALE_MAX) style.copy(fontSize = style.fontSize * (TAB_SCALE_MAX / density.fontScale)) else style
-    FitText(text, capped, Modifier.clearAndSetSemantics { contentDescription = text })
+    FitText(text, capped)
 }
 
 /** 1.39: a tab name's letters grow with the phone's text size up to this much, so five names fit the bar on one line. */

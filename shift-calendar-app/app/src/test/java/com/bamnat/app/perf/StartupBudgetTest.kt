@@ -228,8 +228,9 @@ class StartupBudgetTest {
          * that were started without a name (메모 일정, 투자 알림·월말, 출퇴근) are counted too, so 21 with no new job.
          * Raising it is a decision, not an accident. 1.32 조사 대조 [WTYP-11][WTYP-16][WTYP-29]: 22, one job ("datenotices")
          * for 희망 오프 마감, 퇴근 시각 알림 and 코인 12월 31일 together, started with the later groups, after the month.
+         * 1.39 [TASK-07]: 23, one job ("taskwidget") that redraws the 할 일 위젯 when a memo or 프로 changes, after the month.
          */
-        const val JOBS_BUDGET = 22
+        const val JOBS_BUDGET = 23
         /** [PERF-03] Of those, the ones that start before the calendar's first month: alarms, notices, sleep, backup. */
         const val FIRST_JOBS_BUDGET = 7
     }

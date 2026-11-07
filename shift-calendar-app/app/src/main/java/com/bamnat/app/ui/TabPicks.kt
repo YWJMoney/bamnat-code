@@ -96,12 +96,12 @@ internal object TabPicks {
         TopLevel.entries.map { top(it, style) } +
             FEATURES.map { feature(it, style) } +
             TabPick(STUDIO, "스튜디오", Icons.Outlined.Palette, kind = KIND_TOGETHER) +
-            listOfNotNull(TabPick(MANAGE, "팀·가게 관리", Icons.Outlined.SupervisorAccount, kind = KIND_TOGETHER).takeIf { manageOn })
+            listOfNotNull(TabPick(MANAGE, "관리", Icons.Outlined.SupervisorAccount, kind = KIND_TOGETHER).takeIf { manageOn })
 
     /** The screen of [key], or null when this version does not know it. */
     fun of(key: String, style: WorkStyle?): TabPick? = when {
         key == STUDIO -> TabPick(STUDIO, "스튜디오", Icons.Outlined.Palette, kind = KIND_TOGETHER)
-        key == MANAGE -> TabPick(MANAGE, "팀·가게 관리", Icons.Outlined.SupervisorAccount, kind = KIND_TOGETHER)
+        key == MANAGE -> TabPick(MANAGE, "관리", Icons.Outlined.SupervisorAccount, kind = KIND_TOGETHER)
         key.startsWith(TabSlots.FEATURE) -> FEATURES.firstOrNull { f(it.place) == key }?.let { feature(it, style) }
         else -> TopLevel.entries.firstOrNull { it.route == key }?.let { top(it, style) }
     }
