@@ -54,11 +54,16 @@ class CompanyShareTeamsTest {
         val rotation = JSONObject(text).getJSONObject("rotation")
         assertEquals("A조", rotation.getString("team"))
         val teams = CompanyShare.teamsOf(text)
-        assertEquals(listOf("A조" to "2026-11-03", "B조" to "2026-11-05", "C조" to "2026-11-07", "D조" to "2026-11-09"),
-            teams.map { it.name to it.anchor.toString() })
-        // C조 today is on the first day of the order; picking it gives C조 as mine in the coworker's 모든 조 보기.
+        // Each 조's day is the file's own start day moved by the 조's distance, whatever day the phone keeps as the start.
+        val start = LocalDate.parse(rotation.getString("anchor"))
+        assertEquals(listOf("A조" to start, "B조" to start.plusDays(2), "C조" to start.plusDays(4), "D조" to start.plusDays(6)),
+            teams.map { it.name to it.anchor })
+        // C조 is 4 days behind: every day it works what my 조 worked 4 days before, read off the file alone.
         val c = TeamAnchors.pickable(teams, 8).first { it.first == "C조" }.second
-        assertEquals(0, TeamAnchors.stepOn(c, today, 8))
+        val steps = rotation.getJSONArray("steps")
+        fun on(anchor: LocalDate, day: LocalDate) = steps.opt(TeamAnchors.stepOn(anchor, day, 8)).toString()
+        (0L until 16L).map(today::plusDays).forEach { day -> assertEquals("$day", on(start, day.minusDays(4)), on(c, day)) }
+        assertTrue((0L until 8L).map { on(c, today.plusDays(it)) }.toSet().containsAll(listOf("주간", "야간", "null")))
         assertEquals("C조", TeamAnchors.roster(teams, c, 8)!!.mine.name)
         // The box typed by the sender wins over the roster's name.
         assertEquals("1팀", JSONObject(share(roster).export("", false, team = "1팀")).getJSONObject("rotation").getString("team"))
