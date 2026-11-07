@@ -167,7 +167,12 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         val work: List<TimelineSpan> = emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val night: StateFlow<Night?> = combine(com.bamnat.app.sleep.SleepRecordService.recording, container.flags.byKey) { rec, f ->
+    val night: StateFlow<Night?> = combine(
+        com.bamnat.app.sleep.SleepRecordService.recording, container.flags.byKey,
+        // 1.39 G5-B2: read again once the night is written down, not the moment the microphone stops (that showed the
+        // night before until the screen was opened again).
+        com.bamnat.app.sleep.SleepRecordService.saved,
+    ) { rec, f, _ ->
         rec to (f[com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND]?.on == true)
     }.flatMapLatest { (_, on) ->
         if (!on) kotlinx.coroutines.flow.flowOf(null)

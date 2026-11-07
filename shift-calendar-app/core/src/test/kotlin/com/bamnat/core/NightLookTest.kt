@@ -91,3 +91,14 @@ class SleepHeadTest {
         assertEquals("—", none.value)
     }
 }
+
+/** 1.39 G5-N3 폴드 탁상 시계: the clock walks so the screen keeps no shape. */
+class NightClockShiftTest {
+    @Test fun walksFifteenPlacesWithinFourDp() {
+        val places = (0 until 60).map { com.bamnat.core.sleep.NightClockShift.of(it) }
+        assertEquals(15, places.toSet().size)
+        assertTrue(places.all { (x, y) -> kotlin.math.abs(x) <= 4 && kotlin.math.abs(y) <= 4 })
+        // Each minute it moves.
+        assertTrue((1 until 60).all { places[it] != places[it - 1] })
+    }
+}

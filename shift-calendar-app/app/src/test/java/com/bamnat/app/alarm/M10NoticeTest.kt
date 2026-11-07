@@ -149,6 +149,8 @@ class M10NoticeTest {
         assertEquals("7시간 30분 잤어요", woke.extras.getString(Notification.EXTRA_TITLE))
         assertEquals("다음: 오늘 19:00 야간", woke.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
         assertTrue(woke.flags and Notification.FLAG_ONGOING_EVENT == 0)
+        // 1.39 G5-B1 (PC 1.38 최종 사용성 6): 깼어요 by a sleepy hand is undone from the notice, the sleep going on.
+        assertEquals(listOf("아직 자요"), woke.actions.map { it.title.toString() })
         // Left open for 16 hours, it was a missed 깼어요: no notice.
         SleepingNotice.show(context, SleepEntry(2, now.minusHours(17), null), null, now)
         assertNull(posted(Notifications.SLEEPING_ID))
