@@ -27,9 +27,11 @@ object NightLine {
         return Line(w ?: if (shifts) "이번 주 근무 없음" else null, a, alarmsOn && alarm != null)
     }
 
-    private fun day(now: LocalDateTime, at: LocalDateTime): String = when (at.toLocalDate()) {
+    /** "오늘", "내일", "모레" or "11/15": one day word for the night screen and the 자는 중 notice (1.39 PC a483ca15). */
+    fun day(now: LocalDateTime, at: LocalDateTime): String = when (at.toLocalDate()) {
         now.toLocalDate() -> "오늘"
         now.toLocalDate().plusDays(1) -> "내일"
+        now.toLocalDate().plusDays(2) -> "모레"
         else -> "${at.monthValue}/${at.dayOfMonth}"
     }
 

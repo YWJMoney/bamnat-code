@@ -80,7 +80,8 @@ object SleepingNotice {
             .setOngoing(true)
             .setSilent(true)
             .setContentTitle(title)
-            .setContentText(nextAlarm?.let { "다음 알람 " + (if (it.toLocalDate() == now.toLocalDate()) "" else "내일 ") + hm(it) } ?: "깨면 ‘깼어요’를 눌러 주세요")
+            // 1.39 (PC a483ca15): any day after today was "내일" here; the night screen's day word now (오늘·내일·모레·11/15).
+            .setContentText(nextAlarm?.let { "다음 알람 " + com.bamnat.core.sleep.NightLine.day(now, it) + " " + hm(it) } ?: "깨면 ‘깼어요’를 눌러 주세요")
             .setWhen(start.atZone(Today.zone()).toInstant().toEpochMilli())
             .setUsesChronometer(true)
             .setShowWhen(true)
