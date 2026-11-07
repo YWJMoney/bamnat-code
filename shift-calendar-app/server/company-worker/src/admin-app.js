@@ -1230,6 +1230,19 @@ function adminApp(L, BUILD, M) {
         <button class="btn small ghost" data-act="post-pick-all">${n === d.posts.length ? "모두 풀기" : "보이는 것 모두 고르기"}</button>
         ${[["show", "문제없음·다시 보이기"], ["hide", "가리기"], ["delete", "지우기"]].map(([k, label]) =>
           `<button class="btn small${k === "delete" ? " danger" : k === "show" ? " primary" : ""}" data-act="post-bulk" data-key="${k}"${n ? "" : " disabled"}>${label}</button>`).join("")}</div>` : "";
+    // 1.39 발굴 2-4: 보완 요청 by version (the server sends the one with the most open first), a line over each version's.
+    if (S.postFilter === "fix" && !talk) {
+      let at = "";
+      const rows = d.posts.map((p) => {
+        const key = `${p.company.id}/${p.setup}`;
+        const head = key === at ? "" : `<h3 class="span">${esc(p.company.name)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}
+          <span class="pill${p.open ? " warn" : " ok"}">${p.open ? `열린 요청 ${p.open}` : "모두 답함"}</span></h3>`;
+        at = key;
+        return head + postCard(p, edit, talk, picking);
+      });
+      return head + tools + `<p class="hint">같은 판의 요청을 묶어, 열린 요청이 많은 판부터 보여요. 판의 계산 줄은 운영 › 회사 판 보기에서 봐요.
+        7일 넘게 답이 없으면 판을 살펴 고치거나 내려요.</p><div class="grid">${rows.join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
+    }
     return head + tools + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk, picking)).join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
   }
 
@@ -1344,7 +1357,15 @@ function adminApp(L, BUILD, M) {
     const person = S.careQuery ? (S.data.carePerson ? carePersonCard(S.data.carePerson, c, edit) : skeleton(1)) : "";
     const holds = c.holds.length ? `<ul class="rows">${c.holds.map((x) => careLine(x, edit)).join("")}</ul>` : '<p class="meta">지금 쉬는 사람이 없어요.</p>';
     const unread = c.warnings.filter((x) => !x.seen && !x.liftedAt).length;
-    return `<h3>마을 돌봄</h3>${banner}${find}${person}
+    // 1.39 발굴: 앱이 '48시간 안에 답해요'라고 약속하니 기다리는 해명을 남은 시간 순으로, 30일이 지나면 세지 않는 '확인 전' 가려짐 수도.
+    const waiting = c.appeals ?? [];
+    const left = (h) => h < 0 ? `<span class="pill bad">${-h}시간 늦음</span>` : `<span class="pill${h < 12 ? " warn" : ""}">${h}시간 남음</span>`;
+    const appeals = waiting.length ? `<h4>답을 기다리는 해명 ${waiting.length}</h4><ul class="rows">${waiting.map((a) => `<li class="item"><a class="row-main" href="${href("inquiries", a.inquiry)}">
+      <span>${a.kind === "post" ? "가려진 글 다시 보여 주세요" : a.kind === "limit" ? "신고 누적 쓰기 제한 해명" : "경고·쉬기 해명"} · ${esc(ago(a.at))}</span></a>${left(a.hoursLeft)}</li>`).join("")}</ul>` : "";
+    const u = c.unconfirmed ?? { n: 0 };
+    const unconfirmed = c.on && u.n ? `<p class="note${u.daysLeft != null && u.daysLeft <= 5 ? " warn" : ""}">신고로 먼저 가려지고 아직 확인하지 않은 글이 ${u.n}건이에요${u.daysLeft != null ? `(가장 오래된 것은 ${u.daysLeft}일 남음)` : ""}. 30일 안에 확인하지 않으면 세지 않아요.
+      <button type="button" class="linkish" data-act="post-filter" data-key="hidden">가려진 글 보기</button></p>` : "";
+    return `<h3>마을 돌봄</h3>${banner}${unconfirmed}${appeals}${find}${person}
       <h4>지금 쉬는 사람 ${c.holds.length}</h4>${holds}
       ${c.warnings.length ? `<details><summary>최근 30일 경고·안내 ${c.warnings.length}${unread ? ` · 아직 안 읽음 ${unread}` : ""}</summary><ul class="rows">${c.warnings.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}
       ${c.ended.length ? `<details><summary>최근 30일에 끝나거나 푼 쉬기 ${c.ended.length}</summary><ul class="rows">${c.ended.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}`;
@@ -1440,7 +1461,8 @@ function adminApp(L, BUILD, M) {
     return `<article class="card${on ? " picked" : ""}">
       <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.room ? ` <span class="dept">${p.room === "style" ? "유형 광장" : "회사 정보 광장"}</span>` : p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
       <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
-      ${p.kind === "fix" ? `<p class="meta"><span class="pill warn">보완 요청</span> ${(p.fix ?? []).map((f) => esc(f)).join(" · ")}</p>` : ""}
+      ${p.kind === "fix" ? `<p class="meta"><span class="pill warn">보완 요청</span> ${(p.fix ?? []).map((f) => esc(f)).join(" · ")}${p.answered === true ? ' <span class="pill ok">올린 분이 답함</span>'
+        : p.answered === false && Date.now() - Date.parse(p.at) > 7 * 86400000 ? ' <span class="pill bad">7일 넘게 답 없음</span>' : ""}</p>` : ""}
       <blockquote>${esc(p.body)}</blockquote>
       ${Array.isArray(p.poll) && p.poll.length ? `<p class="meta">투표 보기: ${p.poll.map((o) => esc(String(o))).join(" · ")}</p>` : ""}
       ${p.attach ? `<p class="meta">붙인 작품 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(p.attach)}">${esc(p.attach)}</button></p>` : ""}
@@ -1667,6 +1689,7 @@ function adminApp(L, BUILD, M) {
           <label class="sr" for="reply">답</label>
           <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
           <input type="hidden" name="template" value="">
+          ${queueAhead(q.id).length ? `<label class="switch"><input type="checkbox" name="alike"><span class="track" aria-hidden="true"></span><span>큐에 남은 비슷한 문의 ${queueAhead(q.id).length}건에도 같은 답(큐에서 빠져요)</span></label>` : ""}
           <div class="chips" role="group" aria-label="자주 쓰는 답">${list.map((t, i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}" title="${esc(t.text.slice(0, 120))}">${i < 9 ? `<span class="kbd">${i + 1}</span> ` : ""}${esc(t.label)}</button>`).join("")}
             <button type="button" class="chip pick" data-act="templates">${icon(P.plus)}답 관리</button></div>
           <div class="actions"><span class="count-box"><span class="count" id="reply-count">0/2000</span><span class="saved" id="reply-saved" aria-live="polite"></span></span>
@@ -2282,6 +2305,9 @@ function adminApp(L, BUILD, M) {
    * 1.37.1 [FAM-01] 가족 프로 이용권: the owner gives 프로 to family phones with no end, and cuts any of them at any time.
    * The code goes in the same place as an admin's (밤낮 앱 › 설정 › 프로 › '관리자 연결'), so no app update is needed.
    */
+  /** 1.39 [FAM-04] 발굴: a family phone not seen for 60 days is likely a phone given up (바꾼 휴대폰), still holding 프로. */
+  const familyIdle = (d) => Date.now() - Date.parse(d.seenAt ?? d.createdAt) > 60 * 864e5;
+
   function familyCard() {
     const f = S.data.family;
     const phones = f?.phones ?? [];
@@ -2295,8 +2321,8 @@ function adminApp(L, BUILD, M) {
       ${codes.length ? `<h3 class="section">아직 안 넣은 코드</h3><ul class="rows">${codes.map((c) => `<li class="item"><div class="row-main"><b>${esc(c.name)} · ${esc(c.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</b>
         <small>${esc(clock(c.expiresAt))}까지</small></div><div class="actions"><button class="btn small" data-act="family-code-delete" data-id="${esc(c.code)}">취소</button></div></li>`).join("")}</ul>` : ""}
       ${phones.length ? `<h3 class="section">가족 휴대폰</h3><ul class="rows">${phones.map((d) => `<li class="item"><div class="row-main"><b>${esc(d.name)}</b>
-        <small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}</small></div>
-        ${d.paused ? '<span class="pill warn">정지</span>' : '<span class="pill ok">프로 사용 중</span>'}
+        <small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}${familyIdle(d) ? " · 휴대폰을 바꿨다면 끊고 새 코드를 보내 주세요" : ""}</small></div>
+        ${d.paused ? '<span class="pill warn">정지</span>' : familyIdle(d) ? '<span class="pill warn">60일 넘게 안 보임</span>' : '<span class="pill ok">프로 사용 중</span>'}
         <div class="actions"><button class="btn small" data-act="family-set" data-id="${d.id}" data-key="${d.paused ? "resume" : "pause"}" data-name="${esc(d.name)}">${d.paused ? "다시 켜기" : "정지"}</button>
           <button class="btn small" data-act="family-rename" data-id="${d.id}" data-name="${esc(d.name)}">닉네임</button>
           <button class="btn small danger" data-act="family-remove" data-id="${d.id}" data-name="${esc(d.name)}">끊기</button></div></li>`).join("")}</ul>`
@@ -3402,6 +3428,29 @@ function adminApp(L, BUILD, M) {
     load();
   }
 
+  /**
+   * 1.39 [ADM3-40] 발굴 2-1: 큐 모드 knows the 오늘 › 할 일 bundles (ADM3-37), so one answer can go to the alike questions still
+   * ahead in the queue. id → the others of its bundle that are in the queue.
+   */
+  function queueAlike(today, ids) {
+    const inQueue = new Set(ids);
+    const out = {};
+    for (const x of today?.todo?.items ?? []) {
+      if (x.type !== "inquiry" || !x.others?.length) continue;
+      const group = [x.id, ...x.others].filter((id) => inQueue.has(id));
+      for (const id of group) if (group.length > 1) out[id] = group.filter((o) => o !== id);
+    }
+    return out;
+  }
+
+  /** The alike questions of the open one that the queue has not reached yet (answered ones drop out as the queue goes). */
+  const queueAhead = (id) => {
+    const qm = S.queue;
+    if (!qm?.alike?.[id]) return [];
+    const ahead = new Set(qm.ids.slice(qm.at + 1));
+    return qm.alike[id].filter((o) => ahead.has(o));
+  };
+
   /** [ADMUX-04] 큐 모드: the next waiting question, or the end of the queue. */
   function queueNext(skip = false) {
     const qm = S.queue;
@@ -3409,7 +3458,7 @@ function adminApp(L, BUILD, M) {
     qm.at += 1;
     if (skip) qm.skipped += 1;
     if (qm.at >= qm.ids.length) {
-      const n = qm.ids.length - qm.skipped;
+      const n = qm.ids.length - qm.skipped + (qm.extra ?? 0);
       S.queue = null;
       toast(`큐를 마쳤어요. ${n}건 처리${qm.skipped ? `, ${qm.skipped}건 건너뜀` : ""}`);
       go("inquiries");
@@ -4332,11 +4381,11 @@ function adminApp(L, BUILD, M) {
     },
     // [ADMUX-04] 큐 모드
     "queue-start": async () => {
-      const r = await act(() => api("/inquiries?status=open&sort=sla&limit=100"));
+      const [r, today] = await Promise.all([act(() => api("/inquiries?status=open&sort=sla&limit=100")), api("/today").catch(() => null)]);
       const ids = (r?.inquiries ?? []).filter((q) => q.waiting && !(q.assignee && q.assignee.id !== S.me.id)).map((q) => q.id);
       if (!r) return;
       if (!ids.length) return toast("지금 답할 문의가 없어요. 다른 관리자가 맡은 것은 빼요");
-      S.queue = { ids, at: 0, skipped: 0 };
+      S.queue = { ids, at: 0, skipped: 0, alike: queueAlike(today, ids) };
       S.data.inquiries = { ...r, inquiries: r.inquiries.filter((q) => ids.includes(q.id)) };
       go("inquiries", ids[0]);
     },
@@ -4926,6 +4975,9 @@ function adminApp(L, BUILD, M) {
       document.getElementById("second-on-code")?.focus();
     },
     "phone-previews": ({ id }) => openPreviews(id),
+    // 1.39 [FAM-04] 발굴: 폴드에서 코드와 넣는 곳을 문자·카톡으로 바로 보내요(받는 분이 설정 경로를 묻지 않게).
+    "share-family": ({ id }) => navigator.share?.({ title: "밤낮 가족 프로 이용권",
+      text: `밤낮 앱 › 설정 › 프로 › '관리자 연결'에 ${id.replace(/(\d{3})(\d{3})/, "$1 $2")}을 1시간 안에 넣어 주세요. 끝나는 날 없이 프로가 열려요.` }).catch(() => {}),
     "copy-family": ({ id }) => navigator.clipboard?.writeText(id).then(() => toast("복사했어요"), () => toast("복사하지 못했어요")),
     // 1.37.1 [FAM-01]
     "family-remove": ({ id, name }) => confirmBox(`${name} 휴대폰의 프로를 끊을까요?`, "그 휴대폰은 다음 확인 때부터 무료가 돼요. 다시 주려면 새 가족 코드를 만들어요.", "끊기", async () => {
@@ -5531,8 +5583,16 @@ function adminApp(L, BUILD, M) {
       const close = submitter?.dataset.close === "1";
       const template = Number(form.elements.template?.value) || undefined;
       const id = S.route.id;
-      const q = await act(() => api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}) }),
-        close ? "답하고 닫았어요. 보낸 분 앱에 보여요" : "답했어요. 보낸 분 앱에 보여요");
+      // 1.39 [ADM3-40] 큐 모드: the same answer to the alike ones ahead, which then leave the queue.
+      const alike = form.elements.alike?.checked ? queueAhead(id) : [];
+      const q = await act(async () => {
+        const first = await api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}) });
+        const sent = [];
+        for (const o of alike) await api(`/inquiries/${o}/reply`, "POST", { text, ...(close ? { close: true } : {}) }).then(() => sent.push(o), () => {});
+        if (S.queue && sent.length) Object.assign(S.queue, { ids: S.queue.ids.filter((x) => !sent.includes(x)), extra: (S.queue.extra ?? 0) + sent.length });
+        return { first, sent: sent.length, missed: alike.length - sent.length };
+      }, (r) => `${r.sent ? `${r.sent + 1}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보내 큐에 남겨 뒀어요)` : ""}`)
+        .then((r) => r?.first);
       if (!q) return;
       typingSent = 0;
       S.data.inquiry = q;
@@ -5552,8 +5612,15 @@ function adminApp(L, BUILD, M) {
       const text = form.elements.text.value.trim();
       if (!text) return toast(ERRORS.text);
       const close = submitter?.dataset.close === "1";
-      const q = await act(() => api(`/inquiries/${form.dataset.id}/reply`, "POST", { text, ...(close ? { close: true } : {}) }),
-        close ? "답하고 닫았어요. 보낸 분 앱에 보여요" : "답했어요. 보낸 분 앱에 보여요");
+      // 1.39 [ADM3-39] '비슷한 문의 N건에도 같은 답': the lead first, then each of the bundle with the same words.
+      const others = form.elements.all?.checked ? (form.dataset.others || "").split(",").filter(Boolean) : [];
+      const body = { text, ...(close ? { close: true } : {}) };
+      const q = await act(async () => {
+        const first = await api(`/inquiries/${form.dataset.id}/reply`, "POST", body);
+        let missed = 0; // the lead is answered already, so one that fails does not undo it (pressing again would answer the lead twice)
+        for (const id of others) await api(`/inquiries/${id}/reply`, "POST", body).catch(() => missed++);
+        return { first, missed };
+      }, (r) => `${others.length ? `${others.length + 1 - r.missed}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보냈어요, 그 문의에서 다시 답해 주세요)` : ""}`);
       if (q) load({ quiet: true });
     },
     "inquiry-note": async (form) => {
@@ -5703,7 +5770,7 @@ function adminApp(L, BUILD, M) {
       form.reset();
       openDialog(`<div class="box"><h2>${esc(r.name)} 가족 코드</h2><p class="code-big" aria-label="가족 코드">${esc(r.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
         <p class="hint">${esc(clock(r.expiresAt))}까지 한 번 쓸 수 있어요. 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 넣으면 바로 프로가 열려요.</p>
-        <div class="actions"><button class="btn" data-act="copy-family" data-id="${esc(r.code)}">코드 복사</button><button class="btn" data-act="close">닫기</button></div></div>`);
+        <div class="actions">${navigator.share ? `<button class="btn primary" data-act="share-family" data-id="${esc(r.code)}">${icon(P.share)}보내기</button>` : ""}<button class="btn" data-act="copy-family" data-id="${esc(r.code)}">코드 복사</button><button class="btn" data-act="close">닫기</button></div></div>`);
       load({ quiet: true });
     },
     password: async (form) => {

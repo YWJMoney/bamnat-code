@@ -265,7 +265,13 @@ private fun DayFirstCard(
         if (YearMonth.from(today) == month) {
             val week = remember(snapshot, today) { com.bamnat.core.hours.WorkHoursCalculator(snapshot.resolver, java.time.DayOfWeek.MONDAY).week(today) }
             // PC f42b2eba: the same limit as the 주별 근무시간 lines on this screen.
-            (weekLimitHours ?: legalWeekHours(profile))?.let { HoursBar("이번 주 근무", week.totalMinutes, it) }
+            // 1.39 발굴 (PC 5c4ad849 '40시간 / 64시간, 64가 뭔지 말이 없어요'): the limit says where it comes from.
+            val legal = legalWeekHours(profile)
+            (weekLimitHours ?: legal)?.let { limit ->
+                HoursBar("이번 주 근무", week.totalMinutes, limit,
+                    note = if (legal != null && limit == legal) "근로기준법 한 주 한도 ${limit}시간" + (if (limit != 52) " (탄력·특례)" else " (40시간 + 연장 12시간)")
+                    else "내가 정한 '한 주 근무 경고' ${limit}시간 · 설정 › 알림과 잠 › 근무시간 경고에서 바꿔요")
+            }
         }
         com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)?.let { cap ->
             HoursBar("${month.monthValue}월 시간외", summary.extraMinutes, cap)
@@ -451,7 +457,9 @@ private fun AddPayDialog(start: LocalDate, onDismiss: () -> Unit, onSave: (Local
 
 /** 1.32 [WTYP-26] "n / 52시간" with a bar, red past the limit. */
 @Composable
-internal fun HoursBar(label: String, minutes: Int, limitHours: Int) {
+internal fun HoursBar(label: String, minutes: Int, limitHours: Int,
+                      /** 1.39 발굴: what the limit is (법 한도인지, 내가 정한 경고인지), under the bar. */
+                      note: String? = null) {
     val cal = LocalCalendarColors.current
     val over = minutes > limitHours * 60
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp).semantics(mergeDescendants = true) {}) {
@@ -465,6 +473,8 @@ internal fun HoursBar(label: String, minutes: Int, limitHours: Int) {
             color = if (over) cal.warning else MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
         )
+        if (note != null) Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp))
     }
 }
 

@@ -69,7 +69,9 @@ test("the clock page: buttons first, the card last; iPhone and PC get no dead en
   assert.match(android, /앱을 받은 뒤에도 이 링크는 그대로 열려요/);
   assert.match(android, /utm_medium%3Dclock%26utm_campaign%3Dboss/);
   const iphone = await (await call(env, `/c/${id}`, {}, IPHONE)).text();
-  assert.match(iphone, /밤낮은 Android 앱이에요. 이 링크는 iPhone에서도 그대로 계속 열려요/);
+  // 1.39 [IOS-03] what 밤낮 is and that the link keeps working, without promising the app's 달력·알람 to an iPhone.
+  assert.match(iphone, /밤낮은 Android 근무 달력 앱이에요/);
+  assert.match(iphone, /이 링크는 iPhone에서도 그대로 계속 열려요/);
   assert.doesNotMatch(iphone, /밤낮 받기/);
   const pc = await (await call(env, `/c/${id}`, {}, PC)).text();
   assert.match(pc, /Play 스토어에서 보기/);
@@ -159,7 +161,8 @@ test("an ended link says what to do next and still offers the app, without promi
     assert.doesNotMatch(text, /그대로 열려요/, path);
   }
   const iphone = await (await call(env, `/c/${"b".repeat(22)}`, {}, IPHONE)).text();
-  assert.match(iphone, /밤낮은 Android 앱이에요\.<\/p>/);
+  assert.match(iphone, /밤낮은 Android 근무 달력 앱이에요/);
+  assert.doesNotMatch(iphone, /계속 열려요/, "an ended link does not keep opening");
   const closed = await (await call(env, `/c/${"b".repeat(22)}`, { headers: { cookie: "bn_spread=off" } })).text();
   assert.doesNotMatch(closed, /class="spread"|<!--spread:/);
 });
@@ -225,7 +228,7 @@ test("every receive page has a preview that names the kind of page and nothing o
   }
 });
 
-// ---- 1.39 [SPREAD-12] iPhone 캘린더 ----
+// ---- 1.39 [SPREAD-12] iPhone 캘린더 (IOS-02 feedButton으로 합침) ----
 
 test("an iPhone gets one tap to subscribe in its calendar, only when the sharer turned the address on", async () => {
   readsForget();
@@ -233,11 +236,9 @@ test("an iPhone gets one tap to subscribe in its calendar, only when the sharer 
   const on = (await (await call(env, "/api/share", json({ ...sample, ics: true, tz: "Asia/Seoul" }))).json()).id;
   const off = (await (await call(env, "/api/share", json(sample))).json()).id;
   const iphone = await (await call(env, `/s/${on}`, {}, IPHONE)).text();
-  assert.match(iphone, new RegExp(`<a href="webcal://share\\.example/s/${on}\\.ics">아이폰 캘린더에 넣기</a>`));
+  assert.match(iphone, new RegExp(`href="webcal://share\\.example/s/${on}\\.ics">아이폰 캘린더에 넣기</a>`)); // IOS-02 feedButton
   assert.ok(iphone.indexOf("아이폰 캘린더에 넣기") < iphone.indexOf('class="grid"'), "above the month, not in the card");
-  assert.doesNotMatch(await (await call(env, `/s/${on}`)).text(), /webcal:/, "Android opens it in the app");
-  assert.doesNotMatch(await (await call(env, `/s/${on}`, {}, PC)).text(), /webcal:/);
-  assert.doesNotMatch(await (await call(env, `/s/${off}`, {}, IPHONE)).text(), /webcal:/, "never without the sharer's say");
+    assert.doesNotMatch(await (await call(env, `/s/${off}`, {}, IPHONE)).text(), /webcal:/, "never without the sharer's say");
   // Closing the card leaves the button: it is the page's, not the card's.
   assert.match(await (await call(env, `/s/${on}`, { headers: { cookie: "bn_spread=off" } }, IPHONE)).text(), /아이폰 캘린더에 넣기/);
 });

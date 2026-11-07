@@ -143,4 +143,32 @@ class LiveTryOnTest {
         assertFalse(LiveTryOn.start(c, theme, own = false, LookParts.of(theme).map { it.id }.toSet(), "calendar", LiveTryOn.From.Detail("X")))
         assertFalse(c.settingsRepository.trying)
     }
+
+    /** [TRY-07] '바뀐 곳' on the band walks the tabs the look changes, the opened one first, and comes round again. */
+    @Test fun theBandWalksTheTabsTheLookChanges() = runBlocking {
+        val theme = BuiltInThemes.of(WorkStyle.SHIFT)[1]
+        val tabs = LookParts.of(theme).map { it.tab }.toSet()
+        assertTrue(LiveTryOn.start(c, theme, own = false, LookParts.of(theme).map { it.id }.toSet(), "money", LiveTryOn.From.Detail("ABCD2345")))
+        val t = LiveTryOn.trial.value!!
+        assertEquals("money", t.tour.first())
+        assertEquals(t.tour.distinct(), t.tour)
+        assertTrue(t.tour.drop(1).all { it in tabs })
+        repeat(t.tour.size) { LiveTryOn.next() }
+        assertEquals("round again to the first", 0, LiveTryOn.trial.value!!.at)
+    }
+
+    /** [TRY-07] 입기 on the band: the trial ends unsaved and the page it came from is asked to put it on, with the same parts. */
+    @Test fun wearFromTheBandGoesBackToPutItOn() = runBlocking {
+        val saved = c.recipes.pieces.lookOf(c.settingsRepository.current)
+        val theme = BuiltInThemes.of(WorkStyle.SHIFT)[1]
+        val picked = LookParts.of(theme).map { it.id }.take(2).toSet()
+        assertTrue(LiveTryOn.start(c, theme, own = false, picked, "calendar", LiveTryOn.From.Detail("ABCD2345")))
+        LiveTryOn.wear(c)
+        assertNull(LiveTryOn.trial.value)
+        assertFalse(c.settingsRepository.trying)
+        assertEquals("nothing worn yet: the page's own 입기 does it", saved, c.recipes.pieces.lookOf(c.settingsRepository.settings.value))
+        val back = LiveTryOn.take { it == LiveTryOn.From.Detail("ABCD2345") }
+        assertTrue(back!!.wear)
+        assertEquals(picked, back.picked)
+    }
 }

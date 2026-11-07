@@ -294,13 +294,53 @@ export async function carePerson(d, env, dev, now) {
   };
 }
 
+/**
+ * 1.39 제작자 표식(광장 커뮤니티 갈래)과 맞춘 규칙: 지금 표식을 쉬어야 하는 휴대폰인지. 의견 쉬기·마을 쉬기 중, 풀지 않은 경고를 받은 지
+ * 30일 안, 신고 누적 쓰기 제한 중이면 쉬어요. 기간이 지나거나 해명을 받아들여 풀면 저절로 돌아와요. 마을 돌봄이 꺼진 동안(3.12 전)은
+ * 신고 누적 제한만 봐요. 1번째 부드러운 안내(auto_first)는 운영 규칙 6항대로 아무것도 막지 않으니 표식도 그대로예요. 사람에게 따로 알리지 않고, 다른 이용자에게 '왜 없는지'도 보이지 않아요(표식이 없는 것과 같음).
+ */
+export const CARE_QUIET = { warnDays: 30 };
+
+/** [devs] 가운데 표식을 쉬어야 하는 휴대폰(설치 해시)의 Set. 목록 한 번에 한 번 불러요(D1은 한 문장에 값 100개까지라 90개씩 나눠 읽음). */
+export async function careQuietMany(d, env, devs, now = Date.now()) {
+  const list = [...new Set((devs ?? []).filter((x) => typeof x === "string" && x))];
+  const quiet = new Set();
+  if (!list.length) return quiet;
+  const on = await careOn(d, env, now);
+  for (let i = 0; i < list.length; i += 90) {
+    const part = list.slice(i, i + 90);
+    const marks = part.map(() => "?").join(", ");
+    const [limits, notes] = await Promise.all([
+      d.all(env, `SELECT device FROM write_limits WHERE until > ? AND device IN (${marks})`, now, ...part),
+      on ? d.all(env, `SELECT device FROM care_notes WHERE lifted_at IS NULL AND device IN (${marks})
+        AND ((kind != 'warn' AND until > ?) OR (kind = 'warn' AND reason != 'auto_first' AND at > ?))`, ...part, now, now - CARE_QUIET.warnDays * DAY) : [],
+    ]);
+    for (const r of [...limits, ...notes]) quiet.add(r.device);
+  }
+  return quiet;
+}
+
+/** 한 휴대폰만 볼 때. */
+export async function careQuiet(d, env, dev, now = Date.now()) {
+  return (await careQuietMany(d, env, [dev], now)).has(dev);
+}
+
 /** 관리자 앱 목록: 지금 쉬는 사람, 최근 30일 경고(읽음 여부), 최근 30일에 끝난 쉬기. */
 export async function careList(d, env, now) {
   const rows = await d.all(env, `SELECT * FROM care_notes WHERE (kind != 'warn' AND lifted_at IS NULL AND until > ?1) OR at > ?2 OR COALESCE(lifted_at, until, 0) > ?2
     ORDER BY at DESC LIMIT 200`, now, now - 30 * DAY);
   const all = rows.map((r) => noteView(r, now));
+  // 1.39 발굴: 약속한 48시간 안에 답하도록 기다리는 해명을 오래된 것부터, 30일이 지나면 세지 않는 '확인 전' 가려짐 수.
+  const [waiting, open] = await Promise.all([
+    d.all(env, "SELECT target, inquiry_id, at FROM care_appeals WHERE result IS NULL ORDER BY at ASC LIMIT 50"),
+    d.one(env, "SELECT COUNT(*) AS n, MIN(at) AS oldest FROM write_strikes WHERE confirmed = 0 AND at > ?", now - 30 * DAY),
+  ]);
+  const HOUR = DAY / 24;
   return {
     on: await careOn(d, env, now),
+    appeals: waiting.map((a) => ({ inquiry: a.inquiry_id, kind: a.target.startsWith("post:") ? "post" : a.target === "limit" ? "limit" : "note",
+      at: isoOf(a.at), hoursLeft: Math.floor((a.at + APPEAL.answerHours * HOUR - now) / HOUR) })),
+    unconfirmed: { n: open?.n ?? 0, ...(open?.oldest ? { daysLeft: Math.max(0, Math.ceil((open.oldest + 30 * DAY - now) / DAY)) } : {}) },
     rules: { days: CARE.days, warnWithinDays: CARE.warnWithinDays, keepDays: CARE.keepDays, severe: CARE_SEVERE, reasons: CARE_REASONS },
     holds: all.filter((x) => x.active),
     warnings: all.filter((x) => x.kind === "warn"),

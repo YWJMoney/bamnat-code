@@ -53,7 +53,8 @@ data class Logic(val buttons: List<LogicButton> = emptyList(), val rules: List<L
         val s = same(other)
         val over = overLimit(other)
         return listOfNotNull(
-            s.takeIf { it.isNotEmpty() }?.let { l -> l.joinToString(", ") { (t, m) -> "‘$t’" + (if (t != m) "은 내 ‘$m’과" else "은 이미 있는 것과") } + " 하는 일이 같아 하나로 뒀어요" },
+            // PC 03111522 ('‘커피’은'): 은/는 and 과/와 by the word's last letter.
+            s.takeIf { it.isNotEmpty() }?.let { l -> l.joinToString(", ") { (t, m) -> "‘$t’" + com.bamnat.core.recipe.RecipeLint.topic(t) + (if (t != m) " 내 ‘$m’" + (if (com.bamnat.core.recipe.RecipeLint.topic(m) == "은") "과" else "와") else " 이미 있는 것과") } + " 하는 일이 같아 하나로 뒀어요" },
             over.takeIf { it > 0 }?.let { "한도(단추 ${MAX_BUTTONS}개·규칙 ${MAX_RULES}개)를 넘는 ${it}개는 넣지 않았어요" },
         ).joinToString(". ").ifEmpty { null }
     }

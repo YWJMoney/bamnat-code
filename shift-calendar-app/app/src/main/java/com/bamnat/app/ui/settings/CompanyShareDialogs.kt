@@ -16,6 +16,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -34,7 +35,9 @@ fun CompanyShareDialog(hasPay: Boolean, hasRotation: Boolean, onDismiss: () -> U
     // [695] 1.33 (계획 "'회사 설정 보내기' 회사 이름 미리 채우기"): the company the calendar is in, or the name typed in the first setup.
     val context = androidx.compose.ui.platform.LocalContext.current
     var name by rememberSaveable { mutableStateOf(runCatching { com.bamnat.app.share.ShareContent.companyName(context.appContainer) }.getOrDefault("")) }
-    var team by rememberSaveable { mutableStateOf("") }
+    // [CYC-06] 1.39: my 조 from 모든 조 보기, and every 조 goes along with its day.
+    val roster = remember { runCatching { context.appContainer.teams.get(com.bamnat.app.data.PersonalCalendar.MAIN) }.getOrNull()?.takeIf { it.teams.size >= 2 } }
+    var team by rememberSaveable { mutableStateOf(roster?.mine?.name.orEmpty()) }
     var amounts by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -47,7 +50,10 @@ fun CompanyShareDialog(hasPay: Boolean, hasRotation: Boolean, onDismiss: () -> U
                         team, { team = it.take(12) },
                         label = { Text("내 조 이름 (선택)") },
                         placeholder = { Text("예: A조") },
-                        supportingText = { Text("같은 조 동료는 오늘 근무를 따로 고르지 않아도 돼요") },
+                        supportingText = {
+                            Text(if (roster != null) "모든 조 보기의 ${roster.teams.joinToString("·") { it.name }}도 함께 가요. 어느 조 동료든 조만 고르면 돼요"
+                                else "같은 조 동료는 오늘 근무를 따로 고르지 않아도 돼요")
+                        },
                         singleLine = true,
                     )
                 }
@@ -90,7 +96,10 @@ fun CompanyImportDialog(summary: CompanySummary, hasPay: Boolean, onDismiss: () 
                             Text("${days}일 근무 주기도 넣기", style = MaterialTheme.typography.bodyLarge)
                             // [SETUP-02] Whose order it is, and that another 조 only picks today's row next.
                             Text(
-                                (summary.team?.let { "보낸 분은 $it${Fmt.ieyo(it)}. " } ?: "") + "오늘 근무를 고르면 내 조에 맞춰져요. 지난 날은 그대로예요",
+                                (summary.team?.let { "보낸 분은 $it${Fmt.ieyo(it)}. " } ?: "") +
+                                    // [CYC-06] 1.39: a file naming every 조 asks "몇 조예요?" next.
+                                    (if (summary.teams.size >= 2) "다음에서 내 조(${summary.teams.joinToString("·") { it.name }})를 고르면 맞춰져요. "
+                                    else "오늘 근무를 고르면 내 조에 맞춰져요. ") + "지난 날은 그대로예요",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

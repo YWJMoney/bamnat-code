@@ -110,12 +110,12 @@ fun rememberNightMode(look: String, sleeping: Boolean): Boolean {
 /**
  * 1.39 [FLOW-14][DSG-07] 시간에 맞춘 자동 밤 모드 for the whole app ([com.bamnat.core.design.NightRule.app]): while a sleep is open,
  * inside the sleep planned around the calendar's work (the same plan as 오늘의 흐름) and at 01~05 (a night shift's dawn, or bed).
- * Read once a minute; nothing is read at all while 밤 색 is 끔.
+ * Read once a minute; nothing is read at all while 밤 색 is 끔 or 수면 화면만 (the default).
  */
 @Composable
 fun rememberAppNight(settings: com.bamnat.app.data.AppSettings, container: AppContainer): Boolean {
     val look = com.bamnat.core.design.NightLook.of(settings.nightLook)
-    if (look == com.bamnat.core.design.NightLook.OFF) return false
+    if (look == com.bamnat.core.design.NightLook.OFF || look == com.bamnat.core.design.NightLook.SCREENS) return false
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
     if (look == com.bamnat.core.design.NightLook.PHONE) return dark
     val now = rememberMinute()

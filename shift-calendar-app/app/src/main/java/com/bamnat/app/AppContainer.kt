@@ -246,13 +246,19 @@ class AppContainer(context: Context) {
     val companyShare by lazy { com.bamnat.app.data.CompanyShare(scheduleRepository, payStore, settingsRepository,
         shared = { keys -> keys.forEach { runCatching { profiles.mark(com.bamnat.app.data.PersonalCalendar.MAIN, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
         // [ITEM-03] 1.30 BC (결정 D102): 회사 공통 정액 goes to the 광장 while the plaza.fixed_amount row is on.
-        fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }) }
+        fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) },
+        teamRoster = { teams.get(com.bamnat.app.data.PersonalCalendar.MAIN) }) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() },
         device = { companyStore.device },
         // [PLAZA-30] 1.27 AI: the main calendar's matched month (the pay file, so the backup keeps it).
         proof = { slipProof() })
+    /** 1.39 [PLZC-10] 근무 태그: what this phone shows in the plazas and the tag a post carries. */
+    val plazaTags by lazy { com.bamnat.app.company.PlazaTagSource(this) }
+    init {
+        (companyApi as? com.bamnat.app.company.CompanyClient)?.roomTag = { room -> plazaTags.json(room) }
+    }
     /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
     val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }
     /** 1.36 PC 재검토: kinds of day put away per calendar ('안 쓰는 종류'). */
@@ -331,7 +337,8 @@ class AppContainer(context: Context) {
                 ?: com.bamnat.app.data.CompanyShare(schedule, pay, settingsRepository,
                     shared = { keys -> keys.forEach { runCatching { profiles.mark(id, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
                     rosterMonthly = { false },
-                    fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) }).also { made = Triple(schedule, pay, it) }
+                    fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) },
+                    teamRoster = { teams.get(id) }).also { made = Triple(schedule, pay, it) }
         }
         return com.bamnat.app.company.CompanyScope(id,
             com.bamnat.app.company.CompanyStore(files.prefs(appContext, id, files.COMPANY), companyStore),

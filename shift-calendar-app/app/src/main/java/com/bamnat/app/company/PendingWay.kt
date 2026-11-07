@@ -41,6 +41,8 @@ data class PendingWay(
         APPLY,
         /** The first setup or a calendar's setup picked a coworkers' setup with its pay. */
         FIRST_SETUP,
+        /** 1.39 발굴 2-1: the way in use has a newer version from one who sent it ('새 판으로 바꾸기' on the pay screen). */
+        NEWER,
     }
 
     /** [PAYG-08] The 통상시급's hours the company's way says (LG화학 180), for the 기본급 field to show first. */
@@ -146,6 +148,7 @@ suspend fun CompanyScope.commit(
 ): Boolean {
     if (!BaseAsk.ready(base)) return false
     val had = pay.profile.value
+    val before = payWays.way.value
     if (!share.applyRulesWith(way.text, base, hours, month)) return false
     // The allowances the way just brought in that differ by person: the amounts the user typed, the rest 금액 모름 (listed
     // under the total, never counted as 0원 without a word).
@@ -169,10 +172,15 @@ suspend fun CompanyScope.commit(
     if (store.applied.value == null) store.setDraft(CompanyDraft(way.company, way.dept))
     if (store.pendingPay == way.text) store.pendingPay = null
     // [PAYF-04] Counted as one more phone using it ("n명 쓰고 있어요"); a cycle put in with it said so already.
-    if (way.source == PendingWay.Source.FIND && c.companyApi.enabled) {
+    if ((way.source == PendingWay.Source.FIND || way.source == PendingWay.Source.NEWER) && c.companyApi.enabled) {
         val device = store.device
         val cal = serverCal
-        c.appScope.launch { runCatching { c.companyApi.use(device, way.companyId, way.setup, true, cal) } }
+        // 1.39 발굴 2-1: moving to the newer version, the older one is no longer counted as used.
+        val old = before?.takeIf { way.source == PendingWay.Source.NEWER && it.setup != way.setup }
+        c.appScope.launch {
+            runCatching { c.companyApi.use(device, way.companyId, way.setup, true, cal) }
+            old?.let { o -> runCatching { c.companyApi.use(device, o.companyId, o.setup, false, cal) } }
+        }
     }
     pendingWays.committed(way, BaseAsk.hoursToPropose(hours, way.hours))
     c.telemetry.event("pay_way", "commit_" + way.source.name.lowercase())
