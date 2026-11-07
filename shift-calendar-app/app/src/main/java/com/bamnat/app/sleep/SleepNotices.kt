@@ -91,7 +91,7 @@ object SleepingNotice {
         val notification = NotificationCompat.Builder(context, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setGroup(Notifications.SLEEPING_GROUP)
+            .setGroup(Notifications.SLEEPING_GROUP).setGroupSummary(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setSilent(true)
@@ -121,6 +121,8 @@ object SleepingNotice {
             // 1.39 G5-B1 (PC 1.38 최종 사용성 6: 깼어요 잘못 누르기): the sleep goes on, from when it began.
             .apply { if (slept.id > 0 && !slept.imported) addAction(SleepActions.stillAsleep(context, slept.id)) }
             .setAutoCancel(true)
+            // PC c0ca3d9f: unbundled too, so 아직 자요 is there without an expand.
+            .setGroup(Notifications.SLEEPING_GROUP).setGroupSummary(true)
             .setTimeoutAfter(WOKE_SHOWN_MILLIS)
             .build()
         Notifications.post(context, Notifications.SLEEPING_ID, notification)

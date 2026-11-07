@@ -27,9 +27,12 @@ object Notifications {
     /**
      * 1.39 [SLEEP-06] 자는 중 (and 소리 재는 중): no sound or buzz either, but not in the folded 무음 group, so 깼어요 and
      * 측정만 끝 are there without two expands (PC 5c4ad849). Its own group keeps Android from bundling it with others.
+     * PC c0ca3d9f: a group with no summary is still bundled (with D9's 근무표 notice), so each sleep notice is its own
+     * group's summary, as [TodayShiftNotice] is; the 소리 재는 중 notice has a group of its own ([SLEEPING_REC_GROUP]).
      */
     const val SLEEPING_CHANNEL_ID = "sleeping_v1"
     const val SLEEPING_GROUP = "bamnat_sleeping"
+    const val SLEEPING_REC_GROUP = "bamnat_sleeping_rec"
     /** When a night ends: the one day notice with a sound. */
     const val COMMUTE_CHANNEL_ID = "commute_v1"
     const val JOB_CHANNEL_ID = "job_reminder_v1"

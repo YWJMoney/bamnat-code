@@ -128,7 +128,18 @@ object SleepInsights {
         return if (work.any { it.date == day } || before.isNotEmpty() || after != null) Context.WORK_DAY else Context.DAY_OFF
     }
 
-    fun report(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, targetMinutes: Int): Report {
+    /**
+     * 1.39 PC c0ca3d9f 유형별 빈틈 (가게에 '야간 뒤·쉬는 날'): the kinds of day the averages split into, in the words of the work.
+     * 야간 뒤 is said to 교대 only (사용자 2026-11-06), as the sleep screen's 이렇게 쓰여요 does.
+     */
+    fun groupsWord(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+        null, com.bamnat.core.work.WorkStyle.SHIFT -> "야간 뒤·쉬는 날"
+        com.bamnat.core.work.WorkStyle.INVEST -> "평일·쉬는 날"
+        else -> "일한 날·쉬는 날"
+    }
+
+    fun report(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, targetMinutes: Int,
+               style: com.bamnat.core.work.WorkStyle? = null): Report {
         val (nights, work) = nightsAndWork(log, resolver, today, WINDOW_DAYS)
         val blocks = blocks(nights, work)
         // [SLEEP-02] Averages are per rest: a split sleep counts whole, a nap on its own is left out.
@@ -144,10 +155,10 @@ object SleepInsights {
         val spread = spread(main.filter { it.context != Context.AFTER_NIGHT }.map { it.entry.start })
         val loggedDays = nights.mapNotNull { it.entry.wakeDate }.toSet().size
         val report = Report(nights, groups, week, weekBefore, spread, blocks.count { it.nap }, emptyList(), loggedDays, blocks)
-        return report.copy(findings = findings(report, targetMinutes))
+        return report.copy(findings = findings(report, targetMinutes, style))
     }
 
-    private fun findings(r: Report, target: Int): List<Finding> = buildList {
+    private fun findings(r: Report, target: Int, style: com.bamnat.core.work.WorkStyle? = null): List<Finding> = buildList {
         if (r.isEmpty) return@buildList
         val night = r.group(Context.AFTER_NIGHT)
         if (night != null && night.enough && target - night.averageMinutes >= SHORT_MINUTES) {
@@ -186,7 +197,7 @@ object SleepInsights {
         }
         if (r.loggedDays < 5) {
             add(Finding("more-logs", Tone.NOTE, "기록이 쌓이면 더 알려 드려요",
-                "근무별로 2번 넘게 기록하면 야간 뒤·쉬는 날 평균을 따로 보여 줘요. 지금 ${r.loggedDays}일 기록했어요."))
+                "근무별로 2번 넘게 기록하면 ${groupsWord(style)} 평균을 따로 보여 줘요. 지금 ${r.loggedDays}일 기록했어요."))
         }
     }
 
