@@ -106,6 +106,9 @@ class RosterFollowerTest {
         assertEquals(FollowNote.DONE, note.kind)
         assertTrue(note.lines.single(), note.lines.single().startsWith("12/3 D → N"))
         assertTrue(RosterFollower.words(c.received.get(id)!!, note).second.contains("근무 알람도"))
+        // 1.39 PC 5c4ad849: the day put in says it came from the link, not '직접 바꿈'.
+        val snap = c.scheduleRepository.snapshot.first()
+        assertEquals(id, RosterFollower.linkFor(c.received.calendars.value, snap.resolver.resolve(day), snap.shiftTypes)?.id)
         // 되돌리기: the day as it was.
         RosterFollower.takeBack(c, id)
         assertEquals(ShiftOverride.Shift(day1), override(day))
