@@ -30,14 +30,20 @@ object TaxLearner {
         val family: Int = 1,
         val children: Int = 0,
         val nonTaxable: (YearMonth) -> Long = { 0L },
+        /** 1.39 [PAYX-59] 4대보험 lines the worker is out of. */
+        val off: Set<com.bamnat.core.pay.InsuranceLine> = emptySet(),
+        /** 1.39 [PAYX-56] 공제 쪽 돈 (사택관리비·회비) of the month: a payslip's 실수령 is after them too. */
+        val afterTax: (YearMonth) -> Long = { 0L },
     ) {
         /** The table's deductions on [gross] for [month] in [asMode]. */
         fun deductions(gross: Long, month: YearMonth, asMode: TaxMode = mode): Long =
-            TakeHome.estimate(gross, asMode, family, month.atDay(1), children, nonTaxable(month).coerceAtMost(gross)).deductions.sumOf { it.second }
+            TakeHome.estimate(gross, asMode, family, month.atDay(1), children, nonTaxable(month).coerceAtMost(gross), off = off)
+                .deductions.sumOf { it.second } + afterTax(month)
 
         companion object {
             fun of(profile: PayProfile): Table =
-                Table(profile.taxMode, profile.taxFamily, profile.taxChildren) { m -> TakeHome.nonTaxable(profile, m) }
+                Table(profile.taxMode, profile.taxFamily, profile.taxChildren, { m -> TakeHome.nonTaxable(profile, m) }, profile.insuranceOff,
+                    { m -> TakeHome.afterTax(profile, m).sumOf { it.second } })
         }
     }
 

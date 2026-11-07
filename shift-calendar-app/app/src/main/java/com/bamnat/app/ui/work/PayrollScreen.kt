@@ -133,8 +133,13 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
                 StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${ledger.lines.size}명")
-                StatTile("사장님 4대보험", Fmt.won(ledger.employerInsurance), Modifier.weight(1f), caption = "참고")
+                // 1.39 [BOSS-12] 산재보험 (사업주만) with the 4대보험 once the 업종 is picked.
+                StatTile(if (place.industry != null) "사장님 4대보험·산재" else "사장님 4대보험", Fmt.won(ledger.employerInsurance + ledger.accident), Modifier.weight(1f),
+                    caption = if (ledger.accident > 0) "산재 ${Fmt.won(ledger.accident)} 포함 · 참고" else "참고")
             }
+            if (place.industry == null && ledger.lines.isNotEmpty()) Text("업종을 고르면 산재보험료(사장님만 내요)도 더해요 · 사업장 설정에서 한 번",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(role = Role.Button) { settings = true }.padding(vertical = 4.dp))
             ValueLine("인건비 합계", Fmt.won(ledger.total), strong = true)
             // 1.38 [P3-X-07] 인건비율: the 가계부's 매출 for the month next to it.
             val book by context.appContainer.moneyRepository.book.collectAsStateWithLifecycle(null)
@@ -654,9 +659,51 @@ private fun PlaceDialog(start: Workplace, onDismiss: () -> Unit, onSave: (Workpl
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf(1, 10, 30, 60).forEach { u -> FilterChip(selected = p.minuteUnit == u, onClick = { p = p.copy(minuteUnit = u) }, label = { Text(if (u == 60) "1시간" else "${u}분") }) }
         }
+        // 1.39 [BOSS-12] 산재보험 업종 (공식 대조 G5, 고용노동부고시 제2025-91호).
+        IndustryPicker(p.industry) { p = p.copy(industry = it) }
         Hint(if (p.minuteUnit <= 1) "일한 그대로 1분 단위로 세요."
             else "하루 일한 시간을 ${if (p.minuteUnit == 60) "1시간" else "${p.minuteUnit}분"} 단위로 올려서 세요(13:07 퇴근 → ${com.bamnat.core.boss.PayrollLedger.roundUp(LocalTime.of(9, 0), LocalTime.of(13, 7), p.minuteUnit)?.let(Fmt::time)}). 내려서 깎는 건 근로기준법 제43조(임금 전액 지급)에 어긋나서 고를 수 없어요.")
     }
+}
+
+/**
+ * 1.39 [BOSS-12] 산재보험 업종: 작은 가게가 많은 넷은 칩으로, 나머지는 목록에서, 결정 통지서의 요율을 직접 넣을 수도 있어요. 사업주만 내는
+ * 보험료라 직원 명세서에는 나오지 않아요.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun IndustryPicker(code: String?, onPick: (String?) -> Unit) {
+    val kinds = com.bamnat.core.boss.AccidentRates.KINDS
+    var more by remember { mutableStateOf(false) }
+    var typing by remember { mutableStateOf(code?.startsWith(com.bamnat.core.boss.AccidentRates.CUSTOM) == true) }
+    var typed by remember { mutableStateOf(code?.removePrefix(com.bamnat.core.boss.AccidentRates.CUSTOM)?.takeIf { typing }.orEmpty()) }
+    Text("산재보험 업종", style = MaterialTheme.typography.labelLarge)
+    val picked = com.bamnat.core.boss.AccidentRates.kind(code)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        (kinds.take(4) + listOfNotNull(picked?.takeIf { k -> kinds.indexOf(k) >= 4 })).forEach { k ->
+            FilterChip(selected = code == k.code, onClick = { typing = false; onPick(k.code) }, label = { Text(k.label) })
+        }
+        FilterChip(selected = false, onClick = { more = true }, label = { Text("다른 업종") })
+        FilterChip(selected = typing, onClick = { typing = true }, label = { Text("요율 직접 넣기") })
+    }
+    if (typing) OutlinedTextField(typed, { v ->
+        typed = v.filter { it.isDigit() || it == '.' }.take(6)
+        onPick(typed.toDoubleOrNull()?.takeIf { it > 0 && it <= 200 }?.let { com.bamnat.core.boss.AccidentRates.CUSTOM + com.bamnat.core.boss.AccidentRates.permille(it) })
+    }, label = { Text("업종 요율 (천분율 ‰, 출퇴근재해 빼고)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+    Hint(picked?.let { "${com.bamnat.core.boss.AccidentRates.describe(it)} · 급여에 곱해 사장님만 내요(직원 명세서에서 떼지 않아요). ${com.bamnat.core.boss.AccidentRates.YEAR}년 고시 요율이에요." }
+        ?: "업종을 고르면 인건비에 산재보험료를 더해요. 근로복지공단 사업종류 결정 통지서의 요율이 따로 있으면 '요율 직접 넣기'로 넣어요.")
+    if (more) com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { more = false }, title = { Text("산재보험 업종") }, text = {
+        Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+            kinds.forEach { k ->
+                Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { typing = false; onPick(k.code); more = false }.padding(vertical = 10.dp)) {
+                    Text(k.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    Text("${com.bamnat.core.boss.AccidentRates.permille(k.permille)}‰", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }, confirmButton = { TextButton(onClick = { more = false }) { Text("닫기") } })
 }
 
 /** A day picked on Material's calendar. */

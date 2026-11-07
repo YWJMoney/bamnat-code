@@ -189,11 +189,17 @@ fun PayslipMatchDialog(
     fun newItems(names: List<Pair<String, Long>>): List<PayItem> {
         // From the setup's first month, as a monthly allowance counts in every month ([PAYIN-03] never from a mid-month day).
         val from = (profile.base.entries.map { it.from } + chosen.atDay(1)).min()
-        return names.mapIndexed { i, (name, amount) ->
+        // 1.39 [PAYX-57] 소급분 is paid once: it goes in as that month's rule ([oneOffRules]), not every month.
+        return names.filterNot { CustomRule.looksOneMonth(it.first) }.mapIndexed { i, (name, amount) ->
             PayItem("item-${System.currentTimeMillis()}-$i", name,  // real clock: an id, not a time
                 ValueTimeline(listOf(DatedValue(from, amount))), Cadence.MONTHLY,
                 ordinary = com.bamnat.core.pay.OrdinaryGuess.of(name, Cadence.MONTHLY) ?: true)
         }
+    }
+    /** 1.39 [PAYX-57] 명세서의 소급분 (지급): that month only, taxed like pay (소급분은 그달 근로소득이에요). */
+    fun oneOffRules(names: List<Pair<String, Long>>): List<CustomRule> = names.filter { CustomRule.looksOneMonth(it.first) }.mapIndexed { i, (name, amount) ->
+        CustomRule("rule-${System.currentTimeMillis().toString(36)}-$i", name.take(CustomRule.MAX_NAME), com.bamnat.core.pay.RuleWhen(),  // real clock: an id
+            com.bamnat.core.pay.RulePay.Monthly(amount), from = chosen, until = chosen, source = "명세서 ${chosen.monthValue}월")
     }
     var failed by remember { mutableStateOf(false) }
     // Payslip allowances the user chose to add; ids stay the same when the match runs again.
@@ -301,7 +307,8 @@ fun PayslipMatchDialog(
                                     onClick = {
                                         if (nothingPicked) onDismiss()
                                         else {
-                                            vm.applyMatch(m, keep, newItems(m.unmatched.filterKeys { it in adds }.toList()))
+                                            val picked = m.unmatched.filterKeys { it in adds }.toList()
+                                            vm.applyMatch(m, keep, newItems(picked), oneOffRules(picked))
                                             stage = MatchStage.DONE
                                         }
                                     },
@@ -344,6 +351,7 @@ fun PayslipMatchDialog(
                                         adds, { n -> adds = if (n in adds) adds - n else adds + n }, onMakeGap = { makingFor = m },
                                         audit = { SlipAuditCard(m, form.payslip(profile), form.read, snapshot) }) { names ->
                                         added += newItems(names)
+                                        addedRules += oneOffRules(names)
                                         startMatch()
                                     }
                                 }
@@ -442,8 +450,9 @@ private fun ColumnScope.AmountsStage(
         // [PAYX-23] A 실수령액 typed in: the pay before tax that leaves it, by the same 4대보험·간이세액표 the app uses.
         val mode = profile.taxMode.takeIf { it != com.bamnat.core.pay.TaxMode.NONE } ?: com.bamnat.core.pay.TaxMode.INSURANCE_4
         val before = remember(gross, profile, month) {
-            com.bamnat.core.pay.TakeHome.grossFromNet(gross, mode, profile.taxFamily, month.atDay(1), profile.taxChildren,
-                com.bamnat.core.pay.TakeHome.nonTaxable(profile, month))
+            // 1.39 [PAYX-56] 실수령액 is after 사택관리비·회비 too: they are added back before the tax is worked back.
+            com.bamnat.core.pay.TakeHome.grossFromNet(gross + com.bamnat.core.pay.TakeHome.afterTax(profile, month).sumOf { it.second }, mode,
+                profile.taxFamily, month.atDay(1), profile.taxChildren, com.bamnat.core.pay.TakeHome.nonTaxable(profile, month), profile.insuranceOff)
         }
         if (before > gross) TextButton(onClick = { form.gross = before }) {
             Text("실수령액이었다면: 공제 전 약 ${won(before)}으로 바꾸기")
@@ -576,7 +585,8 @@ private fun ResultStage(
             if (m.changes.isNotEmpty() || m.unmatched.isNotEmpty()) Text("바꿀 것만 골라 주세요. 빼면 지금 설정 그대로예요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             amounts.forEach { c -> PickRow(c.label, "${c.from} → ${c.to}", c.key in keep) { onToggle(c.key) } }
-            m.unmatched.forEach { (name, amount) -> PickRow("‘$name’ 더하기", "명세서에만 있는 수당 · 매달 ${won(amount)}", name in adds) { onToggleAdd(name) } }
+            m.unmatched.forEach { (name, amount) -> PickRow("‘$name’ 더하기",
+                if (CustomRule.looksOneMonth(name)) "명세서에만 있는 소급분 · ${m.month.monthValue}월만 ${won(amount)}" else "명세서에만 있는 수당 · 매달 ${won(amount)}", name in adds) { onToggleAdd(name) } }
             if (ways.isNotEmpty()) {
                 Text("계산 방식 (회사가 정말 이렇게 계산하는지 알 때만)", style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 8.dp))

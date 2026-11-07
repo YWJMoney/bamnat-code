@@ -629,6 +629,11 @@ class PayViewModel(
 
     fun setCustomRuleOn(id: String, on: Boolean) = update { p -> p.copy(customRules = p.customRules.map { if (it.id == id) it.copy(on = on) else it }) }
 
+    /** 1.39 [PAYX-56] 세금 뗀 뒤 빼기 (사택관리비·회비) or 지금처럼, for a rule from before 1.39. */
+    fun setCustomRuleAfterTax(id: String, after: Boolean) = update(if (after) "세금 뗀 뒤 빼도록 바꿨어요" else "급여 값을 고쳤어요") { p ->
+        p.copy(customRules = p.customRules.map { if (it.id == id) it.copy(afterTax = after) else it })
+    }
+
     fun removeCustomRule(id: String) = update { p -> p.copy(customRules = p.customRules.filterNot { it.id == id }) }
 
     /** D 1.32 [PAYA-03] Every kept payslip month at once (프로): the settings that fit them all; nothing is saved until [applyFit]. */
@@ -646,11 +651,16 @@ class PayViewModel(
     }
 
     /** [PAYS-02] Keeps the matched settings and the check; one tap on 되돌리기 brings the old ones back. */
-    fun applyMatch(match: PayslipMatch, keep: Set<String> = match.changes.map { it.key }.toSet(), extra: List<PayItem> = emptyList()) =
+    fun applyMatch(
+        match: PayslipMatch, keep: Set<String> = match.changes.map { it.key }.toSet(), extra: List<PayItem> = emptyList(),
+        /** 1.39 [PAYX-57] 명세서의 소급분, that month only. */
+        extraRules: List<com.bamnat.core.pay.CustomRule> = emptyList(),
+    ) =
         update("명세서에 맞춰 바꿨어요") { p ->
         val picked = match.picked(p, keep, Today.millis())
         // PC a34f53b0: allowances only the payslip had, picked to add; the month was not matched with them, so not marked checked.
-        val v = if (extra.isEmpty()) picked else picked.copy(items = picked.items + extra, verified = p.verified)
+        val v = if (extra.isEmpty() && extraRules.isEmpty()) picked
+            else picked.copy(items = picked.items + extra, customRules = (picked.customRules + extraRules).take(com.bamnat.core.pay.CustomRule.MAX), verified = p.verified)
         v.copy(rules = v.rules.copy(extraNames = p.rules.extraNames))
     }
 }

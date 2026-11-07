@@ -99,6 +99,11 @@ data class MonthPay(
     val compLeave: Map<LocalDate, Int> = emptyMap(),
     /** [PAYX-35] Each whole week of the period and whether it earned 주휴 (주 15시간 이상·개근, 제55조·시행령 제30조). */
     val holidayWeeks: List<HolidayWeek> = emptyList(),
+    /**
+     * 1.39 [PAYX-56] 매달 빠지는 돈 taken off after tax (사택관리비·회비, [CustomRule.paidAfterTax]): not in [total] (지급 총액), each a
+     * positive amount that [TakeHome] takes off 실수령.
+     */
+    val afterTax: List<PayLine> = emptyList(),
 ) {
     val total: Long get() = lines.sumOf { it.amount }
     val estimated: Boolean get() = lines.any { it.estimated } || minutes.any { it.estimated }
@@ -745,6 +750,7 @@ class PayCalculator(
             )
         }
         // [PAYS-07] Rules paid once a month: a fixed amount or a share of 기본급, added or taken off.
+        val afterTaxLines = mutableListOf<PayLine>()
         for (rule in profile.customRules) {
             if (!rule.on || !rule.pay.monthly) continue
             if (!rule.inPeriod(month) || rule.tenureOk(month, profile.hireDate) != true) continue
@@ -761,6 +767,12 @@ class PayCalculator(
             }
             val amount = if (rule.capPerMonth > 0) minOf(whole, rule.capPerMonth) else whole
             if (amount == 0L) continue
+            // 1.39 [PAYX-56] 사택관리비처럼 공제 쪽 돈은 지급 총액에서 빼지 않고 세금 뒤 실수령에서 빼요.
+            if (rule.paidAfterTax) {
+                afterTaxLines += PayLine(LineKind.ALLOWANCE, rule.lineLabel, amount, formula = "$formula · 세금 뗀 뒤 실수령에서 빼요",
+                    basis = "명세서 공제 쪽 항목: 지급 총액·4대보험·소득세 기준에 들어가지 않아요")
+                continue
+            }
             lines += PayLine(
                 LineKind.ALLOWANCE, rule.lineLabel, if (rule.deduct) -amount else amount,
                 formula = formula + (if (amount < whole) " → 월 한도 ${won(rule.capPerMonth)}" else "") + if (rule.deduct) " 차감" else "",
@@ -951,7 +963,7 @@ class PayCalculator(
         }
         return MonthPay(month, lines, hourly, rates.version, minutes, warnings, dayPays,
             periodStart.takeUnless { profile.period.isCalendarMonth }, periodEnd.takeUnless { profile.period.isCalendarMonth },
-            profile.period.payDate(month), missing, itemCounts.toMap(), compLeave.toMap(), holidayWeeks.toList()).withHourlyNote(hourlyFormula)
+            profile.period.payDate(month), missing, itemCounts.toMap(), compLeave.toMap(), holidayWeeks.toList(), afterTaxLines.toList()).withHourlyNote(hourlyFormula)
     }
 
     /**

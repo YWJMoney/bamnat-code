@@ -237,8 +237,7 @@ private fun DayFirstCard(
         (1..month.lengthOfMonth()).mapNotNull { snapshot.resolver.resolve(month.atDay(it)).leave }.filter { it.kind.annual }.sumOf { it.days }
     }
     val left = ledger?.takeIf { it.lots.isNotEmpty() }?.available
-    val takeHome = payTotal?.takeIf { mode != null }?.let { TakeHome.estimate(it, mode!!, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
-        nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0) }
+    val takeHome = payTotal?.takeIf { mode != null }?.let { TakeHome.of(profile, month, it, mode!!, nonTaxable) }
     val overtimeDays = remember(snapshot, month) {
         (1..month.lengthOfMonth()).count { snapshot.resolver.resolve(month.atDay(it)).hasExtraWork }
     }
@@ -281,6 +280,7 @@ private fun DayFirstCard(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
             )
+            com.bamnat.app.ui.pay.TakeHomeNotes(r, profile, month)
             // [PAYX-23] The pension line is this month's pay, the bill last year's.
             if (mode == TaxMode.INSURANCE_4) Text(TakeHome.PENSION_NOTE, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -310,6 +310,8 @@ private fun TaxFamilyRow(calendarId: String, profile: PayProfile) {
         }
         Text("근로소득세는 국세청 간이세액표 값이에요. 가족 수는 본인·배우자를 포함해 세어 주세요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1.39 [PAYX-59] 만 60세 이상·65세 이후 고용·주 15시간 미만: 그 보험은 떼지 않아요.
+        com.bamnat.app.ui.pay.InsuranceOffRow(profile.insuranceOff) { off -> set { it.copy(insuranceOff = off) } }
     }
 }
 
@@ -335,8 +337,7 @@ private fun PayGapCard(
         value = payTotal?.let { runCatching { takeHome(it, month) }.getOrNull() }
     }
     val fromRecords = learned?.basis == com.bamnat.core.tax.TaxLearner.Basis.LEARNED
-    val expected = if (fromRecords) learned?.net else payTotal?.takeIf { mode != null }?.let { TakeHome.estimate(it, mode!!, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
-        nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).net }
+    val expected = if (fromRecords) learned?.net else payTotal?.takeIf { mode != null }?.let { TakeHome.of(profile, month, it, mode!!, nonTaxable).net }
     val basisLabel = if (fromRecords) "내 ${if (style == WorkStyle.HOURLY) "급여" else "월급"} 기록으로 맞춘 세후" else mode?.gapLabel() ?: "세전"
     val payDate = profile?.period?.payDate(month)
     val gap = remember(book, month, expected, profile) { book?.let { PayGaps.of(month, expected, payDate, it.entries) } }
@@ -397,8 +398,7 @@ private fun PayGapCard(
                     TextButton(onClick = {
                         if (gate.allows(com.bamnat.app.tier.Feature.PAY_REPORT) || com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) scope.launch {
                             val gross = payTotal ?: return@launch
-                            val ded = TakeHome.estimate(gross, mode ?: TaxMode.NONE, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
-                                nonTaxable ?: profile?.let { p -> TakeHome.nonTaxable(p, month) } ?: 0).deductions
+                            val ded = TakeHome.of(profile, month, gross, mode ?: TaxMode.NONE, nonTaxable).deductions
                             com.bamnat.app.report.ReportShare.pdf(context, PayGaps.doc(gap, gross, if (fromRecords) emptyList() else ded, basisLabel),
                                 "bamnat-덜받은돈-$month.pdf")
                         } else com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT)
