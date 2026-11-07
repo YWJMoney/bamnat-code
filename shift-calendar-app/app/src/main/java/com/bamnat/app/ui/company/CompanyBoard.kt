@@ -407,6 +407,13 @@ fun TalkSheet(holder: TalkHolder) {
     // 1.36 [VIL-16] 마을 V16: a 자랑 on a kind of work's plaza may carry one of my public recipes.
     var attach by remember(o.setup) { mutableStateOf<Pair<String, String>?>(null) }
     val styleRoom = o.room && o.company.startsWith("style-")
+    // 1.39 [PLZC-04][PLZC-10] a kind of work's room: 근무 태그 under names and 나도요 in place of 공감·비공감.
+    val people = styleRoom && holder.people
+    var tagScope by remember { mutableStateOf(false) }
+    var tagTick by remember { mutableStateOf(0) }
+    val myTag by androidx.compose.runtime.produceState<com.bamnat.core.plaza.PlazaTag?>(null, people, o.company, tagTick) {
+        value = if (people) holder.myTag(o.company) else null
+    }
     val showable by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>(), styleRoom, kind) {
         if (styleRoom && kind == "show") value = holder.showable()
     }
@@ -507,7 +514,7 @@ fun TalkSheet(holder: TalkHolder) {
                                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f), MaterialTheme.shapes.medium) else Modifier) {
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
                                 onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
-                                company = o.company, setup = o.setup, roomName = if (o.room) o.title else null,
+                                company = o.company, setup = o.setup, roomName = if (o.room) o.title else null, meToo = people,
                                 onRedo = if (talk.past || o.room) null else ({ redoing = p }),
                                 onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i) { e -> error = e } }),
                                 onFixAt = if (o.room || p.kind != "fix" || !canFix) null else holder::openFix)
@@ -518,7 +525,7 @@ fun TalkSheet(holder: TalkHolder) {
                                     Column(Modifier.weight(1f)) {
                                         PostRow(r, onDelete = { holder.delete(r.id) }, onFlag = { flagging = r }, onHide = { hiding = r },
                                             onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
-                                            helpful = r.id == p.answer,
+                                            helpful = r.id == p.answer, meToo = people,
                                             onHelpful = if (p.kind == "question" && p.mine && !r.mine && r.hidden == null && !talk.past)
                                                 ({ holder.answer(p.id, r.id) { e -> error = e } }) else null)
                                     }
@@ -613,6 +620,15 @@ fun TalkSheet(holder: TalkHolder) {
                 if (rulesAsked && !rulesOk) PlazaRulesCard(rules, onAgreed = { rulesOk = true }, modifier = Modifier.padding(top = 8.dp))
                 else if (styleRoom && rulesAsked) com.bamnat.app.ui.village.VillageNameCard(holder.container, unnamed = "참여자 번호",
                     modifier = Modifier.padding(top = 8.dp))
+                // 1.39 [PLZC-10] 3-3: what my post will carry, said by the box; 보일 것 고르기 changes it (on this phone).
+                if (tagScope) PlazaTagScopeDialog(holder.container, o.company, onDismiss = { tagScope = false; tagTick++ })
+                myTag?.let { t ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                        Text("내 글에 붙는 태그 ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        PlazaTagLine(t, Modifier.weight(1f))
+                        TextButton(onClick = { tagScope = true }) { Text("고르기") }
+                    }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
@@ -747,6 +763,8 @@ private fun PostRow(
     onPoll: ((Int?) -> Unit)? = null,
     /** 1.36 [VIL-13] The room's name when this post can be kept (간직하기); null elsewhere. */
     roomName: String? = null,
+    /** 1.39 [PLZC-04][PLZC-10] A kind of work's room with plaza.people on: the writer's 근무 태그, and 나도요 for 공감·비공감. */
+    meToo: Boolean = false,
     /** 1.39 발굴 2-2: on a 보완 요청, opens the user's own pay where its fields are set; null when theirs is not to be changed here. */
     onFixAt: ((List<String>) -> Unit)? = null,
 ) {
@@ -780,6 +798,7 @@ private fun PostRow(
             if (maker != null && !p.mine) Text("$name ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable(onClickLabel = "프로필 보기") { com.bamnat.app.recipe.RecipeLinks.openMaker(maker) }.heightIn(min = 32.dp))
             else Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
+            if (meToo) WriterMarks(p)
             when (p.kind) {
                 "question" -> { Spacer(Modifier.width(4.dp)); StatusChip("질문", Tone.QUIET) }
                 "tip" -> { Spacer(Modifier.width(4.dp)); StatusChip("팁", Tone.GOOD) }
@@ -828,6 +847,7 @@ private fun PostRow(
                 }
             }
         }
+        if (meToo) p.tag?.let { PlazaTagLine(it) }
         // [COMM-11] I2: one 개인 정보 신고 marks the post 확인 중, dimmed, until an admin looks.
         if (p.review && p.hidden == null) {
             Text("확인 중 · 개인 정보가 있다는 신고가 있어 운영자가 보고 있어요", style = MaterialTheme.typography.labelSmall,
@@ -897,7 +917,10 @@ private fun PostRow(
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                 // [COMM-13] Small words, not the rule's big 맞았어요·달라요 buttons: more posts fit, and a post's 공감 is not
                 // read as a vote on the rule (점검 보고서 하 '광장').
-                if (p.mine) {
+                if (meToo) {
+                    if (p.mine) Text("🙋 나도요 ${p.agree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else MeToo(p.agree, p.myVote) { onVote(true) }
+                } else if (p.mine) {
                     Text("공감 ${p.agree} · 비공감 ${p.disagree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     PostReactions(p.agree, p.disagree, p.myVote, onVote)
