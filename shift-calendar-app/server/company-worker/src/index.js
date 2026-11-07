@@ -3941,8 +3941,6 @@ async function post(request, env) {
   const dev = await deviceHash(device);
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
-  // 1.39 [PAYP-05] 마을 경고·쉬기 (claude/project-thread-0ncdir) hooks here when both are in: careGate(d, env, dev, "opinion", now) for a
-  // talk post or 보완 요청 on a company's version.
   const c = await talkable(env, body.company, body.setup);
   if (!c) return json({ error: "not_found" }, 404);
   const net = await network(request, env, now);
