@@ -85,7 +85,7 @@ import java.util.UUID
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: () -> Unit) {
+internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, onClose: () -> Unit) {
     val context = LocalContext.current
     val store = context.appContainer.phaseThree
     val scope = rememberCoroutineScope()
@@ -98,8 +98,10 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         }
     }
     val place = places?.firstOrNull()
-    var month by rememberSaveable { mutableStateOf(startMonth.toString()) }
-    val ym = YearMonth.parse(month)
+    // 1.39 G2 PC ef175fbf: the 관리 card opened last month and the 가게 card this month. With no month asked for, both open the one
+    // to settle next ([openMonth]); ◀ ▶ then keep what was picked.
+    var month by rememberSaveable { mutableStateOf(startMonth?.toString()) }
+    val ym = month?.let(YearMonth::parse) ?: place?.let { openMonth(it, Today.date()) } ?: YearMonth.from(Today.date()).minusMonths(1)
     var editing by remember { mutableStateOf<StaffMember?>(null) }
     var settings by remember { mutableStateOf(false) }
     var rehireAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
@@ -344,7 +346,9 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
             Column(Modifier.weight(1f)) {
                 Text(Fmt.won(l.gross), style = MaterialTheme.typography.titleMedium)
                 // 1.38 PC 8차: a 월급 직원 with no usual week has no days to count; '0일 · 0시간' read as nothing paid.
-                val counted = if (l.workDays > 0 || l.workMinutes > 0) "${l.workDays}일 · ${com.bamnat.core.hours.HoursFormat.korean(l.workMinutes)}" else null
+                // 1.39 G2 PC ef175fbf: '휴게시간 빼고 세기' moves every hour, so the line says which way it counted.
+                val counted = if (l.workDays > 0 || l.workMinutes > 0) "${l.workDays}일 · ${com.bamnat.core.hours.HoursFormat.korean(l.workMinutes)}" +
+                    if (place.legalBreaks) "(휴게 뺌)" else "(휴게 안 뺌)" else null
                 val insured = if (l.employerInsurance > 0) "4대보험 ${Fmt.won(l.employerInsurance)}" else null
                 if (counted != null || insured != null) Text(listOfNotNull(counted, insured).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -390,10 +394,22 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
                     if (p.formula.isNotBlank()) Hint(p.formula)
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                Text("달라진 날", style = MaterialTheme.typography.labelLarge)
+                // 1.39 G2 PC ef175fbf: the month's 30 day chips sat between one 근거 and the next staff member; folded until asked.
                 val mine = work.filter { it.staffId == l.staff.id }.associateBy { it.date }
-                MonthDays(month, mine, enabled = !closed) { day = it }
-                Hint("평소와 다른 날만 눌러 고쳐요. 지각·조퇴·결근·대근·연차·쉬는 날을 고를 수 있어요.")
+                var days by rememberSaveable(l.staff.id) { mutableStateOf(false) }
+                val said = mine.values.sortedBy { it.date }.joinToString(", ") { "${it.date.dayOfMonth}일 ${it.kind.label}" }
+                Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { days = !days }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("달라진 날" + if (mine.isNotEmpty()) " ${mine.size}일" else "", style = MaterialTheme.typography.labelLarge)
+                        if (!days) Hint(said.ifEmpty { "없어요 · 평소대로 계산했어요" })
+                    }
+                    Text(if (days) "접기" else if (closed) "보기" else "고치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                }
+                if (days) {
+                    MonthDays(month, mine, enabled = !closed) { day = it }
+                    Hint("평소와 다른 날만 눌러 고쳐요. 지각·조퇴·결근·대근·연차·쉬는 날을 고를 수 있어요.")
+                }
+                TextButton(onClick = { open = false }) { Text("근거 접기") }
             }
         }
     }
@@ -934,4 +950,14 @@ internal fun lastHead(now: com.bamnat.core.boss.Ledger, last: com.bamnat.core.bo
     if (same.size == now.lines.size) return "지난달 ${Fmt.won(before)} · $change"
     val who = same.map { it.staff.name.ifBlank { "이름 없음" } }.let { if (it.size <= 2) it.joinToString(", ") else "${it.size}명" }
     return "$who 기준 지난달 ${Fmt.won(before)} → ${Fmt.won(nowSame)} · $change"
+}
+
+/**
+ * 1.39 G2 PC ef175fbf: the month the 대장 opens on. Until last month's pay day (or with none set) it is last month, the one being
+ * settled; once that day has passed it is this month, the next to pay.
+ */
+internal fun openMonth(place: Workplace, today: LocalDate): YearMonth {
+    val last = YearMonth.from(today).minusMonths(1)
+    val pay = place.payDate(last) ?: return last
+    return if (today.isAfter(pay)) last.plusMonths(1) else last
 }
