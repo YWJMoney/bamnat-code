@@ -85,7 +85,9 @@ internal const val ASK_NOTICE =
  * [onShare] opens 내 설정 나누기, [onFix] the screen where the setup is corrected.
  */
 @Composable
-fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (FixPlace) -> Unit) {
+fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (FixPlace) -> Unit,
+                      /** 1.38 PC 12.4.1: the invitation's sheet is up over this screen, so its card does not ask again under it. */
+                      hideInvite: Boolean = false) {
     if (!liveEnabled(vm)) return
     val invite by vm.invite.collectAsStateWithLifecycle()
     val askVote by vm.askVote.collectAsStateWithLifecycle()
@@ -97,7 +99,7 @@ fun CompanyNudgeCards(vm: CompanyNudgeViewModel, onShare: () -> Unit, onFix: (Fi
     LaunchedEffect(thanked) { if (thanked != null) { kotlinx.coroutines.delay(5_000); thanked = null } }
     // 1.36 PC C3: the invitation card waits for the day after the first setup.
     val quiet = androidx.compose.ui.platform.LocalContext.current.appContainer.firstSetup.quietToday()
-    val draft = invite.takeIf { !quiet }
+    val draft = invite.takeIf { !quiet && !hideInvite }
     val asked = askVote
     when {
         draft != null -> InviteCard(draft, rewardShort(terms), onShare = onShare, onLater = { vm.closeInvite() }, onNever = { vm.closeInvite(never = true) },
