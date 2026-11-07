@@ -50,7 +50,7 @@ Claude Code는 저장소 맨 위의 이 파일을 저절로 읽어요(클라우�
 | 곳 | 무엇 |
 |---|---|
 | `YWJMoney/bamnat-code` (비공개) | 앱·워치·서버·문서 코드 전부. 개발은 여기서 |
-| `YWJMoney/-` (공개) | GitHub Pages만: `privacy/`, `terms/`, `community/`, `remote/`. 코드·설계 문서는 절대 올리지 않아요. 이 네 폴더를 고치면 공개 저장소에도 같은 내용을 PR로 올려요 |
+| `YWJMoney/-` (공개) | GitHub Pages만: `privacy/`, `terms/`, `community/`, `remote/`, `r/`(레시피 링크 페이지), `calc/`·`shift/`(검색용 무료 계산기·교대 달력, 공개 저장소 PR #16, Play 링크 출처 `utm_source=bamnat_web`). 코드·설계 문서는 절대 올리지 않아요. 이 폴더들을 고치면 공개 저장소에도 같은 내용을 PR로 올려요. Play로 가는 링크에는 출처를 붙여요: 검색 페이지 `bamnat_web`, 받는 쪽 페이지 `bamnat_share`, 친구 초대 `bamnat_invite`(1.39 SPREAD-02) |
 | 사용자 PC `C:\bamnat` | `bamnat-code`를 받아 둔 곳(에뮬레이터 검증용). 원격 저장소는 `bamnat-code`여야 해요(옛 `-` 주소는 이제 공개 Pages) |
 | 프로젝트 파일 `/mnt/project-files/` | 계획·출시 파일·사용자 안내. 계정을 바꾸면 사라지니, 코드에 필요한 규칙은 이 저장소에 적어요 |
 
