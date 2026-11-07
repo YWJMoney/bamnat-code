@@ -39,6 +39,8 @@ object ProCatalog {
         "look.wardrobe" to "THEME_WARDROBE",
         // 1.36 [PRF-12] 창작자 꾸미기.
         "recipe.creatorPro" to "CREATOR_PRO",
+        // 1.39 [TASK-07] 할 일 위젯 1개는 무료, 2개째부터 프로 (사용자 2026-11-07 "무료 프로 구분은 확실히").
+        "widget.tasksMore" to "MORE_TASK_WIDGETS",
     )
 
     fun isPro(id: String): Boolean = id in tiers

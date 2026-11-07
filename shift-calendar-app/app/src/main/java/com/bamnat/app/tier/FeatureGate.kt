@@ -79,6 +79,8 @@ enum class Feature(val minTier: Tier, private val ownLabel: String? = null) {
     THEME_WARDROBE(Tier.PRO),
     /** [PRF-12] 1.36 창작자 꾸미기: 프로필 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프. 팔로우·보기는 늘 무료. */
     CREATOR_PRO(Tier.PRO),
+    /** 1.39 [TASK-07] 할 일 위젯: the first on the home screen is free, a second and more are 프로. */
+    MORE_TASK_WIDGETS(Tier.PRO),
     ;
 
     /** [NXT-03] 1.29 AU: a 프로 feature's name is core's ProFeatures table, the one the server and 진단 use for free.<FEATURE>. */

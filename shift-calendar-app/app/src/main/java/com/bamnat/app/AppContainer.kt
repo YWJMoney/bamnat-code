@@ -1041,6 +1041,12 @@ class AppContainer(context: Context) {
                     .debounce(300)
                     .collect { com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, it) }
             }
+            // 1.39 [TASK-07] 할 일 위젯 follows the memos (finished in the app, a new one, one moved to the trash) and 프로 (its second widget).
+            keep("taskwidget") {
+                combine(memoRepository.memos, featureGate.state.map { it.allows(com.bamnat.app.tier.Feature.MORE_TASK_WIDGETS) }.distinctUntilChanged()) { m, p -> m to p }
+                    .drop(1).debounce(800)
+                    .collect { com.bamnat.app.widget.TaskWidget.redraw(appContext) }
+            }
             // [INV-08] An investor alarm or date saved, changed or restored re-plans the next investor notice.
             keep("invest") { com.bamnat.app.invest.InvestNotices.follow(this@AppContainer) }
             // [INV-34] 월말 요약's next notice while there is an investor calendar; it reads them when it comes.

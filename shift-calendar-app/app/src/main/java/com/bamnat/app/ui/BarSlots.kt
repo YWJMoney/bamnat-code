@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.dp
 
 /** [NAV2-02] The 나 button's name, which TalkBack reads and the tests find. */
 internal const val ME_BUTTON = "나 · 설정과 다른 화면"
@@ -117,8 +118,12 @@ internal fun SlotIcon(icon: ImageVector, badge: Int, dot: Boolean, dotSaid: Stri
  * 묶음. One tap goes there.
  */
 @Composable
-internal fun GroupMenu(expanded: Boolean, members: List<TabPick>, current: String?, onPick: (String) -> Unit, onEdit: () -> Unit, onDismiss: () -> Unit) {
-    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+internal fun GroupMenu(expanded: Boolean, members: List<TabPick>, current: String?, onPick: (String) -> Unit, onEdit: () -> Unit, onDismiss: () -> Unit,
+    beside: Boolean = false) {
+    // 1.39 3차 PC (펼친 화면 1812x2176: 옆 막대 묶음 칸을 누르면 목록이 막대 위를 덮어요): on the side rail the list opens beside the rail, level
+    // with the icon, instead of under it. The menu is anchored on the 24 dp icon, which sits [RAIL_ICON_START] in from the rail's edge.
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss,
+        offset = if (beside) androidx.compose.ui.unit.DpOffset(RAIL_WIDTH - RAIL_ICON_START + 8.dp, (-24).dp) else androidx.compose.ui.unit.DpOffset.Zero) {
         members.forEach { p ->
             DropdownMenuItem(
                 text = { Text(p.label) },
@@ -131,6 +136,10 @@ internal fun GroupMenu(expanded: Boolean, members: List<TabPick>, current: Strin
         DropdownMenuItem(text = { Text(EDIT_GROUP) }, leadingIcon = { Icon(Icons.Outlined.Edit, null) }, onClick = { onDismiss(); onEdit() })
     }
 }
+
+/** The Material side rail's width and where its item's icon starts in it ((80 - 24) / 2). */
+private val RAIL_WIDTH = 80.dp
+private val RAIL_ICON_START = 28.dp
 
 /** [NAV2-03] Asks for the bar's editor from anywhere (설정 › 화면과 글자's row); the app's root opens it. */
 internal object BarEditLinks {
