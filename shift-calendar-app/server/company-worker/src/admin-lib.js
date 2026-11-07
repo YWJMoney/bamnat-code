@@ -117,6 +117,8 @@ export function adminLib() {
     public: "모두의 문의가 아니에요",
     purchase: "구매 정보를 다시 확인해 주세요",
     rate_limited: "잠시 뒤 다시 해 주세요",
+    no_pay: "이 판에는 급여 방식이 없어요",
+    closed: "아직 열리지 않은 기능이에요",
     // [PLAZA-07][PLAZA-10] 1.26 AF: 회사 참여와 새 정보 보상.
     member_wait: "이 달력은 회사를 바꾼 지 30일이 지나야 다른 회사로 바꿀 수 있어요",
     member_limit: "한 휴대폰은 회사 두 곳까지 참여할 수 있어요",

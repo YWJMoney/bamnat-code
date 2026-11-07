@@ -816,6 +816,45 @@ export async function sha256hex(text) {
 }
 
 /** [text] (as sent) read, cleaned and written: {recipe, text, hash}. Throws RecipeError. */
+/** [PAYP-08] cleanRecipe's {recipe, text, hash} as others may read it. */
+async function sharedOnly(clean) {
+  const out = await sharedPayOut(clean.text, clean.hash);
+  return out.body === clean.text ? {} : { text: out.body, hash: out.hash, recipe: JSON.parse(out.body) };
+}
+
+/**
+ * 1.39 [PAYP-08] (사용자 2026-11-07 "급여 계산 정보는 공개되면 안될 정보"; 숨은 문제 발굴 P0-1 ①): the 근무 주기·급여 방식 piece
+ * carries the company file, pay part and all. A recipe others can read (공개·링크) keeps its shifts and order, never the pay part:
+ * shared pay ways go through the company 광장, which never shows them ([PAYP-01]). Taken out when a recipe is put up and again
+ * when one put up before 1.39 is read, with its hash for the text as served. A 나만 보기 recipe is the maker's own and keeps it.
+ */
+export async function sharedPayOut(text, hash) {
+  if (typeof text !== "string" || !text.includes('"company"')) return { body: text, hash };
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return { body: text, hash };
+  }
+  let changed = false;
+  for (const p of Array.isArray(v?.pieces) ? v.pieces : []) {
+    if (p?.kind !== "company" || typeof p.setup !== "string") continue;
+    try {
+      const file = JSON.parse(p.setup);
+      if (file && typeof file === "object" && file.pay !== undefined) {
+        delete file.pay;
+        p.setup = JSON.stringify(file);
+        changed = true;
+      }
+    } catch {
+      // A piece cleanRecipe let in always parses; anything else is left as it is.
+    }
+  }
+  if (!changed) return { body: text, hash };
+  const out = recipeCanonical(v);
+  return { body: out, hash: await sha256hex(out) };
+}
+
 export async function cleanRecipe(textOrObject) {
   const textIn = typeof textOrObject === "string" ? textOrObject : recipeCanonical(textOrObject);
   if (new TextEncoder().encode(textIn).length > RECIPE.maxBytes) fail("too_big");
@@ -1335,7 +1374,8 @@ async function recipeList(d, env, url) {
   // card, so the app draws a page of cards from this one (edge-cached) answer instead of asking for each work alone.
   const withBody = url.searchParams.get("body") === "1";
   return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}),
-    items: page.map((r) => (withBody ? { ...listItem(r, now), hash: r.hash, body: r.body } : listItem(r, now))),
+    // 1.39 [PAYP-08] A work put up before 1.39 is served without a company pay part.
+    items: await Promise.all(page.map(async (r) => (withBody ? { ...listItem(r, now), ...(await sharedPayOut(r.body, r.hash)) } : listItem(r, now)))),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
@@ -1352,6 +1392,8 @@ async function show(d, env, request, code, url) {
     const old = await d.one(env, "SELECT version, hash, body FROM recipe_versions WHERE code = ? AND version = ?", code, ver);
     if (old) version = old;
   }
+  // 1.39 [PAYP-08] Someone else's: without a company pay part (the maker's own as it was sent).
+  if (!mine) Object.assign(version, await sharedPayOut(version.body, version.hash));
   const myVote = dev ? await d.one(env, "SELECT value, reason FROM recipe_votes WHERE code = ? AND device = ?", code, dev) : null;
   const out = { ...listItem(r, Date.now()), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}) };
   if (mine) {
@@ -1398,6 +1440,8 @@ async function publish(d, env, request) {
     ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "recipe", RECIPE_LIMITS.perNetworkDay, now)));
   if (hit) return hit;
   const scope = readScope(body.scope);
+  // 1.39 [PAYP-08] What others can read carries no company pay part.
+  if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
   // 1.36 [SEC-11] Play Integrity before a write others see; a 나만 보기 recipe is the maker's own (off until INTEGRITY_MODE is set).
   if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const r = clean.recipe;
@@ -1446,6 +1490,8 @@ async function newVersion(d, env, request, code) {
     throw e;
   }
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
+  // 1.39 [PAYP-08]
+  if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
   // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
   if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const trust = await recipeTrust(d, env, dev, now);

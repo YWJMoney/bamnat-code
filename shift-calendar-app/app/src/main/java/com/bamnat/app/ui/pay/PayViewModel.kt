@@ -178,6 +178,26 @@ class PayViewModel(
             .forEach { (key, _) -> container.profiles.mark(calendarId, key, com.bamnat.core.profile.Source.TYPED, why = "급여 설정") }
     }
 
+    /** 1.39 [PAYP-04] The company way this calendar's pay uses; [PayWay.shared] locks its calculation on the pay screen. */
+    val sharedWay: kotlinx.coroutines.flow.StateFlow<com.bamnat.app.company.PayWay?> = container.companyOf(calendarId).payWays.way
+
+    /**
+     * 1.39 [PAYP-04] 직접 만들기 (사용자 2026-11-07 "직접 만들어서 사용하게"): the shared way out and the pay made again from its first step,
+     * with nothing of the shared calculation kept (no 7-day way back to it). The server stops counting the phone as using it.
+     */
+    fun leaveShared() = viewModelScope.launch {
+        val company = container.companyOf(calendarId)
+        val w = company.payWays.way.value
+        payStore.leaveShared()
+        company.payWays.use(null)
+        if (w != null && container.companyApi.enabled) {
+            val device = company.store.device
+            val cal = company.serverCal
+            container.appScope.launch { runCatching { container.companyApi.use(device, w.companyId, w.setup, false, cal) } }
+        }
+        container.telemetry.event("pay_way", "leave_shared")
+    }
+
     fun reset() = viewModelScope.launch {
         payStore.save(null)
         // [PAYF-04] No pay, no company pay way in use.

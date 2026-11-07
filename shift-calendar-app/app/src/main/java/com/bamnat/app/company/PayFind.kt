@@ -43,11 +43,14 @@ class PayFind(private val c: AppContainer, val calendar: String = PersonalCalend
         runCatching { c.companySearch.keepPage(page) }
         // The server keeps a join for 30 days whatever happens next, so the phone says it truly (결정 D79: members see the way).
         store.setMember(page.id, page.name)
-        val setup = page.setups.firstOrNull { it.id == lead && !it.payHidden && it.hasPay }
-            ?: page.setups.filter { it.hasPay && !it.payHidden && !it.doubted }.maxByOrNull { if (it.lead) 1 else 0 }
+        // 1.39 [PAYP-03] A 1.39 server shows no pay (payPrivate): the version is picked as before and its pay taken on its own.
+        val usable = { s: SharedSetup -> s.hasPay && (!s.payHidden || s.payPrivate) }
+        val setup = page.setups.firstOrNull { it.id == lead && usable(it) }
+            ?: page.setups.filter { usable(it) && !it.doubted }.maxByOrNull { if (it.lead) 1 else 0 }
             ?: return Used.Gone
+        val text = wayText(c, store.device, page.id, setup) ?: return Used.Gone
         c.telemetry.event("pay_find", "use")
-        val way = PendingWay(page.id, page.name, setup.dept, setup.id, setup.text, PendingWay.Source.FIND)
+        val way = PendingWay(page.id, page.name, setup.dept, setup.id, text, PendingWay.Source.FIND)
         s.pendingWays.offer(way)
         return Used.Ready(way)
     }
@@ -73,4 +76,13 @@ class PayFind(private val c: AppContainer, val calendar: String = PersonalCalend
     fun knownAll(): List<String> = scope.let { s ->
         listOfNotNull(s.payWays.way.value?.company, s.store.applied.value?.company, s.store.draft.value?.company, s.store.publicUse.value?.company)
     }.map { it.trim() }.filter { it.isNotEmpty() }.distinct()
+}
+
+/**
+ * 1.39 [PAYP-03] The company file of [setup] with its pay part, to put the way in: the page's own text from an older server, or the pay
+ * part taken now ([CompanyApi.take]) from a server that shows it to no one. Null when the version has no pay way to give.
+ */
+suspend fun wayText(c: AppContainer, device: String, companyId: String, setup: SharedSetup): String? {
+    if (!setup.payPrivate) return setup.text.takeIf { !setup.payHidden && setup.hasPay }
+    return c.companyApi.take(device, companyId, setup.id)
 }

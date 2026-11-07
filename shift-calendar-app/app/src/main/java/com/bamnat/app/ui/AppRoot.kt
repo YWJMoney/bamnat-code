@@ -1643,7 +1643,7 @@ private fun AppNavHost(
                         onFix = { nav.fixCompanySetup(it, calendar) }, hideInvite = inviting)
                     if (companyPay) {
                         // [PAYF-04] The company pay way in use: 맞아요·달라요 and 고쳐서 제안하기 on the pay screen itself, and its 기본급.
-                        com.bamnat.app.ui.company.PayWayCard(profile, update = vm::update, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                        com.bamnat.app.ui.company.PayWayCard(profile, update = vm::update, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), onLeave = vm::leaveShared)
                         // [PAYF-01] A pay set up by hand: the search box one tap away until a company's way is in use.
                         if (profile != null) com.bamnat.app.ui.company.PayFindLine(onSaved = { p -> vm.update { p } },
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
