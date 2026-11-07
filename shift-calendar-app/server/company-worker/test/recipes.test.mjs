@@ -469,6 +469,22 @@ test("[FX-01] 프로 문: 값 칸·값 더하기·값() 수식·밖 단추·알�
   await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { ...fx, buttons: [{ ...fx.buttons[0], where: "lock" }] }] }))), (e) => e.code !== undefined);
 });
 
+test("[FX-17] after the 정식 출시 switch a 기능 작품 others can see needs its maker's 프로 (나만 보기 and 1.38 rules stay free)", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const fx = { kind: "logic", values: [{ name: "물 잔", reset: "day", goal: 8 }], buttons: [{ id: "water", label: "물 한 잔", where: "widget", do: "valAdd", arg: "물 잔", by: 1 }] };
+  const old = { kind: "logic", buttons: [{ label: "기록", where: "day", do: "memoTpl", arg: "하루" }] };
+  // Before billing every phone has 프로 (the app's Gate.live).
+  assert.equal((await up(call, 1, { title: "물 위젯 하나", pieces: [...recipe().pieces, fx] })).status, 201);
+  const owner = await signIn(call);
+  assert.equal((await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "시험" }, owner)).status, 200);
+  const no = await up(call, 2, { title: "물 위젯 둘", pieces: [...recipe().pieces, fx] });
+  assert.equal(no.status, 403);
+  assert.equal(no.data.error, "fx_pro");
+  assert.equal((await up(call, 2, { title: "물 위젯 셋", pieces: [...recipe().pieces, fx] }, "private")).status, 201);
+  assert.equal((await up(call, 2, { title: "옛 규칙 하나", pieces: [...recipe().pieces, old] })).status, 201);
+});
+
 test("[FREE-09] every 추천 테마 core wrote reads the same on the server, nine for each kind of work (전문 달력 first, TAB-05), each with its look for the list", async () => {
   const themes = JSON.parse(readFileSync(new URL("../../../docs/recipes/theme-recipes.json", import.meta.url), "utf8"));
   assert.equal(themes.length, 54);

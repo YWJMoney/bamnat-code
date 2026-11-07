@@ -1547,6 +1547,8 @@ async function publish(d, env, request) {
   if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
   // 1.36 [SEC-11] Play Integrity before a write others see; a 나만 보기 recipe is the maker's own (off until INTEGRITY_MODE is set).
   if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+  // 1.39 [FX-17] A 기능 작품 others can see needs its maker's 프로 (the app asks first; this is the same line on the server).
+  if (scope !== "private" && d.hasPro && fxPartsOf(clean.text).length && !(await d.hasPro(env, dev, now))) return d.json({ error: "fx_pro", field: "recipe" }, 403);
   const r = clean.recipe;
   const skel = nameSkeleton(r.title);
   // 사칭 (S4): someone else's recipe with a name that looks the same is refused; the maker's own may share it.
@@ -1599,6 +1601,8 @@ async function newVersion(d, env, request, code) {
   if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
   // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
   if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+  // 1.39 [FX-17]
+  if (scope !== "private" && d.hasPro && fxPartsOf(clean.text).length && !(await d.hasPro(env, dev, now))) return d.json({ error: "fx_pro", field: "recipe" }, 403);
   const trust = await recipeTrust(d, env, dev, now);
   // [RCX-28] Up at once like a first 판; one the operator or 신고 hid stays hidden.
   const state = r.state === "hidden" ? "hidden" : scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";

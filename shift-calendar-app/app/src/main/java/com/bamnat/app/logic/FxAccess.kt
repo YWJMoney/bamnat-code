@@ -38,8 +38,12 @@ object FxAccess {
     /** This phone has 프로 for 기능 작품 (before the 정식 출시 switch every phone has). */
     fun pro(c: AppContainer): Boolean = c.featureGate.state.value.allows(Feature.FX_WORKS)
 
-    /** 기능 장치 run now: 프로, or a 하루 써 보기 running. */
-    fun on(c: AppContainer, now: Instant = Today.instant()): Boolean = pro(c) || load(c.appContext).open(now)
+    /**
+     * 기능 장치 run now: 프로, a 하루 써 보기 running, or a work being tried on with its 기능 ([TRY-06] 기능까지 써 보기, free like every
+     * 입혀 보기; it is all taken back when it ends).
+     */
+    fun on(c: AppContainer, now: Instant = Today.instant()): Boolean =
+        pro(c) || load(c.appContext).open(now) || com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)
 
     /** [key] (a 장터 code, or [FxTaste.OWN]): never tried, running until when, or used. */
     fun status(c: AppContainer, key: String, now: Instant = Today.instant()): FxTaste.Status = FxTaste.status(load(c.appContext), key, now)
