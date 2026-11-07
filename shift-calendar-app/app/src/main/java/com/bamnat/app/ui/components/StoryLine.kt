@@ -64,18 +64,21 @@ fun StoryLine(
     modifier: Modifier = Modifier,
 ) {
     val lines = remember(day, events) { DayStory.arrange(day, events) }
-    val nowAt = now?.takeIf { it.toLocalDate() == day }?.let { DayStory.nowAfter(lines, it) }
+    val today = now?.takeIf { it.toLocalDate() == day }
+    val nowAt = today?.let { DayStory.nowAfter(lines, it) }
     Column(modifier.fillMaxWidth()) {
         if (nowAt == -1) NowMark()
         lines.forEachIndexed { i, line ->
-            StoryRow(line, last = i == lines.lastIndex, shiftColor = shiftColor, onOpen = onOpen)
-            if (nowAt == i) NowMark()
+            // 1.38 PC 12.2: a thing still going on says so on its own card, and "지금" is not drawn under it as if it were over.
+            val going = today != null && DayStory.ongoing(line, today)
+            StoryRow(line, last = i == lines.lastIndex, shiftColor = shiftColor, onOpen = onOpen, going = going)
+            if (nowAt == i && !going) NowMark()
         }
     }
 }
 
 @Composable
-private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOpen: (StoryEvent) -> Unit) {
+private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOpen: (StoryEvent) -> Unit, going: Boolean = false) {
     val e = line.item
     var open by rememberSaveable(e.id) { mutableStateOf(false) }
     val dot = when (e.kind) {
@@ -108,11 +111,12 @@ private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOp
                 .animateContentSize(BamnatMotion.spec(BamnatMotion.open()))
                 .padding(horizontal = 12.dp, vertical = 10.dp)
                 .semantics(mergeDescendants = true) {
-                    contentDescription = "$time, ${e.title}"
+                    contentDescription = listOfNotNull(goingLabel(e.kind).takeIf { going }, time, e.title).joinToString(", ")
                     stateDescription = if (open) "펼침" else "접힘"
                 },
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
+            if (going) Text(goingLabel(e.kind), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Text(e.title, style = MaterialTheme.typography.titleSmall, color = storyTone(e.tone).color())
             Text(time, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -130,6 +134,12 @@ private fun NowMark() {
         }
         Spacer(Modifier.weight(1f).height(2.dp).background(MaterialTheme.colorScheme.primary))
     }
+}
+
+private fun goingLabel(kind: StoryKind) = when (kind) {
+    StoryKind.Shift -> "지금 근무 중"
+    StoryKind.Sleep, StoryKind.SleepPlan -> "지금 자는 중"
+    else -> "지금"
 }
 
 private fun hm(t: LocalDateTime) = "%02d:%02d".format(t.hour, t.minute)
