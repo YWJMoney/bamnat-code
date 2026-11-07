@@ -132,7 +132,7 @@ export const EARNED = {
   bugDays: 3,
   /** At most this many earned days a month (KST) per phone. */
   monthCap: 14,
-  words: { bug: "문제 신고가 고쳐져서" },
+  words: { bug: "문제 신고가 고쳐져서", idea: "보내 주신 제안이 앱에 들어가서", known: "같은 문제를 알려 주셔서" },
 };
 
 /** The first moment of [now]'s month in Korea. */
@@ -152,20 +152,57 @@ export function stackDays(until, rows, launchedAt) {
 
 /** Gives [days] once for [source], within the month's cap; the days actually given (0 when none). */
 export async function giveDays(env, kind, source, dev, days, now) {
+  const cap = (await rewardRules(env)).monthCap;
   const got = await one(env, "SELECT COALESCE(SUM(days), 0) AS n FROM day_rewards WHERE device = ? AND given_at >= ?", dev, kstMonthStart(now));
-  const give = Math.min(days, EARNED.monthCap - (got?.n ?? 0));
+  const give = Math.min(days, cap - (got?.n ?? 0));
   if (give <= 0) return 0;
   const r = await run(env, "INSERT OR IGNORE INTO day_rewards (source, device, kind, days, given_at) VALUES (?, ?, ?, ?, ?)", source, dev, kind, give, now);
   return r.meta.changes ? give : 0;
 }
 
-/** A 개발사항 just marked 완료: every phone that reported it as a problem gets [EARNED.bugDays], once per item. */
+/**
+ * 1.39 [LOOP-14] 쓰면 쌓이는 날 규칙(사용자 2026-11-07 "예전에 만들어서 세분화가 필요"): 관리 › 보상에서 최고 관리자가 바꿔요.
+ * bugDays 문제 신고가 고쳐짐, polishDays 제안이 다듬기로 들어감, featureDays 제안이 새 기능으로 들어감, knownDays 이미 고친 알려진 문제에
+ * '나도 겪어요'(기본 0: 주지 않음), monthCap 한 휴대폰이 한 달(KST)에 받는 날의 상한.
+ */
+export const REWARD_RULES = { bugDays: EARNED.bugDays, polishDays: 3, featureDays: 7, knownDays: 0, monthCap: EARNED.monthCap };
+export const REWARD_MOST = { bugDays: 30, polishDays: 30, featureDays: 30, knownDays: 30, monthCap: 60 };
+export async function rewardRules(env) {
+  const row = await one(env, "SELECT value FROM settings WHERE key = 'reward_rules'").catch(() => null);
+  if (!row) return { ...REWARD_RULES };
+  try {
+    const v = JSON.parse(row.value);
+    return Object.fromEntries(Object.entries(REWARD_RULES).map(([k, d]) => [k, Number.isInteger(v?.[k]) && v[k] >= 0 && v[k] <= REWARD_MOST[k] ? v[k] : d]));
+  } catch {
+    return { ...REWARD_RULES };
+  }
+}
+
+/** A 개발사항 just marked 완료: every phone that reported it as a problem gets the rule's bugDays, once per item. */
 export async function bugFixed(env, itemId, now) {
-  const rows = await all(env, `SELECT DISTINCT i.device AS device FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id
-    WHERE l.item_id = ? AND i.kind IN ('bug', 'problem')`, itemId);
+  const rules = await rewardRules(env);
+  // 1.39 [LOOP-17] 알려진 문제판에서 '나도 겪어요'만 누른 폰은 문제 신고와 따로(knownDays, 기본 0).
+  const rows = await all(env, `SELECT i.device AS device, MIN(COALESCE(i.via, '') = 'known') AS known FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id
+    WHERE l.item_id = ? AND i.kind IN ('bug', 'problem') GROUP BY i.device`, itemId);
   let phones = 0;
-  for (const r of rows) if (await giveDays(env, "bug", `bug:${itemId}:${r.device}`, r.device, EARNED.bugDays, now)) phones++;
+  for (const r of rows) {
+    const [kind, give] = r.known ? ["known", rules.knownDays] : ["bug", rules.bugDays];
+    if (give > 0 && (await giveDays(env, kind, `${kind}:${itemId}:${r.device}`, r.device, give, now))) phones++;
+  }
   if (phones) await audit(env, now, "earned_days", `${phones}대`, `bug ${itemId}`);
+  return phones;
+}
+
+/** 1.39 [LOOP-14] 개발사항이 완료되면: 제안(idea)을 보낸 폰에 다듬기·새 기능마다 정한 날(0이면 안 줌). 크기를 모르면 주지 않아요. */
+export async function ideaAdopted(env, itemId, now) {
+  const d = await one(env, "SELECT size FROM dev_items WHERE id = ?", itemId).catch(() => null);
+  const rules = await rewardRules(env);
+  const days = d?.size === "feature" ? rules.featureDays : d?.size === "polish" ? rules.polishDays : 0;
+  if (!days) return 0;
+  const rows = await all(env, `SELECT DISTINCT i.device AS device FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = ? AND i.kind = 'idea'`, itemId);
+  let phones = 0;
+  for (const r of rows) if (await giveDays(env, "idea", `idea:${itemId}:${r.device}`, r.device, days, now)) phones++;
+  if (phones) await audit(env, now, "earned_days", `${phones}대`, `idea ${itemId}`);
   return phones;
 }
 

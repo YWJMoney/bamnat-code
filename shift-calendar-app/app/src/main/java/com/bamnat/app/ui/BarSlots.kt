@@ -72,7 +72,8 @@ internal fun MeButton(rail: Boolean = false) {
             }
             HorizontalDivider()
             DropdownMenuItem(
-                text = { Text("모든 기능 보기") },
+                // 1.39 PC NAV2 2차: it opens the list where features are turned on and off, so it says so.
+                text = { Text("기능 목록·켜고 끄기") },
                 leadingIcon = { Icon(TabPicks.groupIcon, null) },
                 onClick = { open = false; me.open(TabSlotsUi.ALL_FEATURES) },
             )
@@ -91,7 +92,7 @@ internal object ShownRoute {
 }
 
 internal object TabSlotsUi {
-    /** The feature list (설정 › 기능 켜고 끄기), what 모든 기능 보기 opens. */
+    /** The feature list (설정 › 기능 켜고 끄기), what 기능 목록·켜고 끄기 opens. */
     val ALL_FEATURES = com.bamnat.core.layout.TabSlots.FEATURE + com.bamnat.core.guide.Place.FEATURES.name
 }
 

@@ -125,6 +125,28 @@ class Phase3ScreenshotTest : ScreenshotBase() {
         tapText("지난달", exact = true)
     }
 
+    /** 1.39 G6 [SETUP-18] A team made while the 리더's first setup waits: its times are asked once when the board opens. */
+    private fun seedNoTimes() = runBlocking {
+        val t = seedTeam()
+        app.container.phaseThree.saveTeam(t.copy(shifts = com.bamnat.core.team.TeamTimes.blank(t.shifts)))
+    }
+
+    @Test fun teamTimesAsked() = shoot("p3_13_team_times_ask", FOLDED) {
+        seedNoTimes()
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
+        settle()
+        tapText("열기", exact = true)
+    }
+
+    @Test fun teamTimesCard() = shoot("p3_14_team_times_card", FOLDED) {
+        seedNoTimes()
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
+        settle()
+        tapText("열기", exact = true)
+        settle()
+        tapText("나중에", exact = true)
+    }
+
     @Test fun teamPlanSheet() = shoot("p3_7_team_plan", FOLDED) {
         content {
             com.bamnat.app.ui.pro.WorkPlanSheet(com.bamnat.core.tier.WorkPlanKind.TEAM,

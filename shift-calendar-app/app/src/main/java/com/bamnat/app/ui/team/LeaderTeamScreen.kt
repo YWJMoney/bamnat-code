@@ -174,6 +174,9 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
     // 1.38 사용자 2026-11-06 (사장님처럼 교대가 없는 유형에 주야가 보임): the team takes the kinds in use, not those put away.
     val folded = com.bamnat.app.ui.shifts.foldedHere()
     val kinds = remember(snap, folded) { teamKinds(snap?.shiftTypes.orEmpty(), folded) }
+    // 1.39 G6 [SETUP-18]: with the first setup put off, the calendar's times are the app's samples, not the team's.
+    val appSettings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    val ownTimes = appSettings.setupDone || calendarId != com.bamnat.app.data.PersonalCalendar.MAIN
     val pickFile = rememberAnyFilePicker { uri ->
         scope.launch {
             reading = "파일을 읽고 있어요…"
@@ -202,7 +205,8 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
             Text(if (people.isEmpty()) "단톡방 명단을 그대로 붙여 넣어도 돼요. '민지 책임'처럼 직급은 따로 나눠요."
                 else "${people.size}명: " + people.take(6).joinToString(", ") { it.name } + if (people.size > 6) " …" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("근무 종류는 내 달력의 것(${kinds.joinToString(" ") { it.label }})을 그대로 써요.",
+            Text("근무 종류는 내 달력의 것(${kinds.joinToString(" ") { it.label }})을 그대로 써요." +
+                if (ownTimes) "" else " 내 근무 설정을 아직 안 해서, 근무 시간은 팀 표에서 한 번 정해요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }, confirmButton = {
@@ -210,6 +214,7 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
             val s = snap ?: return@TextButton
             val id = UUID.randomUUID().toString()
             val shifts = teamKinds(s.shiftTypes, folded).sortedBy { it.sortOrder }.map { TeamShift(it.id, it.label, it.name, it.colorArgb, it.isOff, it.start, it.end) }
+                .let { if (ownTimes) it else com.bamnat.core.team.TeamTimes.blank(it) }
             scope.launch {
                 c.phaseThree.saveTeam(Team(id, name.trim(), shifts = shifts, createdAt = Today.millis()))
                 c.phaseThree.saveMembers(people.mapIndexed { i, p -> TeamMember(UUID.randomUUID().toString(), id, p.name, p.role, p.skill, sort = i) })
@@ -324,6 +329,9 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
         calls.filter { it.taken == null && it.token != null }.forEach { k -> runCatching { com.bamnat.app.team.TeamCallSync.pull(c, store.teamNow(team.id) ?: team, k.id) } }
     }
 
+    var timesAsked by rememberSaveable(team.id) { mutableStateOf(false) }
+    var settingTimes by remember(team.id) { mutableStateOf(false) }
+    if (settingTimes) TeamTimesDialog(team, onDismiss = { settingTimes = false }) { t -> settingTimes = false; scope.launch { store.saveTeam(t) } }
     Scaffold(topBar = {
         TopAppBar(title = { Text(team.name) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             actions = {
@@ -353,6 +361,10 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 }, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 IconButton(onClick = { monthText = month.plusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
             }
+            // 1.39 G6 [SETUP-18] 근무 시간 정하기: asked once on the first open, then a card until every kind of work has its times.
+            val noTimes = com.bamnat.core.team.TeamTimes.missing(team)
+            LaunchedEffect(team.id, noTimes.isNotEmpty()) { if (noTimes.isNotEmpty() && !timesAsked) { timesAsked = true; settingTimes = true } }
+            if (noTimes.isNotEmpty()) TeamTimesCard(noTimes) { settingTimes = true }
             // 1.39 [FLOW-23] this month's board starts with today: 출근 수·빈자리 and the day's kinds by start time.
             val today = remember(b, team, Today.date()) { com.bamnat.core.team.TeamToday.of(team, b, Today.date()) }
             if (today != null && active.isNotEmpty()) TeamTodayHead(today)
@@ -550,6 +562,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 scope.launch {
                     // 1.38 PC 11차: a member with no day filled has nothing to share (the server refuses an empty link), so say who
                     // before 확정 instead of confirming and then blaming the internet.
+                    // 1.39 G6 [SETUP-18]: the links carry each day's times (the members' alarms), so they are set before 확정.
+                    if (com.bamnat.core.team.TeamTimes.missing(team).isNotEmpty()) { settingTimes = true; return@launch }
                     val blank = active.filter { b.daysOf(it.id).isEmpty() }
                     if (blank.isNotEmpty()) {
                         dialog = blank.joinToString(", ") { it.name } + "님은 이달 칸이 모두 비어 있어요. 근무나 오프를 칠한 뒤 확정해 주세요. " +
@@ -1140,3 +1154,50 @@ private fun MembersDialog(team: Team, members: List<TeamMember>, onDismiss: () -
  */
 internal fun teamKinds(types: List<com.bamnat.core.model.ShiftType>, folded: Set<Long>): List<com.bamnat.core.model.ShiftType> =
     types.filter { it.id !in folded }.takeIf { kept -> kept.any { !it.isOff } } ?: types
+
+/** 1.39 G6 [SETUP-18] The kinds of work still without times, and what they are for. */
+@Composable
+private fun TeamTimesCard(missing: List<TeamShift>, onSet: () -> Unit) {
+    val cal = com.bamnat.app.ui.theme.LocalCalendarColors.current
+    androidx.compose.material3.Surface(onClick = onSet, shape = MaterialTheme.shapes.medium, color = cal.warningContainer, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("근무 시간이 비어 있어요: ${missing.joinToString(" ") { it.label }}", style = MaterialTheme.typography.titleSmall)
+                Text("팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. 확정하기 전에 정해 주세요.", style = MaterialTheme.typography.bodySmall)
+            }
+            TextButton(onClick = onSet, modifier = Modifier.heightIn(min = 48.dp)) { Text("정하기") }
+        }
+    }
+}
+
+/**
+ * 1.39 G6 [SETUP-18] 근무 시간 정하기: each kind of work's start and end, set once for the team. When the leader's own calendar has
+ * its times by now (the first setup finished meanwhile), they are offered first.
+ */
+@Composable
+private fun TeamTimesDialog(team: Team, onDismiss: () -> Unit, onSave: (Team) -> Unit) {
+    val c = LocalContext.current.appContainer
+    val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
+    val mine by c.scheduleRepository.shiftTypes.collectAsStateWithLifecycle(emptyList())
+    val work = team.shifts.filter { !it.isOff }
+    val times = remember(team.id) { androidx.compose.runtime.mutableStateMapOf<Long, Pair<java.time.LocalTime?, java.time.LocalTime?>>().apply { work.forEach { put(it.id, it.start to it.end) } } }
+    val fromMine = if (settings.setupDone) work.mapNotNull { s -> mine.firstOrNull { it.id == s.id && it.start != null && it.end != null }?.let { s.id to (it.start to it.end) } }.toMap() else emptyMap()
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("근무 시간 정하기") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. 쉬는 날은 시간이 없어요.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (fromMine.isNotEmpty()) TextButton(onClick = { times.putAll(fromMine) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 달력 근무 시간 가져오기") }
+            work.forEach { s ->
+                val (a, b) = times[s.id] ?: (null to null)
+                Text("${s.label} · ${s.name}", style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.bamnat.app.ui.components.TimeField("시작", a, { times[s.id] = it to times[s.id]?.second }, Modifier.weight(1f), empty = "정하기")
+                    com.bamnat.app.ui.components.TimeField("끝", b, { times[s.id] = times[s.id]?.first to it }, Modifier.weight(1f), empty = "정하기",
+                        start = a?.plusHours(8) ?: java.time.LocalTime.of(18, 0))
+                }
+            }
+        }
+    }, confirmButton = {
+        TextButton(onClick = { onSave(com.bamnat.core.team.TeamTimes.set(team, times.toMap())) }) { Text("저장") }
+    }, dismissButton = { TextButton(onClick = onDismiss) { Text("나중에") } })
+}

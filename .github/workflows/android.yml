@@ -46,6 +46,7 @@ jobs:
           cache-read-only: false
       - run: python3 tools/check_tracker.py
       - run: python3 tools/test_check_checklist.py
+      - run: python3 tools/test_dev_status.py
       - run: sh ./gradlew $GRADLE_FLAGS -p core test
       - if: always()
         run: python3 tools/slow_tests.py core/build/test-results >> "$GITHUB_STEP_SUMMARY"

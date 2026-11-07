@@ -170,7 +170,9 @@ internal fun BarSlotsDialog(
             },
             onPick = { k ->
                 picking = null
-                change(if (p.add) TabSlots.addTo(slots, p.index, k) else TabSlots.replace(slots, p.index, k))
+                // 1.39 PC NAV2 2차 (기본 이름 '모음'): a new 묶음 starts named for its two screens, which the name box then shows.
+                val name = (at as? TabSlots.One)?.let { TabSlots.cleanName(label(it.key) + "·" + label(k)) } ?: TabSlots.DEFAULT_GROUP_NAME
+                change(if (p.add) TabSlots.addTo(slots, p.index, k, name) else TabSlots.replace(slots, p.index, k))
                 // A new 묶음 is named at once, so it does not stay '모음'.
                 if (p.add && at is TabSlots.One) renaming = k
             },

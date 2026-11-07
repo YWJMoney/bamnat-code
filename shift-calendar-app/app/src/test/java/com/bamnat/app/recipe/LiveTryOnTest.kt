@@ -116,6 +116,27 @@ class LiveTryOnTest {
         assertEquals(c.recipes.pieces.lookOf(c.settingsRepository.current), c.recipes.pieces.lookOf(c.settingsRepository.settings.value))
     }
 
+    /**
+     * PC a483ca15 (사무직이 벚꽃 파스텔을 입어 보면 메모 줄이 보이는데, 입은 달력은 메모 점): the example's 입으면 draws the 달력 모양 입기
+     * leaves — someone else's theme keeps my 메모 줄 수 and 줄 순서 — for every theme of every kind of work.
+     */
+    @Test fun theExampleShowsTheCellsWearingLeaves() = runBlocking {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY, memoInCells = false, calView = com.bamnat.core.recipe.CalendarView(memo = 0).encode()) }
+        val start = c.recipes.pieces.lookSnapshot()
+        WorkStyle.entries.flatMap { BuiltInThemes.of(it) }.distinctBy { it.title }.forEach { theme ->
+            c.recipes.pieces.restoreLook(start)
+            val mine = Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
+            val shown = com.bamnat.app.ui.recipe.tryOnAfter(mine, theme, LookParts.of(theme).map { it.id }.toSet(), own = false)
+            fun content(r: Recipe) = r.pieces.firstOrNull { it.kind == PieceKind.CAL_VIEW }?.values.orEmpty()
+                .filterKeys { it in com.bamnat.core.recipe.CalendarView.CONTENT_KEYS }.mapValues { (_, v) -> (v as? Number)?.toLong() ?: v }
+            assertTrue(c.wardrobe.wear(theme, "builtin:${theme.title}", own = false))
+            val worn = Recipe("입음", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
+            assertEquals(theme.title, content(worn), content(shown))
+            val view = com.bamnat.core.recipe.CalendarView.decode(c.settingsRepository.current.calView)
+            assertEquals(theme.title, 0, view.memo ?: 0)
+        }
+    }
+
     @Test fun nothingToTryWhenTheLookIsAlreadyMine() = runBlocking {
         val theme = BuiltInThemes.of(WorkStyle.SHIFT)[0]
         assertTrue(c.wardrobe.wear(theme, "builtin:${theme.title}", own = false))
