@@ -2,7 +2,7 @@
 // (where the install came from, never the link), an iPhone line instead of a dead end, and a close that stays closed.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import worker, { readsForget, storeLink, spreadBack, spreadCard } from "../src/index.js";
+import worker, { readsForget, storeLink, spreadBack, spreadCard, OG_TEXT, SPREAD_KINDS } from "../src/index.js";
 
 function kv() {
   const map = new Map();
@@ -40,7 +40,7 @@ test("a family link: the card comes after the month and the 앱에서 보기 sto
   assert.doesNotMatch(page, /<!--spread:/, "the slot is always filled or emptied");
   const card = page.indexOf('class="spread"');
   assert.ok(card > page.indexOf("읽기 전용 근무표예요"), "after the schedule and its foot");
-  assert.match(page, /내 근무표도 이렇게 나눠 보세요/);
+  assert.match(page, /가족 근무를 내 달력 옆에서 바로/);
   assert.match(page, /설치한 뒤 이 링크를 다시 누르면 앱에서 열려요/);
   const fallback = decodeURIComponent(page.match(/S\.browser_fallback_url=([^;]+);end/)[1].replace(/&amp;/g, "&"));
   assert.match(decodeURIComponent(fallback), /utm_source=bamnat_share&utm_medium=family&utm_campaign=family/);
@@ -53,7 +53,8 @@ test("a team leader's link speaks to a teammate", async () => {
   const team = { ...sample, days: [{ date: "2026-11-01", type: 1, memo: "바뀜: 휴→주" }, { date: "2026-11-02", type: 3 }] };
   const { id } = await (await call(env, "/api/share", json({ ...team, v: 2, shows: ["memos"] }))).json();
   const page = await (await call(env, `/s/${id}`)).text();
-  assert.match(page, /내 근무만 달력에 넣고 근무 알람까지/);
+  assert.match(page, /근무가 바뀌면 내 알람도 저절로/);
+  assert.match(page, /이 링크로 시작하면/, "D9 follows only a link the app started from");
   assert.match(page, /utm_campaign%3Dteam/);
 });
 
@@ -124,11 +125,120 @@ test("the contract page shows the card only once it is signed", async () => {
   assert.match(signed, /계약한 시급으로 이번 달 월급 미리 보기/);
 });
 
-test("pages without a card and gone links are left as they were", async () => {
-  readsForget();
-  const env = { SHARES: kv() };
-  const gone = await call(env, `/c/${"a".repeat(22)}`);
-  assert.equal(gone.status, 404);
-  assert.doesNotMatch(await gone.text(), /class="spread"/);
+test("an unknown kind has no card", () => {
   assert.equal(spreadCard("nope", ANDROID, null), "");
 });
+
+test("[SPREAD-34] each card speaks of what the receiver gains, and promises nothing the app does not do yet", () => {
+  for (const [kind, k] of Object.entries(SPREAD_KINDS)) {
+    assert.doesNotMatch(k.title + k.line, /위젯/, `${kind}: a received calendar has no widget yet (SPREAD-33)`);
+    assert.doesNotMatch(k.title, /나눠 보세요|보내 보세요/, `${kind}: the receiver's gain, not the sender's`);
+  }
+});
+
+// ---- 1.39 [SPREAD-08] 끝난 링크 ----
+
+test("an ended link says what to do next and still offers the app, without promising the link opens again", async () => {
+  readsForget();
+  const env = { SHARES: kv() };
+  const family = await call(env, `/s/${"a".repeat(20)}`);
+  assert.equal(family.status, 404);
+  const page = await family.text();
+  assert.match(page, /보낸 분께 새 링크를 부탁해 주세요/);
+  assert.match(page, /class="spread"/);
+  assert.match(page, /가족 근무를 내 달력 옆에서 바로/);
+  assert.match(page, /utm_medium%3Dfamily/);
+  assert.doesNotMatch(page, /다시 누르면 앱에서 열려요|그대로 열려요/);
+  assert.match(page, new RegExp(`name="back" value="/s/${"a".repeat(20)}"`), "closing comes back here");
+  for (const [path, title] of [[`/c/${"b".repeat(22)}`, "내 시급으로"], [`/a/${"b".repeat(22)}`, "확정된 근무가"], [`/v/${"b".repeat(22)}`, "바뀐 근무도"],
+    [`/b/${"b".repeat(22)}`, "근무가 바뀌면"], [`/k/${"b".repeat(22)}`, "계약한 시급으로"], [`/w/${"b".repeat(22)}`, "바뀐 근무도"]]) {
+    const res = await call(env, path);
+    assert.equal(res.status, 404, path);
+    const text = await res.text();
+    assert.match(text, new RegExp(title), path);
+    assert.doesNotMatch(text, /그대로 열려요/, path);
+  }
+  const iphone = await (await call(env, `/c/${"b".repeat(22)}`, {}, IPHONE)).text();
+  assert.match(iphone, /밤낮은 Android 앱이에요\.<\/p>/);
+  const closed = await (await call(env, `/c/${"b".repeat(22)}`, { headers: { cookie: "bn_spread=off" } })).text();
+  assert.doesNotMatch(closed, /class="spread"|<!--spread:/);
+});
+
+test("a link taken down for what it held keeps only its own words", async () => {
+  readsForget();
+  const env = { SHARES: kv() };
+  const id = "c".repeat(20);
+  env.SHARES.map.set(id, JSON.stringify({ removed: true }));
+  const res = await call(env, `/s/${id}`);
+  assert.equal(res.status, 410);
+  assert.doesNotMatch(await res.text(), /class="spread"|<!--spread:/);
+});
+
+// ---- 1.39 [SPREAD-09] 메신저 미리보기 ----
+
+const ogOf = (page) => [...page.matchAll(/<meta (?:property|name)="((?:og|twitter):[a-z_]+|description)" content="([^"]*)">/g)]
+  .map((m) => [m[1], m[2]]);
+
+test("every receive page has a preview that names the kind of page and nothing of the people in it", async () => {
+  readsForget();
+  const env = { SHARES: kv() };
+  // Everything private these links carry: names, team and workplace, shifts and times, the request's words.
+  const secret = ["민지", "주간", "주", "07:00", "6병동", "다른병동", "박마바", "가나다", "김하나", "나이트", "근로계약서 갑", "가", "나", "다"];
+  const made = {};
+  made.family = `/s/${(await (await call(env, "/api/share", json(sample))).json()).id}`;
+  const team = { ...sample, title: "민지", days: [{ date: "2026-11-01", type: 1, memo: "바뀜: 휴→주" }] };
+  made.team = `/s/${(await (await call(env, "/api/share", json({ ...team, v: 2, shows: ["memos"] }))).json()).id}`;
+  made.clock = `/c/${(await (await call(env, "/api/clock", json({ name: "박마바", place: "가나다카페" }))).json()).id}`;
+  const ask = await (await call(env, "/api/ask", json({ team: "6병동", month: "2026-12", members: ["가", "나", "다"],
+    shifts: [{ id: 1, label: "D", color: "#2f7d5b" }], rules: { weekdayCap: 2, weekendCap: 3, kinds: ["OFF"], holidays: [] } }))).json();
+  made.request = `/a/${ask.members[0].key}`;
+  const callMade = await (await call(env, "/api/call", json({ team: "6병동", title: "12/7 나이트 대신 들어갈 수 있나요?", detail: "22:00~07:00", people: ["다"] }))).json();
+  made.call = `/v/${callMade.people[0].key}`;
+  const days = 31;
+  const board = await (await call(env, "/api/board", json({ team: "6병동", month: "2026-12", names: ["가", "나"],
+    labels: [Array(days).fill("D"), Array(days).fill("N")], colors: { D: "#3B82F6", N: "#1E293B" } }))).json();
+  made.board = new URL(board.url).pathname;
+  const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 1));
+  const n = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
+  const row = (l) => Array.from({ length: n }, (_, i) => (i === 6 ? l : "O"));
+  const swap = await (await call(env, "/api/swap", json({ team: "6병동", month: next.toISOString().slice(0, 7), people: ["가", "나", "다"],
+    labels: [row("D"), row("N"), row("O")], ok: { 0: { 7: [1, 2] }, 1: { 7: [0] }, 2: { 7: [0] } } }))).json();
+  made.swap = `/w/${swap.people[0].key}`;
+  const { key } = await (await call(env, "/api/sign", json({ place: "가나다식당", staff: "김하나", title: "근로계약서", days: 7, items: [{ t: "임금", b: "시급 10,320원" }] }))).json();
+  made.sign = `/k/${key}`;
+  assert.deepEqual(Object.keys(made).sort(), Object.keys(SPREAD_KINDS).sort(), "every page kind is looked at");
+  for (const [kind, path] of Object.entries(made)) {
+    const res = await call(env, path, {}, "kakaotalk-scrap/1.0; +https://devtalk.kakao.com/");
+    assert.equal(res.status, 200, path);
+    const og = ogOf(await res.text());
+    const title = og.find(([k]) => k === "og:title");
+    assert.equal(title?.[1], OG_TEXT[kind].title, `${kind}: its own title`);
+    assert.ok(og.some(([k]) => k === "og:description"), kind);
+    for (const [k, v] of og) {
+      assert.doesNotMatch(v, /\d/, `${kind} ${k}: no date, time or count`);
+      for (const word of secret) {
+        // One-letter names (가·나·다) are checked as words, never as syllables inside 'Android'·'나눠' and the like.
+        const hit = word.length === 1 ? new RegExp(`(^|[\\s·,])${word}([\\s·,님]|$)`).test(v) : v.includes(word);
+        assert.ok(!hit, `${kind} ${k} carries "${word}": ${v}`);
+      }
+    }
+  }
+});
+
+// ---- 1.39 [SPREAD-12] iPhone 캘린더 ----
+
+test("an iPhone gets one tap to subscribe in its calendar, only when the sharer turned the address on", async () => {
+  readsForget();
+  const env = { SHARES: kv() };
+  const on = (await (await call(env, "/api/share", json({ ...sample, ics: true, tz: "Asia/Seoul" }))).json()).id;
+  const off = (await (await call(env, "/api/share", json(sample))).json()).id;
+  const iphone = await (await call(env, `/s/${on}`, {}, IPHONE)).text();
+  assert.match(iphone, new RegExp(`<a href="webcal://share\\.example/s/${on}\\.ics">아이폰 캘린더에 넣기</a>`));
+  assert.ok(iphone.indexOf("아이폰 캘린더에 넣기") < iphone.indexOf('class="grid"'), "above the month, not in the card");
+  assert.doesNotMatch(await (await call(env, `/s/${on}`)).text(), /webcal:/, "Android opens it in the app");
+  assert.doesNotMatch(await (await call(env, `/s/${on}`, {}, PC)).text(), /webcal:/);
+  assert.doesNotMatch(await (await call(env, `/s/${off}`, {}, IPHONE)).text(), /webcal:/, "never without the sharer's say");
+  // Closing the card leaves the button: it is the page's, not the card's.
+  assert.match(await (await call(env, `/s/${on}`, { headers: { cookie: "bn_spread=off" } }, IPHONE)).text(), /아이폰 캘린더에 넣기/);
+});
+
