@@ -37,13 +37,13 @@ class FitTableTest {
     /** The whole table, kind × screen, as people will see it with nothing added. */
     @Test fun everyKindOfWorkSeesItsOwnList() {
         val expected = mapOf(
-            WorkStyle.SHIFT to "ask,journal,todayFlow,summary,counts,dayCard,hours,rest,memos",
-            WorkStyle.DAY to "ask,journal,todayFlow,summary,counts,dayCard,hours,memos",
-            WorkStyle.HOURLY to "ask,journal,todayFlow,summary,counts,dayCard,hours,memos",
-            WorkStyle.FIELD to "ask,journal,todayWork,summary,dayCard,memos",
-            WorkStyle.BUSINESS to "ask,journal,todayWork,summary,dayCard,memos",
-            WorkStyle.INVEST to "ask,journal,todayWork,summary,dayCard,memos",
-        )
+            WorkStyle.SHIFT to "ask,journal,todayFlow,summary,counts,dayCard,hours,rest,memos,dayStory",
+            WorkStyle.DAY to "ask,journal,todayFlow,summary,counts,dayCard,hours,memos,dayStory",
+            WorkStyle.HOURLY to "ask,journal,todayFlow,summary,counts,dayCard,hours,memos,dayStory",
+            WorkStyle.FIELD to "ask,journal,todayWork,summary,dayCard,memos,dayStory",
+            WorkStyle.BUSINESS to "ask,journal,todayWork,summary,dayCard,memos,dayStory",
+            WorkStyle.INVEST to "ask,journal,todayWork,summary,dayCard,memos,dayStory",
+        ) // 1.39 [FLOW-22] dayStory: in the list, off on the calendar until the user adds it (CalendarLayout)
         for ((style, parts) in expected) assertEquals("$style", parts, FitTable.shown(FitSurface.CALENDAR_PARTS, style).joinToString(","))
         val tools = mapOf(
             WorkStyle.SHIFT to "edit,teams,push,leaderTeams,typeMonth,share,year,receive,pattern,newCalendar,customize,viewSettings,help", // [EASE-25] push, 1.38 leaderTeams (shown only with team.leader on)

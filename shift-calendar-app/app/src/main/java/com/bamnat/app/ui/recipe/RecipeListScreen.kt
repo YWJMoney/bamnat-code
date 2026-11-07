@@ -586,7 +586,7 @@ private fun MarketHalf(title: String, sub: String, emoji: String, selected: Bool
  */
 internal fun sectionLine(item: com.bamnat.app.recipe.RecipeItem, style: WorkStyle?, long: Boolean): String? = when (item.scope) {
     "tab" -> item.tabs.firstOrNull()?.let { t ->
-        "🗂 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만" else " 탭에만") + (if (long) " 들어가요" else "") +
+        "🗂 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget" || t == "night") "에만" else " 탭에만") + (if (long) " 들어가요" else "") +
             (madeLabel(item.made)?.let { " · $it" } ?: "")
     }
     "part", "logic" -> {
@@ -605,7 +605,7 @@ internal fun madeLabel(m: String?): String? = when (m) { "look" -> "꾸미기"; 
 internal fun toolLabel(t: String): String = when (t) { "part" -> "🧱 부품"; "rule" -> "⚡ 자동 규칙"; "button" -> "🔘 단추"; else -> "🧰 도구" }
 
 /** 1.39 [MKC-01] 도구가 쓰이는 화면 (위젯은 부품이 없어 빼요). */
-internal val TOOL_SCREENS = listOf("calendar", "memo", "money", "pay", "alarm")
+internal val TOOL_SCREENS = listOf("calendar", "memo", "money", "pay", "alarm", "night")
 
 /** 1.39 [MKC-01] Whether this 장터 kind is 도구 (옛 규칙·단추 포함). */
 internal fun String?.isTool(): Boolean = this == RecipeClient.SCOPE_LOGIC || this?.startsWith(RecipeClient.SCOPE_TOOL) == true
@@ -619,6 +619,8 @@ internal fun marketTabLabel(tab: String, style: com.bamnat.core.work.WorkStyle?)
     // 빌드 6 확인: the app has no 알람 tab; it is the alarm's screen and rules.
     "alarm" -> "알람 화면·규칙"
     "widget" -> "위젯"
+    // 1.39 [FLOW-21]
+    "night" -> "밤 화면"
     else -> "앱 전체"
 }
 

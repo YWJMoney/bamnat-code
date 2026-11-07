@@ -145,6 +145,8 @@ export const PART_IDS = [
   "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
   "pay.head", "pay.total", "pay.row",
   "widget", "widget.head", "widget.cell",
+  // 1.39 [FLOW-21] 밤 화면·아침 한 장
+  "night", "night.date", "night.clock", "night.line", "night.card", "night.button", "night.morning",
 ];
 const PART_STATES = ["role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel", "dark"];
 const partParent = (id) => (id === "app" || id === "widget" ? null : !id.includes(".") ? "app"
@@ -1027,7 +1029,7 @@ const carries = (body, kinds) => kinds.some((k) => body.includes(`"kind":"${k}"`
  * [MKX-01] 1.36 장터 두 구간 (사용자 2026-10-31 "테마는 모든 것을 종합으로 만든 것이고 기능별은 한 개의 탭을 전문적으로"): the tabs a
  * recipe changes — calendar, pay (근무·급여·통계), money (가계부·장부), memo, alarm, widget, app (앱 전체 색·아래 탭·모서리·느낌).
  */
-export const MARKET_TABS = ["calendar", "pay", "money", "memo", "alarm", "widget"];
+export const MARKET_TABS = ["calendar", "pay", "money", "memo", "alarm", "widget", "night"];
 const SCREEN_TAB = { calendar: "calendar", memo: "memo", money: "money", stats: "pay", alarm: "alarm", all: "app", settings: "app", guarded: "app", plaza: "app" };
 
 export function tabsOf(body) {
@@ -1073,7 +1075,7 @@ export function tabsOf(body) {
       case "parts":
         for (const l of Array.isArray(p.parts) ? p.parts : []) {
           const root = String(l?.id ?? "").split(".")[0];
-          const tab = { cal: "calendar", memo: "memo", money: "money", pay: "pay", app: "app", widget: "widget" }[root];
+          const tab = { cal: "calendar", memo: "memo", money: "money", pay: "pay", app: "app", widget: "widget", night: "night" }[root];
           if (tab) out.add(tab);
         }
         break;
@@ -1167,7 +1169,7 @@ export function scopeOf(tabs, body) {
  * (cal.* → calendar, memo.* → memo, money.* → money, pay.* → pay, app.* → app, widget.* → widget), a button's place and a rule's verb.
  */
 export const MARKET_SCOPES = ["theme", "tab", "part", "logic"];
-const PART_TAB = { cal: "calendar", memo: "memo", money: "money", pay: "pay", stats: "pay", app: "app", widget: "widget", alarm: "alarm" };
+const PART_TAB = { cal: "calendar", memo: "memo", money: "money", pay: "pay", stats: "pay", app: "app", widget: "widget", alarm: "alarm", night: "night" };
 const LOGIC_TAB = { day: "calendar", cal: "calendar", calendar: "calendar", memo: "memo", memoTpl: "memo", newMemo: "memo", checkReset: "memo", memoLine: "memo",
   money: "money", addMoney: "money", addIncome: "money", envelope: "money", notify: "alarm", pay: "pay", stats: "pay", alarm: "alarm" };
 // D 갈래: 'screen' 동작은 arg가 보낼 탭이에요.

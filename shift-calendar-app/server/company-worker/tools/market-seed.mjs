@@ -43,6 +43,8 @@ export const SETS = {
   // 이미 장터에 있는 판은 넣는 즉시 바뀌어요: 1.38 출시 날 사용자 확인 뒤 넣어요.
   "138r": { dir: join(ROOT, "market-138-refresh"), out: join(ROOT, "market-138-refresh.json"), batch: "1.38 옛 작품 새 판", minApp: null,
     goals: { theme: 49, "tab:calendar": 22, "tab:memo": 11, "tab:money": 1, "tab:pay": 22, "tab:widget": 2 } },
+  // 1.39 [FLOW-21] 장터 새 탭 '밤 화면'의 첫 작품(밤 화면·아침 한 장 부품). 1.39 앱(53)부터.
+  139: { dir: join(ROOT, "market-139"), out: join(ROOT, "market-139.json"), batch: "1.39 밤 화면", minApp: 53, goals: { "tab:night": 6 } },
 };
 
 export function sectionKey(text) {

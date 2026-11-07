@@ -1445,6 +1445,9 @@ fun CalendarScreen(
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
                 }
                 CalendarPart.MEMOS -> memoPart()
+                // 1.39 [FLOW-22] 하루 이야기 of the picked day, as a card the user placed.
+                CalendarPart.DAY_STORY -> DayStoryCalendarCard(vm, snap, selected, onOpenMemo = onOpenMemo,
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp))
                 else -> Unit
             }
         }

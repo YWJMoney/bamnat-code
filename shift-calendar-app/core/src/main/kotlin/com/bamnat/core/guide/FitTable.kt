@@ -64,6 +64,7 @@ object FitTable {
         cal("hours", PAID),
         cal("rest", feature = "shift.restRules"),
         cal("memos"),
+        cal("dayStory"), // 1.39 [FLOW-22]
         // 달력 도구 (the tool sheet).
         tool("edit"),
         tool("teams", feature = "shift.teams"),

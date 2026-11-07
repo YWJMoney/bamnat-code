@@ -749,7 +749,8 @@ class RecipeClient(
         fun toolOn(kind: String?): String? = kind?.takeIf { it.startsWith(SCOPE_TOOL) }?.substringAfter('@', "")?.takeIf { it in MARKET_TABS }
         fun tabKind(tab: String, made: String?): String = SCOPE_TAB + tab + (made?.takeIf { it in MADE_KINDS }?.let { "~$it" } ?: "")
         fun toolKind(tool: String, on: String?): String = SCOPE_TOOL + tool.takeIf { it in TOOL_KINDS }.orEmpty() + (on?.takeIf { it in MARKET_TABS }?.let { "@$it" } ?: "")
-        val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget")
+        // 1.39 [FLOW-21] 밤 화면(밤 화면·아침 한 장 부품).
+        val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget", "night")
         private fun legacyKind(tab: String): String? = when (tab) {
             "calendar" -> "skin"; "memo" -> "memo"; "money" -> "money"; "pay", "alarm" -> "rules"; "widget" -> "layout"; else -> null
         }
