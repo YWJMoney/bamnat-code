@@ -363,7 +363,7 @@ internal fun PlazaFeed(
                     Text("🙋 하루 넘게 답을 기다리는 질문이에요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                     androidx.compose.runtime.key("lifted-" + q.id) {
                         FeedCard(q, answersOf[q.id].orEmpty(), inSheet = talk.posts.any { it.id == q.id },
-                            onOpen = { vm.openTalk(q.id) }, onVote = { ok -> vm.vote(q.id, ok) })
+                            onOpen = { vm.openTalk(q.id) }, onVote = { ok -> vm.vote(q.id, ok) }, onReply = { vm.openTalk(q.id, reply = true) })
                     }
                 }
                 if (tops.isEmpty()) Text("아직 글이 없어요. 처음 이야기를 꺼내 주세요.", style = MaterialTheme.typography.bodyMedium,
@@ -376,7 +376,7 @@ internal fun PlazaFeed(
                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
                 shown.forEach { p -> androidx.compose.runtime.key(p.id) {
                     FeedCard(p, answersOf[p.id].orEmpty(), inSheet = talk.posts.any { it.id == p.id },
-                        onOpen = { vm.openTalk(p.id) }, onVote = { ok -> vm.vote(p.id, ok) })
+                        onOpen = { vm.openTalk(p.id) }, onVote = { ok -> vm.vote(p.id, ok) }, onReply = { vm.openTalk(p.id, reply = true) })
                 } }
                 if (talk.more && (older.isEmpty() || olderMore)) OutlinedButton(onClick = vm::more, enabled = !loadingOlder,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (loadingOlder) "불러오는 중…" else "지난 글 더 보기") }
@@ -387,7 +387,9 @@ internal fun PlazaFeed(
 
 /** One post on the plaza's page. An older post (not in the sheet) opens its answers here. */
 @Composable
-private fun FeedCard(p: TalkPost, answers: List<TalkPost>, inSheet: Boolean, onOpen: () -> Unit, onVote: (Boolean?) -> Unit) {
+private fun FeedCard(p: TalkPost, answers: List<TalkPost>, inSheet: Boolean, onOpen: () -> Unit, onVote: (Boolean?) -> Unit,
+    /** PC 4차 c0ca3d9f: '답 남기기'·'환영 답 남기기' open the sheet with the answer box on this post. */
+    onReply: () -> Unit = onOpen) {
     var open by rememberSaveable(p.id) { mutableStateOf(false) }
     SoftCard {
         Column(Modifier.fillMaxWidth().clickable(onClickLabel = "이 글 보기") { if (inSheet) onOpen() else open = !open }.padding(14.dp),
@@ -424,7 +426,7 @@ private fun FeedCard(p: TalkPost, answers: List<TalkPost>, inSheet: Boolean, onO
                     helped -> "답 ${answers.size} · 도움 된 답 있음"
                     else -> "답 ${answers.size}"
                 }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { onOpen() }.padding(vertical = 12.dp, horizontal = 4.dp))
+                    modifier = Modifier.clickable { if (answers.isEmpty()) onReply() else onOpen() }.padding(vertical = 12.dp, horizontal = 4.dp))
             }
             if (open && !inSheet) answers.forEach { r ->
                 Column(Modifier.padding(start = 16.dp, top = 4.dp)) {

@@ -2581,8 +2581,21 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
     val hubHead = if (inHub) com.bamnat.app.ui.hub.LocalHubHeader.current else null
     val style = remember(calendar) { container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle) }
     val plan = remember(member, style) { com.bamnat.core.plaza.StylePlaza.plan(style, member) }
+    // PC 4차 c0ca3d9f (X10: 3.12 깃발이 앱을 다시 열어야 켜졌어요): 광장 reads the switches as a state, and coming to it asks the server's
+    // config again when it is a few minutes old (debug: every time), so a day that has come shows without opening the app again.
+    val flagRows by container.flags.byKey.collectAsStateWithLifecycle()
+    val peopleOn = flagRows[com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE]?.on == true
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+        container.appScope.launch {
+            val every = if (com.bamnat.app.BuildConfig.DEBUG) java.time.Duration.ZERO else java.time.Duration.ofMinutes(10)
+            if (runCatching { container.remoteConfig.refresh(container.tierApi, every = every) }.getOrDefault(false)) container.flags.refresh()
+        }
+    }
+    // PC 4차 c0ca3d9f (중, 문 줄보다 장터 '찾아보기·오늘의 하나'가 먼저 나와 광장인지 헷갈려요): with 사람 먼저 the talk comes first and
+    // 마을's own head goes under it.
+    val headUnder = peopleOn && plan.room != null || peopleOn && plan.alsoRoom != null && member == null
     val chips: @Composable () -> Unit = {
-        hubHead?.invoke()
+        if (!headUnder) hubHead?.invoke()
         // [TOWN-02] 1.37: answers to my posts in any plaza, first thing in 마을 › 광장 (the room on screen says its own).
         if (inHub) com.bamnat.app.ui.village.NewAnswersLine(container, except = plan.room.takeIf { container.companyApi.enabled },
             onOpen = { nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true } })
@@ -2602,7 +2615,7 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
     }
     CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
     // 1.39 [PLZC-02] 교대·일근 with no company open on their own plaza (사람 먼저) once plaza.people is on; the rule plaza is a door.
-    val ownTalk = container.companyApi.enabled && plan.room == null && plan.alsoRoom != null && com.bamnat.app.ui.company.plazaPeopleOn(container)
+    val ownTalk = container.companyApi.enabled && plan.room == null && plan.alsoRoom != null && peopleOn
     if (container.companyApi.enabled && (plan.room != null || ownTalk)) {
         val home = appViewModel(key = "plaza-home-$calendar-${plan.room ?: plan.alsoRoom}") {
             com.bamnat.app.ui.company.PlazaHomeViewModel(it, calendar, own = ownTalk)
@@ -2613,7 +2626,7 @@ private fun PlazaHost(nav: NavHostController, container: AppContainer, calendarA
             onRates = { nav.navigate(Routes.PLAZA_RATES) { launchSingleTop = true } },
             onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
             onFind = if (ownTalk && member == null) ({ nav.navigate(Routes.companyFind(calendar = calendar)) { launchSingleTop = true } }) else null,
-            header = chips)
+            header = chips, footer = if (headUnder && hubHead != null) ({ hubHead() }) else null)
     } else {
         val vm = appViewModel(key = "company-board-$calendar") { CompanyBoardViewModel(it, calendar) }
         CompanyBoardScreen(
