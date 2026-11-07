@@ -558,7 +558,7 @@ class BackupManager(
                 .put("alarmButton", s.alarmButtonAction)
                 // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
                 .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
-                .put("moneyLayout", s.moneyLayout).put("moneyCheckOpen", s.moneyCheckOpen).put("budgetRollover", s.budgetRollover).put("memoLayout", s.memoLayout).put("tabViews", s.tabViews).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("myColors", s.myColors).put("shiftLooks", s.shiftLooks).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("memoLook", s.memoLook).put("moneyLook", s.moneyLook).put("screenLooks", s.screenLooks).put("payLooks", s.payLooks).put("parts", s.parts).put("logic", s.logic).put("decor", s.decor).put("motion", s.motion).put("rateHint", s.rateHint)
+                .put("moneyLayout", s.moneyLayout).put("moneyCheckOpen", s.moneyCheckOpen).put("budgetRollover", s.budgetRollover).put("memoLayout", s.memoLayout).put("tabViews", s.tabViews).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("myColors", s.myColors).put("shiftLooks", s.shiftLooks).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("cellList", s.cellList).put("memoLook", s.memoLook).put("moneyLook", s.moneyLook).put("screenLooks", s.screenLooks).put("payLooks", s.payLooks).put("parts", s.parts).put("logic", s.logic).put("decor", s.decor).put("motion", s.motion).put("rateHint", s.rateHint)
                 // [ALRM-03] Added in 1.23; what was answered stays on the phone.
                 .put("alarmSuggest", s.alarmSuggest)
                 // [BAK-01] 1.25 Z: what the user chose after seeing what the law pays for work on days off.
@@ -1129,6 +1129,7 @@ class BackupManager(
                     calView = o.optString("calView", s.calView),
                     accentColor = o.optLong("accentColor", s.accentColor),
                     longPress = o.optString("longPress", s.longPress).takeIf { it in com.bamnat.core.recipe.AppFeel.HOLDS } ?: s.longPress,
+                    cellList = o.optString("cellList", s.cellList).takeIf { it in AppSettings.CELL_LISTS } ?: s.cellList,
                     memoLook = o.optString("memoLook", s.memoLook), logic = o.optString("logic", s.logic), decor = o.optString("decor", s.decor), moneyLook = o.optString("moneyLook", s.moneyLook),
                     screenLooks = o.optString("screenLooks", s.screenLooks), payLooks = o.optString("payLooks", s.payLooks),
                     parts = o.optString("parts", s.parts).takeIf { com.bamnat.core.recipe.Blueprint.problem(it) == null } ?: s.parts,

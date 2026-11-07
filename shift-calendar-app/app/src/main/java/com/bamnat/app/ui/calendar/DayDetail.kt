@@ -69,6 +69,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -513,7 +514,9 @@ private fun DayGroups(
 
     // [DAY-04] The order of these groups is the user's; changed here, where it shows.
     var ordering by remember { mutableStateOf(false) }
-    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '일정 시간도 적기'가 한 글자씩 세로로) the two buttons wrap to the next line instead.
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { ordering = true }) {
             Icon(Icons.Filled.SwapVert, contentDescription = null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
@@ -576,20 +579,24 @@ private fun DayGroup(
         ) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-                if (summary != null && !(open && onToggle == null)) {
-                    Text(
-                        summary,
-                        style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
-                        color = summaryColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                        // [VIS-05] Beside a switch "06:10에 울려요 · 직접 정함" ran past one line on the tablet: two lines.
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+            val head: @Composable () -> Unit = {
+                Column {
+                    Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                    if (summary != null && !(open && onToggle == null)) {
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
+                            color = summaryColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                            // [VIS-05] Beside a switch "06:10에 울려요 · 직접 정함" ran past one line on the tablet: two lines.
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
-            trailing?.invoke()
+            // [BIGTXT-01] 1.39 With a big font the button beside the title ('자세히 쓰기') squeezed '메모' to a letter a line: it goes under it.
+            if (trailing != null) com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 96.dp, start = head, end = trailing)
+            else Box(Modifier.weight(1f)) { head() }
             // 1.37 시간 바퀴 PC LOW: a switch right beside the arrow was easy to hit for the other; a gap and a line keep them apart.
             if (trailing != null && onToggle != null) {
                 Spacer(Modifier.width(12.dp))

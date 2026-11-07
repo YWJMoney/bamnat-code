@@ -376,6 +376,12 @@ fun CalendarScreen(
                 .filterValues { it.isNotEmpty() }
         }
     }
+    // [CELL-01] 1.39 Every memo of a day by its title, for cells that list the day's jobs and memos a line each.
+    val memoLists = remember(datedMemos) {
+        datedMemos.groupBy { it.date!! }.mapValues { (_, l) ->
+            l.map { m -> m.title.ifBlank { m.preview }.trim().lineSequence().firstOrNull().orEmpty() }.filter { it.isNotBlank() }
+        }
+    }
     var quickMoney by rememberSaveable { mutableStateOf(false) }
     // [INV-01] An investor calendar's trades, cells and sheets.
     val investVm = if (focus == com.bamnat.core.work.CalendarFocus.INVEST) com.bamnat.app.ui.invest.investViewModel(activeCalendar.id) else null
@@ -921,7 +927,9 @@ fun CalendarScreen(
         }
         WeekdayHeader(DayOfWeek.MONDAY, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
-            val cellHeight = calView.cellHeight(maxWidth) + cellTextGrowth()
+            // [CELL-01] 1.39 A week of cells listing their jobs and memos is as tall as the month's.
+            val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, false)
+            val cellHeight = (if (listOn) maxOf(calView.cellHeight(maxWidth), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth)) + cellTextGrowth()
             val swipe = with(androidx.compose.ui.platform.LocalDensity.current) { WEEK_SWIPE.toPx() }
             val turnTo by rememberUpdatedState(onDateChange)
             WeekStrip(
@@ -939,6 +947,7 @@ fun CalendarScreen(
                 showMoney = focus.moneyFirst,
                 showSpend = settings.spendInCells,
                 memoTexts = memoTexts,
+                memoLists = memoLists.takeIf { listOn },
                 focus = focus,
                 hourly = hourlyCells,
                 invest = investCells,
@@ -1558,7 +1567,9 @@ fun CalendarScreen(
                     .onGloballyPositioned { c -> gridTop = c.positionInWindow().y; gridBottom = gridTop + c.size.height },
             ) {
                 // [CAL-51] On its side a phone keeps its cells as short as they hold, so weeks show under the bars.
-                val cellHeight = calView.cellHeight(maxWidth, sideways) + cellTextGrowth()
+                // [CELL-01] 1.39 Cells that list each day's jobs and memos are taller, so the lines have room (not on its side).
+                val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, sideways)
+                val cellHeight = (if (listOn) maxOf(calView.cellHeight(maxWidth, sideways), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth, sideways)) + cellTextGrowth()
                 val coverRows = fabKeepRows(visibleMonth, settings.weekStart)
                 val ownPx = if (showList) Float.NaN else with(density) { cellHeight.toPx() } * coverRows
                 androidx.compose.runtime.SideEffect { ownRowsPx = ownPx }
@@ -1631,6 +1642,7 @@ fun CalendarScreen(
                         showSpend = settings.spendInCells,
                         spendHeat = settings.spendHeat && !stamping,
                         memoTexts = memoTexts,
+                        memoLists = memoLists.takeIf { listOn && !stamping },
                         onPaint = if (stamping) paintDays else null,
                         weeklyLimitHours = limits.weeklyLimitHours,
                         focus = focus,

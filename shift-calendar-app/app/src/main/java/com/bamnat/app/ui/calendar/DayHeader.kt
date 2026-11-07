@@ -450,7 +450,9 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         JobBadge(count = 1, owed = job.unpaid > 0)
         Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
+        // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '페…'·'09:0/0') the amount goes under the job when both do not fit.
+        com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 120.dp, start = {
+        Column {
             val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") + " " }.orEmpty()
             // [CAL-52] Two lines before the title is cut ("욕실…" lost "타일 시공" beside 받을 돈 in a day panel).
             Text(time + job.title, style = MaterialTheme.typography.bodyLarge, maxLines = bigLines(2), overflow = TextOverflow.Ellipsis)
@@ -464,12 +466,13 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        Spacer(Modifier.width(8.dp))
-        if (job.unpaid > 0) {
-            Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
-        } else if (job.payable > 0) {
-            Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
-        }
+        }, end = {
+            if (job.unpaid > 0) {
+                Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
+            } else if (job.payable > 0) {
+                Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
+            }
+        })
     }
 }
 
