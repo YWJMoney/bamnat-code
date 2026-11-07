@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -292,9 +292,9 @@ private fun FeedCard(p: TalkPost, answers: List<TalkPost>, inSheet: Boolean, onO
             Row(verticalAlignment = Alignment.CenterVertically) {
                 val name = p.nick ?: if (p.who > 0) "참여자 ${p.who}" else "참여자"
                 val maker = p.maker
-                if (maker != null && !p.mine) Text("$name ›", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable(onClickLabel = "프로필 보기") { com.bamnat.app.recipe.RecipeLinks.openMaker(maker) }.heightIn(min = 32.dp))
-                else Text(if (p.mine) "나 ($name)" else name, style = MaterialTheme.typography.labelLarge)
+                // 1.39 [PLZC-40] the name in its mark's color, a tap to the 프로필.
+                com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
+                    onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } })
                 WriterMarks(p)
                 when (p.kind) {
                     "question" -> { Spacer(Modifier.width(4.dp)); StatusChip(if (p.poll != null) "투표" else "질문", Tone.QUIET) }
