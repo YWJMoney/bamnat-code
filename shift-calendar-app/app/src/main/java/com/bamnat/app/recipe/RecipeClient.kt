@@ -778,6 +778,24 @@ class RecipeClient(
         fun withPrice(kind: String, price: String): String = plain(kind).orEmpty() + price.takeIf { it == FX || it == FREE }.orEmpty()
         fun withFx(kind: String, on: Boolean): String = withPrice(kind, if (on) FX else "")
         fun withFree(kind: String, on: Boolean): String = withPrice(kind, if (on) FREE else "")
+
+        /**
+         * 1.39 [MKD-03] 장치·종류 이름으로 찾기 (사용자는 '값 칸', '위젯', '알림 단추', '프로'로 찾아요; 서버 찾기는 제목·설명만 봐요): 그 말이
+         * 가리키는 칩(장터 종류)과 그 칩의 이름. 찾기 칸 아래 칩으로 보여 누르면 그 칩으로 가요.
+         */
+        fun wordKind(q: String, kind: String?): Pair<String, String>? {
+            val w = q.trim().removePrefix("✦").trim().replace(" ", "")
+            val here = plain(kind)?.takeIf { it.isNotEmpty() } ?: SCOPE_THEME
+            return when (w) {
+                "프로", "프로기능", "값칸", "값", "알림단추", "단추위젯", "빠른설정", "바로가기", "fx" -> withFx(here, true) to "✦ 프로 기능 작품"
+                "무료" -> withFree(here, true) to "무료로 다 되는 것"
+                "위젯" -> tabKind("widget", null) to "탭별 작품 › 위젯"
+                "부품" -> toolKind("part", null) to "도구 › 부품"
+                "규칙", "자동규칙" -> toolKind("rule", null) to "도구 › 자동 규칙"
+                "단추" -> toolKind("button", null) to "도구 › 단추"
+                else -> null
+            }?.takeIf { it.first != kind }
+        }
         fun tabOf(kind: String?): String = plain(kind).orEmpty().removePrefix(SCOPE_TAB).substringBefore('~')
         fun madeOf(kind: String?): String? = plain(kind)?.takeIf { it.startsWith(SCOPE_TAB) }?.substringAfter('~', "")?.takeIf { it in MADE_KINDS }
         fun toolOf(kind: String?): String = plain(kind).orEmpty().removePrefix(SCOPE_TOOL).substringBefore('@')

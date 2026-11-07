@@ -242,6 +242,11 @@ fun RecipeListScreen(
     val ctx = LocalContext.current
     val c = ctx.appContainer
     var flipAt by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Int?>(null) }
+    // 1.39 [MKD-45] 테마 분위기 칩 (불러온 테마 가운데서 이 폰이 걸러요).
+    var mood by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    val inThemes = RecipeClient.plain(state.kind) == RecipeClient.SCOPE_THEME
+    val moodNow = com.bamnat.app.recipe.MarketMood.Mood.entries.firstOrNull { it.name == mood }?.takeIf { inThemes }
+    val shown = if (moodNow == null) state.items else state.items.filter { moodNow in com.bamnat.app.recipe.MarketMood.of(it.look) }
     var small by remember { mutableStateOf(runCatching { ctx.getSharedPreferences(VIEW_PREFS, 0).getBoolean(VIEW_SMALL, false) }.getOrDefault(false)) }
     val flipScope = androidx.compose.runtime.rememberCoroutineScope()
     val cols = if (!small) 2 else if (androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600) 4 else 3
@@ -431,8 +436,18 @@ fun RecipeListScreen(
                         ChipRows { toolChips() }
                         ChipRows { screenChips() }
                     }
+                    // 1.39 [MKD-45] 테마 분위기: 밝은 · 어두운 · 파스텔 · 선명한 · 차분한 (다시 누르면 풀려요), 테마 구간에서 붙지 않은 머리에만.
+                    if (!featured && !tools && !pinned) ChipRows {
+                        com.bamnat.app.recipe.MarketMood.Mood.entries.forEach { m ->
+                            FilterChip(selected = moodNow == m, onClick = { mood = if (moodNow == m) null else m.name }, label = { Text(m.label) })
+                        }
+                    }
                     // How sorted and whose, under the half chosen. 1.39 [MKD-02] (CLAUDE.md 7항): 좁은 폰에서 오른쪽 칩이 잘려 있는 줄 모르니 줄을 감싸요.
                     ChipRows {
+                        // 1.39 [MKD-03] '값 칸'·'위젯'·'프로'처럼 장치·종류 이름으로 찾으면 그 칩으로 가는 칩을 맨 앞에.
+                        RecipeClient.wordKind(state.query, state.kind)?.let { (k, name) ->
+                            androidx.compose.material3.AssistChip(onClick = { vm.query(""); vm.kind(k) }, label = { Text("$name 보기") })
+                        }
                         // PC D14 (사용성 낮): 다른 칸 칩은 이 줄 맨 앞에 (따로 줄을 두면 칸을 누를 때·첫 글자에 아래가 두 번 내려갔어요).
                         if (state.query.isNotBlank()) state.elsewhere.forEach { (h, n) ->
                             val here = h == vm.halfNow()
@@ -542,10 +557,14 @@ fun RecipeListScreen(
             // [HUB-04] Themes are picked by eye: two big pictures a row. [MKV-01] 1.37 (사용자 2026-11-05 "실제로 해당 테마나 기능들의 모습을"):
             // 탭별 작품 and 도구 too, each drawn as it really looks, so every 구간 is picked by eye the same way.
             // 1.39 [MKF-03] 작게 보기: 50개씩 들어와도 한 화면에 더 많이 (폰 3열, 폴드 펼침 4열).
-            items(state.items.chunked(cols), key = { row -> row.first().code + "|" + cols }) { row ->
+            if (moodNow != null && shown.isEmpty() && state.items.isNotEmpty()) item {
+                Text("불러온 테마 가운데 ‘${moodNow.label}’ 테마가 아직 없어요" + (if (state.next != null) ". 아래 ‘더 보기’로 더 불러와요" else ""),
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(16.dp))
+            }
+            items(shown.chunked(cols), key = { row -> row.first().code + "|" + cols }) { row ->
                 Row(Modifier.widthIn(max = if (small) 900.dp else 640.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(if (small) 6.dp else 10.dp)) {
                     row.forEach { item ->
-                        ThemeTile(item, vm.style, Modifier.weight(1f), small = small, onPicture = { flipAt = state.items.indexOf(item).coerceAtLeast(0) }) { onOpen(item.code) }
+                        ThemeTile(item, vm.style, Modifier.weight(1f), small = small, onPicture = { flipAt = shown.indexOf(item).coerceAtLeast(0) }) { onOpen(item.code) }
                     }
                     repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
                 }
@@ -556,7 +575,7 @@ fun RecipeListScreen(
     }
     if (codeAsk) CodeDialog(onCode = { codeAsk = false; onOpen(it) }, onDismiss = { codeAsk = false })
     flipAt?.let { at ->
-        MarketFlip(state.items, at, vm.style, onDismiss = { flipAt = null }, onOpen = { code -> flipAt = null; onOpen(code) }, onAt = { flipAt = it },
+        MarketFlip(shown, at, vm.style, onDismiss = { flipAt = null }, onOpen = { code -> flipAt = null; onOpen(code) }, onAt = { flipAt = it },
             onTry = { item ->
                 flipScope.launch {
                     val r = MarketShots.recipe(c, item)
@@ -564,7 +583,7 @@ fun RecipeListScreen(
                     // 도구 (규칙·단추·부품) are tried 전후 in their page; a work that cannot be laid on as it is goes to its 입어 보기.
                     if (r == null || looks.isEmpty() || item.scope == "logic" || item.scope == "part") { flipAt = null; onOpen(item.code); return@launch }
                     val tab = MarketShots.tabOf(MarketShots.faceOf(item, r))
-                    val at = state.items.indexOfFirst { it.code == item.code }.coerceAtLeast(0)
+                    val at = shown.indexOfFirst { it.code == item.code }.coerceAtLeast(0)
                     val ok = runCatching { LiveTryOn.start(c, r, own = false, looks, tab, LiveTryOn.From.Flip(item.code, at)) }.getOrDefault(false)
                     if (ok) flipAt = null else { com.bamnat.app.recipe.RecipeLinks.tryNext = item.code; flipAt = null; onOpen(item.code) }
                 }
@@ -707,16 +726,23 @@ private fun MarketHalf(title: String, sub: String, emoji: String, selected: Bool
 internal fun sectionLine(item: com.bamnat.app.recipe.RecipeItem, style: WorkStyle?, long: Boolean): String? = when (item.scope) {
     "tab" -> item.tabs.firstOrNull()?.let { t ->
         "🗂 " + marketTabLabel(t, style) + (if (t == "alarm" || t == "widget") "에만" else " 탭에만") + (if (long) " 들어가요" else "") +
-            (madeLabel(item.made)?.let { " · $it" } ?: "")
+            (madeLabel(item.made)?.let { " · $it" } ?: "") +
+            // 1.39 [MKD-44] (V10) 위젯 작품은 크기부터 봐요: 위젯 모양은 밤낮 위젯을 한꺼번에 꾸며요.
+            (if (t == "widget") " · " + WIDGET_SIZES else "")
     }
     "part", "logic" -> {
         val kinds = item.tools.ifEmpty { if (item.scope == "part") listOf("part") else emptyList() }
         val what = if (kinds.isEmpty()) "⚡ 규칙·단추" else kinds.joinToString(" + ") { toolLabel(it) }
         val on = item.tabs.filter { it in RecipeClient.MARKET_TABS }.map { marketTabLabel(it, style).removeSuffix(" 화면·규칙") }
-        what + (if (on.isEmpty()) "" else " · " + on.joinToString("·"))
+        what + (if (on.isEmpty()) "" else " · " + on.joinToString("·")) +
+            // 1.39 [MKD-44] 바깥 단추(단추 위젯·빠른 설정)를 쓰는 도구는 2×1 단추 위젯.
+            (if ("outside" in item.fx) " · 단추 위젯 2×1" else "")
     }
     else -> null
 }
+
+/** 1.39 [MKD-44] 위젯 모양이 꾸미는 밤낮 위젯의 크기 (res/xml widget_*_info: 오늘·가계부·디데이 2×1, 주 4×1, 달 4×3). */
+internal const val WIDGET_SIZES = "오늘 2×1 · 주 4×1 · 달 4×3"
 
 /** 1.39 [MKC-04] 작품에 든 1.39 새 기능 장치 ("✦ 값 칸 · 알림 단추"); null when it has none (모두 무료). */
 internal fun fxLine(item: com.bamnat.app.recipe.RecipeItem): String? =

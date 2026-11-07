@@ -32,6 +32,17 @@ class MarketKindsTest {
         assertTrue(RecipeClient.fits(pro, RecipeClient.tabKind("memo", null, fx = true)))
     }
 
+    /** 1.39 [MKD-03] 장치·종류 이름으로 찾으면 그 칩으로. */
+    @Test fun aDeviceNameFindsItsChip() {
+        assertEquals("tab:memo!fx" to "✦ 프로 기능 작품", RecipeClient.wordKind(" 값 칸 ", "tab:memo"))
+        assertEquals("theme!fx", RecipeClient.wordKind("✦ 프로", "theme")?.first)
+        assertEquals("theme!free", RecipeClient.wordKind("무료", "theme!fx")?.first)
+        assertEquals("tab:widget", RecipeClient.wordKind("위젯", "theme")?.first)
+        assertEquals("tool:part", RecipeClient.wordKind("부품", "theme")?.first)
+        assertNull("이미 그 칩이면 없어요", RecipeClient.wordKind("프로", "theme!fx"))
+        assertNull(RecipeClient.wordKind("야간 파랑", "theme"))
+    }
+
     @Test fun fxRidesOnEveryHalf() {
         val tab = RecipeClient.tabKind("memo", null, fx = true)
         assertEquals("tab:memo!fx", tab)
