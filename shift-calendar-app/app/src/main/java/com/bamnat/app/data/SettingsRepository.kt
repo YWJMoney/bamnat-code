@@ -17,6 +17,27 @@ enum class ThemeMode {
     NIGHT_SHIFT,
 }
 
+/**
+ * 1.39 [PAYX-60] Which days 근무 시간·일수 count in a month: the 급여 기간 when the pay has one that is not 1일~말일
+ * (사용자 2026-11-07 '21~20일이면 11월은 10/21~11/20 근무 시간'), unless the user picked 1일~말일 on 통계's chips.
+ */
+enum class StatsPeriod {
+    /** The pay period when the pay has one (21일~20일), else 1일~말일. Before 1.39 the default was 1일~말일. */
+    AUTO,
+    /** Picked on 통계: the pay period. */
+    PAY,
+    /** Picked on 통계: 1일~말일, whatever the pay period. */
+    MONTH;
+
+    /** Whether a month counts over [period] (the pay's 급여 기간). */
+    fun byPay(period: com.bamnat.core.pay.PayPeriod?): Boolean = this != MONTH && period != null && period.endDay != null && !period.isCalendarMonth
+
+    companion object {
+        /** A saved value, or the old switch's: on is [PAY], off is [AUTO] (off was only the default, never a choice). */
+        fun read(v: String?, old: Boolean = false): StatsPeriod = v?.let { runCatching { valueOf(it) }.getOrNull() } ?: if (old) PAY else AUTO
+    }
+}
+
 /** [CAL-03] What a tap on a date does on a phone-sized screen (unfolded, the day is always beside the calendar). */
 enum class PhoneDayView {
     /** The day in short under the calendar; a second tap opens it all in a sheet. As before 1.13. */
@@ -220,8 +241,8 @@ data class AppSettings(
     val payDepositNotice: Boolean = true,
     /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
     val calendarOnly: Boolean = false,
-    /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. */
-    val statsByPayPeriod: Boolean = false,
+    /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. 1.39 [PAYX-60] three ways. */
+    val statsPeriod: StatsPeriod = StatsPeriod.AUTO,
     /** 1.37 [LEDH-06] 가계부 예산·하루 쓸 돈을 월급날~다음 월급날 전날로 봄 (급여일 주기); off is 1일~말일. In the backup. */
     val moneyByPayCycle: Boolean = false,
     /** 1.37 [LEDH-07] 근무 시간 환산: spending of this many won or more says the work it took; 0 is off (결정 4: 5만 원). In the backup. */
@@ -476,7 +497,7 @@ class SettingsRepository(context: Context) {
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
-            statsByPayPeriod = prefs.getBoolean(K_STATS_PERIOD, d.statsByPayPeriod),
+            statsPeriod = StatsPeriod.read(prefs.getString(K_STATS_PERIOD_WAY, null), prefs.getBoolean(K_STATS_PERIOD, false)),
             moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
             workTimeFrom = prefs.getLong(K_WORK_TIME, d.workTimeFrom),
             dayCloseNotice = prefs.getBoolean(K_DAY_CLOSE, d.dayCloseNotice),
@@ -612,7 +633,8 @@ class SettingsRepository(context: Context) {
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
-            .putBoolean(K_STATS_PERIOD, s.statsByPayPeriod)
+            .putString(K_STATS_PERIOD_WAY, s.statsPeriod.name)
+            .putBoolean(K_STATS_PERIOD, s.statsPeriod == StatsPeriod.PAY)
             .putBoolean(K_MONEY_CYCLE, s.moneyByPayCycle)
             .putLong(K_WORK_TIME, s.workTimeFrom)
             .putBoolean(K_DAY_CLOSE, s.dayCloseNotice)
@@ -682,6 +704,7 @@ class SettingsRepository(context: Context) {
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
         const val K_CAL_ONLY = "calendar_only"
         const val K_STATS_PERIOD = "stats_pay_period"
+        const val K_STATS_PERIOD_WAY = "stats_period_way"
         const val K_APP_LOCK = "app_lock"
         const val K_CALENDAR_LAYOUT = "calendar_layout"
         const val K_STATS_LAYOUT = "stats_layout"
