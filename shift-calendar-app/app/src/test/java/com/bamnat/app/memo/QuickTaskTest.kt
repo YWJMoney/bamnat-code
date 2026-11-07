@@ -45,6 +45,21 @@ class QuickTaskTest {
         assertNull(quickMemo("  ", QuickDay.READ, ring = true, now))
     }
 
+    /** PC c0ca3d9f: '오늘' was picked but the line still said 11/9 21:00, and a time gone today was dropped without a word. */
+    @Test fun theLineSaysWhereTheChipsPutIt() {
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("M/d (E)", java.util.Locale.KOREAN)
+        val late = now.withHour(23).withMinute(6)
+        val line = com.bamnat.core.memo.MemoTime.line("모레 밤 9시 운동", late)
+        assertEquals("제목: 운동 · 11/9 (월) 21:00 알림", quickSay(line, QuickDay.READ, ring = true, late, fmt))
+        assertFalse(quickPast(line, QuickDay.READ, late))
+        assertTrue("오늘 21:00 at 23:06 is gone", quickPast(line, QuickDay.TODAY, late))
+        assertTrue(quickSay(line, QuickDay.TODAY, ring = true, late, fmt).startsWith("제목: 운동 · 11/7 (토) · 21:00은 지났어요"))
+        assertNull("what the line said is what 적기 does", quickMemo("모레 밤 9시 운동", QuickDay.TODAY, ring = true, late)!!.reminder)
+        assertEquals("제목: 운동 · 11/8 (일) 21:00 알림", quickSay(line, QuickDay.TOMORROW, ring = true, late, fmt))
+        assertEquals("제목: 운동 · 11/8 (일) · 알림 없이", quickSay(line, QuickDay.TOMORROW, ring = false, late, fmt))
+        assertEquals("제목: 운동 · 날짜 없이 고정", quickSay(line, QuickDay.NONE, ring = true, late, fmt))
+    }
+
     @Test fun aSharedTextIsWrittenOnlyWhenTheUserSaysSo() = runBlocking<Unit> {
         val repo = context.appContainer.memoRepository
         val before = repo.memos.first().size

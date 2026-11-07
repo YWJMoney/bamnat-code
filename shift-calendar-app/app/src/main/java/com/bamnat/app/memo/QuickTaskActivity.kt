@@ -103,13 +103,7 @@ internal enum class QuickDay { READ, TODAY, TOMORROW, NONE }
 internal fun quickMemo(text: String, day: QuickDay, ring: Boolean, now: LocalDateTime): Memo? {
     if (text.isBlank()) return null
     val line = MemoTime.line(text, now)
-    val today = now.toLocalDate()
-    val date: LocalDate? = when (day) {
-        QuickDay.READ -> line.date ?: today
-        QuickDay.TODAY -> today
-        QuickDay.TOMORROW -> today.plusDays(1)
-        QuickDay.NONE -> null
-    }
+    val date: LocalDate? = quickDate(line, day, now)
     // The time read goes with the day picked (내일 저녁 6시, moved to 오늘, rings 오늘 저녁 6시); no day, no ring.
     val at = line.at?.let { a -> date?.atTime(a.toLocalTime()) }?.takeIf { ring && it.isAfter(now) }
     return Memo(
@@ -120,6 +114,35 @@ internal fun quickMemo(text: String, day: QuickDay, ring: Boolean, now: LocalDat
         // A line with no day stays at hand as a pinned note, as on the widget's 고정 list.
         pinned = date == null,
     )
+}
+
+/** The day the chips put the line on, as [quickMemo] does. */
+private fun quickDate(line: MemoTime.Line, day: QuickDay, now: LocalDateTime): LocalDate? = when (day) {
+    QuickDay.READ -> line.date ?: now.toLocalDate()
+    QuickDay.TODAY -> now.toLocalDate()
+    QuickDay.TOMORROW -> now.toLocalDate().plusDays(1)
+    QuickDay.NONE -> null
+}
+
+/** Whether the time read is already gone on the day picked (오늘 21:00 at 23:06): it cannot ring, so the window says so. */
+internal fun quickPast(line: MemoTime.Line, day: QuickDay, now: LocalDateTime): Boolean {
+    val at = line.at ?: return false
+    val date = quickDate(line, day, now) ?: return false
+    return !date.atTime(at.toLocalTime()).isAfter(now)
+}
+
+/** "제목: 운동 · 11/7 (토) 21:00 알림", "… · 21:00은 지났어요, 시각 없이 적어요", "… · 날짜 없이 고정": where 적기 puts it now. */
+internal fun quickSay(line: MemoTime.Line, day: QuickDay, ring: Boolean, now: LocalDateTime, dayFmt: DateTimeFormatter): String {
+    val date = quickDate(line, day, now)
+    val time = line.at?.toLocalTime()
+    val where = when {
+        date == null -> "날짜 없이 고정"
+        time == null -> dayFmt.format(date)
+        quickPast(line, day, now) -> "${dayFmt.format(date)} · ${time}은 지났어요. 시각 없이 적어요(알림은 '내일'을 골라요)"
+        ring -> "${dayFmt.format(date)} $time 알림"
+        else -> "${dayFmt.format(date)} · 알림 없이"
+    }
+    return "제목: ${line.title} · $where"
 }
 
 @Composable
@@ -153,13 +176,13 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo) -> Un
                     placeholder = { Text("예: 내일 저녁 6시 치과") },
                     maxLines = 4,
                 )
-                // What was read, said back: the title without the day and time words, and where it goes.
+                // Where it goes, said back with the chips as they stand (PC c0ca3d9f: the line kept the read day after '오늘' was picked,
+                // and a time already gone today was dropped without a word).
                 if (text.isNotBlank()) {
-                    val at = line.at
-                    val read = line.date?.let { d -> if (at != null) "${dayFmt.format(d)} ${at.toLocalTime()}" else dayFmt.format(d) }
                     Text(
-                        "제목: ${line.title}" + (read?.let { " · 읽은 날짜·시각: $it" } ?: ""),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        quickSay(line, day, ring, now, dayFmt),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (quickPast(line, day, now)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -170,7 +193,8 @@ internal fun QuickTask(shared: String, onClose: () -> Unit, onSave: (Memo) -> Un
                     FilterChip(day == QuickDay.TOMORROW || (day == QuickDay.READ && line.date == now.toLocalDate().plusDays(1)),
                         { day = QuickDay.TOMORROW }, { Text("내일") })
                     FilterChip(day == QuickDay.NONE, { day = QuickDay.NONE }, { Text("날짜 없이") })
-                    line.at?.takeIf { day != QuickDay.NONE }?.let { at -> FilterChip(ring, { ring = !ring }, { Text("알림 ${at.toLocalTime()}") }) }
+                    // A time already gone on the day picked cannot ring: no 알림 chip, and the line above says to pick 내일.
+                    line.at?.takeIf { day != QuickDay.NONE && !quickPast(line, day, now) }?.let { at -> FilterChip(ring, { ring = !ring }, { Text("알림 ${at.toLocalTime()}") }) }
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                     TextButton(onClick = onClose) { Text("닫기") }
