@@ -526,7 +526,9 @@ private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit
             Column(Modifier.weight(1f)) {
                 Text(if (open == null) "지금 자려고요?" else "${Fmt.time(open.start.toLocalTime())}부터 자는 중",
                     style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                Text(if (open == null) "누르고 자면, 일어나서 ‘깼어요’로 끝내요" else "일어났으면 ‘깼어요’를 눌러요",
+                // 1.39 [FLOW-29] 조건은 미리 (PC 실사용 11-06: 짧은 잠이 왜 안 남는지 끝에서야 알았음): said before sleeping.
+                Text(if (open == null) "누르고 자면, 일어나서 ‘깼어요’로 끝내요. ${com.bamnat.core.sleep.SleepMorning.MIN_MINUTES / 60}시간 넘게 자야 아침 기분을 물어요"
+                    else "일어났으면 ‘깼어요’를 눌러요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
             }
             Spacer(Modifier.width(8.dp))

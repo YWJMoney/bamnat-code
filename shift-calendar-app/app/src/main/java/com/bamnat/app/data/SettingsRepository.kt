@@ -42,6 +42,13 @@ data class AppSettings(
     val showKani: Boolean = true,
     /** 1.38 [FLOW-08] 내 하루 이야기: the day's shifts, sleep, money and memos on one time line at the top of the day view. */
     val dayStory: Boolean = true,
+    /** 1.39 [FLOW-28] 하루 다이얼: the day's 24 hours as a ring on 오늘의 흐름 (work, sleep, alarms, now). */
+    val dayDial: Boolean = true,
+    /**
+     * 1.39 [FLOW-30] 근무 기준 하루: on a day with no work around, what is written before this many minutes past midnight belongs to
+     * the day before (기본 04:00). During a shift it is that shift's day whatever the clock says.
+     */
+    val dayStartMinutes: Int = 240,
     /**
      * [CYC-04] 1.38: the 업종 묶음 whose law-named days (소방의 날…) the calendar shows ([com.bamnat.core.plaza.IndustryGroups]);
      * set when a public cycle of that 업종 is put on the calendar, or picked in 설정 › 달력. Empty: none.
@@ -391,6 +398,8 @@ class SettingsRepository(context: Context) {
             showLunar = prefs.getBoolean(K_LUNAR, d.showLunar),
             showKani = prefs.getBoolean(K_KANI, d.showKani),
             dayStory = prefs.getBoolean(K_DAY_STORY, d.dayStory),
+            dayDial = prefs.getBoolean(K_DAY_DIAL, d.dayDial),
+            dayStartMinutes = prefs.getInt(K_DAY_START, d.dayStartMinutes).coerceIn(0, 12 * 60),
             orgDayGroup = prefs.getString(K_ORG_GROUP, null) ?: d.orgDayGroup,
             orgDaysOn = prefs.getBoolean(K_ORG_ON, d.orgDaysOn),
             reviewDue = prefs.getBoolean(K_REVIEW_DUE, false),
@@ -527,6 +536,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_LUNAR, s.showLunar)
             .putBoolean(K_KANI, s.showKani)
             .putBoolean(K_DAY_STORY, s.dayStory)
+            .putBoolean(K_DAY_DIAL, s.dayDial)
+            .putInt(K_DAY_START, s.dayStartMinutes)
             .putString(K_ORG_GROUP, s.orgDayGroup)
             .putBoolean(K_ORG_ON, s.orgDaysOn)
             .putBoolean(K_REVIEW_DUE, s.reviewDue)
@@ -722,6 +733,8 @@ class SettingsRepository(context: Context) {
         const val K_LUNAR = "lunar"
         const val K_KANI = "kani"
         const val K_DAY_STORY = "day_story"
+        const val K_DAY_DIAL = "day_dial"
+        const val K_DAY_START = "day_start_minutes"
         const val K_ORG_GROUP = "org_day_group"
         const val K_ORG_ON = "org_days_on"
         const val K_REVIEW_DUE = "review_due"

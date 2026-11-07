@@ -78,6 +78,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import com.bamnat.app.ui.decor.decor
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -287,6 +288,8 @@ fun MonthGrid(
     payDays: Set<LocalDate> = emptySet(),
     /** [CELL-01] 1.39 Each day's memos, one title each, when the cells list them; null keeps the one line under the badge. */
     memoLists: Map<LocalDate, List<String>>? = null,
+    /** 1.39 [FLOW-03] Right after the first setup: how much of the month has come in (0 to 1), read while drawing ([SetupFill]). */
+    fill: (() -> Float)? = null,
 ) {
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
@@ -423,6 +426,11 @@ fun MonthGrid(
                         invest = invest,
                         modifier = Modifier.weight(1f).fillMaxHeight().then(
                             if (date in marked) Modifier.background(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.shapes.small) else Modifier,
+                        ).then(
+                            if (fill == null) Modifier
+                            else fillShare(date, today, firstCell.plusDays(GRID_ROWS * 7L - 1)).let { share ->
+                                Modifier.graphicsLayer { alpha = fillAlpha(fill(), share).let { a -> 0.15f + 0.85f * a } }
+                            },
                         ),
                         weekNote = if (date.dayOfWeek == DayOfWeek.MONDAY && week.overLimit) {
                             "이 주 ${HoursFormat.korean(week.totalMinutes)}, ${weeklyLimitHours}시간 넘음"

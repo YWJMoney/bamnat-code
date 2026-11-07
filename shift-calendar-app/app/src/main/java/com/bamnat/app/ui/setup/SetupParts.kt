@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.Icon
@@ -59,6 +60,11 @@ internal fun ChoiceCard(
     subtitle: String? = null,
     icon: ImageVector? = null,
     enabled: Boolean = true,
+    /**
+     * 1.39 [FLOW-01] The kind-of-work cards: a big picture in the kind's own colour, the name on one line and the example small and
+     * grey, so the six are told apart before a word is read. Null keeps the plain small icon.
+     */
+    picture: androidx.compose.ui.graphics.Color? = null,
     extra: (@Composable () -> Unit)? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
@@ -70,14 +76,19 @@ internal fun ChoiceCard(
             .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick),
     ) {
         Row(Modifier.heightIn(min = 56.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (icon != null) {
+            if (icon != null && picture != null) {
+                Surface(shape = RoundedCornerShape(18.dp), color = picture.copy(alpha = 0.16f), modifier = Modifier.size(60.dp)) {
+                    Box(contentAlignment = Alignment.Center) { Icon(icon, null, tint = picture, modifier = Modifier.size(34.dp)) }
+                }
+            } else if (icon != null) {
                 Surface(shape = CircleShape, color = scheme.secondaryContainer, modifier = Modifier.size(44.dp)) {
                     Box(contentAlignment = Alignment.Center) { Icon(icon, null, tint = scheme.onSecondaryContainer) }
                 }
             }
             Column(Modifier.padding(start = if (icon != null) 14.dp else 0.dp).weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
-                if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant)
+                if (subtitle != null) Text(subtitle, style = if (picture != null) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                    color = scheme.onSurfaceVariant)
                 extra?.invoke()
             }
             if (selected) Icon(Icons.Filled.CheckCircle, "고름", tint = scheme.primary, modifier = Modifier.padding(start = 8.dp))

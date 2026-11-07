@@ -805,7 +805,8 @@ fun ShiftTypeEditorDialog(
                                 })
                             }
                             if (draft.alarmEnabled && !canPost) {
-                                WarningLine("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications)
+                                WarningLine("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications,
+                                    picture = com.bamnat.app.ui.components.PermissionResult.LOCK_ALARM)
                             }
                             if (draft.alarmEnabled) {
                                 Spacer(Modifier.height(4.dp))

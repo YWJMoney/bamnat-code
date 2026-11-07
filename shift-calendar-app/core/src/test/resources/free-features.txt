@@ -273,3 +273,5 @@ sleep.adapt
 sleep.challenge
 sleep.dnd
 day.story
+view.dayDial
+day.start

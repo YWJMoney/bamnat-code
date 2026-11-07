@@ -820,7 +820,11 @@ private fun SettingsHub(
             // [J133-71] 1.33: what the calendar's kind of work has, so 알바 finds no 회사 찾기.
             val companyWork = context.appContainer.companyFits(com.bamnat.app.ui.company.companyCalendarOf(context.appContainer, null))
             val style = work.workStyle
-            val entries = remember(onOpenBoard != null, companyWork, style) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn, company = companyWork, style = style,
+            val searchCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
+            val flowAdded = com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, "todayFlow", style,
+                com.bamnat.app.ui.guide.rememberFitAdded(searchCalendar))
+            val entries = remember(onOpenBoard != null, companyWork, style, flowAdded) { SettingsIndex.entries(board = onOpenBoard != null, share = vm.shareOn, company = companyWork, style = style,
+                flowAdded = flowAdded,
                 sleepAuto = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false),
                 sleepSound = runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)) }
             SearchResults(query, remember(query, entries) { SettingsIndex.search(query, entries) }, vm.shareOn, pick)

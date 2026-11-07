@@ -149,8 +149,10 @@ internal object SettingsIndex {
      */
     fun entries(board: Boolean = true, share: Boolean = true, company: Boolean = true, style: com.bamnat.core.work.WorkStyle? = null,
                 /** 1.38 [SLEEP-19] `sleep.auto` and `sleep.sound` open: their switches and cards are found. */
-                sleepAuto: Boolean = true, sleepSound: Boolean = true): List<SettingEntry> =
-        all(board, share, company, sleepAuto, sleepSound).filter { fits(it, style) }.map { inWords(it, style) }
+                sleepAuto: Boolean = true, sleepSound: Boolean = true,
+                /** 1.39 G6 (PC 12.5 가게·현장): 오늘의 흐름 put on the calendar by the user (카드 배치 › 더 보기), so its switch is found. */
+                flowAdded: Boolean = false): List<SettingEntry> =
+        all(board, share, company, sleepAuto, sleepSound).filter { fits(it, style, flowAdded) }.map { inWords(it, style) }
 
     /** [J133-79] 1.33 빌드 5: an 알바's rules come from a 근무지, not a 회사 (the screens say so since J133-77). */
     private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry = when {
@@ -176,12 +178,13 @@ internal object SettingsIndex {
      * [J133-77] 1.33 (유형별 점검: 알바가 '회사'를 찾으면 근태 엑셀이, 가게가 찾으면 연차·급여가 나와요): what the calendar's kind of
      * work has. No kind chosen keeps everything.
      */
-    internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): Boolean {
+    internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?, flowAdded: Boolean = false): Boolean {
         if (style == null || style.usesPayEngine) return !(style == com.bamnat.core.work.WorkStyle.HOURLY && e.title == "연차 사용 촉진 알림")
         val place = e.place
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
         // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 on the calendar, so no switch for it either.
-        return e.title !in WAGE_ROWS && e.title != "오늘의 흐름 보기"
+        // 1.39 G6: unless the user put it on the calendar themselves.
+        return e.title !in WAGE_ROWS && (flowAdded || e.title != "오늘의 흐름 보기")
     }
 
     private fun all(board: Boolean, share: Boolean, company: Boolean, sleepAuto: Boolean = true, sleepSound: Boolean = true): List<SettingEntry> = listOfNotNull(
@@ -299,6 +302,8 @@ internal object SettingsIndex {
         row(C, "오전/오후로 보기", "오전", "오후", "12시간", "24시간", "시각 표기"),
         row(C, "칸이 보이기", "칸이", "캐릭터", "마스코트", "그림 친구", "캐릭터 끄기"), // 1.38 [FLOW-26]
         row(C, "하루 이야기 줄", "하루 이야기", "타임라인", "시간 순서", "하루 흐름", "이야기 줄 끄기"), // 1.38 [FLOW-08]
+        row(C, "하루 다이얼", "다이얼", "24시간 원", "시계", "하루 원"), // 1.39 [FLOW-28]
+        row(C, "하루 시작 시각", "하루 시작", "새벽 4시", "자정", "날짜 바뀌는 시각", "어제로"), // 1.39 [FLOW-30]
         row(C, "날짜 밑에 그날 쓴 돈", "지출 표시", "쓴 돈", "달력에 지출", "하루 지출"), // E 1.32 [LEDX-07]
         row(C, "지출 히트맵", "히트맵", "많이 쓴 날", "지출 색", "소비 패턴"), // 1.32 [LEDX-23]
         row(C, "큰 지출을 근무 시간으로", "근무 시간 환산", "몇 시간 일한 돈", "시급으로 보기", "공수"), // 1.37 [LEDH-07]

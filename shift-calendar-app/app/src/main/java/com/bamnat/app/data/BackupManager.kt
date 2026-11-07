@@ -538,6 +538,7 @@ class BackupManager(
                 .put("weekStart", s.weekStart.name).put("weeklyLimit", s.weeklyLimitHours)
                 .put("averageLimit", s.averageLimitHours).put("theme", s.themeMode.name)
                 .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar).put("kani", s.showKani).put("dayStory", s.dayStory)
+                .put("dayDial", s.dayDial).put("dayStart", s.dayStartMinutes)
                 .put("orgDayGroup", s.orgDayGroup).put("orgDaysOn", s.orgDaysOn)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmGuard", s.alarmGuard).put("alarmsOn", s.alarmsEnabled)
@@ -1058,6 +1059,8 @@ class BackupManager(
                     showLunar = o.optBoolean("lunar", s.showLunar),
                     showKani = o.optBoolean("kani", s.showKani),
                     dayStory = o.optBoolean("dayStory", s.dayStory),
+                    dayDial = o.optBoolean("dayDial", s.dayDial),
+                    dayStartMinutes = o.optInt("dayStart", s.dayStartMinutes).coerceIn(0, 12 * 60),
                     orgDayGroup = o.optString("orgDayGroup", s.orgDayGroup),
                     orgDaysOn = o.optBoolean("orgDaysOn", s.orgDaysOn),
                     // Sound files from another phone usually do not exist here.
