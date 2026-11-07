@@ -260,6 +260,12 @@ private fun DayGroups(
     val book by vm.moneyBook.collectAsStateWithLifecycle()
     val dayBook = remember(book, date) { book.on(date) }
     val profile by vm.payProfile.collectAsStateWithLifecycle()
+    // 1.39 PC 5c4ad849: the followed 근무표 this day came from, if it did (작업 요약에 '직접 바꿈' 대신).
+    val received by androidx.compose.ui.platform.LocalContext.current.appContainer.received.calendars.collectAsStateWithLifecycle()
+    val linkName = remember(day, received, snapshot) {
+        if (day.source != DaySource.OVERRIDE) null
+        else com.bamnat.app.share.RosterFollower.linkFor(received, day, snapshot.shiftTypes)?.fullName
+    }
     // [EXTRA-02][EXTRA-03] Minutes and pay are worked out off the main thread, for this date only.
     // [MON-01] A day's pay is free.
     val insightFor by produceState<Pair<LocalDate, DayInsight>?>(null, profile, snapshot, date) {
@@ -356,7 +362,7 @@ private fun DayGroups(
                         DayGroup(
                             // 1.36 PC 재검토: a 현장 calendar's day says 일정 (its kinds of day are 일정 종류).
                             title = com.bamnat.app.ui.shifts.dayKindNoun(style), icon = Icons.Outlined.Work,
-                            summary = workSummary(day, snapshot),
+                            summary = workSummary(day, snapshot, linkName),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
                         ) {
@@ -627,13 +633,15 @@ private fun DayGroup(
     }
 }
 
-private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot): String {
+private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot, link: String? = null): String {
     val name = day.shiftType?.name ?: if (day.isWorkDay) "근무" else "쉬는 날"
     val start = day.start
     val end = day.end
     val time = if (day.isWorkDay && start != null && end != null) " · ${ExtraText.span(start, end)}" else ""
     return when {
         // [READ-37] Without an order every day is put in by hand or from a photo: no "직접 바꿈" on each.
+        // 1.39 PC 5c4ad849: a day put in from a followed 근무표 is not one the user changed by hand.
+        day.source == DaySource.OVERRIDE && link != null -> "$name$time · ${link}대로"
         day.source == DaySource.OVERRIDE && snapshot.hasPattern -> {
             val pattern = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
             "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""

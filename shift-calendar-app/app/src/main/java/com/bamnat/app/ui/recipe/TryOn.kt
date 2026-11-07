@@ -297,6 +297,8 @@ fun TryOnScreen(
      * ([com.bamnat.core.recipe.keepMyCellContent]), so 입으면 shows the cells 입기 leaves.
      */
     own: Boolean = false,
+    /** [TRY-06] The 기능 ticked below that [live] puts on with the looks (by name), or null: looks only. */
+    liveWith: String? = null,
     actions: @Composable ColumnScope.(Set<String>) -> Unit,
 ) {
     val c = LocalContext.current.appContainer
@@ -351,7 +353,7 @@ fun TryOnScreen(
                         if (live != null) {
                             FilledTonalButton(onClick = {
                                 if (liveBusy) return@FilledTonalButton
-                                if (picked.isEmpty()) { liveNote = "입혀 볼 모양을 아래에서 골라 주세요"; return@FilledTonalButton }
+                                if (picked.isEmpty() && liveWith == null) { liveNote = "입혀 볼 모양을 아래에서 골라 주세요"; return@FilledTonalButton }
                                 liveBusy = true
                                 liveScope.launch {
                                     val ok = runCatching { live(picked, tab) }.getOrDefault(false)
@@ -360,8 +362,9 @@ fun TryOnScreen(
                                 }
                             }, enabled = !liveBusy, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text(if (liveBusy) "입혀 보는 중…" else "내 앱 실제 화면에 입혀 보기")
-                                    Text("모든 탭을 내 기록 그대로 · 저장 안 돼요", style = MaterialTheme.typography.labelSmall)
+                                    Text(if (liveBusy) "입혀 보는 중…" else if (liveWith != null) "내 앱에서 실제로 써 보기" else "내 앱 실제 화면에 입혀 보기")
+                                    Text(if (liveWith != null) "모양과 $liveWith 함께 · 끝내면 원래대로" else "모든 탭을 내 기록 그대로 · 저장 안 돼요",
+                                        style = MaterialTheme.typography.labelSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                 }
                             }
                             liveNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,

@@ -56,11 +56,14 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     // 1.39 PC a483ca15 (손으로 바꾼 2일·15일까지 '다른 날'로 세어 넣음): on a link already followed, a day that differs from the copy my
     // days were last matched to was changed by hand; it is left out unless asked for, as '직접 바꾼 날은 그대로' says.
     val cal = c.received.calendars.collectAsState().value.firstOrNull { it.id == id }
-    val hand = remember(all, cal?.basis, cal?.mine, cal?.adopted, pairs, mine, month) {
+    val hand = remember(all, cal?.basis, cal?.mine, cal?.adopted, cal?.note, pairs, mine, month) {
         val basis = cal?.basis?.takeIf { cal.mine || cal.adopted }?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() }
             ?: return@remember emptySet<LocalDate>()
         val was = basis.days.filterKeys { YearMonth.from(it) == month }.mapValues { it.value.type }
-        all.keys intersect RosterAdopt.changes(was, pairs, mine.shiftTypes, mine.resolver::resolve).keys
+        // 1.39 PC 5c4ad849: the days the leader changed that are still asked (넣을지 물어보기) were matched already (basis is the new
+        // copy) but not put in: they are the link's change, not the user's.
+        val asked = cal.note?.takeIf { it.kind == com.bamnat.app.share.FollowNote.ASK }?.apply?.keys.orEmpty()
+        (all.keys intersect RosterAdopt.changes(was, pairs, mine.shiftTypes, mine.resolver::resolve).keys) - asked
     }
     var withHand by remember(id, month) { mutableStateOf(false) }
     val changes = if (withHand) all else all.filterKeys { it !in hand }

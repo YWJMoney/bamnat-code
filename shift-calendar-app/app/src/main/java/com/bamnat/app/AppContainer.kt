@@ -766,6 +766,8 @@ class AppContainer(context: Context) {
         // PC 1차 확인: at start the times that passed while the app was away are caught up (or said as missed); after a change of the
         // rules only what comes from now on counts; a change of the 근무표 registers again (규칙은 근무 시각을 따라요).
         keep("logic") {
+            // [TRY-06] A work's 기능 being tried when the app stopped are put back first (what the user wrote stays), before the rules run.
+            runCatching { com.bamnat.app.recipe.FunctionTrial(this@AppContainer).recover()?.let { com.bamnat.app.ui.recipe.LiveTryOn.tell(it) } }
             // One job (StartupBudgetTest): the rules' own changes, and a changed 근무표 that moves when they run next.
             launch {
                 calendars.active.collectLatest { id ->
