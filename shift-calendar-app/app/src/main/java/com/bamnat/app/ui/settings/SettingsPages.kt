@@ -495,7 +495,7 @@ private fun NoticesPage(
     val context = LocalContext.current
     val canPost = remember(refresh) { Notifications.canPost(context) }
     val off = remember(refresh) {
-        listOf(Notifications.ALARM_CHANNEL_ID, Notifications.DAY_CHANNEL_ID, Notifications.COMMUTE_CHANNEL_ID,
+        listOf(Notifications.ALARM_CHANNEL_ID, Notifications.DAY_CHANNEL_ID, Notifications.SLEEPING_CHANNEL_ID, Notifications.COMMUTE_CHANNEL_ID,
             Notifications.MONEY_CHANNEL_ID, Notifications.LEAVE_CHANNEL_ID, Notifications.TODAY_CHANNEL_ID,
             // PC 8fe7d8b3: 밤낮 소식·문의 답 채널도 꺼져 있으면 여기서 바로 알려요.
             Notifications.PLAZA_CHANNEL_ID, Notifications.INQUIRY_CHANNEL_ID)
@@ -541,7 +541,7 @@ private fun NoticesPage(
             set(on) { it.copy(bedtimeNotice = on) }
         }
         SwitchRow("자는 중 표시", "‘잠들었어요’를 누르면 알림창에 잔 시간과 다음 알람이 보이고, ‘깼어요’로 끝내요", settings.sleepingNotice,
-            warning = warning(settings.sleepingNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
+            warning = warning(settings.sleepingNotice, Notifications.SLEEPING_CHANNEL_ID), onFix = fix(Notifications.SLEEPING_CHANNEL_ID)) { on ->
             set(on) { it.copy(sleepingNotice = on) }
         }
         // 1.38 [SLEEP-01] Only once the `sleep.auto` flag is open (처리방침 새 판 뒤).
