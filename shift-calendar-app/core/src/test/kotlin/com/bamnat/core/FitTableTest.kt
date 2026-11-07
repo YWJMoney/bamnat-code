@@ -71,4 +71,15 @@ class FitTableTest {
         FitTable.all.mapNotNull { it.feature }.forEach { assertNotNull(it, FeatureRegistry.get(it)) }
         assertEquals("keys are unique", FitTable.all.size, FitTable.all.map { it.key }.toSet().size)
     }
+
+    /** 1.39 [FLOW-34] 사용자 결정 11-07: 투자에는 오늘의 흐름을 더하기 목록에도 두지 않고, 예전에 더했어도 안 보여요. 가게·현장은 그대로 더할 수 있어요. */
+    @Test fun investIsNotOfferedTheTodayFlow() {
+        assertFalse(FitTable.others(FitSurface.CALENDAR_PARTS, WorkStyle.INVEST).any { it.id == "todayFlow" })
+        assertFalse(FitTable.visible(FitSurface.CALENDAR_PARTS, "todayFlow", WorkStyle.INVEST, setOf("CALENDAR_PARTS:todayFlow")))
+        for (style in listOf(WorkStyle.BUSINESS, WorkStyle.FIELD)) {
+            assertTrue(FitTable.others(FitSurface.CALENDAR_PARTS, style).any { it.id == "todayFlow" })
+            assertTrue(FitTable.visible(FitSurface.CALENDAR_PARTS, "todayFlow", style, setOf("CALENDAR_PARTS:todayFlow")))
+        }
+        assertTrue(FitTable.visible(FitSurface.CALENDAR_PARTS, "todayFlow", WorkStyle.SHIFT, emptySet()))
+    }
 }

@@ -243,8 +243,8 @@ class FlagEvalTest {
                 else if (f.key == FlagCatalog.DIAG_OBSERVE) "1.32.1" /* 1.32.1 STAB-10 */
                 else if (f.key == FlagCatalog.SHARE_SETUP) "1.33.0" /* 1.33 SHR-20 */
                 else if (f.key == FlagCatalog.SHARE_LOOK) "1.37.0" /* 1.37 SHR-31 */
-                // 1.39 PAYP-05, CARE-01, PLZC-10, G5-N4: the rows tied to 처리방침 3.12.
-                else if (f.key in setOf(FlagCatalog.PLAZA_FIX_REQUEST, FlagCatalog.COMMUNITY_CARE, FlagCatalog.PLAZA_PEOPLE, FlagCatalog.SLEEP_PLAN_SHARE)) "1.39.0"
+                // 1.39 PAYP-05, CARE-01, PLZC-10, G5-N4, SETUP-20: the rows tied to 처리방침 3.12.
+                else if (f.key in setOf(FlagCatalog.PLAZA_FIX_REQUEST, FlagCatalog.COMMUNITY_CARE, FlagCatalog.PLAZA_PEOPLE, FlagCatalog.SLEEP_PLAN_SHARE, FlagCatalog.STATS_SETUP)) "1.39.0"
                 else if (f.group == FlagGroup.PHASE3) "1.38.0" /* 1.38 P3-01 */ else "1.28.0"))
             // 1.38 사용자 C안: a Phase 3 row opens on 정식 출시일 (the launch policy's day), never earlier.
             if (f.group == FlagGroup.PHASE3) assertTrue(f.key, !f.default && f.conditions.any { it == Condition.Date(policy = FlagCatalog.PHASE3_POLICY) } && f.conditions.any { it == Condition.Policy(FlagCatalog.PHASE3_POLICY) } && FlagCatalog.PHASE3_POLICY == "3.11")
