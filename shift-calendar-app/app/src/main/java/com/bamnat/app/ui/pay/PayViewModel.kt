@@ -422,6 +422,9 @@ class PayViewModel(
     /** [EXTRA-05] The 1.8 way of paying a day off was shown next to the law's once; it is not shown again. */
     fun restDayCompared() = container.settingsRepository.update { it.copy(restDayCompared = true) }
 
+    /** 1.39 [PAYX-62] 주 15시간 경계 알림 끄기·켜기(설정 › 알림과 잠 › 돈에서도). */
+    fun weekHoursNudge(on: Boolean) = container.settingsRepository.update { it.copy(weekHoursNudge = on) }
+
     /** Changes the company's rules [PAYX-07]; every change can be undone like a value edit. */
     fun updateRules(transform: (CompanyRules) -> CompanyRules) {
         update { it.copy(rules = transform(it.rules)) }
