@@ -164,6 +164,19 @@ fun proDisclosures(plans: List<Plan>, today: LocalDate): List<String> {
     )
 }
 
+/**
+ * 1.39 [FLOW-25] 결제 창 머리 (흐름 디자인 3-12, 체험 혼동이 1점 리뷰의 원인인 앱을 반대로 배움): what a free month costs today, the day
+ * it turns paid and for how much, and that it is said again before then (7일 전 물음과 마지막 날, [TrialConsentPrompt]), in one line.
+ */
+fun trialHead(today: LocalDate, priceWords: String): String {
+    val end = today.plusMonths(1)
+    return "오늘 0원 · ${end.monthValue}월 ${end.dayOfMonth}일부터 $priceWords · 끝나기 7일 전과 하루 전에 알려 드려요"
+}
+
+/** 1.39 [FAM-03] What a family phone's 프로 is, and what a paused one is told. */
+internal const val FAMILY_ON = "가족 프로 이용권으로 프로를 무료로 써요"
+internal const val FAMILY_PAUSED = "가족 프로 이용권을 잠시 멈췄어요. 다시 켜지면 코드를 넣지 않아도 저절로 프로로 돌아와요."
+
 const val TERMS_URL = "https://ywjmoney.github.io/-/terms/"
 const val PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/"
 
@@ -305,7 +318,19 @@ fun consentWaitingText(q: com.bamnat.app.tier.PendingConsent): String =
 @Composable
 private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamnat.core.work.WorkStyle?) {
     SectionCard(title = "지금") {
-        Text(gate.access.reason.words, style = MaterialTheme.typography.titleMedium)
+        // 1.39 [FAM-03] 1.38 최종 PC 제안 5: a family phone is said as one at the top, before the launch too ('모든 기능이 무료' alone
+        // left it to the 관리자 연결 card at the very bottom), and after it not as an admin's phone. An admin's phone the same way.
+        val admin = pro.passes?.admin?.takeIf { it.approved }
+        Text(if (admin?.family == true && gate.access.reason == ProReason.ADMIN) FAMILY_ON else gate.access.reason.words,
+            style = MaterialTheme.typography.titleMedium)
+        if (admin != null && gate.access.reason != ProReason.ADMIN) {
+            Text(if (admin.family) "가족 프로 이용권이 연결돼 있어요. 정식 출시 뒤에도 끝나는 날 없이 프로예요."
+                else "관리자 휴대폰으로 연결돼 있어요. 정식 출시 뒤에도 프로를 무료로 써요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
+        if (pro.passes?.familyPaused == true) {
+            Text(FAMILY_PAUSED, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+        }
         gate.access.until?.let { until ->
             val day = lastDay(until, zone)
             val words = when (gate.access.reason) {
@@ -479,6 +504,8 @@ private fun AdminCard(c: AppContainer, pro: ProState) {
             admin?.approved == true -> Text("${adminWhose(admin.name)} 휴대폰이에요. 프로를 무료로 써요." +
                 if (admin.owner) " 최고 관리자 코드로 연결해서 따로 승인 없이 바로 열렸어요." else "", style = MaterialTheme.typography.bodyMedium)
             admin != null -> Text("${adminWhose(admin.name)} 휴대폰으로 승인을 기다리고 있어요.", style = MaterialTheme.typography.bodyMedium)
+            // 1.39 [FAM-03] 1.38 최종 PC 제안 4: paused by the owner, said so (the line used to go with no word).
+            pro.passes?.familyPaused == true -> Text("$FAMILY_PAUSED 새 가족 코드를 받았다면 아래에 넣어도 돼요.", style = MaterialTheme.typography.bodyMedium)
             else -> Text("밤낮 관리자라면 관리자 앱 › 내 정보 › ‘내 휴대폰 밤낮 연결’의 6자리 코드를 넣어 주세요. 최고 관리자가 승인하면 프로를 무료로 써요. 가족 프로 이용권 코드도 여기에 넣어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

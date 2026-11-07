@@ -48,7 +48,11 @@ class SleepActionReceiver : BroadcastReceiver() {
                         Notifications.cancel(context, Notifications.BEDTIME_ID)
                         Notifications.cancel(context, Notifications.COMMUTE_ID)
                     }
-                    SleepActions.ACTION_AWAKE -> container.sleepRepository.wokeUp()
+                    SleepActions.ACTION_AWAKE -> {
+                        container.sleepRepository.wokeUp()
+                        // 1.39 [SLEEP-06] 깼어요 ends 자는 동안 소리 too, at once.
+                        SleepRecordService.stop(context)
+                    }
                 }
             } finally {
                 pending.finish()
@@ -70,13 +74,16 @@ object SleepingNotice {
         val left = SleepDebt.MAX_SLEEP_MINUTES * 60_000 - Duration.between(start, now).toMillis()
         if (left <= 0) return cancel(context)
         val title = (if (start.toLocalDate() == now.toLocalDate()) "" else "어제 ") + "${hm(start)}부터 자는 중"
-        val notification = NotificationCompat.Builder(context, Notifications.DAY_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setGroup(Notifications.SLEEPING_GROUP)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setSilent(true)
             .setContentTitle(title)
-            .setContentText(nextAlarm?.let { "다음 알람 " + (if (it.toLocalDate() == now.toLocalDate()) "" else "내일 ") + hm(it) } ?: "깨면 ‘깼어요’를 눌러 주세요")
+            // 1.39 (PC a483ca15): any day after today was "내일" here; the night screen's day word now (오늘·내일·모레·11/15).
+            .setContentText(nextAlarm?.let { "다음 알람 " + com.bamnat.core.sleep.NightLine.day(now, it) + " " + hm(it) } ?: "깨면 ‘깼어요’를 눌러 주세요")
             .setWhen(start.atZone(Today.zone()).toInstant().toEpochMilli())
             .setUsesChronometer(true)
             .setShowWhen(true)

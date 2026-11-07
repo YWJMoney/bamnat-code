@@ -51,6 +51,18 @@ object RosterFollower {
     /** Whether this link's changes come into the user's calendar (or are offered). */
     fun followed(cal: ReceivedCalendar): Boolean = mode(cal) != Mode.OFF
 
+    /**
+     * 1.39 PC 5c4ad849 (받은 근무표로 넣은 날에 '직접 바꿈'): the followed link whose [date] this day already is in my kinds of day, so
+     * the day says where it came from (민지의 근무표대로) and not that the user changed it by hand; null when none says so.
+     */
+    fun linkFor(cals: List<ReceivedCalendar>, day: com.bamnat.core.schedule.ResolvedDay, mine: List<com.bamnat.core.model.ShiftType>): ReceivedCalendar? =
+        cals.firstOrNull { cal ->
+            if (cal.gone || !followed(cal)) return@firstOrNull false
+            val s = cal.schedule ?: return@firstOrNull false
+            val theirs = s.days[day.date] ?: return@firstOrNull false
+            RosterAdopt.changes(mapOf(day.date to theirs.type), RosterAdopt.match(theirTypes(s), mine), mine) { day }.isEmpty()
+        }
+
     /** The sender's shifts as [RosterAdopt] pairs them (also the card that puts a month in). */
     fun theirTypes(s: SharedSchedule): List<RosterAdopt.Theirs> = s.types.map { t ->
         val parts = t.time?.split("-")
@@ -75,11 +87,11 @@ object RosterFollower {
      * when it could not be reached. Every fetch of a received link goes through here, so the old copy is never lost before it is
      * compared.
      */
-    suspend fun refresh(c: AppContainer, id: String): Boolean = lock.withLock {
+    suspend fun refresh(c: AppContainer, id: String, quiet: Boolean = false): Boolean = lock.withLock {
         val before = c.received.get(id) ?: return@withLock true
         if (before.gone) return@withLock true
         val got = try {
-            c.shareApi.readIfChanged(id, before.etag)
+            if (quiet) c.shareApi.readQuietly(id, before.etag) else c.shareApi.readIfChanged(id, before.etag)
         } catch (e: ShareLinkException) {
             if (e.message == "not_found") {
                 c.received.markGone(id, e.removedReason)
@@ -90,18 +102,33 @@ object RosterFollower {
         } catch (_: IOException) {
             return@withLock false
         }
-        if (got == null) { c.received.touch(id); return@withLock true }
-        val after = c.received.update(id, got) ?: return@withLock true
-        runCatching { follow(c, before, after) }
+        if (got == null) c.received.touch(id) else c.received.update(id, got)
+        // Also when nothing came now: another way may have brought the new copy in first (PC a483ca15, 12/3 not put in).
+        runCatching { follow(c, id) }
         true
     }
 
-    /** Compares [before] and [after] of one link and does what its [Mode] says. */
-    internal suspend fun follow(c: AppContainer, before: ReceivedCalendar, after: ReceivedCalendar) {
-        val mode = mode(after)
-        if (mode == Mode.OFF) return
-        val old = before.schedule ?: return
-        val new = after.schedule ?: return
+    /**
+     * 1.39 [TEAM-22] For a copy brought in some other way (하루 한 번 소식, opening the link again): what changed since my days were
+     * last matched goes in or is asked, as [refresh] does.
+     */
+    suspend fun settle(c: AppContainer, id: String) = lock.withLock { runCatching { follow(c, id) } }
+
+    /** Compares the copy my days were last matched to ([ReceivedCalendar.basis]) with the link now, and does what its [Mode] says. */
+    internal suspend fun follow(c: AppContainer, id: String) {
+        val cal = c.received.get(id) ?: return
+        val raw = cal.raw ?: return
+        val basis = cal.basis
+        if (basis != null && basis.toString() == raw.toString()) return
+        val mode = mode(cal)
+        val old = basis?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() }
+        val new = cal.schedule
+        if (mode == Mode.OFF || old == null || new == null) { c.received.setBasis(id, raw); return }
+        decide(c, cal, mode, old, new)
+        c.received.setBasis(id, raw)
+    }
+
+    private suspend fun decide(c: AppContainer, after: ReceivedCalendar, mode: Mode, old: SharedSchedule, new: SharedSchedule) {
         val mine = c.scheduleRepository.snapshot.first()
         val pairs = RosterAdopt.match(theirTypes(new), mine.shiftTypes)
         val from = Today.date().withDayOfMonth(1)
@@ -116,7 +143,13 @@ object RosterFollower {
             val undo = was.mapValues { (_, e) -> code(e?.override ?: ShiftOverride.None) }
             said(c, after.id, FollowNote(FollowNote.DONE, Today.instant(), plan.lines, undo = undo, kept = plan.kept))
         } else {
-            said(c, after.id, FollowNote(FollowNote.ASK, Today.instant(), plan.lines, apply = plan.apply.mapValues { code(it.value) }, kept = plan.kept))
+            // A change asked earlier and not answered yet stays in the question with this one.
+            val prev = after.note?.takeIf { it.kind == FollowNote.ASK }
+            val prefixes = plan.lines.map { it.substringBefore(' ') }.toSet()
+            val lines = prev?.lines.orEmpty().filter { it.substringBefore(' ') !in prefixes } + plan.lines
+            val apply = prev?.apply.orEmpty() + plan.apply.mapValues { code(it.value) }
+            val kept = (prev?.kept.orEmpty().filter { it !in plan.apply.keys } + plan.kept).distinct()
+            said(c, after.id, FollowNote(FollowNote.ASK, Today.instant(), lines, apply = apply, kept = kept))
         }
     }
 
@@ -148,7 +181,7 @@ object RosterFollower {
         if (!c.shareApi.enabled) return
         c.received.expire()
         val ids = c.received.calendars.value.filter { !it.gone && followed(it) }.map { it.id }
-        for (id in ids) refresh(c, id)
+        for (id in ids) refresh(c, id, quiet = true)
         sync(c.appContext, c)
     }
 
@@ -192,10 +225,12 @@ object RosterFollower {
     /** The notice's and the calendar line's words. */
     fun words(cal: ReceivedCalendar, note: FollowNote): Pair<String, String> {
         val days = note.lines.take(3).joinToString(", ") + if (note.lines.size > 3) " 외 ${note.lines.size - 3}일" else ""
-        val kept = if (note.kept.isEmpty()) "" else " · 직접 바꾼 ${note.kept.joinToString(", ") { "${it.monthValue}/${it.dayOfMonth}" }}은 그대로 뒀어요"
+        // PC a483ca15: the same words twice and '12/2은'; the days are named after a colon, with no 은/는 to get wrong.
+        val keptDays = note.kept.joinToString(", ") { "${it.monthValue}/${it.dayOfMonth}" }
+        val kept = if (note.kept.isEmpty()) "" else " · 직접 바꿔서 그대로 둔 날: $keptDays"
         return when (note.kind) {
             FollowNote.DONE -> "${cal.name} 근무표가 바뀌어 내 달력에 넣었어요" to "$days$kept. 근무 알람도 바뀐 근무대로 울려요."
-            FollowNote.ASK -> if (note.lines.isEmpty()) "${cal.name} 근무표가 바뀌었어요" to "직접 바꾼 날이라 그대로 뒀어요$kept"
+            FollowNote.ASK -> if (note.lines.isEmpty()) "${cal.name} 근무표가 바뀌었어요" to "직접 바꾼 날이라 그대로 뒀어요: $keptDays"
             else "${cal.name} 근무표가 바뀌었어요 · 내 달력에 넣을까요?" to "$days$kept. 넣으면 근무 알람도 따라가요."
             else -> "${cal.name} 근무표 링크가 끊겼어요" to "내 달력은 그대로예요. 새 링크를 받으면 다시 이어서 받아요."
         }

@@ -91,6 +91,16 @@ class CellListScreenshotTest : ScreenshotBase() {
         content { TryOnScreen(r, WorkStyle.FIELD, onDismiss = {}, onKeep = { true }) { Text("입기") } }
     }
 
+    // ---- [CELL-03] PC a483ca15: 사무직 메모는 보통 높이 칸에 한 줄, 긴 메모 끝 '…' (빈 달의 낮은 칸은 CellListOnTest) ----
+    @Test fun officeMemos() = shoot("1412_cell_list_office_memos_folded", FOLDED) {
+        field()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
+    }
+    @Test fun officeMemosUnfolded() = shoot("1413_cell_list_office_memos_unfolded", UNFOLDED) {
+        field()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY) }
+    }
+
     // ---- [BIGTXT-01] 큰 글자 ----
     @Test fun dayPanelBigFont() = shoot("1399_bigtext_day_panel_unfolded_200", UNFOLDED, 2f) {
         field()

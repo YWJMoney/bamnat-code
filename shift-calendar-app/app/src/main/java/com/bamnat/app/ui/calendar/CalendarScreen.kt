@@ -400,6 +400,9 @@ fun CalendarScreen(
     LaunchedEffect(reviewMoment) {
         if (reviewMoment != null) {
             delay(1500)
+            // 1.39 [SPREAD-06] Not right after an ad, a payment window or an app-stop: the moment waits for the next opening.
+            val crashAt = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { InAppReview.lastCrash(context) }.getOrDefault(0L) }
+            if (!InAppReview.calm(System.currentTimeMillis(), crashAt)) return@LaunchedEffect
             context.findActivity()?.let { InAppReview.ask(it) }
             vm.markReviewAsked(reviewMoment)
         }
@@ -931,8 +934,9 @@ fun CalendarScreen(
         WeekdayHeader(DayOfWeek.MONDAY, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             // [CELL-01] 1.39 A week of cells listing their jobs and memos is as tall as the month's.
-            val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, false)
-            val cellHeight = (if (listOn) maxOf(calView.cellHeight(maxWidth), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth)) + cellTextGrowth()
+            val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, false, hasMemos = datedMemos.isNotEmpty())
+            val tall = listOn && cellListTall(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, true)
+            val cellHeight = (if (tall) maxOf(calView.cellHeight(maxWidth), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth)) + cellTextGrowth()
             val swipe = with(androidx.compose.ui.platform.LocalDensity.current) { WEEK_SWIPE.toPx() }
             val turnTo by rememberUpdatedState(onDateChange)
             WeekStrip(
@@ -951,6 +955,7 @@ fun CalendarScreen(
                 showSpend = settings.spendInCells,
                 memoTexts = memoTexts,
                 memoLists = memoLists.takeIf { listOn },
+                listEmptyDays = tall,
                 focus = focus,
                 hourly = hourlyCells,
                 invest = investCells,
@@ -1578,8 +1583,16 @@ fun CalendarScreen(
             ) {
                 // [CAL-51] On its side a phone keeps its cells as short as they hold, so weeks show under the bars.
                 // [CELL-01] 1.39 Cells that list each day's jobs and memos are taller, so the lines have room (not on its side).
-                val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, sideways)
-                val cellHeight = (if (listOn) maxOf(calView.cellHeight(maxWidth, sideways), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth, sideways)) + cellTextGrowth()
+                val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, sideways, hasMemos = datedMemos.isNotEmpty())
+                // [CELL-03] Tall only for a month that has jobs or memos to list; an empty month keeps its weeks in sight.
+                val monthHasLines = remember(datedMemos, moneyBook.jobs, visibleMonth, focus) {
+                    datedMemos.any { YearMonth.from(it.date!!) == visibleMonth } ||
+                        focus != com.bamnat.core.work.CalendarFocus.SHIFTS && moneyBook.jobs.any { j ->
+                            !j.date.isAfter(visibleMonth.atEndOfMonth()) && !(j.endDate ?: j.date).isBefore(visibleMonth.atDay(1))
+                        }
+                }
+                val tall = listOn && cellListTall(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, monthHasLines)
+                val cellHeight = (if (tall) maxOf(calView.cellHeight(maxWidth, sideways), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth, sideways)) + cellTextGrowth()
                 val coverRows = fabKeepRows(visibleMonth, settings.weekStart)
                 val ownPx = if (showList) Float.NaN else with(density) { cellHeight.toPx() } * coverRows
                 androidx.compose.runtime.SideEffect { ownRowsPx = ownPx }
@@ -1653,6 +1666,7 @@ fun CalendarScreen(
                         spendHeat = settings.spendHeat && !stamping,
                         memoTexts = memoTexts,
                         memoLists = memoLists.takeIf { listOn && !stamping },
+                        listEmptyDays = tall,
                         onPaint = if (stamping) paintDays else null,
                         weeklyLimitHours = limits.weeklyLimitHours,
                         focus = focus,
@@ -2088,6 +2102,8 @@ private fun CalendarHeader(
     val small = maxWidth < 340.dp
     // [CAL-52] 중-4: on 393·412dp phones the two icons left the month a few dp ("2026년" only); they are in 도구 too.
     val roomy = maxWidth >= HEADER_ICONS_WIDTH
+    // [NAV2-02] Large text on a phone: the 나 button keeps its place, so 오늘 is an icon and the month is short.
+    val crowded = !roomy && LocalDensity.current.fontScale >= 1.3f && com.bamnat.app.ui.LocalMe.current.show && !com.bamnat.app.ui.LocalMe.current.inRail
     val wideTitle = maxWidth >= 600.dp
     var menu by remember { mutableStateOf(false) }
     // [BLU-05] 1.36 부품 꾸미기: 달력 머리, 달 이름, 이동 단추, 오늘 단추.
@@ -2130,7 +2146,7 @@ private fun CalendarHeader(
                 val titleText = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) }
                 // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
                 val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }
-                com.bamnat.app.ui.FitText(monthTitle(month, short = small, yearInk = yearInk), titleText,
+                com.bamnat.app.ui.FitText(monthTitle(month, short = small || crowded, yearInk = yearInk), titleText,
                     (if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false)).then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -2138,7 +2154,7 @@ private fun CalendarHeader(
         }
         val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
         if (todayPart.hide == true) Unit
-        else if (small) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
+        else if (small || crowded) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
         // PC 확인 C15 1.36 (사진 위 '오늘' 2.1:1): on this month already the button is off, and its 38% grey vanished on a 꾸밈 사진; there it
         // keeps most of the ink (still lighter than when it can be pressed).
         else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod,
@@ -2170,6 +2186,9 @@ private fun CalendarHeader(
                 Text(" 도구", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge)
             }
         }
+        // [NAV2-02] 1.39 설정 and the tabs not in the bar, always (PC NAV2: hidden on a small phone, settings was hard to find);
+        // there 오늘 is an icon and the month drops this year's number instead.
+        com.bamnat.app.ui.MeButton()
     }
     if (menu) {
         // [FIT-01] Every tool with its id in the fit table; [FIT-02] the ones this kind of work does not use wait under 더 보기.

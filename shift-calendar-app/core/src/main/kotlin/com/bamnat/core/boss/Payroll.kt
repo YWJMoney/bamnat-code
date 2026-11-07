@@ -175,6 +175,11 @@ data class LedgerLine(
     val warnings: List<LedgerWarning>,
     /** 1.39 [BOSS-12] 산재보험 (사업주만, 공식 대조 G5): 0 for a 사업소득자 or with no 업종 picked. */
     val accident: Long = 0,
+    /**
+     * 1.39 G2 PC 4bd5d745: minutes really worked in each week (from [Workplace.weekStart]) that touches the month, 연장·휴일 included.
+     * The 주휴 weeks cap at 소정근로 (40시간), so a 60-hour week read 40 and the 주 52시간 red never came.
+     */
+    val weekMinutes: List<Int> = emptyList(),
 ) {
     val lines: List<PayLine> get() = pay?.lines.orEmpty().filter { it.amount != 0L }
     val gross: Long get() = lines.sumOf { it.amount }
@@ -307,8 +312,14 @@ object PayrollLedger {
         val worked = pay?.minutes.orEmpty()
         val workDays = days.count { it.isWorkDay || it.extras.isNotEmpty() }
         // 1.38 PC 1차: hours worked on a 휴일 are hours worked too (10월 22일 근무가 160시간으로 보이고 지난달 비교가 거꾸로 말하던 것).
-        val workMinutes = pay?.lines?.filter { it.kind == LineKind.BASE || it.kind == LineKind.EXTRA_HOURS || it.kind == LineKind.HOLIDAY }?.sumOf { it.minutes }
-            ?.takeIf { it > 0 } ?: days.sumOf { it.scheduledMinutes + it.extras.sumOf { e -> e.minutes } }
+        // 1.39 G2 PC 4bd5d745: every minute the engine counted on a working day, 연장 included. The pay lines left 연장 out and
+        // some months only kept 휴일근로 (10월 '22일 · 24시간', so '일한 시간 152시간 늘었어요' against November's 252시간).
+        val workMinutes = worked.filter { s.workingOn(it.date) && it.date.year == month.year && it.date.month == month.month }
+            .sumOf { it.worked }.takeIf { it > 0 } ?: days.sumOf { it.totalMinutes }
+        val first = month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(place.weekStart))
+        val weekMinutes = if (!employed) emptyList() else generateSequence(first) { it.plusWeeks(1) }
+            .takeWhile { !it.isAfter(month.atEndOfMonth()) }
+            .map { from -> (0L..6L).map(from::plusDays).filter(s::workingOn).sumOf { r.resolve(it).totalMinutes } }.toList()
         fun minutesOf(kind: LineKind) = pay?.lines?.filter { it.kind == kind }?.sumOf { it.minutes } ?: 0
         val gross = pay?.total ?: 0
         // [BOSS-11] Only the 4대보험 the law puts them in (G2·G3·G6), not just what was ticked.
@@ -320,7 +331,7 @@ object PayrollLedger {
             staff = s, month = month, pay = pay,
             workDays = workDays, workMinutes = workMinutes,
             overtimeMinutes = minutesOf(LineKind.OVERTIME), nightMinutes = minutesOf(LineKind.NIGHT), holidayMinutes = minutesOf(LineKind.HOLIDAY),
-            employerInsurance = insurance, warnings = emptyList(), accident = accident,
+            employerInsurance = insurance, warnings = emptyList(), accident = accident, weekMinutes = weekMinutes,
         )
         return line.copy(warnings = warnings(place, line, worked.isEmpty()))
     }
@@ -372,7 +383,7 @@ object PayrollLedger {
         if (!s.weeklyHolidayPay && s.form == WageForm.HOUR && l.pay?.holidayWeeks.orEmpty().any { it.workedMinutes >= 15 * 60 }) add(LedgerWarning("holiday-off", "주휴수당을 끈 직원이에요",
             "주 15시간 이상 일한 주가 있어요. 그 주는 주휴수당을 줘야 해요(근로기준법 제55조, 시행령 제30조)."))
         // 1.38 [BOSS-10] 주 52시간 (근로기준법 제53조): a week past it is told, for a 5인 이상 place the law caps.
-        if (place.fivePlus != false) l.pay?.holidayWeeks.orEmpty().filter { it.workedMinutes > 52 * 60 }.takeIf { it.isNotEmpty() }?.let { w ->
+        if (place.fivePlus != false) l.weekMinutes.filter { it > 52 * 60 }.takeIf { it.isNotEmpty() }?.let { w ->
             add(LedgerWarning("week52", "주 52시간을 넘은 주가 있어요", "${w.size}주가 한 주 52시간(근로기준법 제53조)을 넘었어요. 근무를 나눠 주세요."))
         }
         if (noWork) add(LedgerWarning("empty", "근무가 없어요", "이번 달 일한 날이 없어요. 평소 근무 요일·시간을 넣거나 근무를 고쳐 주세요."))

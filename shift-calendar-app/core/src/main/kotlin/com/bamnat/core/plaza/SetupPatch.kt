@@ -228,9 +228,15 @@ object RoomCards {
     fun cards(mine: String, others: List<Version>, max: Int = 8): List<RoomCard> {
         data class Acc(val row: CompareRow, var persons: Int, var from: String, var best: Int)
         val acc = LinkedHashMap<Pair<String, String?>, Acc>()
+        // 1.39 [PAYP-01] A version read without its pay (a 1.39 app sees none) says nothing about pay: my pay lines are not
+        // 'taken away' in it.
+        val mineFacts = SetupFacts.read(mine)
+        val mineNoPay by lazy { (runCatching { Json.parse(mine) }.getOrNull() as? Map<*, *>)?.let { SetupFacts.read(it - "pay") }.orEmpty() }
         for (v in others) {
             val n = v.persons.coerceAtLeast(1)
-            for (row in SetupCompare.changes(mine, v.text)) {
+            val theirs = runCatching { Json.parse(v.text) }.getOrNull() as? Map<*, *> ?: continue
+            val rows = SetupCompare.rows(if (theirs.containsKey("pay")) mineFacts else mineNoPay, SetupFacts.read(theirs)).filter { !it.same }
+            for (row in rows) {
                 val k = row.key to row.after
                 val a = acc[k]
                 if (a == null) acc[k] = Acc(row, n, v.id, n)

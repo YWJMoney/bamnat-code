@@ -766,6 +766,8 @@ class AppContainer(context: Context) {
         // PC 1차 확인: at start the times that passed while the app was away are caught up (or said as missed); after a change of the
         // rules only what comes from now on counts; a change of the 근무표 registers again (규칙은 근무 시각을 따라요).
         keep("logic") {
+            // [TRY-06] A work's 기능 being tried when the app stopped are put back first (what the user wrote stays), before the rules run.
+            runCatching { com.bamnat.app.recipe.FunctionTrial(this@AppContainer).recover()?.let { com.bamnat.app.ui.recipe.LiveTryOn.tell(it) } }
             // One job (StartupBudgetTest): the rules' own changes, and a changed 근무표 that moves when they run next.
             launch {
                 calendars.active.collectLatest { id ->
@@ -872,13 +874,18 @@ class AppContainer(context: Context) {
         keep("sleeping") {
             var openId: Long? = null
             val on = settingsRepository.settings.map { it.sleepingNotice }.distinctUntilChanged()
-            combine(sleepRepository.recent(days = 2), on, alarmScheduler.upcoming) { log, show, next -> Triple(log, show, next) }
-                .collect { (log, show, next) ->
+            // 1.39 [SLEEP-06] While 자는 동안 소리 measures, its notice is the 자는 중 notice (깼어요 and 측정만 끝 side by side
+            // on one card), so the shade does not stack two of them (PC 1.38 최종 사용성 6).
+            val measuring = com.bamnat.app.sleep.SleepRecordService.recording.map { it != null }.distinctUntilChanged()
+            combine(sleepRepository.recent(days = 2), on, alarmScheduler.upcoming, measuring) { log, show, next, rec -> Triple(log, show, next) to rec }
+                .collect { (t, rec) ->
+                    val (log, show, next) = t
                     val now = Today.dateTime()
                     val open = log.firstOrNull {
                         it.end == null && !it.imported && Duration.between(it.start, now).toMinutes() < SleepDebt.MAX_SLEEP_MINUTES
                     }
                     when {
+                        open != null && show && rec -> SleepingNotice.cancel(appContext)
                         open != null && show ->
                             SleepingNotice.show(appContext, open, next?.let { AlarmScheduler.millisToLocal(it.triggerAtMillis) }, now)
                         openId != null -> {

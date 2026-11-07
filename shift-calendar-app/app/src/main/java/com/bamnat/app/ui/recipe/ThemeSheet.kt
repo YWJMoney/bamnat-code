@@ -151,7 +151,9 @@ fun WornNow(onFix: (() -> Unit)?) {
  * asks for a rewarded ad watched to the end; mine, 프로 and the ads switch off never do.
  */
 @Composable
-fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0, onDismiss: () -> Unit) {
+fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0,
+               /** [TRY-05] Opened again after trying it on the real app: the parts ticked and the tab shown then. */
+               again: LiveTryOn.Reopen? = null, onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
     var note by remember { mutableStateOf<String?>(null) }
@@ -181,6 +183,9 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0, onDismi
     }
     TryOnScreen(r, style, onDismiss,
         onKeep = { ids -> c.wardrobe.keep(r, code, ids.toList()) },
+        // [TRY-05] 1.39 실제 화면으로 입어 보기: the sheet closes; 끝내기 opens it again over the screen it was on.
+        live = { picked, tab -> LiveTryOn.start(c, r, own, picked, tab, LiveTryOn.From.Sheet(r, code, ver)).also { if (it) onDismiss() } },
+        startPicked = again?.picked, startTab = again?.tab, own = own,
     ) { picked ->
         note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         // [TAB-05] PC 확인 bf62e966 사용성 제안: before wearing a 전문 달력, one line on how the 달력·메모·가계부 will be laid out.
@@ -288,7 +293,7 @@ fun ThemeUpdateAsk() {
                 Toast.LENGTH_LONG).show()
         }
     }
-    if (trying) TryOnScreen(r, c.settingsRepository.current.workStyle, onDismiss = { trying = false }, onKeep = null) { _ ->
+    if (trying) TryOnScreen(r, c.settingsRepository.current.workStyle, onDismiss = { trying = false }, onKeep = null, own = worn.own) { _ ->
         Button(onClick = { trying = false; newer = null; update() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("새 판으로 바꾸기") }
     } else AlertDialog(
         onDismissRequest = { newer = null },

@@ -145,8 +145,9 @@ test("the developer adopts or turns down what coworkers sent", async () => {
   assert.equal((await call("POST", `/api/admin/groups/${a.data.company.id}/${a.data.setup}/adopt`, {}, h)).status, 404);
   const o = (await adminHome(call, h)).data;
   assert.deepEqual([o.pending, o.flagged, o.owed, o.companies, o.rules, o.reports], [0, 0, 1, 2, 1, 2]);
+  // 1.39 [LOOP-14] askMonths(회사 방식 요청 반영 보상): 따로 정하기 전에는 채택 보상을 따라가요.
   assert.deepEqual(o.settings, { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90,
-    firstMonths: 0, firstCapYear: 3 });
+    firstMonths: 0, firstCapYear: 3, askMonths: 3 });
   assert.equal(o.reasons.wrong, "실제와 다른 정보로 보여요");
 });
 
@@ -265,7 +266,7 @@ test("a lower bar adopts what already meets it", async () => {
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 3, rewardMonths: 25 }, h)).data.error, "rewardMonths");
   const saved = await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6 }, h);
   assert.deepEqual(saved.data, { adoptPoints: 2, rewardMonths: 6, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90,
-    firstMonths: 0, firstCapYear: 3 });
+    firstMonths: 0, firstCapYear: 3, askMonths: 6 });
   const mine = (await call("GET", `/api/reports/${a.data.id}`)).data;
   assert.deepEqual([mine.status, mine.threshold, mine.rewardMonths], ["adopted", 2, 6]);
   assert.deepEqual(mine.reward, { months: 6, status: "owed" });

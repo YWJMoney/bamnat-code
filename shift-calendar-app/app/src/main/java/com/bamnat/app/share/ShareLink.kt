@@ -573,6 +573,12 @@ interface ShareApi {
      */
     suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = read(id)
 
+    /**
+     * 1.39 G2: [readIfChanged] for a check the user did not ask for (받은 근무표 따라가기 every 6 hours, 하루 한 번 소식), so the sharer's
+     * 봤어요 is not set by it.
+     */
+    suspend fun readQuietly(id: String, etag: String?): ReceivedShare? = readIfChanged(id, etag)
+
     /** [SRV-05] Reports a received link to the developer ([ShareReport] reasons); nobody learns who sent it. */
     suspend fun report(id: String, reason: String) {}
 
@@ -760,8 +766,12 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     override suspend fun read(id: String): ReceivedShare = readIfChanged(id, null)!!
 
-    override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = withContext(Dispatchers.IO) {
-        val reply = request("GET", "/api/share/$id", null, null, etag)
+    override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = readAt(id, etag, quiet = false)
+
+    override suspend fun readQuietly(id: String, etag: String?): ReceivedShare? = readAt(id, etag, quiet = true)
+
+    private suspend fun readAt(id: String, etag: String?, quiet: Boolean): ReceivedShare? = withContext(Dispatchers.IO) {
+        val reply = request("GET", "/api/share/$id", null, null, etag, quiet)
         if (reply.code == HttpURLConnection.HTTP_NOT_MODIFIED) return@withContext null
         val o = reply.body
         readable {
@@ -1031,14 +1041,14 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     private class Reply(val code: Int, val body: JSONObject, val etag: String?)
 
-    private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null): Reply {
+    private fun request(method: String, path: String, body: JSONObject?, token: String?, etag: String? = null, quiet: Boolean = false): Reply {
         // [QA130-01] 1.30 AY: no link made, changed or reported by a Play pre-launch robot; to it, as if offline.
         if (!com.bamnat.app.diag.TestLab.allows(method)) throw IOException("test_lab")
         // [SRV-30] 1.36: at s.bamnat.app, or the old workers.dev name when the new one cannot be reached at all.
-        return com.bamnat.app.company.ServerAddress.call(baseUrl) { at -> requestAt(at, method, path, body, token, etag) }
+        return com.bamnat.app.company.ServerAddress.call(baseUrl) { at -> requestAt(at, method, path, body, token, etag, quiet) }
     }
 
-    private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?): Reply {
+    private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?, quiet: Boolean = false): Reply {
         // [SPD-26][SPD-27] 1.31: as the company server's requests, through Cronet when there and the connection kept for the next.
         val conn = com.bamnat.app.company.NetEngine.open(URL(baseUrl.trimEnd('/') + path))
         var broke = true
@@ -1048,6 +1058,7 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
             conn.readTimeout = 15_000
             token?.let { conn.setRequestProperty("X-Delete-Token", it) }
             etag?.let { conn.setRequestProperty("If-None-Match", it) }
+            if (quiet) conn.setRequestProperty("X-Bamnat-Quiet", "1")
             if (body != null) {
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")

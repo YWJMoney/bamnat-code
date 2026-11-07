@@ -10,6 +10,25 @@ object WhatsNew {
     data class Release(val versionCode: Int, val versionName: String, val lines: List<Line>)
 
     val releases: List<Release> = listOf(
+        // 1.39.0 (docs/plans/1.39-개발계획.md). 줄은 통합 브랜치에서만 더해요(총괄). 판 마무리 때 다시 고르고 다듬어요.
+        Release(53, "1.39.0", listOf(
+            // [NAV2-01][NAV2-02][NAV2-03]
+            Line("아래 탭 다섯 칸을 원하는 기능으로 채워요. 한 칸에 여러 기능을 묶으면 누를 때 목록이 떠요. 설정은 위쪽 ‘나’ 단추에 있어요", "nav.tabOrder"),
+            // [TEAM-22] D9
+            Line("팀 리더가 근무표를 고치면 6시간 안에 내 달력과 근무 알람에 들어가요. 받은 근무표에서 바로 넣기·물어보기·넣지 않기를 골라요", "share.receive"),
+            // [CELL-01][CELL-02]
+            Line("날짜 칸에 그날 일감·메모가 한 줄씩 보여요. 테마를 입어도 내가 적은 것은 그대로예요", "calendar.view"),
+            // [PAYX-60]
+            Line("급여 기간을 21일~20일처럼 정하면 근무 시간과 일수도 그 월급의 기간으로 세요", "stats.range"),
+            // [PAYX-56][PAYX-57][PAYX-58]
+            Line("명세서 공제 칸의 사택관리비 같은 돈은 세금 뗀 뒤 빼고, 소급분은 그달에만 넣어요", "pay.calc"),
+            // [FLOW-09]~[FLOW-16]
+            Line("밤 화면: ‘잠들었어요’를 누르면 어두운 화면에 큰 시계와 다음 근무·알람이 떠요", "sleep.log"),
+            // [MKP-01]~[MKP-05][TRY-05]
+            Line("장터 테마가 빨리 열리고, 입기 전에 내 앱 실제 화면에 입혀 볼 수 있어요", "look.themes"),
+            // [PRIV-06]
+            Line("설정 › 개인정보의 ‘모두 지우기’가 내가 만든 공유 링크까지 한 번에 지워요"),
+        )),
         // 1.38.0 (docs/plans/1.38-개발계획.md). 갈래마다 줄을 고치면 부딪히니 통합 브랜치에서만 더해요(갈래 0).
         Release(52, "1.38.0", listOf(
             // [EASE-17][EASE-20][EASE-21]

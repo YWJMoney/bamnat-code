@@ -108,6 +108,9 @@ abstract class ScreenshotBase {
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         // A search one shot left open must not open the next shot's 회사 찾기 with its name and chips.
         com.bamnat.app.ui.company.PublicBrowse.reset()
+        // 1.39 [FLOW-03] Nor a setup's '이번 달이 채워졌어요' line from a shot that went through setup (kept in memory, so it leaked
+        // into the next class's calendars: 가게 달력에 '이번 달 야간 5번', 3차 통합 화면 지문).
+        com.bamnat.app.ui.calendar.SetupFill.close()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
@@ -554,8 +557,21 @@ abstract class ScreenshotBase {
          * [NAV-06] 1.26 AD: holds a finger on the tab in place [from] for [hold] frames (40 is a long press), then drags it
          * slowly to place [to], along the bar (or the rail when [wide]), where [tab] would tap.
          */
-        fun dragTab(from: Int, to: Int, wide: Boolean, hold: Int = 0) = gesture { w, h, d ->
-            fun at(i: Float) = if (wide) 40 * d to (45 + i * 62) * d else w * (i + 0.5f) / TABS to h - 40 * d  /* [RCX-29] six since 광장 */
+        fun dragTab(from: Int, to: Int, wide: Boolean, hold: Int = 0) {
+            // [NAV2-02] Where the tabs are drawn (the rail has the 나 button above them since 1.39), the old guess without a bar.
+            val drawn = barTabs(wide).map { it.boundsInWindow.center }
+            dragTabAt(from, to, wide, hold, drawn)
+        }
+
+        private fun dragTabAt(from: Int, to: Int, wide: Boolean, hold: Int, drawn: List<Offset>) = gesture { w, h, d ->
+            fun guess(i: Float) = if (wide) 40 * d to (45 + i * 62) * d else w * (i + 0.5f) / TABS to h - 40 * d  /* [RCX-29] six since 광장 */
+            fun at(i: Float): Pair<Float, Float> {
+                if (drawn.size <= maxOf(from, to)) return guess(i)
+                val lo = drawn[kotlin.math.floor(i).toInt().coerceIn(0, drawn.lastIndex)]
+                val hi = drawn[kotlin.math.ceil(i).toInt().coerceIn(0, drawn.lastIndex)]
+                val f = i - kotlin.math.floor(i)
+                return (lo.x + (hi.x - lo.x) * f) to (lo.y + (hi.y - lo.y) * f)
+            }
             List(hold + 1) { at(from.toFloat()) } + (1..30).map { k -> at(from + (to - from) * k / 30f) } + listOf(at(to.toFloat()))
         }
 
@@ -567,6 +583,13 @@ abstract class ScreenshotBase {
          * tab under the finger must read as chosen afterwards, or it is tapped again, at most [TAB_TRIES] times.
          */
         fun tab(index: Int, wide: Boolean) {
+            // [NAV2-02] 1.39 설정 waits by the 나 button unless a place of the bar holds it: opened the way that menu opens it.
+            if (index == SETTINGS_TAB && nodes().none { n -> n.config.getOrNull(SemanticsProperties.Role) == Role.Tab &&
+                    n.config.getOrNull(SemanticsProperties.Text)?.joinToString { it.text } == "설정" }) {
+                scenario.onActivity { com.bamnat.app.ui.settings.SettingsLinks.home() }
+                settle()
+                return
+            }
             var at = 0f to 0f
             repeat(TAB_TRIES) {
                 // 1.35 [RCX-29]: the bar's own tabs where they are drawn (six since 광장), the old guess only without a bar.
@@ -585,7 +608,7 @@ abstract class ScreenshotBase {
             if (tabs.isEmpty()) return tabs
             val bar = if (wide) tabs.minOf { it.boundsInWindow.left }.let { left -> tabs.filter { it.boundsInWindow.left <= left + 1f }.sortedBy { it.boundsInWindow.top } }
                 else tabs.maxOf { it.boundsInWindow.bottom }.let { low -> tabs.filter { it.boundsInWindow.bottom >= low - 1f }.sortedBy { it.boundsInWindow.left } }
-            return bar.takeIf { it.size == TABS }.orEmpty()
+            return bar.takeIf { it.size >= 2 }.orEmpty()
         }
 
         /** Whether the tab at ([x], [y]) is the chosen one; null when no tab is there (a screen without the bar). */
@@ -979,8 +1002,8 @@ abstract class ScreenshotBase {
         const val REACH_WAIT_NANOS = 5_000_000_000L
         /** [QA-05] Taps on a tab before it is given up as chosen; see [Screen.tab]. */
         const val TAB_TRIES = 3
-        /** 1.35 [RCX-29]: six tabs, 광장 (4) in front of 설정 (5). */
-        const val TABS = 6
+        /** 1.35 [RCX-29]: six tabs, 광장 (4) in front of 설정 (5); [NAV2-01] 1.39 five places, 설정 by the 나 button. */
+        const val TABS = 5
         const val SETTINGS_TAB = 5
         /** [QA-08] Once more, for a screen that has drawn nothing at all yet. */
         const val EMPTY_WAIT_NANOS = 15_000_000_000L

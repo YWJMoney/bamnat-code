@@ -93,6 +93,8 @@ class ShareSync(
         store.expire()
         val link = store.link.value ?: return@withLock Result.Same
         if (!store.auto) return@withLock Result.Same
+        // [TRY-06] A work only being tried never goes out; once it is put back, the change sends what is there.
+        if (com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)) return@withLock Result.Same
         // 1.36: 프로 keeps every link open while it lasts; after it ends a kept link closes within 90 days.
         send(store, link, ShareLinkPayload.keepOpen(link, clock(), c.featureGate.state.value.keepsLinks))
     }

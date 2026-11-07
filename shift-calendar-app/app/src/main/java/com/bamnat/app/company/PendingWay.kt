@@ -50,7 +50,7 @@ data class PendingWay(
     val title: String get() = if (dept.isEmpty()) company else "$company · $dept"
 
     /** The pay way as the pay screen keeps it once put in. */
-    fun way(): PayWay = PayWay(companyId, company, dept, setup)
+    fun way(): PayWay = PayWay(companyId, company, dept, setup, shared = true)
 }
 
 /**
@@ -118,7 +118,7 @@ class PendingWays {
             val waiting = ways.pending.value
             val a = applied ?: waiting?.let { AppliedSetup(it.companyId, it.company, it.dept, it.setup, null, false, com.bamnat.core.time.Today.instant()) }
             if (a == null || !runCatching { org.json.JSONObject(text).has("pay") }.getOrDefault(false)) return
-            if (scope.payWays.way.value?.setup != a.setup) scope.payWays.use(PayWay(a.companyId, a.company, a.dept, a.setup))
+            if (scope.payWays.way.value?.setup != a.setup) scope.payWays.use(PayWay(a.companyId, a.company, a.dept, a.setup, shared = true))
             val way = waiting?.takeIf { it.setup == a.setup } ?: PendingWay(a.companyId, a.company, a.dept, a.setup, text, PendingWay.Source.FIRST_SETUP)
             ways.committed(way, BaseAsk.hoursToPropose(hours, CompanyShare.hoursIn(text)))
             c.telemetry.event("pay_way", "commit_amounts")

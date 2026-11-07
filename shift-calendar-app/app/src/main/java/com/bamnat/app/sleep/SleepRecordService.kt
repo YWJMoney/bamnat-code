@@ -77,6 +77,10 @@ class SleepRecordService : Service(), SensorEventListener {
     private var lastAccel: FloatArray? = null
     private var wake: android.os.PowerManager.WakeLock? = null
     @Volatile private var endsAt: Long? = null
+    /** When the open sleep began (잠들었어요 may have come before 측정 시작), for the notice's clock. */
+    @Volatile private var sleepFrom: Long? = null
+    /** The next alarm as the night screen says it (PC 5c4ad849: the notice had none). */
+    @Volatile private var nextAlarm: LocalDateTime? = null
     /** False when it stopped by the clock alone: the user may still be asleep, so the sleep stays open. */
     @Volatile private var closeSleep = true
     private var watch: kotlinx.coroutines.Job? = null
@@ -182,12 +186,14 @@ class SleepRecordService : Service(), SensorEventListener {
             val resolver = c.scheduleRepository.snapshot.first().resolver
             val now = start
             val alarm = if (s.alarmsEnabled) com.bamnat.core.alarm.AlarmPlanner.nextAlarm(resolver, now)?.triggerAt else null
+            nextAlarm = alarm
             val plan = com.bamnat.core.sleep.SleepSchedule.of(resolver, now.toLocalDate().minusDays(1), now.toLocalDate().plusDays(1),
                 s.alarmsEnabled, s.sleepTargetMinutes)
             RecordEnd.at(start, alarm, RecordEnd.plannedWake(start, plan.sleeps), s.sleepTargetMinutes)
         }.getOrElse { start.plusHours(RecordEnd.MAX_HOURS) }
         val endMillis = end.atZone(Today.zone()).toInstant().toEpochMilli()
         endsAt = endMillis
+        sleepFrom = runCatching { c.sleepRepository.openNow()?.start?.atZone(Today.zone())?.toInstant()?.toEpochMilli() }.getOrNull()
         _recording.value?.let { _recording.value = it.copy(endsAt = endMillis) }
         ContextCompat.getMainExecutor(this).execute { if (running) runCatching {
             getSystemService(android.app.NotificationManager::class.java)?.notify(Notifications.SLEEP_RECORD_ID, notice())
@@ -270,18 +276,36 @@ class SleepRecordService : Service(), SensorEventListener {
 
     private fun battery(): Int = getSystemService(BatteryManager::class.java)?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
 
-    private fun notice() = NotificationCompat.Builder(this, Notifications.DAY_CHANNEL_ID)
-        .setSmallIcon(R.drawable.ic_notification)
-        .setCategory(NotificationCompat.CATEGORY_SERVICE)
-        .setSilent(true)
-        .setOngoing(true)
-        .setContentTitle("자는 동안 소리를 재고 있어요")
-        .setContentText(endsAt?.let { "알람을 끄거나 깼어요를 누르면 끝나요 · 늦어도 ${Fmt.time(local(it).toLocalTime())}" }
-            ?: "휴대폰 안에서만 듣고, 아무 데도 보내지 않아요")
-        .setContentIntent(Notifications.open(this, NoticeLinks.Target.SLEEP, 3409))
-        .addAction(0, "측정 끝", PendingIntent.getService(this, 3410, Intent(this, SleepRecordService::class.java).setAction(ACTION_STOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
-        .build()
+    /**
+     * 1.39 [SLEEP-06] One card for the night (PC 1.38 최종 사용성 6: 자는 중 and this were stacked, '측정 끝' two
+     * expands away and beside '깼어요'): while measuring this is the 자는 중 notice, with the clock since falling asleep,
+     * 깼어요 (ends the sleep and the measuring) and 측정만 끝 (the sleep goes on, and 자는 중 comes back).
+     */
+    private fun notice(): android.app.Notification {
+        val from = sleepFrom ?: startedAt.takeIf { it > 0 } ?: Today.millis()
+        val now = Today.dateTime()
+        val alarm = nextAlarm?.takeIf { it.isAfter(now) }?.let { "다음 알람 ${com.bamnat.core.sleep.NightLine.day(now, it)} ${Fmt.time(it.toLocalTime())}" }
+        val end = endsAt?.let { "측정은 늦어도 ${Fmt.time(local(it).toLocalTime())}에 저절로 끝나요" }
+        val text = listOfNotNull(alarm, end).joinToString(" · ").ifEmpty { "휴대폰 안에서만 듣고, 아무 데도 보내지 않아요" }
+        return NotificationCompat.Builder(this, Notifications.SLEEPING_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setGroup(Notifications.SLEEPING_GROUP)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setSilent(true)
+            .setOngoing(true)
+            .setContentTitle("${Fmt.time(local(from).toLocalTime())}부터 자는 중 · 소리 재는 중")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setWhen(from)
+            .setUsesChronometer(true)
+            .setShowWhen(true)
+            .setContentIntent(Notifications.open(this, NoticeLinks.Target.NIGHT, 3409))
+            .addAction(SleepActions.awake(this))
+            .addAction(0, "측정만 끝", PendingIntent.getService(this, 3410, Intent(this, SleepRecordService::class.java).setAction(ACTION_STOP),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+            .build()
+    }
 
     companion object {
         const val ACTION_STOP = "com.bamnat.app.sleep.RECORD_STOP"

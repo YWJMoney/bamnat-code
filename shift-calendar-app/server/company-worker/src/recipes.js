@@ -817,6 +817,45 @@ export async function sha256hex(text) {
 }
 
 /** [text] (as sent) read, cleaned and written: {recipe, text, hash}. Throws RecipeError. */
+/** [PAYP-08] cleanRecipe's {recipe, text, hash} as others may read it. */
+async function sharedOnly(clean) {
+  const out = await sharedPayOut(clean.text, clean.hash);
+  return out.body === clean.text ? {} : { text: out.body, hash: out.hash, recipe: JSON.parse(out.body) };
+}
+
+/**
+ * 1.39 [PAYP-08] (사용자 2026-11-07 "급여 계산 정보는 공개되면 안될 정보"; 숨은 문제 발굴 P0-1 ①): the 근무 주기·급여 방식 piece
+ * carries the company file, pay part and all. A recipe others can read (공개·링크) keeps its shifts and order, never the pay part:
+ * shared pay ways go through the company 광장, which never shows them ([PAYP-01]). Taken out when a recipe is put up and again
+ * when one put up before 1.39 is read, with its hash for the text as served. A 나만 보기 recipe is the maker's own and keeps it.
+ */
+export async function sharedPayOut(text, hash) {
+  if (typeof text !== "string" || !text.includes('"company"')) return { body: text, hash };
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return { body: text, hash };
+  }
+  let changed = false;
+  for (const p of Array.isArray(v?.pieces) ? v.pieces : []) {
+    if (p?.kind !== "company" || typeof p.setup !== "string") continue;
+    try {
+      const file = JSON.parse(p.setup);
+      if (file && typeof file === "object" && file.pay !== undefined) {
+        delete file.pay;
+        p.setup = JSON.stringify(file);
+        changed = true;
+      }
+    } catch {
+      // A piece cleanRecipe let in always parses; anything else is left as it is.
+    }
+  }
+  if (!changed) return { body: text, hash };
+  const out = recipeCanonical(v);
+  return { body: out, hash: await sha256hex(out) };
+}
+
 export async function cleanRecipe(textOrObject) {
   const textIn = typeof textOrObject === "string" ? textOrObject : recipeCanonical(textOrObject);
   if (new TextEncoder().encode(textIn).length > RECIPE.maxBytes) fail("too_big");
@@ -1166,12 +1205,58 @@ export function sectionOf(body) {
   return { scope: kinds.has("logic") ? "logic" : "part", tabs: [...out].sort(), ...(kinds.has("logic") ? {} : { unit }) };
 }
 
+/**
+ * 1.39 [MKC-01] 장터 분류 다시 (사용자 2026-11-07 "테마는 모든 것을 꾸민 모습, 각 탭별로 기능이나 디자인 한 제작물, 도구 또한 분류"):
+ * 맨 위 세 구간 테마 · 탭별 작품 · 도구. 탭별 작품은 꾸미기(모양)·기능(틀·묶음·규칙)으로, 도구(옛 부품·규칙·단추)는 부품·자동 규칙·단추로 나눠요.
+ * - LOOK_PIECES: 모양만 바꾸는 조각 (BuiltInThemes.LOOK_KINDS와 근무 꾸미기). 나머지는 기능.
+ */
+export const LOOK_PIECES = ["screenLook", "calView", "calTheme", "memoLook", "moneyLook", "widget", "photoLook", "layout", "cards", "parts", "decor", "tabView", "shiftLook"];
+/** 도구 종류 (scope part·logic). */
+export const TOOL_KINDS = ["part", "rule", "button"];
+/** 탭별 작품·테마가 무엇을 바꾸는지: "look" 꾸미기만, "func" 기능만, "both" 둘 다; 조각이 없으면 null. */
+export function madeOf(body) {
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return null;
+  }
+  const kinds = (rec?.pieces ?? []).map((p) => p?.kind).filter(Boolean);
+  if (!kinds.length) return null;
+  const look = kinds.some((k) => LOOK_PIECES.includes(k));
+  const func = kinds.some((k) => !LOOK_PIECES.includes(k));
+  return look && func ? "both" : look ? "look" : "func";
+}
+/** 도구의 종류 (부품·자동 규칙·단추): 규칙과 단추를 함께 담으면 둘 다예요. 도구가 아니면 빈 목록. */
+export function toolsOf(body, scope) {
+  if (scope !== "part" && scope !== "logic") return [];
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return [];
+  }
+  const out = new Set();
+  for (const p of rec?.pieces ?? []) {
+    if (p?.kind === "parts" || p?.kind === "tabView") out.add("part");
+    if (p?.kind === "logic") {
+      if ((p.rules ?? []).length) out.add("rule");
+      if ((p.buttons ?? []).length) out.add("button");
+    }
+  }
+  return TOOL_KINDS.filter((t) => out.has(t));
+}
+
 /** A list row as the app reads it (no owner, no hash of the owner). */
 export function listItem(r, now) {
   const look = r.body ? lookOf(r.body) : null;
   const { scope, tabs, unit } = r.body ? sectionOf(r.body) : { scope: null, tabs: [] };
+  const made = r.body && (scope === "tab" || scope === "theme") ? madeOf(r.body) : null;
+  const tools = r.body ? toolsOf(r.body, scope) : [];
   return {
     ...(unit ? { unit } : {}),
+    ...(made ? { made } : {}),
+    ...(tools.length ? { tools } : {}),
     ...(look ? { look } : {}),
     // [MKX-01] Which tabs it changes and whether it is a 테마 or one tab's.
     ...(tabs.length ? { tabs } : {}),
@@ -1310,14 +1395,24 @@ async function recipeList(d, env, url) {
   // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
   // [MKX-01] 1.36 두 구간: scope=theme, or scope=tab with tab=<one of MARKET_TABS> (or none for every tab's); kind is then left aside.
   // 1.36 [MKX-05] and scope=part / scope=logic (부품·규칙·단추), each with an optional tab= of the tab it touches.
-  const scope = MARKET_SCOPES.includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
+  // 1.39 [MKC-01] scope=tool: 도구 (부품과 규칙·단추를 함께), tool=part|rule|button으로 좁혀요. 탭별 작품은 made=look|func (둘 다 담은 것은 양쪽에).
+  const scope0 = url.searchParams.get("scope");
+  const scope = MARKET_SCOPES.includes(scope0) || scope0 === "tool" ? scope0 : null;
   const tab = scope && scope !== "theme" && [...MARKET_TABS, "app"].includes(url.searchParams.get("tab")) ? url.searchParams.get("tab") : null;
   // A 갈래 '부품 하나': scope=part&unit=cal.head.
   const unit = scope === "part" && /^(part:)?[a-z]+(\.[A-Za-z]+)?$/.test(url.searchParams.get("unit") ?? "") ? url.searchParams.get("unit") : null;
+  const made = (scope === "tab" || scope === "theme") && ["look", "func"].includes(url.searchParams.get("made")) ? url.searchParams.get("made") : null;
+  const tool = scope === "tool" && TOOL_KINDS.includes(url.searchParams.get("tool")) ? url.searchParams.get("tool") : null;
   const kind = !scope && RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
   const rows = scope ? rows0.filter((r) => {
     const s = sectionOf(r.body);
-    return s.scope === scope && (!tab || (scope === "tab" ? s.tabs[0] === tab : s.tabs.includes(tab))) && (!unit || s.unit === unit);
+    const inScope = scope === "tool" ? s.scope === "part" || s.scope === "logic" : s.scope === scope;
+    if (!inScope) return false;
+    if (tab && !(scope === "tab" ? s.tabs[0] === tab : s.tabs.includes(tab))) return false;
+    if (unit && s.unit !== unit) return false;
+    if (made) { const m = madeOf(r.body); if (m !== made && m !== "both") return false; }
+    if (tool && !toolsOf(r.body, s.scope).includes(tool)) return false;
+    return true;
   }) : kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
   let scored = rows;
   if (sort === "good") {
@@ -1336,7 +1431,8 @@ async function recipeList(d, env, url) {
   // card, so the app draws a page of cards from this one (edge-cached) answer instead of asking for each work alone.
   const withBody = url.searchParams.get("body") === "1";
   return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}),
-    items: page.map((r) => (withBody ? { ...listItem(r, now), hash: r.hash, body: r.body } : listItem(r, now))),
+    // 1.39 [PAYP-08] A work put up before 1.39 is served without a company pay part.
+    items: await Promise.all(page.map(async (r) => (withBody ? { ...listItem(r, now), ...(await sharedPayOut(r.body, r.hash)) } : listItem(r, now)))),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
@@ -1353,6 +1449,8 @@ async function show(d, env, request, code, url) {
     const old = await d.one(env, "SELECT version, hash, body FROM recipe_versions WHERE code = ? AND version = ?", code, ver);
     if (old) version = old;
   }
+  // 1.39 [PAYP-08] Someone else's: without a company pay part (the maker's own as it was sent).
+  if (!mine) Object.assign(version, await sharedPayOut(version.body, version.hash));
   const myVote = dev ? await d.one(env, "SELECT value, reason FROM recipe_votes WHERE code = ? AND device = ?", code, dev) : null;
   const out = { ...listItem(r, Date.now()), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}) };
   if (mine) {
@@ -1399,6 +1497,8 @@ async function publish(d, env, request) {
     ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "recipe", RECIPE_LIMITS.perNetworkDay, now)));
   if (hit) return hit;
   const scope = readScope(body.scope);
+  // 1.39 [PAYP-08] What others can read carries no company pay part.
+  if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
   // 1.36 [SEC-11] Play Integrity before a write others see; a 나만 보기 recipe is the maker's own (off until INTEGRITY_MODE is set).
   if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const r = clean.recipe;
@@ -1447,6 +1547,8 @@ async function newVersion(d, env, request, code) {
     throw e;
   }
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
+  // 1.39 [PAYP-08]
+  if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
   // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
   if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
   const trust = await recipeTrust(d, env, dev, now);

@@ -32,7 +32,8 @@ test("[PROP-01] a member reads a proposal's setup with the post; anyone else get
   assert.equal(sent.status, 201);
   // Phone 1 sent the company's setup, so it joined: it reads the proposal's setup, named for the company.
   const mine = (await t.read(1)).data.posts.find((p) => p.kind === "proposal");
-  assert.deepEqual(mine.change.map((l) => l.field), ["hours", "allowance"]);
+  // 1.39 [PAYP-01] Pay lines to no one; the setup (with its pay) only to an older app's member, for 이 제안으로 계산해 보기.
+  assert.deepEqual(mine.change, []);
   const text = JSON.parse(mine.proposal.text);
   assert.equal(text.company, "예시정밀");
   assert.equal(text.pay.monthlyHours, 209);
@@ -43,6 +44,10 @@ test("[PROP-01] a member reads a proposal's setup with the post; anyone else get
   assert.deepEqual(stranger.change, []);
   const nobody = (await t.read()).data.posts.find((p) => p.kind === "proposal");
   assert.equal(nobody.proposal.text, undefined);
+  // A 1.39 app, member or not, gets the proposal's setup without its pay.
+  const later = (await call("GET", `/api/companies/${t.c}/setups/${t.g}/posts`, undefined, { "x-device": device(1), "x-pay-private": "1" })).data
+    .posts.find((p) => p.kind === "proposal");
+  assert.equal(JSON.parse(later.proposal.text).pay, undefined);
 });
 
 test("[ITEM-08] the proposal fields offer 통상시급 기준 시간, and the words still take no amount", async () => {

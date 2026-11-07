@@ -135,6 +135,12 @@ internal fun payCells(result: MonthPay): List<com.bamnat.app.ui.components.StatC
 /** [FREE-07] 1.35 급여 모양 of the pay on screen. */
 internal val LocalPayLook = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.PayLook() }
 
+/**
+ * 1.39 [PAYP-04] (사용자 2026-11-07 "급여탭에서 수정이 불가능하게하고 볼수도 없게"): the pay uses a way someone else shared, put in
+ * from 1.39 ([com.bamnat.app.company.PayWay.shared]). Its lines say the hours and the amount, never the rate or the multiplier.
+ */
+internal val LocalPayLocked = androidx.compose.runtime.compositionLocalOf { false }
+
 /** [PAYS-12] 자세히 고치기 opened from the easy setup, with the setup it had come to (null: none yet). */
 private class DetailedStart(val from: PayProfile?)
 
@@ -223,6 +229,20 @@ fun PayScreen(
     val history by vm.history.collectAsStateWithLifecycle()
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var askRestart by rememberSaveable { mutableStateOf(false) }
+    // 1.39 [PAYP-04]: with a shared way in use, the setup, the rules, 고친 기록 and 처음부터 다시 open what the way is instead
+    // (기본급, 의견 보내기, 직접 만들기); whichever way they were asked (menu, chip, 설정 찾기, focus).
+    val sharedWay by vm.sharedWay.collectAsStateWithLifecycle()
+    val locked = sharedWay?.shared == true && profile != null
+    var lockOpen by rememberSaveable { mutableStateOf(false) }
+    if (locked && (editingSetup || editingRules || showHistory || askRestart || detailedFrom != null)) {
+        editingSetup = false; editingRules = false; showHistory = false; askRestart = false; detailedFrom = null; rulesFocus = null
+        lockOpen = true
+    }
+    val lockWay = sharedWay
+    val lockProfile = profile
+    if (lockOpen && locked && lockWay != null && lockProfile != null) com.bamnat.app.ui.company.SharedPayLockSheet(lockWay, lockProfile,
+        onBase = { b, h -> val m = com.bamnat.core.time.Today.month(); vm.update { com.bamnat.core.pay.BaseAsk.apply(it, b, m, h) } },
+        onLeave = vm::leaveShared, onDismiss = { lockOpen = false })
     if (showHistory) PayHistoryDialog(history, profile, onRestore = vm::restore, onDismiss = { showHistory = false })
     if (askRestart) RestartDialog(onRestart = { vm.restart(); detailedFrom = null; editingSetup = false }, onDismiss = { askRestart = false })
     if (plazaAsk && onShareWay != null) PlazaAskDialog(onShare = { plazaAsk = false; onShareWay() }, onDismiss = { plazaAsk = false })
@@ -282,7 +302,7 @@ fun PayScreen(
                     if (profile != null && !editingSetup && !editingRules) {
                         var menu by remember { mutableStateOf(false) }
                         Box {
-                            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.Tune, "급여 설정 고치기") }
+                            IconButton(onClick = { if (locked) lockOpen = true else menu = true }) { Icon(Icons.Filled.Tune, "급여 설정 고치기") }
                             com.bamnat.app.ui.components.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                 androidx.compose.material3.DropdownMenuItem(text = { Text("자세히 고치기 (하나씩 묻기)") },
                                     onClick = { menu = false; detailedFrom = DetailedStart(profile); editingSetup = true })
@@ -362,10 +382,11 @@ fun PayScreen(
                 }
                 // [FREE-07] 1.35 급여 모양 of this kind of work; the figures and their 예상·추정 marks show whatever it says.
                 else -> androidx.compose.runtime.CompositionLocalProvider(LocalPayLook provides
-                    (com.bamnat.app.ui.theme.LocalPayLooks.current[workStyle ?: com.bamnat.core.work.WorkStyle.SHIFT] ?: com.bamnat.core.recipe.PayLook())) {
+                    (com.bamnat.app.ui.theme.LocalPayLooks.current[workStyle ?: com.bamnat.core.work.WorkStyle.SHIFT] ?: com.bamnat.core.recipe.PayLook()),
+                    LocalPayLocked provides locked) {
                     PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, onEditRulesAt = { f -> rulesFocus = f; editingRules = true }, top = top,
                     onDetailed = { detailedFrom = DetailedStart(profile); editingSetup = true },
-                    underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, onOpenShiftTypes = onOpenShiftTypes, startMatching = startMatching,
+                    underTotal = underTotal, onReport = onReport, onShareWay = onShareWay.takeIf { !locked }, onOpenLeave = onOpenLeave, onOpenShiftTypes = onOpenShiftTypes, startMatching = startMatching,
                     focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true }, onOpenSchooling = onOpenSchooling)
                 }
             }
@@ -410,6 +431,7 @@ private fun PayResult(
     val closed by vm.closed.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val payLook = LocalPayLook.current
+    val locked = LocalPayLocked.current
     // [PAYS-01] Worked out on a background thread; the month shown stays until the next one is ready.
     // [UX-10] 1.25 Z (U7): opened again, the month shows at once as it was left; worked out again only when something changed.
     val viewKey = "pay:${vm.calendarId}:$month"
@@ -537,6 +559,9 @@ private fun PayResult(
             // [PAYS-19] 1.27 순번 449 (사용자 "맞춰보기가 있는데 어디에 있는지 안보이고"): right under the total, one card, two
             // ways named apart: 금액 비교하기 (the payslip's amounts against the app's, 프로) and 계산 방식 찾기 (the company's
             // way from a payslip or its rules page, free).
+            // 1.39 [PAYP-04]: matching a payslip changes the rules, and sharing would put someone else's way up as this phone's;
+            // with a shared way in use the card on top (의견 보내기·직접 만들기) is the way to say it differs.
+            if (!locked) {
             SlipMatchCard(profile, gate, onCompare = { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) },
                 onFind = { slipRules = true })
             com.bamnat.app.ui.pro.TrialNote(Feature.PAYSLIP_MATCH, gate, Modifier.padding(horizontal = 4.dp))
@@ -545,6 +570,7 @@ private fun PayResult(
                 FitMonthsCard(vm, profile, snapshot, allowed = gate.allows(Feature.PAYSLIP_MATCH), onPro = { openPro(Feature.PAYSLIP_MATCH) })
             // A 1.32 [FIX132-04] Just matched: offer the plaza once, the 명세서 tick on.
             if (unlocked) ShareAfterMatchCard(profile)
+            }
         }
         if (payTab == PayTab.RESULT) {
 
@@ -601,12 +627,13 @@ private fun PayResult(
         // [PAYX-37] 풀이 모두 보기: every line's formula and the law it rests on, like a 명세서 with its working.
         var explainAll by rememberSaveable { mutableStateOf(payLook.open == true) }
         SectionCard(title = "항목별 내역", trailing = {
-            if (unlocked && shown.lines.isNotEmpty()) TextButton(onClick = { explainAll = !explainAll }) { Text(if (explainAll) "풀이 접기" else "풀이 모두 보기") }
+            if (locked) Text("계산 방식은 공유한 분의 것이에요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (unlocked && shown.lines.isNotEmpty()) TextButton(onClick = { explainAll = !explainAll }) { Text(if (explainAll) "풀이 접기" else "풀이 모두 보기") }
             else Text("누르면 계산 풀이", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }) {
             for (line in shown.lines) {
-                LineRow(line, unlocked, onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked) detail = line }
-                if (explainAll && unlocked) {
+                LineRow(line, unlocked, onEstimate = { estimate = Estimates.forLine(line, profile, shown.month) }) { if (unlocked && !locked) detail = line }
+                if (explainAll && unlocked && !locked) {
                     Text(com.bamnat.core.pay.PayExplain.explain(line), style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 20.dp, bottom = 6.dp))
                 }
@@ -746,9 +773,12 @@ private fun PayResult(
                 onRaise = { if (bulkOpen || com.bamnat.app.ui.pro.tryFeature(Feature.PAY_BULK_EDIT)) raiseTarget = ValueTarget.Base else openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) },
                 onEstimate = { estimate = Estimates.forValue(profile, month, null) },
             )
+            // 1.39 [PAYX-58] 비과세 shared by kind this month (식대 + 중식대), said under each of those rows.
+            val freeParts = remember(profile, month) { com.bamnat.core.pay.TakeHome.nonTaxableParts(profile, month).filter { it.names.size > 1 || it.over } }
             profile.items.forEach { item ->
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 if (item.cadence == Cadence.BONUS) {
+                    if (locked) return@forEach
                     BonusRow(item, profile.bonusBase(item, month), month, unlocked,
                         onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
                         onBasis = { b -> vm.updateItem(item.id) { it.copy(bonusBasis = b) } },
@@ -775,10 +805,18 @@ private fun PayResult(
                         item.cadence == Cadence.MONTHLY && !item.isFixedOvertime && !item.isPercent
                     },
                     onTaxFree = { on -> vm.updateItem(item.id) { it.copy(taxable = !on) } },
+                    taxFreeNote = freeParts.firstOrNull { item.name in it.names }?.let { f ->
+                        (if (f.names.size > 1) f.names.joinToString("·") + " 합쳐서 " else "") +
+                            "${month.monthValue}월 ${won(f.paid)} 중 ${won(f.amount)}까지 비과세로 어림해요"
+                    },
                 )
             }
             // [PAYS-07] Rules of the company's own, each with its switch; the ones the builder can show open in it.
-            if (profile.customRules.isNotEmpty()) {
+            if (locked) {
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                Text("상여·회사 규칙은 공유받은 급여 방식대로 계산해요. 볼 수도 고칠 수도 없어요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+            } else if (profile.customRules.isNotEmpty()) {
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 Text("직접 만든 항목", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
                 profile.customRules.forEach { rule ->
@@ -791,8 +829,8 @@ private fun PayResult(
                         onRemove = { vm.removeCustomRule(rule.id) })
                 }
             }
-            MakeItemCard(enabled = unlocked) { building = true }
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            if (!locked) MakeItemCard(enabled = unlocked) { building = true }
+            if (!locked) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 OutlinedButton(onClick = { addingBonus = true }, enabled = unlocked) {
                     Icon(Icons.Filled.Add, null); Text(" 상여금 추가")
                 }
@@ -809,7 +847,14 @@ private fun PayResult(
         } // VALUES
 
         // U 1.32 [UX132-03] 회사 규칙: what the rules are, and the editor.
-        if (payTab == PayTab.RULES) {
+        if (payTab == PayTab.RULES && locked) {
+            SectionCard(title = PayTab.RULES.labelFor(settings.workStyle), trailing = { TextButton(onClick = onEditRules) { Text("열기") } }) {
+                Text(com.bamnat.app.ui.company.SharedPayWords.TITLE, style = MaterialTheme.typography.bodyLarge)
+                Text(com.bamnat.app.ui.company.SharedPayWords.HIDDEN, style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(com.bamnat.app.ui.company.SharedPayWords.ASK, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+            }
+        } else if (payTab == PayTab.RULES) {
         SectionCard(title = PayTab.RULES.labelFor(settings.workStyle), trailing = { TextButton(onClick = onEditRules, enabled = unlocked) { Text("바꾸기") } }) {
             val summary = profile.named(com.bamnat.app.ui.calendar.LocalExtraKinds.current).rules.summary(profile)
             Text(
@@ -1168,7 +1213,8 @@ private fun Walkthrough(result: MonthPay, onClose: () -> Unit) {
             Text(
                 when (step) {
                     1 -> "이번 달 통상시급: ${won(result.ordinaryHourly)}"
-                    2 -> "${example.label}: ${PayCalculator.hours(example.minutes)} × ${won(example.hourly)} × ${PayCalculator.pct(example.multiplier)}"
+                    2 -> if (LocalPayLocked.current) "${example.label}: ${PayCalculator.hours(example.minutes)}"
+                        else "${example.label}: ${PayCalculator.hours(example.minutes)} × ${won(example.hourly)} × ${PayCalculator.pct(example.multiplier)}"
                     else -> "${example.label} = ${won(example.amount)} · 합계 ${won(result.total)}"
                 },
                 style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
@@ -1237,6 +1283,7 @@ private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {
             // [PAYX-55] 1.38 PC 12.5: a line with no one rate (회사 규칙, 직접 넣은 규칙) read '4시간 × 0%'; it says how it was worked out.
             val how = when {
                 line.minutes <= 0 -> null
+                LocalPayLocked.current -> PayCalculator.hours(line.minutes)
                 line.multiplier > 0 && line.hourly > 0 -> "${PayCalculator.hours(line.minutes)} × ${won(line.hourly)} × ${PayCalculator.pct(line.multiplier)}"
                 line.multiplier > 0 -> "${PayCalculator.hours(line.minutes)} × ${PayCalculator.pct(line.multiplier)}"
                 else -> line.formula.ifBlank { PayCalculator.hours(line.minutes) }
@@ -1267,6 +1314,8 @@ private fun ValueRow(
     onRemove: (() -> Unit)? = null,
     /** [PAYR-07] 비과세 (식대 등), for the take-home estimate; null hides the switch. */
     taxFree: Boolean? = null,
+    /** 1.39 [PAYX-58] PC a483ca15 N6: what this row's 비과세 shares its 월 20만 원 with (식대·중식대 합쳐서), when it does. */
+    taxFreeNote: String? = null,
     onTaxFree: ((Boolean) -> Unit)? = null,
     /** [PAYS-01] 금액 모름: left out of the total. */
     unknownAmount: Boolean = false,
@@ -1305,9 +1354,13 @@ private fun ValueRow(
         }
         if (taxFree != null && onTaxFree != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("세금 없는 돈 (비과세: 식대·자가운전보조금 등, 월 20만 원까지)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                // 1.39 [PAYX-58] PC a483ca15 N6: the limit is per kind, so two 식대 lines share one 20만 원.
+                Text("세금 없는 돈 (비과세: 식대·자가운전보조금 등, 종류마다 월 20만 원까지 · 식대가 둘이면 합쳐서 20만 원)",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 Switch(checked = taxFree, onCheckedChange = onTaxFree, enabled = enabled)
             }
+            if (taxFree && taxFreeNote != null) Text(taxFreeNote, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1418,9 +1471,10 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
                         style = with(com.bamnat.app.ui.parts.PartMods) { text(part.copy(ink = null), MaterialTheme.typography.titleSmall) })
                 }
                 if (open == d.date) {
+                    val locked = LocalPayLocked.current
                     d.parts.forEach { part ->
                         Row(Modifier.fillMaxWidth().padding(start = 76.dp, top = 2.dp)) {
-                            Text("${part.label} · ${part.formula}", style = MaterialTheme.typography.bodySmall,
+                            Text(if (locked) part.label else "${part.label} · ${part.formula}", style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                             Text(won(part.amount), style = MaterialTheme.typography.bodySmall)
                         }

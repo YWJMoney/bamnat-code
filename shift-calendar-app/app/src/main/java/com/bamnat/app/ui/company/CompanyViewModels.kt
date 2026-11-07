@@ -404,6 +404,10 @@ class CompanyDetailViewModel(
                     _state.value = State.Loaded(again)
                     again.setups.firstOrNull { it.id == setup.id }?.takeIf { !it.payHidden }?.let { text = it.text }
                 }
+                // 1.39 [PAYP-03] A server that shows no pay way: the pay part is taken now, for the pay alone (never shown).
+                if (withPay && (setup.payPrivate || page.setups.any { it.id == setup.id && it.payPrivate })) {
+                    com.bamnat.app.company.wayText(c, store.device, page.id, setup.copy(payPrivate = true))?.let { text = it }
+                }
                 // [PAYG-03] 1.30 BA: on a pay that has its amounts, the cycle goes in now and the pay waits for its 기본급 on the
                 // pay screen (PendingWay), put in all at once there or not at all; a first pay is made on the amounts screen.
                 val payWaits = withPay && scope.pay.profile.value != null && runCatching { org.json.JSONObject(text).has("pay") }.getOrDefault(false)
@@ -1473,7 +1477,8 @@ class CompanyReportViewModel(
         viewModelScope.launch {
             _sending.value = try {
                 val store = scope.store
-                val setup = scope.share.exportForServer(_cycleOnly.value)
+                // 1.39 [PAYP-08]: a pay way someone else shared goes up as the shifts only; it is not this phone's to put up again.
+                val setup = scope.share.exportForServer(_cycleOnly.value || scope.payWays.way.value?.shared == true)
                 // [PLZD-01][PLZD-02][PLZD-03][PLZD-05] A company the plaza has: the same rule, another shape or other values ask first.
                 if (!topic && !checked) {
                     val v = guard.check(company, dept, setup.toString(), note)

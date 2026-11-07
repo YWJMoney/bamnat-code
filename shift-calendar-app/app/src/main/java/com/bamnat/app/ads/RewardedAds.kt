@@ -173,9 +173,10 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
                     loading = false
                     var earned = false
                     ad.fullScreenContentCallback = object : com.google.android.gms.ads.FullScreenContentCallback() {
-                        override fun onAdDismissedFullScreenContent() { if (earned) rewarded() else onQuit() }
+                        override fun onAdDismissedFullScreenContent() { com.bamnat.app.review.InAppReview.hush(); if (earned) rewarded() else onQuit() }
                         override fun onAdFailedToShowFullScreenContent(e: com.google.android.gms.ads.AdError) { onNoAd("show_failed") }
                     }
+                    com.bamnat.app.review.InAppReview.hush() // 1.39 [SPREAD-06] no review sheet right after an ad
                     ad.show(activity) { earned = true }
                 }
 

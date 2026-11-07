@@ -260,6 +260,12 @@ private fun DayGroups(
     val book by vm.moneyBook.collectAsStateWithLifecycle()
     val dayBook = remember(book, date) { book.on(date) }
     val profile by vm.payProfile.collectAsStateWithLifecycle()
+    // 1.39 PC 5c4ad849: the followed 근무표 this day came from, if it did (작업 요약에 '직접 바꿈' 대신).
+    val received by androidx.compose.ui.platform.LocalContext.current.appContainer.received.calendars.collectAsStateWithLifecycle()
+    val linkName = remember(day, received, snapshot) {
+        if (day.source != DaySource.OVERRIDE) null
+        else com.bamnat.app.share.RosterFollower.linkFor(received, day, snapshot.shiftTypes)?.fullName
+    }
     // [EXTRA-02][EXTRA-03] Minutes and pay are worked out off the main thread, for this date only.
     // [MON-01] A day's pay is free.
     val insightFor by produceState<Pair<LocalDate, DayInsight>?>(null, profile, snapshot, date) {
@@ -356,7 +362,7 @@ private fun DayGroups(
                         DayGroup(
                             // 1.36 PC 재검토: a 현장 calendar's day says 일정 (its kinds of day are 일정 종류).
                             title = com.bamnat.app.ui.shifts.dayKindNoun(style), icon = Icons.Outlined.Work,
-                            summary = workSummary(day, snapshot),
+                            summary = workSummary(day, snapshot, linkName),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
                         ) {
@@ -510,7 +516,9 @@ private fun DayGroups(
                             if (settings.sleepTips) {
                                 SleepSection(date = date, today = today, now = now, flow = flow, tips = tips, log = log,
                                     targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare,
-                                    onAsleep = vm::fellAsleep, onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
+                                    // 1.39 [FLOW-13] (PC 3차 sik-5): 잠들었어요 here opens the night screen too, as on the sleep screen and the date chip.
+                                    onAsleep = { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) },
+                                    onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
                             }
                         }
                     }
@@ -627,13 +635,15 @@ private fun DayGroup(
     }
 }
 
-private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot): String {
+private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot, link: String? = null): String {
     val name = day.shiftType?.name ?: if (day.isWorkDay) "근무" else "쉬는 날"
     val start = day.start
     val end = day.end
     val time = if (day.isWorkDay && start != null && end != null) " · ${ExtraText.span(start, end)}" else ""
     return when {
         // [READ-37] Without an order every day is put in by hand or from a photo: no "직접 바꿈" on each.
+        // 1.39 PC 5c4ad849: a day put in from a followed 근무표 is not one the user changed by hand.
+        day.source == DaySource.OVERRIDE && link != null -> "$name$time · ${link}대로"
         day.source == DaySource.OVERRIDE && snapshot.hasPattern -> {
             val pattern = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
             "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""
@@ -1395,8 +1405,9 @@ private fun SleepSection(
             val debt = remember(log, today, targetMinutes) { com.bamnat.core.sleep.SleepDebt.of(log, today, targetMinutes) }
             Text(
                 if (debt.days == 0) "잠들 때와 깼을 때 한 번씩 누르면 최근 7일 수면과 근무별 평균(야간 뒤·쉬는 날)을 보여 줘요. 기록은 이 휴대폰과 백업 파일에만 남아요."
-                else "최근 7일 중 ${debt.days}일 기록 · 평균 ${hoursText(debt.averageMinutes)}" +
-                    if (debt.shortMinutes > 0) " · 목표보다 ${hoursText(debt.shortMinutes)} 부족" else " · 목표만큼 잤어요",
+                // 1.39 (PC 5c4ad849): the sleep screen's head, word for word ("평균 7시간 10분 · 목표보다 10분 더 잤어요 ·
+                // 7일 중 5일 적음"); this used to add up each short day ("0시간 30분 부족") while that compared the average.
+                else com.bamnat.core.sleep.SleepHead.of(debt, targetMinutes).let { "평균 ${it.value} · ${it.caption}" },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -1434,8 +1445,6 @@ private fun tipSummary(tips: List<com.bamnat.core.sleep.SleepPlan.Tip>, date: Lo
     tips.firstOrNull { it.kind == com.bamnat.core.sleep.SleepPlan.Kind.SLEEP_AFTER_NIGHT || it.kind == com.bamnat.core.sleep.SleepPlan.Kind.BEDTIME }
         ?.let { "잘 시간 " + sleepTime(it, date) }
         ?: tips.firstOrNull { it.kind == com.bamnat.core.sleep.SleepPlan.Kind.NAP }?.let { "낮잠 " + sleepTime(it, date) }
-
-private fun hoursText(minutes: Long): String = if (minutes % 60 == 0L) "${minutes / 60}시간" else "${minutes / 60}시간 ${minutes % 60}분"
 
 private fun sleepTime(tip: com.bamnat.core.sleep.SleepPlan.Tip, date: LocalDate): String {
     fun hm(x: java.time.LocalDateTime) = "%02d:%02d".format(x.hour, x.minute)

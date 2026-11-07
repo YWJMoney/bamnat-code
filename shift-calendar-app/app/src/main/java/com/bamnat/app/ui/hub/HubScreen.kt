@@ -149,12 +149,13 @@ fun HubScreen(
                     style?.let { Text(RecipeDescribe.short(it) + " 분들과", style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 3.dp)) }
                     // 1.36 [VIL-06] 마을 V6: one search for 장터·광장·요청, at the top of 마을.
+                    Spacer(Modifier.weight(1f))
                     onSearch?.let {
-                        Spacer(Modifier.weight(1f))
                         androidx.compose.material3.IconButton(onClick = it) {
                             androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Search, "마을에서 찾기")
                         }
                     }
+                    com.bamnat.app.ui.MeButton() // [NAV2-02]
                 }
                 PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface)) {
                     HubSection.entries.forEach { s ->

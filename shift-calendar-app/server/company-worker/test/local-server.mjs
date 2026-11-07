@@ -1,11 +1,15 @@
 // [COMM-04][ADMIN-01] The worker on a plain Node server with SQLite, for the app's round-trip test and
 // to try the developer app at http://localhost:8788/admin/ before deploying:
-//   ADMIN_PASSWORD=<10+ letters> npm run local -- 8788 [--seed] [--db local.sqlite]
+//   ADMIN_PASSWORD=<10+ letters> npm run local -- 8788 [--seed] [--market] [--db local.sqlite]
 // --seed fills it with made-up coworkers' reports, so every screen has something on it.
+// --market (1.39) puts the real 장터's works in too (seedMarket, below).
 import http from "node:http";
 import worker from "../src/index.js";
 import { d1 } from "./d1.mjs";
 import { report, setup } from "./helpers.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const args = process.argv.slice(2);
 const port = Number(args.find((a) => /^\d+$/.test(a)) || 8788);
@@ -259,6 +263,50 @@ if (args.includes("--seed")) {
   if (await seeded()) console.log("--seed: this --db file already has the examples, so none are added.");
   else await seed();
 }
+
+/**
+ * 1.39 3차 (PC a483ca15: 시험 서버에 장터 작품이 다섯 개뿐이라 장터 로딩·세 구간을 못 봤어요): --market puts in the works made for the
+ * real 장터 (1.36 출시 작품, 1.38 가계부 틀·스튜디오 작품·옛 작품 새 판), opens each batch and hides the ones 1.38 took down, so the
+ * test 장터 looks like the real one. The files are the ones tools/market-seed.mjs writes: market/ beside package.json (the PC zip),
+ * else docs/recipes/ in the repo. Needs ADMIN_PASSWORD. A kept --db that has them already gets none twice.
+ */
+async function seedMarket() {
+  const here = fileURLToPath(new URL("../", import.meta.url));
+  const find = (f) => [join(here, "market", f), join(here, "../../docs/recipes", f)].find((x) => existsSync(x));
+  const login = await worker.fetch(new Request(`http://localhost:${port}/api/admin/login`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", "cf-connecting-ip": "10.0.0.30" },
+    body: JSON.stringify({ password: env.ADMIN_PASSWORD }),
+  }), env);
+  if (!login.ok) return console.log("--market: ADMIN_PASSWORD가 있어야 장터 작품을 넣어요.");
+  const cookie = login.headers.get("set-cookie").split(";")[0];
+  const admin = (path, body) => worker.fetch(new Request(`http://localhost:${port}/api/admin${path}`, {
+    method: "POST", headers: { "content-type": "application/json", "x-admin": "1", cookie }, body: JSON.stringify(body),
+  }), env);
+  const have = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes").first())?.n ?? 0;
+  if (have > 100) return console.log(`--market: 이 --db에는 작품이 이미 ${have}개 있어서 더 넣지 않아요.`);
+  const said = [];
+  for (const f of ["market-136.json", "market-138.json", "market-138-studio.json", "market-138-refresh.json"]) {
+    const at = find(f);
+    if (!at) { said.push(`${f} 없음`); continue; }
+    const entries = JSON.parse(readFileSync(at, "utf8"));
+    let ok = 0;
+    for (const e of entries) {
+      const r = await admin("/recipes", e);
+      if (r.status < 300) ok++;
+      else console.log(`--market 못 넣음 ${e.recipe?.title}: ${r.status} ${await r.text()}`);
+    }
+    for (const batch of new Set(entries.map((e) => e.batch).filter(Boolean))) await admin("/recipes/release", { batch });
+    said.push(`${f} ${ok}개`);
+  }
+  const plan = find("market-138-refresh-plan.json");
+  if (plan) {
+    const titles = JSON.parse(readFileSync(plan, "utf8")).hide.map((x) => x.title);
+    await admin("/recipes/hide-titles", { titles, dry: false, note: "1.38 장터 정리" });
+  }
+  const shown = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes WHERE state = 'visible'").first())?.n ?? 0;
+  console.log(`--market: ${said.join(", ")} · 장터에 보이는 작품 ${shown}개`);
+}
+if (args.includes("--market")) await seedMarket();
 
 // AE 1.26: --test-clock lets an app test move this server's clock on (POST /__test/clock {days}), as for a
 // friend's second day [INVITE-03]. Only this local server has it; the worker itself never does.

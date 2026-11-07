@@ -63,15 +63,16 @@ class ADScreenshotTest : ScreenshotBase() {
         }
     }
 
-    private val barNames = setOf("달력", "가계부", "메모", "근무·급여", "마을", "설정")
+    private val barNames = setOf("달력", "가계부", "메모", "근무·급여", "마을", "설정", "돈", "잠")
 
     /** The app's tabs (not a screen's own tabs), by name. */
     private fun Screen.barTabs() = nodes().filter { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }
         .mapNotNull { n -> n.config.getOrNull(SemanticsProperties.Text)?.joinToString { it.text }?.takeIf { it in barNames }?.let { n to it } }
 
-    /** The tab chosen in the bar now, by its name. */
+    /** The tab chosen in the bar now, by its name; [NAV2-02] 설정, opened from the 나 button, by its search box. */
     private fun Screen.tabNow(): String? =
         barTabs().firstOrNull { (n, _) -> n.config.getOrNull(SemanticsProperties.Selected) == true }?.second
+            ?: "설정".takeIf { com.bamnat.app.ui.ShownRoute.route == "settings" }
 
     /** The tabs' names in the bar's (or the rail's) order. */
     private fun Screen.barOrder(): List<String> =
@@ -109,15 +110,15 @@ class ADScreenshotTest : ScreenshotBase() {
 
     @Test fun longPressDragTapOutsideAndTheAppOpensOnMemos() {
         open(PHONE_393) { scenario ->
-            assertEquals(listOf("달력", "가계부", "메모", "근무·급여", "마을", "설정"), barOrder())
+            assertEquals(listOf("달력", "가계부", "메모", "근무·급여", "마을"), barOrder())
             assertTrue(gone(TAB_EDIT_HINT_TOP))
             // Held still on 메모, then dragged to the front in the same touch.
             dragTab(2, 0, wide = false, hold = 40)
             assertTrue("the edit says what the first tab is", appears(TAB_EDIT_HINT_TOP))
-            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "마을", "설정"), barOrder())
+            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "마을"), barOrder())
             assertEquals("not saved while editing", "", saved())
             // A tab tapped while editing does not open.
-            tab(SETTINGS_TAB, wide = false)
+            tab(4, wide = false)
             assertEquals("달력", tabNow())
             assertTrue(appears(TAB_EDIT_HINT_TOP))
             // Anywhere else saves and ends the edit, and does nothing else.
@@ -137,7 +138,7 @@ class ADScreenshotTest : ScreenshotBase() {
         // Opened again: on 메모.
         open(PHONE_393) {
             assertEquals("메모", tabNow())
-            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "마을", "설정"), barOrder())
+            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "마을"), barOrder())
         }
     }
 
@@ -145,7 +146,7 @@ class ADScreenshotTest : ScreenshotBase() {
         memoFirst()
         open(PHONE_393) { scenario ->
             assertEquals("메모", tabNow())
-            // Bar places now: 메모 달력 돈 근무·급여 마을 설정.
+            // Bar places now: 메모 달력 돈 근무·급여 마을, 설정 by the 나 button.
             tab(2, wide = false)
             tab(SETTINGS_TAB, wide = false)
             assertEquals("설정", tabNow())
@@ -172,13 +173,13 @@ class ADScreenshotTest : ScreenshotBase() {
 
     @Test fun theRailMovesUpAndDownToo() {
         open(UNFOLDED) {
-            dragTab(5, 0, wide = true, hold = 40)
+            dragTab(4, 0, wide = true, hold = 40)
             assertTrue(appears(TAB_EDIT_HINT_TOP))
             // The screen beside the rail saves.
             tap(400f, 300f)
-            assertEquals("settings,calendar,money,memos,stats,plaza", saved())
+            assertEquals("plaza,calendar,money,memos,stats,settings", saved())
         }
-        open(UNFOLDED) { assertEquals("설정", tabNow()) }
+        open(UNFOLDED) { assertEquals("마을", tabNow()) }
     }
 
     @Test fun talkBackMovesTheTabsWithActions() {
@@ -186,13 +187,14 @@ class ADScreenshotTest : ScreenshotBase() {
             tabAction("메모", TAB_FORWARD_ACTION)
             tabAction("메모", TAB_FORWARD_ACTION)
             assertTrue(appears(TAB_EDIT_HINT_TOP))
-            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "마을", "설정"), barOrder())
+            assertEquals(listOf("메모", "달력", "가계부", "근무·급여", "마을"), barOrder())
             // What TalkBack reads out after the move, from the hint's live region.
             assertTrue(nodes().any { n -> n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith("메모, 1번째") } })
             tabAction("달력", TAB_BACKWARD_ACTION)
             tabAction("가계부", TAB_SAVE_ACTION)
             assertTrue(gone(TAB_EDIT_HINT_TOP))
             assertEquals("memos,money,calendar,stats,plaza,settings", saved())
+            assertEquals("a bar of tabs stays the tab order", "", c.settingsRepository.current.tabSlots)
             // Outside the edit a tab offers the long press by name.
             val tabNode = nodes().first { it.config.getOrNull(SemanticsProperties.Role) == Role.Tab }
             assertEquals(TAB_EDIT_ACTION, tabNode.config.getOrNull(SemanticsActions.OnLongClick)?.label)
@@ -210,15 +212,15 @@ class ADScreenshotTest : ScreenshotBase() {
             assertEquals("money,calendar,memos,stats,plaza,settings", saved())
             // The bar behind the dialog changed at once, and the screen did not move.
             tapText("완료", exact = true)
-            assertEquals(listOf("가계부", "달력", "메모", "근무·급여", "마을", "설정"), barOrder())
-            assertEquals("설정", tabNow())
+            assertEquals(listOf("가계부", "달력", "메모", "근무·급여", "마을"), barOrder())
+            assertTrue("still on the settings page", shows(TAB_ORDER_ROW, exact = true))
         }
         open(PHONE_393) {
             assertEquals("가계부", tabNow())
-            // Settings is still the last tab.
+            // [NAV2-02] Settings waits by the 나 button.
             settingsPage(SettingsPage.CALENDAR.title)
             tapText(TAB_ORDER_ROW, exact = true)
-            tapText("처음 순서로", exact = true)
+            tapText("처음대로 (다섯 탭)", exact = true)
             assertEquals("", saved())
             tapText("완료", exact = true)
         }
@@ -293,7 +295,7 @@ class ADScreenshotTest : ScreenshotBase() {
         settle()
         typeInto("기능과 도움말 찾기", "첫 화면")
         tapText("달력 말고 다른 화면으로 시작하고 싶어요")
-        assertTrue(appears("첫 화면·메뉴 순서 열기"))
+        assertTrue(appears("$TAB_ORDER_ROW 열기"))
         noCuts("help_answer")
     }
     @Test fun settingsSearch() = shoot("1034_ad_settings_search", PHONE_393) {
@@ -301,5 +303,59 @@ class ADScreenshotTest : ScreenshotBase() {
         typeInto("설정 찾기", "첫 화면")
         assertTrue(appears(TAB_ORDER_ROW))
         noCuts("settings_search")
+    }
+
+    // ---- 1.39 [NAV2-01][NAV2-02]: 칸에 아무 화면, 묶음, 나 단추 ----
+
+    @Test fun aPlaceHoldsAnyScreenAndAGroupShowsItsName() {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP") }
+        open(PHONE_393) {
+            assertEquals(listOf("달력", "돈", "메모", "잠"), barOrder())
+            assertEquals("달력", tabNow())
+            // The 묶음 says what is in it to TalkBack.
+            assertTrue(appears("돈, 묶음 3개: 가계부, 받을 돈, 급여", exact = true))
+            // 설정 and the tabs the bar does not hold wait by the 나 button.
+            assertTrue(appears(com.bamnat.app.ui.ME_BUTTON, exact = true))
+            // A place holding another screen opens it over the tab.
+            tab(3, wide = false)
+            assertTrue("잠 opened", gone("달력 판 고르기", exact = false))
+            back()
+            assertEquals("달력", tabNow())
+        }
+    }
+
+    @Test fun theBarOfAPhoneThatNeverChangedHasFivePlacesAndTheMeButton() = open(PHONE_393) {
+        assertEquals(listOf("달력", "가계부", "메모", "근무·급여", "마을"), barOrder())
+        assertTrue(appears(com.bamnat.app.ui.ME_BUTTON, exact = true))
+        noCuts("five_places")
+    }
+
+    @Test fun groupedBar393() = shoot("1035_ad_grouped_bar_393", PHONE_393) {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
+        settle()
+        noCuts("grouped_bar_393")
+    }
+    @Test fun groupedBar200() = shoot("1036_ad_grouped_bar_200", SMALL_PHONE, 2f) {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;g|잠·쉼|f:SLEEP+f:LEAVE;memos;stats;plaza") }
+        settle()
+        noCuts("grouped_bar_200")
+    }
+    @Test fun groupedRailUnfolded() = shoot("1037_ad_grouped_rail_unfolded", UNFOLDED) {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
+        settle()
+        noCuts("grouped_rail_unfolded")
+    }
+    @Test fun slotEditorWithAGroup() = shoot("1038_ad_slot_editor", PHONE_393) {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
+        settingsPage(SettingsPage.CALENDAR.title)
+        tapText(TAB_ORDER_ROW, exact = true)
+        assertTrue(appears("묶음 3개", exact = true))
+        noCuts("slot_editor")
+    }
+    @Test fun slotEditor200() = shoot("1039_ad_slot_editor_200", SMALL_PHONE, 2f) {
+        c.settingsRepository.update { it.copy(tabSlots = "calendar;g|돈|money+f:OWED+f:PAY;memos;f:SLEEP;plaza") }
+        settingsPage(SettingsPage.CALENDAR.title)
+        tapText(TAB_ORDER_ROW, exact = true)
+        noCuts("slot_editor_200")
     }
 }

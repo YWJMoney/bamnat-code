@@ -270,7 +270,7 @@ internal fun CompanyPage.toJson(): JSONObject = JSONObject().put("id", id).put("
             .put("setup", JSONObject(s.text)).put("lines", JSONArray(s.lines.map { (a, b) -> JSONArray(listOf(a, b)) }))
             .put("trust", s.trust).put("agree", s.agree).put("posts", s.posts).put("uses", s.uses).put("senders", s.senders)
             .put("checked", s.checked).put("by", JSONArray(s.by)).put("checkedLong", s.checkedLong).put("support", s.support)
-            .put("payHidden", s.payHidden).put("stable", s.stable).put("lead", s.lead).put("doubted", s.doubted)
+            .put("payHidden", s.payHidden).put("payPrivate", s.payPrivate).put("fixes", s.fixes).put("stable", s.stable).put("lead", s.lead).put("doubted", s.doubted)
             .put("opinion", JSONObject().put("ok", s.opinion.ok).put("bad", s.opinion.bad).put("why", JSONObject(s.opinion.why))
                 .put("mine", s.opinion.mine ?: JSONObject.NULL))
     }))

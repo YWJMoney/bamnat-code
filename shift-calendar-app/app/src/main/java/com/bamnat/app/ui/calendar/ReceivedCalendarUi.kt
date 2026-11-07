@@ -183,15 +183,24 @@ internal fun ReceivedCalendar.summary(): String {
     return if (s.first != null && s.last != null) "${Fmt.monthDay(s.first)}~${Fmt.monthDay(s.last)}" else "근무 없음"
 }
 
-/** [SHR-01] The parts the sharer ticked, in the share sheet's words; null when only shifts came. */
-internal fun SharedSchedule.showsText(): String? =
-    listOfNotNull(
+/**
+ * [SHR-01] The parts the sharer ticked, in the share sheet's words; null when only shifts came. 1.39 PC a483ca15 (메모 없는데
+ * '함께 받은 것: 메모'): as the web page says it, a kind with nothing in it is left out, and a 리더's own notes in the memo place
+ * ("바뀜: …", "같이 쉬어요: …") are named for what they are.
+ */
+internal fun SharedSchedule.showsText(): String? {
+    val notes = days.values.flatMap { d -> d.memo?.split(" · ").orEmpty() }.filter { it.isNotBlank() }
+    val memoNames = if ("memos" !in shows) emptyList() else listOfNotNull(
+        "메모".takeIf { notes.any { !it.startsWith("바뀜: ") && !it.startsWith("같이 쉬어요: ") } },
+        "바뀐 날 표시".takeIf { notes.any { it.startsWith("바뀜: ") } },
+        "같이 쉬는 사람".takeIf { notes.any { it.startsWith("같이 쉬어요: ") } },
+    )
+    return (listOfNotNull(
         "일정".takeIf { "jobs" in shows },
-        "휴가 종류".takeIf { "leaveKinds" in shows },
-        "연장·휴무일 근무".takeIf { "extras" in shows },
-        "메모".takeIf { "memos" in shows },
-        payKind.label.takeIf { "pay" in shows },
-    ).takeIf { it.isNotEmpty() }?.joinToString(", ")
+        "휴가 종류".takeIf { "leaveKinds" in shows && days.values.any { it.leave != null } },
+        "연장·휴무일 근무".takeIf { "extras" in shows && days.values.any { it.extras.isNotEmpty() } },
+    ) + memoNames + listOfNotNull(payKind.label.takeIf { "pay" in shows })).takeIf { it.isNotEmpty() }?.joinToString(", ")
+}
 
 /**
  * [SHR-02] Opening a received link: a look at whose schedule it is and what came with it, then

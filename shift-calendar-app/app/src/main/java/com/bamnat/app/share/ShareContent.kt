@@ -98,7 +98,11 @@ object ShareContent {
     /** [SHR-20] The calendar's company setup as a coworker's file has it, without amounts (회사 공통 정액 as the 광장 has it). */
     suspend fun setupFile(c: AppContainer, calendar: String = PersonalCalendar.MAIN): String? {
         val scope = c.companyOf(calendar)
-        return runCatching { scope.share.export(companyName(c, calendar), withAmounts = false) }.getOrNull()
+        return runCatching {
+            val text = scope.share.export(companyName(c, calendar), withAmounts = false)
+            // 1.39 [PAYP-08]: a pay way someone else shared is not this phone's to pass on; the coworker gets the shifts only.
+            if (scope.payWays.way.value?.shared == true) org.json.JSONObject(text).apply { remove("pay") }.toString() else text
+        }.getOrNull()
     }
 
     /** [SHR-20][695] The company the calendar is in, else the name typed in the first setup; "" when none. */

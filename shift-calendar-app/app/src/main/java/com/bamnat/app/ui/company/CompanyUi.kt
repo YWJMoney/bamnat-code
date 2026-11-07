@@ -68,6 +68,9 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "member" -> "이 회사에 참여한 휴대폰만 볼 수 있어요. 이 회사 설정을 쓰면 참여돼요"
     // [PLZD-01] 1.30 BD: 이 규칙 쓰기 could not put the plaza's rule into the calendar.
     "apply" -> "이 규칙을 넣지 못했어요. 회사 광장에서 다시 해 주세요"
+    // 1.39 [PAYP-03][PAYP-05] A version with no pay part, 보완 요청 before 처리방침 3.12.
+    "no_pay" -> "이 판에는 급여 방식이 없어요"
+    "closed" -> "아직 열리지 않은 기능이에요. 앱을 업데이트한 뒤 다시 해 주세요"
     else -> "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요"
 }
 

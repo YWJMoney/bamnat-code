@@ -38,8 +38,15 @@
 | `/inquiries`, `/inquiries/<id>`(알람 점검 기록은 빠짐), `/inquiries/sort`, `/inquiries/handoff` | `/dev`, `/dev/<id>`, `/dev/<id>/links·links/remove·notes·reply` |
 | `/dev`, `/dev/<id>`, `/templates` | `/desk/ship` |
 | `/ledger?view=claude&q=…`(장부 줄, 300줄씩 `more`), `/ledger.csv`, `/ledger/log?key=q12` | `/ledger/state {keys,state,reason}`, `/ledger/undo {key}`, `/ledger/summary {key,text}` |
+| 1.39 `/loop`(자동 순환 상태), `/loop/queue`(영향도 순 개발 대기열), `/loop/decide`(결정함), `/loop/tiers`, `/loop/tier/<d…>`(요금 관측치, 읽기만), `/loop/autonomy` | 1.39 `/loop/drafts`(결정함 문의에 보낼 답 초안만) |
 
 그 밖(지우기, 여러 개 한 번에 닫기, 공개 바꾸기, 사진, 결제 기록, 자동 대응 설정, 기능 스위치, 공지, 관리자, 열쇠 목록)은 403. 하루 3000번·바꾸기 400번을 넘으면 429.
+
+## 자동 순환 (1.39 G10)
+- **나간 판 저장이 저절로**: 서버가 Play 프로덕션 트랙을 매시 읽어 판이 100%가 되면 1시간 기다렸다가 위 '나간 판 저장'을 해요. 관리자 앱 › 자동 순환에서 그 1시간 안에 취소·지금 보내기, 스위치로 끄기. 단계적 출시 중에는 앱이 보낸 판(X-App)으로 고친 판을 연 폰에만 먼저 안내해요.
+- **개발 상태는 저장소에서**: `ops/dev-status.jsonl`(문의 글 없음)이 main에 합쳐지면 GitHub Action이 동기화 열쇠(`POST /dev/sync`만 됨)로 보내요. 고친 판은 그 커밋의 versionName. 동기화 열쇠는 관리자 앱 › 열쇠에서 '동기화'로 만들어요(하나만, 1년).
+- **요금은 사람만**: 열쇠로는 요금을 정하지 못해요(`/loop/tier/<d…>` POST는 최고 관리자 세션만). Claude는 `tierAsk`·`tierWhy`로 제안하고, 결정함에 올라가요.
+- **해결됐나요·알려진 문제**: 앱에서 '아직이에요'가 오면 문의가 다시 열리고 개발사항이 접수로 돌아가 결정함·알림에 떠요. '나도 겪어요'는 짧은 문의 한 건(이미 답한 상태)으로 묶여 관리자 차례에 쌓이지 않아요.
 
 ## 시험
 `npm test`의 `test/ledger.test.mjs`(장부 줄·K 번호·겹침·단계·끝내기 이유·되돌리기·7일 되돌아옴·CSV·열쇠 범위), `test/desk.test.mjs`(나간 판 전후 앱 단계·답·묶음 답, 흐름 숫자, 열쇠 범위·끊기). 로컬에서 보기: `ADMIN_PASSWORD=… npm run local -- 8788 --seed --test-clock` 뒤 `/admin/#/flow`, `/admin/#/desk`.

@@ -37,6 +37,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.StickyNote2
@@ -389,9 +391,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     // 1.38 PC 11차: opened from a teammate's 근무표 link on a new phone, the first screen names it and offers the
                     // matching start (매달 나오는 근무표) in one tap.
                     val waitingLink by container.received.opening.collectAsStateWithLifecycle()
-                    val waitingSchedule by produceState<com.bamnat.app.share.SharedSchedule?>(null, waitingLink) {
-                        value = waitingLink?.let { id -> runCatching { com.bamnat.app.share.SharedSchedule.parse(container.shareApi.read(id).schedule) }.getOrNull() }
+                    // 1.39 [TEAM-22] The copy the setup fills the days from, kept as what later changes are compared with.
+                    val waitingRaw by produceState<org.json.JSONObject?>(null, waitingLink) {
+                        value = waitingLink?.let { id -> runCatching { container.shareApi.read(id).schedule }.getOrNull() }
                     }
+                    val waitingSchedule = remember(waitingRaw) { waitingRaw?.let { runCatching { com.bamnat.app.share.SharedSchedule.parse(it) }.getOrNull() } }
                     val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
                     // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
                     val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
@@ -419,9 +423,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             // 1.38 PC 12.3: the link that started the setup is kept as a 받은 달력 (it is the team's, and follows its next
                             // 판), and the waiting link is let go, so the calendar does not offer to add it again after the setup.
                             val id = waitingLink
+                            val filledFrom = waitingRaw
                             container.received.open(null)
                             if (id != null) rootScope.launch {
-                                runCatching { container.received.put(id, container.shareApi.read(id), mine = true) }
+                                // PC a483ca15 (12/3 주→야 not put in): the days come from [filledFrom]; a change the 리더 made since is
+                                // put in by the next look, not lost in this fresh read.
+                                runCatching { container.received.put(id, container.shareApi.read(id), mine = true, basis = filledFrom) }
                                 // 1.39 [TEAM-22] The 리더's later changes of this link come into the member's days by themselves.
                                 com.bamnat.app.share.RosterFollower.sync(container.appContext, container)
                             }
@@ -472,10 +479,17 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
 
     // [NAV-05] 1.26 AD: the tabs in the user's order (D82); the first is home: the app opens there, back ends there.
+    // [NAV2-01] 1.39 the bar is up to five places the user fills (a tab, another screen, or a 묶음 of several); none saved is the
+    // tab order's five, 설정 by the 나 button. Home is the first tab in it.
     val tabEdit = remember { TabEdit() }
-    val savedTabs = remember(settingsNow.tabOrder) { TopLevel.ordered(settingsNow.tabOrder) }
-    val home = savedTabs.first()
-    val tabs = if (tabEdit.editing) tabEdit.order.map { k -> TopLevel.entries.first { it.route == k } } else savedTabs
+    val slots = remember(settingsNow.tabSlots, settingsNow.tabOrder) {
+        com.bamnat.core.layout.TabSlots.resolve(settingsNow.tabSlots, settingsNow.tabOrder, TabPicks.known)
+    }
+    val home = TopLevel.entries.first { it.route == com.bamnat.core.layout.TabSlots.home(slots) }
+    val shownSlots = if (tabEdit.editing) {
+        val byKey = slots.associateBy(com.bamnat.core.layout.TabSlots::key)
+        tabEdit.order.mapNotNull { byKey[it] }.ifEmpty { slots }
+    } else slots
 
     // Opening the app (again) always lands on the first tab (the calendar unless the user moved another first).
     val homeRequests by HomeRequests.count.collectAsStateWithLifecycle()
@@ -486,7 +500,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             // Only from another tab: an editor the user left open (pay setup, a pattern) keeps their input.
             // A tapped notice says where to go instead [SLP-15].
             val current = nav.currentBackStackEntry?.destination?.route
-            val homeRoute = TopLevel.ordered(container.settingsRepository.current.tabOrder).first().route
+            val homeRoute = container.settingsRepository.current.let {
+                com.bamnat.core.layout.TabSlots.home(com.bamnat.core.layout.TabSlots.resolve(it.tabSlots, it.tabOrder, TabPicks.known))
+            }
             if (NoticeLinks.target.value == null && current != homeRoute && TopLevel.entries.any { it.route == current }) {
                 TabHistory.clear()
                 nav.navigate(homeRoute) {
@@ -952,6 +968,39 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [NAV-05] The tab the app opens on: home when the app starts, kept through a turn of the screen with the back stack.
     val startTab = rememberSaveable { home.route }
 
+    // [TRY-05] 1.39 실제 화면으로 입어 보기: when a trial starts, the real app opens on the tab 입어 보기 showed, and 끝내기 comes back
+    // to the screen it was opened on (still under, or opened again by its route).
+    val liveTrial by com.bamnat.app.ui.recipe.LiveTryOn.trial.collectAsStateWithLifecycle()
+    val trialOn = liveTrial != null
+    LaunchedEffect(trialOn) {
+        val t = com.bamnat.app.ui.recipe.LiveTryOn.trial.value ?: run { com.bamnat.app.ui.recipe.LiveTryOn.back = null; return@LaunchedEffect }
+        val entry = nav.currentBackStackEntry
+        val destId = entry?.destination?.id
+        val real = entry?.let(::filledRoute)
+        com.bamnat.app.ui.recipe.LiveTryOn.back = back@{
+            val here = nav.currentBackStackEntry?.destination?.id
+            if (destId == null || here == destId) return@back
+            val under = runCatching { nav.getBackStackEntry(destId) }.isSuccess
+            when {
+                under -> nav.popBackStack(destId, false)
+                real != null && TopLevel.entries.any { it.route == real } -> nav.navigateTopLevel(real)
+                real != null -> runCatching { nav.navigate(real) { launchSingleTop = true } }
+            }
+        }
+        (TopLevel.entries.firstOrNull { it.route == t.tab } ?: TopLevel.CALENDAR).let { dest -> if (dest.route != route) navigateTop(dest) }
+    }
+    // The app left while trying on: the trial ends (nothing was saved), 입어 보기 waiting where it was.
+    // [TRY-06] One with 기능 waits a little (a photo for a memo, a glance elsewhere) and then puts them back.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+        if (com.bamnat.app.ui.recipe.LiveTryOn.trial.value != null) com.bamnat.app.ui.recipe.LiveTryOn.stepAway(container)
+    }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START) { com.bamnat.app.ui.recipe.LiveTryOn.stepIn() }
+    // A theme sheet tried on the real app is opened again here, over whichever screen it was on.
+    val trialAgain by com.bamnat.app.ui.recipe.LiveTryOn.reopen.collectAsStateWithLifecycle()
+    (trialAgain?.from as? com.bamnat.app.ui.recipe.LiveTryOn.From.Sheet)?.let { f ->
+        com.bamnat.app.ui.recipe.ThemeSheet(f.r, f.code, activeStyle, f.ver, again = trialAgain) { com.bamnat.app.ui.recipe.LiveTryOn.take { it == f } }
+    }
+
     // [NAV-02] 1.25 Z (U4): back goes where the user was. From a tab reached from another tab, that tab, as it was
     // left (Android's default went to the calendar from every tab); from the calendar itself, a second back within
     // two seconds closes the app, so one stray back does not. Screens and sheets inside take back first.
@@ -992,37 +1041,116 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
 
     // [NAV-06] 1.26 AD: a long press on a tab moves the tabs; a tap anywhere else, back, or leaving the tabs saves.
+    // [NAV2-01] 1.39 the places move (a 묶음 with its screens); what is kept is the bar, or nothing while it is the tab order's.
     val saveTabs: () -> Unit = {
         if (tabEdit.editing) {
             val made = tabEdit.finish()
-            if (made != savedTabs.map { it.route }) {
-                container.settingsRepository.update { it.copy(tabOrder = com.bamnat.core.layout.TabOrder.toSave(made)) }
+            if (made != slots.map(com.bamnat.core.layout.TabSlots::key)) {
+                container.settingsRepository.update { it.withBar(com.bamnat.core.layout.TabSlots.ordered(slots, made)) }
             }
         }
     }
     if (tabEdit.editing) androidx.activity.compose.BackHandler { saveTabs() }
     LaunchedEffect(route, showNav) { if (!showNav || topLevel == null) saveTabs() }
-    val tabNames: (String) -> String = { k -> TopLevel.entries.first { it.route == k }.labelFor(activeStyle) }
-    val tabsShown: () -> List<String> = { tabs.map { it.route } }
-    val onTab: (TopLevel) -> Unit = { dest -> if (!tabEdit.editing) navigateTop(dest) }
+    val flagRowsNav by container.flags.byKey.collectAsStateWithLifecycle()
+    val manageOn = flagRowsNav[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true || flagRowsNav[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+    val pickOf: (String) -> TabPick? = { k -> TabPicks.of(k, activeStyle) }
+    val slotLabel: (com.bamnat.core.layout.TabSlots.Slot) -> String = { sl ->
+        when (sl) {
+            is com.bamnat.core.layout.TabSlots.One -> pickOf(sl.key)?.label ?: sl.key
+            is com.bamnat.core.layout.TabSlots.Group -> sl.name
+        }
+    }
+    val tabNames: (String) -> String = { k -> slots.firstOrNull { com.bamnat.core.layout.TabSlots.key(it) == k }?.let(slotLabel) ?: k }
+    val tabsShown: () -> List<String> = { shownSlots.map(com.bamnat.core.layout.TabSlots::key) }
+    // [NAV2-01] Where a place's screen is: a tab as a tab, another screen opened over the tab on show.
+    val openPick: (String) -> Unit = { k ->
+        val top = TabPicks.topOf(k)
+        val place = TabPicks.placeOf(k)
+        when {
+            top != null -> navigateTop(top)
+            place != null -> nav.openFeature(container, com.bamnat.core.guide.FeatureRoute(place))
+            k == TabPicks.STUDIO -> nav.navigate(Routes.studio()) { launchSingleTop = true }
+            k == TabPicks.MANAGE -> nav.navigate(Routes.MANAGE) { launchSingleTop = true }
+        }
+    }
+    // [NAV2-01] A 묶음 opens its list under it; the bar's editor opens over everything (from the list, the 나 button or settings).
+    var openGroup by remember { mutableStateOf<String?>(null) }
+    var editingBar by rememberSaveable { mutableStateOf(false) }
+    val onSlot: (com.bamnat.core.layout.TabSlots.Slot) -> Unit = { sl ->
+        if (!tabEdit.editing) when (sl) {
+            is com.bamnat.core.layout.TabSlots.One -> openPick(sl.key)
+            is com.bamnat.core.layout.TabSlots.Group -> openGroup = com.bamnat.core.layout.TabSlots.key(sl)
+        }
+    }
+    LaunchedEffect(Unit) { BarEditLinks.asks.collect { editingBar = true } }
+    /** How a place looks now: chosen while its tab (or one of its 묶음's) is on show. */
+    class SlotLook(val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector, val selected: Boolean, val badge: Int, val dot: Boolean,
+        val members: List<TabPick>?, val current: String?, val said: String)
+    val lookOf: (com.bamnat.core.layout.TabSlots.Slot) -> SlotLook = { sl ->
+        val keys = sl.keys
+        val badge = if (com.bamnat.core.layout.TabOrder.SETTINGS in keys) inquiryUnread else 0
+        val dot = com.bamnat.core.layout.TabOrder.PLAZA in keys && villageNew > 0
+        when (sl) {
+            is com.bamnat.core.layout.TabSlots.One -> {
+                val p = pickOf(sl.key)
+                val selected = TabPicks.topOf(sl.key)?.let { it == topLevel } == true
+                SlotLook(p?.label ?: sl.key, (if (selected) p?.selectedIcon else p?.icon) ?: TabPicks.groupIconOther, selected, badge, dot, null, null, p?.label ?: sl.key)
+            }
+            is com.bamnat.core.layout.TabSlots.Group -> {
+                val members = keys.mapNotNull(pickOf)
+                val cur = members.firstOrNull { m -> TabPicks.topOf(m.key)?.let { it == topLevel } == true }
+                SlotLook(sl.name, cur?.selectedIcon ?: members.firstOrNull()?.icon ?: TabPicks.groupIcon, cur != null, badge, dot, members, cur?.key,
+                    "${sl.name}, 묶음 ${members.size}개: " + members.joinToString(", ") { it.label })
+            }
+        }
+    }
+    // [NAV2-02] The 나 button at the top of the tabs: 설정 and the tabs the bar does not hold.
+    androidx.compose.runtime.SideEffect { ShownRoute.route = route }
+    val missingTabs = com.bamnat.core.layout.TabSlots.missing(slots)
+    val meState = MeState(
+        show = missingTabs.isNotEmpty(),
+        unread = if (com.bamnat.core.layout.TabOrder.SETTINGS in missingTabs) inquiryUnread else 0,
+        missing = missingTabs.mapNotNull(pickOf),
+        open = openPick,
+        editBar = { editingBar = true },
+        inRail = wide,
+    )
+    if (editingBar) com.bamnat.app.ui.settings.BarSlotsDialog(
+        settings = settingsNow, style = activeStyle, manageOn = manageOn,
+        onChange = { made -> container.settingsRepository.update { it.withBar(made) } },
+        onReset = { container.settingsRepository.update { it.copy(tabSlots = "", tabOrder = emptyList()) } },
+        onDismiss = { editingBar = false },
+    )
 
     // [DAILY-09] Half open like a laptop (Flex): the calendar splits at the hinge.
     val tabletop = rememberTabletop()
     androidx.compose.runtime.CompositionLocalProvider(LocalTabletop provides tabletop) {
         Row(Modifier.fillMaxSize()) {
             if (wide && showNav) {
-                NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow) {
+                NavigationRail(containerColor = MaterialTheme.colorScheme.surfaceContainerLow, header = {
+                    // [NAV2-02] 설정 and the tabs not on the rail, at its top.
+                    androidx.compose.runtime.CompositionLocalProvider(LocalMe provides meState) { MeButton(rail = true) }
+                }) {
                     Spacer(Modifier.height(12.dp))
-                    tabs.forEachIndexed { index, dest ->
-                        androidx.compose.runtime.key(dest.route) {
-                            val selected = dest == topLevel
-                            val label = dest.labelFor(activeStyle)
+                    shownSlots.forEachIndexed { index, sl ->
+                        val k = com.bamnat.core.layout.TabSlots.key(sl)
+                        androidx.compose.runtime.key(k) {
+                            val look = lookOf(sl)
                             NavigationRailItem(
-                                selected = selected,
-                                onClick = { onTab(dest) },
-                                icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0, dot = dest == TopLevel.PLAZA && villageNew > 0) } },
-                                label = { TabLabel(label) },
-                                modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = false, tabsShown, tabNames, saveTabs),
+                                selected = look.selected,
+                                onClick = { onSlot(sl) },
+                                icon = {
+                                    androidx.compose.foundation.layout.Box {
+                                        WigglingIcon(tabEdit.editing, index) { SlotIcon(look.icon, look.badge, look.dot, group = look.members?.size ?: 0) }
+                                        look.members?.let { m ->
+                                            GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null })
+                                        }
+                                    }
+                                },
+                                label = { TabLabel(look.label) },
+                                modifier = tabEditModifier(tabEdit, k, index, shownSlots.size, look.label, horizontal = false, tabsShown, tabNames, saveTabs)
+                                    .then(if (look.members != null) Modifier.semantics { contentDescription = look.said } else Modifier),
                                 // [VIS-03] The chosen tab in the same blue as every other chosen thing.
                                 colors = com.bamnat.app.ui.components.Selection.navRailItemColors(),
                             )
@@ -1069,17 +1197,25 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                 modifier = com.bamnat.app.ui.parts.PartMods.box(barPart.copy(fill = null), androidx.compose.ui.graphics.RectangleShape),
                                 containerColor = barPart.fill?.let { androidx.compose.ui.graphics.Color(it.toInt()).copy(alpha = (barPart.fillA ?: 100) / 100f) } ?: androidx.compose.material3.NavigationBarDefaults.containerColor,
                             ) {
-                                val twoLineRoom = twoLineTabs(tabs.map { it.labelFor(activeStyle) })
-                                tabs.forEachIndexed { index, dest ->
-                                    androidx.compose.runtime.key(dest.route) {
-                                        val selected = dest == topLevel
-                                        val label = dest.labelFor(activeStyle)
+                                val twoLineRoom = twoLineTabs(shownSlots.map(slotLabel))
+                                shownSlots.forEachIndexed { index, sl ->
+                                    val k = com.bamnat.core.layout.TabSlots.key(sl)
+                                    androidx.compose.runtime.key(k) {
+                                        val look = lookOf(sl)
                                         NavigationBarItem(
-                                            selected = selected,
-                                            onClick = { onTab(dest) },
-                                            icon = { WigglingIcon(tabEdit.editing, index) { TabIcon(dest, selected, if (dest == TopLevel.SETTINGS) inquiryUnread else 0, dot = dest == TopLevel.PLAZA && villageNew > 0) } },
-                                            label = { TabLabel(label, twoLineRoom, if (selected) tabOn else tabPart) },
-                                            modifier = tabEditModifier(tabEdit, dest.route, index, tabs.size, label, horizontal = true, tabsShown, tabNames, saveTabs),
+                                            selected = look.selected,
+                                            onClick = { onSlot(sl) },
+                                            icon = {
+                                                androidx.compose.foundation.layout.Box {
+                                                    WigglingIcon(tabEdit.editing, index) { SlotIcon(look.icon, look.badge, look.dot, group = look.members?.size ?: 0) }
+                                                    look.members?.let { m ->
+                                                        GroupMenu(openGroup == k, m, look.current, openPick, onEdit = { editingBar = true }, onDismiss = { openGroup = null })
+                                                    }
+                                                }
+                                            },
+                                            label = { TabLabel(look.label, twoLineRoom, if (look.selected) tabOn else tabPart) },
+                                            modifier = tabEditModifier(tabEdit, k, index, shownSlots.size, look.label, horizontal = true, tabsShown, tabNames, saveTabs)
+                                                .then(if (look.members != null) Modifier.semantics { contentDescription = look.said } else Modifier),
                                             colors = itemColors,
                                         )
                                     }
@@ -1100,15 +1236,19 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         RingingBanner()
                         // 1.38 PC 9차 (EASE-03 '끼어드는 창 0'): the window asking to allow notifications is gone; the calendar's red alarm
                         // line says it ("알림이 꺼져 있어 알람이 소리만 나요 · 허용") wherever an alarm comes within a week.
-                        AppNavHost(
-                            nav = nav,
-                            container = container,
-                            wide = wide,
-                            snackbar = snackbar,
-                            styleExtras = styleExtras,
-                            start = startTab,
-                            modifier = Modifier.weight(1f),
-                        )
+                        androidx.compose.runtime.CompositionLocalProvider(LocalMe provides meState) {
+                            AppNavHost(
+                                nav = nav,
+                                container = container,
+                                wide = wide,
+                                snackbar = snackbar,
+                                styleExtras = styleExtras,
+                                start = startTab,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                        // [TRY-05] Over the tabs while a theme is tried on the real app (inner screens: above the system's bar).
+                        androidx.compose.foundation.layout.Box(if (showNav) Modifier else Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.Companion.navigationBars)) { com.bamnat.app.ui.recipe.LiveTryOnBand(container) }
                     }
                     // [NAV-06] Over the screen while the tabs are moved: a tap here saves, and does nothing else. Beside the
                     // rail the line about it lies over the bottom of the screen, which keeps its size.
@@ -1608,7 +1748,7 @@ private fun AppNavHost(
                         onFix = { nav.fixCompanySetup(it, calendar) }, hideInvite = inviting)
                     if (companyPay) {
                         // [PAYF-04] The company pay way in use: 맞아요·달라요 and 고쳐서 제안하기 on the pay screen itself, and its 기본급.
-                        com.bamnat.app.ui.company.PayWayCard(profile, update = vm::update, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+                        com.bamnat.app.ui.company.PayWayCard(profile, update = vm::update, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), onLeave = vm::leaveShared)
                         // [PAYF-01] A pay set up by hand: the search box one tap away until a company's way is in use.
                         if (profile != null) com.bamnat.app.ui.company.PayFindLine(onSaved = { p -> vm.update { p } },
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -2180,22 +2320,6 @@ private const val TWO_LINE_HEIGHT = 0.9f
 private fun twoLineTabs(names: List<String>): Boolean =
     androidx.compose.ui.platform.LocalDensity.current.fontScale >= TWO_LINE_FROM && names.any { it.split('·').size == 2 }
 
-/** [UX-05] A tab's icon; 설정 carries how many answers to the user's questions are new. */
-@Composable
-private fun TabIcon(dest: TopLevel, selected: Boolean, badge: Int, dot: Boolean = false) {
-    val icon = if (selected) dest.selectedIcon else dest.icon
-    // [TOWN-07] 마을: a dot, no number, when my plaza posts have new answers.
-    if (badge <= 0 && dot) {
-        BadgedBox(badge = { androidx.compose.material3.Badge(Modifier.semantics { contentDescription = "광장 내 글에 새 답" }) }) { Icon(icon, contentDescription = null) }
-        return
-    }
-    if (badge <= 0) {
-        Icon(icon, contentDescription = null)
-        return
-    }
-    BadgedBox(badge = { IconCountBadge(badge, "문의에 새 답 ${badge}개", cap = 9) }) { Icon(icon, contentDescription = null) }
-}
-
 /** [TYPE-03] 근무 주기 of a calendar; a shop's is its 영업일·정기휴무. */
 private fun NavHostController.openPattern(c: com.bamnat.app.AppContainer, calendar: String) {
     val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
@@ -2447,6 +2571,17 @@ private fun NavHostController.navigateTopLevel(route: String, record: Boolean = 
         launchSingleTop = true
         restoreState = true
     }
+}
+
+/** [TRY-05] The route [entry] was opened with, its arguments filled in ("recipe/{code}?…" → "recipe/ab12?…"). */
+private fun filledRoute(entry: androidx.navigation.NavBackStackEntry): String? {
+    var r = entry.destination.route ?: return null
+    val args = entry.arguments
+    Regex("\\{([^}]+)\\}").findAll(r).map { it.groupValues[1] }.toList().forEach { k ->
+        @Suppress("DEPRECATION") val v = args?.get(k)?.toString() ?: return null
+        r = r.replace("{$k}", android.net.Uri.encode(v))
+    }
+    return r
 }
 
 /** [NAV-02] The tabs the user went through, latest last, for back. Kept for the app's run; opening the app again clears it. */

@@ -553,6 +553,8 @@ class BackupManager(
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
                 .put("tabOrder", s.tabOrder.joinToString(","))
+                // [NAV2-01] Added in 1.39: the bottom bar's places (screens and 묶음).
+                .put("tabSlots", s.tabSlots)
                 .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
                 .put("wakeCheck", s.wakeCheckMinutes)
                 // [ALRM-08] Added in 1.25 (AB).
@@ -562,6 +564,8 @@ class BackupManager(
                 .put("moneyLayout", s.moneyLayout).put("moneyCheckOpen", s.moneyCheckOpen).put("budgetRollover", s.budgetRollover).put("memoLayout", s.memoLayout).put("tabViews", s.tabViews).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("myColors", s.myColors).put("shiftLooks", s.shiftLooks).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("cellList", s.cellList).put("memoLook", s.memoLook).put("moneyLook", s.moneyLook).put("screenLooks", s.screenLooks).put("payLooks", s.payLooks).put("parts", s.parts).put("logic", s.logic).put("decor", s.decor).put("motion", s.motion).put("rateHint", s.rateHint)
                 // [ALRM-03] Added in 1.23; what was answered stays on the phone.
                 .put("alarmSuggest", s.alarmSuggest)
+                // 1.39 [SPREAD-05] 보내는 사진에 밤낮 표시.
+                .put("exportMark", s.exportMark)
                 // [BAK-01] 1.25 Z: what the user chose after seeing what the law pays for work on days off.
                 .put("restDayCompared", s.restDayCompared)
                 .put("restCheck", s.restCheck)
@@ -1114,6 +1118,8 @@ class BackupManager(
                     phoneCalendars = o.optStringOrNull("phoneCalendars")?.let(::decodeGroupOrder) ?: s.phoneCalendars,
                     // [NAV-05] Added in 1.26; an older backup keeps this phone's order.
                     tabOrder = o.optStringOrNull("tabOrder")?.let(::decodeGroupOrder) ?: s.tabOrder,
+                    // [NAV2-01] Added in 1.39; an older backup keeps this phone's bar.
+                    tabSlots = if (o.has("tabSlots")) o.optString("tabSlots", "") else s.tabSlots,
                     // [PROV-06][PROV-07] Added in 1.20. Shift ids are the backup's own, restored with its shifts.
                     alarmMission = o.optString("alarmMission", s.alarmMission),
                     shiftMissions = o.optStringOrNull("shiftMissions")?.let(::decodeShiftMissions) ?: s.shiftMissions,
@@ -1141,6 +1147,7 @@ class BackupManager(
                     tabViews = o.optString("tabViews", s.tabViews),
                     rateHint = o.optBoolean("rateHint", s.rateHint),
                     alarmSuggest = o.optBoolean("alarmSuggest", s.alarmSuggest),
+                    exportMark = o.optBoolean("exportMark", s.exportMark),
                     restDayCompared = o.optBoolean("restDayCompared", s.restDayCompared),
                     calendarMemos = o.optBoolean("calendarMemos", s.calendarMemos),
                     restCheck = o.optBoolean("restCheck", s.restCheck),
