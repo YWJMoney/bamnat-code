@@ -247,7 +247,18 @@ async function seedAdmins(cookie) {
   await asOwner("/invites", { email: "seojin@example.com", perms: reviewer, note: "문의 답변" });
 }
 
-if (args.includes("--seed")) await seed();
+// 1.38 [ADM3-36] PC 13차: --seed on a --db file that already has the examples does not add them again.
+async function seeded() {
+  try {
+    return Boolean((await env.DB.prepare("SELECT COUNT(*) AS n FROM reports").first())?.n);
+  } catch {
+    return false;
+  }
+}
+if (args.includes("--seed")) {
+  if (await seeded()) console.log("--seed: this --db file already has the examples, so none are added.");
+  else await seed();
+}
 
 // AE 1.26: --test-clock lets an app test move this server's clock on (POST /__test/clock {days}), as for a
 // friend's second day [INVITE-03]. Only this local server has it; the worker itself never does.

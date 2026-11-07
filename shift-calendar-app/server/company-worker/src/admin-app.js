@@ -603,6 +603,9 @@ function adminApp(L, BUILD, M) {
     if (path(location.hash) !== path(href(S.route.name, S.route.id))) syncUrl();
   }
 
+  /** 1.38 [ADM3-36] Where each list was left, by screen name (this tab only). */
+  const scrollMemo = {};
+
   function go(name, id) {
     const next = href(name, id);
     if (location.hash === next) load();
@@ -746,6 +749,8 @@ function adminApp(L, BUILD, M) {
       if (name === "account") jobs.push(api("/me/push").then(keep((d) => { S.data.push = d; })).catch(() => {}));
       // S 1.32 [SECX-01] 휴대폰 미리 보기, set here by role (no longer on the phone).
       if (name === "account") jobs.push(api("/me/phones").then(keep((d) => { S.data.myPhones = d; })).catch(() => {}));
+      // 1.37.1 [FAM-01] 가족 프로 이용권 (최고 관리자만).
+      if (name === "account" && S.me?.owner) jobs.push(api("/family").then(keep((d) => { S.data.family = d; })).catch(() => {}));
       // R131 1.31 [ADMX-16]
       if (name === "account") jobs.push(api("/me/2fa").then(keep((d) => { S.data.second = { ...(S.data.second?.secret && !d.on ? S.data.second : {}), ...d }; })).catch(() => {}));
       // [ADMIN-15] The owner's server state.
@@ -1561,8 +1566,7 @@ function adminApp(L, BUILD, M) {
           <input type="hidden" name="template" value="">
           <div class="chips" role="group" aria-label="자주 쓰는 답">${list.map((t, i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}" title="${esc(t.text.slice(0, 120))}">${i < 9 ? `<span class="kbd">${i + 1}</span> ` : ""}${esc(t.label)}</button>`).join("")}
             <button type="button" class="chip pick" data-act="templates">${icon(P.plus)}답 관리</button></div>
-          <p class="saved" id="reply-saved" aria-live="polite"></p>
-          <div class="actions"><span class="count" id="reply-count">0/2000</span>
+          <div class="actions"><span class="count-box"><span class="count" id="reply-count">0/2000</span><span class="saved" id="reply-saved" aria-live="polite"></span></span>
             <button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">답하기</button></div>
         </form>` : ""}
       </section>
@@ -2144,6 +2148,31 @@ function adminApp(L, BUILD, M) {
         <div class="actions">${d.status === "approved" ? "" : `<button class="btn small primary" data-act="phone" data-id="${d.id}" data-key="approve">승인</button>`}
           <button class="btn small danger" data-act="phone" data-id="${d.id}" data-key="remove">끊기</button></div></li>`).join("")}</ul>`
         : '<p class="hint">연결된 휴대폰이 없어요.</p>'}`;
+  }
+
+  /**
+   * 1.37.1 [FAM-01] 가족 프로 이용권: the owner gives 프로 to family phones with no end, and cuts any of them at any time.
+   * The code goes in the same place as an admin's (밤낮 앱 › 설정 › 프로 › '관리자 연결'), so no app update is needed.
+   */
+  function familyCard() {
+    const f = S.data.family;
+    const phones = f?.phones ?? [];
+    const codes = f?.codes ?? [];
+    const on = phones.filter((d) => !d.paused).length;
+    return `<section class="card"><div class="card-head"><h2>가족 프로 이용권</h2>${phones.length ? `<span class="pill ok">${on}대 사용 중</span>` : ""}</div>
+      <p class="hint">가족 휴대폰에 프로를 끝나는 날 없이 무료로 줘요. 닉네임을 적고 코드를 만들어 보내면, 가족이 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 1시간 안에 넣어요. 승인 없이 바로 열려요. 정지하면 다시 켤 때까지 무료가 되고, 끊으면 새 코드가 있어야 해요. 닉네임은 이 화면에만 보이고 그 휴대폰에는 '가족'으로만 보여요. 몇 대든 줄 수 있어요.</p>
+      <form class="inline-form" data-form="family-code"><div class="fieldset"><label for="family-name">닉네임(관리자 앱에서만 보여요)</label>
+        <input id="family-name" name="name" maxlength="20" required placeholder="예: 엄마" autocomplete="off"></div>
+        <div class="actions start"><button class="btn primary" type="submit">가족 코드 만들기</button></div></form>
+      ${codes.length ? `<h3 class="section">아직 안 넣은 코드</h3><ul class="rows">${codes.map((c) => `<li class="item"><div class="row-main"><b>${esc(c.name)} · ${esc(c.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</b>
+        <small>${esc(clock(c.expiresAt))}까지</small></div><div class="actions"><button class="btn small" data-act="family-code-delete" data-id="${esc(c.code)}">취소</button></div></li>`).join("")}</ul>` : ""}
+      ${phones.length ? `<h3 class="section">가족 휴대폰</h3><ul class="rows">${phones.map((d) => `<li class="item"><div class="row-main"><b>${esc(d.name)}</b>
+        <small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}</small></div>
+        ${d.paused ? '<span class="pill warn">정지</span>' : '<span class="pill ok">프로 사용 중</span>'}
+        <div class="actions"><button class="btn small" data-act="family-set" data-id="${d.id}" data-key="${d.paused ? "resume" : "pause"}" data-name="${esc(d.name)}">${d.paused ? "다시 켜기" : "정지"}</button>
+          <button class="btn small" data-act="family-rename" data-id="${d.id}" data-name="${esc(d.name)}">닉네임</button>
+          <button class="btn small danger" data-act="family-remove" data-id="${d.id}" data-name="${esc(d.name)}">끊기</button></div></li>`).join("")}</ul>`
+        : f ? '<p class="hint">아직 연결된 가족 휴대폰이 없어요.</p>' : ""}</section>`;
   }
 
   /**
@@ -2899,6 +2928,7 @@ function adminApp(L, BUILD, M) {
       <section class="card"><h2>내 휴대폰 밤낮 연결</h2>
         <p class="hint">관리자 휴대폰은 프로를 무료로 써요. 코드를 만들어 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 10분 안에 넣어요${m.owner ? "" : ". 최고 관리자가 승인하면 시작돼요"}. 한 사람당 2대까지예요.</p>
         <div class="actions start"><button class="btn primary" data-act="link-code">연결 코드 만들기</button></div></section>
+      ${m.owner ? familyCard() : ""}
       ${previewCard()}
       <section class="card"><h2>로그인</h2><p class="hint">로그인은 쓰는 동안 저절로 이어지고, 7일 동안 안 쓰면 끝나요(길어도 30일). 휴대폰을 잃어버렸다면 모든 기기에서 로그아웃해요.</p>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
@@ -4712,6 +4742,30 @@ function adminApp(L, BUILD, M) {
       document.getElementById("second-on-code")?.focus();
     },
     "phone-previews": ({ id }) => openPreviews(id),
+    "copy-family": ({ id }) => navigator.clipboard?.writeText(id).then(() => toast("복사했어요"), () => toast("복사하지 못했어요")),
+    // 1.37.1 [FAM-01]
+    "family-remove": ({ id, name }) => confirmBox(`${name} 휴대폰의 프로를 끊을까요?`, "그 휴대폰은 다음 확인 때부터 무료가 돼요. 다시 주려면 새 가족 코드를 만들어요.", "끊기", async () => {
+      const d = await act(() => api(`/devices/${id}/remove`, "POST", {}), "끊었어요");
+      if (d) { S.data.family = d; render({ keepScroll: true }); }
+    }),
+    "family-set": ({ id, key, name }) => {
+      const go = async () => {
+        const d = await act(() => api(`/family/${id}`, "POST", { do: key }), key === "pause" ? "정지했어요" : "다시 켰어요. 다음 확인 때부터 프로예요");
+        if (d) { S.data.family = d; render({ keepScroll: true }); }
+      };
+      if (key === "pause") confirmBox(`${name} 휴대폰을 정지할까요?`, "다음 확인 때부터 무료가 되고, 다시 켜기를 누르면 같은 휴대폰이 바로 프로로 돌아와요.", "정지", go);
+      else go();
+    },
+    "family-rename": ({ id, name }) => {
+      openDialog(`<form class="box" data-form="family-rename" data-id="${esc(id)}"><h2>닉네임 바꾸기</h2>
+        <div class="fieldset"><label for="family-nick">닉네임(관리자 앱에서만 보여요)</label><input id="family-nick" name="name" maxlength="20" required value="${esc(name)}" autocomplete="off"></div>
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">바꾸기</button></div></form>`);
+      document.getElementById("family-nick")?.focus();
+    },
+    "family-code-delete": async ({ id }) => {
+      const d = await act(() => api(`/family/codes/${id}/delete`, "POST", {}), "코드를 취소했어요");
+      if (d) { S.data.family = d; render({ keepScroll: true }); }
+    },
     "link-code": async () => {
       const r = await act(() => api("/me/link-code", "POST", {}));
       if (!r) return;
@@ -5277,7 +5331,10 @@ function adminApp(L, BUILD, M) {
       const next = neighbours().next;
       if (close && S.prefs.next && next) return go("inquiries", next);
       render();
-      window.scrollTo(0, document.body.scrollHeight);
+      // 1.38 [ADM3-36] PC 13차: the page used to go to its very end, which on a folded phone is 함께 온 정보 under the talk;
+      // the answer just sent is shown instead.
+      const mine = [...document.querySelectorAll("#main .bubble.admin")].pop();
+      if (mine) mine.scrollIntoView({ block: "center" });
       load({ quiet: true });
     },
     // AN 1.28 [ADMUX-33] 바로 답하기 on 오늘's 할 일: the same answer as on the question, without opening it.
@@ -5416,6 +5473,22 @@ function adminApp(L, BUILD, M) {
         render({ keepScroll: true });
         load({ quiet: true });
       }
+    },
+    "family-rename": async (form) => {
+      const d = await act(() => api(`/family/${form.dataset.id}`, "POST", { do: "name", name: form.elements.name.value }), "닉네임을 바꿨어요");
+      if (!d) return;
+      dialog.close();
+      S.data.family = d;
+      render({ keepScroll: true });
+    },
+    "family-code": async (form) => {
+      const r = await act(() => api("/family/code", "POST", { name: form.elements.name.value }));
+      if (!r) return;
+      form.reset();
+      openDialog(`<div class="box"><h2>${esc(r.name)} 가족 코드</h2><p class="code-big" aria-label="가족 코드">${esc(r.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
+        <p class="hint">${esc(clock(r.expiresAt))}까지 한 번 쓸 수 있어요. 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 넣으면 바로 프로가 열려요.</p>
+        <div class="actions"><button class="btn" data-act="copy-family" data-id="${esc(r.code)}">코드 복사</button><button class="btn" data-act="close">닫기</button></div></div>`);
+      load({ quiet: true });
     },
     password: async (form) => {
       const r = await act(() => api("/me/password", "POST", { current: form.elements.current.value, next: form.elements.next.value }), "비밀번호를 바꿨어요");
@@ -5722,7 +5795,8 @@ function adminApp(L, BUILD, M) {
       writeDraft(t.id, t.value);
       if (t.id === "reply") {
         const saved = document.getElementById("reply-saved");
-        if (saved) saved.textContent = t.value ? "적는 중인 답은 이 기기에 저장돼요" : "";
+        // 1.38 [ADM3-36] PC 13차: said beside the count, so the line never pushes 답하기 under the bottom tabs.
+        if (saved) saved.textContent = t.value ? "이 기기에 저장 중" : "";
         pingTyping(Boolean(t.value.trim()));
       }
     }
@@ -5954,7 +6028,8 @@ function adminApp(L, BUILD, M) {
           return ACTIONS.template({ i: a.n - 1 });
         }
         // AN 1.28 [ADMUX-36] (1.38 [ADM3]: 1~5) the numbers are the hubs everywhere else, always the same number; a hub opens on its last tab.
-        const hub = L.HUBS[a.n - 1] && hubs().find((h) => h.key === L.HUBS[a.n - 1].key);
+        // 1.38 [ADM3-36] PC 13차: by the hubs this admin sees, in their order, so 1~3 work for an admin with three hubs.
+        const hub = hubs()[a.n - 1];
         if (!detail && hub) {
           stop();
           go(lastTab[hub.key] && hub.tabs.includes(lastTab[hub.key]) ? lastTab[hub.key] : hub.tabs[0]);
@@ -6030,6 +6105,8 @@ function adminApp(L, BUILD, M) {
     if (moved && before.name === "inquiries" && before.id) pingTyping(false);
     // [ADMUX-10] A sheet or a question box belongs to the screen it was opened on (점검 보고서 중-14).
     if (moved && dialog.open && !S.relogin) dialog.close();
+    // 1.38 [ADM3-36] PC 13차: a list keeps where it was when the admin comes back from another hub or a question.
+    if (moved && !before.id) scrollMemo[before.name] = window.scrollY;
     S.route = next;
     applyParams(next);
     // AN 1.28 [ADMUX-35] An old address shows as the new one.
@@ -6042,7 +6119,7 @@ function adminApp(L, BUILD, M) {
       // 큐 모드 ends once the admin goes somewhere else than a question of the queue.
       if (S.queue && !(next.name === "inquiries" && S.queue.ids.includes(next.id))) S.queue = null;
       render();
-      window.scrollTo(0, 0);
+      window.scrollTo(0, next.id ? 0 : scrollMemo[next.name] ?? 0);
       document.getElementById("title")?.focus({ preventScroll: true });
     }
     load();

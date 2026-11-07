@@ -2116,3 +2116,6 @@ ADM3-33,그래프에 이날 바꾼 것 점,1.38,완료,,"브랜치 claude/projec
 ADM3-34,개발사항 이야기,1.38,완료,,"브랜치 claude/project-thread-h3chak. story, #/dev/<id>. 서버 시험 545·화면 시험 59 통과, 로컬 서버에서 네 폭 확인(2026-11-06)"
 ADM3-35,허브 5개·갤럭시 폴드 세 폭,1.38,완료,,"브랜치 claude/project-thread-h3chak. admin-lib HUBS, style.js, 360·412·768·1440 사진. 서버 시험 545·화면 시험 59 통과, 로컬 서버에서 네 폭 확인(2026-11-06)"
 PAYX-55,"급여 풀이: 회사 규칙·직접 규칙 줄이 ‘4시간 × 0%’로 보이던 것을 실제 계산 근거로(한 번이면 그날 식 그대로, 배율이 있으면 시간 × 시급 × 배율), 회사 규칙 줄에 기준 시급(시수) 함께",1.38,진행 중,,"PC 12.5 유형별 빈틈 1 2026-11-07; SchoolingInShiftTest.theSchoolingLineSaysItsNumbers; 계획 1.38 23장, PC 확인 전"
+FAM-01,"가족 프로 이용권: 최고 관리자가 만든 1시간 연결 코드를 가족 폰이 '관리자 연결'에 넣으면 끝없는 프로, 끊기",1.38,완료,,"브랜치 claude/project-thread-h3chak. money.js familyCode·familyList, 관리 › 내 계정 '가족 프로 이용권'. 서버 시험 [FAM-01] 통과(2026-11-07)"
+FAM-02,"가족 프로 이용권 정지·다시 켜기와 관리자 앱에서만 보는 닉네임(폰에는 '가족'만)",1.38,완료,,"브랜치 claude/project-thread-h3chak. familySet, 앱 ProScreen 가족 말. 서버 시험 [FAM-01] 통과(2026-11-07)"
+ADM3-36,"PC 13차 고칠 것: 접은 폭 답하기 단추 붙박이, 답한 뒤 내 답으로, 목록 위치 기억, 패스키 안내, 보이는 허브대로 숫자 키, --seed 다시 안 넣기",1.38,완료,,"브랜치 claude/project-thread-h3chak. 380px 화면으로 단추가 아래 탭 위에 있는지 확인(2026-11-07)"

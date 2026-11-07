@@ -77,7 +77,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 import { DAY, HOUR } from "./units.js";
 import { inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
-import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
+import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
@@ -4680,6 +4680,13 @@ async function signedRoute(request, env, url, path, method, now, session) {
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/previews$/);
   if (m && method === "POST") return phonePreviews(request, env, actor, m[1], now);
   if (path === "/devices" && method === "GET") return json(await phoneList(env));
+  // 1.37.1 [FAM-01] 가족 프로 이용권: the owner's (areaFor gives "owner"). Cutting one is /devices/<id>/remove.
+  if (path === "/family" && method === "GET") return json(await familyList(env, now));
+  if (path === "/family/code" && method === "POST") return familyCode(request, env, now);
+  m = path.match(/^\/family\/codes\/(\d{6})\/delete$/);
+  if (m && method === "POST") return familyCodeDelete(env, m[1], now);
+  m = path.match(/^\/family\/(d[A-Za-z0-9]{15})$/);
+  if (m && method === "POST") return familySet(request, env, m[1], now);
   m = path.match(/^\/devices\/(d[A-Za-z0-9]{15})\/(approve|remove)$/);
   if (m && method === "POST") return setPhone(env, m[1], m[2], now);
   if (path === "/posts" && method === "GET") return json(await postList(env, url));
