@@ -1,0 +1,68 @@
+{
+ "panels": [
+  {
+   "name": "01-달력",
+   "theme": "night",
+   "label": "교대 근무표",
+   "title": "한 달 근무가\n<em>한눈에</em>",
+   "sub": "교대 순서만 고르면 달력이 바로 채워져요",
+   "image": "screens/store_1_calendar.png"
+  },
+  {
+   "name": "02-첫설정",
+   "theme": "day",
+   "label": "쉬운 시작",
+   "title": "고르기만 하면\n<em>준비 끝</em>",
+   "sub": "하는 일을 고르면 맞는 근무표와 알람이\n바로 준비돼요. 로그인도 없어요",
+   "image": "screens/store_2_setup.png"
+  },
+  {
+   "name": "03-사진읽기",
+   "theme": "night",
+   "label": "근무표 읽기",
+   "title": "종이 근무표,\n<em>찍기만 하세요</em>",
+   "sub": "사진·엑셀·PDF에서 내 줄을 찾아\n달력에 넣어요",
+   "image": "screens/store_3_roster.png"
+  },
+  {
+   "name": "04-알람",
+   "theme": "day",
+   "label": "근무 알람",
+   "title": "근무마다\n<em>다른 알람</em>",
+   "sub": "제시간에 울리는지 점검까지,\n누구나 무료로 확인해요",
+   "image": "screens/store_4_alarm_checks.png"
+  },
+  {
+   "name": "05-잠",
+   "theme": "night",
+   "label": "잠",
+   "title": "야간 뒤에도\n<em>잠을 챙겨요</em>",
+   "sub": "잔 시간과 아침 기분을 남기고,\n잠드는 소리를 켜요",
+   "image": "screens/store_5_sleep.png"
+  },
+  {
+   "name": "06-급여",
+   "theme": "day",
+   "label": "급여 · 가계부",
+   "title": "수당까지\n<em>이번 달 예상 월급</em>",
+   "sub": "야간·연장·휴일 수당과 세금,\n가계부까지 한 곳에서",
+   "image": "screens/store_6_pay.png"
+  },
+  {
+   "name": "07-팀근무표",
+   "theme": "night",
+   "label": "팀 리더 · 사장님",
+   "title": "팀 근무표를\n<em>링크 하나로</em>",
+   "sub": "팀원은 앱 없이 자기 근무를 보고,\n근무 신청도 링크로 받아요",
+   "image": "screens/store_7_team.png"
+  },
+  {
+   "name": "08-메모",
+   "theme": "day",
+   "label": "메모 · 꾸미기",
+   "title": "사진 넣은 메모,\n<em>내 마음대로</em>",
+   "sub": "사진 크기를 바꾸고 옆에 글을 써요.\n스튜디오로 달력도 꾸며요",
+   "image": "screens/store_8_memos.png"
+  }
+ ]
+}
