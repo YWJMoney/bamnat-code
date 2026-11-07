@@ -101,7 +101,8 @@ internal fun ProOfferContent(c: AppContainer, feature: Feature?, gate: Gate, onP
             Text(feature?.let { "‘${it.label}’ · 프로 기능이에요" } ?: "프로 기능이에요", style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.semantics { heading() })
         }
-        Text("이렇게 쓸 수 있어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1.39 G2 PC ef175fbf: "이렇게 쓸 수 있어요." ended with nothing after it; the lines below are the ways to open it.
+        Text("아래 방법으로 열 수 있어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 1.36 PC 재검토: while the bundle's free first week is there, it is the one blue button on top and 프로 is a text button.
         if (feature != null && gate.canTry(feature)) {
             LeaseAdOption(feature, gate, onOpened = ProOffer::close)

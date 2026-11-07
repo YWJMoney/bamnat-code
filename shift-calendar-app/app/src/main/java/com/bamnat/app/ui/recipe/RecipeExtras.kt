@@ -70,7 +70,7 @@ internal fun ThemeTokens(r: Recipe, edit: ((Recipe) -> Recipe) -> Unit) {
     }
     r.inputs.filter { it.kind == com.bamnat.core.recipe.InputKind.COLOR }.forEach { i ->
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("🎨 ‘${i.label}’은 받는 분이 골라요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text("🎨 ‘${i.label}’${com.bamnat.core.text.Josa.eunneun(i.label)} 받는 분이 골라요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             TextButton(onClick = { edit { RecipeTokens.fromInput(it, i.id) ?: it } }) { Text("내 색으로 정하기") }
         }
     }

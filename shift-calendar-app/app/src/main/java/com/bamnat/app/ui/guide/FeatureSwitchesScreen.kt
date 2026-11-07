@@ -106,7 +106,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
     val waits: (AppFeature) -> String? = { f -> if (!isOn(f)) null else profile?.facts?.let { com.bamnat.core.profile.FactText.startsWith(it, f.id) } }
     val ask: (AppFeature) -> Unit = { f -> asking = profile?.facts?.let { com.bamnat.core.profile.FactText.waiting(it, f.id).firstOrNull() } }
     val toggle: (AppFeature, Boolean) -> Unit = { f, on ->
-        message = if (FeatureSwitches.set(c, f, active, on)) null else "‘${f.name}’은 켜는 곳에서 켜요. 그 화면을 열었어요"
+        message = if (FeatureSwitches.set(c, f, active, on)) null else "‘${f.name}’${com.bamnat.core.text.Josa.eunneun(f.name)} 켜는 곳에서 켜요. 그 화면을 열었어요"
     }
 
     Scaffold(topBar = {
