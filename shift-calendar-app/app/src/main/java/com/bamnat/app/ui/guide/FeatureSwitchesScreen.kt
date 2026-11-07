@@ -120,7 +120,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                 Modifier.widthIn(max = 640.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("쓰지 않는 기능은 꺼 두면 화면에서 사라져요. 언제든 여기서 다시 켤 수 있어요.",
+                Text("쓰지 않는 기능은 꺼 두면 화면에서 사라져요. 적은 기록은 지우지 않으니 언제든 여기서 다시 켜면 그대로 보여요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // [ONBOARD-04][SIMPLE-02] The recommended features and their permissions, on one screen.
                 SectionCard(title = "추천 기능 한 번에 켜기") {
