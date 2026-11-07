@@ -203,7 +203,14 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
     val resolved = remember(r) { r.pieces.associate { p -> p.kind to runCatching { RecipeResolve.piece(r, p, RecipeResolve.answers(r, emptyMap())) }.getOrDefault(p.values) } }
     val corners = resolved[PieceKind.PHOTO_LOOK]?.get("corners") as? String
     @Suppress("UNCHECKED_CAST")
-    val tabs = TabOrder.of((resolved[PieceKind.LAYOUT]?.get("tabs") as? List<String>).orEmpty())
+    val workTabs = (resolved[PieceKind.LAYOUT]?.get("tabs") as? List<String>).orEmpty()
+    // [TRY-07] 1.39 발굴 (3차 PC: 예시 아래 막대는 6칸, 내 앱은 5칸): the bar as the phone draws it ([com.bamnat.core.layout.TabSlots]):
+    // my own places as they are (a 묶음, another screen: a 화면 배치 does not move them, as on the phone), else the work's 화면 배치
+    // (or my tab order) with 설정 by the 나 button.
+    val myBar by androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.settings.collectAsStateWithLifecycle()
+    val slots = remember(workTabs, myBar.tabSlots, myBar.tabOrder) {
+        com.bamnat.core.layout.TabSlots.resolve(myBar.tabSlots, workTabs.ifEmpty { myBar.tabOrder }, com.bamnat.app.ui.TabPicks.known)
+    }
     // [BLU-05] 1.36 부품 꾸미기 on the example app: the parts as the phone draws them (앱 전체·단추·카드 through the theme).
     @Suppress("UNCHECKED_CAST")
     val rawParts = remember(resolved) {
@@ -267,17 +274,19 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                 val barPart = blueprint.style("app.tabs")
                 Row(Modifier.fillMaxWidth().partSpot("app.tabs").background(barPart.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.surfaceContainer, barShape).padding(vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly) {
-                    tabs.forEach { key ->
-                        val t = TopLevel.entries.firstOrNull { it.route == key } ?: return@forEach
-                        val on = key == tab
+                    slots.forEach { slot ->
+                        val first = com.bamnat.app.ui.TabPicks.of(slot.keys.first(), style) ?: return@forEach
+                        val goes = slot.keys.firstOrNull { k -> TopLevel.entries.any { it.route == k } }
+                        val label = (slot as? com.bamnat.core.layout.TabSlots.Group)?.name ?: first.label
+                        val on = tab in slot.keys
                         val tp = blueprint.style("app.tab", if (on) setOf("sel") else emptySet())
                         val ink = tp.ink?.let { Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
-                        Column(Modifier.partSpot("app.tab").clickable(onClickLabel = "${t.labelFor(style)} 화면 보기") { onTab(key) }.semantics { selected = on }.padding(horizontal = 4.dp, vertical = 2.dp),
+                        Column(Modifier.partSpot("app.tab").clickable(enabled = goes != null, onClickLabel = "$label 화면 보기") { goes?.let(onTab) }.semantics { selected = on }.padding(horizontal = 4.dp, vertical = 2.dp),
                             horizontalAlignment = Alignment.CenterHorizontally) {
                             Box(Modifier.background(if (on) tp.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.secondaryContainer else Color.Transparent, CircleShape).padding(horizontal = 10.dp, vertical = 2.dp)) {
-                                Icon(if (on) t.selectedIcon else t.icon, null, Modifier.size(20.dp), tint = ink)
+                                Icon(if (on) first.selectedIcon else first.icon, null, Modifier.size(20.dp), tint = ink)
                             }
-                            Text(t.labelFor(style), style = com.bamnat.app.ui.parts.PartMods.text(tp.copy(ink = null), MaterialTheme.typography.labelSmall), fontSize = tp.size?.sp ?: 10.sp, maxLines = 1, color = ink)
+                            Text(label, style = com.bamnat.app.ui.parts.PartMods.text(tp.copy(ink = null), MaterialTheme.typography.labelSmall), fontSize = tp.size?.sp ?: 10.sp, maxLines = 1, color = ink)
                         }
                     }
                 }

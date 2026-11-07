@@ -989,6 +989,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         }
         (TopLevel.entries.firstOrNull { it.route == t.tab } ?: TopLevel.CALENDAR).let { dest -> if (dest.route != route) navigateTop(dest) }
     }
+    // [TRY-07] 1.39 발굴: '바뀐 곳' on the band walks the tabs the look changes, one by one.
+    val tourAt = liveTrial?.at ?: 0
+    LaunchedEffect(trialOn, tourAt) {
+        val t = com.bamnat.app.ui.recipe.LiveTryOn.trial.value ?: return@LaunchedEffect
+        TopLevel.entries.firstOrNull { it.route == t.tour.getOrNull(t.at) }?.let { dest -> if (dest.route != route) navigateTop(dest) }
+    }
     // The app left while trying on: the trial ends (nothing was saved), 입어 보기 waiting where it was.
     // [TRY-06] One with 기능 waits a little (a photo for a memo, a glance elsewhere) and then puts them back.
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
