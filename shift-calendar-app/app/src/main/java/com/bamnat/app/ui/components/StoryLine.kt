@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.bamnat.app.ui.theme.BamnatMotion
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.app.ui.theme.Tone
@@ -94,10 +95,12 @@ private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOp
     }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
         // 1.38 PC 12차 유형별 빈틈 9: last night's shift began yesterday, so its own time with "어제" over it, not the day's 00:00.
-        Column(Modifier.width(48.dp).padding(top = 12.dp)) {
-            if (line.fromYesterday) Text("어제", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // PC 12.3 빈틈 6: at 200% text '06:00' broke into '06:/00'. The column grows with the text, one line always.
+        Column(Modifier.width(timeColumn()).padding(top = 12.dp)) {
+            if (line.fromYesterday) Text("어제", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, softWrap = false)
             Text(hm(if (line.fromYesterday) e.start else line.from), style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
         }
         Box(Modifier.width(20.dp).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
             if (!last) Box(Modifier.padding(top = 14.dp).width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
@@ -125,10 +128,16 @@ private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOp
     }
 }
 
+/** The times' column: 48dp, wider as the phone's text grows so 'HH:MM' stays on one line, the same on every row. */
+@Composable
+private fun timeColumn(): androidx.compose.ui.unit.Dp =
+    with(androidx.compose.ui.platform.LocalDensity.current) { maxOf(48.dp, 42.sp.toDp()) }
+
 @Composable
 private fun NowMark() {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("지금", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(48.dp))
+        Text("지금", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(timeColumn()),
+            maxLines = 1, softWrap = false)
         Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.size(10.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
         }

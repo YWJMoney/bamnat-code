@@ -1357,7 +1357,9 @@ fun CalendarScreen(
                 com.bamnat.app.ui.guide.JournalHomeLine(Modifier.padding(horizontal = 16.dp), today = today)
             })
             // [CAL-51] On a low screen the user's parts above the month wait here too, after everything else.
-            if (low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown }.forEach { placed ->
+            // 1.38 PC 12.3 빈틈 7 (글자 200%: 근무 중인데 오늘의 흐름이 '알림 1개 더 보기' 안에 접힘): 오늘의 흐름 is one line now (#254),
+            // so it stays over the month on its own below, never folded with the notices.
+            if (low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.TODAY_FLOW }.forEach { placed ->
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
         }.let { all ->
@@ -1421,7 +1423,14 @@ fun CalendarScreen(
             }
         }
         // [CUST-01] The parts above the month in the user's order (화면 꾸미기); [CVW-06] the ones moved over it from below too.
-        if (low || holding) { if (!holding) aboveHeights[1] = 0 } else Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) {
+        if (low || holding) {
+            if (!holding) {
+                // 1.38 PC 12.3 빈틈 7: 오늘의 흐름's one line, by itself, on a low screen or at very large text.
+                val flow = calendarParts.firstOrNull { it.part == CalendarPart.TODAY_FLOW && isAbove(it.part) && it.shown }
+                if (flow != null) Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) { aboveParts[CalendarPart.TODAY_FLOW]?.second?.invoke() }
+                else aboveHeights[1] = 0
+            }
+        } else Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) {
             // [CNV-06] 요약·횟수 줄 above the month stay just over it (below).
             calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { placed ->
                 aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
