@@ -62,19 +62,22 @@ class MKVScreenshotTest : ScreenshotBase() {
         fun item(i: Int): RecipeItem = recipes[i].let { r ->
             val (scope, tabs) = sort(r)
             RecipeItem(code(i), r.title, r.summary, r.styles, r.cover, null, 1, likes = 30 - i % 20, dislikes = 0, users = 90 - i % 50, kept = null,
-                official = true, publicData = false, parent = null, at = Instant.parse("2026-11-01T00:00:00Z"), tabs = tabs, scope = scope)
+                official = true, publicData = false, parent = null, at = Instant.parse("2026-11-01T00:00:00Z"), tabs = tabs, scope = scope,
+                // 1.39 [MKC-04] 규칙·단추 작품 가운데 하나 걸러 하나는 1.39 새 기능 장치(값 칸·단추 위젯)를 써요.
+                fx = if (scope == "logic" && i % 2 == 0) listOf("values", "outside") else emptyList())
         }
 
         override val enabled = true
         override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) = RecipePage(
-            recipes.indices.map(::item).filter { style == null || style in it.styles }.filter {
+            recipes.indices.map(::item).filter { style == null || style in it.styles }.filter { !RecipeClient.fxOnly(kind) || it.fx.isNotEmpty() }.filter {
+                val k = RecipeClient.plain(kind)
                 when {
-                    kind == RecipeClient.SCOPE_THEME -> it.scope == "theme"
-                    kind == RecipeClient.SCOPE_LOGIC -> it.scope == "logic"
+                    k == RecipeClient.SCOPE_THEME -> it.scope == "theme"
+                    k == RecipeClient.SCOPE_LOGIC -> it.scope == "logic"
                     // 1.39 [MKC-01] 도구 (옛 규칙·단추로 열어도 도구로 가요).
-                    kind != null && kind.startsWith(RecipeClient.SCOPE_TOOL) -> it.scope == "logic" || it.scope == "part"
-                    kind != null && kind.startsWith(RecipeClient.SCOPE_TAB) -> it.scope == "tab" &&
-                        RecipeClient.tabOf(kind).let { t -> t.isEmpty() || t in it.tabs }
+                    k != null && k.startsWith(RecipeClient.SCOPE_TOOL) -> it.scope == "logic" || it.scope == "part"
+                    k != null && k.startsWith(RecipeClient.SCOPE_TAB) -> it.scope == "tab" &&
+                        RecipeClient.tabOf(k).let { t -> t.isEmpty() || t in it.tabs }
                     else -> true
                 }
             }.let { l ->
@@ -178,5 +181,53 @@ class MKVScreenshotTest : ScreenshotBase() {
         // The result under it, reached by scrolling (a tap on the words does nothing).
         tapText("‘오늘 하루 정리해요’ 알림이 떠요", exact = false)
         assertTrue(appears("‘오늘 하루 정리해요’ 알림이 떠요", exact = false))
+    }
+
+    /** 1.39 [MKC-04] '✦ 프로 기능' 칩: 도구 줄 전체 바로 다음, 고르면 새 기능 장치를 쓴 작품만, 카드에 무엇이 들었는지. */
+    @Test fun proWorksHaveTheirChip() = shoot("1523_mkc_fx_chip", PHONE) {
+        c.recipeApi = Market()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        val model = RecipeListViewModel(c)
+        content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        model.kind(RecipeClient.SCOPE_TOOL)
+        settle()
+        tapText("✦ 프로 기능", exact = true)
+        settle()
+        assertTrue(model.state.value.kind == RecipeClient.toolKind("", null, fx = true))
+        assertTrue("프로 기능 작품만", model.state.value.items.isNotEmpty() && model.state.value.items.all { it.fx.isNotEmpty() })
+        assertTrue("무엇이 들었는지 한 줄", appears("✦ 값 칸 · 단추 위젯·빠른 설정·바로가기", exact = true))
+        // 다른 칩을 고르면 '✦ 프로 기능'은 풀려요.
+        tapText("🧱 부품", exact = true)
+        settle()
+        assertTrue(!RecipeClient.fxOnly(model.state.value.kind))
+    }
+
+    /** 1.39 [MKC-04] 무료 폰의 상세: 프로 기능 카드에 하루 써 보기·프로 보기, 시작하면 넣는 길로. */
+    @Test fun aFreePhoneTastesAProWorkForADay() = shoot("1524_mkc_fx_card", PHONE) {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT, previewTier = com.bamnat.app.tier.Tier.FREE) }
+        val parts = setOf(com.bamnat.core.formula.FxPro.Part.VALUES, com.bamnat.core.formula.FxPro.Part.OUTSIDE)
+        var opened = 0
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(16.dp)) {
+                com.bamnat.app.ui.recipe.FxHeadLine(parts)
+                com.bamnat.app.ui.recipe.FxCard(parts, "FXTASTE23", applied = false) { opened++ }
+                com.bamnat.app.ui.recipe.FxHeadLine(emptySet())
+            }
+        }
+        settle()
+        assertTrue(appears("프로 기능이 든 작품", exact = true))
+        assertTrue(appears("✦ 들어 있는 것: 값 칸 · 단추 위젯·빠른 설정·바로가기", exact = true))
+        assertTrue("무료 작품은 무료라고", appears("무료 · 모두 무료로 넣고 쓸 수 있어요", exact = true))
+        assertTrue(appears("프로 보기", exact = true))
+        tapText("하루 써 보기", exact = true)
+        settle()
+        assertTrue(appears("하루 써 보기를 시작할까요?", exact = true))
+        tapText("시작하고 넣기", exact = true)
+        settle()
+        assertTrue("시작하면 넣는 길로", opened == 1)
+        assertTrue(com.bamnat.app.logic.FxAccess.status(c, "FXTASTE23") is com.bamnat.core.formula.FxTaste.Status.Using)
+        assertTrue(appears("하루 써 보기 중이에요", exact = false))
     }
 }

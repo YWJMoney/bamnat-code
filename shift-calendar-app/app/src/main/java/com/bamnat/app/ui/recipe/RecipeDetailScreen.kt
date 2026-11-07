@@ -158,6 +158,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                val fxParts = remember(r) { com.bamnat.app.logic.FxAccess.partsOf(r) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     RecipeCover(r.cover, 80.dp)
                     Spacer(Modifier.width(14.dp))
@@ -167,6 +168,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         Text(listOfNotNull(doc.item.nick?.let { "만든 분 $it" } ?: if (doc.item.official) "만든 분 밤낮" else "만든 분 이름 없음", "v${doc.item.version}",
                             RecipeDescribe.styles(r)).joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // 1.39 [MKC-04] 무료인지, 프로 기능이 들었는지 맨 위에서 한 줄로.
+                        FxHeadLine(fxParts)
                         // [RCX-05] The maker's page: their recipes, badges and 팔로우.
                         // [PRF-01] 1.36: the maker's 프로필 (테마·기능별 탭·모음, 팔로우) by name, a button big enough to see.
                         doc.item.maker?.let { m ->
@@ -247,6 +250,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 val tryFns = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.app.recipe.FunctionTrial.KINDS }
                 val ended by LiveTryOn.ended.collectAsStateWithLifecycle()
                 ended?.takeIf { it.code == vm.code }?.let { e -> TriedCard(LiveTryOn.say(e)) { LiveTryOn.forget() } }
+                // 1.39 [MKC-04] 프로 기능 작품: 무엇이 프로인지와 하루 써 보기·프로 보기. 하루 써 보기를 시작하면 평소 넣는 길로 (입어 보기, 아니면 넣기 확인).
+                FxCard(fxParts, vm.code, applied = s.appliedAt != null) { if (hasLooks) tryOn = true else confirming = true }
                 if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     // 7차 통합 347b7c37 PC 제안 (넣은 뒤에도 '입어 보고 고르기'로 남아요): once in, it says so and offers another look.
                     Text(when { s.applying -> "넣는 중…"; s.appliedAt != null -> (if (doc.item.scope == "tab") "✓ 넣은 작품 · 다시 입어 보기" else "✓ 입은 테마 · 다시 입어 보기"); else -> "입어 보고 고르기" })
