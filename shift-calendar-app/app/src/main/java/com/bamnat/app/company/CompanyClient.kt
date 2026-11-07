@@ -1190,7 +1190,7 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
             "팔로우 $follows".takeIf { follows > 0 }, "공유 링크 ${links}개".takeIf { links > 0 },
         )
         val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
-        val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 연결한 뒤 다시 누르면 마저 지워요" else ""
+        val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 인터넷이 연결되면 저절로 마저 지워요" else ""
         return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) + left
     }
 }
