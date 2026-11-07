@@ -89,6 +89,8 @@ object NoticeLinks {
         STOP_REPORT,
         /** [RUL-03] 1.36 a button or rule's 메모 틀 열기: a new memo on the day in [payload] from [com.bamnat.app.logic.LogicLinks.template]. */
         LOGIC_MEMO,
+        /** 1.39 [TASK-07] 할 일 위젯: memo `id|yyyy-mm-dd` in [payload] (id 0 is a new one on that day). */
+        MEMO_OPEN,
         /** 1.37 [LEDH-14] 가계부 with 돈 적기 open, from the 돈 적기 widget and the quick settings tile. */
         MONEY_ADD,
     }

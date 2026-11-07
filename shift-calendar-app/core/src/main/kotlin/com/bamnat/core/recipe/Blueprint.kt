@@ -32,6 +32,8 @@ object BlueprintParts {
         "money.cal", "money.cal.cell", "money.board", "money.board.col", "money.table", "money.table.row",
         "pay.head", "pay.total", "pay.row",
         "widget", "widget.head", "widget.cell",
+        // 1.39 [TASK-07] 할 일 위젯: 할 일 한 줄, 그 앞 동그라미, 머리의 ＋ 단추.
+        "widget.task", "widget.task.check", "widget.task.add",
     )
 
     /** The words the studio shows for each part. */
@@ -55,6 +57,7 @@ object BlueprintParts {
         "money.head" to "가계부 머리", "money.day" to "가계부 날짜 머리", "money.row" to "가계부 한 줄", "money.amount" to "금액",
         "pay.head" to "급여 머리", "pay.total" to "급여 합계", "pay.row" to "급여 한 줄",
         "widget" to "위젯", "widget.head" to "위젯 머리", "widget.cell" to "위젯 칸",
+        "widget.task" to "할 일 한 줄", "widget.task.check" to "할 일 동그라미", "widget.task.add" to "할 일 ＋ 단추",
     )
 
     /**
@@ -104,7 +107,9 @@ object BlueprintParts {
 
     /** The states a line may be for (`on`), in the order they lay over each other. */
     val STATES: List<String> = listOf(
-        "role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today", "sel",
+        "role.day", "role.eve", "role.night", "role.long", "role.off", "role.other", "in", "out", "sat", "sun", "holiday", "dim", "today",
+        // 1.39 [TASK-07] 할 일 위젯의 한 줄: 늦은 할 일, 끝낸 할 일 (끝냄이 늦음 위에).
+        "late", "done", "sel",
         // [BLU-12] 어두운 화면: not a state a part asks for, it is laid over the part's own line once for the whole app ([Blueprint.forDark]).
         "dark",
     )

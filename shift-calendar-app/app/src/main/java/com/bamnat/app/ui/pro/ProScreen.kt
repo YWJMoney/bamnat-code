@@ -104,8 +104,8 @@ val PRO_PILLARS = listOf(
         listOf("끄기 미션(계산 문제·흔들기), 근무마다 다르게", "끈 뒤 ‘일어났나요?’ 묻고 답이 없으면 한 번 더 울림"),
         setOf(Feature.SURE_ALARM)),
     Pillar("더 넓게, 깔끔하게",
-        listOf("돈 통계: 지난달 비교, 분류별 지출, 올해 흐름", "추가 달력 2개째부터", "광고 없음"),
-        setOf(Feature.MONEY_STATS, Feature.MORE_CALENDARS, Feature.NO_ADS)),
+        listOf("돈 통계: 지난달 비교, 분류별 지출, 올해 흐름", "추가 달력 2개째부터", "할 일 위젯 2개째부터(화면마다, 크기마다)", "광고 없음"),
+        setOf(Feature.MONEY_STATS, Feature.MORE_CALENDARS, Feature.MORE_TASK_WIDGETS, Feature.NO_ADS)),
     // [FREE-10] 1.35 꾸미기 혜택 (사용자 2026-10-30 "꾸미기 혜택을 추가해서 프로의 장점을 살리는").
     Pillar("내 마음대로 꾸미기",
         listOf("테마를 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 두고 한 번에 바꿔 입기", "다른 분이 만든 테마도 광고 없이, 기간 없이",
