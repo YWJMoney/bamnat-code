@@ -1213,9 +1213,16 @@ private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {
                 Text(line.label, style = com.bamnat.app.ui.parts.PartMods.text(part, MaterialTheme.typography.bodyLarge), modifier = Modifier.weight(1f, fill = false))
                 if (line.estimated) { Spacer(Modifier.width(6.dp)); EstimatedChip("추정", onClick = onEstimate.takeIf { unlocked }) }
             }
-            if (line.minutes > 0) {
-                Text("${PayCalculator.hours(line.minutes)} × ${PayCalculator.pct(line.multiplier)}",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // [PAYX-55] 1.38 PC 12.5: a line with no one rate (회사 규칙, 직접 넣은 규칙) read '4시간 × 0%'; it says how it was worked out.
+            val how = when {
+                line.minutes <= 0 -> null
+                line.multiplier > 0 && line.hourly > 0 -> "${PayCalculator.hours(line.minutes)} × ${won(line.hourly)} × ${PayCalculator.pct(line.multiplier)}"
+                line.multiplier > 0 -> "${PayCalculator.hours(line.minutes)} × ${PayCalculator.pct(line.multiplier)}"
+                else -> line.formula.ifBlank { PayCalculator.hours(line.minutes) }
+            }
+            if (how != null) {
+                Text(how, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
         }
         // [FREE-07] What is taken off in 급여 모양's own colour, when it reads on the page.

@@ -66,4 +66,15 @@ class SchoolingInShiftTest {
         val r = PayCalculator().calculate(ruled, nov, resolver(ExtraEntry(50, t(9), t(13)))::resolve, checks = false)
         assertEquals(plain.total + 10_000, r.total)
     }
+
+    /** [PAYX-55] 1.38 PC 12.5: the month's 교육 line says the numbers it was paid on, not "4시간 × 0%". */
+    @Test fun theSchoolingLineSaysItsNumbers() {
+        val profile = WorkForms.apply(WorkForm.OFFICE, 2_430_000, LocalDate.of(2026, 11, 1))
+        val unit = ExtraRule.lawUnit(0.5, 0.5, 0.5, restAsHoliday = false).copy(monthlyHours = 243)
+        val ruled = profile.copy(rules = profile.rules.copy(extra = profile.rules.extra + (50L to unit)))
+        val r = PayCalculator().calculate(ruled, nov, resolver(ExtraEntry(50, t(19), t(23)))::resolve, checks = false)
+        val line = r.lines.singleOrNull { it.kind == com.bamnat.core.pay.LineKind.EXTRA } ?: error(r.lines.joinToString { it.label + "|" + it.formula })
+        assertTrue(line.formula, "4시간 ×" in line.formula && "243" in line.formula && "0%" !in line.formula.replace("50%", ""))
+        assertTrue(line.hourly > 0)
+    }
 }

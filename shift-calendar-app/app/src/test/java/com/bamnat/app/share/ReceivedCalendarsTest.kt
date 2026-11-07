@@ -39,8 +39,8 @@ class ReceivedCalendarsTest {
         s.put("AAAAAAAAAAAAAAAA", share("간호2팀"))
         val again = store()
         assertEquals("AAAAAAAAAAAAAAAA", again.mine()?.id)
-        assertEquals("받은 근무표 · 간호2팀 · 11월 1일까지", again.mine()?.mineLine(short = true))
-        assertTrue(again.mine()!!.mineLine().startsWith("간호2팀에서 받아요 · 11월 1일까지 받았어요"))
+        assertEquals("받은 근무표 · 간호2팀 · 11월 근무표", again.mine()?.mineLine(short = true))
+        assertTrue(again.mine()!!.mineLine().startsWith("간호2팀에서 받아요 · 11월 근무표를 받았어요"))
         again.markGone("AAAAAAAAAAAAAAAA")
         assertEquals("받은 근무표 · 링크가 끊겼어요", again.mine()?.mineLine(short = true))
     }
