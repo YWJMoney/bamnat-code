@@ -124,6 +124,9 @@ class PlazaHomeViewModel(
     val olderMore: StateFlow<Boolean> = _olderMore.asStateFlow()
     private val _loadingOlder = MutableStateFlow(false)
     val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
+    // [PLZC-22] 선배 답 모음 of this kind of work's plaza.
+    private val _picks = MutableStateFlow<List<com.bamnat.app.company.PlazaPick>>(emptyList())
+    val picks: StateFlow<List<com.bamnat.app.company.PlazaPick>> = _picks.asStateFlow()
     // [PLZC-21] 오늘 출근: my shift today (night or day) from my calendar.
     private val _todayShift = MutableStateFlow<com.bamnat.core.plaza.PlazaTag.Now?>(null)
     val todayShift: StateFlow<com.bamnat.core.plaza.PlazaTag.Now?> = _todayShift.asStateFlow()
@@ -198,13 +201,16 @@ class PlazaHomeViewModel(
 
     fun refreshMine() {
         val room = _plan.value.room?.takeIf { it.startsWith("style-") && c.plazaTags.on }
-        if (room == null) { _mine.value = null; _timeLine.value = null; return }
+        if (room == null) { _mine.value = null; _timeLine.value = null; _picks.value = emptyList(); return }
         viewModelScope.launch {
             val day = runCatching { withContext(Dispatchers.Default) { c.plazaTags.dayFor(room) } }.getOrNull()
             if (_plan.value.room != room) return@launch
             _mine.value = day?.tag?.copy(months = if (c.plazaTags.scope().months) 0 else null)
             _timeLine.value = day?.let { timeLine(it.tag.now, it.offAfterNight, it.dayOff) }
             _todayShift.value = day?.todayShift
+            // [PLZC-22] 선배 답 모음, my 근무형태 first.
+            val got = runCatching { c.companyApi.plazaPicks(room) }.getOrDefault(emptyList())
+            if (_plan.value.room == room) _picks.value = got.sortedByDescending { it.form != null && it.form == day?.tag?.form }
             // [PLZC-41] the 근무형태 같은 근무 새 질문 알림 watches follows the calendar.
             com.bamnat.app.company.PlazaPush.syncWatch(c)
         }
@@ -372,9 +378,12 @@ fun PlazaHomeScreen(
                 if (people) {
                     // 1.39 [PLZC-01] 사람 먼저: the talk is the page; 정보·고친 점·시세 are doors on one line above it.
                     // 다른 회사 규칙 means something to a company's room and to 교대·일근 (J133-71), not to 알바·현장·가게·투자.
+                    val picks = vm.picks.collectAsStateWithLifecycle().value
+                    var picksOpen by remember { mutableStateOf(false) }
+                    if (picksOpen) PlazaPicksDialog(picks, vm.mine.collectAsStateWithLifecycle().value?.form) { picksOpen = false }
                     PlazaDoors(plan, onCompany = { plan.room?.let(onCompany) }, onShare = onShare, onRates = onRates,
                         onAll = onAll.takeIf { plan.top == StylePlaza.Top.COMPANY_ROOM || plan.room == StylePlaza.SHIFT || plan.room == StylePlaza.DAY },
-                        onFind = onFind)
+                        onFind = onFind, picks = picks.size, onPicks = { picksOpen = true })
                     FreshAnswers(state, vm.seen.collectAsStateWithLifecycle().value) { vm.openTalk() }
                     PlazaFeed(vm.container, vm, plan, state.talk, state.error,
                         older = vm.older.collectAsStateWithLifecycle().value,
@@ -524,8 +533,10 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun PlazaDoors(plan: StylePlaza.Plan, onCompany: () -> Unit, onShare: () -> Unit, onRates: () -> Unit, onAll: (() -> Unit)?,
-    onFind: (() -> Unit)? = null) {
+    onFind: (() -> Unit)? = null, picks: Int = 0, onPicks: () -> Unit = {}) {
     val doors = buildList {
+        // 1.39 [PLZC-22] 선배 답 모음 first: what this plaza already learned.
+        if (picks > 0) add("📚 선배 답 모음 $picks" to onPicks)
         if (plan.top == StylePlaza.Top.COMPANY_ROOM) {
             add("📋 근무·급여 정보" to onCompany)
             add("✏️ 고친 점" to onCompany)
@@ -551,4 +562,34 @@ private fun FreshAnswers(state: PlazaHomeViewModel.State, seen: Long, onOpen: ()
     val fresh = if (seen == 0L || mine.isEmpty()) 0 else t.posts.count { it.parent in mine && !it.mine && it.at.toEpochMilli() > seen }
     if (fresh > 0) Text("💬 내 글에 새 답 ${fresh}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.clickable(onClickLabel = "새 답 보기", onClick = onOpen).padding(vertical = 4.dp))
+}
+
+/** 1.39 [PLZC-22] 선배 답 모음: the answers the operator kept from this plaza, my 근무형태's first; a tap opens the answer. */
+@Composable
+private fun PlazaPicksDialog(picks: List<com.bamnat.app.company.PlazaPick>, myForm: com.bamnat.core.pay.WorkForm?, onDismiss: () -> Unit) {
+    var open by remember { mutableStateOf<String?>(picks.firstOrNull()?.id) }
+    com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("선배 답 모음") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("이 광장에서 도움이 된 답을 운영자가 골라 모았어요." + if (myForm != null) " ${myForm.label} 분들 답이 먼저예요." else "",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                picks.forEach { p ->
+                    val shown = open == p.id
+                    Column(Modifier.fillMaxWidth().clickable(onClickLabel = if (shown) "접기" else "답 보기") { open = if (shown) null else p.id }
+                        .padding(vertical = 6.dp)) {
+                        Text((if (shown) "▾ " else "▸ ") + p.title, style = MaterialTheme.typography.titleSmall)
+                        p.form?.let { Text(it.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
+                        if (shown) {
+                            Text("Q. ${p.question}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp))
+                            Text("A. ${p.answer}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 2.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }

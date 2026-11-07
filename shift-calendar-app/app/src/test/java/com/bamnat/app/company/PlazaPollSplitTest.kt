@@ -38,4 +38,13 @@ class PlazaPollSplitTest {
         assertEquals(com.bamnat.core.plaza.WorkCard(8, 5, 2, 4, 3), t.posts[0].card)
         assertNull(t.posts[1].card)
     }
+
+    @Test
+    fun `PLZC-22 선배 답 모음 read, an empty one left out`() {
+        val picks = plazaPicksOf(JSONObject("""{"items":[{"id":"k1","title":"야간 뒤 바로 잠드는 법","form":"FOUR_TEAM","question":"잠이 안 와요","answer":"암막 커튼"},
+            {"id":"k2","title":"","question":"q","answer":"a"},{"id":"k3","title":"알람 두 개","question":"q","answer":"a"}]}"""))
+        assertEquals(listOf("k1", "k3"), picks.map { it.id })
+        assertEquals(WorkForm.FOUR_TEAM, picks[0].form)
+        assertNull(picks[1].form)
+    }
 }

@@ -341,6 +341,15 @@ data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val 
 /** 1.39 [PLZC-12] 머리 숫자 of a kind of work's plaza; [checkin] [PLZC-21] 오늘 출근 where the room has it. */
 data class Pulse(val today: Int, val waiting: Int, val working: Int, val checkin: Checkin? = null)
 
+/** 1.39 [PLZC-22] 선배 답 모음: an answer the operator picked, with its question; [form] the question's 근무형태 when it had one. */
+data class PlazaPick(val id: String, val title: String, val form: com.bamnat.core.pay.WorkForm?, val question: String, val answer: String)
+
+internal fun plazaPicksOf(o: JSONObject): List<PlazaPick> = o.optJSONArray("items").objects().mapNotNull { p ->
+    val id = p.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+    PlazaPick(id, p.optString("title"), p.optString("form").takeIf { it.isNotEmpty() }
+        ?.let { f -> com.bamnat.core.pay.WorkForm.entries.firstOrNull { it.name == f } }, p.optString("question"), p.optString("answer"))
+}.filter { it.title.isNotBlank() && it.answer.isNotBlank() }
+
 /** 1.39 [PLZC-21] 오늘 출근: today's taps by kind (day·night in 교대, go·rain in 현장) and this phone's own. */
 data class Checkin(val counts: Map<String, Int>, val mine: String? = null)
 
@@ -664,6 +673,9 @@ interface CompanyApi {
     /** 1.36 [VIL-13] My newest posts and replies in the plazas. */
     suspend fun myPosts(device: String): List<MyPost> = throw CompanyException("offline")
 
+    /** 1.39 [PLZC-22] 선배 답 모음 of a kind of work's plaza ([room]); empty before plaza.people. */
+    suspend fun plazaPicks(room: String): List<PlazaPick> = emptyList()
+
     /** 1.39 [PLZC-21] 오늘 출근 한 번 누르기 in [room] ([kind] null takes it back); today's counts come back. */
     suspend fun plazaCheckin(device: String, room: String, kind: String?): Checkin = throw CompanyException("offline")
 
@@ -965,6 +977,10 @@ class CompanyClient(
 
     override suspend fun myPosts(device: String): List<MyPost> = serverCall {
         myPostsOf(exchange("GET", "/api/posts/mine", device = device).json)
+    }
+
+    override suspend fun plazaPicks(room: String): List<PlazaPick> = serverCall {
+        plazaPicksOf(exchange("GET", "/api/plaza/picks?room=" + URLEncoder.encode(room, "UTF-8")).json)
     }
 
     override suspend fun plazaCheckin(device: String, room: String, kind: String?): Checkin = serverCall {

@@ -92,6 +92,7 @@ import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.j
 import { makerMarks } from "./maker-mark.js";
 import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleCard, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut, pollByForm } from "./plaza-people.js";
 import { PLAZA_CHECKIN_SCHEMA, plazaCheckinRoute, plazaCheckins } from "./plaza-checkin.js";
+import { PLAZA_PICKS_SCHEMA, plazaPicksAdmin, plazaPicksRoute } from "./plaza-picks.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
 import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute } from "./plaza-push.js";
@@ -562,6 +563,7 @@ async function routeOnce(request, env, url, ctx) {
   // 1.39 [PLZC-41] 같은 근무 새 질문 알림을 받을 광장.
   if (path === "/api/plaza/watch" && (method === "POST" || method === "DELETE")) return plazaWatchRoute(request, env, await peopleOn(env));
   if (path === "/api/plaza/checkin" && method === "POST") return plazaCheckinRoute(request, env, await peopleOn(env));
+  if (path === "/api/plaza/picks" && method === "GET") return plazaPicksRoute(request, env, url, await peopleOn(env));
   // 1.36 누락 점검 N13: 찾아도 없던 말 ('없다고 알리기').
   if (path === "/api/growth/miss") { const r = await growthRoute(request, env, path, url); if (r) return r; }
   // 1.38 [EASE-31] 밤낮 Q&A (마을): 관리자가 공개로 고른 자주 쓰는 답.
@@ -843,6 +845,7 @@ const SCHEMA = [
   ...FCM_SCHEMA,
   ...PLAZA_PUSH_SCHEMA,
   ...PLAZA_CHECKIN_SCHEMA,
+  ...PLAZA_PICKS_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -4897,6 +4900,8 @@ function areaFor(path) {
   // 1.39 [CARE-05] 마을 돌봄(경고·쉬기)도 글을 돌보는 사람이.
   if (path === "/care" || path.startsWith("/care/")) return "community";
   if (path.startsWith("/village/")) return "community";
+  // 1.39 [PLZC-22] 광장 답 모음도 마을을 돌보는 사람이.
+  if (path === "/plaza/picks" || path.startsWith("/plaza/picks/")) return "community";
   // 1.36 [GRW-02] 스튜디오 요구는 문의를 맡은 사람이, 기본 도구 후보는 장터를 맡은 사람이.
   if (path.startsWith("/growth/needs")) return "inquiries";
   if (path.startsWith("/growth/")) return "community";
@@ -5088,6 +5093,14 @@ async function signedRoute(request, env, url, path, method, now, session) {
   }
   // 1.39 [CARE-05] 마을 돌봄: 경고·의견 쉬기·마을 쉬기 목록, 사람 하나, 보내기, 풀기.
   if (path === "/care" || path.startsWith("/care/")) return careAdmin(request, env, url, path, method, now);
+  // 1.39 [PLZC-22] 광장 답 모음.
+  if (path === "/plaza/picks" || path.startsWith("/plaza/picks/")) {
+    const v = await plazaPicksAdmin(request, env, path, now, STYLE_ROOMS);
+    if (v) {
+      if (request.method !== "GET") await audit(env, now, "plaza_pick", path);
+      return v;
+    }
+  }
   // 1.36 [VIL-11] 이번 주 이야기 주제 of each kind of work's plaza.
   if (path.startsWith("/village/")) {
     const v = await villageAdmin(recipeDeps, request, env, path, now, STYLE_ROOMS);

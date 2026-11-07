@@ -184,13 +184,19 @@ internal object Lens {
     const val QUESTION = "question"
     const val TIP = "tip"
     const val SHOW = "show"
+    /** 1.39 [PLZC-32] 야간 라운지: while my calendar says I am on a night shift, the posts of others awake at work tonight. */
+    const val LOUNGE = "lounge"
 }
+
+/** [PLZC-32] How far back 야간 라운지 looks. */
+private const val LOUNGE_HOURS = 12L
 
 /** Whether [p] (a top post) answers to [lens], with my tag for 나와 같은 근무 and 같은 업종, and the answers under it. */
 internal fun inLens(p: TalkPost, lens: String, mine: PlazaTag?, answers: List<TalkPost>): Boolean = when (lens) {
     Lens.SAME -> mine?.form != null && p.tag?.form == mine.form
     Lens.INDUSTRY -> mine?.industry != null && p.tag?.industry == mine.industry
     Lens.WORKING -> p.tag?.now != null
+    Lens.LOUNGE -> p.tag?.now == PlazaTag.Now.NIGHT && p.at.isAfter(com.bamnat.core.time.Today.instant().minusSeconds(LOUNGE_HOURS * 3600))
     // No answer yet from anyone but the one who asked (참여자 N is the same writer within a talk; unnumbered counts as another).
     Lens.WAITING -> p.kind == "question" && answers.none { a -> if (p.mine) !a.mine else a.mine || a.who == 0 || a.who != p.who }
     Lens.QUESTION, Lens.TIP, Lens.SHOW -> p.kind == lens
@@ -276,7 +282,7 @@ internal fun CheckinRow(room: String?, checkin: com.bamnat.app.company.Checkin, 
  * Null when it has nothing to say.
  */
 internal fun timeLine(now: PlazaTag.Now?, offAfterNight: Boolean, dayOff: Boolean): Pair<String, String>? = when {
-    now == PlazaTag.Now.NIGHT -> "야간 근무 중이시네요 · 지금 깨어 있는 분들 글이에요" to Lens.WORKING
+    now == PlazaTag.Now.NIGHT -> "🌙 야간 근무 중이시네요 · 야간 라운지에 지금 깨어 있는 분들이 있어요" to Lens.LOUNGE
     now == PlazaTag.Now.DAY -> "근무 중이시네요 · 쉬는 시간에 한 줄 남겨 보세요" to Lens.ALL
     offAfterNight -> "야간 끝나셨어요? 오늘 밤 어땠는지 한 줄 남겨 보세요" to Lens.ALL
     dayOff -> "쉬는 날이에요 · 이번 주 이야기를 둘러봐요" to Lens.ALL
@@ -316,7 +322,15 @@ internal fun PlazaFeed(
             PlazaTagLine(mine, Modifier.weight(1f))
             TextButton(onClick = { scopeOpen = true }) { Text("보일 것 고르기") }
         }
+        // [PLZC-32] On a night shift the plaza opens as 야간 라운지 once (a tap on 전체 stays).
+        val night = styleRoom && mine?.now == PlazaTag.Now.NIGHT
+        var loungeOpened by rememberSaveable(plan.room) { mutableStateOf(false) }
+        androidx.compose.runtime.LaunchedEffect(night) {
+            if (night && !loungeOpened) { loungeOpened = true; if (lens == Lens.ALL) lens = Lens.LOUNGE }
+            if (!night && lens == Lens.LOUNGE) lens = Lens.ALL
+        }
         val lenses = buildList {
+            if (night) add(Lens.LOUNGE to "🌙 야간 라운지")
             add(Lens.ALL to "전체")
             if (styleRoom && mine?.form != null) add(Lens.SAME to "나와 같은 근무 · ${mine.form!!.label}")
             if (styleRoom && mine?.industry != null) add(Lens.INDUSTRY to "같은 업종 · ${IndustryGroups.byKey(mine.industry)?.name}")
@@ -354,7 +368,11 @@ internal fun PlazaFeed(
                 }
                 if (tops.isEmpty()) Text("아직 글이 없어요. 처음 이야기를 꺼내 주세요.", style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(vertical = 16.dp))
-                else if (shown.isEmpty() && lifted == null) Text(if (lens == Lens.WAITING) "답을 기다리는 질문이 없어요" else "이렇게 고른 글이 아직 없어요",
+                else if (shown.isEmpty() && lifted == null) Text(when (lens) {
+                    Lens.WAITING -> "답을 기다리는 질문이 없어요"
+                    Lens.LOUNGE -> "오늘 밤 라운지는 아직 조용해요. 야간 중인 분들께 먼저 한 줄 남겨 보세요"
+                    else -> "이렇게 고른 글이 아직 없어요"
+                },
                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
                 shown.forEach { p -> androidx.compose.runtime.key(p.id) {
                     FeedCard(p, answersOf[p.id].orEmpty(), inSheet = talk.posts.any { it.id == p.id },

@@ -254,3 +254,27 @@ test("[PLZC-20] 근무 카드: numbers only, on a top post where days at work co
   const reply = (await call("POST", "/api/posts", { device: device(2), company: "style-shift", setup: "room", body: "고생 많으세요", parent: id, card }, from(2))).data.id;
   assert.equal((await read(call, 3, "style-shift")).data.posts.find((p) => p.id === reply).card, undefined);
 });
+
+test("[PLZC-22] 광장 답 모음: the operator picks a helped answer, the app reads it after 3.12, a hidden one drops out", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const admin = await signIn(call);
+  await policyOn(call);
+  const q = (await write(call, 1, "style-shift", "야간 끝나고 바로 잠이 안 와요", { s: "SHIFT", f: "FOUR_TEAM" }, { kind: "question" })).data.id;
+  const a = (await call("POST", "/api/posts", { device: device(2), company: "style-shift", setup: "room", body: "암막 커튼이랑 귀마개 쓰고 바로 누워요", parent: q }, from(2))).data.id;
+  const b = (await call("POST", "/api/posts", { device: device(3), company: "style-shift", setup: "room", body: "저도 궁금해요", parent: q }, from(3))).data.id;
+  assert.equal((await call("POST", `/api/posts/${q}/answer`, { device: device(1), reply: a }, from(1))).status, 200);
+  const list = (await call("GET", "/api/admin/plaza/picks", undefined, admin)).data.items.find((x) => x.room === "style-shift");
+  assert.deepEqual(list.candidates.map((c) => [c.answer, c.chosen, c.form]), [[a, true, "FOUR_TEAM"]], "only the chosen one, not '저도 궁금해요'");
+  assert.equal((await call("POST", "/api/admin/plaza/picks", { answer: b, title: "x".repeat(41) }, admin)).data.error, "title");
+  assert.equal((await call("POST", "/api/admin/plaza/picks", { answer: q, title: "질문은 안 돼요" }, admin)).data.error, "answer");
+  assert.equal((await call("POST", "/api/admin/plaza/picks", { answer: a, title: "야간 뒤 바로 잠드는 법" }, admin)).status, 200);
+  const items = (await call("GET", "/api/plaza/picks?room=style-shift", undefined, as(5))).data.items;
+  assert.deepEqual(items.map((x) => [x.title, x.form, x.question, x.answer]),
+    [["야간 뒤 바로 잠드는 법", "FOUR_TEAM", "야간 끝나고 바로 잠이 안 와요", "암막 커튼이랑 귀마개 쓰고 바로 누워요"]]);
+  assert.equal((await call("GET", "/api/admin/plaza/picks", undefined, admin)).data.items.find((x) => x.room === "style-shift").candidates.length, 0);
+  // The writer takes the answer down: it is gone from the 모음 too.
+  assert.equal((await call("DELETE", `/api/posts/${a}`, undefined, as(2))).status < 300, true);
+  assert.deepEqual((await call("GET", "/api/plaza/picks?room=style-shift", undefined, as(5))).data.items, []);
+  assert.equal((await call("GET", "/api/plaza/picks?room=style-x", undefined, as(5))).status, 400);
+});
