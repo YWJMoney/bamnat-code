@@ -297,6 +297,8 @@ data class TalkPost(
     val first: Boolean = false,
     /** 1.39 [PLZC-16] How many of the writer's answers someone else's question picked (도움 n), beside a 마을 이름. */
     val helped: Int = 0,
+    /** 1.39 [PLZC-40] 🏅 이달의 제작자·⭐ 인기 제작자 beside a 마을 이름 (the same as on 장터's cards). */
+    val mark: com.bamnat.core.plaza.MakerMark? = null,
 )
 
 /** 1.36 [VIL-10] 마을 V10 투표 글: 2~4 choices, how many picked each, and which one this phone picked (null: none yet). */
@@ -1398,6 +1400,7 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             tag = p.optJSONObject("tag")?.let { t -> com.bamnat.core.plaza.PlazaTag.of { k -> t.opt(k)?.takeIf { it != JSONObject.NULL } } },
             first = p.optBoolean("first", false),
             helped = p.optInt("helped", 0).coerceIn(0, 100_000),
+            mark = com.bamnat.core.plaza.MakerMark.of(p.optString("mark", "").ifEmpty { null }),
         )
     },
     mutedUntil = o.optStringOrNull("mutedUntil")?.let(Instant::parse),

@@ -89,6 +89,7 @@ import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, con
 import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
 import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
+import { makerMarks } from "./maker-mark.js";
 import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut } from "./plaza-people.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
@@ -4061,6 +4062,8 @@ async function talkData(request, env, companyId, grp, known = null) {
     }
   }
   const makers = new Map(makerRows.filter((m) => !m.hidden && !m.closed).map((m) => [m.device, m.maker]));
+  // 1.39 [PLZC-40] 🏅·⭐ 제작자 표식 beside a name (the same as on 장터's cards), once plaza.people is on.
+  const marks = people && makers.size ? await makerMarks(recipeDeps, env, [...makers.values()], now) : null;
   const review = new Set(reviewRows.map((r) => r.post_id));
   const proposals = new Map(proposalRows.map((r) => [r.id, r]));
   // [PLZ-02] Where each proposal's setup stands, every one in one round.
@@ -4093,6 +4096,7 @@ async function talkData(request, env, companyId, grp, known = null) {
       // 1.36 [V3] 마을 이름 하나: shown in a kind of work's 광장 (with the 프로필 it leads to), never in a company's.
       nick: style ? nicks.get(p.device) ?? null : null,
       ...(style && makers.has(p.device) ? { maker: makers.get(p.device) } : {}),
+      ...(marks?.get(makers.get(p.device))?.mark ? { mark: marks.get(makers.get(p.device)).mark } : {}),
       stance: senders.has(p.device) ? "sender" : v ? (v.ok ? "ok" : "bad") : null,
       verified: verified.has(p.device) || v?.verified === 1,
       body: p.body,

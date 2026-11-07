@@ -170,6 +170,8 @@ class SettingsFilesBackup(
             Part("wish_off"),
             // 1.36 [VIL-13] 마을 › 간직한 글: posts kept to read again, only on the phone (the server keeps no list).
             Part("village_saved"),
+            // 1.39 [PLZC-10] 광장 근무 태그에 무엇을 보일지(근무형태·업종·개월·근무 중): 새 휴대폰에서도 같게.
+            Part("plaza_tag"),
             // [FREE-10] 1.35 테마 옷장: 입었던 테마, 내 테마, the look kept aside while a theme is on. The 3일 전 notice said and
             // the 프로 mark are this phone's.
             // [R136-03] 1.36: the day each calendar started on this phone (깐 날 표시), so a restored phone says the same day.
