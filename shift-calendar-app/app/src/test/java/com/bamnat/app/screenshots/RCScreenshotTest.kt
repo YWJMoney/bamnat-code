@@ -101,9 +101,9 @@ class RCScreenshotTest : ScreenshotBase() {
         // [CNV-13] the tool row opens with 펼치기 instead of sliding it.
         tapText("도구 줄 모두 펼쳐 보기", exact = true)
         tapText("보관함", prefix = true)
-        tapText("장터 ‘기능별 탭 › 달력’에서 찾기", exact = true)
+        tapText("장터 ‘탭별 작품 › 달력’에서 찾기", exact = true)
         assertTrue("장터 on its own, with 뒤로", appears("코드로 받기", exact = true))
-        assertTrue(appears("탭 하나만", exact = true))
+        assertTrue(appears("탭 하나를 위해", exact = true))
         back()
         assertTrue("뒤로 → the studio", appears("화면: 달력 ▾", exact = true))
     } }
@@ -123,7 +123,7 @@ class RCScreenshotTest : ScreenshotBase() {
         model.query("없는이름가나"); model.load()
         settle()
         assertTrue(appears("‘없는이름가나’에 맞는 작품이", exact = false))
-        assertTrue(appears("기능별 탭에서 찾기", exact = true))
+        assertTrue(appears("탭별 작품에서 찾기", exact = true))
     }
 
     @Test fun theListOfAKindOfWork() = shoot("1340_rcp_list_shift", PHONE) {

@@ -45,6 +45,10 @@ data class RecipeItem(
     val scope: String? = null,
     /** 1.36 [VIL-18] The first work of a new maker, given a place in 요즘 뜨는·좋은 순. */
     val newMaker: Boolean = false,
+    /** 1.39 [MKC-01] 테마·탭별 작품이 바꾸는 것: "look" 꾸미기, "func" 기능, "both"; null from a server before 1.39. */
+    val made: String? = null,
+    /** 1.39 [MKC-01] 도구의 종류 (part 부품, rule 자동 규칙, button 단추); empty for a 테마·탭별 작품 or from a server before 1.39. */
+    val tools: List<String> = emptyList(),
 )
 
 /**
@@ -374,10 +378,17 @@ class RecipeClient(
             when {
                 kind == SCOPE_THEME -> { add("scope=theme"); add("kind=skin") }
                 kind == SCOPE_LOGIC -> { add("scope=logic"); add("kind=rules") }
+                // 1.39 [MKC-01] 도구: 부품과 규칙·단추를 함께 (tool= 종류, tab= 쓰는 화면). A server before 1.39 reads kind=rules (규칙·단추만).
+                kind != null && kind.startsWith(SCOPE_TOOL) -> {
+                    add("scope=tool"); add("kind=rules")
+                    toolOf(kind).takeIf { it in TOOL_KINDS }?.let { add("tool=$it") }
+                    toolOn(kind)?.let { add("tab=$it") }
+                }
                 kind != null && kind.startsWith(SCOPE_TAB) -> {
                     add("scope=tab")
-                    val t = kind.removePrefix(SCOPE_TAB)
+                    val t = tabOf(kind)
                     if (t in MARKET_TABS) { add("tab=$t"); legacyKind(t)?.let { add("kind=$it") } }
+                    madeOf(kind)?.let { add("made=$it") }
                 }
                 else -> kind?.takeIf { it in KINDS }?.let { add("kind=$it") }
             }
@@ -711,6 +722,8 @@ class RecipeClient(
                 o.optBoolean("showcase"), ThemeSwatch.of(o.optJSONObject("look")),
                 o.optJSONArray("tabs")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(), o.optStringOrNull("scope"),
                 o.optBoolean("newMaker"),
+                o.optStringOrNull("made")?.takeIf { it == "look" || it == "func" || it == "both" },
+                o.optJSONArray("tools")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it in TOOL_KINDS } }.orEmpty(),
             )
         }
 
@@ -720,8 +733,22 @@ class RecipeClient(
         /** [MKX-01] 1.36 장터 구간: [SCOPE_THEME], or [SCOPE_TAB] + one of [MARKET_TABS] ("tab:" alone: every tab's). */
         const val SCOPE_THEME = "theme"
         const val SCOPE_TAB = "tab:"
-        /** [RUL-07] 1.36 장터 '규칙·단추' 구간 (서버 scope `logic`, 갈래 F sectionOf). */
+        /** [RUL-07] 1.36 장터 '규칙·단추' 구간 (서버 scope `logic`, 갈래 F sectionOf). 1.39부터는 도구([SCOPE_TOOL])의 한 갈래로 열려요. */
         const val SCOPE_LOGIC = "logic"
+        /**
+         * 1.39 [MKC-01] 장터 '도구' 구간 (사용자 2026-11-07 "도구 또한 분류를 나눠서"): 지금 입은 테마나 기본 모양 위에 하나만 더하는 것 — 부품
+         * (서버 scope `part`)과 규칙·단추 (`logic`). "tool:" alone: every tool; "tool:<종류>" one of [TOOL_KINDS]; "@<탭>" the screen it works on.
+         */
+        const val SCOPE_TOOL = "tool:"
+        val TOOL_KINDS = listOf("part", "rule", "button")
+        /** 1.39 [MKC-01] 탭별 작품의 꾸미기·기능: "tab:<탭>~look" or "~func". */
+        val MADE_KINDS = listOf("look", "func")
+        fun tabOf(kind: String?): String = kind.orEmpty().removePrefix(SCOPE_TAB).substringBefore('~')
+        fun madeOf(kind: String?): String? = kind?.takeIf { it.startsWith(SCOPE_TAB) }?.substringAfter('~', "")?.takeIf { it in MADE_KINDS }
+        fun toolOf(kind: String?): String = kind.orEmpty().removePrefix(SCOPE_TOOL).substringBefore('@')
+        fun toolOn(kind: String?): String? = kind?.takeIf { it.startsWith(SCOPE_TOOL) }?.substringAfter('@', "")?.takeIf { it in MARKET_TABS }
+        fun tabKind(tab: String, made: String?): String = SCOPE_TAB + tab + (made?.takeIf { it in MADE_KINDS }?.let { "~$it" } ?: "")
+        fun toolKind(tool: String, on: String?): String = SCOPE_TOOL + tool.takeIf { it in TOOL_KINDS }.orEmpty() + (on?.takeIf { it in MARKET_TABS }?.let { "@$it" } ?: "")
         val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget")
         private fun legacyKind(tab: String): String? = when (tab) {
             "calendar" -> "skin"; "memo" -> "memo"; "money" -> "money"; "pay", "alarm" -> "rules"; "widget" -> "layout"; else -> null
@@ -732,7 +759,10 @@ class RecipeClient(
             item.tabs.isEmpty() || kind == null -> true
             kind == SCOPE_THEME -> item.scope == "theme"
             kind == SCOPE_LOGIC -> item.scope == "logic"
-            kind.startsWith(SCOPE_TAB) -> item.scope == "tab" && kind.removePrefix(SCOPE_TAB).let { it.isEmpty() || item.tabs.firstOrNull() == it }
+            kind.startsWith(SCOPE_TOOL) -> (item.scope == "part" || item.scope == "logic") &&
+                toolOf(kind).let { t -> t.isEmpty() || item.tools.isEmpty() || t in item.tools } && toolOn(kind).let { it == null || it in item.tabs }
+            kind.startsWith(SCOPE_TAB) -> item.scope == "tab" && tabOf(kind).let { it.isEmpty() || item.tabs.firstOrNull() == it } &&
+                madeOf(kind).let { m -> m == null || item.made == null || item.made == m || item.made == "both" }
             else -> true
         }
 
@@ -756,7 +786,7 @@ class RecipeClient(
                 "muted" -> "운영 원칙을 지키지 않은 글·작품이 있어 지금은 쓸 수 없어요"
                 "not_found" -> "지워졌거나 가려진 레시피예요"
                 "too_long" -> "40자까지 쓸 수 있어요"
-                "two_themes" -> "모음에는 테마를 하나만 넣을 수 있어요. 나머지는 기능별 탭으로 골라 주세요"
+                "two_themes" -> "모음에는 테마를 하나만 넣을 수 있어요. 나머지는 탭별 작품으로 골라 주세요"
                 "codes" -> "작품을 2~6개 골라 주세요"
                 "title" -> "이름을 2~30자로 적어 주세요"
                 "summary" -> "한 줄 설명은 80자까지 쓸 수 있어요"

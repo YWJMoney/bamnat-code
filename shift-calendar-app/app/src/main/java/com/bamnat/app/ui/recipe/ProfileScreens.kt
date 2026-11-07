@@ -477,7 +477,7 @@ fun MakerScreen(
                         if (p.recipes.isEmpty() && !vm.c.recipes.profileCleared()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("아직 작품이 없어요", style = MaterialTheme.typography.titleSmall)
-                            Text("스튜디오에서 만든 테마나 기능별 탭을 장터에 올리면 여기 모이고, 다른 분이 팔로우할 수 있어요",
+                            Text("스튜디오에서 만든 테마나 탭별 작품을 장터에 올리면 여기 모이고, 다른 분이 팔로우할 수 있어요",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             FilledTonalButton(onClick = onMake, modifier = Modifier.heightIn(min = 48.dp)) { Text("첫 작품 만들기") }
                         }
@@ -486,7 +486,7 @@ fun MakerScreen(
                 // 테마 | 기능별 탭 | 모음
                 PrimaryTabRow(selectedTabIndex = part) {
                     Tab(part == 0, { part = 0 }, text = { Text("테마 ${p.themes.size}") })
-                    Tab(part == 1, { part = 1 }, text = { Text("기능별 탭 ${p.tabRecipes.size}") })
+                    Tab(part == 1, { part = 1 }, text = { Text("탭별 작품 ${p.tabRecipes.size}") })
                     Tab(part == 2, { part = 2 }, text = { Text("모음 ${p.sets.size}") })
                 }
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -499,11 +499,11 @@ fun MakerScreen(
                                 tabs.forEach { t -> FilterChip(tabFilter == t, { tabFilter = t }, label = { Text(marketTabLabel(t, viewerStyle(vm.c))) }) }
                             }
                             Grid(p.tabRecipes.filter { tabFilter == null || it.tabs.firstOrNull() == tabFilter }.sortedByDescending { it.code in p.pins }, p.pins,
-                                empty = if (mine) "탭 하나만 바꾼 작품은 여기 모여요" else "아직 올린 기능별 탭이 없어요", onOpen)
+                                empty = if (mine) "탭 하나만 바꾼 작품은 여기 모여요" else "아직 올린 탭별 작품이 없어요", onOpen)
                         }
                         else -> {
                             if (mine) {
-                                Text("내 테마 하나에 기능별 탭을 묶어 두면, 받는 분이 한 번에 입어 보고 차례로 넣어요", style = MaterialTheme.typography.bodySmall,
+                                Text("내 테마 하나에 탭별 작품을 묶어 두면, 받는 분이 한 번에 입어 보고 차례로 넣어요", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 if (vm.canWrite && p.recipes.size >= 2) FilledTonalButton(onClick = { newSet = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("모음 만들기") }
                                 else if (p.recipes.size < 2) Text("작품이 2개 이상이면 모음을 만들 수 있어요", style = MaterialTheme.typography.bodySmall)
@@ -674,7 +674,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
         // 숫자 줄: 테마 · 기능별 탭 · 팔로워 · 팔로잉 · 넣은 분
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Count(p.themes.size, "테마")
-            Count(p.tabRecipes.size, "기능별 탭")
+            Count(p.tabRecipes.size, "탭별 작품")
             Count(p.followers, "팔로워", if (mine) ({ onPeople("followers") }) else null)
             Count(p.followingCount, "팔로잉", if (mine) ({ onPeople("following") }) else null)
             Count(p.users, "넣은 분")
@@ -821,7 +821,7 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, style: WorkSt
                 OutlinedTextField(title, { title = it.take(40) }, label = { Text("이름 (예: ${setExample(style)})") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(summary, { summary = it.take(100) }, label = { Text("한 줄 설명 (안 써도 돼요)") }, modifier = Modifier.fillMaxWidth(),
                     supportingText = { Text("${RecipeText.graphemes(summary.trim())}/80") }, isError = RecipeText.graphemes(summary.trim()) > 80)
-                Text("테마 하나 + 기능별 탭 여러 개를 골라요 (${picked.size}/6)", style = MaterialTheme.typography.bodySmall)
+                Text("테마 하나 + 탭별 작품 여러 개를 골라요 (${picked.size}/6)", style = MaterialTheme.typography.bodySmall)
                 works.forEach { r ->
                     val on = r.code in picked
                     Row(Modifier.fillMaxWidth().clickable { picked = if (on) picked - r.code else picked + r.code }.heightIn(min = 48.dp),
@@ -829,7 +829,7 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, style: WorkSt
                         Checkbox(on, { picked = if (on) picked - r.code else picked + r.code })
                         Column(Modifier.weight(1f)) {
                             Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(if (r.scope == "tab") "기능별 탭 · " + marketTabLabel(r.tabs.firstOrNull() ?: "", style) else "테마",
+                            Text(if (r.scope == "tab") "탭별 작품 · " + marketTabLabel(r.tabs.firstOrNull() ?: "", style) else "테마",
                                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }

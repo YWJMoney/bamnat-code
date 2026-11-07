@@ -1165,12 +1165,58 @@ export function sectionOf(body) {
   return { scope: kinds.has("logic") ? "logic" : "part", tabs: [...out].sort(), ...(kinds.has("logic") ? {} : { unit }) };
 }
 
+/**
+ * 1.39 [MKC-01] 장터 분류 다시 (사용자 2026-11-07 "테마는 모든 것을 꾸민 모습, 각 탭별로 기능이나 디자인 한 제작물, 도구 또한 분류"):
+ * 맨 위 세 구간 테마 · 탭별 작품 · 도구. 탭별 작품은 꾸미기(모양)·기능(틀·묶음·규칙)으로, 도구(옛 부품·규칙·단추)는 부품·자동 규칙·단추로 나눠요.
+ * - LOOK_PIECES: 모양만 바꾸는 조각 (BuiltInThemes.LOOK_KINDS와 근무 꾸미기). 나머지는 기능.
+ */
+export const LOOK_PIECES = ["screenLook", "calView", "calTheme", "memoLook", "moneyLook", "widget", "photoLook", "layout", "cards", "parts", "decor", "tabView", "shiftLook"];
+/** 도구 종류 (scope part·logic). */
+export const TOOL_KINDS = ["part", "rule", "button"];
+/** 탭별 작품·테마가 무엇을 바꾸는지: "look" 꾸미기만, "func" 기능만, "both" 둘 다; 조각이 없으면 null. */
+export function madeOf(body) {
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return null;
+  }
+  const kinds = (rec?.pieces ?? []).map((p) => p?.kind).filter(Boolean);
+  if (!kinds.length) return null;
+  const look = kinds.some((k) => LOOK_PIECES.includes(k));
+  const func = kinds.some((k) => !LOOK_PIECES.includes(k));
+  return look && func ? "both" : look ? "look" : "func";
+}
+/** 도구의 종류 (부품·자동 규칙·단추): 규칙과 단추를 함께 담으면 둘 다예요. 도구가 아니면 빈 목록. */
+export function toolsOf(body, scope) {
+  if (scope !== "part" && scope !== "logic") return [];
+  let rec;
+  try {
+    rec = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return [];
+  }
+  const out = new Set();
+  for (const p of rec?.pieces ?? []) {
+    if (p?.kind === "parts" || p?.kind === "tabView") out.add("part");
+    if (p?.kind === "logic") {
+      if ((p.rules ?? []).length) out.add("rule");
+      if ((p.buttons ?? []).length) out.add("button");
+    }
+  }
+  return TOOL_KINDS.filter((t) => out.has(t));
+}
+
 /** A list row as the app reads it (no owner, no hash of the owner). */
 export function listItem(r, now) {
   const look = r.body ? lookOf(r.body) : null;
   const { scope, tabs, unit } = r.body ? sectionOf(r.body) : { scope: null, tabs: [] };
+  const made = r.body && (scope === "tab" || scope === "theme") ? madeOf(r.body) : null;
+  const tools = r.body ? toolsOf(r.body, scope) : [];
   return {
     ...(unit ? { unit } : {}),
+    ...(made ? { made } : {}),
+    ...(tools.length ? { tools } : {}),
     ...(look ? { look } : {}),
     // [MKX-01] Which tabs it changes and whether it is a 테마 or one tab's.
     ...(tabs.length ? { tabs } : {}),
@@ -1309,14 +1355,24 @@ async function recipeList(d, env, url) {
   // [FREE-08] 종류로 보기: 스킨·배치·메모장·가계부·규칙.
   // [MKX-01] 1.36 두 구간: scope=theme, or scope=tab with tab=<one of MARKET_TABS> (or none for every tab's); kind is then left aside.
   // 1.36 [MKX-05] and scope=part / scope=logic (부품·규칙·단추), each with an optional tab= of the tab it touches.
-  const scope = MARKET_SCOPES.includes(url.searchParams.get("scope")) ? url.searchParams.get("scope") : null;
+  // 1.39 [MKC-01] scope=tool: 도구 (부품과 규칙·단추를 함께), tool=part|rule|button으로 좁혀요. 탭별 작품은 made=look|func (둘 다 담은 것은 양쪽에).
+  const scope0 = url.searchParams.get("scope");
+  const scope = MARKET_SCOPES.includes(scope0) || scope0 === "tool" ? scope0 : null;
   const tab = scope && scope !== "theme" && [...MARKET_TABS, "app"].includes(url.searchParams.get("tab")) ? url.searchParams.get("tab") : null;
   // A 갈래 '부품 하나': scope=part&unit=cal.head.
   const unit = scope === "part" && /^(part:)?[a-z]+(\.[A-Za-z]+)?$/.test(url.searchParams.get("unit") ?? "") ? url.searchParams.get("unit") : null;
+  const made = (scope === "tab" || scope === "theme") && ["look", "func"].includes(url.searchParams.get("made")) ? url.searchParams.get("made") : null;
+  const tool = scope === "tool" && TOOL_KINDS.includes(url.searchParams.get("tool")) ? url.searchParams.get("tool") : null;
   const kind = !scope && RECIPE_KINDS[url.searchParams.get("kind")] ? url.searchParams.get("kind") : null;
   const rows = scope ? rows0.filter((r) => {
     const s = sectionOf(r.body);
-    return s.scope === scope && (!tab || (scope === "tab" ? s.tabs[0] === tab : s.tabs.includes(tab))) && (!unit || s.unit === unit);
+    const inScope = scope === "tool" ? s.scope === "part" || s.scope === "logic" : s.scope === scope;
+    if (!inScope) return false;
+    if (tab && !(scope === "tab" ? s.tabs[0] === tab : s.tabs.includes(tab))) return false;
+    if (unit && s.unit !== unit) return false;
+    if (made) { const m = madeOf(r.body); if (m !== made && m !== "both") return false; }
+    if (tool && !toolsOf(r.body, s.scope).includes(tool)) return false;
+    return true;
   }) : kind ? rows0.filter((r) => carries(r.body, RECIPE_KINDS[kind])) : rows0;
   let scored = rows;
   if (sort === "good") {

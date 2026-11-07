@@ -182,6 +182,9 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // [LIN-02][LIN-03] 1.35 a 수정판 of my recipe: what it changed, and 내 판에 가져오기.
                 s.parentDoc?.takeIf { it.mine }?.let { pd -> DiffSection(pd, s.diff, onOpen) { picked -> vm.takeInto(picked)?.let { body -> onTakeInto(pd.item.code, body) } } }
 
+                // 1.39 [MKC-02][MKC-03] 도구 (부품·자동 규칙·단추): 넣기 전에 내 화면과 내 날로 전후를 직접 해 봐요.
+                val tool = remember(r, doc.item.scope) { doc.item.scope == "part" || doc.item.scope == "logic" || com.bamnat.core.recipe.LookParts.partUnit(r) != null }
+                if (tool) ToolTryout(r, vm.style)
                 Text("내 달력에 넣을 것 고르기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text("켜 둔 조각만 들어가요. 근무 기록·가계부·메모는 그대로예요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
