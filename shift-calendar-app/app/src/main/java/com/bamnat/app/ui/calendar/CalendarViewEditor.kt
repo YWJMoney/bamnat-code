@@ -145,7 +145,9 @@ private val SAMPLE = listOf(
 @Composable
 fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell: String? = null, today: Color? = null, rows: Int = 1, start: Int = 6,
     /** [R136-07] Real dates' numbers, one a cell from Sunday, and which cell is today (else the example's 3rd). */
-    numbers: List<Int>? = null, todayAt: Int = 2) {
+    numbers: List<Int>? = null, todayAt: Int = 2,
+    /** [CELL-02] 1.39 Each day's jobs and memos a line each, as my calendar lists them (입어 보기 on my own month). */
+    listed: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
     val height = when (view.size) { "short" -> 46.dp; "tall" -> 86.dp; "huge" -> 120.dp; else -> 60.dp }
@@ -186,6 +188,15 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
                         when {
                             view.badge == "line" -> if (!d.off) Box(Modifier.fillMaxWidth().height(3.dp).background(color, RoundedCornerShape(2.dp)))
                             !left -> SampleMark(d, if (view.badge == "small") 12 else 16, cell)
+                        }
+                        if (listed) {
+                            // [CELL-02] As the month itself draws a listing cell: a line each, "+n" where they do not fit.
+                            val dark = com.bamnat.app.ui.components.isDarkSurface()
+                            CellListLines(
+                                d.memos.map { CellLine(it, ink = scheme.onSurface, bar = cal.memoDot, fill = cal.memoDot.copy(alpha = if (dark) 0.22f else 0.12f)) },
+                                d.hours?.let { CellFoot(it, scheme.onSurfaceVariant, false, minor = true) }, (8 + bump).sp, cellMoreColor(), Modifier.weight(1f),
+                            )
+                            return@Column
                         }
                         val custom = !view.isDefault
                         val texts = buildMap {

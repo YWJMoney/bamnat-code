@@ -152,7 +152,9 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                         */
                        start: LocalDate? = null, todayDate: LocalDate? = null, days: List<com.bamnat.app.ui.calendar.SampleDay>? = null,
                        /** PC 확인 W38 1.36 (오늘 색을 바꿔도 예시의 오늘 동그라미가 파랑): the 오늘 colour being made, null for the app's own. */
-                       todayColor: Color? = null) {
+                       todayColor: Color? = null,
+                       /** [CELL-02] 1.39 Each day's jobs and memos a line each, as my calendar lists them (입어 보기 on my own month). */
+                       listed: Boolean = false) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
     val first = start ?: LocalDate.of(2026, 11, 2)
@@ -217,6 +219,12 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                         },
                         texts = buildMap { s.memo?.let { put("memo", it) }; s.hours?.let { put("hours", it) } },
                         moneyColor = cal.income,
+                        list = if (!listed) null else days?.getOrNull(r * 7 + c)?.let { d ->
+                            com.bamnat.app.ui.calendar.CellListContent(
+                                d.memos.map { com.bamnat.app.ui.calendar.CellLine(it, ink = scheme.onSurface, bar = cal.memoDot, fill = cal.memoDot.copy(alpha = 0.14f)) },
+                                d.hours?.let { com.bamnat.app.ui.calendar.CellFoot(it, scheme.onSurfaceVariant, false, minor = true) },
+                            )
+                        },
                     )
                 }
             }

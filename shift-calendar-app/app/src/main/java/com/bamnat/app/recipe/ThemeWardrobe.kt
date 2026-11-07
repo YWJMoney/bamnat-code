@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONObject
+import com.bamnat.core.recipe.keepMyCellContent
 
 /**
  * [FREE-10] 1.35 테마 옷장 (사용자 2026-10-30): the theme worn now, 입었던 테마, and the user's own look kept aside while a theme is on,
@@ -23,6 +24,28 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     private val _lease = MutableStateFlow(ThemeLease.decode(prefs.getString(K_LEASE, null)))
     val lease: StateFlow<ThemeLease> = _lease.asStateFlow()
+
+    init { keepMyCellContentOnce() }
+
+    /**
+     * [CELL-02] 1.39 (사용자 2026-11-07 "1.37에서 테마를 입으면 달력에 적어 둔 것이 안 보여요"): a theme worn before 1.39 could set the
+     * cells' 메모 줄 to 0 (its maker's own choice) and turn 날짜 칸의 메모 off. Once, while someone else's theme is on, the 메모 줄 and 줄 순서
+     * go back to the user's own look kept aside, and memos come back into the cells if that theme had taken them out.
+     */
+    private fun keepMyCellContentOnce() {
+        if (prefs.getBoolean(K_CELL_CONTENT, false)) return
+        prefs.edit().putBoolean(K_CELL_CONTENT, true).apply()
+        if (_lease.value.worn?.own != false) return
+        val mine = readMap(K_MINE)?.get("calView")?.let(com.bamnat.core.recipe.CalendarView::decode) ?: return
+        runCatching {
+            c.settingsRepository.update { s ->
+                val cur = com.bamnat.core.recipe.CalendarView.decode(s.calView)
+                if (cur.memo == mine.memo && cur.order == mine.order) s
+                else s.copy(calView = cur.copy(memo = mine.memo, order = mine.order).encode(),
+                    memoInCells = if (cur.memo == 0 && mine.memo != 0) true else s.memoInCells)
+            }
+        }.onFailure { android.util.Log.w(TAG, "cell content", it) }
+    }
 
     private fun save(l: ThemeLease) {
         prefs.edit().putString(K_LEASE, ThemeLease.encode(l)).apply()
@@ -97,7 +120,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
      * [code] is the 나눔 판 code, "builtin:<title>" or "" for one of mine.
      */
     suspend fun wear(r: Recipe, code: String, own: Boolean, ver: Int = 0, whole: Recipe? = null): Boolean {
-        val looks = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
+        // [CELL-02] 1.39 Someone else's theme leaves what my cells show (메모 줄·줄 순서·시간·음력·지출) as I set it.
+        val looks = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }).let { if (own) it else it.keepMyCellContent() }
         if (looks.pieces.isEmpty()) return false
         beforeWear()
         val picks = looks.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
@@ -485,7 +509,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     private suspend fun putOn(w: ThemeLease.Wear, r: Recipe, ver: Int): Boolean {
-        val looks = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS })
+        // [CELL-02] 1.39 A new 판 of someone else's theme, too: its look, my cells' content.
+        val looks = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }).let { if (w.own) it else it.keepMyCellContent() }
         if (looks.pieces.isEmpty()) return false
         val picks = looks.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
         c.recipes.apply(looks, w.code, ver, PersonalCalendar.MAIN, picks, emptyMap())
@@ -616,6 +641,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         private const val K_PREV_VER = "prev_ver"
         private const val K_FOLDERS = "folders"
         private const val K_PLACED = "placed"
+        /** [CELL-02] 1.39 [keepMyCellContentOnce] has run. */
+        private const val K_CELL_CONTENT = "cell_content_139"
         private const val TAG = "BamnatDrawer"
         private const val UNDO_ROW_MS = 4_000L
         const val FOLDER_NAME = 12

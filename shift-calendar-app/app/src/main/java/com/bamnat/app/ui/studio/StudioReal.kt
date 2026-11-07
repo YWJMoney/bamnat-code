@@ -51,6 +51,22 @@ internal fun rememberMyMemos(n: Int = 4): List<Memo>? {
     }
 }
 
+/**
+ * [CELL-02] 1.39 (사용자 2026-11-07, 입어 보기에서 내 달력에 적은 것이 안 보임): my memos by their date, each by its title's first line, for
+ * the month 입어 보기 and the studio draw on my phone; null elsewhere (the 올리기 표지 keeps the example).
+ */
+@Composable
+internal fun rememberMyDayMemos(): Map<java.time.LocalDate, List<String>>? {
+    val real = LocalRealLook.current
+    val c = LocalContext.current.appContainer
+    val memos by c.memoRepository.memos.collectAsStateWithLifecycle(emptyList())
+    return remember(memos, real) {
+        if (!real) return@remember null
+        memos.filter { it.deletedAtMillis == null && it.date != null }.groupBy { it.date!! }
+            .mapValues { (_, l) -> l.map { m -> m.title.ifBlank { m.preview }.trim().lineSequence().firstOrNull().orEmpty() }.filter { it.isNotBlank() } }
+    }
+}
+
 /** [CNV-12] An amount as the 가계부 writes it: 1,234,000원. */
 internal fun won(v: Long): String = "%,d원".format(v)
 
