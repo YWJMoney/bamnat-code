@@ -1,0 +1,257 @@
+// 1.39 [LOOP] 문의 → 개발 → 출시 → 답 자동 순환의 관리자 화면(계획 docs/plans/1.39-G10-자동순환.md, 사용자 2026-11-07).
+// 다른 화면 묶음처럼 글(String(fn))로 브라우저에 가고, 앱이 나눠 주는 것(A)으로 불려요. 밖의 이름은 쓰지 않아요.
+//   오늘 › 자동 순환 #/loop: Play 출시 감지·1시간 보류 안내(취소·지금), 업데이트 없이 고친 것, 저장소 동기화, 정기 출시 열차, 멈춤 스위치,
+//                          믿을수록 더 맡기기, 쓰면 쌓이는 날 규칙, 영향도 순 개발 대기열 [LOOP-01~08][LOOP-12][LOOP-14]
+//   오늘 › 결정함 #/decide: 최고 관리자 확인 문의(Claude 초안)와 요금을 정할 새 기능 [LOOP-09]
+//   숫자 › 요금 판단 #/tiers: 새 기능마다 관측치와 무료·프로 결정(최고 관리자만) [LOOP-10][LOOP-11]
+export function loopViews(A) {
+  const { S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, toast, openDialog, dialog, confirmBox, syncUrl } = A;
+
+  const owner = () => Boolean(S.me?.owner);
+  const head = (title, meta = "", side = "") => `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
+  const when = (isoText) => (isoText ? new Date(isoText).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
+  const left = (isoText) => {
+    const m = Math.round((Date.parse(isoText) - Date.now()) / 60000);
+    return m <= 0 ? "곧" : m < 60 ? `${m}분 뒤` : `${Math.floor(m / 60)}시간 ${m % 60}분 뒤`;
+  };
+  const reload = (...keys) => {
+    for (const k of keys) S.data[k] = null;
+    syncUrl();
+    load({ quiet: true });
+  };
+  const SHIP_NAMES = { waiting: "보류 중", done: "보냄", cancelled: "취소함" };
+  const SHIP_TONES = { waiting: "warn", done: "ok", cancelled: "" };
+  const REWARD_NAMES = [["bugDays", "문제 신고가 고쳐짐", "문제 신고(버그)를 보낸 폰에, 그 개발사항이 완료되면"], ["polishDays", "제안이 다듬기로 들어감", "건의·제안이 '다듬기' 크기로 완료되면"],
+    ["featureDays", "제안이 새 기능으로 들어감", "건의·제안이 '새 기능' 크기로 완료되면"], ["knownDays", "알려진 문제에 '나도 겪어요'", "목록에서 나도 겪어요만 누른 폰에, 고쳐지면(0이면 안 줌)"],
+    ["monthCap", "한 휴대폰 한 달 상한", "위 날을 다 더해 한 달(한국 시간)에 받을 수 있는 날"]];
+
+  // ---- 오늘 › 자동 순환 ----
+
+  function playCard(d) {
+    const p = d.play ?? {};
+    const pills = [p.ready ? '<span class="pill ok">Play 연결됨</span>' : '<span class="pill warn">Play 서비스 계정 없음</span>',
+      d.shipped ? `<span class="pill info">나간 판 ${esc(d.shipped.v)}</span>` : '<span class="pill warn">나간 판 없음</span>',
+      d.switches.autoShip ? "" : '<span class="pill bad">자동 출시 안내 꺼짐</span>'].filter(Boolean).join(" ");
+    const track = p.at ? `<dl class="lines"><div><dt>100% 나간 판</dt><dd>${esc(p.done ?? "—")}</dd></div>
+        <div><dt>단계적 출시</dt><dd>${p.rolling ? `${esc(p.rolling.v)} · ${Math.round((p.rolling.fraction ?? 0) * 100)}%` : "없음"}</dd></div>
+        ${p.halted ? `<div><dt>멈춘 출시</dt><dd>${esc(p.halted)}</dd></div>` : ""}<div><dt>마지막으로 읽음</dt><dd>${esc(ago(p.at))}</dd></div></dl>`
+      : `<p class="hint">${p.ready ? "매시 17분에 프로덕션 트랙을 읽어요. 아직 한 번도 읽지 않았어요." : "서버 비밀값 PLAY_SERVICE_ACCOUNT에 '앱 정보 보기' 권한이 있으면 매시 Play 프로덕션 트랙을 읽어요. 없으면 지금처럼 흐름 › '나간 판 저장'을 눌러요."}</p>`;
+    const ships = d.ships.length ? `<ul class="rows">${d.ships.map((s) => `<li><div class="row"><span class="row-main"><b>${esc(s.version)}</b>
+        <small>${s.status === "waiting" ? `${esc(left(s.until))} 문의 안내·업데이트 소식이 나가요` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
+        <span class="pill ${SHIP_TONES[s.status] ?? ""}">${esc(SHIP_NAMES[s.status] ?? s.status)}</span>
+        ${s.status === "waiting" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
+          <button class="btn small primary" type="button" data-act="loop-ship-now" data-v="${esc(s.version)}">지금 보내기</button>` : ""}</div></li>`).join("")}</ul>` : "";
+    return `<section class="card">${head("Play 출시 감지", "판이 100% 나가면 1시간 뒤 스스로 '나간 판 저장'", can("devStatus", "edit") && p.ready ? '<button class="btn small" type="button" data-act="loop-play">지금 읽기</button>' : "")}
+      <p>${pills}</p>${track}${ships}
+      <p class="hint">단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p></section>`;
+  }
+
+  function liveCard(d) {
+    if (!d.waitingLive.length) return "";
+    return `<section class="card">${head("업데이트 없이 고친 것", `닿기를 기다림 ${d.waitingLive.length}개`)}
+      <ul class="rows">${d.waitingLive.map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b><small>${esc(x.routeName ?? x.route)} · ${esc(x.want ?? "")}</small></span>${icon(P.chevron)}</a></li>`).join("")}</ul>
+      <p class="hint">서버 배포·원격 자료 서명·기능 스위치가 실제로 닿으면 묶인 문의에 바로 답이 가요(앱 업데이트 없이).</p></section>`;
+  }
+
+  function syncCard(d) {
+    const key = d.syncKeys.find((k) => k.alive);
+    const rows = d.syncs.length ? `<ul class="rows">${d.syncs.map((s) => `<li><div class="row"><span class="row-main"><b>${s.pr ? `PR #${s.pr}` : esc(s.sha.slice(0, 8) || "직접")}${s.version ? ` · ${esc(s.version)}` : ""}</b>
+        <small>${esc(when(s.at))} · ${s.n}줄 · 새 ${s.result.made ?? 0} · 바뀜 ${s.result.changed ?? 0} · 답 ${s.result.told ?? 0}${s.result.errors ? ` · 오류 ${s.result.errors}` : ""}</small></span>
+        <span class="pill ${s.result.errors ? "warn" : "ok"}">${s.result.errors ? "확인" : "받음"}</span></div></li>`).join("")}</ul>`
+      : '<p class="hint">아직 받은 것이 없어요. main에 합쳐지면 GitHub Action이 ops/dev-status.jsonl의 바뀐 줄을 보내요.</p>';
+    return `<section class="card">${head("저장소 동기화", d.switches.sync ? "켜짐" : "꺼짐", owner() ? `<button class="btn small" type="button" data-act="loop-sync-key"${key ? " disabled" : ""}>동기화 열쇠 만들기</button>` : "")}
+      ${rows}<p class="hint">저장소에는 문의 글 없이 개발 상태만 있어요(d 번호·추적 번호·요약·판). 요금(무료·프로)은 저장소에서 정하지 못해요.
+      ${key ? `동기화 열쇠: ${esc(key.label)}${key.lastAt ? ` · 마지막 ${esc(ago(key.lastAt))}` : " · 아직 안 씀"}. 끊기는 관리 › Claude 열쇠에서 해요.` : "동기화 열쇠가 없어요."}</p></section>`;
+  }
+
+  function trainCard(d) {
+    const t = d.train;
+    return `<section class="card">${head("정기 출시 열차", t.next ? `다음 출발 ${t.next}` : "")}
+      <p class="hint">앱 판으로 고친 것은 ${t.days}일마다 한 번 모아 나가요. 고친 직후 문의에는 '○월 ○일 정기 업데이트에 들어가요'가 날짜와 함께 가요. 알람·데이터·결제·앱이 안 열림 같은 긴급은 열차를 기다리지 않아요.</p>
+      ${owner() ? `<form class="inline-form" data-form="loop-train"><label for="lt-start">첫 출발일</label><input id="lt-start" name="start" type="date" required value="${esc(t.start)}">
+        <label for="lt-days">며칠마다</label><input id="lt-days" name="days" type="number" min="7" max="60" required value="${t.days}">
+        <div class="actions"><button class="btn small primary" type="submit">저장</button></div></form>` : ""}</section>`;
+  }
+
+  function switchCard(d) {
+    const sw = d.switches;
+    const box = (k, label, hint) => `<label class="chk"><input type="checkbox" name="${k}"${sw[k] ? " checked" : ""}${owner() ? "" : " disabled"}><span><b>${esc(label)}</b> <small>${esc(hint)}</small></span></label>`;
+    return `<section class="card">${head("멈춤 스위치", "문제가 보이면 바로 끄세요")}
+      <form data-form="loop-switches">${box("autoShip", "Play 출시를 보고 스스로 안내", "끄면 지금처럼 '나간 판 저장'을 사람이 눌러요")}
+        ${box("sync", "저장소 동기화 받기", "끄면 GitHub이 보내도 받지 않아요(409)")}
+        ${box("phone", "고친 판으로 연 폰에 바로 안내", "단계적 출시 중에 그 폰에만")}
+        ${box("halt", "단계적 출시가 나빠지면 멈춤 권장 알림", "판 건강 비교로")}
+        <h3>Play 인앱 업데이트</h3>
+        <p class="hint">앱이 하루 한 번 읽어요. 이 versionCode보다 낮은 앱은 긴급이면 바로 업데이트 화면을, 정기면 앱 안에서 한 번 '업데이트' 단추를 보여요. 0이면 권하지 않아요.</p>
+        <label for="ls-urgent">긴급(바로 업데이트) 기준 versionCode</label><input id="ls-urgent" name="urgentMin" type="number" min="0" inputmode="numeric" value="${sw.urgentMin ?? 0}"${owner() ? "" : " disabled"}>
+        <label for="ls-flex">정기(한 번 권함) 기준 versionCode</label><input id="ls-flex" name="flexibleMin" type="number" min="0" inputmode="numeric" value="${sw.flexibleMin ?? 0}"${owner() ? "" : " disabled"}>
+        ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form></section>`;
+  }
+
+  function autonomyCard(d) {
+    const a = d.autonomy;
+    return `<section class="card">${head("믿을수록 더 맡기기", `연속 ${a.need}번이면 제안`)}
+      <p class="hint">Claude 답은 10분 보류 뒤 나가요. 종류마다 사람이 손대지 않고 그대로 나간 수를 세요. 켠 종류는 보류 없이 바로 가요. 결제·환불 말이 있거나 회사 방식 문의면 켜 두어도 보류해요. '새 문제'는 켤 수 없어요.</p>
+      <form data-form="loop-instant"><ul class="rows">${a.piles.map((p) => `<li><div class="row"><span class="row-main"><b>${esc(p.name)}</b>
+        <small>그대로 ${p.sent} · 고쳐서 ${p.edited} · 취소 ${p.cancelled}${p.quick ? ` · 바로 ${p.quick}` : ""} · 연속 ${p.streak}</small></span>
+        ${p.suggest ? '<span class="pill gold">맡겨도 돼요</span>' : ""}
+        ${p.pile === "new" ? "" : `<label class="chk"><input type="checkbox" name="instant" value="${esc(p.pile)}"${p.instant ? " checked" : ""}${owner() ? "" : " disabled"}><span>바로</span></label>`}</div></li>`).join("")}</ul>
+      ${owner() ? '<div class="actions"><button class="btn small primary" type="submit">저장</button></div>' : ""}</form></section>`;
+  }
+
+  function rewardCard(d) {
+    const r = d.rewards;
+    return `<section class="card" id="reward-rules">${head("쓰면 쌓이는 날 규칙", "문의·제안 보상")}
+      <p class="hint">프로를 날 수만큼 열어 드려요. 회사 방식 채택·요청 반영의 개월 보상은 관리 › 채택 규칙에 있어요.</p>
+      <form data-form="loop-rewards">${REWARD_NAMES.map(([k, label, hint]) => `<label for="lr-${k}">${esc(label)} <small>${esc(hint)}</small></label>
+        <input id="lr-${k}" name="${k}" type="number" min="0" max="${k === "monthCap" ? 60 : 30}" inputmode="numeric" value="${r[k]}"${owner() ? "" : " disabled"}>`).join("")}
+        ${owner() ? '<div class="actions"><button class="btn small primary" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form></section>`;
+  }
+
+  function queueCard() {
+    const q = S.data.loopQueue?.items;
+    if (!q) return skeleton(1);
+    return `<section class="card">${head("개발 대기열", "영향도 순 · Claude가 이 순서로 가져가요")}
+      ${q.length ? `<ol class="rows">${q.slice(0, 12).map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
+        <small>문의 ${x.asks} · 같아요 ${x.same}${x.again ? ` · 다시 생김 ${x.again}` : ""}${x.urgent ? " · 급함" : ""}${x.track ? ` · ${esc(x.track)}` : ""}</small></span>
+        <span class="pill ${x.urgent || x.again ? "bad" : "info"}">${x.score}점</span>${icon(P.chevron)}</a></li>`).join("")}</ol>`
+        : empty("기다리는 개발사항이 없어요", "")}
+      <p class="hint">점수 = 묶인 문의 3 + 같아요 1 + 급함(알람·데이터·결제·앱이 안 열림) 5 + 걸린 판 1 + 고친 뒤 다시 생김 6.</p></section>`;
+  }
+
+  function loopView() {
+    const d = S.data.loopState;
+    if (!d) return skeleton(3);
+    const top = `<section class="flow-head"><div><h2>문의 → 개발 → 출시 → 답</h2><p class="meta">Play 출시와 저장소 개발 상태를 서버가 직접 보고, 묶인 문의에 스스로 답해요.</p></div>
+      <div class="flow-state">${d.urgentWaiting ? `<a class="pill bad" href="${href("desk")}">급한 문제 신고 ${d.urgentWaiting}건</a>` : '<span class="pill ok">급한 문제 신고 없음</span>'}</div></section>`;
+    return `${top}<div class="flow-cols">${playCard(d)}${liveCard(d)}${queueCard()}${syncCard(d)}${trainCard(d)}${switchCard(d)}${autonomyCard(d)}${rewardCard(d)}</div>`;
+  }
+
+  // ---- 오늘 › 결정함 ----
+
+  function decideView() {
+    const d = S.data.loopDecide;
+    if (!d) return skeleton(2);
+    const asks = d.asks.length ? `<ul class="rows">${d.asks.map((x) => `<li><div class="row"><span class="row-main"><a href="${href("inquiries", x.id)}"><b>${esc(x.no ?? "")} ${esc(x.title ?? "")}</b></a>
+        <small>${esc(x.why)}${x.late ? " · 기한 넘김" : ""}</small>${x.draft ? `<small class="answer">Claude 초안: ${esc(x.draft.text)}</small>${x.draft.why ? `<small>이유: ${esc(x.draft.why)}</small>` : ""}` : '<small class="meta">초안 없음</small>'}</span>
+        ${x.draft && can("inquiries", "edit") ? `<button class="btn small primary" type="button" data-act="loop-draft-send" data-id="${esc(x.id)}" data-key="${esc(x.key)}">초안 보내기</button>` : ""}
+        <a class="btn small" href="${href("inquiries", x.id)}">열기</a></div></li>`).join("")}</ul>`
+      : empty("최고 관리자가 볼 문의가 없어요", "환불·결제·보상, 법·안전, 개인정보, 크게 화난 민원, 약관·처리방침 질문은 여기에 모여요.");
+    const tiers = owner() ? (d.tiers.length ? `<ul class="rows">${d.tiers.map((x) => `<li><a class="row" href="${href("tiers")}"><span class="row-main"><b>${esc(x.title)}</b>
+        <small>${x.track ? `${esc(x.track)} · ` : ""}문의 ${x.asks}건${x.ask ? ` · Claude 제안: ${esc(x.askName)}` : ""}${x.later ? " · 더 논의 중" : ""}</small>${x.why ? `<small>${esc(x.why)}</small>` : ""}</span>
+        <span class="pill warn">요금 정하기</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : '<p class="hint">요금을 정할 새 기능이 없어요.</p>')
+      : '<p class="hint">새 기능의 무료·프로는 최고 관리자가 정해요.</p>';
+    return `<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
+      <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${tiers}
+        <p class="hint">버그 고침·이미 있는 기능 다듬기·알람·달력 기본은 묻지 않고 무료예요. 새 기능만 여기서 정하고, 정하기 전에는 기능 스위치를 켤 수 없어요.</p></section>`;
+  }
+
+  // ---- 숫자 › 요금 판단 ----
+
+  function obsLines(o) {
+    const lines = [["요청", `문의 ${o.requests.asks}건 · 같아요 ${o.requests.same} · 나도 겪어요 ${o.requests.meToo} · 제안 ${o.requests.ideas}`],
+      ["사용 통계 기준", o.statsDays ? `최근 28일 중 ${o.statsDays}일 · 폰·일 ${o.statsPhoneDays}` : "아직 없음"]];
+    for (const u of o.usage) lines.push([`쓴 수 ${u.event}`, `폰·일 ${u.phoneDays} (${u.share ?? "—"}%) · 모두 ${u.total}번`]);
+    if (o.flag) lines.push([`스위치 ${o.flag.key}`, `켜진 폰·일 ${o.flag.onPhoneDays} (${o.flag.share ?? "—"}%)${o.flag.since ? ` · ${o.flag.since.slice(0, 10)}부터` : ""}`]);
+    if (o.around) {
+      const b = o.around.before;
+      const a = o.around.after;
+      lines.push(["켜기 앞뒤 14일", `프로 화면 ${b.paywall_view}→${a.paywall_view} · 체험 ${b.trial_start}→${a.trial_start} · 구독 ${b.subscribe}→${a.subscribe} · 문제 신고 ${b.bugs}→${a.bugs}`]);
+    }
+    return `<dl class="lines">${lines.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>${o.note ? `<p class="note">${esc(o.note)}</p>` : ""}`;
+  }
+
+  function tiersView() {
+    const d = S.data.loopTiers;
+    if (!d) return skeleton(2);
+    if (!d.items.length) return empty("새 기능이 아직 없어요", "저장소에서 크기 '새 기능'으로 온 개발사항이 여기 모여요.");
+    return `<p class="hint">새 기능마다 요청·쓰는 수·스위치를 켠 앞뒤를 모아 둬요. 무료·프로는 최고 관리자만 정하고(사용자 논의 뒤), 나중에 다시 정할 수 있어요. 무료로 연 것을 다시 잠그지는 않는 것이 원칙이에요.</p>
+      ${d.items.map((x) => `<section class="card">${head(x.title, `${x.statusName ?? ""}${x.track ? ` · ${x.track}` : ""}`, x.tier ? `<span class="pill ${x.tier === "later" ? "warn" : "ok"}">${esc(x.tierName)}</span>` : '<span class="pill warn">아직 안 정함</span>')}
+        ${x.onBeforeTier ? '<p class="note warn">요금을 정하기 전에 스위치가 켜져 있어요(날짜 조건 등). 먼저 정해 주세요.</p>' : ""}
+        ${x.ask ? `<p><b>Claude 제안</b> ${esc(x.askName)}${x.why ? ` — ${esc(x.why)}` : ""}</p>` : ""}
+        ${x.tierBy ? `<p class="meta">${esc(x.tierBy)} · ${esc(when(x.tierAt))}${x.tierNote ? ` · ${esc(x.tierNote)}` : ""}</p>` : ""}
+        ${obsLines(x.observe)}
+        ${owner() ? `<div class="actions">${Object.entries(d.tiers).map(([k, name]) => `<button class="btn small${x.tier === k ? " primary" : ""}" type="button" data-act="loop-tier" data-id="${esc(x.id)}" data-tier="${k}">${esc(name)}</button>`).join("")}</div>` : ""}
+      </section>`).join("")}`;
+  }
+
+  // ---- 길·다 왔는지·단추 ----
+
+  const loads = {
+    loop: () => [["/loop", "loopState"], ["/loop/queue", "loopQueue"]],
+    decide: () => [["/loop/decide", "loopDecide"]],
+    tiers: () => [["/loop/tiers", "loopTiers"]],
+  };
+  const has = { loop: () => S.data.loopState, decide: () => S.data.loopDecide, tiers: () => S.data.loopTiers };
+  const views = { loop: () => loopView(), decide: () => decideView(), tiers: () => tiersView() };
+
+  const actions = {
+    "loop-ship-cancel": ({ v }) => confirmBox(`${v} 자동 안내를 멈출까요?`, "멈추면 이 판은 스스로 저장되지 않아요. 나중에 흐름 › '나간 판 저장'으로 직접 저장해요.", "멈추기", async () => {
+      if (await act(() => api(`/loop/ship/${v}/cancel`, "POST", {}), "멈췄어요")) reload("loopState");
+    }),
+    "loop-ship-now": ({ v }) => confirmBox(`${v} 안내를 지금 보낼까요?`, "나간 판으로 저장하고 묶인 문의에 업데이트 안내를, 앱에 업데이트 소식 공지를 올려요.", "지금 보내기", async () => {
+      if (await act(() => api(`/loop/ship/${v}/now`, "POST", {}), (r) => `${r.version} 저장 · 문의 ${r.answered ?? 0}건 안내`)) reload("loopState");
+    }, "primary"),
+    "loop-play": async () => {
+      const r = await act(() => api("/loop/play", "POST", {}));
+      if (r?.error) toast(`Play를 읽지 못했어요: ${r.error}`);
+      else if (r) toast(r.held ? `${r.held} 출시를 봤어요. 1시간 뒤 안내가 나가요` : "읽었어요. 새로 100% 나간 판은 없어요");
+      reload("loopState");
+    },
+    "loop-sync-key": async () => {
+      const r = await act(() => api("/keys", "POST", { scope: "sync" }));
+      if (!r) return;
+      openDialog(`<div class="key-once"><h2>동기화 열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> GitHub 저장소 bamnat-code › Settings › Secrets and variables › Actions에
+        이름 BAMNAT_SYNC_KEY로 넣어요. 이 열쇠는 개발 상태 보내기 한 가지만 할 수 있어요.</p>
+        <label for="key-once">열쇠</label><input id="key-once" readonly value="${esc(r.key)}" class="mono"><p class="meta">${esc(r.expiresAt.slice(0, 10))}까지 써요.</p>
+        <div class="actions"><button class="btn" type="button" data-act="key-copy">복사</button><button class="btn primary" type="button" data-act="close">넣었어요</button></div></div>`);
+      reload("loopState");
+    },
+    "loop-tier": ({ id, tier }) => {
+      const names = S.data.loopTiers?.tiers ?? {};
+      openDialog(`<form data-form="loop-tier" data-id="${esc(id)}" data-tier="${esc(tier)}"><h2>${esc(names[tier] ?? tier)}(으)로 정할까요?</h2>
+        <p>${tier === "later" ? "정하지 않고 더 논의해요. 그동안 이 기능 스위치는 켤 수 없어요." : "정한 뒤에 기능 관리에서 스위치를 켤 수 있어요. 나중에 다시 정할 수 있어요."}</p>
+        <label for="lt-note">메모(무엇을 보고 정했는지)</label><input id="lt-note" name="note" maxlength="300">
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">정하기</button></div></form>`);
+    },
+    "loop-draft-send": ({ id, key }) => {
+      const x = S.data.loopDecide?.asks.find((a) => a.key === key);
+      if (!x?.draft) return;
+      confirmBox("Claude 초안을 보낼까요?", x.draft.text, "보내기", async () => {
+        if (await act(() => api(`/inquiries/${id}/reply`, "POST", { text: x.draft.text }), "보냈어요")) {
+          await api("/loop/drafts", "POST", { key, text: null }).catch(() => null);
+          reload("loopDecide");
+        }
+      }, "primary");
+    },
+  };
+
+  const forms = {
+    "loop-train": async (form) => {
+      const f = new FormData(form);
+      if (await act(() => api("/loop/train", "POST", { start: f.get("start"), days: Number(f.get("days")) }), (r) => `다음 출발 ${r.next}`)) reload("loopState");
+    },
+    "loop-switches": async (form) => {
+      const f = new FormData(form);
+      const body = { autoShip: f.has("autoShip"), sync: f.has("sync"), phone: f.has("phone"), halt: f.has("halt"),
+        urgentMin: Number(f.get("urgentMin") || 0), flexibleMin: Number(f.get("flexibleMin") || 0) };
+      if (await act(() => api("/loop/switches", "POST", body), "저장했어요")) reload("loopState");
+    },
+    "loop-instant": async (form) => {
+      const instant = new FormData(form).getAll("instant").map(String);
+      if (await act(() => api("/loop/switches", "POST", { instant }), "저장했어요")) reload("loopState");
+    },
+    "loop-rewards": async (form) => {
+      const f = new FormData(form);
+      const body = Object.fromEntries(REWARD_NAMES.map(([k]) => [k, Number(f.get(k) || 0)]));
+      if (await act(() => api("/loop/rewards", "POST", body), "보상 규칙을 저장했어요")) reload("loopState");
+    },
+    "loop-tier": async (form) => {
+      dialog.close();
+      const note = String(new FormData(form).get("note") ?? "");
+      if (await act(() => api(`/loop/tier/${form.dataset.id}`, "POST", { tier: form.dataset.tier, note }), "정했어요")) reload("loopTiers", "loopDecide");
+    },
+  };
+
+  return { loopViews: views, loopLoads: loads, loopHas: has, actions, forms };
+}

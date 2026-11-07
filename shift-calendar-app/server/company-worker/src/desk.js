@@ -233,7 +233,7 @@ export async function flow(env, now) {
     stage("todo", "개발 대기", todo, (d) => d.created_at, "Claude에게 넘기기로 복사하거나, 열쇠가 있으면 Claude가 직접 가져가요", { route: "sort", label: "Claude에게 넘기기" }),
     stage("handed", "Claude에게 넘김", handed, (d) => d.handed_at, "Claude가 개발을 시작하면 개발중으로 바뀌어요", { route: "dev", label: "개발사항 보기" }),
     stage("doing", "개발 중", doing, (d) => d.updated_at, "PR·디버그 빌드·PC 확인 중이에요", { route: "dev", label: "개발사항 보기" }),
-    stage("built", "고침 · 출시 전", built, (d) => d.updated_at, "Play에 올린 뒤 '나간 판'을 저장하면 앱에 반영이 떠요", { act: "flow-ship", label: "나간 판 저장" }),
+    stage("built", "고침 · 출시 전", built, (d) => d.updated_at, "Play 100% 출시를 서버가 보면 1시간 뒤 스스로 저장하고 답해요(서비스 계정이 없으면 '나간 판 저장')", { act: "flow-ship", label: "나간 판 저장" }),
     stage("notify", "출시됨 · 답 남음", notify, (r) => r.updated_at, "고친 판이 나갔는데 아직 답을 기다리는 문의예요", { route: "inquiries", label: "문의 보기" }),
   ];
   // 30일 숫자: 첫 답까지 걸린 시간, 답 목표 지킴, 도움이 됐어요, 개발 걸린 날.
@@ -302,7 +302,7 @@ export const keyAllows = (path, method, scope = "ops") => (scope === "sync" ? (m
 /** 'Claude' 관리자: 문의와 개발사항만, 처리까지. 기록에는 'Claude'로 남아요. */
 const keyActorOf = (row) => (row.scope === "sync"
   ? { id: `key:${row.id}`, name: "저장소 동기화", email: "", owner: false, key: row.id, sync: true, perms: { dev: "edit", devStatus: "edit" } }
-  : { id: `key:${row.id}`, name: "Claude", email: "", owner: false, key: row.id, perms: { inquiries: "edit", dev: "edit", devStatus: "edit" } });
+  : { id: `key:${row.id}`, name: "Claude", email: "", owner: false, key: row.id, perms: { inquiries: "edit", dev: "edit", devStatus: "edit", metrics: "view" } });
 
 /**
  * Authorization: Bearer bko_… 로 온 부름. 열쇠가 아니면 null(쿠키 로그인으로), 맞지 않거나 막힌 길이면 Response, 맞으면 { actor }.

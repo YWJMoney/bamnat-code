@@ -4528,6 +4528,8 @@ function areaFor(path) {
   if (path === "/desk/ship") return "devStatus";
   // 1.39 [LOOP] 자동 순환은 개발사항을 보는 사람이(스위치·열차·보상 규칙·요금은 loop.js가 최고 관리자만), 저장소 동기화는 개발사항 처리 권한.
   if (path === "/dev/sync") return "devStatus";
+  // 요금 판단(관측치)은 숫자를 보는 사람이: 숫자 허브 안이에요.
+  if (path === "/loop/tiers" || path.startsWith("/loop/tier/")) return "metrics";
   if (path === "/loop" || path.startsWith("/loop/")) return "dev";
   if (path === "/queue" || path.startsWith("/groups/") || path.startsWith("/asks/")) return "review";
   if (path.startsWith("/inquiries") || path.startsWith("/templates")) return "inquiries";

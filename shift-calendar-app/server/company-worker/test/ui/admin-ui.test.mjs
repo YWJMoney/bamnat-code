@@ -120,7 +120,9 @@ test("[ADMUX-01] every screen opens without an error and without a style attribu
   for (const s of ["home", "desk", "inquiries", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
     "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "inbox", "ops", "settings", "more",
     // 1.38 [ADM3] 새 화면들.
-    "flow", "cockpit", "incident", "reviews", "requests", "launch", "materials", "health", "money", "errors", "backup", "keys", "growth"]) {
+    "flow", "cockpit", "incident", "reviews", "requests", "launch", "materials", "health", "money", "errors", "backup", "keys", "growth",
+    // 1.39 [LOOP] 자동 순환·결정함·요금 판단.
+    "loop", "decide", "tiers"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
     assert.ok(main.textContent.trim().length > 10, `${s} shows something`);
@@ -630,7 +632,7 @@ test("[ADMUX-30] six hubs for the owner; an admin sees only the hubs and tabs th
   assert.ok(t.$('.side li[data-hub="ask"].open .subnav a[data-tab="companies"]'));
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "ask");
   await t.go("#/home");
-  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "desk", "flow", "cockpit", "incident"]);
+  assert.deepEqual(t.$$("#hubtabs a").map((a) => a.dataset.tab), ["home", "desk", "decide", "flow", "loop", "cockpit", "incident"]);
   await t.go("#/metrics");
   assert.equal(t.$('.tabs [aria-current="page"]').dataset.nav, "insight");
   // 민지 answers questions only: 오늘, 문의 (without 답 목표, which is 설정's) and 관리 (내 계정 only).
