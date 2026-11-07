@@ -274,7 +274,7 @@ fun LiveTryOnBand(c: AppContainer) {
                         ending -> "원래대로 돌리는 중…"
                         !trial.showing -> "지금 내 모습 (입기 전)"
                         fn -> "‘${trial.title}’ 써 보는 중"
-                        else -> "‘${trial.title}’ 입어 보는 중"
+                        else -> "‘${trial.title}’ 입혀 보는 중"
                     }, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(when {
                         !trial.showing -> "‘입은 모습’을 누르면 다시 입혀 봐요"
