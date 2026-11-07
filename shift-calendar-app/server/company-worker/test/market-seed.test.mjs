@@ -164,3 +164,25 @@ test("1.39 판 정리: 내린 작품은 목록·찾기·추천에서 빠지지�
   assert.equal(again.data.hidden, 1);
   assert.equal((await call("GET", `/api/recipes/${made["옛 테마 둘"]}`)).status, 200);
 });
+
+test("1.39 판 정리 belowApp: 그 판 미만 옛 앱의 장터에는 계속 보이고, 새 앱에서만 빠져요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  for (const title of ["옛 테마 하나", "옛 테마 둘"]) assert.equal((await call("POST", "/api/admin/recipes", { recipe: recipe(title) }, admin)).status, 201);
+  const out = await call("POST", "/api/admin/recipes/hide-titles", { titles: ["옛 테마 하나"], belowApp: 53, note: "1.39 장터 정리" }, admin);
+  assert.equal(out.data.hidden, 1);
+  await call("POST", "/api/admin/recipes/hide-titles", { titles: ["옛 테마 둘"] }, admin);
+  // 1.38(52) 앱과 app=을 안 보내는 아주 옛 앱에는 '하나'가 남고, 53 앱에는 둘 다 빠져요. belowApp이 없는 '둘'은 모든 앱에서 빠져요.
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=52")), ["옛 테마 하나"]);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new")), ["옛 테마 하나"]);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53")), []);
+  const listed = (await call("GET", "/api/admin/recipes?tab=retired", undefined, admin)).data.items;
+  assert.deepEqual(listed.map((i) => [i.title, i.retiredBelow ?? null]).sort(), [["옛 테마 둘", null], ["옛 테마 하나", 53]]);
+  // 다시 보내면 belowApp만 새로 적어요(이제 모든 앱에서 빠짐).
+  await call("POST", "/api/admin/recipes/hide-titles", { titles: ["옛 테마 하나"] }, admin);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=52")), []);
+  // 되돌리면 모두에게 다시.
+  await call("POST", "/api/admin/recipes/show-titles", { titles: ["옛 테마 하나", "옛 테마 둘"] }, admin);
+  assert.equal(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53")).length, 2);
+});

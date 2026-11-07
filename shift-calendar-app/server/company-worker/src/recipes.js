@@ -988,6 +988,9 @@ export const RECIPE_COLUMNS = [
   "ALTER TABLE recipes ADD COLUMN release_at INTEGER",
   "ALTER TABLE recipes ADD COLUMN min_app INTEGER",
   "ALTER TABLE recipes ADD COLUMN batch TEXT",
+  // 1.39 판 정리 (작품 갈래 부탁): a retired work stays in the lists of apps below this versionCode, whose 장터 would otherwise be
+  // nearly empty (the new 판's works are min_app 53 and newer). null: off for every app.
+  "ALTER TABLE recipes ADD COLUMN retired_below INTEGER",
 ];
 
 export function newCode() {
@@ -1487,11 +1490,14 @@ async function recipeList(d, env, url) {
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 30);
   const cursor = Math.max(0, Math.min(600, Number(url.searchParams.get("cursor")) || 0));
   const now = Date.now();
-  const where = ["r.state = 'visible'", "r.scope = 'public'"];
-  const args = [];
+  const app = appCodeOf(url);
+  // 1.39 판 정리: a retired work with retired_below stays listed for apps older than that (an app sending no app= is before 1.36).
+  const where = [`(r.state = 'visible' OR (r.state = 'hidden' AND r.hidden_reason = '${RETIRED}' AND r.retired_below IS NOT NULL AND ? < r.retired_below))`,
+    "r.scope = 'public'"];
+  const args = [app];
   // 1.36 [MKS-01] An app sends its versionCode as app=; one that sends none (before 1.36) never sees a min_app recipe it cannot read.
   where.push("(r.min_app IS NULL OR r.min_app <= ?)");
-  args.push(appCodeOf(url));
+  args.push(app);
   if (style && ALL_STYLES.has(style)) {
     where.push("(',' || r.styles || ',') LIKE ?");
     args.push(`%,${style},%`);
@@ -2092,7 +2098,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     return d.json({ tab, ...(tab === "one" ? { code } : {}), items: rows.map((r) => ({ ...listItem(r, now), section: sectionOf(r.body).scope, state: r.state, scope: r.scope, body: r.body, hash: r.hash, note: r.note,
       ...(r.release_at ? { releaseAt: new Date(r.release_at).toISOString() } : {}), ...(r.min_app ? { minApp: r.min_app } : {}), ...(r.batch ? { batch: r.batch } : {}),
       late: r.state === "pending" && now - r.updated_at > DAY, flags: flags.filter((f) => f.code === r.code).map((f) => ({ reason: f.reason, n: f.n, counted: f.counted ?? f.n })),
-      quiet: quietOf(r.code), hidden: r.hidden_reason ?? null })) });
+      quiet: quietOf(r.code), hidden: r.hidden_reason ?? null, ...(r.retired_below ? { retiredBelow: r.retired_below } : {}) })) });
   }
   if (path === "/recipes/actions" && method === "GET") {
     const rows = await d.all(env, "SELECT * FROM recipe_actions ORDER BY id DESC LIMIT 300");
@@ -2189,8 +2195,11 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     const codes = clean(body?.codes).map((c) => c.toUpperCase()).filter((c) => /^[2-9A-HJ-NP-Z]{8}$/.test(c)).slice(0, 1200);
     if (titles.length === 0 && codes.length === 0) return d.json({ error: "titles" }, 400);
     const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
+    // 작품 갈래 부탁: belowApp N이면 N 미만 앱의 장터에는 계속 보여요(새 판 작품이 아직 안 보이는 옛 앱이 비지 않게). 없으면 모든 앱에서 빠져요.
+    const below = Number.isInteger(body.belowApp) && body.belowApp > 0 && body.belowApp < 1_000_000 ? body.belowApp : null;
     // 1.38 정리로 이미 'admin'으로 숨긴 운영자 작품도 다시 보내면 'retired'로 바뀌어, 넣은 분이 다시 열 수 있어요.
-    const from = hiding ? "(state IN ('visible', 'waiting') OR (state = 'hidden' AND hidden_reason = 'admin'))" : `state = 'hidden' AND hidden_reason = '${RETIRED}'`;
+    // 이미 판 정리로 내린 것도 다시 보내면 belowApp만 새로 적어요.
+    const from = hiding ? `(state IN ('visible', 'waiting') OR (state = 'hidden' AND hidden_reason IN ('admin', '${RETIRED}')))` : `state = 'hidden' AND hidden_reason = '${RETIRED}'`;
     const skels = [...new Set(titles.map(nameSkeleton))];
     const found = new Map();
     const look = async (col, keys) => {
@@ -2211,8 +2220,8 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
         const part = rows.slice(i, i + 90).map((r) => r.code);
         const marks = part.map(() => "?").join(",");
         stmts.push(hiding
-          ? d.stmt(env, `UPDATE recipes SET state = 'hidden', hidden_reason = '${RETIRED}', hidden_at = ?, note = ? WHERE code IN (${marks})`, now, note, ...part)
-          : d.stmt(env, `UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, note = '' WHERE code IN (${marks})`, ...part));
+          ? d.stmt(env, `UPDATE recipes SET state = 'hidden', hidden_reason = '${RETIRED}', hidden_at = ?, note = ?, retired_below = ? WHERE code IN (${marks})`, now, note, below, ...part)
+          : d.stmt(env, `UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, note = '', retired_below = NULL WHERE code IN (${marks})`, ...part));
         stmts.push(d.stmt(env, `INSERT INTO recipe_actions (code, action, reason, actor, at) SELECT code, ?, ?, ?, ? FROM recipes WHERE code IN (${marks})`,
           hiding ? "hide" : "show", (note || (hiding ? "판 정리" : "판 정리 되돌림")).slice(0, 200), actorName, now, ...part));
       }
@@ -2241,10 +2250,10 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     } else if (what === "hide") {
       // 1.36 [LIM-10] Hidden by the operator counts like reports hiding it (not again when reports already did).
       if (r.state !== "hidden") strike = r.owner;
-      stmts.push(d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ? WHERE code = ?", now, note, code));
+      stmts.push(d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ?, retired_below = NULL WHERE code = ?", now, note, code));
       if (r.state !== "hidden") stmts.push(d.stmt(env, "UPDATE recipe_trust SET hidden = hidden + 1 WHERE device = ?", r.owner));
     } else if (what === "show") {
-      stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, flags = 0, note = '' WHERE code = ?", code));
+      stmts.push(d.stmt(env, "UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, flags = 0, note = '', retired_below = NULL WHERE code = ?", code));
       stmts.push(d.stmt(env, "DELETE FROM recipe_flags WHERE code = ?", code));
       stmts.push(d.stmt(env, "DELETE FROM write_strikes WHERE ref = ?", code));
       // 1.36 [SEC-16] M10: shown again, its maker's mark for it goes too (it kept 단골 away for good) and a restriction it started ends.
