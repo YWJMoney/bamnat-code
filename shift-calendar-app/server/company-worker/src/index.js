@@ -2004,7 +2004,7 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
   const waitingGroups = groups.filter((g) => !rules.some((r) => r.grp === g.grp));
   const pair = (grp) => ({ company: c.id, grp });
   const extra = who.member && (parts.has("room") || parts.has("talk")) ? Promise.all([
-    parts.has("room") ? roomData(env, c, who, now) : null,
+    parts.has("room") ? roomData(env, c, who, now, payPrivate(request)) : null,
     parts.has("talk") ? talkData(request, env, c.id, ROOM, { c, who }) : null,
   ]) : null;
   // Its failure is the answer's, below; not a second one if the page's own reads fail first.
@@ -2319,12 +2319,12 @@ async function room(request, env, companyId) {
   const who = c.id === companyId ? asked : await viewer(request, env, c.id);
   if (!who.dev) refuse("device", "device");
   if (!who.member) return who.limited ? tooMany("reads", DAY - (Date.now() % DAY)) : json({ error: "member" }, 403);
-  const r = await roomData(env, c, who, Date.now());
+  const r = await roomData(env, c, who, Date.now(), payPrivate(request));
   return json(r.body, r.status);
 }
 
 /** [PLAZA-09] The room of [c] for a member [who], as {status, body}: its lists together, then every version's state together. */
-async function roomData(env, c, who, now) {
+async function roomData(env, c, who, now, privatePay = false) {
   const [{ adoptPoints }, live, mine, stable] = await Promise.all([
     settings(env),
     all(env, `SELECT grp, dept, dept_norm, setup, version, 'adopted' AS status, adopted_at AS at FROM rules
@@ -2346,9 +2346,12 @@ async function roomData(env, c, who, now) {
   const base = live.find((v) => v.grp === mine?.grp) ?? best;
   const baseSetup = JSON.parse(base.setup);
   const st = stable(base.dept_norm, base.grp, facts.uses(c.id, base.grp), now);
-  const view = (v) => ({ ...states.get(v.grp), dept: v.dept, version: v.version, at: iso(v.at), setup: shared(v.setup, c.name) });
+  // 1.39 [PAYP-01]: a 1.39 app sees the versions' shifts and what changed in them, never their pay (its way says it differs by 보완 요청).
+  const text = (v) => (privatePay ? shiftsOnly(shared(v.setup, c.name)) : shared(v.setup, c.name));
+  const view = (v) => ({ ...states.get(v.grp), dept: v.dept, version: v.version, at: iso(v.at), setup: text(v) });
+  const lines = (l) => (privatePay ? shiftLines(l) : l);
   const others = live.filter((v) => v.grp !== base.grp && v.dept_norm === base.dept_norm).map((v) => ({
-    ...view(v), changes: diffLines(describe(baseSetup), describe(JSON.parse(v.setup))),
+    ...view(v), changes: diffLines(lines(describe(baseSetup)), lines(describe(JSON.parse(v.setup)))),
   })).sort((a, b) => b.persons - a.persons || b.support - a.support);
   return { status: 200, body: {
     company: { id: c.id, name: c.name },

@@ -33,6 +33,11 @@ test("[PAYP-01][PAYP-03] a 1.39 app reads no pay, members too, and takes a versi
     assert.deepEqual([page.setups[0].pay, page.setups[0].payPrivate], [true, true]);
     assert.ok(!JSON.stringify(page).includes("가산율"));
   }
+  // The room too: the versions' shifts, never their pay.
+  const room = (await call("GET", `/api/companies/${c}/room`, undefined, app(9))).data;
+  assert.equal(room.member, true);
+  assert.equal(room.base.setup.pay, undefined);
+  assert.ok(!JSON.stringify(room).includes("가산율"));
   // Putting the way in: the pay part, named for the company.
   const took = await call("POST", `/api/companies/${c}/setups/${g}/take`, { device: device(9) }, from(9));
   assert.equal(took.status, 200, took.text);

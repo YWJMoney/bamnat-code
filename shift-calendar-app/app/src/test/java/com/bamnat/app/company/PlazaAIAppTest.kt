@@ -186,8 +186,10 @@ class PlazaAIAppTest {
                 assertFalse(line.queued)
                 assertEquals("야간 50% → 60%", line.line)
                 // The server keeps one version per phone and department: this phone's is now the changed one.
-                val night = suspend { CompanyClient(base, device = { c.companyStore.device }).company(id).setups
-                    .flatMap { s -> SetupFacts.read(s.text).filter { it.key == "rate:night" }.map { it.value } } }
+                // 1.39 [PAYP-03] The sender reads its version's pay by taking it; the page itself has none.
+                val night = suspend { CompanyClient(base, device = { c.companyStore.device }).let { api -> api.company(id).setups
+                    .mapNotNull { s -> api.take(c.companyStore.device, id, s.id) }
+                    .flatMap { t -> SetupFacts.read(t).filter { it.key == "rate:night" }.map { it.value } } } }
                 assertEquals(listOf("60%"), night())
                 // 이번엔 안 할게요 on the next change keeps it off the server, and the same values are not asked again.
                 c.autoShare.sharedDone()

@@ -81,6 +81,12 @@ class PlazaRoomTest {
         assertEquals(2, cards.size)
         val order = RoomCards.cards(mine, listOf(RoomCards.Version("d", edit { it.rotation(listOf("주간", "야간", null)) }, 1))).single()
         assertFalse(order.canTake)
+        // 1.39 [PAYP-01] A version a 1.39 app reads without its pay says only what differs in the shifts.
+        val withoutPay = mine.substringBefore(",\n        \"pay\"") + "}"
+        assertTrue(SetupFacts.read(withoutPay).isNotEmpty())
+        val shiftsOnly = SetupEdit.of(withoutPay)!!.shiftTime("주간", "08:00", "20:00", 60).text
+        val noPay = RoomCards.cards(mine, listOf(RoomCards.Version("e", shiftsOnly, 1)))
+        assertEquals(listOf("주간 07:00~19:00 · 휴게 60분 → 08:00~20:00 · 휴게 60분으로 바꾼 사람 1명"), noPay.map { it.text })
     }
 
     @Test fun `a member hears of other versions until the company settles`() {
