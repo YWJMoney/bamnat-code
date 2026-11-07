@@ -79,7 +79,7 @@ import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, usage } from "./usage.js";
-import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
+import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
@@ -501,6 +501,9 @@ async function routeOnce(request, env, url, ctx) {
   if (m && method === "GET") return talk(request, env, m[1], ROOM);
   m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/setups\/([0-9a-f]{16})\/posts$/);
   if (m && method === "GET") return talk(request, env, m[1], m[2]);
+  // 1.39 [PAYP-03] A version's pay part, for the phone putting that way in now.
+  m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/setups\/([0-9a-f]{16})\/take$/);
+  if (m && method === "POST") return takeWay(request, env, m[1], m[2]);
   if (path === "/api/posts" && method === "POST") return post(request, env);
   m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})(\/flag)?$/);
   if (m && method === "DELETE" && !m[2]) return takePostBack(request, env, m[1]);
@@ -1987,10 +1990,17 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
     all(env, "SELECT grp FROM rules WHERE company_id = ?1 AND withdrawn = 1 UNION SELECT grp FROM reports WHERE company_id = ?1 AND status = 'rejected'", id),
     stableFacts(env, id),
   ]);
+  // 1.39 [PAYP-05] 보완 요청 still open on each version, read beside the second round (not one more).
+  const fixesRead = c && !c.hidden && !c.merged_into ? openFixes(env, id) : null;
+  fixesRead?.catch(() => {});
   if (!c || c.hidden) return { status: 404, body: { error: "not_found" } };
   if (c.merged_into) return { status: 200, body: { mergedInto: c.merged_into } };
-  const view = (text) => (who.member ? shared(text, c.name) : shiftsOnly(shared(text, c.name)));
-  const words = (setup) => (who.member ? describe(setup) : shiftLines(describe(setup)));
+  // 1.39 [PAYP-01] (사용자 2026-11-07 "급여 계산식은 보여지지 않게"): pay lines go to no one, members too; the pay part itself
+  // only to an app before 1.39 that joined (it puts a way in from the page), never to a 1.39 app, which takes it (/take) when
+  // it puts the way in and shows it nowhere.
+  const payBody = who.member && !payPrivate(request);
+  const view = (text) => (payBody ? shared(text, c.name) : shiftsOnly(shared(text, c.name)));
+  const words = (setup) => shiftLines(describe(setup));
   const waitingGroups = groups.filter((g) => !rules.some((r) => r.grp === g.grp));
   const pair = (grp) => ({ company: c.id, grp });
   const extra = who.member && (parts.has("room") || parts.has("talk")) ? Promise.all([
@@ -2006,7 +2016,8 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
   const mark = (deptNorm, grp, text) => {
     const has = JSON.parse(text).pay !== undefined;
     const st = stable(deptNorm, grp, facts.uses(c.id, grp), now);
-    return { pay: has, ...(has && !who.member ? { payHidden: true } : {}), ...(st.stable ? { stable: true } : {}) };
+    return { pay: has, ...(has && !who.member ? { payHidden: true } : {}), ...(has && !payBody ? { payPrivate: true } : {}),
+      ...(st.stable ? { stable: true } : {}) };
   };
   const setups = rules.map((r) => ({ ...facts.state(c.id, r.grp, adoptPoints, true), dept: r.dept, version: r.version, adoptedAt: iso(r.adopted_at),
     setup: view(r.setup), lines: words(JSON.parse(r.setup)), ...mark(r.dept_norm, r.grp, r.setup) }));
@@ -2031,9 +2042,14 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
     picked.push({ s, rep });
   }
   setups.push(...picked.map(({ s, rep }) => ({ ...s, dept: rep.dept, setup: view(rep.setup), lines: words(JSON.parse(rep.setup)),
-    ...mark(rep.dept_norm, rep.grp, rep.setup) })));
+    ...mark(rep.dept_norm, rep.grp, rep.setup), ...(down.has(rep.grp) ? { [DOWN]: true } : {}) })));
   // AH 1.27 [PLAZA-14][PLAZA-15] Each department's 대표 주기, doubted versions and 맞아요·달라요 with this phone's own.
   markLeads(setups, (grp) => facts.opinions(c.id, grp, who.dev));
+  // 1.39 [PAYP-02] (사용자 2026-11-07 "좋아요나 맞아요 많은순으로 위로"): in each department the most 맞아요 first, then the most used.
+  sortByOk(setups);
+  // 1.39 [PAYP-05] 보완 요청 still open on each version, for its card.
+  const open = await fixesRead;
+  for (const s of setups) if (open.get(s.id)) s.fixes = open.get(s.id);
   // BD 1.30 [PLZD-07] What each folded version says against its department's 대표.
   pgChanges(setups, normName);
   const body = { id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases: aliasRows.map((a) => a.name),
@@ -2071,6 +2087,104 @@ async function stableFacts(env, companyId) {
 }
 
 const shared = (text, name) => ({ ...JSON.parse(text), company: name });
+
+// 1.39 시작
+// ---- [PAYP-01..07] 공유 급여 비공개 · 맞아요 순 · 보완 요청 (사용자 2026-11-07) ----
+//
+// "급여 정보가 회사 검색만 하면 내용들이 다 보여지는데 … 급여 계산식은 보여지지 않게 한다 … 좋아요나 맞아요 많은순으로 위로 …
+// 보완요청을 하면 어떤점이 다른거 같아요를 이야기할수 있게해서 제공한 사용자가 수정을 할수 있게한다 … 관리자앱에서는 볼수 있게".
+// Before 1.39 a phone that joined a company (which anyone may, by picking it) read every version's pay part and its lines. Now no
+// phone reads them: the shifts and their order, that a pay way is there, its 맞아요·달라요 and users, and 보완 요청 are what show.
+// A 1.39 app says so with X-Pay-Private: 1 and takes a way's pay part only when it puts that way in (/take), for the pay alone;
+// an older app's member still gets the pay part (not its lines) so its 이 급여 방식 쓰기 keeps working until it updates.
+
+/** Whether the asking app is 1.39 or later, which never shows a shared pay way and takes it with /take. */
+export const payPrivate = (request) => request?.headers?.get?.("x-pay-private") === "1";
+
+/** A version the developer turned down (a key the answer never carries: JSON.stringify leaves symbols out). */
+const DOWN = Symbol("down");
+
+/** [PAYP-02] Each department's versions, the most 맞아요 first, then the most backing and the most used; departments keep their order. */
+export function sortByOk(setups) {
+  const order = new Map();
+  for (const s of setups) {
+    const k = normName(s.dept ?? "");
+    if (!order.has(k)) order.set(k, order.size);
+  }
+  // Who stands behind a version (its senders and 맞아요, each phone once: persons) is its 맞아요 count; the 맞아요 votes alone next.
+  // What people doubt or the developer turned down never climbs over the others, however many stand behind it.
+  const ok = (s) => s.opinion?.ok ?? 0;
+  const low = (s) => (s.doubted || s[DOWN] ? 1 : 0);
+  const at = new Map(setups.map((s, i) => [s, i]));
+  setups.sort((a, b) => order.get(normName(a.dept ?? "")) - order.get(normName(b.dept ?? "")) || low(a) - low(b) || (b.persons ?? 0) - (a.persons ?? 0) ||
+    ok(b) - ok(a) || (b.uses ?? 0) - (a.uses ?? 0) || at.get(a) - at.get(b));
+  return setups;
+}
+
+/** [PAYP-05] How many 보완 요청 are open (shown, with no reply yet from one who sent that version) on each version of a company. */
+async function openFixes(env, companyId) {
+  const rows = await all(env, `SELECT p.grp, COUNT(*) AS n FROM posts p WHERE p.company_id = ?1 AND p.kind = 'fix' AND p.status = 'shown'
+      AND p.parent IS NULL AND NOT EXISTS (SELECT 1 FROM posts a JOIN reports r ON r.company_id = a.company_id AND r.grp = a.grp
+        AND r.device = a.device AND r.status IN ('pending', 'adopted', 'replaced') WHERE a.parent = p.id AND a.status = 'shown')
+    GROUP BY p.grp`, companyId);
+  return new Map(rows.map((r) => [r.grp, r.n]));
+}
+
+/** [PAYP-03] How many ways one phone may take in a day: enough to try a few versions, not to read every company's. */
+export const TAKES_PER_DAY = 12;
+const takes = new Map();
+
+/** One more take by [dev] today, false past [TAKES_PER_DAY] (in memory, per Worker, as memberRead). */
+function takeCounted(dev, now) {
+  const day = Math.floor(now / DAY);
+  const key = `${dev}|${day}`;
+  const n = (takes.get(key) ?? 0) + 1;
+  if (n > TAKES_PER_DAY) return false;
+  takes.set(key, n);
+  if (takes.size > 20000) for (const k of takes.keys()) if (!k.endsWith(`|${day}`)) takes.delete(k);
+  return true;
+}
+
+/**
+ * POST /api/companies/:id/setups/:grp/take — {device, cal}: 1.39 [PAYP-03] the pay part of one version, for a phone that joined the
+ * company and is putting that way into its pay now. The app keeps it in the pay alone and never shows it ([PAYP-04]); the
+ * server counts the phone as using it when the pay is saved (/api/uses, as before). A taken-down, turned-down or held version
+ * is not given.
+ */
+async function takeWay(request, env, companyId, grp) {
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const now = Date.now();
+  const dev = await deviceHash(device);
+  const c = await follow(env, companyId);
+  if (!c || c.hidden) return json({ error: "not_found" }, 404);
+  const member = await one(env, "SELECT 1 AS ok FROM members WHERE device = ? AND company_id = ? AND left = 0 LIMIT 1", dev, c.id);
+  if (!member) return json({ error: "member" }, 403);
+  // Counted in memory like a member's reads (memberRead): nothing about who took what is written down.
+  if (!takeCounted(dev, now)) return json({ error: "rate_limited" }, 429);
+  const row = await one(env, `SELECT dept, setup FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0
+      UNION ALL SELECT r.dept, r.setup FROM reports r WHERE r.company_id = ?1 AND r.grp = ?2 AND r.status IN ('pending', 'adopted') AND ${pgShown("r")}
+        AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
+      LIMIT 1`, c.id, grp);
+  if (!row) return json({ error: "not_found" }, 404);
+  const setup = shared(row.setup, c.name);
+  if (setup.pay === undefined) return json({ error: "no_pay" }, 404);
+  return json({ company: { id: c.id, name: c.name }, setup: grp, dept: row.dept, text: JSON.stringify(setup) });
+}
+
+/** [PAYP-05] Where a 보완 요청 says a way differs: the proposal's fields, 1 to 6 of them, no values. */
+function readFix(raw) {
+  const fields = list(raw ?? [], 6, "change");
+  if (!fields.length) refuse("change", "change");
+  const seen = new Set();
+  for (const [i, f] of fields.entries()) {
+    const field = oneOf(typeof f === "object" && f ? f.field : f, Object.keys(CHANGE_FIELDS), `change.${i}`);
+    seen.add(field);
+  }
+  return [...seen].map((field) => ({ field }));
+}
+// 1.39 끝
 
 // AF 1.26 시작
 // ---- [PLAZA-07][PLAZA-08][PLAZA-09][PLAZA-10] 회사별 광장 (결정 D79) ----
@@ -3657,7 +3771,8 @@ async function talkData(request, env, companyId, grp, known = null) {
   }
   const me = device ? (who.dev ?? await deviceHash(device)) : null;
   const member = who.member;
-  const lines = (change) => (member ? change : change.filter((l) => l.field === "shift" || l.field === "order"));
+  // 1.39 [PAYP-01] A proposal's pay lines to no one (members too); a 보완 요청's lines are where it differs, without values.
+  const lines = (change, kind) => (kind === "fix" ? change : change.filter((l) => l.field === "shift" || l.field === "order"));
   const now = Date.now();
   // [COMM-09] Writers this phone chose not to see, from its own list (X-Hide); the server keeps no list.
   const sealed = authorKey(env).then(async (key) => ({ key, hidden: await hiddenAuthors(key, request.headers.get("x-hide")) }));
@@ -3780,7 +3895,7 @@ async function talkData(request, env, companyId, grp, known = null) {
       ...(p.poll ? { poll: pollOfRow(p) } : {}),
       ...(p.attach && cards.has(p.attach) ? { attach: { code: p.attach, title: cards.get(p.attach).title,
         ...(cards.get(p.attach).look ? { look: cards.get(p.attach).look } : {}) } } : {}),
-      change: p.change ? lines(JSON.parse(p.change)) : null,
+      change: p.change ? lines(JSON.parse(p.change), p.kind) : null,
       agree: p.agree ?? 0,
       disagree: p.disagree ?? 0,
       ...postTrust(p),
@@ -3791,7 +3906,7 @@ async function talkData(request, env, companyId, grp, known = null) {
     });
   }
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
-  if (member && !room) await withProposalTexts(all, env, c, posts); // BC 1.30 [PROP-01]
+  if (member && !room) await withProposalTexts(all, env, c, posts, { withoutPay: payPrivate(request) }); // BC 1.30 [PROP-01]
   // [J133-91] 1.33 빌드 7 확인 ("고쳐 다시 올리기를 열면 전에 바꾼 값이 비어 있어요"): the writer's own proposals come with their
   // setup to anyone, so it opens as it was sent; without the pay part when this version has a pay way they may not see (결정 D79).
   else if (!room) {
@@ -3826,6 +3941,8 @@ async function post(request, env) {
   const dev = await deviceHash(device);
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
+  // 1.39 [PAYP-05] 마을 경고·쉬기 (claude/project-thread-0ncdir) hooks here when both are in: careGate(d, env, dev, "opinion", now) for a
+  // talk post or 보완 요청 on a company's version.
   const c = await talkable(env, body.company, body.setup);
   if (!c) return json({ error: "not_found" }, 404);
   const net = await network(request, env, now);
@@ -3840,8 +3957,13 @@ async function post(request, env) {
     if (!top) refuse("parent", "parent");
     parent = top.parent ?? top.id;
   }
-  const kind = given(body.kind) ? oneOf(body.kind, ["talk", "question", "proposal"], "kind") : "talk";
-  const change = kind === "proposal" ? readChange(body.change) : null;
+  const kind = given(body.kind) ? oneOf(body.kind, ["talk", "question", "proposal", "fix"], "kind") : "talk";
+  // 1.39 [PAYP-05] 보완 요청: on a version, never a reply; on only once the owner opened it (plaza.fix_request, 처리방침).
+  if (kind === "fix") {
+    if (parent) refuse("parent", "parent");
+    if (!(await fixRequestsOpen(env, now))) return json({ error: "closed" }, 403);
+  }
+  const change = kind === "proposal" ? readChange(body.change) : kind === "fix" ? readFix(body.change) : null;
   const id = `p${randomId(15)}`;
   // [PLZ-02][PLZ-09] A proposal carries the whole setup as it should be: it is sent like a report, as a
   // change of the rule this talk is about when that rule is in use, and the post's 맞아요 count for it.
@@ -4110,7 +4232,9 @@ export async function history(env, companyId, url, request) {
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
   // [PLAZA-08] What each version paid, only for a phone that joined the company.
   const who = c.id === companyId ? asked : await viewer(request, env, c.id);
-  const words = (setup) => (who.member ? describe(setup) : shiftLines(describe(setup)));
+  // 1.39 [PAYP-01] Pay lines to no one; a version's pay part only to an older app's member, which can put it back on a phone.
+  const words = (setup) => shiftLines(describe(setup));
+  const payBody = who.member && !payPrivate(request);
   const deptOf = `SELECT dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
     UNION ALL SELECT dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`;
   const [dept, rules] = await Promise.all([one(env, deptOf, c.id, grp), all(env, `SELECT r.*,
@@ -4127,7 +4251,7 @@ export async function history(env, companyId, url, request) {
       state: r.withdrawn ? "withdrawn" : r.superseded ? "superseded" : "active",
       senders: r.sp_senders, post: r.sp_post ?? null,
       // [PLAZA-05] What the version was, so the app can compare it and put it back on a phone.
-      body: who.member ? shared(r.setup, c.name) : shiftsOnly(shared(r.setup, c.name)),
+      body: payBody ? shared(r.setup, c.name) : shiftsOnly(shared(r.setup, c.name)),
       changes: before ? diffLines(words(before), words(setup)) : [],
     });
     before = setup;
@@ -7060,7 +7184,7 @@ async function digest(request, env, url) {
 }
 
 async function newsItems(env, dev, since, now) {
-  const [changed, adopted, rates, results, rooms, roomPosts, replies] = (await batch(env, [
+  const [changed, adopted, rates, results, rooms, roomPosts, replies, fixes, fixAnswers] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -7082,6 +7206,17 @@ async function newsItems(env, dev, since, now) {
         JOIN posts a ON a.parent = q.id AND a.status = 'shown' AND a.device != q.device AND a.created_at > ?2
         LEFT JOIN companies c ON c.id = q.company_id
       WHERE q.device = ?1 AND q.grp = 'room' AND q.parent IS NULL GROUP BY q.company_id ORDER BY at DESC LIMIT 10`, dev, since),
+    // 1.39 [PAYP-06] 보완 요청 others wrote on a version this phone sent (pending or in use), by version.
+    stmt(env, `SELECT f.company_id, c.name, f.grp, MAX(r.dept) AS dept, COUNT(DISTINCT f.id) AS n, MAX(f.created_at) AS at FROM posts f
+        JOIN reports r ON r.company_id = f.company_id AND r.grp = f.grp AND r.device = ?1 AND r.status IN ('pending', 'adopted')
+        LEFT JOIN companies c ON c.id = f.company_id
+      WHERE f.kind = 'fix' AND f.status = 'shown' AND f.parent IS NULL AND f.device != ?1 AND f.created_at > ?2
+      GROUP BY f.company_id, f.grp ORDER BY at DESC LIMIT 10`, dev, since),
+    // 1.39 [PAYP-06] Answers to this phone's 보완 요청: a sender's reply, or the version it asked about replaced by its sender's newer one.
+    stmt(env, `SELECT q.company_id, c.name, q.grp, COUNT(*) AS n, MAX(a.created_at) AS at FROM posts q
+        JOIN posts a ON a.parent = q.id AND a.status = 'shown' AND a.device != q.device AND a.created_at > ?2
+        LEFT JOIN companies c ON c.id = q.company_id
+      WHERE q.device = ?1 AND q.kind = 'fix' AND q.parent IS NULL GROUP BY q.company_id, q.grp ORDER BY at DESC LIMIT 10`, dev, since),
   ])).map((r) => r.results);
   const items = [
     ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
@@ -7095,6 +7230,8 @@ async function newsItems(env, dev, since, now) {
     // AI 1.27 [PLAZA-35] New posts in 회사 정보 광장, n of them in one line.
     ...roomPosts.map((r) => ({ kind: "room_posts", company: { id: r.company_id, name: r.name }, count: r.n, at: iso(r.at) })),
     ...replies.map((r) => ({ kind: "replies", company: { id: r.company_id, name: STYLE_ROOMS[r.company_id] ?? r.name ?? "" }, count: r.n, at: iso(r.at) })),
+    ...fixes.map((r) => ({ kind: "fix", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, dept: r.dept ?? "", count: r.n, at: iso(r.at) })),
+    ...fixAnswers.map((r) => ({ kind: "fix_answer", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, count: r.n, at: iso(r.at) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   return items;
 }
