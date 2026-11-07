@@ -376,6 +376,51 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
     }
 
     /**
+     * [TRY-05] 1.39 실제 화면으로 입어 보기: the look settings [r]'s looks would leave on this phone, worked out the way 입기 puts them on
+     * (a whole theme by [wear] with the tabs laid on over it again, one tab's looks by [overlay]), written nowhere. Only the settings that
+     * change are given; empty when nothing would. Its pictures and fonts are fetched first, as 입기 does, so the trial shows them.
+     */
+    suspend fun trialLook(r0: Recipe, own: Boolean, answers: Map<String, Any?> = emptyMap()): Map<String, String> {
+        val filled = com.bamnat.core.recipe.RecipeResolve.answers(r0, answers)
+        val resolved = r0.copy(pieces = r0.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.map { p ->
+            p.copy(values = runCatching { com.bamnat.core.recipe.RecipeResolve.piece(r0, p, filled) }.getOrDefault(p.values)) })
+        val looks = if (own) resolved else resolved.keepMyCellContent()
+        if (looks.pieces.isEmpty()) return emptyMap()
+        fetchLooks(looks)
+        val saved = c.settingsRepository.current
+        var d = saved
+        if (com.bamnat.core.recipe.LookParts.onlyTab(looks) != null) {
+            // One tab's looks are laid on what is worn ([layOn]).
+            val now = Recipe("지금", styles = com.bamnat.core.work.WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(d))
+            com.bamnat.core.recipe.LookParts.layer(now, looks).pieces.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+        } else {
+            looks.pieces.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+            // [MKX-02] The tabs laid on go over the new theme again ([reOverlay]).
+            if (keepOverlays) _overlays.value.forEach { o ->
+                val or0 = runCatching { RecipeCodec.read(o.body) }.getOrNull() ?: return@forEach
+                val of = com.bamnat.core.recipe.RecipeResolve.answers(or0, o.answers)
+                val on = or0.copy(pieces = or0.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }.map { p ->
+                    p.copy(values = runCatching { com.bamnat.core.recipe.RecipeResolve.piece(or0, p, of) }.getOrDefault(p.values)) })
+                val now = Recipe("지금", styles = com.bamnat.core.work.WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(d))
+                com.bamnat.core.recipe.LookParts.layer(now, on).pieces.forEach { p -> d = c.recipes.pieces.onDraft(d, p.kind, p.values) }
+            }
+        }
+        val before = c.recipes.pieces.lookOf(saved)
+        return c.recipes.pieces.lookOf(d).filter { (k, v) -> before[k] != v }
+    }
+
+    /** The pictures, 꾸밈 사진 and shared fonts [looks] names, asked for now (as [RecipePieces.apply] and [overlay] do). */
+    private suspend fun fetchLooks(looks: Recipe) {
+        looks.pieces.forEach { p ->
+            if (p.kind == com.bamnat.core.recipe.PieceKind.PHOTO_LOOK || p.kind == com.bamnat.core.recipe.PieceKind.SCREEN_LOOK || p.kind == com.bamnat.core.recipe.PieceKind.DECOR)
+                runCatching { c.recipes.pieces.photoIds(p.values).forEach { LookImages.fetch(c, it) } }
+            if (p.kind == com.bamnat.core.recipe.PieceKind.DECOR)
+                runCatching { com.bamnat.app.ui.decor.DecorPhotos.load(c, com.bamnat.core.recipe.Decor.of(p.values).images) }
+        }
+        runCatching { RecipeFonts.fetchIn(c, RecipeCodec.write(looks)) }
+    }
+
+    /**
      * [MKX-02] 1.36 빌드 8 (탭을 얹고 테마를 벗으면 '내가 고친 …'이 저절로 내 테마에): a tab laid on or taken off is not the
      * user's own change to the theme worn, so the look 벗기 compares with is the one with the tabs.
      */

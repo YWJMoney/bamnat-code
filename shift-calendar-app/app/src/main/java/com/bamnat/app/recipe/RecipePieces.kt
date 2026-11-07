@@ -535,6 +535,8 @@ class RecipePieces(private val c: AppContainer) {
      */
     suspend fun apply(kind: PieceKind, values: Map<String, Any?>, cal: String, code: String, mode: Mode = Mode.REPLACE): JSONObject? {
         if (mode == Mode.SKIP) return null
+        // [TRY-05] A look put on for real ends a theme only being tried on, so what is put on shows.
+        if (kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS) com.bamnat.app.ui.recipe.LiveTryOn.drop(c)
         return when (kind) {
             PieceKind.SHIFT_LOOK -> {
                 val repo = c.scopeOf(cal).schedule
@@ -1251,8 +1253,13 @@ class RecipePieces(private val c: AppContainer) {
     /** [FREE-10] The settings a theme can change ([com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS]); never a record, an alarm or a rule. */
     fun lookSnapshot(): Map<String, String> = LOOK_SETTINGS.associateWith { settingOf(c.settingsRepository.current, it) }
 
+    /** [TRY-05] [s] with the look settings of [look] (as [lookOf] writes them) on it; nothing else changes. */
+    fun withLook(s: com.bamnat.app.data.AppSettings, look: Map<String, String>): com.bamnat.app.data.AppSettings =
+        look.entries.filter { it.key in LOOK_SETTINGS }.fold(s) { acc, (k, v) -> withSetting(acc, k, v) }
+
     /** [FREE-10] Puts back a look written by [lookSnapshot]. */
     fun restoreLook(m: Map<String, String>) {
+        com.bamnat.app.ui.recipe.LiveTryOn.drop(c)
         c.settingsRepository.update { s -> m.entries.filter { it.key in LOOK_SETTINGS }.fold(s) { acc, (k, v) -> withSetting(acc, k, v) } }
     }
 

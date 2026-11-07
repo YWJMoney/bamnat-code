@@ -387,25 +387,53 @@ class SettingsRepository(context: Context) {
     private val prefs: SharedPreferences =
         context.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    private val _settings = MutableStateFlow(read())
+    /** What is saved on the phone. */
+    private val _stored = MutableStateFlow(read())
+
+    /**
+     * [TRY-05] 1.39 실제 화면으로 입어 보기 (사용자 2026-11-07 "입혀보기에서 가계부나 급여 일감 등이 실 모습과 100% 동일하게"): a theme's
+     * look laid over the saved settings in memory only, while the user walks the real app with it. Never written: [update] works on
+     * the saved settings, [current] is them, and the look goes when the trial ends or the app is closed.
+     */
+    @Volatile private var trial: ((AppSettings) -> AppSettings)? = null
+    @Volatile private var trialShown = true
+    private val _settings = MutableStateFlow(_stored.value)
+
+    /** What the screens draw: the saved settings, with a theme being tried on over them ([putTrial]). */
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
 
+    private fun shown(s: AppSettings): AppSettings = trial?.takeIf { trialShown }?.let { f -> runCatching { f(s) }.getOrDefault(s) } ?: s
+
     // Held in a field: SharedPreferences keeps listeners weakly.
-    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> _settings.value = read() }
+    private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> read().let { _stored.value = it; _settings.value = shown(it) } }
 
     init {
         prefs.registerOnSharedPreferenceChangeListener(listener)
     }
 
-    val current: AppSettings get() = _settings.value
+    /** The saved settings (never a theme only being tried on: what is read here is what is kept, backed up and put back). */
+    val current: AppSettings get() = _stored.value
 
     fun update(transform: (AppSettings) -> AppSettings) {
         synchronized(this) {
             val next = transform(read())
             write(next)
-            _settings.value = next
+            _stored.value = next
+            _settings.value = shown(next)
         }
     }
+
+    /** [TRY-05] Lays [look] over the saved settings on screen (null: none); [shown] false draws the saved ones for a moment (지금 모습). */
+    fun putTrial(look: ((AppSettings) -> AppSettings)?, shown: Boolean = true) {
+        synchronized(this) {
+            trial = look
+            trialShown = shown
+            _settings.value = shown(_stored.value)
+        }
+    }
+
+    /** Whether a theme is being tried on now. */
+    val trying: Boolean get() = trial != null
 
     private fun read(): AppSettings {
         val d = AppSettings()
