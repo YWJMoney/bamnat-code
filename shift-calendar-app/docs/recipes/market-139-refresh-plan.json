@@ -1,0 +1,3771 @@
+{
+ "note": "1.39 장터 고르기(MKW-06)",
+ "hide": [
+  {
+   "title": "알바 끝나면 시간 적기",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "일하다 물 한 잔",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "1일엔 고정비 확인",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘 쓴 돈 적었어?",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘은 한 푼도 안 쓰기",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "입금되면 알려 줘",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "열자마자 오늘 정리",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "쉬는 날 뭐 하지",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘 매출 메모에 남기기",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "일당 한 번에 적기",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "마감날 아침에 알려 줘",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "금요일 저녁 주말 계획",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "큰돈 쓴 날 메모",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "월말엔 이달 돈 정리",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "다 했으면 칭찬해 줘",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "전날 밤 장비 챙기기",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "가게 문 열 준비",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "문 닫고 오늘 정산",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘 목표 매출 넘었다",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "월요일은 발주하는 날",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "장 끝나고 복기",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "토요일 아침 공부",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "월말에 자산 한 번 보기",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "많이 번 날은 금색",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "잠 모자란 날 빨갛게",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "피곤한 만큼 굵은 테두리",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "하루 따라 변하는 오늘",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "많이 일한 날 진하게",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "쓴 만큼 물드는 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "메모 많은 날 티 내기",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "기념일엔 하트",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "마감 남은 날 색으로",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "한 달 근무 한 줄로",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "한 주 크게 보기",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "빨간 날 반짝반짝",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "주말엔 빗금",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "손으로 쓴 일기장",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "물감 번진 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "네온 불빛 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "입금 날 금빛",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "현장 나간 날 도장",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "출장 다닌 날",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "장사 잘된 날 금색",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "예약 있는 날",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "매매한 날 표시",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "배당·적립 날 표시",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "돈 들고 난 날",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "할 일 끝낸 날 동그라미",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "꼬리표마다 색",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "매주 습관 체크",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "급한 일부터",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "아직 안 넘긴 인계",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "근무 끝나고 돌아보기",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "아침저녁 체크리스트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘 현장 일지",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "시험 공부 계획",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "포스트잇 붙이기",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "하다 만 체크 노랗게",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "중요한 메모 빨갛게",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘 메모만 또렷하게",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "식비는 주황 교통은 파랑",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "이번 달 월급 얼마?",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "공수 세기",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "배달 앱 수입 모아 보기",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "길게 일한 날 표시",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "까만 바탕 큰 합계",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "몽글몽글 급여 노트",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "목표 넘으면 금빛",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "일당 목표 넘긴 날",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "비 온 날은 흐리게",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "주말 현장 주황",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "엿새 넘게 나가면 경고",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "200시간 넘으면 빨강",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "출장 다닌 날 수입",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "콘크리트 느낌",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "민트색 배달 수입",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "건당 받는 프리랜서",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "촬영장 스태프",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "용달 기사 수입",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "나무색 인테리어",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "흑백 일감 수입",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 현장 출근",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "현장 목표 모으기",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "누런 종이 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "곰돌이 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "좋아하는 색 하나로",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "전부 유리처럼",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "까만 바탕 금색",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "아침 낮 저녁 색",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "근무가 곧 색",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "봄 여름 가을 겨울",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘 뭐 있지",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "스티커 붙인 앱",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "숲속 새싹",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "물결 바다",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘 장사 어땠나",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "동네 빵집",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "까만 쇼룸",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "부가세 신고 안 놓치기",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "카페 사장님",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "혼자 하는 스튜디오",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘은 어디서 장사",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "포장하고 보내고",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "원칙대로 매매",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "조용한 초록 차트",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "매달 모으기",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "분기 끝 점검 노트",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "흔들린 날 기록",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "배당 들어오는 날",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "투자 공부 일지",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "점 하나 투자",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "깔끔한 아침",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "사무실 한 주",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "휴가 기다리는 달력",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "여권 도장 출장",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "남색에 금색 선",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "꽃 피는 플래너",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "마감 쫓기는 중",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "공책에 끄적끄적",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "주 15시간 넘겼다",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "카페 알바생",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "투잡 뛰는 중",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "편의점 밤 알바",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "알바비 모으기",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "근무 바꾼 날",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "시험 기간 알바생",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "계산대 영수증",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "파란 도면",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "공수 칩 붙는 달력",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "안전모 쓰고 출근",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "장비 챙기는 일지",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "비 와도 배달",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "입금일 기다리는 프리랜서",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "여기저기 출장 현장",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "미장 벽 느낌",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "오로라 뜨는 나이트",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "까만 병동 달력",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "별 스티커 교대 수첩",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "철판 공장 근무표",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "당비휴 소방관",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "해 뜨기 전 커피",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "한밤의 유리",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "136",
+   "belowApp": 53
+  },
+  {
+   "title": "타자기 근무표",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "3교대 간호사 달력",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "밤 근무 버티기",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "라이더 하루 정리",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "동네 카페 하루",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "혼자 하는 네일숍",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-refresh",
+   "belowApp": 53
+  },
+  {
+   "title": "자취 첫 달 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 근무자 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138",
+   "belowApp": 53
+  },
+  {
+   "title": "배달 라이더 장부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138",
+   "belowApp": 53
+  },
+  {
+   "title": "1인 카페 장부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138",
+   "belowApp": 53
+  },
+  {
+   "title": "월급 사흘 전 알림",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "봉투 반 채움 축하",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "오늘 번 돈 한 줄",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 뒤 수면 기록",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "연속 다섯째 날 쉼표",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "커피 한 번에 적기",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "점심·저녁 한 번에",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "팁·용돈 들어온 날",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "아침 오늘 요약",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "체크 다 끝낸 날 칭찬",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "마감 하루 전 알림",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "주말 장보기",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "물 마시기 세 번",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "공휴일 근무 수당 메모",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "무지출 챌린지",
+   "why": "같은 일을 하는 규칙·단추가 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "logic",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "유리 달 머리",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "노을 셰이더 머리",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "종이 결 달 머리",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "네온 사인 머리",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "금빛 오늘 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 별빛 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "쉬는 날 점무늬 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "주말 체크무늬 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "쓴 돈 열지도 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "체크 고리 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "피로 테두리 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "유리 메모 카드",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "줄 노트 메모 카드",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤 메모 카드",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "분류 색 띠 줄",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "많이 쓴 날 머리",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "유리 날짜 머리",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "유리 알약 탭",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "네온 고른 탭",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "알약 단추",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "남색 오늘 위젯 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 남색 위젯 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "파스텔 쉬는 날 위젯 칸",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 수당 상자",
+   "why": "같은 특징의 부품이 하나 더 있어요(한 특징에 하나만 남김)",
+   "section": "part",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "오로라 기상",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 주간 두 번",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 낮잠 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "흔들어 깨우기",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "부드러운 별빛 기상",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "병동 교대 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "공장 3교대 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤바다 기상",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "깊은 잠 깨우기",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "민트 출근 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "재택 여유 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "당직 대비 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 도시 출근",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "덧셈 출근 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "파스텔 오픈 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "편의점 야간 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "카페 오픈 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "학생 알바 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "배달 출발 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "벚꽃 기상",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "눈 오는 아침",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "숲속 기상",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "도시 불빛 기상",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "아침 해 기상",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "길게 울리는 알람",
+   "why": "1.39 알람 작품과 겹쳐요",
+   "section": "tab:alarm",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "수면 빚 오로라",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "별 세는 야간표",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "교대 피로 계기판",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "주 52시간 지킴이",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "주휴 금줄 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 출근 해돋이",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "공휴일 근무 금테",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "시간만큼 차오르는 바다",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "그날 번 돈 숲",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 뒤 회복 정원",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "현장 공수 노을",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "당직 달빛",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "쓴 돈 열지도",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "무지출 초록 도장",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "예산선 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "근무 몇 시간어치",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "월급날 카운트다운",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "통장 잔액 예보",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "카페 지출 표시",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "배달 지출 표시",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "매출 금빛 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "들어온 돈 반짝",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "체크 고리 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "마감 신호등",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "바쁜 날 숨쉬기",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "시험 디데이",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "운동한 날 도장",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "병원 가는 날",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "여행 기다림",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "기념일 하트",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "육아 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "반려동물 산책",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "주간 판 유리",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "한 해 모아보기",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "근무 띠 목록",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "교대 순번 판",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "하루 시간표",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "벚꽃 오늘",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "단풍 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "눈 내리는 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "장마 우산 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "여름 하늘 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "은하수 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "유니콘 꿈 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "고양이 낮잠 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "네온 밤 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "금빛 도시 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "한지 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "큰 글씨 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "공휴일 폭죽 달력",
+   "why": "기본 칸에 배경 한 장과 수식 하나라 1.39 달력 작품이 넘어서요",
+   "section": "tab:calendar",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "SBAR 인수인계 보드",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "교대 전달 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "회의록 표",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "프로젝트 칸반",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "현장 일지철",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "받을 돈 장부",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "가게 오픈·마감 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "단골 수첩",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "매매 일지 표",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "배당 정원",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "투자 공부 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "알바 출근 가방",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 잠 기록",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "출근 준비물 체크",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "자격증 공부방",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "불렛저널",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "감사 일기장",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "기분 날씨 일기",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "장보기 목록",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "습관 정원",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "운동 일지",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "식단 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "약 먹기 알림장",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "반려동물 수첩",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "청소 당번표",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "요리 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "여행 준비물",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "독서 서재",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "위시리스트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "아이디어 씨앗",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "부업 장부",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "노란 포스트잇 벽",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "칠판 수업 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "크래프트 다이어리",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "리넨 한 줄 일기",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤 줄 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "하얀 줄 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "모눈 기획 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "벚꽃 편지지",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "비 오는 창가 메모",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "오로라 일기",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "바다 엽서",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "숲속 메모장",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "도시 밤 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "멤피스 스크랩북",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "테라조 식탁 메모",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "유니콘 꿈 노트",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "성탄 카드 메모",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "큰 글씨 메모장",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "주간 계획 보드",
+   "why": "기본 메모 카드에 색과 틀만 바꾼 판이라 1.39 메모 작품(판·조건 테)이 넘어서요",
+   "section": "tab:memo",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "이번 달 흐름 오로라",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "예산 지킴이",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "근무 몇 시간 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "무지출 달력 판",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "지출 열지도 달력",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "분류 보드",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "표 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "고정비 점검판",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "카드값 미리보기",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "통장 한눈에",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "모으기 봉투",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "지난달 이야기",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "덜 적는 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "근무별 소비",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "카드 공제 문턱",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "카페 줄 갈색",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "배달 줄 주황",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "식비 초록 띠",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "교통비 파란 띠",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "쇼핑 경고등",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "의료비 모음",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "반려동물 지출",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "아이 지출 노트",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "취미 지출 정원",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "매출 나눠 보기",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "가게 분류 보드",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "카페 사장 장부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "현장 일감 돈",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "프리랜서 3.3%",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "유류비 띠",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "투자 현금 흐름",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "적립 봉투",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "수입 내역 먼저",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "모든 달력 합계",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "금빛 동전 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "크래프트 영수증철",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "한지 금전출납부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤바다 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "벚꽃 용돈 기입장",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "네온 지갑",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "숲속 저금통",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "유리 지갑",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "도시 불빛 장부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "노을 바다 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "눈 오는 날 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "멤피스 용돈판",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "은하 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "구름 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "큰 글씨 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "한 줄 요약 가계부",
+   "why": "1.39 가계부 작품과 겹쳐요",
+   "section": "tab:money",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 수당 오로라",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "교대 급여 별밤",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "209시간 경고판",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야간 달빛 명세",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "병동 급여 노트",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "공장 3교대 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "소방 당번 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "교대 연간 흐름",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "금빛 월급 대시보드",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "야근 수당 확인",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "민트 월급 노트",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "당직 수당 노트",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "연봉 한 판",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "출근 도시 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "주휴수당 금빛",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "편의점 야간 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "카페 알바 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "레몬 시급 계산기",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "배달 알바 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "파스텔 시급 노트",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "알바 목표 저금",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "주말 알바 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "근무 시간 타일",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "세 달 견주기",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "한 해 근무 흐름",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "유리 급여 상자",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "오로라 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "바다 급여 노트",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "벚꽃 월급날",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "겨울 보너스",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "모눈 급여표",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "큰 숫자 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "네온 급여판",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "숲속 월급",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "노을 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "테라조 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "크래프트 급여 봉투",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "은하 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "물속 햇살 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "금빛 축제 급여",
+   "why": "1.39 급여 작품과 겹쳐요(큰 합계와 줄 구조가 같고 색만 다름)",
+   "section": "tab:pay",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "오로라 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "초승달 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "별밤 근무 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 별 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤바다 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "병동 야간 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "민트 출근 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "금빛 도시 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "푸른 유리 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 도시 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "파스텔 알바 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "레몬 소다 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "네온 핑크 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "말랑 체크 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "해넘이 현장 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "크래프트 현장 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "리넨 가게 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "아르데코 가게 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "자정 차트 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "심해 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "벚꽃 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "단풍 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "눈 오는 밤 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "여름 구름 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "분홍 오로라 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "물속 햇살 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "라벤더 꿈 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "성탄 불빛 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "은하수 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "보름달 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "멤피스 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "레트로 무지개 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "고양이 낮잠 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "노을 구름 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "큰 글씨 위젯",
+   "why": "1.39 위젯 작품과 겹쳐요",
+   "section": "tab:widget",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "오로라 당직실",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "초승달 근무표",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "은하수 3교대",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "별밤 병동",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "별 뜬 산장",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤바다 교대",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 빛망울",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "빗방울 야간창",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤 벚꽃 교대",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "한밤 보라 큰글씨",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "푸른 능선 한 손",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 별 집중",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "금빛 오피스",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "민트 아침 출근",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "산뜻한 아침 산",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 도시 출근길",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "블루아워 리포트",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "모눈 업무 수첩",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "줄 노트 다이어리",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "푸른 유리 대시보드",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "맑은 바다 휴가",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "물결 선 큰글씨",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "뭉게구름 한 손",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "구름 솜사탕 집중",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "파스텔 알바 일지",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "레몬 소다 시프트",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "말랑 체크 카페",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "레트로 무지개 알바",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "분홍 물방울 일지",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "분홍 물결 오픈조",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "하늘 벚꽃 파트타임",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "네온 핑크 야간조",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "네온 시티 배달",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "멤피스 큰글씨",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "분홍 유리 한 손",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "민트 물결 집중",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "해넘이 현장 일지",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "가을 능선 공수표",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "사막 저녁 장비함",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "크래프트 작업 노트",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "칠판 공정표",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "단풍 바람 프리랜서",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "장맛비 현장",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "비 온 창 작업실",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "비 오는 도시 시공",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "먹구름 금빛 큰글씨",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 산 한 손",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "하프톤 집중",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "아르데코 살롱",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "리넨 공방",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "테라조 베이커리",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "초록 테라조 샐러드바",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "금빛 축제 매장",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "햇살 유리 꽃집",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "노을 도시 포차",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "초록 잎 카페",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "복숭아 큰글씨 장부",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "금빛 바다 한 손",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "노란 노트 집중",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "자정 보라 트레이딩룸",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "심해 장기 투자",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "푸른 물 적립식",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "한밤 도시 복기",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "푸른 불빛 공부방",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "한겨울 밤 원칙",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "깊은 숲 배당",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤 멤피스 차트",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤 노트 투자일기",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "밤 유리 큰글씨",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "에메랄드 한 손",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "육각 빛 집중",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "분홍 오로라",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 오로라",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "보라 오로라",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "보름달 바다빛",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "분홍 노을 언덕",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "안개 숲 산책",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "라벤더 언덕",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "보랏빛 해넘이 바다",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "새벽 바다 산책",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "물속 햇살",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "보랏빛 불빛",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "성탄 불빛",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "초록 빛망울",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "하얀 겨울 빛",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "점 노트 불렛저널",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "오래된 종이 서재",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "민트 유리",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "노을 창 물방울",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "초록 창 빗방울",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "하얀 눈 아침",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "노을 구름",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "보랏빛 도시",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "겨울 도시",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "파스텔 물결 선",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "라벤더 꿈",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  },
+  {
+   "title": "와인 노을",
+   "why": "1.39 정상급 테마와 겹쳐요(달력 얼굴만 다르고 가계부·메모가 기본에 색만 입힌 판)",
+   "section": "theme",
+   "from": "138-studio",
+   "belowApp": 53
+  }
+ ]
+}
