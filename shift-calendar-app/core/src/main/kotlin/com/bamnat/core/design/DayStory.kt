@@ -51,4 +51,13 @@ object DayStory {
 
     /** The line "지금" sits after: the last item that has begun by [now], or -1 when none has (or [now] is another day). */
     fun nowAfter(lines: List<StoryLineItem>, now: LocalDateTime): Int = lines.indexOfLast { !it.from.isAfter(now) }
+
+    /**
+     * 1.38 PC 12.2 사용성 제안: whether [line] is still going on at [now] (a span that has begun and not yet ended), so
+     * last night's shift at 00:11 reads "지금 근무 중" on its own card instead of sitting above "지금" as if it were over.
+     */
+    fun ongoing(line: StoryLineItem, now: LocalDateTime): Boolean {
+        val end = line.item.end ?: return false
+        return !line.item.start.isAfter(now) && end.isAfter(now)
+    }
 }
