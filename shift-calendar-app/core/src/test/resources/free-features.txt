@@ -96,6 +96,7 @@ leave.promotion
 leave.promotionLog
 lock.today
 memo.lastShift
+memo.done
 memo.repeat
 memo.photo
 memo.paper

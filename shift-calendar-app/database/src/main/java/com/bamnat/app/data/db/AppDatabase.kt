@@ -34,7 +34,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 1.38 [SLEEP-03][SLEEP-07] Version 31: 아침 한 장과 밤 소리.
         SleepCheckEntity::class, SleepEventEntity::class,
     ],
-    version = 32,
+    version = 33,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -74,7 +74,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
                 MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
-                MIGRATION_30_31, MIGRATION_31_32,
+                MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33,
             )
 
         /**
@@ -475,6 +475,17 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_31_32 = object : Migration(31, 32) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `workplace` ADD COLUMN `industry` TEXT")
+            }
+        }
+
+        /**
+         * Version 33 (1.39 [TASK-02][TASK-05]): 메모 끝냄. A memo that does not repeat keeps when it was finished, a repeating one the
+         * days it was finished on. Every memo of version 32 is not finished, as it was.
+         */
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `memos` ADD COLUMN `doneAt` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `memos` ADD COLUMN `doneDays` TEXT NOT NULL DEFAULT ''")
             }
         }
 
