@@ -69,7 +69,7 @@ class MKVScreenshotTest : ScreenshotBase() {
 
         override val enabled = true
         override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) = RecipePage(
-            recipes.indices.map(::item).filter { style == null || style in it.styles }.filter { !RecipeClient.fxOnly(kind) || it.fx.isNotEmpty() }.filter {
+            recipes.indices.map(::item).filter { style == null || style in it.styles }.filter { !RecipeClient.fxOnly(kind) || it.fx.isNotEmpty() }.filter { !RecipeClient.freeOnly(kind) || it.fx.isEmpty() }.filter {
                 val k = RecipeClient.plain(kind)
                 when {
                     k == RecipeClient.SCOPE_THEME -> it.scope == "theme"
@@ -270,5 +270,37 @@ class MKVScreenshotTest : ScreenshotBase() {
         scrollUp(300)
         assertTrue(appears("작품 모습", exact = true, ms = 5_000))
         settle()
+    }
+
+    /**
+     * 1.39 [MKD-41][MKD-42][MKD-43] 상세 (사용자 2026-11-07 "설명들이 너무 난잡 … 간결하게"): 맨 위에 작품 실제 모습(좌우로 다른 화면),
+     * 이름 · 만든 분(표식 · 팔로워, 누르면 프로필) · 한두 줄, 가운데 '넣기 전에 해 보기' 사다리, 조각은 '자세히 보기'에 접혀요.
+     */
+    @Test fun theDetailShowsTheWorkFirst() = shoot("1527_mkd_detail_top", PHONE) {
+        val m = Market()
+        val i = m.recipes.indices.first { m.item(it).scope == "theme" }
+        c.recipeApi = object : RecipeApi by m {
+            override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc = m.show(code, device, version).let {
+                it.copy(item = it.item.copy(nick = "밤샘간호사", official = false, maker = "mk1", mark = "month", followers = 1_234))
+            }
+        }
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        var maker: String? = null
+        val vm = com.bamnat.app.ui.recipe.RecipeDetailViewModel(c, m.code(i), com.bamnat.app.data.PersonalCalendar.MAIN)
+        content { com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = {}, onRemake = {}, onMaker = { maker = it }) }
+        settle()
+        assertTrue("작품 모습이 맨 위에", appears("작품 모습", exact = true, ms = 5_000))
+        assertTrue("테마는 다른 화면도 넘겨 봐요", appears("가계부", exact = true))
+        assertTrue(appears("🏅 이달의 제작자", exact = true))
+        assertTrue(appears("팔로워 1.2천 · 프로필 · 다른 작품", exact = true))
+        assertTrue(scrolledTo("넣기 전에 해 보기", exact = true))
+        assertTrue(appears("예시로 보기", exact = true))
+        assertTrue(appears("내 앱에 입혀 보기", exact = true))
+        assertTrue("조각 고르기는 접혀 있어요", gone("켜 둔 조각만 들어가요. 근무 기록·가계부·메모는 그대로예요", exact = true))
+        repeat(6) { scrollDown(400) }
+        settle()
+        tapText("밤샘간호사", exact = true)
+        settle()
+        assertTrue("만든 분을 누르면 프로필로", maker == "mk1")
     }
 }

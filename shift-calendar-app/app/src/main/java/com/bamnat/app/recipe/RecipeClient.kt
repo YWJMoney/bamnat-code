@@ -54,6 +54,13 @@ data class RecipeItem(
      * 1.38까지 장치만 써서 모두 무료로 쓸 수 있어요; 있으면 '✦ 프로 기능'.
      */
     val fx: List<String> = emptyList(),
+    /**
+     * 1.39 [MKD-41] 만든 분 표식 (광장 갈래 MakerMark 키: "month" 이달의 제작자, "popular" 인기 제작자). 쉬는 중이거나 없으면 null.
+     * 서버 recipes.js listItem·show의 mark.
+     */
+    val mark: String? = null,
+    /** 1.39 [MKD-41] 만든 분의 팔로워 수 (서버 followers); 옛 서버는 null. */
+    val followers: Int? = null,
 )
 
 /**
@@ -381,6 +388,7 @@ class RecipeClient(
             add("app=${com.bamnat.app.BuildConfig.VERSION_CODE}")
             // 1.39 [MKC-04] '✦ 프로 기능'만 (어느 구간에서든 끝에 [FX]). A server before 1.39 FX-01 sends all; [fits] keeps those with fx.
             if (fxOnly(kind)) add("fx=1")
+            if (freeOnly(kind)) add("fx=0")
             val k = plain(kind)
             // [MKX-01] 1.36 두 구간: "theme" or "tab:<tab>" goes as scope (and tab), with the nearest 1.35 kind for a server before 1.36.
             when {
@@ -733,6 +741,8 @@ class RecipeClient(
                 o.optStringOrNull("made")?.takeIf { it == "look" || it == "func" || it == "both" },
                 o.optJSONArray("tools")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it in TOOL_KINDS } }.orEmpty(),
                 o.optJSONArray("fx").strings().filter { it.isNotBlank() },
+                o.optStringOrNull("mark")?.takeIf { it.isNotBlank() },
+                o.optInt("followers").takeIf { o.has("followers") && !o.isNull("followers") },
             )
         }
 
@@ -758,24 +768,33 @@ class RecipeClient(
          */
         const val FX = "!fx"
         fun fxOnly(kind: String?): Boolean = kind?.endsWith(FX) == true
-        /** [kind] without [FX]. */
-        fun plain(kind: String?): String? = kind?.removeSuffix(FX)
-        fun withFx(kind: String, on: Boolean): String = kind.removeSuffix(FX) + (if (on) FX else "")
+        /** 1.39 [MKD-11] '무료로 다 되는 것'만 (서버 fx=0): ✦ 장치가 하나도 없는 작품. [FX]와 같은 자리에 붙고 둘 중 하나만이에요. */
+        const val FREE = "!free"
+        fun freeOnly(kind: String?): Boolean = kind?.endsWith(FREE) == true
+        /** [FX], [FREE] or "" — what [kind] keeps when another chip of its row is picked. */
+        fun price(kind: String?): String = when { fxOnly(kind) -> FX; freeOnly(kind) -> FREE; else -> "" }
+        /** [kind] without [FX] or [FREE]. */
+        fun plain(kind: String?): String? = kind?.removeSuffix(FX)?.removeSuffix(FREE)
+        fun withPrice(kind: String, price: String): String = plain(kind).orEmpty() + price.takeIf { it == FX || it == FREE }.orEmpty()
+        fun withFx(kind: String, on: Boolean): String = withPrice(kind, if (on) FX else "")
+        fun withFree(kind: String, on: Boolean): String = withPrice(kind, if (on) FREE else "")
         fun tabOf(kind: String?): String = plain(kind).orEmpty().removePrefix(SCOPE_TAB).substringBefore('~')
         fun madeOf(kind: String?): String? = plain(kind)?.takeIf { it.startsWith(SCOPE_TAB) }?.substringAfter('~', "")?.takeIf { it in MADE_KINDS }
         fun toolOf(kind: String?): String = plain(kind).orEmpty().removePrefix(SCOPE_TOOL).substringBefore('@')
         fun toolOn(kind: String?): String? = plain(kind)?.takeIf { it.startsWith(SCOPE_TOOL) }?.substringAfter('@', "")?.takeIf { it in MARKET_TABS }
-        fun tabKind(tab: String, made: String?, fx: Boolean = false): String =
-            withFx(SCOPE_TAB + tab + (made?.takeIf { it in MADE_KINDS }?.let { "~$it" } ?: ""), fx && made == null)
-        fun toolKind(tool: String, on: String?, fx: Boolean = false): String = withFx(
-            SCOPE_TOOL + tool.takeIf { it in TOOL_KINDS }.orEmpty() + (on?.takeIf { it in MARKET_TABS }?.let { "@$it" } ?: ""), fx && tool !in TOOL_KINDS)
+        fun tabKind(tab: String, made: String?, fx: Boolean = false, free: Boolean = false): String =
+            withPrice(SCOPE_TAB + tab + (made?.takeIf { it in MADE_KINDS }?.let { "~$it" } ?: ""), if (made != null) "" else if (fx) FX else if (free) FREE else "")
+        fun toolKind(tool: String, on: String?, fx: Boolean = false, free: Boolean = false): String = withPrice(
+            SCOPE_TOOL + tool.takeIf { it in TOOL_KINDS }.orEmpty() + (on?.takeIf { it in MARKET_TABS }?.let { "@$it" } ?: ""),
+            if (tool in TOOL_KINDS) "" else if (fx) FX else if (free) FREE else "")
         val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget")
         private fun legacyKind(tab: String): String? = when (tab) {
             "calendar" -> "skin"; "memo" -> "memo"; "money" -> "money"; "pay", "alarm" -> "rules"; "widget" -> "layout"; else -> null
         }
 
         /** [MKX-01] Whether [item] belongs where [kind] points (a server before 1.36 sends no tabs: then all it sent). */
-        fun fits(item: RecipeItem, kind: String?): Boolean = if (fxOnly(kind) && item.fx.isEmpty()) false else fitsPlain(item, plain(kind))
+        fun fits(item: RecipeItem, kind: String?): Boolean =
+            if ((fxOnly(kind) && item.fx.isEmpty()) || (freeOnly(kind) && item.fx.isNotEmpty())) false else fitsPlain(item, plain(kind))
         private fun fitsPlain(item: RecipeItem, kind: String?): Boolean = when {
             item.tabs.isEmpty() || kind == null -> true
             kind == SCOPE_THEME -> item.scope == "theme"

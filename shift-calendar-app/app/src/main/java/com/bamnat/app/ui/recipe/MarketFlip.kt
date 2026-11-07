@@ -140,7 +140,7 @@ private fun FlipPage(item: RecipeItem, style: WorkStyle?, onOpen: () -> Unit, on
             sectionLine(item, shown, long = true)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
             fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary) }
             Text("♥ ${item.likes} · 넣은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: "") +
-                (item.nick?.let { " · 만든 분 $it" } ?: if (item.official) " · 만든 분 밤낮" else ""),
+ " · " + MarketMaker.line(item),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.size(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

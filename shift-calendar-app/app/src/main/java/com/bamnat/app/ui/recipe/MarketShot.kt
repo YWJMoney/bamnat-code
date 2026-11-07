@@ -197,6 +197,13 @@ internal object MarketShots {
         data object Rules : Face
     }
 
+    /** 1.39 [MKF-01] 내 앱에 입혀 보기가 먼저 여는 탭: 카드가 보여 주는 화면의 탭. */
+    fun tabOf(f: Face): String = when (f) {
+        is Face.Tab -> f.tab
+        Face.Pay -> TabOrder.STATS
+        else -> TabOrder.CALENDAR
+    }
+
     fun faceOf(item: RecipeItem, r: Recipe): Face {
         val kinds = r.pieces.map { it.kind }.toSet()
         if (LookParts.partUnit(r) == LookParts.LOGIC || (kinds.isNotEmpty() && kinds.all { it == PieceKind.LOGIC })) return Face.Rules

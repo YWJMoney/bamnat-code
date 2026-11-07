@@ -3,6 +3,8 @@ package com.bamnat.app.ui.recipe
 import com.bamnat.app.appContainer
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Surface
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -159,78 +161,40 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         ) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 val fxParts = remember(r) { com.bamnat.app.logic.FxAccess.partsOf(r) }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    RecipeCover(r.cover, 80.dp)
-                    Spacer(Modifier.width(14.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(r.title, style = MaterialTheme.typography.titleLarge)
-                        if (r.summary.isNotEmpty()) Text(r.summary, style = MaterialTheme.typography.bodyMedium)
-                        Text(listOfNotNull(doc.item.nick?.let { "만든 분 $it" } ?: if (doc.item.official) "만든 분 밤낮" else "만든 분 이름 없음", "v${doc.item.version}",
-                            RecipeDescribe.styles(r)).joinToString(" · "),
-                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        // 1.39 [MKC-04] 무료인지, 프로 기능이 들었는지 맨 위에서 한 줄로.
-                        FxHeadLine(fxParts)
-                        // [RCX-05] The maker's page: their recipes, badges and 팔로우.
-                        // [PRF-01] 1.36: the maker's 프로필 (테마·기능별 탭·모음, 팔로우) by name, a button big enough to see.
-                        doc.item.maker?.let { m ->
-                            androidx.compose.material3.OutlinedButton(onClick = { onMaker(m) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                                Text((doc.item.nick ?: "만든 분") + " 프로필 · 다른 작품 보기", maxLines = 1)
-                            }
-                        }
-                    }
+                // 1.39 [MKD-42] 상세 다시 짜기 (사용자 2026-11-07 "설명들이 너무 난잡 … 간결하게 표시하고 실제 맛은 미리보기와 입어보기 예시 사용들로"):
+                // 맨 위는 작품 실제 모습 크게(도구는 전후 해 보기), 그 아래 이름 · 만든 분 · 한두 줄, 가운데 '넣기 전에 해 보기' 사다리,
+                // 조각 목록과 규칙 원문은 '자세히 보기'로 접어요.
+                val tool = remember(r, doc.item.scope) { doc.item.scope == "part" || doc.item.scope == "logic" || com.bamnat.core.recipe.LookParts.partUnit(r) != null }
+                val hasLooks = remember(r) { com.bamnat.core.recipe.LookParts.of(r).isNotEmpty() }
+                var sawExample by androidx.compose.runtime.saveable.rememberSaveable(vm.code) { mutableStateOf(false) }
+                if (tool) ToolTryout(r, vm.style)
+                else WorkHero(doc.item, r, vm.style) { if (hasLooks) { sawExample = true; tryOn = true } }
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(r.title, style = MaterialTheme.typography.titleLarge)
+                    if (r.summary.isNotEmpty()) Text(r.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("넣은 분 ${doc.item.users + s.usersPlus}명" + (doc.item.kept?.let { " · 7일 뒤에도 쓰는 분 $it%" } ?: " · 7일 유지율은 적용 20번부터 보여요"),
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                VoteRow(s, vm, onDislike = { disliking = true })
+                // [RCX-05][PRF-01] 만든 분: 표식 · 팔로워, 누르면 프로필.
+                MakerLine(doc.item, onMaker.takeIf { doc.item.maker != null })
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // 1.39 [MKC-04] 무료인지, 프로 기능이 들었는지 맨 위에서 한 줄로.
+                    FxHeadLine(fxParts)
+                    // 1.39 [MKD-12] 넣은 작품의 ✦ 장치가 쉬는 중이면 (하루 써 보기가 끝났거나 프로가 끝남).
+                    val fxOn = fxNow(vm.code).let { (pro, st) -> pro || st is com.bamnat.core.formula.FxTaste.Status.Using || com.bamnat.app.logic.FxAccess.on(LocalContext.current.appContainer) }
+                    if (fxParts.isNotEmpty() && (s.appliedAt ?: s.laidAt) != null && !fxOn)
+                        Text("✦ 쉬는 중 · 무료인 것은 그대로 돌고, ✦ 장치는 프로에서 다시 켜져요", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.tertiary)
+                    Text(listOfNotNull("넣은 분 ${doc.item.users + s.usersPlus}명", doc.item.kept?.let { "7일 뒤에도 쓰는 분 $it%" }, RecipeDescribe.styles(r).takeIf { it.isNotBlank() })
+                        .joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                ShortDesc(r.desc)
                 if (doc.mine) MakerCard(doc, onNewVersion = vm.body()?.let { b -> { onNewVersion(b) } })
-                (s.appliedAt ?: s.laidAt)?.let { at -> AppliedCard(at, laidOnly = s.appliedAt == null) { undoing = true } }
-                if (r.desc.isNotEmpty()) Text(r.desc, style = MaterialTheme.typography.bodyMedium)
                 // [LIN-02][LIN-03] 1.35 a 수정판 of my recipe: what it changed, and 내 판에 가져오기.
                 s.parentDoc?.takeIf { it.mine }?.let { pd -> DiffSection(pd, s.diff, onOpen) { picked -> vm.takeInto(picked)?.let { body -> onTakeInto(pd.item.code, body) } } }
 
-                // 1.39 [MKC-02][MKC-03] 도구 (부품·자동 규칙·단추): 넣기 전에 내 화면과 내 날로 전후를 직접 해 봐요.
-                val tool = remember(r, doc.item.scope) { doc.item.scope == "part" || doc.item.scope == "logic" || com.bamnat.core.recipe.LookParts.partUnit(r) != null }
-                if (tool) ToolTryout(r, vm.style)
-                Text("내 달력에 넣을 것 고르기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                Text("켜 둔 조각만 들어가요. 근무 기록·가계부·메모는 그대로예요", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                // [MAT-06] PC 확인 9차 (받는 쪽은 글꼴이 함께 오는지 모름): the shared fonts it names come along.
-                val fontCount = remember(r) { com.bamnat.app.recipe.RecipeFonts.idsIn(com.bamnat.core.recipe.RecipeCodec.write(r)).size }
-                if (fontCount > 0) Text("만든 분이 나눈 글꼴 ${fontCount}개가 함께 와요. 운영자가 확인한 글꼴은 넣을 때 바로, 확인 전인 글꼴은 확인 뒤 저절로 들어와요(그 전에는 비슷한 앱 글꼴로 보여요)",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                s.pieces.filter { it.fits }.forEach { p -> PieceCard(r, p, s.answers, vm) }
-                val other = s.pieces.filter { !it.fits }
-                if (other.isNotEmpty()) {
-                    TextButton(onClick = { folded = !folded }) { Text((if (folded) "펼치기: " else "접기: ") + "내 유형에는 없는 조각 ${other.size}개") }
-                    AnimatedVisibility(!folded) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            other.forEach { p ->
-                                Text("• ${p.kind.label}: " + RecipeDescribe.line(r.pieces.first { it.kind == p.kind }, amounts = false, style = vm.style),
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-                    }
-                }
-                // [RCX-27] 내 달력에서 미리 보기: this month, 지금 ↔ 넣은 뒤, with only the pieces switched on.
-                val lookOn = s.pieces.any { it.kind == PieceKind.SHIFT_LOOK && it.on && it.fits }
-                val themeOn = s.pieces.firstOrNull { it.kind == PieceKind.CAL_THEME && it.on && it.fits }
-                val companyOn = s.pieces.any { it.kind == PieceKind.COMPANY && it.on && it.fits }
-                MyMonthPreview(vm.calendar, if (lookOn) s.looks else emptyList(),
-                    themeOn?.let { RecipeResolve.piece(r, r.pieces.first { p -> p.kind == PieceKind.CAL_THEME }, RecipeResolve.answers(r, s.answers)) },
-                    company = r.pieces.firstOrNull { it.kind == PieceKind.COMPANY }?.takeIf { companyOn }?.values?.get("setup") as? String)
-                ScreenPreview(r, vm.style) { k -> s.pieces.any { it.kind == k && it.on && it.fits } }
                 val chosen = s.pieces.count { it.on && it.fits }
                 val used = s.pieces.filter { it.on && it.fits }.flatMap { p -> RecipeResolve.inputsOf(r, r.pieces.first { it.kind == p.kind }) }.map { it.id }.toSet()
                 val missing = r.inputs.filter { it.id in used && it.required && s.answers[it.id] == null && it.default == null }
                 val outside = r.inputs.filter { it.id in used && RecipeResolve.rangeProblem(it, if (s.answers.containsKey(it.id)) s.answers[it.id] else it.default) != null }
-                if (missing.isNotEmpty()) Text("‘${missing.first().label}’${com.bamnat.app.ui.Fmt.obj(missing.first().label)} 채워 주세요", color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall)
-                // 1.35 실사용 점검: the field already says the range in red; here only why the button waits, not a second red line.
-                else if (outside.isNotEmpty()) Text("위 ‘${outside.first().label}’ 칸을 고치면 넣을 수 있어요", color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall)
-                // [TRY-01] 1.35 (사용자 2026-10-30 21:45 "입어보기랑 넣기가 버튼 두개가 있을 필요가 없고"): a recipe with looks has one way in,
-                // 입어 보기 — 지금 ↔ 입으면 and the parts to tick — whose button puts in what was ticked. One without looks is put in at once.
-                val hasLooks = remember(r) { com.bamnat.core.recipe.LookParts.of(r).isNotEmpty() }
                 // PC 확인 V34: opened from a 입어 보기 elsewhere, it goes on to 입어 보기 at once.
                 LaunchedEffect(r) {
                     if (hasLooks && com.bamnat.app.recipe.RecipeLinks.tryNext != null && com.bamnat.app.recipe.RecipeLinks.tryNext == vm.code) {
@@ -248,51 +212,150 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
                 val liveTry = LocalContext.current.appContainer
+                val tryScope = androidx.compose.runtime.rememberCoroutineScope()
                 // [TRY-06] 1.39 기능까지 써 보기: the 기능 switched on, put on the real app for a while and taken back whole.
                 val tryFns = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.app.recipe.FunctionTrial.KINDS }
                 val ended by LiveTryOn.ended.collectAsStateWithLifecycle()
                 ended?.takeIf { it.code == vm.code }?.let { e -> TriedCard(LiveTryOn.say(e)) { LiveTryOn.forget() } }
-                // 1.39 [MKC-04] 프로 기능 작품: 무엇이 프로인지와 하루 써 보기·프로 보기. 하루 써 보기를 시작하면 평소 넣는 길로 (입어 보기, 아니면 넣기 확인).
-                FxCard(fxParts, vm.code, applied = s.appliedAt != null) { if (hasLooks) tryOn = true else confirming = true }
-                if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    // 7차 통합 347b7c37 PC 제안 (넣은 뒤에도 '입어 보고 고르기'로 남아요): once in, it says so and offers another look.
-                    Text(when { s.applying -> "넣는 중…"; s.appliedAt != null -> (if (doc.item.scope == "tab") "✓ 넣은 작품 · 다시 입어 보기" else "✓ 입은 테마 · 다시 입어 보기"); else -> "입어 보고 고르기" })
-                } else Button(onClick = { confirming = true }, enabled = chosen > 0 && ready,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                    // PC D15 (사용성 낮): 규칙·단추만 있는 작품은 실제로 들어가는 수로 ('고른 1개'인데 규칙 2개가 들어갔어요).
-                    val logicOnly = remember(r) { r.pieces.isNotEmpty() && r.pieces.all { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC } }
-                    val inside = remember(r) { r.pieces.filter { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }.fold(com.bamnat.core.formula.Logic()) { a, p -> a.plus(com.bamnat.core.formula.Logic.from(p.values)) } }
-                    Text(when {
+                var liveNote by remember(r) { mutableStateOf<String?>(null) }
+                var tasting by remember { mutableStateOf(false) }
+                var tasteRefused by remember { mutableStateOf(false) }
+                val (pro, fxStatus) = fxNow(vm.code)
+                val allLooks = remember(r) { com.bamnat.core.recipe.LookParts.of(r).map { it.id }.toSet() }
+                val logicOnly = remember(r) { r.pieces.isNotEmpty() && r.pieces.all { it.kind == PieceKind.LOGIC } }
+                val inside = remember(r) { r.pieces.filter { it.kind == PieceKind.LOGIC }.fold(com.bamnat.core.formula.Logic()) { a, p -> a.plus(com.bamnat.core.formula.Logic.from(p.values)) } }
+                val putIn = s.appliedAt ?: s.laidAt
+                val steps = buildList {
+                    // ① 예시로 보기: 예시 폰에서 지금 ↔ 입으면, 부분만 골라 넣기도 여기서.
+                    if (hasLooks) add(LadderStep("예시로 보기", "예시 폰에서 지금 ↔ 입으면, 마음에 드는 부분만 골라요", done = sawExample, enabled = !s.applying) {
+                        sawExample = true; tryOn = true
+                    })
+                    // ② 내 앱에 입혀 보기: 실제 내 화면, 저장 안 됨 (기능도 돌아요).
+                    if (hasLooks || tryFns.isNotEmpty()) add(LadderStep("내 앱에 입혀 보기",
+                        "실제 내 화면에 잠깐 입어 봐요. 저장되지 않아요" + (if (tryFns.isNotEmpty()) " · " + tryFns.joinToString("·") { it.kind.label } + "도 정말 돌아요" else ""),
+                        done = ended?.code == vm.code, enabled = ready) {
+                        liveNote = null
+                        tryScope.launch {
+                            val tab = if (hasLooks) MarketShots.tabOf(MarketShots.faceOf(doc.item, r))
+                                else com.bamnat.app.recipe.FunctionTrial.tab(r, tryFns.map { it.kind }.toSet())
+                            val ok = runCatching {
+                                LiveTryOn.start(liveTry, r, own = doc.mine, if (hasLooks) allLooks else emptySet(), tab, LiveTryOn.From.Detail(vm.code), s.answers,
+                                    functions = tryFns.associate { it.kind to it.mode }, cal = vm.calendar)
+                            }.getOrDefault(false)
+                            if (!ok) liveNote = "지금 내 앱과 같아서 바뀌는 곳이 없어요"
+                        }
+                    })
+                    // ③ 하루 써 보기 (✦, 무료 폰만): 진짜로 넣고 24시간 ✦ 장치까지.
+                    if (fxParts.isNotEmpty() && !pro) when (fxStatus) {
+                        is com.bamnat.core.formula.FxTaste.Status.Ready -> add(LadderStep("하루 써 보기 ✦", "${FxMarket.HOURS}시간 동안 ✦ 장치까지 진짜로 넣어 써요 · 작품마다 한 번") { tasting = true })
+                        is com.bamnat.core.formula.FxTaste.Status.Using -> add(LadderStep("하루 써 보기 ✦",
+                            "${FxMarket.untilWords(fxStatus.until)}까지 · ${FxMarket.leftWords(fxStatus.until)}", done = true, enabled = putIn == null,
+                            action = if (putIn == null) "넣고 써 보기" else null) { if (hasLooks) tryOn = true else confirming = true })
+                        else -> add(LadderStep("하루 써 보기 ✦", "이미 썼어요 · ✦ 장치는 프로에서 다시 켜져요", done = true, enabled = false) {})
+                    }
+                    // ④ 넣기, 넣은 뒤에는 '✓ 넣었어요 · 되돌리기' (입혀 보기 갈래 PC 확인).
+                    val whole = if (doc.item.scope == "tab") "이 작품 넣기" else "이 테마 입기"
+                    if (putIn != null) {
+                        val left = (com.bamnat.app.recipe.RecipeRepository.UNDO_DAYS - (com.bamnat.core.time.Today.millis() - putIn) / 86_400_000L).coerceAtLeast(1)
+                        add(LadderStep(if (s.applying) "넣는 중…" else "✓ 넣었어요 · 다시 넣기",
+                            java.text.SimpleDateFormat("M월 d일", java.util.Locale.KOREA).format(java.util.Date(putIn)) +
+                                (if (s.appliedAt == null) " 테마 위에 얹음 · 언제든 되돌려요" else " 넣음 · ${left}일 안에 되돌려요"),
+                            done = true, main = true, enabled = ready && (hasLooks || chosen > 0), other = "되돌리기" to { undoing = true }) {
+                            if (hasLooks) { vm.lookParts(allLooks); confirming = true } else confirming = true
+                        })
+                    } else add(LadderStep(when {
                         s.applying -> "넣는 중…"
+                        hasLooks -> whole
+                        // PC D15 (사용성 낮): 규칙·단추만 있는 작품은 실제로 들어가는 수로.
                         logicOnly -> listOfNotNull(inside.rules.size.takeIf { it > 0 }?.let { "규칙 ${it}개" }, inside.buttons.size.takeIf { it > 0 }?.let { "단추 ${it}개" })
                             .joinToString("·") + " 넣기"
-                        // bc7e2d43 PC 확인 LOW-1 (받은 뒤에도 넣기 단추가 그대로): once in, it says it goes in again.
-                        s.appliedAt != null -> "고른 ${chosen}개 다시 넣기"
                         else -> "고른 ${chosen}개 내 달력에 넣기"
+                    }, if (hasLooks) "부분만 넣으려면 ‘예시로 보기’에서 골라요" else null, main = true, enabled = ready && (hasLooks || chosen > 0)) {
+                        if (hasLooks) { vm.lookParts(allLooks); confirming = true } else confirming = true
                     })
                 }
-                if (!hasLooks && tryFns.isNotEmpty()) TryFunctionsButton(tryFns.map { it.kind }, enabled = ready) {
-                    LiveTryOn.start(liveTry, r, own = doc.mine, emptySet(), com.bamnat.app.recipe.FunctionTrial.tab(r, tryFns.map { it.kind }.toSet()),
-                        LiveTryOn.From.Detail(vm.code), s.answers, functions = tryFns.associate { it.kind to it.mode }, cal = vm.calendar)
+                TryLadder(steps) {
+                    liveNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                    if (tasteRefused) Text("이 작품은 하루 써 보기를 이미 썼어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    if (missing.isNotEmpty()) Text("‘${missing.first().label}’${com.bamnat.app.ui.Fmt.obj(missing.first().label)} ‘자세히 보기’에서 채워 주세요",
+                        color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    // 1.35 실사용 점검: the field already says the range in red; here only why the button waits.
+                    else if (outside.isNotEmpty()) Text("‘자세히 보기’의 ‘${outside.first().label}’ 칸을 고치면 넣을 수 있어요", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodySmall)
                 }
-                // [BLU-07] PC 6차: a 부품 is kept for the studio from here in one tap, not only inside 입어 보기.
-                val unit = remember(r) { com.bamnat.core.recipe.LookParts.partUnit(r) }
-                if (unit != null) {
-                    var keptLine by remember(r) { mutableStateOf<String?>(null) }
-                    androidx.compose.material3.OutlinedButton(onClick = {
-                        keptLine = if (vm.keep(setOf(unit))) "✓ 보관함에 담았어요. 스튜디오 › 보관함에서 꺼내 얹어요"
-                            else "보관함이 꽉 찼어요. 스튜디오 › 보관함에서 하나를 빼고 다시 담아 주세요"
-                    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 부품 보관함에 담기") }
-                    keptLine?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                if (tasting) FxTasteAsk(fxParts, vm.code, onDismiss = { tasting = false }, onRefused = { tasteRefused = true }) {
+                    if (hasLooks) tryOn = true else confirming = true
                 }
-                // [RUL-07] 1.36 규칙·단추는 보관함에 담아 두고 스튜디오 › 규칙·단추에서 내 것에 더해 얹어요.
-                if (r.pieces.any { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }) {
-                    var keptLogic by remember(r) { mutableStateOf<String?>(null) }
-                    OutlinedButton(onClick = {
-                        keptLogic = if (vm.keep(setOf(com.bamnat.core.recipe.LookParts.LOGIC))) "✓ 보관함에 담았어요. 스튜디오 › 규칙·단추 › 보관함에서 내 규칙에 더해 얹어요"
-                            else "보관함이 꽉 찼어요 (${vm.partsLimit()}개까지)"
-                    }, modifier = Modifier.fillMaxWidth()) { Text("규칙·단추만 보관함에 담기") }
-                    keptLogic?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                // 1.39 [MKC-04] 프로 기능 작품: 무엇이 프로인지와 프로 보기 (하루 써 보기는 위 사다리 ③).
+                FxCard(fxParts, vm.code, applied = s.appliedAt != null, ladder = true) { if (hasLooks) tryOn = true else confirming = true }
+                VoteRow(s, vm, onDislike = { disliking = true })
+
+                // 1.39 [MKD-42] 자세히 보기: 넣을 조각 고르기와 칸 채우기, 내 달력 미리 보기, 담기 (채울 칸이 비었으면 펼친 채로).
+                var details by androidx.compose.runtime.saveable.rememberSaveable(vm.code) { mutableStateOf(false) }
+                val open = details || missing.isNotEmpty() || outside.isNotEmpty()
+                val shownPieces = s.pieces.filter { it.fits && !(it.lines.isNotEmpty() && it.lines.all { l -> l.skipped && l.text.startsWith("지금과 같아서") }) }
+                Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
+                        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable { details = !open },
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("자세히 보기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                                Text("넣을 것 ${chosen}/${s.pieces.count { it.fits }}개 고르기 · 내 달력 미리 보기 · v${doc.item.version}",
+                                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text(if (open) "접기" else "펼치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                        }
+                        AnimatedVisibility(open) {
+                            Column(Modifier.padding(bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("켜 둔 조각만 들어가요. 근무 기록·가계부·메모는 그대로예요", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                // [MAT-06] PC 확인 9차 (받는 쪽은 글꼴이 함께 오는지 모름): the shared fonts it names come along.
+                                val fontCount = remember(r) { com.bamnat.app.recipe.RecipeFonts.idsIn(com.bamnat.core.recipe.RecipeCodec.write(r)).size }
+                                if (fontCount > 0) Text("만든 분이 나눈 글꼴 ${fontCount}개가 함께 와요. 운영자가 확인한 글꼴은 넣을 때 바로, 확인 전인 글꼴은 확인 뒤 저절로 들어와요(그 전에는 비슷한 앱 글꼴로 보여요)",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                shownPieces.forEach { p -> PieceCard(r, p, s.answers, vm) }
+                                val other = s.pieces.filter { !it.fits }
+                                if (other.isNotEmpty()) {
+                                    TextButton(onClick = { folded = !folded }) { Text((if (folded) "펼치기: " else "접기: ") + "내 유형에는 없는 조각 ${other.size}개") }
+                                    AnimatedVisibility(!folded) {
+                                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            other.forEach { p ->
+                                                Text("• ${p.kind.label}: " + RecipeDescribe.line(r.pieces.first { it.kind == p.kind }, amounts = false, style = vm.style),
+                                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                        }
+                                    }
+                                }
+                                // [RCX-27] 내 달력에서 미리 보기: this month, 지금 ↔ 넣은 뒤, with only the pieces switched on.
+                                val lookOn = s.pieces.any { it.kind == PieceKind.SHIFT_LOOK && it.on && it.fits }
+                                val themeOn = s.pieces.firstOrNull { it.kind == PieceKind.CAL_THEME && it.on && it.fits }
+                                val companyOn = s.pieces.any { it.kind == PieceKind.COMPANY && it.on && it.fits }
+                                MyMonthPreview(vm.calendar, if (lookOn) s.looks else emptyList(),
+                                    themeOn?.let { RecipeResolve.piece(r, r.pieces.first { p -> p.kind == PieceKind.CAL_THEME }, RecipeResolve.answers(r, s.answers)) },
+                                    company = r.pieces.firstOrNull { it.kind == PieceKind.COMPANY }?.values?.get("setup") as? String)
+                                ScreenPreview(r, vm.style) { k -> s.pieces.any { it.kind == k && it.on && it.fits } }
+                                // [BLU-07] PC 6차: a 부품 is kept for the studio from here in one tap, not only inside 입어 보기.
+                                val unit = remember(r) { com.bamnat.core.recipe.LookParts.partUnit(r) }
+                                if (unit != null) {
+                                    var keptLine by remember(r) { mutableStateOf<String?>(null) }
+                                    androidx.compose.material3.OutlinedButton(onClick = {
+                                        keptLine = if (vm.keep(setOf(unit))) "✓ 보관함에 담았어요. 스튜디오 › 보관함에서 꺼내 얹어요"
+                                            else "보관함이 꽉 찼어요. 스튜디오 › 보관함에서 하나를 빼고 다시 담아 주세요"
+                                    }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 부품 보관함에 담기") }
+                                    keptLine?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                }
+                                // [RUL-07] 1.36 규칙·단추는 보관함에 담아 두고 스튜디오 › 규칙·단추에서 내 것에 더해 얹어요.
+                                if (r.pieces.any { it.kind == PieceKind.LOGIC }) {
+                                    var keptLogic by remember(r) { mutableStateOf<String?>(null) }
+                                    OutlinedButton(onClick = {
+                                        keptLogic = if (vm.keep(setOf(com.bamnat.core.recipe.LookParts.LOGIC))) "✓ 보관함에 담았어요. 스튜디오 › 규칙·단추 › 보관함에서 내 규칙에 더해 얹어요"
+                                            else "보관함이 꽉 찼어요 (${vm.partsLimit()}개까지)"
+                                    }, modifier = Modifier.fillMaxWidth()) { Text("규칙·단추만 보관함에 담기") }
+                                    keptLogic?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                }
+                            }
+                        }
+                    }
                 }
                 if (tryOn) {
                     val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }

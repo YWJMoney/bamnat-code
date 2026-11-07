@@ -50,6 +50,18 @@ object FxMarket {
         return if (m >= 60) "${m / 60}시간 남았어요" else "${m.coerceAtLeast(1)}분 남았어요"
     }
 
+    /**
+     * 1.39 [MKD-13] 장치 이름을 누르면 나오는 한 줄 (사용자는 '값 칸'이 무엇인지 몰라요). 이 앱이 모르는 새 장치는 이름만.
+     */
+    fun explain(p: FxPro.Part): String = when (p.key) {
+        "values" -> "작품이 세는 숫자예요. 커피 잔 수, 이번 달 야간 수처럼 단추로 올리고 화면에 보여요"
+        "valueAct" -> "단추나 규칙이 값 칸 숫자를 올리거나 정해요"
+        "valueRead" -> "조건이나 알림 글에 값 칸 숫자를 넣어 써요. 예: 10잔이 넘으면 알림"
+        "outside" -> "앱을 열지 않고 홈 화면 위젯·알림 막대 빠른 설정·바로가기에서 작품 단추를 눌러요"
+        "notifyButtons" -> "작품이 보낸 알림에 단추가 붙어, 누르면 앱을 열지 않고 바로 기록돼요"
+        else -> p.label
+    }
+
     /** What the card says under its title for [status] (with 프로 [pro]). */
     fun stateLine(pro: Boolean, status: FxTaste.Status, now: Instant = Today.instant()): String = when {
         pro -> "프로라서 넣으면 ✦ 장치까지 바로 다 돌아요"
@@ -84,8 +96,9 @@ internal fun FxHeadLine(parts: Set<FxPro.Part>) {
  * - 써 보는 중: 언제까지인지. 다 썼으면: 그동안 한 일과 '프로 보기'.
  * [onTaste]는 하루 써 보기를 시작한 뒤 넣는 길(입어 보기 또는 넣기 확인)을 여는 일이에요.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun FxCard(parts: Set<FxPro.Part>, code: String, applied: Boolean, onTaste: () -> Unit) {
+internal fun FxCard(parts: Set<FxPro.Part>, code: String, applied: Boolean, ladder: Boolean = false, onTaste: () -> Unit) {
     if (parts.isEmpty()) return
     val c = LocalContext.current.appContainer
     val gate by c.featureGate.state.collectAsStateWithLifecycle()
@@ -102,6 +115,15 @@ internal fun FxCard(parts: Set<FxPro.Part>, code: String, applied: Boolean, onTa
                     modifier = Modifier.semantics { heading() })
             }
             Text("✦ 들어 있는 것: " + FxPro.say(parts), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            // 1.39 [MKD-13] 장치마다 무엇인지: 누르면 한 줄 설명.
+            var told by remember(parts) { mutableStateOf<FxPro.Part?>(null) }
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                parts.forEach { p ->
+                    com.bamnat.app.ui.components.FilterChip(selected = told == p, onClick = { told = if (told == p) null else p },
+                        label = { Text("✦ " + p.label + " ?") })
+                }
+            }
+            told?.let { p -> Text(p.label + ": " + FxMarket.explain(p), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer) }
             Text("1.38까지 있던 모양·규칙·단추는 무료 그대로예요. 1.39부터 새로 연 ✦ 장치만 프로에서 돌아요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onTertiaryContainer)
             Text(FxMarket.stateLine(pro, status), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
@@ -110,15 +132,33 @@ internal fun FxCard(parts: Set<FxPro.Part>, code: String, applied: Boolean, onTa
             }
             if (refused) Text("이 작품은 하루 써 보기를 이미 썼어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             if (!pro) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                if (status is FxTaste.Status.Ready) Button(onClick = { asking = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("하루 써 보기") }
-                if (status is FxTaste.Status.Using && !applied) Button(onClick = onTaste, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("넣고 써 보기") }
+                // 1.39 [MKD-43] 상세에서는 '넣기 전에 해 보기' 사다리 ③이 하루 써 보기를 맡아요.
+                if (!ladder && status is FxTaste.Status.Ready) Button(onClick = { asking = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("하루 써 보기") }
+                if (!ladder && status is FxTaste.Status.Using && !applied) Button(onClick = onTaste, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("넣고 써 보기") }
                 OutlinedButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PRO) },
                     modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("프로 보기") }
             }
         }
     }
-    if (asking) AlertDialog(
-        onDismissRequest = { asking = false },
+    if (asking) FxTasteAsk(parts, code, onDismiss = { asking = false }, onRefused = { refused = true }, onTaste = onTaste)
+}
+
+/** 1.39 [MKC-04] 이 폰에서 지금: 프로인지, 이 작품의 하루 써 보기가 어디쯤인지. */
+@Composable
+internal fun fxNow(code: String): Pair<Boolean, FxTaste.Status> {
+    val c = LocalContext.current.appContainer
+    val gate by c.featureGate.state.collectAsStateWithLifecycle()
+    val taste by FxAccess.taste(c).collectAsStateWithLifecycle()
+    val status = remember(taste, code) { FxAccess.status(c, code) }
+    return gate.allows(com.bamnat.app.tier.Feature.FX_WORKS) to status
+}
+
+/** 1.39 [MKC-04] 하루 써 보기를 시작할지 묻는 창 (상세 카드와 사다리 ③이 같이 써요). */
+@Composable
+internal fun FxTasteAsk(parts: Set<FxPro.Part>, code: String, onDismiss: () -> Unit, onRefused: () -> Unit, onTaste: () -> Unit) {
+    val c = LocalContext.current.appContainer
+    AlertDialog(
+        onDismissRequest = onDismiss,
         title = { Text("하루 써 보기를 시작할까요?") },
         text = {
             Text("이 작품을 내 앱에 진짜로 넣고, ${FxMarket.HOURS}시간 동안 ✦ ${FxPro.say(parts)}까지 다 써 봐요. 작품마다 한 번뿐이에요. " +
@@ -126,10 +166,10 @@ internal fun FxCard(parts: Set<FxPro.Part>, code: String, applied: Boolean, onTa
         },
         confirmButton = {
             TextButton(onClick = {
-                asking = false
-                if (FxAccess.start(c, code)) onTaste() else refused = true
+                onDismiss()
+                if (FxAccess.start(c, code)) onTaste() else onRefused()
             }) { Text("시작하고 넣기") }
         },
-        dismissButton = { TextButton(onClick = { asking = false }) { Text("닫기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
