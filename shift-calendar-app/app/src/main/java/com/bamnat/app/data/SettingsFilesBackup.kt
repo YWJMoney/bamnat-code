@@ -211,6 +211,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 1.39 [LOOP-13] 인앱 업데이트 '새 버전 있어요'를 이미 물어본 판: 이 휴대폰에 깔린 판의 일이라 옮기지 않아요.
+            "in_app_update" to "인앱 업데이트를 이미 물어본 새 판 번호, 이 휴대폰의 것",
             // 1.38 [P3-X-08] 신고·지급 '했어요' 표시: 알림 목록이라 복원 뒤엔 지난 일이 길어야 일주일 다시 보여요.
             "boss_filed" to "다가올 신고·지급에서 '했어요'를 누른 것, 이 휴대폰의 것",
             // 1.38 [P3-L-15] 병동 전체 표 링크와 고치는 열쇠: 복원 뒤엔 리더가 한 번 눌러 새로 만들어요(옛 주소는 그 달 끝 60일 뒤 저절로 지워져요).
