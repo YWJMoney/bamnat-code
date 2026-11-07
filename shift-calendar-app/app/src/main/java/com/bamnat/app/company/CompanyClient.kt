@@ -99,6 +99,10 @@ data class SharedSetup(
     val payPrivate: Boolean = false,
     /** 1.39 [PAYP-05] 보완 요청 not yet answered by those who sent this version. */
     val fixes: Int = 0,
+    /** 1.39 발굴 2-3: this phone's own 보완 요청 on it: "open", "answered" (one who sent it replied), or null for none. */
+    val myFix: String? = null,
+    /** 1.39 발굴 4-3: when it was last sent (or adopted), for the card's 근거 line; null from a server before it. */
+    val sentAt: Instant? = null,
     /** [PLAZA-09] 안정: three phones or more on it and nothing else sent or adopted for 30 days. */
     val stable: Boolean = false,
     /** [PLAZA-14] 1.27 AH: its department's 대표 주기; [doubted] when too many said 달라요 for it to lead (AH-D7). */
@@ -192,6 +196,11 @@ data class CompanyPage(
     /** [PLAZA-08] This phone joined the company and sees its pay ways; [limited] when it read too much today. */
     val member: Boolean = false,
     val limited: Boolean = false,
+    /**
+     * 1.39 발굴 2-1: for a version this phone uses, the newer one of its department one of its senders sent since (on this page), by
+     * the older one's id: the pay screen offers it, as the way in use does not follow by itself.
+     */
+    val newer: Map<String, String> = emptyMap(),
 )
 
 /** What a setup needs to be adopted and what adoption earns, said before anyone sends [COMM-03]. */
@@ -1267,6 +1276,8 @@ internal fun companyPage(o: JSONObject): CompanyPage = CompanyPage(
             payHidden = s.optBoolean("payHidden") || s.optBoolean("payPrivate"),
             payPrivate = s.optBoolean("payPrivate"),
             fixes = s.optInt("fixes"),
+            myFix = s.optStringOrNull("myFix"),
+            sentAt = s.optStringOrNull("sentAt")?.let { runCatching { Instant.parse(it) }.getOrNull() },
             stable = s.optBoolean("stable"),
             lead = s.optBoolean("lead"),
             doubted = s.optBoolean("doubted"),
@@ -1276,6 +1287,7 @@ internal fun companyPage(o: JSONObject): CompanyPage = CompanyPage(
     },
     member = o.optBoolean("member"),
     limited = o.optBoolean("limited"),
+    newer = o.optJSONObject("newer")?.let { n -> n.keys().asSequence().associateWith { n.optString(it) }.filterValues { it.isNotEmpty() } }.orEmpty(),
 )
 
 /** [PLAZA-09] A member's room (`/room`, or the `room` of a [CompanyBundle]). */
