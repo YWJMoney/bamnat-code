@@ -346,7 +346,7 @@ private fun ShotStandIn(item: RecipeItem, width: Dp, height: Dp, style: WorkStyl
 }
 
 @Composable
-private fun ShotPhone(face: MarketShots.Face, r: Recipe, style: WorkStyle?, scale: Float) {
+internal fun ShotPhone(face: MarketShots.Face, r: Recipe, style: WorkStyle?, scale: Float) {
     Box(Modifier.fillMaxSize().clipToBounds(), contentAlignment = Alignment.Center) {
         Box(Modifier.requiredSize(MarketShots.PHONE_W.dp, MarketShots.PHONE_H.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {
             when (face) {
