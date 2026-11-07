@@ -1344,7 +1344,15 @@ function adminApp(L, BUILD, M) {
     const person = S.careQuery ? (S.data.carePerson ? carePersonCard(S.data.carePerson, c, edit) : skeleton(1)) : "";
     const holds = c.holds.length ? `<ul class="rows">${c.holds.map((x) => careLine(x, edit)).join("")}</ul>` : '<p class="meta">지금 쉬는 사람이 없어요.</p>';
     const unread = c.warnings.filter((x) => !x.seen && !x.liftedAt).length;
-    return `<h3>마을 돌봄</h3>${banner}${find}${person}
+    // 1.39 발굴: 앱이 '48시간 안에 답해요'라고 약속하니 기다리는 해명을 남은 시간 순으로, 30일이 지나면 세지 않는 '확인 전' 가려짐 수도.
+    const waiting = c.appeals ?? [];
+    const left = (h) => h < 0 ? `<span class="pill bad">${-h}시간 늦음</span>` : `<span class="pill${h < 12 ? " warn" : ""}">${h}시간 남음</span>`;
+    const appeals = waiting.length ? `<h4>답을 기다리는 해명 ${waiting.length}</h4><ul class="rows">${waiting.map((a) => `<li class="item"><a class="row-main" href="${href("inquiries", a.inquiry)}">
+      <span>${a.kind === "post" ? "가려진 글 다시 보여 주세요" : a.kind === "limit" ? "신고 누적 쓰기 제한 해명" : "경고·쉬기 해명"} · ${esc(ago(a.at))}</span></a>${left(a.hoursLeft)}</li>`).join("")}</ul>` : "";
+    const u = c.unconfirmed ?? { n: 0 };
+    const unconfirmed = c.on && u.n ? `<p class="note${u.daysLeft != null && u.daysLeft <= 5 ? " warn" : ""}">신고로 먼저 가려지고 아직 확인하지 않은 글이 ${u.n}건이에요${u.daysLeft != null ? `(가장 오래된 것은 ${u.daysLeft}일 남음)` : ""}. 30일 안에 확인하지 않으면 세지 않아요.
+      <button type="button" class="linkish" data-act="post-filter" data-key="hidden">가려진 글 보기</button></p>` : "";
+    return `<h3>마을 돌봄</h3>${banner}${unconfirmed}${appeals}${find}${person}
       <h4>지금 쉬는 사람 ${c.holds.length}</h4>${holds}
       ${c.warnings.length ? `<details><summary>최근 30일 경고·안내 ${c.warnings.length}${unread ? ` · 아직 안 읽음 ${unread}` : ""}</summary><ul class="rows">${c.warnings.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}
       ${c.ended.length ? `<details><summary>최근 30일에 끝나거나 푼 쉬기 ${c.ended.length}</summary><ul class="rows">${c.ended.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}`;
