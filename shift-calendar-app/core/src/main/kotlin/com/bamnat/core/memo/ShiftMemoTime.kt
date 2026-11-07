@@ -12,8 +12,8 @@ import java.time.LocalTime
  * (결정 AK-D6).
  */
 object ShiftMemoTime {
-    /** One day of the calendar ahead. [start] is null on a day off or a work day without hours. */
-    data class Day(val date: LocalDate, val name: String, val work: Boolean, val start: LocalTime?)
+    /** One day of the calendar ahead. [start] is null on a day off or a work day without hours; 1.39 [CAL2-20] [end] with it. */
+    data class Day(val date: LocalDate, val name: String, val work: Boolean, val start: LocalTime?, val end: LocalTime? = null)
 
     data class Suggestion(val at: LocalDateTime, val label: String, val name: String, val date: LocalDate)
 

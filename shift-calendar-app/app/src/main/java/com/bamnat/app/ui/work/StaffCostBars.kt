@@ -59,7 +59,7 @@ fun StaffCostBars(lines: List<LedgerLine>, last: Map<String, Long>, modifier: Mo
                 Text(Fmt.won(l.employerTotal), style = MaterialTheme.typography.labelMedium, color = if (over) danger else MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        Text("사장님이 내는 몫까지 · 점선은 지난달" + if (rows.any { r -> r.warnings.any { it.key == "week52" } }) " · 빨강은 주 52시간을 넘은 사람" else "",
+        Text("사장님이 내는 몫까지" + (if (last.values.any { it > 0 }) " · 점선은 지난달" else "") + if (rows.any { r -> r.warnings.any { it.key == "week52" } }) " · 빨강은 주 52시간을 넘은 사람" else "",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
