@@ -195,8 +195,9 @@ data class AppSettings(
     val noiseMix: String = "",
     val noiseTimerMinutes: Int = 30,
     /**
-     * 1.39 [FLOW-14][DSG-07] 밤 색 ([com.bamnat.core.design.NightLook] key): 잘 시간에만 (default) turns the whole app warm and dark
-     * while asleep, in the planned sleep and at 01~05, and the sleep and night screens from 22:00 to 06:00; 끔; 휴대폰 따름.
+     * 1.39 [FLOW-14][DSG-07] 밤 색 ([com.bamnat.core.design.NightLook] key): 수면 화면만 (default, 1.38's behaviour) darkens the
+     * sleep and night screens from 22:00 to 06:00 and while asleep; 잘 시간엔 앱 전체 also the whole app while asleep, in the
+     * planned sleep and at 01~05; 끔; 휴대폰 따름.
      * 1.38's 밤에는 어두운 색 off (sleep_night_look false) reads as 끔.
      */
     val nightLook: String = com.bamnat.core.design.NightLook.DEFAULT.key,

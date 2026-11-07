@@ -1344,7 +1344,15 @@ function adminApp(L, BUILD, M) {
     const person = S.careQuery ? (S.data.carePerson ? carePersonCard(S.data.carePerson, c, edit) : skeleton(1)) : "";
     const holds = c.holds.length ? `<ul class="rows">${c.holds.map((x) => careLine(x, edit)).join("")}</ul>` : '<p class="meta">지금 쉬는 사람이 없어요.</p>';
     const unread = c.warnings.filter((x) => !x.seen && !x.liftedAt).length;
-    return `<h3>마을 돌봄</h3>${banner}${find}${person}
+    // 1.39 발굴: 앱이 '48시간 안에 답해요'라고 약속하니 기다리는 해명을 남은 시간 순으로, 30일이 지나면 세지 않는 '확인 전' 가려짐 수도.
+    const waiting = c.appeals ?? [];
+    const left = (h) => h < 0 ? `<span class="pill bad">${-h}시간 늦음</span>` : `<span class="pill${h < 12 ? " warn" : ""}">${h}시간 남음</span>`;
+    const appeals = waiting.length ? `<h4>답을 기다리는 해명 ${waiting.length}</h4><ul class="rows">${waiting.map((a) => `<li class="item"><a class="row-main" href="${href("inquiries", a.inquiry)}">
+      <span>${a.kind === "post" ? "가려진 글 다시 보여 주세요" : a.kind === "limit" ? "신고 누적 쓰기 제한 해명" : "경고·쉬기 해명"} · ${esc(ago(a.at))}</span></a>${left(a.hoursLeft)}</li>`).join("")}</ul>` : "";
+    const u = c.unconfirmed ?? { n: 0 };
+    const unconfirmed = c.on && u.n ? `<p class="note${u.daysLeft != null && u.daysLeft <= 5 ? " warn" : ""}">신고로 먼저 가려지고 아직 확인하지 않은 글이 ${u.n}건이에요${u.daysLeft != null ? `(가장 오래된 것은 ${u.daysLeft}일 남음)` : ""}. 30일 안에 확인하지 않으면 세지 않아요.
+      <button type="button" class="linkish" data-act="post-filter" data-key="hidden">가려진 글 보기</button></p>` : "";
+    return `<h3>마을 돌봄</h3>${banner}${unconfirmed}${appeals}${find}${person}
       <h4>지금 쉬는 사람 ${c.holds.length}</h4>${holds}
       ${c.warnings.length ? `<details><summary>최근 30일 경고·안내 ${c.warnings.length}${unread ? ` · 아직 안 읽음 ${unread}` : ""}</summary><ul class="rows">${c.warnings.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}
       ${c.ended.length ? `<details><summary>최근 30일에 끝나거나 푼 쉬기 ${c.ended.length}</summary><ul class="rows">${c.ended.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}`;
@@ -2282,6 +2290,9 @@ function adminApp(L, BUILD, M) {
    * 1.37.1 [FAM-01] 가족 프로 이용권: the owner gives 프로 to family phones with no end, and cuts any of them at any time.
    * The code goes in the same place as an admin's (밤낮 앱 › 설정 › 프로 › '관리자 연결'), so no app update is needed.
    */
+  /** 1.39 [FAM-04] 발굴: a family phone not seen for 60 days is likely a phone given up (바꾼 휴대폰), still holding 프로. */
+  const familyIdle = (d) => Date.now() - Date.parse(d.seenAt ?? d.createdAt) > 60 * 864e5;
+
   function familyCard() {
     const f = S.data.family;
     const phones = f?.phones ?? [];
@@ -2295,8 +2306,8 @@ function adminApp(L, BUILD, M) {
       ${codes.length ? `<h3 class="section">아직 안 넣은 코드</h3><ul class="rows">${codes.map((c) => `<li class="item"><div class="row-main"><b>${esc(c.name)} · ${esc(c.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</b>
         <small>${esc(clock(c.expiresAt))}까지</small></div><div class="actions"><button class="btn small" data-act="family-code-delete" data-id="${esc(c.code)}">취소</button></div></li>`).join("")}</ul>` : ""}
       ${phones.length ? `<h3 class="section">가족 휴대폰</h3><ul class="rows">${phones.map((d) => `<li class="item"><div class="row-main"><b>${esc(d.name)}</b>
-        <small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}</small></div>
-        ${d.paused ? '<span class="pill warn">정지</span>' : '<span class="pill ok">프로 사용 중</span>'}
+        <small>${esc(ago(d.createdAt))} 연결${d.seenAt ? ` · 마지막 확인 ${esc(ago(d.seenAt))}` : ""}${familyIdle(d) ? " · 휴대폰을 바꿨다면 끊고 새 코드를 보내 주세요" : ""}</small></div>
+        ${d.paused ? '<span class="pill warn">정지</span>' : familyIdle(d) ? '<span class="pill warn">60일 넘게 안 보임</span>' : '<span class="pill ok">프로 사용 중</span>'}
         <div class="actions"><button class="btn small" data-act="family-set" data-id="${d.id}" data-key="${d.paused ? "resume" : "pause"}" data-name="${esc(d.name)}">${d.paused ? "다시 켜기" : "정지"}</button>
           <button class="btn small" data-act="family-rename" data-id="${d.id}" data-name="${esc(d.name)}">닉네임</button>
           <button class="btn small danger" data-act="family-remove" data-id="${d.id}" data-name="${esc(d.name)}">끊기</button></div></li>`).join("")}</ul>`
@@ -4926,6 +4937,9 @@ function adminApp(L, BUILD, M) {
       document.getElementById("second-on-code")?.focus();
     },
     "phone-previews": ({ id }) => openPreviews(id),
+    // 1.39 [FAM-04] 발굴: 폴드에서 코드와 넣는 곳을 문자·카톡으로 바로 보내요(받는 분이 설정 경로를 묻지 않게).
+    "share-family": ({ id }) => navigator.share?.({ title: "밤낮 가족 프로 이용권",
+      text: `밤낮 앱 › 설정 › 프로 › '관리자 연결'에 ${id.replace(/(\d{3})(\d{3})/, "$1 $2")}을 1시간 안에 넣어 주세요. 끝나는 날 없이 프로가 열려요.` }).catch(() => {}),
     "copy-family": ({ id }) => navigator.clipboard?.writeText(id).then(() => toast("복사했어요"), () => toast("복사하지 못했어요")),
     // 1.37.1 [FAM-01]
     "family-remove": ({ id, name }) => confirmBox(`${name} 휴대폰의 프로를 끊을까요?`, "그 휴대폰은 다음 확인 때부터 무료가 돼요. 다시 주려면 새 가족 코드를 만들어요.", "끊기", async () => {
@@ -5552,8 +5566,15 @@ function adminApp(L, BUILD, M) {
       const text = form.elements.text.value.trim();
       if (!text) return toast(ERRORS.text);
       const close = submitter?.dataset.close === "1";
-      const q = await act(() => api(`/inquiries/${form.dataset.id}/reply`, "POST", { text, ...(close ? { close: true } : {}) }),
-        close ? "답하고 닫았어요. 보낸 분 앱에 보여요" : "답했어요. 보낸 분 앱에 보여요");
+      // 1.39 [ADM3-39] '비슷한 문의 N건에도 같은 답': the lead first, then each of the bundle with the same words.
+      const others = form.elements.all?.checked ? (form.dataset.others || "").split(",").filter(Boolean) : [];
+      const body = { text, ...(close ? { close: true } : {}) };
+      const q = await act(async () => {
+        const first = await api(`/inquiries/${form.dataset.id}/reply`, "POST", body);
+        let missed = 0; // the lead is answered already, so one that fails does not undo it (pressing again would answer the lead twice)
+        for (const id of others) await api(`/inquiries/${id}/reply`, "POST", body).catch(() => missed++);
+        return { first, missed };
+      }, (r) => `${others.length ? `${others.length + 1 - r.missed}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보냈어요, 그 문의에서 다시 답해 주세요)` : ""}`);
       if (q) load({ quiet: true });
     },
     "inquiry-note": async (form) => {
@@ -5703,7 +5724,7 @@ function adminApp(L, BUILD, M) {
       form.reset();
       openDialog(`<div class="box"><h2>${esc(r.name)} 가족 코드</h2><p class="code-big" aria-label="가족 코드">${esc(r.code.replace(/(\d{3})(\d{3})/, "$1 $2"))}</p>
         <p class="hint">${esc(clock(r.expiresAt))}까지 한 번 쓸 수 있어요. 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 넣으면 바로 프로가 열려요.</p>
-        <div class="actions"><button class="btn" data-act="copy-family" data-id="${esc(r.code)}">코드 복사</button><button class="btn" data-act="close">닫기</button></div></div>`);
+        <div class="actions">${navigator.share ? `<button class="btn primary" data-act="share-family" data-id="${esc(r.code)}">${icon(P.share)}보내기</button>` : ""}<button class="btn" data-act="copy-family" data-id="${esc(r.code)}">코드 복사</button><button class="btn" data-act="close">닫기</button></div></div>`);
       load({ quiet: true });
     },
     password: async (form) => {

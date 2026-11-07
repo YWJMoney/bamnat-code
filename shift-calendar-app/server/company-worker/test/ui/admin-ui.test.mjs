@@ -398,6 +398,43 @@ test("[ADM3-37] 오늘 › 할 일: 같은 말로 읽히는 문의는 한 줄, �
   assert.equal(bundle.querySelectorAll(".bundle-list p").length, 2);
   assert.match(bundle.closest("li").querySelector(".kind").textContent, /3건/);
   assert.ok(![...u.$$("#main .rows.inbox > li .row-main a")].some((a) => /진동만 와요/.test(a.textContent)), "not a row of its own too");
+  // 1.39 [ADM3-39] 발굴: one answer to the whole bundle, by choice (off by default).
+  const form = bundle.closest("li").querySelector('form[data-form="quick-reply"]');
+  assert.match(form.textContent, /비슷한 문의 2건에도 같은 답 보내기/);
+  assert.equal(form.elements.all.checked, false);
+  form.elements.text.value = "알람 소리 설정을 다음 판에서 고쳐요";
+  form.elements.all.checked = true;
+  form.requestSubmit(form.querySelector('[data-close="1"]'));
+  await u.settle(60);
+  assert.match(u.text("#toast"), /3건에 답하고 닫았어요/);
+  const owner = await signIn(call);
+  const list = (await call("GET", "/api/admin/inquiries?status=all", undefined, owner)).data.inquiries;
+  const alarms = list.filter((q) => /알람/.test(JSON.stringify(q)));
+  assert.equal(alarms.length, 3);
+  for (const q of alarms) assert.equal(q.status, "closed");
+  assert.ok(!u.$("#main .rows.inbox details.bundle"), "the bundle left the list");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[FAM-04] 가족 프로 이용권: a phone not seen for 60 days says so, a fresh one is 프로 사용 중", async (t) => {
+  offline(t);
+  const s = server();
+  const { call, env, DB } = s;
+  const owner = await signIn(call);
+  for (const [n, name] of [[31, "엄마"], [32, "옛 휴대폰"]]) {
+    const { code } = (await call("POST", "/api/admin/family/code", { name }, owner)).data;
+    await call("POST", "/api/admin-link", { code }, { "x-device": device(n), ...from(n) });
+  }
+  const old = Date.now() - 90 * 864e5;
+  DB.db.prepare("UPDATE admin_devices SET created_at = ?, seen_at = ? WHERE admin_name = ?").run(old, old, "옛 휴대폰");
+  const u = await asOwner(env, t);
+  await u.go("#/account");
+  const rows = [...u.$$("#main .rows li")].filter((li) => /엄마|옛 휴대폰/.test(li.textContent));
+  assert.equal(rows.length, 2);
+  assert.match(rows.find((li) => /엄마/.test(li.textContent)).textContent, /프로 사용 중/);
+  const idle = rows.find((li) => /옛 휴대폰/.test(li.textContent)).textContent;
+  assert.match(idle, /60일 넘게 안 보임/);
+  assert.match(idle, /휴대폰을 바꿨다면 끊고 새 코드를/);
   assert.deepEqual(u.errors, []);
 });
 

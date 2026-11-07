@@ -299,8 +299,17 @@ export async function careList(d, env, now) {
   const rows = await d.all(env, `SELECT * FROM care_notes WHERE (kind != 'warn' AND lifted_at IS NULL AND until > ?1) OR at > ?2 OR COALESCE(lifted_at, until, 0) > ?2
     ORDER BY at DESC LIMIT 200`, now, now - 30 * DAY);
   const all = rows.map((r) => noteView(r, now));
+  // 1.39 발굴: 약속한 48시간 안에 답하도록 기다리는 해명을 오래된 것부터, 30일이 지나면 세지 않는 '확인 전' 가려짐 수.
+  const [waiting, open] = await Promise.all([
+    d.all(env, "SELECT target, inquiry_id, at FROM care_appeals WHERE result IS NULL ORDER BY at ASC LIMIT 50"),
+    d.one(env, "SELECT COUNT(*) AS n, MIN(at) AS oldest FROM write_strikes WHERE confirmed = 0 AND at > ?", now - 30 * DAY),
+  ]);
+  const HOUR = DAY / 24;
   return {
     on: await careOn(d, env, now),
+    appeals: waiting.map((a) => ({ inquiry: a.inquiry_id, kind: a.target.startsWith("post:") ? "post" : a.target === "limit" ? "limit" : "note",
+      at: isoOf(a.at), hoursLeft: Math.floor((a.at + APPEAL.answerHours * HOUR - now) / HOUR) })),
+    unconfirmed: { n: open?.n ?? 0, ...(open?.oldest ? { daysLeft: Math.max(0, Math.ceil((open.oldest + 30 * DAY - now) / DAY)) } : {}) },
     rules: { days: CARE.days, warnWithinDays: CARE.warnWithinDays, keepDays: CARE.keepDays, severe: CARE_SEVERE, reasons: CARE_REASONS },
     holds: all.filter((x) => x.active),
     warnings: all.filter((x) => x.kind === "warn"),

@@ -42,8 +42,19 @@ class NightLookTest {
 
     @Test fun keysRoundTripAndDefault() {
         NightLook.entries.forEach { assertEquals(it, NightLook.of(it.key)) }
-        assertEquals(NightLook.SLEEP_TIME, NightLook.of(null))
-        assertEquals(NightLook.SLEEP_TIME, NightLook.of("??"))
+        // 1.39 (사용자 11-07): 1.38's own behaviour by default, the whole app only when chosen.
+        assertEquals(NightLook.SCREENS, NightLook.of(null))
+        assertEquals(NightLook.SCREENS, NightLook.of("??"))
+    }
+
+    @Test fun screensOnlyLeavesTheAppItsOwnColours() {
+        val l = NightLook.SCREENS
+        val plan = listOf(at(9)..at(16))
+        assertFalse(NightRule.app(l, at(3), sleeping = true, planned = plan, systemDark = true))
+        assertFalse(NightRule.app(l, at(10), sleeping = false, planned = plan, systemDark = false))
+        assertTrue(NightRule.screen(l, at(23), sleeping = false, systemDark = false))
+        assertTrue(NightRule.screen(l, at(14), sleeping = true, systemDark = false))
+        assertFalse(NightRule.screen(l, at(14), sleeping = false, systemDark = true))
     }
 
     @Test fun nightLineSaysWorkAndAlarm() {
