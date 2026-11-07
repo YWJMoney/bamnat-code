@@ -2659,7 +2659,8 @@ function adminApp(L, BUILD, M) {
     const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit) : "";
     const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
       <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
-      <textarea name="recipe" rows="8" required></textarea>
+      <textarea name="recipe" rows="8"${tab === "waiting" ? "" : " required"}></textarea>
+      ${tab === "waiting" ? `<label>또는 파일로 (docs/recipes/market-….json, 휴대폰에서 긴 글을 붙여 넣기 어려울 때) <input type="file" name="file" accept=".json,application/json"></label>` : ""}
       ${tab === "showcase" ? `<p class="hint">showcase-recipes.json 전체를 붙여 넣으면 30개가 한 번에 올라가요. 하나만 붙여 넣어도 보여주기로 올라가요.</p><input type="hidden" name="showcase" value="on">`
         : tab === "waiting" ? "" : `<label class="switch"><input type="checkbox" name="publicData"><span class="track" aria-hidden="true"></span><span>공공 자료 레시피 (공개 자료 탭)</span></label>`}
       ${recipeHoldFields(tab === "waiting")}
@@ -2692,7 +2693,7 @@ function adminApp(L, BUILD, M) {
   /** 1.38 [STM-10] 밤낮 재료 묶음: 몇 개·공개 상태·무료 수, 공개·숨기기, 무료·광고 나누기(광고로 연 묶음은 30일, 프로는 모두). */
   function materialsView(d, edit) {
     if (!d) return "";
-    if (!d.items.length) return `<h3>밤낮 재료</h3><p class="hint">넣은 재료가 없어요. tools/materials-seed.mjs로 넣어요.</p>`;
+    if (!d.items.length) return `<h3>밤낮 재료</h3><p class="hint">넣은 재료가 없어요. 아래 ‘재료 파일 올리기’로 넣어요.</p>${edit ? materialUploadForm() : ""}`;
     const packs = new Map();
     for (const m of d.items) {
       const p = packs.get(m.pack) ?? { kind: m.kind, n: 0, ok: 0, waiting: 0, hidden: 0, free: 0 };
@@ -2713,7 +2714,18 @@ function adminApp(L, BUILD, M) {
       return list.length ? `<details data-key="materials-${kind}"><summary>${label} ${list.length}묶음 · ${list.reduce((n, [, p]) => n + p.n, 0)}개</summary><ul class="rows">${list.map(row).join("")}</ul></details>` : "";
     };
     return `<h3>밤낮 재료</h3><p class="hint">공개 ${c.ok ?? 0} · 대기 ${c.waiting ?? 0} · 숨김 ${c.hidden ?? 0}. 스튜디오 › 꾸밈 › 넣기의 ‘밤낮 재료’ 칸이에요. 무료가 아닌 재료는 광고 한 편으로 그 묶음을 30일 열거나 프로로 모두 써요.</p>
-      ${group("icon", "색 아이콘")}${group("bg", "배경")}`;
+      ${group("icon", "색 아이콘")}${group("bg", "배경")}${edit ? materialUploadForm() : ""}`;
+  }
+
+  /**
+   * 1.39 E11 재료 파일 올리기: the files `tools/materials-seed.mjs --files` writes (재료-01.json …), picked here with this login, so the real
+   * server gets its materials without a password in any tool. They go in as 대기 (공개는 위 묶음마다); the same picture again only renames.
+   */
+  function materialUploadForm() {
+    return `<form data-form="material-upload" class="card"><h3>재료 파일 올리기</h3>
+      <p class="hint">tools/materials-seed.mjs --files로 만든 재료-01.json … 을 모두 골라요. 대기로 들어가고, 공개는 위 묶음마다 해요. 같은 그림을 다시 올리면 이름·순서만 바뀌어요.</p>
+      <input type="file" name="files" accept=".json,application/json" multiple required>
+      <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form>`;
   }
 
   /** 1.36 [MKS-01] 출시 대기 묶음: 몇 개, 예약, 지금 공개. */
@@ -5444,6 +5456,33 @@ function adminApp(L, BUILD, M) {
       await act(() => api("/recipes/materials/free", "POST", { pack: form.dataset.key, mode }), (r) => `무료 ${r?.free ?? 0} · 광고·프로 ${r?.paid ?? 0}`);
       load();
     },
+    // 1.39 E11 재료 파일 올리기: 25개씩(서버 한 번에 받는 수) 나눠, 몇 개째인지 단추에 보이며 넣어요.
+    "material-upload": async (form) => {
+      const picked = [...(form.querySelector('input[type="file"]')?.files ?? [])];
+      if (!picked.length) return;
+      const items = [];
+      for (const file of picked) {
+        let doc;
+        try { doc = JSON.parse(await file.text()); } catch { toast(`${file.name}을 읽지 못했어요`); return; }
+        if (doc?.kind !== "bamnat-materials" || !Array.isArray(doc.items)) { toast(`${file.name}은 재료 파일이 아니에요`); return; }
+        items.push(...doc.items);
+      }
+      const button = form.querySelector('button[type="submit"]');
+      const label = button?.textContent;
+      S.uploading = true;
+      let done = 0;
+      const failed = [];
+      for (let i = 0; i < items.length; i += 25) {
+        if (button) button.textContent = `올리는 중 ${Math.min(i + 25, items.length)}/${items.length} · 창을 닫지 마세요`;
+        const chunk = items.slice(i, i + 25);
+        try { await api("/recipes/materials", "POST", { items: chunk }); done += chunk.length; }
+        catch { failed.push(`${i + 1}~${i + chunk.length}`); }
+      }
+      S.uploading = false;
+      if (button && label != null) button.textContent = label;
+      toast(`재료 ${done}개를 대기로 넣었어요${failed.length ? ` · 못 넣은 것 ${failed.join(", ")}번째 (같은 파일을 다시 올리면 돼요)` : ""}`);
+      if (done) { form.reset(); load(); }
+    },
     "recipe-picks": async (form) => {
       const codes = String(new FormData(form).get("codes") ?? "").toUpperCase().split(/[\s,]+/).filter(Boolean);
       await act(() => api("/recipes/picks", "POST", { style: form.dataset.key, codes }), codes.length ? `${codes.length}개 골랐어요` : "이번 주 고른 것을 비웠어요");
@@ -5477,7 +5516,11 @@ function adminApp(L, BUILD, M) {
     "recipe-upload": async (form) => {
       const f = new FormData(form);
       let parsed;
-      try { parsed = JSON.parse(String(f.get("recipe") ?? "")); } catch { toast("레시피 글(JSON)을 읽지 못했어요"); return; }
+      // 1.39 E11: 출시 대기 also takes the market file itself (a phone cannot paste 1.5 MB well).
+      const file = form.querySelector('input[name="file"]')?.files?.[0];
+      const text = file ? await file.text() : String(f.get("recipe") ?? "");
+      if (!text.trim()) { toast("레시피 글을 붙여 넣거나 파일을 골라 주세요"); return; }
+      try { parsed = JSON.parse(text); } catch { toast("레시피 글(JSON)을 읽지 못했어요"); return; }
       // One recipe, or docs/recipes/starter-recipes.json whole ([{publicData, recipe}, …]): each goes up on its own.
       const list = Array.isArray(parsed) ? parsed : [{ recipe: parsed, publicData: f.get("publicData") === "on", showcase: f.get("showcase") === "on" }];
       // 1.36 [MKS-01] 출시 대기: the form's settings unless the file's entry says its own.

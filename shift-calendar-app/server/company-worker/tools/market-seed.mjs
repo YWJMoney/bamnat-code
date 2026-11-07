@@ -47,7 +47,9 @@ export const SETS = {
   // 1.39에서 고친 그림(투명 바탕 글자색·아래 막대 그림 칠)에 맞춰 그렸고 FX 프로 작품이 더해질 묶음이라 1.39 앱(versionCode 53)부터 보여요.
   // 실서버는 1.39 출시 날 사용자 확인 뒤.
   139: { dir: join(ROOT, "market-139"), out: join(ROOT, "market-139.json"), batch: "1.39 정상급 작품", minApp: 53,
-    goals: { theme: 50, "tab:calendar": 50, "tab:memo": 50, "tab:money": 50, "tab:pay": 50, "tab:widget": 50, "tab:alarm": 50, part: 48, logic: 38 } },
+    goals: { theme: 50, "tab:calendar": 50, "tab:memo": 50, "tab:money": 50, "tab:pay": 50, "tab:widget": 50, "tab:alarm": 50, part: 48, logic: 38,
+      // 1.39 [FLOW-21] 장터 새 탭 '밤 화면'의 첫 작품(밤 화면·아침 한 장 부품, G8).
+      "tab:night": 6 } },
 };
 
 export function sectionKey(text) {

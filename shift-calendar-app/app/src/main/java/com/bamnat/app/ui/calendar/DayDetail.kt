@@ -295,16 +295,8 @@ private fun DayGroups(
     // only when it says more than the work card (a sleep, money or memo on it).
     val sleepLog by vm.sleepLog.collectAsStateWithLifecycle()
     val story = remember(snapshot, date, sleepLog, dayBook, memos, tips, settings.dayStory, settings.alarmsEnabled, calendarAlarms, settings.dayStartMinutes) {
-        if (!settings.dayStory) null else runCatching {
-            val ring = settings.alarmsEnabled && calendarAlarms
-            val alarmsAround = if (!ring) emptyList() else listOf(date, date.plusDays(1))
-                .flatMap { com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snapshot.resolver, it) }
-            val near = sleepLog.filter { it.start.toLocalDate() in date.minusDays(1)..date }
-            val items = com.bamnat.core.design.DayStoryItems.of(date, snapshot.resolver, alarmsAround, near, tips, dayBook.entries,
-                com.bamnat.core.memo.MemoStory.items(memos, date),
-                dayStartsAt = com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)) // 1.39 [FLOW-30]
-            items.takeIf { com.bamnat.core.design.DayStoryItems.worthShowing(com.bamnat.core.design.DayStory.arrange(date, it)) }
-        }.getOrNull()
+        // 1.39 [FLOW-22] worked out in one place (DayStoryPart), as the 달력 아래 하루 이야기 카드 does.
+        dayStoryItems(snapshot, date, settings, calendarAlarms, sleepLog, dayBook.entries, memos, tips)
     }
     val storyShown = story != null
     LaunchedEffect(storyShown) { onStory(storyShown) }

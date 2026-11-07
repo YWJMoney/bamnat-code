@@ -115,3 +115,15 @@ test("[MKC-01] 1.39 장터 분류: 탭별 작품은 꾸미기·기능, 도구는
   assert.equal(tabItems.find((i) => i.code === tpl).made, "func");
   assert.equal(tabItems.find((i) => i.code === look).made, "look");
 });
+
+// 1.39 [FLOW-21] 밤 화면 부품: a work of night lines is the 장터 탭 '밤 화면'; one night part alone is a 부품 on that screen.
+test("[FLOW-21] night parts are the 밤 화면 tab", async () => {
+  const { MARKET_TABS, cleanRecipe } = await import("../src/recipes.js");
+  assert.ok(MARKET_TABS.includes("night"));
+  const whole = { pieces: [{ kind: "parts", parts: [{ id: "night", fill: 4278190080 }, { id: "night.clock", size: 90 }, { id: "night.line" }] }] };
+  assert.deepEqual(sectionOf(whole), { scope: "tab", tabs: ["night"] });
+  assert.deepEqual(sectionOf({ pieces: [{ kind: "parts", parts: [{ id: "night.morning", r: 20 }] }] }), { scope: "part", tabs: ["night"], unit: "part:night.morning" });
+  // The server takes the new ids (the same list as core BlueprintParts).
+  const rec = { format: "bamnat-recipe", v: 1, title: "밤", styles: ["SHIFT"], pieces: whole.pieces };
+  assert.doesNotThrow(() => cleanRecipe(JSON.stringify(rec)));
+});

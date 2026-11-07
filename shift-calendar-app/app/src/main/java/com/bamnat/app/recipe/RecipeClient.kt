@@ -805,7 +805,8 @@ class RecipeClient(
         fun toolKind(tool: String, on: String?, fx: Boolean = false, free: Boolean = false): String = withPrice(
             SCOPE_TOOL + tool.takeIf { it in TOOL_KINDS }.orEmpty() + (on?.takeIf { it in MARKET_TABS }?.let { "@$it" } ?: ""),
             if (tool in TOOL_KINDS) "" else if (fx) FX else if (free) FREE else "")
-        val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget")
+        // 1.39 [FLOW-21] 밤 화면(밤 화면·아침 한 장 부품).
+        val MARKET_TABS = listOf("calendar", "pay", "money", "memo", "alarm", "widget", "night")
         private fun legacyKind(tab: String): String? = when (tab) {
             "calendar" -> "skin"; "memo" -> "memo"; "money" -> "money"; "pay", "alarm" -> "rules"; "widget" -> "layout"; else -> null
         }
