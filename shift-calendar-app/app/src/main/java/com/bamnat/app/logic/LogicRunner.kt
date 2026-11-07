@@ -214,6 +214,22 @@ object LogicRunner {
         return n
     }
 
+    /**
+     * [TRY-06] 1.39 기능까지 써 보기: everything the rules and buttons wrote from [since] on, taken back newest first (and gone from
+     * '규칙이 쓴 것' and 되돌리기). Answers how many.
+     */
+    suspend fun takeBackSince(c: AppContainer, since: Long): Int {
+        val store = LogicStore(c.appContext)
+        val all = store.written()
+        val mine = all.filter { it.optLong("at", -1L) >= since }
+        if (mine.isEmpty()) return 0
+        store.keepWritten(all.filter { it.optLong("at", -1L) < since })
+        if (store.undo?.let { runCatching { JSONObject(it).optLong("at", -1L) }.getOrNull() }?.let { it >= since } == true) store.undo = null
+        var n = 0
+        for (o in mine.asReversed()) if (runCatching { takeBack(c, o) }.isSuccess) n++
+        return n
+    }
+
     private suspend fun takeBack(c: AppContainer, o: JSONObject) {
         when {
             // 1.36 [SEC-12] Only the line the rule added comes out (what was written after it stays), and the words before if it is not found.
@@ -669,6 +685,9 @@ class LogicStore(context: Context) {
     }
 
     fun clearWritten() = p.edit().remove("written").apply()
+
+    /** [TRY-06] Only [list] kept in '규칙이 쓴 것'. */
+    fun keepWritten(list: List<JSONObject>) = p.edit().putString("written", JSONArray(list.map { it.toString() }).toString()).apply()
 
     /** A memo a rule made ([line] null), or a line a rule added to one. */
     private fun made(memo: Long, line: String?) {

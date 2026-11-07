@@ -139,7 +139,7 @@ class AutoBackup(
         return (ok == null || !ok.plus(DUE_AFTER).isAfter(now)) && (tried == null || !tried.plus(RETRY_AFTER).isAfter(now))
     }
 
-    suspend fun runIfDue(): Result? = if (due()) runNow() else null
+    suspend fun runIfDue(): Result? = if (due() && !com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)) runNow() else null // [TRY-06] not while a work is tried
 
     /** Writes the backup now, whatever the time since the last. */
     suspend fun runNow(): Result = lock.withLock {
