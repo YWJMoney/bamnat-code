@@ -75,6 +75,7 @@ import com.bamnat.app.recipe.RecipePost
 import com.bamnat.core.recipe.Input
 import com.bamnat.core.recipe.InputKind
 import com.bamnat.core.recipe.PieceKind
+import kotlinx.coroutines.launch
 import com.bamnat.core.recipe.RecipeDescribe
 import com.bamnat.core.recipe.RecipeResolve
 import com.bamnat.core.recipe.RecipeText
@@ -241,6 +242,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     LiveTryOn.take { it is LiveTryOn.From.Detail && it.code == vm.code }?.let { tryAgain = it; tryOn = true }
                 }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
+                val liveTry = LocalContext.current.appContainer
+                // [TRY-06] 1.39 기능까지 써 보기: the 기능 switched on, put on the real app for a while and taken back whole.
+                val tryFns = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.app.recipe.FunctionTrial.KINDS }
+                val ended by LiveTryOn.ended.collectAsStateWithLifecycle()
+                ended?.takeIf { it.code == vm.code }?.let { e -> TriedCard(LiveTryOn.say(e)) { LiveTryOn.forget() } }
                 if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     // 7차 통합 347b7c37 PC 제안 (넣은 뒤에도 '입어 보고 고르기'로 남아요): once in, it says so and offers another look.
                     Text(when { s.applying -> "넣는 중…"; s.appliedAt != null -> (if (doc.item.scope == "tab") "✓ 넣은 작품 · 다시 입어 보기" else "✓ 입은 테마 · 다시 입어 보기"); else -> "입어 보고 고르기" })
@@ -257,6 +263,10 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         s.appliedAt != null -> "고른 ${chosen}개 다시 넣기"
                         else -> "고른 ${chosen}개 내 달력에 넣기"
                     })
+                }
+                if (!hasLooks && tryFns.isNotEmpty()) TryFunctionsButton(tryFns.map { it.kind }, enabled = ready) {
+                    LiveTryOn.start(liveTry, r, own = doc.mine, emptySet(), com.bamnat.app.recipe.FunctionTrial.tab(r, tryFns.map { it.kind }.toSet()),
+                        LiveTryOn.From.Detail(vm.code), s.answers, functions = tryFns.associate { it.kind to it.mode }, cal = vm.calendar)
                 }
                 // [BLU-07] PC 6차: a 부품 is kept for the studio from here in one tap, not only inside 입어 보기.
                 val unit = remember(r) { com.bamnat.core.recipe.LookParts.partUnit(r) }
@@ -284,10 +294,13 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                     TryOnScreen(r, vm.style, onDismiss = { tryOn = false; tryAgain = null },
                         onKeep = { ids -> vm.keep(ids) }, onToStudio = onToStudio,
                         // [TRY-05] 1.39 실제 화면으로 입어 보기.
+                        // [TRY-06] with the 기능 ticked below, which then really run.
                         live = { picked, tab ->
-                            LiveTryOn.start(liveC, r, own = doc.mine, picked, tab, LiveTryOn.From.Detail(vm.code), s.answers).also { if (it) { tryOn = false; tryAgain = null } }
+                            LiveTryOn.start(liveC, r, own = doc.mine, picked, tab, LiveTryOn.From.Detail(vm.code), s.answers,
+                                functions = tryFns.associate { it.kind to it.mode }, cal = vm.calendar).also { if (it) { tryOn = false; tryAgain = null } }
                         },
                         startPicked = tryAgain?.picked, startTab = tryAgain?.tab, own = doc.mine,
+                        liveWith = tryFns.takeIf { it.isNotEmpty() }?.joinToString("·") { it.kind.label },
                         extra = if (others.isEmpty()) null else { {
                             Text("기능 · 모양과 함께 넣을 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
                             others.forEach { p ->
@@ -844,3 +857,40 @@ private fun DiffRow(label: String, change: String?, pickable: Boolean, on: Boole
 }
 
 
+
+/** [TRY-06] 넣기 전에 기능을 내 앱에서 실제로 써 보기 (규칙·단추가 정말 돌고, 끝내면 원래대로). */
+@Composable
+internal fun TryFunctionsButton(kinds: List<PieceKind>, enabled: Boolean, start: suspend () -> Boolean) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf<String?>(null) }
+    androidx.compose.material3.FilledTonalButton(onClick = {
+        if (busy) return@FilledTonalButton
+        busy = true
+        note = null
+        scope.launch {
+            val ok = runCatching { start() }.getOrDefault(false)
+            busy = false
+            if (!ok) note = "이 기능은 지금 내 앱과 같아서 바뀌는 곳이 없어요"
+        }
+    }, enabled = enabled && !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(if (busy) "준비하는 중…" else "넣기 전에 내 앱에서 실제로 써 보기")
+            Text("정말 돌아요: " + kinds.joinToString("·") { it.label } + " · 끝내면 원래대로", style = MaterialTheme.typography.labelSmall,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        }
+    }
+    note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+}
+
+/** [TRY-06] What the 기능 did while tried, on the page they were tried from (until closed). */
+@Composable
+internal fun TriedCard(line: String, onClose: () -> Unit) {
+    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+        }
+    }
+}

@@ -36,6 +36,9 @@ import com.bamnat.core.money.Job
 import com.bamnat.core.money.JobStatus
 import com.bamnat.core.money.PlatformWork
 import com.bamnat.core.recipe.CalendarView
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
 
 /**
  * [CELL-01] 1.39 날짜 칸에 일감·메모를 줄줄이 (사용자 관찰: 일감 위주 사용자의 칸에서 이름이 잘리고 메모가 안 보였음, 다른 일정 달력처럼
@@ -70,11 +73,13 @@ private val LINE_PAD_V = 1.dp
  * [CELL-02] 1.39 (사용자 2026-11-07 "테마를 입으면 달력에 적어 둔 것이 안 보여요"): a theme or a 달력 모양 of the user's own lists too, in its
  * own colours, fonts and corners; only the sideways month keeps one line.
  */
-internal fun cellListOn(choice: String, jobs: Boolean, memoInCells: Boolean, view: CalendarView, sideways: Boolean): Boolean =
+internal fun cellListOn(choice: String, jobs: Boolean, memoInCells: Boolean, view: CalendarView, sideways: Boolean,
+    /** [CELL-03] 1.39 (PC a483ca15: 사무직 달력에 메모가 점만 보여요) The calendar has memos on dates: 알아서 lists them too. */
+    hasMemos: Boolean = false): Boolean =
     !sideways && when (choice) {
         "on" -> true
         "off" -> false
-        else -> jobs || memoInCells || (view.memo ?: 0) > 0
+        else -> jobs || memoInCells || (view.memo ?: 0) > 0 || hasMemos
     }
 
 /**
@@ -82,9 +87,17 @@ internal fun cellListOn(choice: String, jobs: Boolean, memoInCells: Boolean, vie
  * focus says, and [view] as the cells would have it. One choice, so the example lists exactly where the calendar does.
  */
 internal fun cellListOn(choice: String, style: com.bamnat.core.work.WorkStyle?, memoInCells: Boolean, view: CalendarView,
-                        /** G1 1.39 '알아서' lists a month with dated memos (the calendar passes its own); with it, as [memoInCells] is. */
+                        /** G1 1.39 '알아서' lists a month with dated memos (the calendar passes its own); passed on as the calendar's own [cellListOn] takes it. */
                         hasMemos: Boolean = false): Boolean =
-    cellListOn(choice, com.bamnat.core.work.CalendarFocus.of(style) == com.bamnat.core.work.CalendarFocus.JOBS, memoInCells || hasMemos, view, false)
+    cellListOn(choice, com.bamnat.core.work.CalendarFocus.of(style) == com.bamnat.core.work.CalendarFocus.JOBS, memoInCells, view, false, hasMemos)
+
+/**
+ * [CELL-03] 1.39 (PC a483ca15: 일감·메모가 없는 달도 칸이 높아 세 주만 보여요) Whether a listing month gets the tall cells
+ * ([listCellHeight]): only a month with something to list, and only where lists were asked for (늘, 일감 달력, 날짜 칸의 메모, 메모 줄).
+ * A list that came only because memos exist keeps the plain height: a memo day shows one line under its date.
+ */
+internal fun cellListTall(choice: String, jobs: Boolean, memoInCells: Boolean, view: CalendarView, monthHasLines: Boolean): Boolean =
+    monthHasLines && (choice == "on" || jobs || memoInCells || (view.memo ?: 0) > 0)
 
 /** [CELL-02] 1.39 What a listing cell shows under its date, handed to a theme's own cell ([CustomCellBody]). */
 internal class CellListContent(val lines: List<CellLine>, val foot: CellFoot?)
@@ -127,12 +140,21 @@ internal fun CellListLines(lines: List<CellLine>, foot: CellFoot?, size: TextUni
             val one = measurer.measure("가1", style).size.height
             maxOf(one.toDp(), (size * LIST_LINE).toDp())
         }
-        val textW = with(density) { (maxWidth - 5.dp).roundToPx().coerceAtLeast(1) }
+        // The row's padding (bar 4dp + 1dp) rounds on its own: a pixel short, so a line that only just fits is counted as wrapping
+        // (PC 확인 1.39: '대체공휴일' given two lines needed three and was cut at the foot).
+        val textW = with(density) { ((maxWidth - 5.dp).toPx() - 2f).toInt().coerceAtLeast(1) }
         val wants = remember(lines, textW, style) {
             lines.map { l -> measurer.measure(l.text, style, constraints = Constraints(maxWidth = textW)).lineCount }
         }
         val room = if (constraints.hasBoundedHeight) maxHeight else lineH * 8
         val all = CellList.slots(room.value, (lineH + LINE_PAD_V * 2).value, LINE_GAP.value)
+        // [CELL-03] 1.39 No room for even one line (a low cell whose mark took its own line): a dot in the first thing's colour, as the
+        // plain cell's memo dot, not a "+1" cut in half. The day's button still reads them all.
+        if (all <= 0) {
+            if (lines.isNotEmpty()) Box(Modifier.padding(start = 2.dp, top = 1.dp).size(5.dp)
+                .background(lines.first().bar ?: lines.first().ink, androidx.compose.foundation.shape.CircleShape))
+            return@BoxWithConstraints
+        }
         val withFoot = CellList.fit(lines.size, (all - if (foot != null) 1 else 0).coerceAtLeast(0), wants)
         // The hours or the lunar date give their line to the day's own things when those do not all fit; money and 공수 keep theirs.
         val dropFoot = foot != null && foot.minor && withFoot.hidden > 0
@@ -162,7 +184,7 @@ private fun CellLineRow(line: CellLine, maxLines: Int, style: TextStyle) {
         maxLines = maxLines,
         // One line keeps going to the cell's edge ("엄마 MRI 1…"), not stopping at the last whole word ("엄마").
         softWrap = maxLines > 1,
-        overflow = TextOverflow.Clip,
+        overflow = TextOverflow.Ellipsis,
         fontWeight = if (line.bold) FontWeight.SemiBold else FontWeight.Normal,
         textDecoration = if (line.struck) TextDecoration.LineThrough else null,
         modifier = Modifier
@@ -175,7 +197,9 @@ private fun CellLineRow(line: CellLine, maxLines: Int, style: TextStyle) {
                     style = Stroke(width = 1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.dp.toPx()))))
                 drawRect(bar, topLeft = Offset.Zero, size = Size(2.5.dp.toPx(), size.height))
             }
-            .padding(start = if (line.bar != null) 4.dp else 1.dp, end = 1.dp, top = LINE_PAD_V, bottom = LINE_PAD_V),
+            .padding(start = if (line.bar != null) 4.dp else 1.dp, end = 1.dp, top = LINE_PAD_V, bottom = LINE_PAD_V)
+            // [CELL-03] A line may end in '…' where the cell is narrow; the day's button reads every job and memo whole instead.
+            .clearAndSetSemantics {},
     )
 }
 

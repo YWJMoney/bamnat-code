@@ -990,9 +990,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         (TopLevel.entries.firstOrNull { it.route == t.tab } ?: TopLevel.CALENDAR).let { dest -> if (dest.route != route) navigateTop(dest) }
     }
     // The app left while trying on: the trial ends (nothing was saved), 입어 보기 waiting where it was.
+    // [TRY-06] One with 기능 waits a little (a photo for a memo, a glance elsewhere) and then puts them back.
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-        if (com.bamnat.app.ui.recipe.LiveTryOn.trial.value != null) com.bamnat.app.ui.recipe.LiveTryOn.end(container)
+        if (com.bamnat.app.ui.recipe.LiveTryOn.trial.value != null) com.bamnat.app.ui.recipe.LiveTryOn.stepAway(container)
     }
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START) { com.bamnat.app.ui.recipe.LiveTryOn.stepIn() }
     // A theme sheet tried on the real app is opened again here, over whichever screen it was on.
     val trialAgain by com.bamnat.app.ui.recipe.LiveTryOn.reopen.collectAsStateWithLifecycle()
     (trialAgain?.from as? com.bamnat.app.ui.recipe.LiveTryOn.From.Sheet)?.let { f ->

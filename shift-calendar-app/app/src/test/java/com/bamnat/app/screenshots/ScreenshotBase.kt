@@ -108,6 +108,9 @@ abstract class ScreenshotBase {
         ShadowAlarmManager.setCanScheduleExactAlarms(true)
         // A search one shot left open must not open the next shot's 회사 찾기 with its name and chips.
         com.bamnat.app.ui.company.PublicBrowse.reset()
+        // 1.39 [FLOW-03] Nor a setup's '이번 달이 채워졌어요' line from a shot that went through setup (kept in memory, so it leaked
+        // into the next class's calendars: 가게 달력에 '이번 달 야간 5번', 3차 통합 화면 지문).
+        com.bamnat.app.ui.calendar.SetupFill.close()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")

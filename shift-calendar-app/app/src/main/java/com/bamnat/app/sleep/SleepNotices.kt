@@ -74,9 +74,11 @@ object SleepingNotice {
         val left = SleepDebt.MAX_SLEEP_MINUTES * 60_000 - Duration.between(start, now).toMillis()
         if (left <= 0) return cancel(context)
         val title = (if (start.toLocalDate() == now.toLocalDate()) "" else "어제 ") + "${hm(start)}부터 자는 중"
-        val notification = NotificationCompat.Builder(context, Notifications.DAY_CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setGroup(Notifications.SLEEPING_GROUP)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setSilent(true)
             .setContentTitle(title)

@@ -51,6 +51,18 @@ object RosterFollower {
     /** Whether this link's changes come into the user's calendar (or are offered). */
     fun followed(cal: ReceivedCalendar): Boolean = mode(cal) != Mode.OFF
 
+    /**
+     * 1.39 PC 5c4ad849 (받은 근무표로 넣은 날에 '직접 바꿈'): the followed link whose [date] this day already is in my kinds of day, so
+     * the day says where it came from (민지의 근무표대로) and not that the user changed it by hand; null when none says so.
+     */
+    fun linkFor(cals: List<ReceivedCalendar>, day: com.bamnat.core.schedule.ResolvedDay, mine: List<com.bamnat.core.model.ShiftType>): ReceivedCalendar? =
+        cals.firstOrNull { cal ->
+            if (cal.gone || !followed(cal)) return@firstOrNull false
+            val s = cal.schedule ?: return@firstOrNull false
+            val theirs = s.days[day.date] ?: return@firstOrNull false
+            RosterAdopt.changes(mapOf(day.date to theirs.type), RosterAdopt.match(theirTypes(s), mine), mine) { day }.isEmpty()
+        }
+
     /** The sender's shifts as [RosterAdopt] pairs them (also the card that puts a month in). */
     fun theirTypes(s: SharedSchedule): List<RosterAdopt.Theirs> = s.types.map { t ->
         val parts = t.time?.split("-")

@@ -441,11 +441,14 @@ internal fun RepeatIconButton(onStep: () -> Unit, enabled: Boolean, content: @Co
     androidx.compose.runtime.LaunchedEffect(pressed, enabled) {
         if (!pressed || !enabled) return@LaunchedEffect
         repeated = false
-        kotlinx.coroutines.delay(450)
+        // [JOBDAYS-01] 1.39 (PC a483ca15: 작업 기간 +를 두 번 눌렀는데 60일): a tap is one step; only a real hold repeats, slowly for
+        // the first steps and quicker after, so a press a slow phone holds a moment too long adds a step or two, not dozens.
+        kotlinx.coroutines.delay(550)
+        var n = 0
         while (true) {
             repeated = true
             step()
-            kotlinx.coroutines.delay(90)
+            kotlinx.coroutines.delay(if (n++ < 5) 220 else 90)
         }
     }
     FilledTonalIconButton(
