@@ -4,6 +4,7 @@
 
 1. 앱 화면: `StoreScreenshotTest`를 **시험 하나씩** 돌려요(한꺼번에 돌리면 그림 엔진이 멈출 수 있어요). 근무표 읽기 화면은 `UScreenshotTest.setupWhichLine`.
    ```bash
+   export BAMNAT_STORE_SHOTS=1   # 없으면 시험이 건너뛰어져요(전체 시험에서는 돌지 않게)
    for t in calendarAllowed firstSetup shiftAlarms sleep payResult team memos; do
      bash gradlew :app:testDebugUnitTest --tests "com.bamnat.app.screenshots.StoreScreenshotTest.$t" -Pbamnat.robolectricRepo=<미러>
    done

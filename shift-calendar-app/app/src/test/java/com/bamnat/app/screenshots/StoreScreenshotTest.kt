@@ -29,6 +29,9 @@ class StoreScreenshotTest : ScreenshotBase() {
 
     private val c get() = app.container
 
+    /** A tool, not a check: only when asked (BAMNAT_STORE_SHOTS=1), so the full suite never mixes its SDK 33 shot in. */
+    @org.junit.Before fun onlyWhenAsked() = org.junit.Assume.assumeTrue(System.getenv("BAMNAT_STORE_SHOTS") == "1")
+
     @Test fun calendar() = shoot("store_1_calendar", STORE) {}
 
     /** The same month with 잠금 화면 알람 already allowed, as on a phone set up once. */
