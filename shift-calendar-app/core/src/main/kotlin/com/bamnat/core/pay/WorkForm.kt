@@ -100,7 +100,7 @@ object PayStory {
                 val hourly = Math.round(PayCalculator.ordinaryWage(p, month).total.toDouble() / p.monthlyHours.coerceAtLeast(1))
                 add("월 기본급 ${won(amount)}, 통상시급 ${won(hourly)}(한 달 ${p.monthlyHours}시간)으로 셈해요")
             }
-            WageType.HOURLY -> add("시급 ${won(amount)}으로 일한 시간만큼" + if (r.weeklyHolidayPay) ", 주 15시간 넘으면 주휴수당도" else "")
+            WageType.HOURLY -> add("시급 ${won(amount)}으로 일한 시간만큼" + if (r.weeklyHolidayPay) ", 주 15시간 이상이면 주휴수당도" else "")
             WageType.DAILY -> add("일당 ${won(amount)}, 하루 ${PayCalculator.hours(p.dailyHours)} 기준")
         }
         val premiums = p.fiveOrMoreEmployees && !r.supervisoryApproved

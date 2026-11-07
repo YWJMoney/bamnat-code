@@ -74,7 +74,12 @@ internal fun SameAsPhotoCard(
                 if (same == false) "다른 칸을 눌러 그 칸만 고쳐 주세요. 고친 글자는 다음 근무표부터 배워요."
                 else "위는 사진, 아래는 읽은 근무예요. 옆으로 밀어 끝까지 봐 주세요." +
                     (if (scan.ways > 1) " ${scan.ways}가지 방법으로 읽어 맞춰 봤어요." else "") +
-                    (if (doubtful.isNotEmpty()) " 노란 칸 ${doubtful.size}개는 읽기가 갈렸어요." else ""),
+                    // [READ-41] PC 12차: a blank the repeat filled went in with no word; it is said apart, so a real blank is not missed.
+                    row.filled.filter { it in doubtful }.let { f ->
+                        val split = doubtful.size - f.size
+                        (if (split > 0) " 노란 칸 ${split}개는 읽기가 갈렸어요." else "") +
+                            (if (f.isNotEmpty()) " ${f.sorted().joinToString(", ") { "${it}일" }}은 사진에 글자가 없어 앞뒤 반복으로 채웠어요. 정말 빈칸이면 '다른 곳이 있어요'를 누르고 그 칸을 고쳐 주세요." else "")
+                    },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
             PhotoStrip(scan, row, rank, cells, doubtful, byId, days, tappable = same == false, onFix = onFix)

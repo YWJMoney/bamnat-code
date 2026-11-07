@@ -120,7 +120,7 @@ fun TimeRangeDialog(
                         partIndex = TimeRangePart.END.ordinal
                     }
                     if (showBreak) {
-                        PartTab("휴게", HoursFormat.korean(breakMin), part == TimeRangePart.BREAK, Modifier.weight(1f)) { partIndex = TimeRangePart.BREAK.ordinal }
+                        PartTab("휴게", HoursFormat.breakText(breakMin), part == TimeRangePart.BREAK, Modifier.weight(1f)) { partIndex = TimeRangePart.BREAK.ordinal }
                     }
                 }
                 Text(
@@ -145,7 +145,7 @@ fun TimeRangeDialog(
                 )
                 if (part == TimeRangePart.BREAK) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        MinutesStepper(minutes = breakMin, onChange = { breakMin = it }, step = 10, max = maxBreakMinutes, dialogTitle = "휴게 시간")
+                        MinutesStepper(minutes = breakMin, onChange = { breakMin = it }, step = 10, max = maxBreakMinutes, dialogTitle = "휴게 시간", format = HoursFormat::breakText)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(top = 8.dp)) {
                             for (m in BREAK_CHOICES) {
                                 FilterChip(selected = breakMin == m, onClick = { breakMin = m }, label = { Text(HoursFormat.korean(m)) })

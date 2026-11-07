@@ -43,6 +43,7 @@ import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.Widgets
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Share
+import com.bamnat.app.share.mineLine
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -195,6 +196,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val snoozeAt: StateFlow<Long?> = container.alarmScheduler.snoozeAt
     /** [MCAL-01] The user's calendars, for 설정 > 달력. */
     val calendars: StateFlow<List<com.bamnat.app.data.PersonalCalendar>> = container.calendars.calendars
+    /** 1.38 PC 12.4.1 [P3-L-19] Received links: the one the user's work comes from changes how 내 근무 is said. */
+    val received: StateFlow<List<com.bamnat.app.share.ReceivedCalendar>> = container.received.calendars
     /** [MON-04] What 프로 is on this phone now. */
     val gate: StateFlow<com.bamnat.app.tier.Gate> = container.featureGate.state
     /** [MON-07] Google says this phone's region has its own ad consent form to open again. */
@@ -238,7 +241,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val ruleCards: StateFlow<List<com.bamnat.core.guide.RuleCards.Card>> = kotlinx.coroutines.flow.combine(
         container.calendars.active.flatMapLatest { id ->
             kotlinx.coroutines.flow.combine(
-                container.calendars.repository(id).live,
+                // 1.38 PC 11차: with the kinds put away here, which get no alarm card.
+                kotlinx.coroutines.flow.combine(container.calendars.repository(id).live, container.foldedTypes.state) { live, f -> live to f[id].orEmpty() },
                 container.calendars.pay(id).profile,
                 // The repeating memos of this calendar; a 근무마다 memo only where it goes by this calendar's kinds of day.
                 container.memoRepository.memosFor(id).map { list ->
@@ -251,8 +255,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         },
         container.settingsRepository.settings,
     ) { (s, p, m), st ->
-        com.bamnat.core.guide.RuleCards.of(s.patterns, s.shiftTypes, com.bamnat.core.time.Today.date(), p?.customRules.orEmpty(),
-            com.bamnat.core.formula.Logic.decode(st.logic), alarmsOn = st.alarmsEnabled, memos = m)
+        com.bamnat.core.guide.RuleCards.of(s.first.patterns, s.first.shiftTypes, com.bamnat.core.time.Today.date(), p?.customRules.orEmpty(),
+            com.bamnat.core.formula.Logic.decode(st.logic), alarmsOn = st.alarmsEnabled, memos = m, hidden = s.second,
+            ringingOnly = com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(st.workStyle),
+            workDayLine = when (st.workStyle) {
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업하는 날이에요"
+                com.bamnat.core.work.WorkStyle.DAY, com.bamnat.core.work.WorkStyle.HOURLY -> "출근하는 날이에요"
+                com.bamnat.core.work.WorkStyle.FIELD -> "일하는 날이에요"
+                else -> "근무하는 날이에요"
+            })
     }.flowOn(kotlinx.coroutines.Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun cancelSnooze() = container.alarmScheduler.cancelSnooze()
@@ -821,13 +832,16 @@ private fun SettingsHub(
         com.bamnat.app.ui.pro.BillingTopLine(Modifier.padding(bottom = 4.dp))
         AlarmReadyCard(vm, settings, refresh, askNotifications, onOpenDiagnostics, onOpenShiftTypes)
         Spacer(Modifier.size(4.dp))
-        Shortcuts(onFound, work.workStyle)
+        // 1.38 PC 12.4.1 [P3-L-19] A member whose month comes by link sets no cycle: 받은 근무표, not 근무 주기.
+        val mineCal = vm.received.collectAsStateWithLifecycle().value.firstOrNull { it.mine }
+        Shortcuts(onFound, work.workStyle, received = mineCal != null)
         Spacer(Modifier.size(4.dp))
         // 1.36 PC 재검토: the count of 근무 leaves the kinds put away out ('근무 3가지 · 안 쓰는 종류 3개').
         val activeCal by vm.activeCalendar.collectAsStateWithLifecycle()
         val folded = androidx.compose.ui.platform.LocalContext.current.appContainer.foldedTypes.state.collectAsStateWithLifecycle().value[activeCal].orEmpty()
         for (p in SettingsPage.entries) {
-            GroupRow(p.icon, p.titleFor(work.workStyle), summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
+            GroupRow(p.icon, p.titleFor(work.workStyle), if (p == SettingsPage.WORK && mineCal != null) mineCal.mineLine(short = true)
+                else summary(p, if (p == SettingsPage.WORK) work else settings, snapshot, profile != null, notificationsOk, work.workStyle, folded), selected == p,
                 tone = com.bamnat.app.ui.theme.settingsTones().of(p.kind)) { onOpen(p) }
         }
         // [J133-69] 1.33 (중간 빌드 확인: 설정을 열면 맨 위가 친구 초대·알려 주기 카드와 '모르는 것 3개' 부탁이라 설정 목록은 넘겨야
@@ -1004,7 +1018,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
 /** [UX-04] What people open most, one tap from the top: work, pay, sharing, the alarm's sound, a backup. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.work.WorkStyle? = null) {
+private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.work.WorkStyle? = null, received: Boolean = false) {
     val entries = remember { SettingsIndex.entries().associateBy { it.title } }
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text("자주 찾는 것", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1013,15 +1027,20 @@ private fun Shortcuts(onFound: (SettingEntry) -> Unit, style: com.bamnat.core.wo
             for ((title, plain, icon) in SHORTCUTS) {
                 // [J133-71] 1.33: 급여 only for work paid by the hour or month. [J133-77] The rest in the work's own words.
                 if (title == "급여 계산" && style?.usesPayEngine == false) continue
-                val label = shortcutLabel(title, style) ?: plain
+                // 1.38 PC 12.4.1 [P3-L-19] The month comes by link: its chip opens the received links, not 근무 주기.
+                val mineChip = received && title == "근무 주기"
+                val label = if (mineChip) "받은 근무표" else shortcutLabel(title, style) ?: plain
                 if (label.isEmpty()) continue
-                val e = entries[title] ?: continue
+                val e = entries[if (mineChip) RECEIVE_TITLE else title] ?: continue
                 AssistChip(onClick = { onFound(e) }, label = { Text(label) },
                     leadingIcon = { Icon(icon, null, Modifier.size(AssistChipDefaults.IconSize)) })
             }
         }
     }
 }
+
+/** The search entry for the received links ([SettingsGo.RECEIVE]). */
+private const val RECEIVE_TITLE = "동료 근무표 받기"
 
 private val SHORTCUTS = listOf(
     Triple("근무 종류와 시간", "근무 시간", Icons.Outlined.Schedule),
@@ -1084,7 +1103,7 @@ private fun summary(page: SettingsPage, s: AppSettings, snapshot: ScheduleSnapsh
             (if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "마감 뒤" else "퇴근길").takeIf { s.commuteNotice && style != com.bamnat.core.work.WorkStyle.INVEST },
             "잘 준비".takeIf { s.bedtimeNotice },
             "돈".takeIf { s.moneyNotices }, "연차".takeIf { s.leaveNotice && style?.usesCompany != false },
-        ).ifEmpty { listOf("근무 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck && style?.usesPayEngine != false })
+        ).ifEmpty { listOf("${com.bamnat.app.ui.shifts.alarmNoun(style)} 알람만 와요") }) + listOfNotNull("목표 수면 ${sleepHours(s.sleepTargetMinutes)}", "휴식 점검".takeIf { s.restCheck && style?.usesPayEngine != false })
     ).joinToString(" · ")
     // [J133-71] 1.33: 회사 설정 only where the work has a company; 연차 not for 알바's few hours a week.
     SettingsPage.PAY -> when {
@@ -1196,8 +1215,9 @@ private fun AlarmReadyCard(
                     val owner = if (active == com.bamnat.app.data.PersonalCalendar.MAIN) "" else
                         context.appContainer.calendars.get(com.bamnat.app.data.PersonalCalendar.MAIN)?.name?.let { "$it " }.orEmpty()
                     val line = when {
-                        !settings.alarmsEnabled -> "근무 알람도 이 날 알람도 울리지 않아요"
-                        next == null -> "근무 종류에서 근무 전 알람을 켜면 울려요"
+                        !settings.alarmsEnabled -> "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람도 이 날 알람도 울리지 않아요"
+                        next == null -> if (com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(settings.workStyle)) (if (settings.workStyle == com.bamnat.core.work.WorkStyle.INVEST) "투자 알람에서 알람을 켜면 울려요" else "${settings.workStyle.words().types}에서 시작 전 알람을 켜면 울려요")
+                            else "근무 종류에서 근무 전 알람을 켜면 울려요"
                         else -> AlarmScheduler.millisToLocal(next.triggerAtMillis).let { at ->
                             "다음 알람 ${Fmt.dayTitle(at.toLocalDate())} ${Fmt.time(at.toLocalTime())} · " + owner + next.plan.shiftName.ifBlank { "이 날 알람" }
                         }

@@ -87,6 +87,13 @@ class StudioCanvasTest {
         assertFalse(CalendarPart.COUNTS.id in cards.hidden(cards.show(gone, CalendarPart.COUNTS.id, true)))
     }
 
+    /** 1.38 통합 12차: 오늘의 흐름 is over the month in the month-first line (one line until opened); the summary stays under it. */
+    @Test fun todaysFlowIsOverTheMonthByDefault() {
+        val above = calendarAbove(AppSettings().calendarParts().map { it.part })
+        assertTrue(above(CalendarPart.TODAY_FLOW))
+        assertFalse(above(CalendarPart.SUMMARY))
+    }
+
     @Test fun zoomStepsAreTheUsualOnes() {
         assertEquals(1.25f, StudioEdit.zoomStep(1f, 1))
         assertEquals(0.75f, StudioEdit.zoomStep(1f, -1))

@@ -287,10 +287,24 @@ fun foldedHere(): Set<Long> {
 }
 
 /** 1.36 PC 재검토 (현장은 제목만 '일정'이고 안은 '근무'): what a kind of day is called in [style]'s own words. */
-fun dayKindNoun(style: WorkStyle?): String = if (style == WorkStyle.FIELD) "일정" else "근무"
+// 1.38 PC 11차 식당 둘러보기 ('근무 추가'): a shop's kinds of day are 영업·단축영업.
+fun dayKindNoun(style: WorkStyle?): String = when (style) { WorkStyle.FIELD -> "일정"; WorkStyle.BUSINESS -> "영업"; else -> "근무" }
+
+/**
+ * 1.38 PC 12.1 (식당 설정에 '근무 알람'·'잠금 화면 오늘 근무'): what an alarm or the lock-screen line is for, in this kind of work's
+ * words. 일근·알바 keep 근무; an investor's alarms are 투자 알람 (설정 › 투자 알람).
+ */
+fun alarmNoun(style: WorkStyle?): String = when (style) {
+    WorkStyle.FIELD -> "일정"; WorkStyle.BUSINESS -> "영업"; WorkStyle.INVEST -> "투자"; else -> "근무"
+}
+
+/** What the lock-screen line shows: 오늘 영업 for a shop, 오늘 일정 for 현장·투자, else 오늘 근무. */
+fun lockNoun(style: WorkStyle?): String = when (style) {
+    WorkStyle.FIELD, WorkStyle.INVEST -> "일정"; WorkStyle.BUSINESS -> "영업"; else -> "근무"
+}
 
 /** "일정이" / "근무가". */
-fun dayKindSubject(style: WorkStyle?): String = if (style == WorkStyle.FIELD) "일정이" else "근무가"
+fun dayKindSubject(style: WorkStyle?): String = when (style) { WorkStyle.FIELD -> "일정이"; WorkStyle.BUSINESS -> "영업이"; else -> "근무가" }
 
 /** Where the kinds of day are set, as the settings row says it ("설정 › 일정 종류"). */
 fun dayKindsPlace(style: WorkStyle?): String = "설정 › " + style.words().types

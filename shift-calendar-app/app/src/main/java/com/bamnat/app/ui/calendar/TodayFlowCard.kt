@@ -113,7 +113,10 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
     // [VIS-04] At 150% text and more the card is as tall as on a small phone.
     val short = androidx.compose.ui.platform.LocalConfiguration.current.let { it.screenHeightDp < SHORT_SCREEN_DP && it.screenWidthDp < 600 } ||
         androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
-    val folded = chosen ?: short
+    // 1.38 통합 12차: in the month-first line (no order of the user's own, [CALENDAR_FIRST]) it is over the month as one line until
+    // opened, so the five weeks stay in view on any phone.
+    val monthFirst = remember(settings.calendarLayout) { com.bamnat.core.layout.PageLayout.decode(settings.calendarLayout).order.isEmpty() }
+    val folded = chosen ?: (short || monthFirst)
     val now = rememberMinute()
     val card = remember(snapshot, settings, log, now) { vm.todayFlow(snapshot, settings, log, now) }
     TodayFlowCard(

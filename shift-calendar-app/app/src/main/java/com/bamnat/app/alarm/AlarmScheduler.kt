@@ -50,6 +50,10 @@ class AlarmScheduler(
     /** When a pending snooze will ring again, or null. */
     val snoozeAt: StateFlow<Long?> = _snoozeAt.asStateFlow()
 
+    /** How many plannings have finished; tests wait for the app's own first one before planning theirs (CI 12차). */
+    @Volatile var plannings = 0
+        private set
+
     fun canScheduleExact(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
 
@@ -66,6 +70,10 @@ class AlarmScheduler(
      */
     @Synchronized
     fun reschedule(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime = Today.dateTime()) {
+        try { plan(calendars, enabled, after) } finally { plannings++ }
+    }
+
+    private fun plan(calendars: List<Pair<String?, ScheduleSnapshot>>, enabled: Boolean, after: LocalDateTime) {
         // [REL-11] An inexact alarm can arrive minutes late. Until it has, re-planning (another
         // alarm or a widget waking the app) must keep it rather than skip past it to the next one.
         // [ALRM-09] 오늘 남은 알람 모두 끄기: the next alarm is the first one after it.

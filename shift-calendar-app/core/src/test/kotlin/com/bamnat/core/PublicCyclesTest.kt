@@ -213,6 +213,16 @@ class PublicCyclesTest {
         assertEquals(listOf('D', 'N', 'O'), CycleOrders.choices(c, "DDOONNOO"))
     }
 
+    /** 1.38 통합 11차: every row of the file has work to put in, even with no order and no time (병원이 근무표 짬). */
+    @Test fun everyRowHasWorkEvenWithoutAnOrder() {
+        all.forEach { c ->
+            val plan = PublicSetup.plan(c, c.codes)
+            assertTrue("${c.id} ${c.display}: only 휴무", plan.types.any { !it.isOff })
+        }
+        val ward = all.first { it.roster && it.shifts.isEmpty() && it.formKey == "3교대" }
+        assertEquals(listOf("주간", "오후", "야간", "휴무"), PublicSetup.plan(ward, "").types.map { it.name })
+    }
+
     @Test fun aRowBecomesTheShiftsAndOrderOfACompanyFile() {
         val c = all.first { it.company == "GS EPS" }
         val plan = PublicSetup.plan(c, c.codes)

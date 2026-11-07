@@ -64,18 +64,21 @@ fun StoryLine(
     modifier: Modifier = Modifier,
 ) {
     val lines = remember(day, events) { DayStory.arrange(day, events) }
-    val nowAt = now?.takeIf { it.toLocalDate() == day }?.let { DayStory.nowAfter(lines, it) }
+    val today = now?.takeIf { it.toLocalDate() == day }
+    val nowAt = today?.let { DayStory.nowAfter(lines, it) }
     Column(modifier.fillMaxWidth()) {
         if (nowAt == -1) NowMark()
         lines.forEachIndexed { i, line ->
-            StoryRow(line, last = i == lines.lastIndex, shiftColor = shiftColor, onOpen = onOpen)
-            if (nowAt == i) NowMark()
+            // 1.38 PC 12.2: a thing still going on says so on its own card, and "지금" is not drawn under it as if it were over.
+            val going = today != null && DayStory.ongoing(line, today)
+            StoryRow(line, last = i == lines.lastIndex, shiftColor = shiftColor, onOpen = onOpen, going = going)
+            if (nowAt == i && !going) NowMark()
         }
     }
 }
 
 @Composable
-private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOpen: (StoryEvent) -> Unit) {
+private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOpen: (StoryEvent) -> Unit, going: Boolean = false) {
     val e = line.item
     var open by rememberSaveable(e.id) { mutableStateOf(false) }
     val dot = when (e.kind) {
@@ -90,8 +93,14 @@ private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOp
         e.end?.let { append("–"); if (line.intoTomorrow) append("내일 "); append(hm(it)) }
     }
     Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-        Text(hm(line.from), style = MaterialTheme.typography.labelMedium.merge(NumberStyle), modifier = Modifier.width(48.dp).padding(top = 12.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1.38 PC 12차 유형별 빈틈 9: last night's shift began yesterday, so its own time with "어제" over it, not the day's 00:00.
+        // PC 12.3 빈틈 6: at 200% text '06:00' broke into '06:/00'. The column grows with the text, one line always.
+        Column(Modifier.width(timeColumn()).padding(top = 12.dp)) {
+            if (line.fromYesterday) Text("어제", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1, softWrap = false)
+            Text(hm(if (line.fromYesterday) e.start else line.from), style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false)
+        }
         Box(Modifier.width(20.dp).fillMaxHeight(), contentAlignment = Alignment.TopCenter) {
             if (!last) Box(Modifier.padding(top = 14.dp).width(2.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
             Box(Modifier.padding(top = 12.dp).size(12.dp).background(dot, CircleShape))
@@ -104,11 +113,12 @@ private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOp
                 .animateContentSize(BamnatMotion.spec(BamnatMotion.open()))
                 .padding(horizontal = 12.dp, vertical = 10.dp)
                 .semantics(mergeDescendants = true) {
-                    contentDescription = "$time, ${e.title}"
+                    contentDescription = listOfNotNull(goingLabel(e.kind).takeIf { going }, time, e.title).joinToString(", ")
                     stateDescription = if (open) "펼침" else "접힘"
                 },
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
+            if (going) Text(goingLabel(e.kind), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Text(e.title, style = MaterialTheme.typography.titleSmall, color = storyTone(e.tone).color())
             Text(time, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -117,15 +127,33 @@ private fun StoryRow(line: StoryLineItem, last: Boolean, shiftColor: Color, onOp
     }
 }
 
+/** The times' column: 48dp, wider as the phone's text grows so 'HH:MM' stays on one line, the same on every row. */
+@Composable
+private fun timeColumn(): androidx.compose.ui.unit.Dp {
+    // PC 12.4.1 (200%: '08:0', the last digit under the rail): measured from the time's own style, not guessed in sp.
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val style = MaterialTheme.typography.labelMedium.merge(NumberStyle)
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val px = remember(style, density.fontScale, density.density) { measurer.measure("00:00", style, softWrap = false, maxLines = 1).size.width }
+    return maxOf(48.dp, with(density) { px.toDp() } + 6.dp)
+}
+
 @Composable
 private fun NowMark() {
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("지금", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(48.dp))
+        Text("지금", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(timeColumn()),
+            maxLines = 1, softWrap = false)
         Box(Modifier.width(20.dp), contentAlignment = Alignment.Center) {
             Box(Modifier.size(10.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
         }
         Spacer(Modifier.weight(1f).height(2.dp).background(MaterialTheme.colorScheme.primary))
     }
+}
+
+private fun goingLabel(kind: StoryKind) = when (kind) {
+    StoryKind.Shift -> "지금 근무 중"
+    StoryKind.Sleep, StoryKind.SleepPlan -> "지금 자는 중"
+    else -> "지금"
 }
 
 private fun hm(t: LocalDateTime) = "%02d:%02d".format(t.hour, t.minute)

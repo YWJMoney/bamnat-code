@@ -148,6 +148,9 @@ internal fun extraLine(e: ResolvedExtra): String {
     val to = e.to
     return when {
         from == null || to == null -> "${ExtraText.name(e)} · 시각 모름"
+        // [PAYX-54] 1.38 PC 12.4.1: work in the shift's own hours adds none; the times as typed, and why.
+        e.insideShiftMinutes > 0 -> "${ExtraText.name(e)} · ${Fmt.timeRange(e.entry.start ?: from.toLocalTime(), e.entry.end ?: to.toLocalTime())} · " +
+            if (e.minutes <= 0) "근무 시간 안이라 시간은 안 더해요" else "${HoursFormat.korean(e.minutes)} (근무와 겹친 ${HoursFormat.korean(e.insideShiftMinutes)} 뺌)"
         e.entry.hasTimes || e.covered != null -> "${ExtraText.name(e)} · ${Fmt.timeRange(from.toLocalTime(), to.toLocalTime())} · ${HoursFormat.korean(e.minutes)}"
         else -> "${e.kind.name} · ${if (e.kind.timing is com.bamnat.core.model.ExtraTiming.BeforeShift) "근무 전" else "근무 뒤"} " +
             "${HoursFormat.korean(e.minutes)} (${ExtraText.span(from.toLocalTime(), to.toLocalTime())})"
@@ -172,6 +175,8 @@ fun DayHeader(
     onOpen: (() -> Unit)? = null,
     /** [CAL-01] The smaller title, for the preview card and the narrow unfolded panel. */
     compact: Boolean = onOpen != null,
+    /** The first memo's token ("메모 · 도시락"); off while the day's story line (FLOW-08) shows the memos already. */
+    memoToken: Boolean = true,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var dragged by remember { mutableFloatStateOf(0f) }
@@ -261,7 +266,7 @@ fun DayHeader(
             },
             label = "day-body",
         ) { d ->
-            DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp))
+            DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp), memoToken)
         }
         // Under the calendar the folded FAB sits over the row's end, so the last chip can scroll out from under it.
         if (!chipsFirst && headChips) ShiftChips(day, snapshot, vm, settings, Modifier.padding(top = 6.dp), endSpace = 12.dp)
@@ -274,7 +279,7 @@ fun DayHeader(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier) {
+private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier, memoToken: Boolean = true) {
     val cal = LocalCalendarColors.current
     val focus = CalendarFocus.of(settings.workStyle)
     val book by vm.moneyBook.collectAsStateWithLifecycle()
@@ -340,14 +345,14 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
             Text("외 ${day.extras.size - MAX_EXTRA_LINES}건", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp))
         }
-        if (day.hasExtraWork) {
+        if (day.hasExtraWork && day.extraMinutes > 0) {
             Text(
                 "이 날 합계 ${HoursFormat.korean(day.totalMinutes)}",
                 style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
                 color = cal.holidayWork,
             )
         }
-        val tokens = dayTokens(day, snapshot, vm, settings)
+        val tokens = dayTokens(day, snapshot, vm, settings, memoToken)
         if (tokens.isNotEmpty()) {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 for (t in tokens) Token(t)
@@ -485,7 +490,7 @@ private fun DaySalesLine(sales: com.bamnat.core.money.DailySales) {
 }
 
 @Composable
-private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings): List<DayToken> {
+private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, memoToken: Boolean = true): List<DayToken> {
     val memos by vm.datedMemos.collectAsStateWithLifecycle()
     val dayMemos = remember(memos, day.date) { memos.filter { it.date == day.date } }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
@@ -509,7 +514,7 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
         // "직접 바꿈" said nothing on each of them; only a day's own times are worth a word there.
         if (day.hasCustomTimes) add(DayToken("이 날만 시간 바꿈", DayToken.Tone.ACCENT))
         // [NOTE-06] The first memo's title, cut to one line, and how many more there are.
-        dayMemos.firstOrNull()?.let { first ->
+        if (memoToken) dayMemos.firstOrNull()?.let { first ->
             val title = first.title.ifBlank { first.preview }.lineSequence().firstOrNull().orEmpty().trim()
             val shown = if (title.length > 14) title.take(13) + "…" else title
             val more = if (dayMemos.size > 1) " 외 ${dayMemos.size - 1}" else ""
@@ -573,7 +578,9 @@ private fun QuickChips(
             val (on, off0) = ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day).partition { ExtraText.indexOf(day, it) >= 0 }
             // [CAL-37] The kinds used in the last 60 days first; a new user gets their kind of work's usual order.
             val used = snapshot.entries.filter { !it.date.isBefore(today.minusDays(QuickOrder.DAYS.toLong())) }.flatMap { e -> e.extras.map { it.kindId } }
-            val off = QuickOrder.extras(off0, { it.kind.id }, used, settings.workStyle.takeIf { !day.isWorkDay })
+            // [PAYX-51] The kind made last comes first until it is first used.
+            val everUsed = snapshot.entries.flatMapTo(HashSet()) { e -> e.extras.map { it.kindId } }
+            val off = QuickOrder.extras(off0, { it.kind.id }, used, settings.workStyle.takeIf { !day.isWorkDay }, everUsed)
             on + off.take((QUICK_EXTRAS - on.size).coerceAtLeast(0))
         }
     }

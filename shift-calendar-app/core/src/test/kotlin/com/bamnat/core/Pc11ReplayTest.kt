@@ -44,6 +44,18 @@ class Pc11ReplayTest {
             assertEquals("${r.label} days", (1..30).toSet(), r.cells.keys)
             for (d in 1..30) assertEquals("${r.label} ${d}일", order[(d - 1 + start.getValue(r.label)) % 6], letter(r.cells[d]))
         }
+        // The photo's blanks (1조 5·18일) are filled from the repeat and said to be (PC 12차: 말없이 채우지 않게).
+        assertTrue(merged.rows.first { it.label == "1조" }.filled.containsAll(setOf(5, 18)))
+    }
+
+    @Test fun aDaySplitBetweenReadingsTakesTheRepeatInYellow() {
+        // PC 12차: 1조's 3일 read 야 and 비 alike, and the anchor's 비 was kept.
+        val merged = RosterVote.merge(reads("team11-pc.tsv").map { DutyRoster.analyse(it, codes) })
+        val row = merged.rows.first { it.label == "1조" }
+        val split = row.copy(cells = (row.cells + (3 to DutyCell.Shift(4))).toSortedMap(), unsure = row.unsure + 3, guessed = row.guessed - 3)
+        val again = com.bamnat.core.imports.RosterPeriod.fill(listOf(split)).single()
+        assertEquals('N', letter(again.cells[3]))
+        assertTrue(3 in again.guessed)
     }
 
     @Test fun theBlurryDutyRosterKeepsEveryoneWithNothingQuietlyWrong() {

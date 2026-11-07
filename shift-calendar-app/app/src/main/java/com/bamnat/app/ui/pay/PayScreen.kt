@@ -41,6 +41,7 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
@@ -145,6 +146,8 @@ fun PayScreen(
     vm: PayViewModel,
     onBack: () -> Unit,
     onOpenExtraKinds: () -> Unit = {},
+    /** [PAYX-51] 연장 휴무일 근무 지정 opened at '교육', its 시수 in view. */
+    onOpenSchooling: () -> Unit = onOpenExtraKinds,
     /** [LEAVE-06] The 연차 screen of this calendar. */
     onOpenLeave: () -> Unit = {},
     /** 1.36 PC 급여 검토 W6: 근무 유형 (휴게 시작 시각), from the note that says it was guessed; null leaves the button out. */
@@ -330,13 +333,14 @@ fun PayScreen(
                         suggestedOccupation = if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) Occupation.PART_TIME else null,
                         companyFind = companyFind,
                         leaveAsk = wizardLeave,
+                        effectOf = vm::effectOf,
                     )
                     }
                     }
                 }
                 editingRules -> {
                     val month by vm.month.collectAsStateWithLifecycle()
-                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { rulesLeave = 0; closeRules() }, onOpenKinds = onOpenExtraKinds, focus = rulesFocus, leaveAsk = rulesLeave, style = workStyle)
+                    CompanyRulesEditor(vm, profile!!, snap, month, onClose = { rulesLeave = 0; closeRules() }, onOpenKinds = onOpenExtraKinds, onOpenSchooling = onOpenSchooling, focus = rulesFocus, leaveAsk = rulesLeave, style = workStyle)
                 }
                 // [FREE-07] 1.35 급여 모양 of this kind of work; the figures and their 예상·추정 marks show whatever it says.
                 else -> androidx.compose.runtime.CompositionLocalProvider(LocalPayLook provides
@@ -344,7 +348,7 @@ fun PayScreen(
                     PayResult(vm, profile!!, snap, gate, onEditSetup = { detailedFrom = null; editingSetup = true }, onEditRules = { editingRules = true }, onEditRulesAt = { f -> rulesFocus = f; editingRules = true }, top = top,
                     onDetailed = { detailedFrom = DetailedStart(profile); editingSetup = true },
                     underTotal = underTotal, onReport = onReport, onShareWay = onShareWay, onOpenLeave = onOpenLeave, onOpenShiftTypes = onOpenShiftTypes, startMatching = startMatching,
-                    focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true })
+                    focus = focus, focusUsed = focusUsed, onFocusUsed = { focusUsed = true }, onOpenSchooling = onOpenSchooling)
                 }
             }
             // [PAYIN-05] What the last save did, with 되돌리기.
@@ -375,6 +379,7 @@ private fun PayResult(
     focusUsed: Boolean = false,
     onFocusUsed: () -> Unit = {},
     onEditRulesAt: (PayFocus) -> Unit = { onEditRules() },
+    onOpenSchooling: (() -> Unit)? = null,
 ) {
     val month by vm.month.collectAsStateWithLifecycle()
     // U 1.32 [UX132-03] 결과 · 내 급여 값 · 회사 규칙 · 도구.
@@ -423,7 +428,6 @@ private fun PayResult(
     var plazaAsk by remember { mutableStateOf(false) }
     var checking by remember { mutableStateOf(false) }
     var amountFor by remember { mutableStateOf<com.bamnat.core.pay.MissingItem?>(null) }
-    var addingItem by remember { mutableStateOf(false) }
     var addingBonus by remember { mutableStateOf(false) }
     // [PAYR-08] Once closed, never opened again by itself on this phone (notes/1.22-285/D.md M12).
     val hintContext = androidx.compose.ui.platform.LocalContext.current
@@ -432,6 +436,7 @@ private fun PayResult(
     // [PAYS-07] 우리 회사 항목 만들기, a rule made before being changed, and the item just made.
     var building by remember { mutableStateOf(false) }
     var editingRule by remember { mutableStateOf<com.bamnat.core.pay.CustomRule?>(null) }
+    var monthAmountFor by remember { mutableStateOf<com.bamnat.core.pay.CustomRule?>(null) }
     var justMade by remember { mutableStateOf<MadeItem?>(null) }
     // [PAYS-11] A 추정 badge tapped: what to put in so it goes away.
     var estimate by remember { mutableStateOf<EstimateHint?>(null) }
@@ -744,9 +749,10 @@ private fun PayResult(
                     onOrdinary = { on -> vm.updateItem(item.id) { it.copy(ordinary = on) } },
                     onRemove = { vm.removeItem(item.id) },
                     onEstimate = { estimate = Estimates.forValue(profile, month, item) },
-                    // Only on allowances that may be 비과세, so the list does not grow a switch per line.
+                    // 비과세 (식대 등), on every 매달 수당.
                     taxFree = (!item.taxable).takeIf {
-                        item.cadence == Cadence.MONTHLY && !item.isFixedOvertime && (!item.taxable || com.bamnat.core.pay.TakeHome.looksNonTaxable(item.name))
+                        // [PAYX-52] 1.38 PC 12.1: every 매달 수당, since a payslip's 비과세 lines go past the names the app knows.
+                        item.cadence == Cadence.MONTHLY && !item.isFixedOvertime && !item.isPercent
                     },
                     onTaxFree = { on -> vm.updateItem(item.id) { it.copy(taxable = !on) } },
                 )
@@ -757,6 +763,8 @@ private fun PayResult(
                 Text("직접 만든 항목", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
                 profile.customRules.forEach { rule ->
                     CustomRuleRow(rule, shiftNames, unlocked,
+                        // [PAYX-52] A 매달 amount (사택관리비) can be its own in this month.
+                        month = result.month, onThisMonth = if (rule.pay is com.bamnat.core.pay.RulePay.Monthly) ({ monthAmountFor = rule }) else null,
                         onEdit = if (ItemKind.of(rule) != null) ({ editingRule = rule }) else null,
                         onOn = { vm.setCustomRuleOn(rule.id, it) },
                         onRemove = { vm.removeCustomRule(rule.id) })
@@ -764,9 +772,6 @@ private fun PayResult(
             }
             MakeItemCard(enabled = unlocked) { building = true }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                OutlinedButton(onClick = { addingItem = true }, enabled = unlocked) {
-                    Icon(Icons.Filled.Add, null); Text(" 수당 추가")
-                }
                 OutlinedButton(onClick = { addingBonus = true }, enabled = unlocked) {
                     Icon(Icons.Filled.Add, null); Text(" 상여금 추가")
                 }
@@ -819,6 +824,11 @@ private fun PayResult(
                 // [PAYG-05] 1.30 BA: 자세히 고치기 next to 처음부터 설정 (1.29 had it only on the easy setup's last page).
                 TextButton(onClick = onDetailed) { Icon(Icons.Filled.Tune, null); Text(" 자세히 고치기") }
                 TextButton(onClick = onEditSetup) { Icon(Icons.Filled.Edit, null); Text(" 처음부터 설정") }
+                // [PAYX-51] 1.38 PC 12차 (교육 시수까지 여섯 번 들어가야 했어요): one tap to '교육' with its 시수, for a 월급제 only (the 시수
+                // divides a monthly 통상임금). The kind is made from its ready one when there is none.
+                if (onOpenSchooling != null && profile.wageType == WageType.MONTHLY) {
+                    TextButton(onClick = onOpenSchooling, enabled = unlocked) { Icon(Icons.Filled.Schedule, null); Text(" 교육 시수 정하기") }
+                }
             }
         }
 
@@ -880,11 +890,22 @@ private fun PayResult(
         onDismiss = { building = false; editingRule = null },
         onSave = { made -> vm.saveMade(made); if (editingRule == null) justMade = made; building = false; editingRule = null },
         editing = editingRule,
+        // [PAYX-50] 1.38: '수당 추가' is this one window, its kinds as chips; changing a rule stays as it was.
+        oneWindow = editingRule == null,
     )
     if (checking && range != null) UnknownsSheet(vm, range, profile, result.month,
         onMatch = { checking = false; matching = true },
         onEdit = { target -> checking = false; editTarget = target },
         onDismiss = { checking = false })
+    monthAmountFor?.let { r ->
+        AmountDialog("${r.name} ${result.month.monthValue}월 금액", "${result.month.monthValue}월 금액",
+            hint = "이번 달만 이 금액으로 계산해요. 다른 달은 보통 금액 ${won((r.pay as? com.bamnat.core.pay.RulePay.Monthly)?.amount ?: 0)} 그대로예요. " +
+                "보통 금액을 넣으면 되돌려요.",
+            onDismiss = { monthAmountFor = null }) { amount ->
+            vm.setRuleMonth(r.id, result.month, amount)
+            monthAmountFor = null
+        }
+    }
     amountFor?.let { m ->
         AmountDialog("${m.name} 금액", if (m.times == null) "한 달 금액" else "1회 금액", onDismiss = { amountFor = null }) { amount ->
             vm.setItemAmount(m.id, amount, result.month)
@@ -900,10 +921,6 @@ private fun PayResult(
     if (addingBonus) AddBonusDialog(onDismiss = { addingBonus = false }) { name, months, percent, amount, ordinary, festivals, before ->
         vm.addBonus(name, months, percent, amount, ordinary, month, festivals, before)
         addingBonus = false
-    }
-    if (addingItem) AddItemDialog(onDismiss = { addingItem = false }, allowUnknownAmount = true) { name, amount, cadence, ordinary, fixedOt ->
-        vm.addItem(name, amount, cadence, ordinary, month, fixedOt)
-        addingItem = false
     }
 }
 
@@ -1075,13 +1092,18 @@ private fun effectText(e: com.bamnat.core.pay.UnknownEffect): String = when {
 
 /** [PAYS-01] An amount for an allowance that had none. */
 @Composable
-private fun AmountDialog(title: String, label: String, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
+private fun AmountDialog(title: String, label: String, hint: String? = null, onDismiss: () -> Unit, onSave: (Long) -> Unit) {
     var amount by remember { mutableStateOf<Long?>(null) }
     val huge = rememberHugeCheck()
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
-        text = { MoneyField(label, amount, { amount = it }) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                MoneyField(label, amount, { amount = it })
+                hint?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+        },
         confirmButton = { Button(onClick = { amount?.let { a -> huge.run(a) { onSave(a) } } }, enabled = (amount ?: 0) > 0) { Text("넣기") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
@@ -1255,7 +1277,7 @@ private fun ValueRow(
         }
         if (taxFree != null && onTaxFree != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("세금 없는 돈 (식대 등, 월 20만 원까지)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                Text("세금 없는 돈 (비과세: 식대·자가운전보조금 등, 월 20만 원까지)", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 Switch(checked = taxFree, onCheckedChange = onTaxFree, enabled = enabled)
             }
         }
@@ -1469,7 +1491,7 @@ private fun LeaveCard(vm: PayViewModel, snapshot: ScheduleSnapshot, month: YearM
         // 넘는 알바에게도 생겨요. Nothing written yet, an 알바 is told that, and under 5 nothing shows.
         if (hourly && !fiveOrMore) return
         SectionCard(title = "연차", trailing = { TextButton(onClick = onOpenLeave) { Text("연차 화면") } }) {
-            Text((if (hourly) "5명 이상 근무지에서 주 15시간 넘게 일하면 알바도 연차가 생겨요. " else "") +
+            Text((if (hourly) "5명 이상 근무지에서 주 15시간 이상 일하면 알바도 연차가 생겨요. " else "") +
                 "입사일을 넣으면 연차를 법대로 세고, 쓴 날과 없어질 날을 알려 드려요. 달력에서 날을 길게 눌러 연차·반차를 넣어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

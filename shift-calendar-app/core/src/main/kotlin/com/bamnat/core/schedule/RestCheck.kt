@@ -214,7 +214,9 @@ object RestCheck {
             val name = e.covered?.name?.takeUnless { it in e.kind.name }?.let { "$it ${e.kind.name}" } ?: e.kind.name
             val piece = Block(from, to, name, e.covered?.colorArgb ?: e.kind.colorArgb)
             val m = main
-            main = if (nextToShift && m != null && !from.isAfter(m.to) && !to.isBefore(m.from)) {
+            // [PAYX-54] Work inside the shift's hours (교육 during 일근) is the same stretch of work, not a second one.
+            val inShift = m != null && e.insideShiftMinutes > 0 && from.isBefore(m.to) && to.isAfter(m.from)
+            main = if ((nextToShift || inShift) && m != null && !from.isAfter(m.to) && !to.isBefore(m.from)) {
                 m.copy(from = minOf(m.from, from), to = maxOf(m.to, to))
             } else {
                 if (nextToShift && m == null) piece else { out += piece; m }

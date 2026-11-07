@@ -220,8 +220,10 @@ private object Routes {
     const val LEAVE = "leave?calendar={calendar}"
     fun leave(calendar: String = PersonalCalendar.MAIN) = "leave?calendar=$calendar"
     /** [MCAL-06] How extra work is paid, in one calendar's pay; without one, the main calendar's. */
-    const val EXTRA_KINDS = "extra_kinds?calendar={calendar}"
-    fun extraKinds(calendar: String = PersonalCalendar.MAIN) = "extra_kinds?calendar=$calendar"
+    const val EXTRA_KINDS = "extra_kinds?calendar={calendar}&start={start}"
+    /** [PAYX-51] [start]: a kind to open at once by its name (교육), made from its ready kind when there is none. */
+    fun extraKinds(calendar: String = PersonalCalendar.MAIN, start: String? = null) =
+        "extra_kinds?calendar=$calendar" + (start?.let { "&start=" + android.net.Uri.encode(it) } ?: "")
     const val MEMO = "memo/{id}?date={date}&checklist={checklist}&notebook={notebook}"
 
     /** [notebook]: opened from the memo tab, so a new memo goes into the notebook shown there. */
@@ -382,6 +384,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val exit = remember { ExitGuard() }
                     androidx.activity.compose.BackHandler { exit.press(context) }
                     val shown by container.settingsRepository.settings.collectAsStateWithLifecycle()
+                    // 1.38 PC 11차: opened from a teammate's 근무표 link on a new phone, the first screen names it and offers the
+                    // matching start (매달 나오는 근무표) in one tap.
+                    val waitingLink by container.received.opening.collectAsStateWithLifecycle()
+                    val waitingSchedule by produceState<com.bamnat.app.share.SharedSchedule?>(null, waitingLink) {
+                        value = waitingLink?.let { id -> runCatching { com.bamnat.app.share.SharedSchedule.parse(container.shareApi.read(id).schedule) }.getOrNull() }
+                    }
+                    val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
+                    // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
+                    val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
                     // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
                     // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
                     val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
@@ -396,7 +407,19 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         firstStyleKey = it.key
                     }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
                         onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
-                        textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } })
+                        textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } },
+                        linkWaiting = waitingLink != null, linkTitle = waitingTitle,
+                        onLinkStart = linkDraft?.let { draft -> {
+                            sizeSeen()
+                            com.bamnat.app.ui.onboarding.QuietStart.apply(container, com.bamnat.core.work.WorkStyle.SHIFT)
+                            container.telemetry.event("setup_link", if (draft.step == com.bamnat.core.setup.SetupStep.SUMMARY) "ready" else "times")
+                            container.setupDrafts.save(draft)
+                            // 1.38 PC 12.3: the link that started the setup is kept as a 받은 달력 (it is the team's, and follows its next
+                            // 판), and the waiting link is let go, so the calendar does not offer to add it again after the setup.
+                            val id = waitingLink
+                            container.received.open(null)
+                            if (id != null) rootScope.launch { runCatching { container.received.put(id, container.shareApi.read(id), mine = true) } }
+                        } })
                     return
                 }
                 // 1.36 W4: before 1.36 the recommended-features page came here, between "무슨 일 하세요?" and the setup. A phone
@@ -1556,9 +1579,17 @@ private fun AppNavHost(
                     if (nudges.invite.value != null) inviting = true
                 }
             }
+            // 1.38 PC 12.4.1 빈틈 6 (설정 끝 길잡이 창 밑 '내 급여 값'에 같은 권유 카드가 또): the company's invitation (its sheet, or its
+            // card here on a later visit) is the one ask; the pay setup's own card does not ask the same again.
+            val inviteNow by nudges.invite.collectAsStateWithLifecycle()
+            val payMoment by vm.shareMoment.collectAsStateWithLifecycle()
+            LaunchedEffect(inviteNow != null, payMoment) {
+                if (inviteNow != null && (payMoment == com.bamnat.app.ui.company.ShareMoment.PAY || payMoment == com.bamnat.app.ui.company.ShareMoment.PAYSLIP)) vm.shareShown()
+            }
             CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) }, focus = payFocus,
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
+                onOpenSchooling = { nav.navigate(Routes.extraKinds(calendar, SCHOOLING_KIND)) { launchSingleTop = true } },
                 onOpenLeave = { nav.navigate(Routes.leave(calendar)) { launchSingleTop = true } },
                 onOpenShiftTypes = { nav.navigate(Routes.shiftTypes(calendar)) { launchSingleTop = true } },
                 top = {
@@ -1567,7 +1598,7 @@ private fun AppNavHost(
                         container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle),
                         com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-                        onFix = { nav.fixCompanySetup(it, calendar) })
+                        onFix = { nav.fixCompanySetup(it, calendar) }, hideInvite = inviting)
                     if (companyPay) {
                         // [PAYF-04] The company pay way in use: 맞아요·달라요 and 고쳐서 제안하기 on the pay screen itself, and its 기본급.
                         com.bamnat.app.ui.company.PayWayCard(profile, update = vm::update, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -2008,10 +2039,13 @@ private fun AppNavHost(
         composable(Routes.RECOMMENDED) {
             com.bamnat.app.ui.onboarding.RecommendedScreen(container, firstStart = false, onDone = { nav.popFrom(Routes.RECOMMENDED) })
         }
-        composable(Routes.EXTRA_KINDS, arguments = listOf(navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN })) { entry ->
+        composable(Routes.EXTRA_KINDS, arguments = listOf(
+            navArgument("calendar") { type = NavType.StringType; defaultValue = PersonalCalendar.MAIN },
+            navArgument("start") { type = NavType.StringType; nullable = true; defaultValue = null },
+        )) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "extra_kinds_$calendar") { ExtraKindsViewModel(it, calendar) }
-            ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) },
+            ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) }, start = entry.arguments?.getString("start"),
                 // Back to the pay screen when it opened this one, so the stack does not grow.
                 onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } })
         }
@@ -2028,7 +2062,8 @@ private fun AppNavHost(
         )) { entry ->
             val calendar = entry.arguments?.getString("calendar") ?: PersonalCalendar.MAIN
             val vm = appViewModel(key = "shifts_$calendar") { ShiftsViewModel(it, calendar) }
-            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) }, editId = entry.arguments?.getLong("edit") ?: 0L)
+            ShiftTypesScreen(vm = vm, onBack = { nav.popFrom(Routes.SHIFT_TYPES) }, editId = entry.arguments?.getLong("edit") ?: 0L,
+                onOpenSchooling = { nav.navigate(Routes.extraKinds(calendar, SCHOOLING_KIND)) { launchSingleTop = true } })
         }
         composable(
             Routes.PATTERN,
@@ -2119,6 +2154,9 @@ private fun TabLabel(text: String, twoLineRoom: Boolean = false, part: com.bamna
 }
 
 /** A two-word tab name takes two lines from this text scale, each [TWO_LINE_SIZE] of the others' size in [TWO_LINE_HEIGHT] of room. */
+/** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장 휴무일 근무 지정's ready '교육'). */
+internal const val SCHOOLING_KIND = "교육"
+
 private const val TWO_LINE_FROM = 1.5f
 private const val TWO_LINE_SIZE = 0.8f
 private const val TWO_LINE_HEIGHT = 0.9f

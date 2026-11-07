@@ -516,6 +516,7 @@ private fun ShiftTimeCard(t: ShiftType, onChange: (ShiftType) -> Unit, onMore: (
                     step = 10,
                     max = 4 * 60,
                     dialogTitle = "${t.name} 쉬는 시간",
+                    format = com.bamnat.core.hours.HoursFormat::breakText,
                 )
             }
             if (LocalDensity.current.fontScale >= 1.5f) {

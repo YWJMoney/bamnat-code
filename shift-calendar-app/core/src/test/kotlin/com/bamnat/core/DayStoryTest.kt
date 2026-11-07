@@ -49,4 +49,14 @@ class DayStoryTest {
         ))
         assertEquals(listOf("주간", "출근 알람"), lines.map { it.item.title })
     }
+
+    @Test fun lastNightsShiftIsStillGoingAfterMidnight() {
+        val lines = DayStory.arrange(day, listOf(
+            StoryItem(at(11, 18), at(12, 6), StoryKind.Shift, "야간"),
+            StoryItem(at(12, 9), null, StoryKind.Memo, "도시락"),
+        ))
+        assertTrue(DayStory.ongoing(lines[0], at(12, 0, 11)))
+        assertFalse(DayStory.ongoing(lines[0], at(12, 6)))
+        assertFalse(DayStory.ongoing(lines[1], at(12, 9)))
+    }
 }

@@ -181,8 +181,9 @@ internal fun ExtraRuleEditor(
                         },
                         style = MaterialTheme.typography.titleSmall,
                     )
+                    // [PAYX-51] Two lines kept whichever way it reads, so a tap below (시수, a premium) does not move the page.
                     Text(if (atLaw) legalText else rule.describe(), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, minLines = 2)
                 }
                 if (!atLaw) TextButton(onClick = reset) { Text(resetLabel) }
             }

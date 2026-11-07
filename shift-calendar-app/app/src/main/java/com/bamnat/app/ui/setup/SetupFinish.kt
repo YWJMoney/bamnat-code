@@ -166,9 +166,13 @@ private fun ringLine(t: ShiftType, minutes: Int?): String {
 
 @Composable
 internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
-    StepHeader("이대로 저장할까요?", "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
+    // 1.38 PC 12.1: filled from a 근무표 link, the names are what is left to check.
+    if (d.linkTitle.isNotBlank()) StepHeader("‘${d.linkTitle}’ 근무표로 시작할까요?", "받은 근무표의 근무 이름과 시간, 근무한 날을 그대로 넣었어요. 이름이 맞으면 아래 단추 하나로 시작해요.")
+    else StepHeader("이대로 저장할까요?", "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
     val types = remember(d.types) { d.types.associateBy { it.id } }
-    SummaryCard("근무 형태", styleTitle(d), onFix = { vm.fix(SetupStep.STYLE) })
+    if (d.linkTitle.isNotBlank()) SummaryCard("근무 이름", d.types.filter { !it.isOff }.joinToString(", ") { if (it.label != it.name) "${it.name}(${it.label})" else it.name },
+        onFix = { vm.fix(SetupStep.TIMES) })
+    else SummaryCard("근무 형태", styleTitle(d), onFix = { vm.fix(SetupStep.STYLE) })
     val source = d.source
     if ((source != null || d.companyName.isNotBlank()) && SetupStep.COMPANY in d.steps) {
         // 1.38 통합 7차 347b7c37 (직접 만든 순서에도 '3조 2교대로 시작'): an order of the user's own is said so.
@@ -196,6 +200,9 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
         d.style == WorkStyle.HOURLY && d.noFixedDays -> SummaryCard("요일", "그때그때 달라요. 일한 날 달력에 적어요", onFix = { vm.fix(SetupStep.ORDER) })
         else -> SummaryCard("요일", weekLine(d) + if (d.holidaysOff) " · 공휴일 쉼" else " · 공휴일에도 일함", onFix = { vm.fix(SetupStep.ORDER) })
     }
+    // 1.38 통합 11차 (알바 월수금 13~18시: 쉬는 시간 30분이 붙어 주 13시간 30분 → 주휴 없음, 요약에는 작게만): the 15-hour line
+    // of 주휴수당 is said plainly when the week's hours make or miss it, and when the break alone decides it.
+    weeklyHolidayNote(d)?.let { SummaryCard("주휴수당", it, onFix = { vm.fix(SetupStep.TIMES) }) }
     if (d.usesRotation) {
         val date = vm.questionDate(d)
         todaySentence(d, date, vm.today)?.let { SummaryCard("오늘", it, onFix = { vm.fix(SetupStep.TODAY) }) }
@@ -281,6 +288,26 @@ private fun companyLine(d: SetupDraft, source: SetupSource?, ownOrder: Boolean =
 }.joinToString("\n")
 
 /** "월·화·수·목·금 주간" or "월 오전 알바 · 수 저녁 알바". */
+/**
+ * 시급 알바의 주휴수당 (근로기준법 제55조·제18조 제3항, 1주 소정근로 15시간 이상): the week's hours from the days set, said against the
+ * 15 hours, and the break named when it alone takes the week under. Null for other kinds of work or no fixed days.
+ */
+internal fun weeklyHolidayNote(d: SetupDraft): String? {
+    if (d.style != WorkStyle.HOURLY || d.noFixedDays) return null
+    val days = d.weekly.mapNotNull { id -> id?.takeIf { !d.isOff(it) }?.let(d::type) }
+    if (days.isEmpty()) return null
+    val work = days.sumOf { it.workMinutes }
+    val withBreaks = days.sumOf { it.workMinutes + it.breakMinutes }
+    val line = 15 * 60
+    val hours = HoursFormat.korean(work)
+    return when {
+        work >= line -> "주 $hours 일해요 · 주 15시간 이상이라 주휴수당을 받아요"
+        withBreaks >= line -> "쉬는 시간을 빼면 주 ${hours}이라 주휴수당 기준(주 15시간)에 ${HoursFormat.korean(line - work)} 모자라요. " +
+            "쉬는 시간 없이 일하면 ‘고치기’에서 쉬는 시간을 0분으로 바꿔 주세요"
+        else -> "주 ${hours}이라 주휴수당 기준(주 15시간)에 ${HoursFormat.korean(line - work)} 모자라요"
+    }
+}
+
 private fun weekLine(d: SetupDraft): String {
     val days = java.time.DayOfWeek.entries.mapIndexedNotNull { i, day ->
         d.weekly.getOrNull(i)?.takeIf { !d.isOff(it) }?.let { day to d.type(it)!! }

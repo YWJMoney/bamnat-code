@@ -321,17 +321,23 @@ object PublicCycles {
      */
     fun provided(company: String, formKey: String): PublicCycle {
         val three = formKey in PublicCycle.THREE_FORMS
-        val codes = when (formKey) {
-            "3조1교대", "4조1교대", "격일제" -> listOf('X')
-            "주간연속2교대" -> listOf('D', 'E')
-            "고정" -> listOf('D')
-            else -> if (three) listOf('D', 'E', 'N') else listOf('D', 'N')
-        }
+        val codes = usualWork(formKey).toList()
         return PublicCycle(
             id = "", display = company, company = company, industry = "", site = "", form = formName(formKey), formKey = formKey,
             orderText = "", timeText = "", asOf = "", trustText = "", trust = emptySet(), linkCheck = false, partner = false, source = "",
             codes = "", orderState = OrderState.NONE, weekly = false, roster = false, shifts = codes.map { CycleShift.usual(it, three) },
         )
+    }
+
+    /**
+     * The kinds of work a form usually has ('D''E''N' for 3교대, 'X' for 당번 forms), for a row or a first provider with no
+     * shift of its own. 1.38 통합 11차 (간호사: 경인의료재활센터병원 · 3교대를 고르면 근무가 '휴무'뿐이라 넘어가지 못해요).
+     */
+    fun usualWork(formKey: String): String = when (formKey) {
+        "3조1교대", "4조1교대", "격일제" -> "X"
+        "주간연속2교대" -> "DE"
+        "고정" -> "D"
+        else -> if (formKey in PublicCycle.THREE_FORMS) "DEN" else "DN"
     }
 
     /** The forms a first provider picks from, in the order people most often work them. */

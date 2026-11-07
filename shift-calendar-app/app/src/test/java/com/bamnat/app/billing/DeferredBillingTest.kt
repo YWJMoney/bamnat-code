@@ -38,7 +38,8 @@ class DeferredBillingTest {
         withTimeout(5_000) { b.refresh() }
         assertEquals(1, made)
         assertNotEquals(Thread.currentThread(), on.get())
-        withTimeout(5_000) { while (b.plans.value.isEmpty()) kotlinx.coroutines.delay(10) }
+        // CI 12차: the plans and the state are passed on by two coroutines of their own; the one is not proof of the other.
+        withTimeout(5_000) { while (b.plans.value.isEmpty() || b.state.value == BillingState.UNKNOWN) kotlinx.coroutines.delay(10) }
         assertEquals(listOf(plan), b.plans.value)
         assertEquals(BillingState.READY, b.state.value)
     }

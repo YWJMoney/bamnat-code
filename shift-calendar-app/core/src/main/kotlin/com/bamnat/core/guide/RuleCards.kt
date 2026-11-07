@@ -44,6 +44,15 @@ object RuleCards {
         logic: Logic = Logic(),
         alarmsOn: Boolean = true,
         memos: List<Memo> = emptyList(),
+        /** 1.38 PC 11차 식당 둘러보기 ('야간 날이면'): kinds put away ('안 쓰는 종류'), which get no alarm card. */
+        hidden: Set<Long> = emptySet(),
+        /** 1.38 PC 11차 식당 둘러보기: what a weekly working day is called ("영업하는 날이에요" for a shop). */
+        workDayLine: String = "근무하는 날이에요",
+        /**
+         * 1.38 PC 12.1 (식당 '만약 영업 날이면 → 알람이 울리지 않아요 · 꺼짐'): work without 교대 lists only the alarms that ring; a
+         * shift worker still sees the kinds without one, since a 야간 with no alarm is worth a look.
+         */
+        ringingOnly: Boolean = false,
     ): List<Card> = buildList {
         val names = types.associate { it.id to it.name }
         when (val p = PatternTimeline.current(patterns, today)) {
@@ -53,7 +62,7 @@ object RuleCards {
             }
             is WorkPattern.Weekly -> {
                 val days = p.steps.mapIndexedNotNull { i, id -> DAYS[i].takeIf { id != null && types.firstOrNull { t -> t.id == id }?.isOff != true } }
-                if (days.isNotEmpty()) add(Card(Group.SHIFT, "${days.joinToString("·")}요일이면", "근무하는 날이에요", Where.PATTERN))
+                if (days.isNotEmpty()) add(Card(Group.SHIFT, "${days.joinToString("·")}요일이면", workDayLine, Where.PATTERN))
                 add(Card(Group.SHIFT, "공휴일·대체공휴일이면",
                     if (p.holidaysOff) "쉬는 날이 되고 알람도 울리지 않아요" else "요일대로 일해요 (쉬게 하려면 고치기)", Where.PATTERN, on = p.holidaysOff))
                 if (p.altSaturday != null) add(Card(Group.SHIFT, "토요일이면", "격주로만 일해요", Where.PATTERN))
@@ -61,8 +70,9 @@ object RuleCards {
             null -> Unit
         }
         for (t in types.sortedBy { it.sortOrder }) {
-            if (!t.hasTimes) continue
+            if (!t.hasTimes || t.id in hidden) continue
             val alarms = t.activeAlarms
+            if (ringingOnly && (!alarmsOn || alarms.isEmpty())) continue
             val cond = "${t.name} 날이면"
             if (!alarmsOn) add(Card(Group.ALARM, cond, "알람이 울리지 않아요 (설정에서 알람을 모두 껐어요)", Where.SHIFT_TYPES, on = false))
             else if (alarms.isEmpty()) add(Card(Group.ALARM, cond, "알람이 울리지 않아요", Where.SHIFT_TYPES, on = false))

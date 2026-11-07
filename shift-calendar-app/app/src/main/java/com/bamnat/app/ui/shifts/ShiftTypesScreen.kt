@@ -123,7 +123,11 @@ import java.time.LocalTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L) {
+fun ShiftTypesScreen(
+    vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L,
+    /** [PAYX-51] To '교육' and its 시수 in 연장 휴무일 근무 지정, from the editor of a day named 교육·연수·LMS. */
+    onOpenSchooling: (() -> Unit)? = null,
+) {
     val types by vm.shiftTypes.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<ShiftType?>(null) }
     // [DAILY-08] Opened for one shift type: its editor first, once.
@@ -276,6 +280,7 @@ fun ShiftTypesScreen(vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L)
             initial = type,
             showPremium = vm.isShiftCalendar,
             noun = dayKindNoun(vm.workStyle),
+            onOpenSchooling = onOpenSchooling?.let { go -> { editing = null; go() } },
             onDismiss = { editing = null },
             onSave = {
                 vm.save(it)
@@ -564,6 +569,9 @@ private fun OffsetPickerDialog(
     )
 }
 
+/** [PAYX-49] Names of a kind of day that is training, where the editor points to the 시수 of 연장 휴무일 근무 지정. */
+private val SCHOOLING = Regex("교육|연수|LMS", RegexOption.IGNORE_CASE)
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ShiftTypeEditorDialog(
@@ -577,6 +585,8 @@ fun ShiftTypeEditorDialog(
     showPremium: Boolean = false,
     /** 1.36 PC 재검토: "일정" on a 현장 calendar. */
     noun: String = "근무",
+    /** [PAYX-51] The 교육 시수 note's button; null leaves only the note. */
+    onOpenSchooling: (() -> Unit)? = null,
 ) {
     // [CAL-30] I 리뷰 P14: what is being typed survives a fold or a turn of the phone.
     var draft by rememberSaveable(initial, stateSaver = ShiftTypeSaver) { mutableStateOf(initial) }
@@ -718,6 +728,7 @@ fun ShiftTypeEditorDialog(
                                     step = 10,
                                     max = 12 * 60,
                                     dialogTitle = "휴게 시간",
+                                    format = com.bamnat.core.hours.HoursFormat::breakText,
                                 )
                             }
                             // 순번 285: 근로기준법 제54조 asks for 30 minutes from 4 hours and an hour from 8; say so, never block.
@@ -761,6 +772,19 @@ fun ShiftTypeEditorDialog(
                         // [SHFT-01] This kind of day's own premium, a line of its own in 급여 계산.
                         if (showPremium) ShiftPremiumSection(timed, onChange = { draft = draft.copy(premiumPercent = it) },
                             onBreakPaid = { draft = draft.copy(breakPaid = it) })
+                        // 1.38 [PAYX-49] PC 11차 ("근무 추가 양식에 인정 시수 칸이 없어요"): a 교육 paid on its own 시수 is extra work,
+                        // whose 시수 is set with its pay; a kind of day only names the day. Said where the user looks for it.
+                        if (SCHOOLING.containsMatchIn(draft.name)) {
+                            Text(
+                                "교육처럼 시수(통상시급을 나누는 시간)가 다른 일은 설정 › 연장 휴무일 근무 지정에서 '교육'을 더해 " +
+                                    "급여와 가산 › 시수를 정해요. 근무 종류에는 시수 칸이 없어요.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 4.dp),
+                            )
+                            // [PAYX-51] 1.38 PC 12차: one tap there, '교육' made when there is none.
+                            if (onOpenSchooling != null) TextButton(onClick = onOpenSchooling) { Text("교육 시수 정하러 가기") }
+                        }
 
                         if (showAlarms) SectionCard(title = "알람") {
                             Row(verticalAlignment = Alignment.CenterVertically) {

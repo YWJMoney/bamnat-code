@@ -144,6 +144,8 @@ data class ReceivedCalendar(
     val etag: String? = null,
     /** [SHR-13] Why the developer took the link down, when it was taken down rather than cut by the sharer. */
     val removedReason: String? = null,
+    /** 1.38 PC 12.4.1 [P3-L-19] The user's own work comes from this link (the setup was started from it): settings say 받은 근무표, not 근무 주기. */
+    val mine: Boolean = false,
 ) {
     val schedule: SharedSchedule? by lazy { raw?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() } }
     val gone: Boolean get() = raw == null
@@ -159,6 +161,18 @@ data class ReceivedCalendar(
         /** Avatar colours, one per calendar in the order they were added. */
         val COLORS = listOf(0xFFE8833A, 0xFF2E9D8F, 0xFF7C5CC4, 0xFFD45087, 0xFF3D7DD8, 0xFF8A9A2B)
     }
+}
+
+/**
+ * 1.38 PC 12.4.1 [P3-L-19] Where a member's work comes from, for settings: whose link, up to which day it holds, and when the next
+ * month comes. [short] is the settings list's summary; otherwise the 내 근무 row's line.
+ */
+fun ReceivedCalendar.mineLine(short: Boolean = false): String {
+    if (gone) return if (short) "받은 근무표 · 링크가 끊겼어요" else "${name} 링크가 끊겼어요 · 새 링크를 받으면 이어서 와요"
+    val last = schedule?.last
+    val until = last?.let { "${it.monthValue}월 ${it.dayOfMonth}일까지" }
+    return if (short) listOfNotNull("받은 근무표", name, until).joinToString(" · ")
+    else listOfNotNull("${name}에서 받아요", until?.let { "$it 받았어요" }, "다음 달 근무표는 확정되면 알림으로 와요").joinToString(" · ")
 }
 
 /**
@@ -187,6 +201,9 @@ class ReceivedCalendarStore(
 
     fun get(id: String): ReceivedCalendar? = _calendars.value.firstOrNull { it.id == id }
 
+    /** 1.38 PC 12.4.1 [P3-L-19] The link the user's own work comes from, if the setup was started from one. */
+    fun mine(): ReceivedCalendar? = _calendars.value.firstOrNull { it.mine }
+
     fun view(id: String?) {
         _viewing.value = id?.takeIf { i -> _calendars.value.any { it.id == i } }
     }
@@ -199,12 +216,13 @@ class ReceivedCalendarStore(
     fun update(id: String, share: ReceivedShare): ReceivedCalendar? = if (get(id) == null) null else put(id, share)
 
     /** Adds the link, or brings an existing one up to date, and returns it. */
-    fun put(id: String, share: ReceivedShare): ReceivedCalendar {
+    fun put(id: String, share: ReceivedShare, mine: Boolean = false): ReceivedCalendar {
         val now = clock()
         val old = get(id)
         val title = share.schedule.optString("title").trim()
         val color = old?.color ?: ReceivedCalendar.COLORS[_calendars.value.size % ReceivedCalendar.COLORS.size]
-        val cal = ReceivedCalendar(id, title, color, old?.addedAt ?: now, now, share.updatedAt, share.expiresAt, share.schedule, share.etag)
+        val cal = ReceivedCalendar(id, title, color, old?.addedAt ?: now, now, share.updatedAt, share.expiresAt, share.schedule, share.etag,
+            mine = mine || old?.mine == true)
         write(if (old == null) _calendars.value + cal else _calendars.value.map { if (it.id == id) cal else it })
         return cal
     }
@@ -277,6 +295,7 @@ class ReceivedCalendarStore(
         raw?.let { put("schedule", it) }
         etag?.let { put("etag", it) }
         removedReason?.let { put("removedReason", it) }
+        if (mine) put("mine", true)
     }
 
     private fun fromJson(o: JSONObject): ReceivedCalendar? {
@@ -284,7 +303,7 @@ class ReceivedCalendarStore(
         fun time(key: String) = o.optString(key).takeIf { it.isNotEmpty() }?.let { runCatching { Instant.parse(it) }.getOrNull() }
         return ReceivedCalendar(id, o.optString("title"), o.optLong("color", ReceivedCalendar.COLORS[0]),
             time("addedAt") ?: Instant.EPOCH, time("fetchedAt"), time("updatedAt"), time("expiresAt"), o.optJSONObject("schedule"),
-            o.optString("etag").takeIf { it.isNotEmpty() }, o.optString("removedReason").takeIf { it.isNotEmpty() })
+            o.optString("etag").takeIf { it.isNotEmpty() }, o.optString("removedReason").takeIf { it.isNotEmpty() }, o.optBoolean("mine", false))
     }
 
     companion object {

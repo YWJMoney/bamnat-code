@@ -198,6 +198,17 @@ internal val YearMonthSaver = androidx.compose.runtime.saveable.Saver<YearMonth?
 )
 /** [CAL-15] The floating button's height and the room it keeps from the screen's edge. */
 private val FAB_HEIGHT = 56.dp
+
+/**
+ * 12.1: the month grid's rows the FAB must not sit on, counted from the top: up to the row of the month's last day, or the row
+ * before when that day is in the left half (the FAB rests at the right, over next month's faded days then).
+ */
+internal fun fabKeepRows(month: YearMonth, weekStart: java.time.DayOfWeek): Int {
+    val first = month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
+    val index = java.time.temporal.ChronoUnit.DAYS.between(first, month.atEndOfMonth()).toInt()
+    val row = index / 7
+    return if (index % 7 < 4) row else row + 1
+}
 private val FAB_MARGIN = 16.dp
 /** [CAL-15] Between the month's last row and the button riding under it. */
 private val FAB_DOCK_GAP = 8.dp
@@ -741,10 +752,12 @@ fun CalendarScreen(
             // 1.38 PC 4a5c3828 (자영업·투자 달력에 '가족·연인과 근무 같이 보기'): 투자 has no days to see together; a shop's are its 영업일.
             onTogether = if (shareLinks && viewingReceived == null && !togetherDone && togetherStyle != com.bamnat.core.work.WorkStyle.INVEST) ({ together = true }) else null,
             togetherShop = togetherStyle == com.bamnat.core.work.WorkStyle.BUSINESS,
+            togetherField = togetherStyle == com.bamnat.core.work.WorkStyle.FIELD,
         )
     }
     if (together) TogetherSheet(
         shop = togetherStyle == com.bamnat.core.work.WorkStyle.BUSINESS,
+        field = togetherStyle == com.bamnat.core.work.WorkStyle.FIELD,
         onSend = { together = false; shareCalendar() },
         onTake = if (received.enabled) ({ together = false; adding = "" }) else null,
         onDismiss = { together = false },
@@ -776,6 +789,8 @@ fun CalendarScreen(
     // [DAILY-09] Where the month starts in the window, so the half above a fold's hinge can open on it.
     var gridTop by remember { mutableFloatStateOf(Float.NaN) }
     var fabAreaBottom by remember { mutableFloatStateOf(Float.NaN) }
+    // How far down the month the FAB may not go: the rows with this month's days where the FAB rests (the right side).
+    var ownRowsPx by remember { mutableFloatStateOf(Float.NaN) }
     val docking = paint == null && !listView && !(weekOnly && !wide)
     val density = androidx.compose.ui.platform.LocalDensity.current
     val fabLift = with(density) { (FAB_MARGIN + FAB_HEIGHT).toPx() }
@@ -806,7 +821,19 @@ fun CalendarScreen(
     // first look tells what it is.
     val fabExpanded by remember { derivedStateOf { fabDrop.value > 0.5f || pageScroll.value == 0 || !pageScroll.canScrollForward } }
     // Below the screen's edge with the month, it is not there for TalkBack either.
-    val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f } }
+    // 12.1 화면 사진(오늘의 흐름 한 줄이 달력 위로 오며 달력이 내려감, 큰 글씨에서 '빠른 입력'이 21~24일을 가림): where the
+    // month is longer than the room above the FAB, it steps aside while it would sit on this month's own days, and comes back
+    // once the page goes on past them. Next month's faded days in the last row may go under it.
+    val fabOnDays by remember(fabLift) {
+        derivedStateOf {
+            if (!docking || ownRowsPx.isNaN() || gridTop.isNaN() || fabAreaBottom.isNaN()) false
+            else {
+                val top = fabAreaBottom - fabLift + fabDrop.value
+                top < gridTop + ownRowsPx && top + fabHeight > gridTop
+            }
+        }
+    }
+    val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f || fabOnDays } }
     // PC 8eae2521 (근무 0개: 안내 카드의 '빠른 입력'과 떠 있는 '빠른 입력' 두 개, 떠 있는 것이 날짜 칸을 가림): while the empty
     // calendar's start card is up, its own button is the one way in.
     var startCardShown by remember { mutableStateOf(false) }
@@ -1007,7 +1034,8 @@ fun CalendarScreen(
             // [NAV-03] Which tiles this kind of calendar has at all, so the others keep their places while one waits.
             toolFit = ToolFit(teams = settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT, receive = received.enabled,
                 viewingReceived = viewingReceived != null, hasShiftTypes = snap.shiftTypes.isNotEmpty(), teamsReady = openTeams != null || viewingReceived != null,
-                pushReady = snap.resolver.patternOn(today) is com.bamnat.core.model.WorkPattern.Rotation),
+                pushReady = snap.resolver.patternOn(today) is com.bamnat.core.model.WorkPattern.Rotation,
+                leader = context.appContainer.flags.byKey.collectAsStateWithLifecycle().value[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true),
             onPushToday = { realigning = today }, // [EASE-25]
         ) }
         if (sideways) {
@@ -1329,7 +1357,9 @@ fun CalendarScreen(
                 com.bamnat.app.ui.guide.JournalHomeLine(Modifier.padding(horizontal = 16.dp), today = today)
             })
             // [CAL-51] On a low screen the user's parts above the month wait here too, after everything else.
-            if (low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown }.forEach { placed ->
+            // 1.38 PC 12.3 빈틈 7 (글자 200%: 근무 중인데 오늘의 흐름이 '알림 1개 더 보기' 안에 접힘): 오늘의 흐름 is one line now (#254),
+            // so it stays over the month on its own below, never folded with the notices.
+            if (low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.TODAY_FLOW }.forEach { placed ->
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
         }.let { all ->
@@ -1393,7 +1423,14 @@ fun CalendarScreen(
             }
         }
         // [CUST-01] The parts above the month in the user's order (화면 꾸미기); [CVW-06] the ones moved over it from below too.
-        if (low || holding) { if (!holding) aboveHeights[1] = 0 } else Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) {
+        if (low || holding) {
+            if (!holding) {
+                // 1.38 PC 12.3 빈틈 7: 오늘의 흐름's one line, by itself, on a low screen or at very large text.
+                val flow = calendarParts.firstOrNull { it.part == CalendarPart.TODAY_FLOW && isAbove(it.part) && it.shown }
+                if (flow != null) Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) { aboveParts[CalendarPart.TODAY_FLOW]?.second?.invoke() }
+                else aboveHeights[1] = 0
+            }
+        } else Column(Modifier.onSizeChanged { aboveHeights[1] = it.height }) {
             // [CNV-06] 요약·횟수 줄 above the month stay just over it (below).
             calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.MONTH && it.part != CalendarPart.SUMMARY && it.part != CalendarPart.COUNTS }.forEach { placed ->
                 aboveParts[placed.part]?.second?.invoke() ?: partBody(placed.part)
@@ -1515,6 +1552,9 @@ fun CalendarScreen(
             ) {
                 // [CAL-51] On its side a phone keeps its cells as short as they hold, so weeks show under the bars.
                 val cellHeight = calView.cellHeight(maxWidth, sideways) + cellTextGrowth()
+                val coverRows = fabKeepRows(visibleMonth, settings.weekStart)
+                val ownPx = if (showList) Float.NaN else with(density) { cellHeight.toPx() } * coverRows
+                androidx.compose.runtime.SideEffect { ownRowsPx = ownPx }
                 // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
                 val stamping = mark != null || (paint != null && paint != PaintTool.Pick)
                 val memoCounts = remember(datedMemos) { datedMemos.groupingBy { it.date!! }.eachCount() }
@@ -2117,6 +2157,7 @@ private fun CalendarHeader(
             CalendarTool(label, slot.icon(), id = slot.id, onClick = when (slot.id) {
                 CalendarToolSlots.EDIT -> onEditCalendar
                 CalendarToolSlots.TEAMS -> onOpenTeams
+                CalendarToolSlots.LEADER -> ({ com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.LEADER_TEAMS)) })
                 CalendarToolSlots.TYPE_MONTH -> onTypeMonth
                 CalendarToolSlots.PUSH -> onPushToday
                 CalendarToolSlots.SHARE -> onShare
@@ -2187,6 +2228,7 @@ internal data class CalendarTool(
 private fun CalendarToolSlots.Slot.icon(): androidx.compose.ui.graphics.vector.ImageVector = when (id) {
     CalendarToolSlots.EDIT -> Icons.Outlined.Edit
     CalendarToolSlots.TEAMS -> Icons.Outlined.Groups
+    CalendarToolSlots.LEADER -> Icons.Outlined.Groups
     CalendarToolSlots.TYPE_MONTH -> Icons.Outlined.Keyboard
     CalendarToolSlots.PUSH -> Icons.Filled.Autorenew
     CalendarToolSlots.SHARE -> Icons.Filled.Share

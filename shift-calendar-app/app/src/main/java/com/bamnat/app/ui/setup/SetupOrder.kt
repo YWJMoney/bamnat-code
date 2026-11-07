@@ -625,7 +625,8 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
                 Text("근무표의 글자로 근무 종류를 맞출까요?", style = MaterialTheme.typography.titleSmall)
                 Text(kinds.joinToString(" · ") { k -> "${k.type.name}(${k.type.label})" + (k.type.start?.let { s -> " ${s.hour}~${k.type.end?.hour ?: ""}시" } ?: "") },
                     style = MaterialTheme.typography.bodyMedium)
-                Text("지금은 ${d.types.joinToString("·") { it.name }}로 들어가요. 맞추면 비번과 휴무도 따로 남고, 시간은 근무 시간 단계에서 바꿀 수 있어요.",
+                Text("지금은 ${d.types.joinToString("·") { it.name }}로 들어가요. 맞추면 비번과 휴무도 따로 남아요. " +
+                    (if (vm.sheetKindsKeepTimes(kinds)) "시간은 고른 시간 그대로예요. " else "근무표에 시간이 없어 흔한 시간으로 넣어요. ") + "시간은 근무 시간 단계에서 바꿀 수 있어요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     com.bamnat.app.ui.components.Button(onClick = vm::useSheetKinds) { Text("글자대로 맞추기") }

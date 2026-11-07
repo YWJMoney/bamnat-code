@@ -172,7 +172,8 @@ internal object SettingsIndex {
         if (style == null || style.usesPayEngine) return !(style == com.bamnat.core.work.WorkStyle.HOURLY && e.title == "연차 사용 촉진 알림")
         val place = e.place
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
-        return e.title !in WAGE_ROWS
+        // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 on the calendar, so no switch for it either.
+        return e.title !in WAGE_ROWS && e.title != "오늘의 흐름 보기"
     }
 
     private fun all(board: Boolean, share: Boolean, company: Boolean, sleepAuto: Boolean = true, sleepSound: Boolean = true): List<SettingEntry> = listOfNotNull(
@@ -317,6 +318,7 @@ internal object SettingsIndex {
         row(V, SUMMARY_ROW, "동의", "권한 요약", "내가 허용한 것", "보내는 것", "권한 한눈에", "동의 내역"), // [ALRM-02]
         screen(A.title, "서버 연결 점검", SettingsGo.DIAGNOSTICS, "서버 연결", "인터넷", "보내지 못함", "연결 확인", "서버 상태"), // [ALRM-02]
         row(V, "앱 잠금", "잠금", "지문", "얼굴", "비밀번호", "PIN", "생체 인증", "숨기기"),
+        row(V, "금액 가리기", "금액 숨기기", "돈 가리기", "금액 안 보이게", "잔액 숨기기", "월급 가리기", "가리기", "눈 단추"), // 1.38 PC 12.2
         row(V, "알림 허용", "알림 권한", "권한", row = "알림"),
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),
         row(V, "결제 알림 읽기", "카드 알림", "은행 알림", "문자", "자동 기록", "가계부"),

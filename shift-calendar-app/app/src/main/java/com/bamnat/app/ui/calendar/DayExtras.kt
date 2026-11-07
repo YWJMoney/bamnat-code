@@ -272,6 +272,7 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                     step = 10,
                     max = (span - 10).coerceAtLeast(0),
                     dialogTitle = "휴게 시간",
+                    format = com.bamnat.core.hours.HoursFormat::breakText,
                 )
             }
             // [EASE-26] The end a little later or earlier with a tap.

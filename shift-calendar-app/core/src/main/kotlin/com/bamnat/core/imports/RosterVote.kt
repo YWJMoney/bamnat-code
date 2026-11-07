@@ -171,6 +171,7 @@ object RosterVote {
         val cells = HashMap<Int, DutyCell>()
         val unsure = HashSet<Int>()
         val guessed = HashSet<Int>()
+        val contested = HashSet<Int>()
         for (d in days) {
             val votes = all.mapNotNull { r -> r.cells[d]?.let { r to it } }
             val known = votes.filter { it.second !is DutyCell.Unknown }
@@ -185,11 +186,12 @@ object RosterVote {
             val pick = a.cells[d]?.takeIf { it in tied } ?: tied.first()
             cells[d] = pick
             if (!clear(counts.values.sortedDescending())) unsure += d
+            if (counts.size > 1) contested += d
             // The anchor's own doubt (a cell off its column's middle) stays when the cell is the anchor's.
             if (d in a.unsure && a.cells[d] == pick) unsure += d
             // A doubt any reading had about the word it read there (a word of the other alphabet, a lone 0) stays.
             if (known.any { (r, c) -> c == pick && d in r.guessed }) guessed += d
         }
-        return a.copy(label = label(all), cells = cells, unsure = unsure, guessed = guessed, notes = a.notes.filterKeys { cells[it] == a.cells[it] })
+        return a.copy(label = label(all), cells = cells, unsure = unsure, contested = a.contested + contested, guessed = guessed, notes = a.notes.filterKeys { cells[it] == a.cells[it] })
     }
 }

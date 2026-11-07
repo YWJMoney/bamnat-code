@@ -74,7 +74,10 @@ class RosterTeamPhotoTest {
         )
         val raws = (1..30).map { code(0, it) } + "아"
         val kinds = com.bamnat.core.imports.SheetKinds.of(raws, hospital)!!
-        assertEquals(listOf("주간 주 07:00", "야간 야 19:00", "비번 비 null", "휴무 휴 null"), kinds.map { "${it.type.name} ${it.type.label} ${it.type.start}" })
+        // [READ-41] PC 12.3: the times picked in the setup (데이 07~15, 나이트 23~07) stay; the sheet's letters say which kinds only.
+        assertEquals(listOf("주간 주 07:00~15:00", "야간 야 23:00~07:00", "비번 비 null~null", "휴무 휴 null~null"), kinds.map { "${it.type.name} ${it.type.label} ${it.type.start}~${it.type.end}" })
+        // With nothing picked for a part, the usual times.
+        assertEquals("19:00", com.bamnat.core.imports.SheetKinds.of(raws, hospital.take(1) + hospital.drop(2))!!.first { it.type.label == "야" }.type.start.toString())
         // Kinds that already say 주·야·비·휴, or a sheet of D·E·N·O: nothing offered.
         assertEquals(null, com.bamnat.core.imports.SheetKinds.of(raws, kinds.map { it.type }))
         assertEquals(null, com.bamnat.core.imports.SheetKinds.of((1..30).map { listOf("D", "E", "N", "O")[it % 4] }, hospital))

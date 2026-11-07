@@ -35,6 +35,9 @@ object AfterAlarmCard {
         val c = context.appContainer
         val s = c.settingsRepository.current
         if (!s.afterAlarmCard || !Notifications.canPost(context)) return
+        // 1.38 PC 12.1 (식당에 '이번 주 시간(52시간까지)'): the week's hours against the legal limit are a wage worker's; a shop, a
+        // freelancer or an investor gets no card (the setting is on by default and its row shows only to work with a 근무표).
+        if (s.workStyle?.usesPayEngine == false) return
         val snapshot = c.scheduleRepository.snapshot.first()
         if (snapshot.isEmpty) return
         // PC 267560dd: after an alarm three notices said "오늘 야간 19:00~07:00". When 잠금 화면 '오늘 근무' or the day's planning
