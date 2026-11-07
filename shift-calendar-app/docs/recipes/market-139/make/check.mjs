@@ -6,7 +6,8 @@ import { sectionOf } from "../../../../server/company-worker/src/recipes.js";
 const here = fileURLToPath(new URL(".", import.meta.url));
 const moods = {}, styles = {}, titles = new Map();
 let n = 0, top = 0;
-const want = (f) => f.startsWith("themes-") ? { scope: "theme" } : f.startsWith("tab-") ? { scope: "tab", tab: f.split("-")[1].replace(/\.mjs$/, "") } : {};
+const want = (f) => f.startsWith("themes-") ? { scope: "theme" } : f.startsWith("tab-") ? { scope: "tab", tab: f.split("-")[1].replace(/\.mjs$/, "") }
+  : f.startsWith("tool-parts") ? { scope: "part" } : f.startsWith("tool-rules") || f.startsWith("tool-buttons") ? { scope: "logic" } : {};
 const per = {};
 for (const f of readdirSync(here).filter((f) => /^(themes|tab|tool|fx)-.*\.mjs$/.test(f)).sort()) {
   for (const w of (await import(`./${f}`)).default) {

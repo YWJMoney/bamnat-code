@@ -341,7 +341,7 @@ export default [
     decor: [{ photo: use("dumbbell"), at: "cal.head", x: 930, y: 500, w: 24, h: 24 }],
   }),
   cal({
-    title: "고양이 낮잠 달력", style: null, mood: "파스텔", emoji: "🐈",
+    title: "낮잠 고양이 달력", style: null, mood: "파스텔", emoji: "🐈",
     summary: "햇볕 드는 창가 같은 크림색 바탕, 쉬는 날 칸에 고양이가 웅크려 자는 달력",
     wow: "달력에 따뜻한 오후 햇살이 비스듬히 들고, 쉬는 날 칸엔 고양이가 웅크려 낮잠을 자요. 일한 날은 발바닥 색 점이 콕, 오늘은 둥근 털실색 테로 감싸져요.",
     changes: ["햇살 드는 크림 바탕", "쉬는 날 고양이 아이콘", "일한 날 발바닥 점", "둥근 손글씨"],

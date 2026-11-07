@@ -285,7 +285,7 @@ async function seedMarket() {
   const have = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes").first())?.n ?? 0;
   if (have > 100) return console.log(`--market: 이 --db에는 작품이 이미 ${have}개 있어서 더 넣지 않아요.`);
   const said = [];
-  for (const f of ["market-136.json", "market-138.json", "market-138-studio.json", "market-138-refresh.json"]) {
+  for (const f of ["market-136.json", "market-138.json", "market-138-studio.json", "market-138-refresh.json", "market-139.json"]) {
     const at = find(f);
     if (!at) { said.push(`${f} 없음`); continue; }
     const entries = JSON.parse(readFileSync(at, "utf8"));
