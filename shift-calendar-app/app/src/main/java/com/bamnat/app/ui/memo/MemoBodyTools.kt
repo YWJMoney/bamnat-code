@@ -82,7 +82,7 @@ internal fun MemoBodyToolbar(tools: MemoBodyTools) {
 }
 
 /**
- * [NOTE-05] The chip that makes a memo come back every week, month or year. [EASE-22] 1.38: or on every day of a kind of
+ * [NOTE-05] The chip that makes a memo come back every day (1.39), week, month, year or lunar year (1.39 [CAL2-06]). [EASE-22] 1.38: or on every day of a kind of
  * shift ("야간마다"), the memo's own day's kind first, following the shift when it moves. [EASE-23] Shown on a memo with no date
  * too: picking a repeat gives it the day to start from, rather than asking for a date first.
  */
@@ -105,8 +105,11 @@ internal fun MemoRepeatChip(
         )
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             val from = date ?: com.bamnat.core.time.Today.date()
-            listOf(MemoRepeat.Kind.NONE, MemoRepeat.Kind.WEEK, MemoRepeat.Kind.MONTH, MemoRepeat.Kind.YEAR).forEach { kind ->
-                val text = if (kind == MemoRepeat.Kind.NONE) "반복 없음" else MemoRepeat.label(MemoRepeat.code(kind, from))
+            // 1.39 [CAL2-06] 매일 and 매년 음력 (제사·음력 생일) with the others.
+            listOf(MemoRepeat.Kind.NONE, MemoRepeat.Kind.DAY, MemoRepeat.Kind.WEEK, MemoRepeat.Kind.MONTH, MemoRepeat.Kind.YEAR, MemoRepeat.Kind.LUNAR).forEach { kind ->
+                val code = MemoRepeat.code(kind, from)
+                if (kind != MemoRepeat.Kind.NONE && code.isEmpty()) return@forEach
+                val text = if (kind == MemoRepeat.Kind.NONE) "반복 없음" else MemoRepeat.label(code)
                 DropdownMenuItem(text = { Text(text) }, onClick = { open = false; onChange(kind) })
             }
             // [EASE-22] 근무마다: the day's own kind first, then the calendar's order.

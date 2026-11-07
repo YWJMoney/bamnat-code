@@ -592,15 +592,18 @@ class MemoEditorViewModel(
         (shiftCalendar(listOf(_memo.value), active) ?: active).takeIf { container.calendars.get(it) != null } ?: com.bamnat.app.data.PersonalCalendar.MAIN
     }.distinctUntilChanged()
 
-    /** [MEMO-05] The next 60 days of that calendar, for '다음 야간 때' and the dialog's '근무에 맞춰' chips. */
+    /**
+     * [MEMO-05] The next 60 days of that calendar, for '다음 야간 때' and the dialog's '근무에 맞춰' chips. 1.39 [CAL2-20] From
+     * yesterday, with each shift's end, so a time this morning is checked against last night's 야간 too (those only look ahead).
+     */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val shiftDays: StateFlow<List<com.bamnat.core.memo.ShiftMemoTime.Day>> = shiftCal.flatMapLatest { cal ->
         container.calendars.repository(cal).live.map { snap ->
             val from = Today.date()
-            (0L..60L).mapNotNull { i ->
+            (-1L..60L).mapNotNull { i ->
                 val d = snap.resolver.resolve(from.plusDays(i))
                 val type = d.shiftType ?: return@mapNotNull null
-                com.bamnat.core.memo.ShiftMemoTime.Day(d.date, type.name, d.isWorkDay, d.start)
+                com.bamnat.core.memo.ShiftMemoTime.Day(d.date, type.name, d.isWorkDay, d.start, d.end)
             }
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
