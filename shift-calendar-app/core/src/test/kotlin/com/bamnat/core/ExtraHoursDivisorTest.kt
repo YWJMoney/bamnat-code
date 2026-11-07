@@ -116,7 +116,8 @@ class ExtraHoursDivisorTest {
         val part = p.day(start)!!.parts.single { it.kind == LineKind.EXTRA }
         assertTrue(part.formula, part.formula.startsWith("2시간 × 10,000원(÷243시간) = 20,000원"))
         val line = p.lines.single { it.kind == LineKind.EXTRA }
-        assertTrue(line.formula, "통상시급 (243시간 기준)" in line.formula)
+        // [PAYX-55] One time in the month: the line says its numbers, not the profile's 180시간 통상시급.
+        assertTrue(line.formula, line.formula.startsWith("2시간 × 10,000원(÷243시간) = 20,000원") && "180시간" !in line.formula)
         assertTrue(line.basis, "통상임금 ÷ 243시간 10,000원" in line.basis)
         assertTrue(line.basis, "다른 근무는 180시간" in line.basis)
     }
