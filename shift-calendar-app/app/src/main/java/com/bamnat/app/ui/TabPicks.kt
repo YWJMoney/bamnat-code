@@ -59,7 +59,8 @@ internal object TabPicks {
     private val PAID = setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY)
     private val FEATURES = listOf(
         Feature(Place.PAY, "급여", Icons.Outlined.Payments, KIND_WORK, PAID),
-        Feature(Place.LEAVE, "연차", Icons.Outlined.BeachAccess, KIND_WORK, setOf(WorkStyle.SHIFT, WorkStyle.DAY)),
+        // 1.39 PC NAV2 2차: 알바 has 연차 too (주 15시간 이상).
+        Feature(Place.LEAVE, "연차", Icons.Outlined.BeachAccess, KIND_WORK, setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY)),
         Feature(Place.OWED, "받을 돈", Icons.AutoMirrored.Outlined.ReceiptLong, KIND_WORK),
         Feature(Place.YEAR, "한 해 보기", Icons.Outlined.CalendarViewMonth, KIND_WORK),
         Feature(Place.COMBINED, "모든 달력", Icons.Outlined.Layers, KIND_WORK),

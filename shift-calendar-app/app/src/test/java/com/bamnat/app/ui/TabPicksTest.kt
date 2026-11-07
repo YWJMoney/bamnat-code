@@ -36,6 +36,8 @@ class TabPicksTest {
         val pay = shop.first { it.key == "f:PAY" }
         assertFalse("급여 does not fit a shop", pay.fits)
         assertTrue(shop.first { it.key == "f:SLEEP" }.fits)
+        // 1.39 PC NAV2 2차: 알바 has 연차.
+        assertTrue(TabPicks.all(WorkStyle.HOURLY, manageOn = false).first { it.key == "f:LEAVE" }.fits)
         // No kind of work set yet: everything fits.
         assertTrue(TabPicks.all(null, manageOn = false).all { it.fits })
         // 1.39 PC NAV2: a shop or an investor reads 돈과 일정, a shop's 근무 주기 is its 영업일.
