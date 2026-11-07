@@ -1257,7 +1257,7 @@ async function boardDelete(request, env, id) {
 
 async function boardView(env, id) {
   const record = await env.SHARES.get(boardKey(id), "json");
-  if (!record || Date.parse(record.expiresAt) < Date.now()) return html(page("병동 표가 없어요", `<p class="empty">이 표는 끝났거나 리더가 거뒀어요.</p>`), 404);
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return html(page("팀 표가 없어요", `<p class="empty">이 표는 끝났거나 리더가 거뒀어요.</p>`), 404);
   const [y, m] = record.month.split("-").map(Number);
   const days = record.rows[0]?.length ?? 0;
   const wd = (d) => new Date(Date.UTC(y, m - 1, d)).getUTCDay();
