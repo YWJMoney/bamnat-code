@@ -230,4 +230,45 @@ class MKVScreenshotTest : ScreenshotBase() {
         assertTrue(com.bamnat.app.logic.FxAccess.status(c, "FXTASTE23") is com.bamnat.core.formula.FxTaste.Status.Using)
         assertTrue(appears("하루 써 보기 중이에요", exact = false))
     }
+
+    /** 1.39 [MKF-01][MKF-02] 크게 넘겨 보기: 좌우로 다음 작품, 위아래로 그 작품이 바꾸는 다른 화면(칩), 아래에 입혀 보기·자세히. */
+    @Test fun aWorkIsFlippedBigBeforeItIsPicked() = shoot("1525_mkf_flip", PHONE) {
+        val m = Market()
+        c.recipeApi = m
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        val themes = m.recipes.indices.map(m::item).filter { it.scope == "theme" }.take(4)
+        assertTrue("테마가 있어요", themes.size >= 2)
+        var opened: String? = null
+        content {
+            com.bamnat.app.ui.recipe.MarketFlip(themes, 0, WorkStyle.SHIFT, onDismiss = {}, onOpen = { opened = it }, onTry = {})
+        }
+        settle()
+        assertTrue(appears("크게 넘겨 보기", exact = true))
+        assertTrue(appears("1 / ${themes.size}", exact = true))
+        assertTrue("테마는 달력만이 아니라 다른 화면도", appears("가계부", exact = true, ms = 5_000))
+        assertTrue(appears("내 앱에 입혀 보기", exact = true))
+        tapText("다음 ▶", exact = true)
+        settle()
+        assertTrue(appears("2 / ${themes.size}", exact = true))
+        tapText("자세히", exact = true)
+        settle()
+        assertTrue("자세히는 지금 보는 작품으로", opened == themes[1].code)
+    }
+
+    /** 1.39 [MKF-03] 작게 보기: 한 줄에 셋, 이 폰에 기억해요. */
+    @Test fun smallCardsShowMoreAtOnce() = shoot("1526_mkf_small", PHONE) {
+        c.recipeApi = Market()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        val model = RecipeListViewModel(c)
+        content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        model.kind(RecipeClient.SCOPE_THEME)
+        settle()
+        tapText("작게 보기", exact = true)
+        settle()
+        assertTrue("이 폰에 기억해요", app.getSharedPreferences("market_view", 0).getBoolean("small", false))
+        scrollUp(300)
+        assertTrue(appears("작품 모습", exact = true, ms = 5_000))
+        settle()
+    }
 }

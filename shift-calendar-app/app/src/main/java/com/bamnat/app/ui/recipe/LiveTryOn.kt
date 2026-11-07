@@ -48,6 +48,8 @@ object LiveTryOn {
         data class Detail(val code: String) : From
         /** A theme sheet ([ThemeSheet]) of [r], opened again over the screen it was on. */
         data class Sheet(val r: Recipe, val code: String, val ver: Int) : From
+        /** 1.39 [MKF-01] 장터 크게 넘겨 보기 ([MarketFlip]) at [at] of the list, [code] the work tried. */
+        data class Flip(val code: String, val at: Int) : From
     }
 
     data class Trial(
@@ -101,7 +103,7 @@ object LiveTryOn {
         val all = com.bamnat.core.recipe.LookParts.of(r).map { it.id }.toSet()
         val worn = if (picked.containsAll(all)) r else com.bamnat.core.recipe.LookParts.pick(r, picked)
         val look = if (all.isEmpty() || picked.isEmpty()) emptyMap() else runCatching { c.wardrobe.trialLook(worn, own, answers) }.getOrDefault(emptyMap())
-        val code = when (from) { is From.Detail -> from.code; is From.Sheet -> from.code }
+        val code = when (from) { is From.Detail -> from.code; is From.Sheet -> from.code; is From.Flip -> from.code }
         // The 기능 go on first (for real, kept to be put back); the looks are laid over what that leaves.
         val fn = if (functions.isEmpty()) emptyList() else runCatching {
             com.bamnat.app.recipe.FunctionTrial(c).start(r, code, cal, functions.keys, functions, answers)
