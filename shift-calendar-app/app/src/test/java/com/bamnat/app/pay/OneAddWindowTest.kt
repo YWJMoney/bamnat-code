@@ -95,4 +95,15 @@ class OneAddWindowTest {
         assertFalse(item.taxable)
         assertTrue(item.name.length <= 20 && CustomRule.MAX_NAME > 0)
     }
+
+    /** [PAYX-53] 1.38 PC 12.4.1: an item with no name gets a number of its own, so the list tells them apart. */
+    @Test fun anUnnamedItemIsNumbered() {
+        assertEquals("매달 수당 1", (draft(ItemKind.MONTHLY, amount = 50_000).made(start) as MadeItem.Item).item.name)
+        val second = draft(ItemKind.MONTHLY, amount = 50_000).apply { taken = setOf("매달 수당 1", "식대") }
+        assertEquals("매달 수당 2", (second.made(start) as MadeItem.Item).item.name)
+        val rule = draft(ItemKind.DEDUCT, amount = 30_000).apply { taken = setOf("차감 1", "차감 2") }
+        assertEquals("차감 3", (rule.made(start) as MadeItem.Rule).rule.name)
+        assertEquals("기숙사비", (draft(ItemKind.DEDUCT, "기숙사비", 30_000).made(start) as MadeItem.Rule).rule.name)
+        assertEquals("매달 수당 1", (draft(ItemKind.MONTHLY).madeOrAsked(start) as MadeItem.Item).item.name)
+    }
 }
