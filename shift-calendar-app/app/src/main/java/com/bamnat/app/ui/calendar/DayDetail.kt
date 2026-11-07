@@ -314,6 +314,12 @@ private fun DayGroups(
                     onOpen = { e -> com.bamnat.core.memo.MemoStory.memoIdOf(e)?.let { onOpenMemo(it, date) } },
                     shiftColor = day.shiftType?.let { Color((it.colorArgb or 0xFF000000L).toInt()) } ?: MaterialTheme.colorScheme.primary,
                 )
+                // 1.39 G8 발굴 1-1 (PC 4차: 달력 아래 카드를 찾지 못함): the card starts off, so it is offered here where the story is seen.
+                val onCalendar = remember(settings) { settings.calendarParts().any { it.part == CalendarPart.DAY_STORY && it.shown } }
+                if (!onCalendar) androidx.compose.material3.TextButton(
+                    onClick = { vm.updateSettings { it.withPartShown(CalendarPart.DAY_STORY, true) } },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) { Text("달력 아래에도 두기 (카드 배치에서 뺄 수 있어요)") }
             }
         }
     }
