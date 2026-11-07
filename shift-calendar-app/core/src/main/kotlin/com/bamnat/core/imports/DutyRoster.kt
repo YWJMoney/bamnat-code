@@ -80,6 +80,11 @@ data class RosterRow(
     val notes: Map<Int, String> = emptyMap(),
     /** [READ-03] Days whose cell stood off its column's middle in the photo: maybe the next day's, so looked at. */
     val unsure: Set<Int> = emptySet(),
+    /**
+     * [READ-41] 1.38 PC 12.3: days the readings gave two different codes for (not merely one reading losing it). Such a cell
+     * stays yellow even when the line's repeat agrees with the pick: the photo may say the other one.
+     */
+    val contested: Set<Int> = emptySet(),
     /** [READ-04] The line of the table it was read from, top to bottom: the order people are listed, and where a tap lands. */
     val line: Int = 0,
     /**
