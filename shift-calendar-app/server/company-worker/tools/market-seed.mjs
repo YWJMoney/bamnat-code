@@ -114,11 +114,17 @@ async function login(base) {
 async function hide(base, dry, plan = "market-138-refresh-plan.json", show = false) {
   const cookie = await login(base);
   const items = JSON.parse(readFileSync(join(ROOT, plan), "utf8")).hide;
-  const titles = items.filter((x) => !x.code).map((x) => x.title).filter(Boolean);
-  const codes = items.map((x) => x.code).filter(Boolean);
-  const r = await fetch(`${base}/api/admin/recipes/${show ? "show" : "hide"}-titles`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
-    body: JSON.stringify({ titles, codes, dry, note: plan.includes("139") ? "1.39 장터 정리" : "1.38 장터 정리" }) });
-  return `${r.status} ${await r.text()}`;
+  const out = [];
+  // 항목의 belowApp(그 판 미만 앱에는 계속 보임)마다 한 번씩.
+  for (const below of new Set(items.map((x) => x.belowApp ?? null))) {
+    const part = items.filter((x) => (x.belowApp ?? null) === below);
+    const titles = part.filter((x) => !x.code).map((x) => x.title).filter(Boolean);
+    const codes = part.map((x) => x.code).filter(Boolean);
+    const r = await fetch(`${base}/api/admin/recipes/${show ? "show" : "hide"}-titles`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
+      body: JSON.stringify({ titles, codes, dry, note: plan.includes("139") ? "1.39 장터 정리" : "1.38 장터 정리", ...(below ? { belowApp: below } : {}) }) });
+    out.push(`${below ? `앱 ${below} 미만에는 보임: ` : ""}${r.status} ${await r.text()}`);
+  }
+  return out.join("\n");
 }
 
 async function post(base, entries, open = null) {

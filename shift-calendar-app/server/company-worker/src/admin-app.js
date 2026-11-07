@@ -2715,7 +2715,7 @@ function adminApp(L, BUILD, M) {
         <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
         ${r.batch || r.releaseAt || r.minApp ? `<small>${[r.batch ? `묶음 ${esc(r.batch)}` : "", r.releaseAt ? `공개 예약 ${esc(new Date(r.releaseAt).toLocaleString("ko-KR"))}` : "", r.minApp ? `앱 판 ${r.minApp} 이상만` : ""].filter(Boolean).join(" · ")}</small>` : ""}
         ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
-        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림", retired: "판 정리로 내림 · 넣은 분은 계속 써요" }[r.hidden] ?? r.hidden)}</small>` : ""}
+        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림", retired: "판 정리로 내림 · 넣은 분은 계속 써요" }[r.hidden] ?? r.hidden)}${r.retiredBelow ? ` · 앱 판 ${r.retiredBelow} 미만에는 계속 보여요` : ""}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
@@ -2811,21 +2811,31 @@ function adminApp(L, BUILD, M) {
       <textarea name="plan" rows="6" required></textarea>
       <label>또는 파일로 <input type="file" name="file" accept=".json,.txt,application/json,text/plain"></label>
       <label>메모 <input name="note" maxlength="200" placeholder="1.39 장터 정리"></label>
+      <label>옛 앱에는 남기기: 이 앱 판 미만에는 계속 보여요(계획 파일의 belowApp이 먼저) <input name="below" inputmode="numeric" pattern="\\d{1,6}" placeholder="53"></label>
       <div class="actions"><button class="btn" type="submit" name="go" value="dry">몇 개인지 보기</button>
         <button class="btn primary" type="submit" name="go" value="hide">숨기기</button>
         <button class="btn" type="submit" name="go" value="show">되돌리기</button></div>${said}</form>`;
   }
 
-  /** The titles and codes in what was pasted: a plan file ({hide:[{title}]}), a list of strings, or lines. */
-  function retireKeys(text) {
-    const out = { titles: [], codes: [] };
-    const add = (x) => { const t = String(x ?? "").trim(); if (!t) return; (/^[2-9A-HJ-NP-Z]{8}$/.test(t) ? out.codes : out.titles).push(t); };
+  /**
+   * The titles and codes in what was pasted (a plan file {hide:[{title, code?, belowApp?}]}, a list of strings, or lines), grouped by
+   * belowApp (작품 갈래: '그 판 미만 앱에는 계속 보임'); [below] is for those that say none.
+   */
+  function retireGroups(text, below) {
+    const groups = new Map();
+    const add = (x, b) => {
+      const t = String(x ?? "").trim();
+      if (!t) return;
+      const k = Number.isInteger(b) && b > 0 ? b : below;
+      if (!groups.has(k)) groups.set(k, { belowApp: k, titles: [], codes: [] });
+      (/^[2-9A-HJ-NP-Z]{8}$/.test(t) ? groups.get(k).codes : groups.get(k).titles).push(t);
+    };
     let j = null;
     try { j = JSON.parse(text); } catch { j = null; }
     const list = Array.isArray(j) ? j : Array.isArray(j?.hide) ? j.hide : null;
-    if (list) for (const x of list) { if (typeof x === "string") add(x); else { if (x?.code) add(x.code); else add(x?.title); } }
+    if (list) for (const x of list) { if (typeof x === "string") add(x); else add(x?.code || x?.title, x?.belowApp); }
     else for (const line of String(text).split(/\r?\n/)) add(line);
-    return out;
+    return [...groups.values()];
   }
 
   function recipeReleaseView(d, edit) {
@@ -5640,21 +5650,36 @@ function adminApp(L, BUILD, M) {
       const go = submitter?.value ?? "dry";
       const f = new FormData(form);
       const file = form.querySelector('input[name="file"]')?.files?.[0];
-      const keys = retireKeys(file ? await file.text() : String(f.get("plan") ?? ""));
-      if (!keys.titles.length && !keys.codes.length) { toast("정리 계획이나 제목을 붙여 넣어 주세요"); return; }
+      const below = Number(f.get("below"));
+      const groups = retireGroups(file ? await file.text() : String(f.get("plan") ?? ""), Number.isInteger(below) && below > 0 ? below : null);
+      const asked = groups.reduce((n, g) => n + g.titles.length + g.codes.length, 0);
+      if (!asked) { toast("정리 계획이나 제목을 붙여 넣어 주세요"); return; }
       const note = String(f.get("note") ?? "").trim() || "판 정리";
       const path = go === "show" ? "/recipes/show-titles" : "/recipes/hide-titles";
+      // belowApp마다 한 번씩 보내고 합쳐요.
+      const send = async (dry) => {
+        const sum = { found: 0, done: 0, missing: [] };
+        for (const g of groups) {
+          for (let i = 0; i < Math.max(g.titles.length, g.codes.length); i += 1200) {
+            const r = await api(path, "POST", { titles: g.titles.slice(i, i + 1200), codes: g.codes.slice(i, i + 1200), note, dry, ...(g.belowApp ? { belowApp: g.belowApp } : {}) });
+            sum.found += r.found ?? 0; sum.done += r.hidden ?? r.shown ?? 0; sum.missing.push(...(r.missing ?? []));
+          }
+        }
+        return sum;
+      };
       // Not through act(): it empties the form, and the pasted plan is needed again for 숨기기.
       let dry;
-      try { dry = await api(path, "POST", { ...keys, note, dry: true }); } catch (e) { fail(e); return; }
-      const say = (n, what) => `${keys.titles.length + keys.codes.length}개 가운데 ${n}개 ${what}`;
+      try { dry = await send(true); } catch (e) { fail(e); return; }
+      const keep = groups.filter((g) => g.belowApp).map((g) => g.belowApp);
+      const old = go === "hide" && keep.length ? ` · 앱 판 ${[...new Set(keep)].join("·")} 미만에는 계속 보여요` : "";
+      const say = (n, what) => `${asked}개 가운데 ${n}개 ${what}${old}`;
       S.recipeRetire = { say: say(dry.found, go === "show" ? "되돌릴 수 있어요" : go === "hide" ? "숨길 수 있어요" : "찾았어요"), missing: dry.missing };
       if (go === "dry" || !dry.found) { render({ keepScroll: true }); return; }
       confirmBox(go === "show" ? `${dry.found}개를 장터에 다시 보일까요?` : `${dry.found}개를 장터에서 내릴까요?`,
-        go === "show" ? "목록·찾기·추천에 다시 나와요." : "목록·찾기·추천에서 빠져요. 지우지 않고, 이미 넣은 분은 그대로 쓰고 코드로 열 수 있어요. 여기서 한 번에 되돌릴 수 있어요.",
+        go === "show" ? "목록·찾기·추천에 다시 나와요." : "목록·찾기·추천에서 빠져요. 지우지 않고, 이미 넣은 분은 그대로 쓰고 코드로 열 수 있어요. 여기서 한 번에 되돌릴 수 있어요." + old,
         go === "show" ? "되돌리기" : "숨기기", async () => {
-          const r = await act(() => api(path, "POST", { ...keys, note }), (x) => go === "show" ? `${x?.shown ?? 0}개를 다시 보였어요` : `${x?.hidden ?? 0}개를 내렸어요`);
-          if (r) S.recipeRetire = { say: say(r.shown ?? r.hidden ?? 0, go === "show" ? "다시 보였어요" : "내렸어요"), missing: r.missing };
+          const r = await act(() => send(false), (x) => go === "show" ? `${x?.done ?? 0}개를 다시 보였어요` : `${x?.done ?? 0}개를 내렸어요`);
+          if (r) S.recipeRetire = { say: say(r.done, go === "show" ? "다시 보였어요" : "내렸어요"), missing: r.missing };
           S.data.recipes = null; load();
         }, go === "show" ? "primary" : "danger");
     },

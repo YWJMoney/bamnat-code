@@ -303,12 +303,17 @@ async function seedMarket() {
     const plan = find(f);
     if (!plan) continue;
     const hide = JSON.parse(readFileSync(plan, "utf8")).hide ?? [];
-    const titles = hide.filter((x) => !x.code).map((x) => x.title).filter(Boolean);
-    const codes = hide.map((x) => x.code).filter(Boolean);
-    for (let i = 0; i < Math.max(titles.length, codes.length); i += 1200) {
-      const r = await admin("/recipes/hide-titles", { titles: titles.slice(i, i + 1200), codes: codes.slice(i, i + 1200), dry: false, note });
-      const out = await r.json().catch(() => ({}));
-      said.push(`${note} ${out.hidden ?? 0}개 내림${out.missing?.length ? `(못 찾음 ${out.missing.length})` : ""}`);
+    // 항목의 belowApp(그 판 미만 앱에는 계속 보임)마다 한 번씩.
+    for (const below of new Set(hide.map((x) => x.belowApp ?? null))) {
+      const part = hide.filter((x) => (x.belowApp ?? null) === below);
+      const titles = part.filter((x) => !x.code).map((x) => x.title).filter(Boolean);
+      const codes = part.map((x) => x.code).filter(Boolean);
+      for (let i = 0; i < Math.max(titles.length, codes.length); i += 1200) {
+        const r = await admin("/recipes/hide-titles", { titles: titles.slice(i, i + 1200), codes: codes.slice(i, i + 1200), dry: false, note,
+          ...(below ? { belowApp: below } : {}) });
+        const out = await r.json().catch(() => ({}));
+        said.push(`${note} ${out.hidden ?? 0}개 내림${below ? `(앱 ${below} 미만에는 보임)` : ""}${out.missing?.length ? `(못 찾음 ${out.missing.length})` : ""}`);
+      }
     }
   }
   const shown = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes WHERE state = 'visible'").first())?.n ?? 0;
