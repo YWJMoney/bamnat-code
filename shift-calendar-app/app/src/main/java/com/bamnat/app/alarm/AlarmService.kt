@@ -237,6 +237,8 @@ class AlarmService : Service() {
                 if (!reached && watchFirst) handler.post { if (phoneLater === later) { handler.removeCallbacks(later); later.run() } }
             }
         }
+        // 1.39 [FLOW-15] 깨우는 단계: the watch first is 1 (진동); the phone's sound comes in at phoneOutputs.
+        _stage.value = if (watchFirst) 1 else 0
         if (!watchFirst) phoneOutputs(ring)
         listenForPowerButton()
         if (!inCallNow) handler.postDelayed(autoStop, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
@@ -329,6 +331,8 @@ class AlarmService : Service() {
         if (sound != AppSettings.SILENT_SOUND) {
             requestFocus()
             playSound(candidateUris(sound), settings.gradualVolume)
+            // 1.39 [FLOW-15] A sound that grows is 2 (소리 작게) until it is full; a full sound after the watch is 3.
+            _stage.value = if (settings.gradualVolume) 2 else if (_stage.value > 0) 3 else 0
         }
         if (settings.vibrate || sound == AppSettings.SILENT_SOUND) startVibration()
     }
@@ -493,6 +497,7 @@ class AlarmService : Service() {
             val mp = player ?: return
             volume = (volume + RAMP_INCREMENT).coerceAtMost(1f)
             if (quietUntil == 0L) runCatching { mp.setVolume(volume, volume) }
+            if (volume >= 1f && _stage.value > 0) _stage.value = 3
             if (volume < 1f) handler.postDelayed(this, RAMP_STEP_MILLIS)
         }
     }
@@ -556,6 +561,7 @@ class AlarmService : Service() {
         _allOffAfterMission.value = false
         _ringing.value = null
         _since.value = null
+        _stage.value = 0
         inCallNow = false
         holdSince = 0L
         _inCall.value = false
@@ -569,6 +575,7 @@ class AlarmService : Service() {
         stopOutputs()
         _ringing.value = null
         _since.value = null
+        _stage.value = 0
         super.onDestroy()
     }
 
@@ -631,6 +638,13 @@ class AlarmService : Service() {
         private val _since = MutableStateFlow<Long?>(null)
         /** [PROV-06] When the ringing began (epoch ms), for the mission's time limit. */
         val ringingSince: StateFlow<Long?> = _since.asStateFlow()
+
+        private val _stage = MutableStateFlow(0)
+        /**
+         * 1.39 [FLOW-15] 깨우는 단계 for the ringing screen's three dots: 1 진동 (the watch first), 2 소리 작게 (점점 크게 is growing),
+         * 3 소리 크게; 0 when this ring has no steps (full sound at once), and the dots are not shown.
+         */
+        val wakeStage: StateFlow<Int> = _stage.asStateFlow()
 
         private val _inCall = MutableStateFlow(false)
         /** [ALRM-22] The ring waits for a call to end. */

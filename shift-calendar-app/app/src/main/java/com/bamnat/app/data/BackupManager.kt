@@ -573,7 +573,7 @@ class BackupManager(
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
                 .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes)
-                .put("noiseMix", s.noiseMix).put("noiseTimer", s.noiseTimerMinutes).put("sleepNightLook", s.sleepNightLook).put("smartWake", s.smartWakeMinutes) // 1.38 [SLEEP-04][DSG-07]
+                .put("noiseMix", s.noiseMix).put("noiseTimer", s.noiseTimerMinutes).put("nightLook", s.nightLook).put("smartWake", s.smartWakeMinutes) // 1.38 [SLEEP-04][DSG-07]
                 // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22.
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
                 .put("plazaRules", s.plazaRulesAgreed)
@@ -1158,7 +1158,9 @@ class BackupManager(
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
                     noiseMix = o.optString("noiseMix", s.noiseMix),
                     noiseTimerMinutes = o.optInt("noiseTimer", s.noiseTimerMinutes).coerceIn(0, 8 * 60),
-                    sleepNightLook = o.optBoolean("sleepNightLook", s.sleepNightLook),
+                    // 1.39 [FLOW-14] 밤 색; a 1.38 backup carries only 밤에는 어두운 색 (on/off).
+                    nightLook = o.optString("nightLook").takeIf { it.isNotEmpty() }?.let { com.bamnat.core.design.NightLook.of(it).key }
+                        ?: if (o.has("sleepNightLook") && !o.optBoolean("sleepNightLook", true)) com.bamnat.core.design.NightLook.OFF.key else s.nightLook,
                     smartWakeMinutes = o.optInt("smartWake", s.smartWakeMinutes).coerceIn(0, 30),
                     commuteMinutes = o.optInt("commute", s.commuteMinutes).coerceIn(0, MAX_COMMUTE_MINUTES),
                     // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22; older backups keep what this phone has.

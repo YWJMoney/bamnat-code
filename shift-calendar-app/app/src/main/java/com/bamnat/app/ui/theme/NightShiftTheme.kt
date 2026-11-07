@@ -76,24 +76,62 @@ object NightPalette {
         outlineVariant = androidx.compose.ui.graphics.Color(0xFF4A3B34),
     )
 
-    /** Whether [now] is in the night hours the sleep screen goes dark for. */
-    fun isNight(now: LocalDateTime, sleeping: Boolean): Boolean = sleeping || now.hour >= 22 || now.hour < 6
+    /** Whether [now] is in the night hours the sleep screen goes dark for (1.39: [com.bamnat.core.design.NightRule.screen]). */
+    fun isNight(now: LocalDateTime, sleeping: Boolean): Boolean =
+        com.bamnat.core.design.NightRule.screen(com.bamnat.core.design.NightLook.SLEEP_TIME, now, sleeping, systemDark = false)
 }
 
-/**
- * 1.38 [DSG-07] Whether the sleep screen should be in [NightPalette] now: on unless the user turned 밤 색 off, from 22:00 to
- * 06:00 and while a sleep is open. Checked once a minute, on the minute.
- */
+/** The time now, again on every minute, for the night rules. */
 @Composable
-fun rememberNightMode(enabled: Boolean, sleeping: Boolean): Boolean {
-    if (!enabled) return false
+private fun rememberMinute(): LocalDateTime {
     val now by produceState(Today.dateTime()) {
         while (true) {
             delay(60_000L - Today.millis() % 60_000L)
             value = Today.dateTime()
         }
     }
-    return NightPalette.isNight(now, sleeping)
+    return now
+}
+
+/**
+ * 1.38 [DSG-07] 1.39 [FLOW-14] Whether the sleep screen and the night screen should be in [NightPalette] now
+ * ([com.bamnat.core.design.NightRule.screen]): from 22:00 to 06:00 and while a sleep is open, unless 밤 색 is 끔.
+ */
+@Composable
+fun rememberNightMode(look: String, sleeping: Boolean): Boolean {
+    val l = com.bamnat.core.design.NightLook.of(look)
+    if (l == com.bamnat.core.design.NightLook.OFF) return false
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val now = rememberMinute()
+    return com.bamnat.core.design.NightRule.screen(l, now, sleeping, dark)
+}
+
+/**
+ * 1.39 [FLOW-14][DSG-07] 시간에 맞춘 자동 밤 모드 for the whole app ([com.bamnat.core.design.NightRule.app]): while a sleep is open,
+ * inside the sleep planned around the calendar's work (the same plan as 오늘의 흐름) and at 01~05 (a night shift's dawn, or bed).
+ * Read once a minute; nothing is read at all while 밤 색 is 끔.
+ */
+@Composable
+fun rememberAppNight(settings: com.bamnat.app.data.AppSettings, container: AppContainer): Boolean {
+    val look = com.bamnat.core.design.NightLook.of(settings.nightLook)
+    if (look == com.bamnat.core.design.NightLook.OFF) return false
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    if (look == com.bamnat.core.design.NightLook.PHONE) return dark
+    val now = rememberMinute()
+    val snapshot by container.calendars.activeSnapshot.collectAsStateWithLifecycle(initialValue = null as ScheduleSnapshot?)
+    val log by androidx.compose.runtime.remember(container) { container.sleepRepository.recent(days = 2) }
+        .collectAsStateWithLifecycle(initialValue = emptyList())
+    val sleeping = log.any { it.end == null }
+    val today = now.toLocalDate()
+    val planned = remember(snapshot, today, settings.sleepTargetMinutes, settings.commuteMinutes, settings.alarmsEnabled) {
+        snapshot?.let { snap ->
+            runCatching {
+                com.bamnat.core.sleep.SleepSchedule.of(snap.resolver, today.minusDays(1), today, settings.alarmsEnabled,
+                    settings.sleepTargetMinutes, settings.commuteMinutes).sleeps.map { it.from..it.to }
+            }.getOrNull()
+        }.orEmpty()
+    }
+    return com.bamnat.core.design.NightRule.app(look, now, sleeping, planned, dark)
 }
 
 /** The sleep screen's content in [NightPalette] when [night]; the app's own colours otherwise. */

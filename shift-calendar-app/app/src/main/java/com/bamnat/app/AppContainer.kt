@@ -1102,7 +1102,9 @@ class AppContainer(context: Context) {
             // [WEAR-04][WEAR-06] 1.31: or the calendar chosen for the watch, and whether the watch rings too.
             keep("watch") {
                 val chosen = settingsRepository.settings.map { it.watchCalendar to it.watchAlarm }.distinctUntilChanged()
-                combine(scheduleRepository.live, alarmScheduler.upcoming, chosen) { snap, next, _ -> snap to next }
+                // 1.39 G5 점검 [SLEEP-14]: 잠들었어요·깼어요 change the tile's 잘 시간 line too (it was sent only with the work or the alarm).
+                val slept = sleepRepository.recent(days = 2).map { l -> l.firstOrNull()?.let { it.id to it.end } }.distinctUntilChanged()
+                combine(scheduleRepository.live, alarmScheduler.upcoming, chosen, slept) { snap, next, _, _ -> snap to next }
                     .debounce(1_000)
                     .collectLatest { (snap, next) ->
                         val id = settingsRepository.current.watchCalendar

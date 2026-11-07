@@ -60,7 +60,14 @@ class SleepS3Test {
     @Test fun beforeAndAfterAMarkedDay() {
         val snore = (1..7).associate { d(it) to 40L } + (8..14).associate { d(it) to 15L }
         val mood = (1..7).associate { d(it) to 2 } + (8..14).associate { d(it) to 4 }
-        assertEquals("코골이 하룻밤 40분 → 15분 · 아침 기분 2.0 → 4.0", BeforeAfter.compare(d(8), snore, mood)!!.line)
+        // Marked on day 7 (a new pillow that evening): days 1..7 woke before it, 8..14 after.
+        assertEquals("코골이 하룻밤 40분 → 15분 · 아침 기분 2.0 → 4.0", BeforeAfter.compare(d(7), snore, mood)!!.line)
         assertNull(BeforeAfter.compare(d(8), mapOf(d(7) to 30L), emptyMap()))
+    }
+
+    @Test fun theMarkedMorningIsBefore() {
+        // 1.39 G5: the night ending on the marked day was slept before the change.
+        val snore = mapOf(d(5) to 40L, d(6) to 40L, d(7) to 40L, d(8) to 10L, d(9) to 10L, d(10) to 10L)
+        assertEquals("코골이 하룻밤 40분 → 10분", BeforeAfter.compare(d(7), snore, emptyMap())!!.line)
     }
 }

@@ -127,7 +127,7 @@ object RecoveryChallenge {
 }
 
 /**
- * 1.38 [SLEEP-22] 조치 전후 비교: the 7 days before a day the user marked (a new pillow, no late coffee) against the 7 after,
+ * 1.38 [SLEEP-22] 조치 전후 비교: the 7 mornings up to a day the user marked (a new pillow, no late coffee) against the 7 after,
  * in snoring minutes and morning mood. Says nothing with fewer than 3 nights on either side.
  */
 object BeforeAfter {
@@ -154,8 +154,10 @@ object BeforeAfter {
             val m = moodByNight.filterKeys { it in range }.values
             return Side(maxOf(s.size, m.size), s.takeIf { it.size >= MIN_NIGHTS }?.average(), m.takeIf { it.size >= MIN_NIGHTS }?.average())
         }
-        val before = side(marked.minusDays(DAYS)..marked.minusDays(1))
-        val after = side(marked..marked.plusDays(DAYS - 1))
+        // 1.39 G5 점검: the change is marked during the day ("오늘 바꾼 것"), so the night that ends on the marked morning was
+        // still before it; the first night after is the one that wakes the next day.
+        val before = side(marked.minusDays(DAYS - 1)..marked)
+        val after = side(marked.plusDays(1)..marked.plusDays(DAYS))
         return Result(before, after).takeIf { it.line != null }
     }
 }

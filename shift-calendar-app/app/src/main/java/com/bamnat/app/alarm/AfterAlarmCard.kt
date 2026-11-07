@@ -57,9 +57,21 @@ object AfterAlarmCard {
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3316))
             // [EASE-19] Turning the alarm off opened nothing; the day is one tap away here.
             .addAction(0, "오늘 보기", Notifications.open(context, NoticeLinks.Target.TODAY, 3317))
+            // 1.39 [FLOW-16] 아침 한 장 in the same card: last night's sleep not yet answered opens the morning card on the sleep screen.
+            .apply { if (morningAsk(c)) addAction(0, "잘 잤어요?", Notifications.open(context, NoticeLinks.Target.SLEEP, 3318)) }
             .build()
         Notifications.post(context, ID, n)
     }
+
+    /**
+     * 1.39 [FLOW-16] A sleep that ended in the last hours has no morning answer yet (SleepMorning.pending), or the sleep is still
+     * open (깼어요 not pressed: the sleep screen has it, and the morning card follows).
+     */
+    private suspend fun morningAsk(c: com.bamnat.app.AppContainer): Boolean = runCatching {
+        val log = c.sleepRepository.recent(days = 2).first()
+        val checks = c.sleepRepository.checks(days = 2).first()
+        log.any { it.end == null } || com.bamnat.core.sleep.SleepMorning.pending(log, checks, Today.dateTime()) != null
+    }.getOrDefault(false)
 
     private fun showing(context: Context, id: Int): Boolean = runCatching {
         context.getSystemService(android.app.NotificationManager::class.java)?.activeNotifications?.any { it.id == id } == true

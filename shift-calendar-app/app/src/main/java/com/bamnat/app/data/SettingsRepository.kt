@@ -161,8 +161,12 @@ data class AppSettings(
     /** 1.38 [SLEEP-04] The last 잠드는 소리 mix ("brown:0.50,rain:0.35") and its timer in minutes (0: until stopped). */
     val noiseMix: String = "",
     val noiseTimerMinutes: Int = 30,
-    /** 1.38 [DSG-07] 밤 색: the sleep screen turns warm and dark from 22:00 to 06:00 and while a sleep is open. */
-    val sleepNightLook: Boolean = true,
+    /**
+     * 1.39 [FLOW-14][DSG-07] 밤 색 ([com.bamnat.core.design.NightLook] key): 잘 시간에만 (default) turns the whole app warm and dark
+     * while asleep, in the planned sleep and at 01~05, and the sleep and night screens from 22:00 to 06:00; 끔; 휴대폰 따름.
+     * 1.38's 밤에는 어두운 색 off (sleep_night_look false) reads as 끔.
+     */
+    val nightLook: String = com.bamnat.core.design.NightLook.DEFAULT.key,
     /** 1.38 [SLEEP-08] 깨우는 구간 in minutes before the alarm, 0 off (default); listens only while the night is measured. */
     val smartWakeMinutes: Int = 0,
     /** 1.38 [SLEEP-09] 헬스 커넥트에 쓰기, off by default. */
@@ -431,7 +435,8 @@ class SettingsRepository(context: Context) {
             sleepAuto = prefs.getBoolean(K_SLEEP_AUTO, d.sleepAuto),
             noiseMix = prefs.getString(K_NOISE_MIX, d.noiseMix) ?: d.noiseMix,
             noiseTimerMinutes = prefs.getInt(K_NOISE_TIMER, d.noiseTimerMinutes),
-            sleepNightLook = prefs.getBoolean(K_SLEEP_NIGHT_LOOK, d.sleepNightLook),
+            nightLook = prefs.getString(K_NIGHT_LOOK, null)
+                ?: if (!prefs.getBoolean(K_SLEEP_NIGHT_LOOK, true)) com.bamnat.core.design.NightLook.OFF.key else d.nightLook,
             smartWakeMinutes = prefs.getInt(K_SMART_WAKE, d.smartWakeMinutes),
             healthWrite = prefs.getBoolean(K_HEALTH_WRITE, d.healthWrite),
             sleepDnd = prefs.getBoolean(K_SLEEP_DND, d.sleepDnd),
@@ -566,7 +571,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_AUTO, s.sleepAuto)
             .putString(K_NOISE_MIX, s.noiseMix)
             .putInt(K_NOISE_TIMER, s.noiseTimerMinutes)
-            .putBoolean(K_SLEEP_NIGHT_LOOK, s.sleepNightLook)
+            .putString(K_NIGHT_LOOK, s.nightLook)
             .putInt(K_SMART_WAKE, s.smartWakeMinutes)
             .putBoolean(K_HEALTH_WRITE, s.healthWrite)
             .putBoolean(K_SLEEP_DND, s.sleepDnd)
@@ -762,7 +767,9 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_AUTO = "sleep_auto"
         const val K_NOISE_MIX = "noise_mix"
         const val K_NOISE_TIMER = "noise_timer"
+        /** 1.38 밤에는 어두운 색 (sleep screen only), read once into [K_NIGHT_LOOK]. */
         const val K_SLEEP_NIGHT_LOOK = "sleep_night_look"
+        const val K_NIGHT_LOOK = "night_look"
         const val K_SMART_WAKE = "smart_wake"
         const val K_HEALTH_WRITE = "health_write"
         const val K_SLEEP_DND = "sleep_dnd"

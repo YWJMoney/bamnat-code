@@ -27,6 +27,8 @@ object NoticeLinks {
         MEMOS,
         /** [SLP-16] The sleep log and what it says. */
         SLEEP,
+        /** 1.39 [FLOW-13] 밤 화면 (clock, tomorrow's work and alarm, sounds, 깼어요), from the 자는 중 notice and 잠들었어요. */
+        NIGHT,
         /** [RECV-02] Everything owed to the user. */
         OWED,
         /** [IMPORT-01] Bringing in the phone's calendar. */
