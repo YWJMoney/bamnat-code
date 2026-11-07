@@ -50,7 +50,8 @@ class ZScreenshotTest : ScreenshotBase() {
         val chosen = nodes().filter {
             it.config.getOrNull(SemanticsProperties.Role) == Role.Tab && it.config.getOrNull(SemanticsProperties.Selected) == true
         }.mapNotNull { n -> n.config.getOrNull(SemanticsProperties.Text)?.joinToString { it.text }?.takeIf { t -> t in names } }
-        return chosen.firstOrNull() ?: if (shownDialogs().isNotEmpty()) "(창 ${shownDialogs().size}개)" else null
+        // [NAV2-02] 1.39 설정, opened from the 나 button, is no place of the bar: known by its search box.
+        return chosen.firstOrNull() ?: if (shownDialogs().isNotEmpty()) "(창 ${shownDialogs().size}개)" else "설정".takeIf { com.bamnat.app.ui.ShownRoute.route == "settings" }
     }
 
     private fun ActivityScenario<MainActivity>.finishing(): Boolean {

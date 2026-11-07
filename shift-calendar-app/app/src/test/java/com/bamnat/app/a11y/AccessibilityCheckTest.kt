@@ -211,7 +211,8 @@ class AccessibilityCheckTest {
                 run { tap(s, "가계부"); audit(s, "512_a11y_folded_money") },
                 run { tap(s, "메모"); audit(s, "513_a11y_folded_memos") },
                 run { tap(s, "근무·급여"); audit(s, "514_a11y_folded_stats") },
-                run { tap(s, "설정"); audit(s, "515_a11y_folded_settings") },
+                // [NAV2-02] 1.39 설정 is by the 나 button, which opens it as its menu does.
+                run { s.onActivity { com.bamnat.app.ui.settings.SettingsLinks.home() }; settle(); audit(s, "515_a11y_folded_settings") },
             )
         })
     }

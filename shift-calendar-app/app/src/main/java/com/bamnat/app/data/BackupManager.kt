@@ -553,6 +553,8 @@ class BackupManager(
                 .put("phoneCalendars", s.phoneCalendars.joinToString(","))
                 // [NAV-05] Added in 1.26 (AD): the tabs' order, the first one the app opens on.
                 .put("tabOrder", s.tabOrder.joinToString(","))
+                // [NAV2-01] Added in 1.39: the bottom bar's places (screens and 묶음).
+                .put("tabSlots", s.tabSlots)
                 .put("alarmMission", s.alarmMission).put("shiftMissions", encodeShiftMissions(s.shiftMissions))
                 .put("wakeCheck", s.wakeCheckMinutes)
                 // [ALRM-08] Added in 1.25 (AB).
@@ -1114,6 +1116,8 @@ class BackupManager(
                     phoneCalendars = o.optStringOrNull("phoneCalendars")?.let(::decodeGroupOrder) ?: s.phoneCalendars,
                     // [NAV-05] Added in 1.26; an older backup keeps this phone's order.
                     tabOrder = o.optStringOrNull("tabOrder")?.let(::decodeGroupOrder) ?: s.tabOrder,
+                    // [NAV2-01] Added in 1.39; an older backup keeps this phone's bar.
+                    tabSlots = if (o.has("tabSlots")) o.optString("tabSlots", "") else s.tabSlots,
                     // [PROV-06][PROV-07] Added in 1.20. Shift ids are the backup's own, restored with its shifts.
                     alarmMission = o.optString("alarmMission", s.alarmMission),
                     shiftMissions = o.optStringOrNull("shiftMissions")?.let(::decodeShiftMissions) ?: s.shiftMissions,

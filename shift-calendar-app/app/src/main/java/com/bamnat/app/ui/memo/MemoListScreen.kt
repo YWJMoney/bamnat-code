@@ -422,6 +422,7 @@ private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash
                 Icon(Icons.Outlined.Delete, contentDescription = "휴지통")
             }
         }
+        com.bamnat.app.ui.MeButton() // [NAV2-02]
     }
 }
 

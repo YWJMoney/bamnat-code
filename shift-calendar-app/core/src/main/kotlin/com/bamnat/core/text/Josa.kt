@@ -7,4 +7,6 @@ object Josa {
     fun iga(w: String): String = if (batchim(w) == false) "가" else "이"
     fun eulreul(w: String): String = if (batchim(w) == false) "를" else "을"
     fun eunneun(w: String): String = if (batchim(w) == false) "는" else "은"
+    /** 1.39 PC NAV2 ("‘연차’과 묶을 화면"): 과/와. */
+    fun gwawa(w: String): String = if (batchim(w) == false) "와" else "과"
 }
