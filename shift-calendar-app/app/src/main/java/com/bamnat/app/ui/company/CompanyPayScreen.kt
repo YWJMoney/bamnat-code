@@ -131,12 +131,15 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                 }
 
                 // [ITEM-06][PAYG-11] 1.30: what the company sets for everyone is in already, said once and not asked.
-                vm.text?.let { CommonItemLines(it) }
+                // 1.39 [PAYP-04] A shared way: what comes with it grouped as the sharer's, its numbers not shown.
+                val sharedWay = remember(vm.text) { vm.sharedWay }
+                if (sharedWay) SharedWayNote() else vm.text?.let { CommonItemLines(it) }
                 // [PAYF-06] The one field that cannot be left out (회사 방식은 기본급으로 계산), and the 통상시급's hours:
                 // [PAYG-08] the company's own first, shown open.
                 com.bamnat.app.ui.pay.BaseFields(wageType, base, { base = it }, hours, { hours = it },
                     profile = remember(wageType) { com.bamnat.core.pay.PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, wageType, com.bamnat.core.pay.ValueTimeline()) },
-                    month = Today.month(), companyHours = remember(vm.text) { vm.text?.let(com.bamnat.app.data.CompanyShare::hoursIn) }, companyName = vm.company.ifEmpty { null })
+                    month = Today.month(), companyHours = remember(vm.text) { vm.text?.let(com.bamnat.app.data.CompanyShare::hoursIn) }.takeIf { !sharedWay },
+                    companyName = vm.company.ifEmpty { null }, hideHours = sharedWay)
                 // [PAYG-11] 월급·1년 전부터·정확이 거의 모두: the rest folded, one tap away (fewer things to read before 계산 시작).
                 var more by rememberSaveable { mutableStateOf(wageType != WageType.MONTHLY || rough) }
                 TextButton(onClick = { more = !more }, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -190,7 +193,7 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                         )
                     }
                 }
-                vm.bonusNote?.let { note ->
+                vm.bonusNote?.takeIf { !sharedWay }?.let { note ->
                     Note("상여는 기본급으로 저절로 계산돼요: $note")
                 }
                 Note(
