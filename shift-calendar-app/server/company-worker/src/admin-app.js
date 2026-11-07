@@ -2562,7 +2562,7 @@ function adminApp(L, BUILD, M) {
 
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
-  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
+  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
     ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"], ["fonts", "나눈 글꼴"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
@@ -2626,6 +2626,8 @@ function adminApp(L, BUILD, M) {
       queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
       flagged: "신고가 들어온 레시피예요. 다른 회선의 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요. 새 기기(3일 안)의 신고와 같은 회선의 두 번째 신고는 여기에만 보이고 가리기에는 세지 않아요.",
       hidden: "가린 레시피는 90일 뒤 지워져요.",
+      // 1.39 판 정리
+      retired: "새 판이 나와 장터에서 내린 운영자 작품이에요. 목록·찾기·추천에는 안 나오지만 이미 넣은 분은 그대로 쓰고 코드로 열 수 있어요. 지우지 않아요. 아래에 정리 계획(market-…-refresh-plan.json)을 붙여 넣어 몇 개인지 먼저 보고 숨기거나, 잘못 숨긴 것을 한 번에 되돌려요.",
       visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
       official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
       // [RCX-32]
@@ -2645,7 +2647,7 @@ function adminApp(L, BUILD, M) {
         <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
         ${r.batch || r.releaseAt || r.minApp ? `<small>${[r.batch ? `묶음 ${esc(r.batch)}` : "", r.releaseAt ? `공개 예약 ${esc(new Date(r.releaseAt).toLocaleString("ko-KR"))}` : "", r.minApp ? `앱 판 ${r.minApp} 이상만` : ""].filter(Boolean).join(" · ")}</small>` : ""}
         ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
-        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림" }[r.hidden] ?? r.hidden)}</small>` : ""}
+        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림", retired: "판 정리로 내림 · 넣은 분은 계속 써요" }[r.hidden] ?? r.hidden)}</small>` : ""}
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
@@ -2656,7 +2658,8 @@ function adminApp(L, BUILD, M) {
           ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
           <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
       : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
-    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit) : "";
+    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit)
+      : tab === "retired" && edit ? recipeRetireView(S.recipeRetire) : "";
     const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
       <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
       <textarea name="recipe" rows="8"${tab === "waiting" ? "" : " required"}></textarea>
@@ -2729,6 +2732,34 @@ function adminApp(L, BUILD, M) {
   }
 
   /** 1.36 [MKS-01] 출시 대기 묶음: 몇 개, 예약, 지금 공개. */
+  /**
+   * 1.39 판 정리: 계획 파일({"hide":[{title, why}]}, 제목 목록 줄마다, 코드)을 붙여 넣거나 골라 '몇 개인지 보기'(dry) → 숨기기, 또는 되돌리기.
+   * [last] 마지막으로 본 결과(찾은 수·없는 제목)를 보여 줘요.
+   */
+  function recipeRetireView(last) {
+    const said = last ? `<p class="hint" data-retire-said>${esc(last.say)}${last.missing?.length ? ` · 못 찾은 것 ${last.missing.length}개: ${esc(last.missing.slice(0, 20).join(", "))}${last.missing.length > 20 ? " …" : ""}` : ""}</p>` : "";
+    return `<form data-form="recipe-retire" class="card"><h3>판 정리 붙여 넣기</h3>
+      <p class="hint">정리 계획 JSON 전체, 또는 제목(이나 작품 코드)을 한 줄에 하나씩. 운영자 작품만 찾고 사용자 작품은 건드리지 않아요. 한 번에 1,200개까지.</p>
+      <textarea name="plan" rows="6" required></textarea>
+      <label>또는 파일로 <input type="file" name="file" accept=".json,.txt,application/json,text/plain"></label>
+      <label>메모 <input name="note" maxlength="200" placeholder="1.39 장터 정리"></label>
+      <div class="actions"><button class="btn" type="submit" name="go" value="dry">몇 개인지 보기</button>
+        <button class="btn primary" type="submit" name="go" value="hide">숨기기</button>
+        <button class="btn" type="submit" name="go" value="show">되돌리기</button></div>${said}</form>`;
+  }
+
+  /** The titles and codes in what was pasted: a plan file ({hide:[{title}]}), a list of strings, or lines. */
+  function retireKeys(text) {
+    const out = { titles: [], codes: [] };
+    const add = (x) => { const t = String(x ?? "").trim(); if (!t) return; (/^[2-9A-HJ-NP-Z]{8}$/.test(t) ? out.codes : out.titles).push(t); };
+    let j = null;
+    try { j = JSON.parse(text); } catch { j = null; }
+    const list = Array.isArray(j) ? j : Array.isArray(j?.hide) ? j.hide : null;
+    if (list) for (const x of list) { if (typeof x === "string") add(x); else { if (x?.code) add(x.code); else add(x?.title); } }
+    else for (const line of String(text).split(/\r?\n/)) add(line);
+    return out;
+  }
+
   function recipeReleaseView(d, edit) {
     if (!d) return skeleton(1);
     if (!d.items.length) return `<p class="hint">출시 대기 중인 작품이 없어요.</p>`;
@@ -5512,6 +5543,29 @@ function adminApp(L, BUILD, M) {
       }
       await act(() => api("/recipes/release", "POST", body), how === "schedule" ? "공개를 예약했어요. 그때 저절로 나와요(한 시간 안)" : "예약을 풀었어요");
       load();
+    },
+    // 1.39 판 정리: 붙여 넣은 계획을 먼저 세어 보고(dry), 숨기기·되돌리기는 몇 개인지 묻고 해요.
+    "recipe-retire": async (form, submitter) => {
+      const go = submitter?.value ?? "dry";
+      const f = new FormData(form);
+      const file = form.querySelector('input[name="file"]')?.files?.[0];
+      const keys = retireKeys(file ? await file.text() : String(f.get("plan") ?? ""));
+      if (!keys.titles.length && !keys.codes.length) { toast("정리 계획이나 제목을 붙여 넣어 주세요"); return; }
+      const note = String(f.get("note") ?? "").trim() || "판 정리";
+      const path = go === "show" ? "/recipes/show-titles" : "/recipes/hide-titles";
+      // Not through act(): it empties the form, and the pasted plan is needed again for 숨기기.
+      let dry;
+      try { dry = await api(path, "POST", { ...keys, note, dry: true }); } catch (e) { fail(e); return; }
+      const say = (n, what) => `${keys.titles.length + keys.codes.length}개 가운데 ${n}개 ${what}`;
+      S.recipeRetire = { say: say(dry.found, go === "show" ? "되돌릴 수 있어요" : go === "hide" ? "숨길 수 있어요" : "찾았어요"), missing: dry.missing };
+      if (go === "dry" || !dry.found) { render({ keepScroll: true }); return; }
+      confirmBox(go === "show" ? `${dry.found}개를 장터에 다시 보일까요?` : `${dry.found}개를 장터에서 내릴까요?`,
+        go === "show" ? "목록·찾기·추천에 다시 나와요." : "목록·찾기·추천에서 빠져요. 지우지 않고, 이미 넣은 분은 그대로 쓰고 코드로 열 수 있어요. 여기서 한 번에 되돌릴 수 있어요.",
+        go === "show" ? "되돌리기" : "숨기기", async () => {
+          const r = await act(() => api(path, "POST", { ...keys, note }), (x) => go === "show" ? `${x?.shown ?? 0}개를 다시 보였어요` : `${x?.hidden ?? 0}개를 내렸어요`);
+          if (r) S.recipeRetire = { say: say(r.shown ?? r.hidden ?? 0, go === "show" ? "다시 보였어요" : "내렸어요"), missing: r.missing };
+          S.data.recipes = null; load();
+        }, go === "show" ? "primary" : "danger");
     },
     "recipe-upload": async (form) => {
       const f = new FormData(form);

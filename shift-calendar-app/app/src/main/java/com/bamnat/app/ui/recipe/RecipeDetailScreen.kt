@@ -167,8 +167,8 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 val tool = remember(r, doc.item.scope) { doc.item.scope == "part" || doc.item.scope == "logic" || com.bamnat.core.recipe.LookParts.partUnit(r) != null }
                 val hasLooks = remember(r) { com.bamnat.core.recipe.LookParts.of(r).isNotEmpty() }
                 var sawExample by androidx.compose.runtime.saveable.rememberSaveable(vm.code) { mutableStateOf(false) }
-                if (tool) ToolTryout(r, vm.style)
-                else WorkHero(doc.item, r, vm.style) { if (hasLooks) { sawExample = true; tryOn = true } }
+                // 도구의 전후 해 보기는 길어서 이름·만든 분·무료/프로 줄 아래에 둬요 (하루 써 보기가 끝나 알림으로 열 때 그 줄이 먼저 보이게).
+                if (!tool) WorkHero(doc.item, r, vm.style) { if (hasLooks) { sawExample = true; tryOn = true } }
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(r.title, style = MaterialTheme.typography.titleLarge)
                     if (r.summary.isNotEmpty()) Text(r.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -176,16 +176,30 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 // [RCX-05][PRF-01] 만든 분: 표식 · 팔로워, 누르면 프로필.
                 MakerLine(doc.item, onMaker.takeIf { doc.item.maker != null })
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    // 1.39 판 정리: 새 판이 나와 장터에서 내린 작품 (넣은 분이 코드로 연 것).
+                    if (doc.item.retired) Text(if ((s.appliedAt ?: s.laidAt) != null) "장터에서 내려간 작품이에요 · 넣은 것은 그대로 써요"
+                        else "장터에서 내려간 작품이에요 · 링크로는 넣을 수 있어요", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // 1.39 [MKC-04] 무료인지, 프로 기능이 들었는지 맨 위에서 한 줄로.
                     FxHeadLine(fxParts)
                     // 1.39 [MKD-12] 넣은 작품의 ✦ 장치가 쉬는 중이면 (하루 써 보기가 끝났거나 프로가 끝남).
-                    val fxOn = fxNow(vm.code).let { (pro, st) -> pro || st is com.bamnat.core.formula.FxTaste.Status.Using || com.bamnat.app.logic.FxAccess.on(LocalContext.current.appContainer) }
-                    if (fxParts.isNotEmpty() && (s.appliedAt ?: s.laidAt) != null && !fxOn)
+                    val (fxPro, fxStatus) = fxNow(vm.code)
+                    val fxOn = fxPro || fxStatus is com.bamnat.core.formula.FxTaste.Status.Using || com.bamnat.app.logic.FxAccess.on(LocalContext.current.appContainer)
+                    // FX-23·24: 써 보기가 끝나 알림을 누르면 이 상세가 열려요. 맨 위에서 마쳤다는 것과 그동안 한 일, 프로 보기를 바로.
+                    val ended = fxParts.isNotEmpty() && !fxPro && fxStatus is com.bamnat.core.formula.FxTaste.Status.Used
+                    val did = if (ended) com.bamnat.app.logic.FxAccess.summary(LocalContext.current.appContainer) else null
+                    if (ended) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("✦ 하루 써 보기를 마쳤어요" + (did?.let { " · 그동안 한 일: $it" } ?: "") +
+                            (if ((s.appliedAt ?: s.laidAt) != null) ". 무료인 것은 그대로 돌고, ✦ 장치는 프로에서 다시 켜져요" else ""),
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PRO) }) { Text("프로 보기") }
+                    } else if (fxParts.isNotEmpty() && (s.appliedAt ?: s.laidAt) != null && !fxOn)
                         Text("✦ 쉬는 중 · 무료인 것은 그대로 돌고, ✦ 장치는 프로에서 다시 켜져요", style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.tertiary)
                     Text(listOfNotNull("넣은 분 ${doc.item.users + s.usersPlus}명", doc.item.kept?.let { "7일 뒤에도 쓰는 분 $it%" }, RecipeDescribe.styles(r).takeIf { it.isNotBlank() })
                         .joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                if (tool) ToolTryout(r, vm.style)
                 ShortDesc(r.desc)
                 if (doc.mine) MakerCard(doc, onNewVersion = vm.body()?.let { b -> { onNewVersion(b) } })
                 // [LIN-02][LIN-03] 1.35 a 수정판 of my recipe: what it changed, and 내 판에 가져오기.
