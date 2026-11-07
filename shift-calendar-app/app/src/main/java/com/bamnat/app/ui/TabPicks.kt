@@ -84,7 +84,14 @@ internal object TabPicks {
             (k.startsWith(TabSlots.FEATURE) && FEATURES.any { f(it.place) == k })
     }
 
-    /** What the picker offers on the calendar of [style]; 관리 화면 only while 팀 리더 or 사장님 is on. */
+    /**
+     * 1.39 3차 PC (사무직, 팀 없음: '칸 더하기' 목록에 '팀·가게 관리'가 있어요): 관리 화면 is offered to someone who leads — a team made or a
+     * 사업장 set up on this phone, or a shop's calendar — and only while 팀 리더 or 사장님 is on ([flagOn]). One already on the bar stays.
+     */
+    fun manageShown(flagOn: Boolean, style: WorkStyle?, hasTeam: Boolean, hasWorkplace: Boolean): Boolean =
+        flagOn && (hasTeam || hasWorkplace || style == WorkStyle.BUSINESS)
+
+    /** What the picker offers on the calendar of [style]; 관리 화면 only for someone who leads ([manageShown]). */
     fun all(style: WorkStyle?, manageOn: Boolean): List<TabPick> =
         TopLevel.entries.map { top(it, style) } +
             FEATURES.map { feature(it, style) } +

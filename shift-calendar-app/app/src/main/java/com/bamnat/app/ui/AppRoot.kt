@@ -154,6 +154,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.bamnat.core.time.Today
@@ -1058,7 +1059,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     if (tabEdit.editing) androidx.activity.compose.BackHandler { saveTabs() }
     LaunchedEffect(route, showNav) { if (!showNav || topLevel == null) saveTabs() }
     val flagRowsNav by container.flags.byKey.collectAsStateWithLifecycle()
-    val manageOn = flagRowsNav[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true || flagRowsNav[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
+    // 1.39 3차 PC (사무직, 팀 없음: '칸 더하기'에 '팀·가게 관리'): only for someone who leads — a team made or a 사업장 set up on this
+    // phone, or a shop's calendar — while its feature is on ([TabPicks.manageShown]).
+    val ledTeams by remember(container) { container.phaseThree.teamList.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    val ledPlaces by remember(container) { container.phaseThree.workplaces.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    val manageOn = TabPicks.manageShown(
+        flagRowsNav[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true || flagRowsNav[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true,
+        activeStyle, ledTeams, ledPlaces)
     val pickOf: (String) -> TabPick? = { k -> TabPicks.of(k, activeStyle) }
     val slotLabel: (com.bamnat.core.layout.TabSlots.Slot) -> String = { sl ->
         when (sl) {
