@@ -237,7 +237,11 @@ enum class LogicVerb(val key: String, val label: String, val writes: Boolean) {
         fun of(key: String?): LogicVerb? = entries.firstOrNull { it.key == key }
 
         /** The screens a button or a rule may open. */
-        val SCREENS = linkedMapOf("calendar" to "달력", "day" to "그날 화면", "memo" to "메모장", "money" to "가계부", "pay" to "급여", "stats" to "통계", "alarm" to "알람")
+        val SCREENS = linkedMapOf("calendar" to "달력", "day" to "그날 화면", "memo" to "메모장", "money" to "가계부", "pay" to "급여", "stats" to "통계", "alarm" to "알람",
+            // 1.39 [FX-21] 새 화면 (프로 기능 장치): 수면 기록, 밤 화면.
+            "sleep" to "수면", "night" to "밤 화면")
+        /** 1.39 [FX-21] Screens opened from 1.39 on (프로, [FxPro.Part.REACH]). */
+        val NEW_SCREENS = setOf("sleep", "night")
     }
 }
 
@@ -341,7 +345,9 @@ enum class RuleTrigger(val key: String, val label: String) {
     /** 1.39 [FX-12] 값 칸 [LogicRule.of]가 바뀌면 (프로 기능 장치); [LogicRule.goal]이면 목표에 처음 닿을 때만. */
     VALUE("value", "값이 바뀌면"),
     /** 1.39 [FX-15] [LogicRule.min]분마다 (프로 기능 장치), [LogicRule.at]~[LogicRule.until] 사이나 근무 중에만. */
-    EVERY("every", "몇 분마다");
+    EVERY("every", "몇 분마다"),
+    /** 1.39 [FX-21] 근무 알람을 끄면 (메모 일정 알람·다시 확인은 빼고), 그날 값으로 조건 (프로 기능 장치). */
+    ALARM_OFF("alarmOff", "근무 알람을 끄면");
 
     companion object {
         val KEYS = entries.map { it.key }
@@ -414,6 +420,7 @@ data class LogicRule(
             RuleTrigger.MONEY -> "가계부에 적으면"
             RuleTrigger.HOLD -> "날짜를 길게 누르면"
             RuleTrigger.VALUE -> "‘${of.orEmpty()}’" + (if (goal) " 목표에 처음 닿으면" else " 값이 바뀌면")
+            RuleTrigger.ALARM_OFF -> "근무 알람을 끄면"
             RuleTrigger.EVERY -> (if (inWork) "근무 중 " else if (at != null || until != null) "${at ?: "00:00"}~${until ?: "24:00"} " else "") +
                 "${span(min.coerceAtLeast(EVERY_MIN))}마다"
         }

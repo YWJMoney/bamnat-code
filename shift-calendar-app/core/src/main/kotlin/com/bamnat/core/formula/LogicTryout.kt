@@ -94,5 +94,6 @@ object LogicTryout {
         RuleTrigger.MONEY -> "가계부에 적어 보기"
         RuleTrigger.VALUE -> "‘${r.of.orEmpty()}’ 바꿔 보기"
         RuleTrigger.EVERY -> "다음 때 만들어 보기"
+        RuleTrigger.ALARM_OFF -> "알람 꺼 보기"
     }
 }

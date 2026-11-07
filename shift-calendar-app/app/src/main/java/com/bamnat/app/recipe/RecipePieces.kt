@@ -320,7 +320,9 @@ class RecipePieces(private val c: AppContainer) {
                     // PC D6: 내 규칙 뒤에 더해지고, 같은 것은 하나로 둬요 (말없이 합쳐지지 않게).
                     Change("내 규칙·단추는 그대로 두고 뒤에 더해요"),
                     com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic).mergeSay(l)?.let { Change(it) },
-                ))
+                ) +
+                    // 1.39 [FX-25] 넣기 전 부딪힘: 같은 때 같은 가계부·값 칸, 뜻이 다른 같은 이름 값 칸, 같은 자리 같은 이름 단추.
+                    com.bamnat.core.formula.LogicClash.check(com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic), l).map { Change("⚠ $it") })
                 .ifEmpty { listOf(Change("바뀌는 것이 없어요", skipped = true)) }
         }
         PieceKind.LAYOUT, PieceKind.CARDS, PieceKind.WIDGET, PieceKind.CAL_VIEW, PieceKind.APP_FEEL, PieceKind.MEMO_LOOK, PieceKind.MONEY_LOOK,
@@ -757,6 +759,10 @@ class RecipePieces(private val c: AppContainer) {
                         val store = com.bamnat.app.logic.LogicStore(c.appContext)
                         com.bamnat.core.formula.Logic.from(vals).writingRules.filter { it.key !in had }.forEach { store.gotOff(it.key) }
                         store.markGot(com.bamnat.core.formula.Logic.from(vals).rules.map { it.key }.filter { it !in had })
+                        // 1.39 [FX-23] 작품마다 하루 써 보기: the new ones remember this work.
+                        val hadB = com.bamnat.core.formula.Logic.decode(now.logic).buttons.map { it.id }.toSet()
+                        val after = com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic)
+                        store.markFrom(code, after.rules.map { it.key }.filter { it !in had }, after.buttons.map { it.id }.filter { it !in hadB })
                         com.bamnat.app.logic.LogicRunner.rulesChanged(c)
                     }
                     JSONObject().put("settings", out)
