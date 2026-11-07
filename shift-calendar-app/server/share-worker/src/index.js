@@ -2076,7 +2076,27 @@ export function validate(body) {
     if (s === null) return { error: "sleep_now" };
     schedule.sleepNow = s;
   }
+  // 1.39 G5-N4 계획한 잠 시간: only when the sender ticked it, pairs of times (epoch millis) and nothing else. Like 지금 자는 중, only
+  // the receiving app shows it; the web page (/s/:id) never does.
+  if (body.sleepPlan != null) {
+    const p = sleepPlan(body.sleepPlan);
+    if (p === null) return { error: "sleep_plan" };
+    schedule.sleepPlan = p;
+  }
   return { schedule, ttlDays };
+}
+
+/** 1.39 G5-N4 [{from, to}] in epoch millis: at most 24, each a from before a to at most 16 hours on. Null refuses it. */
+function sleepPlan(v) {
+  if (!Array.isArray(v) || v.length > 24) return null;
+  const out = [];
+  for (const w of v) {
+    if (!w || typeof w !== "object" || Array.isArray(w)) return null;
+    if (Object.keys(w).some((k) => k !== "from" && k !== "to")) return null;
+    if (!Number.isSafeInteger(w.from) || !Number.isSafeInteger(w.to) || w.from <= 0 || w.to <= w.from || w.to - w.from > 16 * 3600 * 1000) return null;
+    out.push({ from: w.from, to: w.to });
+  }
+  return out;
 }
 
 /** 1.38 [SLEEP-11] {since, wakeAt?} in epoch millis: since first, the wake within 20 hours of it. Null refuses it. */
