@@ -1579,6 +1579,13 @@ private fun AppNavHost(
                     if (nudges.invite.value != null) inviting = true
                 }
             }
+            // 1.38 PC 12.4.1 빈틈 6 (설정 끝 길잡이 창 밑 '내 급여 값'에 같은 권유 카드가 또): the company's invitation (its sheet, or its
+            // card here on a later visit) is the one ask; the pay setup's own card does not ask the same again.
+            val inviteNow by nudges.invite.collectAsStateWithLifecycle()
+            val payMoment by vm.shareMoment.collectAsStateWithLifecycle()
+            LaunchedEffect(inviteNow != null, payMoment) {
+                if (inviteNow != null && (payMoment == com.bamnat.app.ui.company.ShareMoment.PAY || payMoment == com.bamnat.app.ui.company.ShareMoment.PAYSLIP)) vm.shareShown()
+            }
             CompositionLocalProvider(com.bamnat.app.ui.company.LocalCompanyCalendar provides calendar) {
             PayScreen(vm = vm, onBack = { nav.popFrom(Routes.PAY) }, focus = payFocus,
                 onOpenExtraKinds = { nav.navigate(Routes.extraKinds(calendar)) { launchSingleTop = true } },
@@ -1591,7 +1598,7 @@ private fun AppNavHost(
                         container.calendars.styleOf(calendar, container.settingsRepository.current.workStyle),
                         com.bamnat.core.profile.AskPlace.Screen(PAY_ASKS), Modifier.padding(horizontal = 16.dp, vertical = 6.dp), inCardOnly = true)
                     CompanyNudgeCards(nudges, onShare = { nav.navigate(Routes.companyReport(calendar)) { launchSingleTop = true } },
-                        onFix = { nav.fixCompanySetup(it, calendar) })
+                        onFix = { nav.fixCompanySetup(it, calendar) }, hideInvite = inviting)
                     if (companyPay) {
                         // [PAYF-04] The company pay way in use: 맞아요·달라요 and 고쳐서 제안하기 on the pay screen itself, and its 기본급.
                         com.bamnat.app.ui.company.PayWayCard(profile, update = vm::update, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
