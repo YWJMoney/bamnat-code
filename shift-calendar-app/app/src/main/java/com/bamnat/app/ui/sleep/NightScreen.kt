@@ -98,6 +98,13 @@ class NightViewModel(private val container: AppContainer) : ViewModel() {
         container.settingsRepository.update { it.copy(noiseMix = mix.encode(), noiseTimerMinutes = minutes) }
     }
 
+    /** 1.39 G5-M1: the master switch turned on here, where it was found off, without a trip to the alarm settings. */
+    fun turnOnAlarms() {
+        container.settingsRepository.update { it.copy(alarmsEnabled = true) }
+        // PC 확인 f6b585f8: where the master switch was turned, for 알람 점검.
+        container.telemetry.event("alarms_switch", "on night")
+    }
+
     fun fellAsleep() { container.appScope.launch { container.sleepRepository.fellAsleep() } }
 
     fun wokeUp(done: () -> Unit) {
@@ -147,7 +154,7 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
                 Text(Fmt.dayTitle(now.toLocalDate()), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(Fmt.time(now.toLocalTime()), fontSize = 76.sp, fontWeight = FontWeight.Light, style = NumberStyle,
                     color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.semantics { heading() })
-                line?.let { l -> NightLineRow(l, onAlarms) }
+                line?.let { l -> NightLineRow(l, onAlarms, vm::turnOnAlarms, switchOff = !settings.alarmsEnabled) }
                 if (com.bamnat.app.ui.components.LocalShowKani.current) {
                     Spacer(Modifier.height(16.dp))
                     com.bamnat.app.ui.components.Kani(com.bamnat.app.ui.components.KaniMood.Sleepy, night = true, size = 72.dp)
@@ -179,15 +186,22 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
     }
 }
 
-/** "내일 07:00 주간 · 알람 06:00 켜짐"; with no alarm set, said in the caution colour with the way to the alarms. */
+/**
+ * "내일 07:00 주간 · 알람 06:00 켜짐"; with no alarm set, said in the caution colour with the way to the alarms. 1.39 G5-M1: when
+ * it is the app's own switch that is off, one tap turns it on right here (the line then says the alarm), the rest of the way
+ * (알람 확인하기) still there for a shift with no alarm.
+ */
 @Composable
-private fun NightLineRow(l: NightLine.Line, onAlarms: () -> Unit) {
+private fun NightLineRow(l: NightLine.Line, onAlarms: () -> Unit, onTurnOn: () -> Unit, switchOff: Boolean) {
     val tint = if (l.alarmOn) MaterialTheme.colorScheme.onSurface else com.bamnat.app.ui.theme.Tone.Caution.color()
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
         Icon(if (l.alarmOn) Icons.Outlined.Alarm else Icons.Outlined.AlarmOff, null, tint = tint, modifier = Modifier.size(20.dp))
         Text(" ${l.text}", style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center, color = tint)
     }
-    if (!l.alarmOn) TextButton(onClick = onAlarms, modifier = Modifier.heightIn(min = 48.dp)) { Text("알람 확인하기") }
+    if (!l.alarmOn) Row(horizontalArrangement = Arrangement.Center) {
+        if (switchOff) Button(onClick = onTurnOn, modifier = Modifier.heightIn(min = 48.dp)) { Text("알람 켜기") }
+        TextButton(onClick = onAlarms, modifier = Modifier.heightIn(min = 48.dp)) { Text("알람 확인하기") }
+    }
 }
 
 private tailrec fun Context.findActivity(): Activity? = when (this) {

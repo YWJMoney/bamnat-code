@@ -84,6 +84,8 @@ class SleepRecordService : Service(), SensorEventListener {
     /** False when it stopped by the clock alone: the user may still be asleep, so the sleep stays open. */
     @Volatile private var closeSleep = true
     private var watch: kotlinx.coroutines.Job? = null
+    /** 1.39 G5-B2: the phone turning off ends the night where it stands, saved, with the sleep left open. */
+    private var shutdown: android.content.BroadcastReceiver? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -109,6 +111,16 @@ class SleepRecordService : Service(), SensorEventListener {
             ?.apply { setReferenceCounted(false); acquire(14 * 60 * 60 * 1000L) }
         running = true
         _recording.value = Recording(startedAt, 0)
+        // 1.39 G5-B2: until this night is saved, it is "measuring" on disk too, so a night cut off (the phone turned off, the
+        // battery ran out, the app was closed) is said next time rather than found missing.
+        prefs(this).edit().putLong(K_RUNNING, startedAt).remove(K_CUT).apply()
+        shutdown = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                prefs(context).edit().putLong(K_CUT, Today.millis()).commit()
+                closeSleep = false
+                finishNight()
+            }
+        }.also { ContextCompat.registerReceiver(this, it, android.content.IntentFilter(Intent.ACTION_SHUTDOWN), ContextCompat.RECEIVER_NOT_EXPORTED) }
         // 잠들었어요 as well: the night is in the log from now; the start moves to when the phone settled.
         appContainer.appScope.launch { appContainer.sleepRepository.fellAsleep() }
         watch = appContainer.appScope.launch { watchTheMorning() }
@@ -155,6 +167,7 @@ class SleepRecordService : Service(), SensorEventListener {
             }
             runCatching { record.stop() }
             record.release()
+            saving = true
             val night = events.toList()
             val kept = clips.toMap()
             appContainer.appScope.launch { save(night, kept) }
@@ -229,7 +242,12 @@ class SleepRecordService : Service(), SensorEventListener {
         stopSelf()
     }
 
-    private suspend fun save(events: List<SoundEvent>, clips: Map<SoundEvent, File>) {
+    private suspend fun save(events: List<SoundEvent>, clips: Map<SoundEvent, File>) = try { saveNight(events, clips) } finally {
+        saving = false
+        _saved.value = Today.millis()
+    }
+
+    private suspend fun saveNight(events: List<SoundEvent>, clips: Map<SoundEvent, File>) {
         val c = appContainer
         c.sleepRepository.addEvents(events.map { e ->
             SleepEventEntity(startMillis = startedAt + e.startMillis, endMillis = startedAt + e.endMillis, kind = e.kind.key,
@@ -248,8 +266,11 @@ class SleepRecordService : Service(), SensorEventListener {
         }
         val used = if (batteryAtStart >= 0) (batteryAtStart - battery()).coerceAtLeast(0) else -1
         val summary = SoundSummary.of(events, onset?.let { it * 60_000L })
-        prefs(this).edit().putLong(K_LAST_START, startedAt).putLong(K_LAST_END, Today.millis())
-            .putInt(K_LAST_BATTERY, used).putString(K_LAST_LINE, summary.line()).apply()
+        val p = prefs(this)
+        val cut = p.getLong(K_CUT, 0L) >= startedAt
+        p.edit().putLong(K_LAST_START, startedAt).putLong(K_LAST_END, Today.millis())
+            .putInt(K_LAST_BATTERY, used).putString(K_LAST_LINE, summary.line()).putBoolean(K_LAST_CUT, cut)
+            .remove(K_RUNNING).remove(K_CUT).apply()
         c.sleepRepository.dropOldClips(KEEP_DAYS) { name -> File(File(filesDir, CLIP_DIR), name).delete() }
     }
 
@@ -266,6 +287,8 @@ class SleepRecordService : Service(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
 
     override fun onDestroy() {
+        shutdown?.let { runCatching { unregisterReceiver(it) } }
+        shutdown = null
         running = false
         watch?.cancel()
         wake?.let { if (it.isHeld) it.release() }
@@ -318,10 +341,32 @@ class SleepRecordService : Service(), SensorEventListener {
         private const val K_LAST_END = "last_end"
         private const val K_LAST_BATTERY = "last_battery"
         private const val K_LAST_LINE = "last_line"
+        private const val K_LAST_CUT = "last_cut"
+        /** 1.39 G5-B2: the start of a night not saved yet, and when the phone turned off during one. */
+        private const val K_RUNNING = "running_start"
+        private const val K_CUT = "cut_at"
+        /** A night cut off longer ago than this is not news any more. */
+        private const val CUT_SHOWN_MILLIS = 24 * 60 * 60 * 1000L
         private val TYPE = if (Build.VERSION.SDK_INT >= 30) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
 
         private val _recording = MutableStateFlow<Recording?>(null)
         val recording: StateFlow<Recording?> = _recording.asStateFlow()
+
+        /** Between the microphone stopping and the night written down; a night cut off is not said meanwhile. */
+        @Volatile private var saving = false
+        private val _saved = MutableStateFlow(0L)
+        /** When the last night was written down (the sleep screen reads [lastNight] again then, not before). */
+        val saved: StateFlow<Long> = _saved.asStateFlow()
+
+        /**
+         * 1.39 G5-B2: the start of a night that was measuring and never got saved (the phone or the app was stopped
+         * before it could), when not measuring now; null otherwise.
+         */
+        fun cutOff(context: Context): LocalDateTime? {
+            if (_recording.value != null || saving) return null
+            val at = prefs(context).getLong(K_RUNNING, 0L).takeIf { it > 0 && Today.millis() - it < CUT_SHOWN_MILLIS } ?: return null
+            return local(at)
+        }
 
         private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
@@ -342,12 +387,15 @@ class SleepRecordService : Service(), SensorEventListener {
         }
 
         /** The last measured night, for the morning card: when, the line, and the battery it took (-1 unknown). */
-        data class LastNight(val start: LocalDateTime, val end: LocalDateTime, val line: String, val battery: Int)
+        data class LastNight(val start: LocalDateTime, val end: LocalDateTime, val line: String, val battery: Int,
+            /** 1.39 G5-B2: the phone turned off, so the night ends there. */
+            val cut: Boolean = false)
 
         fun lastNight(context: Context): LastNight? {
             val p = prefs(context)
             val start = p.getLong(K_LAST_START, 0L).takeIf { it > 0 } ?: return null
-            return LastNight(local(start), local(p.getLong(K_LAST_END, start)), p.getString(K_LAST_LINE, "").orEmpty(), p.getInt(K_LAST_BATTERY, -1))
+            return LastNight(local(start), local(p.getLong(K_LAST_END, start)), p.getString(K_LAST_LINE, "").orEmpty(), p.getInt(K_LAST_BATTERY, -1),
+                p.getBoolean(K_LAST_CUT, false))
         }
 
         fun clip(context: Context, name: String): File = File(File(context.filesDir, CLIP_DIR), name)
