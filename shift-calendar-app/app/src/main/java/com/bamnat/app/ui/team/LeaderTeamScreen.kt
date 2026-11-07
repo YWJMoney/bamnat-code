@@ -597,6 +597,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         val why = when ((e as? com.bamnat.app.share.ShareLinkException)?.message) {
                             "days" -> "칸이 모두 빈 팀원이 있어 링크를 못 만들었어요. 칠한 뒤 다시 눌러 주세요."
                             "paused", "rate_limited" -> "링크 만들기가 잠시 멈췄어요. 조금 뒤에 다시 눌러 주세요."
+                            "contact" -> (e as com.bamnat.app.share.ShareLinkException).friendly.orEmpty()
                             else -> "링크는 인터넷이 될 때 다시 눌러 주세요."
                         }
                         dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + why

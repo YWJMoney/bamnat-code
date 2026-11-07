@@ -53,6 +53,8 @@ object FlagCatalog {
     const val SLEEP_SHARE = "sleep.share"
     /** 1.39 [PAYP-05] 보완 요청 on a company's shared way (글 종류·다른 곳 항목, 올린 분 소식), once 처리방침's next version names it. */
     const val PLAZA_FIX_REQUEST = "plaza.fix_request"
+    /** 1.39 [CARE-01~06] 마을 돌봄(부드러운 경고 → 의견 쉬기·마을 쉬기, 확인한 것만 세는 단계), once 처리방침's next version names it. */
+    const val COMMUNITY_CARE = "community.care"
     const val FREE_PREFIX = "free."
     /** [FLAG-34] A `free.<FEATURE>` row's words; [FREE_SLOT] is the feature's name (the server puts its Korean name). */
     const val FREE_FEATURE = "^[A-Z][A-Z0-9_]{1,40}$"
@@ -121,6 +123,8 @@ object FlagCatalog {
     private const val EARLY = PolicyConsent.VERSION
     /** 1.39 [PAYP-05] The 처리방침 version 1.39 ships with (보완 요청, PRIV-06 등 한 판); its dates come from the 관리자 앱 일정. */
     const val FIX_REQUEST_POLICY = "3.12"
+    /** 1.39 [CARE-01] The 처리방침 version 1.39 ships with (공유 급여 보완 요청과 한 판); its dates come from the 관리자 앱 일정. */
+    const val CARE_POLICY = FIX_REQUEST_POLICY
 
     /** [FLAG-11] 정식 출시 retired: what the switch and the 3.1 hold did together (결정 D84). */
     private val launch: List<Condition> = listOf(
@@ -382,6 +386,20 @@ object FlagCatalog {
     )
 
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
+    /**
+     * 1.39 [CARE-01~06] (사용자 2026-11-07 "악성 유저는 차단을 통해 몇일 의견제시나 커뮤니티 사용중단, 그전에 미리 경고도 부드럽게", "2회는 너무
+     * 타이트, 실제로 잘못된 행동을 하고 있을 때 제재"): 경고 기록과 운영자가 고르는 쉬기는 처리방침 1-4항과 광장 운영 규칙 6항의 다음 판에서
+     * 처음 적어요. 그 시행일(관리자 앱 › 기능 관리 › 일정의 3.12)에 저절로 켜지고, 그 전에는 1.36 신고 누적 제한(30일 안 2번) 그대로예요.
+     */
+    val COMMUNITY_CARE_FLAG = Flag(
+        COMMUNITY_CARE, "마을 돌봄(경고·쉬기)",
+        what = "마을에서 운영 원칙에 어긋난 글은 운영자가 확인한 것만 세고, 60일 안 1번은 안내, 2번은 경고, 3번부터 며칠 쓰는 횟수가 줄어요. 운영자는 경고를 먼저 보낸 뒤 1~30일 의견 쉬기·마을 쉬기를 걸 수 있어요. 앱은 마을을 열 때 안내를 한 번 보여 주고, 쉬는 동안 마을 맨 위에 한 줄로 알려요.",
+        whyOff = "경고 기록과 운영자 쉬기를 처리방침 3.12(1-4항)와 광장 운영 규칙 다음 판(6항)에 적고 그 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 신고 누적 쓰기 제한(30일 안 2번)이 그대로예요.",
+        basis = Basis(policy = "3.12 1-4항", requirement = "CARE-01", note = "1.39 마을 돌봄 (사용자 2026-11-07)"),
+        conditions = listOf(Condition.Date(policy = CARE_POLICY), Condition.Policy(CARE_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
+    )
+
     val SWITCHES: List<Flag> = ServerSwitch.entries.map { s ->
         Flag(
             switchKey(s), SWITCH_NAMES.getValue(s),
@@ -394,7 +412,7 @@ object FlagCatalog {
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
-        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG) +
+        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

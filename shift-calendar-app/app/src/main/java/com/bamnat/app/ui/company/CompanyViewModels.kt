@@ -878,8 +878,12 @@ class TalkHolder(
 }
 
 /** [LIM-03] 1.31: [talkProblem] for a refusal, with when it goes again and why when the server said. */
-fun talkProblem(e: com.bamnat.app.company.CompanyException): String =
-    if (e.code == "rate_limited") com.bamnat.app.company.RateLimits.of(e, "글쓰기") else talkProblem(e.code)
+fun talkProblem(e: com.bamnat.app.company.CompanyException): String = when (e.code) {
+    "rate_limited" -> com.bamnat.app.company.RateLimits.of(e, "글쓰기")
+    // 1.39 [CARE-02] 쉬는 중이면 언제까지인지와 어디서 까닭을 보는지.
+    "muted" -> com.bamnat.core.plaza.CommunityCare.mutedText(e.untilMillis)
+    else -> talkProblem(e.code)
+}
 
 /** What to say when a post is refused. */
 fun talkProblem(code: String): String = when (code) {
@@ -888,6 +892,7 @@ fun talkProblem(code: String): String = when (code) {
     "email" -> "메일 주소는 빼 주세요"
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
     "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요"
+    "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
     "rate_limited" -> com.bamnat.app.company.RateLimits.text("글쓰기")
     "own" -> "내 글에는 할 수 없어요"
     "parent" -> "답글을 달 글이 지워졌어요"

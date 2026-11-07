@@ -11,7 +11,11 @@
 // GET    /.well-known/assetlinks.json   lets Android open /s/ links in the app (ANDROID_CERT_SHA256)
 // POST   /api/share/:id/report body {reason} -> 204   [SRV-05] the app's 신고
 // POST   /s/:id/report         the page's own form (no script) -> a thank-you page
-// GET    /api/admin/reports    [SRV-05] reported links, most reported first (Bearer SHARE_ADMIN_TOKEN)
+// GET    /api/admin/reports    [SRV-05] reported links, most reported first (Bearer SHARE_ADMIN_TOKEN); 1.39 [CARE-07] with kind
+//                              (s 근무표, b 병동 표, a 근무 신청, v 결원, w 바꾸기, k 근로계약서, c 출퇴근)
+// POST   /(b|a|v|w|k|c)/:key/report  1.39 [CARE-07] the team pages' own form -> a thank-you page
+// DELETE /api/admin/link/:kind/:id    1.39 [CARE-08] takes a team link down: its content goes at once, its pages say why (410)
+// GET    /api/admin/link/:kind/:id    1.39 [CARE-08] the words in it, for the operator to judge a report (no keys or tokens)
 // DELETE /api/admin/share/:id  takes a link down: the page then says it was removed (410)
 // GET    /api/admin/stats?days=  links made, pages seen, reports and take-downs per day [STAT-04]
 // PUT    /api/admin/flags      [SRV-08] {createOff}: the company server's 근무표 링크 새로 만들기 switch
@@ -161,6 +165,43 @@ export const REPORT_REASONS = {
   other: "그 밖의 문제",
 };
 
+/** 1.39 [CARE-07] 팀·사장님 링크(계약서·결원 등)의 신고 이유: 사기 의심이 맨 앞. */
+export const TEAM_REPORT_REASONS = { scam: "돈·계좌·연락을 요구해요(사기 의심)", ...REPORT_REASONS };
+
+/**
+ * 1.39 [CARE-09] 팀·사장님 링크에 들어가는 글(계약서 항목, 결원 글, 팀 이름, 이름 등)에서 받지 않는 것: 전화번호, 링크·주소창 주소,
+ * 계좌번호 모양(숫자 11자리 이상), 메신저로 옮기기. 앱이 만드는 계약서·결원 글에는 이런 것이 없어서, 앱을 거치지 않고 우리 주소로
+ * 가짜 계약서("보증금은 아래 계좌로")를 만드는 길만 막혀요. 사업자등록번호(10자리)·날짜·시각·금액은 그대로예요.
+ */
+const SCAM_TEXT = [
+  ["phone", /(\+?82[\s.-]?0?|0)1[016789][\s.-]?\d{3,4}[\s.-]?\d{4}|(\+?82[\s.-]?0?|0)(2|[3-6][1-5]|70)[\s.-]?\d{3,4}[\s.-]?\d{4}/],
+  ["link", /https?:\/\/|www\.|\b[a-z0-9-]{2,}\.(com|net|kr|co|me|io|ly|gg|xyz|app|link|site|shop)\b|t\.me\//i],
+  ["account", /(?<![\d:.])\d{2,6}(?:[\s-]\d{2,8}){1,4}(?![\d:.])/],
+  ["messenger", /오픈\s*채팅|오픈\s*톡|텔레그램|카톡\s*(아이디|id)|카카오톡\s*(아이디|id)|라인\s*아이디|위챗|whats\s*app/i],
+];
+const digitsIn = (s) => s.replace(/\D/g, "").length;
+
+/** Why one of the strings in [value] (any depth) cannot go on a team page, or null. */
+export function scamProblem(value, depth = 0) {
+  if (typeof value === "string") {
+    for (const [code, re] of SCAM_TEXT) {
+      const m = value.match(re);
+      if (!m) continue;
+      // A number group is an account only when it is long enough (사업자등록번호 123-45-67890 is 10).
+      if (code === "account" && digitsIn(m[0]) < 11 && !/\d{11,}/.test(value)) continue;
+      return code;
+    }
+    if (/\d{11,}/.test(value)) return "account";
+    return null;
+  }
+  if (depth > 6 || value == null || typeof value !== "object") return null;
+  for (const v of Array.isArray(value) ? value : Object.values(value)) {
+    const why = scamProblem(v, depth + 1);
+    if (why) return why;
+  }
+  return null;
+}
+
 /** [SHR-01] The parts a sharer can tick on top of the shifts. */
 export const SHOWS = ["leaveKinds", "extras", "memos", "pay", "jobs"];
 
@@ -224,6 +265,14 @@ async function route(request, env) {
   if (path === SPREAD_HIDE && request.method === "POST") return spreadHide(request, url);
   if (path === "/api/groups" || path.startsWith("/api/groups/")) return groups(request, env, path);
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
+  // 1.39 [CARE-07][CARE-08] 팀·사장님 링크: 페이지의 신고 양식, 운영자가 내린 링크는 이유와 함께 410.
+  const teamPage = path.match(/^\/([bavwkc])\/([A-Za-z0-9]{22})(\/[a-z]+)?$/);
+  if (teamPage) {
+    if (teamPage[3] === "/report" && request.method === "POST") return teamReport(request, env, teamPage[1], teamPage[2]);
+    const down = await teamDown(env, teamPage[1], teamPage[2]);
+    // (route's own `page` below is a match, so the page is made outside it.)
+    if (down) return teamDownPage(down);
+  }
   if (path === "/api/clock" && request.method === "POST") return clockCreate(request, env, url);
   const clockApi = path.match(/^\/api\/clock\/([A-Za-z0-9]{22})$/);
   if (clockApi && request.method === "GET") return clockRead(request, env, clockApi[1]);
@@ -493,6 +542,10 @@ async function admin(request, env, url) {
   if (path === "/reports" && request.method === "GET") return json({ reports: await reports(env) });
   const m = path.match(/^\/share\/([A-Za-z0-9]{16,32})$/);
   if (m && request.method === "DELETE") return takeDown(request, env, m[1]);
+  // 1.39 [CARE-08] 팀·사장님 링크 내리기(종류별).
+  const team = path.match(/^\/link\/([bavwkc])\/([A-Za-z0-9]{22})$/);
+  if (team && request.method === "DELETE") return teamTakeDown(request, env, team[1], team[2]);
+  if (team && request.method === "GET") return teamPeek(env, team[1], team[2]);
   if (path === "/stats" && request.method === "GET") return json(await stats(env, url.searchParams.get("days")));
   if (path === "/flags" && request.method === "PUT") {
     let body = {};
@@ -509,7 +562,13 @@ async function reports(env) {
   let cursor;
   do {
     const page = await env.SHARES.list({ prefix: "report:", cursor });
-    for (const k of page.keys) if (k.metadata) out.push({ id: k.name.slice("report:".length), ...k.metadata });
+    for (const k of page.keys) {
+      if (!k.metadata) continue;
+      // 1.39 [CARE-07] report:<kind>:<id> for a team link, report:<id> for a 근무표 링크 (kind s).
+      const rest = k.name.slice("report:".length);
+      const [kind, id] = rest.includes(":") ? rest.split(":") : ["s", rest];
+      out.push({ id, kind, name: TEAM_KINDS[kind]?.name ?? "근무표 링크", ...k.metadata });
+    }
     cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor && out.length < 1000);
   return out.sort((a, b) => b.count - a.count || b.last.localeCompare(a.last)).slice(0, 200);
@@ -531,6 +590,127 @@ async function takeDown(request, env, id) {
   }
   await kvDel(env, `report:${id}`);
   return new Response(null, { status: 204 });
+}
+
+// ---- 1.39 [CARE-07][CARE-08] 팀·사장님 링크의 신고와 내리기 ----
+//
+// 1.38의 병동 표(b)·근무 신청(a)·결원(v)·바꾸기(w)·근로계약서(k)·출퇴근(c) 페이지에도 근무표 링크처럼 신고 양식이 있고, 운영자가 관리자 앱에서
+// 내려요. 신고는 링크(라운드)마다 이유별 수만, 신고한 사람은 남지 않아요. 내리면 내용은 바로 지우고 '내렸다'는 표시와 이유만 90일 둬요.
+
+const TEAM_KINDS = {
+  b: { name: "병동 표", main: (id) => boardKey(id) },
+  a: { name: "근무 신청", page: (key) => askMemberKey(key), main: (id) => askKey(id) },
+  v: { name: "결원 요청", page: (key) => callPersonKey(key), main: (id) => callKey(id) },
+  w: { name: "근무 바꾸기", page: (key) => swapPersonKey(key), main: (id) => swapKey(id) },
+  k: { name: "근로계약서", page: (key) => signPageKey(key), main: (id) => signKey(id) },
+  c: { name: "출퇴근", main: (id) => clockKey(id) },
+};
+const TEAM_REMOVED_TEXT = "이 링크는 신고를 받아 운영 규칙에 따라 내려졌어요. 밤낮은 링크로 돈이나 계좌를 요구하지 않아요.";
+const downKey = (kind, id) => `down:${kind}:${id}`;
+
+/** The round a page's key belongs to ({ id, record }), or null when it is gone. */
+async function teamRound(env, kind, key) {
+  const k = TEAM_KINDS[kind];
+  if (!k) return null;
+  let id = key;
+  if (k.page) {
+    const link = await env.SHARES.get(k.page(key), "json");
+    if (!link?.id) return null;
+    id = link.id;
+  }
+  const record = await env.SHARES.get(k.main(id), "json");
+  if (!record || Date.parse(record.expiresAt) < Date.now()) return { id, record: null };
+  return { id, record };
+}
+
+/** The take-down mark of the round behind a page, or null. */
+async function teamDown(env, kind, key) {
+  const k = TEAM_KINDS[kind];
+  let id = key;
+  if (k.page) {
+    const link = await env.SHARES.get(k.page(key), "json");
+    if (!link?.id) return null;
+    id = link.id;
+  }
+  return env.SHARES.get(downKey(kind, id), "json");
+}
+
+async function teamReport(request, env, kind, key) {
+  const done = (status, text) => html(page("신고", `<p class="empty">${esc(text)}</p>`), status);
+  const reason = new URLSearchParams((await request.text()).slice(0, 512)).get("reason");
+  if (!Object.hasOwn(TEAM_REPORT_REASONS, reason ?? "")) return done(400, "신고 이유를 골라 주세요.");
+  const found = await teamRound(env, kind, key);
+  if (!found?.record) return done(404, "이미 닫힌 링크예요.");
+  const ip = netOf(request.headers.get("cf-connecting-ip"));
+  const day = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+  const once = `rp:${(await sha256(`${env.RATE_SALT || "bamnat"}:${ip}:${kind}:${found.id}:${day}`)).slice(0, 24)}`;
+  const thanks = "신고를 받았어요. 운영자가 확인하고 운영 규칙에 어긋나면 링크를 내려요. 돈이나 계좌를 요구받았다면 보내지 마세요. 고마워요.";
+  if (await env.SHARES.get(once)) return done(200, thanks);
+  if (!(await allow(env, request, "rr", LIMITS.reportsPerHour))) return done(429, "잠시 뒤에 다시 신고해 주세요.");
+  await kvPut(env, once, "1", { expirationTtl: 86400 });
+  const rkey = `report:${kind}:${found.id}`;
+  const got = await env.SHARES.getWithMetadata?.(rkey);
+  const was = got?.metadata ?? { count: 0, reasons: {} };
+  const next = { count: was.count + 1, reasons: { ...was.reasons, [reason]: (was.reasons?.[reason] ?? 0) + 1 }, last: new Date().toISOString() };
+  const ttl = Math.max(60, Math.ceil((Date.parse(found.record.expiresAt) - Date.now()) / 1000));
+  await kvPut(env, rkey, "1", { expirationTtl: ttl, metadata: next });
+  count(env, "reports");
+  return done(200, thanks);
+}
+
+/** The operator takes a team round down: its content goes now; each of its pages says it was taken down, with why, for 90 days. */
+async function teamTakeDown(request, env, kind, id) {
+  const k = TEAM_KINDS[kind];
+  const record = await env.SHARES.get(k.main(id), "json");
+  const marked = await env.SHARES.get(downKey(kind, id), "json");
+  if (!record && !marked) return json({ error: "not_found" }, 404);
+  let reason = "";
+  try {
+    reason = String(JSON.parse((await request.text()).slice(0, 2048))?.reason ?? "");
+  } catch { /* no reason given */ }
+  reason = reason.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, LIMITS.removedReason);
+  if (!marked) {
+    await kvPut(env, downKey(kind, id), JSON.stringify({ at: new Date().toISOString(), ...(reason ? { reason } : {}) }),
+      { expirationTtl: LIMITS.removedDays * 86400 });
+    count(env, "removed");
+  }
+  // The content goes; member pages' keys stay until they end, only to find the mark.
+  if (record) await kvDel(env, k.main(id));
+  await kvDel(env, `report:${kind}:${id}`);
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * GET /api/admin/link/:kind/:id: what the operator reads before taking a reported team link down. Only the words people typed (titles, notes,
+ * 계약 항목), never a key, token, hash or address; 600 characters at most.
+ */
+async function teamPeek(env, kind, id) {
+  const record = await env.SHARES.get(TEAM_KINDS[kind].main(id), "json");
+  if (!record) return json({ error: "not_found" }, 404);
+  const words = [];
+  const walk = (v, key = "") => {
+    if (words.join(" · ").length > 600) return;
+    if (/token|key|hash|secret|ip|pin|sig|url|id$/i.test(key)) return;
+    if (typeof v === "string") { if (v.trim() && !/^\d{4}-\d{2}-\d{2}T/.test(v)) words.push(v.trim()); return; }
+    if (Array.isArray(v)) { for (const x of v) walk(x, key); return; }
+    if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) walk(x, k);
+  };
+  walk(record);
+  return json({ kind, name: TEAM_KINDS[kind].name, text: words.join(" · ").slice(0, 600), expiresAt: record.expiresAt ?? null });
+}
+
+function teamDownPage(down) {
+  return html(page("내려진 링크예요", `<p class="empty">${esc(TEAM_REMOVED_TEXT)}</p>${down.reason ? `<p class="muted">내린 이유: ${esc(down.reason)}</p>` : ""}`), 410);
+}
+
+/** The plain form at the foot of a team page (no script), with the line that 밤낮 never asks for money. */
+function teamFoot(kind, key) {
+  const options = Object.entries(TEAM_REPORT_REASONS).map(([k, v], i) =>
+    `<label><input type="radio" name="reason" value="${k}"${i === 0 ? " required" : ""}> ${esc(v)}</label>`).join("");
+  return `<p class="muted foot">밤낮은 링크로 돈이나 계좌, 다른 메신저로 옮기기를 요구하지 않아요. 그런 요구를 받으면 보내지 말고 신고해 주세요.</p>` +
+    `<details class="report"><summary>이 링크 신고하기</summary><form method="post" action="/${kind}/${esc(key)}/report">` +
+    `<p class="muted">운영자가 확인해 운영 규칙에 어긋나면 링크를 내려요. 누가 신고했는지는 남지 않아요.</p>${options}` +
+    `<button type="submit">신고 보내기</button></form></details>`;
 }
 
 // ---- [SHR-14] 우리 조 모아 보기: links put together under a 6-letter code ----
@@ -644,6 +824,9 @@ async function clockCreate(request, env, url) {
   if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 2048)); } catch { return json({ error: "bad_json" }, 400); }
+  // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
+  const scam = scamProblem(body);
+  if (scam) return json({ error: "contact", why: scam }, 400);
   const name = cleanText(body?.name, LIMITS.clockName);
   const place = cleanText(body?.place ?? "", LIMITS.clockPlace);
   if (!name || place == null) return json({ error: "bad_name" }, 400);
@@ -715,7 +898,7 @@ async function clockView(env, id, done, status = 200, known = null) {
 <div class="buttons">${button("in", "출근")}${button("out", "퇴근")}</div>
 <h2>오늘 (${today.slice(5).replace("-", "/")})</h2>${list}
 <p class="foot muted">누른 시각만 사장님에게 가요. 위치·전화번호·기기 정보는 보내지 않아요. 잘못 눌렀으면 사장님께 말해 주세요. 사장님이 확인한 뒤 급여에 넣어요.</p>${spreadSlot("clock")}`;
-  return html(page(`${record.name}님 출퇴근`, body), status);
+  return html(page(`${record.name}님 출퇴근`, body + teamFoot("c", id)), status);
 }
 
 // ---- 1.38 [P3-L-13] 근무 신청 받기 ----
@@ -771,6 +954,9 @@ async function askCreate(request, env, url) {
   if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 16 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
+  const scam = scamProblem(body);
+  if (scam) return json({ error: "contact", why: scam }, 400);
   const team = cleanText(body?.team, LIMITS.askTeam);
   const month = isMonth(body?.month) ? body.month : null;
   const rules = month ? askRules(body?.rules, month) : null;
@@ -963,7 +1149,7 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
 <p class="rule">${esc(rule)}</p>${saidHtml}<div class="grid">${heads}${cells.join("")}</div>${panel}
 <h2>내 신청 ${mine.wishes.length}일</h2>${list}<h2>리더에게 한 줄</h2>${note}
 <p class="foot muted">신청한 날·종류·한 줄·신청한 시각만 리더에게 가요. 다른 사람에게는 날마다 몇 명이 신청했는지만 보여요${rules.showNames ? "(리더가 이름도 보이게 했어요)" : ""}. 위치·전화번호·기기 정보는 보내지 않아요. 근무표가 확정되면 리더가 근무표 링크를 보내 줘요.</p>${spreadSlot("request")}`;
-  return html(page(`${record.team} ${mo}월 근무 신청`, body), status);
+  return html(page(`${record.team} ${mo}월 근무 신청`, body + teamFoot("a", key)), status);
 }
 
 // ---- 1.38 [P3-X-01] 결원 메우기 (and the other yes/no asks of a team) ----
@@ -981,6 +1167,9 @@ async function callCreate(request, env, url) {
   if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 8 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
+  const scam = scamProblem(body);
+  if (scam) return json({ error: "contact", why: scam }, 400);
   const team = cleanText(body?.team, LIMITS.askTeam);
   const title = cleanText(body?.title, LIMITS.callTitle);
   const detail = cleanText(body?.detail ?? "", LIMITS.callDetail);
@@ -1085,7 +1274,7 @@ async function callView(env, key, said, status = 200, known = null) {
   const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
   const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.team)} · ${esc(me)}님께</p>${record.detail ? `<p>${esc(record.detail)}</p>` : ""}${saidHtml}${state}
 <p class="foot muted">답과 답한 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>${spreadSlot("call")}`;
-  return html(page(record.title, body), status);
+  return html(page(record.title, body + teamFoot("v", key)), status);
 }
 
 // ---- 1.38 [P3-L-15] 봤어요 and 병동 전체 보기 ----
@@ -1222,6 +1411,9 @@ async function boardCreate(request, env, url) {
   if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 64 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
+  const scam = scamProblem(body);
+  if (scam) return json({ error: "contact", why: scam }, 400);
   const board = boardBody(body);
   if (!board || Date.parse(board.expiresAt) < Date.now()) return json({ error: "bad_board" }, 400);
   const id = randomId(22);
@@ -1244,6 +1436,9 @@ async function boardUpdate(request, env, id) {
   if (record instanceof Response) return record;
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 64 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
+  const scam = scamProblem(body);
+  if (scam) return json({ error: "contact", why: scam }, 400);
   const board = boardBody(body);
   if (!board) return json({ error: "bad_board" }, 400);
   await put(env, boardKey(id), { ...board, tokenHash: record.tokenHash, updatedAt: new Date().toISOString() });
@@ -1272,7 +1467,7 @@ async function boardView(env, id) {
   const html_ = `<h1>${esc(record.team)} ${m}월 근무표</h1><p class="muted">리더가 확정한 표예요. 바뀌면 이 주소 그대로 새로 보여요.</p>
 <div class="wide"><table class="ward"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody><tfoot><tr><th class="who">날마다</th><td colspan="${days}"></td></tr>${counts}</tfoot></table></div>
 <p class="foot muted">이름과 근무 글자만 있어요. ${record.month.slice(0, 4)}년 ${m}월이 끝나고 ${LIMITS.boardDaysAfter}일 뒤에 지워져요.</p>${spreadSlot("board")}`;
-  return html(page(`${record.team} ${m}월 근무표`, html_));
+  return html(page(`${record.team} ${m}월 근무표`, html_ + teamFoot("b", id)));
 }
 
 // ---- 1.38 [P3-X-06] 근로계약서 링크 서명 ----
@@ -1288,6 +1483,9 @@ async function signCreate(request, env, url) {
   if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 24 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
+  const scam = scamProblem(body);
+  if (scam) return json({ error: "contact", why: scam }, 400);
   const place = cleanText(body?.place, LIMITS.clockPlace);
   const staff = cleanText(body?.staff, LIMITS.askName);
   const title = cleanText(body?.title, LIMITS.signTitle);
@@ -1368,7 +1566,7 @@ async function signView(env, key, said, status = 200, known = null) {
 <label><input type="checkbox" name="agree" value="1" required> 위 내용을 읽었고 동의해요</label><button class="in">서명하기</button></form>`;
   const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.place)} · ${esc(record.staff)}님</p>${saidHtml}${items}${form}
 <p class="foot muted">이름과 서명한 시각만 사장님 앱에 가요. 서명한 계약서는 사장님 휴대폰과 PDF에만 남고, 이 페이지는 사장님이 받은 뒤나 ${kstDay(record.expiresAt)}에 지워져요.</p>${record.signed ? spreadSlot("sign") : ""}`;
-  return html(page(record.title, body), status);
+  return html(page(record.title, body + teamFoot("k", key)), status);
 }
 
 // ---- 1.38 [P3-X-02] 바꾸기 요청 ----
@@ -1412,6 +1610,9 @@ async function swapCreate(request, env, url) {
   if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
+  const scam = scamProblem(body);
+  if (scam) return json({ error: "contact", why: scam }, 400);
   const team = cleanText(body?.team, LIMITS.askTeam);
   const month = typeof body?.month === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(body.month) ? body.month : null;
   const names = Array.isArray(body?.people) ? body.people.map((n) => cleanText(n, LIMITS.askName)) : [];
@@ -1460,6 +1661,9 @@ async function swapChange(request, env, id, url) {
   if (record instanceof Response) return record;
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 128 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  // 1.39 [CARE-09] 전화·링크·계좌·메신저 옮기기는 팀 페이지에 싣지 않아요(사기 막기).
+  const scam = scamProblem(body);
+  if (scam) return json({ error: "contact", why: scam }, 400);
   if (body?.labels !== undefined) {
     const days = record.rows[0]?.length ?? 0;
     const board = swapBoard(body, record.people.length, days);
@@ -1587,7 +1791,7 @@ async function swapView(env, key, said, status = 200, known = null) {
   const body = `<h1>${esc(record.team)} ${m}월 근무 바꾸기</h1><p class="muted">${esc(me)}님 · 근무 규칙(쉬는 시간·주 52시간)에 맞는 사람만 보여요</p>${saidHtml}${inHtml}${sentHtml}
 <h2>바꿀 수 있는 날</h2>${pickHtml}
 <p class="foot muted">고른 날·상대·답과 누른 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>${spreadSlot("swap")}`;
-  return html(page(`${record.team} 근무 바꾸기`, body), status);
+  return html(page(`${record.team} 근무 바꾸기`, body + teamFoot("w", key)), status);
 }
 
 function groupCode() {

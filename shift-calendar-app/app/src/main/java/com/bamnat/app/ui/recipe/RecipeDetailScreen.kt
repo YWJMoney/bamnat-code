@@ -684,7 +684,11 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     Row {
         if (replyTo != null) TextButton(onClick = { replyTo = null }) { Text("답글 그만두기") }
         Spacer(Modifier.weight(1f))
-        Button(onClick = { vm.post(body.trim(), kind, replyTo?.id) { ok -> if (ok) { body = ""; replyTo = null } } },
+        // 1.39 조사 ⑦ 쓰기 전 한마디(막지 않아요).
+        var nudge by remember { mutableStateOf(false) }
+        val go = { vm.post(body.trim(), kind, replyTo?.id) { ok -> if (ok) { body = ""; replyTo = null } } }
+        if (nudge) com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = false }, onSend = { nudge = false; go() })
+        Button(onClick = { if (com.bamnat.core.plaza.PostNudge.needed(body)) nudge = true else go() },
             enabled = RecipeText.graphemes(body.trim()) >= 2 && problem == null) { Text("올리기") }
     }
     disliking?.let { p -> DislikeDialog(onSend = { r, o -> vm.votePost(p.id, -1, r, o); disliking = null }, onDismiss = { disliking = null }) }
