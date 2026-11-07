@@ -287,7 +287,7 @@ fun MonthGrid(
     /** [EASE-04] 1.38 월급날 (근무·급여 › 규칙): a small '급여' at the top left. */
     payDays: Set<LocalDate> = emptySet(),
     /** [CELL-01] 1.39 Each day's memos, one title each, when the cells list them; null keeps the one line under the badge. */
-    memoLists: Map<LocalDate, List<String>>? = null,
+    memoLists: Map<LocalDate, List<CellMemo>>? = null,
     /** [CELL-03] 1.39 Days with nothing to list keep the plain cell (a month listed at its plain height, for its memo days). */
     listEmptyDays: Boolean = true,
     /** 1.39 [FLOW-03] Right after the first setup: how much of the month has come in (0 to 1), read while drawing ([SetupFill]). */
@@ -480,7 +480,7 @@ fun WeekStrip(
     showSpend: Boolean = false,
     memoTexts: Map<LocalDate, String> = emptyMap(),
     /** [CELL-01] 1.39 As [MonthGrid]'s. */
-    memoLists: Map<LocalDate, List<String>>? = null,
+    memoLists: Map<LocalDate, List<CellMemo>>? = null,
     /** [CELL-03] 1.39 Days with nothing to list keep the plain cell (a month listed at its plain height, for its memo days). */
     listEmptyDays: Boolean = true,
     focus: CalendarFocus = CalendarFocus.SHIFTS,
@@ -581,7 +581,7 @@ private fun DayCell(
     /** [ROST-01] Days to look at (한 달 근무 넣기: cells a roster was read with doubt), tinted behind the cell. */
     marked: Set<LocalDate> = emptySet(),
     /** [CELL-01] 1.39 The day's memo titles when the cells list their jobs and memos; null for the plain cell. */
-    memoList: List<String>? = null,
+    memoList: List<CellMemo>? = null,
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
@@ -682,7 +682,7 @@ private fun DayCell(
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
         // [CELL-03] 1.39 A listing cell cuts long lines with '…': its button reads each memo whole.
-        if (!memoList.isNullOrEmpty()) append(", 메모 ").append(memoList.joinToString(", "))
+        if (!memoList.isNullOrEmpty()) append(", 메모 ").append(memoList.joinToString(", ") { if (it.done) "${it.text} 끝냄" else it.text })
         else if (hasMemo) append(", 메모 있음")
         fieldUnitsText(fieldJobs)?.let { append(", ").append(it) }
         fieldJobs?.filter { it.status == com.bamnat.core.money.JobStatus.TENTATIVE || it.cancelled }?.forEach { append(", ‘${it.title}’ ${it.status.label}") }
@@ -826,7 +826,12 @@ private fun DayCell(
             val items = buildList {
                 if (!redLast) redDay?.let(::add)
                 if (focus == CalendarFocus.JOBS || jobFirst) addAll(jobLines(fieldJobs, dark2, scheme.onSurface))
-                memoList.forEach { add(CellLine(it, ink = scheme.onSurface, bar = cal.memoDot, fill = cal.memoDot.copy(alpha = if (dark2) 0.22f else 0.12f))) }
+                // [CELL-04] Each memo in the colour the user gave it (the memo list's own colour), a finished checklist struck and faded.
+                memoList.forEach { m ->
+                    val own = if (m.color > 0) com.bamnat.app.ui.components.memoBackground(m.color) else null
+                    add(CellLine(m.text, ink = scheme.onSurface.copy(alpha = if (m.done) 0.5f else 1f), bar = cal.memoDot,
+                        fill = own ?: cal.memoDot.copy(alpha = if (dark2) 0.22f else 0.12f), struck = m.done))
+                }
                 if (redLast) redDay?.let(::add)
             }
             val moneyText = (if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })
@@ -1239,7 +1244,7 @@ private fun cellTexts(
 }
 
 /** [CELL-01][CELL-03] A day's memo titles when its cell lists, or null for the plain cell. */
-private fun dayList(lists: Map<LocalDate, List<String>>?, emptyToo: Boolean, focus: CalendarFocus, jobs: List<com.bamnat.core.money.Job>?, date: LocalDate): List<String>? {
+private fun dayList(lists: Map<LocalDate, List<CellMemo>>?, emptyToo: Boolean, focus: CalendarFocus, jobs: List<com.bamnat.core.money.Job>?, date: LocalDate): List<CellMemo>? {
     val memos = lists?.let { it[date].orEmpty() } ?: return null
     return memos.takeIf { emptyToo || it.isNotEmpty() || focus != CalendarFocus.SHIFTS && !jobs.isNullOrEmpty() }
 }

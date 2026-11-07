@@ -99,6 +99,32 @@ internal fun cellListOn(choice: String, style: com.bamnat.core.work.WorkStyle?, 
 internal fun cellListTall(choice: String, jobs: Boolean, memoInCells: Boolean, view: CalendarView, monthHasLines: Boolean): Boolean =
     monthHasLines && (choice == "on" || jobs || memoInCells || (view.memo ?: 0) > 0)
 
+/**
+ * [CELL-04] 1.39 발굴 (일정 앱에서 온 사용자: 칸 안 메모가 모두 같은 색, 시간 순서가 아님) One memo of a day as its cell lists it:
+ * the time of a schedule in front ("14:00 치과"), the colour the user gave the memo, and a checklist whose every item is done struck through.
+ */
+data class CellMemo(val text: String, val color: Int = 0, val done: Boolean = false)
+
+/**
+ * [CELL-04] A day's memos for its cell: schedules first, by their time, then the rest in the order they were (pinned first). A repeating
+ * schedule shows its own time on each day it comes back.
+ */
+internal fun cellMemos(memos: List<com.bamnat.core.memo.Memo>, date: java.time.LocalDate): List<CellMemo> {
+    fun time(m: com.bamnat.core.memo.Memo): java.time.LocalTime? =
+        m.reminder?.at?.takeIf { it.toLocalDate() == date || m.repeat.isNotBlank() }?.toLocalTime()
+    return memos.mapNotNull { m ->
+        val title = m.title.ifBlank { m.preview }.trim().lineSequence().firstOrNull().orEmpty()
+        if (title.isBlank()) null else Triple(m, time(m), title)
+    }.sortedWith(compareBy({ it.second == null }, { it.second }, { !it.first.pinned }))
+        .map { (m, t, title) ->
+            CellMemo(
+                text = t?.let { "%02d:%02d %s".format(it.hour, it.minute, title) } ?: title,
+                color = m.colorIndex,
+                done = m.isChecklist && m.checklist.isNotEmpty() && m.checklist.all { it.checked },
+            )
+        }
+}
+
 /** [CELL-02] 1.39 What a listing cell shows under its date, handed to a theme's own cell ([CustomCellBody]). */
 internal class CellListContent(val lines: List<CellLine>, val foot: CellFoot?)
 
