@@ -1216,6 +1216,20 @@ export async function devUpdate(env, row, body, now) {
     const text = body.news === null ? "" : plainText(body.news, 80, "news");
     if (text !== (row.news ?? "")) [edit.news, set.news] = [[row.news ?? "", text], text];
   }
+  // 1.39 [LOOP-17][LOOP-08] 알려진 문제판에 보일 쉬운 제목·보일지, 전달 길·크기: 저장소 동기화와 같은 칸을 관리자 앱에서도(요금은 따로, 최고 관리자만).
+  if (body.publicTitle !== undefined) {
+    const text = body.publicTitle ? inquiryText(String(body.publicTitle)).slice(0, LOOP.knownTitle) : "";
+    if (text !== (row.public_title ?? "")) [edit.publicTitle, set.public_title] = [[row.public_title ?? "", text], text];
+  }
+  if (body.known !== undefined) {
+    const k = body.known === true ? 1 : body.known === false ? -1 : 0;
+    if (k !== (row.known ?? 0)) [edit.known, set.known] = [[row.known ?? 0, k], k];
+  }
+  for (const [key, names] of [["route", LOOP.routes], ["size", LOOP.sizes]]) {
+    if (body[key] === undefined) continue;
+    const v = body[key] === null || body[key] === "" ? "" : Object.hasOwn(names, body[key]) ? body[key] : refuse(key, key);
+    if (v !== (row[key] ?? "")) [edit[key], set[key]] = [[row[key] ?? "", v], v];
+  }
   if (Object.keys(edit).length) {
     stmts.push(devEvent(env, row.id, now, "edit", edit));
     notes.push(["dev_edit", Object.keys(edit).join(" ")]);
@@ -1371,6 +1385,12 @@ export const devItem = (r) => ({
   releasedIn: r.released_in ?? null,
   shipReply: r.ship_reply ?? "",
   news: r.news ?? "",
+  // 1.39 [LOOP-17][LOOP-08]
+  publicTitle: r.public_title ?? "",
+  known: r.known ?? 0,
+  route: r.route ?? "",
+  size: r.size ?? "",
+  track: r.track ?? "",
   links: r.links ?? 0,
   waiting: r.waiting ?? 0,
   createdBy: { id: r.created_by, name: r.created_by_name },

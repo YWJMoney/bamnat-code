@@ -85,7 +85,7 @@ export function loopViews(A) {
         ${box("phone", "고친 판으로 연 폰에 바로 안내", "단계적 출시 중에 그 폰에만")}
         ${box("halt", "단계적 출시가 나빠지면 멈춤 권장 알림", "판 건강 비교로")}
         <h3>Play 인앱 업데이트</h3>
-        <p class="hint">앱이 하루 한 번 읽어요. 이 versionCode보다 낮은 앱은 긴급이면 바로 업데이트 화면을, 정기면 앱 안에서 한 번 '업데이트' 단추를 보여요. 0이면 권하지 않아요.</p>
+        <p class="hint">앱이 하루 한 번 읽고 열 때마다 봐요(첫 설정을 마친 폰만). 이 versionCode보다 낮은 앱은 긴급이면 Play 전체 화면 업데이트를, 정기면 Play의 '업데이트할까요?' 창을 새 판마다 한 번 띄우고 뒤에서 받은 뒤 '다시 시작'을 물어요. 0이면 권하지 않아요. Play에서 받은 앱에서만 돼요.</p>
         <label for="ls-urgent">긴급(바로 업데이트) 기준 versionCode</label><input id="ls-urgent" name="urgentMin" type="number" min="0" inputmode="numeric" value="${sw.urgentMin ?? 0}"${owner() ? "" : " disabled"}>
         <label for="ls-flex">정기(한 번 권함) 기준 versionCode</label><input id="ls-flex" name="flexibleMin" type="number" min="0" inputmode="numeric" value="${sw.flexibleMin ?? 0}"${owner() ? "" : " disabled"}>
         ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);

@@ -878,6 +878,8 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                 Text("개발자가 읽고 답하면 여기에 보여요. 보통 하루 안에 답해요. 설정 탭과 설정 첫 화면에도 표시해 드려요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            // 1.39 [LOOP-16] 해결됐나요: after the fixed version reached this phone, two presses say if it worked.
+            if (i.askFixed || i.fixed != 0) FixedAsk(i, busy) { ok -> error = null; vm.fixed(i.id, ok) { why -> error = why } }
             if (i.answers > 0) RateAnswer(i, busy, onMore = { more ->
                 error = null
                 vm.more(i.id, more) { sent, why -> if (sent == null) error = why }
@@ -973,6 +975,31 @@ private fun RateAnswer(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {},
                 OutlinedTextField(line, { line = it.take(200) }, Modifier.weight(1f), singleLine = true,
                     placeholder = { Text("무엇이 아쉬웠나요? (한 줄)") })
                 TextButton(enabled = line.isNotBlank() && !busy, onClick = { onMore("$MISSED ${line.trim()}"); line = "" }) { Text("보내기") }
+            }
+        }
+    }
+}
+
+/**
+ * 1.39 [LOOP-16] 해결됐나요? shows once the fix is in the version on this phone. 아직이에요 opens the question
+ * again for the developer, so a fix that did not work is not lost behind a 반영 mark.
+ */
+@Composable
+private fun FixedAsk(i: Inquiry, busy: Boolean, onAnswer: (Boolean) -> Unit) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            when (i.fixed) {
+                1 -> Text("해결됐다고 알려 주셨어요. 고마워요", style = MaterialTheme.typography.bodyMedium)
+                -1 -> Text("아직 그대로라고 알려 주셨어요. 개발자가 다시 살펴보고 여기에 답할게요",
+                    style = MaterialTheme.typography.bodyMedium)
+                else -> {
+                    Text("고친 업데이트가 이 폰에 들어왔어요. 문제가 해결됐나요?", style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(enabled = !busy, onClick = { onAnswer(true) }) { Text("해결됐어요") }
+                        OutlinedButton(enabled = !busy, onClick = { onAnswer(false) }) { Text("아직이에요") }
+                    }
+                }
             }
         }
     }
@@ -1183,6 +1210,48 @@ private fun Bubble(text: String, fromDeveloper: Boolean, at: String) {
 }
 
 /**
+ * 1.39 [LOOP-17] 지금 알려진 문제: problems many people met, with where the fix stands. 나도 겪어요 counts this
+ * phone once and brings the answer when the fixed version ships; pressing again takes it back. Folded to
+ * three rows so it never pushes the help answers far down.
+ */
+@Composable
+private fun KnownIssues(vm: InquiryViewModel) {
+    val known by vm.known.collectAsStateWithLifecycle()
+    val busy by vm.busy.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.loadKnown() }
+    if (known.isEmpty()) return
+    var all by rememberSaveable { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("지금 알려진 문제", style = MaterialTheme.typography.titleSmall)
+            Text("같은 일을 겪으면 ‘나도 겪어요’만 눌러 주세요. 고친 업데이트가 나오면 내 문의로 알려 드려요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            (if (all) known else known.take(3)).forEach { k ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(k.title, style = MaterialTheme.typography.bodyMedium)
+                        Text(knownState(k), style = MaterialTheme.typography.bodySmall,
+                            color = if (k.state == "fixed") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    FilterChip(selected = k.mine, enabled = !busy,
+                        onClick = { error = null; vm.knownMe(k.id, !k.mine) { why -> error = why } },
+                        label = { Text(if (k.mine) "나도 겪어요 ✓" else "나도 겪어요") })
+                }
+            }
+            if (known.size > 3) TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "${known.size - 3}개 더 보기") }
+            error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
+
+internal fun knownState(k: com.bamnat.app.company.KnownIssue): String = when (k.state) {
+    "fixed" -> (k.version?.let { "$it 버전에서 고쳤어요" } ?: "고쳤어요") + " · 업데이트해 주세요"
+    "fixing" -> "고치는 중이에요" + if (k.me > 1) " · ${k.me}명이 겪어요" else ""
+    else -> "확인하고 있어요" + if (k.me > 1) " · ${k.me}명이 겪어요" else ""
+}
+
+/**
  * [UX-05] 도움말: one search over the answers, the settings and 모두의 문의, the answers about the screen
  * it was opened from first, then the rest. A question is always one tap away at the end, with the
  * words searched already in it, so not finding an answer is never a dead end.
@@ -1222,6 +1291,8 @@ private fun HelpHome(
             singleLine = true,
             shape = MaterialTheme.shapes.extraLarge,
         )
+        // 1.39 [LOOP-17] 지금 알려진 문제: before writing, what is already being fixed, and 나도 겪어요 instead of a new question.
+        if (query.isBlank() && vm.online) KnownIssues(vm)
         // [INQ-07] 문의하기 on the first tab, not only behind 내 문의 › 새 문의 쓰기 (점검 보고서 하 '문의').
         // AG 1.27 [INVITE-12] What a 문의 is for, and that it is answered, said above it.
         if (query.isBlank() && vm.online) Text(com.bamnat.app.ui.grow.FEEDBACK_WORDS, style = MaterialTheme.typography.bodySmall,

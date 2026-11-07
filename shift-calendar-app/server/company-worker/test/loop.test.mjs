@@ -314,6 +314,24 @@ test("[LOOP-17] 알려진 문제판: 여럿이 겪는 것만 보이고, 나도 �
   assert.equal((await call("POST", `/api/known/${d}/me`, { on: true })).status, 400);
 });
 
+test("[LOOP-17][LOOP-08] 관리자 앱에서도 알려진 문제 제목·보일지·전달 길·크기를 정하고 기록에 남아요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const owner = await signIn(call);
+  const q1 = await ask(call, 1, "잠금 화면에서 알람 소리가 작아요");
+  const d = await item(call, owner, "잠금 화면 알람 소리", [q1]);
+  const r = await call("POST", `/api/admin/dev/${d}`, { publicTitle: "  잠금 화면 알람 소리가 작아요 ", known: true, route: "app", size: "fix" }, owner);
+  assert.equal(r.status, 200);
+  assert.deepEqual([r.data.publicTitle, r.data.known, r.data.route, r.data.size], ["잠금 화면 알람 소리가 작아요", 1, "app", "fix"]);
+  assert.ok(r.data.history.some((h) => h.action === "edit" && h.detail?.publicTitle));
+  // 늘 보이기면 한 사람만 겪어도 보여요.
+  t.mock.timers.tick(61e3);
+  assert.deepEqual((await call("GET", "/api/known", undefined, { "x-device": device(5) })).data.items.map((k) => k.title), ["잠금 화면 알람 소리가 작아요"]);
+  assert.equal((await call("POST", `/api/admin/dev/${d}`, { route: "rocket" }, owner)).status, 400);
+  const off = await call("POST", `/api/admin/dev/${d}`, { known: false, route: null }, owner);
+  assert.deepEqual([off.data.known, off.data.route], [-1, ""]);
+});
+
 test("[LOOP-14] 보상 규칙 세분화: 문제 신고·다듬기·새 기능 제안·한 달 상한을 최고 관리자가 바꾸고, 회사 방식 요청 보상은 따로예요", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const { call, DB } = server();

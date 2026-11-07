@@ -429,8 +429,10 @@ export async function devQueue(env, limit = 60) {
       (SELECT GROUP_CONCAT(m.text, ' ') FROM dev_links l JOIN inquiry_messages m ON m.inquiry_id = l.inquiry_id AND m.sender = 'user' WHERE l.item_id = d.id) AS words
     FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') LIMIT 400`).catch(() => []);
   const URGENT_WORDS = /안\s*울|못\s*(들|일어)|놓쳤|늦게\s*울|지각|안\s*열|안\s*켜|튕|강제\s*종료|꺼져|데이터.{0,6}(사라|없어|날아)|사라졌|환불|결제.{0,6}(안|됐|두\s*번)/;
+  // 수면(사용자 11-07 '수면 문제도 긴급인지 검토'): 녹음·마이크가 안 꺼짐, 방해 금지가 안 풀림, 소리 클립이 안 지워짐은 알람·개인정보와 같은 급함.
+  const SLEEP_URGENT = /(녹음|마이크|측정).{0,8}(계속|안\s*꺼|안\s*멈|켜져)|방해\s*금지.{0,8}(안\s*풀|계속|안\s*꺼)|(소리|녹음).{0,6}(파일|클립).{0,8}(남아|안\s*지워)/;
   return rows.map((d) => {
-    const urgent = URGENT_WORDS.test(d.words ?? "") ? 1 : 0;
+    const urgent = URGENT_WORDS.test(d.words ?? "") || SLEEP_URGENT.test(d.words ?? "") ? 1 : 0;
     const x = { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status], track: d.track, size: d.size, route: d.route, tier: d.tier,
       handed: Boolean(d.handed_at), asks: d.asks, same: d.same, versions: d.versions, again: d.again, urgent, createdAt: iso(d.created_at) };
     return { ...x, score: impact(x) };
