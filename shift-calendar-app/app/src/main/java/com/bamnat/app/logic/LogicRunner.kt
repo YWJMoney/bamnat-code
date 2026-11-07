@@ -480,13 +480,14 @@ object LogicRunner {
 
     fun onOpen(c: AppContainer) {
         // 1.39 [FX-02] C-3: a 하루 써 보기 that ended says what it did, once, and where 프로 keeps it on.
-        runCatching { FxAccess.endedCard(c) }.getOrNull()?.let { line ->
+        runCatching { FxAccess.endedCard(c) }.getOrNull()?.let { (line, code) ->
             val n = NotificationCompat.Builder(c.appContext, Notifications.RULES_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("오늘 이 작품이 한 일")
                 .setContentText(line)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(line))
-                .setContentIntent(Notifications.open(c.appContext, NoticeLinks.Target.PRO, REQ + 3))
+                // 1.39 [FX-24] 그 작품의 장터 자세히(한 일·프로 카드)로, 내가 만든 것은 프로 화면으로.
+                .setContentIntent(Notifications.open(c.appContext, NoticeLinks.Target.PRO, REQ + 3, payload = code?.takeIf { it != com.bamnat.core.formula.FxTaste.OWN }))
                 .setSilent(true)
                 .setAutoCancel(true)
                 .build()
@@ -801,6 +802,17 @@ class LogicStore(context: Context) {
         p.edit().putStringSet("got", p.getStringSet("got", emptySet()).orEmpty() + keys).apply()
     }
     fun got(key: String): Boolean = key in p.getStringSet("got", emptySet()).orEmpty()
+
+    /** 1.39 [FX-23] Where received rules ([LogicRule.key]) and buttons ([LogicButton.id]) came from: the 장터 code, for 작품마다 하루 써 보기. */
+    fun markFrom(code: String, rules: Collection<String>, buttons: Collection<String>) {
+        if (code.isBlank() || (rules.isEmpty() && buttons.isEmpty())) return
+        val e = p.edit()
+        rules.forEach { e.putString("from.r.$it", code) }
+        buttons.forEach { e.putString("from.b.$it", code) }
+        e.apply()
+    }
+    fun fromRule(key: String): String? = p.getString("from.r.$key", null)
+    fun fromButton(id: String): String? = p.getString("from.b.$id", null)
     fun fired(key: String, at: String) = p.edit().putString("fired.$key", at).apply()
 
     var undo: String?

@@ -172,6 +172,21 @@ object ValueBook {
     fun total(kept: Kept?, value: LogicValue, today: LocalDate, n: Int): Double =
         (0 until n.coerceIn(1, PAST + 1)).sumOf { back(kept, value, today, it) ?: value.start }
 
+    /**
+     * 1.39 [FX-26] 잘못 누른 하루 바로잡기: [value]'s number in the period of [day] set to [to] (now's or a kept past one; a past period
+     * with nothing kept gets one). [today] is now.
+     */
+    fun fix(kept: Kept?, value: LogicValue, day: LocalDate, today: LocalDate, to: Double): Kept {
+        val p = value.reset.period(day)
+        val v = to.coerceIn(-LIMIT, LIMIT)
+        if (p == value.reset.period(today)) return set(value, today, v, kept)
+        val k = kept ?: Kept(value.start, value.reset.period(today))
+        if (k.period == p) return k.copy(v = v)
+        val past = if (k.past.any { it.first == p }) k.past.map { if (it.first == p) p to v else it }
+            else (k.past + (p to v)).sortedBy { e -> (0..PAST).firstOrNull { value.reset.period(value.reset.back(today, it)) == e.first } ?: PAST + 1 }.reversed()
+        return k.copy(past = past.takeLast(PAST))
+    }
+
     /** The most a 값 칸 may hold either way (a runaway rule cannot grow it without end). */
     const val LIMIT = 1_000_000_000.0
 

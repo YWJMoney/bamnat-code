@@ -39,4 +39,20 @@ class LogicWeekTest {
         assertNull(FxExamples.into(full, water))
         assertNotNull(FxExamples.into(Logic(), FxExamples.ALL.first { it.key == "nights" }))
     }
+
+    @Test fun clashesAreSaidBeforePuttingIn() {
+        val water = LogicValue("물 잔", ValueReset.DAY, goal = 8.0)
+        val pay = LogicRule("야간 수당", RuleTrigger.END, role = "night", act = LogicAct(LogicVerb.ADD_INCOME, "수당", amount = 30000))
+        val mine = Logic(rules = listOf(pay), values = listOf(water))
+        val got = Logic(
+            rules = listOf(pay, pay.copy(name = "야간 적기", act = LogicAct(LogicVerb.ADD_MONEY, "야식", amount = 8000))),
+            values = listOf(water.copy(reset = ValueReset.WEEK)),
+        )
+        val said = LogicClash.check(mine, got)
+        assertEquals(2, said.size)
+        assertTrue(said[0].contains("매주"))
+        assertTrue(said[1].contains("두 번 적힐"))
+        // The same rule is kept once, not a clash; a different time is not one either.
+        assertTrue(LogicClash.check(mine, Logic(rules = listOf(pay, pay.copy(name = "주간", role = "day", min = 30)))).isEmpty())
+    }
 }

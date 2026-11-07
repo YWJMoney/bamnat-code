@@ -88,6 +88,22 @@ class FxProTest {
         assertNull(LogicRule.from(r.copy(of = null).toMap()))
     }
 
+    @Test fun aTryOpensOnlyItsWork() {
+        // [FX-23] A's try opens A's ✦ rule, not B's.
+        val a = LogicRule("A 스트레칭", RuleTrigger.EVERY, min = 60, act = LogicAct(LogicVerb.NOTIFY, "A"))
+        val b = LogicRule("B 스트레칭", RuleTrigger.EVERY, min = 90, act = LogicAct(LogicVerb.NOTIFY, "B"))
+        val l = Logic(listOf(memo), listOf(night, a, b))
+        val free = FxPro.free(l, { false }, { it.key == a.key })
+        assertEquals(listOf(night, a), free.rules)
+        assertEquals(listOf(memo), free.buttons)
+        val at = Instant.parse("2026-11-07T09:00:00Z")
+        val s = FxTaste.start(FxTaste.start(FxTaste.State(), "AAAA11", at)!!, "BBBB22", at.plusSeconds(20 * 3600))!!
+        assertEquals(setOf("AAAA11", "BBBB22"), s.openKeys(at.plusSeconds(21 * 3600)))
+        assertEquals(setOf("BBBB22"), s.openKeys(at.plusSeconds(25 * 3600)))
+        assertEquals("AAAA11", s.lastEnded(at.plusSeconds(25 * 3600)))
+        assertNull(s.lastEnded(at.plusSeconds(3600)))
+    }
+
     @Test fun newLooksArePro() {
         assertTrue(FxPro.looks(listOf("calTheme", "shiftLook")).isEmpty())
         assertEquals(setOf(FxPro.Part.LOOK), FxPro.looks("parts", mapOf("parts" to listOf(mapOf("id" to "cal.cell"), mapOf("id" to "night.clock")))))
@@ -147,6 +163,14 @@ class FxProTest {
         assertEquals(17.0, s.total(2), 0.0)
         assertEquals(36.0, s.total(7), 0.0) // nothing kept counts as 0
         assertEquals(k, ValueBook.decode(ValueBook.encode(mapOf("물 잔" to k!!)))["물 잔"])
+        // [FX-26] 잘못 누른 하루 바로잡기: a kept past day, a day with nothing kept, and today.
+        val f1 = ValueBook.fix(k, water, d.minusDays(2), d, 8.0)
+        assertEquals(8.0, ValueSeries(water, f1, d, d.atTime(20, 0)).back(2)!!, 0.0)
+        assertEquals(5, ValueSeries(water, f1, d, d.atTime(20, 0)).streak())
+        val f2 = ValueBook.fix(f1, water, d.minusDays(6), d, 5.0)
+        assertEquals(5.0, ValueSeries(water, f2, d, d.atTime(20, 0)).back(6)!!, 0.0)
+        assertEquals(f2.past.last().first, d.minusDays(1).toString())
+        assertEquals(3.0, ValueBook.fix(f2, water, d, d, 3.0).v, 0.0)
         val scope = object : FormulaScope {
             override fun get(name: String): Value? = null
             override fun series(name: String) = if (name == "물 잔") s else null

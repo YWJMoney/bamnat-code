@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -848,6 +850,8 @@ fun LogicEditor(
         store.setOff(r.key, true); bump++; LogicRunner.schedule(c); true
     }
     var editValue by remember { mutableStateOf<Int?>(null) }
+    var history by remember { mutableStateOf<com.bamnat.core.formula.LogicValue?>(null) }
+    history?.let { v -> ValueHistory(v, { history = null }) { bump++ } }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // 1.39 [FX-01] 프로 문: what of this work is a 프로 기능 장치, and whether it runs on this phone.
         FxDoor(logic)
@@ -917,7 +921,9 @@ fun LogicEditor(
         logic.values.forEachIndexed { i, v ->
             val now = remember(bump, v) { FxValues.now(v.name) }
             LineCard(v.say(), now?.let { "지금 ${v.show(it)}" }, null, null, onEdit = if (readOnly) onOpen else ({ editValue = i }),
-                onRemove = { onChange(logic.copy(values = logic.values.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
+                onRemove = { onChange(logic.copy(values = logic.values.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
+                // 1.39 [FX-26] 값 칸 기록 보기·고치기 (설정의 목록에서).
+                action = if (phone && v.kind == com.bamnat.core.formula.ValueKind.NUM && v.reset != com.bamnat.core.formula.ValueReset.NEVER) "기록 보기" to { history = v } else null)
         }
         if (!readOnly && logic.values.size < com.bamnat.core.formula.LogicValue.MAX) TextButton(onClick = { editValue = -1 }) { Text("+ 값 칸 만들기") }
         if (phone && store.undo != null) OutlinedButton(onClick = { c.appScope.launch { LogicRunner.undo(c); bump++ } }) { Text("마지막 동작 되돌리기") }
@@ -1093,6 +1099,57 @@ internal fun fxUntil(at: java.time.Instant): String {
     val z = at.atZone(com.bamnat.core.time.Today.zone())
     val day = if (z.toLocalDate() == com.bamnat.core.time.Today.date()) "오늘" else "내일"
     return "$day ${"%02d:%02d".format(z.hour, z.minute)}"
+}
+
+/**
+ * 1.39 [FX-26] 값 칸 기록: 지난 14기간 막대(목표선), 연속·합계, 그리고 잘못 누른 날 바로잡기(그 기간을 눌러 숫자 고치기).
+ */
+@Composable
+private fun ValueHistory(v: com.bamnat.core.formula.LogicValue, onClose: () -> Unit, onFixed: () -> Unit) {
+    val c = LocalContext.current.appContainer
+    val all by FxValues.flow(c).collectAsState()
+    val today = remember { com.bamnat.core.time.Today.date() }
+    val kept = all?.get(v.name)
+    val n = 14
+    val days = remember(today) { (n - 1 downTo 0).map { v.reset.back(today, it) } }
+    val nums = days.map { com.bamnat.core.formula.ValueBook.on(kept, v, it, today) }
+    val top = (nums.filterNotNull() + listOfNotNull(v.goal)).maxOrNull()?.takeIf { it > 0 } ?: 1.0
+    var fixing by remember { mutableStateOf<LocalDate?>(null) }
+    AlertDialog(onDismissRequest = onClose,
+        title = { Text("‘${v.name}’ 기록") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val s = com.bamnat.core.formula.ValueSeries(v, kept, today, com.bamnat.core.time.Today.dateTime())
+                Text(listOfNotNull(
+                    v.goal?.let { "목표 연속 ${s.streak()}번" },
+                    "최근 7${if (v.reset == com.bamnat.core.formula.ValueReset.DAY) "일" else "번"} 합계 ${com.bamnat.core.formula.Formula.numText(s.total(7))}${v.unit}",
+                ).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                Row(Modifier.fillMaxWidth().heightIn(min = 96.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
+                    days.forEachIndexed { i, d ->
+                        val x = nums[i]
+                        val reached = v.goal != null && x != null && x >= v.goal!!
+                        Column(Modifier.weight(1f).clickable(onClickLabel = "${d.monthValue}/${d.dayOfMonth} 고치기") { fixing = d }
+                            .semantics { contentDescription = "${d.monthValue}/${d.dayOfMonth} ${x?.let { com.bamnat.core.formula.Formula.numText(it) } ?: "기록 없음"}" },
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()
+                                .height(((x ?: 0.0) / top * 80).coerceIn(2.0, 80.0).dp)
+                                .background(if (x == null) MaterialTheme.colorScheme.surfaceVariant else if (reached) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary))
+                        }
+                    }
+                }
+                Text("${days.first().monthValue}/${days.first().dayOfMonth} ~ 오늘 · 막대를 누르면 그날 숫자를 고쳐요", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                fixing?.let { d ->
+                    var text by remember(d) { mutableStateOf(com.bamnat.core.formula.ValueBook.on(kept, v, d, today)?.let(com.bamnat.core.formula.Formula::numText).orEmpty()) }
+                    OutlinedTextField(text, { t -> text = t.filter { it.isDigit() || it == '.' || it == '-' }.take(10) }, Modifier.fillMaxWidth(), singleLine = true,
+                        label = { Text("${d.monthValue}/${d.dayOfMonth} 숫자") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    TextButton(onClick = {
+                        text.toDoubleOrNull()?.let { to -> if (FxValues.fix(c, v.name, d, to)) { fixing = null; onFixed(); LogicRunner.say("${d.monthValue}/${d.dayOfMonth} ‘${v.name}’를 고쳤어요") } }
+                    }, enabled = text.toDoubleOrNull() != null) { Text("고치기") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("닫기") } })
 }
 
 /** 1.39 [FX-03] 값 칸 만들기·고치기. */

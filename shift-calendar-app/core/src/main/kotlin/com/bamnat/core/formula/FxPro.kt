@@ -131,12 +131,18 @@ object FxPro {
      * What runs without 프로: the buttons and rules with no 프로 part (1.38 things and the [TASTE] allowance), each 알림 without its
      * 알림 단추 ('10분 뒤 다시' stays). The 값 칸 list stays so its numbers are kept and shown as they were.
      */
-    fun free(l: Logic): Logic {
+    fun free(l: Logic): Logic = free(l, { false }, { false })
+
+    /**
+     * 1.39 [FX-23] 작품마다 하루 써 보기: as [free], but the buttons and rules [openButton]·[openRule] say are of a work being tried run
+     * whole (그 작품 것만, 다른 작품의 ✦는 쉬어요).
+     */
+    fun free(l: Logic, openButton: (LogicButton) -> Boolean, openRule: (LogicRule) -> Boolean): Logic {
         fun bare(a: LogicAct) = a.copy(then = a.then.filter { it in LogicAct.AGAIN })
         fun only(p: Set<Part>) = p.isEmpty() || p == setOf(Part.NOTIFY_BUTTONS)
         return Logic(
-            buttons = l.buttons.filter { only(parts(l, it)) }.map { it.copy(act = bare(it.act)) },
-            rules = l.rules.filter { only(parts(l, it)) }.map { it.copy(act = bare(it.act)) },
+            buttons = l.buttons.mapNotNull { b -> if (openButton(b)) b else if (only(parts(l, b))) b.copy(act = bare(b.act)) else null },
+            rules = l.rules.mapNotNull { r -> if (openRule(r)) r else if (only(parts(l, r))) r.copy(act = bare(r.act)) else null },
             values = l.values,
         )
     }
