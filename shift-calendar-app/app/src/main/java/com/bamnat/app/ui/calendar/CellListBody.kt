@@ -77,6 +77,15 @@ internal fun cellListOn(choice: String, jobs: Boolean, memoInCells: Boolean, vie
         else -> jobs || memoInCells || (view.memo ?: 0) > 0
     }
 
+/**
+ * [TRY-05] The same choice for a kind of work's month drawn elsewhere (입어 보기, 스튜디오): 일감 for [style]'s calendar as the calendar's own
+ * focus says, and [view] as the cells would have it. One choice, so the example lists exactly where the calendar does.
+ */
+internal fun cellListOn(choice: String, style: com.bamnat.core.work.WorkStyle?, memoInCells: Boolean, view: CalendarView,
+                        /** G1 1.39 '알아서' lists a month with dated memos (the calendar passes its own); with it, as [memoInCells] is. */
+                        hasMemos: Boolean = false): Boolean =
+    cellListOn(choice, com.bamnat.core.work.CalendarFocus.of(style) == com.bamnat.core.work.CalendarFocus.JOBS, memoInCells || hasMemos, view, false)
+
 /** [CELL-02] 1.39 What a listing cell shows under its date, handed to a theme's own cell ([CustomCellBody]). */
 internal class CellListContent(val lines: List<CellLine>, val foot: CellFoot?)
 

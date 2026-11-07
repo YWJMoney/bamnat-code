@@ -69,6 +69,7 @@ import com.bamnat.app.appContainer
 import com.bamnat.core.layout.TabOrder
 import com.bamnat.core.recipe.LookParts
 import com.bamnat.core.recipe.Recipe
+import com.bamnat.core.recipe.keepMyCellContent
 import com.bamnat.core.work.WorkStyle
 
 /** The example app at [scale], drawn at its full size and shrunk (taps still land where they are seen). */
@@ -291,6 +292,11 @@ fun TryOnScreen(
     /** [TRY-05] Opened again after a trial: the parts that were ticked and the tab that was shown. */
     startPicked: Set<String>? = null,
     startTab: String? = null,
+    /**
+     * [TRY-05] One of mine: its 달력 모양 brings what the cells show too. Someone else's leaves that as I have it, as 입기 does
+     * ([com.bamnat.core.recipe.keepMyCellContent]), so 입으면 shows the cells 입기 leaves.
+     */
+    own: Boolean = false,
     actions: @Composable ColumnScope.(Set<String>) -> Unit,
 ) {
     val c = LocalContext.current.appContainer
@@ -315,7 +321,7 @@ fun TryOnScreen(
     val mine by produceState(Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = emptyList()), c) {
         value = Recipe("지금", styles = WorkStyle.entries.toSet(), pieces = c.recipes.pieces.lookPieces(c.settingsRepository.current))
     }
-    val after = remember(mine, picked, r) { LookParts.layer(mine, LookParts.pick(r, picked)) }
+    val after = remember(mine, picked, r, own) { tryOnAfter(mine, r, picked, own) }
     var onlyChanges by remember { mutableStateOf(false) }
     var changedBlocks by remember { mutableStateOf(0) }
     // [TRY-04] The parts that change on the screen shown, by name.
@@ -467,6 +473,10 @@ fun TryOnScreen(
         )
     }
 }
+
+/** [TRY-05] 입으면 of 입어 보기: [r]'s [picked] parts on [mine], what the cells show kept as mine for someone else's (as 입기 does). */
+internal fun tryOnAfter(mine: Recipe, r: Recipe, picked: Set<String>, own: Boolean): Recipe =
+    LookParts.layer(mine, LookParts.pick(r, picked).let { if (own) it else it.keepMyCellContent() })
 
 /** The parts a box item ([com.bamnat.app.recipe.ThemeWardrobe.Kept]) holds, said in a line. */
 internal fun partsLine(ids: List<String>): String = ids.mapNotNull { LookParts.byId(it)?.label }.joinToString(" · ").ifEmpty { "전체" }
