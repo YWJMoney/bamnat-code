@@ -290,7 +290,7 @@ export function opsViews(A) {
     const tiles = `<div class="tiles core">${tile("응답 중간", t.n ? `${t.p50}ms` : "—", `24시간 ${t.n}번`)}${tile("느린 5%", t.n ? `${t.p95}ms` : "—", `가장 느림 ${t.max}ms`, t.p95 > 1500 ? "hot" : "")}
       ${tile("서버 오류", t.err, t.n ? `${Math.round((t.err / t.n) * 1000) / 10}%` : "", t.err ? "hot" : "", href("errors"))}
       ${tile("DB 크기", d.dbBytes ? bytes(d.dbBytes) : "—", d.dbBytes ? `한도의 ${Math.round(used * 100)}%` : "", used > 0.7 ? "hot" : "")}
-      ${tile("공유 서버", d.share ? (d.share.ok ? "살아 있음" : "답 없음") : "—", d.share ? `${d.share.ms}ms` : "SHARE_BASE_URL 없음", d.share && !d.share.ok ? "hot" : "")}</div>`;
+      ${tile("공유 서버", d.share ? (d.share.ok ? "살아 있음" : "답 없음") : "—", d.share ? `${d.share.ms}ms${d.share.old ? " · 옛 판(1.39 공유 서버를 올리면 정확해져요)" : ""}` : "SHARE_BASE_URL 없음", d.share && !d.share.ok ? "hot" : "")}</div>`;
     const slow = d.speed.routes.length ? `<details class="data-table" data-key="slow-routes"><summary>느린 길 ${d.speed.routes.length}개</summary><div class="table-wrap"><table class="grid-table"><thead><tr><th scope="col">길</th><th scope="col">번</th><th scope="col">중간</th><th scope="col">느린 5%</th><th scope="col">오류</th></tr></thead>
       <tbody>${d.speed.routes.map((r) => `<tr><th scope="row" class="mono">${esc(r.key)}</th><td>${r.n}</td><td>${r.p50}ms</td><td>${r.p95}ms</td><td>${r.err}</td></tr>`).join("")}</tbody></table></div></details>` : "";
     return `${tiles}${setup}${jobs}<section class="card">${head("응답 속도", "24시간")}${dayBars(d.speed.hours.map((h) => String(h.key)), d.speed.hours.map((h) => h.p95), [], "시간마다 느린 5%", (k) => `${String(k).slice(8, 10)}일 ${String(k).slice(11, 13)}시`)}${slow}</section>`;
