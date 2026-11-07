@@ -28,6 +28,8 @@ export function lum(h) {
   const v = [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255).map((x) => (x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4));
   return 0.2126 * v[0] + 0.7152 * v[1] + 0.0722 * v[2];
 }
+/** Mix two "#RRGGBB" colours, t of the way to b. */
+export const mix = (a, b, t) => "#" + [1, 3, 5].map((i) => Math.round(parseInt(a.slice(i, i + 2), 16) * (1 - t) + parseInt(b.slice(i, i + 2), 16) * t).toString(16).padStart(2, "0")).join("").toUpperCase();
 export const contrast = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
 
 const ROLE_BY_STYLE = { SHIFT: ["day", "eve", "night", "off"], DAY: ["day", "other", "long", "off"], HOURLY: ["day", "eve", "night", "off"] };
@@ -76,9 +78,23 @@ export function theme(s) {
   all.push(`cd:${H(p.card)}`, `ik:${H(p.ink)}`, `ac:${H(p.accent)}`, `ft:${f.body}`);
   const scr = [`all~${all.join("|")}`];
   for (const [k, v] of Object.entries(s.screens ?? {})) scr.push(`${k}~${v}`);
-  const alarmBg = p.alarmBg ?? (p.dark ? p.bg : "#0E0F14");
-  const alarm = [`bg:${H(alarmBg)}`, `fl:${pa.alarm ?? (p.dark && pa.screen ? pa.screen : lg(180, alarmBg, p.alarmTo ?? "#1B1D27"))}`, `cd:${H(p.alarmCard ?? (p.dark ? p.card : "#262833"))}`, `ik:FFFFFFFF`,
-    `ac:${H(p.alarmAccent ?? (contrast(p.accent, alarmBg) < 3 ? "#F2F2F2" : p.accent))}`, `ft:${f.alarm ?? (f.body === "nanumpen" ? "gaegu" : f.body)}`]; // 막 깬 눈에 가는 펜 글씨는 안 읽혀요(렌더 확인): 같은 손글씨 결의 개구로
+  // 렌더(사용자 11-07 '퀄리티 다 뛰어나?'): 밝은 세트의 알람이 모두 같은 먹색이라 '빨강 경광·분홍 체크·나무 결' 같은 설명과 달랐어요.
+  // 밝은 세트는 그 포인트 색을 깊게 가라앉힌 밤빛(눈부시지 않게)에 그 세트의 결·무늬를 같은 색으로 다시 깔아요.
+  const deepOf = (k) => { let t = k; while (contrast("#FFFFFF", mix(p.accent, "#0B0C10", t)) < 9 && t < 0.97) t += 0.03; return mix(p.accent, "#0B0C10", t); };
+  const own = !p.dark && !p.alarmBg;
+  const alarmBg = p.alarmBg ?? (p.dark ? p.bg : deepOf(0.68));
+  const deep2 = mix(alarmBg, "#0B0C10", 0.55);
+  const reTint = (paint) => {
+    const q = paint?.split(".");
+    if (q?.[0] === "tx") return `tx.${q[1]}.${A(alarmBg, 255)}.${q[3]}`;
+    if (q?.[0] === "pt") return `pt.${q[1]}.${A(mix(p.accent, "#FFFFFF", 0.35), 34)}.${A(alarmBg, 255)}.${q[4]}.${q[5]}`;
+    return null;
+  };
+  const alarmCard = p.alarmCard ?? (p.dark ? p.card : (() => { let t = 0.5; while (contrast("#FFFFFF", mix(p.accent, "#0B0C10", t)) < 5.5 && t < 0.95) t += 0.03; return mix(p.accent, "#0B0C10", t); })());
+  const alarmFill = pa.alarm ?? (p.dark && pa.screen ? pa.screen : (own && reTint(pa.screen)) || lg(180, alarmBg, p.alarmTo ?? (own ? deep2 : "#1B1D27")));
+  const alarmAc = p.alarmAccent ?? (contrast(p.accent, alarmBg) >= 4.5 ? p.accent : contrast(mix(p.accent, "#FFFFFF", 0.45), alarmBg) >= 4.5 ? mix(p.accent, "#FFFFFF", 0.45) : "#F2F2F2");
+  const alarm = [`bg:${H(alarmBg)}`, `fl:${alarmFill}`, `cd:${H(alarmCard)}`, `ik:FFFFFFFF`,
+    `ac:${H(alarmAc)}`, `ft:${f.alarm ?? (f.body === "nanumpen" ? "gaegu" : f.body)}`]; // 막 깬 눈에 가는 펜 글씨는 안 읽혀요(렌더 확인): 같은 손글씨 결의 개구로
   if (s.photo && s.alarmPhoto !== false) alarm.push(`ph:${use(s.photo)}`, `dm:${Math.min(80, (s.dim ?? 20) + 40)}`);
   if (!s.screens?.alarm) scr.push(`alarm~${alarm.join("|")}`);
   const payStyles = style ? [style] : ["SHIFT", "DAY", "HOURLY", "FIELD"];
