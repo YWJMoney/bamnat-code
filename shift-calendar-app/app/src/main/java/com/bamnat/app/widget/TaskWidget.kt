@@ -227,9 +227,15 @@ private fun note(row: TaskList.Row, today: LocalDate): String? = listOfNotNull(
 @Composable
 internal fun TaskLocked() {
     val context = androidx.glance.LocalContext.current
-    Column(GlanceModifier.fillMaxSize().clickable(actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.PRO)))) {
+    // PC 2afb3a76 (둘째 위젯의 프로 글이 위쪽만 쓰고 아래가 비어요): in the middle, with the way there as a button.
+    Column(GlanceModifier.fillMaxSize().clickable(actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.PRO))),
+        verticalAlignment = Alignment.CenterVertically, horizontalAlignment = Alignment.CenterHorizontally) {
         Text("할 일 위젯 2개째부터는 프로예요", style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14), fontWeight = FontWeight.Medium), maxLines = 2)
         Spacer(GlanceModifier.height(4.dp))
-        Text("처음 놓은 할 일 위젯은 계속 무료예요. 눌러서 프로 보기", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 3)
+        Text("처음 놓은 할 일 위젯은 계속 무료예요", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 2)
+        Spacer(GlanceModifier.height(8.dp))
+        Box(GlanceModifier.background(GlanceTheme.colors.primaryContainer).cornerRadius(16.dp).padding(horizontal = 14.dp, vertical = 6.dp)) {
+            Text("프로 보기", style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = wsp(13), fontWeight = FontWeight.Medium), maxLines = 1)
+        }
     }
 }

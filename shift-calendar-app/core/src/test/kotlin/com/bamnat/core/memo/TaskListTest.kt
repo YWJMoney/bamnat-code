@@ -60,4 +60,22 @@ class TaskListTest {
         ), today)
         assertTrue(rows.isEmpty())
     }
+
+    /** PC 2afb3a76: three things the 할 일 위젯 got wrong on the emulator. */
+    @Test fun aMemoIsDueOnItsPlansDayAndBoxesInANoteCount() {
+        val rows = TaskList.of(listOf(
+            // 날짜 11/6, 일정 11/7 20:00: today's, not late.
+            memo(1, "서류 내기", date = today.minusDays(1), reminderAt = today.atTime(20, 0)),
+            // ☐ lines written in a note with the editor's '☐ 체크'.
+            memo(2, "이삿짐", date = today.minusDays(1)).copy(body = "☐ 상자 사기\n☑ 테이프"),
+            memo(3, "장보기", date = null, pinned = true),
+            memo(4, "우유 사기", doneAt = 7),
+            // A box with nothing after it is not a line to tick.
+            memo(5, "빈 칸", date = today.minusDays(1)).copy(body = "☐ "),
+        ), today)
+        assertEquals(listOf("이삿짐", "서류 내기", "장보기", "우유 사기"), rows.map { it.text })
+        assertEquals(listOf(TaskList.Kind.LATE, TaskList.Kind.TODAY, TaskList.Kind.PINNED, TaskList.Kind.TODAY), rows.map { it.kind })
+        assertEquals("1/2", rows[0].count)
+        assertEquals(today, rows[1].day)
+    }
 }

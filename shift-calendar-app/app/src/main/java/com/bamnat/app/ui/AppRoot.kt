@@ -2404,6 +2404,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.STUDIO_MEMO -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MEMO")
     SettingsGo.STUDIO_STATS -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "STATS")
     SettingsGo.STUDIO_MANAGE -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "MANAGE")
+    SettingsGo.STUDIO_WIDGET -> Routes.studio(com.bamnat.app.ui.studio.StudioViewModel.START_AREA + "WIDGET")
     SettingsGo.LEAVE -> Routes.leave()
     SettingsGo.SENT -> Routes.companySent()
     SettingsGo.SHARE, SettingsGo.RECEIVE, SettingsGo.SLEEP, SettingsGo.CALENDAR_IMPORT,

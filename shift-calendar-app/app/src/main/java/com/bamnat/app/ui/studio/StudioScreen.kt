@@ -733,7 +733,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             DropdownMenu(open, { open = false }) {
                                 // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
                                 val manageOn = com.bamnat.app.ui.work.rememberManageOn()
-                                Area.entries.filter { it.target != null && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) && (it != Area.MANAGE || manageOn) }
+                                // 1.39 PC 2afb3a76 (스튜디오에서 위젯으로 가는 길을 못 찾았어요): 위젯 has no screen of its own (no target) and had
+                                // dropped out of this list with 1.37's canvas; it is one of the screens again.
+                                Area.entries.filter { (it.target != null || it == Area.WIDGET) && it != Area.ALL && (it != Area.PAY || (vm.style != WorkStyle.BUSINESS && vm.style != WorkStyle.INVEST)) && (it != Area.MANAGE || manageOn) }
                                     .forEach { a -> DropdownMenuItem({ Text(a.labelFor(vm.style)) }, onClick = { open = false; pick(a) }) }
                                 HorizontalDivider()
                                 listOf(Area.ALL, Area.FEATURES, Area.RULES).forEach { a ->
