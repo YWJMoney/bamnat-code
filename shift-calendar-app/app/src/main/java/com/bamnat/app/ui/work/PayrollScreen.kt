@@ -168,6 +168,18 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             if (unticked.isNotEmpty() && !isClosed) Text("4대보험을 고르지 않았어요: " + unticked.joinToString(", ") { it.name } + " · 고르면 사장님 몫까지 맞게 나와요",
                 style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning,
                 modifier = Modifier.clickable(role = Role.Button) { editing = unticked.first() }.padding(vertical = 4.dp))
+            // 1.39 G2-M1·I3: the weeks before a new 최저임금·요율 day, what changes and whom it reaches (core LawChange, 출처는 거기).
+            val law = remember(place, staff) { com.bamnat.core.boss.LawChange.next(place, staff, Today.date()) }
+            law?.let { n ->
+                Text("${n.from.monthValue}월 ${n.from.dayOfMonth}일부터 바뀌어요 · " + n.changes.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+                if (n.under.isNotEmpty()) Text("새 최저임금보다 적어요: " + n.under.joinToString(", ") { (m, h) -> "${m.name.ifBlank { "이름 없음" }}(시간당 ${Fmt.won(h)})" } +
+                    (if (n.raise > 0) " · 맞춰 올리면 ${n.from.monthValue}월 인건비 +${Fmt.won(n.raise)}" else "") + " · 눌러서 고쳐요",
+                    style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning,
+                    modifier = Modifier.clickable(role = Role.Button) { editing = n.under.first().first }.padding(vertical = 4.dp))
+            }
+            // 1.39 G2-M2 두루누리: the 4대보험 above is before it; a small place is told once (core Durunuri, 출처는 거기).
+            com.bamnat.core.boss.Durunuri.hint(ledger)?.let { Hint(it) }
             if (place.industry == null && ledger.lines.isNotEmpty()) Text("업종을 고르면 산재보험료(사장님만 내요)도 더해요 · 사업장 설정에서 한 번",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable(role = Role.Button) { settings = true }.padding(vertical = 4.dp))
@@ -576,6 +588,8 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             Text("생년월일 (선택)", modifier = Modifier.weight(1f))
             TextButton(onClick = { birthPick = true }) { Text(s.birth?.let(Fmt::shortFullDate) ?: "고르기") }
         }
+        // 1.39 G2-N2: 18세 미만은 근로시간·밤 근무 제한이 있어 생년월일로 알려 드려요(근로기준법 제69·70조).
+        if (s.birth == null) Hint("18세 미만 직원이면 넣어 주세요 · 하루 7시간·주 35시간과 밤 근무 제한을 대장에서 알려 드려요")
         SwitchLine("주휴수당 주기", s.weeklyHolidayPay, { s = s.copy(weeklyHolidayPay = it) }, "한 주 15시간이 안 되면 저절로 빠져요")
         Text("평소 일하는 요일", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
