@@ -41,6 +41,20 @@ object InsuranceRules {
         return Result(ins, why)
     }
 
+    /**
+     * 1.39 G2 (PC f7f61818 '월급 직원을 넣어도 4대보험이 비어 사장님 4대보험 0원'): what a new staff member is enrolled in by law before
+     * the boss says otherwise. 월급, or a usual week of 15시간 이상 (월 60시간), is in all four (국민연금법 제8조, 국민건강보험법 제6조,
+     * 고용보험법 제8조); a shorter week is left empty and [of] says why. [legalBreaks] as the place counts its 휴게.
+     */
+    fun defaultFor(s: StaffMember, legalBreaks: Boolean): Insurance {
+        val weekly = s.weekly.values.sumOf { it.paidMinutes(legalBreaks) }
+        val all = s.form == WageForm.MONTH || weekly >= WEEK_MINUTES
+        return (if (all) Insurance.ALL else Insurance()).copy(tax = s.insurance.tax)
+    }
+
+    /** Someone the law puts in the 4대보험 with none ticked: the 인건비 shown is short of what the boss pays. */
+    fun unticked(s: StaffMember, legalBreaks: Boolean): Boolean = !s.insurance.any && s.insurance.tax != StaffTax.BIZ && defaultFor(s, legalBreaks).any
+
     /** G4 건강보험 보수월액 하한 (국민건강보험법 시행령 제32조): 28만 원. */
     const val HEALTH_BASE_MIN = com.bamnat.core.pay.TakeHome.HEALTH_BASE_MIN
 
