@@ -198,7 +198,7 @@ class MainActivity : ComponentActivity() {
                     onDone = { container.settingsRepository.update { it.copy(textAsked = true) } })
                 // 1.39 [LOOP-13] The update downloaded behind the app: 다시 시작 when the user wants, never by itself.
                 val updateReady by com.bamnat.app.review.InAppUpdate.ready.collectAsStateWithLifecycle()
-                if (updateReady) androidx.compose.material3.AlertDialog(
+                if (updateReady) com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = { com.bamnat.app.review.InAppUpdate.later() },
                     title = { androidx.compose.material3.Text("새 버전을 받았어요") },
                     text = { androidx.compose.material3.Text("다시 시작하면 바로 새 버전으로 열려요. 몇 초면 끝나고, 기록은 그대로예요.") },
