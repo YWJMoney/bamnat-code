@@ -450,7 +450,9 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         JobBadge(count = 1, owed = job.unpaid > 0)
         Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
+        // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '페…'·'09:0/0') the amount goes under the job when both do not fit.
+        com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 168.dp, start = {
+        Column {
             val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") + " " }.orEmpty()
             // [CAL-52] Two lines before the title is cut ("욕실…" lost "타일 시공" beside 받을 돈 in a day panel).
             Text(time + job.title, style = MaterialTheme.typography.bodyLarge, maxLines = bigLines(2), overflow = TextOverflow.Ellipsis)
@@ -464,12 +466,13 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         }
-        Spacer(Modifier.width(8.dp))
-        if (job.unpaid > 0) {
-            Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
-        } else if (job.payable > 0) {
-            Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
-        }
+        }, end = {
+            if (job.unpaid > 0) {
+                Text("받을 돈 ${Fmt.wonShort(job.unpaid)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.warning)
+            } else if (job.payable > 0) {
+                Text(Fmt.wonShort(job.payable), style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
+            }
+        })
     }
 }
 
@@ -477,11 +480,12 @@ private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
 @Composable
 private fun DaySalesLine(sales: com.bamnat.core.money.DailySales) {
     val cal = LocalCalendarColors.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    // [BIGTXT-01] 1.39 (200%: '매출' alone, its amount cut away) the two parts wrap to the next line instead of being cut.
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(itemVerticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Outlined.Storefront, null, tint = cal.income, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(8.dp))
-        Text("매출 ${Fmt.won(sales.sales)}", style = MaterialTheme.typography.bodyLarge.merge(NumberStyle), maxLines = 1,
-            modifier = Modifier.weight(1f, fill = false))
+        Text("매출 ${Fmt.won(sales.sales)}", style = MaterialTheme.typography.bodyLarge.merge(NumberStyle), maxLines = 1, softWrap = false)
         if (sales.costs != 0L) {
             Text(" · 남은 돈 ${Fmt.wonShort(sales.net)}", style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
                 color = if (sales.net < 0) cal.expense else MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)

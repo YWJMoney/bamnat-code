@@ -115,6 +115,11 @@ data class AppSettings(
      * also put 메모 first in the day view; that is now the user's own [dayGroupOrder].
      */
     val memoInCells: Boolean = false,
+    /**
+     * [CELL-01] 1.39 날짜 칸에 일감·메모를 줄줄이: "auto" lists them for field work (일감) and for anyone with [memoInCells] on,
+     * "on" always, "off" never (the cell keeps its one line under the badge).
+     */
+    val cellList: String = "auto",
     /** [FEAT-17] The month's memos in short under the calendar. */
     val calendarMemos: Boolean = true,
     /** [SLP-01][MKT-07] Rest-gap signs on the calendar and the day view. */
@@ -315,6 +320,9 @@ data class AppSettings(
         else HourLimits(weeklyLimitHours, averageLimitHours)
 
     companion object {
+        /** [CELL-01] What [AppSettings.cellList] can be. */
+        val CELL_LISTS = setOf("auto", "on", "off")
+
         /**
          * [J133B-02] 1.33 빌드 8 확인 ("가게 하루 시트에 '이 주 72시간 · 64시간 넘음'"): a shop's own hours are the owner's, not
          * an employee's under 근로기준법, so a 가게 calendar flags no week, average or 52시간 (a week has 168 hours).
@@ -408,6 +416,7 @@ class SettingsRepository(context: Context) {
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
             memoInCells = prefs.getBoolean(K_MEMO_FIRST, d.memoInCells),
+            cellList = prefs.getString(K_CELL_LIST, null)?.takeIf { it in AppSettings.CELL_LISTS } ?: d.cellList,
             calendarMemos = prefs.getBoolean(K_CAL_MEMOS, d.calendarMemos),
             restCheck = prefs.getBoolean(K_REST_CHECK, d.restCheck),
             strictRest = prefs.getBoolean(K_STRICT_REST, d.strictRest),
@@ -544,6 +553,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
             .putString(K_EXTRA_KINDS, s.extraKinds.encode())
             .putBoolean(K_MEMO_FIRST, s.memoInCells)
+            .putString(K_CELL_LIST, s.cellList)
             .putBoolean(K_CAL_MEMOS, s.calendarMemos)
             .putBoolean(K_REST_CHECK, s.restCheck)
             .putBoolean(K_STRICT_REST, s.strictRest)
@@ -738,6 +748,7 @@ class SettingsRepository(context: Context) {
         const val K_ROSTER_MONTHLY = "roster_monthly"
         const val K_EXTRA_KINDS = "extra_kinds"
         const val K_MEMO_FIRST = "memo_first"
+        const val K_CELL_LIST = "cell_list"
         const val K_CAL_MEMOS = "calendar_memos"
         const val K_REST_CHECK = "rest_check"
         const val K_STRICT_REST = "strict_rest"

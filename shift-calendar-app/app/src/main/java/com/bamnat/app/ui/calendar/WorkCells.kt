@@ -78,7 +78,8 @@ internal fun FieldJobMarks(jobs: List<Job>, date: LocalDate) {
     Column(Modifier.fillMaxWidth().height(22.dp), verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically)) {
         shown.forEach { j -> FieldBar(j, date, dark, Modifier.weight(1f, fill = false)) }
         if (jobs.size > 2) {
-            Text("+${jobs.size - 1}", fontSize = 8.sp, lineHeight = 9.sp, maxLines = 1, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            val small = with(androidx.compose.ui.platform.LocalDensity.current) { minOf(8.sp.toDp(), 8.5.dp).toSp() }
+            Text("+${jobs.size - 1}", fontSize = small, lineHeight = small, maxLines = 1, style = FooterTrim, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.align(Alignment.CenterHorizontally))
         }
     }
@@ -114,8 +115,12 @@ private fun FieldBar(job: Job, date: LocalDate, dark: Boolean, modifier: Modifie
         if (first) {
             val label = if (com.bamnat.core.money.PlatformWork.isPlatform(job)) "${job.client.take(2)}${com.bamnat.core.money.PlatformWork.count(job)}"
                 else job.units?.let { DayRate.cell(it) } ?: job.client.ifBlank { job.title }.trim().take(4)
+            // [CELL-01] 1.39 (사용자 사진: 큰 글자에서 '스윈이'의 위아래가 잘림) 8sp grew past the 10dp bar with the font setting; the
+            // letters stay inside it (at most 8.5dp) and keep no font padding.
+            val small = with(androidx.compose.ui.platform.LocalDensity.current) { minOf(8.sp.toDp(), 8.5.dp).toSp() }
             Text(
-                label, fontSize = 8.sp, lineHeight = 9.sp, maxLines = 1, overflow = TextOverflow.Clip, fontWeight = FontWeight.Bold,
+                label, fontSize = small, lineHeight = small, maxLines = 1, overflow = TextOverflow.Clip, fontWeight = FontWeight.Bold,
+                style = FooterTrim,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (cancelled) 0.5f else 1f),
                 textDecoration = if (cancelled) TextDecoration.LineThrough else null,
             )
