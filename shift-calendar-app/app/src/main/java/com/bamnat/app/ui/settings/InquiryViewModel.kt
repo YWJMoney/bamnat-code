@@ -12,6 +12,7 @@ import com.bamnat.app.company.InquiryDraft
 import com.bamnat.app.company.InquiryFlag
 import com.bamnat.app.company.InquiryInfo
 import com.bamnat.app.company.InquiryKind
+import com.bamnat.app.company.KnownIssue
 import com.bamnat.app.company.PublicPage
 import com.bamnat.app.company.PublicThread
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
@@ -280,6 +281,40 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     fun rate(id: String, good: Boolean?, done: (String?) -> Unit = {}) = act({ _, why -> done(why) }) {
         c.inquiryApi.rate(device, id, good).also { updated ->
             _list.value = _list.value.orEmpty().map { if (it.id == id) updated else it }
+        }
+    }
+
+    /** [LOOP-16] 해결됐어요 / 아직이에요 after the fix shipped; the answer goes back on the question. */
+    fun fixed(id: String, ok: Boolean, done: (String?) -> Unit = {}) = act({ _, why -> done(why) }) {
+        c.inquiryApi.fixed(device, id, ok).also { updated ->
+            _list.value = _list.value.orEmpty().map { if (it.id == id) updated else it }
+        }
+    }
+
+    private val _known = MutableStateFlow<List<KnownIssue>>(emptyList())
+    /** [LOOP-17] 지금 알려진 문제: what the developer is already fixing, so nobody has to write it again. */
+    val known: StateFlow<List<KnownIssue>> = _known.asStateFlow()
+
+    fun loadKnown() {
+        if (!online) return
+        viewModelScope.launch {
+            runCatching { c.inquiryApi.known(device) }.onSuccess { _known.value = it }
+        }
+    }
+
+    /** [LOOP-17] 나도 겪어요: counts this phone once and gets the answer when the fix ships. */
+    fun knownMe(id: String, on: Boolean, done: (String?) -> Unit = {}) {
+        if (_busy.value) return
+        _busy.value = true
+        viewModelScope.launch {
+            val r = runCatching { c.inquiryApi.knownMe(device, id, on) }
+            _busy.value = false
+            r.onSuccess {
+                _known.value = it
+                // The press is a question of this phone's; 내 문의 shows it and its answer.
+                if (on) { c.inquiryStore.asked = true; refresh() }
+                done(null)
+            }.onFailure { done(failure(it)) }
         }
     }
 

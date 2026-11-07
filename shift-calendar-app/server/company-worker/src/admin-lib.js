@@ -133,6 +133,21 @@ export function adminLib() {
     rewardCapDays: "상한을 세는 기간은 30~365일 사이로 정해 주세요",
     rewardCapMonths: "한 사람 상한은 1~24개월 사이로 정해 주세요",
     rewardMonths: "보상 개월은 0~24 사이로 정해 주세요",
+    // 1.39 [LOOP] 자동 순환·보상 규칙.
+    askMonths: "요청 반영 보상은 0~24개월 사이로 정해 주세요",
+    tier: "무료·프로를 먼저 정해 주세요. 숫자 › 요금 판단에서 정한 뒤에 켤 수 있어요",
+    sync_off: "저장소 동기화가 꺼져 있어요. 관리 › 자동 순환에서 켜 주세요",
+    start: "첫 출발일을 2026-11-20처럼 골라 주세요",
+    bugDays: "문제 신고 보상은 0~30일 사이로 정해 주세요",
+    polishDays: "다듬기 제안 보상은 0~30일 사이로 정해 주세요",
+    featureDays: "새 기능 제안 보상은 0~30일 사이로 정해 주세요",
+    knownDays: "나도 겪어요 보상은 0~30일 사이로 정해 주세요",
+    monthCap: "한 달 상한은 0~60일 사이로 정해 주세요",
+    urgentMin: "긴급 업데이트 기준은 versionCode 숫자로 적어 주세요(0이면 안 함)",
+    flexibleMin: "정기 업데이트 권유 기준은 versionCode 숫자로 적어 주세요(0이면 안 함)",
+    key_scope: "이 열쇠로는 할 수 없는 일이에요",
+    items: "보낸 줄을 읽지 못했어요",
+    item: "보낸 줄 하나를 읽지 못했어요",
     same: "이미 같은 것을 보냈어요",
     server: "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요",
     setup: "설정 파일을 읽지 못했어요",
@@ -300,10 +315,10 @@ export function adminLib() {
    * 모두 들어가 '더 보기'가 없어요. 옛 주소(#/inquiries 등)는 화면 이름이 그대로라 그대로 열려요.
    */
   const HUBS = [
-    { key: "today", label: "오늘", icon: "home", tabs: ["home", "desk", "flow", "cockpit", "incident"] },
+    { key: "today", label: "오늘", icon: "home", tabs: ["home", "desk", "decide", "flow", "loop", "cockpit", "incident"] },
     { key: "ask", label: "사람과 글", icon: "inquiries", tabs: ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"] },
     { key: "release", label: "출시", icon: "release", tabs: ["launch", "flags", "materials", "types", "notices", "chores", "gates"] },
-    { key: "insight", label: "숫자", icon: "metrics", tabs: ["metrics", "health", "money", "errors", "effects"] },
+    { key: "insight", label: "숫자", icon: "metrics", tabs: ["metrics", "health", "money", "errors", "effects", "tiers"] },
     { key: "manage", label: "관리", icon: "admins", tabs: ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"] },
   ];
 
@@ -320,6 +335,10 @@ export function adminLib() {
     flow: { label: "흐름", area: "inquiries", old: "흐름 관제 파이프라인 단계 막힘 나간 판 출시 운영 장부 Claude 처리해 지표 첫 답 flow desk" },
     // 1.38 [DESK-02][DESK-03] 운영 장부: 할 일함과 정리함을 하나로. 모든 들어온 일이 한 줄씩(번호·겹침·묶음·단계·답·담당·기한·기록).
     desk: { label: "운영 장부", old: "운영 장부 체크시트 할 일함 정리함 대기열 누락 기한 넘김 다시 열림 상태 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 붙여 넣기 Claude 차례 최고 관리자 확인 CSV work sort desk ledger" },
+    // 1.39 [LOOP] 자동 순환(Play 출시 감지·저장소 동기화·정기 출시 열차·멈춤 스위치·믿을수록 더 맡기기·보상 규칙), 결정함, 요금 판단.
+    loop: { label: "자동 순환", area: "dev", old: "자동 순환 자동 출시 Play 트랙 출시 감지 보류 저장소 동기화 GitHub 정기 출시 열차 2주 인앱 업데이트 멈춤 스위치 믿을수록 맡기기 바로 보내기 보상 규칙 쓰면 쌓이는 날 영향도 대기열 loop" },
+    decide: { label: "결정함", area: "dev", old: "결정함 최고 관리자 확인 Claude 초안 무료 프로 요금 정하기 decide" },
+    tiers: { label: "요금 판단", area: "metrics", old: "요금 판단 무료 프로 관측치 새 기능 요금 tier tiers" },
     // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구 묶음, 기본 도구 후보, 손잡이 지도.
     growth: { label: "스튜디오 요구", area: "inquiries", old: "스튜디오 요구 자가 발전 기본 도구 후보 모두의 도구 승격 손잡이 지도 출시 노트 growth" },
     inquiries: { label: "문의", area: "inquiries", badge: (o) => o.inquiries ?? 0, strip: "답 대기", old: "문의 inquiries" },

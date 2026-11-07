@@ -134,7 +134,11 @@ export async function story(env, id) {
     }
     if (h.action === "link" || h.action === "unlink") continue;
     const STATUS = { todo: "접수", doing: "개발중", done: "완료", rejected: "반려", handed: "Claude에게 넘김" };
-    const NAMES = { create: "만듦", edit: "고침", assign: "담당 바뀜", delete: "지움", restore: "되살림", reply: "묶인 문의에 답", result: "개발 결과" };
+    const NAMES = { create: "만듦", edit: "고침", assign: "담당 바뀜", delete: "지움", restore: "되살림", reply: "묶인 문의에 답", result: "개발 결과",
+      // 1.39 [LOOP] 자동 순환이 남기는 것.
+      sync: `저장소에서 받음${d.pr ? ` · PR #${d.pr}` : ""}${d.version ? ` · ${d.version}` : ""}`, live: "업데이트 없이 실제로 닿음", phone_told: `고친 판(${d.app ?? ""})으로 연 폰에 안내`,
+      fixed_yes: "문의한 분: 해결됐어요", fixed_no: "문의한 분: 아직이에요(다시 열림)", me_too: "알려진 문제판: 나도 겪어요",
+      tier: `요금 ${d.tier?.[1] ?? ""}${d.note ? ` · ${d.note}` : ""}`, release: `반영 판 ${d.releasedIn?.[1] ?? ""}` };
     const what = h.action === "status" ? `상태 ${STATUS[d.status?.[0]] ?? d.status?.[0] ?? ""} → ${STATUS[d.status?.[1]] ?? d.status?.[1] ?? ""}`
       : h.action === "note" ? `기록 ${String(d.text ?? "").slice(0, 60)}` : NAMES[h.action] ?? h.action;
     if (h.action === "create") continue;

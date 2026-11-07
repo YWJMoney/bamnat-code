@@ -298,6 +298,9 @@ export async function applySort(request, env, now) {
   return json(done);
 }
 
+/** 1.39 [LOOP-12] 정리함 줄이 들었던 더미(Claude가 결과에 같이 적어요). 모르면 "". */
+const pileOf = (a) => (typeof a?.pile === "string" && PILES.includes(a.pile) ? a.pile : "");
+
 /** The 정리함 steps themselves, shared by applySort and 1.37 [ADM2-08] the 결과 block's 문의 lines; a Response when not allowed. */
 async function sortActions(env, actions, now) {
   const body = { actions };
@@ -323,7 +326,7 @@ async function sortActions(env, actions, now) {
       done.created.push({ id: item, title });
       for (const id of ids) {
         if (await link(env, item, id, now, name)) done.linked++;
-        if (a.text && (await inboxAnswer(env, id, a.text, now, name))) done.replied++;
+        if (a.text && (await inboxAnswer(env, id, a.text, now, name, pileOf(a)))) done.replied++;
       }
       continue;
     }
@@ -342,7 +345,7 @@ async function sortActions(env, actions, now) {
     if (a.do === "link" || a.do === "reopen" || (a.do === "reply" && a.item)) {
       if (await link(env, devId(a.item), id, now, name)) done.linked++;
     }
-    if ((a.do === "reply" || a.do === "reopen") && a.text && (await inboxAnswer(env, id, a.text, now, name))) {
+    if ((a.do === "reply" || a.do === "reopen") && a.text && (await inboxAnswer(env, id, a.text, now, name, pileOf(a)))) {
       done.replied++;
       // 1.37 [ADM2-10] 이미 나간 판으로 고친 개발사항에 묶어 답했으면 그 답이 '나왔어요' 안내예요: 판을 저장할 때 다시 보내지 않아요.
       if (a.do === "reply" && a.item) {
@@ -365,10 +368,10 @@ async function link(env, item, id, now, by) {
 }
 
 /** An answer on question [id] by [by], the question then 답함 (taken by whoever answered when nobody held it). */
-export async function inboxAnswer(env, id, text, now, by) {
+export async function inboxAnswer(env, id, text, now, by, pile = "") {
   const t = plainText(text, INQUIRY.text, "text", true);
-  // 1.38 [DESK-09] Claude 열쇠의 답은 10분 보류.
-  if (env.actor?.key) return (await one(env, "SELECT id FROM inquiries WHERE id = ?", id)) ? holdReply(env, { id }, t, {}, now) : false;
+  // 1.38 [DESK-09] Claude 열쇠의 답은 10분 보류. 1.39 [LOOP-12] 정리함 더미(pile)를 같이 적어 '믿을수록 더 맡기기'를 세요.
+  if (env.actor?.key) return (await one(env, "SELECT id FROM inquiries WHERE id = ?", id)) ? holdReply(env, { id }, t, { pile }, now) : false;
   const r = await run(env, "UPDATE inquiries SET status = 'answered', updated_at = ?, assignee = COALESCE(assignee, ?), assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?",
     now, env.actor?.id ?? null, by, id);
   if (!r.meta.changes) return false;

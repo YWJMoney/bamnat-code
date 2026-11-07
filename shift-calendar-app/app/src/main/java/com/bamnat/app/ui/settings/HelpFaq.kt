@@ -972,6 +972,8 @@ internal object HelpFaq {
         com.bamnat.core.work.WorkStyle.FIELD -> listOf("jobOwed", "jobTax", "bizTax", "platformCut", "unitRules", "incomeKinds")
         com.bamnat.core.work.WorkStyle.BUSINESS -> listOf("shopCash", "shopVat", "bizTax", "receiptScan")
         com.bamnat.core.work.WorkStyle.INVEST -> listOf("investFee", "investCapture", "investCaptureTrust", "investYearEnd")
+        // 1.39 PC G10 확인(일근·사무직 첫 화면에 '교대 순서'·'근무 순서가 하루 밀렸어요'가 먼저): 일근이 자주 묻는 것부터, 근무 주기는 뒤로.
+        com.bamnat.core.work.WorkStyle.DAY -> listOf("alarm", "leave", "extra", "pay", "takeHome", "holidayWork", "phoneCalendar", "widget")
         else -> emptyList()
     }
 

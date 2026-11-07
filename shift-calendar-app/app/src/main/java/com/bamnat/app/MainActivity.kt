@@ -31,6 +31,9 @@ class MainActivity : ComponentActivity() {
         AppLock.onConfirmed(it.resultCode == RESULT_OK)
     }
 
+    /** 1.39 [LOOP-13] Play's update screens report back here; a declined urgent one is asked again on the next start. */
+    private val updateFlow = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartIntentSenderForResult()) { }
+
     /**
      * [PERF-09] 1.28 AO (검토 6-1 병목 3): the container once this screen has it. Until then the window and Compose are
      * made (side by side with the container's own thread) and the splash screen stays; nothing of the app is drawn.
@@ -193,6 +196,15 @@ class MainActivity : ComponentActivity() {
                 if (!settings.textAsked && settings.textStep == com.bamnat.app.data.AppSettings().textStep && updated && consent != null && settings.setupDone) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
                     onPick = { step -> container.settingsRepository.update { it.copy(textStep = step) } },
                     onDone = { container.settingsRepository.update { it.copy(textAsked = true) } })
+                // 1.39 [LOOP-13] The update downloaded behind the app: 다시 시작 when the user wants, never by itself.
+                val updateReady by com.bamnat.app.review.InAppUpdate.ready.collectAsStateWithLifecycle()
+                if (updateReady) androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { com.bamnat.app.review.InAppUpdate.later() },
+                    title = { androidx.compose.material3.Text("새 버전을 받았어요") },
+                    text = { androidx.compose.material3.Text("다시 시작하면 바로 새 버전으로 열려요. 몇 초면 끝나고, 기록은 그대로예요.") },
+                    confirmButton = { androidx.compose.material3.TextButton(onClick = { com.bamnat.app.review.InAppUpdate.restart() }) { androidx.compose.material3.Text("다시 시작") } },
+                    dismissButton = { androidx.compose.material3.TextButton(onClick = { com.bamnat.app.review.InAppUpdate.later() }) { androidx.compose.material3.Text("나중에") } },
+                )
                 // [LOCK-01] Over the app, so the screen the user was on is still there after.
                 val locked by AppLock.locked.collectAsStateWithLifecycle()
                 if (locked) com.bamnat.app.ui.LockCover { AppLock.ask(this, confirmLock::launch) }
@@ -297,6 +309,11 @@ class MainActivity : ComponentActivity() {
         // [SRV-07] not in the first three days after install.
         // 1.36 PC 재검토: the first start of this process is an open afresh (the 정식 출시 switch is asked again sooner).
         c.syncPro(opened = !openedOnce).also { openedOnce = true }
+        // 1.39 [LOOP-13] Play 인앱 업데이트, only after the first setup and as the server's numbers say.
+        if (c.settingsRepository.settings.value.setupDone) c.remoteConfig.current.let { r ->
+            com.bamnat.app.review.InAppUpdate.check(this, updateFlow,
+                com.bamnat.app.review.InAppUpdate.due(BuildConfig.VERSION_CODE, r.updateUrgentMin, r.updateFlexibleMin))
+        }
         if (com.bamnat.core.tier.AdRules.sdkMayStart(c.flags.on(com.bamnat.core.flags.FlagCatalog.ADS), c.featureGate.state.value.allows(com.bamnat.app.tier.Feature.NO_ADS),
                 c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
