@@ -951,7 +951,13 @@ fun MoneyScreen(
         }
     }
 
-    val addDate = if (YearMonth.from(today) == month) today else month.atEndOfMonth()
+    // 1.39 [FLOW-30] 근무 기준 하루: a coffee bought at 02:10 in last night's shift is put on that night's day, as is the small hours of
+    // a day with no work before 하루 시작 시각 (기본 04:00). The date row on the sheet still changes it.
+    val addDate = if (YearMonth.from(today) == month) {
+        val at = com.bamnat.core.time.Today.dateTime()
+        snapshot?.let { s -> com.bamnat.core.design.DayBoundary.dayOf(at, s.resolver::resolve, com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)) }
+            ?.takeIf { at.toLocalDate() == today } ?: today
+    } else month.atEndOfMonth()
     adding?.let { k ->
         // A new round for 저장하고 하나 더, so the sheet starts empty again.
         key(addRound) {

@@ -549,4 +549,31 @@ class SetupFlowTest {
         vm.pickStyle(WorkStyle.SHIFT)
         assertEquals(SetupStep.COMPANY, draft.step)
     }
+
+    /**
+     * 1.37 MED-2 (1.39 G6): in the first setup 일근 → 알바 with its 토·일 → 일근 again starts 일근 from 월~금, not from the
+     * 알바's 토·일.
+     */
+    @Test fun dayWorkAfterHourlyInTheSetupIsMondayToFridayAgain() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.DAY)
+        assertEquals(listOf(true, true, true, true, true, false, false), draft.weekly.map { it != null })
+        vm.back()
+        vm.pickStyle(WorkStyle.HOURLY)
+        val shift = draft.types.first { !it.isOff }.id
+        (0..6).forEach { vm.setWeekly(it, shift.takeIf { _ -> it >= 5 }) }
+        assertEquals(listOf(false, false, false, false, false, true, true), draft.weekly.map { it != null })
+        while (draft.step != SetupStep.STYLE) vm.back()
+        vm.pickStyle(WorkStyle.DAY)
+        assertEquals(listOf(true, true, true, true, true, false, false), draft.weekly.map { it != null })
+    }
+
+    /** [FLOW-03] The line said when the filled calendar first shows: from the draft about to be saved. */
+    @Test fun theFillLineCountsTheDraftsDays() {
+        val vm = vm()
+        vm.pickStyle(WorkStyle.DAY)
+        val line = vm.fillLine(draft)!!
+        assertTrue(line.text, line.head.contains("일하는 날"))
+        assertTrue(line.text, line.rest.contains("쉬는 날"))
+    }
 }

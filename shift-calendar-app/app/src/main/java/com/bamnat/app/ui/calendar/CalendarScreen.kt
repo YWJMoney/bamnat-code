@@ -1117,7 +1117,8 @@ fun CalendarScreen(
             // [REL-11][SLP-15] Without notifications an alarm still sounds, but nothing on the lock
             // screen stops it. Asked here, where it is needed, instead of on the first start.
             // 1.38 PC 9차: the app's window that said why (화면이 안 뜨고 소리만) is gone, so the line says it.
-            !notificationsAllowed -> NOTICE_OFF_LINE to { AlarmWarningLine(NOTICE_OFF_LINE, "허용", askNotifications, linePlace) }
+            !notificationsAllowed -> NOTICE_OFF_LINE to { AlarmWarningLine(NOTICE_OFF_LINE, "허용", askNotifications, linePlace,
+                picture = com.bamnat.app.ui.components.PermissionResult.LOCK_ALARM) }
             // [REL-12] Android 14+ can block the full-screen alarm; then only a small notification shows.
             !fullScreenAllowed -> "잠금 화면에 알람 화면이 안 떠요" to { AlarmWarningLine("잠금 화면에 알람 화면이 안 떠요", "허용", {
                 if (android.os.Build.VERSION.SDK_INT >= 34) SystemSettings.open(context,
@@ -1136,7 +1137,8 @@ fun CalendarScreen(
         val aboveParts: Map<CalendarPart, Pair<String, @Composable () -> Unit>> = mapOf(
             CalendarPart.TODAY_FLOW to ("오늘의 흐름" to @Composable {
                 // [SLP-14] 오늘의 흐름 while this month is on screen, for work that comes in shifts and hours.
-                if (settings.sleepTips && settings.workStyle?.usesPayEngine != false && !snap.isEmpty && visibleMonth == YearMonth.from(today)) {
+                // 1.39 PC 12.5 '가게·현장 흐름 스위치': 현장·가게·투자 have it when they added it (카드 배치 › 더 보기), as the layout says.
+                if (settings.sleepTips && settings.partFits(CalendarPart.TODAY_FLOW, fitAdded) && !snap.isEmpty && visibleMonth == YearMonth.from(today)) {
                     TodayFlowSection(vm, snap, settings, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 }
             }),
@@ -1544,6 +1546,11 @@ fun CalendarScreen(
                 computedNote()
                 countsPart(Modifier)
             }
+            // 1.39 [FLOW-03] The month just set up fills from today, with its one line over it.
+            val fillMoment by SetupFill.now.collectAsStateWithLifecycle()
+            val fillMine = fillMoment?.takeIf { it.calendar == activeCalendar.id && paint == null }
+            val fillNow = rememberSetupFill(fillMine, activeCalendar.id, ready = !snap.isEmpty)
+            if (fillMine != null) SetupFillCard(fillMine, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
             if (!showList) WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
             BoxWithConstraints(
                 Modifier.fillMaxWidth().padding(horizontal = if (showList) 0.dp else 8.dp)
@@ -1641,6 +1648,7 @@ fun CalendarScreen(
                         wishDays = if (stamping || !wishShown) emptySet() else wishOff.days,
                         // [EASE-04] 1.38 월급날 '급여', where the pay is counted.
                         payDays = payDaysOn(payProfile?.period, pageToMonth(baseMonth, page)).takeUnless { stamping || !payShown }.orEmpty(),
+                        fill = fillNow.takeIf { pageToMonth(baseMonth, page) == YearMonth.from(today) },
                     )
                 }
                 }
@@ -2472,7 +2480,11 @@ private fun HoursPart(label: String, value: String, overLimit: Int?, warning: Co
 
 /** [CAL-01] One line about what keeps an alarm due this week from working; the whole line fixes it. */
 @Composable
-private fun AlarmWarningLine(text: String, action: String, onAction: () -> Unit, modifier: Modifier = Modifier) {
+private fun AlarmWarningLine(
+    text: String, action: String, onAction: () -> Unit, modifier: Modifier = Modifier,
+    /** 1.39 [FLOW-05] A permission asked here for the first time: what it gives, drawn small where the warning mark was. */
+    picture: com.bamnat.app.ui.components.PermissionResult? = null,
+) {
     val cal = LocalCalendarColors.current
     Surface(
         onClick = onAction,
@@ -2487,7 +2499,8 @@ private fun AlarmWarningLine(text: String, action: String, onAction: () -> Unit,
         val mark = cal.warning.takeIf { com.bamnat.core.layout.Contrast.ratio(argb(it), argb(cal.warningContainer)) >= 3.0 } ?: ink
         val act = MaterialTheme.colorScheme.primary.takeIf { com.bamnat.core.layout.Contrast.ratio(argb(it), argb(cal.warningContainer)) >= 4.5 } ?: ink
         Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.WarningAmber, null, tint = mark, modifier = Modifier.size(20.dp))
+            if (picture != null) com.bamnat.app.ui.components.PermissionPicture(picture, accent = mark, ink = MaterialTheme.colorScheme.inverseSurface, height = 40.dp)
+            else Icon(Icons.Filled.WarningAmber, null, tint = mark, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             // [VIS-04] What stops the alarm is said whole, at any text size.
             Text(text, style = MaterialTheme.typography.bodyMedium, color = ink, modifier = Modifier.weight(1f))

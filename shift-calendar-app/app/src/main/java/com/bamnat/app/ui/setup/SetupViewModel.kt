@@ -849,6 +849,13 @@ class SetupViewModel(
         return AlarmPlanner.nextAlarm(snapshot.resolver, at)
     }
 
+    /** 1.39 [FLOW-03] What the saved setup puts on the calendar from today, said in one line; null when no day works. */
+    internal fun fillLine(d: SetupDraft): com.bamnat.core.setup.FillMoment.Line? {
+        val snapshot = ScheduleSnapshot(d.typesToSave(), d.pattern(today), d.paintedEntries())
+        if (snapshot.isEmpty) return null
+        return com.bamnat.core.setup.FillMoment.of(snapshot.resolver.resolveRange(today, today.plusDays(70)), today, firstAlarm(d)?.triggerAt)
+    }
+
     // ---- 8. saving ----
 
     fun save() = save(current)
@@ -860,6 +867,10 @@ class SetupViewModel(
         c.appScope.launch {
             runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
                 .onSuccess {
+                    // 1.39 [FLOW-03] The month fills over the calendar with its one line ("이번 달 야간 8번 · 첫 알람 내일 06:00").
+                    runCatching { fillLine(d) }.getOrNull()?.let { line ->
+                        com.bamnat.app.ui.calendar.SetupFill.set(com.bamnat.app.ui.calendar.SetupFill.Moment(calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN, line))
+                    }
                     if (again) { store.clear(); _done.value = true }
                     // [J133-51] The day the calendar was set up: no question cards or tips on top of it.
                     val cal = calendarId ?: com.bamnat.app.data.PersonalCalendar.MAIN
