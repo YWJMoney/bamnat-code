@@ -37,7 +37,11 @@ test("IOS-02: a link with its calendar address on offers 내 캘린더에 넣기
   assert.match(ios, /아이폰 캘린더에 넣기/);
   assert.match(ios, /출근 알람은 아니에요/);
   assert.match(ios, /Safari로 열기/);
+  assert.match(ios, new RegExp(`https://s\\.bamnat\\.app/s/${id}\\.ics`), "the address for other calendar apps, in the page's own scheme");
   assert.doesNotMatch(ios, /<script/i);
+  // The card at the end does not promise an iPhone the app's 달력·알람.
+  assert.doesNotMatch(ios, /근무 알람까지<\/p>/);
+  assert.match(ios, /밤낮은 Android 근무 달력 앱이에요/);
   const android = await (await call(env, `/s/${id}`, {}, ANDROID)).text();
   assert.match(android, /구글 캘린더에 넣기/);
   assert.match(android, new RegExp(`calendar\\.google\\.com/calendar/r\\?cid=webcal%3A%2F%2Fs\\.bamnat\\.app%2Fs%2F${id}\\.ics`));

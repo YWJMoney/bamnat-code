@@ -438,7 +438,7 @@ async function view(request, env, id) {
   const tired = record.tired ? await tiredState(env, id, record) : null;
   // [SHR-02] On Android the page offers the app, which keeps it as a 받은 달력 next to the user's own.
   return html(renderSchedule(record.schedule, record.expiresAt, phone === "android" ? id : null, id,
-    { phone, feed: `${url.host}/s/${id}.ics`, tired, said: url.searchParams.get("t") }));
+    { phone, feed: `${url.host}/s/${id}.ics`, scheme: url.protocol.replace(":", ""), tired, said: url.searchParams.get("t") }));
 }
 
 /**
@@ -2290,11 +2290,16 @@ export function spreadCard(kind, ua, back) {
   const get = android
     ? `<a class="get" href="${esc(storeHref(kind, ua))}">밤낮 받기 · 무료</a><p class="muted small">${after}</p>`
     // [SPREAD-03] No dead end on an iPhone: say what 밤낮 is and that this page keeps working.
-    : apple ? `<p class="muted small">밤낮은 Android 앱이에요. 이 링크는 iPhone에서도 그대로 계속 열려요.</p>`
+    : apple ? ""
     : `<p class="muted small">밤낮은 Android 휴대폰 앱이에요. <a href="${esc(storeLink(kind))}">Play 스토어에서 보기</a></p>`;
   const close = back
     ? `<form class="x" method="post" action="${SPREAD_HIDE}"><input type="hidden" name="back" value="${esc(back)}"><button aria-label="닫기, 이 브라우저에서 다시 안 보기">×</button></form>`
     : "";
+  // 1.39 [IOS-03] An iPhone is not promised what only the app does (내 달력·알람): it hears what 밤낮 is and who it is for.
+  if (apple) {
+    return `<aside class="spread">${close}<p class="t">밤낮은 Android 근무 달력 앱이에요</p><p class="muted small">이 링크는 iPhone에서도 그대로 계속 열려요. ` +
+      `Android 휴대폰을 쓰는 가족·동료라면 밤낮 앱으로 근무를 넣고 근무 알람까지 맞출 수 있어요.</p></aside>`;
+  }
   return `<aside class="spread">${close}<p class="t">${esc(k.title)}</p><p class="muted small">${esc(k.line)}</p>${get}</aside>`;
 }
 
@@ -2448,7 +2453,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
   const app = appId
     ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
-  return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone)}${tiredPanel(reportId, opts.tired, opts.said)}` +
+  return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
     `${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
     `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
   "근무표");
@@ -2459,7 +2464,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
  * calendar. iPhone: webcal:// opens 캘린더's 구독. Anything else: Google Calendar's add-by-address page (Android, a computer).
  * It follows changes within hours; it is not an alarm, and the page says so.
  */
-export function feedButton(schedule, feed, phone) {
+export function feedButton(schedule, feed, phone, scheme = "https") {
   if (schedule.ics !== true || !feed) return "";
   const webcal = `webcal://${feed}`;
   const href = phone === "ios" ? webcal : `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
@@ -2467,7 +2472,7 @@ export function feedButton(schedule, feed, phone) {
   return `<div class="panel feed"><p class="feed-t"><a class="get" href="${esc(href)}">${label}</a></p>` +
     `<p class="muted small">한 번 넣어 두면 근무가 바뀔 때 캘린더도 몇 시간 안에 따라 바뀌어요. 출근 알람은 아니에요.` +
     (phone === "ios" ? ` 카카오톡 안에서 안 열리면 오른쪽 아래 메뉴에서 'Safari로 열기' 뒤 다시 눌러 주세요.` : "") +
-    `</p><p class="muted small">다른 캘린더 앱: <span class="addr">https://${esc(feed)}</span></p></div>`;
+    `</p><p class="muted small">다른 캘린더 앱: <span class="addr">${esc(scheme)}://${esc(feed)}</span></p></div>`;
 }
 
 /** 1.39 [IOS-04] '오늘 피곤해요' on the page, while the leader's 피곤해요 합계 is on for this link: no name goes, once a day. */
