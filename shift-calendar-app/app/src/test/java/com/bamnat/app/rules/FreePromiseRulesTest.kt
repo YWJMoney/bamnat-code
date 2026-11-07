@@ -65,17 +65,19 @@ class FreePromiseRulesTest {
     @Test fun theFirstTabIsWhereTheAppOpens() {
         val root = File(main, "ui/AppRoot.kt").readText()
         // Cold start: the NavHost starts on the first saved tab.
-        assertTrue(root.contains("val savedTabs = remember(settingsNow.tabOrder) { TopLevel.ordered(settingsNow.tabOrder) }"))
-        assertTrue(root.contains("val home = savedTabs.first()"))
+        // [NAV2-01] 1.39 the bar's places (or, none saved, the tab order's), home its first tab.
+        assertTrue(root.contains("com.bamnat.core.layout.TabSlots.resolve(settingsNow.tabSlots, settingsNow.tabOrder, TabPicks.known)"))
+        assertTrue(root.contains("val home = TopLevel.entries.first { it.route == com.bamnat.core.layout.TabSlots.home(slots) }"))
         assertTrue(root.contains("val startTab = rememberSaveable { home.route }"))
         assertTrue(root.contains("start = startTab,") && root.contains("startDestination = start,"))
         // Back after time away (or a new day): the first tab as saved now, not the calendar, unless a notice said where.
-        assertTrue(root.contains("val homeRoute = TopLevel.ordered(container.settingsRepository.current.tabOrder).first().route"))
+        assertTrue(root.contains("com.bamnat.core.layout.TabSlots.home(com.bamnat.core.layout.TabSlots.resolve(it.tabSlots, it.tabOrder, TabPicks.known))"))
         assertTrue(root.contains("if (NoticeLinks.target.value == null && current != homeRoute"))
         // The order a backup carries comes back with it.
         val backup = File(main, "data/BackupManager.kt").readText()
         assertTrue(backup.contains(".put(\"tabOrder\", s.tabOrder.joinToString(\",\"))"))
         assertTrue(backup.contains("tabOrder = o.optStringOrNull(\"tabOrder\")?.let(::decodeGroupOrder) ?: s.tabOrder"))
+        assertTrue(backup.contains(".put(\"tabSlots\", s.tabSlots)"))
         // Every kind of work sees every tab, so the first one is always there (none can be hidden).
         for (moved in com.bamnat.core.layout.TabOrder.DEFAULT) {
             val order = com.bamnat.core.layout.TabOrder.move(com.bamnat.core.layout.TabOrder.DEFAULT, moved, 0)

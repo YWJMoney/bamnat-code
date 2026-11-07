@@ -274,6 +274,11 @@ data class AppSettings(
      * is the screen the app opens on. Empty is the usual order (달력 first), so nothing changes for whoever never moved one.
      */
     val tabOrder: List<String> = emptyList(),
+    /**
+     * [NAV2-01] 1.39: the bottom bar's places as the user filled them ([com.bamnat.core.layout.TabSlots], one screen or a 묶음 each).
+     * Empty is the bar [tabOrder] makes, so a phone that never filled one sees the tabs as before (설정 by the 나 button).
+     */
+    val tabSlots: String = "",
     /** [FEAT-07] The user's calendars written to a calendar of their own on the phone (프로); none at first. */
     val phoneCalendars: List<String> = emptyList(),
     /** [PROV-06] What 끄기 asks for (프로), by [com.bamnat.core.alarm.AlarmMission.key]; none at first. */
@@ -514,6 +519,7 @@ class SettingsRepository(context: Context) {
                 ?: if (prefs.getBoolean(K_MEMO_FIRST, false)) listOf("memo") else d.dayGroupOrder,
             phoneCalendars = prefs.getString(K_PHONE_CALENDARS, null)?.let(::decodeGroupOrder) ?: d.phoneCalendars,
             tabOrder = prefs.getString(K_TAB_ORDER, null)?.let(::decodeGroupOrder) ?: d.tabOrder,
+            tabSlots = prefs.getString(K_TAB_SLOTS, null) ?: d.tabSlots,
             alarmMission = prefs.getString(K_ALARM_MISSION, null) ?: d.alarmMission,
             shiftMissions = prefs.getString(K_SHIFT_MISSIONS, null)?.let(::decodeShiftMissions) ?: d.shiftMissions,
             wakeCheckMinutes = prefs.getInt(K_WAKE_CHECK, d.wakeCheckMinutes),
@@ -649,6 +655,7 @@ class SettingsRepository(context: Context) {
             .putString(K_DAY_GROUP_ORDER, s.dayGroupOrder.joinToString(","))
             .putString(K_PHONE_CALENDARS, s.phoneCalendars.joinToString(","))
             .putString(K_TAB_ORDER, s.tabOrder.joinToString(","))
+            .putString(K_TAB_SLOTS, s.tabSlots)
             .putString(K_ALARM_MISSION, s.alarmMission)
             .putString(K_SHIFT_MISSIONS, encodeShiftMissions(s.shiftMissions))
             .putInt(K_WAKE_CHECK, s.wakeCheckMinutes)
@@ -712,6 +719,7 @@ class SettingsRepository(context: Context) {
         const val K_DAY_GROUP_ORDER = "day_group_order"
         const val K_PHONE_CALENDARS = "phone_calendars"
         const val K_TAB_ORDER = "tab_order"
+        const val K_TAB_SLOTS = "tab_slots"
         const val K_ALARM_MISSION = "alarm_mission"
         const val K_SHIFT_MISSIONS = "shift_missions"
         const val K_WAKE_CHECK = "wake_check_minutes"

@@ -892,6 +892,7 @@ fun MoneyScreen(
                         DropdownMenuItem(text = { Text(if (settings.hideAmounts) "금액 보이기" else "금액 가리기") }, onClick = { menuOpen = false; flipHide() })
                     }
                 }
+                com.bamnat.app.ui.MeButton() // [NAV2-02]
             }
             // [MCAL-06] Whose money this is, once there are several calendars.
             com.bamnat.app.ui.calendar.CalendarScopeChips(LocalContext.current.appContainer, Modifier.padding(horizontal = 16.dp))

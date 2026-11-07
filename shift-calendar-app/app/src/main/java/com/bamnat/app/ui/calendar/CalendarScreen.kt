@@ -2170,6 +2170,9 @@ private fun CalendarHeader(
                 Text(" 도구", maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge)
             }
         }
+        // [NAV2-02] 1.39 설정 and the tabs not in the bar; on a small phone or at the largest text the month keeps the room
+        // (the other tabs' tops have it, and 도구 › 달력 보기 설정 opens settings).
+        if (!(small || !roomy && LocalDensity.current.fontScale >= 1.5f)) com.bamnat.app.ui.MeButton()
     }
     if (menu) {
         // [FIT-01] Every tool with its id in the fit table; [FIT-02] the ones this kind of work does not use wait under 더 보기.
