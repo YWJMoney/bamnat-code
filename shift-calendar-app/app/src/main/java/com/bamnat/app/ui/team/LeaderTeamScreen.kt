@@ -924,6 +924,8 @@ private suspend fun links(c: com.bamnat.app.AppContainer, team: Team, b: TeamBoa
             feed = java.time.ZoneId.systemDefault()).apply {
             // Without the phone's 시간대 이름 (the server reads Asia/Seoul), so only the 'on' mark goes. 처리방침 3.12 names it (총괄 몫).
             remove("tz")
+            // 1.39 PC (SPREAD 2차): the page speaks to a teammate from the first 확정 (card, preview), not only after a 바뀜.
+            put("team", true)
         }
         val id = m.linkId
         val token = m.linkToken

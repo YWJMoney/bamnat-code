@@ -425,7 +425,10 @@ async function view(request, env, id) {
   const record = await env.SHARES.get(id, "json");
   if (record?.removed) return html(page("내려진 링크예요", `<p class="empty">${REMOVED_TEXT}</p>`), 410);
   if (!record || Date.parse(record.expiresAt) < Date.now()) {
-    return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext("최신 근무표가 필요하면 보낸 분께 새 링크를 부탁해 주세요.", "family")}`), 404);
+    // 1.39 PC (SPREAD 2차): an expired link still kept says whose it was (a leader's teammate link speaks to a teammate); one
+    // the sharer cut is gone, so its card speaks to anyone who keeps a schedule.
+    return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext(record?.schedule?.team
+      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : "최신 근무표가 필요하면 보낸 분께 새 링크를 부탁해 주세요.", record?.schedule ? scheduleKind(record.schedule) : "schedule")}`), 404);
   }
   const phone = platformOf(request.headers.get("user-agent") || "");
   if (request.method === "GET") {
@@ -2020,6 +2023,10 @@ export function validate(body) {
   }
   days.sort((a, b) => a.date.localeCompare(b.date));
   const schedule = { v: v2 ? 2 : 1, title, types, days };
+  // 1.39 PC (SPREAD 2차): a team leader's 팀원 링크 says so from its first 확정 (before, only 바뀜·같이 쉬어요 notes told), so the
+  // page's card and preview speak to a teammate. A mark only, nothing about the team.
+  if (body.team != null && typeof body.team !== "boolean") return { error: "team" };
+  if (body.team === true) schedule.team = true;
   // [FEAT-15] The sharer turned on the address calendar apps subscribe to, in the time zone of their phone.
   if (body.ics != null && typeof body.ics !== "boolean") return { error: "ics" };
   if (body.ics === true) {
@@ -2264,6 +2271,9 @@ export const SPREAD_KINDS = {
     line: "밤낮에 근무를 넣어 두면 바꾼 날도 한 번에 고치고, 알람이 따라 바뀌어요." },
   clock: { campaign: "boss", title: "내 시급으로 이번 달 월급 미리 보기",
     line: "밤낮에 시급과 일한 날을 넣으면 이번 달 받을 돈과 주휴수당을 미리 볼 수 있어요. 무료예요." },
+  // A schedule link that is gone, whoever it was from: speaks to anyone who keeps a schedule.
+  schedule: { campaign: "family", title: "내 근무도 달력과 알람으로",
+    line: "밤낮에 근무를 넣으면 한 달 달력이 저절로 차고 출근 전에 알람이 울려요. 받은 근무표도 내 달력 옆에 둘 수 있어요. 무료예요." },
   sign: { campaign: "boss", title: "계약한 시급으로 이번 달 월급 미리 보기",
     line: "밤낮에 시급과 일한 날을 넣으면 이번 달 받을 돈과 주휴수당을 미리 볼 수 있어요. 무료예요." },
 };
@@ -2441,6 +2451,16 @@ function appLink(id, kind = "family") {
 }
 
 /**
+ * 1.39 [SPREAD-01] A team leader's link speaks to a teammate; any other to family. The leader's app marks its links (team) from
+ * 1.39; an older app's link is known by its notes (바뀜·같이 쉬어요), which only a 다시 확정 or 같이 쉬는 사람 adds.
+ */
+export function scheduleKind(schedule) {
+  if (schedule.team === true) return "team";
+  const notes = (schedule.days ?? []).flatMap((d) => (d.memo ? String(d.memo).split(" · ") : []));
+  return notes.some((n) => /^(바뀜: |같이 쉬어요: )/.test(n)) ? "team" : "family";
+}
+
+/**
  * Month grids for every month the days touch, weeks starting on Sunday.
  * 1.39 [IOS-02..05] [opts]: `phone` (platformOf), `feed` ("host/s/<id>.ics" when the page is served), `tired` (tiredState or null),
  * `said` (the ?t= answer of the 피곤해요 form).
@@ -2513,8 +2533,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
         return `<li><span>${y}년 ${m}월${p.label ? ` <span class="muted">${esc(p.label)}</span>` : ""}</span><b>${won(p.amount)}</b></li>`;
       }).join("")}</ul><p class="muted">${PAY_NOTES[payKind]}</p></section>`
     : "";
-  // 1.39 [SPREAD-01] A team leader's link (its notes say 바뀜·같이 쉬어요) speaks to a teammate; any other to family.
-  const kind = notes.some((n) => /^(바뀜: |같이 쉬어요: )/.test(n)) ? "team" : "family";
+  const kind = scheduleKind(schedule);
   const app = appId
     ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
