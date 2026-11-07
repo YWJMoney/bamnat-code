@@ -6,7 +6,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.glance.GlanceId
+import androidx.glance.ColorFilter
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
 import androidx.glance.GlanceTheme
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
@@ -38,6 +41,9 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextDecoration
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
+import com.bamnat.app.R
+import com.bamnat.core.recipe.PartStyle
 import com.bamnat.app.NoticeLinks
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.PersonalCalendar
@@ -215,10 +221,8 @@ private fun TaskRow(row: TaskList.Row, today: LocalDate) {
         // TalkBack reads what the circle does, not "○" (조사 보완 11-07: 위젯 글자 읽기).
         val said = if (row.done) "끝냄 취소: ${row.text}" else "끝내기: ${row.text}"
         Box(GlanceModifier.width(36.dp).height(36.dp).clickable(toggle).semantics { contentDescription = said }, contentAlignment = Alignment.Center) {
-            Text(if (row.done) "✓" else "○",
-                style = TextStyle(color = when { row.done -> GlanceTheme.colors.primary; row.kind == TaskList.Kind.LATE -> GlanceTheme.colors.error
-                    else -> GlanceTheme.colors.onSurfaceVariant }, fontSize = wsp(18), fontWeight = FontWeight.Bold).widgetLetters(check),
-                maxLines = 1, modifier = GlanceModifier.widgetBox(check, 18))
+            TaskCircle(row.done, when { row.done -> GlanceTheme.colors.primary; row.kind == TaskList.Kind.LATE -> GlanceTheme.colors.error
+                else -> GlanceTheme.colors.onSurfaceVariant }, check)
         }
         Column(GlanceModifier.defaultWeight().clickable(openMemo(context, row.memo.id, row.day))) {
             Text(row.text.ifEmpty { "제목 없는 메모" },
@@ -230,6 +234,20 @@ private fun TaskRow(row: TaskList.Row, today: LocalDate) {
             }
         }
     }
+}
+
+/**
+ * 1.39 [TASK-07] The circle a row is finished with, drawn rather than written: a launcher's font draws "○" as a dot (PC e0f19f47,
+ * 위젯2-늦음.jpg), so it is a picture the size the letter was meant to be — 18 sp times 위젯 글자 크기, or the 동그라미 part's 크기 —
+ * in its colour (the part's 글자 색 when set) on the part's fill and corners.
+ */
+@Composable
+private fun TaskCircle(done: Boolean, color: ColorProvider, check: PartStyle) {
+    val look = TextStyle(color = color, fontSize = wsp(18)).widgetLetters(check)
+    val side = (look.fontSize?.value ?: 18f).coerceIn(10f, 40f)
+    Image(ImageProvider(if (done) R.drawable.ic_task_done else R.drawable.ic_task_open), contentDescription = null,
+        colorFilter = ColorFilter.tint(look.color),
+        modifier = GlanceModifier.widgetBox(check, 18).width(side.dp).height(side.dp))
 }
 
 /** The small line under a row: "늦음 · 11/5 10:00", "15:00 · 2/5", "고정", or nothing. */
@@ -259,8 +277,7 @@ internal fun TaskLine(rows: List<TaskList.Row>) {
             val toggle = actionRunCallback<TaskDoneAction>(actionParametersOf(TaskWidget.MEMO_ID to next.memo.id, TaskWidget.DAY to (next.day?.toString() ?: "")))
             Box(GlanceModifier.width(36.dp).height(36.dp).clickable(toggle).semantics { contentDescription = "끝내기: ${next.text}" },
                 contentAlignment = Alignment.Center) {
-                Text("○", style = TextStyle(color = if (next.kind == TaskList.Kind.LATE) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = wsp(18), fontWeight = FontWeight.Bold).widgetLetters(check), maxLines = 1, modifier = GlanceModifier.widgetBox(check, 18))
+                TaskCircle(false, if (next.kind == TaskList.Kind.LATE) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant, check)
             }
             val line = widgetPart("widget.task", states)
             val tail = listOfNotNull(next.time?.let { Fmt.time(it) }, "늦음".takeIf { next.kind == TaskList.Kind.LATE }, "남은 $left".takeIf { left > 1 })
