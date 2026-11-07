@@ -28,7 +28,16 @@ object LogicTryout {
             LogicVerb.ADD_INCOME -> "가계부에 수입 ‘${words.ifEmpty { "기타" }}$money’ 한 줄이 생겨요"
             LogicVerb.MEMO_LINE -> "그날 메모에 ‘${words.ifEmpty { "한 줄" }}’ 한 줄이 더해져요"
             LogicVerb.ENVELOPE -> (if (act.arg.isEmpty()) "맨 위 봉투에" else "‘${act.arg}’ 봉투에") + (if (money.isEmpty()) " 돈이" else "${money}이") + " 들어가요"
-        }
+            // 1.39 [FX-03] 값 칸: what it would be after (the default when the phone has counted none yet).
+            LogicVerb.VAL_ADD -> {
+                val by = act.by ?: 1.0
+                val now = scope.value(act.arg)?.number ?: 0.0
+                "‘${act.arg}’ 값이 ${Formula.numText(now)} → ${Formula.numText(now + by)}이 돼요"
+            }
+            LogicVerb.VAL_SET -> "‘${act.arg}’ 값이 ${Formula.numText(act.by ?: 0.0)}이 돼요"
+            LogicVerb.VAL_STAMP -> "‘${act.arg}’에 지금 시각이 적혀요"
+            LogicVerb.VAL_TEXT -> "‘${act.arg}’에 ‘${runCatching { FormulaText.render(act.text, scope) }.getOrDefault(act.text).take(24)}’이 적혀요"
+        } + (act.after?.let { " (${LogicAct.afterWords(it)} 뒤에)" } ?: "")
     }
 
     /** [b] pressed on [date]: hidden on a day its 보이는 조건 is false. */
@@ -59,17 +68,19 @@ object LogicTryout {
         }
         if (r.on == RuleTrigger.DAILY) at = runCatching { LocalTime.parse(r.at ?: "09:00") }.getOrNull()
         val scope = facts.scope(date)
-        if (r.cond.isNotEmpty() && Formula.eval(r.cond, scope)?.truthy != true)
+        val holds = r.cond.isEmpty() || Formula.eval(r.cond, scope)?.truthy == true
+        if (!holds && r.otherwise.isEmpty())
             return Try(date, false, "조건(${EasyWhen.read(r.cond)?.say() ?: "수식"})이 이날은 맞지 않아요", "", at)
-        val whenWords = at?.let { "%d:%02d에".format(it.hour, it.minute) } ?: r.sayWhen()
-        return Try(date, true, whenWords, result(r.act, scope), at)
+        val whenWords = (at?.let { "%d:%02d에".format(it.hour, it.minute) } ?: r.sayWhen()) + (if (!holds) " 조건이 맞지 않아 ‘아니면’으로" else "")
+        // 1.39 [FX-11] 동작 줄: each act's result in order.
+        return Try(date, true, whenWords, r.steps(holds).joinToString(" · ") { result(it, scope) }, at)
     }
 
     /** The days of [days] on which [r] would run by itself (근무 시작·끝·매일), for "앞으로 2주 동안 N번". Others wait for a tap or a save. */
     fun runsOn(r: LogicRule, days: List<LocalDate>, facts: DayFactsBook): List<LocalDate> = days.filter { rule(r, it, facts).runs }
 
     /** Whether [r] runs by itself on a time (근무 시작·끝·매일), not on something done (날짜 누르기, 메모·가계부 저장, 앱 열기). */
-    fun timed(r: LogicRule): Boolean = r.on == RuleTrigger.START || r.on == RuleTrigger.END || r.on == RuleTrigger.DAILY
+    fun timed(r: LogicRule): Boolean = r.on == RuleTrigger.START || r.on == RuleTrigger.END || r.on == RuleTrigger.DAILY || r.on == RuleTrigger.EVERY
 
     /** The 상황 to make for [r], said as a button ("근무 끝 만들어 보기", "메모 저장해 보기"). */
     fun situation(r: LogicRule): String = when (r.on) {
@@ -81,5 +92,7 @@ object LogicTryout {
         RuleTrigger.MEMO -> "메모 저장해 보기"
         RuleTrigger.OPEN -> "앱 처음 열어 보기"
         RuleTrigger.MONEY -> "가계부에 적어 보기"
+        RuleTrigger.VALUE -> "‘${r.of.orEmpty()}’ 바꿔 보기"
+        RuleTrigger.EVERY -> "다음 때 만들어 보기"
     }
 }

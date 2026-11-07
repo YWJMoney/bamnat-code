@@ -28,6 +28,11 @@ class DayFactsBook(
     private val payMonth: (LocalDate) -> YearMonth = { YearMonth.from(it) },
     /** 1.37 [LEDH-19] The 가계부's forecast and envelopes, worked out the first time a formula reads one of [MONEY_AHEAD]. */
     moneyFacts: () -> MoneyFacts? = { null },
+    /**
+     * 1.39 [FX-03][FX-13] 값 칸: a work's kept number under a name with its past (read each time, as a button may just have added to
+     * it), for `값("물 잔")` on each day and 지난값·연속·값합계·지난시간.
+     */
+    private val values: (String) -> ValueSeries? = { null },
 ) {
     private val ahead: MoneyFacts? by lazy { runCatching(moneyFacts).getOrNull() }
     /** A day's work as the calendar resolved it. [role] is [com.bamnat.core.recipe.ShiftRole]'s key. */
@@ -64,6 +69,8 @@ class DayFactsBook(
                 return if (plain.containsKey(name)) Value.of(plain[name]) else null
             }
             override fun input(label: String): Value? = if (inputs.containsKey(label)) Value.of(inputs[label]) else null
+            override fun value(name: String): Value? = values(name)?.on(date)
+            override fun series(name: String): ValueSeries? = values(name)
         }
     }
 

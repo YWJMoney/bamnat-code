@@ -365,6 +365,27 @@
             </intent-filter>
         </service>
 
+        <!-- 1.39 [FX-04] 빠른 설정 '밤낮 단추' 타일 (기능 작품): only the system's quick settings binds it. -->
+        <service
+            android:name=".logic.FxButtonTile"
+            android:exported="true"
+            android:icon="@drawable/ic_tile_money_add"
+            android:label="@string/tile_fx_button"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- 1.39 [FX-04] 앱 바로가기 단추: presses and closes; only launched by our own dynamic shortcuts (not exported). -->
+        <activity
+            android:name=".logic.FxPressActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!-- [PROV-03] 매일 자동 백업: only the system's job scheduler binds it. -->
         <service
             android:name=".backup.AutoBackupJob"
@@ -474,6 +495,24 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_countdown_info" />
         </receiver>
+
+        <!-- 1.39 [FX-04] 밤낮 단추 위젯 (기능 작품, 프로). -->
+        <receiver
+            android:name=".widget.FxButtonWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_fx_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_fx_info" />
+        </receiver>
+
+        <!-- 1.39 [FX-05] 알림 단추: only this app's own notices send it. -->
+        <receiver
+            android:name=".logic.FxPressReceiver"
+            android:exported="false" />
 
         <!-- 1.37 [LEDH-14] 오늘 쓸 돈 + 돈 적기. -->
         <receiver

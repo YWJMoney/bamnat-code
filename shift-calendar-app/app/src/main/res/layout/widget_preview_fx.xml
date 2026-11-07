@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1.39 [FX-04] What the 밤낮 단추 widget looks like, for the phone's widget list (Android 12+). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal" android:padding="8dp" android:background="@drawable/widget_preview_bg">
+<TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="🛵 +1건 · 12건" android:textSize="13sp" android:textColor="#3F51B5" android:gravity="center" />
+<TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="💧 물 · 6/8잔" android:textSize="13sp" android:textColor="#3F51B5" android:gravity="center" />
+</LinearLayout>

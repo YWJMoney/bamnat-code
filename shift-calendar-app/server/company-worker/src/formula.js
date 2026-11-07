@@ -131,7 +131,8 @@ const fx_mainName = (n) => fx_NAME_BY.get(n) ?? fx_NAME_BY.get(n.toLowerCase()) 
 const fx_FNS = [
   ["IF", "만약", "if", 2, 41, true], ["SWITCH", "고르기", "switch", 3, 41, true], ["AND", "모두", "all", 1, 20, true],
   ["OR", "하나라도", "any", 1, 20, true], ["NOT", "아님", "not", 1, 1], ["IFNONE", "없으면", "ifEmpty", 2, 2, true],
-  ["INPUT", "칸", "input", 1, 2, true], ["CONTAINS", "포함", "contains", 2, 2], ["STARTS", "시작", "startsWith", 2, 2],
+  ["INPUT", "칸", "input", 1, 2, true], ["VALUE", "값", "value", 1, 2, true], ["PAST", "지난값", "pastValue", 1, 2, true], ["STREAK", "연속", "valueStreak", 1, 1, true],
+  ["TOTAL", "값합계", "valueSum", 1, 2, true], ["MEAN", "값평균", "valueAvg", 1, 2, true], ["SINCE", "지난시간", "hoursSince", 1, 1, true], ["CONTAINS", "포함", "contains", 2, 2], ["STARTS", "시작", "startsWith", 2, 2],
   ["ENDS", "끝", "endsWith", 2, 2], ["LEN", "길이", "len", 1, 1], ["COUNT", "개수", "count", 1, 2], ["SUM", "합", "sum", 1, 20],
   ["AVG", "평균", "avg", 1, 20], ["MAX", "최대", "max", 1, 20], ["MIN", "최소", "min", 1, 20], ["ROUND", "반올림", "round", 1, 2],
   ["FLOOR", "내림", "floor", 1, 1], ["CEIL", "올림", "ceil", 1, 1], ["ABS", "절댓값", "abs", 1, 1], ["BETWEEN", "사이", "between", 3, 3],
@@ -410,6 +411,10 @@ function fx_run(root, scope) {
         case "OR": return fxBool(A.some((x) => fx_truthy(ev(x))));
         case "IFNONE": { const v = ev(A[0]); return fx_isEmpty(v) ? ev(A[1]) : v; }
         case "INPUT": { const label = valueText(ev(A[0])); return scope.input(label) ?? (A.length > 1 ? ev(A[1]) : fx_NONE); }
+        // 1.39 [FX-13] 값 칸의 기록: the server keeps none (core the same with no ValueSeries).
+        case "PAST": case "STREAK": case "TOTAL": case "MEAN": case "SINCE": return fx_NONE;
+        // 1.39 [FX-03] 값 칸: the server has none of a phone's counted values, so the default (core Fn.VALUE).
+        case "VALUE": { const name = valueText(ev(A[0])).trim(); return (scope.value?.(name) ?? null) ?? (A.length > 1 ? ev(A[1]) : fx_NONE); }
         default: return fx_NONE;
       }
     }
@@ -495,4 +500,40 @@ export function formulaTextProblem(src) {
     i++;
   }
   return null;
+}
+
+/** 1.39 [FX-01] core Compiled.calls: the functions a formula calls, by key (VALUE for 값(…)); empty when it does not read. */
+export function fxCalls(src) {
+  const out = new Set();
+  const r = parseFormula(src);
+  if (!r.ok) return out;
+  const walk = (n) => {
+    if (!n) return;
+    if (n.k === "call") { out.add(n.fn.key); n.args.forEach(walk); } else if (n.k === "un") walk(n.x); else if (n.k === "bin") { walk(n.a); walk(n.b); }
+  };
+  walk(r.root);
+  return out;
+}
+
+/** 1.39 [FX-01] The functions (keys) a formula calls, or a text's {formulas} when [text]. */
+export function fxCallKeys(src, text = false) {
+  const s = String(src ?? "");
+  if (!s) return [];
+  if (!text) return [...fxCalls(s)];
+  const out = new Set();
+  const re = /\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(s))) for (const k of fxCalls(m[1])) out.add(k);
+  return [...out];
+}
+
+/** 1.39 [FX-01] core FxPro.readsValue / readsValueText: does a formula, or a text's {formulas}, call 값(…)? */
+export function fxReadsValue(src, text = false) {
+  const s = String(src ?? "");
+  if (!s) return false;
+  if (!text) return fxCalls(s).has("VALUE");
+  const re = /\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(s))) if (fxCalls(m[1]).has("VALUE")) return true;
+  return false;
 }

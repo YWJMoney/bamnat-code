@@ -793,6 +793,8 @@ class AppContainer(context: Context) {
                 if (first) com.bamnat.app.logic.LogicRunner.catchUp(this@AppContainer)
                 else com.bamnat.app.logic.LogicRunner.rulesChanged(this@AppContainer)
                 first = false
+                // 1.39 [FX-04] 앱 바로가기·단추 위젯·빠른 설정 follow the buttons.
+                com.bamnat.app.logic.FxOutside.sync(this@AppContainer)
                 com.bamnat.app.logic.LogicRunner.onOpen(this@AppContainer)
             }
         }

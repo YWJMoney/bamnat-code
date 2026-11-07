@@ -214,6 +214,10 @@ private fun placeWords(p: ButtonPlace): String = when (p) {
     ButtonPlace.CALENDAR -> "달력"
     ButtonPlace.MONEY -> "가계부"
     ButtonPlace.DECOR -> "꾸밈 그림을 누르면"
+    // 1.39 [FX-04] 밖에서 누르기 (프로 기능 장치).
+    ButtonPlace.WIDGET -> "홈 화면 단추 위젯"
+    ButtonPlace.TILE -> "빠른 설정 타일"
+    ButtonPlace.SHORTCUT -> "앱 아이콘 바로가기"
 }
 
 /** 자동 규칙: the 상황 made on the day, beside what my own rules do then. */

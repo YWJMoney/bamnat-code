@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { server, device, from, signIn, seasoned } from "./helpers.mjs";
 import { MATERIAL_CHECKS } from "../src/materials.js";
-import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf, partUnitOf, logicOnly } from "../src/recipes.js";
+import { cleanRecipe, nameSkeleton, reservedName, mixedScript, rankGood, rankHot, keptPercent, recipeCanonical, lookOf, tabsOf, scopeOf, partUnitOf, logicOnly, fxPartsOf, FX_PARTS, listItem } from "../src/recipes.js";
 
 const cases = JSON.parse(readFileSync(new URL("../../../docs/recipe-cases.json", import.meta.url), "utf8"));
 /** After 처리방침 3.8 is in force (시행 2026-11-29 KST). */
@@ -433,6 +433,65 @@ test("[RUL-07] 규칙·단추만: a recipe of only the logic piece is its own se
   assert.deepEqual(got.data.items.map((i) => [i.title, i.scope]), [["퇴근 규칙·단추", "logic"]]);
   const tabs = await call("GET", "/api/recipes?style=SHIFT&sort=new&scope=tab");
   assert.deepEqual(tabs.data.items.map((i) => i.title), ["알람만"]);
+});
+
+test("[FX-01] 프로 문: 값 칸·값 더하기·값() 수식·밖 단추·알림 단추 are read, listed as 기능 장치 (core FxPro), the rest is free", async () => {
+  assert.deepEqual(FX_PARTS, ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "look"]);
+  const fx = { kind: "logic", values: [{ name: "물 잔", reset: "day", goal: 8, unit: "잔" }],
+    buttons: [{ id: "water", label: "물 한 잔", where: "widget", do: "valAdd", arg: "물 잔", by: 1 }, { id: "snz", label: "10분 뒤", where: "day", do: "notify", arg: "다시" }],
+    rules: [{ name: "물 알림", on: "daily", at: "15:00", when: "값(\"물 잔\", 0) < 4", do: "notify", arg: "물 {값(\"물 잔\")}잔째", then: ["water"] }] };
+  const ok = await cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, fx] })));
+  for (const k of ['"values"', '"valAdd"', '"where":"widget"', '"then":["water"]', '"by":1']) assert.ok(ok.text.includes(k), k);
+  // 사용자 11-07 18:38 '하나씩 무료 맛보기': the first 숫자 값 칸 and the first widget button counting it are free.
+  assert.deepEqual(fxPartsOf(ok.text), ["valueRead", "notifyButtons"]);
+  const two = { ...fx, values: [...fx.values, { name: "배달", kind: "num" }], buttons: [...fx.buttons, { id: "del", label: "배달", where: "widget", do: "valAdd", arg: "배달" }] };
+  assert.deepEqual(fxPartsOf({ pieces: [two] }), ["values", "valueAct", "valueRead", "outside", "notifyButtons"]);
+  assert.deepEqual(fxPartsOf({ pieces: [{ kind: "logic", rules: [{ name: "a", on: "every", min: 120, during: "work", do: "notify", arg: "스트레칭", then: ["again10"],
+    more: [{ do: "memoLine", arg: "{연속(\"물 잔\")}일째" }] }] }] }), ["chain", "history", "time"]);
+  // 1.38까지의 규칙·단추만 있으면 프로 장치가 없어요.
+  const old = { kind: "logic", buttons: [{ label: "기록", where: "day", do: "memoTpl", arg: "하루" }], rules: [{ name: "끝", on: "end", do: "checkReset" }] };
+  assert.deepEqual(fxPartsOf({ pieces: [old] }), []);
+  assert.deepEqual(fxPartsOf({ pieces: [{ kind: "logic", rules: [{ name: "a", on: "open", do: "notify", arg: "오늘 {값(\"배달\", 0)}건" }] }] }), ["valueRead"]);
+  assert.deepEqual(fxPartsOf("not json"), []);
+  const row = { body: ok.text, code: "c", title: "t", summary: "", styles: "SHIFT", cover: "{}", version: 1, likes: 0, dislikes: 0, applied: 0, kept7: 0, official: 0, public_data: 0, updated_at: 0, created_at: 0 };
+  assert.deepEqual(listItem(row, 0).fx, ["valueRead", "notifyButtons"]);
+  assert.equal(listItem({ ...row, body: JSON.stringify({ pieces: [old] }) }, 0).fx, undefined);
+  // fx=1: only works with a 기능 장치, beside any scope.
+  const { call } = server({ plaza: true });
+  const admin = await signIn(call);
+  for (const [title, pieces] of [["물 위젯", [fx]], ["옛 규칙", [old]]]) {
+    const put = await call("POST", "/api/admin/recipes", { recipe: recipe({ title, pieces }) }, admin);
+    assert.ok(put.status < 300, JSON.stringify(put.data));
+  }
+  const all = await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53");
+  assert.ok(all.data.items.map((i) => i.title).includes("옛 규칙"));
+  const only = await call("GET", "/api/recipes?style=SHIFT&sort=new&fx=1&app=53");
+  assert.deepEqual(only.data.items.map((i) => [i.title, i.fx]), [["물 위젯", ["valueRead", "notifyButtons"]]]);
+  const free = await call("GET", "/api/recipes?style=SHIFT&sort=new&fx=0&app=53");
+  assert.ok(free.data.items.map((i) => i.title).includes("옛 규칙"));
+  assert.ok(!free.data.items.map((i) => i.title).includes("물 위젯"));
+  const tools = await call("GET", "/api/recipes?style=SHIFT&sort=new&fx=1&scope=tool&app=53");
+  assert.deepEqual(tools.data.items.map((i) => i.title), ["물 위젯"]);
+  // A bad 값 칸 name or place is refused like any other field.
+  await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { ...fx, values: [{ name: "a/b" }] }] }))), (e) => e.code !== undefined);
+  await assert.rejects(cleanRecipe(recipeCanonical(recipe({ pieces: [...recipe().pieces, { ...fx, buttons: [{ ...fx.buttons[0], where: "lock" }] }] }))), (e) => e.code !== undefined);
+});
+
+test("[FX-17] after the 정식 출시 switch a 기능 작품 others can see needs its maker's 프로 (나만 보기 and 1.38 rules stay free)", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const fx = { kind: "logic", values: [{ name: "물 잔", reset: "day", goal: 8 }, { name: "배달" }], buttons: [{ id: "water", label: "물 한 잔", where: "widget", do: "valAdd", arg: "물 잔", by: 1 }] };
+  // The free 맛보기 (one 값 칸 and one widget button) goes up like a 1.38 rule.
+  const old = { kind: "logic", values: [{ name: "물 잔" }], buttons: [{ label: "기록", where: "day", do: "memoTpl", arg: "하루" }, { id: "w", label: "물", where: "widget", do: "valAdd", arg: "물 잔" }] };
+  // Before billing every phone has 프로 (the app's Gate.live).
+  assert.equal((await up(call, 1, { title: "물 위젯 하나", pieces: [...recipe().pieces, fx] })).status, 201);
+  const owner = await signIn(call);
+  assert.equal((await call("POST", "/api/admin/flags/billing/force", { force: "on", why: "시험" }, owner)).status, 200);
+  const no = await up(call, 2, { title: "물 위젯 둘", pieces: [...recipe().pieces, fx] });
+  assert.equal(no.status, 403);
+  assert.equal(no.data.error, "fx_pro");
+  assert.equal((await up(call, 2, { title: "물 위젯 셋", pieces: [...recipe().pieces, fx] }, "private")).status, 201);
+  assert.equal((await up(call, 2, { title: "옛 규칙 하나", pieces: [...recipe().pieces, old] })).status, 201);
 });
 
 test("[FREE-09] every 추천 테마 core wrote reads the same on the server, nine for each kind of work (전문 달력 first, TAB-05), each with its look for the list", async () => {

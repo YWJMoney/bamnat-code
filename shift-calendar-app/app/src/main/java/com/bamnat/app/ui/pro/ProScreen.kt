@@ -110,8 +110,10 @@ val PRO_PILLARS = listOf(
     Pillar("내 마음대로 꾸미기",
         listOf("테마를 ${com.bamnat.app.recipe.ThemeWardrobe.PRO_OUTFITS}벌까지 저장해 두고 한 번에 바꿔 입기", "다른 분이 만든 테마도 광고 없이, 기간 없이",
             // [PRF-12] 1.36 창작자 꾸미기.
-            "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프"),
-        setOf(Feature.THEME_WARDROBE, Feature.CREATOR_PRO)),
+            "내 마을 프로필에 표지 그림, 대표 작품 6개, 작품 통계 28일 날별 그래프",
+            // 1.39 [FX-01] 기능 작품.
+            "기능 작품: 값 칸, 홈 화면 단추 위젯·빠른 설정·바로가기, 단추 달린 알림을 켜고 장터에 올리기"),
+        setOf(Feature.THEME_WARDROBE, Feature.CREATOR_PRO, Feature.FX_WORKS)),
 )
 
 /**
