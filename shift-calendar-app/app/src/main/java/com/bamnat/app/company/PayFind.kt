@@ -32,7 +32,7 @@ class PayFind(private val c: AppContainer, val calendar: String = PersonalCalend
     suspend fun use(hit: CompanyHit): Used = use(hit.id, hit.lead?.let { l -> l.payWay?.takeIf { !l.pay }?.setup ?: l.setup })
 
     /** [PAYF-01] 이 급여 방식 쓰기 on company [id], its 대표 주기 [lead] first when the search named one. */
-    suspend fun use(id: String, lead: String?): Used {
+    suspend fun use(id: String, lead: String?, source: PendingWay.Source = PendingWay.Source.FIND): Used {
         val api = c.companyApi
         val s = scope
         val store = s.store
@@ -50,7 +50,7 @@ class PayFind(private val c: AppContainer, val calendar: String = PersonalCalend
             ?: return Used.Gone
         val text = wayText(c, store.device, page.id, setup) ?: return Used.Gone
         c.telemetry.event("pay_find", "use")
-        val way = PendingWay(page.id, page.name, setup.dept, setup.id, text, PendingWay.Source.FIND)
+        val way = PendingWay(page.id, page.name, setup.dept, setup.id, text, source)
         s.pendingWays.offer(way)
         return Used.Ready(way)
     }

@@ -129,3 +129,80 @@ test("[PAYP-08] a recipe others read carries no company pay part; 나만 보기 
   const same = await sharedPayOut(old.body, old.hash);
   assert.equal(same.body, old.body);
 });
+
+// ---- 1.39 발굴 (사용자 2026-11-07 18:45 "부족한점 더하면 좋을것 새로 추가하면 좋을것 혁신할점") ----
+
+test("[발굴 2-1·2-3·4-3] the page says a used version's newer one, this phone's own 보완 요청 and when each was last sent", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, DB } = server({ plaza: true });
+  const a = await call("POST", "/api/reports", report(1, { company: "고친정밀" }), from(1));
+  await policy312(DB);
+  const c = a.data.company.id;
+  const g = a.data.setup;
+  await call("POST", "/api/uses", { device: device(5), company: c, setup: g, cal: "main" }, from(5));
+  const page = async (n) => (await call("GET", `/api/companies/${c}`, undefined, { "x-device": device(n) })).data;
+  const first = await page(5);
+  assert.equal(first.newer, undefined);
+  assert.equal(first.setups[0].sentAt, new Date(AFTER).toISOString());
+  // Phone 5's 보완 요청: open, then answered by the sender.
+  const fix = await call("POST", "/api/posts", { device: device(5), company: c, setup: g, body: "야간이 22시부터예요", kind: "fix",
+    change: [{ field: "night" }] }, from(5));
+  assert.equal(fix.status, 201, fix.text);
+  assert.equal((await page(5)).setups[0].myFix, "open");
+  assert.equal((await page(8)).setups[0].myFix, undefined, "only the writer's own");
+  t.mock.timers.tick(60_000);
+  await call("POST", "/api/posts", { device: device(1), company: c, setup: g, body: "고쳐서 다시 올릴게요", parent: fix.data.id }, from(1));
+  assert.equal((await page(5)).setups[0].myFix, "answered");
+  // The sender sends the corrected version: their older pending one leaves the page, and phone 5, still on it, is offered the newer.
+  t.mock.timers.tick(60_000);
+  const changed = setup();
+  changed.shiftTypes[1].start = "22:00";
+  const b = await call("POST", "/api/reports", report(1, { company: "고친정밀", setup: changed }), from(1));
+  assert.notEqual(b.data.setup, g);
+  const after = await page(5);
+  assert.deepEqual(after.newer, { [g]: b.data.setup });
+  assert.equal((await page(8)).newer, undefined, "only for a phone that uses the older one");
+  // ... and hears of it once in 밤낮 소식.
+  const news = (await call("GET", `/api/plaza/news?since=${new Date(AFTER).toISOString()}`, undefined, { "x-device": device(5) })).data.items;
+  assert.deepEqual(news.filter((i) => i.kind === "newer").map((i) => [i.company.name, i.setup]), [["고친정밀", g]]);
+  // Once it uses the newer one, nothing more is offered.
+  await call("POST", "/api/uses", { device: device(5), company: c, setup: b.data.setup, cal: "main" }, from(5));
+  assert.equal((await page(5)).newer, undefined);
+});
+
+test("[발굴 2-4] the admin app's 보완 요청 go by version, the most open first, with whether the sender answered", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, DB } = server({ plaza: true });
+  const a = await call("POST", "/api/reports", report(1, { company: "가나정밀" }), from(1));
+  await policy312(DB);
+  const b = await call("POST", "/api/reports", report(2, { company: "다라정밀" }), from(2));
+  const fix = (n, r) => call("POST", "/api/posts", { device: device(n), company: r.data.company.id, setup: r.data.setup, body: "수당이 달라요",
+    kind: "fix", change: [{ field: "allowance" }] }, from(n));
+  const one = await fix(5, a);
+  t.mock.timers.tick(1000);
+  await fix(6, b);
+  t.mock.timers.tick(1000);
+  await fix(7, b);
+  await call("POST", "/api/posts", { device: device(1), company: a.data.company.id, setup: a.data.setup, body: "봤어요", parent: one.data.id }, from(1));
+  const owner = await signIn(call);
+  const listed = (await call("GET", "/api/admin/posts?status=fix", undefined, owner)).data.posts;
+  assert.deepEqual(listed.map((p) => [p.company.name, p.open, p.answered]), [["다라정밀", 2, false], ["다라정밀", 2, false], ["가나정밀", 0, true]]);
+});
+
+test("[발굴 3-5] once a month, a sender hears how many other phones count with their way", async (t) => {
+  // The 1st of December, 00:30 KST.
+  const firstOfMonth = Date.parse("2026-11-30T15:30:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now: firstOfMonth - 3 * 86400_000 });
+  const { call } = server({ plaza: true });
+  const a = await call("POST", "/api/reports", report(1, { company: "고마운정밀" }), from(1));
+  for (const n of [5, 6]) await call("POST", "/api/uses", { device: device(n), company: a.data.company.id, setup: a.data.setup, cal: "main" }, from(n));
+  const news = async (since) => (await call("GET", `/api/plaza/news?since=${new Date(since).toISOString()}`, undefined, { "x-device": device(1) }))
+    .data.items.filter((i) => i.kind === "thanks");
+  // Not in the middle of a month.
+  assert.deepEqual(await news(Date.now() - 3600_000), []);
+  t.mock.timers.setTime(firstOfMonth);
+  const said = await news(Date.now() - 86400_000);
+  assert.deepEqual(said.map((i) => [i.company.name, i.count]), [["고마운정밀", 2]]);
+  // Asked again the same day after it went: not again.
+  assert.deepEqual(await news(Date.now() - 600_000), []);
+});

@@ -238,8 +238,8 @@ object Notifications {
     }
 
     /** [SLP-15] A notice's tap opens the screen it is about. */
-    fun open(context: Context, target: NoticeLinks.Target, requestCode: Int, calendar: String? = null): PendingIntent = PendingIntent.getActivity(
-        context, requestCode, NoticeLinks.intent(context, target, calendar),
+    fun open(context: Context, target: NoticeLinks.Target, requestCode: Int, calendar: String? = null, payload: String? = null): PendingIntent = PendingIntent.getActivity(
+        context, requestCode, NoticeLinks.intent(context, target, calendar, payload),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
