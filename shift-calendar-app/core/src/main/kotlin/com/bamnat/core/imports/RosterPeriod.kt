@@ -65,7 +65,9 @@ object RosterPeriod {
                 if (fill && now != want) { cells[d] = want; guessed += d; if (now == null || now is DutyCell.Unknown) filled += d }
                 // [READ-41] 1.38 PC 12.2 (사용성): a clean 조 roster showed '노란 칸 15개' — cells only one or two readings saw. A cell
                 // the readings split on that says what the line's repeat says, inside the line, is not one to look at.
-                else if (d in row.unsure && now == want && d in (first + 2)..(end - 2)) settled += d
+                // 12.3: unless two readings gave two different codes there; then the photo may say the other one (the
+                // repeat and most readings can be wrong together), so it stays yellow.
+                else if (d in row.unsure && d !in row.contested && now == want && d in (first + 2)..(end - 2)) settled += d
             }
             if (cells == row.cells && settled.isEmpty()) row
             else row.copy(cells = cells.toSortedMap(), guessed = guessed, filled = filled, unsure = row.unsure - settled)
