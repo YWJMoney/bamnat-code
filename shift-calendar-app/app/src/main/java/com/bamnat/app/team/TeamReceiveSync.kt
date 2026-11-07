@@ -48,12 +48,55 @@ object TeamReceiveSync {
     /** 1.39 [PRIV-06] 모두 지우기 cut the table link on the server: the phone forgets it (병동 전체 보기 then reads off). */
     fun forgetBoard(c: Context, teamId: String) = keep(c, teamId, null)
 
-    /** Who opened their link since it last changed; a member without a link is left out. */
-    suspend fun seen(app: AppContainer, members: List<TeamMember>): Map<String, Instant?> = members.mapNotNull { m ->
+    /** 1.39 G2: what one member's link says about 봤어요. */
+    sealed interface LinkSeen {
+        data class At(val at: Instant) : LinkSeen
+        data object Not : LinkSeen
+        /** The server has no such link (ran out, cut, taken down, or the server lost it) or it is not this phone's to read. */
+        data object Gone : LinkSeen
+        /** Not reached (no internet); says nothing about the link. */
+        data object Unknown : LinkSeen
+    }
+
+    /**
+     * Who opened their link since it last changed; a member without a link is left out. 1.39 G2 (PC a483ca15): a link the server no
+     * longer has used to drop out of the map as if it were never sent, so a team whose links were all gone read "0/0명 · 모두 봤어요".
+     */
+    suspend fun seen(app: AppContainer, members: List<TeamMember>): Map<String, LinkSeen> = members.mapNotNull { m ->
         val id = m.linkId ?: return@mapNotNull null
         val token = m.linkToken ?: return@mapNotNull null
-        runCatching { app.shareApi.seen(id, token) }.fold({ m.id to it }, { null })
+        m.id to try {
+            app.shareApi.seen(id, token)?.let { LinkSeen.At(it) } ?: LinkSeen.Not
+        } catch (e: com.bamnat.app.share.ShareLinkException) {
+            if (e.message == "not_found" || e.message == "forbidden") LinkSeen.Gone else LinkSeen.Unknown
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            LinkSeen.Unknown
+        }
     }.toMap()
+
+    /** The 봤어요 line under the board, and who each button is for. */
+    data class SeenLine(val text: String, val notSeen: List<TeamMember>, val gone: List<TeamMember>, val unread: Int)
+
+    fun seenLine(version: Int, members: List<TeamMember>, got: Map<String, LinkSeen>): SeenLine {
+        val asked = members.filter { it.id in got }
+        val gone = asked.filter { got[it.id] == LinkSeen.Gone }
+        val read = asked.filter { got[it.id] is LinkSeen.At || got[it.id] == LinkSeen.Not }
+        val notSeen = read.filter { got[it.id] == LinkSeen.Not }
+        val unread = asked.count { got[it.id] == LinkSeen.Unknown }
+        val parts = ArrayList<String>()
+        if (read.isNotEmpty()) {
+            parts += "${version}판 링크를 본 사람 ${read.size - notSeen.size}/${read.size}명" + when {
+                notSeen.isNotEmpty() -> " · 아직: " + notSeen.joinToString(", ") { it.name }
+                gone.isEmpty() && unread == 0 -> " · 모두 봤어요"
+                else -> ""
+            }
+        }
+        if (gone.isNotEmpty()) parts += "링크가 없어요: " + gone.joinToString(", ") { it.name } + " · 기간이 지났거나 지워졌어요. 새 링크를 보내 주세요"
+        if (unread > 0) parts += if (read.isEmpty() && gone.isEmpty()) "본 사람을 읽지 못했어요. 인터넷이 될 때 '다시 보기'를 눌러 주세요" else "못 읽은 ${unread}명"
+        return SeenLine(parts.joinToString("\n"), notSeen, gone, unread)
+    }
 
     fun url(m: TeamMember): String? = m.linkId?.let { com.bamnat.app.BuildConfig.SHARE_BASE_URL.trimEnd('/') + "/s/" + it }
 

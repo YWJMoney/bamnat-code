@@ -49,6 +49,8 @@ class RosterFollowerTest {
         override suspend fun delete(state: ShareLinkState) = Unit
         override suspend fun read(id: String): ReceivedShare = share ?: throw ShareLinkException("not_found")
         override suspend fun readIfChanged(id: String, etag: String?): ReceivedShare? = read(id).takeIf { it.etag != etag }
+        var quiet = 0
+        override suspend fun readQuietly(id: String, etag: String?): ReceivedShare? { quiet++; return readIfChanged(id, etag) }
     }
 
     /** The 리더's link: 12/3 and 12/4 with D or N. */
@@ -79,6 +81,18 @@ class RosterFollowerTest {
     }
 
     private suspend fun override(d: LocalDate) = c.scheduleRepository.snapshot.first().entries.firstOrNull { it.date == d }?.override
+
+    /** 1.39 G2: the 6-hourly check is not the member looking, so it asks without setting the 리더's 봤어요; opening the link does. */
+    @Test fun theBackgroundCheckDoesNotCountAsSeen() = runBlocking<Unit> {
+        c.received.put(id, api.share!!, mine = true)
+        api.share = link("2", "1", "t2")
+        RosterFollower.checkAll(c)
+        assertEquals(1, api.quiet)
+        assertEquals(ShiftOverride.Shift(night), override(day))
+        api.share = link("2", "2", "t3")
+        RosterFollower.refresh(c, id)
+        assertEquals(1, api.quiet)
+    }
 
     @Test fun theLinkTheWorkComesFromGoesInAndCanBeTakenBack() = runBlocking<Unit> {
         c.received.put(id, api.share!!, mine = true)

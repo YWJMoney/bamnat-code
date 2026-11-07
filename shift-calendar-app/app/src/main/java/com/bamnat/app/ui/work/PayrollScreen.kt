@@ -131,6 +131,16 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                     FilterChip(selected = false, onClick = { scope.launch { store.updateWorkplace(place.id) { it.copy(fivePlus = false) } } }, label = { Text("5명 미만") })
                 }
             }
+            // 1.39 [FLOW-24] one number first: the month's 인건비, then each person's bar against last month.
+            val lastWork by store.work(place.id, ym.minusMonths(1)).collectAsStateWithLifecycle(emptyList())
+            val lastLedger = remember(place, staff, lastWork, ym) { PayrollLedger.month(place, staff, ym.minusMonths(1), lastWork) }
+            Text("${ym.monthValue}월 인건비", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp))
+            Text(Fmt.won(ledger.total), style = MaterialTheme.typography.headlineSmall)
+            lastLedger.total.takeIf { it > 0 && ledger.total > 0 }?.let { lt ->
+                val d = ledger.total - lt
+                Hint("지난달 ${Fmt.won(lt)} · " + if (d == 0L) "같아요" else "${if (d > 0) "+" else "−"}${Fmt.won(kotlin.math.abs(d))}")
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
                 StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${ledger.lines.size}명")
                 // 1.39 [BOSS-12] 산재보험 (사업주만) with the 4대보험 once the 업종 is picked.
@@ -140,13 +150,13 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
             if (place.industry == null && ledger.lines.isNotEmpty()) Text("업종을 고르면 산재보험료(사장님만 내요)도 더해요 · 사업장 설정에서 한 번",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable(role = Role.Button) { settings = true }.padding(vertical = 4.dp))
-            ValueLine("인건비 합계", Fmt.won(ledger.total), strong = true)
+            if (ledger.lines.size >= 2 || lastLedger.lines.isNotEmpty() && ledger.lines.isNotEmpty())
+                StaffCostBars(ledger.lines, lastLedger.lines.associate { it.staff.id to it.employerTotal }, Modifier.padding(vertical = 6.dp))
             // 1.38 [P3-X-07] 인건비율: the 가계부's 매출 for the month next to it.
             val book by context.appContainer.moneyRepository.book.collectAsStateWithLifecycle(null)
-            val lastWork by store.work(place.id, ym.minusMonths(1)).collectAsStateWithLifecycle(emptyList())
-            val ratio = remember(book, ledger, lastWork, staff) {
+            val ratio = remember(book, ledger, lastLedger) {
                 book?.let { b ->
-                    val last = PayrollLedger.month(place, staff, ym.minusMonths(1), lastWork).total.takeIf { it > 0 }
+                    val last = lastLedger.total.takeIf { it > 0 }
                     com.bamnat.core.boss.LaborRatio.of(ym, ledger.total, b.sales, Today.date(), last)
                 }
             }
