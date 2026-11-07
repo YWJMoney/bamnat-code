@@ -643,7 +643,7 @@ private fun SetupCard(
             if (!s.adopted) PointsBar(s.points, s.threshold)
             WaitReason(s.points, s.threshold, s.adopted, s.agree)
             // [PLZ-08] Who stands behind it, in the names they chose.
-            WhoLine(s.senders, s.checked, s.uses, s.by, s.checkedLong)
+            WhoLine(s.senders, s.checked, s.uses, s.by, s.checkedLong, fixes = s.fixes, sentAt = s.sentAt)
             main.forEach { (label, text) -> SetupLine(label, text) }
             if (pay.isNotEmpty()) {
                 Row(
@@ -656,8 +656,10 @@ private fun SetupCard(
                 }
                 AnimatedVisibility(more) { Column { pay.forEach { (label, text) -> SetupLine(label, text) } } }
             } else if (s.payHidden) {
-                // [PLAZA-08] 결정 D79: that there is one and how many stand behind it, never its values.
-                Text("급여 방식 있음 · 확인 ${s.persons}명 · 쓰면 보여요", style = MaterialTheme.typography.labelLarge,
+                // [PLAZA-08] 결정 D79: that there is one and how many stand behind it, never its values. 1.39 [PAYP-01]: a server
+                // that shows the pay to no one shows it once used neither (발굴: '쓰면 보여요' was no longer true).
+                Text(if (s.payPrivate) "급여 방식 있음 · 계산 방식은 공유한 분만 봐요" else "급여 방식 있음 · 확인 ${s.persons}명 · 쓰면 보여요",
+                    style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else if (!s.hasPay) {
                 Text("급여 계산 방식은 없어요. 근무표만 가져와요.", style = MaterialTheme.typography.bodySmall,

@@ -561,6 +561,8 @@ private fun PayResult(
             // way from a payslip or its rules page, free).
             // 1.39 [PAYP-04]: matching a payslip changes the rules, and sharing would put someone else's way up as this phone's;
             // with a shared way in use the card on top (의견 보내기·직접 만들기) is the way to say it differs.
+            // 1.39 발굴 3-2: over a shared way, the payslip checked by amounts alone, its answer sent as 맞아요 or a 보완 요청.
+            if (locked && closedSnap == null && !noBase) com.bamnat.app.ui.company.SharedSlipCheckCard(shown)
             if (!locked) {
             SlipMatchCard(profile, gate, onCompare = { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro(Feature.PAYSLIP_MATCH) },
                 onFind = { slipRules = true })

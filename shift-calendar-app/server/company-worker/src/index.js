@@ -2010,8 +2010,9 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
     all(env, "SELECT grp FROM rules WHERE company_id = ?1 AND withdrawn = 1 UNION SELECT grp FROM reports WHERE company_id = ?1 AND status = 'rejected'", id),
     stableFacts(env, id),
   ]);
-  // 1.39 [PAYP-05] 보완 요청 still open on each version, read beside the second round (not one more).
-  const fixesRead = c && !c.hidden && !c.merged_into ? openFixes(env, id) : null;
+  // 1.39 [PAYP-05] 보완 요청 still open on each version, this phone's own, each version's newer one and when it was last sent,
+  // read beside the second round (not one more).
+  const fixesRead = c && !c.hidden && !c.merged_into ? versionFacts(env, id, who.dev) : null;
   fixesRead?.catch(() => {});
   if (!c || c.hidden) return { status: 404, body: { error: "not_found" } };
   if (c.merged_into) return { status: 200, body: { mergedInto: c.merged_into } };
@@ -2068,12 +2069,24 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
   // 1.39 [PAYP-02] (사용자 2026-11-07 "좋아요나 맞아요 많은순으로 위로"): in each department the most 맞아요 first, then the most used.
   sortByOk(setups);
   // 1.39 [PAYP-05] 보완 요청 still open on each version, for its card.
-  const open = await fixesRead;
-  for (const s of setups) if (open.get(s.id)) s.fixes = open.get(s.id);
+  const vf = await fixesRead;
+  const ids = new Set(setups.filter((s) => !s[DOWN] && !s.doubted).map((s) => s.id));
+  for (const s of setups) {
+    if (vf.open.get(s.id)) s.fixes = vf.open.get(s.id);
+    // 1.39 발굴 2-3: what became of this phone's own 보완 요청 on it (open, or answered by one who sent it).
+    if (vf.mine.has(s.id)) s.myFix = vf.mine.get(s.id) ? "answered" : "open";
+    // 1.39 발굴 4-3: when it was last sent (or adopted), for the card's 근거 line.
+    const last = Math.max(vf.last.get(s.id) ?? 0, s.adoptedAt ? Date.parse(s.adoptedAt) : 0);
+    if (last > 0) s.sentAt = iso(last);
+  }
   // BD 1.30 [PLZD-07] What each folded version says against its department's 대표.
   pgChanges(setups, normName);
+  // 1.39 발굴 2-1: for the versions this phone uses, the newer one of the same department one of their senders sent since (on
+  // this page, not doubted or taken down), even when the older one left the page (a sender's pending one is replaced by their
+  // next): the pay screen offers it, as the way in use is not followed by itself (1-4). Only that the same phone sent both.
+  const newer = Object.fromEntries((vf?.used ?? []).map((g) => [g, vf.next.get(g)]).filter(([g, n]) => n && n !== g && ids.has(n) && !vf.used.includes(n)));
   const body = { id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases: aliasRows.map((a) => a.name),
-    setups, member: who.member, ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } };
+    setups, member: who.member, ...(Object.keys(newer).length ? { newer } : {}), ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } };
   // SP1 1.30 [SPD-05] The room (as /room answers it) and the room's talk (as /setups/room/posts does), keys an older app never reads.
   if (extra) {
     const [roomR, talkR] = await extra;
@@ -2142,12 +2155,39 @@ export function sortByOk(setups) {
 }
 
 /** [PAYP-05] How many 보완 요청 are open (shown, with no reply yet from one who sent that version) on each version of a company. */
-async function openFixes(env, companyId) {
-  const rows = await all(env, `SELECT p.grp, COUNT(*) AS n FROM posts p WHERE p.company_id = ?1 AND p.kind = 'fix' AND p.status = 'shown'
-      AND p.parent IS NULL AND NOT EXISTS (SELECT 1 FROM posts a JOIN reports r ON r.company_id = a.company_id AND r.grp = a.grp
-        AND r.device = a.device AND r.status IN ('pending', 'adopted', 'replaced') WHERE a.parent = p.id AND a.status = 'shown')
-    GROUP BY p.grp`, companyId);
-  return new Map(rows.map((r) => [r.grp, r.n]));
+const FIX_OPEN = `p.kind = 'fix' AND p.status = 'shown' AND p.parent IS NULL`;
+/** Whether the 보완 요청 [q] (a posts alias) has a shown reply from one who sent its version. */
+const fixAnswered = (q = "p") => `EXISTS (SELECT 1 FROM posts a JOIN reports r ON r.company_id = a.company_id AND r.grp = a.grp
+    AND r.device = a.device AND r.status IN ('pending', 'adopted', 'replaced') WHERE a.parent = ${q}.id AND a.status = 'shown')`;
+const FIX_ANSWERED = fixAnswered();
+
+/**
+ * 1.39 [PAYP-05] and 발굴 2-1·2-3·4-3, for each version of a company in one batch: the open 보완 요청 (no reply yet from one who sent
+ * it), [dev]'s own 보완 요청 (true once answered), the newer version of the same department one of its senders sent since (the
+ * newest), when it was last sent, and the versions [dev] uses. Nothing says who sent what: only that the same phone sent both.
+ */
+async function versionFacts(env, companyId, dev) {
+  const [open, mine, next, last, used] = (await batch(env, [
+    stmt(env, `SELECT p.grp, COUNT(*) AS n FROM posts p WHERE p.company_id = ?1 AND ${FIX_OPEN} AND NOT ${FIX_ANSWERED} GROUP BY p.grp`, companyId),
+    stmt(env, `SELECT p.grp, MAX(CASE WHEN ${FIX_ANSWERED} THEN 1 ELSE 0 END) AS answered FROM posts p
+        WHERE p.company_id = ?1 AND p.device = ?2 AND ${FIX_OPEN} GROUP BY p.grp`, companyId, dev ?? ""),
+    stmt(env, `SELECT o.grp, n.grp AS next, MAX(n.created_at) AS at FROM reports o JOIN reports n ON n.company_id = o.company_id
+        AND n.device = o.device AND n.dept_norm = o.dept_norm AND n.grp != o.grp AND n.created_at > o.created_at
+        AND n.status IN ('pending', 'adopted') AND ${pgShown("n")}
+      WHERE o.company_id = ?1 AND o.status IN ('pending', 'adopted', 'replaced') GROUP BY o.grp, n.grp`, companyId),
+    stmt(env, `SELECT grp, MAX(created_at) AS at FROM reports WHERE company_id = ?1 AND status IN ('pending', 'adopted', 'replaced')
+        AND ${pgShown()} GROUP BY grp`, companyId),
+    stmt(env, "SELECT grp FROM uses WHERE company_id = ?1 AND device = ?2", companyId, dev ?? ""),
+  ])).map((r) => r.results);
+  const newest = new Map();
+  for (const r of next) if (!newest.has(r.grp) || newest.get(r.grp).at < r.at) newest.set(r.grp, r);
+  return {
+    open: new Map(open.map((r) => [r.grp, r.n])),
+    mine: new Map(mine.map((r) => [r.grp, r.answered === 1])),
+    next: new Map([...newest].map(([grp, r]) => [grp, r.next])),
+    last: new Map(last.map((r) => [r.grp, r.at])),
+    used: used.map((r) => r.grp),
+  };
 }
 
 /** [PAYP-03] How many ways one phone may take in a day: enough to try a few versions, not to read every company's. */
@@ -6446,7 +6486,16 @@ async function postList(env, url) {
       ? await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
           WHERE p.kept = 0 AND (p.flags > 0 OR p.hide_reason = 'flags') AND (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\')
           ORDER BY p.flags DESC, p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after)
-      : await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
+      : status === "fix"
+        // 1.39 발굴 2-4: by version, the one with the most open 보완 요청 first, so a way said to differ by many is seen at once;
+        // each says whether one who sent the version answered it.
+        ? await all(env, `SELECT p.*, c.name, CASE WHEN ${fixAnswered("p")} THEN 1 ELSE 0 END AS answered,
+              (SELECT COUNT(*) FROM posts q WHERE q.company_id = p.company_id AND q.grp = p.grp AND q.kind = 'fix' AND q.status = 'shown'
+                AND q.parent IS NULL AND NOT ${fixAnswered("q")}) AS open_n
+            FROM posts p LEFT JOIN companies c ON c.id = p.company_id
+            WHERE (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\') AND p.kind = 'fix' AND p.parent IS NULL
+            ORDER BY open_n DESC, p.company_id, p.grp, p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after)
+        : await all(env, `SELECT p.*, c.name FROM posts p LEFT JOIN companies c ON c.id = p.company_id
           WHERE (?1 = '' OR c.norm LIKE ?1 ESCAPE '\\') ${status === "hidden" ? "AND p.status = 'hidden'" : ""} ${only}
           ORDER BY p.created_at DESC LIMIT ?2 OFFSET ?3`, like, pg.limit + 1, pg.after);
   // [ADMIN-16] One talk comes whole; the lists come a page at a time.
@@ -6486,6 +6535,8 @@ async function postList(env, url) {
       body: p.body,
       // 1.39 [PAYP-07] A 보완 요청 says where, in words.
       ...(p.kind === "fix" ? { kind: "fix", fix: (() => { try { return JSON.parse(p.change ?? "[]").map((c) => CHANGE_FIELDS[c.field] ?? c.field); } catch { return []; } })() } : {}),
+      // 1.39 발굴 2-4: in the 보완 요청 list, whether one who sent the version answered, and the open ones on the same version.
+      ...(p.answered !== undefined ? { answered: p.answered === 1, open: p.open_n } : {}),
       // PC 확인 5c21f3bb: a question's poll choices too, so a 신고 on it can be judged by what was asked.
       ...(p.poll ? { poll: (() => { try { return JSON.parse(p.poll); } catch { return null; } })() } : {}),
       ...(p.attach ? { attach: p.attach } : {}),
@@ -7221,8 +7272,20 @@ async function digest(request, env, url) {
   });
 }
 
+/** 1.39 발굴 3-5: the fewest other phones on a version for its sender to hear of them once a month. */
+export const THANKS_MIN = 2;
+
+/** 1.39 발굴 3-5: the start of a month (the 1st, 00:00 KST) inside (since, now], or 0: the thanks go out once a month, on its first ask. */
+export function thanksAt(since, now) {
+  const kst = new Date(now + 9 * HOUR);
+  const start = Date.UTC(kst.getUTCFullYear(), kst.getUTCMonth(), 1) - 9 * HOUR;
+  return start > since && start <= now ? start : 0;
+}
+
 async function newsItems(env, dev, since, now) {
-  const [changed, adopted, rates, results, rooms, roomPosts, replies, fixes, fixAnswers] = (await batch(env, [
+  // 1.39 발굴 3-5: once a month (the 1st, KST), to those who sent a pay way others use: how many phones count with it now.
+  const monthStart = thanksAt(since, now);
+  const [changed, adopted, rates, results, rooms, roomPosts, replies, fixes, fixAnswers, newer, thanks] = (await batch(env, [
     stmt(env, `SELECT n.company_id, c.name, n.dept, n.version, n.adopted_at AS at FROM uses u
         JOIN rules o ON o.company_id = u.company_id AND o.grp = u.grp AND o.superseded = 1
         JOIN rules n ON n.company_id = o.company_id AND n.dept_norm = o.dept_norm AND n.superseded = 0 AND n.withdrawn = 0 AND n.adopted_at > ?
@@ -7255,6 +7318,20 @@ async function newsItems(env, dev, since, now) {
         JOIN posts a ON a.parent = q.id AND a.status = 'shown' AND a.device != q.device AND a.created_at > ?2
         LEFT JOIN companies c ON c.id = q.company_id
       WHERE q.device = ?1 AND q.kind = 'fix' AND q.parent IS NULL GROUP BY q.company_id, q.grp ORDER BY at DESC LIMIT 10`, dev, since),
+    // 1.39 발굴 2-1: a version this phone uses got a newer one of its department from one who sent it (not yet adopted, so
+    // 'changed' does not say it): the pay screen offers it.
+    stmt(env, `SELECT u.company_id, c.name, u.grp, MAX(n.dept) AS dept, MAX(n.created_at) AS at FROM uses u
+        JOIN reports o ON o.company_id = u.company_id AND o.grp = u.grp AND o.status IN ('pending', 'adopted', 'replaced')
+        JOIN reports n ON n.company_id = o.company_id AND n.device = o.device AND n.dept_norm = o.dept_norm AND n.grp != o.grp
+          AND n.created_at > o.created_at AND n.created_at > ?2 AND n.status IN ('pending', 'adopted') AND ${pgShown("n")}
+        LEFT JOIN companies c ON c.id = u.company_id
+      WHERE u.device = ?1 AND o.device != ?1 AND NOT EXISTS (SELECT 1 FROM uses x WHERE x.device = u.device AND x.company_id = n.company_id AND x.grp = n.grp)
+      GROUP BY u.company_id, u.grp ORDER BY at DESC LIMIT 10`, dev, since),
+    stmt(env, `SELECT r.company_id, c.name, r.grp, MAX(r.dept) AS dept,
+        (SELECT COUNT(*) FROM uses u WHERE u.company_id = r.company_id AND u.grp = r.grp AND u.device != ?1) AS n FROM reports r
+        LEFT JOIN companies c ON c.id = r.company_id
+      WHERE ?2 > 0 AND r.device = ?1 AND r.status IN ('pending', 'adopted') GROUP BY r.company_id, r.grp HAVING n >= ${THANKS_MIN}
+      ORDER BY n DESC LIMIT 3`, dev, monthStart),
   ])).map((r) => r.results);
   const items = [
     ...changed.map((r) => ({ kind: "changed", company: { id: r.company_id, name: r.name }, dept: r.dept, version: r.version, at: iso(r.at) })),
@@ -7270,6 +7347,9 @@ async function newsItems(env, dev, since, now) {
     ...replies.map((r) => ({ kind: "replies", company: { id: r.company_id, name: STYLE_ROOMS[r.company_id] ?? r.name ?? "" }, count: r.n, at: iso(r.at) })),
     ...fixes.map((r) => ({ kind: "fix", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, dept: r.dept ?? "", count: r.n, at: iso(r.at) })),
     ...fixAnswers.map((r) => ({ kind: "fix_answer", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, count: r.n, at: iso(r.at) })),
+    ...newer.map((r) => ({ kind: "newer", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, dept: r.dept ?? "", at: iso(r.at) })),
+    ...thanks.map((r) => ({ kind: "thanks", company: { id: r.company_id, name: r.name ?? "" }, setup: r.grp, dept: r.dept ?? "", count: r.n,
+      at: iso(monthStart) })),
   ].sort((a, b) => b.at.localeCompare(a.at));
   return items;
 }

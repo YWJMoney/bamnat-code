@@ -592,6 +592,8 @@ internal suspend fun payTrial(c: AppContainer, text: String, setup: String, mont
 object TalkSheets {
     val closing = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     fun closeAll() { closing.tryEmit(Unit) }
+    /** 1.39 발굴: a version's talk to open on the screen the notice brought up (마을 › 내 글), taken once. */
+    val pending = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.NoticeLinks.FixTalk?>(null)
 }
 
 class TalkHolder(
@@ -677,6 +679,21 @@ class TalkHolder(
      * [TOWN-05] 1.37: on a company's rule talk, what the votes do, with the adoption terms the app last read (the same as
      * 규칙 광장's 투표 중 line; a proposal is adopted like any rule, server `postVote`).
      */
+    /**
+     * 1.39 발굴 2-2: a 보완 요청's fields open this calendar's own pay where they are set, for one whose pay is their own (it may be the
+     * version the request is on, sent from it); never over a shared way, which is not shown. False when there is no pay to open.
+     */
+    fun canFixOwnPay(): Boolean {
+        val scope = c.companyOf(calendar)
+        return scope.pay.profile.value != null && scope.payWays.way.value?.shared != true
+    }
+
+    /** 1.39 발굴 2-2: closes the talk and opens the pay where [fields] are set ([fixFocus]). */
+    fun openFix(fields: List<String>) {
+        close()
+        com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.PAY, fixFocus(fields).key))
+    }
+
     fun voteLine(): String {
         val t = c.termsNow()
         return "글마다 맞아요·달라요로 알려 주세요. ‘고치자는 제안’은 맞아요가 ${t?.agree ?: 75}% 이상이고 ${t?.threshold ?: 3}점이 모이면 " +

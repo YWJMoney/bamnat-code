@@ -1223,6 +1223,19 @@ function adminApp(L, BUILD, M) {
         <button class="btn small ghost" data-act="post-pick-all">${n === d.posts.length ? "모두 풀기" : "보이는 것 모두 고르기"}</button>
         ${[["show", "문제없음·다시 보이기"], ["hide", "가리기"], ["delete", "지우기"]].map(([k, label]) =>
           `<button class="btn small${k === "delete" ? " danger" : k === "show" ? " primary" : ""}" data-act="post-bulk" data-key="${k}"${n ? "" : " disabled"}>${label}</button>`).join("")}</div>` : "";
+    // 1.39 발굴 2-4: 보완 요청 by version (the server sends the one with the most open first), a line over each version's.
+    if (S.postFilter === "fix" && !talk) {
+      let at = "";
+      const rows = d.posts.map((p) => {
+        const key = `${p.company.id}/${p.setup}`;
+        const head = key === at ? "" : `<h3 class="span">${esc(p.company.name)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}
+          <span class="pill${p.open ? " warn" : " ok"}">${p.open ? `열린 요청 ${p.open}` : "모두 답함"}</span></h3>`;
+        at = key;
+        return head + postCard(p, edit, talk, picking);
+      });
+      return head + tools + `<p class="hint">같은 판의 요청을 묶어, 열린 요청이 많은 판부터 보여요. 판의 계산 줄은 운영 › 회사 판 보기에서 봐요.
+        7일 넘게 답이 없으면 판을 살펴 고치거나 내려요.</p><div class="grid">${rows.join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
+    }
     return head + tools + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk, picking)).join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
   }
 
@@ -1355,7 +1368,8 @@ function adminApp(L, BUILD, M) {
     return `<article class="card${on ? " picked" : ""}">
       <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.room ? ` <span class="dept">${p.room === "style" ? "유형 광장" : "회사 정보 광장"}</span>` : p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
       <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
-      ${p.kind === "fix" ? `<p class="meta"><span class="pill warn">보완 요청</span> ${(p.fix ?? []).map((f) => esc(f)).join(" · ")}</p>` : ""}
+      ${p.kind === "fix" ? `<p class="meta"><span class="pill warn">보완 요청</span> ${(p.fix ?? []).map((f) => esc(f)).join(" · ")}${p.answered === true ? ' <span class="pill ok">올린 분이 답함</span>'
+        : p.answered === false && Date.now() - Date.parse(p.at) > 7 * 86400000 ? ' <span class="pill bad">7일 넘게 답 없음</span>' : ""}</p>` : ""}
       <blockquote>${esc(p.body)}</blockquote>
       ${Array.isArray(p.poll) && p.poll.length ? `<p class="meta">투표 보기: ${p.poll.map((o) => esc(String(o))).join(" · ")}</p>` : ""}
       ${p.attach ? `<p class="meta">붙인 작품 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(p.attach)}">${esc(p.attach)}</button></p>` : ""}

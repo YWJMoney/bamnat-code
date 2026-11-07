@@ -67,6 +67,13 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     val talk = remember { com.bamnat.app.ui.company.TalkHolder(c, scope) }
     com.bamnat.app.ui.company.TalkSheet(talk)
     val open = { room: String, name: String, id: String -> talk.show(room, com.bamnat.core.plaza.StylePlaza.ROOM, name, focus = id) }
+    // 1.39 발굴: from '보완 요청이 n개 왔어요', the version's talk opens at once.
+    val fixTalk by com.bamnat.app.ui.company.TalkSheets.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(fixTalk) {
+        val f = fixTalk ?: return@LaunchedEffect
+        com.bamnat.app.ui.company.TalkSheets.pending.value = null
+        talk.show(f.company, f.setup, f.title)
+    }
     LaunchedEffect(Unit) {
         mine = try {
             c.companyApi.myPosts(c.companyStore.device).also { list ->
