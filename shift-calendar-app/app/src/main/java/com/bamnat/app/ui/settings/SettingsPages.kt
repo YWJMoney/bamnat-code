@@ -405,8 +405,11 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
 @Composable
 private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
     // [SLP-03][SLP-04][SLP-06][SLP-07][SLP-14] Sleep that fits the schedule. Suggestions, not treatment.
-    SectionCard(title = "오늘의 흐름") {
-        SwitchRow("오늘의 흐름 보기", "달력 위에 한 줄로 지금 할 일과 잘 시간·다음 근무를 보여 줘요. 누르면 펼쳐져요. 날짜를 누르면 그날의 수면 제안도 보여요. 자리는 달력 › 도구 › 화면 꾸미기에서 옮겨요",
+    // 1.38 PC 12.4.1 빈틈 2 (투자에 오늘의 흐름 설명): the calendar shows 오늘의 흐름 only for work in shifts and hours (CalendarScreen
+    // TODAY_FLOW), so 현장·가게·투자 keep the sleep settings without the switch for a card they never see.
+    val flowHere = settings.workStyle?.usesPayEngine != false
+    SectionCard(title = if (flowHere) "오늘의 흐름" else "잠") {
+        if (flowHere) SwitchRow("오늘의 흐름 보기", "달력 위에 한 줄로 지금 할 일과 잘 시간·다음 근무를 보여 줘요. 누르면 펼쳐져요. 날짜를 누르면 그날의 수면 제안도 보여요. 자리는 달력 › 도구 › 화면 꾸미기에서 옮겨요",
             settings.sleepTips) { v -> vm.update { it.copy(sleepTips = v) } }
         ChoiceRow("목표 수면 시간", null, listOf(360, 390, 420, 450, 480, 540).map { it to sleepHours(it) }, settings.sleepTargetMinutes) { m ->
             vm.update { it.copy(sleepTargetMinutes = m) }

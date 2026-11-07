@@ -172,7 +172,8 @@ internal object SettingsIndex {
         if (style == null || style.usesPayEngine) return !(style == com.bamnat.core.work.WorkStyle.HOURLY && e.title == "연차 사용 촉진 알림")
         val place = e.place
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
-        return e.title !in WAGE_ROWS
+        // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 on the calendar, so no switch for it either.
+        return e.title !in WAGE_ROWS && e.title != "오늘의 흐름 보기"
     }
 
     private fun all(board: Boolean, share: Boolean, company: Boolean, sleepAuto: Boolean = true, sleepSound: Boolean = true): List<SettingEntry> = listOfNotNull(
