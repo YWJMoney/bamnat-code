@@ -208,6 +208,7 @@
        "paint": "lg.90.227CF0FF,18B49CFF,00070B1A",
        "r": 18,
        "pad": 12,
+       "padY": 24,
        "out": 6
       },
       {
@@ -525,6 +526,23 @@
        "h": 14,
        "fill": 4290026751,
        "fillA": 100
+      },
+      {
+       "shape": "pill",
+       "at": "cal.head",
+       "x": 850,
+       "y": 690,
+       "w": 104,
+       "h": 26,
+       "r": 13,
+       "fill": 4286378239,
+       "fillA": 100,
+       "text": "물 +1잔",
+       "size": 11,
+       "weight": 800,
+       "ink": 4278456858,
+       "over": true,
+       "tap": "water"
       }
      ]
     },
@@ -766,7 +784,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "all~bg:FFEFEDE8|fl:tx.paper.FFEFEDE8.14|cd:FFFBFAF7|ik:FF1B1B1A|ac:FFE8641E|ft:notosanskr/alarm~bg:FF522814|fl:tx.paper.FF522814.14|cd:FF7A3817|ik:FFFFFFFF|ac:FFF2AA83|ft:notosanskr",
+     "screens": "all~bg:FFEFEDE8|fl:tx.paper.FFEFEDE8.14|cd:FFFBFAF7|ik:FF1B1B1A|ac:FFE8641E|ft:notosanskr/alarm~bg:FF1B1B1A|fl:lg.180.FF1B1B1A,FF1B1D27|cd:FF2A2926|ik:FFFFFFFF|ac:FFE8641E|ft:notosanskr",
      "pay": "DAY~tt:xl|pl:FFFBFAF7|mn:FFE8641E|rw:roomy|dy:1"
     },
     {
@@ -938,6 +956,7 @@
        "paint": "so.00EFEDE8",
        "r": 6,
        "pad": 12,
+       "padY": 24,
        "out": 6
       },
       {
@@ -1225,6 +1244,23 @@
        "h": 4,
        "fill": 4293420062,
        "fillA": 100
+      },
+      {
+       "shape": "pill",
+       "at": "cal.head",
+       "x": 850,
+       "y": 690,
+       "w": 104,
+       "h": 26,
+       "r": 13,
+       "fill": 4279966490,
+       "fillA": 100,
+       "text": "집중 시작",
+       "size": 11,
+       "weight": 800,
+       "ink": 4294967295,
+       "over": true,
+       "tap": "focus"
       }
      ]
     },
@@ -1570,12 +1606,13 @@
        "paint": "pt.stripes.26E8FF3A.FF111214.60.45",
        "r": 6,
        "pad": 12,
+       "padY": 24,
        "out": 6
       },
       {
        "id": "cal.head.title",
        "font": "bebasneue",
-       "size": 36,
+       "size": 30,
        "weight": 800,
        "ink": 4294243568,
        "track": 2
@@ -1863,6 +1900,23 @@
        "h": 6,
        "fill": 4293459770,
        "fillA": 90
+      },
+      {
+       "shape": "pill",
+       "at": "cal.head",
+       "x": 850,
+       "y": 690,
+       "w": 104,
+       "h": 26,
+       "r": 13,
+       "fill": 4293459770,
+       "fillA": 100,
+       "text": "+1건",
+       "size": 11,
+       "weight": 800,
+       "ink": 4279308820,
+       "over": true,
+       "tap": "plus"
       }
      ]
     },
@@ -2154,6 +2208,7 @@
        "paint": "so.FFFFD400",
        "r": 4,
        "pad": 12,
+       "padY": 24,
        "out": 6
       },
       {
@@ -2450,6 +2505,23 @@
        "h": 40,
        "fill": 4280032282,
        "fillA": 100
+      },
+      {
+       "shape": "pill",
+       "at": "cal.head",
+       "x": 850,
+       "y": 690,
+       "w": 104,
+       "h": 26,
+       "r": 13,
+       "fill": 4280032282,
+       "fillA": 100,
+       "text": "1공수",
+       "size": 11,
+       "weight": 800,
+       "ink": 4294956032,
+       "over": true,
+       "tap": "one"
       }
      ]
     },
@@ -2822,6 +2894,7 @@
        "paint": "so.00F7F1E3",
        "r": 10,
        "pad": 12,
+       "padY": 24,
        "out": 6
       },
       {
@@ -3101,17 +3174,34 @@
      "items": [
       {
        "shape": "seal",
-       "at": "cal.head",
-       "x": 880,
-       "y": 300,
-       "w": 80,
-       "h": 80,
+       "at": "bg.calendar",
+       "x": 930,
+       "y": 40,
+       "w": 56,
+       "h": 56,
        "fill": 4280249159,
-       "fillA": 18,
+       "fillA": 10,
        "line": "solid",
        "lineW": 1.5,
        "lineC": 4280249159,
        "rot": 12
+      },
+      {
+       "shape": "pill",
+       "at": "cal.head",
+       "x": 850,
+       "y": 690,
+       "w": 104,
+       "h": 26,
+       "r": 13,
+       "fill": 4280249159,
+       "fillA": 100,
+       "text": "손님 +1",
+       "size": 11,
+       "weight": 800,
+       "ink": 4294967295,
+       "over": true,
+       "tap": "card"
       }
      ]
     },
@@ -3461,12 +3551,13 @@
        "paint": "pt.thin.14FFB347.FF0C0C0B.50.0",
        "r": 2,
        "pad": 12,
+       "padY": 24,
        "out": 6
       },
       {
        "id": "cal.head.title",
        "font": "vt323",
-       "size": 34,
+       "size": 28,
        "weight": 800,
        "ink": 4294175186,
        "track": 3,
@@ -3738,6 +3829,31 @@
        "when": "꼬리표.포함(\"매매\") 그리고 아님 꼬리표.포함(\"일지\")",
        "fill": 4294933099,
        "fillA": 16
+      }
+     ]
+    },
+    {
+     "kind": "decor",
+     "items": [
+      {
+       "shape": "pill",
+       "at": "cal.head",
+       "x": 850,
+       "y": 690,
+       "w": 104,
+       "h": 26,
+       "r": 13,
+       "fill": 4279571731,
+       "fillA": 100,
+       "line": "solid",
+       "lineW": 1.5,
+       "lineC": 4294947655,
+       "text": "매매 +1",
+       "size": 11,
+       "weight": 800,
+       "ink": 4294947655,
+       "over": true,
+       "tap": "trade"
       }
      ]
     },
@@ -4077,6 +4193,7 @@
        "paint": "so.00F3F6F1",
        "r": 22,
        "pad": 12,
+       "padY": 24,
        "out": 6
       },
       {
@@ -4355,14 +4472,31 @@
      "items": [
       {
        "shape": "leaf",
-       "at": "cal.head",
-       "x": 900,
-       "y": 360,
-       "w": 70,
-       "h": 70,
+       "at": "bg.calendar",
+       "x": 930,
+       "y": 40,
+       "w": 50,
+       "h": 50,
        "fill": 4283337834,
-       "fillA": 30,
+       "fillA": 24,
        "rot": 20
+      },
+      {
+       "shape": "pill",
+       "at": "cal.head",
+       "x": 850,
+       "y": 690,
+       "w": 104,
+       "h": 26,
+       "r": 13,
+       "fill": 4283337834,
+       "fillA": 100,
+       "text": "물 한 잔",
+       "size": 11,
+       "weight": 800,
+       "ink": 4294967295,
+       "over": true,
+       "tap": "water"
       }
      ]
     },
@@ -4645,6 +4779,7 @@
        "paint": "rg.85.20.70.30C9B6FF,00C9B6FF",
        "r": 20,
        "pad": 12,
+       "padY": 24,
        "out": 6
       },
       {
@@ -4927,13 +5062,30 @@
      "items": [
       {
        "shape": "moon",
-       "at": "cal.head",
-       "x": 880,
-       "y": 260,
-       "w": 80,
-       "h": 80,
+       "at": "bg.calendar",
+       "x": 920,
+       "y": 40,
+       "w": 56,
+       "h": 56,
        "fill": 4291409663,
        "fillA": 70
+      },
+      {
+       "shape": "pill",
+       "at": "cal.head",
+       "x": 850,
+       "y": 690,
+       "w": 104,
+       "h": 26,
+       "r": 13,
+       "fill": 4291409663,
+       "fillA": 100,
+       "text": "잠들어요",
+       "size": 11,
+       "weight": 800,
+       "ink": 4279702320,
+       "over": true,
+       "tap": "sleep"
       },
       {
        "shape": "sparkle",

@@ -9,6 +9,13 @@ import { theme, cellLook, lg, rg, sg, pt, tx, gl, so, sh } from "./art.mjs";
 
 /** A button with an id, so a 알림 can carry it (then). */
 const btn = (id, label, emoji, where, act, more) => ({ id, label, emoji, where, ...act, ...(more ? { more } : {}) });
+/**
+ * 달력 머리의 '바로 단추' (꾸밈 층 tap): 무료 테마엔 없는 프로 작품의 얼굴. 홈 화면 위젯과 같은 단추를 달력 위에서도 한 번에 눌러요.
+ */
+// 그려 보기: 제목 줄 가운데에 두면 큰 제목 글꼴과 겹치고, 머리 칠(줄무늬·단색) 아래에 깔리면 안 보여요. 머리 아랫단 여백(꾸밈 글씨가 있으면 앱이
+// 위아래를 넉넉히 둬요)의 오른쪽에, 칠 위로(over) 올려요. 그림자는 글씨가 두 번 찍혀 보여 빼요.
+const chip = (tap, text, fill, ink, o = {}) => ({ shape: "pill", at: "cal.head", x: o.x ?? 850, y: o.y ?? 690, w: o.w ?? 104, h: 26, r: 13, fill: c(fill), fillA: o.fillA ?? 100,
+  ...(o.line ? { line: "solid", lineW: 1.5, lineC: c(o.line) } : {}), text, size: 11, weight: 800, ink: c(ink), over: true, tap });
 
 export default [
   // ---------- 교대: 야간 회복 ----------
@@ -49,6 +56,7 @@ export default [
     decor: [
       { shape: "ring", at: "bg.calendar", x: 860, y: 70, w: 220, h: 220, line: "dot", lineW: 1, lineC: c("#7CF0FF"), fillA: 0, alpha: 60 },
       { shape: "circle", at: "bg.calendar", x: 960, y: 70, w: 14, h: 14, fill: c("#B49CFF"), fillA: 100 },
+      chip("water", "물 +1잔", "#7CF0FF", "#04121A"),
     ],
     values: [
       { name: "물 잔", reset: "day", goal: 6, unit: "잔" },
@@ -82,7 +90,7 @@ export default [
     wow: "따뜻한 회색 종이 위 먹색 글씨, 한 가지 귤색 포인트만 남긴 조용한 책상이에요. 홈 화면 '집중 시작'을 누르면 50분 뒤 쉬라는 알림이 오고, 그 알림에서 바로 다음 집중을 시작해요. 하루 집중 4번 막대와 지난 7일이 위젯에 쌓이고, 커피 단추는 누르는 그 자리에서 가계부 카페 줄까지 적어요.",
     changes: ["홈 화면 집중 단추(50분 뒤 알림, 목표 4번 막대·지난 7일)", "알림 속 '다음 집중' 단추", "커피 한 번에 가계부", "퇴근 때 오늘 집중 기록", "먹색·귤색 한 점 지면"],
     p: { bg: "#EFEDE8", card: "#FBFAF7", ink: "#1B1B1A", sub: "#62605A", accent: "#E8641E", onAccent: "#FFFFFF", line: "#D9D5CC",
-      sat: "#3A5A8C", sun: "#C23B22", day: "#1B1B1A", other: "#8C877C", long: "#E8641E", off: "#C9C4B8", band: "#F4F2EC" },
+      sat: "#3A5A8C", sun: "#C23B22", day: "#1B1B1A", other: "#8C877C", long: "#E8641E", off: "#C9C4B8", band: "#F4F2EC", alarmBg: "#1B1B1A", alarmCard: "#2A2926" },
     font: { body: "notosanskr", title: "hahmlet", date: "dmserif", memo: "notoserifkr", num: "dmserif" },
     paint: { screen: tx("paper", "#EFEDE8", 14), card: so("#FBFAF7"), tabs: so("#1B1B1A"), total: so("#1B1B1A"), paper: tx("paper", "#FBFAF7", 12) },
     r: { card: 6, cell: 4, tabs: 30, btn: 30 },
@@ -97,7 +105,7 @@ export default [
       { id: "cal.cell", when: "근무시간 >= 10", line: "solid", lineW: 1.5, lineC: c("#E8641E") },
       { id: "cal.cell.date", when: '요일 = "금" 그리고 아님 쉬는날', ink: c("#E8641E") },
     ],
-    decor: [{ shape: "line_h", at: "cal.head", x: 40, y: 900, w: 160, h: 4, fill: c("#E8641E"), fillA: 100 }],
+    decor: [{ shape: "line_h", at: "cal.head", x: 40, y: 900, w: 160, h: 4, fill: c("#E8641E"), fillA: 100 }, chip("focus", "집중 시작", "#1B1B1A", "#FFFFFF")],
     values: [
       { name: "집중", reset: "day", goal: 4, unit: "번" },
       { name: "커피", reset: "day", unit: "잔" },
@@ -136,7 +144,7 @@ export default [
       total: lg(90, "#1B1C20", "#2A2B10"),
     },
     r: { card: 6, cell: 6, tabs: 8, btn: 6 },
-    titleSize: 36, titleTrack: 2, weekTrack: 18, tabsLine: { c: "#E8FF3A", a: 60 }, cardLine: { c: "#2C2E33" },
+    titleSize: 30, titleTrack: 2, weekTrack: 18, tabsLine: { c: "#E8FF3A", a: 60 }, cardLine: { c: "#2C2E33" },
     cal: { size: "tall", badge: "small" },
     looks: [cellLook({ cr: 6, dp: "tl", ds: "l", dw: "b", mk: "line", mp: "bottom", pd: 2, ff: "oswald" }),
       cellLook({ cr: 6, dp: "tl", ds: "l", dc: "#55575E", mk: "none", pd: 2, ff: "oswald" })],
@@ -146,7 +154,7 @@ export default [
       { id: "cal.cell", when: "수입 > 0", fill: c("#B8F56B"), fillA: 16 },
       C.holidayWork("#FFB03A"),
     ],
-    decor: [{ shape: "dash_h", at: "cal.head", x: 500, y: 940, w: 400, h: 6, fill: c("#E8FF3A"), fillA: 90 }],
+    decor: [{ shape: "dash_h", at: "cal.head", x: 500, y: 940, w: 400, h: 6, fill: c("#E8FF3A"), fillA: 90 }, chip("plus", "+1건", "#E8FF3A", "#111214")],
     values: [{ name: "건수", reset: "day", goal: 30, unit: "건" }],
     buttons: [
       btn("plus", "+1건", "🛵", "widget", { do: "valAdd", arg: "건수", by: 1 }),
@@ -197,7 +205,7 @@ export default [
       C.holidayWork("#C9301E"),
     ],
     // 노랑 머리 아래에 표지판 사선 띠(글자 위가 아니라 머리 아랫단에).
-    decor: [{ shape: "tape", at: "cal.head", x: 500, y: 960, w: 400, h: 40, fill: c("#1C1C1A"), fillA: 100 }],
+    decor: [{ shape: "tape", at: "cal.head", x: 500, y: 960, w: 400, h: 40, fill: c("#1C1C1A"), fillA: 100 }, chip("one", "1공수", "#1C1C1A", "#FFD400")],
     values: [{ name: "공수", reset: "month", goal: 22, unit: "공수" }],
     buttons: [
       btn("one", "1공수", "🦺", "widget", { do: "valAdd", arg: "공수", by: 1 }, [{ do: "memoLine", arg: "1공수 · 이달 {값(\"공수\")}공수" }]),
@@ -237,7 +245,8 @@ export default [
       { id: "cal.cell", when: '수입 >= 칸("하루 목표 매출", 500000)', line: "solid", lineW: 2, lineC: c("#1F6B47"), motion: "glow" },
       { id: "cal.cell.date", when: "공휴일", ink: c("#B8392B"), weight: 900 },
     ],
-    decor: [{ shape: "seal", at: "cal.head", x: 880, y: 300, w: 80, h: 80, fill: c("#1F6B47"), fillA: 18, line: "solid", lineW: 1.5, lineC: c("#1F6B47"), rot: 12 }],
+    decor: [{ shape: "seal", at: "bg.calendar", x: 930, y: 40, w: 56, h: 56, fill: c("#1F6B47"), fillA: 10, line: "solid", lineW: 1.5, lineC: c("#1F6B47"), rot: 12 },
+      chip("card", "손님 +1", "#1F6B47", "#FFFFFF")],
     values: [
       { name: "카드 손님", reset: "day", unit: "명" },
       { name: "현금 손님", reset: "day", unit: "명" },
@@ -274,7 +283,7 @@ export default [
     font: { body: "ibmplexsanskr", title: "vt323", date: "jetbrainsmono", memo: "nanumgothiccoding", num: "jetbrainsmono" },
     paint: { screen: rg(50, 0, 140, ["#1E1A10"], ["#0C0C0B", 255, 70]), card: so("#151513"), head: pt("thin", ["#FFB347", 0x14], "#0C0C0B", 50), tabs: so("#0C0C0B"), total: lg(135, "#2A2210", "#151513"), paper: tx("noise", "#151513", 18) },
     r: { card: 2, cell: 2, tabs: 2, btn: 2 },
-    tabsFloat: false, glow: "#FFB347", glowR: 6, titleSize: 34, titleTrack: 3, weekTrack: 22,
+    tabsFloat: false, glow: "#FFB347", glowR: 6, titleSize: 28, titleTrack: 3, weekTrack: 22,
     tabsLine: { c: "#2A2824" }, cardLine: { c: "#2A2824" }, cellLine: { c: "#1F1E1B", w: 0.5 },
     cal: { size: "normal", badge: "line", grid: "line" },
     looks: [cellLook({ cr: 2, dp: "tl", ds: "m", mk: "line", mp: "bottom", pd: 2, ff: "jetbrainsmono" })],
@@ -282,6 +291,7 @@ export default [
       { id: "cal.cell", when: '꼬리표.포함("매매")', line: "solid", lineW: 1.5, lineC: c("#FFB347") },
       { id: "cal.cell", when: '꼬리표.포함("매매") 그리고 아님 꼬리표.포함("일지")', fill: c("#FF7A6B"), fillA: 16 },
     ],
+    decor: [chip("trade", "매매 +1", "#151513", "#FFB347", { line: "#FFB347" })],
     values: [
       { name: "매매", reset: "day", unit: "번" },
       { name: "참은 충동", reset: "week", unit: "번" },
@@ -322,7 +332,7 @@ export default [
       { id: "cal.cell", when: "쉬는날", fill: c("#F2A98A"), fillA: 14 },
       { id: "cal.cell", when: "체크율 >= 100", line: "solid", lineW: 2, lineC: c("#4E8C6A") },
     ],
-    decor: [{ shape: "leaf", at: "cal.head", x: 900, y: 360, w: 70, h: 70, fill: c("#4E8C6A"), fillA: 30, rot: 20 }],
+    decor: [{ shape: "leaf", at: "bg.calendar", x: 930, y: 40, w: 50, h: 50, fill: c("#4E8C6A"), fillA: 24, rot: 20 }, chip("water", "물 한 잔", "#4E8C6A", "#FFFFFF")],
     values: [
       { name: "물 잔", reset: "day", goal: 8, unit: "잔" },
       { name: "약", reset: "never", kind: "time" },
@@ -364,7 +374,8 @@ export default [
       { id: "cal.cell", when: '근무종류 = "야간"', fill: c("#C9B6FF"), fillA: 18 },
     ],
     decor: [
-      { shape: "moon", at: "cal.head", x: 880, y: 260, w: 80, h: 80, fill: c("#C9B6FF"), fillA: 70 },
+      { shape: "moon", at: "bg.calendar", x: 920, y: 40, w: 56, h: 56, fill: c("#C9B6FF"), fillA: 70 },
+      chip("sleep", "잠들어요", "#C9B6FF", "#171330"),
       { shape: "sparkle", at: "bg.calendar", x: 120, y: 60, w: 24, h: 24, fill: c("#ECE8FF"), fillA: 60 },
       { shape: "sparkle", at: "bg.calendar", x: 300, y: 30, w: 14, h: 14, fill: c("#ECE8FF"), fillA: 40 },
     ],
