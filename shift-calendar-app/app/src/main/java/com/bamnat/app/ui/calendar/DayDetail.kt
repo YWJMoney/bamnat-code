@@ -516,7 +516,9 @@ private fun DayGroups(
                             if (settings.sleepTips) {
                                 SleepSection(date = date, today = today, now = now, flow = flow, tips = tips, log = log,
                                     targetMinutes = settings.sleepTargetMinutes, health = health, compare = compare,
-                                    onAsleep = vm::fellAsleep, onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
+                                    // 1.39 [FLOW-13] (PC 3차 sik-5): 잠들었어요 here opens the night screen too, as on the sleep screen and the date chip.
+                                    onAsleep = { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) },
+                                    onAwake = { vm.wokeUp() }, onWokeAt = { vm.wokeUp(it) })
                             }
                         }
                     }
