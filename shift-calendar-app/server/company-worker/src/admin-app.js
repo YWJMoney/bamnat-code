@@ -254,6 +254,7 @@ function adminApp(L, BUILD, M) {
   // 1.39 [LOOP-08] 전달 길·크기(서버 loop.js LOOP.routes·sizes와 같은 이름).
   const DEV_ROUTES = { server: "서버", remote: "원격 자료", flag: "기능 스위치", app: "정기 앱 업데이트", hotfix: "긴급 앱 업데이트" };
   const DEV_SIZES = { fix: "고침", polish: "다듬기", feature: "새 기능" };
+  const TIER_NAMES = { free: "무료", pro: "프로", pass: "묶음 7일권", trial: "체험 뒤 프로", later: "더 논의" };
   const DEV_STYLES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   /** [ADMIN-11] What 반려 usually says, one tap each; the admin can still type their own. */
   const REJECT_REASONS = ["이미 있는 기능이에요", "지금 계획과 맞지 않아요", "기술적으로 어려워요", "같은 항목이 있어요", "더 많은 요청을 기다려요"];
@@ -781,7 +782,9 @@ function adminApp(L, BUILD, M) {
       if (name === "desk" && can("inquiries")) {
         api("/flow").then(keep((d) => { S.data.flowStrip = d; if (S.route.name === "desk") render({ keepScroll: true }); })).catch(() => {});
       }
-      if (name === "dev" && id && can("dev") && S.data.story?.id !== id) {
+      // PC 1.39 G10 2차: 다시 열면 옛 이야기가 먼저 보였어요. 들어올 때마다 새로 읽어요(그동안은 옛 것을 숨김).
+      if (name === "dev" && id && can("dev")) {
+        if (!quiet && S.data.story?.id === id) S.data.story = null;
         api(`/story/${encodeURIComponent(id)}`).then(keep((d) => { S.data.story = d; if (S.route.name === "dev" && S.route.id === id) render({ keepScroll: true }); })).catch(() => {});
       }
       const results = await Promise.allSettled(jobs);
@@ -1860,7 +1863,18 @@ function adminApp(L, BUILD, M) {
       delete: () => "지웠어요",
       restore: () => "되살렸어요",
       reply: () => `연결된 문의 ${x.count}건에 답했어요${x.close ? "(닫음)" : ""}<blockquote>${esc(x.text)}</blockquote>`,
-    }[h.action]?.() ?? esc(h.action);
+      // 1.39 [LOOP] 자동 순환이 남기는 것(PC 2차: 영어 이름이 그대로 보였음).
+      handoff: () => "Claude에게 넘겼어요",
+      result: () => "개발 결과를 받았어요",
+      sync: () => `저장소에서 받았어요${x.pr ? ` · PR #${esc(x.pr)}` : ""}${x.version ? ` · ${esc(x.version)}` : ""}${x.fields?.length ? ` <span class="meta">(${esc(x.fields.length)}칸)</span>` : ""}`,
+      live: () => `업데이트 없이 실제로 닿았어요${x.route ? ` · ${esc(DEV_ROUTES[x.route] ?? x.route)}` : ""}`,
+      phone_told: () => `고친 판${x.app ? `(${esc(x.app)})` : ""}으로 연 폰에 바로 안내했어요${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
+      fixed_yes: () => `문의한 분이 '해결됐어요'를 눌렀어요${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
+      fixed_no: () => `문의한 분이 '아직이에요'를 눌렀어요(다시 열림)${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
+      me_too: () => "알려진 문제판에서 '나도 겪어요'",
+      tier: () => `요금: ${was(TIER_NAMES[x.tier?.[0]] ?? x.tier?.[0], TIER_NAMES[x.tier?.[1]] ?? x.tier?.[1])}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
+    }[h.action]?.() ?? "바뀐 것이 있어요";
+    if (h.action === "status" && x.why) return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}<blockquote>${esc(x.why)}</blockquote></span></li>`;
     return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}</span></li>`;
   }
 
