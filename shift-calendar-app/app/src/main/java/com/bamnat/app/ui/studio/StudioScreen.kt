@@ -135,6 +135,7 @@ import com.bamnat.core.recipe.ScreenLooks
 import com.bamnat.core.recipe.WidgetLook
 import com.bamnat.core.work.WorkStyle
 import com.bamnat.app.data.AppSettings
+import com.bamnat.app.ui.calendar.calendarLineSettled
 import com.bamnat.app.ui.calendar.calendarParts
 import com.bamnat.app.ui.calendar.withPartMoved
 import com.bamnat.app.ui.calendar.withPartHome
@@ -336,10 +337,11 @@ internal fun pageCards(tab: String, style: WorkStyle?, added: Set<String> = empt
         fun fits(p: CalendarPart) = com.bamnat.core.guide.FitTable.visible(FitSurface.CALENDAR_PARTS, p.id, style, added)
         fun aboveIn(d: AppSettings, p: CalendarPart) = com.bamnat.app.ui.calendar.calendarAbove(d.calendarParts().map { it.part })(p)
         PageCards("달력", ids, CalendarPart.entries.associate { it.id to it.labelFor(style) }, skip.map { it.id }.toSet(),
-            { id -> CalendarPart.byId(id)?.let(::fits) == true }, { it.calendarLayout }, { d, l -> d.copy(calendarLayout = l) },
+            // 1.39 [FLOW-22] PC 4차 (＋ 카드 넣기에 하루 이야기가 없음): the line as the calendar reads it, a card that starts off included.
+            { id -> CalendarPart.byId(id)?.let(::fits) == true }, { it.calendarLineSettled() }, { d, l -> d.copy(calendarLayout = l) },
             moveFn = { d, id, by -> CalendarPart.byId(id)?.let { p -> d.withPartMoved(p, by) { q -> fits(q) } } ?: d },
-            showFn = { d, id, shown -> CalendarPart.byId(id)?.let { p -> d.withPartShown(p, shown).let { x -> x.copy(calendarLayout = StudioEdit.showCard(x.calendarLayout, ids, id, shown)) } } ?: d },
-            hiddenFn = { d -> d.calendarParts().filter { it.part !in skip && fits(it.part) && !StudioEdit.cardShown(d.calendarLayout, ids, it.part.id) }.map { it.part.id } },
+            showFn = { d, id, shown -> CalendarPart.byId(id)?.let { p -> d.withPartShown(p, shown).let { x -> x.copy(calendarLayout = StudioEdit.showCard(x.calendarLineSettled(), ids, id, shown)) } } ?: d },
+            hiddenFn = { d -> d.calendarParts().filter { it.part !in skip && fits(it.part) && !StudioEdit.cardShown(d.calendarLineSettled(), ids, it.part.id) }.map { it.part.id } },
             aboveFn = { d, id -> CalendarPart.byId(id)?.let { aboveIn(d, it) } ?: true },
             across = { d, id ->
                 val p = CalendarPart.byId(id)

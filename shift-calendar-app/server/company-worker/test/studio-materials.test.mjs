@@ -75,12 +75,12 @@ test("[STM-10] 무료·광고 나누기: 묶음마다 모두 무료·모두 광�
   assert.equal((await call("POST", "/api/admin/recipes/materials/free", { pack: "날씨", mode: "all" })).status, 403);
 });
 
-test("[E11] 실서버용 재료 파일: 50개씩 나뉘고, 관리자 앱이 알아보는 표시와 몇째 파일인지가 붙어요", async () => {
+test("[E11] 실서버용 재료 파일: 25개씩 나뉘고, 관리자 앱이 알아보는 표시와 몇째 파일인지가 붙어요", async () => {
   const { files, FILE_KIND, PER_FILE } = await import("../tools/materials-seed.mjs");
-  const items = Array.from({ length: 120 }, (_, i) => ({ kind: "icon", pack: "p", name: `n${i}`, ord: i, webp: "x" }));
+  const items = Array.from({ length: 60 }, (_, i) => ({ kind: "icon", pack: "p", name: `n${i}`, ord: i, webp: "x" }));
   const out = files(items);
-  assert.equal(out.length, Math.ceil(120 / PER_FILE));
-  assert.deepEqual(out.map((f) => [f.kind, f.part, f.of, f.items.length]), [[FILE_KIND, 1, 3, 50], [FILE_KIND, 2, 3, 50], [FILE_KIND, 3, 3, 20]]);
+  assert.equal(out.length, Math.ceil(60 / PER_FILE));
+  assert.deepEqual(out.map((f) => [f.kind, f.part, f.of, f.items.length]), [[FILE_KIND, 1, 3, 25], [FILE_KIND, 2, 3, 25], [FILE_KIND, 3, 3, 10]]);
   assert.deepEqual(out.flatMap((f) => f.items).map((x) => x.name), items.map((x) => x.name));
   // The admin app's upload form reads exactly this marker, and sends 25 at a time (the server's batch).
   const app = readFileSync(new URL("../src/admin-app.js", import.meta.url), "utf8");

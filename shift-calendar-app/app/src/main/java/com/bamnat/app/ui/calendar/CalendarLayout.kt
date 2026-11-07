@@ -124,6 +124,13 @@ internal fun AppSettings.calendarParts(added: Set<String>): List<PageLayout.Plac
     // B 1.32 [CALX-04] 달력만 보기 puts every part away; 화면 꾸미기's own choices come back when it is off.
     calendarParts().map { if (it.shown && (calendarOnly || !partFits(it.part, added))) it.copy(shown = false) else it }
 
+/**
+ * 1.39 [FLOW-22] PC 4차: the layout line as the calendar reads it ([lineParts]: 하루 이야기 off until it is put in), for editors that
+ * work on the line itself (스튜디오 카드 배치). Read raw, a line with no 하루 이야기 in it says it shows, so ＋ 카드 넣기 never offered it
+ * and any card moved there wrote it in as shown.
+ */
+internal fun AppSettings.calendarLineSettled(): String = PageLayout.of(lineParts()) { it.id }.encode()
+
 /** [CUST-01] [shown] for [part]: the three with their own switch change that switch, the rest the layout line. */
 internal fun AppSettings.withPartShown(part: CalendarPart, shown: Boolean): AppSettings = when (part) {
     CalendarPart.DAY_CARD -> copy(showDayCard = shown)

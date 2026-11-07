@@ -761,7 +761,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         SwitchRow("칸이 보이기", "첫 설정을 마칠 때, 빈 화면, 아침 카드, 밤 화면에 달력 칸 모양 친구 칸이가 나와요. 끄면 글자만 보여요",
             settings.showKani) { on -> vm.update { it.copy(showKani = on) } }
         // 1.38 [FLOW-08] 내 하루 이야기 줄.
-        SwitchRow("하루 이야기 줄", "날짜를 열면 맨 위에 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 끄면 지금처럼 묶음 카드만 보여요",
+        SwitchRow("하루 이야기 줄", "날짜를 열면 맨 위에 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 끄면 지금처럼 묶음 카드만 보여요. 달력 아래 카드로도 둘 수 있어요(날짜 화면의 ‘달력 아래에도 두기’ 또는 카드 배치 › ＋ 카드 넣기)",
             settings.dayStory) { on -> vm.update { it.copy(dayStory = on) } }
         // 1.39 [FLOW-28] 하루 다이얼 on 오늘의 흐름, for work that has it (교대·일근·알바).
         if (settings.workStyle?.usesPayEngine != false) SwitchRow("하루 다이얼", "오늘의 흐름에 하루 24시간을 원으로 보여 줘요. 근무는 근무 색 호, 잘 시간은 점선, 잔 시간은 칠한 호, 알람은 점, 지금은 바늘이에요",

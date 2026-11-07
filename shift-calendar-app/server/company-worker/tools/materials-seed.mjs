@@ -74,8 +74,8 @@ async function post(base, items, open = false) {
 
 /** The marker the 관리자 앱's '재료 파일 올리기' looks for, so a wrong file is turned away before anything goes up. */
 export const FILE_KIND = "bamnat-materials";
-/** Items per file: a few MB each, so a phone browser reads one at a time without trouble. */
-export const PER_FILE = 50;
+/** Items per file: under 5 MB each (backgrounds are the big ones), so a phone browser and the project folder take each without trouble. */
+export const PER_FILE = 25;
 
 /** 1.39 E11: the materials as files for the real server ({kind, part, of, items}), [PER_FILE] each, in ord order per pack. */
 export function files(items, per = PER_FILE) {

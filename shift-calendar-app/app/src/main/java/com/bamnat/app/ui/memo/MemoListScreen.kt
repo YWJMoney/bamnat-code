@@ -502,7 +502,8 @@ private fun MemoWeekStrip(state: MemoListState, today: LocalDate, vm: MemoListVi
     state.day?.let { d ->
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             val n = state.weekCounts[d] ?: 0
-            Text("${d.monthValue}월 ${d.dayOfMonth}일 메모 ${n}개" + if (n == 0) " · 이날은 메모가 없어요" else "",
+            // PC 4차: '메모 0개 · 이날은 메모가 없어요' said it twice.
+            Text("${d.monthValue}월 ${d.dayOfMonth}일 " + if (n == 0) "· 이날은 메모가 없어요" else "메모 ${n}개",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             androidx.compose.material3.TextButton(onClick = vm::clearDay) { Text("모두 보기") }
         }

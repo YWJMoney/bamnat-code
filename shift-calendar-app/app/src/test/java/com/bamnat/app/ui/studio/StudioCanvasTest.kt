@@ -135,4 +135,19 @@ class StudioCanvasTest {
         org.junit.Assert.assertEquals(2, both.days)
         org.junit.Assert.assertEquals(1.5, both.units!!, 0.0)
     }
+
+    /** 1.39 [FLOW-22] PC 4차: 하루 이야기 starts off, ＋ 카드 넣기 offers it, and moving another card does not turn it on. */
+    @Test fun theDayStoryCardIsOfferedAndStaysOffUntilPutIn() {
+        val cards = pageCards(TabOrder.CALENDAR, WorkStyle.SHIFT)
+        val d = AppSettings(workStyle = WorkStyle.SHIFT)
+        assertTrue(CalendarPart.DAY_STORY.id in cards.hidden(d))
+        // Another card put away and back, or moved: still off.
+        val moved = cards.show(cards.show(d, CalendarPart.SUMMARY.id, false), CalendarPart.SUMMARY.id, true)
+        assertTrue(CalendarPart.DAY_STORY.id in cards.hidden(moved))
+        assertFalse(moved.calendarParts().first { it.part == CalendarPart.DAY_STORY }.shown)
+        // Put in: on the calendar, and no longer offered.
+        val on = cards.show(moved, CalendarPart.DAY_STORY.id, true)
+        assertTrue(on.calendarParts().first { it.part == CalendarPart.DAY_STORY }.shown)
+        assertFalse(CalendarPart.DAY_STORY.id in cards.hidden(on))
+    }
 }
