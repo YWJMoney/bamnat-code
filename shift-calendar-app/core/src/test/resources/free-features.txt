@@ -275,3 +275,4 @@ sleep.dnd
 day.story
 view.dayDial
 day.start
+sleep.diary

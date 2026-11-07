@@ -627,7 +627,8 @@ fun ReceivedCalendarView(
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             // 1.38 [SLEEP-11] 지금 자는 중: one line while it is fresh, so a call can wait.
-            schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) }?.let { line ->
+            // 1.39 G5-N4 계획한 잠 시간 when no 지금 자는 중 is said: what the plan says now or within a day.
+            (schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) } ?: sleepPlanLine(schedule.sleepPlan))?.let { line ->
                 Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(horizontal = 4.dp))
             }
@@ -1052,6 +1053,13 @@ private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.co
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
+}
+
+/** 1.39 G5-N4 "오늘 09:00~16:00 잘 계획이에요" or "지금은 잘 계획 시간이에요 · 16:00까지"; null with nothing within a day. */
+internal fun sleepPlanLine(plan: List<com.bamnat.app.share.SleepPlanWindow>, now: java.time.LocalDateTime = com.bamnat.core.time.Today.dateTime()): String? {
+    if (plan.isEmpty()) return null
+    fun t(ms: Long) = java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(ms), com.bamnat.core.time.Today.zone())
+    return com.bamnat.core.sleep.SleepPlanShare.line(plan.map { com.bamnat.core.sleep.SleepPlanShare.Window(t(it.from), t(it.to)) }, now)
 }
 
 /** 1.38 [SLEEP-11] "22:10부터 자는 중 · 6:30에 일어나요"; null once it is stale ([com.bamnat.app.share.SleepNow.shownAt]). */
