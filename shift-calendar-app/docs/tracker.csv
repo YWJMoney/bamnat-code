@@ -2147,4 +2147,4 @@ CARE-08,"1.39 운영자가 팀 링크 내용을 읽고(열쇠 없이) 내리기,
 CARE-09,"1.39 팀 링크에 전화·링크·계좌·메신저 옮기기 거절(사기 막기), 앱이 까닭을 말함",1.39,진행 중,에뮬레이터 확인,"scamProblem, ShareLinkException.friendly, TeamLinkText. 코드 고침, PC 확인 전"
 CARE-10,"1.39 해명하면 풀어 주기(사용자 '문의를 통해 해명하면 풀어주는 길'): 경고·쉬기·신고 누적 제한·가려진 글 '다시 보여 주세요' → 나만 보는 문의, 관리자 앱 받아들이기·그대로 두기와 답 초안, 48시간 답 약속",1.39,진행 중,에뮬레이터 확인,"careAppeal·careAppealDecide·care_appeals, 관리자 앱 appealCard, 앱 AppealDialog·MyVillagePosts. 코드 고침, PC 확인 전"
 CARE-11,"1.39 조사 ⑦⑧: 쓰기 전 한마디(폰 안, 막지 않음), 10분 안 같은 글 쉬어 가기",1.39,진행 중,에뮬레이터 확인,"core PostNudge, CompanyBoard·RecipeDetail 글쓰기, careRepeat. 코드 고침, PC 확인 전"
-CARE-12,"1.39 처리방침 3.12 '마을 경고·쉬기' 줄과 광장 운영 규칙 6·7항 개정 초안(게시는 사용자 승인 뒤)",1.39,대기,사용자 승인,"프로젝트 계획/1.39-처리방침-3.12-초안.md(급여 스레드와 한 판), 계획/1.39-광장운영규칙-6항-초안.md"
+CARE-12,"1.39 처리방침 3.12 '마을 경고·쉬기' 줄과 광장 운영 규칙 2(6·7항) — 사용자 2026-11-07 승인, 앱 PlazaRules 2판은 community.care 켜질 때만, ④ 신고자 정확도는 넣지 않음(필요할 때 도입)",1.39,진행 중,3.12 게시일,"공개 저장소 PR YWJMoney/-#15(날짜는 3.12에 맞춰 채움), core PlazaRules.VERSION_CARE·CommunityCareTest, 프로젝트 계획/1.39-처리방침-3.12-초안.md"

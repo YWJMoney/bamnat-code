@@ -60,4 +60,17 @@ class CommunityCareTest {
         assertTrue(TeamLinkText.contact("account").contains("계좌번호"))
         assertTrue(TeamLinkText.contact(null).contains("사기"))
     }
+
+    @org.junit.Test
+    fun `rules 2판 only while care is on`() {
+        val r = com.bamnat.core.plaza.PlazaRules
+        org.junit.Assert.assertTrue(r.agreed(1, care = false))
+        org.junit.Assert.assertFalse(r.agreed(1, care = true))
+        org.junit.Assert.assertTrue(r.agreed(2, care = true))
+        org.junit.Assert.assertEquals(listOf(5), r.changedSince(1, care = true))
+        org.junit.Assert.assertTrue(r.changedSince(1, care = false).isEmpty())
+        org.junit.Assert.assertEquals(r.lines(true).size, r.since(true).size)
+        org.junit.Assert.assertEquals(r.LINES.take(5), r.lines(true).take(5))
+        org.junit.Assert.assertTrue(r.lines(true).none { Regex("\\d+원").containsMatchIn(it) })
+    }
 }
