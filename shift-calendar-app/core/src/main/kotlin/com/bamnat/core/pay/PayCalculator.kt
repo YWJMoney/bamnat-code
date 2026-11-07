@@ -119,7 +119,10 @@ class PayCalculator(
 ) {
     private val rateTable: List<Rates> get() = fixedRates ?: RateTable.current
 
-    private class ExtraTotal(val rule: ExtraRule, val label: String, val kind: Long, var amount: Long = 0, var minutes: Int = 0, var times: Int = 0, var legal: Long = 0)
+    private class ExtraTotal(val rule: ExtraRule, val label: String, val kind: Long, var amount: Long = 0, var minutes: Int = 0, var times: Int = 0, var legal: Long = 0) {
+        /** [PAYX-55] The way the one time was worked out, with its numbers; a month of several times says the rule. */
+        var one: String? = null
+    }
 
     /** The premiums in force: the company's when it set one, else the law's (none under 5 employees). */
     private class Premiums(val overtime: Double, val night: Double, val holidayWithin8h: Double, val holidayOver8h: Double, val holidayBase: Double)
@@ -388,7 +391,7 @@ class PayCalculator(
             fun pay(key: Triple<Long, Long?, Boolean>, name: String, rule: ExtraRule, w: WorkMinutes, piece: PieceAt) {
                 val r = applyRule(rule, w, piece, hourlyFor(rule), monthlyBase, baseLabel, pr, law, rates)
                 extraTotals.getOrPut(key) { ExtraTotal(rule, name, key.first) }.apply {
-                    amount += r.amount; this.minutes += r.credited; times++; legal += r.legal
+                    amount += r.amount; this.minutes += r.credited; times++; legal += r.legal; one = r.formula
                 }
                 parts += DayPart(LineKind.EXTRA, name, r.amount, r.formula)
             }
@@ -436,7 +439,7 @@ class PayCalculator(
                 if (e.minutes <= 0 && e.insideShiftMinutes > 0) {
                     if (rule.bonus > 0) {
                         extraTotals.getOrPut(Triple(e.kind.id, perShift?.let { covered!!.id }, false)) { ExtraTotal(rule, name, e.kind.id) }
-                            .apply { amount += rule.bonus; times++ }
+                            .apply { amount += rule.bonus; times++; one = "근무 시간 안이라 시간은 더하지 않고 1회 ${won(rule.bonus)}" }
                         parts += DayPart(LineKind.EXTRA, name, rule.bonus, "근무 시간 안이라 시간은 더하지 않고 1회 ${won(rule.bonus)}")
                     }
                     continue
@@ -686,9 +689,12 @@ class PayCalculator(
             val rule = t.rule
             lines += PayLine(
                 LineKind.EXTRA, "${t.label} (회사 규칙)", t.amount,
-                formula = "${rule.describe()}: ${t.times}회" + (if (t.minutes > 0) ", ${hours(t.minutes)}" else ""),
+                // [PAYX-55] 1.38 PC 12.5: the numbers it was paid on ("4시간 × 9,877원(÷243시간) = … + 연장 가산 4시간 × 50% = …"),
+                // not the rule's words alone.
+                formula = t.one?.takeIf { t.times == 1 && it.isNotBlank() }
+                    ?: ("${rule.describe()}: ${t.times}회" + (if (t.minutes > 0) ", ${hours(t.minutes)}" else "")),
                 minutes = t.minutes,
-                hourly = if (rule.basis == ExtraBasis.HOURLY_RATE) hourlyFor(rule) else 0,
+                hourly = if (rule.basis == ExtraBasis.HOURLY_RATE || rule.basis == ExtraBasis.UNIT && rule.usesHourly) hourlyFor(rule) else 0,
                 multiplier = if (rule.basis == ExtraBasis.HOURLY_RATE) rule.multiplier else 0.0,
                 basis = "달력에 ‘${rules.extraName(t.kind)}’로 넣은 근무" + (rule.monthlyHours?.takeIf { profile.wageType == WageType.MONTHLY && rule.usesHourly }
                     ?.let { " · 통상시급은 통상임금 ÷ ${it}시간 ${won(hourlyFor(rule))} (회사 규칙, 다른 근무는 ${profile.monthlyHours}시간)" }.orEmpty()),
@@ -1281,7 +1287,8 @@ class PayCalculator(
     }
 
     private fun MonthPay.withHourlyNote(formula: String) =
-        copy(lines = lines.map { if (it.hourly > 0) it.copy(formula = "${it.formula} · 통상시급 = $formula") else it })
+        // [PAYX-55] Only lines on this 통상시급: one on its own 시수 (교육 ÷ 243) says its own in its basis.
+        copy(lines = lines.map { if (it.hourly > 0 && it.hourly == ordinaryHourly) it.copy(formula = "${it.formula} · 통상시급 = $formula") else it })
 
     private fun line(
         kind: LineKind, label: String, minutes: Int, hourly: Long, multiplier: Double,
