@@ -288,6 +288,8 @@ fun MonthGrid(
     payDays: Set<LocalDate> = emptySet(),
     /** [CELL-01] 1.39 Each day's memos, one title each, when the cells list them; null keeps the one line under the badge. */
     memoLists: Map<LocalDate, List<String>>? = null,
+    /** [CELL-03] 1.39 Days with nothing to list keep the plain cell (a month listed at its plain height, for its memo days). */
+    listEmptyDays: Boolean = true,
     /** 1.39 [FLOW-03] Right after the first setup: how much of the month has come in (0 to 1), read while drawing ([SetupFill]). */
     fill: (() -> Float)? = null,
 ) {
@@ -397,8 +399,8 @@ fun MonthGrid(
                         isSelected = date == selected || remember(date) { derivedStateOf { date in dragged } }.value,
                         hasMemo = date in memoDates,
                         money = if (inMonth) cells.days[date] else null,
-                        memoText = if (memoLists != null) null else memoTexts[date],
-                        memoList = memoLists?.let { it[date].orEmpty() },
+                        memoText = if (dayList(memoLists, listEmptyDays, focus, cells.field[date], date) != null) null else memoTexts[date],
+                        memoList = dayList(memoLists, listEmptyDays, focus, cells.field[date], date),
                         showHours = showHours,
                         showLunar = showLunar,
                         onClick = { onDayClick(date) },
@@ -479,6 +481,8 @@ fun WeekStrip(
     memoTexts: Map<LocalDate, String> = emptyMap(),
     /** [CELL-01] 1.39 As [MonthGrid]'s. */
     memoLists: Map<LocalDate, List<String>>? = null,
+    /** [CELL-03] 1.39 Days with nothing to list keep the plain cell (a month listed at its plain height, for its memo days). */
+    listEmptyDays: Boolean = true,
     focus: CalendarFocus = CalendarFocus.SHIFTS,
     hourly: HourlyCells? = null,
     /** [DAYW-01] As in [MonthGrid]. */
@@ -504,8 +508,8 @@ fun WeekStrip(
                 isSelected = date == selected,
                 hasMemo = date in memoDates,
                 money = cells.days[date],
-                memoText = if (memoLists != null) null else memoTexts[date],
-                memoList = memoLists?.let { it[date].orEmpty() },
+                memoText = if (dayList(memoLists, listEmptyDays, focus, cells.field[date], date) != null) null else memoTexts[date],
+                memoList = dayList(memoLists, listEmptyDays, focus, cells.field[date], date),
                 showHours = showHours,
                 showLunar = showLunar,
                 onClick = { onDayClick(date) },
@@ -677,9 +681,14 @@ private fun DayCell(
         if (day.source == DaySource.OVERRIDE && snapshot.hasPattern || day.hasCustomTimes) append(", 직접 바꿈")
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
-        if (hasMemo) append(", 메모 있음")
+        // [CELL-03] 1.39 A listing cell cuts long lines with '…': its button reads each memo whole.
+        if (!memoList.isNullOrEmpty()) append(", 메모 ").append(memoList.joinToString(", "))
+        else if (hasMemo) append(", 메모 있음")
         fieldUnitsText(fieldJobs)?.let { append(", ").append(it) }
         fieldJobs?.filter { it.status == com.bamnat.core.money.JobStatus.TENTATIVE || it.cancelled }?.forEach { append(", ‘${it.title}’ ${it.status.label}") }
+        // [CELL-03] The jobs a listing cell shows by name, read by name too.
+        if (memoList != null && focus != CalendarFocus.SHIFTS && !fieldJobs.isNullOrEmpty())
+            append(", ").append(fieldJobs.joinToString(", ") { it.client.ifBlank { it.title }.trim() })
         if (cardDue) append(", 카드 입금 예정")
         if (payDay) append(", 급여일")
         span?.let { append(", ‘${it.title}’ ${it.days}일 중 ${it.nth}일째") }
@@ -852,6 +861,11 @@ private fun DayCell(
             // The day's own shift as a small badge without its icon, so it fits beside the date in a 48dp cell; the rest as before.
             val plainShift = type != null && fullLeave == null && covered == null && badgeKind == null && !jobFirst &&
                 !(hourly != null && hourlyRange != null) && !(invest != null && invest.trades(date) > 0 && type.isOff)
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+            // [CELL-03] 1.39 (320dp·큰 글자에서 날짜 옆 '야'가 잘림): the shift's badge sits beside the date only where both fit; else on
+            // its own line at the plain cell's size.
+            val beside = maxWidth >= 50.dp && density.fontScale < 1.3f
+            val markOwnLine = hasMark && (!plainShift || !beside)
             Column(Modifier.fillMaxSize().padding(horizontal = 2.dp, vertical = 1.5.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(Modifier.fillMaxWidth().heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
@@ -874,13 +888,14 @@ private fun DayCell(
                     else if (!hasMark) cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern)
                         .firstOrNull()?.let { CornerMark(it, dot = true) }
                     if (wishOff) Spacer(Modifier.width(8.dp))
-                    if (hasMark && plainShift) Box(Modifier.padding(start = 1.dp)) {
+                    if (hasMark && plainShift && beside) Box(Modifier.padding(start = 1.dp)) {
                         ShiftBadge(type = type, text = type!!.label, size = 18.dp, outlined = type.isOff, showIcon = false)
                     }
                 }
                 // Wider marks (대근 둘, 특근, 연차, 알바 시간…) take their own line under the date instead of being squeezed beside it.
-                if (hasMark && !plainShift) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) { dayMark(18.dp) }
+                if (markOwnLine) Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterStart) { dayMark(if (beside) 18.dp else 22.dp) }
                 CellListLines(items, foot, footerSize, cellMoreColor(), Modifier.weight(1f))
+            }
             }
         } else if (custom || cellParts != null) CustomCellBody(
             parts = cellParts,
@@ -1221,6 +1236,12 @@ private fun cellTexts(
     if (hours.isNotEmpty()) put("hours", hours)
     if (showSpend && focus == CalendarFocus.SHIFTS) money?.expense?.takeIf { it > 0 }?.let { put("spend", "−" + Fmt.wonShort(it)) }
     if (showLunar) put("lunar", KoreanLunar.fromSolar(date).short)
+}
+
+/** [CELL-01][CELL-03] A day's memo titles when its cell lists, or null for the plain cell. */
+private fun dayList(lists: Map<LocalDate, List<String>>?, emptyToo: Boolean, focus: CalendarFocus, jobs: List<com.bamnat.core.money.Job>?, date: LocalDate): List<String>? {
+    val memos = lists?.let { it[date].orEmpty() } ?: return null
+    return memos.takeIf { emptyToo || it.isNotEmpty() || focus != CalendarFocus.SHIFTS && !jobs.isNullOrEmpty() }
 }
 
 /**
