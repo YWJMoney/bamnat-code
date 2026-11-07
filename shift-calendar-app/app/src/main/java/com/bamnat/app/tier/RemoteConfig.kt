@@ -56,6 +56,9 @@ data class LaunchConfig(
     /** [FLAG-04] The phone's time since boot when the answer came, and which boot (to carry [serverTime] forward). */
     val fetchedElapsed: Long? = null,
     val fetchedBoot: Int? = null,
+    /** 1.39 [LOOP-13] Play 인앱 업데이트: below [updateUrgentMin] at once, below [updateFlexibleMin] behind the app; 0 = never. */
+    val updateUrgentMin: Int = 0,
+    val updateFlexibleMin: Int = 0,
 ) {
     /**
      * [FLAG-06] The overrides the phone evaluates: the server's [flags], or, from a 1.27 server, its switch read as
@@ -95,6 +98,7 @@ data class LaunchConfig(
         .put("policy", FlagJson.toJson(policy))
         .put("serverTime", serverTime?.toString() ?: JSONObject.NULL)
         .put("fetchedElapsed", fetchedElapsed ?: JSONObject.NULL).put("fetchedBoot", fetchedBoot ?: JSONObject.NULL)
+        .put("update", JSONObject().put("urgentMin", updateUrgentMin).put("flexibleMin", updateFlexibleMin))
 
     companion object {
         /** 1.38 Phase 3 요금: the table as the server sends it (`workPlans`). */
@@ -152,6 +156,9 @@ data class LaunchConfig(
                 // Kept by the store, not sent by the server: only a saved answer has them.
                 fetchedElapsed = if (!o.has("fetchedElapsed") || o.isNull("fetchedElapsed")) null else o.getLong("fetchedElapsed"),
                 fetchedBoot = if (!o.has("fetchedBoot") || o.isNull("fetchedBoot")) null else o.getInt("fetchedBoot"),
+                // An older server sends none: nothing is asked.
+                updateUrgentMin = o.optJSONObject("update")?.optInt("urgentMin", 0)?.coerceAtLeast(0) ?: 0,
+                updateFlexibleMin = o.optJSONObject("update")?.optInt("flexibleMin", 0)?.coerceAtLeast(0) ?: 0,
             )
         }
 

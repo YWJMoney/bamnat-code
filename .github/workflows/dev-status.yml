@@ -1,0 +1,66 @@
+# 1.39 [LOOP-05] 개발 상태 동기화. 저장소에는 개발 상태만(ops/dev-status.jsonl) 있고 문의 원문은 서버에만 있어요.
+# PR: 개발 상태 파일 검사. main에 합쳐지면: 합친 커밋의 판(versionName)과 함께 서버 /api/admin/dev/sync로 보내요.
+# 보내는 열쇠는 '개발 동기화 열쇠'(POST /dev/sync만 되는 좁은 열쇠)예요. 사용자가 관리자 앱 › 운영 장부 › 열쇠에서 만들어
+# 저장소 Settings › Secrets › Actions에 BAMNAT_SYNC_KEY로, 서버 주소는 Variables에 BAMNAT_API로 넣어요. 없으면 보내지 않고 넘어가요.
+name: dev-status
+
+on:
+  pull_request:
+    paths: ["shift-calendar-app/ops/**", "shift-calendar-app/tools/dev_status.py", "shift-calendar-app/server/company-worker/src/dev-built.js", ".github/workflows/dev-status.yml"]
+  push:
+    branches: [main]
+    paths: ["shift-calendar-app/ops/**", "shift-calendar-app/gradle.properties", "shift-calendar-app/server/company-worker/src/dev-built.js", ".github/workflows/dev-status.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dev-status-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/dev_status.py check
+      - run: python3 tools/test_dev_status.py
+
+  sync:
+    needs: check
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    env:
+      BAMNAT_API: ${{ vars.BAMNAT_API }}
+      BAMNAT_SYNC_KEY: ${{ secrets.BAMNAT_SYNC_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 서버로 보내기
+        run: |
+          if [ -z "$BAMNAT_API" ] || [ -z "$BAMNAT_SYNC_KEY" ]; then
+            echo "BAMNAT_API 또는 BAMNAT_SYNC_KEY가 없어 보내지 않아요(사용자 할 일: 1.39 사용자가-해야-할-일.md)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          version=$(sed -n 's/^bamnat.versionName=//p' gradle.properties | tr -d '[:space:]')
+          python3 tools/dev_status.py payload --version "$version" --sha "$GITHUB_SHA" > "$RUNNER_TEMP/body.json"
+          code=$(curl -sS -o "$RUNNER_TEMP/out.json" -w '%{http_code}' -X POST "${BAMNAT_API%/}/api/admin/dev/sync" \
+            -H "authorization: Bearer $BAMNAT_SYNC_KEY" -H "x-admin: 1" -H "content-type: application/json" \
+            --data-binary @"$RUNNER_TEMP/body.json")
+          # 결과에는 개수와 개발사항 번호만 있어요(문의 내용 없음).
+          python3 - "$RUNNER_TEMP/out.json" "$code" "$version" >> "$GITHUB_STEP_SUMMARY" <<'PY'
+          import json, sys
+          out, code, ver = sys.argv[1], sys.argv[2], sys.argv[3]
+          try:
+              r = json.load(open(out, encoding="utf-8"))
+          except Exception:
+              r = {}
+          print(f"### 개발 상태 동기화 {ver} (HTTP {code})")
+          print(f"새로 만듦 {r.get('made', '-')} · 바뀜 {r.get('changed', '-')} · 바로 답 {r.get('told', '-')} · 오류 {r.get('errors', r.get('error', '-'))}")
+          PY
+          [ "$code" = "200" ]

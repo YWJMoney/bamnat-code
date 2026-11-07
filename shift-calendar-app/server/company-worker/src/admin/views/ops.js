@@ -324,7 +324,8 @@ export function opsViews(A) {
 
   // ---- [ADM3-34] 개발사항 이야기 ----
 
-  const STORY_ICON = { ask: "문의", link: "묶음", told: "답", made: "만듦", status: "상태", ship: "출시", note: "기록" };
+  const STORY_ICON = { ask: "문의", link: "묶음", told: "답", made: "만듦", status: "상태", ship: "출시", note: "기록",
+    sync: "저장소", live: "닿음", phone_told: "답", fixed_yes: "해결", fixed_no: "다시", me_too: "나도", tier: "요금", release: "판" };
 
   function storyCard() {
     const d = S.data.story;
