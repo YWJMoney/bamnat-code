@@ -215,6 +215,16 @@ internal fun PulseLine(pulse: Pulse, onLens: (String) -> Unit) {
     }
 }
 
+/** [PLZC-20] 근무 카드 under a post: a small box with this month's numbers from the writer's calendar. */
+@Composable
+internal fun WorkCardLine(card: com.bamnat.core.plaza.WorkCard, modifier: Modifier = Modifier) {
+    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.small,
+        modifier = modifier.semantics(mergeDescendants = true) { contentDescription = card.spoken() }) {
+        Text("📅 " + card.line(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+    }
+}
+
 /** [PLZC-21] What a 오늘 출근 kind says: on its button, and with its count. */
 internal fun checkinWords(kind: String): Pair<String, String> = when (kind) {
     "night" -> "오늘 야간 출근 ✊" to "오늘 야간 출근"
@@ -381,6 +391,7 @@ private fun FeedCard(p: TalkPost, answers: List<TalkPost>, inSheet: Boolean, onO
             }
             p.tag?.let { PlazaTagLine(it) }
             Text(p.body, style = MaterialTheme.typography.bodyMedium, maxLines = if (open) Int.MAX_VALUE else 6, overflow = TextOverflow.Ellipsis)
+            p.card?.let { WorkCardLine(it) }
             p.attach?.let { (_, title) -> Text("🎨 $title", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!p.mine) MeToo(p.agree, p.myVote, onVote)

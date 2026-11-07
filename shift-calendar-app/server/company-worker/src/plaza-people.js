@@ -12,6 +12,8 @@ export const PEOPLE_COLUMNS = [
   // 1.39 [PLZC-10] 근무 태그 (JSON {s, f?, i?, m?, n?}) and its 근무형태 alone, for 나와 같은 근무.
   "ALTER TABLE posts ADD COLUMN tag TEXT",
   "ALTER TABLE posts ADD COLUMN tag_form TEXT",
+  // 1.39 [PLZC-20] 근무 카드: this month so far by the writer's calendar (JSON {d, w, n, s, o}), no dates.
+  "ALTER TABLE posts ADD COLUMN card TEXT",
   // 1.39 [PLZC-31] 근무형태별 투표 결과: the voter's 근무형태 at the time (none without a tag).
   "ALTER TABLE poll_votes ADD COLUMN form TEXT",
 ];
@@ -145,4 +147,26 @@ export async function pollByForm(all, env, ids, options) {
     out.set(id, [...named.map(([f, counts]) => ({ f, counts })), ...(sum(rest) >= POLL_SPLIT_MIN ? [{ f: null, counts: rest }] : [])]);
   }
   return out;
+}
+
+/** 1.39 [PLZC-20] The kinds of work whose plaza takes a 근무 카드 (the ones that count days at work). */
+export const CARD_STYLES = ["SHIFT", "DAY", "FIELD", "HOURLY"];
+
+/**
+ * 1.39 [PLZC-20] 근무 카드: this month so far by the writer's calendar, numbers only. d days of the month gone, w days at work, n of them
+ * nights, s the longest run of days at work, o days off. Anything else is refused.
+ */
+export function peopleCard(raw, room, refuse) {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== "object" || Array.isArray(raw) || !CARD_STYLES.includes(PEOPLE_ROOM_STYLE[room])) refuse("card");
+  const keys = ["d", "w", "n", "s", "o"];
+  if (Object.keys(raw).some((k) => !keys.includes(k))) refuse("card");
+  const c = {};
+  for (const k of keys) {
+    const v = raw[k];
+    if (!Number.isInteger(v) || v < 0 || v > 31) refuse("card");
+    c[k] = v;
+  }
+  if (c.d < 1 || c.w + c.o > c.d || c.n > c.w || c.s > c.w) refuse("card");
+  return c;
 }

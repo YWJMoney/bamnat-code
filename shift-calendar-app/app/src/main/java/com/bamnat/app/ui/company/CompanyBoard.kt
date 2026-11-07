@@ -414,6 +414,11 @@ fun TalkSheet(holder: TalkHolder) {
     val myTag by androidx.compose.runtime.produceState<com.bamnat.core.plaza.PlazaTag?>(null, people, o.company, tagTick) {
         value = if (people) holder.myTag(o.company) else null
     }
+    // 1.39 [PLZC-20] 근무 카드 붙이기: my month so far from the calendar of this plaza's kind of work.
+    var withCard by remember(o.setup) { mutableStateOf(false) }
+    val myCard by androidx.compose.runtime.produceState<com.bamnat.core.plaza.WorkCard?>(null, people, o.company) {
+        value = if (people) runCatching { holder.container.plazaTags.card(o.company) }.getOrNull() else null
+    }
     val showable by androidx.compose.runtime.produceState(emptyList<Pair<String, String>>(), styleRoom, kind) {
         if (styleRoom && kind == "show") value = holder.showable()
     }
@@ -629,6 +634,12 @@ fun TalkSheet(holder: TalkHolder) {
                         TextButton(onClick = { tagScope = true }) { Text("고르기") }
                     }
                 }
+                if (replyTo == null && kind != "proposal") myCard?.let { card ->
+                    com.bamnat.app.ui.components.FilterChip(selected = withCard, onClick = { withCard = !withCard },
+                        label = { Text(if (withCard) "📅 근무 카드 붙임 · ${card.line()}" else "📅 이번 달 근무 카드 붙이기", maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                        modifier = Modifier.padding(top = 2.dp))
+                }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
@@ -667,12 +678,14 @@ fun TalkSheet(holder: TalkHolder) {
                               val go = { rules.ensure {
                                 rulesOk = true
                                 busy = true
+                                // [PLZC-20] the card goes with this top post only (taken once by the client).
+                                holder.container.plazaTags.cardOnce = if (withCard && parent == null && myCard != null) o.company else null
                                 holder.send(body, parent = parent, kind = sentKind, change = if (proposing) lines else emptyList(), withSetup = withIt, poll = poll,
                                     attach = attach.takeIf { styleRoom && kind == "show" && replyTo == null }) { e ->
-                                    busy = false; error = e
+                                    busy = false; error = e; holder.container.plazaTags.cardOnce = null
                                     // PC 확인 V35: sent, the box starts over: 이야기, no recipe, no choices.
                                     if (e == null) {
-                                        text = text.trim().removePrefix(body).trimStart(); replyId = null; pollDraft = emptyList(); attach = null
+                                        text = text.trim().removePrefix(body).trimStart(); replyId = null; pollDraft = emptyList(); attach = null; withCard = false
                                         change = listOf(blankChange()); if (o.room || proposing) kind = "talk"
                                     }
                                 }
@@ -847,6 +860,7 @@ private fun PostRow(
             }
         }
         if (meToo) p.tag?.let { PlazaTagLine(it) }
+        if (meToo) p.card?.let { WorkCardLine(it, Modifier.padding(top = 2.dp)) }
         // [COMM-11] I2: one 개인 정보 신고 marks the post 확인 중, dimmed, until an admin looks.
         if (p.review && p.hidden == null) {
             Text("확인 중 · 개인 정보가 있다는 신고가 있어 운영자가 보고 있어요", style = MaterialTheme.typography.labelSmall,

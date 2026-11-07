@@ -30,4 +30,12 @@ class PlazaPollSplitTest {
         assertNull(checkinOf(JSONObject("""{"counts":{"go":0,"rain":0}}"""))!!.mine)
         assertNull(checkinOf(JSONObject("{}")))
     }
+
+    @Test
+    fun `PLZC-20 a post's 근무 카드 is read, a wrong one left out`() {
+        val t = talkOf(JSONObject("""{"posts":[{"id":"p1","n":1,"body":"야간 둘","at":"2026-11-07T10:00:00Z","card":{"d":8,"w":5,"n":2,"s":4,"o":3}},
+            {"id":"p2","n":2,"body":"이상한 카드","at":"2026-11-07T10:00:00Z","card":{"d":3,"w":9,"n":0,"s":0,"o":0}}]}"""))
+        assertEquals(com.bamnat.core.plaza.WorkCard(8, 5, 2, 4, 3), t.posts[0].card)
+        assertNull(t.posts[1].card)
+    }
 }

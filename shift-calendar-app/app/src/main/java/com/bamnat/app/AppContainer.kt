@@ -261,6 +261,7 @@ class AppContainer(context: Context) {
     val plazaTags by lazy { com.bamnat.app.company.PlazaTagSource(this) }
     init {
         (companyApi as? com.bamnat.app.company.CompanyClient)?.roomTag = { room -> plazaTags.json(room) }
+        (companyApi as? com.bamnat.app.company.CompanyClient)?.roomCard = { room -> plazaTags.cardJson(room) }
     }
     /** [RCP-25] 1.34 나눔 판 on this phone: applying, 되돌리기 and the recipes being made. */
     val recipes by lazy { com.bamnat.app.recipe.RecipeRepository(this, appContext) }

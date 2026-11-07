@@ -89,4 +89,17 @@ class PlazaTagTest {
         assertEquals(PlazaTag.Now.DAY, PlazaTags.shiftOf(6))
         assertEquals(PlazaTag.Now.DAY, PlazaTags.shiftOf(14))
     }
+
+    @Test
+    fun `PLZC-20 근무 카드 counts this month, nights by the start hour, the longest run`() {
+        val w = { h: Int -> true to h }
+        val off = false to null
+        val month = listOf(w(7), w(7), w(19), w(19), off, off, w(7), w(19), w(19), w(19), w(19), off, null to null)
+        val c = com.bamnat.core.plaza.WorkCard.of(month)!!
+        assertEquals(com.bamnat.core.plaza.WorkCard(13, 9, 6, 5, 3), c)
+        assertEquals("이번 달 근무 9일 · 야간 6 · 최장 연속 5일 · 쉬는 날 3", c.line())
+        assertNull(com.bamnat.core.plaza.WorkCard.of(listOf(off, off)))
+        assertEquals(c, com.bamnat.core.plaza.WorkCard.of { c.fields()[it] })
+        assertNull(com.bamnat.core.plaza.WorkCard.of { mapOf("d" to 3, "w" to 5, "n" to 0, "s" to 0, "o" to 0)[it] })
+    }
 }

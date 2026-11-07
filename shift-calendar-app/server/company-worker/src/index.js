@@ -90,7 +90,7 @@ import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.j
 import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
 import { makerMarks } from "./maker-mark.js";
-import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut, pollByForm } from "./plaza-people.js";
+import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleCard, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut, pollByForm } from "./plaza-people.js";
 import { PLAZA_CHECKIN_SCHEMA, plazaCheckinRoute, plazaCheckins } from "./plaza-checkin.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
@@ -2605,11 +2605,13 @@ async function roomPost(request, env, body) {
     const m = tag.wantsMonths ? peopleMonths(seen?.first ?? now, now) : null;
     if (m !== null) tag.m = m;
   }
+  // 1.39 [PLZC-20] 근무 카드, on a top post in a kind of work's plaza that counts days at work, once plaza.people is on.
+  const card = place.style && !parent && given(body.card) && (await peopleOn(env, now)) ? peopleCard(body.card, place.id, refuse) : null;
   const id = `p${randomId(15)}`;
   await run(env, `INSERT INTO posts (id, company_id, grp, device, body, status, flags, kept, hide_reason, created_at, hidden_at,
-      parent, kind, change, report_id, agree, disagree, poll, attach, tag, tag_form)
-    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
-  poll ? JSON.stringify(poll) : null, attach, tag ? JSON.stringify(tag) : null, tag?.f ?? null);
+      parent, kind, change, report_id, agree, disagree, poll, attach, tag, tag_form, card)
+    VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
+  poll ? JSON.stringify(poll) : null, attach, tag ? JSON.stringify(tag) : null, tag?.f ?? null, card ? JSON.stringify(card) : null);
   // 1.39 [PLZC-41] 답이 오면 질문한 분에게, 근무형태가 붙은 질문이면 그 근무를 지켜보는 분에게 바로 (말 없는 알림).
   if (place.style) await plazaPushAfter(env, { room: place.id, writer: dev, parent, kind, form: tag?.f ?? null, on: await peopleOn(env, now) }, now);
   return json({ id, at: iso(now) }, 201);
@@ -4126,6 +4128,7 @@ async function talkData(request, env, companyId, grp, known = null) {
       ...(p.kind === "question" && p.answer ? { answer: p.answer } : {}),
       ...(p.poll ? { poll: pollOfRow(p) } : {}),
       ...(peopleTagOut(p, people) ? { tag: peopleTagOut(p, people) } : {}),
+      ...(people && p.card ? { card: JSON.parse(p.card) } : {}),
       ...(writerFacts && !p.parent && writerFacts.first.get(p.device) === p.created_at ? { first: true } : {}),
       ...(writerFacts && nicks.has(p.device) && writerFacts.helped.get(p.device) ? { helped: writerFacts.helped.get(p.device) } : {}),
       ...(p.attach && cards.has(p.attach) ? { attach: { code: p.attach, title: cards.get(p.attach).title,

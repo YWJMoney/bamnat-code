@@ -299,6 +299,8 @@ data class TalkPost(
     val helped: Int = 0,
     /** 1.39 [PLZC-40] 🏅 이달의 제작자·⭐ 인기 제작자 beside a 마을 이름 (the same as on 장터's cards). */
     val mark: com.bamnat.core.plaza.MakerMark? = null,
+    /** 1.39 [PLZC-20] 근무 카드 the writer attached (this month so far, numbers only). */
+    val card: com.bamnat.core.plaza.WorkCard? = null,
 )
 
 /** 1.36 [VIL-10] 마을 V10 투표 글: 2~4 choices, how many picked each, and which one this phone picked (null: none yet). */
@@ -752,10 +754,13 @@ class CompanyClient(
      * when it is sent; null for none (깃발 plaza.people off, or a company's room). Set by the container.
      */
     @Volatile var roomTag: (suspend (room: String) -> JSONObject?)? = null
+    @Volatile var roomCard: (suspend (room: String) -> JSONObject?)? = null
 
     private suspend fun JSONObject.tagged(company: String, setup: String): JSONObject = apply {
         if (setup == com.bamnat.core.plaza.StylePlaza.ROOM && company.startsWith("style-")) {
             runCatching { roomTag?.invoke(company) }.getOrNull()?.let { put("tag", it) }
+            // 1.39 [PLZC-20] 근무 카드 on a top post, when the box asked for it.
+            if (!has("parent") && has("body")) runCatching { roomCard?.invoke(company) }.getOrNull()?.let { put("card", it) }
         }
     }
 
@@ -1444,6 +1449,7 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
             tag = p.optJSONObject("tag")?.let { t -> com.bamnat.core.plaza.PlazaTag.of { k -> t.opt(k)?.takeIf { it != JSONObject.NULL } } },
             first = p.optBoolean("first", false),
             helped = p.optInt("helped", 0).coerceIn(0, 100_000),
+            card = p.optJSONObject("card")?.let { c -> com.bamnat.core.plaza.WorkCard.of { k -> c.opt(k) } },
             mark = com.bamnat.core.plaza.MakerMark.of(p.optString("mark", "").ifEmpty { null }),
         )
     },

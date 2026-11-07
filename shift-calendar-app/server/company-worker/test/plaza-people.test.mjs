@@ -235,3 +235,22 @@ test("[PLZC-31] 근무형태별 투표 결과: a 근무형태 of 5 or more apart
   const seen = (await read(call, 2, "style-shift")).data.posts.find((p) => p.id === id).poll;
   assert.deepEqual(seen.byForm, [{ f: "FOUR_TEAM", counts: [4, 1] }, { f: null, counts: [1, 4] }]);
 });
+
+test("[PLZC-20] 근무 카드: numbers only, on a top post where days at work count, shown after 3.12", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const card = { d: 8, w: 5, n: 2, s: 4, o: 3 };
+  const early = (await write(call, 1, "style-shift", "이번 달 벌써 야간 둘", null, { card })).data.id;
+  await policyOn(call);
+  const id = (await write(call, 1, "style-shift", "이번 달 반도 안 됐는데 야간 둘", null, { card })).data.id;
+  for (const bad of [{ ...card, note: 1 }, { ...card, n: 9 }, { ...card, w: 7 }, { ...card, d: 0, w: 0, n: 0, s: 0, o: 0 }, { ...card, s: 40 }, "5"]) {
+    assert.equal((await write(call, 2, "style-shift", "카드 시험 글이에요", null, { card: bad })).status, 400, JSON.stringify(bad));
+  }
+  assert.equal((await write(call, 2, "style-shop", "가게는 근무 카드가 없어요", null, { card })).status, 400);
+  const posts = (await read(call, 3, "style-shift")).data.posts;
+  assert.deepEqual(posts.find((p) => p.id === id).card, card);
+  assert.equal(posts.find((p) => p.id === early).card, undefined, "before 3.12 nothing was kept");
+  // An answer carries none.
+  const reply = (await call("POST", "/api/posts", { device: device(2), company: "style-shift", setup: "room", body: "고생 많으세요", parent: id, card }, from(2))).data.id;
+  assert.equal((await read(call, 3, "style-shift")).data.posts.find((p) => p.id === reply).card, undefined);
+});
