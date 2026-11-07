@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.recipe
 
+import com.bamnat.app.appContainer
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -97,6 +98,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     var disliking by remember { mutableStateOf(false) }
     var confirming by remember { mutableStateOf(false) }
     var tryOn by remember { mutableStateOf(false) }
+    var tryAgain by remember { mutableStateOf<LiveTryOn.Reopen?>(null) }
     var adNote by remember { mutableStateOf<String?>(null) }
     val adGate = confirming && vm.looksNeedAd()
     var folded by remember { mutableStateOf(true) }
@@ -229,6 +231,12 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         tryOn = true
                     }
                 }
+                // [TRY-05] Back from trying it on the real app: 입어 보기 again, the same parts ticked and the same tab.
+                val again by LiveTryOn.reopen.collectAsStateWithLifecycle()
+                LaunchedEffect(again, r) {
+                    if (!hasLooks) return@LaunchedEffect
+                    LiveTryOn.take { it is LiveTryOn.From.Detail && it.code == vm.code }?.let { tryAgain = it; tryOn = true }
+                }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
                 if (hasLooks) Button(onClick = { tryOn = true }, enabled = !s.applying, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     // 7차 통합 347b7c37 PC 제안 (넣은 뒤에도 '입어 보고 고르기'로 남아요): once in, it says so and offers another look.
@@ -269,8 +277,14 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 if (tryOn) {
                     val others = s.pieces.filter { it.fits && it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }
                     val allParts = remember(r) { com.bamnat.core.recipe.LookParts.of(r).size }
-                    TryOnScreen(r, vm.style, onDismiss = { tryOn = false },
+                    val liveC = LocalContext.current.appContainer
+                    TryOnScreen(r, vm.style, onDismiss = { tryOn = false; tryAgain = null },
                         onKeep = { ids -> vm.keep(ids) }, onToStudio = onToStudio,
+                        // [TRY-05] 1.39 실제 화면으로 입어 보기.
+                        live = { picked, tab ->
+                            LiveTryOn.start(liveC, r, own = doc.mine, picked, tab, LiveTryOn.From.Detail(vm.code), s.answers).also { if (it) { tryOn = false; tryAgain = null } }
+                        },
+                        startPicked = tryAgain?.picked, startTab = tryAgain?.tab,
                         extra = if (others.isEmpty()) null else { {
                             Text("기능 · 모양과 함께 넣을 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp).semantics { heading() })
                             others.forEach { p ->

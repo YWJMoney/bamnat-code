@@ -37,6 +37,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.StickyNote2
@@ -952,6 +954,37 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [NAV-05] The tab the app opens on: home when the app starts, kept through a turn of the screen with the back stack.
     val startTab = rememberSaveable { home.route }
 
+    // [TRY-05] 1.39 실제 화면으로 입어 보기: when a trial starts, the real app opens on the tab 입어 보기 showed, and 끝내기 comes back
+    // to the screen it was opened on (still under, or opened again by its route).
+    val liveTrial by com.bamnat.app.ui.recipe.LiveTryOn.trial.collectAsStateWithLifecycle()
+    val trialOn = liveTrial != null
+    LaunchedEffect(trialOn) {
+        val t = com.bamnat.app.ui.recipe.LiveTryOn.trial.value ?: run { com.bamnat.app.ui.recipe.LiveTryOn.back = null; return@LaunchedEffect }
+        val entry = nav.currentBackStackEntry
+        val destId = entry?.destination?.id
+        val real = entry?.let(::filledRoute)
+        com.bamnat.app.ui.recipe.LiveTryOn.back = back@{
+            val here = nav.currentBackStackEntry?.destination?.id
+            if (destId == null || here == destId) return@back
+            val under = runCatching { nav.getBackStackEntry(destId) }.isSuccess
+            when {
+                under -> nav.popBackStack(destId, false)
+                real != null && TopLevel.entries.any { it.route == real } -> nav.navigateTopLevel(real)
+                real != null -> runCatching { nav.navigate(real) { launchSingleTop = true } }
+            }
+        }
+        (TopLevel.entries.firstOrNull { it.route == t.tab } ?: TopLevel.CALENDAR).let { dest -> if (dest.route != route) navigateTop(dest) }
+    }
+    // The app left while trying on: the trial ends (nothing was saved), 입어 보기 waiting where it was.
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+        if (com.bamnat.app.ui.recipe.LiveTryOn.trial.value != null) com.bamnat.app.ui.recipe.LiveTryOn.end(container)
+    }
+    // A theme sheet tried on the real app is opened again here, over whichever screen it was on.
+    val trialAgain by com.bamnat.app.ui.recipe.LiveTryOn.reopen.collectAsStateWithLifecycle()
+    (trialAgain?.from as? com.bamnat.app.ui.recipe.LiveTryOn.From.Sheet)?.let { f ->
+        com.bamnat.app.ui.recipe.ThemeSheet(f.r, f.code, activeStyle, f.ver, again = trialAgain) { com.bamnat.app.ui.recipe.LiveTryOn.take { it == f } }
+    }
+
     // [NAV-02] 1.25 Z (U4): back goes where the user was. From a tab reached from another tab, that tab, as it was
     // left (Android's default went to the calendar from every tab); from the calendar itself, a second back within
     // two seconds closes the app, so one stray back does not. Screens and sheets inside take back first.
@@ -1109,6 +1142,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             start = startTab,
                             modifier = Modifier.weight(1f),
                         )
+                        // [TRY-05] Over the tabs while a theme is tried on the real app (inner screens: above the system's bar).
+                        androidx.compose.foundation.layout.Box(if (showNav) Modifier else Modifier.windowInsetsPadding(androidx.compose.foundation.layout.WindowInsets.Companion.navigationBars)) { com.bamnat.app.ui.recipe.LiveTryOnBand(container) }
                     }
                     // [NAV-06] Over the screen while the tabs are moved: a tap here saves, and does nothing else. Beside the
                     // rail the line about it lies over the bottom of the screen, which keeps its size.
@@ -2447,6 +2482,17 @@ private fun NavHostController.navigateTopLevel(route: String, record: Boolean = 
         launchSingleTop = true
         restoreState = true
     }
+}
+
+/** [TRY-05] The route [entry] was opened with, its arguments filled in ("recipe/{code}?…" → "recipe/ab12?…"). */
+private fun filledRoute(entry: androidx.navigation.NavBackStackEntry): String? {
+    var r = entry.destination.route ?: return null
+    val args = entry.arguments
+    Regex("\\{([^}]+)\\}").findAll(r).map { it.groupValues[1] }.toList().forEach { k ->
+        @Suppress("DEPRECATION") val v = args?.get(k)?.toString() ?: return null
+        r = r.replace("{$k}", android.net.Uri.encode(v))
+    }
+    return r
 }
 
 /** [NAV-02] The tabs the user went through, latest last, for back. Kept for the app's run; opening the app again clears it. */
