@@ -6,6 +6,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.bamnat.core.model.WorkPattern
+import com.bamnat.core.schedule.TeamRoster
 import java.time.LocalDate
 
 /** [CYC-06] "몇 조예요?": the day each team starts the cycle. */
@@ -29,5 +31,32 @@ class TeamAnchorsTest {
         assertNull(TeamAnchors.anchorOf(listOf(CycleTeam("1조", jan5), CycleTeam("2조"), CycleTeam("3조")), 1, 4))
         assertTrue(TeamAnchors.pickable(listOf(CycleTeam("1조"), CycleTeam("2조")), 4).isEmpty())
         assertEquals(listOf("1조" to jan5, "2조" to jan5.plusDays(2)), TeamAnchors.pickable(listOf(CycleTeam("1조", jan5), CycleTeam("2조")), 4))
+    }
+
+    @Test fun `a sender's teams go with the file and come back as the same rota for any team picked`() {
+        // 주주야야휴휴휴휴, 4조: A조 (mine) first, B·C·D two days apart each, as 모든 조 보기 keeps them.
+        val steps = listOf(1L, 1L, 2L, 2L, null, null, null, null)
+        val sender = TeamRoster(listOf(TeamRoster.Team("A조", 0, mine = true), TeamRoster.Team("B조", 2), TeamRoster.Team("C조", 4), TeamRoster.Team("D조", 6)))
+        val teams = TeamAnchors.ofRoster(sender, jan5, 8)
+        assertEquals(listOf("A조" to jan5, "B조" to jan5.plusDays(2), "C조" to jan5.plusDays(4), "D조" to jan5.plusDays(6)), teams.map { it.name to it.anchor })
+        // A coworker picks C조: their order starts on C조's day, and every team works what the sender's phone says it works.
+        val mine = TeamAnchors.roster(teams, jan5.plusDays(4), 8)!!
+        assertEquals("C조", mine.mine.name)
+        val theirs = WorkPattern.Rotation(startDate = jan5, steps = steps, anchorDate = jan5.plusDays(4))
+        val senders = WorkPattern.Rotation(startDate = jan5, steps = steps, anchorDate = jan5)
+        (0L until 16L).map(jan5::plusDays).forEach { day ->
+            sender.teams.forEach { t ->
+                assertEquals("${t.name} $day", sender.shiftOn(senders, t, day), mine.shiftOn(theirs, mine.teams.first { it.name == t.name }, day))
+            }
+        }
+        assertEquals(4, TeamAnchors.stepOn(jan5, jan5.plusDays(12), 8))
+    }
+
+    @Test fun `nothing goes for one team, two teams on one day, or an answer that is none of them`() {
+        assertTrue(TeamAnchors.ofRoster(TeamRoster(listOf(TeamRoster.Team("A조", 0, true))), jan5, 8).isEmpty())
+        assertTrue(TeamAnchors.ofRoster(TeamRoster(listOf(TeamRoster.Team("A조", 0, true), TeamRoster.Team("B조", 8))), jan5, 8).isEmpty())
+        val teams = listOf(CycleTeam("1조", jan5), CycleTeam("2조", jan5.plusDays(2)))
+        assertNull(TeamAnchors.roster(teams, jan5.plusDays(1), 4))
+        assertEquals(listOf(2, 0), TeamAnchors.roster(teams, jan5.plusDays(2), 4)!!.teams.map { it.lag })
     }
 }

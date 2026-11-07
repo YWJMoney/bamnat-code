@@ -783,7 +783,9 @@ class RecipeClient(
                 "opinion" -> "의견을 5자 이상 120자 이하로 적어 주세요"
                 "own" -> "내 레시피에는 누를 수 없어요"
                 // PC 확인 보안 6차: not always 신고, nor 30 days (운영자 가림, 30·90일 단계); the same words as 광장's.
-                "muted" -> "운영 원칙을 지키지 않은 글·작품이 있어 지금은 쓸 수 없어요"
+                "muted" -> (e as? CompanyException)?.untilMillis?.let { com.bamnat.core.plaza.CommunityCare.mutedText(it) }
+                    ?: "운영 원칙을 지키지 않은 글·작품이 있어 지금은 쓸 수 없어요"
+                "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
                 "not_found" -> "지워졌거나 가려진 레시피예요"
                 "too_long" -> "40자까지 쓸 수 있어요"
                 "two_themes" -> "모음에는 테마를 하나만 넣을 수 있어요. 나머지는 탭별 작품으로 골라 주세요"

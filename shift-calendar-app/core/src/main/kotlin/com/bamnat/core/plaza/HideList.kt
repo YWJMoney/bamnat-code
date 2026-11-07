@@ -61,4 +61,28 @@ object PlazaRules {
     fun changedSince(agreed: Int): List<Int> = if (agreed <= 0) emptyList() else SINCE.indices.filter { SINCE[it] > agreed }
 
     fun agreed(version: Int): Boolean = version >= VERSION
+
+    /**
+     * 1.39 [CARE-12] 운영 규칙 2판(6항 안내·경고와 쉬어 가기, 7항 해명). 사용자 2026-11-07 승인. 처리방침 3.12 시행일에
+     * `community.care`가 켜질 때만 이 판을 쓰므로([care]), 켜지기 전에는 아무에게도 다시 동의를 묻지 않아요.
+     */
+    const val VERSION_CARE = 2
+
+    private val CARE_LINE = "운영자가 확인한 일이 되풀이되면 먼저 알리고, 그래도 되풀이되면 며칠 쉬어 가요. 해명하면 사람이 다시 봐요. " +
+        "마음에 들지 않는 사람의 글은 ‘이 사람 글 안 보기’로 가릴 수 있어요."
+
+    fun version(care: Boolean): Int = if (care) VERSION_CARE else VERSION
+
+    fun lines(care: Boolean): List<String> = if (care) LINES.dropLast(1) + CARE_LINE else LINES
+
+    fun since(care: Boolean): List<Int> = if (care) SINCE.dropLast(1) + VERSION_CARE else SINCE
+
+    fun changedSince(agreed: Int, care: Boolean): List<Int> =
+        if (agreed <= 0) emptyList() else since(care).let { s -> s.indices.filter { s[it] > agreed } }
+
+    fun agreed(version: Int, care: Boolean): Boolean = version >= version(care)
+
+    /** The one line on the card above the writing box. */
+    fun cardLine(care: Boolean): String = if (care) "누군지 알 수 있는 정보·욕설·광고는 쓰지 않아요. 되풀이되면 먼저 알리고 며칠 쉬어 가요"
+        else "누군지 알 수 있는 정보·욕설·광고는 쓰지 않아요. 신고가 모이면 가려지고, 어기면 글쓰기가 막힐 수 있어요"
 }

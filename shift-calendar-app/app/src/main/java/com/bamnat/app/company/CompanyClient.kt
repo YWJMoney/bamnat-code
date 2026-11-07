@@ -520,7 +520,12 @@ class CompanyException(
     val retryAfter: Int? = null,
     /** "device" (this phone did it often), "network" (many phones on the same Wi-Fi) or "reads"; null when not said. */
     val why: String? = null,
+    /** 1.39 [CARE-02] With "muted": when 쉬기 ends (ISO), so the app can say the day. */
+    val until: String? = null,
 ) : IOException(code) {
+    /** [until] as epoch millis, or null. */
+    val untilMillis: Long? get() = until?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+
     /** [SRV-07] No connection, a busy or broken server, a sign-in page: worth sending again later. */
     val retryable: Boolean get() = code in RETRY || code.startsWith("http_5")
 
@@ -619,6 +624,15 @@ interface CompanyApi {
     suspend fun enterContest(device: String, style: String, code: String, on: Boolean): Unit = throw CompanyException("offline")
     /** 1.36 [VIL-13] My newest posts and replies in the plazas. */
     suspend fun myPosts(device: String): List<MyPost> = throw CompanyException("offline")
+
+    /** 1.39 [CARE-03] 마을을 열 때 한 번: 읽지 않은 안내, 지금 쉬기, 해명 상태. 서버가 모르면 빈 것. */
+    suspend fun careStanding(device: String): com.bamnat.core.plaza.CareStanding = com.bamnat.core.plaza.CareStanding()
+
+    /** 1.39 [CARE-03] 안내를 '확인했어요'. */
+    suspend fun careSeen(device: String, id: String) = Unit
+
+    /** 1.39 [CARE-10] 해명(또는 가려진 글 '다시 보여 주세요', target "post:<id>"): 나만 보는 문의가 돼요. 문의 번호를 돌려줘요. */
+    suspend fun careAppeal(device: String, target: String, text: String): String = throw CompanyException("offline")
     /** 1.36 [VIL-16] A 자랑 with one of my public recipes ([code]) on it. */
     suspend fun postShow(device: String, company: String, setup: String, body: String, code: String): String =
         throw CompanyException("offline")
@@ -886,6 +900,19 @@ class CompanyClient(
 
     override suspend fun myPosts(device: String): List<MyPost> = serverCall {
         myPostsOf(exchange("GET", "/api/posts/mine", device = device).json)
+    }
+
+    override suspend fun careStanding(device: String): com.bamnat.core.plaza.CareStanding = serverCall {
+        careStandingOf(exchange("GET", "/api/community/standing", device = device).json)
+    }
+
+    override suspend fun careSeen(device: String, id: String) = serverCall {
+        request("POST", "/api/community/standing/seen", JSONObject().put("device", device).put("id", id))
+        Unit
+    }
+
+    override suspend fun careAppeal(device: String, target: String, text: String): String = serverCall {
+        request("POST", "/api/community/appeal", JSONObject().put("device", device).put("target", target).put("text", text.trim())).getString("inquiry")
     }
 
     override suspend fun pollVote(device: String, id: String, choice: Int?): Poll = serverCall {
@@ -1172,7 +1199,7 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
             "팔로우 $follows".takeIf { follows > 0 }, "공유 링크 ${links}개".takeIf { links > 0 },
         )
         val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
-        val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 연결한 뒤 다시 누르면 마저 지워요" else ""
+        val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 인터넷이 연결되면 저절로 마저 지워요" else ""
         return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) + left
     }
 }
@@ -1524,7 +1551,7 @@ private fun exchangeOnce(
             val err = runCatching { JSONObject(text) }.getOrNull()
             val retry = err?.optInt("retryAfter")?.takeIf { it > 0 } ?: conn.getHeaderField("Retry-After")?.trim()?.toIntOrNull()
             throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"),
-                retry, err?.optStringOrNull("why"))
+                retry, err?.optStringOrNull("why"), err?.optStringOrNull("until"))
         }
         result = NetTimings.Result.OK
         return Answer(code, if (text.isBlank()) JSONObject() else JSONObject(text), conn.getHeaderField("ETag"))
@@ -1607,3 +1634,25 @@ internal fun JSONArray?.lines(): List<String> = if (this == null) emptyList() el
 }
 
 internal fun JSONArray?.objects(): List<JSONObject> = if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
+
+
+/** 1.39 [CARE-03] `GET /api/community/standing`: 없는 칸은 비워 둬요(옛 서버는 404라 [CompanyApi.careStanding]이 빈 것을 줘요). */
+internal fun careStandingOf(o: JSONObject): com.bamnat.core.plaza.CareStanding {
+    fun ms(s: String?): Long? = s?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
+    fun appeal(x: JSONObject): String? = x.optJSONObject("appeal")?.let { a -> if (a.isNull("result")) "" else a.optString("result") }
+    fun note(x: JSONObject, hold: Boolean) = com.bamnat.core.plaza.CareNote(
+        id = x.getString("id"), reason = x.optString("reason", "other"), note = x.optStringOrNull("note"), by = x.optString("by", "operator"),
+        about = x.optStringOrNull("about"), scope = if (hold) x.optString("scope", "opinion") else null,
+        days = x.optInt("days").takeIf { it > 0 }, untilMillis = ms(x.optStringOrNull("until")), appeal = appeal(x),
+    )
+    return com.bamnat.core.plaza.CareStanding(
+        warning = o.optJSONObject("warning")?.let { note(it, false) },
+        hold = o.optJSONObject("hold")?.let { note(it, true) },
+        limitAppeal = when {
+            !o.has("limitAppeal") -> null
+            o.isNull("limitAppeal") -> "none"
+            else -> o.optJSONObject("limitAppeal")?.let { a -> if (a.isNull("result")) "" else a.optString("result") } ?: "none"
+        },
+        answerHours = o.optInt("answerHours", com.bamnat.core.plaza.CommunityCare.ANSWER_HOURS),
+    )
+}
