@@ -722,8 +722,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [GUIDE-06] A feature turned off from its ⋮: where it comes back, one tap away.
     LaunchedEffect(Unit) {
-        com.bamnat.app.ui.guide.FeatureLinks.turnedOff.collect { name ->
-            val result = snackbar.showSnackbar("‘$name’ 꺼졌어요. 설정 › 기능 켜고 끄기에서 다시 켤 수 있어요",
+        com.bamnat.app.ui.guide.FeatureLinks.turnedOff.collect { off ->
+            // 1.39 발굴 [GUIDE-06][GUIDE-21] A card's records stay: said so, with where it comes back.
+            val kept = if (off.keepsRecords) " 적은 기록은 그대로 남아요." else ""
+            val result = snackbar.showSnackbar("‘${off.name}’ 껐어요.$kept 설정 › 기능 켜고 끄기에서 다시 켤 수 있어요",
                 actionLabel = "바로 가기", duration = SnackbarDuration.Long)
             if (result == SnackbarResult.ActionPerformed) nav.navigate(Routes.FEATURES) { launchSingleTop = true }
         }

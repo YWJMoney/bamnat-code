@@ -90,8 +90,16 @@ fun FeatureMenuButton(card: CardFeature, modifier: Modifier = Modifier) {
             Icon(Icons.Filled.MoreVert, "‘${card.feature.name}’ 더 보기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            // 1.39 발굴 [GUIDE-06][GUIDE-21] G2 PC 5c4ad849 (가게 '직원 인건비' ⋮ › 이 기능 끄기가 기록을 지우는 것처럼 보임):
+            // the item says the records stay and where it comes back, before it is tapped.
             DropdownMenuItem(
-                text = { Text("이 기능 끄기") },
+                text = {
+                    androidx.compose.foundation.layout.Column {
+                        Text("이 기능 끄기")
+                        Text("화면에서만 숨겨요. 적은 기록은 그대로 남아요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
                 leadingIcon = { Icon(Icons.Outlined.ToggleOff, null) },
                 onClick = {
                     open = false
@@ -99,7 +107,13 @@ fun FeatureMenuButton(card: CardFeature, modifier: Modifier = Modifier) {
                 },
             )
             DropdownMenuItem(
-                text = { Text("기능 켜고 끄기") },
+                text = {
+                    androidx.compose.foundation.layout.Column {
+                        Text("기능 켜고 끄기")
+                        Text("끈 기능은 여기서 다시 켜요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
                 leadingIcon = { Icon(Icons.Outlined.Tune, null) },
                 onClick = { open = false; FeatureLinks.openSwitches() },
             )
@@ -107,9 +121,9 @@ fun FeatureMenuButton(card: CardFeature, modifier: Modifier = Modifier) {
     }
 }
 
-/** [GUIDE-06] Off, then said where it comes back: "꺼졌어요. 설정 › 기능 켜고 끄기에서 다시 켤 수 있어요". */
+/** [GUIDE-06] Off, then said that the records stay and where it comes back. */
 fun turnOff(c: com.bamnat.app.AppContainer, feature: AppFeature, calendar: String) {
-    if (FeatureSwitches.set(c, feature, calendar, false)) FeatureLinks.saidOff(feature.name)
+    if (FeatureSwitches.set(c, feature, calendar, false)) FeatureLinks.saidOff(feature.name, keepsRecords = true)
 }
 
 /**
