@@ -108,10 +108,12 @@ fun LeaderTeamScreen(calendarId: String, onBack: () -> Unit, startTeam: String? 
     val store = c.phaseThree
     val teams by store.teamList.collectAsStateWithLifecycle(null)
     // 관리 화면 opens one team straight away; its 뒤로 goes back there, not to the team list.
-    var openId by rememberSaveable { mutableStateOf(startTeam) }
+    // 1.39 [READ-31]: a roster shared from 카카오톡·갤러리 and put on a team opens that team with it waiting, as a picked file does.
+    val handed = remember { com.bamnat.app.imports.SharedToManage.takeTeam() }
+    var openId by rememberSaveable { mutableStateOf(handed?.teamId ?: startTeam) }
     var making by rememberSaveable { mutableStateOf(false) }
     // 1.38 가져오기: a team made from a file opens with that file waiting for ① 이름 ② 코드.
-    var madeFrom by remember { mutableStateOf<Pair<com.bamnat.core.imports.RosterGrid, Boolean>?>(null) }
+    var madeFrom by remember { mutableStateOf(handed?.let { it.grid to it.fromPhoto }) }
     val open = teams?.firstOrNull { it.id == openId }
     // PC 10차(낮음): with two or more teams, 뒤로 from a team goes to the team list first (표 이름 목록), not past it; with one, there is no list to see.
     val several = teams.orEmpty().count { !it.archived } >= 2

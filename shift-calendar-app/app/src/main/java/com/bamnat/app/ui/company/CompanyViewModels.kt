@@ -174,6 +174,8 @@ data class Phases(
     val sent: Int? = null,
     val team: String? = null,
     val hasPattern: Boolean = false,
+    /** [CYC-06] 1.39: every 조 the file names, with the row each works today, so a coworker picks theirs by name. */
+    val teams: List<Pair<String, Int>> = emptyList(),
 )
 
 /**
@@ -221,7 +223,12 @@ internal suspend fun rotationPhases(c: AppContainer, text: String, fromSender: B
         options.firstOrNull { orderFrom(it.step) == order }?.step
     }
     val team = rotation.optString("team").trim().take(CompanyShare.MAX_TEAM).takeIf { fromSender && it.isNotEmpty() }
-    return Phases(options, n, current, sent, team, snapshot.hasPattern)
+    // [CYC-06] 1.39: the file's 조 with their days: each 조's row today, the first row of the same order.
+    val teams = if (!fromSender) emptyList() else com.bamnat.core.setup.TeamAnchors.pickable(CompanyShare.teamsOf(text), n).mapNotNull { (name, day) ->
+        val order = orderFrom(com.bamnat.core.setup.TeamAnchors.stepOn(day, today, n))
+        options.firstOrNull { orderFrom(it.step) == order }?.let { name to it.step }
+    }.takeIf { it.size >= 2 }.orEmpty()
+    return Phases(options, n, current, sent, team, snapshot.hasPattern, teams)
 }
 
 /** [COMM-01] A company's shared setups, and applying one from today's place in its rotation. */
