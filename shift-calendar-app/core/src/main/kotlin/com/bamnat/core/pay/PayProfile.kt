@@ -330,6 +330,11 @@ data class PayProfile(
     val previousYearPay: Long? = null,
     /** [LEDG-29] The 가계부 counts pay as the take-home that arrives on the pay day ([PayIncome]) instead of the month's 세전. */
     val ledgerTakeHome: Boolean = false,
+    /**
+     * 1.39 [PAYX-59] 4대보험 lines the worker is not in (공식 대조 G2·G3·G6: 만 60세 이상 국민연금, 주 15시간 미만, 65세 이후 고용의
+     * 고용보험). The user picks them (the app has no 생년월일); [TakeHome] leaves them out of 예상 실수령 and says why.
+     */
+    val insuranceOff: Set<InsuranceLine> = emptySet(),
 ) {
     /** [HRLY-07] The weekday 주휴 weeks start on. */
     val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart

@@ -49,6 +49,7 @@ import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.money.LedgerExport
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.TakeHome
+import com.bamnat.core.pay.InsuranceLine
 import com.bamnat.core.pay.TaxMode
 import com.bamnat.core.work.HourlyWork
 import com.bamnat.core.work.WorkLogCsv
@@ -78,6 +79,42 @@ val TaxMode.label: String
         TaxMode.WITHHOLDING_3_3 -> "3.3%"
         TaxMode.INSURANCE_4 -> "4대보험"
     }
+
+/**
+ * 1.39 [PAYX-58][PAYX-59] Under a take-home's lines: why a 4대보험 line is missing or on the 28만 원 floor, and a 비과세 kind over its
+ * 월 20만 원 (식대가 둘이면 합쳐서).
+ */
+@Composable
+internal fun TakeHomeNotes(r: com.bamnat.core.pay.TakeHomeResult, profile: PayProfile?, month: YearMonth) {
+    val over = remember(profile, month) { profile?.let { TakeHome.nonTaxableParts(it, month).filter { p -> p.over } }.orEmpty() }
+    (r.notes + over.map { p -> "${p.kind} ${won(p.paid)} 중 ${won(p.amount)}까지만 비과세예요(한도는 종류마다 월 20만 원" +
+        (if (p.names.size > 1) ", ${p.names.joinToString("·")} 합쳐서" else "") + ")" }).forEach {
+        Text("ⓘ $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * 1.39 [PAYX-59] 공식 대조 G2·G3·G6: 4대보험 the worker is out of, picked here (the app does not ask a 생년월일): 만 60세 이상 국민연금,
+ * 65세 이후 새로 일한 곳의 고용보험, 주 15시간 미만. Each chip on means that line is not taken off.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun InsuranceOffRow(off: Set<InsuranceLine>, onChange: (Set<InsuranceLine>) -> Unit) {
+    var open by remember { mutableStateOf(off.isNotEmpty()) }
+    if (!open) {
+        TextButton(onClick = { open = true }) { Text("떼지 않는 보험이 있어요 (만 60세 이상·주 15시간 미만 등)") }
+        return
+    }
+    Text("떼지 않는 보험", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        InsuranceLine.entries.forEach { l ->
+            FilterChip(selected = l in off, onClick = { onChange(if (l in off) off - l else off + l) }, label = { Text("${l.label} 안 뗌") })
+        }
+    }
+    Text("국민연금: 만 60세가 되면 의무 가입이 끝나요(국민연금법 제6조). 고용보험: 65세 이후 새로 일한 곳은 떼지 않아요(고용보험법 제10조). " +
+        "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 넘게 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
 
 /** [HRLY-04] "예상 실수령 1,784,750원 (4대보험)" under a pay before tax; nothing when no tax is taken. */
 @Composable
@@ -109,13 +146,26 @@ internal fun HourlyPayCard(
         }
         // [PAYR-04] The same 가족·자녀 the stats card sets, so both screens show one take-home.
         val r = remember(gross, profile, month) {
-            TakeHome.estimate(gross, profile.taxMode, profile.taxFamily, month.atDay(1), profile.taxChildren, TakeHome.nonTaxable(profile, month))
+            TakeHome.forProfile(profile, month, gross)
         }
         r.deductions.forEach { (name, amount) ->
             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                 Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Text(if (unlocked) "−${won(amount)}" else "●●●원", style = MaterialTheme.typography.bodyMedium)
             }
+        }
+        TakeHomeNotes(r, profile, month)
+        if (profile.taxMode == TaxMode.INSURANCE_4) {
+            // 1.39 [PAYX-59] G2: 주마다 15시간이 안 되는 달이면 국민연금·건강보험은 대상이 아니에요(한 번 눌러 빼기).
+            val short = holidayWeeks.isNotEmpty() && holidayWeeks.all { it.workedMinutes < 15 * 60 }
+            if (short && (InsuranceLine.PENSION !in profile.insuranceOff || InsuranceLine.HEALTH !in profile.insuranceOff)) {
+                Text("이번 달은 주마다 15시간이 안 돼요. 주 15시간(월 60시간) 미만이면 국민연금·건강보험은 떼지 않아요(국민연금법 시행령 제2조, 국민건강보험법 시행령 제9조).",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
+                TextButton(onClick = { vm.update { it.copy(insuranceOff = it.insuranceOff + InsuranceLine.PENSION + InsuranceLine.HEALTH) } }) {
+                    Text("국민연금·건강보험 떼지 않기")
+                }
+            }
+            InsuranceOffRow(profile.insuranceOff) { off -> vm.update { it.copy(insuranceOff = off) } }
         }
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("세전 ${if (unlocked) won(r.gross) else "●●●원"}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),

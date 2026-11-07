@@ -69,6 +69,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -201,19 +202,30 @@ fun DayPanel(
     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
     // 1.38 PC 12차 유형별 빈틈 9: with the day's story up, the head's '메모 · …' token said the same thing again above it.
     var storyUp by remember(date) { mutableStateOf(false) }
-    Column(modifier) {
+    // [BIGTXT-01] 1.39 With a big font on a short screen the day's head alone filled the sheet and its last chips were squeezed: the head
+    // then scrolls with the groups, as one page; otherwise it stays put above them.
+    val conf = androidx.compose.ui.platform.LocalConfiguration.current
+    val oneScroll = scrollGroups && conf.fontScale >= 1.5f && conf.screenHeightDp < 760
+    val head: @Composable () -> Unit = {
         DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp), compact = compact, memoToken = !storyUp)
         weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
         // [RUL-03] 1.36 단추 on the day screen (스튜디오·받은 테마).
         com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.DAY, date, Modifier.padding(bottom = 4.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+    }
+    val body: @Composable () -> Unit = {
+        DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds, onRealign,
+            onStory = { storyUp = it })
+    }
+    if (oneScroll) Column(modifier.imePadding().verticalScroll(rememberScrollState())) {
+        head()
+        Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding)) { body() }
+    } else Column(modifier) {
+        head()
         Column(
             (if (scrollGroups) Modifier.weight(1f, fill = false).imePadding().verticalScroll(rememberScrollState()) else Modifier)
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding),
-        ) {
-            DayGroups(day, today, snapshot, vm, groups, memoFocus, onOpenMemo, onNewMemo, onOpenShiftTypes, onOpenPay, onOpenExtraKinds, onRealign,
-                onStory = { storyUp = it })
-        }
+        ) { body() }
     }
 }
 
@@ -273,14 +285,15 @@ private fun DayGroups(
     // 1.38 [FLOW-08] 내 하루 이야기: shifts (last night's too), alarms, sleep, money and memos of the day on one line,
     // only when it says more than the work card (a sleep, money or memo on it).
     val sleepLog by vm.sleepLog.collectAsStateWithLifecycle()
-    val story = remember(snapshot, date, sleepLog, dayBook, memos, tips, settings.dayStory, settings.alarmsEnabled, calendarAlarms) {
+    val story = remember(snapshot, date, sleepLog, dayBook, memos, tips, settings.dayStory, settings.alarmsEnabled, calendarAlarms, settings.dayStartMinutes) {
         if (!settings.dayStory) null else runCatching {
             val ring = settings.alarmsEnabled && calendarAlarms
             val alarmsAround = if (!ring) emptyList() else listOf(date, date.plusDays(1))
                 .flatMap { com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snapshot.resolver, it) }
             val near = sleepLog.filter { it.start.toLocalDate() in date.minusDays(1)..date }
             val items = com.bamnat.core.design.DayStoryItems.of(date, snapshot.resolver, alarmsAround, near, tips, dayBook.entries,
-                com.bamnat.core.memo.MemoStory.items(memos, date))
+                com.bamnat.core.memo.MemoStory.items(memos, date),
+                dayStartsAt = com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)) // 1.39 [FLOW-30]
             items.takeIf { com.bamnat.core.design.DayStoryItems.worthShowing(com.bamnat.core.design.DayStory.arrange(date, it)) }
         }.getOrNull()
     }
@@ -513,7 +526,9 @@ private fun DayGroups(
 
     // [DAY-04] The order of these groups is the user's; changed here, where it shows.
     var ordering by remember { mutableStateOf(false) }
-    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '일정 시간도 적기'가 한 글자씩 세로로) the two buttons wrap to the next line instead.
+    @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+    androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = { ordering = true }) {
             Icon(Icons.Filled.SwapVert, contentDescription = null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
@@ -576,20 +591,24 @@ private fun DayGroup(
         ) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(22.dp))
             Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-                if (summary != null && !(open && onToggle == null)) {
-                    Text(
-                        summary,
-                        style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
-                        color = summaryColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
-                        // [VIS-05] Beside a switch "06:10에 울려요 · 직접 정함" ran past one line on the tablet: two lines.
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+            val head: @Composable () -> Unit = {
+                Column {
+                    Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                    if (summary != null && !(open && onToggle == null)) {
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
+                            color = summaryColor ?: MaterialTheme.colorScheme.onSurfaceVariant,
+                            // [VIS-05] Beside a switch "06:10에 울려요 · 직접 정함" ran past one line on the tablet: two lines.
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
-            trailing?.invoke()
+            // [BIGTXT-01] 1.39 With a big font the button beside the title ('자세히 쓰기') squeezed '메모' to a letter a line: it goes under it.
+            if (trailing != null) com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 96.dp, start = head, end = trailing)
+            else Box(Modifier.weight(1f)) { head() }
             // 1.37 시간 바퀴 PC LOW: a switch right beside the arrow was easy to hit for the other; a gap and a line keep them apart.
             if (trailing != null && onToggle != null) {
                 Spacer(Modifier.width(12.dp))

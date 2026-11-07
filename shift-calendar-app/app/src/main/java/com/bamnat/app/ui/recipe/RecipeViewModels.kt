@@ -3,6 +3,7 @@ package com.bamnat.app.ui.recipe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.core.recipe.keepMyCellContent
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.data.db.AppliedRecipeEntity
 import com.bamnat.app.recipe.MyRecipes
@@ -28,6 +29,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 
 /** [MKX-02] A tab's name as the 기능별 탭 chips say it. */
@@ -48,6 +51,11 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         const val TYPING_PAUSE_MS = 500L
         val HALVES = listOf(RecipeClient.SCOPE_THEME, RecipeClient.SCOPE_TAB, RecipeClient.SCOPE_LOGIC)
         fun halfName(h: String) = when (h) { RecipeClient.SCOPE_LOGIC -> "규칙·단추"; RecipeClient.SCOPE_TAB -> "기능별 탭"; else -> "테마" }
+
+        /** 1.39 [MKP-01] A list as last seen, for the same 구간·칸·찾기 opened again (while the app runs). */
+        private class Kept(val items: List<RecipeItem>, val next: Int?, val at: Long)
+        private val pages = LinkedHashMap<String, Kept>()
+        private const val PAGES = 16
     }
 
     enum class Tab(val key: String, val label: String) { SHOWCASE("showcase", "이런 것도"), HOT("hot", "요즘 뜨는"), GOOD("good", "좋은 순"), NEW("new", "새로"), OFFICIAL("official", "시작 레시피"), DATA("data", "공개 자료") }
@@ -99,39 +107,74 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     /** The half [kind] is in. */
     fun halfNow(): String = halfOf(_state.value.kind)
 
+    /** The list asked for last; a newer ask takes its place (a tab tapped twice, words typed on). */
+    private var loading: kotlinx.coroutines.Job? = null
+    private var counting: kotlinx.coroutines.Job? = null
+
+    /**
+     * 1.39 [MKP-01] 장터 로딩 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"):
+     * - the list the phone saw last for the same 구간·칸·찾기 shows at once while it is read again ([pages]);
+     * - the list shows as soon as it comes; how many the other 구간 have (찾기·빈 구간) is counted after, not before it;
+     * - an older ask still on its way is dropped, so a slow answer never takes the place of the one asked last.
+     */
     fun load(more: Boolean = false) {
         if (!enabled) { _state.value = _state.value.copy(error = "장터는 아직 열리지 않았어요"); return }
         val s = _state.value
         if (more && s.next == null) return
-        _state.value = s.copy(loading = true, error = null)
-        viewModelScope.launch {
-            _state.value = try {
-                val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
+        if (more && loading?.isActive == true) return
+        loading?.cancel()
+        counting?.cancel()
+        val styleNow = if (s.allStyles) null else style
+        val key = listOf(styleNow?.name, s.tab.key, s.query.trim(), s.kind).joinToString("|")
+        val kept = if (more) null else synchronized(pages) { pages[key] }
+        _state.value = if (kept != null) s.copy(items = kept.items, next = kept.next, loadedAt = kept.at, loading = true, error = null)
+            else s.copy(loading = true, error = null, items = if (more) s.items else emptyList())
+        loading = viewModelScope.launch {
+            try {
+                val page = c.recipeApi.list(styleNow, s.tab.key, s.query, if (more) s.next ?: 0 else 0, s.kind)
+                MarketShots.feed(c, page)
                 // [PRF-05] 1.36 차단한 분의 작품은 이 폰에서 빼요 (목록은 모든 폰이 같은 캐시).
                 val got = page.items.filter { RecipeClient.fits(it, s.kind) && !c.recipes.hides(it) }
-                // PC D12 (사용성 낮): 다른 구간은 '새로'(모든 글)에서 세어요. 시작 레시피 칸처럼 좁은 칸에서 찾아도 길이 보이게, 지금 구간도
-                // 이 칸에 없으면 '새로'에 몇 개인지.
-                val other = if (more) _state.value.elsewhere else if (s.query.isBlank()) emptyMap() else HALVES.filter { h -> h != halfOf(s.kind) || (s.tab != Tab.NEW && got.isEmpty()) }.mapNotNull { h ->
-                    runCatching { c.recipeApi.list(if (s.allStyles) null else style, Tab.NEW.key, s.query, 0, h) }.getOrNull()?.let { p ->
+                val items = if (more) _state.value.items + got else got
+                val at = com.bamnat.core.time.Today.millis()
+                if (!more) synchronized(pages) { pages[key] = Kept(items, page.next, at); while (pages.size > PAGES) pages.remove(pages.keys.first()) }
+                _state.value = _state.value.copy(items = items, next = page.next, loading = false, loadedAt = at,
+                    elsewhere = if (more) _state.value.elsewhere else emptyMap(), other = if (more) _state.value.other else 0)
+                if (!more) count(s, styleNow, got.isEmpty(), items.isNotEmpty())
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(loading = false, error = RecipeClient.problem(e))
+            }
+        }
+    }
+
+    /**
+     * PC D12 (사용성 낮): 다른 구간은 '새로'(모든 글)에서 세어요. 시작 레시피 칸처럼 좁은 칸에서 찾아도 길이 보이게, 지금 구간도 이 칸에 없으면
+     * '새로'에 몇 개인지. PC 확인 38d63451: an empty 테마 says the 기능별 탭 has some (and the other way round), not only "아직 없어요".
+     * 1.39 [MKP-01]: counted after the list is on the screen, the halves at the same time.
+     */
+    private fun count(s: State, styleNow: WorkStyle?, noneHere: Boolean, any: Boolean) {
+        val otherKind = when {
+            s.kind == RecipeClient.SCOPE_THEME -> RecipeClient.SCOPE_TAB
+            s.kind?.startsWith(RecipeClient.SCOPE_TAB) == true -> RecipeClient.SCOPE_THEME
+            else -> null
+        }
+        val wantOther = !any && otherKind != null && s.query.isBlank()
+        if (s.query.isBlank() && !wantOther) return
+        counting = viewModelScope.launch {
+            val other = if (s.query.isBlank()) emptyMap() else HALVES.filter { h -> h != halfOf(s.kind) || (s.tab != Tab.NEW && noneHere) }.map { h ->
+                async {
+                    runCatching { c.recipeApi.list(styleNow, Tab.NEW.key, s.query, 0, h) }.getOrNull()?.let { p ->
                         val n = p.items.count { RecipeClient.fits(it, h) }
                         if (n == 0) null else h to (if (p.next != null) "${n}개 넘게" else "${n}개")
                     }
-                }.toMap()
-                val items = if (more) _state.value.items + got else got
-                // PC 확인 38d63451: an empty 테마 says the 기능별 탭 has some (and the other way round), not only "아직 없어요".
-                val otherKind = when {
-                    s.kind == RecipeClient.SCOPE_THEME -> RecipeClient.SCOPE_TAB
-                    s.kind?.startsWith(RecipeClient.SCOPE_TAB) == true -> RecipeClient.SCOPE_THEME
-                    else -> null
                 }
-                val otherCount = if (items.isNotEmpty() || otherKind == null || s.query.isNotBlank()) 0 else runCatching {
-                    c.recipeApi.list(if (s.allStyles) null else style, "hot", "", 0, otherKind).items
-                        .count { RecipeClient.fits(it, otherKind) && !c.recipes.hides(it) }
-                }.getOrDefault(0)
-                _state.value.copy(items = items, next = page.next, loading = false, elsewhere = other, other = otherCount, loadedAt = com.bamnat.core.time.Today.millis())
-            } catch (e: Exception) {
-                _state.value.copy(loading = false, error = RecipeClient.problem(e))
-            }
+            }.awaitAll().filterNotNull().toMap()
+            val otherCount = if (!wantOther) 0 else runCatching {
+                c.recipeApi.list(styleNow, "hot", "", 0, otherKind).items.count { RecipeClient.fits(it, otherKind) && !c.recipes.hides(it) }
+            }.getOrDefault(0)
+            _state.value = _state.value.copy(elsewhere = other, other = otherCount)
         }
     }
 
@@ -156,7 +199,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val mode: RecipePieces.Mode = if (kind == PieceKind.MEMO_TEMPLATES) RecipePieces.Mode.BOTH else RecipePieces.Mode.REPLACE,
         val lines: List<RecipePieces.Change> = emptyList(),
         /** [RCX-23] Titles of mine the piece runs into (메모 틀), asked 바꾸기 / 둘 다 두기. */
-        val clashes: List<String> = emptyList())
+        val clashes: List<String> = emptyList(),
+        /** 1.39 [MKP-05] 기능 조각 전후: what it touches here, 지금 ↔ 넣으면. */
+        val sides: List<RecipePieces.Side> = emptyList())
 
     data class State(
         val doc: RecipeDoc? = null, val recipe: Recipe? = null, val error: String? = null,
@@ -193,12 +238,23 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /** 1.39 [MKP-03] Done once the whole work (this phone's 좋아요, whether it is mine) has been read, or could not be. */
+    private val read = kotlinx.coroutines.CompletableDeferred<Unit>()
     /** The last work's written form, to tell a newer app's work from one changed on the way. */
     private var newerBody: String? = null
 
     init { load() }
 
     fun load() {
+        // 1.39 [MKP-03] 작품 바로 열기 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): a card tapped in the 장터 already brought the
+        // work's written form; it shows at once (조각·미리 보기·입어 보기) while the whole work is read, and 넣기 waits for that.
+        if (_state.value.doc == null) MarketShots.seen(code)?.let { d ->
+            runCatching { d.recipe() }.getOrNull()?.let { r ->
+                newerBody = d.body
+                _state.value = _state.value.copy(doc = d, recipe = r, pieces = piecesOf(r), error = null, votes = Votes(d.item.likes, d.item.dislikes, null))
+                preview()
+            }
+        }
         viewModelScope.launch {
             try {
                 // PC 확인 W34 1.36 (처음 들어갈 때 한 번 '인터넷에 연결되지 않았어요', 다시 해 보기로 열림): a connection that drops on the
@@ -208,9 +264,12 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 }
                 newerBody = doc.body
                 val r = doc.recipe()
-                val pieces = r.pieces.map { p -> Piece(p.kind, on = style == null || style in p.kind.styles, fits = style == null || style in p.kind.styles) }
-                _state.value = _state.value.copy(doc = doc, recipe = r, pieces = pieces, error = null,
+                MarketShots.keepDoc(c, doc)
+                // What was ticked on the work shown from the card stays, when it is the same work.
+                val same = _state.value.doc?.hash == doc.hash && _state.value.pieces.isNotEmpty()
+                _state.value = _state.value.copy(doc = doc, recipe = r, pieces = if (same) _state.value.pieces else piecesOf(r), error = null,
                     votes = Votes(doc.item.likes, doc.item.dislikes, doc.myVote))
+                read.complete(Unit)
                 preview()
                 // [RCX-24] Already on this phone: 되돌리기 stays here for 7 days, not only in the moment's snackbar.
                 c.recipes.inUse().filter { it.code == code && c.recipes.canUndo(it) }.maxByOrNull { it.appliedAt }?.let { e ->
@@ -234,10 +293,15 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 _state.value = _state.value.copy(error = if (newer) "새 판 밤낮에서 만든 작품이라 이 앱에서는 열 수 없어요. 앱을 업데이트하면 열려요"
                     else "레시피가 오는 길에 바뀌었어요. 받지 않았어요")
             } catch (e: Exception) {
-                _state.value = _state.value.copy(error = RecipeClient.problem(e))
+                // 1.39 [MKP-03] Shown from the card already: it stays, and the problem is said once below.
+                _state.value = if (_state.value.doc != null) _state.value.copy(message = RecipeClient.problem(e)) else _state.value.copy(error = RecipeClient.problem(e))
+            } finally {
+                read.complete(Unit)
             }
         }
     }
+
+    private fun piecesOf(r: Recipe) = r.pieces.map { p -> Piece(p.kind, on = style == null || style in p.kind.styles, fits = style == null || style in p.kind.styles) }
 
     /**
      * [LIN-03] 1.35 내 판에 가져오기 (사용자 2026-10-30 "제작자는 해당 내용을 보고 수정을 할수 있게"): my recipe (the parent) with the
@@ -268,7 +332,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     }
 
     fun toggle(kind: PieceKind, on: Boolean) = set(kind) { it.copy(on = on) }
-    fun mode(kind: PieceKind, m: RecipePieces.Mode) = set(kind) { it.copy(mode = m) }
+    fun mode(kind: PieceKind, m: RecipePieces.Mode) { set(kind) { it.copy(mode = m) }; preview() }
     fun answer(id: String, v: Any?) { _state.value = _state.value.copy(answers = _state.value.answers + (id to v)); preview() }
 
     private fun set(kind: PieceKind, f: (Piece) -> Piece) {
@@ -289,8 +353,13 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             val clashes = r.pieces.firstOrNull { it.kind == PieceKind.MEMO_TEMPLATES }?.let { p ->
                 runCatching { c.recipes.pieces.memoClashes(RecipeResolve.piece(r, p, answers)) }.getOrDefault(emptyList())
             }.orEmpty()
+            // 1.39 [MKP-05] 지금 ↔ 넣으면, with the 바꾸기 / 둘 다 두기 chosen for each piece.
+            val modes = _state.value.pieces.associate { it.kind to it.mode }
+            val sides = r.pieces.associate { p ->
+                p.kind to c.recipes.pieces.compare(p.kind, RecipeResolve.piece(r, p, answers), calendar, modes[p.kind] ?: RecipePieces.Mode.REPLACE)
+            }
             _state.value = _state.value.copy(pieces = _state.value.pieces.map {
-                it.copy(lines = lines[it.kind].orEmpty(), clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes else emptyList())
+                it.copy(lines = lines[it.kind].orEmpty(), clashes = if (it.kind == PieceKind.MEMO_TEMPLATES) clashes else emptyList(), sides = sides[it.kind].orEmpty())
             }, looks = look)
         }
     }
@@ -315,14 +384,23 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val s0 = _state.value
         val full = s0.recipe ?: return
         // [TRY-01] Only the look parts ticked; 알람·규칙·메모 틀 as switched on.
-        val r = s0.lookParts?.let { ids ->
+        val r0 = s0.lookParts?.let { ids ->
             val picked = com.bamnat.core.recipe.LookParts.pick(full, ids).pieces
             full.copy(pieces = full.pieces.filter { it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS } + picked)
         } ?: full
         val s = s0
-        val doc = s.doc ?: return
+        val shown = s.doc ?: return
         _state.value = s.copy(applying = true)
         viewModelScope.launch {
+            // 1.39 [MKP-03] A work shown from its 장터 card goes in once it has been read whole (mine or not, its version now).
+            kotlinx.coroutines.withTimeoutOrNull(8_000) { read.await() }
+            val doc = _state.value.doc ?: shown
+            if (doc.hash != shown.hash) {
+                _state.value = _state.value.copy(applying = false, message = "그 사이 만든 분이 새 판을 올렸어요. 바뀐 조각을 보고 다시 넣어 주세요")
+                return@launch
+            }
+            // [CELL-02] 1.39 Someone else's 달력 모양 changes how my cells look, not what they show (mine as the whole read says).
+            val r = if (doc.mine) r0 else r0.keepMyCellContent()
             // [FREE-10] The looks among the chosen pieces are worn as a theme (its days, 입었던 테마, 벗기 to my own look);
             // the rest (알람, 규칙, 메모 틀) are put on as always and never run out.
             val looks = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS }.map { it.kind }.toSet()

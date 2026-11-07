@@ -538,12 +538,13 @@ class BackupManager(
                 .put("weekStart", s.weekStart.name).put("weeklyLimit", s.weeklyLimitHours)
                 .put("averageLimit", s.averageLimitHours).put("theme", s.themeMode.name)
                 .put("dynamicColor", s.dynamicColor).put("cellHours", s.showHoursInCells).put("lunar", s.showLunar).put("kani", s.showKani).put("dayStory", s.dayStory)
+                .put("dayDial", s.dayDial).put("dayStart", s.dayStartMinutes)
                 .put("orgDayGroup", s.orgDayGroup).put("orgDaysOn", s.orgDaysOn)
                 .putOpt("sound", s.defaultAlarmSound).put("vibrate", s.vibrate).put("gradual", s.gradualVolume)
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmGuard", s.alarmGuard).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("setupLater", s.setupLater).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
-                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsByPayPeriod).put("appLock", s.appLock)
+                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsPeriod == StatsPeriod.PAY).put("statsPeriod", s.statsPeriod.name).put("appLock", s.appLock)
                 // 1.37 [LEDH-06][LEDH-07] 근무가 보이는 가계부.
                 .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
                 // 1.38 [LEDH-24]
@@ -558,7 +559,7 @@ class BackupManager(
                 .put("alarmButton", s.alarmButtonAction)
                 // [DAILY-01][BACK-01][DAILY-15][DAILY-16] Added in 1.22.
                 .put("widgetMemo", s.widgetMemo).put("backupPhotos", s.backupPhotos)
-                .put("moneyLayout", s.moneyLayout).put("moneyCheckOpen", s.moneyCheckOpen).put("budgetRollover", s.budgetRollover).put("memoLayout", s.memoLayout).put("tabViews", s.tabViews).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("myColors", s.myColors).put("shiftLooks", s.shiftLooks).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("memoLook", s.memoLook).put("moneyLook", s.moneyLook).put("screenLooks", s.screenLooks).put("payLooks", s.payLooks).put("parts", s.parts).put("logic", s.logic).put("decor", s.decor).put("motion", s.motion).put("rateHint", s.rateHint)
+                .put("moneyLayout", s.moneyLayout).put("moneyCheckOpen", s.moneyCheckOpen).put("budgetRollover", s.budgetRollover).put("memoLayout", s.memoLayout).put("tabViews", s.tabViews).put("calTheme", s.calTheme).put("widgetLook", s.widgetLook).put("myColors", s.myColors).put("shiftLooks", s.shiftLooks).put("photoLook", s.photoLook).put("calView", s.calView).put("accentColor", s.accentColor).put("longPress", s.longPress).put("cellList", s.cellList).put("memoLook", s.memoLook).put("moneyLook", s.moneyLook).put("screenLooks", s.screenLooks).put("payLooks", s.payLooks).put("parts", s.parts).put("logic", s.logic).put("decor", s.decor).put("motion", s.motion).put("rateHint", s.rateHint)
                 // [ALRM-03] Added in 1.23; what was answered stays on the phone.
                 .put("alarmSuggest", s.alarmSuggest)
                 // [BAK-01] 1.25 Z: what the user chose after seeing what the law pays for work on days off.
@@ -573,7 +574,7 @@ class BackupManager(
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
                 .put("moneyNotices", s.moneyNotices).put("leaveNotice", s.leaveNotice)
                 .put("sleepTarget", s.sleepTargetMinutes).put("commute", s.commuteMinutes)
-                .put("noiseMix", s.noiseMix).put("noiseTimer", s.noiseTimerMinutes).put("sleepNightLook", s.sleepNightLook).put("smartWake", s.smartWakeMinutes) // 1.38 [SLEEP-04][DSG-07]
+                .put("noiseMix", s.noiseMix).put("noiseTimer", s.noiseTimerMinutes).put("nightLook", s.nightLook).put("smartWake", s.smartWakeMinutes) // 1.38 [SLEEP-04][DSG-07]
                 // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22.
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
                 .put("plazaRules", s.plazaRulesAgreed)
@@ -1058,6 +1059,8 @@ class BackupManager(
                     showLunar = o.optBoolean("lunar", s.showLunar),
                     showKani = o.optBoolean("kani", s.showKani),
                     dayStory = o.optBoolean("dayStory", s.dayStory),
+                    dayDial = o.optBoolean("dayDial", s.dayDial),
+                    dayStartMinutes = o.optInt("dayStart", s.dayStartMinutes).coerceIn(0, 12 * 60),
                     orgDayGroup = o.optString("orgDayGroup", s.orgDayGroup),
                     orgDaysOn = o.optBoolean("orgDaysOn", s.orgDaysOn),
                     // Sound files from another phone usually do not exist here.
@@ -1093,7 +1096,7 @@ class BackupManager(
                     stretchLimitHours = o.optInt("stretchLimit", s.stretchLimitHours).coerceIn(0, 48),
                     payDepositNotice = o.optBoolean("payDepositNotice", s.payDepositNotice),
                     calendarOnly = o.optBoolean("calendarOnly", false),
-                    statsByPayPeriod = o.optBoolean("statsPayPeriod", false),
+                    statsPeriod = StatsPeriod.read(o.optString("statsPeriod").ifEmpty { null }, o.optBoolean("statsPayPeriod", false)),
                     moneyByPayCycle = o.optBoolean("moneyPayCycle", s.moneyByPayCycle),
                     workTimeFrom = o.optLong("workTimeFrom", s.workTimeFrom).coerceAtLeast(0),
                     dayCloseNotice = o.optBoolean("dayCloseNotice", s.dayCloseNotice),
@@ -1129,6 +1132,7 @@ class BackupManager(
                     calView = o.optString("calView", s.calView),
                     accentColor = o.optLong("accentColor", s.accentColor),
                     longPress = o.optString("longPress", s.longPress).takeIf { it in com.bamnat.core.recipe.AppFeel.HOLDS } ?: s.longPress,
+                    cellList = o.optString("cellList", s.cellList).takeIf { it in AppSettings.CELL_LISTS } ?: s.cellList,
                     memoLook = o.optString("memoLook", s.memoLook), logic = o.optString("logic", s.logic), decor = o.optString("decor", s.decor), moneyLook = o.optString("moneyLook", s.moneyLook),
                     screenLooks = o.optString("screenLooks", s.screenLooks), payLooks = o.optString("payLooks", s.payLooks),
                     parts = o.optString("parts", s.parts).takeIf { com.bamnat.core.recipe.Blueprint.problem(it) == null } ?: s.parts,
@@ -1158,7 +1162,9 @@ class BackupManager(
                     sleepTargetMinutes = o.optInt("sleepTarget", s.sleepTargetMinutes).coerceIn(4 * 60, 10 * 60),
                     noiseMix = o.optString("noiseMix", s.noiseMix),
                     noiseTimerMinutes = o.optInt("noiseTimer", s.noiseTimerMinutes).coerceIn(0, 8 * 60),
-                    sleepNightLook = o.optBoolean("sleepNightLook", s.sleepNightLook),
+                    // 1.39 [FLOW-14] 밤 색; a 1.38 backup carries only 밤에는 어두운 색 (on/off).
+                    nightLook = o.optString("nightLook").takeIf { it.isNotEmpty() }?.let { com.bamnat.core.design.NightLook.of(it).key }
+                        ?: if (o.has("sleepNightLook") && !o.optBoolean("sleepNightLook", true)) com.bamnat.core.design.NightLook.OFF.key else s.nightLook,
                     smartWakeMinutes = o.optInt("smartWake", s.smartWakeMinutes).coerceIn(0, 30),
                     commuteMinutes = o.optInt("commute", s.commuteMinutes).coerceIn(0, MAX_COMMUTE_MINUTES),
                     // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22; older backups keep what this phone has.

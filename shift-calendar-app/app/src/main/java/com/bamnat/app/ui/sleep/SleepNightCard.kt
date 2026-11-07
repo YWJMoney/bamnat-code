@@ -47,19 +47,27 @@ internal fun SleepNightCard(
     smartWake: Int,
     onSmartWake: (Int) -> Unit,
     work: List<TimelineSpan> = emptyList(),
+    /** 1.39 [FLOW-12] The morning card shows the sounds to hear first; here they are not said twice. */
+    listenShown: Boolean = false,
+    onNight: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val recording by SleepRecordService.recording.collectAsStateWithLifecycle()
     var refused by remember { mutableStateOf(false) }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         refused = !ok
-        if (ok) SleepRecordService.start(context)
+        if (ok) { SleepRecordService.start(context); onNight() }
     }
     SectionCard(title = "자는 동안 소리") {
         val r = recording
         if (r != null) {
             Text("${Fmt.time(local(r.startedAt).toLocalTime())}부터 재는 중 · 들린 소리 ${r.events}번", style = MaterialTheme.typography.bodyMedium)
             // PC 실사용(경쟁 앱이 짧은 측정을 끝에 와서야 거절): what a short night gives is said while measuring, not after.
+            // 1.39 [SLEEP-06] When it ends by itself, said before the night rather than found in the morning.
+            r.endsAt?.let { end ->
+                Text("알람을 끄거나 깼어요를 누르면 끝나요. 늦어도 ${Fmt.time(local(end).toLocalTime())}에 저절로 멈춰요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Text("휴대폰이 15분 넘게 가만히 있어야 잠든 때를 알아요. 소리는 그 전부터 남겨요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = { SleepRecordService.stop(context) }, modifier = Modifier.padding(top = 8.dp)) { Text("측정 끝") }
@@ -68,7 +76,8 @@ internal fun SleepNightCard(
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (refused) Text("마이크를 허용해야 잴 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             Button(onClick = {
-                if (SleepRecordService.permitted(context)) SleepRecordService.start(context) else ask.launch(Manifest.permission.RECORD_AUDIO)
+                // 1.39 [FLOW-13] Measuring starts the night: the dark night screen opens.
+                if (SleepRecordService.permitted(context)) { SleepRecordService.start(context); onNight() } else ask.launch(Manifest.permission.RECORD_AUDIO)
             }, modifier = Modifier.padding(top = 8.dp)) { Text("측정 시작") }
         }
         // 1.38 [SLEEP-08] 깨우는 구간: only earlier than the alarm, and only while measuring.
@@ -98,7 +107,7 @@ internal fun SleepNightCard(
             }
             val withClip = events.filter { it.file != null }
             val listen = ClipPicker.listen(withClip.map { it.toEvent() }).mapNotNull { e -> withClip.firstOrNull { it.startMillis == e.startMillis } }
-            if (listen.isNotEmpty()) {
+            if (listen.isNotEmpty() && !listenShown) {
                 Text("들어 볼 소리", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 8.dp))
                 listen.forEach { e -> ClipRow(e, onKeep) }
             }
@@ -107,7 +116,7 @@ internal fun SleepNightCard(
 }
 
 @Composable
-private fun ClipRow(e: SleepEventEntity, onKeep: (SleepEventEntity, Boolean) -> Unit) {
+internal fun ClipRow(e: SleepEventEntity, onKeep: (SleepEventEntity, Boolean) -> Unit) {
     val context = LocalContext.current
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
     DisposableEffect(e.id) { onDispose { player?.release(); player = null } }
@@ -131,3 +140,9 @@ private fun ClipRow(e: SleepEventEntity, onKeep: (SleepEventEntity, Boolean) -> 
 private fun SleepEventEntity.toEvent() = SoundEvent(startMillis, endMillis, SoundKind.of(kind), level)
 
 private fun local(millis: Long): LocalDateTime = LocalDateTime.ofInstant(Instant.ofEpochMilli(millis), Today.zone())
+
+/** 1.39 [FLOW-12] The three sounds worth hearing first from [events] (different kinds, the loudest of each), for the morning card. */
+internal fun listenFirst(events: List<SleepEventEntity>): List<SleepEventEntity> {
+    val withClip = events.filter { it.file != null }
+    return ClipPicker.listen(withClip.map { it.toEvent() }).mapNotNull { e -> withClip.firstOrNull { it.startMillis == e.startMillis } }
+}

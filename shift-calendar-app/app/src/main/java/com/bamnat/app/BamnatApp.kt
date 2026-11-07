@@ -37,7 +37,7 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
 
     /**
      * [NXT-01] Built when WorkManager first starts. [NXT-11] Its JobScheduler ids are kept to a range of their own, away
-     * from the app's own jobs (AutoBackupJob 4401, PlazaNewsJob 4402, OutboxJob 4403·4404, InquiryReplyJob 4405, StaffClockJob 4406), so neither replaces the other.
+     * from the app's own jobs (AutoBackupJob 4401, PlazaNewsJob 4402, OutboxJob 4403·4404, InquiryReplyJob 4405, StaffClockJob 4406, RosterFollowJob 4407), so neither replaces the other.
      */
     override val workManagerConfiguration: androidx.work.Configuration
         get() = androidx.work.Configuration.Builder()

@@ -3,6 +3,10 @@ package com.bamnat.app.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -31,7 +35,9 @@ import com.bamnat.app.ui.theme.color
 import com.bamnat.core.design.ChartEmphasis
 
 /** One bar: [label] under it and in the bubble, [text] the value as the user reads it ("6시간 30분"). */
-data class ChartBar(val label: String, val value: Double, val tone: Tone = Tone.Plain, val text: String = value.toString())
+data class ChartBar(val label: String, val value: Double, val tone: Tone = Tone.Plain, val text: String = value.toString(),
+    /** 1.39 [DSG-04] A bar whose colour is its meaning on its own (손익의 빨강·파랑), not one of the two that stand out. */
+    val color: androidx.compose.ui.graphics.Color? = null)
 
 /** The one line across the chart: an average, a target or a plan. */
 data class Baseline(val value: Double, val label: String, val dashed: Boolean = true)
@@ -50,6 +56,10 @@ fun BarChart(
     height: Dp = 120.dp,
     firstLabel: String? = bars.firstOrNull()?.label,
     lastLabel: String? = bars.lastOrNull()?.label,
+    /** 1.39 [DSG-04][FLOW-10] Each bar's own label under it (a few bars: 근무별 평균, 6개월), else the first and last only. */
+    labels: Boolean = bars.size <= 7,
+    /** 1.39 [FLOW-10] Each bar's [ChartBar.text] under its label, for a few bars read at a glance. */
+    values: Boolean = false,
 ) {
     var picked by rememberSaveable(bars.size) { mutableStateOf<Int?>(null) }
     val emphasis = ChartEmphasis.pick(bars.map { it.value })
@@ -60,8 +70,10 @@ fun BarChart(
     val tones = bars.mapIndexed { i, b ->
         if (b.tone != Tone.Plain && (i == emphasis.maxIndex || i == emphasis.minIndex)) b.tone.color() else primary
     }
-    val max = maxOf(bars.maxOfOrNull { it.value } ?: 0.0, (baseline?.value ?: 0.0) * 1.1).coerceAtLeast(1.0)
-    val described = bars.filter { it.value > 0 }.joinToString(", ") { "${it.label} ${it.text}" }.ifEmpty { "기록 없음" }
+    // 1.39 [DSG-04] Values below zero (손익) hang from a zero line in the middle; otherwise the bars stand on the bottom.
+    val signed = bars.any { it.value < 0 }
+    val max = maxOf(bars.maxOfOrNull { kotlin.math.abs(it.value) } ?: 0.0, (baseline?.value ?: 0.0) * 1.1).coerceAtLeast(1.0)
+    val described = bars.filter { it.value != 0.0 }.joinToString(", ") { "${it.label} ${it.text}" }.ifEmpty { "기록 없음" }
     Column(modifier.fillMaxWidth()) {
         // The bubble: one at a time, over the chart so the bars do not move.
         val bubble = picked?.let(bars::getOrNull)
@@ -80,18 +92,41 @@ fun BarChart(
             if (bars.isEmpty()) return@Canvas
             val gap = (if (bars.size > 10) 4 else 8).dp.toPx()
             val w = (size.width - gap * (bars.size - 1)) / bars.size
+            val zero = if (signed) size.height / 2 else size.height
+            val room = if (signed) size.height / 2 else size.height
+            if (signed) drawLine(line, Offset(0f, zero), Offset(size.width, zero), strokeWidth = 1.dp.toPx())
             bars.forEachIndexed { i, b ->
-                val h = if (b.value <= 0) 4.dp.toPx() else (size.height * b.value / max).toFloat()
+                val none = if (signed) b.value == 0.0 else b.value <= 0
+                val h = if (none) 4.dp.toPx() else (room * kotlin.math.abs(b.value) / max).toFloat()
+                val top = if (b.value < 0) zero else zero - h
                 drawRoundRect(
-                    color = if (b.value <= 0) empty else if (i == picked) pickedColor else tones[i],
-                    topLeft = Offset(i * (w + gap), size.height - h), size = Size(w, h), cornerRadius = CornerRadius(4.dp.toPx()),
+                    color = if (none) empty else if (i == picked) pickedColor else b.color ?: tones[i],
+                    topLeft = Offset(i * (w + gap), if (none && signed) zero - h / 2 else top), size = Size(w, h),
+                    cornerRadius = CornerRadius(4.dp.toPx()),
                 )
             }
             baseline?.let { bl ->
-                val y = (size.height - size.height * bl.value / max).toFloat()
+                val y = (zero - room * bl.value / max).toFloat()
                 drawLine(line, Offset(0f, y), Offset(size.width, y), strokeWidth = 1.dp.toPx(),
                     pathEffect = if (bl.dashed) PathEffect.dashPathEffect(floatArrayOf(8f, 6f)) else null)
             }
+        }
+        if (labels && bars.isNotEmpty()) {
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(if (bars.size > 10) 4.dp else 8.dp)) {
+                bars.forEach { b ->
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(b.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center, maxLines = 2)
+                        if (values) Text(b.text, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center, maxLines = 2, color = if (b.tone != Tone.Plain) b.tone.color() else Color.Unspecified)
+                    }
+                }
+            }
+            baseline?.let {
+                Text(it.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp))
+            }
+            return@Column
         }
         Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
             Text(firstLabel.orEmpty(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

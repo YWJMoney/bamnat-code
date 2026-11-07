@@ -86,18 +86,9 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
         if (_refresh.value == Refresh.Loading(id)) return
         _refresh.value = Refresh.Loading(id)
         viewModelScope.launch {
-            _refresh.value = try {
-                // Taken out while this was loading: it stays out.
-                val changed = c.shareApi.readIfChanged(id, c.received.get(id)?.etag)
-                if (changed == null) c.received.touch(id) else c.received.update(id, changed)
-                Refresh.Idle
-            } catch (e: ShareLinkException) {
-                // Cut or run out: what the sharer took back goes from this phone too.
-                if (e.message == "not_found") c.received.markGone(id, e.removedReason)
-                if (e.message == "not_found") Refresh.Idle else Refresh.Offline(id)
-            } catch (e: IOException) {
-                Refresh.Offline(id)
-            }
+            // Taken out while this was loading: it stays out. Cut or run out: what the sharer took back goes from this phone too.
+            // 1.39 [TEAM-22] A followed link's change goes into the user's own days (or is asked) on the way.
+            _refresh.value = if (com.bamnat.app.share.RosterFollower.refresh(c, id)) Refresh.Idle else Refresh.Offline(id)
         }
     }
 

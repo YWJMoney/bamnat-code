@@ -146,6 +146,14 @@ data class ReceivedCalendar(
     val removedReason: String? = null,
     /** 1.38 PC 12.4.1 [P3-L-19] The user's own work comes from this link (the setup was started from it): settings say 받은 근무표, not 근무 주기. */
     val mine: Boolean = false,
+    /** 1.39 [TEAM-22] '내 달력에 넣기' was pressed for this link once: a later change is offered too. */
+    val adopted: Boolean = false,
+    /** 1.39 [TEAM-22] What to do when the link changes ([RosterFollower.Mode] key); null is the default for [mine]/[adopted]. */
+    val follow: String? = null,
+    /** 1.39 [TEAM-22] The last change said over the calendar (put in, asked, or the link gone), until closed. */
+    val note: FollowNote? = null,
+    /** 1.39 [SLEEP-15][P3-L-18] The leader asked for 피곤해요 합계 on this link ([ReceivedShare.tired]): the sleep screen offers the button. */
+    val tired: Boolean = false,
 ) {
     val schedule: SharedSchedule? by lazy { raw?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() } }
     val gone: Boolean get() = raw == null
@@ -160,6 +168,42 @@ data class ReceivedCalendar(
     companion object {
         /** Avatar colours, one per calendar in the order they were added. */
         val COLORS = listOf(0xFFE8833A, 0xFF2E9D8F, 0xFF7C5CC4, 0xFFD45087, 0xFF3D7DD8, 0xFF8A9A2B)
+    }
+}
+
+/**
+ * 1.39 [TEAM-22] What a change of a followed link did, kept with the link until the user closes it: [kind] "done" (put in: [undo] holds
+ * each day's override as it was), "ask" ([apply] waits for one press) or "gone" (the link was cut; the user's days stay). Day codes
+ * are "n" (follows the pattern), "o" (off) or "s<id>" (that shift).
+ */
+data class FollowNote(
+    val kind: String,
+    val at: Instant,
+    val lines: List<String>,
+    val apply: Map<java.time.LocalDate, String> = emptyMap(),
+    val undo: Map<java.time.LocalDate, String> = emptyMap(),
+    val kept: List<java.time.LocalDate> = emptyList(),
+) {
+    fun toJson(): JSONObject = JSONObject().apply {
+        put("kind", kind); put("at", at.toString()); put("lines", JSONArray(lines))
+        put("apply", JSONObject().apply { apply.forEach { (d, c) -> put(d.toString(), c) } })
+        put("undo", JSONObject().apply { undo.forEach { (d, c) -> put(d.toString(), c) } })
+        put("kept", JSONArray(kept.map { it.toString() }))
+    }
+
+    companion object {
+        const val DONE = "done"
+        const val ASK = "ask"
+        const val GONE = "gone"
+
+        fun fromJson(o: JSONObject?): FollowNote? = o?.let {
+            runCatching {
+                fun days(k: String) = o.optJSONObject(k)?.let { m -> m.keys().asSequence().associate { java.time.LocalDate.parse(it) to m.getString(it) } }.orEmpty()
+                FollowNote(o.getString("kind"), Instant.parse(o.getString("at")),
+                    o.optJSONArray("lines")?.let { a -> List(a.length()) { a.getString(it) } }.orEmpty(), days("apply"), days("undo"),
+                    o.optJSONArray("kept")?.let { a -> List(a.length()) { java.time.LocalDate.parse(a.getString(it)) } }.orEmpty())
+            }.getOrNull()
+        }
     }
 }
 
@@ -229,9 +273,14 @@ class ReceivedCalendarStore(
         val title = share.schedule.optString("title").trim()
         val color = old?.color ?: ReceivedCalendar.COLORS[_calendars.value.size % ReceivedCalendar.COLORS.size]
         val cal = ReceivedCalendar(id, title, color, old?.addedAt ?: now, now, share.updatedAt, share.expiresAt, share.schedule, share.etag,
-            mine = mine || old?.mine == true)
+            mine = mine || old?.mine == true, adopted = old?.adopted == true, follow = old?.follow, note = old?.note, tired = share.tired)
         write(if (old == null) _calendars.value + cal else _calendars.value.map { if (it.id == id) cal else it })
         return cal
+    }
+
+    /** 1.39 [SLEEP-15] The leader turned 피곤해요 off (the server says not_found to a press): no button for this link until it comes back. */
+    fun setTired(id: String, on: Boolean) {
+        if (get(id)?.tired != on) write(_calendars.value.map { if (it.id == id) it.copy(tired = on) else it })
     }
 
     /** [SHR-12] Asked and nothing changed: the copy here is current as of now. */
@@ -251,6 +300,21 @@ class ReceivedCalendarStore(
         if (_calendars.value.any { !it.gone && it.expiresAt?.isBefore(now) == true }) {
             write(_calendars.value.map { if (!it.gone && it.expiresAt?.isBefore(now) == true) it.copy(raw = null, etag = null) else it })
         }
+    }
+
+    /** 1.39 [TEAM-22] '내 달력에 넣기' was pressed: a later change of this link is offered. */
+    fun markAdopted(id: String) {
+        if (get(id)?.adopted == false) write(_calendars.value.map { if (it.id == id) it.copy(adopted = true) else it })
+    }
+
+    /** 1.39 [TEAM-22] 바뀌면 바로 넣기 / 물어보기 / 넣지 않기 for this link. */
+    fun setFollow(id: String, key: String?) {
+        write(_calendars.value.map { if (it.id == id) it.copy(follow = key) else it })
+    }
+
+    /** 1.39 [TEAM-22] The change said over the calendar; null closes it. */
+    fun setNote(id: String, note: FollowNote?) {
+        write(_calendars.value.map { if (it.id == id) it.copy(note = note) else it })
     }
 
     fun remove(id: String) {
@@ -303,6 +367,10 @@ class ReceivedCalendarStore(
         etag?.let { put("etag", it) }
         removedReason?.let { put("removedReason", it) }
         if (mine) put("mine", true)
+        if (adopted) put("adopted", true)
+        follow?.let { put("follow", it) }
+        note?.let { put("note", it.toJson()) }
+        if (tired) put("tired", true)
     }
 
     private fun fromJson(o: JSONObject): ReceivedCalendar? {
@@ -310,7 +378,9 @@ class ReceivedCalendarStore(
         fun time(key: String) = o.optString(key).takeIf { it.isNotEmpty() }?.let { runCatching { Instant.parse(it) }.getOrNull() }
         return ReceivedCalendar(id, o.optString("title"), o.optLong("color", ReceivedCalendar.COLORS[0]),
             time("addedAt") ?: Instant.EPOCH, time("fetchedAt"), time("updatedAt"), time("expiresAt"), o.optJSONObject("schedule"),
-            o.optString("etag").takeIf { it.isNotEmpty() }, o.optString("removedReason").takeIf { it.isNotEmpty() }, o.optBoolean("mine", false))
+            o.optString("etag").takeIf { it.isNotEmpty() }, o.optString("removedReason").takeIf { it.isNotEmpty() }, o.optBoolean("mine", false),
+            adopted = o.optBoolean("adopted", false), follow = o.optString("follow").takeIf { it.isNotEmpty() },
+            note = FollowNote.fromJson(o.optJSONObject("note")), tired = o.optBoolean("tired", false))
     }
 
     companion object {

@@ -214,6 +214,10 @@ internal fun CalendarEditSheet(
         // 1.32 [LEDX-23]
         OptionSwitch("지출 히트맵", settings.spendHeat) { on -> update { it.copy(spendHeat = on) } }
         OptionSwitch("날짜 밑에 메모 첫 글자", settings.memoInCells) { on -> update { it.copy(memoInCells = on, calendarMemos = it.calendarMemos || on) } }
+        // [CELL-01] 1.39 칸에 일감·메모를 줄줄이: 알아서(일감 달력, 또는 메모를 칸에 보일 때) · 늘 · 끔.
+        OptionChips("날짜 칸에 일감·메모를 줄마다", listOf("auto" to "알아서", "on" to "늘", "off" to "한 줄만"), settings.cellList) { v ->
+            update { it.copy(cellList = v) }
+        }
         // [CVW-09] 1.35
         OptionChips("날짜를 길게 누르면", listOf("menu" to "빠른 메뉴", "memo" to "바로 메모", "open" to "하루 열기"), settings.longPress) { v ->
             update { it.copy(longPress = v) }

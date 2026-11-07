@@ -18,8 +18,7 @@ object PayIncome {
 
     /** The take-home of [gross], the pay of [payMonth], with the profile's tax setting and 비과세. */
     fun net(profile: PayProfile, payMonth: YearMonth, gross: Long): Long =
-        TakeHome.estimate(gross, profile.taxMode, profile.taxFamily, payMonth.atDay(1), profile.taxChildren,
-            TakeHome.nonTaxable(profile, payMonth)).net
+        TakeHome.forProfile(profile, payMonth, gross).net
 
     /** What arrives in [month], [grossOf] giving a pay month's 세전 total (null when it cannot be worked out). */
     fun paidIn(profile: PayProfile, month: YearMonth, grossOf: (YearMonth) -> Long?): List<Paid> =

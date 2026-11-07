@@ -45,8 +45,7 @@ object TaxWay {
     ): Long? {
         if (learned?.basis == com.bamnat.core.tax.TaxLearner.Basis.LEARNED) return learned.net
         val mode = of(profile, statsChoice) ?: return null
-        return com.bamnat.core.pay.TakeHome.estimate(gross, mode, profile?.taxFamily ?: 1, month.atDay(1), profile?.taxChildren ?: 0,
-            nonTaxable ?: profile?.let { com.bamnat.core.pay.TakeHome.nonTaxable(it, month) } ?: 0).net
+        return com.bamnat.core.pay.TakeHome.of(profile, month, gross, mode, nonTaxable).net
     }
 
     val CHOICES = listOf(TaxMode.INSURANCE_4 to "4대보험·소득세", TaxMode.WITHHOLDING_3_3 to "3.3%", TaxMode.NONE to "떼지 않음")

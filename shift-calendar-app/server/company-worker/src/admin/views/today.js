@@ -109,19 +109,29 @@ export function todayViews(A) {
       return `<section class="card todo-card">${head}<p class="hint">${S.inboxView === "all" ? "기다리는 일이 없어요." : "이 보기에는 기다리는 일이 없어요."} 새로 오면 여기와 메뉴에 숫자로 보여요.</p>${again}</section>`;
     }
     const flagged = (x) => x.type === "flagged_post" || x.type === "hidden_post";
+    // 1.39 [ADM3-37] 13차 확인 7: 같은 말로 읽히는 문의는 한 줄로. 첫 줄(기한이 가장 가까운 것) 아래 '비슷한 문의 N건'으로 접고,
+    // 첫 줄이 이 보기에 없으면(내 것만 보기 등) 나머지는 따로 보여요.
+    const asks = new Map(list.filter((x) => x.type === "inquiry").map((x) => [x.id, x]));
+    const rows = list.filter((x) => !(x.type === "inquiry" && x.bundle && asks.has(x.bundle)));
+    const bundleOf = (x) => (x.type === "inquiry" ? (x.others ?? []).map((id) => asks.get(id)).filter(Boolean) : []);
+    const bundled = (x, more) => !more.length ? "" : `<details class="quick bundle" data-key="bd:${esc(x.id)}"><summary>비슷한 문의 ${more.length}건 함께 보기</summary>
+          <div class="bundle-list">${more.map((o) => `<p><a href="${inboxLink(o)}">${esc(o.title)}</a>
+            <small>${esc(ago(o.at))}${o.assignee ? ` · ${o.mine ? "내가 맡음" : esc(o.assignee.name)}` : ""}</small>${dueText(o, Date.now())}</p>`).join("")}</div>
+          <p class="meta">같은 답이면 운영 장부에서 한 개발사항으로 묶거나 한꺼번에 답해요. <a href="#/desk?view=today">운영 장부 열기</a></p></details>`;
     return `<section class="card todo-card">${head}
-      <ul class="rows inbox">${list.map((x) => {
+      <ul class="rows inbox">${rows.map((x) => {
+        const more = bundleOf(x);
         const answer = x.type === "inquiry" && editInq && (!x.assignee || x.mine) ? `<details class="quick" data-key="qr:${esc(x.id)}"><summary>바로 답하기</summary>
           <form data-form="quick-reply" data-id="${esc(x.id)}"><label class="sr" for="qr-${esc(x.id)}">답</label>
             <textarea id="qr-${esc(x.id)}" name="text" maxlength="4000" required placeholder="보낸 분 앱에 보일 답을 적어요"></textarea>
             <div class="actions"><button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">보내기</button></div></form></details>` : "";
         return `<li><div class="row">
-        <span class="row-main"><b><span class="kind">${esc(INBOX_NAMES[x.type] ?? x.type)}</span> <a href="${inboxLink(x)}">${esc(x.title)}</a></b>
+        <span class="row-main"><b><span class="kind">${esc(INBOX_NAMES[x.type] ?? x.type)}${more.length ? ` ${more.length + 1}건` : ""}</span> <a href="${inboxLink(x)}">${esc(x.title)}</a></b>
           <small>${esc(ago(x.at))}${x.company ? ` · ${esc(x.company)}` : ""}${x.n ? ` · ${x.n}${flagged(x) ? "번 신고" : "건"}` : ""}${x.type === "inquiry" ? (x.assignee ? ` · ${x.mine ? "내가 맡음" : esc(x.assignee.name)}` : " · 아무도 안 맡음") : ""}</small></span>
         <span class="row-side">${dueText(x, Date.now())}
           ${x.type === "inquiry" && editInq && !x.assignee ? `<button class="btn small" data-act="inbox-assign" data-id="${x.id}">맡기</button>` : ""}
           <a class="btn small${x.type === "inquiry" ? "" : " primary"}" href="${inboxLink(x)}">${x.type === "inquiry" ? "열기" : "보기"}</a>
-          <button class="btn small ghost" data-act="inbox-snooze" data-key="${esc(`${x.type}:${x.id}`)}" title="이 기기에서 내일 아침까지 숨겨요">내일 볼게요</button></span></div>${answer}</li>`;
+          <button class="btn small ghost" data-act="inbox-snooze" data-key="${esc(`${x.type}:${x.id}`)}" title="이 기기에서 내일 아침까지 숨겨요">내일 볼게요</button></span></div>${bundled(x, more)}${answer}</li>`;
       }).join("")}</ul>${again}</section>`;
   }
 

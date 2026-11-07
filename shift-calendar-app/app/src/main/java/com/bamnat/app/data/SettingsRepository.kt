@@ -17,6 +17,27 @@ enum class ThemeMode {
     NIGHT_SHIFT,
 }
 
+/**
+ * 1.39 [PAYX-60] Which days 근무 시간·일수 count in a month: the 급여 기간 when the pay has one that is not 1일~말일
+ * (사용자 2026-11-07 '21~20일이면 11월은 10/21~11/20 근무 시간'), unless the user picked 1일~말일 on 통계's chips.
+ */
+enum class StatsPeriod {
+    /** The pay period when the pay has one (21일~20일), else 1일~말일. Before 1.39 the default was 1일~말일. */
+    AUTO,
+    /** Picked on 통계: the pay period. */
+    PAY,
+    /** Picked on 통계: 1일~말일, whatever the pay period. */
+    MONTH;
+
+    /** Whether a month counts over [period] (the pay's 급여 기간). */
+    fun byPay(period: com.bamnat.core.pay.PayPeriod?): Boolean = this != MONTH && period != null && period.endDay != null && !period.isCalendarMonth
+
+    companion object {
+        /** A saved value, or the old switch's: on is [PAY], off is [AUTO] (off was only the default, never a choice). */
+        fun read(v: String?, old: Boolean = false): StatsPeriod = v?.let { runCatching { valueOf(it) }.getOrNull() } ?: if (old) PAY else AUTO
+    }
+}
+
 /** [CAL-03] What a tap on a date does on a phone-sized screen (unfolded, the day is always beside the calendar). */
 enum class PhoneDayView {
     /** The day in short under the calendar; a second tap opens it all in a sheet. As before 1.13. */
@@ -42,6 +63,13 @@ data class AppSettings(
     val showKani: Boolean = true,
     /** 1.38 [FLOW-08] 내 하루 이야기: the day's shifts, sleep, money and memos on one time line at the top of the day view. */
     val dayStory: Boolean = true,
+    /** 1.39 [FLOW-28] 하루 다이얼: the day's 24 hours as a ring on 오늘의 흐름 (work, sleep, alarms, now). */
+    val dayDial: Boolean = true,
+    /**
+     * 1.39 [FLOW-30] 근무 기준 하루: on a day with no work around, what is written before this many minutes past midnight belongs to
+     * the day before (기본 04:00). During a shift it is that shift's day whatever the clock says.
+     */
+    val dayStartMinutes: Int = 240,
     /**
      * [CYC-04] 1.38: the 업종 묶음 whose law-named days (소방의 날…) the calendar shows ([com.bamnat.core.plaza.IndustryGroups]);
      * set when a public cycle of that 업종 is put on the calendar, or picked in 설정 › 달력. Empty: none.
@@ -115,6 +143,11 @@ data class AppSettings(
      * also put 메모 first in the day view; that is now the user's own [dayGroupOrder].
      */
     val memoInCells: Boolean = false,
+    /**
+     * [CELL-01] 1.39 날짜 칸에 일감·메모를 줄줄이: "auto" lists them for field work (일감) and for anyone with [memoInCells] on,
+     * "on" always, "off" never (the cell keeps its one line under the badge).
+     */
+    val cellList: String = "auto",
     /** [FEAT-17] The month's memos in short under the calendar. */
     val calendarMemos: Boolean = true,
     /** [SLP-01][MKT-07] Rest-gap signs on the calendar and the day view. */
@@ -161,8 +194,12 @@ data class AppSettings(
     /** 1.38 [SLEEP-04] The last 잠드는 소리 mix ("brown:0.50,rain:0.35") and its timer in minutes (0: until stopped). */
     val noiseMix: String = "",
     val noiseTimerMinutes: Int = 30,
-    /** 1.38 [DSG-07] 밤 색: the sleep screen turns warm and dark from 22:00 to 06:00 and while a sleep is open. */
-    val sleepNightLook: Boolean = true,
+    /**
+     * 1.39 [FLOW-14][DSG-07] 밤 색 ([com.bamnat.core.design.NightLook] key): 잘 시간에만 (default) turns the whole app warm and dark
+     * while asleep, in the planned sleep and at 01~05, and the sleep and night screens from 22:00 to 06:00; 끔; 휴대폰 따름.
+     * 1.38's 밤에는 어두운 색 off (sleep_night_look false) reads as 끔.
+     */
+    val nightLook: String = com.bamnat.core.design.NightLook.DEFAULT.key,
     /** 1.38 [SLEEP-08] 깨우는 구간 in minutes before the alarm, 0 off (default); listens only while the night is measured. */
     val smartWakeMinutes: Int = 0,
     /** 1.38 [SLEEP-09] 헬스 커넥트에 쓰기, off by default. */
@@ -204,8 +241,8 @@ data class AppSettings(
     val payDepositNotice: Boolean = true,
     /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
     val calendarOnly: Boolean = false,
-    /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. */
-    val statsByPayPeriod: Boolean = false,
+    /** B 1.32 [CALX-05] 근무·급여's month counted over the pay period (급여 설정's 급여 기간) instead of 1일~말일. 1.39 [PAYX-60] three ways. */
+    val statsPeriod: StatsPeriod = StatsPeriod.AUTO,
     /** 1.37 [LEDH-06] 가계부 예산·하루 쓸 돈을 월급날~다음 월급날 전날로 봄 (급여일 주기); off is 1일~말일. In the backup. */
     val moneyByPayCycle: Boolean = false,
     /** 1.37 [LEDH-07] 근무 시간 환산: spending of this many won or more says the work it took; 0 is off (결정 4: 5만 원). In the backup. */
@@ -315,6 +352,9 @@ data class AppSettings(
         else HourLimits(weeklyLimitHours, averageLimitHours)
 
     companion object {
+        /** [CELL-01] What [AppSettings.cellList] can be. */
+        val CELL_LISTS = setOf("auto", "on", "off")
+
         /**
          * [J133B-02] 1.33 빌드 8 확인 ("가게 하루 시트에 '이 주 72시간 · 64시간 넘음'"): a shop's own hours are the owner's, not
          * an employee's under 근로기준법, so a 가게 calendar flags no week, average or 52시간 (a week has 168 hours).
@@ -383,6 +423,8 @@ class SettingsRepository(context: Context) {
             showLunar = prefs.getBoolean(K_LUNAR, d.showLunar),
             showKani = prefs.getBoolean(K_KANI, d.showKani),
             dayStory = prefs.getBoolean(K_DAY_STORY, d.dayStory),
+            dayDial = prefs.getBoolean(K_DAY_DIAL, d.dayDial),
+            dayStartMinutes = prefs.getInt(K_DAY_START, d.dayStartMinutes).coerceIn(0, 12 * 60),
             orgDayGroup = prefs.getString(K_ORG_GROUP, null) ?: d.orgDayGroup,
             orgDaysOn = prefs.getBoolean(K_ORG_ON, d.orgDaysOn),
             reviewDue = prefs.getBoolean(K_REVIEW_DUE, false),
@@ -408,6 +450,7 @@ class SettingsRepository(context: Context) {
             rosterMonthly = prefs.getBoolean(K_ROSTER_MONTHLY, d.rosterMonthly),
             extraKinds = ExtraKinds.decode(prefs.getString(K_EXTRA_KINDS, null)),
             memoInCells = prefs.getBoolean(K_MEMO_FIRST, d.memoInCells),
+            cellList = prefs.getString(K_CELL_LIST, null)?.takeIf { it in AppSettings.CELL_LISTS } ?: d.cellList,
             calendarMemos = prefs.getBoolean(K_CAL_MEMOS, d.calendarMemos),
             restCheck = prefs.getBoolean(K_REST_CHECK, d.restCheck),
             strictRest = prefs.getBoolean(K_STRICT_REST, d.strictRest),
@@ -431,7 +474,8 @@ class SettingsRepository(context: Context) {
             sleepAuto = prefs.getBoolean(K_SLEEP_AUTO, d.sleepAuto),
             noiseMix = prefs.getString(K_NOISE_MIX, d.noiseMix) ?: d.noiseMix,
             noiseTimerMinutes = prefs.getInt(K_NOISE_TIMER, d.noiseTimerMinutes),
-            sleepNightLook = prefs.getBoolean(K_SLEEP_NIGHT_LOOK, d.sleepNightLook),
+            nightLook = prefs.getString(K_NIGHT_LOOK, null)
+                ?: if (!prefs.getBoolean(K_SLEEP_NIGHT_LOOK, true)) com.bamnat.core.design.NightLook.OFF.key else d.nightLook,
             smartWakeMinutes = prefs.getInt(K_SMART_WAKE, d.smartWakeMinutes),
             healthWrite = prefs.getBoolean(K_HEALTH_WRITE, d.healthWrite),
             sleepDnd = prefs.getBoolean(K_SLEEP_DND, d.sleepDnd),
@@ -453,7 +497,7 @@ class SettingsRepository(context: Context) {
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
-            statsByPayPeriod = prefs.getBoolean(K_STATS_PERIOD, d.statsByPayPeriod),
+            statsPeriod = StatsPeriod.read(prefs.getString(K_STATS_PERIOD_WAY, null), prefs.getBoolean(K_STATS_PERIOD, false)),
             moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
             workTimeFrom = prefs.getLong(K_WORK_TIME, d.workTimeFrom),
             dayCloseNotice = prefs.getBoolean(K_DAY_CLOSE, d.dayCloseNotice),
@@ -518,6 +562,8 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_LUNAR, s.showLunar)
             .putBoolean(K_KANI, s.showKani)
             .putBoolean(K_DAY_STORY, s.dayStory)
+            .putBoolean(K_DAY_DIAL, s.dayDial)
+            .putInt(K_DAY_START, s.dayStartMinutes)
             .putString(K_ORG_GROUP, s.orgDayGroup)
             .putBoolean(K_ORG_ON, s.orgDaysOn)
             .putBoolean(K_REVIEW_DUE, s.reviewDue)
@@ -544,6 +590,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_ROSTER_MONTHLY, s.rosterMonthly)
             .putString(K_EXTRA_KINDS, s.extraKinds.encode())
             .putBoolean(K_MEMO_FIRST, s.memoInCells)
+            .putString(K_CELL_LIST, s.cellList)
             .putBoolean(K_CAL_MEMOS, s.calendarMemos)
             .putBoolean(K_REST_CHECK, s.restCheck)
             .putBoolean(K_STRICT_REST, s.strictRest)
@@ -566,7 +613,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SLEEP_AUTO, s.sleepAuto)
             .putString(K_NOISE_MIX, s.noiseMix)
             .putInt(K_NOISE_TIMER, s.noiseTimerMinutes)
-            .putBoolean(K_SLEEP_NIGHT_LOOK, s.sleepNightLook)
+            .putString(K_NIGHT_LOOK, s.nightLook)
             .putInt(K_SMART_WAKE, s.smartWakeMinutes)
             .putBoolean(K_HEALTH_WRITE, s.healthWrite)
             .putBoolean(K_SLEEP_DND, s.sleepDnd)
@@ -586,7 +633,8 @@ class SettingsRepository(context: Context) {
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
-            .putBoolean(K_STATS_PERIOD, s.statsByPayPeriod)
+            .putString(K_STATS_PERIOD_WAY, s.statsPeriod.name)
+            .putBoolean(K_STATS_PERIOD, s.statsPeriod == StatsPeriod.PAY)
             .putBoolean(K_MONEY_CYCLE, s.moneyByPayCycle)
             .putLong(K_WORK_TIME, s.workTimeFrom)
             .putBoolean(K_DAY_CLOSE, s.dayCloseNotice)
@@ -656,6 +704,7 @@ class SettingsRepository(context: Context) {
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
         const val K_CAL_ONLY = "calendar_only"
         const val K_STATS_PERIOD = "stats_pay_period"
+        const val K_STATS_PERIOD_WAY = "stats_period_way"
         const val K_APP_LOCK = "app_lock"
         const val K_CALENDAR_LAYOUT = "calendar_layout"
         const val K_STATS_LAYOUT = "stats_layout"
@@ -712,6 +761,8 @@ class SettingsRepository(context: Context) {
         const val K_LUNAR = "lunar"
         const val K_KANI = "kani"
         const val K_DAY_STORY = "day_story"
+        const val K_DAY_DIAL = "day_dial"
+        const val K_DAY_START = "day_start_minutes"
         const val K_ORG_GROUP = "org_day_group"
         const val K_ORG_ON = "org_days_on"
         const val K_REVIEW_DUE = "review_due"
@@ -738,6 +789,7 @@ class SettingsRepository(context: Context) {
         const val K_ROSTER_MONTHLY = "roster_monthly"
         const val K_EXTRA_KINDS = "extra_kinds"
         const val K_MEMO_FIRST = "memo_first"
+        const val K_CELL_LIST = "cell_list"
         const val K_CAL_MEMOS = "calendar_memos"
         const val K_REST_CHECK = "rest_check"
         const val K_STRICT_REST = "strict_rest"
@@ -762,7 +814,9 @@ class SettingsRepository(context: Context) {
         const val K_SLEEP_AUTO = "sleep_auto"
         const val K_NOISE_MIX = "noise_mix"
         const val K_NOISE_TIMER = "noise_timer"
+        /** 1.38 밤에는 어두운 색 (sleep screen only), read once into [K_NIGHT_LOOK]. */
         const val K_SLEEP_NIGHT_LOOK = "sleep_night_look"
+        const val K_NIGHT_LOOK = "night_look"
         const val K_SMART_WAKE = "smart_wake"
         const val K_HEALTH_WRITE = "health_write"
         const val K_SLEEP_DND = "sleep_dnd"

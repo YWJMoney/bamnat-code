@@ -119,14 +119,36 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
     val folded = chosen ?: (short || monthFirst)
     val now = rememberMinute()
     val card = remember(snapshot, settings, log, now) { vm.todayFlow(snapshot, settings, log, now) }
+    // 1.39 [FLOW-28] 하루 다이얼: the same day as a 24-hour ring (work, planned and real sleep, alarms, now), off in 설정 › 화면과 글자.
+    val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
+    val dial = remember(snapshot, settings, log, now, calendarAlarms) {
+        if (!settings.dayDial) null else runCatching {
+            val today = now.toLocalDate()
+            val alarms = if (!settings.alarmsEnabled || !calendarAlarms) emptyList()
+                else listOf(today, today.plusDays(1)).flatMap { com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snapshot.resolver, it) }
+            val items = listOf(today, today.plusDays(1)).flatMap { d ->
+                com.bamnat.core.design.DayStoryItems.of(d, snapshot.resolver,
+                    sleeps = log.filter { it.start.toLocalDate() in today.minusDays(1)..today.plusDays(1) },
+                    plans = if (settings.sleepTips) vm.sleepTips(snapshot, d, settings) else emptyList())
+            }.distinctBy { it.id } + alarms.distinct().map { a ->
+                com.bamnat.core.design.StoryItem(a.triggerAt, null, com.bamnat.core.design.StoryKind.Alarm, "알람", id = "alarm@${a.triggerAt}")
+            }
+            val d = com.bamnat.core.design.DayDialArcs.of(items, now) { i ->
+                snapshot.resolver.resolve(i.start.toLocalDate()).shiftType?.colorArgb
+            }
+            d.takeIf { !it.isEmpty }?.let { it to com.bamnat.core.design.DayDialArcs.says(items, it) }
+        }.getOrNull()
+    }
     TodayFlowCard(
+        dial = dial,
         card = card,
         targetMinutes = settings.sleepTargetMinutes,
         commuteMinutes = settings.commuteMinutes,
         asleepSince = log.firstOrNull { it.end == null && !it.imported }?.start,
         onAction = { action, date ->
             when (action) {
-                TodayFlow.Action.ASLEEP -> vm.fellAsleep()
+                // 1.39 [FLOW-13] and the dark night screen (clock, tomorrow's alarm, 잠드는 소리, 깼어요).
+                TodayFlow.Action.ASLEEP -> { vm.fellAsleep(); com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.NIGHT) }
                 TodayFlow.Action.AWAKE -> vm.wokeUp()
                 TodayFlow.Action.ALARM_ON -> date?.let { vm.setAlarmSkipped(it, false, announce = true) }
                 TodayFlow.Action.AWAKE_AT -> Unit // asks for the time first, below
@@ -188,6 +210,8 @@ internal fun TodayFlowCard(
     folded: Boolean = false,
     onFold: (Boolean) -> Unit = {},
     nights: Boolean = true,
+    /** 1.39 [FLOW-28] The day dial and what a screen reader hears of it; null when it is off or has nothing to show. */
+    dial: Pair<com.bamnat.core.design.DayDialArcs.Dial, String>? = null,
 ) {
     var info by remember { mutableStateOf(false) }
     var askWake by remember { mutableStateOf(false) }
@@ -238,8 +262,11 @@ internal fun TodayFlowCard(
         // What to do now leads; the strip under it shows the day around it, and the one button comes last.
         Column(Modifier.padding(start = 16.dp, top = 4.dp, end = 4.dp, bottom = 12.dp)) {
             // The buttons sit beside the headline only; the line under it runs the full width.
+            // 1.39 [FLOW-28] The dial stands at the head's left on a phone at normal text; at 150% and more the words need the width.
+            val showDial = dial != null && androidx.compose.ui.platform.LocalDensity.current.fontScale < 1.5f
             Box {
-                Column(Modifier.padding(top = 12.dp, end = 12.dp)) {
+                if (showDial) com.bamnat.app.ui.components.DayDial(dial!!.first, dial.second, Modifier.padding(top = 12.dp), size = 60.dp)
+                Column(Modifier.padding(top = 12.dp, end = 12.dp, start = if (showDial) 68.dp else 0.dp)) {
                     // 1.38 [FLOW-06] One number first: "출근까지 2시간 10분", the words of what to do under it.
                     countdown?.let { cd ->
                         Text(androidx.compose.ui.text.buildAnnotatedString {

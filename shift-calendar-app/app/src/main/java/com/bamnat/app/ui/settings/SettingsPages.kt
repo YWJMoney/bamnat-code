@@ -415,7 +415,10 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
     // [SLP-03][SLP-04][SLP-06][SLP-07][SLP-14] Sleep that fits the schedule. Suggestions, not treatment.
     // 1.38 PC 12.4.1 빈틈 2 (투자에 오늘의 흐름 설명): the calendar shows 오늘의 흐름 only for work in shifts and hours (CalendarScreen
     // TODAY_FLOW), so 현장·가게·투자 keep the sleep settings without the switch for a card they never see.
-    val flowHere = settings.workStyle?.usesPayEngine != false
+    // 1.39 PC 12.5 '가게·현장 흐름 스위치': 현장·가게 that put 오늘의 흐름 on their calendar (달력 카드 배치 › 더 보기) get its switch here too.
+    val activeCalendar by vm.activeCalendar.collectAsStateWithLifecycle()
+    val flowAdded = com.bamnat.app.ui.guide.rememberFitAdded(activeCalendar)
+    val flowHere = com.bamnat.core.guide.FitTable.visible(com.bamnat.core.guide.FitSurface.CALENDAR_PARTS, "todayFlow", settings.workStyle, flowAdded)
     SectionCard(title = if (flowHere) "오늘의 흐름" else "잠") {
         if (flowHere) SwitchRow("오늘의 흐름 보기", "달력 위에 한 줄로 지금 할 일과 잘 시간·다음 근무를 보여 줘요. 누르면 펼쳐져요. 날짜를 누르면 그날의 수면 제안도 보여요. 자리는 달력 › 도구 › 화면 꾸미기에서 옮겨요",
             settings.sleepTips) { v -> vm.update { it.copy(sleepTips = v) } }
@@ -746,6 +749,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             SwitchRow("휴대폰 배경색에 맞추기", "배경화면 색으로 앱의 색을 바꿔요", settings.dynamicColor) { v -> vm.update { it.copy(dynamicColor = v) } }
         }
+        // 1.39 [FLOW-14][DSG-07] 밤 색: 시간에 맞춘 자동 밤 모드 (잘 시간·새벽 근무 중), 끔, 휴대폰 따름.
+        NightLookRow(settings.nightLook) { k -> vm.update { it.copy(nightLook = k) } }
         // [CVW-08] 1.35 앱 강조색: buttons, the picked tab and what is selected, over the app's own blue.
         AccentRow(settings.accentColor) { c -> vm.update { it.copy(accentColor = c) } }
         // 1.38 [FLOW-26] 칸이: on by default; off leaves the words alone everywhere it would show.
@@ -754,6 +759,14 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         // 1.38 [FLOW-08] 내 하루 이야기 줄.
         SwitchRow("하루 이야기 줄", "날짜를 열면 맨 위에 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 끄면 지금처럼 묶음 카드만 보여요",
             settings.dayStory) { on -> vm.update { it.copy(dayStory = on) } }
+        // 1.39 [FLOW-28] 하루 다이얼 on 오늘의 흐름, for work that has it (교대·일근·알바).
+        if (settings.workStyle?.usesPayEngine != false) SwitchRow("하루 다이얼", "오늘의 흐름에 하루 24시간을 원으로 보여 줘요. 근무는 근무 색 호, 잘 시간은 점선, 잔 시간은 칠한 호, 알람은 점, 지금은 바늘이에요",
+            settings.dayDial) { on -> vm.update { it.copy(dayDial = on) } }
+        // 1.39 [FLOW-30] 근무 기준 하루: where a small-hours note, spending or sleep belongs on a day with no work around it.
+        ChoiceRow("하루 시작 시각", "야간 근무 중 새벽에 적은 돈·메모·잠은 그 야간 날에 붙어요. 근무가 없는 날은 이 시각 전까지 어제로 쳐요",
+            listOf(0, 180, 240, 300, 360).map { it to if (it == 0) "자정" else "%02d:00".format(it / 60) }, settings.dayStartMinutes) { m ->
+            vm.update { it.copy(dayStartMinutes = m) }
+        }
         // [NAV-07] 1.26 AD: which tab the app opens on and the tabs' order, without the long press.
         TabOrderRow(settings) { order -> vm.update { it.copy(tabOrder = order) } }
         // [CVW-07] 1.35 앱 동작: this section and the day's taps, shared as one piece.
@@ -1072,10 +1085,14 @@ private fun PrivacyPage(
         // 1.36 [INQ-07] Where 처리방침 6항 says it is, not only under 보낸 설정 once something was sent.
         var forgetting by remember { mutableStateOf(false) }
         var forgot by remember { mutableStateOf<String?>(null) }
-        NavRow(FORGET_ALL_ROW, forgot ?: "보낸 설정·글·신고·문의를 서버에서 지워요") { forgetting = true }
+        NavRow(FORGET_ALL_ROW, forgot ?: "보낸 설정·글·신고·문의와 내가 만든 공유 링크를 서버에서 지워요") { forgetting = true }
+        // 1.39 [PRIV-06] What links it cuts, read when it asks (none said for a phone that made none).
+        var links by remember { mutableStateOf<String?>(null) }
+        val app = context.appContainer
+        androidx.compose.runtime.LaunchedEffect(forgetting) { if (forgetting) links = runCatching { com.bamnat.app.share.ShareForget.held(app) }.getOrNull() }
         if (forgetting) ConfirmDialog(
             title = "보낸 정보를 모두 지울까요?",
-            message = com.bamnat.app.ui.company.FORGET_ALL_WORDS,
+            message = (links?.let { "$it.\n\n" } ?: "") + com.bamnat.app.ui.company.FORGET_ALL_WORDS,
             confirmLabel = "모두 지우기",
             destructive = true,
             onDismiss = { forgetting = false },
@@ -1467,3 +1484,12 @@ internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
         confirmButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
+
+/** 1.39 [FLOW-14][DSG-07] 밤 색, here and on the sleep screen: the three choices with what each does. */
+@Composable
+internal fun NightLookRow(key: String, onPick: (String) -> Unit) {
+    val now = com.bamnat.core.design.NightLook.of(key)
+    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onPick)
+}
+
+internal const val NIGHT_LOOK_ROW = "밤 색"

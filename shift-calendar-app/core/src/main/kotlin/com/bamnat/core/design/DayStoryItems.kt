@@ -25,6 +25,8 @@ object DayStoryItems {
         plans: List<SleepPlan.Tip> = emptyList(),
         money: List<MoneyEntry> = emptyList(),
         memos: List<StoryItem> = emptyList(),
+        /** 1.39 [FLOW-30] 하루 시작 시각: money dated [date] whose time is in the small hours of the next day ([DayBoundary]). */
+        dayStartsAt: java.time.LocalTime = DayBoundary.DEFAULT_START,
     ): List<StoryItem> {
         val out = mutableListOf<StoryItem>()
         // The day before first: its night shift is the first thing of this day.
@@ -63,7 +65,10 @@ object DayStoryItems {
             if (m.kind == MoneyKind.TRANSFER) return@forEach
             val what = m.merchant.ifBlank { m.note.ifBlank { m.category } }.ifBlank { m.kind.label }
             val sign = if (m.kind == MoneyKind.INCOME) "+" else ""
-            out += StoryItem(m.date.atTime(t), null, StoryKind.Money, "$what $sign${"%,d".format(m.amount)}원",
+            // 1.39 [FLOW-30] Written at 02:10 in this day's night shift (or before 하루 시작 시각) it is the next morning's 02:10.
+            val next = m.date.plusDays(1).atTime(t)
+            val at = if (DayBoundary.dayOf(next, resolver::resolve, dayStartsAt) == m.date) next else m.date.atTime(t)
+            out += StoryItem(at, null, StoryKind.Money, "$what $sign${"%,d".format(m.amount)}원",
                 m.category.takeIf { it.isNotBlank() && it != what }, tone = if (m.kind == MoneyKind.INCOME) "good" else null,
                 id = "money:${m.id}@${m.date}")
         }

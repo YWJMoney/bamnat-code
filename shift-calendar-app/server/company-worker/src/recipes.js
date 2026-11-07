@@ -1331,7 +1331,11 @@ async function recipeList(d, env, url) {
   const newMaker = (r) => r.owner !== "operator" && counts.get(r.owner) === 1 && now - r.created_at < NEW_MAKER_DAYS * DAY;
   if (sort === "hot" || sort === "good") scored = withNewMakers(scored, newMaker);
   const page = scored.slice(cursor, cursor + RECIPE_LIMITS.pageSize);
-  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}), items: page.map((r) => listItem(r, now)),
+  // 1.39 [MKP-01] 장터 로딩 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): body=1 sends each work's written form and hash with its
+  // card, so the app draws a page of cards from this one (edge-cached) answer instead of asking for each work alone.
+  const withBody = url.searchParams.get("body") === "1";
+  return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}),
+    items: page.map((r) => (withBody ? { ...listItem(r, now), hash: r.hash, body: r.body } : listItem(r, now))),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
@@ -1761,6 +1765,16 @@ export async function recipeRoute(d, request, env, path, url, ctx) {
   m = path.match(/^\/api\/recipes\/([2-9A-HJ-NP-Z]{8})(\/[a-z]+)?$/);
   if (!m) return null;
   const [, code, sub] = m;
+  // 1.39 [MKP-01] A work read with no phone named (a 장터 card's picture, the web page) is the same for everyone: kept a minute at the edge.
+  if (!sub && method === "GET" && !request.headers.get("x-device")) {
+    return d.edgeCached(request, ctx, RECIPE_LIMITS.edgeSeconds, async () => {
+      const res = await show(d, env, request, code, url);
+      if (res.status !== 200) return res;
+      const headers = new Headers(res.headers);
+      headers.set("cache-control", `public, max-age=${RECIPE_LIMITS.edgeSeconds}`);
+      return new Response(res.body, { status: 200, headers });
+    });
+  }
   if (!sub && method === "GET") return show(d, env, request, code, url);
   if (!sub && method === "DELETE") return remove(d, env, request, code);
   if (sub === "/versions" && method === "POST") return newVersion(d, env, request, code);

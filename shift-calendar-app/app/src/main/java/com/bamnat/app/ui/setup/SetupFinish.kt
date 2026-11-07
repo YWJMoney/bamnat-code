@@ -4,6 +4,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.filled.ExpandMore
+import com.bamnat.app.data.ScheduleSnapshot
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -111,7 +115,9 @@ internal fun AlarmPart(vm: SetupViewModel, d: SetupDraft, compact: Boolean = fal
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { canPost = Notifications.canPost(context) }
     val ask = rememberNotificationAsk()
     if (anyAlarm && !canPost) {
-        WarningBanner("알림을 허용해 주세요", "허용해야 잠금 화면에서 알람을 끌 수 있어요", action = "허용", onAction = ask)
+        // 1.39 [FLOW-05] The first time it is needed, what it gives is drawn first: the alarm big on the lock screen with its 끄기.
+        com.bamnat.app.ui.components.PermissionAskCard(com.bamnat.app.ui.components.PermissionResult.LOCK_ALARM,
+            "알림을 허용해 주세요", "허용해야 잠금 화면에서 알람을 끌 수 있어요", action = "허용", onAction = ask)
     }
 }
 
@@ -167,12 +173,38 @@ private fun ringLine(t: ShiftType, minutes: Int?): String {
 @Composable
 internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     // 1.38 PC 12.1: filled from a 근무표 link, the names are what is left to check.
+    // 1.39 [FLOW-04] The check is the calendar itself: this month as it will be saved, a day tapped goes back to where it is set, and
+    // the answers in words fold into one line under it (opened, each has its '고치기').
+    val preview = remember(d.types, d.rotation, d.anchor, d.weekly, d.painted, d.leaves, d.holidaysOff) {
+        ScheduleSnapshot(d.typesToSave(), d.pattern(vm.today), d.paintedEntries()).takeIf { !it.isEmpty }
+    }
     if (d.linkTitle.isNotBlank()) StepHeader("‘${d.linkTitle}’ 근무표로 시작할까요?", "받은 근무표의 근무 이름과 시간, 근무한 날을 그대로 넣었어요. 이름이 맞으면 아래 단추 하나로 시작해요.")
-    else StepHeader("이대로 저장할까요?", "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
+    else StepHeader("이대로 저장할까요?",
+        if (preview != null) "저장하면 달력이 이렇게 채워져요. 다른 날이 있으면 그 칸을 눌러 바로 고쳐요." else "저장하면 달력이 바로 채워져요. 고칠 곳은 ‘고치기’를 누르세요.")
     val types = remember(d.types) { d.types.associateBy { it.id } }
+    if (preview != null) {
+        val thisMonth = remember(vm.today) { java.time.YearMonth.from(vm.today) }
+        var month by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(thisMonth.toString()) }
+        SetupMonth(
+            month = java.time.YearMonth.parse(month),
+            snapshot = preview,
+            weekStart = vm.weekStart,
+            today = vm.today,
+            selected = null,
+            onMonth = { month = it.toString() },
+            first = thisMonth,
+            last = thisMonth.plusMonths(2),
+            // An order is fixed where today's place in it is asked; days of the week and a painted roster where they were set.
+            onDayClick = { vm.fix(if (d.usesRotation && SetupStep.TODAY in d.steps) SetupStep.TODAY else SetupStep.ORDER) },
+        )
+    }
     if (d.linkTitle.isNotBlank()) SummaryCard("근무 이름", d.types.filter { !it.isOff }.joinToString(", ") { if (it.label != it.name) "${it.name}(${it.label})" else it.name },
         onFix = { vm.fix(SetupStep.TIMES) })
-    else SummaryCard("근무 형태", styleTitle(d), onFix = { vm.fix(SetupStep.STYLE) })
+    var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(preview == null) }
+    if (!open) {
+        SummaryFold(foldLine(d, preview != null)) { open = true }
+    } else {
+    if (d.linkTitle.isBlank()) SummaryCard("근무 형태", styleTitle(d), onFix = { vm.fix(SetupStep.STYLE) })
     val source = d.source
     if ((source != null || d.companyName.isNotBlank()) && SetupStep.COMPANY in d.steps) {
         // 1.38 통합 7차 347b7c37 (직접 만든 순서에도 '3조 2교대로 시작'): an order of the user's own is said so.
@@ -200,13 +232,14 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
         d.style == WorkStyle.HOURLY && d.noFixedDays -> SummaryCard("요일", "그때그때 달라요. 일한 날 달력에 적어요", onFix = { vm.fix(SetupStep.ORDER) })
         else -> SummaryCard("요일", weekLine(d) + if (d.holidaysOff) " · 공휴일 쉼" else " · 공휴일에도 일함", onFix = { vm.fix(SetupStep.ORDER) })
     }
-    // 1.38 통합 11차 (알바 월수금 13~18시: 쉬는 시간 30분이 붙어 주 13시간 30분 → 주휴 없음, 요약에는 작게만): the 15-hour line
-    // of 주휴수당 is said plainly when the week's hours make or miss it, and when the break alone decides it.
-    weeklyHolidayNote(d)?.let { SummaryCard("주휴수당", it, onFix = { vm.fix(SetupStep.TIMES) }) }
     if (d.usesRotation) {
         val date = vm.questionDate(d)
         todaySentence(d, date, vm.today)?.let { SummaryCard("오늘", it, onFix = { vm.fix(SetupStep.TODAY) }) }
     }
+    }
+    // 1.38 통합 11차 (알바 월수금 13~18시: 쉬는 시간 30분이 붙어 주 13시간 30분 → 주휴 없음, 요약에는 작게만): the 15-hour line
+    // of 주휴수당 is said plainly when the week's hours make or miss it, and when the break alone decides it. 1.39: never folded away.
+    weeklyHolidayNote(d)?.let { SummaryCard("주휴수당", it, onFix = { vm.fix(SetupStep.TIMES) }) }
     // [EASE-07] 1.38: the alarm is chosen here (already 출근 1시간 전), not on a screen of its own.
     val first = remember(d) { vm.firstAlarm(d) }
     Surface(
@@ -247,6 +280,30 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
         com.bamnat.app.ui.onboarding.StatsLine(settings.shareUsageStats) { c.setUsageStats(it) }
     }
 }
+
+/** 1.39 [FLOW-04] The answers in words, folded to one line under the month: "교대 근무 · 4조 2교대 · 주간 07:00~19:00 외 1 ▾". */
+@Composable
+private fun SummaryFold(text: String, onOpen: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(onClickLabel = "고른 답 모두 보기", onClick = onOpen)
+            .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text("고른 답 보기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
+        Icon(Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+/** 1.39 [FLOW-04] The folded line: the kind of work, where the order came from and the first shift's hours. */
+internal fun foldLine(d: SetupDraft, withMonth: Boolean): String = buildList {
+    add(styleTitle(d).substringBefore(" · "))
+    d.source?.name?.takeIf { it.isNotBlank() }?.let(::add) ?: d.companyName.takeIf { it.isNotBlank() }?.let(::add)
+    val work = d.workTypes
+    work.firstOrNull()?.let { t -> add("${t.name} ${hoursOf(t)}" + if (work.size > 1) " 외 ${work.size - 1}" else "") }
+    if (!withMonth && d.style == WorkStyle.SHIFT && !d.usesRotation) add(if (d.painted.isEmpty()) "근무표는 나중에" else "칠한 날 ${d.painted.size}일")
+}.joinToString(" · ")
 
 @Composable
 private fun SummaryCard(title: String, text: String, onFix: () -> Unit, extra: (@Composable () -> Unit)? = null) {

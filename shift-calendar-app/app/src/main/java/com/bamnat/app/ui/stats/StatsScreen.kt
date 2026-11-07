@@ -160,7 +160,8 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
     // the first open of 통계 draws at once instead of waiting on nine months of days.
     // [UX-10] 1.25 Z (U7): back on this tab, the figures are there from the first frame; worked out again only when the days changed.
     // B 1.32 [CALX-05] Over the pay period when chosen and the pay has one (급여 기간 21일~20일), else 1일~말일.
-    val period = payProfile?.period?.takeIf { settings.statsByPayPeriod && it.endDay != null }
+    // 1.39 [PAYX-60] By itself when the pay has one (21일~20일), unless 1일~말일 was picked on the chips below.
+    val period = payProfile?.period?.takeIf { settings.statsPeriod.byPay(it) && pays }
     // 1.32 [CALX-06] 주 and 직접 for this visit (1일~말일 and 급여 기간 are kept in settings); the trend stays by month.
     var briefMode by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf<String?>(null) }
     var weekShift by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -240,11 +241,11 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             var picking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 com.bamnat.app.ui.components.FilterChip(selected = rangeMode == com.bamnat.core.hours.StatsRange.Mode.MONTH,
-                    onClick = { briefMode = null; vm.updateSettings { it.copy(statsByPayPeriod = false) } }, label = { Text("1일~말일") })
-                payProfile?.period?.takeIf { it.endDay != null }?.let { pp ->
+                    onClick = { briefMode = null; vm.updateSettings { it.copy(statsPeriod = com.bamnat.app.data.StatsPeriod.MONTH) } }, label = { Text("1일~말일") })
+                payProfile?.period?.takeIf { com.bamnat.app.data.StatsPeriod.PAY.byPay(it) && pays }?.let { pp ->
                     com.bamnat.app.ui.components.FilterChip(selected = rangeMode == com.bamnat.core.hours.StatsRange.Mode.PAY,
-                        onClick = { briefMode = null; vm.updateSettings { it.copy(statsByPayPeriod = true) } },
-                        label = { Text("급여 기간 ${pp.label(month)}") })
+                        onClick = { briefMode = null; vm.updateSettings { it.copy(statsPeriod = com.bamnat.app.data.StatsPeriod.PAY) } },
+                        label = { Text("${month.monthValue}월 월급분 ${pp.label(month)}") })
                 }
                 com.bamnat.app.ui.components.FilterChip(selected = rangeMode == com.bamnat.core.hours.StatsRange.Mode.WEEK,
                     onClick = { briefMode = com.bamnat.core.hours.StatsRange.Mode.WEEK.name; weekShift = 0 }, label = { Text("주") })
@@ -508,13 +509,13 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 }
                 StatsPart.TREND -> {
                 SectionCard(title = "최근 6개월") {
-                    MonthTrend(trend.map { it.month to it.totalMinutes.toLong() }, floor = 60) { HoursFormat.decimalHours(it.toDouble()).substringBefore('.') }
+                    MonthTrend(trend.map { it.month to it.totalMinutes.toLong() }) { HoursFormat.decimalHours(it.toDouble()).substringBefore('.') }
                 }
 
                 }
-                StatsPart.COMPARE -> CompareCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate)
+                StatsPart.COMPARE -> CompareCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate, period)
                 StatsPart.YEAR -> YearWorkCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate,
-                    onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.REPORT.key) } })
+                    onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.REPORT.key) } }, period = period)
                 else -> Unit
             }
         }
@@ -594,40 +595,16 @@ private fun LimitBar(value: Double, limit: Double, max: Double) {
     }
 }
 
+/**
+ * The last months as bars. 1.39 [DSG-04] 그래프 규칙 (수면 화면에서 먼저 쓴 부품): one colour, each month's value under its name,
+ * the months' average dashed across, and a tap shows one bubble.
+ */
 @Composable
-private fun MonthTrend(values: List<Pair<YearMonth, Long>>, floor: Long, label: (Long) -> String) {
-    val max = (values.maxOfOrNull { it.second } ?: 0).coerceAtLeast(floor)
-    Row(
-        Modifier.fillMaxWidth().height(140.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        values.forEachIndexed { i, (m, minutes) ->
-            val last = i == values.lastIndex
-            Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    if (minutes > 0) label(minutes) else "",
-                    style = MaterialTheme.typography.labelSmall.merge(NumberStyle), maxLines = 1,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
-                    Box(
-                        Modifier
-                            .widthIn(max = 36.dp)
-                            .fillMaxWidth()
-                            .fillMaxHeight((minutes.toFloat() / max).coerceIn(0.02f, 1f))
-                            .clip(MaterialTheme.shapes.extraSmall)
-                            .background(
-                                if (last) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
-                            ),
-                    )
-                }
-                Text(Fmt.monthShort(m), style = MaterialTheme.typography.labelSmall,
-                    color = if (last) MaterialTheme.colorScheme.primary else Color.Unspecified)
-            }
-        }
-    }
+private fun MonthTrend(values: List<Pair<YearMonth, Long>>, label: (Long) -> String) {
+    val bars = values.map { (m, v) -> com.bamnat.app.ui.components.ChartBar(Fmt.monthShort(m), v.toDouble(), text = if (v > 0) label(v) else "—") }
+    val avg = com.bamnat.core.design.ChartEmphasis.average(values.map { it.second.toDouble() })
+    val base = avg?.let { com.bamnat.app.ui.components.Baseline(it, "점선 평균 ${label(it.toLong())}") }
+    com.bamnat.app.ui.components.BarChart(bars, base, height = 120.dp, values = true)
 }
 
 /** Entry to 급여 계산 [PAYX-06]: the month's estimate when set up and unlocked, otherwise an invitation. */
@@ -743,7 +720,7 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
         }
     }
     if (trend.any { it.second > 0 }) {
-        SectionCard(title = "최근 6개월 번 돈") { MonthTrend(trend, floor = 1) { wonBrief(it) } }
+        SectionCard(title = "최근 6개월 번 돈") { MonthTrend(trend) { wonBrief(it) } }
     }
 }
 
@@ -806,7 +783,7 @@ private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, firstD
         }
     }
     if (trend.any { it.second > 0 }) {
-        SectionCard(title = "최근 6개월 매출") { MonthTrend(trend, floor = 1) { wonBrief(it) } }
+        SectionCard(title = "최근 6개월 매출") { MonthTrend(trend) { wonBrief(it) } }
     }
 }
 

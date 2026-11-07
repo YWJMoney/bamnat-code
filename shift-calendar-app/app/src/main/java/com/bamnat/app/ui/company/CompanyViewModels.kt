@@ -1591,11 +1591,15 @@ suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.Forget
     c.recipes.setBlocked(emptySet())
     c.recipes.hasProfile(false)
     c.recipes.peopleChanged()
-    return counts
+    // 1.39 [PRIV-06] and every link this phone made on the share server, with the keys it holds (달력·팀·가게 링크).
+    val links = runCatching { com.bamnat.app.share.ShareForget.all(c) }.getOrNull()
+    return counts.copy(links = links?.cut ?: 0, linksLeft = links?.left ?: 0)
 }
 
 /** [INQ-05] What 모두 지우기 asks before it goes; 1.36 [INQ-07] says what the law keeps. */
 const val FORGET_ALL_WORDS = "보낸 설정, 맞았어요·달라요, 토론 글과 신고, 받기로 한 보상, 앱 문의, 마을에 올린 레시피·프로필·모음·팔로우·차단까지 서버에서 모두 지워요. " +
+    // 1.39 [PRIV-06] 공유 서버도: 이 휴대폰이 만든 링크는 모두 끊겨 받은 사람에게 더 보이지 않아요. 무엇이 끊기는지는 ShareForget.held가 앞에 말해요.
+    "이 휴대폰이 만든 공유 링크도 모두 끊어서 받은 사람에게 더 보이지 않아요. " +
     "이 휴대폰에서 쓰는 설정과 넣은 레시피는 그대로예요. 결제·환불 문의는 전자상거래법에 따라 앱에서만 사라지고 운영자가 3년 보관해요."
 
 

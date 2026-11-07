@@ -114,6 +114,24 @@ import com.bamnat.core.time.Today
 /** 1.37 PC 5차: through Fmt, so 금액 가리기 hides 세전·세후·세금·실수령 too. */
 internal fun won(v: Long): String = com.bamnat.app.ui.Fmt.won(v)
 
+/**
+ * 1.39 [FLOW-31] The pay result's four small figures. 기본 is the base and paid leave, 수당 everything paid on top (연장·야간·휴일·추가·
+ * 고정 수당), then the hours and days worked in the period. Amounts go through [won], so 금액 가리기 hides them too.
+ */
+internal fun payCells(result: MonthPay): List<com.bamnat.app.ui.components.StatCell> {
+    val base = result.lines.filter { it.kind == com.bamnat.core.pay.LineKind.BASE || it.kind == com.bamnat.core.pay.LineKind.LEAVE }.sumOf { it.amount }
+    val extra = result.total - base
+    val worked = result.minutes.sumOf { it.total.worked }
+    val days = result.minutes.count { it.total.worked > 0 }
+    return listOf(
+        com.bamnat.app.ui.components.StatCell("기본", won(base), meaning = "기본급·시급으로 받는 돈과 유급 휴가예요"),
+        com.bamnat.app.ui.components.StatCell("수당", won(extra), tone = if (extra > 0) com.bamnat.app.ui.theme.Tone.Good else com.bamnat.app.ui.theme.Tone.Plain,
+            meaning = "연장·야간·휴일·추가 근무와 고정 수당을 더한 돈이에요. 항목별 내역에서 하나씩 봐요"),
+        com.bamnat.app.ui.components.StatCell("일한 시간", com.bamnat.core.hours.HoursFormat.korean(worked), meaning = "이 기간 칠한 근무에서 쉬는 시간을 뺀 시간이에요"),
+        com.bamnat.app.ui.components.StatCell("일한 날", "$days", "일", meaning = "근무가 있는 날이에요. 휴가·쉬는 날은 세지 않아요"),
+    )
+}
+
 /** [FREE-07] 1.35 급여 모양 of the pay on screen. */
 internal val LocalPayLook = androidx.compose.runtime.staticCompositionLocalOf { com.bamnat.core.recipe.PayLook() }
 
@@ -544,6 +562,8 @@ private fun PayResult(
         } else TotalCard(shown, range, unlocked, closed = closedSnap != null, onChecks = { checking = true },
             onEstimate = { estimate = Estimates.forMonth(shown, profile) },
             monthly = profile.wageType == com.bamnat.core.pay.WageType.MONTHLY)
+        // 1.39 [FLOW-31] Under the one number, four small ones with › for what each means: 기본·수당·일한 시간·일한 날.
+        if (!noBase && unlocked && shown.lines.isNotEmpty()) com.bamnat.app.ui.components.StatGrid(payCells(shown))
         // A 1.32 [FIX132-03] A month on an older value says so, with one tap to make every month the same.
         if (closedSnap == null && unlocked) {
             val older = remember(profile, month) { com.bamnat.core.pay.PaySameness.of(profile, month) }
@@ -764,8 +784,9 @@ private fun PayResult(
                 profile.customRules.forEach { rule ->
                     CustomRuleRow(rule, shiftNames, unlocked,
                         // [PAYX-52] A 매달 amount (사택관리비) can be its own in this month.
-                        month = result.month, onThisMonth = if (rule.pay is com.bamnat.core.pay.RulePay.Monthly) ({ monthAmountFor = rule }) else null,
+                        month = result.month, onThisMonth = if (rule.pay is com.bamnat.core.pay.RulePay.Monthly && !rule.oneMonth) ({ monthAmountFor = rule }) else null,
                         onEdit = if (ItemKind.of(rule) != null) ({ editingRule = rule }) else null,
+                        onAfterTax = { after -> vm.setCustomRuleAfterTax(rule.id, after) },
                         onOn = { vm.setCustomRuleOn(rule.id, it) },
                         onRemove = { vm.removeCustomRule(rule.id) })
                 }

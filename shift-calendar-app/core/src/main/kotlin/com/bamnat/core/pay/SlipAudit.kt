@@ -42,7 +42,7 @@ object SlipAudit {
     fun deductions(read: PayslipRead, profile: PayProfile, month: YearMonth): List<Deduction> {
         val gross = read.gross ?: return emptyList()
         val est = TakeHome.estimate(gross, TaxMode.INSURANCE_4, profile.taxFamily, month.atDay(1), profile.taxChildren,
-            TakeHome.nonTaxable(profile, month)).deductions.toMap()
+            TakeHome.nonTaxable(profile, month), off = profile.insuranceOff).deductions.toMap()
         val slip = read.lines.filter { it.role == SlipRole.DEDUCTION && it.amount != null }
             .groupBy { deductionOf(it.name) }.filterKeys { it != null }.mapValues { (_, l) -> l.sumOf { it.amount!! } }
         return DEDUCTIONS.map { (name, _) -> Deduction(name, slip[name], est[name]) }.filter { it.slip != null || (it.estimate ?: 0) > 0 }

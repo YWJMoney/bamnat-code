@@ -217,11 +217,10 @@ fun SectionCard(
     if (LocalFlatSections.current) {
         Column(modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             if (title != null || trailing != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(title.orEmpty(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.weight(1f))
-                    trailing?.invoke()
-                }
+                // [BIGTXT-01] 1.39 A big font puts the button under the title instead of squeezing the title.
+                SideOrBelow(Modifier.fillMaxWidth(), minStart = 80.dp, start = {
+                    Text(title.orEmpty(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+                }, end = { trailing?.invoke() })
                 Spacer(Modifier.padding(top = 4.dp))
             }
             content()
@@ -239,19 +238,15 @@ fun SectionCard(
         // U 1.32 [UX132-06] 촘촘하게 (기본) trims the card's top and bottom; the sides stay 16dp for the finger.
         Column(Modifier.padding(horizontal = 16.dp, vertical = com.bamnat.app.ui.theme.LocalSpacing.current.inner)) {
             if (title != null || trailing != null) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (title != null) {
-                        Text(
-                            title,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.weight(1f).semantics { heading() },
-                        )
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                    trailing?.invoke()
-                }
+                // [BIGTXT-01] 1.39 A big font puts the button under the title instead of squeezing the title.
+                SideOrBelow(Modifier.fillMaxWidth(), minStart = 80.dp, start = {
+                    if (title != null) Text(
+                        title,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                }, end = { trailing?.invoke() })
                 Spacer(Modifier.padding(top = 10.dp))
             }
             content()

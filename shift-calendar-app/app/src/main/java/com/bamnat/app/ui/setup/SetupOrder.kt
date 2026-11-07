@@ -173,7 +173,9 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft, header: Boolean = t
     }
     ChoiceCard(
         title = if (capturing) "캡처를 읽는 중이에요…" else "다른 앱 화면 캡처로 가져오기",
-        subtitle = "쓰던 근무 앱이나 캘린더의 한 달 화면을 캡처해 고르면 순서와 오늘 근무를 찾아요. 사진은 휴대폰 안에서만 읽어요",
+        // 1.39 [FLOW-29] 조건은 미리: the picture is read only with the month's dates (four weeks or more) and a 근무 on 7 days or more.
+        subtitle = "쓰던 근무 앱이나 캘린더의 한 달 화면을 캡처해 고르면 순서와 오늘 근무를 찾아요. " +
+            "날짜가 ${com.bamnat.core.imports.CalendarShot.MIN_DAYS}칸 넘게, 근무 글자가 ${com.bamnat.core.imports.CalendarShot.MIN_CELLS}칸 넘게 보여야 읽혀요. 사진은 휴대폰 안에서만 읽어요",
         icon = Icons.Filled.PhotoCamera,
         selected = false,
         onClick = { if (!capturing) capture.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },

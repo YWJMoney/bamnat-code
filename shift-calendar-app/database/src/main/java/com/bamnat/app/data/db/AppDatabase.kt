@@ -34,7 +34,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         // 1.38 [SLEEP-03][SLEEP-07] Version 31: 아침 한 장과 밤 소리.
         SleepCheckEntity::class, SleepEventEntity::class,
     ],
-    version = 31,
+    version = 32,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -74,7 +74,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
                 MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
-                MIGRATION_30_31,
+                MIGRATION_30_31, MIGRATION_31_32,
             )
 
         /**
@@ -465,6 +465,16 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `sleep_events` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `startMillis` INTEGER NOT NULL, " +
                     "`endMillis` INTEGER NOT NULL, `kind` TEXT NOT NULL, `level` REAL NOT NULL, `file` TEXT, `keep` INTEGER NOT NULL DEFAULT 0)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_sleep_events_startMillis` ON `sleep_events` (`startMillis`)")
+            }
+        }
+
+        /**
+         * 1.39 (DB 32, 급여·수당 갈래 G3) [BOSS-12] 산재보험 사업종류 of a 사업장. A new nullable column only: every 사업장 of version 31
+         * keeps its meaning (업종을 아직 안 골라 산재를 계산하지 않음).
+         */
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `workplace` ADD COLUMN `industry` TEXT")
             }
         }
 

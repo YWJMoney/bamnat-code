@@ -106,15 +106,18 @@ export function overlaps(q, k, skip = null) {
   const g = grams(String(q.text ?? "").replace(/^\s*\[[^\]\n]{1,40}\]\s*/, ""));
   const topic = triage(q.kind, q.text, q.info).topic;
   const path = screenPath(q.text);
-  const out = [];
+  const found = [];
   for (const d of k.devs) {
     if (d.id === skip) continue;
-    const s = likeness(g, d.g);
+    const byText = likeness(g, d.g);
+    // 1.39 [DESK-05] 출시 노트 후보: 그 개발사항의 업데이트 소식 한 줄과 더 닮았으면 그 점수와 '소식' 이유로.
+    const byNews = d.ng ? likeness(g, d.ng) : 0;
+    const s = Math.max(byText, byNews);
     if (s < LEDGER.overlapFloor) continue;
-    const why = [`글 ${Math.round(s * 100)}%`];
-    const out_ = d.status === "done" && d.released_in ? (isOut(d.released_in, k.shipped) ? `${d.released_in}에서 고침` : `${d.released_in} 출시 전`) : DEV.statuses[d.status] ?? d.status;
-    why.push(out_);
-    out.push({ type: "dev", id: d.id, title: d.title, status: d.status, releasedIn: d.released_in ?? null, score: s, why });
+    const gone = d.status === "done" && d.released_in && isOut(d.released_in, k.shipped);
+    const why = [byNews > byText ? `${gone ? `${d.released_in} 업데이트 소식` : "나갈 소식"} ‘${clip(d.news, 30)}’ ${Math.round(byNews * 100)}%` : `글 ${Math.round(s * 100)}%`];
+    why.push(d.status === "done" && d.released_in ? (gone ? `${d.released_in}에서 고침` : `${d.released_in} 출시 전`) : DEV.statuses[d.status] ?? d.status);
+    found.push({ type: "dev", id: d.id, title: d.title, status: d.status, releasedIn: d.released_in ?? null, ...(byNews > byText ? { note: d.news } : {}), score: s, why });
   }
   for (const a of k.answered) {
     if (a.id === q.id) continue;
@@ -126,14 +129,14 @@ export function overlaps(q, k, skip = null) {
       s = Math.min(1, s + LEDGER.pathBonus);
       why.push(`같은 화면 [${path}]`);
     }
-    out.push({ type: "inquiry", id: a.id, title: titleFrom(a.first), score: s, why: [...why, "전에 답함"] });
+    found.push({ type: "inquiry", id: a.id, title: titleFrom(a.first), score: s, why: [...why, "전에 답함"] });
   }
   for (const t of k.templates) {
     const s = likeness(g, t.g, t.topic === topic);
     if (s < LEDGER.overlapFloor) continue;
-    out.push({ type: "template", id: t.id, title: t.label, score: s, why: [`글 ${Math.round(s * 100)}%`, "자주 쓰는 답"] });
+    found.push({ type: "template", id: t.id, title: t.label, score: s, why: [`글 ${Math.round(s * 100)}%`, "자주 쓰는 답"] });
   }
-  return out.sort((a, b) => b.score - a.score).slice(0, LEDGER.overlaps).map((o) => ({ ...o, score: Math.round(o.score * 100) / 100, why: o.why.join(" · ") }));
+  return found.sort((a, b) => b.score - a.score).slice(0, LEDGER.overlaps).map((o) => ({ ...o, score: Math.round(o.score * 100) / 100, why: o.why.join(" · ") }));
 }
 
 async function linesOf(env, keys, ats) {

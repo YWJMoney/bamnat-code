@@ -53,6 +53,8 @@ data class Workplace(
     val minuteUnit: Int = 1,
     /** 1.38 [P3-X-01] 대타 요청 on their way (the same yes/no link as the 리더's 결원 메우기; [TeamCall.gap] is the staff id and day). */
     val calls: List<com.bamnat.core.team.TeamCall> = emptyList(),
+    /** 1.39 [BOSS-12] 산재보험 사업종류 ([AccidentRates.Kind.code] or "custom:‰"); null until the 사장님 picks it (DB 32판). */
+    val industry: String? = null,
 ) {
     fun payDate(month: YearMonth): LocalDate? = payday?.let { month.plusMonths(1).atDay(it.coerceAtMost(month.plusMonths(1).lengthOfMonth())) }
 }
@@ -171,10 +173,12 @@ data class LedgerLine(
     val holidayMinutes: Int,
     val employerInsurance: Long,
     val warnings: List<LedgerWarning>,
+    /** 1.39 [BOSS-12] 산재보험 (사업주만, 공식 대조 G5): 0 for a 사업소득자 or with no 업종 picked. */
+    val accident: Long = 0,
 ) {
     val lines: List<PayLine> get() = pay?.lines.orEmpty().filter { it.amount != 0L }
     val gross: Long get() = lines.sumOf { it.amount }
-    val employerTotal: Long get() = gross + employerInsurance
+    val employerTotal: Long get() = gross + employerInsurance + accident
     /** Pay lines grouped by what the ledger calls them: 기본급, 주휴수당, 연장·야간·휴일, 수당. */
     fun amountOf(kind: LineKind): Long = lines.filter { it.kind == kind }.sumOf { it.amount }
 }
@@ -185,7 +189,9 @@ data class LedgerWarning(val key: String, val title: String, val text: String)
 data class Ledger(val workplace: Workplace, val month: YearMonth, val lines: List<LedgerLine>) {
     val gross: Long get() = lines.sumOf { it.gross }
     val employerInsurance: Long get() = lines.sumOf { it.employerInsurance }
-    val total: Long get() = gross + employerInsurance
+    /** 1.39 [BOSS-12] 산재보험 of everyone this month. */
+    val accident: Long get() = lines.sumOf { it.accident }
+    val total: Long get() = gross + employerInsurance + accident
     /** The line above the ledger for a place under 5 people, or one not answered yet. */
     val note: String? get() = when (workplace.fivePlus) {
         false -> "5인 미만 사업장: 연장·야간·휴일 가산 없이 계산했어요(근로기준법 제11조)"
@@ -308,11 +314,13 @@ object PayrollLedger {
         // [BOSS-11] Only the 4대보험 the law puts them in (G2·G3·G6), not just what was ticked.
         val eligible = InsuranceRules.of(place, s, month).effective
         val insurance = if (eligible.any) employerInsurance(gross, eligible, month.atDay(1)) else 0
+        // 1.39 [BOSS-12] 산재 covers every 근로자 from the first day, 단시간 too (산재보험법 제6조); a 사업소득자 (3.3%) is not one.
+        val accident = if (s.insurance.tax == StaffTax.BIZ) 0 else AccidentRates.premium(gross, place.industry, month.atDay(1))
         val line = LedgerLine(
             staff = s, month = month, pay = pay,
             workDays = workDays, workMinutes = workMinutes,
             overtimeMinutes = minutesOf(LineKind.OVERTIME), nightMinutes = minutesOf(LineKind.NIGHT), holidayMinutes = minutesOf(LineKind.HOLIDAY),
-            employerInsurance = insurance, warnings = emptyList(),
+            employerInsurance = insurance, warnings = emptyList(), accident = accident,
         )
         return line.copy(warnings = warnings(place, line, worked.isEmpty()))
     }
@@ -337,7 +345,12 @@ object PayrollLedger {
         val care = cut.cut10(health, sh.careRatio)
         val pension = cut.cut10((pay / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax), sh.pension)
         val employment = cut.cut10(pay, cut.exact(sh.employment).add(cut.exact(LaborCost.STABILITY)).toDouble())
-        return all - (if (ins.pension) 0 else pension) - (if (ins.health) 0 else health + care) - (if (ins.employment) 0 else employment)
+        // 1.39 [BOSS-12] G4 보수월액 하한 28만 원 for the 사업주 half too, as the 직원 명세서 already does ([Payslip]).
+        val floor = if (ins.health && pay in 1 until InsuranceRules.HEALTH_BASE_MIN) {
+            val h = cut.cut10(InsuranceRules.HEALTH_BASE_MIN, sh.health)
+            (h + cut.cut10(h, sh.careRatio)) - (health + care)
+        } else 0
+        return all - (if (ins.pension) 0 else pension) - (if (ins.health) 0 else health + care) - (if (ins.employment) 0 else employment) + floor
     }
 
     /** [BOSS-05] 최저임금 미달, 주휴가 빠진 주, 결근, 아직 모르는 5인 여부, the engine's own 확인 필요. */

@@ -110,6 +110,8 @@ internal fun RingingScreen(
     shift: RingShift? = null,
     /** [EASE-19] 끄고 오늘 보기: off, then the app on today. Null hides it (with a mission, or previews). */
     onToday: (() -> Unit)? = null,
+    /** 1.39 [FLOW-15] 깨우는 단계 1..3 ([AlarmService.wakeStage]); 0 shows no dots. */
+    stage: Int = 0,
 ) {
     val now by produceState(Today.dateTime()) {
         while (true) {
@@ -143,6 +145,8 @@ internal fun RingingScreen(
                         fontWeight = FontWeight.Light,
                         style = NumberStyle,
                     )
+                    // 1.39 [FLOW-15] 깨우는 단계: three dots under the one big number, and which step it is now.
+                    if (stage in 1..3) WakeSteps(stage)
                     Spacer(Modifier.height(8.dp))
                     if (shift != null) ShiftBlock(shift)
                     else Text(title, color = Color.White, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
@@ -212,6 +216,23 @@ internal fun RingingScreen(
 }
 
 private const val ALL_OFF_ASK_MILLIS = 5_000L
+
+/** 1.39 [FLOW-15] The three steps a ring wakes by, as the screen says them. */
+internal val WAKE_STEPS = listOf("진동", "소리 작게", "소리 크게")
+
+/** 1.39 [FLOW-15] 진동 → 소리 작게 → 소리 크게 as three dots, the ones done filled, with "지금 2단계 · 소리 작게". */
+@Composable
+private fun WakeSteps(stage: Int) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.semantics(mergeDescendants = true) {}) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            for (i in 1..3) Box(Modifier.size(if (i == stage) 12.dp else 9.dp)
+                .background(Color.White.copy(alpha = if (i <= stage) 0.95f else 0.3f), RoundedCornerShape(50)))
+        }
+        Text("지금 ${stage}단계 · ${WAKE_STEPS[stage - 1]}", color = Color.White.copy(alpha = 0.75f),
+            style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
+    }
+}
 
 /** [ALRM-09] The 모두 끄기 button, before and after the first tap. */
 internal fun allOffLabel(asking: Boolean) =
