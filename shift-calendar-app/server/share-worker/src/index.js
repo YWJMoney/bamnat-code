@@ -263,6 +263,10 @@ async function route(request, env) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
   }
+  // 1.39 [ADM3-41] 관리자 앱 › 서버 상태가 살아 있는지 보는 곳. 아무것도 읽지 않고 살아 있다고만 답해요.
+  if (path === "/api/health" && (request.method === "GET" || request.method === "HEAD")) {
+    return new Response(request.method === "HEAD" ? null : JSON.stringify({ ok: true }), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+  }
   if (path === "/api/share" && request.method === "POST") return create(request, env, url);
   if (path === SPREAD_HIDE && request.method === "POST") return spreadHide(request, url);
   if (path === "/api/groups" || path.startsWith("/api/groups/")) return groups(request, env, path);
