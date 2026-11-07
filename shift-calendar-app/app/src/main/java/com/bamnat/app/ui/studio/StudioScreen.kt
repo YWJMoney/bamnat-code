@@ -1533,7 +1533,7 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                     // 1.39 [TASK-07] 할 일 위젯: 머리와 ＋, 늦은·오늘·끝낸 할 일 한 줄씩, 각 줄 앞 동그라미 (부품 widget.task·check·add).
                     WidgetKind.TASKS -> {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(Modifier.weight(1f)) { Head("할 일 1개 · 늦은 것 1개") }
+                            Box(Modifier.weight(1f)) { Head("할 일 2개 · 늦은 것 1개") }
                             val plus = bp.style("widget.task.add")
                             if (plus.hide != true) com.bamnat.app.ui.parts.PartText("＋", face.over(plus),
                                 MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = (16 * scale).sp),
@@ -1548,11 +1548,17 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                             val check = bp.style("widget.task.check", states - "today")
                             Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.task")).then(com.bamnat.app.ui.parts.PartMods.box(line.copy(ink = null), RoundedCornerShape(6.dp))),
                                 verticalAlignment = Alignment.CenterVertically) {
-                                com.bamnat.app.ui.parts.PartText(if (done) "✓" else "○", face.over(check),
-                                    MaterialTheme.typography.titleMedium.copy(color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
-                                        else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp),
-                                    Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
-                                        .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp))))
+                                // The same picture the home widget draws (a launcher draws the "○" letter as a dot), in the part's colour and size.
+                                val circle = com.bamnat.app.ui.parts.PartMods.text(face.over(check), MaterialTheme.typography.titleMedium.copy(
+                                    color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
+                                        else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp))
+                                Box(Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
+                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp)))) {
+                                    androidx.compose.material3.Icon(
+                                        androidx.compose.ui.res.painterResource(if (done) com.bamnat.app.R.drawable.ic_task_done else com.bamnat.app.R.drawable.ic_task_open),
+                                        contentDescription = null, tint = circle.color,
+                                        modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { circle.fontSize.toDp() }.coerceIn(10.dp, 40.dp)))
+                                }
                                 Column(Modifier.weight(1f)) {
                                     com.bamnat.app.ui.parts.PartText(words, face.over(line),
                                         MaterialTheme.typography.bodyMedium.copy(color = if (done) ink.copy(alpha = 0.6f) else ink, fontSize = (14 * scale).sp,

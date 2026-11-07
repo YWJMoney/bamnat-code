@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1.39 [TASK-07] 할 일 위젯의 끝낸 표시: the circle filled with a tick, the size of the open circle. Tinted in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12,1.8C6.37,1.8 1.8,6.37 1.8,12s4.57,10.2 10.2,10.2 10.2,-4.57 10.2,-10.2S17.63,1.8 12,1.8zM10.2,16.6l-4.4,-4.4 1.5,-1.5 2.9,2.9 6.5,-6.5 1.5,1.5 -8,8z" />
+</vector>
