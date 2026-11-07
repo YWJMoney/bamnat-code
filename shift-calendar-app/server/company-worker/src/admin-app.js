@@ -721,7 +721,7 @@ function adminApp(L, BUILD, M) {
         // 1.36 [VIL-21] 마을 운영: 유형 광장마다 이번 주 주제.
         else if (!id && S.postFilter === "village") {
           jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })),
-            api("/plaza/picks").then(keep((d) => { S.data.picks = d; })));
+            api("/plaza/picks").then(keep((d) => { S.data.picks = d; })), api("/plaza/effect").then(keep((d) => { S.data.plazaEffect = d; })));
         }
         else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
         else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
@@ -1275,7 +1275,28 @@ function adminApp(L, BUILD, M) {
         placeholder="예: 야간 끝나고 잠드는 나만의 방법"${edit ? "" : " readonly"}></label>
       ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">이야기 주제 저장</button>
         ${x.text ? `<button class="btn ghost" data-act="topic-clear" data-id="${esc(x.room)}">내리기</button>` : ""}</div>` : ""}
-    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit) + `<hr class="split">` + picksView(edit);
+    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit) + `<hr class="split">` + picksView(edit) + `<hr class="split">` + plazaEffectView();
+  }
+
+  /**
+   * 1.39 [PLZC-33] 광장 효과: per kind of work's plaza, sums only. 처리방침 3.12 (plaza.people) 전후를 하루 글 수로 비교하고,
+   * 1.40 광장 논의(docs/plans/1.40-이후-논의/광장.md)를 이 숫자로 시작해요.
+   */
+  function plazaEffectView() {
+    const d = S.data.plazaEffect;
+    if (!d) return skeleton(1);
+    const n = (v, unit = "") => (v === null || v === undefined ? "–" : `${v}${unit}`);
+    const mins = (m) => (m === null ? "–" : m < 60 ? `${m}분` : `${Math.round(m / 6) / 10}시간`);
+    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. 다시 쓴 분은 처음 쓴 뒤 ${d.back}일 안에 또 쓴 비율이에요.</p>
+      <div class="table-wrap"><table class="list nums"><thead><tr><th scope="col">광장</th><th scope="col">하루 글 (전)</th><th scope="col">질문 · 답 받음</th><th scope="col">첫 답까지</th><th scope="col">답</th><th scope="col">태그 붙은 글</th>
+        <th scope="col">나도요</th><th scope="col">근무 카드</th><th scope="col">쓴 분</th><th scope="col">처음 쓴 분 · 다시 씀</th><th scope="col">오늘 출근</th></tr></thead><tbody>
+      ${d.items.map((x) => {
+        const cells = [["하루 글 (전)", `${n(x.postsPerDay)} (${n(x.postsPerDayBefore)})`], ["질문 · 답 받음", `${x.questions} · ${n(x.answeredPct, "%")}`],
+          ["첫 답까지", mins(x.firstAnswerMin)], ["답", x.answers], ["태그 붙은 글", n(x.tagged, "%")], ["나도요", x.metoo], ["근무 카드", x.cards],
+          ["쓴 분", x.writers], ["처음 쓴 분 · 다시 씀", `${x.newWriters} · ${n(x.cameBackPct, "%")}`], ["오늘 출근", x.checkinToday]];
+        return `<tr><td class="name">${esc(x.name)}</td>${cells.map(([l, v]) => `<td class="n"><span class="lab">${l} </span>${v}</td>`).join("")}</tr>`;
+      }).join("")}
+      </tbody></table></div>`;
   }
 
   const FORM_NAMES = { THREE_SHIFT: "3교대", TWO_SHIFT: "2교대", FOUR_TEAM: "4조 2교대", NURSE: "간호 듀티", ON_CALL: "당직", DAY_ON_DAY_OFF: "격일",
@@ -4672,6 +4693,7 @@ function adminApp(L, BUILD, M) {
       S.data.village = null;
       S.data.contests = null;
       S.data.picks = null;
+      S.data.plazaEffect = null;
       refilter("posts");
     },
     // 1.39 [CARE-05]

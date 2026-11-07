@@ -278,3 +278,30 @@ test("[PLZC-22] 광장 답 모음: the operator picks a helped answer, the app r
   assert.deepEqual((await call("GET", "/api/plaza/picks?room=style-shift", undefined, as(5))).data.items, []);
   assert.equal((await call("GET", "/api/plaza/picks?room=style-x", undefined, as(5))).status, 400);
 });
+
+test("[PLZC-33] 광장 효과: sums per plaza, answered share and first answer time, tags, 나도요, writers coming back", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW - 20 * DAY });
+  const { call } = server();
+  // A first-time writer 20 days ago who writes again 2 days later.
+  await write(call, 7, "style-shift", "처음 써 봐요 반가워요");
+  t.mock.timers.tick(2 * DAY);
+  await write(call, 7, "style-shift", "또 왔어요 오늘도 야간");
+  t.mock.timers.tick(18 * DAY);
+  await policyOn(call);
+  const q = (await write(call, 1, "style-shift", "야간 뒤 몇 시간 자요?", { s: "SHIFT", f: "FOUR_TEAM" }, { kind: "question" })).data.id;
+  t.mock.timers.tick(30 * 60e3);
+  await call("POST", "/api/posts", { device: device(2), company: "style-shift", setup: "room", body: "여섯 시간이요", parent: q }, from(2));
+  await write(call, 3, "style-shift", "답 없는 질문이에요", null, { kind: "question" });
+  await call("POST", `/api/posts/${q}/vote`, { device: device(4), ok: true }, from(4));
+  const r = await call("GET", "/api/admin/plaza/effect", undefined, await signIn(call));
+  assert.equal(r.status, 200);
+  const s = r.data.items.find((x) => x.room === "style-shift");
+  assert.equal(s.questions, 2);
+  assert.equal(s.answeredPct, 50);
+  assert.equal(s.firstAnswerMin, 30);
+  assert.equal(s.metoo, 1);
+  assert.equal(s.newWriters, 1, "the writer of 20 days ago");
+  assert.equal(s.cameBackPct, 100);
+  assert.ok(s.tagged > 0 && s.tagged < 100);
+  assert.equal(r.data.items.find((x) => x.room === "style-shop").posts, 0);
+});
