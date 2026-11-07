@@ -344,13 +344,13 @@ class SetupFlowTest {
         assertEquals("영업", c.scheduleRepository.snapshot.first().resolver.resolve(today.plusDays(3)).shiftType?.name)
     }
 
-    /** 1.38 통합 10차: a table made by '우리 회사 근무표 올리기' in the setup is to be put up (box ticked); a row of the list is not. */
-    @Test fun anUploadInTheSetupIsTickedToGoUp() {
+    /** 1.38 D3: the summary's 올리기 box starts unticked even for a table made by '우리 회사 근무표 올리기'; ticking it puts it up. */
+    @Test fun anUploadInTheSetupStartsUnticked() {
         val vm = vm()
         vm.pickStyle(WorkStyle.SHIFT)
         val made = com.bamnat.core.plaza.PublicCycles.provided("예시정밀", "4조2교대")
         vm.pickPublic(made, "DDNNOOOO")
-        assertTrue(vm.shareCycle.value)
+        assertFalse(vm.shareCycle.value)
         vm.pickPublic(made.copy(id = "row1"), "DDNNOOOO")
         assertFalse(vm.shareCycle.value)
     }

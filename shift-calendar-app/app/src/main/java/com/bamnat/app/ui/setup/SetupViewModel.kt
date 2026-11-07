@@ -387,9 +387,9 @@ class SetupViewModel(
         val text = PublicCycleFiles.text(cycle, codes)
         val roster = if (current.style == WorkStyle.SHIFT) cycle.roster else null
         useShared(SetupSource(SetupSource.Kind.PUBLIC, text, id = cycle.id, name = cycle.company, dept = cycle.formKey), text, roster)
-        // 1.38 통합 10차 (첫 설정에서 '우리 회사 근무표 올리기'로 만든 순서가 '설정 이어가기'로 끝나고 올라가지 않아요): pressing 올리기 was
-        // the ask, so the summary's box starts ticked for it (it can be unticked there); a row of the list starts unticked (994c2328).
-        shareCycle.value = cycle.id.isEmpty()
+        // 1.38 출시 점검 D3 (사용자 2026-11-07, 추천안): a choice that sends something to a server starts unticked, like 사용 통계,
+        // so the summary's 올리기 box starts empty even for a table made by '우리 회사 근무표 올리기'; the user ticks it there.
+        shareCycle.value = false
         c.telemetry.event("setup_public", if (cycle.id.isEmpty()) "provided" else cycle.orderState.name.lowercase())
     }
 

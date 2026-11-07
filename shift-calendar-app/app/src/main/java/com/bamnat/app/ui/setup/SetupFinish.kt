@@ -428,7 +428,7 @@ private fun ShareCycleLine(company: String, on: Boolean, upload: Boolean = false
         Column(Modifier.weight(1f)) {
             Text(if (upload) "‘$company’ 근무표 올리기 · 같은 회사 분이 바로 써요" else "‘$company’ 다른 분들도 이 근무주기를 쓰게 나누기 (선택)",
                 style = MaterialTheme.typography.bodyLarge)
-            if (upload) Text("공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요. 올리지 않으려면 체크를 풀어요.",
+            if (upload) Text("체크하면 저장할 때 올라가요. 공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text("근무 이름·시간·순서만 나눠요. 급여 금액, 이름, 연락처, 사진은 보내지 않아요. 설정 › 개인정보·앱 정보에서 바꿔요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

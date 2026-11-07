@@ -446,9 +446,12 @@ class LegalPagesTest {
         assumeTrue(policy.exists())
         val text = policy.readText()
         val v = com.bamnat.core.flags.PolicyCalendar.SEED.of("3.11")!!
-        // 1.38: 3.11 is not posted yet (공개 저장소 PR #10 보류), so share.look waits for the day the owner sets on 1.38's release.
-        assertTrue(v.effective > java.time.LocalDate.of(2027, 1, 1) && v.holdEnds == v.effective)
-        assertTrue(text.contains("처리방침 3.11 · 앱 버전 1.37.0 기준 · 게시일 2026년 11월 4일 · 시행일 2026년 11월 10일"))
+        // 1.38 (사용자 2026-11-07 "처리방침은 오늘 기준으로"): 3.11 is posted and takes effect on 11-07; a phone installed before
+        // waits for its yes or the 30-day notice's end, 12-07.
+        assertEquals(java.time.LocalDate.of(2026, 11, 7), v.posted)
+        assertEquals(java.time.LocalDate.of(2026, 11, 7), v.effective)
+        assertEquals(java.time.LocalDate.of(2026, 12, 7), v.holdEnds)
+        assertTrue(text.contains("처리방침 3.11 ·") && text.contains("게시일 2026년 11월 7일 · 시행일 2026년 11월 7일"))
         assertTrue("3.11 is the newest version line", text.indexOf("처리방침 3.11 ·") < text.indexOf("처리방침 3.10 ·"))
         assertTrue(text.contains("이용자가 ‘내 테마’를 고른 링크만") && text.contains("이용자가 ‘근무 설정’을 고른 링크만"))
         assertTrue(text.contains("공유 서버는 급여 부분이 든 근무 설정을 받지 않음"))
