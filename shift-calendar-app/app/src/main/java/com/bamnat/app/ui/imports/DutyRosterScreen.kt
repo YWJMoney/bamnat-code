@@ -486,6 +486,9 @@ class DutyRosterViewModel(
             if (u.from != RosterFrom.TYPED && u.row?.guessed.orEmpty().any { it in cells && it !in u.edits }) markShiftsInferred()
             _ui.update { it.copy(applied = all.size, history = emptyList()) }
             container.proMoments.rosterIn() // 1.32 [PROX-02]
+            // 1.39 [SPREAD-06] A month filled from a 근무표 (사진·파일·직접) is the first good moment for Play's review too, as a
+            // first pattern saved is (ShiftsViewModel); it is still asked only after the first month-end card, back on 내 달력.
+            if (all.size >= com.bamnat.app.review.InAppReview.ROSTER_DAYS) container.settingsRepository.update { if (it.reviewAsked) it else it.copy(reviewDue = true) }
             // [EASE-15] A photo's month says how few cells needed a hand.
             val text = "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요" +
                 (if (outside.isNotEmpty()) " · ${RosterReader.span(outside.keys)}도" else "") +

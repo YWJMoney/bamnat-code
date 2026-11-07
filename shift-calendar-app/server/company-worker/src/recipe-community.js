@@ -843,6 +843,10 @@ async function rcMonthMakers(d, env, url) {
 const rcEsc = (t) => String(t ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const rcHex = (n) => (Number.isInteger(n) ? "#" + (n & 0xffffff).toString(16).padStart(6, "0") : null);
 
+/** 1.39 [SPREAD-02] The store page from a maker's profile, with where the install came from (never the maker's id). */
+export const MAKER_STORE = "https://play.google.com/store/apps/details?id=com.bamnat.app&referrer=" +
+  encodeURIComponent("utm_source=bamnat_share&utm_medium=maker&utm_campaign=recipe");
+
 /**
  * GET /m/:id — a maker's 프로필 as a small web page for a link sent in a messenger: face, name, 소개, counts and 대표 작품, with
  * "밤낮 앱에서 보기" (bamnat://m/<id>). Nothing about who looks; a hidden or closed profile is not there. Not indexed.
@@ -880,7 +884,7 @@ a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;b
 <h1>${rcEsc(nick)}</h1>${m?.bio && !m.bio_hidden ? `<p>${rcEsc(m.bio)}</p>` : ""}
 <div class="n"><div><b>${rows.length}</b>작품</div><div><b>${followers}</b>팔로워</div><div><b>${users}</b>쓰는 분</div></div>
 <div class="w">${works}</div><p><a class="b" href="${app}">밤낮 앱에서 보기</a></p>
-<p><small>밤낮 근무 달력의 마을에서 테마와 기능을 나누는 분이에요. 앱이 없으면 Play 스토어에서 ‘밤낮’을 찾아 주세요. 이 페이지는 아무것도 저장하지 않아요.</small></p>`);
+<p><small>밤낮 근무 달력의 마을에서 테마와 기능을 나누는 분이에요. 앱이 없으면 <a href="${MAKER_STORE}">Play 스토어에서 밤낮 받기</a>(Android 앱이에요). 이 페이지는 아무것도 저장하지 않아요.</small></p>`);
 }
 
 // ---- [RCX-08] 이번 주 고른 것 ----

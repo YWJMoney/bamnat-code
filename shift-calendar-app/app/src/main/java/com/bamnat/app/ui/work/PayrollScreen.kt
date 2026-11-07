@@ -249,6 +249,10 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
             if (!next.allowed) { ask = next; return@OutlinedButton }
             editing = StaffMember(UUID.randomUUID().toString(), "", base = RateTable.on(ym.atDay(1)).minimumHourlyWage)
         }, enabled = !isClosed) { Text("직원 더하기") }
+        // 1.39 [SPREAD-07] After the first staff member is in: one card, once, to tell another 사장님.
+        val hasStaff = staff.isNotEmpty()
+        LaunchedEffect(hasStaff) { if (hasStaff) context.appContainer.grow.peerDue(com.bamnat.core.guide.Peer.BOSS) }
+        if (hasStaff) com.bamnat.app.ui.pro.PeerInviteCard(com.bamnat.core.guide.Peer.BOSS)
         // 1.38 가져오기: a staff list in any file or photo (엑셀·CSV·PDF·사진), checked on one page before anyone is added.
         var reading by remember { mutableStateOf<String?>(null) }
         var importing by remember { mutableStateOf<Pair<List<com.bamnat.core.boss.StaffImport.Line>, Boolean>?>(null) }

@@ -974,6 +974,11 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         // [FEAT-07] The same, kept up to date by itself (프로).
         PhoneCalendarRows(vm)
     }
+    // 1.39 [SPREAD-05] The corner '밤낮' on pictures that leave the phone, on until the user turns it off.
+    SectionCard(title = "보내는 사진") {
+        SwitchRow(EXPORT_MARK_ROW, if (settings.exportMark) "근무표 사진 오른쪽 아래, 견적서·거래내역서 맨 아래에 작게 들어가요. 받은 분이 앱을 찾을 수 있어요"
+            else "근무표·견적서·거래내역서 사진에 밤낮 표시 없이 보내요", settings.exportMark) { on -> vm.update { it.copy(exportMark = on) } }
+    }
     if (vm.shareOn) ShareLinkRows()
 }
 
@@ -1401,6 +1406,8 @@ internal const val FREE_LOOK_ROW = "화면 꾸미기 (모든 화면)"
 /** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
 internal const val SPEND_HEAT_ROW = "지출 히트맵"
 internal const val WORK_TIME_ROW = "큰 지출을 근무 시간으로"
+/** 1.39 [SPREAD-05] 설정 › 데이터, also found by search. */
+internal const val EXPORT_MARK_ROW = "보내는 사진에 밤낮 표시"
 internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 /** 1.32 [WTYP-12] */
 internal const val STRETCH_ROW = "연속 근무 경고"

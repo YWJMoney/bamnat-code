@@ -274,6 +274,41 @@ fun InviteNudgeNotice(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * 1.39 [SPREAD-07] (앱 안 퍼짐 설계, 사용자 2026-11-07): right after a leader first sends the team's links, or a 사장님 first adds a
+ * staff member, one card offers to tell another leader·사장님, with the 친구 초대 link (초대한 분께 프로). It shows the day it
+ * first comes and then never again ([GrowNudges.peerInvite]); '다시 안 보기' ends it at once. The calendar card's switch
+ * (기능 켜고 끄기 › 달력의 친구 초대 카드) turns this off too.
+ */
+@Composable
+fun PeerInviteCard(peer: com.bamnat.core.guide.Peer, modifier: Modifier = Modifier) {
+    val c = LocalContext.current.appContainer
+    if (!c.inviteApi.enabled) return
+    val grow by c.grow.state.collectAsStateWithLifecycle()
+    val state by c.invites.store.state.collectAsStateWithLifecycle()
+    val guide = com.bamnat.app.data.GuideStore.get(LocalContext.current)
+    val guideState by guide.state.collectAsStateWithLifecycle()
+    val today = Today.date()
+    val off = com.bamnat.core.guide.FeatureRegistry.get(NUDGE_ID)?.let { guideState.isOff(it, GuideState.ALL) } ?: false
+    if (off || !GrowNudges.peerInvite(grow, peer, today)) return
+    var said by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(peer) { c.grow.peerShown(peer, today); runCatching { c.invites.refresh() } }
+    val (title, line) = when (peer) {
+        com.bamnat.core.guide.Peer.TEAM -> "다른 팀 리더께도 알려 주세요" to "근무표 짜기·링크 보내기를 다른 병동·팀 리더도 덜 수 있어요."
+        com.bamnat.core.guide.Peer.BOSS -> "아는 사장님께도 알려 주세요" to "직원 급여·출퇴근·계약서를 다른 사장님도 휴대폰 하나로 챙길 수 있어요."
+    }
+    SoftCard(modifier.padding(vertical = 6.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text("$line ${state.rules.words()}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            said?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            InviteShareAction(c, onMessage = { said = it }, tonal = true) {
+                TextButton(onClick = { c.grow.peerClosed(peer) }) { Text("다시 안 보기") }
+            }
+        }
+    }
+}
+
 /** AG 1.27 [INVITE-11] The feature switch of the calendar's invite card (FeatureRegistry, 기능 켜고 끄기). */
 const val NUDGE_ID = "invite.nudge"
 

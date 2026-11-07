@@ -42,6 +42,28 @@ object InAppReview {
         else -> null
     }
 
+    /**
+     * 1.39 [SPREAD-06] (앱 안 퍼짐 점검): the moments above are good ones (a month of use, a pay month closed), but the sheet must
+     * not come right after an ad, a payment window or the app stopping. An ad or a payment hushes it for [HUSH_MS]; an app-stop
+     * note keeps it off for [CRASH_DAYS]. A hushed moment stays due and is asked the next time 내 달력 opens.
+     */
+    /** A 근무표 put in with at least this many days counts as a month filled (a 4주 roster is 28). */
+    const val ROSTER_DAYS = 20
+    const val HUSH_MS = 10 * 60 * 1000L
+    const val CRASH_DAYS = 3L
+    @Volatile private var hushedUntil = 0L
+
+    /** An ad was shown or a payment window opened just now. */
+    fun hush(now: Long = System.currentTimeMillis()) { hushedUntil = now + HUSH_MS }
+
+    /** Whether now is a calm moment: no ad or payment a moment ago, no app-stop in the last days ([crashAt] 0 for none). */
+    fun calm(now: Long, crashAt: Long, until: Long = hushedUntil): Boolean =
+        now >= until && (crashAt <= 0L || now - crashAt > CRASH_DAYS * 24 * 60 * 60 * 1000L)
+
+    /** The newest app-stop note's time on this phone, 0 for none (the note's name is crash-<millis>.txt). */
+    fun lastCrash(context: Context): Long =
+        com.bamnat.app.diag.CrashLog.notes(context).firstOrNull()?.name?.removePrefix("crash-")?.removeSuffix(".txt")?.toLongOrNull() ?: 0L
+
     fun Context.findActivity(): Activity? {
         var c: Context? = this
         while (c is ContextWrapper) {

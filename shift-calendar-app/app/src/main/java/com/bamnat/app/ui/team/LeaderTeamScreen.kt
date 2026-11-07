@@ -265,6 +265,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     var planAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var plans by remember { mutableStateOf<List<TeamAuto.Plan>?>(null) }
     var resent by remember { mutableStateOf<Pair<Int, List<Pair<TeamMember, String>>>?>(null) }
+    // 1.39 [SPREAD-07] The team's links went out for the first time: the one '다른 팀 리더께도' card may come (below the button).
+    LaunchedEffect(linksFor != null) { if (linksFor != null) c.grow.peerDue(com.bamnat.core.guide.Peer.TEAM) }
     // 1.38 [P3-L-15] 병동 전체 보기 (on when this phone holds the team's table link) and 봤어요.
     var ward by remember(team.id) { mutableStateOf(com.bamnat.app.team.TeamReceiveSync.board(context, team.id)?.url) }
     var wardOn by remember(team.id) { mutableStateOf(ward != null) }
@@ -608,6 +610,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 })
             }
             busy?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (linksFor == null) com.bamnat.app.ui.pro.PeerInviteCard(com.bamnat.core.guide.Peer.TEAM)
             Text("팀원은 앱이 없어도 링크로 자기 근무를 봐요. 앱이 있으면 내 달력에 넣을 수 있어요. 고친 뒤 다시 확정하면 같은 링크가 바뀌고, 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요(팀원이 직접 바꾼 날은 그대로).",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // 1.38 같이 쉬는 사람 (경쟁 앱 조사 P3-L-11): off until the leader turns it on — it puts teammates' names in each link.

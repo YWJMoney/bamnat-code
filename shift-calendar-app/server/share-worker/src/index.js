@@ -61,6 +61,7 @@
 // POST   /api/share/:id/tired  the member's app, once a day (KST): adds one to today's count. A day's repeat is marked by a
 //                              hash of the link and the day for 2 days; the leader never sees who.
 // GET    /v/:key               the asked person's page; POST /v/:key/answer form a=yes|no -> the page again
+// POST   /spread/hide          1.39 [SPREAD-01] form back=<page path>: the '나도 써 보기' line stays closed in this browser (a cookie, nothing kept here)
 //                              The admin paths answer 404 until SHARE_ADMIN_TOKEN (20+ characters) is set;
 //                              the company server's 개발자 앱 calls them with the same token.
 //
@@ -198,7 +199,7 @@ const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 export default {
   async fetch(request, env, ctx) {
     try {
-      return await route(request, env);
+      return await spread(request, await route(request, env));
     } catch (e) {
       return json({ error: "server" }, 500);
     } finally {
@@ -220,6 +221,7 @@ async function route(request, env) {
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
   }
   if (path === "/api/share" && request.method === "POST") return create(request, env, url);
+  if (path === SPREAD_HIDE && request.method === "POST") return spreadHide(request, url);
   if (path === "/api/groups" || path.startsWith("/api/groups/")) return groups(request, env, path);
   if (path.startsWith("/api/admin/")) return admin(request, env, url);
   if (path === "/api/clock" && request.method === "POST") return clockCreate(request, env, url);
@@ -712,7 +714,7 @@ async function clockView(env, id, done, status = 200, known = null) {
   const body = `<h1>${esc(record.name)}님 출퇴근</h1>${record.place ? `<p class="muted">${esc(record.place)}</p>` : ""}${said}
 <div class="buttons">${button("in", "출근")}${button("out", "퇴근")}</div>
 <h2>오늘 (${today.slice(5).replace("-", "/")})</h2>${list}
-<p class="foot muted">누른 시각만 사장님에게 가요. 위치·전화번호·기기 정보는 보내지 않아요. 잘못 눌렀으면 사장님께 말해 주세요. 사장님이 확인한 뒤 급여에 넣어요.</p>`;
+<p class="foot muted">누른 시각만 사장님에게 가요. 위치·전화번호·기기 정보는 보내지 않아요. 잘못 눌렀으면 사장님께 말해 주세요. 사장님이 확인한 뒤 급여에 넣어요.</p>${spreadSlot("clock")}`;
   return html(page(`${record.name}님 출퇴근`, body), status);
 }
 
@@ -960,7 +962,7 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
   const body = `<h1>${esc(record.team)} ${mo}월 근무 신청</h1><p class="muted">${esc(me)}님 · ${open ? "신청 받는 중" : "마감"}</p>
 <p class="rule">${esc(rule)}</p>${saidHtml}<div class="grid">${heads}${cells.join("")}</div>${panel}
 <h2>내 신청 ${mine.wishes.length}일</h2>${list}<h2>리더에게 한 줄</h2>${note}
-<p class="foot muted">신청한 날·종류·한 줄·신청한 시각만 리더에게 가요. 다른 사람에게는 날마다 몇 명이 신청했는지만 보여요${rules.showNames ? "(리더가 이름도 보이게 했어요)" : ""}. 위치·전화번호·기기 정보는 보내지 않아요. 근무표가 확정되면 리더가 근무표 링크를 보내 줘요.</p>`;
+<p class="foot muted">신청한 날·종류·한 줄·신청한 시각만 리더에게 가요. 다른 사람에게는 날마다 몇 명이 신청했는지만 보여요${rules.showNames ? "(리더가 이름도 보이게 했어요)" : ""}. 위치·전화번호·기기 정보는 보내지 않아요. 근무표가 확정되면 리더가 근무표 링크를 보내 줘요.</p>${spreadSlot("request")}`;
   return html(page(`${record.team} ${mo}월 근무 신청`, body), status);
 }
 
@@ -1082,7 +1084,7 @@ async function callView(env, key, said, status = 200, known = null) {
       (mine.a ? `<p class="muted">지금 답: ${mine.a === "yes" ? "들어갈 수 있어요" : "어려워요"} (바꿀 수 있어요)</p>` : "");
   const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
   const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.team)} · ${esc(me)}님께</p>${record.detail ? `<p>${esc(record.detail)}</p>` : ""}${saidHtml}${state}
-<p class="foot muted">답과 답한 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>`;
+<p class="foot muted">답과 답한 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>${spreadSlot("call")}`;
   return html(page(record.title, body), status);
 }
 
@@ -1269,7 +1271,7 @@ async function boardView(env, id) {
   const counts = order.map((l) => `<tr><th class="who">${chip(l)}</th>${Array.from({ length: days }, (_, d) => `<td>${record.rows.filter((r) => r[d] === l).length || ""}</td>`).join("")}</tr>`).join("");
   const html_ = `<h1>${esc(record.team)} ${m}월 근무표</h1><p class="muted">리더가 확정한 표예요. 바뀌면 이 주소 그대로 새로 보여요.</p>
 <div class="wide"><table class="ward"><thead><tr><th></th>${head}</tr></thead><tbody>${body}</tbody><tfoot><tr><th class="who">날마다</th><td colspan="${days}"></td></tr>${counts}</tfoot></table></div>
-<p class="foot muted">이름과 근무 글자만 있어요. ${record.month.slice(0, 4)}년 ${m}월이 끝나고 ${LIMITS.boardDaysAfter}일 뒤에 지워져요.</p>`;
+<p class="foot muted">이름과 근무 글자만 있어요. ${record.month.slice(0, 4)}년 ${m}월이 끝나고 ${LIMITS.boardDaysAfter}일 뒤에 지워져요.</p>${spreadSlot("board")}`;
   return html(page(`${record.team} ${m}월 근무표`, html_));
 }
 
@@ -1365,7 +1367,7 @@ async function signView(env, key, said, status = 200, known = null) {
     : `<form class="sign panel" method="post" action="/k/${key}/sign"><label>이름 <input name="name" maxlength="${LIMITS.askName}" autocomplete="name" required></label>
 <label><input type="checkbox" name="agree" value="1" required> 위 내용을 읽었고 동의해요</label><button class="in">서명하기</button></form>`;
   const body = `<h1>${esc(record.title)}</h1><p class="muted">${esc(record.place)} · ${esc(record.staff)}님</p>${saidHtml}${items}${form}
-<p class="foot muted">이름과 서명한 시각만 사장님 앱에 가요. 서명한 계약서는 사장님 휴대폰과 PDF에만 남고, 이 페이지는 사장님이 받은 뒤나 ${kstDay(record.expiresAt)}에 지워져요.</p>`;
+<p class="foot muted">이름과 서명한 시각만 사장님 앱에 가요. 서명한 계약서는 사장님 휴대폰과 PDF에만 남고, 이 페이지는 사장님이 받은 뒤나 ${kstDay(record.expiresAt)}에 지워져요.</p>${record.signed ? spreadSlot("sign") : ""}`;
   return html(page(record.title, body), status);
 }
 
@@ -1584,7 +1586,7 @@ async function swapView(env, key, said, status = 200, known = null) {
   const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
   const body = `<h1>${esc(record.team)} ${m}월 근무 바꾸기</h1><p class="muted">${esc(me)}님 · 근무 규칙(쉬는 시간·주 52시간)에 맞는 사람만 보여요</p>${saidHtml}${inHtml}${sentHtml}
 <h2>바꿀 수 있는 날</h2>${pickHtml}
-<p class="foot muted">고른 날·상대·답과 누른 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>`;
+<p class="foot muted">고른 날·상대·답과 누른 시각만 리더에게 가요. 위치·전화번호·기기 정보는 보내지 않아요.</p>${spreadSlot("swap")}`;
   return html(page(`${record.team} 근무 바꾸기`, body), status);
 }
 
@@ -1939,6 +1941,112 @@ async function sha256(text) {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// ---- 1.39 [SPREAD-01..04] 받는 쪽 페이지 끝의 '나도 써 보기' 한 줄 ----
+// The person who got a link does what they came for first (보기·출퇴근·답·서명); only then, at the very end of the page, one
+// small card says what 밤낮 would do for them, with a way to close it for good in this browser. The pages run no script, so
+// each page leaves a slot (spreadSlot) and the answer fills it here from the phone's kind and the close cookie.
+
+/** The Play listing. [SPREAD-02] Where an install came from rides in Play's referrer; never a link's id, key or a name. */
+export const PLAY = "https://play.google.com/store/apps/details?id=com.bamnat.app";
+
+/** Each page's card: what it says and the campaign Play's 사용자 획득 보고서 groups it under. */
+export const SPREAD_KINDS = {
+  family: { campaign: "family", title: "내 근무표도 이렇게 나눠 보세요",
+    line: "밤낮에 근무를 넣으면 달력이 저절로 차고, 링크 하나로 가족·동료에게 보여 줄 수 있어요. 무료예요." },
+  team: { campaign: "team", title: "내 근무만 달력에 넣고 근무 알람까지",
+    line: "밤낮 앱으로 이 근무표를 받으면 내 근무가 내 달력에 들어가고, 출근 전에 알람이 울려요. 리더가 고치면 저절로 바뀌어요." },
+  board: { campaign: "team", title: "내 근무만 달력에 넣고 근무 알람까지",
+    line: "밤낮 앱이 있으면 리더가 보내는 내 근무 링크를 내 달력에 넣고, 출근 전에 알람이 울려요." },
+  request: { campaign: "team", title: "확정된 근무표를 내 달력과 알람으로",
+    line: "리더가 근무표 링크를 보내면 밤낮 앱에서 한 번에 내 달력에 넣고 근무 알람까지 맞춰요." },
+  call: { campaign: "ask", title: "바뀐 근무도 내 달력과 알람에 바로",
+    line: "밤낮에 근무를 넣어 두면 대신 들어가는 날도 한 번에 고치고, 알람이 따라 바뀌어요." },
+  swap: { campaign: "ask", title: "바뀐 근무도 내 달력과 알람에 바로",
+    line: "밤낮에 근무를 넣어 두면 바꾼 날도 한 번에 고치고, 알람이 따라 바뀌어요." },
+  clock: { campaign: "boss", title: "내 시급으로 이번 달 월급 미리 보기",
+    line: "밤낮에 시급과 일한 날을 넣으면 이번 달 받을 돈과 주휴수당을 미리 볼 수 있어요. 무료예요." },
+  sign: { campaign: "boss", title: "계약한 시급으로 이번 달 월급 미리 보기",
+    line: "밤낮에 시급과 일한 날을 넣으면 이번 달 받을 돈과 주휴수당을 미리 볼 수 있어요. 무료예요." },
+};
+
+/** [SPREAD-02] The store page for a page kind: utm_source=bamnat_share&utm_medium=<kind>&utm_campaign=<campaign>. */
+export function storeLink(kind) {
+  const k = SPREAD_KINDS[kind] ? kind : "family";
+  const referrer = `utm_source=bamnat_share&utm_medium=${k}&utm_campaign=${SPREAD_KINDS[k].campaign}`;
+  return `${PLAY}&referrer=${encodeURIComponent(referrer)}`;
+}
+
+/**
+ * A messenger's own browser (카카오톡, 네이버, 인스타그램, 페이스북, 라인) may open Play's web page, where an install loses the
+ * referrer: there the Play app is opened straight, the web page to fall back to (as the 친구 초대 page does, INVITE-13).
+ */
+function storeHref(kind, ua) {
+  const store = storeLink(kind);
+  if (!/KAKAOTALK|NAVER|Instagram|FBAN|FBAV|FB_IAB|Line\//i.test(ua)) return store;
+  const referrer = store.slice(store.indexOf("&referrer=") + "&referrer=".length);
+  return `intent://details?id=com.bamnat.app&referrer=${referrer}#Intent;scheme=market;package=com.android.vending;` +
+    `S.browser_fallback_url=${encodeURIComponent(store)};end`;
+}
+
+const SPREAD_MARK = /<!--spread:([a-z]+)-->/;
+const SPREAD_COOKIE = "bn_spread=off";
+const SPREAD_HIDE = "/spread/hide";
+/** The pages a card may go back to once closed: only this server's own receive pages, never another address. */
+const SPREAD_BACK = /^\/(s\/[A-Za-z0-9]{16,32}|[cavwkb]\/[A-Za-z0-9]{22})$/;
+
+/** Where a page leaves room for its card (filled or emptied by [spread]). */
+function spreadSlot(kind) {
+  return SPREAD_KINDS[kind] ? `<!--spread:${kind}-->` : "";
+}
+
+/** The page's own address for a form's answer ("/c/<id>/punch" → "/c/<id>"), or null when it is not a receive page. */
+export function spreadBack(path) {
+  const page = path.replace(/\/(punch|pick|note|ask|cancel|reply|answer|sign)$/, "");
+  return SPREAD_BACK.test(page) ? page : null;
+}
+
+/** [SPREAD-01..04] The card for [kind] as this phone should see it. */
+export function spreadCard(kind, ua, back) {
+  const k = SPREAD_KINDS[kind];
+  if (!k) return "";
+  const android = /Android/i.test(ua);
+  const apple = !android && /iPhone|iPad|iPod|Macintosh.*Mobile/i.test(ua);
+  // [SPREAD-04] Back to the link after the install: a schedule link opens in the app; the others stay pages.
+  const after = kind === "family" || kind === "team" ? "설치한 뒤 이 링크를 다시 누르면 앱에서 열려요." : "앱을 받은 뒤에도 이 링크는 그대로 열려요.";
+  const get = android
+    ? `<a class="get" href="${esc(storeHref(kind, ua))}">밤낮 받기 · 무료</a><p class="muted small">${after}</p>`
+    // [SPREAD-03] No dead end on an iPhone: say what 밤낮 is and that this page keeps working.
+    : apple ? `<p class="muted small">밤낮은 Android 앱이에요. 이 링크는 iPhone에서도 그대로 계속 열려요.</p>`
+    : `<p class="muted small">밤낮은 Android 휴대폰 앱이에요. <a href="${esc(storeLink(kind))}">Play 스토어에서 보기</a></p>`;
+  const close = back
+    ? `<form class="x" method="post" action="${SPREAD_HIDE}"><input type="hidden" name="back" value="${esc(back)}"><button aria-label="닫기, 이 브라우저에서 다시 안 보기">×</button></form>`
+    : "";
+  return `<aside class="spread">${close}<p class="t">${esc(k.title)}</p><p class="muted small">${esc(k.line)}</p>${get}</aside>`;
+}
+
+/** Fills (or empties) a page's slot: closed in this browser → nothing; otherwise the card for this phone. */
+async function spread(request, res) {
+  if (!(res.headers.get("content-type") ?? "").startsWith("text/html")) return res;
+  const body = await res.text();
+  const m = body.match(SPREAD_MARK);
+  if (!m) return new Response(body, res);
+  const closed = (request.headers.get("cookie") ?? "").split(/;\s*/).includes(SPREAD_COOKIE);
+  const card = closed ? "" : spreadCard(m[1], request.headers.get("user-agent") ?? "", spreadBack(new URL(request.url).pathname));
+  return new Response(body.replace(SPREAD_MARK, card), res);
+}
+
+/** POST /spread/hide: the card stays closed in this browser for a year, and the page comes back as it was. */
+async function spreadHide(request, url) {
+  const form = new URLSearchParams((await request.text()).slice(0, 128));
+  const back = spreadBack(form.get("back") ?? "");
+  if (!back) return new Response("Not found", { status: 404 });
+  const secure = url.protocol === "https:" ? "; Secure" : ""; // the PC's local server is plain http
+  return new Response(null, { status: 303, headers: {
+    location: back, "cache-control": "no-store", "referrer-policy": "no-referrer",
+    "set-cookie": `${SPREAD_COOKIE}; Max-Age=31536000; Path=/; HttpOnly; SameSite=Lax${secure}`,
+  } });
+}
+
 // ---- output ----
 
 function json(data, status = 200) {
@@ -1979,9 +2087,12 @@ const PAY_NOTES = {
 
 const won = (n) => `${String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}원`;
 
-/** [SHR-02] Opens the app on Android, or its store page when it is not installed. */
-function appLink(id) {
-  const store = encodeURIComponent("https://play.google.com/store/apps/details?id=com.bamnat.app");
+/**
+ * [SHR-02] Opens the app on Android, or its store page when it is not installed. 1.39 [SPREAD-02] The store page carries
+ * where the install came from (never the link's id).
+ */
+function appLink(id, kind = "family") {
+  const store = encodeURIComponent(storeLink(kind));
   return `intent://s/${id}#Intent;scheme=bamnat;package=com.bamnat.app;S.browser_fallback_url=${store};end`;
 }
 
@@ -2049,11 +2160,13 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
         return `<li><span>${y}년 ${m}월${p.label ? ` <span class="muted">${esc(p.label)}</span>` : ""}</span><b>${won(p.amount)}</b></li>`;
       }).join("")}</ul><p class="muted">${PAY_NOTES[payKind]}</p></section>`
     : "";
+  // 1.39 [SPREAD-01] A team leader's link (its notes say 바뀜·같이 쉬어요) speaks to a teammate; any other to family.
+  const kind = notes.some((n) => /^(바뀜: |같이 쉬어요: )/.test(n)) ? "team" : "family";
   const app = appId
-    ? `<p class="app"><a href="${esc(appLink(appId))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
+    ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
-    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>` + (reportId ? reportForm(reportId) : ""));
+    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""));
 }
 
 /** [SRV-05] A plain form, so reporting works without scripts (the page allows none). */
@@ -2165,5 +2278,8 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .bad{background:var(--card);border:2px solid var(--sun);border-radius:12px;padding:12px 14px;font-weight:700}.rule{font-size:14px}.small{font-size:12px}
 .note{display:flex;gap:8px}.note input{flex:1;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px}.note button{min-height:44px;padding:8px 14px;border-radius:999px;border:none;background:var(--today);color:#15192B;font-weight:700}
 .punches{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.punches li{display:flex;justify-content:space-between;padding:12px 14px;border-top:1px solid var(--line)}.punches li:first-child{border-top:none}
+.spread{position:relative;margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 48px 14px 14px}.spread p{margin:0 0 4px}.spread .t{font-weight:700}
+.spread .x{position:absolute;top:4px;right:4px;margin:0}.spread .x button{width:44px;height:44px;border:none;background:none;color:var(--muted);font-size:22px;cursor:pointer}
+.spread .get{display:inline-block;margin:8px 0 4px;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}.spread a{color:var(--fg)}
 </style></head><body><main>${body}</main></body></html>`;
 }

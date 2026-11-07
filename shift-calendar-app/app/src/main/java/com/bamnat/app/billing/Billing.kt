@@ -247,6 +247,7 @@ class PlayBilling(
         val params = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(listOf(BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(d).build()))
             .build()
+        com.bamnat.app.review.InAppReview.hush() // 1.39 [SPREAD-06] no review sheet right after a payment window
         val result = client.launchBillingFlow(activity, params)
         log("billing_pass_open ${result.responseCode}")
         return result.responseCode == BillingClient.BillingResponseCode.OK
@@ -308,6 +309,7 @@ class PlayBilling(
                 BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(d).setOfferToken(plan.offerToken).build(),
             ))
             .build()
+        com.bamnat.app.review.InAppReview.hush() // 1.39 [SPREAD-06] no review sheet right after a payment window
         val result = client.launchBillingFlow(activity, params)
         log("billing_open ${result.responseCode}")
         return result.responseCode == BillingClient.BillingResponseCode.OK
@@ -447,6 +449,7 @@ class PlayBilling(
             builder.setSubscriptionUpdateParams(BillingFlowParams.SubscriptionUpdateParams.newBuilder()
                 .setOldPurchaseToken(old).setSubscriptionReplacementMode(mode).build())
         }
+        com.bamnat.app.review.InAppReview.hush() // 1.39 [SPREAD-06] no review sheet right after a payment window
         val result = client.launchBillingFlow(activity, builder.build())
         log("billing_work_open ${result.responseCode}")
         return result.responseCode == BillingClient.BillingResponseCode.OK

@@ -40,6 +40,8 @@ object MonthImage {
         val legend: Boolean = true,
         /** Whose 근무표 ("민지의 근무표"); blank keeps the plain title. */
         val name: String = "",
+        /** 1.39 [SPREAD-05] The small '밤낮 근무 달력' in the corner (설정 › 데이터, or this sheet, turns it off). */
+        val mark: Boolean = true,
     )
 
     /** A day's extras from the memos: the first line ([memo]) and a leading emoji ([sticker]). */
@@ -88,8 +90,8 @@ object MonthImage {
         text.textSize = 64f; text.typeface = bold
         val whose = look.name.trim().takeIf { it.isNotEmpty() }?.let { "${it.take(12)}의 " }.orEmpty()
         c.drawText("$whose${month.year}년 ${month.monthValue}월 근무표", PAD, 110f, text)
-        text.textSize = 32f; text.typeface = Typeface.DEFAULT; text.color = 0xFF6B7280.toInt()
-        c.drawText("밤낮 교대 달력", PAD, 160f, text)
+        // 1.39 [SPREAD-05] The app's name sits small in the lower right corner now (it said '교대' to every kind of work at the top).
+        if (look.mark) drawMark(c, height)
 
         val cellW = (WIDTH - 2 * PAD) / 7
         val days = (0 until 7).map { weekStart.plus(it.toLong()) }
@@ -184,6 +186,17 @@ object MonthImage {
             c.drawText("${type.name}$times", x + 56f, y, text)
         }
         return bmp
+    }
+
+    /** 1.39 [SPREAD-05] What the corner says: the name someone finds the app by in Play. */
+    const val MARK = "밤낮 근무 달력"
+
+    /** The corner mark, small and grey in the lower right, kept clear of the 이름표 above it. */
+    fun drawMark(c: Canvas, height: Int, width: Int = WIDTH) {
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 26f; color = 0xFF9AA0AC.toInt(); textAlign = Paint.Align.RIGHT; typeface = Typeface.DEFAULT
+        }
+        c.drawText(MARK, width - PAD, height - 28f, p)
     }
 
     /** Cuts [s] with … so it fits [width] at [paint]'s size. */
