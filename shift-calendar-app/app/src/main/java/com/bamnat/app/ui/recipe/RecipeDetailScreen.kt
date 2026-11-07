@@ -268,7 +268,9 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         else -> add(LadderStep("하루 써 보기 ✦", "이미 썼어요 · ✦ 장치는 프로에서 다시 켜져요", done = true, enabled = false) {})
                     }
                     // ④ 넣기, 넣은 뒤에는 '✓ 넣었어요 · 되돌리기' (입혀 보기 갈래 PC 확인).
-                    val whole = if (doc.item.scope == "tab") "이 작품 넣기" else "이 테마 입기"
+                    // PC 4차 c0ca3d9f: 부품 상세에도 '이 테마 입기'가 나왔어요. 작품 종류대로 말해요.
+                    val part = doc.item.scope == "part" || com.bamnat.core.recipe.LookParts.partUnit(r) != null
+                    val whole = wholeWords(doc.item.scope, part)
                     if (putIn != null) {
                         val left = (com.bamnat.app.recipe.RecipeRepository.UNDO_DAYS - (com.bamnat.core.time.Today.millis() - putIn) / 86_400_000L).coerceAtLeast(1)
                         add(LadderStep(if (s.applying) "넣는 중…" else "✓ 넣었어요 · 다시 넣기",
@@ -284,7 +286,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                         logicOnly -> listOfNotNull(inside.rules.size.takeIf { it > 0 }?.let { "규칙 ${it}개" }, inside.buttons.size.takeIf { it > 0 }?.let { "단추 ${it}개" })
                             .joinToString("·") + " 넣기"
                         else -> "고른 ${chosen}개 내 달력에 넣기"
-                    }, if (hasLooks) "부분만 넣으려면 ‘예시로 보기’에서 골라요" else null, main = true, enabled = ready && (hasLooks || chosen > 0)) {
+                    }, if (hasLooks && !part) "부분만 넣으려면 ‘예시로 보기’에서 골라요" else null, main = true, enabled = ready && (hasLooks || chosen > 0)) {
                         if (hasLooks) { vm.lookParts(allLooks); confirming = true } else confirming = true
                     })
                 }
@@ -424,7 +426,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 Text(when {
                                     n == 0 -> "넣을 것을 골라 주세요"
-                                    whole -> if (doc.item.scope == "tab") "이 작품 그대로 넣기" else "이 테마 입기"
+                                    whole -> wholeWords(doc.item.scope, doc.item.scope == "part" || com.bamnat.core.recipe.LookParts.partUnit(r) != null, plain = true)
                                     else -> "$detail 넣기"
                                 })
                                 if (whole && detail != null) Text(detail, style = MaterialTheme.typography.labelSmall)
