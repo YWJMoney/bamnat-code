@@ -191,7 +191,7 @@ class WidgetData(
             settings: com.bamnat.app.data.AppSettings): List<String>? {
             val mine = snapshot.resolver.resolve(today).shiftType?.takeIf { !it.isOff } ?: return null
             val rotation = com.bamnat.app.ui.calendar.rotationOf(snapshot, today) ?: return null
-            val roster = com.bamnat.app.ui.calendar.rosterFor(container.teams.get(PersonalCalendar.MAIN), rotation)
+            val roster = com.bamnat.app.ui.calendar.rosterFor(container.teams.get(PersonalCalendar.MAIN), rotation, com.bamnat.app.ui.calendar.offIds(snapshot))
             return com.bamnat.core.schedule.CoverFinder.find(roster, rotation, snapshot.typesById, today, mine.id)
                 .candidates.map { it.team.name }
         }
@@ -217,7 +217,7 @@ class WidgetData(
         /** [DAILY-03] 내 달력's teams today and tomorrow, as 모든 조 보기 shows them. */
         private fun teamsToday(container: com.bamnat.app.AppContainer, snapshot: com.bamnat.app.data.ScheduleSnapshot, today: LocalDate): List<TeamToday>? {
             val rotation = com.bamnat.app.ui.calendar.rotationOf(snapshot, today) ?: return null
-            val roster = com.bamnat.app.ui.calendar.rosterFor(container.teams.get(PersonalCalendar.MAIN), rotation)
+            val roster = com.bamnat.app.ui.calendar.rosterFor(container.teams.get(PersonalCalendar.MAIN), rotation, com.bamnat.app.ui.calendar.offIds(snapshot))
             return teamLines(roster, rotation, snapshot.typesById, today)
         }
 
