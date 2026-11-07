@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.ContextWrapper
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -31,9 +33,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -50,6 +55,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.app.ui.theme.color
 import com.bamnat.core.alarm.AlarmPlanner
+import com.bamnat.core.sleep.NightClockShift
 import com.bamnat.core.sleep.NightLine
 import com.bamnat.core.sleep.SleepEntry
 import com.bamnat.core.sleep.SleepSchedule
@@ -141,9 +147,71 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
             delay(60_000L - Today.millis() % 60_000L)
         }
     }
+    // 1.39 G5-N3 폴드 탁상 시계: half open like a laptop on the bedside, the clock above the hinge and the buttons below; while
+    // charging the screen stays on as a bedside clock, the clock moving a few dp each minute so the screen does not keep it.
+    val tabletop = com.bamnat.app.ui.LocalTabletop.current
+    val charging = rememberPluggedIn()
+    val clockOn = tabletop != null && charging
+    val view = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(view, clockOn) {
+        view.keepScreenOn = clockOn
+        onDispose { view.keepScreenOn = false }
+    }
+    val o = open
+    val status: @Composable () -> Unit = {
+        Text(
+            when {
+                o != null -> (if (o.start.toLocalDate() == now.toLocalDate()) "" else "어제 ") + "${Fmt.time(o.start.toLocalTime())}부터 자는 중"
+                else -> "잠들 때 ‘잠들었어요’를 누르면 잔 시간을 적어요"
+            } + (recording?.let { " · 소리 재는 중" } ?: ""),
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+        )
+    }
+    val sleepButton: @Composable () -> Unit = {
+        if (o != null) Button(onClick = { vm.wokeUp(onClose) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            Text("깼어요", style = MaterialTheme.typography.titleMedium)
+        } else Button(onClick = vm::fellAsleep, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            Text("잠들었어요", style = MaterialTheme.typography.titleMedium)
+        }
+    }
+    val note: @Composable (String) -> Unit = { text ->
+        Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    }
     // Always dark: it is the screen for a dark room (밤 색 끔 keeps the rest of the app in its own colours).
     com.bamnat.app.ui.theme.NightSurface(true) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            if (tabletop != null) {
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                var areaTop by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(0) }
+                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().safeDrawingPadding()
+                    .onGloballyPositioned { areaTop = it.positionInWindow().y.toInt() }) {
+                    val upper = with(density) { tabletop.upperHeight(areaTop, constraints.maxHeight).toDp() }
+                    Column(Modifier.fillMaxSize()) {
+                        Box(Modifier.fillMaxWidth().height(upper)) {
+                            IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopStart)) { Icon(Icons.Filled.Close, "밤 화면 닫기") }
+                            val (dx, dy) = if (clockOn) NightClockShift.of(now.minute) else 0 to 0
+                            Column(Modifier.align(Alignment.Center).offset(dx.dp, dy.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(Fmt.dayTitle(now.toLocalDate()), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(Fmt.time(now.toLocalTime()), fontSize = 96.sp, fontWeight = FontWeight.Light, style = NumberStyle,
+                                    color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.semantics { heading() })
+                                line?.let { l -> NightLineRow(l, onAlarms, vm::turnOnAlarms, switchOff = !settings.alarmsEnabled) }
+                            }
+                        }
+                        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            status()
+                            Column(Modifier.widthIn(max = 520.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                sleepButton()
+                                SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
+                                note(if (clockOn) "충전 중이라 화면을 켜 둬요. 시계는 화면에 자국이 남지 않게 조금씩 자리를 옮겨요. 근무 알람은 이 화면과 상관없이 울려요."
+                                    else "충전기에 꽂으면 화면이 꺼지지 않는 탁상 시계가 돼요. 근무 알람은 이 화면과 상관없이 울려요.")
+                            }
+                        }
+                    }
+                }
+                return@Surface
+            }
             Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally) {
                 // A visible way out (CLAUDE.md 3항: 보이는 닫기가 없는 창은 문제).
@@ -160,31 +228,40 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
                     com.bamnat.app.ui.components.Kani(com.bamnat.app.ui.components.KaniMood.Sleepy, night = true, size = 72.dp)
                 }
                 Spacer(Modifier.height(12.dp))
-                val o = open
-                Text(
-                    when {
-                        o != null -> (if (o.start.toLocalDate() == now.toLocalDate()) "" else "어제 ") + "${Fmt.time(o.start.toLocalTime())}부터 자는 중"
-                        else -> "잠들 때 ‘잠들었어요’를 누르면 잔 시간을 적어요"
-                    } + (recording?.let { " · 소리 재는 중" } ?: ""),
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
-                )
+                status()
                 Spacer(Modifier.height(20.dp))
                 Column(Modifier.widthIn(max = 520.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
-                    if (o != null) Button(onClick = { vm.wokeUp(onClose) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                        Text("깼어요", style = MaterialTheme.typography.titleMedium)
-                    } else Button(onClick = vm::fellAsleep, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
-                        Text("잠들었어요", style = MaterialTheme.typography.titleMedium)
-                    }
-                    Text("화면이 꺼지는 시간은 휴대폰 설정 그대로예요. 근무 알람은 이 화면과 상관없이 울려요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+                    sleepButton()
+                    note("화면이 꺼지는 시간은 휴대폰 설정 그대로예요. 근무 알람은 이 화면과 상관없이 울려요.")
                 }
                 Spacer(Modifier.height(24.dp))
             }
         }
     }
 }
+
+/** 1.39 G5-N3: whether a charger is in (charging or already full), following plugging in and out while shown. */
+@Composable
+private fun rememberPluggedIn(): Boolean {
+    val context = LocalContext.current
+    return produceState(initialValue = pluggedIn(context), context) {
+        val r = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context, i: android.content.Intent) {
+                value = i.action == android.content.Intent.ACTION_POWER_CONNECTED
+            }
+        }
+        androidx.core.content.ContextCompat.registerReceiver(context, r, android.content.IntentFilter().apply {
+            addAction(android.content.Intent.ACTION_POWER_CONNECTED)
+            addAction(android.content.Intent.ACTION_POWER_DISCONNECTED)
+        }, androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
+        awaitDispose { runCatching { context.unregisterReceiver(r) } }
+    }.value
+}
+
+private fun pluggedIn(context: Context): Boolean =
+    (context.registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+        ?.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
 
 /**
  * "내일 07:00 주간 · 알람 06:00 켜짐"; with no alarm set, said in the caution colour with the way to the alarms. 1.39 G5-M1: when
