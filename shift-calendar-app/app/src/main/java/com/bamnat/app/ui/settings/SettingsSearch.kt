@@ -153,9 +153,17 @@ internal object SettingsIndex {
         all(board, share, company, sleepAuto, sleepSound).filter { fits(it, style) }.map { inWords(it, style) }
 
     /** [J133-79] 1.33 빌드 5: an 알바's rules come from a 근무지, not a 회사 (the screens say so since J133-77). */
-    private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry =
-        if (style != com.bamnat.core.work.WorkStyle.HOURLY || "회사 계산 방법" !in e.title) e
-        else e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
+    private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry = when {
+        style == com.bamnat.core.work.WorkStyle.HOURLY && "회사 계산 방법" in e.title ->
+            e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
+        // 1.38 PC 12.5 빈틈 2 (투자의 찾기 결과가 '잠금 화면 오늘 근무'): the result reads as the row does on that kind of work's page;
+        // where it goes (the row's old name) stays, and the old name still finds it.
+        e.title == "잠금 화면 오늘 근무" || e.title == MOVE_ALL_ALARMS_ROW -> {
+            val word = if (e.title == MOVE_ALL_ALARMS_ROW) com.bamnat.app.ui.shifts.alarmNoun(style) else com.bamnat.app.ui.shifts.lockNoun(style)
+            if (word == "근무") e else e.copy(title = e.title.replace("근무", word), keywords = e.keywords + e.title)
+        }
+        else -> e
+    }
 
     /** [J133-77] Screens of wage work (급여, 추가 근무, 듀티표, 근태, 출퇴근) that a shop, a freelancer or an investor does not have. */
     private val WAGE_SCREENS = setOf(SettingsGo.EXTRA_KINDS, SettingsGo.DUTY_ROSTER, SettingsGo.HEALTH_REPORT, SettingsGo.ATTENDANCE_IMPORT,

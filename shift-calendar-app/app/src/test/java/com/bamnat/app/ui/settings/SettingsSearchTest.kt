@@ -221,4 +221,16 @@ class SettingsSearchTest {
         assertEquals(null, topic.action)
         assertFalse(topic.answer.contains("알람 점검"))
     }
+
+    /** 1.38 PC 12.5 빈틈 2: a result reads as its row does on that kind of work's page, and the old name still finds it. */
+    @Test fun lockScreenRowReadsInTheWordsOfTheWork() {
+        fun title(style: com.bamnat.core.work.WorkStyle?) =
+            SettingsIndex.entries(style = style).map { it.title }.first { it.startsWith("잠금 화면 오늘") }
+        org.junit.Assert.assertEquals("잠금 화면 오늘 근무", title(com.bamnat.core.work.WorkStyle.SHIFT))
+        org.junit.Assert.assertEquals("잠금 화면 오늘 영업", title(com.bamnat.core.work.WorkStyle.BUSINESS))
+        org.junit.Assert.assertEquals("잠금 화면 오늘 일정", title(com.bamnat.core.work.WorkStyle.INVEST))
+        val invest = SettingsIndex.entries(style = com.bamnat.core.work.WorkStyle.INVEST)
+        org.junit.Assert.assertTrue(invest.any { it.title == "모든 투자 알람 한 번에 옮기기" && "잠금 화면 오늘 근무" !in it.keywords })
+        org.junit.Assert.assertTrue(invest.any { it.title == "잠금 화면 오늘 일정" && "잠금 화면 오늘 근무" in it.keywords })
+    }
 }
