@@ -999,6 +999,17 @@ private fun PollView(v: com.bamnat.app.company.Poll, enabled: Boolean, onPick: (
         }
         Text(if (v.mine == null) "골라야 결과가 보여요 · ${v.total}명 참여" else "${v.total}명 참여 · 다시 누르면 거둬요",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 1.39 [PLZC-31] 근무형태별 결과, after this phone picked too: each 근무형태's leading choice (5명 미만은 합쳐서).
+        if (v.mine != null && v.byForm.isNotEmpty()) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("근무형태별", style = MaterialTheme.typography.labelMedium)
+            v.byForm.forEach { g ->
+                val (i, pct) = g.lead() ?: return@forEach
+                Text("${g.form?.label ?: "그 밖의 근무"} ${g.total}명 · '${v.options.getOrElse(i) { "" }}' $pct%",
+                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+            Text("한 근무형태가 5명이 안 되면 '그 밖의 근무'로 합쳐요. 누가 무엇을 골랐는지는 보이지 않아요.",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 

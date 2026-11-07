@@ -302,10 +302,20 @@ data class TalkPost(
 )
 
 /** 1.36 [VIL-10] 마을 V10 투표 글: 2~4 choices, how many picked each, and which one this phone picked (null: none yet). */
-data class Poll(val options: List<String>, val counts: List<Int>, val mine: Int? = null) {
+data class Poll(val options: List<String>, val counts: List<Int>, val mine: Int? = null,
+    /** 1.39 [PLZC-31] 근무형태별 결과: groups of 5 or more ([PollSplit.form] null: 그 밖의 근무). */
+    val byForm: List<PollSplit> = emptyList()) {
     val total: Int get() = counts.sum()
     /** The share of [i] in whole percent, 0 before anyone voted. */
     fun percent(i: Int): Int = if (total == 0) 0 else Math.round(counts.getOrElse(i) { 0 } * 100f / total)
+}
+
+/** 1.39 [PLZC-31] One 근무형태's votes on a poll (null: the others together). */
+data class PollSplit(val form: com.bamnat.core.pay.WorkForm?, val counts: List<Int>) {
+    val total: Int get() = counts.sum()
+    /** The choice most of them picked, and its share in whole percent. */
+    fun lead(): Pair<Int, Int>? = counts.indices.maxByOrNull { counts[it] }?.takeIf { total > 0 }
+        ?.let { it to Math.round(counts[it] * 100f / total) }
 }
 
 /**
@@ -641,7 +651,8 @@ interface CompanyApi {
     /** 1.36 [VIL-09] 도움 됐어요: the writer of question [id] picks [reply] (null takes it back). */
     suspend fun postAnswer(device: String, id: String, reply: String?): String? = throw CompanyException("offline")
     /** 1.36 [VIL-10] One choice on poll [id] ([choice] null takes it back); the poll as it stands comes back. */
-    suspend fun pollVote(device: String, id: String, choice: Int?): Poll = throw CompanyException("offline")
+    /** [room] the plaza it is in: in a kind of work's plaza my 근무형태 goes with the vote (1.39 [PLZC-31]). */
+    suspend fun pollVote(device: String, id: String, choice: Int?, room: String? = null): Poll = throw CompanyException("offline")
     /** 1.36 [VIL-06] 마을 검색: the kinds of work's plazas' posts and the requests with [q]. */
     suspend fun villageSearch(q: String): VillageFound = VillageFound(emptyList(), emptyList())
     /** 1.36 [VIL-19] 이달의 주제 공모 for a kind of work ([style] the recipes' key, SHIFT…). */
@@ -975,8 +986,10 @@ class CompanyClient(
         request("POST", "/api/community/appeal", JSONObject().put("device", device).put("target", target).put("text", text.trim())).getString("inquiry")
     }
 
-    override suspend fun pollVote(device: String, id: String, choice: Int?): Poll = serverCall {
-        pollOf(request("POST", "/api/posts/$id/poll", JSONObject().put("device", device).put("choice", choice ?: JSONObject.NULL)).getJSONObject("poll"))
+    override suspend fun pollVote(device: String, id: String, choice: Int?, room: String?): Poll = serverCall {
+        val o = JSONObject().put("device", device).put("choice", choice ?: JSONObject.NULL)
+        if (choice != null && room != null) o.tagged(room, com.bamnat.core.plaza.StylePlaza.ROOM)
+        pollOf(request("POST", "/api/posts/$id/poll", o).getJSONObject("poll"))
     }
 
     override suspend fun postShow(device: String, company: String, setup: String, body: String, code: String): String = serverCall {
@@ -1398,7 +1411,13 @@ internal fun boardOf(o: JSONObject): Board = Board(
 internal fun pollOf(o: JSONObject): Poll {
     val options = (0 until (o.optJSONArray("options")?.length() ?: 0)).map { o.getJSONArray("options").getString(it) }
     val counts = options.indices.map { o.optJSONArray("counts")?.optInt(it) ?: 0 }
-    return Poll(options, counts, if (o.has("mine") && !o.isNull("mine")) o.getInt("mine") else null)
+    // A 근무형태 this app does not know (a newer server's) is left out rather than shown as 그 밖의 근무.
+    val byForm = o.optJSONArray("byForm").objects().mapNotNull { g ->
+        val f = g.optString("f").takeIf { g.has("f") && !g.isNull("f") && it.isNotEmpty() }
+        val form = f?.let { name -> com.bamnat.core.pay.WorkForm.entries.firstOrNull { it.name == name } ?: return@mapNotNull null }
+        PollSplit(form, options.indices.map { g.optJSONArray("counts")?.optInt(it) ?: 0 })
+    }
+    return Poll(options, counts, if (o.has("mine") && !o.isNull("mine")) o.getInt("mine") else null, byForm)
 }
 
 internal fun talkOf(o: JSONObject): Talk = Talk(

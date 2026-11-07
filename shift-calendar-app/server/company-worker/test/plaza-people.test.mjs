@@ -215,3 +215,23 @@ test("[PLZC-21] 오늘 출근: one tap a day per phone, counted by kind in the r
   t.mock.timers.tick(DAY);
   assert.deepEqual((await read(call, 1, "style-shift")).data.pulse.checkin, { counts: { day: 0, night: 0 } });
 });
+
+test("[PLZC-31] 근무형태별 투표 결과: a 근무형태 of 5 or more apart, the rest together, only after 3.12", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  await policyOn(call);
+  const id = (await write(call, 1, "style-shift", "야간 끝나고 바로 자요?", null, { kind: "question", poll: ["바로 자요", "좀 있다 자요"] })).data.id;
+  const vote = (n, choice, f) => call("POST", `/api/posts/${id}/poll`, { device: device(n), choice, ...(f ? { tag: { s: "SHIFT", f } } : {}) }, from(n));
+  for (const n of [10, 11, 12, 13]) await vote(n, 0, "FOUR_TEAM");
+  let r = await vote(14, 1, "FOUR_TEAM");
+  assert.deepEqual(r.data.poll.counts, [4, 1]);
+  assert.deepEqual(r.data.poll.byForm, [{ f: "FOUR_TEAM", counts: [4, 1] }], "five 4조 2교대 stand apart; nobody else yet");
+  for (const n of [20, 21]) await vote(n, 1, "THREE_SHIFT");
+  for (const n of [30, 31]) await vote(n, 1);
+  r = await vote(32, 0);
+  // Two 3교대 are too few to stand alone: with the three without a tag they are 그 밖의 근무.
+  assert.deepEqual(r.data.poll.byForm, [{ f: "FOUR_TEAM", counts: [4, 1] }, { f: null, counts: [1, 4] }]);
+  assert.equal((await vote(33, 0, "OFFICE")).status, 400, "a 일근 form in 교대 광장");
+  const seen = (await read(call, 2, "style-shift")).data.posts.find((p) => p.id === id).poll;
+  assert.deepEqual(seen.byForm, [{ f: "FOUR_TEAM", counts: [4, 1] }, { f: null, counts: [1, 4] }]);
+});

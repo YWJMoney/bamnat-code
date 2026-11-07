@@ -90,7 +90,7 @@ import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.j
 import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
 import { makerMarks } from "./maker-mark.js";
-import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut } from "./plaza-people.js";
+import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut, pollByForm } from "./plaza-people.js";
 import { PLAZA_CHECKIN_SCHEMA, plazaCheckinRoute, plazaCheckins } from "./plaza-checkin.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
@@ -4042,11 +4042,15 @@ async function talkData(request, env, companyId, grp, known = null) {
   // PC 확인 V27: the card carries the recipe's look, so the 자랑 shows a small picture of it.
   const cards = new Map(attached.length ? (await all(env, `SELECT code, title, body FROM recipes WHERE state = 'visible' AND scope = 'public'
     AND code IN (${attached.map(() => "?").join(",")})`, ...attached)).map((r) => [r.code, { title: r.title, look: r.body ? recipeLookOf(r.body) : null }]) : []);
+  // 1.39 [PLZC-31] 근무형태별 투표 결과, on a kind of work's plaza once plaza.people is on.
+  const splits = people && polled.length
+    ? await pollByForm(all, env, polled, new Map(rows.filter((p) => p.poll).map((p) => [p.id, JSON.parse(p.poll).length]))) : new Map();
   const pollOfRow = (p) => {
     const options = JSON.parse(p.poll);
     const counts = options.map((_, i) => pollCounts.find((r) => r.post_id === p.id && r.choice === i)?.n ?? 0);
     const mine = myPolls.find((r) => r.post_id === p.id)?.choice;
-    return { options, counts, ...(mine === undefined ? {} : { mine }) };
+    const byForm = splits.get(p.id);
+    return { options, counts, ...(mine === undefined ? {} : { mine }), ...(byForm ? { byForm } : {}) };
   };
   const dropped = new Set();
   let hiddenByYou = 0;
@@ -4319,19 +4323,23 @@ async function pollVote(request, env, id) {
   const limitHit = await overLimit(env, now, [["device", `vote|${dev}|${Math.floor(now / HOUR)}`, LIMITS.votesPerHour, HOUR],
     ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
   if (limitHit) return limitHit;
-  const p = await one(env, "SELECT id, status, poll FROM posts WHERE id = ?", id);
+  const p = await one(env, "SELECT id, status, poll, company_id FROM posts WHERE id = ?", id);
   if (!p || p.status !== "shown" || !p.poll) return json({ error: "not_found" }, 404);
   const options = JSON.parse(p.poll);
+  // 1.39 [PLZC-31] The voter's 근무형태 goes with the vote in a kind of work's plaza, once plaza.people is on.
+  const people = Object.hasOwn(STYLE_ROOMS, p.company_id) && (await peopleOn(env, now));
+  const form = people && given(body.tag) ? (peopleTag(body.tag, p.company_id, refuse)?.f ?? null) : null;
   if (body.choice === null) {
     await run(env, "DELETE FROM poll_votes WHERE post_id = ? AND device = ?", id, dev);
   } else {
     if (!Number.isInteger(body.choice) || body.choice < 0 || body.choice >= options.length) refuse("choice", "choice");
-    await run(env, `INSERT INTO poll_votes (post_id, device, choice, at) VALUES (?, ?, ?, ?)
-      ON CONFLICT (post_id, device) DO UPDATE SET choice = excluded.choice, at = excluded.at`, id, dev, body.choice, now);
+    await run(env, `INSERT INTO poll_votes (post_id, device, choice, at, form) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (post_id, device) DO UPDATE SET choice = excluded.choice, at = excluded.at, form = excluded.form`, id, dev, body.choice, now, form);
   }
   const rows = await all(env, "SELECT choice, COUNT(*) AS n FROM poll_votes WHERE post_id = ? GROUP BY choice", id);
   const counts = options.map((_, i) => rows.find((r) => r.choice === i)?.n ?? 0);
-  return json({ id, poll: { options, counts, ...(body.choice === null ? {} : { mine: body.choice }) } });
+  const byForm = people ? (await pollByForm(all, env, [id], new Map([[id, options.length]]))).get(id) : undefined;
+  return json({ id, poll: { options, counts, ...(body.choice === null ? {} : { mine: body.choice }), ...(byForm ? { byForm } : {}) } });
 }
 
 async function postVote(request, env, id) {
