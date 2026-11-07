@@ -313,7 +313,7 @@ class SleepRecordService : Service(), SensorEventListener {
         return NotificationCompat.Builder(this, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setGroup(Notifications.SLEEPING_GROUP + "_record").setGroupSummary(true) // 1.39 PC c0ca3d9f: its own summary; a group with none is bundled by Android 15+
+            .setGroup(Notifications.SLEEPING_REC_GROUP).setGroupSummary(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setSilent(true)
             .setOngoing(true)
