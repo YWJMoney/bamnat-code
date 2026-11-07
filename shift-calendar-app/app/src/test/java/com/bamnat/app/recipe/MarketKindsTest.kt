@@ -72,4 +72,14 @@ class MarketKindsTest {
         assertTrue(RecipeClient.fits(theme, "theme!fx"))
         assertFalse(RecipeClient.fits(item("theme", listOf("calendar")), "theme!fx"))
     }
+
+    /** PC 4차 c0ca3d9f: 부품 상세의 넣기 단추가 '이 테마 입기'였어요. 작품 종류대로. */
+    @Test fun thePutInButtonSaysWhatKindItIs() {
+        assertEquals("이 테마 입기", com.bamnat.app.ui.recipe.wholeWords("theme", part = false))
+        assertEquals("이 부품 넣기", com.bamnat.app.ui.recipe.wholeWords("part", part = true))
+        assertEquals("이 부품 넣기", com.bamnat.app.ui.recipe.wholeWords("logic", part = true))
+        assertEquals("이 작품 넣기", com.bamnat.app.ui.recipe.wholeWords("tab", part = false))
+        assertEquals("이 작품 그대로 넣기", com.bamnat.app.ui.recipe.wholeWords("tab", part = false, plain = true))
+        assertEquals("이 작품 넣기", com.bamnat.app.ui.recipe.wholeWords("logic", part = false))
+    }
 }

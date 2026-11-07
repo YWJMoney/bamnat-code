@@ -76,6 +76,16 @@ object MarketMaker {
 }
 
 /**
+ * 1.39 [MKD-43] 넣기 단추의 한마디, 작품 종류대로 (PC 4차 c0ca3d9f: 부품 상세에도 '이 테마 입기'): 테마는 입기, 탭별 작품·도구는 넣기.
+ * [plain] 자세히 보기의 단추처럼 '그대로'를 붙일 때.
+ */
+internal fun wholeWords(scope: String?, part: Boolean, plain: Boolean = false): String = when {
+    part -> "이 부품 넣기"
+    scope == "theme" || scope == null -> "이 테마 입기"
+    else -> if (plain) "이 작품 그대로 넣기" else "이 작품 넣기"
+}
+
+/**
  * 1.39 [MKD-41] 상세 맨 위의 만든 분 줄: 얼굴(첫 글자) · 이름 · 표식 · 팔로워, 누르면 프로필 (만든 분 쪽 아이디가 있을 때만).
  */
 @Composable
