@@ -54,6 +54,9 @@ object PlazaNews {
             "room_posts" -> "${i.company ?: "참여한 회사"} 정보 광장에 새 글이 ${i.count.coerceAtLeast(1)}개 올라왔어요."
             // 1.36 [VIL-09] PC 확인 V1: answers to what I wrote in a room (질문이면 도움 됐어요를 고를 수 있어요).
             "replies" -> "${i.company?.takeIf { it.isNotBlank() } ?: "광장"}에 쓴 내 글에 새 답이 ${i.count.coerceAtLeast(1)}개 달렸어요."
+            // 1.39 [PAYP-06] To the senders of a shared pay way: where coworkers say it differs. To the writer: the sender answered.
+            "fix" -> "내가 나눈 ${i.company ?: "회사"} 급여 방식에 보완 요청이 ${i.count.coerceAtLeast(1)}개 왔어요. 어디가 다른지 보고 고치거나 답해 주세요."
+            "fix_answer" -> "${i.company ?: "회사"} 급여 방식에 보낸 보완 요청에 답이 왔어요."
             else -> null
         }
     }

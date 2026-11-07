@@ -6395,12 +6395,13 @@ async function rateTo(env, actor, id, status, now) {
  * six letters of the install's hash, enough to see the same writer again and nothing more.
  */
 async function postList(env, url) {
-  const status = ["flagged", "hidden", "all", "room"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "flagged";
+  // 1.39 [PAYP-07] fix: the 보완 요청 on shared pay ways, newest first, to see which ways are said to differ.
+  const status = ["flagged", "hidden", "all", "room", "fix"].includes(url.searchParams.get("status")) ? url.searchParams.get("status") : "flagged";
   const company = url.searchParams.get("company");
   const grp = url.searchParams.get("setup");
   // AI 1.27 [PLAZA-32] One room whole too: a company's (its id) or a kind of work's (style-…), setup "room".
   const one_talk = company && (/^[A-Za-z0-9]{12}$/.test(company) || Object.hasOwn(STYLE_ROOMS, company)) && grp && (/^[0-9a-f]{16}$/.test(grp) || grp === ROOM);
-  const only = status === "room" ? "AND p.grp = 'room'" : "";
+  const only = status === "room" ? "AND p.grp = 'room'" : status === "fix" ? "AND p.kind = 'fix'" : "";
   const pg = page(url.searchParams);
   const like = companyLike(url.searchParams.get("q"));
   const rows = one_talk
@@ -6448,6 +6449,8 @@ async function postList(env, url) {
       ...(p.grp === ROOM ? { room: Object.hasOwn(STYLE_ROOMS, p.company_id) ? "style" : "company" } : {}),
       dept: depts.get(key) ?? "",
       body: p.body,
+      // 1.39 [PAYP-07] A 보완 요청 says where, in words.
+      ...(p.kind === "fix" ? { kind: "fix", fix: (() => { try { return JSON.parse(p.change ?? "[]").map((c) => CHANGE_FIELDS[c.field] ?? c.field); } catch { return []; } })() } : {}),
       // PC 확인 5c21f3bb: a question's poll choices too, so a 신고 on it can be judged by what was asked.
       ...(p.poll ? { poll: (() => { try { return JSON.parse(p.poll); } catch { return null; } })() } : {}),
       ...(p.attach ? { attach: p.attach } : {}),
