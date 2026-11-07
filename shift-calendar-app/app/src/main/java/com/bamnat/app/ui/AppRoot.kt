@@ -605,7 +605,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.YEAR -> { nav.navigate(Routes.YEAR) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.PRO -> { nav.navigate(Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // 1.39 [FX-24] 하루 써 보기 끝 알림은 그 작품 장터 자세히(그 작품이 한 일·프로 카드)로.
+            NoticeLinks.Target.PRO -> {
+                val code = NoticeLinks.payload.value?.takeIf { Regex("[A-Za-z0-9]{4,16}").matches(it) }
+                nav.navigate(if (code != null) Routes.recipe(code) else Routes.PRO) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             // [TOWN-01] 1.37: a 소식 opens 마을 on the part it speaks of, not on the part last seen (장터·테마·공방 hid the answer).
             NoticeLinks.Target.PLAZA -> {
                 com.bamnat.app.ui.company.TalkSheets.closeAll()

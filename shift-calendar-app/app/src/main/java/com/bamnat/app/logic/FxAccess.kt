@@ -62,10 +62,17 @@ object FxAccess {
     /** The 프로 기능 장치 a whole work carries in its 규칙·단추 piece (none: free to put in and to send up). */
     fun partsOf(r: com.bamnat.core.recipe.Recipe): Set<FxPro.Part> =
         (r.pieces.filter { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }.flatMap { FxPro.uses(Logic.from(it.values)) } +
-            FxPro.looks(r.pieces.map { it.kind.key })).let { s -> FxPro.Part.entries.filter { it in s }.toSet() }
+            r.pieces.flatMap { FxPro.looks(it.kind.key, it.values) }).let { s -> FxPro.Part.entries.filter { it in s }.toSet() }
 
     /** What runs of [full] now. */
-    fun runnable(c: AppContainer, full: Logic): Logic = if (on(c)) full else FxPro.free(full)
+    fun runnable(c: AppContainer, full: Logic, now: Instant = Today.instant()): Logic {
+        if (pro(c) || com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)) return full
+        // 1.39 [FX-23] 작품마다: a try opens the 규칙·단추 that came from that work (내가 만든 것·표시 없는 것은 OWN의 써 보기로).
+        val open = load(c.appContext).openKeys(now)
+        if (open.isEmpty()) return FxPro.free(full)
+        val store = LogicStore(c.appContext)
+        return FxPro.free(full, { (store.fromButton(it.id) ?: FxTaste.OWN) in open }, { (store.fromRule(it.key) ?: FxTaste.OWN) in open })
+    }
 
     // ---- [FX-02] C-3 하루 써 본 뒤 요약 ----
 
@@ -92,7 +99,7 @@ object FxAccess {
      * The try ended and its card was not said yet: once, a quiet notice "하루 써 보기가 끝났어요 · 오늘 이 작품이 한 일 … · 프로에서 계속"
      * that opens the 프로 screen. Asked when the app opens.
      */
-    fun endedCard(c: AppContainer, now: Instant = Today.instant()): String? {
+    fun endedCard(c: AppContainer, now: Instant = Today.instant()): Pair<String, String?>? {
         if (pro(c)) return null
         val s = load(c.appContext)
         if (s.tried.isEmpty() || s.open(now)) return null
@@ -101,7 +108,8 @@ object FxAccess {
         if (p.getString(SAID, null) == last) return null
         p.edit().putString(SAID, last).apply()
         val did = summary(c)
-        return if (did != null) "하루 써 보기가 끝났어요. 그동안 한 일: $did. 프로에서는 계속 돌아요" else "하루 써 보기가 끝났어요. 프로에서는 기능 장치가 계속 돌아요"
+        return (if (did != null) "하루 써 보기가 끝났어요. 그동안 한 일: $did. 프로에서는 계속 돌아요" else "하루 써 보기가 끝났어요. 프로에서는 기능 장치가 계속 돌아요") to
+            s.lastEnded(now)
     }
 }
 
@@ -179,6 +187,16 @@ object FxValues {
     }
 
     internal fun kept(c: AppContainer, name: String): ValueBook.Kept? = load(c.appContext)[name]
+
+    /** 1.39 [FX-26] [name]'s number on [day] (its period) set to [to] by hand; false when there is no such 값 칸. */
+    fun fix(c: AppContainer, name: String, day: java.time.LocalDate, to: Double): Boolean {
+        val def = LogicRunner.logic(c, all = true).value(name) ?: return false
+        val all = load(c.appContext)
+        val next = all + (name to ValueBook.fix(all[name], def, day, Today.date(), to))
+        c.appContext.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().putString(ALL, ValueBook.encode(next)).apply()
+        _all.value = next
+        return true
+    }
 
     /** Forgets every number (설정에서 '값 칸 비우기'). */
     fun clear(c: AppContainer) {

@@ -183,6 +183,73 @@ class MKVScreenshotTest : ScreenshotBase() {
         assertTrue(appears("‘오늘 하루 정리해요’ 알림이 떠요", exact = false))
     }
 
+    /** 1.39 [MKD-04] 값 칸 해 보기: 단추 위젯 '물 한 잔'을 누를 때마다 숫자가 오르고, 목표에 처음 닿으면 그 규칙이 따라 돌아요. 저장 안 됨. */
+    @Test fun aValueButtonIsTriedWithItsCount() = shoot("1528_mkd_value_tryout", PHONE) {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        val f = com.bamnat.core.formula.LogicVerb.VAL_ADD
+        val logic = com.bamnat.core.formula.Logic(
+            buttons = listOf(com.bamnat.core.formula.LogicButton("물 한 잔", "💧", com.bamnat.core.formula.ButtonPlace.WIDGET,
+                com.bamnat.core.formula.LogicAct(f, "물 잔", by = 1.0))),
+            rules = listOf(com.bamnat.core.formula.LogicRule("다 마셨어요", com.bamnat.core.formula.RuleTrigger.VALUE, of = "물 잔", goal = true,
+                act = com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.NOTIFY, "오늘 물 다 마셨어요"))),
+            values = listOf(com.bamnat.core.formula.LogicValue("물 잔", com.bamnat.core.formula.ValueReset.DAY, goal = 2.0, unit = "잔")),
+        )
+        val r = Recipe("물 마시기", styles = WorkStyle.entries.toSet(), pieces = listOf(com.bamnat.core.recipe.Piece(PieceKind.LOGIC, logic.toValues())))
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
+                .padding(16.dp)) { com.bamnat.app.ui.recipe.ToolTryout(r, WorkStyle.SHIFT) }
+        }
+        settle()
+        assertTrue(appears("✦ 값 칸 (해 보기)", exact = true))
+        assertTrue(appears("0/2잔", exact = true))
+        tapText("✨ 💧 물 한 잔", exact = true)
+        settle()
+        assertTrue(appears("1/2잔", exact = true))
+        tapText("✨ 💧 물 한 잔", exact = true)
+        settle()
+        assertTrue(appears("2/2잔", exact = true))
+        assertTrue("목표에 닿으면 규칙이 따라 돌아요", appears("그러면 ‘다 마셨어요’ 규칙이 돌아요", exact = false))
+        tapText("처음으로", exact = true)
+        settle()
+        assertTrue(appears("0/2잔", exact = true))
+    }
+
+    /** FX-23·24 이어 받기: 무료 폰에서 하루 써 보기가 끝나 알림으로 상세가 열리면, 맨 위에 마쳤다는 것·그동안 한 일·프로 보기. */
+    @Test fun aFinishedTasteSaysWhatItDid() = shoot("1529_mkd_taste_ended", PHONE) {
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT, previewTier = com.bamnat.app.tier.Tier.FREE) }
+        val m = Market()
+        val i = m.recipes.indices.first { m.item(it).scope == "logic" }
+        val logic = com.bamnat.core.formula.Logic(
+            buttons = listOf(com.bamnat.core.formula.LogicButton("물 한 잔", "💧", com.bamnat.core.formula.ButtonPlace.WIDGET,
+                com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.VAL_ADD, "물 잔", by = 1.0))),
+            // 값 칸 하나·단추 위젯 하나는 무료라, 값이 바뀌면 규칙(✦)을 더해 프로 기능 작품으로.
+            rules = listOf(com.bamnat.core.formula.LogicRule("다 마셨어요", com.bamnat.core.formula.RuleTrigger.VALUE, of = "물 잔", goal = true,
+                act = com.bamnat.core.formula.LogicAct(com.bamnat.core.formula.LogicVerb.NOTIFY, "오늘 물 다 마셨어요"))),
+            values = listOf(com.bamnat.core.formula.LogicValue("물 잔", com.bamnat.core.formula.ValueReset.DAY, goal = 8.0, unit = "잔")),
+        )
+        val r = Recipe("물 마시기", styles = WorkStyle.entries.toSet(), pieces = listOf(com.bamnat.core.recipe.Piece(PieceKind.LOGIC, logic.toValues())))
+        c.recipeApi = object : RecipeApi by m {
+            override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc =
+                RecipeDoc(m.item(i).copy(title = r.title, retired = true), RecipeCodec.hash(r), RecipeCodec.write(r), "public", mine = false)
+        }
+        val code = m.code(i)
+        // 30시간 전에 시작해 그동안 값을 한 번 더했고, 지금은 끝났어요.
+        val now = com.bamnat.core.time.Today.zoned()
+        com.bamnat.core.time.Today.fix(now.minusHours(30))
+        assertTrue(com.bamnat.app.logic.FxAccess.start(c, code))
+        com.bamnat.app.logic.FxAccess.note(c, com.bamnat.core.formula.LogicVerb.VAL_ADD)
+        com.bamnat.core.time.Today.fix(now)
+        assertTrue(com.bamnat.app.logic.FxAccess.status(c, code) is com.bamnat.core.formula.FxTaste.Status.Used)
+        val vm = com.bamnat.app.ui.recipe.RecipeDetailViewModel(c, code, com.bamnat.app.data.PersonalCalendar.MAIN)
+        content { com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = {}, onRemake = {}, onMaker = {}) }
+        settle()
+        // 도구도 이름·만든 분·이 줄이 맨 위에, 긴 전후 해 보기는 그 아래.
+        assertTrue(appears("✦ 하루 써 보기를 마쳤어요 · 그동안 한 일: 값 더하기 1번", exact = false, ms = 5_000))
+        assertTrue(appears("프로 보기", exact = true))
+        // 1.39 판 정리로 내린 작품도 코드로 열리면 그렇다고 한 줄.
+        assertTrue(appears("장터에서 내려간 작품이에요 · 링크로는 넣을 수 있어요", exact = true))
+    }
+
     /** 1.39 [MKC-04] '✦ 프로 기능' 칩: 도구 줄 전체 바로 다음, 고르면 새 기능 장치를 쓴 작품만, 카드에 무엇이 들었는지. */
     @Test fun proWorksHaveTheirChip() = shoot("1523_mkc_fx_chip", PHONE) {
         c.recipeApi = Market()

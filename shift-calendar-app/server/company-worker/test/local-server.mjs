@@ -298,10 +298,18 @@ async function seedMarket() {
     for (const batch of new Set(entries.map((e) => e.batch).filter(Boolean))) await admin("/recipes/release", { batch });
     said.push(`${f} ${ok}개`);
   }
-  const plan = find("market-138-refresh-plan.json");
-  if (plan) {
-    const titles = JSON.parse(readFileSync(plan, "utf8")).hide.map((x) => x.title);
-    await admin("/recipes/hide-titles", { titles, dry: false, note: "1.38 장터 정리" });
+  // 1.38 [STM-09]·1.39 판 정리: 각 판의 정리 계획대로 내려요(지우지 않음, 넣은 분은 코드로 계속 열어요).
+  for (const [f, note] of [["market-138-refresh-plan.json", "1.38 장터 정리"], ["market-139-refresh-plan.json", "1.39 장터 정리"]]) {
+    const plan = find(f);
+    if (!plan) continue;
+    const hide = JSON.parse(readFileSync(plan, "utf8")).hide ?? [];
+    const titles = hide.filter((x) => !x.code).map((x) => x.title).filter(Boolean);
+    const codes = hide.map((x) => x.code).filter(Boolean);
+    for (let i = 0; i < Math.max(titles.length, codes.length); i += 1200) {
+      const r = await admin("/recipes/hide-titles", { titles: titles.slice(i, i + 1200), codes: codes.slice(i, i + 1200), dry: false, note });
+      const out = await r.json().catch(() => ({}));
+      said.push(`${note} ${out.hidden ?? 0}개 내림${out.missing?.length ? `(못 찾음 ${out.missing.length})` : ""}`);
+    }
   }
   const shown = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes WHERE state = 'visible'").first())?.n ?? 0;
   console.log(`--market: ${said.join(", ")} · 장터에 보이는 작품 ${shown}개`);

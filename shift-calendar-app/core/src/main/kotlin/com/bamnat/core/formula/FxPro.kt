@@ -33,6 +33,8 @@ object FxPro {
         HISTORY("history", "값 기록"),
         /** [FX-15] 몇 분마다·기다렸다 하기. */
         TIME("time", "몇 분마다·기다렸다"),
+        /** [FX-21] 1.39 새 언제(근무 알람을 끄면)·새 화면(수면·밤 화면 열기). */
+        REACH("reach", "알람·수면과 잇기"),
         /** [FX-22] 1.39 새 화면 모양 부품 ([NEW_LOOKS]: 수면·할 일 화면, G8 밤 화면·하루 이야기 줄). */
         LOOK("look", "1.39 새 화면 모양"),
         ;
@@ -76,6 +78,7 @@ object FxPro {
         if (r.more.isNotEmpty() || r.otherwise.isNotEmpty()) add(Part.CHAIN)
         if (r.on == RuleTrigger.VALUE) add(Part.VALUE_RULE)
         if (r.on == RuleTrigger.EVERY) add(Part.TIME)
+        if (r.on == RuleTrigger.ALARM_OFF) add(Part.REACH)
         formula(r.cond, this)
     }
 
@@ -84,6 +87,7 @@ object FxPro {
         if (a.verb.pro && !(taste != null && a.arg == taste && (a.verb == LogicVerb.VAL_ADD || a.verb == LogicVerb.VAL_SET))) out += Part.VALUE_ACT
         if (a.then.any { it !in LogicAct.AGAIN }) out += Part.NOTIFY_BUTTONS
         if (a.after != null) out += Part.TIME
+        if (a.verb == LogicVerb.SCREEN && a.arg in LogicVerb.NEW_SCREENS) out += Part.REACH
         if (a.verb == LogicVerb.NOTIFY || a.verb == LogicVerb.MEMO_LINE || a.verb == LogicVerb.NEW_MEMO || a.verb == LogicVerb.VAL_TEXT) {
             text(a.arg, out); text(a.text, out)
         }
@@ -110,12 +114,19 @@ object FxPro {
      * [FX-22] 1.39에 새로 연 화면 모양 부품: a work's piece kind (or a 설계도 부품 id) that is one of these, or starts with one ending in
      * '.', is [Part.LOOK]. 갈래마다 자기 부품 앞자리를 여기에만 더해요 (서버 recipes.js FX_NEW_LOOKS도 같이).
      */
-    val NEW_LOOKS: List<String> = emptyList()
+    val NEW_LOOKS: List<String> = listOf(
+        // G8 FLOW-21 밤 화면·아침 한 장 (설계도 부품 night·night.date·night.clock·night.line·night.card·night.button·night.morning).
+        "night", "night.",
+    )
 
     fun isNewLook(id: String): Boolean = NEW_LOOKS.any { id == it || (it.endsWith('.') && id.startsWith(it)) }
 
     /** [Part.LOOK] when any of [ids] (piece kinds, 설계도 부품 ids) is a 1.39 새 모양. */
     fun looks(ids: Collection<String>): Set<Part> = if (ids.any(::isNewLook)) setOf(Part.LOOK) else emptySet()
+
+    /** [Part.LOOK] for one piece: its kind, or for 부품 꾸미기 (`parts`) the 설계도 부품 ids its lines dress. */
+    fun looks(kind: String, values: Map<String, Any?>): Set<Part> =
+        looks(listOf(kind) + if (kind == "parts") (values["parts"] as? List<*>).orEmpty().mapNotNull { (it as? Map<*, *>)?.get("id") as? String } else emptyList())
 
     /** Whether [l] needs 프로 to run as made. */
     fun needs(l: Logic): Boolean = uses(l).isNotEmpty()
@@ -124,12 +135,18 @@ object FxPro {
      * What runs without 프로: the buttons and rules with no 프로 part (1.38 things and the [TASTE] allowance), each 알림 without its
      * 알림 단추 ('10분 뒤 다시' stays). The 값 칸 list stays so its numbers are kept and shown as they were.
      */
-    fun free(l: Logic): Logic {
+    fun free(l: Logic): Logic = free(l, { false }, { false })
+
+    /**
+     * 1.39 [FX-23] 작품마다 하루 써 보기: as [free], but the buttons and rules [openButton]·[openRule] say are of a work being tried run
+     * whole (그 작품 것만, 다른 작품의 ✦는 쉬어요).
+     */
+    fun free(l: Logic, openButton: (LogicButton) -> Boolean, openRule: (LogicRule) -> Boolean): Logic {
         fun bare(a: LogicAct) = a.copy(then = a.then.filter { it in LogicAct.AGAIN })
         fun only(p: Set<Part>) = p.isEmpty() || p == setOf(Part.NOTIFY_BUTTONS)
         return Logic(
-            buttons = l.buttons.filter { only(parts(l, it)) }.map { it.copy(act = bare(it.act)) },
-            rules = l.rules.filter { only(parts(l, it)) }.map { it.copy(act = bare(it.act)) },
+            buttons = l.buttons.mapNotNull { b -> if (openButton(b)) b else if (only(parts(l, b))) b.copy(act = bare(b.act)) else null },
+            rules = l.rules.mapNotNull { r -> if (openRule(r)) r else if (only(parts(l, r))) r.copy(act = bare(r.act)) else null },
             values = l.values,
         )
     }

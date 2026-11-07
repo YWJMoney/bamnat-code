@@ -144,6 +144,9 @@ object LogicRunner {
                 "money" -> NoticeLinks.open(NoticeLinks.Target.MONEY)
                 "pay", "stats" -> NoticeLinks.open(NoticeLinks.Target.PAY)
                 "alarm" -> NoticeLinks.open(NoticeLinks.Target.ALARM_CHECK)
+                // 1.39 [FX-21] 수면 기록, 밤 화면.
+                "sleep" -> NoticeLinks.open(NoticeLinks.Target.SLEEP)
+                "night" -> NoticeLinks.open(NoticeLinks.Target.NIGHT)
             }
             LogicVerb.NEW_MEMO -> {
                 val t = c.memoTemplates.items.value.firstOrNull { it.title == act.arg }
@@ -469,6 +472,16 @@ object LogicRunner {
         )
     }
 
+    /** 1.39 [FX-21] 근무 알람을 끄면 (메모 일정·다시 확인 알람은 빼고): today's values, quietly (알람 화면 위에 말하지 않게). */
+    fun onAlarmOff(c: AppContainer) {
+        if (resting || logic(c).rules.none { it.on == RuleTrigger.ALARM_OFF }) return
+        val date = Today.date()
+        c.appScope.launch {
+            val f = facts(c)
+            due(c, RuleTrigger.ALARM_OFF, date, f).forEach { (r, acts) -> runCatching { runSteps(c, acts, date, f.scope(date), r.name, quiet = true) } }
+        }
+    }
+
     /** 가계부에 적으면 (사용자 2026-11-01 "가계부와 연동"): the entry's day. */
     fun onMoneySaved(c: AppContainer, date: LocalDate) {
         if (resting || logic(c).rules.none { it.on == RuleTrigger.MONEY }) return
@@ -480,13 +493,14 @@ object LogicRunner {
 
     fun onOpen(c: AppContainer) {
         // 1.39 [FX-02] C-3: a 하루 써 보기 that ended says what it did, once, and where 프로 keeps it on.
-        runCatching { FxAccess.endedCard(c) }.getOrNull()?.let { line ->
+        runCatching { FxAccess.endedCard(c) }.getOrNull()?.let { (line, code) ->
             val n = NotificationCompat.Builder(c.appContext, Notifications.RULES_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle("오늘 이 작품이 한 일")
                 .setContentText(line)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(line))
-                .setContentIntent(Notifications.open(c.appContext, NoticeLinks.Target.PRO, REQ + 3))
+                // 1.39 [FX-24] 그 작품의 장터 자세히(한 일·프로 카드)로, 내가 만든 것은 프로 화면으로.
+                .setContentIntent(Notifications.open(c.appContext, NoticeLinks.Target.PRO, REQ + 3, payload = code?.takeIf { it != com.bamnat.core.formula.FxTaste.OWN }))
                 .setSilent(true)
                 .setAutoCancel(true)
                 .build()
@@ -533,27 +547,10 @@ object LogicRunner {
 
     /** 1.39 [FX-15] 몇 분마다: the next time after [after], in its 시간대 or while a shift is on, at most [LogicRule.EVERY_DAY_MAX] a day. */
     private fun nextEvery(r: LogicRule, after: LocalDateTime, facts: DayFactsBook): Pair<LocalDateTime, LocalDate>? {
-        val step = r.min.coerceIn(LogicRule.EVERY_MIN, LogicRule.EVERY_MAX).toLong()
+        // 1.39 [FX-18] the same times the 일주일 미리 돌려 보기 shows (core LogicWeek.everyTimes).
         for (k in -1..14) {
             val day = after.toLocalDate().plusDays(k.toLong())
-            val (from, to) = if (r.inWork) {
-                val v = facts.values(day)
-                if (v[com.bamnat.core.formula.FormulaName.OFF.ko] == true) continue
-                val start = (v[com.bamnat.core.formula.FormulaName.START.ko] as? String)?.takeIf { it.isNotEmpty() }?.let(LocalTime::parse) ?: continue
-                val end = (v[com.bamnat.core.formula.FormulaName.END.ko] as? String)?.takeIf { it.isNotEmpty() }?.let(LocalTime::parse) ?: continue
-                day.atTime(start) to (if (!end.isAfter(start)) day.plusDays(1).atTime(end) else day.atTime(end))
-            } else {
-                val start = r.at?.let { runCatching { LocalTime.parse(it) }.getOrNull() } ?: LocalTime.MIDNIGHT
-                val end = r.until?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
-                day.atTime(start) to (if (end == null) day.plusDays(1).atStartOfDay() else if (!end.isAfter(start)) day.plusDays(1).atTime(end) else day.atTime(end))
-            }
-            // A shift's first round is one step in (2시간마다 from 09:00 is 11:00, not the start itself).
-            var t = if (r.inWork) from.plusMinutes(step) else from
-            var n = 0
-            while (!t.isAfter(to) && n < LogicRule.EVERY_DAY_MAX) {
-                if (t.isAfter(after) && (r.inWork || t.isBefore(to))) return t to day
-                t = t.plusMinutes(step); n++
-            }
+            com.bamnat.core.formula.LogicWeek.everyTimes(r, day, facts.values(day)).firstOrNull { it.isAfter(after) }?.let { return it to day }
         }
         return null
     }
@@ -818,6 +815,17 @@ class LogicStore(context: Context) {
         p.edit().putStringSet("got", p.getStringSet("got", emptySet()).orEmpty() + keys).apply()
     }
     fun got(key: String): Boolean = key in p.getStringSet("got", emptySet()).orEmpty()
+
+    /** 1.39 [FX-23] Where received rules ([LogicRule.key]) and buttons ([LogicButton.id]) came from: the 장터 code, for 작품마다 하루 써 보기. */
+    fun markFrom(code: String, rules: Collection<String>, buttons: Collection<String>) {
+        if (code.isBlank() || (rules.isEmpty() && buttons.isEmpty())) return
+        val e = p.edit()
+        rules.forEach { e.putString("from.r.$it", code) }
+        buttons.forEach { e.putString("from.b.$it", code) }
+        e.apply()
+    }
+    fun fromRule(key: String): String? = p.getString("from.r.$key", null)
+    fun fromButton(id: String): String? = p.getString("from.b.$id", null)
     fun fired(key: String, at: String) = p.edit().putString("fired.$key", at).apply()
 
     var undo: String?

@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync } from
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lint } from "../../market-136/make/lint.mjs";
+import { KEEP } from "./curate.mjs";
 
 const HERE = fileURLToPath(new URL(".", import.meta.url));
 const OUT = fileURLToPath(new URL("..", import.meta.url));
@@ -19,6 +20,18 @@ for (const f of readdirSync(HERE).filter((x) => /^(themes|tab|tool|fx)-.*\.mjs$/
   const out = OUT_OF(f);
   if (!out) continue;
   (files[out] ??= []).push(...(await import(`./${f}`)).default.map((w) => ({ ...w, from: f })));
+}
+
+// [MKW-06] 고르기: curate.mjs KEEP에 있는 것만 묶음에 넣어요(구간이 없으면 모두).
+let cut = 0;
+for (const [name, list] of Object.entries(files)) {
+  const keep = KEEP[name.replace(/\.json$/, "")];
+  if (!keep) continue;
+  const set = new Set(keep);
+  const missing = keep.filter((t) => !list.some((w) => w.recipe.title === t));
+  if (missing.length) throw new Error(`curate.mjs ${name}에 없는 제목: ${missing.join(", ")}`);
+  files[name] = list.filter((w) => set.has(w.recipe.title));
+  cut += list.length - files[name].length;
 }
 
 // 이미 장터에 있는 제목은 쓰지 않아요(같은 제목은 그 작품의 새 판이 돼요).
@@ -60,6 +73,6 @@ for (const [name, list] of Object.entries(files)) {
   n += list.length;
 }
 const top = readdirSync(OUT).filter((x) => MINE.test(x)).reduce((a, f) => a + JSON.parse(readFileSync(join(OUT, f), "utf8")).filter((w) => w.showcase).length, 0);
-console.log(`작품 ${n}개(⭐ ${top})를 ${Object.keys(files).length}개 파일에 썼어요: ${Object.entries(files).map(([k, v]) => `${k} ${v.length}`).join(", ")}`);
+console.log(`고르기로 뺀 것 ${cut}개. 작품 ${n}개(⭐ ${top})를 ${Object.keys(files).length}개 파일에 썼어요: ${Object.entries(files).map(([k, v]) => `${k} ${v.length}`).join(", ")}`);
 for (const p of problems) console.log(`살필 것: ${p}`);
 if (problems.length) process.exitCode = 1;

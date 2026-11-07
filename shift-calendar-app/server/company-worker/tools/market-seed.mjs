@@ -47,7 +47,8 @@ export const SETS = {
   // 1.39에서 고친 그림(투명 바탕 글자색·아래 막대 그림 칠)에 맞춰 그렸고 FX 프로 작품이 더해질 묶음이라 1.39 앱(versionCode 53)부터 보여요.
   // 실서버는 1.39 출시 날 사용자 확인 뒤.
   139: { dir: join(ROOT, "market-139"), out: join(ROOT, "market-139.json"), batch: "1.39 정상급 작품", minApp: 53,
-    goals: { theme: 50, "tab:calendar": 50, "tab:memo": 50, "tab:money": 50, "tab:pay": 50, "tab:widget": 50, "tab:alarm": 50, part: 48, logic: 38,
+    // [MKW-06] 고르기(사용자 11-07 21:10 '적더라도 최고, 겹치지 않는 특징'): 만든 441개 가운데 구간마다 특징이 겹치지 않는 것만(make/curate.mjs).
+    goals: { theme: 28, "tab:calendar": 25, "tab:memo": 18, "tab:money": 17, "tab:pay": 19, "tab:widget": 17, "tab:alarm": 14, part: 19, logic: 10,
       // 1.39 [FLOW-21] 장터 새 탭 '밤 화면'의 첫 작품(밤 화면·아침 한 장 부품, G8).
       "tab:night": 6 } },
 };
@@ -106,12 +107,17 @@ async function login(base) {
   return r.headers.get("set-cookie").split(";")[0];
 }
 
-/** 1.38 [STM-09] 정리 목록(market-138-refresh-plan.json)의 내림 작품을 로컬 서버에서 숨겨요. */
-async function hide(base, dry) {
+/**
+ * 1.38 [STM-09]·1.39 판 정리: 정리 목록(market-13x-refresh-plan.json, --plan으로 고름)의 내림 작품을 로컬 서버에서 숨겨요.
+ * 1.39부터 이유는 'retired'라 넣은 분은 코드로 계속 열어요. --show면 되돌려요.
+ */
+async function hide(base, dry, plan = "market-138-refresh-plan.json", show = false) {
   const cookie = await login(base);
-  const titles = JSON.parse(readFileSync(join(ROOT, "market-138-refresh-plan.json"), "utf8")).hide.map((x) => x.title);
-  const r = await fetch(`${base}/api/admin/recipes/hide-titles`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
-    body: JSON.stringify({ titles, dry, note: "1.38 장터 정리" }) });
+  const items = JSON.parse(readFileSync(join(ROOT, plan), "utf8")).hide;
+  const titles = items.filter((x) => !x.code).map((x) => x.title).filter(Boolean);
+  const codes = items.map((x) => x.code).filter(Boolean);
+  const r = await fetch(`${base}/api/admin/recipes/${show ? "show" : "hide"}-titles`, { method: "POST", headers: { "content-type": "application/json", "x-admin": "1", origin: base, cookie },
+    body: JSON.stringify({ titles, codes, dry, note: plan.includes("139") ? "1.39 장터 정리" : "1.38 장터 정리" }) });
   return `${r.status} ${await r.text()}`;
 }
 
@@ -135,9 +141,10 @@ async function post(base, entries, open = null) {
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const args = process.argv.slice(2);
-  // node tools/market-seed.mjs --hide http://127.0.0.1:8789 [--dry]   1.38 정리 목록의 내림 171개 숨기기(로컬)
+  // node tools/market-seed.mjs --hide http://127.0.0.1:8789 [--dry] [--plan market-139-refresh-plan.json] [--show]   정리 목록대로 내리기·되돌리기(로컬)
   if (args.includes("--hide")) {
-    console.log(`숨기기: ${await hide(args[args.indexOf("--hide") + 1], args.includes("--dry"))}`);
+    const plan = args.includes("--plan") ? args[args.indexOf("--plan") + 1] : undefined;
+    console.log(`숨기기: ${await hide(args[args.indexOf("--hide") + 1], args.includes("--dry"), plan, args.includes("--show"))}`);
     process.exit(0);
   }
   const set = SETS[args.includes("--set") ? args[args.indexOf("--set") + 1] : 136];

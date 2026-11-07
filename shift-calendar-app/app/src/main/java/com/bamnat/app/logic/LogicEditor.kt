@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -101,6 +103,8 @@ fun ConditionEditor(value: String, onChange: (String) -> Unit, scope: FormulaSco
             SegmentedButton(selected = view == 1, onClick = { view = 1 }, shape = SegmentedButtonDefaults.itemShape(1, 3)) { Text("블록") }
             SegmentedButton(selected = view == 2 || (view == 0 && easy == null), onClick = { view = 2 }, shape = SegmentedButtonDefaults.itemShape(2, 3)) { Text("수식으로") }
         }
+        // 1.39 [FX-16] 조건 고르개 (무료): 자주 쓰는 조건을 한 번에. 만들어진 수식은 아래 보기에 그대로 보여 배우게 돼요.
+        QuickConds(value, onChange)
         // PC 확인 8d0cddf6 (규칙 창에서 수식 칸 아래 줄이 창 밖이라 안 보였어요): the 받는 칸 values first, above the condition, in every view.
         InputValuesLine(value, scope)
         if (view == 1) {
@@ -164,6 +168,28 @@ private fun CondRow(c: EasyCond, onChange: (EasyCond) -> Unit, onRemove: () -> U
                     supportingText = name?.let { { Text(it.help) } },
                 )
             }
+        }
+    }
+}
+
+/**
+ * 1.39 [FX-16] 자주 쓰는 조건: 야간인 날·주말·쉬는 날·공휴일, 그리고 작품의 값 칸마다 '목표 못 채움'·'3번 연속'. 누르면 지금 조건을 바꾸고,
+ * 이미 있으면 '그리고'로 이어요.
+ */
+@Composable
+private fun QuickConds(value: String, onChange: (String) -> Unit) {
+    val fx = LocalFxLogic.current
+    val picks = remember(fx.values) {
+        listOf("야간인 날" to "${FormulaName.ROLE.ko} = \"야간\"", "주말" to FormulaName.WEEKEND.ko, "쉬는 날" to FormulaName.OFF.ko,
+            "일하는 날" to "아님 ${FormulaName.OFF.ko}", "공휴일" to FormulaName.HOLIDAY.ko) +
+            fx.values.filter { it.goal != null && it.kind == com.bamnat.core.formula.ValueKind.NUM }.flatMap { v ->
+                val g = com.bamnat.core.formula.Formula.numText(v.goal!!)
+                listOf("${v.name} 목표 못 채움 ✦" to "값(\"${v.name}\") < $g", "${v.name} 3번 연속 ✦" to "연속(\"${v.name}\") >= 3")
+            }
+    }
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        picks.forEach { (label, f) ->
+            AssistChip(onClick = { onChange(if (value.isBlank()) f else if (f in value) value else "$value 그리고 $f") }, label = { Text(label) })
         }
     }
 }
@@ -375,7 +401,8 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
                 label = { Text(if (act.verb == LogicVerb.CHECK_RESET) "체크 목록 제목(비우면 그날 모든 목록)" else "메모 틀 이름") })
         }
         LogicVerb.SCREEN -> Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            LogicVerb.SCREENS.forEach { (k, label) -> FilterChip(selected = act.arg == k, onClick = { onChange(act.copy(arg = k)) }, label = { Text(label) }) }
+            LogicVerb.SCREENS.forEach { (k, label) -> FilterChip(selected = act.arg == k, onClick = { onChange(act.copy(arg = k)) },
+                label = { Text(label + if (k in LogicVerb.NEW_SCREENS) " ✦" else "") }) }
         }
         LogicVerb.MEMO_LINE -> FormulaField(act.arg, { onChange(act.copy(arg = it.take(120))) }, scope, text = true, label = "더할 줄 (예: 야간 {이번주야간}번째 · 이달 지출 {원(이달지출)})")
         // 1.37 PC 4차: 반 폭 칸의 긴 이름표가 두 줄↔한 줄로 바뀌며 칸이 움직여 금액이 이름 칸에 들어갔어요("Trip10000").
@@ -398,7 +425,7 @@ private fun ActEditor(act: LogicAct, onChange: (LogicAct) -> Unit, scope: Formul
 }
 
 /** 1.39 [FX-15] 기다렸다 하기의 고르기. */
-private val AFTER_PICKS = listOf(5, 10, 30, 60, 120, 180)
+private val AFTER_PICKS = listOf(3, 4, 5, 10, 30, 60, 120, 180)
 
 /**
  * 1.39 [FX-11] 동작 줄 ✦: 이어서 할 일 (또는 '아니면' 할 일), 한 줄에 [max]개까지. 각 동작은 위 '무엇을'과 같은 칸으로 고쳐요.
@@ -455,7 +482,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 Text("언제", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     RuleTrigger.entries.forEach { t -> FilterChip(selected = r.on == t, onClick = { r = followWords(r, whenFor(r, t, fxValues)) },
-                        label = { Text(t.label + if (t == RuleTrigger.VALUE || t == RuleTrigger.EVERY) " ✦" else "") }) }
+                        label = { Text(t.label + if (t == RuleTrigger.VALUE || t == RuleTrigger.EVERY || t == RuleTrigger.ALARM_OFF) " ✦" else "") }) }
                 }
                 when (r.on) {
                     RuleTrigger.START, RuleTrigger.END -> {
@@ -477,6 +504,9 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                         isError = timeOf(r.at.orEmpty()) == null,
                         supportingText = { if (timeOf(r.at.orEmpty()) == null) Text("시각을 07:00처럼 넣어 주세요") },
                         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number))
+                    // 1.39 [FX-21]
+                    RuleTrigger.ALARM_OFF -> Text("근무 알람을 끌 때마다 돌아요(메모 일정 알람은 빼요). 예: 일어나면 물 한 잔 +1, 수면 기록 열기",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     RuleTrigger.HOLD -> Text("화면이나 메모 틀을 여는 규칙이 맞는 날에는 길게 눌러도 빠른 설정 대신 그것이 열려요",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // 1.39 [FX-12] 값이 바뀌면: 어느 값 칸, 목표에 처음 닿을 때만.
@@ -778,6 +808,7 @@ internal fun notifyWords(on: RuleTrigger, role: String?): String {
         RuleTrigger.MONEY -> "이달 지출 {원(이달지출)}이에요"
         RuleTrigger.VALUE -> "값이 바뀌었어요"
         RuleTrigger.EVERY -> "잠깐 쉬어 갈 시간이에요"
+        RuleTrigger.ALARM_OFF -> "좋은 아침이에요. 오늘 {근무}예요"
         else -> "{근무} 날이에요"
     }
 }
@@ -824,9 +855,13 @@ fun LogicEditor(
         store.setOff(r.key, true); bump++; LogicRunner.schedule(c); true
     }
     var editValue by remember { mutableStateOf<Int?>(null) }
+    var history by remember { mutableStateOf<com.bamnat.core.formula.LogicValue?>(null) }
+    history?.let { v -> ValueHistory(v, { history = null }) { bump++ } }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         // 1.39 [FX-01] 프로 문: what of this work is a 프로 기능 장치, and whether it runs on this phone.
         FxDoor(logic)
+        // 1.39 [FX-20] 예시로 시작 · [FX-18] 일주일 미리 돌려 보기 (둘 다 무료, 만드는 곳에서만).
+        if (!readOnly && !phone) FxStarters(logic, onChange, facts, day)
         if (show != LogicShow.RULES) {
         Text("단추", style = MaterialTheme.typography.titleSmall)
         if (logic.buttons.isEmpty()) Text("하루 화면·메모장·달력에 단추를 놓으면 한 번 눌러 메모 틀을 열거나 가계부에 넣을 수 있어요",
@@ -891,7 +926,9 @@ fun LogicEditor(
         logic.values.forEachIndexed { i, v ->
             val now = remember(bump, v) { FxValues.now(v.name) }
             LineCard(v.say(), now?.let { "지금 ${v.show(it)}" }, null, null, onEdit = if (readOnly) onOpen else ({ editValue = i }),
-                onRemove = { onChange(logic.copy(values = logic.values.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
+                onRemove = { onChange(logic.copy(values = logic.values.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
+                // 1.39 [FX-26] 값 칸 기록 보기·고치기 (설정의 목록에서).
+                action = if (phone && v.kind == com.bamnat.core.formula.ValueKind.NUM && v.reset != com.bamnat.core.formula.ValueReset.NEVER) "기록 보기" to { history = v } else null)
         }
         if (!readOnly && logic.values.size < com.bamnat.core.formula.LogicValue.MAX) TextButton(onClick = { editValue = -1 }) { Text("+ 값 칸 만들기") }
         if (phone && store.undo != null) OutlinedButton(onClick = { c.appScope.launch { LogicRunner.undo(c); bump++ } }) { Text("마지막 동작 되돌리기") }
@@ -978,6 +1015,53 @@ fun LogicEditor(
     }
 }
 
+/**
+ * 1.39 [FX-20] 예시로 시작: 여섯 가지 기능 예시를 눌러 값 칸·단추·규칙을 한꺼번에 넣고, [FX-18] 일주일 미리 돌려 보기로 내 근무표에서 7일
+ * 동안 언제 무엇을 할지(값 칸이 어떻게 바뀔지) 봐요. 아무것도 실제로 하지 않아요.
+ */
+@Composable
+private fun FxStarters(logic: Logic, onChange: (Logic) -> Unit, facts: com.bamnat.core.formula.DayFactsBook?, day: LocalDate) {
+    var week by remember { mutableStateOf(false) }
+    var full by remember { mutableStateOf<String?>(null) }
+    Text("예시로 시작", style = MaterialTheme.typography.labelLarge)
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.core.formula.FxExamples.ALL.forEach { e ->
+            AssistChip(onClick = {
+                val next = com.bamnat.core.formula.FxExamples.into(logic, e)
+                if (next == null) full = "자리가 모자라요. 단추 ${Logic.MAX_BUTTONS}개·규칙 ${Logic.MAX_RULES}개·값 칸 ${com.bamnat.core.formula.LogicValue.MAX}개까지예요"
+                else { full = null; onChange(next); LogicRunner.say("‘${e.title}’ 예시를 넣었어요. ${e.say}") }
+            }, label = { Text("${e.emoji} ${e.title}") })
+        }
+    }
+    full?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    if (logic.rules.isNotEmpty() && facts != null) OutlinedButton(onClick = { week = true }) { Text("일주일 미리 돌려 보기") }
+    if (week && facts != null) {
+        val w = remember(logic, facts, day) { com.bamnat.core.formula.LogicWeek.run(logic, facts, day) }
+        AlertDialog(onDismissRequest = { week = false },
+            title = { Text("일주일 미리 돌려 보기") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("내 근무표로 ${day.monthValue}/${day.dayOfMonth}부터 7일을 빨리 돌려 봤어요. 실제로는 아무것도 하지 않아요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (w.lines.isEmpty()) Text("7일 동안 저절로 도는 때가 없어요. 근무 시작·끝, 매일, 몇 분마다 규칙이 돌아요")
+                    w.lines.groupBy { it.date }.forEach { (d, ls) ->
+                        Text("${d.monthValue}/${d.dayOfMonth}(${"월화수목금토일"[d.dayOfWeek.value - 1]})", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 6.dp))
+                        ls.forEach { l ->
+                            Text("${l.at?.let { "%02d:%02d".format(it.hour, it.minute) } ?: ""} ${l.who}: ${l.what}".trim(), style = MaterialTheme.typography.bodySmall,
+                                color = if (l.ran) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    if (w.lines.size >= com.bamnat.core.formula.LogicWeek.MAX_LINES) Text("너무 많아 앞의 ${com.bamnat.core.formula.LogicWeek.MAX_LINES}줄만 보여요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                    if (w.values.isNotEmpty()) Text("7일째 값 칸: " + w.values.entries.joinToString(" · ") { "${it.key} ${it.value}" },
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 6.dp))
+                    w.waiting.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { week = false }) { Text("닫기") } })
+    }
+}
+
 /** 1.39 [FX-03][FX-05] The work open in the editor, for the 무엇을 part (its 값 칸 and buttons). */
 internal val LocalFxLogic = androidx.compose.runtime.compositionLocalOf { Logic() }
 
@@ -1020,6 +1104,57 @@ internal fun fxUntil(at: java.time.Instant): String {
     val z = at.atZone(com.bamnat.core.time.Today.zone())
     val day = if (z.toLocalDate() == com.bamnat.core.time.Today.date()) "오늘" else "내일"
     return "$day ${"%02d:%02d".format(z.hour, z.minute)}"
+}
+
+/**
+ * 1.39 [FX-26] 값 칸 기록: 지난 14기간 막대(목표선), 연속·합계, 그리고 잘못 누른 날 바로잡기(그 기간을 눌러 숫자 고치기).
+ */
+@Composable
+private fun ValueHistory(v: com.bamnat.core.formula.LogicValue, onClose: () -> Unit, onFixed: () -> Unit) {
+    val c = LocalContext.current.appContainer
+    val all by FxValues.flow(c).collectAsState()
+    val today = remember { com.bamnat.core.time.Today.date() }
+    val kept = all?.get(v.name)
+    val n = 14
+    val days = remember(today) { (n - 1 downTo 0).map { v.reset.back(today, it) } }
+    val nums = days.map { com.bamnat.core.formula.ValueBook.on(kept, v, it, today) }
+    val top = (nums.filterNotNull() + listOfNotNull(v.goal)).maxOrNull()?.takeIf { it > 0 } ?: 1.0
+    var fixing by remember { mutableStateOf<LocalDate?>(null) }
+    AlertDialog(onDismissRequest = onClose,
+        title = { Text("‘${v.name}’ 기록") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val s = com.bamnat.core.formula.ValueSeries(v, kept, today, com.bamnat.core.time.Today.dateTime())
+                Text(listOfNotNull(
+                    v.goal?.let { "목표 연속 ${s.streak()}번" },
+                    "최근 7${if (v.reset == com.bamnat.core.formula.ValueReset.DAY) "일" else "번"} 합계 ${com.bamnat.core.formula.Formula.numText(s.total(7))}${v.unit}",
+                ).joinToString(" · "), style = MaterialTheme.typography.bodyMedium)
+                Row(Modifier.fillMaxWidth().heightIn(min = 96.dp), horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.Bottom) {
+                    days.forEachIndexed { i, d ->
+                        val x = nums[i]
+                        val reached = v.goal != null && x != null && x >= v.goal!!
+                        Column(Modifier.weight(1f).clickable(onClickLabel = "${d.monthValue}/${d.dayOfMonth} 고치기") { fixing = d }
+                            .semantics { contentDescription = "${d.monthValue}/${d.dayOfMonth} ${x?.let { com.bamnat.core.formula.Formula.numText(it) } ?: "기록 없음"}" },
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth()
+                                .height(((x ?: 0.0) / top * 80).coerceIn(2.0, 80.0).dp)
+                                .background(if (x == null) MaterialTheme.colorScheme.surfaceVariant else if (reached) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary))
+                        }
+                    }
+                }
+                Text("${days.first().monthValue}/${days.first().dayOfMonth} ~ 오늘 · 막대를 누르면 그날 숫자를 고쳐요", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                fixing?.let { d ->
+                    var text by remember(d) { mutableStateOf(com.bamnat.core.formula.ValueBook.on(kept, v, d, today)?.let(com.bamnat.core.formula.Formula::numText).orEmpty()) }
+                    OutlinedTextField(text, { t -> text = t.filter { it.isDigit() || it == '.' || it == '-' }.take(10) }, Modifier.fillMaxWidth(), singleLine = true,
+                        label = { Text("${d.monthValue}/${d.dayOfMonth} 숫자") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
+                    TextButton(onClick = {
+                        text.toDoubleOrNull()?.let { to -> if (FxValues.fix(c, v.name, d, to)) { fixing = null; onFixed(); LogicRunner.say("${d.monthValue}/${d.dayOfMonth} ‘${v.name}’를 고쳤어요") } }
+                    }, enabled = text.toDoubleOrNull() != null) { Text("고치기") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onClose) { Text("닫기") } })
 }
 
 /** 1.39 [FX-03] 값 칸 만들기·고치기. */

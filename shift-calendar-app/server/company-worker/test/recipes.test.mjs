@@ -436,7 +436,9 @@ test("[RUL-07] 규칙·단추만: a recipe of only the logic piece is its own se
 });
 
 test("[FX-01] 프로 문: 값 칸·값 더하기·값() 수식·밖 단추·알림 단추 are read, listed as 기능 장치 (core FxPro), the rest is free", async () => {
-  assert.deepEqual(FX_PARTS, ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "look"]);
+  assert.deepEqual(FX_PARTS, ["values", "valueAct", "valueRead", "outside", "notifyButtons", "chain", "valueRule", "history", "time", "reach", "look"]);
+  // [FX-21] 근무 알람을 끄면·수면 화면 열기.
+  assert.deepEqual(fxPartsOf({ pieces: [{ kind: "logic", rules: [{ name: "a", on: "alarmOff", do: "screen", arg: "sleep" }] }] }), ["reach"]);
   const fx = { kind: "logic", values: [{ name: "물 잔", reset: "day", goal: 8, unit: "잔" }],
     buttons: [{ id: "water", label: "물 한 잔", where: "widget", do: "valAdd", arg: "물 잔", by: 1 }, { id: "snz", label: "10분 뒤", where: "day", do: "notify", arg: "다시" }],
     rules: [{ name: "물 알림", on: "daily", at: "15:00", when: "값(\"물 잔\", 0) < 4", do: "notify", arg: "물 {값(\"물 잔\")}잔째", then: ["water"] }] };
@@ -451,6 +453,9 @@ test("[FX-01] 프로 문: 값 칸·값 더하기·값() 수식·밖 단추·알�
   // 1.38까지의 규칙·단추만 있으면 프로 장치가 없어요.
   const old = { kind: "logic", buttons: [{ label: "기록", where: "day", do: "memoTpl", arg: "하루" }], rules: [{ name: "끝", on: "end", do: "checkReset" }] };
   assert.deepEqual(fxPartsOf({ pieces: [old] }), []);
+  // [FX-22] 1.39 새 화면 모양 부품 (G8 밤 화면) is 프로 too; 1.38 parts stay free.
+  assert.deepEqual(fxPartsOf({ pieces: [{ kind: "parts", parts: [{ id: "cal.cell" }, { id: "night.clock" }] }] }), ["look"]);
+  assert.deepEqual(fxPartsOf({ pieces: [{ kind: "parts", parts: [{ id: "cal.cell" }] }] }), []);
   assert.deepEqual(fxPartsOf({ pieces: [{ kind: "logic", rules: [{ name: "a", on: "open", do: "notify", arg: "오늘 {값(\"배달\", 0)}건" }] }] }), ["valueRead"]);
   assert.deepEqual(fxPartsOf("not json"), []);
   const row = { body: ok.text, code: "c", title: "t", summary: "", styles: "SHIFT", cover: "{}", version: 1, likes: 0, dislikes: 0, applied: 0, kept7: 0, official: 0, public_data: 0, updated_at: 0, created_at: 0 };

@@ -61,6 +61,8 @@ data class RecipeItem(
     val mark: String? = null,
     /** 1.39 [MKD-41] 만든 분의 팔로워 수 (서버 followers); 옛 서버는 null. */
     val followers: Int? = null,
+    /** 1.39 판 정리: 장터에서 내린 작품 (서버 show의 retired). 코드로는 열리고, 넣은 것은 그대로 써요. */
+    val retired: Boolean = false,
 )
 
 /**
@@ -743,6 +745,7 @@ class RecipeClient(
                 o.optJSONArray("fx").strings().filter { it.isNotBlank() },
                 o.optStringOrNull("mark")?.takeIf { it.isNotBlank() },
                 o.optInt("followers").takeIf { o.has("followers") && !o.isNull("followers") },
+                o.optBoolean("retired"),
             )
         }
 
