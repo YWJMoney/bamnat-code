@@ -70,6 +70,27 @@ class MemoScheduleAppTest {
         assertTrue(shadowOf(nm).allNotifications.isEmpty())
     }
 
+    /** 1.39 [TASK-04][TASK-20] The notice's 미루기: 10분 뒤 · 1시간 뒤 · the next day off (내일 with none ahead). */
+    @Test fun aNoticeOffersToPutItOffToTheNextDayOff() {
+        shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
+        Notifications.createChannels(context)
+        val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(15, 0))
+        val memo = Memo(id = 8, title = "택배 받기", reminder = MemoReminder(at, ring = false, notify = true))
+        val rest = LocalDate.of(2026, 11, 12)
+        MemoScheduleAlarm.handle(context, listOf(memo), millis(at), now = millis(at) + 30_000, restOf = { rest })
+        val posted = shadowOf(nm).allNotifications.single()
+        assertEquals(listOf("10분 뒤", "1시간 뒤", "쉬는 날(11/12)"), posted.actions.map { it.title.toString() })
+        val third = shadowOf(posted.actions[2].actionIntent).savedIntent
+        assertEquals(MemoSnoozeReceiver::class.java.name, third.component?.className)
+        assertEquals(8L, third.getLongExtra("memo", -1))
+        assertEquals("rest", third.getStringExtra("way"))
+        assertEquals(rest.toEpochDay(), third.getLongExtra("rest", 0))
+
+        nm.cancelAll()
+        MemoScheduleAlarm.handle(context, listOf(memo), millis(at), now = millis(at) + 30_000)
+        assertEquals("내일", shadowOf(nm).allNotifications.single().actions[2].title.toString())
+    }
+
     @Test fun aMemoScheduleRingsUnderItsOwnWords() {
         val ring = RingRequest("", LocalDate.now(), LocalTime.of(15, 0), 0, null, 1L, custom = true, label = "치과")
         assertEquals("치과", ring.title)

@@ -523,6 +523,8 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         else { answering = found; scheduling = true }
                     },
                     onDecline = { vm.keepAsMemo(found) },
+                    // 1.39 [CAL2-20] 근무와 겹치거나 야간 뒤 잘 시간이면 바로 한 줄.
+                    clash = remember(found.at, shiftDays) { com.bamnat.core.memo.ShiftClash.of(found.at, shiftDays)?.text },
                 )
             }
             if (!memo.isChecklist) MemoToolHostSlot(toolHost)
@@ -564,6 +566,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             current = memo.reminder,
             onDismiss = { scheduling = false },
             shiftTimes = remember(shiftDays) { com.bamnat.core.memo.ShiftMemoTime.suggestions(shiftDays, Today.dateTime()) },
+            clashOf = { at -> com.bamnat.core.memo.ShiftClash.of(at, shiftDays)?.text },
             onSave = { r ->
                 vm.setReminder(r, answered = answering)
                 scheduling = false

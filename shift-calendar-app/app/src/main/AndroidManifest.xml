@@ -221,6 +221,10 @@
         <receiver
             android:name=".memo.MemoScheduleReceiver"
             android:exported="false" />
+        <!-- 1.39 [TASK-04][TASK-20] 미루기 from that notice: 10분 뒤 · 1시간 뒤 · 쉬는 날. -->
+        <receiver
+            android:name=".memo.MemoSnoozeReceiver"
+            android:exported="false" />
 
         <!-- [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 알람 and 바로 기록 from its notice. -->
         <receiver
