@@ -1566,12 +1566,21 @@ async function recipeList(d, env, url) {
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
 
+/**
+ * 1.39 판 정리 (사용자 2026-11-07 "서버에 숨긴처리 하는 로직이 있는지 확인하고 없다면 신설"): the operator's works a new 판 replaces are
+ * taken off the 장터 with hidden_reason 'retired', never deleted. They leave the lists, 찾기 and 추천 (those read state 'visible'), but
+ * whoever has the code (one already put in, a link) still opens it, sees its new 판 and keeps 쓰는 중 counted. A hide by the operator
+ * or by reports ('admin', 'flags') still closes it to everyone but its maker.
+ */
+export const RETIRED = "retired";
+const openable = (r) => r.state === "visible" || (r.state === "hidden" && r.hidden_reason === RETIRED);
+
 /** GET /api/recipes/:code — the recipe for anyone with its code (link-only too), its own for the maker whatever its state. */
 async function show(d, env, request, code, url) {
   const dev = await readDevice(d, request, null);
   const r = await d.one(env, "SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE r.code = ?", code);
   const mine = Boolean(r && dev && r.owner === dev);
-  if (!r || r.state === "deleted" || (!mine && (r.state !== "visible" || r.scope === "private"))) return d.json({ error: "not_found" }, 404);
+  if (!r || r.state === "deleted" || (!mine && (!openable(r) || r.scope === "private"))) return d.json({ error: "not_found" }, 404);
   const ver = Number(url.searchParams.get("v"));
   let version = { version: r.version, hash: r.hash, body: r.body };
   if (Number.isInteger(ver) && ver > 0 && ver !== r.version) {
@@ -1581,7 +1590,9 @@ async function show(d, env, request, code, url) {
   // 1.39 [PAYP-08] Someone else's: without a company pay part (the maker's own as it was sent).
   if (!mine) Object.assign(version, await sharedPayOut(version.body, version.hash));
   const myVote = dev ? await d.one(env, "SELECT value, reason FROM recipe_votes WHERE code = ? AND device = ?", code, dev) : null;
-  const out = { ...listItem(r, Date.now()), ...markFields(await makerMarks(d, env, [r.maker]), r.maker), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}) };
+  const out = { ...listItem(r, Date.now()), ...markFields(await makerMarks(d, env, [r.maker]), r.maker), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}),
+    // 1.39 판 정리: off the 장터, still the wearer's (the app says so and keeps what is put in).
+    ...(r.state === "hidden" && r.hidden_reason === RETIRED ? { retired: true } : {}) };
   if (mine) {
     // The maker sees where it stands and every 안좋아요's reason, without who (결정 D107, 처리방침 3.8).
     const reasons = await d.all(env, "SELECT reason, opinion, at FROM recipe_votes WHERE code = ? AND value = -1 AND held = 0 ORDER BY at DESC LIMIT 100", code);
@@ -1637,7 +1648,7 @@ async function publish(d, env, request) {
   // 사칭 (S4): someone else's recipe with a name that looks the same is refused; the maker's own may share it.
   const same = await d.one(env, "SELECT code FROM recipes WHERE title_skel = ? AND owner != ? AND state IN ('visible', 'pending') LIMIT 1", skel, dev);
   if (same && scope === "public") return d.json({ error: "name_like", field: "title", code: same.code }, 409);
-  if (r.parent && !(await d.one(env, "SELECT 1 AS ok FROM recipes WHERE code = ? AND state = 'visible'", r.parent))) {
+  if (r.parent && !(await d.one(env, `SELECT 1 AS ok FROM recipes WHERE code = ? AND (state = 'visible' OR (state = 'hidden' AND hidden_reason = '${RETIRED}'))`, r.parent))) {
     return d.json({ error: "parent", field: "parent" }, 400);
   }
   const state = scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
@@ -1799,7 +1810,7 @@ async function applied(d, env, request, code) {
   const now = Date.now();
   const net = await d.network(request, env, now);
   if (!(await d.allow(env, `rapplied|${net.day}`, RECIPE_LIMITS.appliedPerNetworkDay, DAY, now))) return d.tooMany("network", DAY - (now % DAY));
-  const r = await d.one(env, "SELECT code FROM recipes WHERE code = ? AND state = 'visible'", code);
+  const r = await d.one(env, `SELECT code FROM recipes WHERE code = ? AND (state = 'visible' OR (state = 'hidden' AND hidden_reason = '${RETIRED}'))`, code);
   if (!r) return d.json({ error: "not_found" }, 404);
   const col = body.kind === "applied" ? "applied" : "kept7";
   // 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): 쓰는 분 and 7일 유지 weigh in 좋은 순 and 요즘 뜨는, and
@@ -1881,8 +1892,8 @@ const talkGrp = (code) => code;
 /** GET /api/recipes/:code/talk — oldest first, with 만든 사람 and 쓰는 중 N일 marks; a 안좋아요's reasons only on one's own post. */
 async function recipeTalk(d, env, request, code) {
   const dev = await readDevice(d, request, null);
-  const r = await d.one(env, "SELECT code, owner, state, scope FROM recipes WHERE code = ?", code);
-  if (!r || (r.state !== "visible" && r.owner !== dev)) return d.json({ error: "not_found" }, 404);
+  const r = await d.one(env, "SELECT code, owner, state, scope, hidden_reason FROM recipes WHERE code = ?", code);
+  if (!r || (!openable(r) && r.owner !== dev)) return d.json({ error: "not_found" }, 404);
   const now = Date.now();
   const [rows, nicks, myVotes, muted] = await Promise.all([
     d.all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 300", RECIPE_TABLE, talkGrp(code)),
@@ -2054,11 +2065,11 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     if (tab === "one" && !/^[2-9A-HJ-NP-Z]{8}$/.test(code)) return d.json({ error: "code", field: "code" }, 400);
     // 1.36 [SEC-16] M10: 신고된 also lists a recipe whose reports all went to the operator only (none counted toward hiding it).
     const where = { queue: "state = 'pending'", flagged: "(flags > 0 OR EXISTS (SELECT 1 FROM recipe_flags f WHERE f.code = recipes.code)) AND state != 'deleted'",
-      hidden: "state = 'hidden'", visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1",
+      hidden: `state = 'hidden' AND COALESCE(hidden_reason, '') != '${RETIRED}'`, retired: `state = 'hidden' AND hidden_reason = '${RETIRED}'`, visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1",
       one: "code = ? AND state != 'deleted'", waiting: "state = 'waiting'" }[tab]
       ?? "state = 'pending'";
     // 1.36 클라우드 관리자 앱 확인 (출시 작품 267개 중 200개만 보이고 구간 수가 틀려요): 출시 대기 lists the whole batch.
-    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${tab === "waiting" ? 1000 : 200}`, ...(tab === "one" ? [code] : []));
+    const rows = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${tab === "waiting" || tab === "retired" ? 1200 : 200}`, ...(tab === "one" ? [code] : []));
     // D1 takes at most 100 bound values in one query, so the codes go in groups (a list of 200 failed on the real server).
     const byCodes = async (sql) => {
       const out = [];
@@ -2167,28 +2178,48 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     const n = await releaseWaiting(d, env, now, where, args, actorName);
     return d.json({ released: n });
   }
-  // 1.38 [STM-09] 판이 바뀌며 내리는 운영자 작품을 제목으로 한 번에 숨겨요(지우지 않음, 하나씩 '보이기'로 되돌려요). dry: 몇 개인지만.
-  if (path === "/recipes/hide-titles" && method === "POST") {
-    const body = await d.readJson(request, 64 * 1024);
-    const titles = Array.isArray(body?.titles) ? body.titles.filter((t) => typeof t === "string" && t.trim()).slice(0, 300) : [];
-    if (titles.length === 0) return d.json({ error: "titles" }, 400);
+  // 1.38 [STM-09] 판이 바뀌며 내리는 운영자 작품을 제목(이나 코드)으로 한 번에 숨겨요. 지우지 않아요.
+  // 1.39 판 정리: 이유는 'retired'라 이미 넣은 분은 코드로 계속 열고(목록·찾기·추천에서만 빠짐), show-titles로 한 번에 되돌려요.
+  // 한 번에 1,200개, 문장은 90개씩 묶어(D1 한 번에 값 100개, 한 요청 문장 수 한도) 몇 번만 보내요. dry: 몇 개인지와 없는 제목만.
+  if ((path === "/recipes/hide-titles" || path === "/recipes/show-titles") && method === "POST") {
+    const hiding = path === "/recipes/hide-titles";
+    const body = await d.readJson(request, 512 * 1024);
+    const clean = (a) => (Array.isArray(a) ? a.filter((t) => typeof t === "string" && t.trim()).map((t) => t.trim()) : []);
+    const titles = clean(body?.titles).slice(0, 1200);
+    const codes = clean(body?.codes).map((c) => c.toUpperCase()).filter((c) => /^[2-9A-HJ-NP-Z]{8}$/.test(c)).slice(0, 1200);
+    if (titles.length === 0 && codes.length === 0) return d.json({ error: "titles" }, 400);
     const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
+    // 1.38 정리로 이미 'admin'으로 숨긴 운영자 작품도 다시 보내면 'retired'로 바뀌어, 넣은 분이 다시 열 수 있어요.
+    const from = hiding ? "(state IN ('visible', 'waiting') OR (state = 'hidden' AND hidden_reason = 'admin'))" : `state = 'hidden' AND hidden_reason = '${RETIRED}'`;
     const skels = [...new Set(titles.map(nameSkeleton))];
-    const found = [];
-    for (let i = 0; i < skels.length; i += 90) {
-      const part = skels.slice(i, i + 90);
-      found.push(...await d.all(env, `SELECT code, title, state FROM recipes WHERE owner = 'operator' AND state IN ('visible', 'waiting')
-        AND title_skel IN (${part.map(() => "?").join(",")})`, ...part));
+    const found = new Map();
+    const look = async (col, keys) => {
+      for (let i = 0; i < keys.length; i += 90) {
+        const part = keys.slice(i, i + 90);
+        for (const r of await d.all(env, `SELECT code, title, state FROM recipes WHERE owner = 'operator' AND ${from} AND ${col} IN (${part.map(() => "?").join(",")})`, ...part)) found.set(r.code, r);
+      }
+    };
+    await look("title_skel", skels);
+    await look("code", codes);
+    const rows = [...found.values()];
+    const knownSkel = new Set(rows.map((r) => nameSkeleton(r.title)));
+    const knownCode = new Set(rows.map((r) => r.code));
+    const missing = [...titles.filter((t) => !knownSkel.has(nameSkeleton(t))), ...codes.filter((c) => !knownCode.has(c))];
+    if (body.dry !== true && rows.length) {
+      const stmts = [];
+      for (let i = 0; i < rows.length; i += 90) {
+        const part = rows.slice(i, i + 90).map((r) => r.code);
+        const marks = part.map(() => "?").join(",");
+        stmts.push(hiding
+          ? d.stmt(env, `UPDATE recipes SET state = 'hidden', hidden_reason = '${RETIRED}', hidden_at = ?, note = ? WHERE code IN (${marks})`, now, note, ...part)
+          : d.stmt(env, `UPDATE recipes SET state = 'visible', hidden_reason = NULL, hidden_at = NULL, note = '' WHERE code IN (${marks})`, ...part));
+        stmts.push(d.stmt(env, `INSERT INTO recipe_actions (code, action, reason, actor, at) SELECT code, ?, ?, ?, ? FROM recipes WHERE code IN (${marks})`,
+          hiding ? "hide" : "show", (note || (hiding ? "판 정리" : "판 정리 되돌림")).slice(0, 200), actorName, now, ...part));
+      }
+      await d.batch(env, stmts);
     }
-    const known = new Set(found.map((r) => nameSkeleton(r.title)));
-    const missing = titles.filter((t) => !known.has(nameSkeleton(t)));
-    if (body.dry !== true && found.length) {
-      await d.batch(env, found.flatMap((r) => [
-        d.stmt(env, "UPDATE recipes SET state = 'hidden', hidden_reason = 'admin', hidden_at = ?, note = ? WHERE code = ?", now, note, r.code),
-        act(r.code, "hide", note || "판 정리"),
-      ]));
-    }
-    return d.json({ hidden: body.dry === true ? 0 : found.length, found: found.length, missing });
+    const n = body.dry === true ? 0 : rows.length;
+    return d.json({ [hiding ? "hidden" : "shown"]: n, found: rows.length, missing, items: rows.slice(0, 1200).map((r) => ({ code: r.code, title: r.title })) });
   }
   const m = path.match(/^\/recipes\/([2-9A-HJ-NP-Z]{8})\/(approve|return|hide|show|delete|official|showcase)$/);
   if (m && method === "POST") {
@@ -2292,7 +2323,8 @@ async function releaseWaiting(d, env, now, where, args, actor) {
 /** Hidden recipes go 90 days after they were hidden (처리방침 3.8), from the hourly job. 1.36 [MKS-01] and 예약된 출시 대기 comes up. */
 export async function pruneRecipes(d, env, now) {
   await releaseWaiting(d, env, now, "state = 'waiting' AND release_at IS NOT NULL AND release_at <= ?", [now], "예약");
-  const old = await d.all(env, "SELECT code FROM recipes WHERE state = 'hidden' AND hidden_at < ? LIMIT 50", now - 90 * DAY);
+  // 1.39 판 정리로 내린 운영자 작품('retired')은 넣은 분이 계속 열어서 지우지 않아요(사용자 작품이 아니라 처리방침 3.8의 가린 것이 아니에요).
+  const old = await d.all(env, `SELECT code FROM recipes WHERE state = 'hidden' AND COALESCE(hidden_reason, '') != '${RETIRED}' AND hidden_at < ? LIMIT 50`, now - 90 * DAY);
   if (old.length) await d.batch(env, old.flatMap((r) => dropRecipe(d, env, r.code)));
   return old.length;
 }

@@ -142,7 +142,7 @@ private fun LogicTryoutView(got: Logic) {
             com.bamnat.app.ui.components.FilterChip(selected = d == date, onClick = { day = d.toEpochDay() }, label = { Text(dayWords(d, facts, today)) })
         }
     }
-    if (got.buttons.isNotEmpty()) ButtonTryout(got.buttons, mine.buttons, date, facts)
+    if (got.buttons.isNotEmpty()) ButtonTryout(got, mine.buttons, date, facts)
     if (got.rules.isNotEmpty()) RuleTryout(got.rules, mine.rules, date, days, facts) { day = it.toEpochDay() }
 }
 
@@ -159,12 +159,18 @@ private fun dayWords(d: LocalDate, facts: DayFactsBook, today: LocalDate): Strin
 
 /** 단추: the screen it sits on, 지금 ↔ 넣으면, and the new ones to press. */
 @Composable
-private fun ButtonTryout(got: List<LogicButton>, mine: List<LogicButton>, date: LocalDate, facts: DayFactsBook) {
+private fun ButtonTryout(logic: Logic, mine: List<LogicButton>, date: LocalDate, facts: DayFactsBook) {
+    val got = logic.buttons
     var after by rememberSaveable { mutableStateOf(true) }
     var held by remember { mutableStateOf(false) }
     var pressed by rememberSaveable { mutableStateOf<String?>(null) }
+    // 1.39 [MKD-04] 값 칸: the work's own numbers move with each press (물 한 잔 +1 → 3/8잔), and 값이 바뀌면 rules follow. Never kept.
+    var tried by remember(logic) { mutableStateOf(LogicTryout.start(logic)) }
+    var said by remember(logic) { mutableStateOf<List<String>>(emptyList()) }
+    val counts = logic.values.isNotEmpty()
     val showAfter = after && !held
     Text("단추 · 눌러 보기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+    if (counts && showAfter) ValuesTried(logic, tried, date) { tried = LogicTryout.start(logic); said = emptyList(); pressed = null }
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         com.bamnat.app.ui.components.FilterChip(selected = !after, onClick = { after = false; pressed = null }, label = { Text("지금") })
         com.bamnat.app.ui.components.FilterChip(selected = after, onClick = { after = true }, label = { Text("넣으면") })
@@ -187,7 +193,11 @@ private fun ButtonTryout(got: List<LogicButton>, mine: List<LogicButton>, date: 
                     }
                     if (showAfter) gotHere.forEach { b ->
                         val t = LogicTryout.press(b, date, facts)
-                        androidx.compose.material3.FilledTonalButton(onClick = { pressed = b.id }, enabled = t.runs, modifier = Modifier.heightIn(min = 40.dp)) {
+                        androidx.compose.material3.FilledTonalButton(onClick = {
+                            pressed = b.id
+                            if (counts) LogicTryout.press(logic, b, tried, date, facts, java.time.LocalDateTime.of(date, Today.dateTime().toLocalTime()))
+                                .let { tried = it.after; said = it.said }
+                        }, enabled = t.runs, modifier = Modifier.heightIn(min = 40.dp)) {
                             Text("✨ " + listOfNotNull(b.emoji, b.label).joinToString(" "), fontWeight = FontWeight.Bold)
                         }
                     }
@@ -197,8 +207,8 @@ private fun ButtonTryout(got: List<LogicButton>, mine: List<LogicButton>, date: 
                     Text("‘${b.label}’: ${t.why}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 gotHere.firstOrNull { it.id == pressed }?.takeIf { showAfter }?.let { b ->
-                    val t = LogicTryout.press(b, date, facts)
-                    ResultLine(true, "‘${b.label}’${com.bamnat.app.ui.Fmt.obj(b.label)} 누르면 ${t.result}")
+                    if (counts && said.isNotEmpty()) ResultLine(true, "‘${b.label}’${com.bamnat.app.ui.Fmt.obj(b.label)} 눌렀어요\n" + said.joinToString("\n"))
+                    else ResultLine(true, "‘${b.label}’${com.bamnat.app.ui.Fmt.obj(b.label)} 누르면 ${LogicTryout.press(b, date, facts).result}")
                 }
             }
         }
@@ -206,6 +216,31 @@ private fun ButtonTryout(got: List<LogicButton>, mine: List<LogicButton>, date: 
     Text(if (showAfter) "✨ 표시가 새로 생기는 단추예요. 눌러 보면 무엇을 하는지 보여요 (해 보기라 저장되지 않아요). 화면을 길게 누르면 지금 모습이에요"
         else "지금 내 화면이에요. ‘넣으면’을 눌러 새 단추를 봐요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/**
+ * 1.39 [MKD-04] 이 작품의 값 칸, as tried: "물 잔 3/8잔" with a bar toward the goal, and 처음으로. Said plainly that it is a try: the
+ * numbers start again when this page closes.
+ */
+@Composable
+private fun ValuesTried(logic: Logic, tried: LogicTryout.Tried, date: LocalDate, onReset: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(10.dp)
+        .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("✦ 값 칸 (해 보기)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            androidx.compose.material3.TextButton(onClick = onReset) { Text("처음으로") }
+        }
+        logic.values.forEach { v ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(v.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Text(tried.show(v, date), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary)
+            }
+            tried.toward(v)?.let { f -> androidx.compose.material3.LinearProgressIndicator(progress = { f }, modifier = Modifier.fillMaxWidth()) }
+        }
+        Text("단추를 눌러 보면 숫자가 바뀌어요. 이 화면을 닫으면 처음으로 돌아가요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 private fun placeWords(p: ButtonPlace): String = when (p) {

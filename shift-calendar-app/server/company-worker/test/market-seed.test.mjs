@@ -115,7 +115,52 @@ test("[STM-09] 판 정리: 운영자 작품을 제목으로 한 번에 숨기고
   const out = await call("POST", "/api/admin/recipes/hide-titles", { titles: ["옛 알람 하나", "옛 위젯 하나"], note: "1.38 장터 정리" }, admin);
   assert.equal(out.data.hidden, 2);
   assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=52")), ["남길 작품"]);
-  assert.equal((await call("GET", "/api/admin/recipes?tab=hidden", undefined, admin)).data.items.length, 2);
+  // 1.39: 판 정리로 내린 것은 '가린 것'이 아니라 '판 정리로 내림'에 따로 보여요.
+  assert.equal((await call("GET", "/api/admin/recipes?tab=retired", undefined, admin)).data.items.length, 2);
+  assert.equal((await call("GET", "/api/admin/recipes?tab=hidden", undefined, admin)).data.items.length, 0);
   assert.equal((await call("POST", "/api/admin/recipes/hide-titles", { titles: [] }, admin)).status, 400);
   assert.equal((await call("POST", "/api/admin/recipes/hide-titles", { titles: ["남길 작품"] })).status >= 400, true);
+});
+
+test("1.39 판 정리: 내린 작품은 목록·찾기·추천에서 빠지지만 코드로는 열리고(넣은 분), 지우지 않고, 한 번에 되돌려요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, env } = server({ plaza: true });
+  let admin = await signIn(call);
+  const made = {};
+  for (const title of ["옛 테마 하나", "옛 테마 둘", "새 테마"]) {
+    made[title] = (await call("POST", "/api/admin/recipes", { recipe: recipe(title) }, admin)).data.code;
+  }
+  await call("POST", `/api/admin/recipes/${made["옛 테마 둘"]}/showcase`, { on: true }, admin);
+  // 계획 파일은 제목, 코드도 돼요.
+  const out = await call("POST", "/api/admin/recipes/hide-titles", { titles: ["옛 테마 하나"], codes: [made["옛 테마 둘"]], note: "1.39 장터 정리" }, admin);
+  assert.deepEqual([out.data.hidden, out.data.missing], [2, []]);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53")), ["새 테마"]);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53&q=" + encodeURIComponent("옛 테마"))), []);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=showcase&app=53")), []);
+  // 이미 넣은 분: 코드로 열리고 '내려감'이라고, 쓰는 분도 세요.
+  const opened = await call("GET", `/api/recipes/${made["옛 테마 하나"]}`);
+  assert.equal(opened.status, 200);
+  assert.equal(opened.data.retired, true);
+  assert.equal((await call("POST", `/api/recipes/${made["옛 테마 하나"]}/applied`, { kind: "kept" })).status, 200);
+  // 90일이 지나도 지우지 않아요 (가린 사용자 작품만 지워요).
+  const later = AFTER + 120 * 86_400_000;
+  t.mock.timers.setTime(later);
+  const waits = [];
+  await worker.scheduled({ cron: "17 * * * *", scheduledTime: later }, env, { waitUntil: (p) => waits.push(p) });
+  await Promise.allSettled(waits);
+  assert.equal((await call("GET", `/api/recipes/${made["옛 테마 하나"]}`)).status, 200);
+  // 운영자가 하나를 가리면(문제가 있어서) 넣은 분에게도 닫혀요. (넉 달이 지나 다시 들어가요.)
+  admin = await signIn(call);
+  assert.equal((await call("POST", `/api/admin/recipes/${made["옛 테마 둘"]}/hide`, { note: "문제" }, admin)).status, 200);
+  assert.equal((await call("GET", `/api/recipes/${made["옛 테마 둘"]}`)).status, 404);
+  // 되돌리기: 판 정리로 내린 것만 (운영자가 가린 것은 그대로).
+  const dry = await call("POST", "/api/admin/recipes/show-titles", { titles: ["옛 테마 하나", "옛 테마 둘"], dry: true }, admin);
+  assert.deepEqual([dry.data.shown, dry.data.found, dry.data.missing], [0, 1, ["옛 테마 둘"]]);
+  const back = await call("POST", "/api/admin/recipes/show-titles", { titles: ["옛 테마 하나"] }, admin);
+  assert.equal(back.data.shown, 1);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53")).sort(), ["새 테마", "옛 테마 하나"].sort());
+  // 1.38처럼 'admin'으로 숨긴 운영자 작품도 다시 보내면 판 정리로 바뀌어 넣은 분이 열 수 있어요.
+  const again = await call("POST", "/api/admin/recipes/hide-titles", { titles: ["옛 테마 둘"] }, admin);
+  assert.equal(again.data.hidden, 1);
+  assert.equal((await call("GET", `/api/recipes/${made["옛 테마 둘"]}`)).status, 200);
 });

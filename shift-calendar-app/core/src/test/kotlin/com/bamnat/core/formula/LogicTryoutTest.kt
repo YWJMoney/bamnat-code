@@ -56,4 +56,35 @@ class LogicTryoutTest {
         val got = Logic(buttons = listOf(LogicButton("큰돈", act = LogicAct(LogicVerb.ADD_MONEY, "x", 9_000_000)))).received()
         assertEquals("가계부에 지출 ‘x 1,000,000원’ 한 줄이 생겨요", LogicTryout.press(got.buttons.first(), mon, book).result)
     }
+
+    /** 1.39 [MKD-04] 값 칸 해 보기: presses move the work's own numbers, and a 목표 rule follows only when the goal is first reached. */
+    @Test fun aValueButtonCountsUpAndTheGoalRuleFollowsOnce() {
+        val cup = LogicButton("물 한 잔", place = ButtonPlace.WIDGET, act = LogicAct(LogicVerb.VAL_ADD, "물 잔", by = 1.0))
+        val done = LogicRule("다 마셨어요", RuleTrigger.VALUE, of = "물 잔", goal = true, act = LogicAct(LogicVerb.NOTIFY, "오늘 물 다 마셨어요"))
+        val l = Logic(buttons = listOf(cup), rules = listOf(done), values = listOf(LogicValue("물 잔", ValueReset.DAY, goal = 2.0, unit = "잔")))
+        val at = mon.atTime(10, 0)
+        var t = LogicTryout.start(l)
+        assertEquals("0/2잔", t.show(l.values[0], mon))
+        val one = LogicTryout.press(l, cup, t, mon, book, at)
+        assertEquals(listOf("‘물 잔’ 값이 0 → 1이 돼요"), one.said)
+        t = one.after
+        val two = LogicTryout.press(l, cup, t, mon, book, at)
+        assertEquals("2/2잔", two.after.show(l.values[0], mon))
+        assertEquals(1f, two.after.toward(l.values[0]))
+        assertTrue(two.said.toString(), two.said.any { it.contains("‘다 마셨어요’") })
+        assertTrue(two.said.any { it.contains("오늘 물 다 마셨어요") })
+        val three = LogicTryout.press(l, cup, two.after, mon, book, at)
+        assertFalse("목표는 처음 닿을 때만", three.said.any { it.contains("‘다 마셨어요’") })
+    }
+
+    @Test fun aValueConditionReadsTheTriedNumber() {
+        val add = LogicButton("한 건", act = LogicAct(LogicVerb.VAL_ADD, "건수", by = 1.0))
+        val warn = LogicRule("많아요", RuleTrigger.VALUE, of = "건수", cond = "값(\"건수\") >= 2", act = LogicAct(LogicVerb.NOTIFY, "벌써 {값(\"건수\")}건"))
+        val l = Logic(buttons = listOf(add), rules = listOf(warn), values = listOf(LogicValue("건수")))
+        val at = mon.atTime(9, 0)
+        val first = LogicTryout.press(l, add, LogicTryout.start(l), mon, book, at)
+        assertFalse(first.said.any { it.contains("많아요") })
+        val second = LogicTryout.press(l, add, first.after, mon, book, at)
+        assertTrue(second.said.toString(), second.said.any { it.contains("벌써 2건") })
+    }
 }

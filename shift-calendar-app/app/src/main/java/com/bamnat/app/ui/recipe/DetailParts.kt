@@ -43,24 +43,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import com.bamnat.app.recipe.RecipeItem
 import com.bamnat.app.ui.components.FilterChip
+import com.bamnat.app.ui.village.MakerBadge
+import com.bamnat.app.ui.village.markColor
+import com.bamnat.core.plaza.MakerMark
 import com.bamnat.core.recipe.Recipe
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
 
 /**
  * 1.39 [MKD-41] 만든 분 (사용자 2026-11-07 "장터 누가 만들었는지 팔로우는 몇인지", "유명한 제작자나 이달의 제작자 … 특별한 표식", "프로필까지 타고"):
- * 이름 · 표식 · 팔로워 수, 누르면 프로필. 표식 글은 광장 갈래 core MakerMark와 같은 말이에요(month 🏅 이달의 제작자, popular ⭐ 인기 제작자).
+ * 이름 · 표식 · 팔로워 수, 누르면 프로필. 표식은 광장 갈래 [MakerMark]·[MakerBadge]·[markColor]를 그대로 써서 광장과 장터가 같은 모양이에요(PLZC-40).
  */
 object MarketMaker {
     /** Who made it, never "이름 없음": 밤낮's own works say 밤낮. */
     fun name(item: RecipeItem): String = item.nick?.takeIf { it.isNotBlank() } ?: if (item.official) "밤낮" else "이름 없는 만든 분"
 
-    /** The mark's badge and words, or null (none, or a key this app does not know yet). */
-    fun mark(key: String?): Pair<String, String>? = when (key) {
-        "month" -> "🏅" to "이달의 제작자"
-        "popular" -> "⭐" to "인기 제작자"
-        else -> null
-    }
+    /** The mark (광장 갈래 [MakerMark]: 🏅 이달의 제작자, ⭐ 인기 제작자), or null (none, or a key this app does not know yet). */
+    fun mark(key: String?): MakerMark? = MakerMark.of(key)
 
     /** "팔로워 1.2천" — short, as a card has room for. */
     fun followers(n: Int?): String? = n?.takeIf { it > 0 }?.let { "팔로워 " + count(it) }
@@ -72,7 +71,7 @@ object MarketMaker {
     }
 
     /** One line for a card: "만든 분 이름 🏅 · 팔로워 120". */
-    fun line(item: RecipeItem): String = "만든 분 " + name(item) + (mark(item.mark)?.let { " " + it.first } ?: "") +
+    fun line(item: RecipeItem): String = "만든 분 " + name(item) + (mark(item.mark)?.let { " " + it.badge } ?: "") +
         (followers(item.followers)?.let { " · $it" } ?: "")
 }
 
@@ -84,7 +83,7 @@ internal fun MakerLine(item: RecipeItem, onMaker: ((String) -> Unit)?) {
     val name = MarketMaker.name(item)
     val mark = MarketMaker.mark(item.mark)
     val go = item.maker?.takeIf { onMaker != null }
-    val tone = if (mark != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurface
+    val tone = markColor(mark)
     Row(
         Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
             .then(if (go != null) Modifier.clickable(role = Role.Button) { onMaker?.invoke(go) } else Modifier)
@@ -101,10 +100,9 @@ internal fun MakerLine(item: RecipeItem, onMaker: ((String) -> Unit)?) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = tone, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                mark?.let { (badge, words) ->
-                    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.small) {
-                        Text("$badge $words", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onTertiaryContainer,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), maxLines = 1)
+                mark?.let { m ->
+                    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.small) {
+                        MakerBadge(m, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
                     }
                 }
             }
