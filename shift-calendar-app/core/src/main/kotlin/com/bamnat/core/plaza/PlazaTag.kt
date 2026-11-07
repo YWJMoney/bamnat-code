@@ -133,6 +133,9 @@ object PlazaTags {
         return if (at.hour >= 22 || at.hour < 6) PlazaTag.Now.NIGHT else PlazaTag.Now.DAY
     }
 
+    /** [PLZC-21] A shift starting at [startHour] is a night (from 17시, or before 4시) or a day one. */
+    fun shiftOf(startHour: Int): PlazaTag.Now = if (startHour >= 17 || startHour < 4) PlazaTag.Now.NIGHT else PlazaTag.Now.DAY
+
     /** The industry groups a writer may pick, 그 밖의 업종 left out (it says nothing). */
     fun industries(): List<IndustryGroups.Group> = IndustryGroups.ALL
 }

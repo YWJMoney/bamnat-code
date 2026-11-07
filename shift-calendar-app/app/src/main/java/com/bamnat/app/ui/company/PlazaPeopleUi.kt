@@ -215,6 +215,52 @@ internal fun PulseLine(pulse: Pulse, onLens: (String) -> Unit) {
     }
 }
 
+/** [PLZC-21] What a 오늘 출근 kind says: on its button, and with its count. */
+internal fun checkinWords(kind: String): Pair<String, String> = when (kind) {
+    "night" -> "오늘 야간 출근 ✊" to "오늘 야간 출근"
+    "day" -> "오늘 주간 출근 ✊" to "오늘 주간 출근"
+    "go" -> "오늘 현장 나가요 ✊" to "오늘 현장 나간 분"
+    "rain" -> "비로 공쳤어요 ☔" to "오늘 비로 공친 분"
+    else -> kind to kind
+}
+
+/**
+ * [PLZC-21] 오늘 출근 한 번 누르기: one tap, no post. In 교대 광장 the button is my shift today from my calendar (none on a day off,
+ * the counts still shown); in 현장 광장 나가요 or 공쳤어요. Once tapped: 'n명 · 함께 버텨요' and 취소.
+ */
+@Composable
+internal fun CheckinRow(room: String?, checkin: com.bamnat.app.company.Checkin, today: PlazaTag.Now?, onTap: (String?) -> Unit) {
+    val kinds = when (room) {
+        StylePlaza.FIELD -> listOf("go", "rain")
+        else -> listOfNotNull(today?.let { if (it == PlazaTag.Now.NIGHT) "night" else "day" })
+    }
+    val mine = checkin.mine
+    val counted = checkin.counts.filterValues { it > 0 }
+    if (mine == null && kinds.isEmpty() && counted.isEmpty()) return
+    SoftCard {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (mine != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("${checkinWords(mine).second} ${checkin.counts[mine] ?: 1}명 · " + if (mine == "rain") "푹 쉬어요" else "함께 버텨요",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { onTap(null) }) { Text("취소") }
+                }
+            } else if (kinds.isNotEmpty()) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    kinds.forEach { k ->
+                        androidx.compose.material3.OutlinedButton(onClick = { onTap(k) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(checkinWords(k).first)
+                        }
+                    }
+                }
+            }
+            val others = counted.filterKeys { it != mine }
+            if (others.isNotEmpty()) Text(others.entries.joinToString(" · ") { (k, n) -> "${checkinWords(k).second} ${n}명" },
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
 /**
  * [PLZC-13] 시간 맞춤 한 줄 from my own calendar (on this phone only): at work at night, just off a night, or a day off.
  * Null when it has nothing to say.
@@ -250,6 +296,7 @@ internal fun PlazaFeed(
     // My tag (and so the lenses that need one), and the 시간 맞춤 line, worked out from my calendar.
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         talk?.pulse?.let { PulseLine(it) { l -> lens = l } }
+        talk?.pulse?.checkin?.let { CheckinRow(plan.room, it, vm.todayShift.collectAsStateWithLifecycle().value, vm::checkin) }
         vm.timeLine.collectAsStateWithLifecycle().value?.let { (words, l) ->
             Text(words, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.fillMaxWidth().clickable { lens = l }.padding(vertical = 4.dp))

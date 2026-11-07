@@ -47,7 +47,7 @@ class PlazaTagSource(private val c: AppContainer) {
     }
 
     /** My day by the calendar of [room]'s kind of work: the tag a post carries now, and whether a night just ended or today is off. */
-    data class MyDay(val tag: PlazaTag, val offAfterNight: Boolean = false, val dayOff: Boolean = false)
+    data class MyDay(val tag: PlazaTag, val offAfterNight: Boolean = false, val dayOff: Boolean = false, val todayShift: PlazaTag.Now? = null)
 
     /** The tag a post in [room] carries now (months left to the server); null without a calendar of that kind of work. */
     suspend fun tagFor(room: String): PlazaTag? = dayFor(room)?.tag
@@ -70,7 +70,10 @@ class PlazaTagSource(private val c: AppContainer) {
             end.toLocalDate() == today && !at.isBefore(end) && at.isBefore(end.plusHours(10)) && yesterday.shiftFrom?.toLocalDate() != today
         } == true
         val dayOff = now == null && !offAfterNight && !todayDay.isWorkDay
-        return MyDay(PlazaTags.compute(style, snap.shiftTypes, pattern, profile, worked, scope(), now), offAfterNight, dayOff)
+        // [PLZC-21] 오늘 출근: the shift on now (yesterday's night still running counts), else today's own, night or day.
+        val running = listOf(yesterday, todayDay).firstOrNull { PlazaTags.nowOf(it.shiftFrom, it.shiftTo, at) != null }
+        val todayShift = (running ?: todayDay.takeIf { it.isWorkDay })?.shiftFrom?.let { PlazaTags.shiftOf(it.hour) }
+        return MyDay(PlazaTags.compute(style, snap.shiftTypes, pattern, profile, worked, scope(), now), offAfterNight, dayOff, todayShift)
     }
 
     /** What goes with a post: the tag's keys, and whether the server may add the months ("m": true). */

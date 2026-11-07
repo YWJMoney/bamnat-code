@@ -80,4 +80,13 @@ class PlazaTagTest {
         assertNull(PlazaTags.nowOf(from, to, from.minusMinutes(1)))
         assertNull(PlazaTags.nowOf(null, null, from))
     }
+
+    @Test
+    fun `PLZC-21 오늘 출근 kind by the shift start, an 18시 night counts as night all evening`() {
+        assertEquals(PlazaTag.Now.NIGHT, PlazaTags.shiftOf(18))
+        assertEquals(PlazaTag.Now.NIGHT, PlazaTags.shiftOf(22))
+        assertEquals(PlazaTag.Now.NIGHT, PlazaTags.shiftOf(0))
+        assertEquals(PlazaTag.Now.DAY, PlazaTags.shiftOf(6))
+        assertEquals(PlazaTag.Now.DAY, PlazaTags.shiftOf(14))
+    }
 }

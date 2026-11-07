@@ -326,8 +326,16 @@ data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val 
     /** 1.39 [PLZC-12] The room's head line: today's posts, questions waiting, writers at work lately. */
     val pulse: Pulse? = null)
 
-/** 1.39 [PLZC-12] 머리 숫자 of a kind of work's plaza. */
-data class Pulse(val today: Int, val waiting: Int, val working: Int)
+/** 1.39 [PLZC-12] 머리 숫자 of a kind of work's plaza; [checkin] [PLZC-21] 오늘 출근 where the room has it. */
+data class Pulse(val today: Int, val waiting: Int, val working: Int, val checkin: Checkin? = null)
+
+/** 1.39 [PLZC-21] 오늘 출근: today's taps by kind (day·night in 교대, go·rain in 현장) and this phone's own. */
+data class Checkin(val counts: Map<String, Int>, val mine: String? = null)
+
+internal fun checkinOf(o: JSONObject?): Checkin? = o?.let {
+    val counts = it.optJSONObject("counts") ?: return null
+    Checkin(counts.keys().asSequence().associateWith { k -> counts.optInt(k) }, it.optString("mine").ifEmpty { null })
+}
 
 /**
  * 1.36 [LIM-10] 신고 누적 쓰기 제한: nobody has a daily cap; posts hidden by reports restrict an install until [until] to [perDay]
@@ -643,6 +651,9 @@ interface CompanyApi {
     /** 1.36 [VIL-13] My newest posts and replies in the plazas. */
     suspend fun myPosts(device: String): List<MyPost> = throw CompanyException("offline")
 
+    /** 1.39 [PLZC-21] 오늘 출근 한 번 누르기 in [room] ([kind] null takes it back); today's counts come back. */
+    suspend fun plazaCheckin(device: String, room: String, kind: String?): Checkin = throw CompanyException("offline")
+
     /** 1.39 [PLZC-41] 같은 근무 새 질문 알림: watch [form] in [room] (교대·일근 광장), or stop with null. */
     suspend fun plazaWatch(device: String, room: String, form: String?) = Unit
 
@@ -938,6 +949,11 @@ class CompanyClient(
 
     override suspend fun myPosts(device: String): List<MyPost> = serverCall {
         myPostsOf(exchange("GET", "/api/posts/mine", device = device).json)
+    }
+
+    override suspend fun plazaCheckin(device: String, room: String, kind: String?): Checkin = serverCall {
+        val o = JSONObject().put("device", device).put("room", room).put("kind", kind ?: JSONObject.NULL)
+        checkinOf(request("POST", "/api/plaza/checkin", o, device)) ?: Checkin(emptyMap())
     }
 
     override suspend fun plazaWatch(device: String, room: String, form: String?) = serverCall {
@@ -1420,7 +1436,7 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
     topic = o.optStringOrNull("topic"),
     more = o.optBoolean("more"),
     older = o.optBoolean("older"),
-    pulse = o.optJSONObject("pulse")?.let { Pulse(it.optInt("today"), it.optInt("waiting"), it.optInt("working")) },
+    pulse = o.optJSONObject("pulse")?.let { Pulse(it.optInt("today"), it.optInt("waiting"), it.optInt("working"), checkinOf(it.optJSONObject("checkin"))) },
 )
 
 internal fun termsOf(o: JSONObject) =

@@ -58,7 +58,7 @@ test("[PLZC-10][PLZC-12] after 3.12: the tag is kept as written, months the serv
   assert.deepEqual(a.tag, { s: "SHIFT", f: "FOUR_TEAM", n: "night", m: 0 });
   assert.deepEqual(b.tag, { s: "SHIFT", f: "THREE_SHIFT" });
   // 오늘 글 2, 답 기다리는 질문 1, 근무 중 1 (the one written at work).
-  assert.deepEqual(p.pulse, { today: 2, waiting: 1, working: 1 });
+  assert.deepEqual(p.pulse, { today: 2, waiting: 1, working: 1, checkin: { counts: { day: 0, night: 0 } } });
   // An answer from someone else: no longer waiting. The asker's own does not count.
   await call("POST", "/api/posts", { device: device(1), company: "style-shift", setup: "room", body: "저도 궁금해서 하나 더", parent: a.id }, from(1));
   assert.equal((await read(call, 4, "style-shift")).data.pulse.waiting, 1);
@@ -190,4 +190,28 @@ test("[PLZC-41] 광장 답 바로 알림: an answer tells the asker, a 근무형
   assert.equal(sent.length, 2);
   // Stop watching.
   assert.equal((await call("DELETE", "/api/plaza/watch", { device: device(2), room: "style-shift" }, from(2))).data.ok, true);
+});
+
+test("[PLZC-21] 오늘 출근: one tap a day per phone, counted by kind in the room's head line, only after 3.12", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const tap = (n, room, kind) => call("POST", "/api/plaza/checkin", { device: device(n), room, kind }, from(n));
+  assert.equal((await tap(1, "style-shift", "night")).status, 403);
+  await policyOn(call);
+  assert.equal((await tap(1, "style-day", "day")).data.error, "room", "일근 광장에는 없어요");
+  assert.equal((await tap(1, "style-shift", "rain")).data.error, "kind");
+  assert.deepEqual((await tap(1, "style-shift", "night")).data.counts, { day: 0, night: 1 });
+  await tap(2, "style-shift", "night");
+  const r = await tap(3, "style-shift", "day");
+  assert.deepEqual(r.data.counts, { day: 1, night: 2 });
+  assert.equal(r.data.mine, "day");
+  // Changing my mind moves my one tap; null takes it back.
+  assert.deepEqual((await tap(3, "style-shift", "night")).data.counts, { day: 0, night: 3 });
+  assert.deepEqual((await tap(3, "style-shift", null)).data.counts, { day: 0, night: 2 });
+  const head = (await read(call, 1, "style-shift")).data.pulse;
+  assert.deepEqual(head.checkin, { counts: { day: 0, night: 2 }, mine: "night" });
+  assert.deepEqual((await tap(4, "style-field", "rain")).data.counts, { go: 0, rain: 1 });
+  // A new Korean day starts from nothing.
+  t.mock.timers.tick(DAY);
+  assert.deepEqual((await read(call, 1, "style-shift")).data.pulse.checkin, { counts: { day: 0, night: 0 } });
 });

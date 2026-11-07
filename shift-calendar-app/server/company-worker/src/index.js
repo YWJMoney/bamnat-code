@@ -91,6 +91,7 @@ import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-material
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
 import { makerMarks } from "./maker-mark.js";
 import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut } from "./plaza-people.js";
+import { PLAZA_CHECKIN_SCHEMA, plazaCheckinRoute, plazaCheckins } from "./plaza-checkin.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
 import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute } from "./plaza-push.js";
@@ -560,6 +561,7 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/push/phone") { const r = await fcmRoute(request, env, path); if (r) return r; }
   // 1.39 [PLZC-41] 같은 근무 새 질문 알림을 받을 광장.
   if (path === "/api/plaza/watch" && (method === "POST" || method === "DELETE")) return plazaWatchRoute(request, env, await peopleOn(env));
+  if (path === "/api/plaza/checkin" && method === "POST") return plazaCheckinRoute(request, env, await peopleOn(env));
   // 1.36 누락 점검 N13: 찾아도 없던 말 ('없다고 알리기').
   if (path === "/api/growth/miss") { const r = await growthRoute(request, env, path, url); if (r) return r; }
   // 1.38 [EASE-31] 밤낮 Q&A (마을): 관리자가 공개로 고른 자주 쓰는 답.
@@ -840,6 +842,7 @@ const SCHEMA = [
   // 1.36 [PUSH-01] 문의 답 바로 알리기 (fcm.js).
   ...FCM_SCHEMA,
   ...PLAZA_PUSH_SCHEMA,
+  ...PLAZA_CHECKIN_SCHEMA,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
@@ -4018,6 +4021,9 @@ async function talkData(request, env, companyId, grp, known = null) {
   // 1.39 [PLZC] 근무 태그·머리 숫자, on a kind of work's plaza once plaza.people is on.
   const people = style && (await peopleOn(env, now));
   const pulse = people && before === null ? await peoplePulse(one, env, c.id, now, grp) : null;
+  // [PLZC-21] 오늘 출근 n명, with this phone's own tap.
+  const checkin = pulse ? await plazaCheckins(env, c.id, me, now) : null;
+  if (checkin) pulse.checkin = checkin;
   // [PLZC-15][PLZC-16] 첫 글 and 도움 n beside a writer's name.
   const writerFacts = people ? await peopleFacts(all, env, rows.map((p) => p.device)) : null;
   // [VIL-02] 1.36 마을 V2 차단 하나로: on a kind of work's own plaza (not a company's room, where writers stay numbers), the makers

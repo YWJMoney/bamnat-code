@@ -124,6 +124,9 @@ class PlazaHomeViewModel(
     val olderMore: StateFlow<Boolean> = _olderMore.asStateFlow()
     private val _loadingOlder = MutableStateFlow(false)
     val loadingOlder: StateFlow<Boolean> = _loadingOlder.asStateFlow()
+    // [PLZC-21] 오늘 출근: my shift today (night or day) from my calendar.
+    private val _todayShift = MutableStateFlow<com.bamnat.core.plaza.PlazaTag.Now?>(null)
+    val todayShift: StateFlow<com.bamnat.core.plaza.PlazaTag.Now?> = _todayShift.asStateFlow()
 
     init {
         // [SPD-12] The whole list of companies, for 다른 회사 규칙 광장 and its search, if the start of the app did not yet.
@@ -201,6 +204,7 @@ class PlazaHomeViewModel(
             if (_plan.value.room != room) return@launch
             _mine.value = day?.tag?.copy(months = if (c.plazaTags.scope().months) 0 else null)
             _timeLine.value = day?.let { timeLine(it.tag.now, it.offAfterNight, it.dayOff) }
+            _todayShift.value = day?.todayShift
             // [PLZC-41] the 근무형태 같은 근무 새 질문 알림 watches follows the calendar.
             com.bamnat.app.company.PlazaPush.syncWatch(c)
         }
@@ -225,6 +229,17 @@ class PlazaHomeViewModel(
             } finally {
                 _loadingOlder.value = false
             }
+        }
+    }
+
+    /** [PLZC-21] 오늘 출근 [kind] (null takes it back); the room's head line takes the counts that come back. */
+    fun checkin(kind: String?) {
+        val room = _plan.value.room ?: return
+        viewModelScope.launch {
+            val got = try { c.companyApi.plazaCheckin(c.companyStore.device, room, kind) } catch (_: CompanyException) { return@launch }
+            val t = _state.value.talk ?: return@launch
+            if (_plan.value.room != room) return@launch
+            _state.value = _state.value.copy(talk = t.copy(pulse = t.pulse?.copy(checkin = got)))
         }
     }
 
