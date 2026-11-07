@@ -625,7 +625,9 @@ fun ReceivedCalendarView(
             ReceivedDayCard(selected, today, cal, schedule, mine.resolver.resolve(selected).takeIf { canCompare }, restTogether(selected))
             schedule.pay.firstOrNull { it.month == month }?.let { PayCard(cal, it, schedule.payKind) }
             // 1.38 [P3-X-03]: the link's month as the user's own days, with what their pay setup makes of it.
-            if (canCompare && schedule.covers(month) && schedule.usesShifts()) AdoptRosterCard(schedule, month, mine)
+            if (canCompare && schedule.covers(month) && schedule.usesShifts()) AdoptRosterCard(cal.id, schedule, month, mine)
+            // 1.39 [TEAM-22] What happens when this link changes, for the link the user's days come from or were put in from.
+            if (com.bamnat.app.share.RosterFollower.followed(cal) || cal.mine || cal.adopted) FollowModeRow(cal)
             val duty = remember(schedule, month, rules) { com.bamnat.app.share.ReceivedDutyCheck.warnings(schedule, month, rules) }
             if (duty.isNotEmpty()) ReceivedDutyCard(cal, duty)
             Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",

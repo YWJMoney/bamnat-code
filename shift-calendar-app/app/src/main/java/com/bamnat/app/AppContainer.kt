@@ -1061,13 +1061,22 @@ class AppContainer(context: Context) {
             keep("plaza news") {
                 combine(
                     settingsRepository.settings.map { listOf(it.plazaNews, it.plazaRulesAgreed, it.phoneCalendars, it.alarmsEnabled) },
-                    companyStore.sent, companyStore.applied, received.calendars.map { it.isEmpty() },
-                ) { a, _, _, _ -> a }
+                    companyStore.sent, companyStore.applied,
+                    received.calendars.map { all -> all.isEmpty() to all.filter { !it.gone && com.bamnat.app.share.RosterFollower.followed(it) }.map { it.id } },
+                ) { a, _, _, r -> a to r }
                     .distinctUntilChanged()
                     .collect {
                         if (com.bamnat.app.company.PlazaNewsJob.wanted(this@AppContainer)) com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
                         else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
+                        // 1.39 [TEAM-22] The 6-hour look runs while a received link is followed (no job of its own in the start's budget).
+                        com.bamnat.app.share.RosterFollower.sync(appContext, this@AppContainer)
                     }
+            }
+            // 1.39 [TEAM-22] D9: once a start, a followed link is asked a little after the month is up, so a 리더's change made while
+            // the phone was away reaches the alarms without waiting for the 6-hour look. Not kept: one ask, then done.
+            if (received.calendars.value.any { !it.gone && com.bamnat.app.share.RosterFollower.followed(it) }) appScope.launch {
+                kotlinx.coroutines.delay(15_000)
+                runCatching { com.bamnat.app.share.RosterFollower.checkAll(this@AppContainer) }
             }
             // [SRCH-09] 1.29 AS: once, not kept (no job of its own, so the startup budget is the same): the most used companies
             // and this phone's company page read ahead, unless the phone saves data, so the first search shows at once.

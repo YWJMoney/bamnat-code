@@ -1209,6 +1209,13 @@ fun CalendarScreen(
             // [MAT-06] 1.36 PC 확인 7차: shared fonts a theme was waiting for, come down by themselves (was a toast). PC 8차: first, so it
             // is the one open (it was folded as '글꼴' under the others); it goes once closed or taken back.
             if (FontArrivals.fonts.isNotEmpty()) add(Notice("fontArrived", "기다리던 글꼴") { FontArrivedLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
+            // 1.39 [TEAM-22] D9: a 리더's change of the team's roster, put into the user's days (근무 알람 follows) or asked; first after
+            // the fonts, so it is open and never folded, with 되돌리기 in reach.
+            receivedList.filter { it.note != null }.forEach { cal ->
+                if (paint == null && viewingReceived == null) add(Notice("rosterFollow:${cal.id}", "받은 근무표 바뀜") {
+                    RosterFollowLine(cal, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                })
+            }
             // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
             // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
             // screen too, for a phone whose notices are off.

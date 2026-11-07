@@ -55,6 +55,8 @@ object Notifications {
     const val INQUIRY_CHANNEL_ID = "inquiry_reply_v1"
     /** 1.38 [P3-B-11] 직원이 출퇴근 링크에서 누른 출근·퇴근 (사장님 휴대폰). */
     const val CLOCK_CHANNEL_ID = "staff_clock_v1"
+    /** 1.39 [TEAM-22] 리더가 바꾼 팀 근무표가 내 달력에 들어갔어요 (또는 넣을까요?): the alarms follow it, so it is said with a sound. */
+    const val ROSTER_CHANNEL_ID = "roster_follow_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -93,6 +95,8 @@ object Notifications {
     const val INQUIRY_ID = 7208
     /** 1.38 [P3-B-11] One notice per staff member, tagged by their id. */
     const val CLOCK_ID = 7231
+    /** 1.39 [TEAM-22] One notice per received link, tagged by its id. */
+    const val ROSTER_ID = 7232
     /** [ALRM-01] 휴대폰 캘린더 permission taken back. */
     const val CALENDAR_PERMISSION_ID = 7206
     /** [ALRM-01] Why an alarm rang late or only as a plain notice. */
@@ -186,6 +190,11 @@ object Notifications {
             description = "직원이 출퇴근 링크에서 출근·퇴근을 누르면 알려요(15분쯤마다 확인, 위치는 받지 않아요)"
             group = GROUP_MONEY
         }
+        val roster = NotificationChannel(ROSTER_CHANNEL_ID, "받은 근무표 바뀜", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "리더가 팀 근무표를 바꾸면 내 달력에 넣고(근무 알람도 따라가요) 바뀐 날을 알려요. 물어보기로 둔 근무표는 넣을지 여쭤봐요"
+            group = GROUP_DAY
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
         val backup = NotificationChannel(BACKUP_CHANNEL_ID, "자동 백업", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되면 알려요"
             group = GROUP_DAY
@@ -209,7 +218,7 @@ object Notifications {
             description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry, clock))
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry, clock, roster))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
         nm.deleteNotificationChannel(OLD_PLAZA_CHANNEL_ID)
     }

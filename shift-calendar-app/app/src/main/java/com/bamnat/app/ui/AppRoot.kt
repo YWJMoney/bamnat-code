@@ -418,7 +418,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             // 판), and the waiting link is let go, so the calendar does not offer to add it again after the setup.
                             val id = waitingLink
                             container.received.open(null)
-                            if (id != null) rootScope.launch { runCatching { container.received.put(id, container.shareApi.read(id), mine = true) } }
+                            if (id != null) rootScope.launch {
+                                runCatching { container.received.put(id, container.shareApi.read(id), mine = true) }
+                                // 1.39 [TEAM-22] The 리더's later changes of this link come into the member's days by themselves.
+                                com.bamnat.app.share.RosterFollower.sync(container.appContext, container)
+                            }
                         } })
                     return
                 }

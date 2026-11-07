@@ -2,6 +2,8 @@ package com.bamnat.app.ui.calendar
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -28,7 +30,6 @@ import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.schedule.RosterAdopt
 import kotlinx.coroutines.launch
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.YearMonth
 
 /**
@@ -37,18 +38,12 @@ import java.time.YearMonth
  * changed days here again ("바뀐 날 2일, +38,000원"); one press puts them in, one more takes them back.
  */
 @Composable
-internal fun AdoptRosterCard(schedule: SharedSchedule, month: YearMonth, mine: ScheduleSnapshot) {
+internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMonth, mine: ScheduleSnapshot) {
     val c = LocalContext.current.appContainer
     val app = c.appScope
     val settings by c.settingsRepository.settings.collectAsState()
     val profile by c.payStore.profile.collectAsState()
-    val theirs = remember(schedule) {
-        schedule.types.map { t ->
-            val parts = t.time?.split("-")
-            fun at(s: String?) = s?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
-            RosterAdopt.Theirs(t.id, t.short, t.name, at(parts?.getOrNull(0)), at(parts?.getOrNull(1)), t.off)
-        }
-    }
+    val theirs = remember(schedule) { com.bamnat.app.share.RosterFollower.theirTypes(schedule) }
     val pairs = remember(theirs, mine.shiftTypes) { RosterAdopt.match(theirs, mine.shiftTypes) }
     val days = remember(schedule, month) { schedule.days.filterKeys { YearMonth.from(it) == month }.mapValues { it.value.type } }
     val changes = remember(days, pairs, mine) { RosterAdopt.changes(days, pairs, mine.shiftTypes, mine.resolver::resolve) }
@@ -88,8 +83,59 @@ internal fun AdoptRosterCard(schedule: SharedSchedule, month: YearMonth, mine: S
                 app.launch {
                     val before = todo.mapValues { (d, o) -> c.scheduleRepository.updateDay(d) { it.copy(override = o) } }
                     undo = before
+                    // 1.39 [TEAM-22] Put in once: when the 리더 changes this link later, the change is offered (or as set below).
+                    c.received.markAdopted(id)
+                    com.bamnat.app.share.RosterFollower.sync(c.appContext, c)
                 }
             }) { Text("${changes.size}일 내 달력에 넣기") }
         }
     }
 }
+
+/**
+ * 1.39 [TEAM-22] D9: what a followed link's change did, over the user's own calendar until closed: put in (되돌리기), asked
+ * (내 달력에 넣기), or the link gone (the user's days stay).
+ */
+@Composable
+internal fun RosterFollowLine(cal: com.bamnat.app.share.ReceivedCalendar, modifier: androidx.compose.ui.Modifier = androidx.compose.ui.Modifier) {
+    val note = cal.note ?: return
+    val c = LocalContext.current.appContainer
+    val app = c.appScope
+    val (title, text) = remember(cal, note) { com.bamnat.app.share.RosterFollower.words(cal, note) }
+    androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp), modifier = modifier.fillMaxWidth()) {
+        androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 4.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(text, style = MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                when {
+                    note.kind == com.bamnat.app.share.FollowNote.DONE && note.undo.isNotEmpty() ->
+                        TextButton(onClick = { app.launch { com.bamnat.app.share.RosterFollower.takeBack(c, cal.id) } }) { Text("되돌리기") }
+                    note.kind == com.bamnat.app.share.FollowNote.ASK && note.apply.isNotEmpty() ->
+                        TextButton(onClick = { app.launch { com.bamnat.app.share.RosterFollower.putIn(c, cal.id) } }) { Text("${note.apply.size}일 내 달력에 넣기") }
+                }
+                TextButton(onClick = { com.bamnat.app.share.RosterFollower.close(c, cal.id) }) { Text("닫기") }
+            }
+        }
+    }
+}
+
+/** 1.39 [TEAM-22] 근무표가 바뀌면: 바로 내 달력에 넣기 / 넣을지 물어보기 / 넣지 않기, for one received link. */
+@Composable
+internal fun FollowModeRow(cal: com.bamnat.app.share.ReceivedCalendar) {
+    val c = LocalContext.current.appContainer
+    val mode = com.bamnat.app.share.RosterFollower.mode(cal)
+    SectionCard(title = "이 근무표가 바뀌면") {
+        Text("리더가 근무표를 고쳐 다시 보내면 6시간 안에 받아요. 내가 직접 바꾼 날은 그대로 둬요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            com.bamnat.app.share.RosterFollower.Mode.entries.forEach { m ->
+                com.bamnat.app.ui.components.FilterChip(selected = m == mode, onClick = {
+                    c.received.setFollow(cal.id, m.key)
+                    com.bamnat.app.share.RosterFollower.sync(c.appContext, c)
+                }, label = { Text(m.words) })
+            }
+        }
+    }
+}
+
