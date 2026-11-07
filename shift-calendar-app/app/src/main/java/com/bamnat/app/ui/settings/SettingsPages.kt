@@ -1117,6 +1117,9 @@ private fun PrivacyPage(
             vm.update { it.copy(appLock = on) }
             if (!on) com.bamnat.app.AppLock.release()
         }
+        // 1.38 PC 12.2 (금액 가리기를 가계부 머리 눈 단추에서만 찾을 수 있었어요): the same switch here, by 앱 잠금.
+        SwitchRow("금액 가리기", "앱과 위젯의 금액을 •••로 가려요. 버스나 회사에서 열 때 써요. 가계부 머리의 눈 단추로도 바로 켜고 꺼요",
+            settings.hideAmounts) { on -> vm.update { it.copy(hideAmounts = on) } }
     }
     SectionCard(title = "권한") {
         val notificationsOk = remember(refresh) { Notifications.canPost(context) }
