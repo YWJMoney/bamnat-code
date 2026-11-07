@@ -84,7 +84,8 @@ import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixedAmountsOpen
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
-import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
+import { CARE_SCHEMA, careAppeal, careAppealDecide, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS } from "./community-care.js";
+import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, confirmStrike, limitJson, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeAllowance, writeLeft, writeLimitHit } from "./write-limits.js";
 import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
 import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
@@ -305,6 +306,8 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM posts WHERE status = 'hidden' AND hidden_at < ?", now - LIMITS.hiddenPostDays * DAY),
     stmt(env, "INSERT INTO plaza_results (device, kind, post_id, result, company_id, at) SELECT device, 'unmuted', NULL, 'ended', NULL, until FROM muted WHERE until < ?", now),
     stmt(env, "DELETE FROM muted WHERE until < ?", now),
+    // 1.39 [CARE-04] 끝난 의견 쉬기는 소식 한 번, 끝난 지 180일 지난 경고·쉬기 기록은 지움.
+    ...carePrune(recipeDeps, env, now),
     stmt(env, "DELETE FROM plaza_results WHERE at < ?", now - 30 * DAY),
     // [PLAZA-07] A company left is forgotten once its 30 days are over.
     stmt(env, "DELETE FROM members WHERE left = 1 AND since < ?", now - MEMBER.waitDays * DAY),
@@ -510,6 +513,11 @@ async function routeOnce(request, env, url, ctx) {
   m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})\/answer$/);
   if (m && method === "POST") return postAnswer(request, env, m[1]);
   if (path === "/api/posts/mine" && method === "GET") return myPosts(request, env);
+  // 1.39 [CARE-03] 마을을 열 때: 읽지 않은 경고, 지금 쉬기, 신고 누적 제한. 확인했어요는 seen.
+  if (path === "/api/community/standing" && method === "GET") return communityStanding(request, env);
+  if (path === "/api/community/standing/seen" && method === "POST") return communitySeen(request, env);
+  // 1.39 [CARE-10] 해명하기: 나만 보는 문의로.
+  if (path === "/api/community/appeal" && method === "POST") return communityAppeal(request, env);
   if (path === "/api/village/search" && method === "GET") return villageSearch(request, env, url);
   if (path.startsWith("/api/village/contest")) {
     const v = await villageRoute(recipeDeps, request, env, path, url, Date.now());
@@ -788,6 +796,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS pro_shares (owner TEXT PRIMARY KEY, code TEXT UNIQUE, code_at INTEGER, guest TEXT UNIQUE, guest_at INTEGER)`,
   // 1.36 [LIM-10] 쓰기 제한: no daily cap; strikes (posts or recipes hidden) restrict an install for a while (write-limits.js).
   ...WRITE_LIMITS_SCHEMA,
+  // 1.39 [CARE-01] 마을 돌봄: 경고·의견 쉬기·마을 쉬기 (community-care.js).
+  ...CARE_SCHEMA,
   // 1.36 [VIL-11] 마을 (village.js): 이번 주 이야기 주제.
   ...VILLAGE_SCHEMA,
   // 1.36 [GRW-01]~[GRW-05] 자가 발전 바퀴 (growth.js): 스튜디오 요구 묶음과 승격 사다리.
@@ -2366,6 +2376,9 @@ async function roomPost(request, env, body) {
   }
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
+  // 1.39 [CARE-02] 의견 쉬기·마을 쉬기 중이면 글을 쉬어 가요.
+  const held = await careGate(recipeDeps, env, dev, "opinion", now);
+  if (held) return held;
   const net = await network(request, env, now);
   // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; the network's stays.
   const limitHit = (await writeLimitHit(recipeDeps, env, dev, "room", now))
@@ -2413,6 +2426,102 @@ async function myPosts(request, env) {
   return json({ items: rows.map((p) => ({ id: p.id, room: p.company_id, name: STYLE_ROOMS[p.company_id] ?? p.name ?? "", body: p.body,
     kind: p.kind ?? "talk", ...(p.parent ? { parent: p.parent } : {}), replies: p.replies, at: iso(p.created_at),
     ...(p.status === "shown" ? {} : { hidden: true }) })) });
+}
+
+/**
+ * 1.39 [CARE-05] 관리자 앱 마을 돌봄. 사람은 글 번호·작품 코드·휴대폰 표시·문의 번호로 찾고, 해시 전체는 내보내지 않아요.
+ * POST /care/warn {post|recipe|mark|inquiry, reason, note}, POST /care/hold {…, scope, days, reason, note}, POST /care/<id>/lift.
+ */
+async function careAdmin(request, env, url, path, method, now) {
+  if (path === "/care" && method === "GET") return json(await careList(recipeDeps, env, now));
+  if (path === "/care/person" && method === "GET") {
+    const q = Object.fromEntries(url.searchParams);
+    const t = await careTarget(recipeDeps, env, q);
+    if (!t.device) return json(t.ambiguous ? { error: "ambiguous", n: t.ambiguous } : { error: "not_found" }, 404);
+    return json({ ...(await carePerson(recipeDeps, env, t.device, now)), ...(t.ref ? { ref: t.ref } : {}) });
+  }
+  if ((path === "/care/warn" || path === "/care/hold") && method === "POST") {
+    if (!(await careOn(recipeDeps, env, now))) return json({ error: "off" }, 409);
+    const body = await readJson(request, 2048);
+    const t = await careTarget(recipeDeps, env, body);
+    if (!t.device) return json(t.ambiguous ? { error: "ambiguous", n: t.ambiguous } : { error: "not_found" }, 404);
+    if (!Object.hasOwn(CARE_REASONS, body.reason)) refuse("reason", "reason");
+    const note = given(body.note) ? str(body.note, 200, "note", { lines: false }).trim() || null : null;
+    if (note && personal(note)) refuse("note", "note");
+    const out = path === "/care/warn"
+      ? await careWarn(recipeDeps, env, t.device, { reason: body.reason, note, by: "operator", ref: t.ref ?? null }, now)
+      : await careHold(recipeDeps, env, t.device, { scope: body.scope, days: body.days, reason: body.reason, note, ref: t.ref ?? null }, now);
+    if (out.error) return json(out, out.error === "warn_first" ? 409 : 400);
+    await audit(env, now, path === "/care/warn" ? "care_warn" : `care_${out.kind}`, t.device.slice(0, 12), `${body.reason}${out.days ? ` ${out.days}일` : ""}`);
+    return json({ ...out, who: t.device.slice(0, 12) });
+  }
+  // 1.39 [CARE-10] 해명 결정: accepted(풀어 줌) | kept(그대로). 답 글은 문의 답으로 따로.
+  const ap = path.match(/^\/care\/appeal\/([A-Za-z0-9]{22})$/);
+  if (ap && method === "POST") {
+    const body = await readJson(request, 256);
+    const out = await careAppealDecide(recipeDeps, env, ap[1], body.result, now);
+    if (out.error) return json(out, out.error === "not_found" ? 404 : 400);
+    await audit(env, now, out.result === "accepted" ? "care_appeal_accept" : "care_appeal_keep", ap[1]);
+    return json(out);
+  }
+  const m = path.match(/^\/care\/(c[A-Za-z0-9]{15})\/lift$/);
+  if (m && method === "POST") {
+    const out = await careLift(recipeDeps, env, m[1], now);
+    if (out) await audit(env, now, "care_lift", m[1], out.kind);
+    return json(out ?? { error: "not_found" }, out ? 200 : 404);
+  }
+  return json({ error: "not_found" }, 404);
+}
+
+/**
+ * GET /api/community/standing — header X-Device: 1.39 [CARE-03] 마을을 열 때 한 번. 읽지 않은 경고·안내 하나(warning), 지금 쉬기(hold),
+ * 신고 누적 제한(limit). 아무것도 없으면 {}. 아무것도 새로 남기지 않아요.
+ */
+async function communityStanding(request, env) {
+  const device = deviceId(request.headers.get("x-device"));
+  if (!device) return json({ error: "device", field: "device" }, 400);
+  const now = Date.now();
+  const dev = await deviceHash(device);
+  const [standing, a] = await Promise.all([careStanding(recipeDeps, env, dev, now), writeAllowance(recipeDeps, env, dev, now)]);
+  return json({ ...standing, ...(a ? { limit: limitJson(a) } : {}) }, 200, { "cache-control": "no-store" });
+}
+
+/**
+ * POST /api/community/appeal {device, target, text} — 1.39 [CARE-10] 경고·쉬기·신고 누적 제한에 대한 해명. 나만 보는 문의 하나가 되고(문의 한도
+ * 그대로), 운영자의 문의함에 '해명'으로 와요. 같은 것에는 한 번, 이어서는 그 문의에서 써요.
+ */
+async function communityAppeal(request, env) {
+  const body = await readJson(request, 4096);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const now = Date.now();
+  const dev = await deviceHash(device);
+  const net = await network(request, env, now);
+  const make = async (text) => {
+    if (personal(text) === "email" || personal(text) === "phone") return { error: personal(text), status: 400 };
+    const hit = await overLimit(env, now, [["device", `inquiry|${dev}`, 5, DAY], ...(await networkCheck(env, dev, net, "inquiry", 200, now))]);
+    if (hit) return { error: "rate_limited", status: 429 };
+    const id = randomId(22);
+    await batch(env, [
+      stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at) VALUES (?, ?, 'other', ?, 'open', 0, ?, ?)",
+        id, dev, JSON.stringify({ appeal: "care" }), now, now),
+      stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
+    ]);
+    await notifyAdmins(env, "inquiry", { title: "새 해명", body: "마을 경고·쉬기에 대한 해명 1건", url: `/admin/#/inquiries/${id}` }, now);
+    return { id };
+  };
+  const out = await careAppeal(recipeDeps, env, dev, body, now, make);
+  if (out.error) return json({ error: out.error, ...(out.inquiry ? { inquiry: out.inquiry } : {}) }, out.status ?? 400);
+  return json(out, 201);
+}
+
+/** POST /api/community/standing/seen {device, id} — 1.39 [CARE-03] 경고를 '확인했어요'. 관리자 앱에 읽음으로 보여요. */
+async function communitySeen(request, env) {
+  const body = await readJson(request, 512);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const ok = await careSeen(recipeDeps, env, await deviceHash(device), body.id, Date.now());
+  return json({ ok });
 }
 
 /**
@@ -3476,6 +3585,9 @@ async function vote(request, env) {
   const limitHit = await overLimit(env, now, [["device", `vote|${await deviceHash(device)}|${Math.floor(now / HOUR)}`, LIMITS.votesPerHour, HOUR],
     ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
   if (limitHit) return limitHit;
+  // 1.39 [CARE-02] 마을 쉬기 중에는 맞았어요·달라요도 쉬어요(급여 정보 순위를 흔들지 않게).
+  const held = await careGate(recipeDeps, env, await deviceHash(device), "community", now);
+  if (held) return held;
   const c = await follow(env, body.company);
   if (!c || c.hidden) return json({ error: "not_found" }, 404);
   const grp = body.setup;
@@ -3826,6 +3938,9 @@ async function post(request, env) {
   const dev = await deviceHash(device);
   const muted = await one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return json({ error: "muted", until: iso(muted.until) }, 403);
+  // 1.39 [CARE-02] 의견 쉬기·마을 쉬기 중이면 글을 쉬어 가요.
+  const held = await careGate(recipeDeps, env, dev, "opinion", now);
+  if (held) return held;
   const c = await talkable(env, body.company, body.setup);
   if (!c) return json({ error: "not_found" }, 404);
   const net = await network(request, env, now);
@@ -3988,6 +4103,9 @@ async function postVote(request, env, id) {
     ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
   if (limitHit) return limitHit;
   const dev = await deviceHash(device);
+  // 1.39 [CARE-02] 마을 쉬기 중에는 투표도 쉬어요(순위를 흔들지 않게).
+  const held = await careGate(recipeDeps, env, dev, "community", now);
+  if (held) return held;
   const p = await one(env, "SELECT * FROM posts WHERE id = ?", id);
   if (!p || p.status !== "shown") return json({ error: "not_found" }, 404);
   if (p.device === dev) return json({ error: "own" }, 400);
@@ -4515,6 +4633,8 @@ function areaFor(path) {
   if (path.startsWith("/posts") || path.startsWith("/rates")) return "community";
   // 1.34 [RCP-36] 나눔 판 검토·신고·임시 조치: the same people who look after the plaza's posts.
   if (path === "/recipes" || path.startsWith("/recipes/")) return "community";
+  // 1.39 [CARE-05] 마을 돌봄(경고·쉬기)도 글을 돌보는 사람이.
+  if (path === "/care" || path.startsWith("/care/")) return "community";
   if (path.startsWith("/village/")) return "community";
   // 1.36 [GRW-02] 스튜디오 요구는 문의를 맡은 사람이, 기본 도구 후보는 장터를 맡은 사람이.
   if (path.startsWith("/growth/needs")) return "inquiries";
@@ -4698,6 +4818,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
     if (out) await audit(env, now, "write_limit_lift", m[1]);
     return json(out ?? { error: "not_found" }, out ? 200 : 404);
   }
+  // 1.39 [CARE-05] 마을 돌봄: 경고·의견 쉬기·마을 쉬기 목록, 사람 하나, 보내기, 풀기.
+  if (path === "/care" || path.startsWith("/care/")) return careAdmin(request, env, url, path, method, now);
   // 1.36 [VIL-11] 이번 주 이야기 주제 of each kind of work's plaza.
   if (path.startsWith("/village/")) {
     const v = await villageAdmin(recipeDeps, request, env, path, now, STYLE_ROOMS);
@@ -6378,6 +6500,8 @@ async function moderatePost(env, id, body, now) {
     await batch(env, stmts);
     // 1.36 [LIM-10] A post the developer hid counts like one reports hid (once: one already hidden was counted then).
     if (p.status !== "hidden") await operatorStrike(recipeDeps, env, p.device, "post", id, now);
+    // 1.39 [CARE-06] One the reports hid, looked at and kept hidden: its waiting strike counts now (마을 돌봄).
+    else await confirmStrike(recipeDeps, env, id, now);
     await audit(env, now, body.action === "mute" ? "post_mute" : "post_hide", target, reason);
   } else if (body.action === "show") {
     await batch(env, [

@@ -31,7 +31,7 @@ const ago = (now, at) => (at ? Math.max(0, Math.floor((now - at) / DAY)) : null)
 
 /** 한 설치의 모든 것(관리자가 볼 수 있는 만큼). [money]는 결제·동의를 볼 수 있는지. */
 export async function personView(env, device, now, { money = false } = {}) {
-  const [inq, reports, posts, recipes, limit, strikes, integrity, members, invites, subs, passes, rewards, consents, share] = (await batch(env, [
+  const [inq, reports, posts, recipes, limit, strikes, integrity, members, invites, subs, passes, rewards, consents, share, care] = (await batch(env, [
     stmt(env, `SELECT i.id, i.kind, i.status, i.created_at, i.updated_at, i.info, i.billing_at,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first
       FROM inquiries i WHERE i.device = ? ORDER BY i.created_at DESC LIMIT 30`, device),
@@ -48,6 +48,9 @@ export async function personView(env, device, now, { money = false } = {}) {
     stmt(env, "SELECT kind, SUM(days) AS days, COUNT(*) AS n, MAX(given_at) AS last FROM day_rewards WHERE device = ? GROUP BY kind", device),
     stmt(env, "SELECT kind, at FROM consents WHERE device = ? ORDER BY at DESC LIMIT 10", device),
     stmt(env, "SELECT guest IS NOT NULL AS gave, guest_at FROM pro_shares WHERE owner = ?", device),
+    // 1.39 [CARE-05] 마을 돌봄: 경고 수와 지금 쉬기.
+    stmt(env, `SELECT kind, COUNT(*) AS n, MAX(CASE WHEN kind != 'warn' AND lifted_at IS NULL AND until > ? THEN until END) AS until
+      FROM care_notes WHERE device = ? GROUP BY kind`, now, device),
   ])).map((r) => r.results ?? []);
   const sumBy = (rows) => Object.fromEntries(rows.map((r) => [r.status ?? r.state ?? r.kind, r.n]));
   let app = null;
@@ -68,6 +71,10 @@ export async function personView(env, device, now, { money = false } = {}) {
     until: activeSub.expiry } : activePass ? { by: "1년 이용권", product: activePass.product, until: activePass.purchased_at + 365 * DAY } : null;
   const flags = [];
   if (lim && lim.until > now) flags.push({ tone: "bad", text: `쓰기 제한 ${lim.step}단계 · ${Math.ceil((lim.until - now) / DAY)}일 남음` });
+  const careWarns = care.find((c) => c.kind === "warn")?.n ?? 0;
+  const careHold = care.filter((c) => c.until).sort((a, b) => (a.kind === "community" ? -1 : 1))[0];
+  if (careHold) flags.push({ tone: "bad", text: `${careHold.kind === "community" ? "마을 쉬기" : "의견 쉬기"} · ${Math.ceil((careHold.until - now) / DAY)}일 남음` });
+  else if (careWarns) flags.push({ tone: "warn", text: `마을 경고 ${careWarns}번` });
   if (integrity[0] && !integrity[0].ok) flags.push({ tone: "warn", text: `Play 확인 안 됨(${integrity[0].why || "이유 모름"})` });
   if (pro) flags.push({ tone: "info", text: pro.trial ? "프로 체험 중" : `프로(${pro.by})` });
   const refundAsks = inq.filter((q) => q.billing_at || /환불|결제/.test(q.first ?? "")).length;

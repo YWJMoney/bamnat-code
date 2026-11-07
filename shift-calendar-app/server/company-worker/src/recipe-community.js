@@ -7,7 +7,8 @@
 import { autoCheck, autoCheckOn, firstState, flagImage, passedPhotos, PHOTO_GUARD, PHOTO_WHY } from "./photo-guard.js";
 import { CODE, cleanText, graphemes, investAdvice, listItem, makerId, oneEmoji, sha256hex, textProblem, trustLevel } from "./recipes.js";
 import { DAY, HOUR } from "./units.js";
-import { addStrike, limitJson, operatorStrike, writeAllowance, writeLimitHit } from "./write-limits.js";
+import { careGate } from "./community-care.js";
+import { addStrike, confirmStrike, limitJson, operatorStrike, writeAllowance, writeLimitHit } from "./write-limits.js";
 
 const RC_STYLE_KEYS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
 // 1.35 [RCX-30] 그림 꾸미기 backgrounds (1080 px) fit in 160 KB; a whole look is up to 9 pictures.
@@ -213,6 +214,9 @@ async function rcRequestPost(d, env, request) {
   if (why) return d.json({ error: why, field: "body" }, 400);
   const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
+  // 1.39 [CARE-02] 의견 쉬기·마을 쉬기 중이면 글을 쉬어 가요.
+  const held = await careGate(d, env, dev, "opinion", now);
+  if (held) return held;
   // 1.36 [LIM-10] No daily cap for one install, only while strikes restrict it; one network's day still has one.
   const net = await d.network(request, env, now);
   const hit = (await writeLimitHit(d, env, dev, "rreq", now))
@@ -1138,6 +1142,8 @@ export async function communityAdmin(d, request, env, path, url, now) {
       // 1.36 [LIM-10] The operator hiding a 소개 (not one the reports already hid) or closing a profile is one strike.
       const was = await d.one(env, "SELECT device, bio_hidden, closed FROM recipe_makers WHERE maker = ?", id);
       if (was && ((what === "bio-hide" && !was.bio_hidden) || (what === "close" && !was.closed))) await rcStrike(d, env, was.device, what === "close" ? "profile" : "bio", id, Date.now(), true);
+      // 1.39 [CARE-06] A 소개 the reports hid (1), kept hidden by the operator: its waiting strike counts now.
+      else if (was && what === "bio-hide" && was.bio_hidden === 1) await confirmStrike(d, env, id, Date.now());
     }
     // bio_hidden: 1 = 신고 셋으로 저절로, 2 = 운영자가 가림.
     if (what !== "clear") await d.run(env, `UPDATE recipe_makers SET ${what.startsWith("bio") ? "bio_hidden" : "closed"} = ? WHERE maker = ?`,
