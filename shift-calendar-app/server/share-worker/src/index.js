@@ -8,6 +8,8 @@
 //                              [SHR-12] with an ETag; If-None-Match with it answers 304 while nothing changed
 // GET    /s/:id                the schedule as a web page (noindex, no scripts)
 // GET    /s/:id.ics            [FEAT-15] the same days as a calendar to subscribe to, only when the sharer turned it on
+// POST   /s/:id/tired          1.39 [IOS-04] the page's own '오늘 피곤해요' form (iPhone or no app): the same once-a-day count as the app
+// GET    /apple-touch-icon.png 1.39 [IOS-05] the icon an iPhone puts on its home screen for a page added there
 // GET    /.well-known/assetlinks.json   lets Android open /s/ links in the app (ANDROID_CERT_SHA256)
 // POST   /api/share/:id/report body {reason} -> 204   [SRV-05] the app's 신고
 // POST   /s/:id/report         the page's own form (no script) -> a thank-you page
@@ -269,6 +271,8 @@ async function route(request, env) {
   const teamPage = path.match(/^\/([bavwkc])\/([A-Za-z0-9]{22})(\/[a-z]+)?$/);
   if (teamPage) {
     if (teamPage[3] === "/report" && request.method === "POST") return teamReport(request, env, teamPage[1], teamPage[2]);
+    // 1.39 [IOS-06] Who opens the team pages, by kind of phone: a number per day only, never kept with the link.
+    if (request.method === "GET" && !teamPage[3] && !previewBot(request)) count(env, `team_${platformOf(request.headers.get("user-agent") || "")}`);
     const down = await teamDown(env, teamPage[1], teamPage[2]);
     // (route's own `page` below is a match, so the page is made outside it.)
     if (down) return teamDownPage(down);
@@ -309,6 +313,8 @@ async function route(request, env) {
   const tiredLink = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/tired$/);
   if (tiredLink && request.method === "PUT") return tiredTie(request, env, tiredLink[1]);
   if (tiredLink && request.method === "POST") return tiredSay(request, env, tiredLink[1]);
+  const tiredForm = path.match(/^\/s\/([A-Za-z0-9]{16,32})\/tired$/);
+  if (tiredForm && request.method === "POST") return tiredPress(request, env, tiredForm[1]);
   const seenApi = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/seen$/);
   if (seenApi && request.method === "GET") return seenRead(request, env, seenApi[1]);
   if (path === "/api/sign" && request.method === "POST") return signCreate(request, env, url);
@@ -337,6 +343,7 @@ async function route(request, env) {
   if (page && (request.method === "GET" || request.method === "HEAD")) return view(request, env, page[1]);
   const feed = path.match(/^\/s\/([A-Za-z0-9]{16,32})\.ics$/);
   if (feed && (request.method === "GET" || request.method === "HEAD")) return calendar(request, env, feed[1]);
+  if (path === "/apple-touch-icon.png" && (request.method === "GET" || request.method === "HEAD")) return touchIcon();
   if (path === "/app-ads.txt" && (request.method === "GET" || request.method === "HEAD")) {
     // AdMob reads this from the developer website on Play (https://bamnat.app). Public values only; APP_ADS_TXT may replace it.
     const body = (env.APP_ADS_TXT || APP_ADS_TXT).trim() + "\n";
@@ -420,10 +427,28 @@ async function view(request, env, id) {
   if (!record || Date.parse(record.expiresAt) < Date.now()) {
     return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>`), 404);
   }
-  if (request.method === "GET") { count(env, "views"); if (!previewBot(request)) await markSeen(env, id, record); }
+  const phone = platformOf(request.headers.get("user-agent") || "");
+  if (request.method === "GET") {
+    count(env, "views");
+    // 1.39 [IOS-06] The same view by kind of phone (a person, not a preview robot).
+    if (!previewBot(request)) { count(env, `views_${phone}`); await markSeen(env, id, record); }
+  }
+  const url = new URL(request.url);
+  // 1.39 [IOS-04] A leader's 피곤해요 합계 is on for this link: the page offers the press too (once a day, like the app).
+  const tired = record.tired ? await tiredState(env, id, record) : null;
   // [SHR-02] On Android the page offers the app, which keeps it as a 받은 달력 next to the user's own.
-  const android = /Android/i.test(request.headers.get("user-agent") || "");
-  return html(renderSchedule(record.schedule, record.expiresAt, android ? id : null, id));
+  return html(renderSchedule(record.schedule, record.expiresAt, phone === "android" ? id : null, id,
+    { phone, feed: `${url.host}/s/${id}.ics`, scheme: url.protocol.replace(":", ""), tired, said: url.searchParams.get("t") }));
+}
+
+/**
+ * 1.39 [IOS-02][IOS-06] Which kind of phone asked: the page's words (an iPhone has no 밤낮 app) and a count per kind.
+ * Never kept with a link or a person.
+ */
+export function platformOf(ua) {
+  if (/Android/i.test(ua)) return "android";
+  if (/iPhone|iPad|iPod|Macintosh.*Mobile/i.test(ua)) return "ios";
+  return "other";
 }
 
 /** [SRV-08] The key the company server's switch writes while new links rest. */
@@ -897,8 +922,10 @@ async function clockView(env, id, done, status = 200, known = null) {
   const body = `<h1>${esc(record.name)}님 출퇴근</h1>${record.place ? `<p class="muted">${esc(record.place)}</p>` : ""}${said}
 <div class="buttons">${button("in", "출근")}${button("out", "퇴근")}</div>
 <h2>오늘 (${today.slice(5).replace("-", "/")})</h2>${list}
-<p class="foot muted">누른 시각만 사장님에게 가요. 위치·전화번호·기기 정보는 보내지 않아요. 잘못 눌렀으면 사장님께 말해 주세요. 사장님이 확인한 뒤 급여에 넣어요.</p>${spreadSlot("clock")}`;
-  return html(page(`${record.name}님 출퇴근`, body + teamFoot("c", id)), status);
+<p class="foot muted">누른 시각만 사장님에게 가요. 위치·전화번호·기기 정보는 보내지 않아요. 잘못 눌렀으면 사장님께 말해 주세요. 사장님이 확인한 뒤 급여에 넣어요.</p>
+<p class="muted small">매일 쓰는 링크예요. 브라우저 메뉴(아이폰은 아래 공유 단추)에서 ‘홈 화면에 추가’를 누르면 아이콘으로 바로 열려요.</p>${spreadSlot("clock")}`;
+  // 1.39 [IOS-05] Added to the home screen, it is named 출퇴근 under the 밤낮 icon (iPhone and Android alike).
+  return html(page(`${record.name}님 출퇴근`, body + teamFoot("c", id), "출퇴근"), status);
 }
 
 // ---- 1.38 [P3-L-13] 근무 신청 받기 ----
@@ -1369,21 +1396,54 @@ async function tiredTie(request, env, id) {
 }
 
 async function tiredSay(request, env, id) {
-  const record = await env.SHARES.get(id, "json");
-  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || !record.tired) return json({ error: "not_found" }, 404);
-  const box = await env.SHARES.get(tiredKey(record.tired), "json");
-  if (!box || Date.parse(box.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
-  if (!(await allow(env, request, "td", LIMITS.createsPerHour))) return json({ error: "rate_limited" }, 429);
+  const said = await tiredAdd(request, env, id);
+  if (said === "not_found" || said === "rate_limited") return json({ error: said }, said === "not_found" ? 404 : 429);
+  return new Response(null, { status: 204 });
+}
+
+/** The key that marks a link's press for today (KST): the app's and the page's press are the same one. */
+async function tiredOnce(env, id) {
   const day = kstDay(new Date().toISOString());
-  const once = `tiredk:${(await sha256(`${env.RATE_SALT || "bamnat"}:${id}:${day}`)).slice(0, 24)}`;
-  if (await env.SHARES.get(once)) return new Response(null, { status: 204 });
+  return `tiredk:${(await sha256(`${env.RATE_SALT || "bamnat"}:${id}:${day}`)).slice(0, 24)}`;
+}
+
+/** Adds today's one for [id]'s team box: "ok", "again" (already today), "not_found" or "rate_limited". */
+async function tiredAdd(request, env, id) {
+  const record = await env.SHARES.get(id, "json");
+  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || !record.tired) return "not_found";
+  const box = await env.SHARES.get(tiredKey(record.tired), "json");
+  if (!box || Date.parse(box.expiresAt) < Date.now()) return "not_found";
+  if (!(await allow(env, request, "td", LIMITS.createsPerHour))) return "rate_limited";
+  const day = kstDay(new Date().toISOString());
+  const once = await tiredOnce(env, id);
+  if (await env.SHARES.get(once)) return "again";
   await kvPut(env, once, "1", { expirationTtl: 2 * 86400 });
   const keep = kstDay(new Date(Date.now() - LIMITS.tiredDays * 86400 * 1000).toISOString());
   const days = Object.fromEntries(Object.entries(box.days).filter(([d]) => d > keep));
   days[day] = (days[day] ?? 0) + 1;
   await put(env, tiredKey(record.tired), { ...box, days });
   count(env, "tired");
-  return new Response(null, { status: 204 });
+  return "ok";
+}
+
+/** 1.39 [IOS-04] For the page: null when the leader's box is gone, else whether today's press is already in. */
+async function tiredState(env, id, record) {
+  const box = await env.SHARES.get(tiredKey(record.tired), "json");
+  if (!box || Date.parse(box.expiresAt) < Date.now()) return null;
+  return { today: Boolean(await env.SHARES.get(await tiredOnce(env, id))) };
+}
+
+/** 1.39 [IOS-04] POST /s/:id/tired: the page's form, then back to the page with what happened (no script, no name). */
+async function tiredPress(request, env, id) {
+  const said = await tiredAdd(request, env, id);
+  const t = said === "ok" || said === "again" ? "1" : said === "rate_limited" ? "wait" : "off";
+  return new Response(null, { status: 303, headers: { location: `/s/${id}?t=${t}`, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+}
+
+/** 1.39 [IOS-05] The 밤낮 dial (brand/v2, the launcher icon) at 180 px, for a page an iPhone adds to its home screen. */
+function touchIcon() {
+  const bytes = Uint8Array.from(atob(TOUCH_ICON), (c) => c.charCodeAt(0));
+  return new Response(bytes, { headers: { "content-type": "image/png", "cache-control": "public, max-age=604800", "x-content-type-options": "nosniff" } });
 }
 
 const boardKey = (id) => `board:${id}`;
@@ -1843,19 +1903,29 @@ export async function flushStats(env, now = true) {
   }
 }
 
+/** 1.39 [IOS-06] The kinds [platformOf] tells apart. */
+const PHONES = ["ios", "android", "other"];
+
 async function stats(env, daysParam) {
   const n = Math.min(90, Math.max(1, parseInt(daysParam ?? "28", 10) || 28));
   await flushStats(env);
   const today = Date.now() + 9 * 3600 * 1000;
   const days = [];
+  const raw = [];
   for (let i = n - 1; i >= 0; i--) {
     const day = new Date(today - i * 86400 * 1000).toISOString().slice(0, 10);
     const got = (await env.SHARES.get(`stats:${day}`, "json")) ?? {};
-    days.push({ day, created: got.created ?? 0, views: got.views ?? 0, reports: got.reports ?? 0, removed: got.removed ?? 0, writes: got.writes ?? 0 });
+    raw.push(got);
+    days.push({ day, created: got.created ?? 0, views: got.views ?? 0, reports: got.reports ?? 0, removed: got.removed ?? 0, writes: got.writes ?? 0,
+      // 1.39 [IOS-06] People opening the pages, by kind of phone (근무표 /s and the team pages apart).
+      phones: Object.fromEntries(PHONES.flatMap((k) => [[`views_${k}`, got[`views_${k}`] ?? 0], [`team_${k}`, got[`team_${k}`] ?? 0]])) });
   }
-  const sum = (k) => days.reduce((a, d) => a + d[k], 0);
+  // 1.39 [IOS-06] Summed from what was counted, so the team counts (clocks, asks, …) that a day's row does not list add up too
+  // (they came out as null before).
+  const sum = (k) => raw.reduce((a, g) => a + (g[k] ?? 0), 0);
+  const phones = Object.fromEntries(PHONES.flatMap((k) => [`views_${k}`, `team_${k}`]).map((k) => [k, sum(k)]));
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
-  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), boards: sum("boards"), tired: sum("tired"), approximate: true };
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), boards: sum("boards"), tired: sum("tired"), phones, approximate: true };
 }
 
 // ---- input ----
@@ -2240,11 +2310,16 @@ export function spreadCard(kind, ua, back) {
   const get = android
     ? `<a class="get" href="${esc(storeHref(kind, ua))}">밤낮 받기 · 무료</a><p class="muted small">${after}</p>`
     // [SPREAD-03] No dead end on an iPhone: say what 밤낮 is and that this page keeps working.
-    : apple ? `<p class="muted small">밤낮은 Android 앱이에요. 이 링크는 iPhone에서도 그대로 계속 열려요.</p>`
+    : apple ? ""
     : `<p class="muted small">밤낮은 Android 휴대폰 앱이에요. <a href="${esc(storeLink(kind))}">Play 스토어에서 보기</a></p>`;
   const close = back
     ? `<form class="x" method="post" action="${SPREAD_HIDE}"><input type="hidden" name="back" value="${esc(back)}"><button aria-label="닫기, 이 브라우저에서 다시 안 보기">×</button></form>`
     : "";
+  // 1.39 [IOS-03] An iPhone is not promised what only the app does (내 달력·알람): it hears what 밤낮 is and who it is for.
+  if (apple) {
+    return `<aside class="spread">${close}<p class="t">밤낮은 Android 근무 달력 앱이에요</p><p class="muted small">이 링크는 iPhone에서도 그대로 계속 열려요. ` +
+      `Android 휴대폰을 쓰는 가족·동료라면 밤낮 앱으로 근무를 넣고 근무 알람까지 맞출 수 있어요.</p></aside>`;
+  }
   return `<aside class="spread">${close}<p class="t">${esc(k.title)}</p><p class="muted small">${esc(k.line)}</p>${get}</aside>`;
 }
 
@@ -2320,8 +2395,13 @@ function appLink(id, kind = "family") {
   return `intent://s/${id}#Intent;scheme=bamnat;package=com.bamnat.app;S.browser_fallback_url=${store};end`;
 }
 
-/** Month grids for every month the days touch, weeks starting on Sunday. */
-export function renderSchedule(schedule, expiresAt, appId = null, reportId = null) {
+/**
+ * Month grids for every month the days touch, weeks starting on Sunday.
+ * 1.39 [IOS-02..05] [opts]: `phone` (platformOf), `feed` ("host/s/<id>.ics" when the page is served), `tired` (tiredState or null),
+ * `said` (the ?t= answer of the 피곤해요 form).
+ */
+export function renderSchedule(schedule, expiresAt, appId = null, reportId = null, opts = {}) {
+  const ios = opts.phone === "ios";
   const types = new Map(schedule.types.map((t) => [t.id, t]));
   const byDate = new Map(schedule.days.map((d) => [d.date, d]));
   const months = [...new Set(schedule.days.map((d) => d.date.slice(0, 7)))];
@@ -2373,11 +2453,15 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
     .flatMap((k) => (k === "pay" ? [PAY_KINDS[payKind]] : k === "memos" ? memoNames : [SHOW_NAMES[k]]));
   const has = shows.length ? `<p class="muted">근무와 함께 보낸 것: ${esc(shows.join(", "))}</p>` : "";
   // [SHR-20] The page never shows the setup itself: only that the app takes it.
-  const setupLine = (schedule.setup ? `<p class="muted">회사 근무 설정도 함께 보냈어요. 밤낮 앱에서 열면 기본급만 넣고 바로 쓸 수 있어요.</p>` : "") +
-    // 1.37 [SHR-31][SHR-32] Like the setup, the page names what came and never shows it.
-    (schedule.look || schedule.kit
-      ? `<p class="muted">${schedule.look && schedule.kit ? "테마와 근무 설정" : schedule.look ? "테마" : "근무 설정"}도 함께 보냈어요. 밤낮 앱에서 열면 입어 보고 골라 넣을 수 있어요.</p>`
-      : "");
+  // 1.39 [IOS-03] An iPhone has no 밤낮 app: it is told the extras are for the Android app and the days are all here.
+  const extras = [schedule.setup && "회사 근무 설정", schedule.look && "테마", schedule.kit && "근무 설정"].filter(Boolean);
+  const setupLine = ios
+    ? (extras.length ? `<p class="muted">${esc(extras.join("·"))}도 함께 왔어요. 이건 Android 밤낮 앱에서만 받을 수 있고, 근무는 이 페이지에서 그대로 볼 수 있어요.</p>` : "")
+    : (schedule.setup ? `<p class="muted">회사 근무 설정도 함께 보냈어요. 밤낮 앱에서 열면 기본급만 넣고 바로 쓸 수 있어요.</p>` : "") +
+      // 1.37 [SHR-31][SHR-32] Like the setup, the page names what came and never shows it.
+      (schedule.look || schedule.kit
+        ? `<p class="muted">${schedule.look && schedule.kit ? "테마와 근무 설정" : schedule.look ? "테마" : "근무 설정"}도 함께 보냈어요. 밤낮 앱에서 열면 입어 보고 골라 넣을 수 있어요.</p>`
+        : "");
   const pay = schedule.pay?.length
     ? `<section class="pay"><h2>함께 보낸 ${PAY_KINDS[payKind]}</h2><ul>${schedule.pay.map((p) => {
         const [y, m] = p.month.split("-").map(Number);
@@ -2389,8 +2473,43 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
   const app = appId
     ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
-  return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
-    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""));
+  return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
+    `${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
+    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
+  "근무표");
+}
+
+/**
+ * 1.39 [IOS-02] The sharer (or the leader, IOS-01) turned the calendar address on: one button puts the days in the phone's own
+ * calendar. iPhone: webcal:// opens 캘린더's 구독. Anything else: Google Calendar's add-by-address page (Android, a computer).
+ * It follows changes within hours; it is not an alarm, and the page says so.
+ */
+export function feedButton(schedule, feed, phone, scheme = "https") {
+  if (schedule.ics !== true || !feed) return "";
+  const webcal = `webcal://${feed}`;
+  const href = phone === "ios" ? webcal : `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
+  const label = phone === "ios" ? "아이폰 캘린더에 넣기" : "구글 캘린더에 넣기";
+  return `<div class="panel feed"><p class="feed-t"><a class="get" href="${esc(href)}">${label}</a></p>` +
+    `<p class="muted small">한 번 넣어 두면 근무가 바뀔 때 캘린더도 몇 시간 안에 따라 바뀌어요. 출근 알람은 아니에요.` +
+    (phone === "ios" ? ` 카카오톡 안에서 안 열리면 오른쪽 아래 메뉴에서 'Safari로 열기' 뒤 다시 눌러 주세요.` : "") +
+    `</p><p class="muted small">다른 캘린더 앱: <span class="addr">${esc(scheme)}://${esc(feed)}</span></p></div>`;
+}
+
+/** 1.39 [IOS-04] '오늘 피곤해요' on the page, while the leader's 피곤해요 합계 is on for this link: no name goes, once a day. */
+function tiredPanel(id, tired, said) {
+  if (!id || !tired) return "";
+  const note = said === "1" ? `<p class="done">팀에 ‘피곤해요’ 하나를 더했어요. 이름은 가지 않아요.</p>`
+    : said === "wait" ? `<p class="bad">잠시 뒤에 다시 눌러 주세요.</p>` : "";
+  const button = tired.today || said === "1"
+    ? `<p class="muted small">오늘은 이미 알렸어요. 내일 다시 누를 수 있어요.</p>`
+    : `<form method="post" action="/s/${esc(id)}/tired"><button class="pick">오늘 피곤해요</button></form>`;
+  return `<div class="panel"><p class="t"><b>팀에 피곤해요 알리기</b></p>${note}` +
+    `<p class="muted small">리더에게는 하루에 몇 명이 눌렀는지만 가요. 누가 눌렀는지는 리더도 몰라요.</p>${button}</div>`;
+}
+
+/** 1.39 [IOS-05] iPhone only: a page added to the home screen opens like an app (the icon is /apple-touch-icon.png). */
+function homeHint() {
+  return `<p class="muted small">아이폰: 아래 공유 단추(□↑) › ‘홈 화면에 추가’를 누르면 다음부터 아이콘 하나로 바로 열려요.</p>`;
 }
 
 /** [SRV-05] A plain form, so reporting works without scripts (the page allows none). */
@@ -2474,9 +2593,11 @@ function hours(minutes) {
   return h && m ? `${h}시간 ${m}분` : h ? `${h}시간` : `${m}분`;
 }
 
-function page(title, body) {
+function page(title, body, short = "밤낮") {
+  // 1.39 [IOS-05] The name and icon an iPhone uses for a page added to its home screen.
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><title>${esc(title)}</title><style>
+<meta name="robots" content="noindex,nofollow"><title>${esc(title)}</title><link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="${esc(short)}"><style>
 :root{--fg:#15192B;--muted:#5b5f73;--line:#e6e2d9;--bg:#F7F4EE;--card:#fff;--sun:#d14343;--sat:#3b5bdb;--today:#C2A36B}
 @media (prefers-color-scheme:dark){:root{--fg:#F2ECE1;--muted:#a7a9b8;--line:#2a2f45;--bg:#15192B;--card:#1d2236;--sun:#ff8787;--sat:#91a7ff}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"Noto Sans KR","Apple SD Gothic Neo",sans-serif}
@@ -2505,5 +2626,9 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .spread{position:relative;margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 48px 14px 14px}.spread p{margin:0 0 4px}.spread .t{font-weight:700}
 .spread .x{position:absolute;top:4px;right:4px;margin:0}.spread .x button{width:44px;height:44px;border:none;background:none;color:var(--muted);font-size:22px;cursor:pointer}
 .spread .get{display:inline-block;margin:8px 0 4px;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}.spread a{color:var(--fg)}
+.feed p{margin:4px 0}.feed .get{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}.addr{user-select:all;word-break:break-all}
 </style></head><body><main>${body}</main></body></html>`;
 }
+
+/** 1.39 [IOS-05] apple-touch-icon.png (180×180), drawn from app/src/main/res/drawable/ic_launcher_foreground.xml on its ink background. */
+const TOUCH_ICON = "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";
