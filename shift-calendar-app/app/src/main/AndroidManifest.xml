@@ -517,6 +517,18 @@
                 android:resource="@xml/widget_money_info" />
         </receiver>
 
+        <!-- 1.39 [TASK-31] 할 일 한 줄: the same 할 일 widget, small. -->
+        <receiver
+            android:name=".widget.TaskLineWidgetReceiver"
+            android:exported="true"
+            android:label="@string/widget_task_line_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_task_line_info" />
+        </receiver>
         <!-- 1.39 [TASK-07] 할 일. -->
         <receiver
             android:name=".widget.TaskWidgetReceiver"

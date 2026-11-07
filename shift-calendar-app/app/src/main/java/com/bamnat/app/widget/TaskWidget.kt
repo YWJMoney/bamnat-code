@@ -72,7 +72,15 @@ class TaskWidget : GlanceAppWidget() {
             var shown by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(first) }
             androidx.compose.runtime.LaunchedEffect(stamp) { if (stamp != 0L) runCatching { load(context, id) }.getOrNull()?.let { shown = it } }
             WidgetLookTheme {
-                WidgetSurface(GlanceModifier) { if (shown.allowed) TaskContent(shown.rows, shown.today) else TaskLocked() }
+                // 1.39 [TASK-31] One row high (할 일 한 줄, or the big one made short): the next to-do and what is left.
+                val short = androidx.glance.LocalSize.current.height < SHORT_BELOW
+                WidgetSurface(GlanceModifier) {
+                    when {
+                        !shown.allowed -> TaskLocked(short)
+                        short -> TaskLine(shown.rows)
+                        else -> TaskContent(shown.rows, shown.today)
+                    }
+                }
             }
         }
     }
@@ -111,12 +119,23 @@ class TaskWidget : GlanceAppWidget() {
             }
         }
 
+        /** Shorter than this, the widget is one row ([TaskLine]). */
+        internal val SHORT_BELOW = 100.dp
+
         internal val MEMO_ID = ActionParameters.Key<Long>("memo")
         internal val DAY = ActionParameters.Key<String>("day")
     }
 }
 
 class TaskWidgetReceiver : GlanceAppWidgetReceiver() {
+    override val glanceAppWidget: GlanceAppWidget = TaskWidget()
+}
+
+/**
+ * 1.39 [TASK-31] 할 일 한 줄 (2×1, wider to 4×1): the same [TaskWidget], listed small in the phone's widget list. Its ids count with the
+ * big one's ([GlanceAppWidgetManager.getGlanceIds] by the widget class), so the free one is still the first 할 일 widget placed.
+ */
+class TaskLineWidgetReceiver : GlanceAppWidgetReceiver() {
     override val glanceAppWidget: GlanceAppWidget = TaskWidget()
 }
 
@@ -152,7 +171,7 @@ internal fun TaskContent(rows: List<TaskList.Row>, today: LocalDate) {
         Spacer(GlanceModifier.height(4.dp))
         if (rows.isEmpty()) {
             Text("오늘 할 일이 없어요. ＋를 눌러 써 보세요", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 2,
-                modifier = GlanceModifier.clickable(openMemo(context, 0, today)))
+                modifier = GlanceModifier.clickable(actionStartActivity(com.bamnat.app.memo.QuickTaskActivity.intent(context))))
             return@Column
         }
         LazyColumn(GlanceModifier.fillMaxWidth().defaultWeight()) {
@@ -224,10 +243,60 @@ private fun note(row: TaskList.Row, today: LocalDate): String? = listOfNotNull(
     row.count,
 ).joinToString(" · ").ifEmpty { null }
 
+/**
+ * 1.39 [TASK-31] One row: the circle of the next to-do left (late first, as the list goes), its words and time, how many are left,
+ * and ＋. With nothing left it says so.
+ */
+@Composable
+internal fun TaskLine(rows: List<TaskList.Row>) {
+    val context = androidx.glance.LocalContext.current
+    val next = rows.firstOrNull { !it.done }
+    val left = rows.count { !it.done }
+    Row(GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
+        if (next != null) {
+            val states = setOfNotNull("today".takeIf { next.kind == TaskList.Kind.TODAY }, "late".takeIf { next.kind == TaskList.Kind.LATE })
+            val check = widgetPart("widget.task.check", states - "today")
+            val toggle = actionRunCallback<TaskDoneAction>(actionParametersOf(TaskWidget.MEMO_ID to next.memo.id, TaskWidget.DAY to (next.day?.toString() ?: "")))
+            Box(GlanceModifier.width(36.dp).height(36.dp).clickable(toggle).semantics { contentDescription = "끝내기: ${next.text}" },
+                contentAlignment = Alignment.Center) {
+                Text("○", style = TextStyle(color = if (next.kind == TaskList.Kind.LATE) GlanceTheme.colors.error else GlanceTheme.colors.onSurfaceVariant,
+                    fontSize = wsp(18), fontWeight = FontWeight.Bold).widgetLetters(check), maxLines = 1, modifier = GlanceModifier.widgetBox(check, 18))
+            }
+            val line = widgetPart("widget.task", states)
+            val tail = listOfNotNull(next.time?.let { Fmt.time(it) }, "늦음".takeIf { next.kind == TaskList.Kind.LATE }, "남은 $left".takeIf { left > 1 })
+            Text(next.text.ifEmpty { "제목 없는 메모" } + tail.joinToString("") { " · $it" },
+                style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(14)).widgetLetters(line), maxLines = 1,
+                modifier = GlanceModifier.defaultWeight().clickable(openMemo(context, next.memo.id, next.day)))
+        } else {
+            Text(if (rows.isEmpty()) "오늘 할 일이 없어요" else "오늘 할 일을 다 끝냈어요",
+                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(13)), maxLines = 1,
+                modifier = GlanceModifier.defaultWeight().padding(start = 4.dp))
+        }
+        val plus = widgetPart("widget.task.add")
+        if (plus.hide != true) Box(
+            GlanceModifier.background(GlanceTheme.colors.primaryContainer).cornerRadius(16.dp).padding(horizontal = 12.dp, vertical = 4.dp)
+                .widgetBox(plus, 16).clickable(actionStartActivity(com.bamnat.app.memo.QuickTaskActivity.intent(context)))
+                .semantics { contentDescription = "할 일 쓰기" },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("＋", style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = wsp(16), fontWeight = FontWeight.Bold).widgetLetters(plus), maxLines = 1)
+        }
+    }
+}
+
 /** A second to-do widget and more without 프로: what it would do, and the way there. The first one stays free. */
 @Composable
-internal fun TaskLocked() {
+internal fun TaskLocked(short: Boolean = false) {
     val context = androidx.glance.LocalContext.current
+    if (short) {
+        Row(GlanceModifier.fillMaxSize().clickable(actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.PRO))),
+            verticalAlignment = Alignment.CenterVertically) {
+            Text("할 일 위젯 2개째부터는 프로예요", style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = wsp(13)), maxLines = 1,
+                modifier = GlanceModifier.defaultWeight())
+            Text("프로 보기", style = TextStyle(color = GlanceTheme.colors.primary, fontSize = wsp(13), fontWeight = FontWeight.Medium), maxLines = 1)
+        }
+        return
+    }
     // PC 2afb3a76 (둘째 위젯의 프로 글이 위쪽만 쓰고 아래가 비어요): in the middle, with the way there as a button.
     Column(GlanceModifier.fillMaxSize().clickable(actionStartActivity(NoticeLinks.intent(context, NoticeLinks.Target.PRO))),
         verticalAlignment = Alignment.CenterVertically, horizontalAlignment = Alignment.CenterHorizontally) {

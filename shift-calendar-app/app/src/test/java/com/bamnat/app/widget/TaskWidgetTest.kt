@@ -66,6 +66,11 @@ class TaskWidgetTest {
         val views = GlanceRemoteViews().compose(context, DpSize(250.dp, 180.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskContent(rows, today) } } }
         assertNotNull(views.remoteViews)
         assertNotNull(GlanceRemoteViews().compose(context, DpSize(250.dp, 180.dp)) { WidgetLookTheme { TaskLocked() } }.remoteViews)
+        // 1.39 [TASK-31] 할 일 한 줄: one row, with what is left, and its locked one.
+        assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(rows) } } }.remoteViews)
+        assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { TaskLine(emptyList()) } }.remoteViews)
+        assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { TaskLocked(short = true) } }.remoteViews)
+        assertTrue(TaskWidget.SHORT_BELOW > 60.dp && TaskWidget.SHORT_BELOW < 110.dp)
         // The second widget's row is 프로; the first is free whatever the tier.
         assertEquals(com.bamnat.app.tier.Tier.PRO, Feature.MORE_TASK_WIDGETS.minTier)
     }

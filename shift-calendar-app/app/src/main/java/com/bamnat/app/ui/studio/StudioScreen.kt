@@ -1424,7 +1424,9 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
             listOf(com.bamnat.app.widget.TodayWidgetReceiver::class.java to "오늘 · 2×1", com.bamnat.app.widget.WeekWidgetReceiver::class.java to "이번 주 · 4×1",
                 com.bamnat.app.widget.MonthWidgetReceiver::class.java to "이번 달 · 4×3", com.bamnat.app.widget.CountdownWidgetReceiver::class.java to "다음 근무까지 · 2×1",
                 // 1.39 [TASK-07] 할 일 위젯 (처음 하나는 무료).
-                com.bamnat.app.widget.TaskWidgetReceiver::class.java to "할 일 · 3×2").forEach { (cls, label) ->
+                com.bamnat.app.widget.TaskWidgetReceiver::class.java to "할 일 · 3×2",
+                // 1.39 [TASK-31] 할 일 한 줄 (같은 할 일 위젯, 처음 놓은 하나가 무료).
+                com.bamnat.app.widget.TaskLineWidgetReceiver::class.java to "할 일 한 줄 · 2×1").forEach { (cls, label) ->
                 androidx.compose.material3.AssistChip(onClick = {
                     if (runCatching { wm.requestPinAppWidget(android.content.ComponentName(context, cls), null, null) }.getOrDefault(false)) placed = true
                 }, label = { Text(label) })
