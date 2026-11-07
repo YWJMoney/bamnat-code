@@ -36,6 +36,11 @@ class Pc12KindsTest {
         val row = read.rows.first { it.label == "1조" }
         val kinds = SheetKinds.of(read.rows.flatMap { it.raw.values }, oldTypes)
         assertNotNull("$bundle: 글자대로 맞추기 카드", kinds)
+        // PC 12.3: a 3교대 picked (데이 06~14) and 주·야·비·휴 read: 주간 keeps the picked 06~14, not 2교대's 7~19시.
+        for (k in kinds!!.filter { !it.role.isOff }) {
+            val mine = shifts.first { it.role == k.role }.type
+            assertEquals("$bundle ${k.type.name}", "${mine.start}~${mine.end}", "${k.type.start}~${k.type.end}")
+        }
         val newTypes = kinds!!.mapIndexed { i, k -> k.type.copy(id = -(i + 1L)) }
         val after = DutyCodes(newTypes.map { DutyType(it.id, it.name, it.label, it.isOff, it.start, it.label == "야") })
         val byRole = kinds.mapIndexed { i, k -> k.role to -(i + 1L) }.toMap()
