@@ -454,9 +454,12 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
     if (forgetting) {
         val village by vm.village.collectAsStateWithLifecycle()
         LaunchedEffect(Unit) { vm.loadVillage() }
+        // 1.39 [PRIV-06] and what share links it cuts, as in 설정 › 개인정보.
+        val app = androidx.compose.ui.platform.LocalContext.current.appContainer
+        val links by androidx.compose.runtime.produceState<String?>(null) { value = runCatching { com.bamnat.app.share.ShareForget.held(app) }.getOrNull() }
         ConfirmDialog(
             title = "보낸 정보를 모두 지울까요?",
-            message = (village?.let { "마을에서 $it${com.bamnat.app.ui.Fmt.iga(it)} 지워져요.\n\n" } ?: "") + FORGET_ALL_WORDS,
+            message = (village?.let { "마을에서 $it${com.bamnat.app.ui.Fmt.iga(it)} 지워져요.\n\n" } ?: "") + (links?.let { "$it.\n\n" } ?: "") + FORGET_ALL_WORDS,
             confirmLabel = "모두 지우기",
             destructive = true,
             onDismiss = { forgetting = false },

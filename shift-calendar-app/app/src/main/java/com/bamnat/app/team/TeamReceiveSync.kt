@@ -45,6 +45,9 @@ object TeamReceiveSync {
         keep(context, teamId, null)
     }
 
+    /** 1.39 [PRIV-06] 모두 지우기 cut the table link on the server: the phone forgets it (병동 전체 보기 then reads off). */
+    fun forgetBoard(c: Context, teamId: String) = keep(c, teamId, null)
+
     /** Who opened their link since it last changed; a member without a link is left out. */
     suspend fun seen(app: AppContainer, members: List<TeamMember>): Map<String, Instant?> = members.mapNotNull { m ->
         val id = m.linkId ?: return@mapNotNull null
@@ -74,6 +77,9 @@ object TeamReceiveSync {
     suspend fun tieTired(app: AppContainer, box: String?, members: List<TeamMember>) {
         members.forEach { m -> val id = m.linkId; val t = m.linkToken; if (id != null && t != null) runCatching { app.shareApi.tiredTie(id, t, box) } }
     }
+
+    /** 1.39 [PRIV-06] 모두 지우기 cut the box on the server (and every member link with it): the phone forgets it. */
+    fun forgetTired(c: Context, teamId: String) = prefs(c).edit().remove(tiredKey(teamId)).apply()
 
     suspend fun tiredOff(app: AppContainer, context: Context, teamId: String, members: List<TeamMember>) {
         tiredBox(context, teamId)?.let { b -> tieTired(app, null, members); runCatching { app.shareApi.tiredDelete(b.id, b.token) } }
