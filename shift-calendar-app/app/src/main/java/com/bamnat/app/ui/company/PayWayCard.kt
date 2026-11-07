@@ -46,6 +46,8 @@ import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -71,17 +73,55 @@ class PayWayViewModel(
     val talk = TalkHolder(c, viewModelScope, calendar)
     /** Without the company server only the 기본급 line is left (a build with no server address). */
     val server: Boolean = c.companyApi.enabled
+    /** 1.39 발굴 2-1: the newer version of the way in use one of its senders sent since (its id), offered as '새 판으로 바꾸기'. */
+    private val _newer = MutableStateFlow<String?>(null)
+    val newer: StateFlow<String?> = _newer.asStateFlow()
+    /** 1.39 발굴 2-3: this phone's own 보완 요청 on the way in use: "open", "answered" or null. */
+    private val _myFix = MutableStateFlow<String?>(null)
+    val myFix: StateFlow<String?> = _myFix.asStateFlow()
 
-    init { load() }
+    // Read when the screen opens and again when the way in use changes (a newer version put in, 직접 만들기).
+    init {
+        viewModelScope.launch {
+            way.map { it?.companyId to it?.setup }.distinctUntilChanged().collect {
+                _newer.value = null
+                _myFix.value = null
+                load()
+            }
+        }
+    }
 
     fun load() {
         val w = way.value ?: return
         if (!c.companyApi.enabled) return
         viewModelScope.launch {
-            runCatching { c.companyApi.company(w.companyId) }.getOrNull()?.setups?.firstOrNull { it.id == w.setup }?.let { s ->
+            val page = runCatching { c.companyApi.company(w.companyId) }.getOrNull() ?: return@launch
+            _newer.value = page.newer[w.setup]?.takeIf { n -> n != w.setup && page.setups.any { it.id == n && it.hasPay } }
+            page.setups.firstOrNull { it.id == w.setup }?.let { s ->
                 _opinion.value = s.opinion
                 _text.value = s.text.takeIf { !s.payHidden }
+                _myFix.value = s.myFix
             }
+        }
+    }
+
+    /**
+     * 1.39 발굴 2-1: '새 판으로 바꾸기': the newer version is read (its pay part taken, as '이 급여 방식 쓰기') and waits for its 기본급
+     * on this screen ([PendingWayAsk]); nothing changes until '이대로 계산'. [done] gets the error, or null.
+     */
+    fun takeNewer(done: (String?) -> Unit) {
+        val w = way.value ?: return done(null)
+        val next = _newer.value ?: return done(null)
+        viewModelScope.launch {
+            val error = try {
+                when (com.bamnat.app.company.PayFind(c, calendar).use(w.companyId, next, PendingWay.Source.NEWER)) {
+                    is com.bamnat.app.company.PayFind.Used.Ready -> { c.telemetry.event("pay_way", "newer"); null }
+                    com.bamnat.app.company.PayFind.Used.Gone -> "새 판을 찾지 못했어요. 잠시 뒤 다시 해 주세요"
+                }
+            } catch (e: CompanyException) {
+                companyProblem(e)
+            }
+            done(error)
         }
     }
 
@@ -207,7 +247,12 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
     val voted = w.vote ?: opinion?.mine?.let { it == "ok" }
     var unfolded by rememberSaveable(w.company, w.dept) { mutableStateOf(false) }
     LaunchedEffect(said) { if (said != null) { kotlinx.coroutines.delay(4_000); if (!proposing) { said = null; unfolded = false } } }
-    if (voted != null && !unfolded && said == null && !proposing) {
+    val newer by vm.newer.collectAsStateWithLifecycle()
+    val myFix by vm.myFix.collectAsStateWithLifecycle()
+    var newerError by remember { mutableStateOf<String?>(null) }
+    // 1.39 발굴 2-1·2-3: a newer version, or an answer to my 보완 요청, keeps the card open (folded, they would go unseen).
+    val news = newer != null || (myFix == "answered" && vm.fixOpen)
+    if (voted != null && !unfolded && said == null && !proposing && !news) {
         SoftCard(modifier) {
             Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -249,6 +294,11 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
                 if (w.shared) OutlinedButton(onClick = { leaving = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("직접 만들기") }
                 return@Column
             }
+            // 1.39 발굴 2-1 (1-4 "고친 판이 나와도 쓰는 분은 옛 판에 머물러요"): one who shared this way sent a corrected one; the
+            // way in use does not follow by itself, so it is offered here, put in the same way as '이 급여 방식 쓰기'.
+            if (newer != null) NewerWayLine(error = newerError, onTake = { newerError = null; vm.takeNewer { e -> newerError = e } })
+            // 1.39 발굴 2-3: what became of my 보완 요청 (처리방침 3.12, as 보완 요청 itself).
+            if (vm.fixOpen) myFix?.let { m -> MyFixLine(answered = m == "answered", onTalk = vm::openTalk) }
             if (voted != null && unfolded) TextButton(onClick = { unfolded = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
             VoteButtons(w.vote ?: opinion?.mine?.let { it == "ok" }, onVote = { ok, why ->
                 said = null
@@ -304,16 +354,19 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BaseAskSheet(profile: PayProfile, month: java.time.YearMonth, onDismiss: () -> Unit, onSave: (Long, Int?) -> Unit) {
+fun BaseAskSheet(profile: PayProfile, month: java.time.YearMonth, onDismiss: () -> Unit,
+    /** 1.39 [PAYP-04] The way is someone else's: the 기본급 alone, the 통상시급 hours not shown. */
+    locked: Boolean = false,
+    onSave: (Long, Int?) -> Unit) {
     var base by rememberSaveable { mutableStateOf(BaseAsk.known(profile, month)) }
     var hours by rememberSaveable { mutableStateOf<Int?>(null) }
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text("기본급을 확인해 주세요", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            Text("회사 방식은 규칙만 가져와요. 금액은 내 명세서대로 넣어야 예상 급여가 맞아요.", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
-            BaseFields(profile.wageType, base, { base = it }, hours, { hours = it }, profile, month)
+            Text(if (locked) SharedPayWords.BASE_ONLY else "회사 방식은 규칙만 가져와요. 금액은 내 명세서대로 넣어야 예상 급여가 맞아요.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            BaseFields(profile.wageType, base, { base = it }, hours, { hours = it }, profile, month, hideHours = locked)
             Button(onClick = { base?.let { onSave(it, hours) } }, enabled = (base ?: 0) > 0, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                 Text("이대로 계산")
             }
@@ -347,7 +400,12 @@ private fun PendingWayAsk(vm: PayWayViewModel, profile: PayProfile?) {
             Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 PendingDone(c, company, asking, onDone = {}, onSaved = null,
-                    intro = if (asking.source == PendingWay.Source.APPLY) "‘${asking.title}’ 근무주기를 넣었어요" else null,
+                    intro = when (asking.source) {
+                        PendingWay.Source.APPLY -> "‘${asking.title}’ 근무주기를 넣었어요"
+                        // 1.39 발굴 2-1: the corrected version of the way in use.
+                        PendingWay.Source.NEWER -> "‘${asking.title}’ 공유한 분이 고친 새 판이에요"
+                        else -> null
+                    },
                     onSkip = { company.cancelPending(c, asking) })
             }
         }
@@ -366,4 +424,38 @@ private fun PendingWayAsk(vm: PayWayViewModel, profile: PayProfile?) {
     }
     // [PAYG-08] "고치면 의견으로": the company's way with the user's hours, ready to send to its talk (or let go).
     hoursAsk?.let { (w, h) -> HoursProposalSheet(CompanyWayText(w.way(), w.text), h) { ways.hoursAsked() } }
+}
+
+/** 1.39 발굴 2-1: "공유한 분이 고친 판을 새로 올렸어요" with 새 판으로 바꾸기. */
+@Composable
+internal fun NewerWayLine(error: String?, onTake: () -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(PayWayWords.NEWER, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                Text(PayWayWords.NEWER_HINT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            TextButton(onClick = onTake, modifier = Modifier.heightIn(min = 48.dp)) { Text(PayWayWords.NEWER_TAKE) }
+        }
+        error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    }
+}
+
+/** 1.39 발굴 2-3: my 보완 요청 on the way in use: waiting, or answered with 토론 보기. */
+@Composable
+internal fun MyFixLine(answered: Boolean, onTalk: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Text(if (answered) PayWayWords.FIX_ANSWERED else PayWayWords.FIX_WAITING, style = MaterialTheme.typography.bodyMedium,
+            color = if (answered) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        TextButton(onClick = onTalk, modifier = Modifier.heightIn(min = 48.dp)) { Text("토론 보기") }
+    }
+}
+
+/** 1.39 발굴 2-1·2-3: the pay way card's lines, one place for the card and the tests. */
+object PayWayWords {
+    const val NEWER = "공유한 분이 고친 판을 새로 올렸어요"
+    const val NEWER_HINT = "바꾸면 기본급만 다시 확인하고 바로 계산해요. 바꾸기 전엔 지금 방식 그대로예요."
+    const val NEWER_TAKE = "새 판으로 바꾸기"
+    const val FIX_WAITING = "보낸 보완 요청 · 공유한 분의 답을 기다리는 중"
+    const val FIX_ANSWERED = "보낸 보완 요청에 답이 왔어요"
 }

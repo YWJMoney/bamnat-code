@@ -63,4 +63,18 @@ class GrowNudgesTest {
         repeat(3) { later = GrowNudges.undone(later, today.plusDays(14)) }
         assertTrue(GrowNudges.feedbackAfterUndo(later, today.plusDays(14)))
     }
+
+    /** 1.39 [SPREAD-07] '동료에게 알려 주기': only after the person's own first step, the day it first shows, once per kind. */
+    @Test fun thePeerInviteComesOnceADayAfterTheFirstStepAndNeverAgain() {
+        val day = LocalDate.of(2026, 11, 7)
+        val s = GrowState()
+        assertFalse("not before the leader sent links", GrowNudges.peerInvite(s, com.bamnat.core.guide.Peer.TEAM, day))
+        val due = s.copy(peerDue = setOf(com.bamnat.core.guide.Peer.TEAM))
+        assertTrue(GrowNudges.peerInvite(due, com.bamnat.core.guide.Peer.TEAM, day))
+        assertFalse("the boss card is its own", GrowNudges.peerInvite(due, com.bamnat.core.guide.Peer.BOSS, day))
+        val shown = due.copy(peerShownOn = mapOf(com.bamnat.core.guide.Peer.TEAM to day))
+        assertTrue("the whole day it showed", GrowNudges.peerInvite(shown, com.bamnat.core.guide.Peer.TEAM, day))
+        assertFalse("never on a later day", GrowNudges.peerInvite(shown, com.bamnat.core.guide.Peer.TEAM, day.plusDays(1)))
+        assertFalse("closed: gone", GrowNudges.peerInvite(due.copy(peerDone = setOf(com.bamnat.core.guide.Peer.TEAM)), com.bamnat.core.guide.Peer.TEAM, day))
+    }
 }

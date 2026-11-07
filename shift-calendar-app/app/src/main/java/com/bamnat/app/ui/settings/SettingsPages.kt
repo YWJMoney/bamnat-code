@@ -495,7 +495,7 @@ private fun NoticesPage(
     val context = LocalContext.current
     val canPost = remember(refresh) { Notifications.canPost(context) }
     val off = remember(refresh) {
-        listOf(Notifications.ALARM_CHANNEL_ID, Notifications.DAY_CHANNEL_ID, Notifications.COMMUTE_CHANNEL_ID,
+        listOf(Notifications.ALARM_CHANNEL_ID, Notifications.DAY_CHANNEL_ID, Notifications.SLEEPING_CHANNEL_ID, Notifications.COMMUTE_CHANNEL_ID,
             Notifications.MONEY_CHANNEL_ID, Notifications.LEAVE_CHANNEL_ID, Notifications.TODAY_CHANNEL_ID,
             // PC 8fe7d8b3: 밤낮 소식·문의 답 채널도 꺼져 있으면 여기서 바로 알려요.
             Notifications.PLAZA_CHANNEL_ID, Notifications.INQUIRY_CHANNEL_ID)
@@ -541,7 +541,7 @@ private fun NoticesPage(
             set(on) { it.copy(bedtimeNotice = on) }
         }
         SwitchRow("자는 중 표시", "‘잠들었어요’를 누르면 알림창에 잔 시간과 다음 알람이 보이고, ‘깼어요’로 끝내요", settings.sleepingNotice,
-            warning = warning(settings.sleepingNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
+            warning = warning(settings.sleepingNotice, Notifications.SLEEPING_CHANNEL_ID), onFix = fix(Notifications.SLEEPING_CHANNEL_ID)) { on ->
             set(on) { it.copy(sleepingNotice = on) }
         }
         // 1.38 [SLEEP-01] Only once the `sleep.auto` flag is open (처리방침 새 판 뒤).
@@ -609,6 +609,10 @@ private fun NoticesPage(
             settings.payDepositNotice, warning = warning(settings.payDepositNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(payDepositNotice = on) }
         }
+        // 1.39 [PAYX-62] 발굴 G3-M3: 알바만. 급여 화면 알바 카드의 '이 알림 끄기'로 끈 것을 여기서 다시 켜요.
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) SwitchRow(com.bamnat.core.pay.WeekHoursNudge.ROW,
+            "이번 주 근무가 15시간 바로 아래·위면 급여 화면 알바 카드에 한 줄로 알려 줘요. 주휴수당은 한 주 15시간부터예요(근로기준법 제18조 제3항)",
+            settings.weekHoursNudge) { on -> vm.update { it.copy(weekHoursNudge = on) } }
         if (leave) SwitchRow("연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 남는 날을 알려 줘요(연차 화면에서도 끌 수 있어요)", settings.leaveNotice,
             warning = warning(settings.leaveNotice, Notifications.LEAVE_CHANNEL_ID), onFix = fix(Notifications.LEAVE_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveNotice = on) }
@@ -749,7 +753,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             SwitchRow("휴대폰 배경색에 맞추기", "배경화면 색으로 앱의 색을 바꿔요", settings.dynamicColor) { v -> vm.update { it.copy(dynamicColor = v) } }
         }
-        // 1.39 [FLOW-14][DSG-07] 밤 색: 시간에 맞춘 자동 밤 모드 (잘 시간·새벽 근무 중), 끔, 휴대폰 따름.
+        // 1.39 [FLOW-14][DSG-07] 밤 색: 끔, 수면 화면만(기본), 잘 시간엔 앱 전체, 휴대폰 따름.
         NightLookRow(settings.nightLook) { k -> vm.update { it.copy(nightLook = k) } }
         // [CVW-08] 1.35 앱 강조색: buttons, the picked tab and what is selected, over the app's own blue.
         AccentRow(settings.accentColor) { c -> vm.update { it.copy(accentColor = c) } }
@@ -973,6 +977,11 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         HorizontalDivider()
         // [FEAT-07] The same, kept up to date by itself (프로).
         PhoneCalendarRows(vm)
+    }
+    // 1.39 [SPREAD-05] The corner '밤낮' on pictures that leave the phone, on until the user turns it off.
+    SectionCard(title = "보내는 사진") {
+        SwitchRow(EXPORT_MARK_ROW, if (settings.exportMark) "근무표 사진 오른쪽 아래, 견적서·거래내역서 맨 아래에 작게 들어가요. 받은 분이 앱을 찾을 수 있어요"
+            else "근무표·견적서·거래내역서 사진에 밤낮 표시 없이 보내요", settings.exportMark) { on -> vm.update { it.copy(exportMark = on) } }
     }
     if (vm.shareOn) ShareLinkRows()
 }
@@ -1401,6 +1410,8 @@ internal const val FREE_LOOK_ROW = "화면 꾸미기 (모든 화면)"
 /** 1.32 [LEDX-23] 설정 › 화면과 글자's row for the heat map, for 설정 찾기 and the tests. */
 internal const val SPEND_HEAT_ROW = "지출 히트맵"
 internal const val WORK_TIME_ROW = "큰 지출을 근무 시간으로"
+/** 1.39 [SPREAD-05] 설정 › 데이터, also found by search. */
+internal const val EXPORT_MARK_ROW = "보내는 사진에 밤낮 표시"
 internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 /** 1.32 [WTYP-12] */
 internal const val STRETCH_ROW = "연속 근무 경고"
@@ -1486,7 +1497,7 @@ internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
     )
 }
 
-/** 1.39 [FLOW-14][DSG-07] 밤 색, here and on the sleep screen: the three choices with what each does. */
+/** 1.39 [FLOW-14][DSG-07] 밤 색, here and on the sleep screen: the four choices with what each does. */
 @Composable
 internal fun NightLookRow(key: String, onPick: (String) -> Unit) {
     val now = com.bamnat.core.design.NightLook.of(key)

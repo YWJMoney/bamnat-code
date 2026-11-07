@@ -50,7 +50,7 @@ Claude Code는 저장소 맨 위의 이 파일을 저절로 읽어요(클라우�
 | 곳 | 무엇 |
 |---|---|
 | `YWJMoney/bamnat-code` (비공개) | 앱·워치·서버·문서 코드 전부. 개발은 여기서 |
-| `YWJMoney/-` (공개) | GitHub Pages만: `privacy/`, `terms/`, `community/`, `remote/`. 코드·설계 문서는 절대 올리지 않아요. 이 네 폴더를 고치면 공개 저장소에도 같은 내용을 PR로 올려요 |
+| `YWJMoney/-` (공개) | GitHub Pages만: `privacy/`, `terms/`, `community/`, `remote/`, `r/`(레시피 링크 페이지), `calc/`·`shift/`(검색용 무료 계산기·교대 달력, 공개 저장소 PR #16, Play 링크 출처 `utm_source=bamnat_web`). 코드·설계 문서는 절대 올리지 않아요. 이 폴더들을 고치면 공개 저장소에도 같은 내용을 PR로 올려요. Play로 가는 링크에는 출처를 붙여요: 검색 페이지 `bamnat_web`, 받는 쪽 페이지 `bamnat_share`, 친구 초대 `bamnat_invite`(1.39 SPREAD-02) |
 | 사용자 PC `C:\bamnat` | `bamnat-code`를 받아 둔 곳(에뮬레이터 검증용). 원격 저장소는 `bamnat-code`여야 해요(옛 `-` 주소는 이제 공개 Pages) |
 | 프로젝트 파일 `/mnt/project-files/` | 계획·출시 파일·사용자 안내. 계정을 바꾸면 사라지니, 코드에 필요한 규칙은 이 저장소에 적어요 |
 
@@ -133,7 +133,7 @@ Claude Code는 저장소 맨 위의 이 파일을 저절로 읽어요(클라우�
 5. 사용자가 "1.37.0 나갔어"라고 하면 `POST /api/admin/desk/ship {version, notify:true}`(먼저 `dry:true`로 몇 건인지 보고). 실서버에 쓰는 일이니 사용자가 그 판을 말했을 때만 해요.
 6. 끝나면 보고 한 장: 답 N, 개발사항 N, 물어볼 것 N, 막힌 단계(장부 `flow.stages`의 `stuck`).
 
-**1.39부터 자동 순환(G10, `shift-calendar-app/docs/plans/1.39-G10-자동순환.md`)**: 서버가 Play 프로덕션 트랙을 읽어 100% 출시를 보면 1시간 보류 뒤 5항의 '나간 판 저장'을 스스로 해요(관리자 앱 › 자동 순환에서 취소·끄기). 개발 PR은 `shift-calendar-app/ops/dev-status.jsonl`에 그 개발사항 줄(d 번호나 추적 번호, status, size, route, done이면 news·shipReply)을 같이 고치고 `python3 tools/dev_status.py check`를 통과시켜요. **문의 원문·개인정보와 요금(tier)은 그 파일에 적지 않아요**(요금은 사용자 논의 뒤 최고 관리자만, Claude는 `tierAsk`로 제안만). route `server`로 done이면 `python3 tools/dev_status.py build`로 `dev-built.js`도 갱신해요.
+**1.39부터 자동 순환(G10, `shift-calendar-app/docs/plans/1.39-G10-자동순환.md`)**: 서버가 Play 프로덕션 트랙을 읽어 100% 출시를 보면 1시간 보류 뒤 5항의 '나간 판 저장'을 스스로 해요(관리자 앱 › 자동 순환에서 취소·끄기). 개발 PR은 `shift-calendar-app/ops/dev-status.jsonl`에 그 개발사항 줄(d 번호나 추적 번호, status, size, route, done이면 news·shipReply)을 같이 고치고 `python3 tools/dev_status.py check`를 통과시켜요(문의로 생긴 고침, 곧 d 번호 + size fix의 done 줄엔 그 문제를 재현한 시험 이름 `test`, LOOP-21). **문의 원문·개인정보와 요금(tier)은 그 파일에 적지 않아요**(요금은 사용자 논의 뒤 최고 관리자만, Claude는 `tierAsk`로 제안만). route `server`로 done이면 `python3 tools/dev_status.py build`로 `dev-built.js`도 갱신해요.
 
 ## 4. 출시 파일 만들기와 자가 점검
 

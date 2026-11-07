@@ -174,6 +174,15 @@ class TodayFlowTest {
         val during = TodayFlow.of(at(2, 16), r, alarmsOn = true)
         assertEquals("근무 중 · 22:00까지", during.headline)
         assertEquals("퇴근 뒤 잘 시간 23:00–04:30 · 오늘은 쉴 틈이 8시간뿐이에요", during.detail)
+        // 1.39 G6 발굴: a shop speaks of opening and closing, field work of starting and ending.
+        val shop = TodayFlow.of(at(2, 16), r, alarmsOn = true, talk = TodayFlow.WorkTalk.of(com.bamnat.core.work.WorkStyle.BUSINESS))
+        assertEquals("영업 중 · 22:00까지", shop.headline)
+        assertEquals("마감 뒤 잘 시간 23:00–04:30 · 오늘은 쉴 틈이 8시간뿐이에요", shop.detail)
+        assertEquals("마감까지", TodayFlow.countdown(shop)?.label)
+        val field = TodayFlow.of(at(2, 16), r, alarmsOn = true, talk = TodayFlow.WorkTalk.of(com.bamnat.core.work.WorkStyle.FIELD))
+        assertEquals("일하는 중 · 22:00까지", field.headline)
+        assertEquals("일 끝까지", TodayFlow.countdown(field)?.label)
+        assertEquals("퇴근까지", TodayFlow.countdown(during)?.label)
     }
 
     @Test

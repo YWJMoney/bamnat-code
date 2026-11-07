@@ -84,6 +84,10 @@ export function adminLib() {
     month: "달을 다시 골라 주세요",
     months: "보상은 1~12개월로 골라 주세요",
     muted: "쓰기가 막힌 기기예요",
+    // 1.39 [CARE-05] 마을 돌봄.
+    ambiguous: "그 표시로 여러 사람이 찾아져요. 글 번호나 더 긴 표시로 찾아 주세요",
+    warn_first: "먼저 경고를 보내 주세요. 불법·성적인 내용·개인 정보 노출만 바로 쉬게 할 수 있어요",
+    off: "마을 돌봄이 아직 꺼져 있어요(운영 규칙·처리방침 시행일에 켜져요)",
     name: "이름을 1~30자로 적어 주세요",
     nick: "별명을 다시 확인해 주세요",
     no_database: "데이터베이스가 연결되지 않았어요",
@@ -337,7 +341,7 @@ export function adminLib() {
     desk: { label: "운영 장부", old: "운영 장부 체크시트 할 일함 정리함 대기열 누락 기한 넘김 다시 열림 상태 중복 자동 분류 자동 대응 Claude 넘기기 개발 결과 붙여 넣기 Claude 차례 최고 관리자 확인 CSV work sort desk ledger" },
     // 1.39 [LOOP] 자동 순환(Play 출시 감지·저장소 동기화·정기 출시 열차·멈춤 스위치·믿을수록 더 맡기기·보상 규칙), 결정함, 요금 판단.
     loop: { label: "자동 순환", area: "dev", old: "자동 순환 자동 출시 Play 트랙 출시 감지 보류 저장소 동기화 GitHub 정기 출시 열차 2주 인앱 업데이트 멈춤 스위치 믿을수록 맡기기 바로 보내기 보상 규칙 쓰면 쌓이는 날 영향도 대기열 loop" },
-    decide: { label: "결정함", area: "dev", old: "결정함 최고 관리자 확인 Claude 초안 무료 프로 요금 정하기 decide" },
+    decide: { label: "결정함", area: "dev", badge: (o) => (o.decideUrgent ?? 0) + (o.decideAsks ?? 0) + (o.decideBack ?? 0) + (o.decideHalts ?? 0) + (o.decideTiers ?? 0), strip: "결정할 것", old: "결정함 최고 관리자 확인 Claude 초안 무료 프로 요금 정하기 decide" },
     tiers: { label: "요금 판단", area: "metrics", old: "요금 판단 무료 프로 관측치 새 기능 요금 tier tiers" },
     // 1.36 [GRW-04][GRW-05][GRW-06] 스튜디오 요구 묶음, 기본 도구 후보, 손잡이 지도.
     growth: { label: "스튜디오 요구", area: "inquiries", old: "스튜디오 요구 자가 발전 기본 도구 후보 모두의 도구 승격 손잡이 지도 출시 노트 growth" },
@@ -1267,7 +1271,7 @@ export function adminLib() {
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
     post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", reward_auto: "보상 저절로 지급", settings: "채택 설정 바꿈",
-    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", village_topic: "광장 이번 주 주제 바꿈", village_contest: "이달의 주제 공모 바꿈",
+    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", village_contest: "이달의 주제 공모 바꿈",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
     inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈",
     dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",

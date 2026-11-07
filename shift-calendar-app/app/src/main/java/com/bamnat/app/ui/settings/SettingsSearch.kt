@@ -179,6 +179,8 @@ internal object SettingsIndex {
      * work has. No kind chosen keeps everything.
      */
     internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?, flowAdded: Boolean = false): Boolean {
+        // 1.39 [PAYX-62] 주 15시간 경계 알림은 알바에만 있어요.
+        if (style != null && style != com.bamnat.core.work.WorkStyle.HOURLY && e.title == com.bamnat.core.pay.WeekHoursNudge.ROW) return false
         if (style == null || style.usesPayEngine) return !(style == com.bamnat.core.work.WorkStyle.HOURLY && e.title == "연차 사용 촉진 알림")
         val place = e.place
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
@@ -248,6 +250,8 @@ internal object SettingsIndex {
         row(N, "나갈 돈·받을 돈", "고정비", "미수금", "돈 알림", "받을 돈"),
         // D 1.32 [PAYA-05]
         row(N, "급여 입금 비교", "월급 들어옴", "급여 알림", "입금 비교", "월급날 알림"),
+        // 1.39 [PAYX-62] 알바만(fits).
+        row(N, com.bamnat.core.pay.WeekHoursNudge.ROW, "주휴", "주휴수당", "15시간", "주 15시간", "쪼개기"),
         row(N, "연차 사용 촉진 알림", "연차", "휴가 알림", "연차 소멸 안내", "소멸", "사용 촉진"),
         // [LEAVE-06]
         screen(P.title, "연차", SettingsGo.LEAVE, "연차 원장", "남은 연차", "연차 계산", "입사일", "이월", "보상휴가", "연차수당"),
@@ -300,7 +304,7 @@ internal object SettingsIndex {
         screen("스튜디오 › 앱 전체 › 부품", "부품 움직임", SettingsGo.STUDIO_PARTS, "움직임", "효과", "부품 효과", "애니메이션", "흔들림", "깜빡임", "부품", "animation"),
         row(C, "촘촘하게", "넉넉하게", "간격", "밀도", "한 화면에 많이"),
         row(C, "오전/오후로 보기", "오전", "오후", "12시간", "24시간", "시각 표기"),
-        row(C, "밤 색", "밤 모드", "야간 모드", "어두운 색", "붉은 색", "눈부심", "잘 시간", "새벽", "밤에 어둡게", "다크 모드"), // 1.39 [FLOW-14][DSG-07]
+        row(C, "밤 색", "밤 모드", "야간 모드", "어두운 색", "붉은 색", "눈부심", "잘 시간", "새벽", "밤에 어둡게", "다크 모드", "수면 화면만"), // 1.39 [FLOW-14][DSG-07]
         row(C, "칸이 보이기", "칸이", "캐릭터", "마스코트", "그림 친구", "캐릭터 끄기"), // 1.38 [FLOW-26]
         row(C, "하루 이야기 줄", "하루 이야기", "타임라인", "시간 순서", "하루 흐름", "이야기 줄 끄기"), // 1.38 [FLOW-08]
         row(C, "하루 다이얼", "다이얼", "24시간 원", "시계", "하루 원"), // 1.39 [FLOW-28]
@@ -328,6 +332,7 @@ internal object SettingsIndex {
         row(D, "휴대폰 캘린더에 근무 쓰기", "구글 캘린더", "삼성 캘린더", "캘린더 연동", "캘린더에 쓰기", "동기화"), // [FEAT-07]
         row(D, GROUP_ROW, "모임 코드", "조 근무표", "동료 근무표 모아", "나란히 보기", "팀 근무표").takeIf { share }, // [SHR-14]
         row(D, CUT_ALL_ROW, "링크 지우기", "공유 끊기", "링크 모두 끊기", "공유 그만", "링크 삭제").takeIf { share }, // [SHR-13]
+        row(D, EXPORT_MARK_ROW, "워터마크", "로고", "밤낮 글자", "사진 표시", "견적서 표시", "표시 끄기"), // 1.39 [SPREAD-05]
         row(V, "개인정보 처리방침", "개인정보", "처리방침"),
         row(V, SENT_ROW, "보낸 정보", "모두 지우기", "정보 삭제", "삭제", "탈퇴", "계정 삭제", "내 정보 지우기", "프로필 지우기", "마을 지우기", "거두기").takeIf { board }, // [PRF-05]
         row(V, SUMMARY_ROW, "동의", "권한 요약", "내가 허용한 것", "보내는 것", "권한 한눈에", "동의 내역"), // [ALRM-02]

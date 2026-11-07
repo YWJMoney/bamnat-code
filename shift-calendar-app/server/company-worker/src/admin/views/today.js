@@ -121,9 +121,12 @@ export function todayViews(A) {
     return `<section class="card todo-card">${head}
       <ul class="rows inbox">${rows.map((x) => {
         const more = bundleOf(x);
+        // 1.39 [ADM3-39] 발굴: 묶음의 다른 문의에도 같은 답을 한 번에(다른 사람이 맡은 것은 빼요). 기본은 꺼 둬요.
+        const also = more.filter((o) => !o.assignee || o.mine);
         const answer = x.type === "inquiry" && editInq && (!x.assignee || x.mine) ? `<details class="quick" data-key="qr:${esc(x.id)}"><summary>바로 답하기</summary>
-          <form data-form="quick-reply" data-id="${esc(x.id)}"><label class="sr" for="qr-${esc(x.id)}">답</label>
+          <form data-form="quick-reply" data-id="${esc(x.id)}" data-others="${esc(also.map((o) => o.id).join(","))}"><label class="sr" for="qr-${esc(x.id)}">답</label>
             <textarea id="qr-${esc(x.id)}" name="text" maxlength="4000" required placeholder="보낸 분 앱에 보일 답을 적어요"></textarea>
+            ${also.length ? `<label class="switch"><input type="checkbox" name="all"><span class="track" aria-hidden="true"></span><span>비슷한 문의 ${also.length}건에도 같은 답 보내기</span></label>` : ""}
             <div class="actions"><button class="btn" type="submit" data-close="1">답하고 닫기</button><button class="btn primary" type="submit">보내기</button></div></form></details>` : "";
         return `<li><div class="row">
         <span class="row-main"><b><span class="kind">${esc(INBOX_NAMES[x.type] ?? x.type)}${more.length ? ` ${more.length + 1}건` : ""}</span> <a href="${inboxLink(x)}">${esc(x.title)}</a></b>

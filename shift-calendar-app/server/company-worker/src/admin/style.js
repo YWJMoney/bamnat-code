@@ -158,6 +158,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .fieldset{margin:0 0 1rem}
 .field{display:flex;gap:.5rem}
 .field input{flex:1;min-width:0}
+.field.stack{flex-direction:column;gap:.25rem}.field.stack>span{font-weight:600;font-size:.9rem}
 .plain{list-style:none;margin:.25rem 0;padding:0;display:grid;gap:.4rem}.plain label{display:flex;gap:.5rem;align-items:baseline;flex-wrap:wrap}
 .searchbar{display:flex;gap:.5rem;margin-bottom:.75rem;flex-wrap:wrap}
 .searchbar input{flex:1 1 12rem;min-width:0}
@@ -169,6 +170,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:0 0 .6rem}
 .card h3{font-size:.98rem}
 .grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem}
+.grid>h3.span{grid-column:1 / -1;margin:.75rem 0 0;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 @media (min-width:600px){.grid.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.grid.two>.card{margin:0}}
 @media (min-width:1024px){.cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:1rem;align-items:start}.cols>*{min-width:0}}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem}

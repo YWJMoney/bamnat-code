@@ -116,6 +116,9 @@ def check_item(n, x):
             say("done에는 shipReply(판이 나간 날 묶인 문의에 가는 답)를 꼭 미리 적어요")
         if not x.get("news"):
             say("done에는 news(앱 업데이트 소식 한 줄, 사용자 말로)를 꼭 적어요")
+        # [LOOP-21] 재현 시험 먼저: 문의로 생긴(d 번호) 고침은 그 문제를 다시 만드는 시험 이름을 남겨요. 시험으로 못 잡는 것은 "PC: …"로.
+        if x.get("id") and x.get("size") == "fix" and not x.get("test"):
+            say("문의로 생긴 고침(size fix + id)의 done에는 test(그 문제를 재현한 시험 이름, 시험으로 못 잡으면 \"PC: 무엇을 봤는지\")를 적어요")
     if x.get("status") == "check" and not x.get("check"):
         say("check에는 PC에서 무엇을 볼지(check 칸)를 적어요")
     if x.get("status") == "rejected" and not x.get("reason"):

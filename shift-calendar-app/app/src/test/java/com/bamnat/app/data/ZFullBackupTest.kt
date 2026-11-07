@@ -45,7 +45,7 @@ class ZFullBackupTest {
         restDayCompared = true, phoneDayView = PhoneDayView.WEEK, showDayCard = true, appLock = true,
         calendarLayout = "cards:a", statsLayout = "stats:b", manageLayout = "plan,-keep", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
         alarmMission = "math", shiftMissions = mapOf(shiftId to "math"), wakeCheckMinutes = 10, widgetMemo = false,
-        backupPhotos = false, moneyLayout = "money:c", moneyCheckOpen = true, budgetRollover = "식비", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", cellList = "on", rateHint = false, alarmSuggest = false,
+        backupPhotos = false, moneyLayout = "money:c", moneyCheckOpen = true, budgetRollover = "식비", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", cellList = "on", rateHint = false, alarmSuggest = false, exportMark = false,
         // 1.25 AB.
         alarmButtonAction = "snooze",
         // 1.35 [FREE-03..08] 꾸미기.
@@ -67,7 +67,7 @@ class ZFullBackupTest {
         usageStatsLookup = true, afterAlarmCard = false, watchAlarm = AppSettings.WATCH_ALARM_WATCH, watchCalendar = "side-job",
         // 1.32 [CALX-03][CALX-04][CALX-05][LEDX-07][PAYA-05][UX132-05][UX132-06].
         tapSelectFirst = true, textAsked = true, compact = false, textStep = 3, clock12 = true, spendInCells = true, spendHeat = true, backupNudge = false,
-        payDepositNotice = false, calendarOnly = true, statsPeriod = StatsPeriod.MONTH, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true, shiftPreviewNotice = !s.shiftPreviewNotice, shiftPreviewHour = 7, moneyChallenge = "NO_SPEND|20000",
+        payDepositNotice = false, weekHoursNudge = false, calendarOnly = true, statsPeriod = StatsPeriod.MONTH, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true, shiftPreviewNotice = !s.shiftPreviewNotice, shiftPreviewHour = 7, moneyChallenge = "NO_SPEND|20000",
         // 1.32 조사 대조 [WTYP-12][WTYP-16].
         stretchLimitHours = 24, leaveTimeNotice = true,
         // 1.38 [SLEEP-04] 잠드는 소리.

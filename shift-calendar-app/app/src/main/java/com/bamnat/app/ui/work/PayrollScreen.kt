@@ -159,7 +159,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                 StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${ledger.lines.size}명")
                 // 1.39 [BOSS-12] 산재보험 (사업주만) with the 4대보험 once the 업종 is picked.
                 StatTile(if (place.industry != null) "사장님 4대보험·산재" else "사장님 4대보험", Fmt.won(ledger.employerInsurance + ledger.accident), Modifier.weight(1f),
-                    caption = if (ledger.accident > 0) "산재 ${Fmt.won(ledger.accident)} 포함 · 참고" else "참고")
+                    caption = if (ledger.accident > 0) "산재 등 ${Fmt.won(ledger.accident)} 포함 · 참고" else "참고")
             }
             // 1.39 G2 (PC f7f61818, 상): someone the law puts in the 4대보험 with nothing ticked makes the 사장님 몫 0원.
             val unticked = ledger.lines.map { it.staff }.filter { com.bamnat.core.boss.InsuranceRules.unticked(it, place.legalBreaks) }
@@ -249,10 +249,14 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
             if (!next.allowed) { ask = next; return@OutlinedButton }
             editing = StaffMember(UUID.randomUUID().toString(), "", base = RateTable.on(ym.atDay(1)).minimumHourlyWage)
         }, enabled = !isClosed) { Text("직원 더하기") }
+        // 1.39 [SPREAD-07] After the first staff member is in: one card, once, to tell another 사장님.
+        val hasStaff = staff.isNotEmpty()
+        LaunchedEffect(hasStaff) { if (hasStaff) context.appContainer.grow.peerDue(com.bamnat.core.guide.Peer.BOSS) }
+        if (hasStaff) com.bamnat.app.ui.pro.PeerInviteCard(com.bamnat.core.guide.Peer.BOSS)
         // 1.38 가져오기: a staff list in any file or photo (엑셀·CSV·PDF·사진), checked on one page before anyone is added.
         var reading by remember { mutableStateOf<String?>(null) }
         var importing by remember { mutableStateOf<Pair<List<com.bamnat.core.boss.StaffImport.Line>, Boolean>?>(null) }
-        val pickList = com.bamnat.app.ui.team.rememberAnyFilePicker { uri ->
+        fun readList(uri: android.net.Uri) {
             scope.launch {
                 reading = "명단을 읽고 있어요…"
                 when (val got = com.bamnat.app.imports.ManageImport.staff(context, uri, Today.date())) {
@@ -266,6 +270,13 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                     }
                 }
             }
+        }
+        val pickList = com.bamnat.app.ui.team.rememberAnyFilePicker { uri -> readList(uri) }
+        // 1.39 [READ-31]: a staff list shared from 카카오톡·갤러리 is read here at once, as one picked with the button.
+        val sharedList by com.bamnat.app.imports.SharedToManage.staffShared.collectAsStateWithLifecycle()
+        LaunchedEffect(place.id, isClosed, sharedList) {
+            if (!isClosed) com.bamnat.app.imports.SharedToManage.takeStaff()?.let(::readList)
+            else if (sharedList != null) reading = "이 달은 닫혀 있어요. 열린 달로 옮기면 받은 명단을 바로 읽어요."
         }
         OutlinedButton(onClick = pickList, enabled = !isClosed) { Text("명단 파일·사진에서 가져오기") }
         reading?.let { Hint(it) }

@@ -60,8 +60,10 @@ class M10NoticeTest {
         // [SCHED-01] 메모 일정 is the ninth, [SHR-12] 근무표 링크 기간 the tenth, [FEAT-18] 잠금 화면 오늘 근무 the eleventh.
         // [INV-08] 투자 알림 the twelfth, [MON-06] 구독 안내 (the trial's question) the thirteenth,
         // [PROV-03] 자동 백업 the fourteenth, [COMM-10] 광장 소식 the fifteenth, [RUL-04] 내 규칙 알림 the sixteenth, 1.36 문의 답 the seventeenth,
-        // 1.38 [P3-B-11] 직원 출퇴근 the eighteenth, 1.39 [TEAM-22] 받은 근무표 바뀜 the nineteenth (하루 안내).
-        assertEquals(19, channels.size)
+        // 1.38 [P3-B-11] 직원 출퇴근 the eighteenth, 1.39 [TEAM-22] 받은 근무표 바뀜 the nineteenth (하루 안내),
+        // 1.39 [SLEEP-06] 자는 중 the twentieth (하루 안내, silent but not folded).
+        assertEquals(20, channels.size)
+        assertEquals("하루 안내", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).group }.name.toString())
         assertEquals("하루 안내", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.ROSTER_CHANNEL_ID).group }.name.toString())
         assertEquals("하루 안내", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.BACKUP_CHANNEL_ID).group }.name.toString())
         assertEquals("돈과 휴가", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.PRO_CHANNEL_ID).group }.name.toString())
@@ -137,12 +139,18 @@ class M10NoticeTest {
         val sleeping = posted(Notifications.SLEEPING_ID)!!
         assertTrue(sleeping.flags and Notification.FLAG_ONGOING_EVENT != 0)
         assertEquals("깼어요", sleeping.actions.single().title.toString())
+        // 1.39 (PC 5c4ad849): not in the folded 무음 group, still without a sound.
+        assertEquals(Notifications.SLEEPING_CHANNEL_ID, sleeping.channelId)
+        assertEquals(NotificationManager.IMPORTANCE_DEFAULT, nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).importance)
+        assertNull(nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).sound)
         assertTrue(sleeping.extras.getString(Notification.EXTRA_TITLE)!!.endsWith("부터 자는 중"))
         SleepingNotice.woke(context, SleepEntry(1, now.minusHours(7).minusMinutes(30), now), "오늘 19:00 야간")
         val woke = posted(Notifications.SLEEPING_ID)!!
         assertEquals("7시간 30분 잤어요", woke.extras.getString(Notification.EXTRA_TITLE))
         assertEquals("다음: 오늘 19:00 야간", woke.extras.getCharSequence(Notification.EXTRA_TEXT).toString())
         assertTrue(woke.flags and Notification.FLAG_ONGOING_EVENT == 0)
+        // 1.39 G5-B1 (PC 1.38 최종 사용성 6): 깼어요 by a sleepy hand is undone from the notice, the sleep going on.
+        assertEquals(listOf("아직 자요"), woke.actions.map { it.title.toString() })
         // Left open for 16 hours, it was a missed 깼어요: no notice.
         SleepingNotice.show(context, SleepEntry(2, now.minusHours(17), null), null, now)
         assertNull(posted(Notifications.SLEEPING_ID))

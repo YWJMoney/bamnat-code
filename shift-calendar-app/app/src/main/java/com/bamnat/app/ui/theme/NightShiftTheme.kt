@@ -4,14 +4,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.luminance
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.data.ThemeMode
 import com.bamnat.core.model.NightShift
-import kotlinx.coroutines.delay
-import java.time.LocalDateTime
 import com.bamnat.core.time.Today
+import java.time.LocalDateTime
+import kotlinx.coroutines.delay
 
 /**
  * [SHFT-05] 야간 근무 중 어둡게: dark while the calendar on the calendar tab is in a night shift (one whose
@@ -109,12 +110,12 @@ fun rememberNightMode(look: String, sleeping: Boolean): Boolean {
 /**
  * 1.39 [FLOW-14][DSG-07] 시간에 맞춘 자동 밤 모드 for the whole app ([com.bamnat.core.design.NightRule.app]): while a sleep is open,
  * inside the sleep planned around the calendar's work (the same plan as 오늘의 흐름) and at 01~05 (a night shift's dawn, or bed).
- * Read once a minute; nothing is read at all while 밤 색 is 끔.
+ * Read once a minute; nothing is read at all while 밤 색 is 끔 or 수면 화면만 (the default).
  */
 @Composable
 fun rememberAppNight(settings: com.bamnat.app.data.AppSettings, container: AppContainer): Boolean {
     val look = com.bamnat.core.design.NightLook.of(settings.nightLook)
-    if (look == com.bamnat.core.design.NightLook.OFF) return false
+    if (look == com.bamnat.core.design.NightLook.OFF || look == com.bamnat.core.design.NightLook.SCREENS) return false
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
     if (look == com.bamnat.core.design.NightLook.PHONE) return dark
     val now = rememberMinute()
@@ -137,7 +138,35 @@ fun rememberAppNight(settings: com.bamnat.app.data.AppSettings, container: AppCo
 /** The sleep screen's content in [NightPalette] when [night]; the app's own colours otherwise. */
 @Composable
 fun NightSurface(night: Boolean, content: @Composable () -> Unit) {
+    NightBars(night, androidx.compose.material3.MaterialTheme.colorScheme.background.luminance() > 0.5f)
     if (!night) return content()
     androidx.compose.material3.MaterialTheme(colorScheme = NightPalette.scheme, typography = androidx.compose.material3.MaterialTheme.typography,
         shapes = androidx.compose.material3.MaterialTheme.shapes, content = content)
+}
+
+/**
+ * 1.39 (PC 5c4ad849: 밤 색일 때 상태 표시줄 글자가 어두운 바탕에서 안 보여요): while a screen is drawn in [NightPalette] the status and
+ * navigation bar icons are light; leaving it (or the night ending) gives them back to the app's own ground ([appLight]), not to
+ * what they were when it opened (the app may have turned to 밤 색 meanwhile).
+ */
+@Composable
+private fun NightBars(night: Boolean, appLight: Boolean) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (view.isInEditMode) return
+    val restore = androidx.compose.runtime.rememberUpdatedState(appLight)
+    fun set(light: Boolean) {
+        var c = view.context
+        while (c is android.content.ContextWrapper && c !is android.app.Activity) c = c.baseContext
+        (c as? android.app.Activity)?.window?.let { w ->
+            androidx.core.view.WindowCompat.getInsetsController(w, view).apply {
+                isAppearanceLightStatusBars = light
+                isAppearanceLightNavigationBars = light
+            }
+        }
+    }
+    // Every frame while night, so a screen skin drawn around it does not put dark icons back.
+    if (night) androidx.compose.runtime.SideEffect { set(false) }
+    androidx.compose.runtime.DisposableEffect(night) {
+        onDispose { if (night) set(restore.value) }
+    }
 }

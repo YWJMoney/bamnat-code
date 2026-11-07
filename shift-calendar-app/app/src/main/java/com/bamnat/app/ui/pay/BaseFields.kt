@@ -61,6 +61,11 @@ internal fun BaseFields(
     /** 1.36 PC Y17: 다음 was tapped with the base empty: said in red under the field, and the cursor goes there. */
     missing: Boolean = false,
     focus: androidx.compose.ui.focus.FocusRequester? = null,
+    /**
+     * 1.39 [PAYP-04] (3차 통합 PC): the pay uses someone else's way, so the 통상시급 기준 시간 is theirs and neither shown nor
+     * changed here: only the user's own amount is asked.
+     */
+    hideHours: Boolean = false,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MoneyField(
@@ -91,7 +96,7 @@ internal fun BaseFields(
                 style = MaterialTheme.typography.bodySmall,
                 color = if (under) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (wage != WageType.MONTHLY) return@Column
+        if (wage != WageType.MONTHLY || hideHours) return@Column
         val company = companyHours?.takeIf { it in BaseAsk.HOURS_RANGE }
         // [PAYG-08] The company's hours are shown, not folded away: they are what the pay is counted on.
         var open by rememberSaveable { mutableStateOf(hours != null || company != null) }
