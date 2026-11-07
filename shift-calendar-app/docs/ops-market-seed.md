@@ -14,7 +14,7 @@
 ```bash
 cd shift-calendar-app/server/company-worker
 node tools/materials-seed.mjs --check                 # 재료 300개(아이콘 200·배경 100) 그림·이름·id 점검
-node tools/materials-seed.mjs --files <내보낼 폴더>      # 재료-01.json … (파일마다 50개, 무료·광고 표시 포함)
+node tools/materials-seed.mjs --files <내보낼 폴더>      # 재료-01.json … (파일마다 25개, 5MB 아래, 무료·광고 표시 포함)
 node tools/market-seed.mjs --set 139 --check           # 판마다 묶음 점검(136·138·138s·138r·139)
 node tools/market-seed.mjs --set 139                   # docs/recipes/market-139.json 갱신
 ```
