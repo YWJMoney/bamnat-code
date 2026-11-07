@@ -151,6 +151,8 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
             return false
         }
         c.received.put(ready.id, ready.share)
+        // 1.39 [TEAM-22] PC a483ca15: opening a followed link again brings its new copy in; what changed goes into my days too.
+        viewModelScope.launch { com.bamnat.app.share.RosterFollower.settle(c, ready.id) }
         c.received.view(ready.id)
         c.telemetry.event("received_add", if (ready.existing) "again" else "new")
         _preview.value = Preview.Idle

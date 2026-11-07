@@ -154,6 +154,11 @@ data class ReceivedCalendar(
     val note: FollowNote? = null,
     /** 1.39 [SLEEP-15][P3-L-18] The leader asked for 피곤해요 합계 on this link ([ReceivedShare.tired]): the sleep screen offers the button. */
     val tired: Boolean = false,
+    /**
+     * 1.39 [TEAM-22] PC a483ca15: the link's schedule my own days were last matched to. Whatever updates [raw] (opening the link
+     * again, the setup's own read, a 모임 copy), [RosterFollower] compares this with [raw], so no change slips by unseen.
+     */
+    val basis: JSONObject? = null,
 ) {
     val schedule: SharedSchedule? by lazy { raw?.let { runCatching { SharedSchedule.parse(it) }.getOrNull() } }
     val gone: Boolean get() = raw == null
@@ -267,13 +272,15 @@ class ReceivedCalendarStore(
     fun update(id: String, share: ReceivedShare): ReceivedCalendar? = if (get(id) == null) null else put(id, share)
 
     /** Adds the link, or brings an existing one up to date, and returns it. */
-    fun put(id: String, share: ReceivedShare, mine: Boolean = false): ReceivedCalendar {
+    fun put(id: String, share: ReceivedShare, mine: Boolean = false, basis: JSONObject? = null): ReceivedCalendar {
         val now = clock()
         val old = get(id)
         val title = share.schedule.optString("title").trim()
         val color = old?.color ?: ReceivedCalendar.COLORS[_calendars.value.size % ReceivedCalendar.COLORS.size]
         val cal = ReceivedCalendar(id, title, color, old?.addedAt ?: now, now, share.updatedAt, share.expiresAt, share.schedule, share.etag,
-            mine = mine || old?.mine == true, adopted = old?.adopted == true, follow = old?.follow, note = old?.note, tired = share.tired)
+            mine = mine || old?.mine == true, adopted = old?.adopted == true, follow = old?.follow, note = old?.note, tired = share.tired,
+            // A new link starts from what is seen now (or what the setup filled the days from); a kept one keeps the last matched copy.
+            basis = basis ?: old?.basis ?: old?.raw ?: share.schedule)
         write(if (old == null) _calendars.value + cal else _calendars.value.map { if (it.id == id) cal else it })
         return cal
     }
@@ -292,19 +299,25 @@ class ReceivedCalendarStore(
     /** The sharer cut the link or it ran out: the schedule goes, the entry stays to say so; [reason] the developer's, if they took it down. */
     fun markGone(id: String, reason: String? = null) {
         val now = clock()
-        write(_calendars.value.map { if (it.id == id) it.copy(raw = null, fetchedAt = now, etag = null, removedReason = reason) else it })
+        write(_calendars.value.map { if (it.id == id) it.copy(raw = null, fetchedAt = now, etag = null, removedReason = reason, basis = null) else it })
     }
 
     /** Clears what ran out by the phone's own clock, even with no internet to ask. */
     fun expire(now: Instant = clock()) {
         if (_calendars.value.any { !it.gone && it.expiresAt?.isBefore(now) == true }) {
-            write(_calendars.value.map { if (!it.gone && it.expiresAt?.isBefore(now) == true) it.copy(raw = null, etag = null) else it })
+            write(_calendars.value.map { if (!it.gone && it.expiresAt?.isBefore(now) == true) it.copy(raw = null, etag = null, basis = null) else it })
         }
     }
 
     /** 1.39 [TEAM-22] '내 달력에 넣기' was pressed: a later change of this link is offered. */
     fun markAdopted(id: String) {
-        if (get(id)?.adopted == false) write(_calendars.value.map { if (it.id == id) it.copy(adopted = true) else it })
+        // The days just put in are this copy's, so it is what a later change is compared with.
+        write(_calendars.value.map { if (it.id == id) it.copy(adopted = true, basis = it.raw ?: it.basis) else it })
+    }
+
+    /** 1.39 [TEAM-22] My days now match [schedule] of this link. */
+    fun setBasis(id: String, schedule: JSONObject?) {
+        write(_calendars.value.map { if (it.id == id) it.copy(basis = schedule) else it })
     }
 
     /** 1.39 [TEAM-22] 바뀌면 바로 넣기 / 물어보기 / 넣지 않기 for this link. */
@@ -371,6 +384,7 @@ class ReceivedCalendarStore(
         follow?.let { put("follow", it) }
         note?.let { put("note", it.toJson()) }
         if (tired) put("tired", true)
+        basis?.let { put("basis", it) }
     }
 
     private fun fromJson(o: JSONObject): ReceivedCalendar? {
@@ -380,7 +394,8 @@ class ReceivedCalendarStore(
             time("addedAt") ?: Instant.EPOCH, time("fetchedAt"), time("updatedAt"), time("expiresAt"), o.optJSONObject("schedule"),
             o.optString("etag").takeIf { it.isNotEmpty() }, o.optString("removedReason").takeIf { it.isNotEmpty() }, o.optBoolean("mine", false),
             adopted = o.optBoolean("adopted", false), follow = o.optString("follow").takeIf { it.isNotEmpty() },
-            note = FollowNote.fromJson(o.optJSONObject("note")), tired = o.optBoolean("tired", false))
+            note = FollowNote.fromJson(o.optJSONObject("note")), tired = o.optBoolean("tired", false),
+            basis = o.optJSONObject("basis"))
     }
 
     companion object {

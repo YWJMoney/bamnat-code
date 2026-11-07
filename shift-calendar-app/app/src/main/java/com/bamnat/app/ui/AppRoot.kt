@@ -391,9 +391,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     // 1.38 PC 11차: opened from a teammate's 근무표 link on a new phone, the first screen names it and offers the
                     // matching start (매달 나오는 근무표) in one tap.
                     val waitingLink by container.received.opening.collectAsStateWithLifecycle()
-                    val waitingSchedule by produceState<com.bamnat.app.share.SharedSchedule?>(null, waitingLink) {
-                        value = waitingLink?.let { id -> runCatching { com.bamnat.app.share.SharedSchedule.parse(container.shareApi.read(id).schedule) }.getOrNull() }
+                    // 1.39 [TEAM-22] The copy the setup fills the days from, kept as what later changes are compared with.
+                    val waitingRaw by produceState<org.json.JSONObject?>(null, waitingLink) {
+                        value = waitingLink?.let { id -> runCatching { container.shareApi.read(id).schedule }.getOrNull() }
                     }
+                    val waitingSchedule = remember(waitingRaw) { waitingRaw?.let { runCatching { com.bamnat.app.share.SharedSchedule.parse(it) }.getOrNull() } }
                     val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
                     // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
                     val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
@@ -421,9 +423,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             // 1.38 PC 12.3: the link that started the setup is kept as a 받은 달력 (it is the team's, and follows its next
                             // 판), and the waiting link is let go, so the calendar does not offer to add it again after the setup.
                             val id = waitingLink
+                            val filledFrom = waitingRaw
                             container.received.open(null)
                             if (id != null) rootScope.launch {
-                                runCatching { container.received.put(id, container.shareApi.read(id), mine = true) }
+                                // PC a483ca15 (12/3 주→야 not put in): the days come from [filledFrom]; a change the 리더 made since is
+                                // put in by the next look, not lost in this fresh read.
+                                runCatching { container.received.put(id, container.shareApi.read(id), mine = true, basis = filledFrom) }
                                 // 1.39 [TEAM-22] The 리더's later changes of this link come into the member's days by themselves.
                                 com.bamnat.app.share.RosterFollower.sync(container.appContext, container)
                             }

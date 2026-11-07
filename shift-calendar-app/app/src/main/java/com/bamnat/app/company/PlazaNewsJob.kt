@@ -242,7 +242,7 @@ class PlazaNewsJob : JobService() {
                 val old = cal.schedule
                 val after = c.received.update(cal.id, got)
                 // 1.39 [TEAM-22] A followed link's change goes into the user's own days (or is asked) before the old copy is gone.
-                if (after != null) runCatching { com.bamnat.app.share.RosterFollower.follow(c, cal, after) }
+                if (after != null) com.bamnat.app.share.RosterFollower.settle(c, cal.id)
                 val new = runCatching { SharedSchedule.parse(got.schedule) }.getOrNull() ?: continue
                 val changed = ReceivedChanges.nextDays(old, new, today)
                 if (changed.isNotEmpty()) lines += "${cal.name} " + changed.take(2).joinToString(", ") +
