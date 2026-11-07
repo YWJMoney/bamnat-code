@@ -44,7 +44,7 @@ object SheetKinds {
     /**
      * [READ-40] The picked [row] in the new kinds. A work day keeps its part (주간 stays 주간) by [oldRole] → [newId]; a cell the
      * old kinds could not read is read again from what the photo said there ([RosterRow.raw]). A day off is 비번 right after a
-     * 야간·당번, else 휴무, yellow where the day's own word says otherwise or nothing says which.
+     * 야간·당번, else 휴무, yellow where the day's own word does not say the same.
      * 1.38 PC 10차: reading again from the words alone left most days empty (8일부터 모두 쉬는 날). PC 11차: a word can sit a day
      * off (the anchor reading's date line lost 2·3·6·8·9일), which put 비 on a 야 day and 휴 on 비 days.
      */
@@ -92,9 +92,7 @@ object SheetKinds {
                 else -> mine ?: ShiftRole.OFF
             }
             cells[d] = if (pick == ShiftRole.AFTER_DUTY) DutyCell.Shift(afterDuty!!) else rest
-            // PC 12.2 (사용성): not yellow for want of a word of its own: the day before says it. Yellow when the day's own word
-            // says otherwise, the day before is not known, or the cell was in doubt already.
-            if (mine != null && mine != pick || afterDuty != null && prev == null && mine == null || d in row.guessed || d in row.unsure) guessed += d
+            if (mine != pick || d in row.guessed) guessed += d
         }
         return RosterPeriod.fill(listOf(row.copy(cells = cells, guessed = guessed))).first()
     }

@@ -48,7 +48,6 @@ object RosterPeriod {
             val cells = row.cells.toMutableMap()
             val guessed = row.guessed.toMutableSet()
             val filled = row.filled.toMutableSet()
-            val settled = HashSet<Int>()
             // Only between the first and last day the line was read on: past its ends a 조 roster may turn (Y9, a real
             // roster whose 31일 broke the repeat), and a guess there would only look like a reading.
             val span = row.cells.filterValues { it !is DutyCell.Unknown }.keys
@@ -63,12 +62,8 @@ object RosterPeriod {
                 val split = d in row.unsure && d in (first + 2)..(end - 2) && want !is DutyCell.Unknown
                 val fill = now == null || now is DutyCell.Unknown || (replaceDoubtful && d in doubt && now != want) || split && now != want
                 if (fill && now != want) { cells[d] = want; guessed += d; if (now == null || now is DutyCell.Unknown) filled += d }
-                // [READ-41] 1.38 PC 12.2 (사용성): a clean 조 roster showed '노란 칸 15개' — cells only one or two readings saw. A cell
-                // the readings split on that says what the line's repeat says, inside the line, is not one to look at.
-                else if (d in row.unsure && now == want && d in (first + 2)..(end - 2)) settled += d
             }
-            if (cells == row.cells && settled.isEmpty()) row
-            else row.copy(cells = cells.toSortedMap(), guessed = guessed, filled = filled, unsure = row.unsure - settled)
+            if (cells == row.cells) row else row.copy(cells = cells.toSortedMap(), guessed = guessed, filled = filled)
         }
     }
 }

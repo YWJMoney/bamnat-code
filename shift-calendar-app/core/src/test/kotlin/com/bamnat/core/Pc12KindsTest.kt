@@ -45,9 +45,6 @@ class Pc12KindsTest {
         val letter = newTypes.associate { it.id to it.label }
         val got = (1..30).joinToString("") { d -> (again.cells[d] as? DutyCell.Shift)?.let { letter[it.shiftTypeId] } ?: "." }
         assertEquals(bundle, truth, got)
-        // PC 12.2: '노란 칸 15개' on a clean roster. Only the days the photo left blank (filled from the repeat) are left to look at.
-        val yellow = again.doubtful(30)
-        assertEquals("$bundle 노란 칸 $yellow", true, yellow.size <= 4 && yellow.containsAll(setOf(5, 18)))
     }
 
     @Test fun twoShifts() = check(ShiftBundles.TWO)
