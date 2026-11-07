@@ -197,6 +197,13 @@ internal object MarketShots {
         data object Rules : Face
     }
 
+    /** 1.39 [MKF-01] 내 앱에 입혀 보기가 먼저 여는 탭: 카드가 보여 주는 화면의 탭. */
+    fun tabOf(f: Face): String = when (f) {
+        is Face.Tab -> f.tab
+        Face.Pay -> TabOrder.STATS
+        else -> TabOrder.CALENDAR
+    }
+
     fun faceOf(item: RecipeItem, r: Recipe): Face {
         val kinds = r.pieces.map { it.kind }.toSet()
         if (LookParts.partUnit(r) == LookParts.LOGIC || (kinds.isNotEmpty() && kinds.all { it == PieceKind.LOGIC })) return Face.Rules
@@ -221,6 +228,42 @@ internal object MarketShots {
             PieceKind.ALARMS in kinds -> Face.Alarm
             else -> Face.Tab(TabOrder.CALENDAR)
         }
+    }
+
+    /**
+     * 1.39 [MKF-02] 크게 넘겨 보기의 위아래: 이 작품이 바꾸는 모든 화면, 카드가 보여 주는 화면([faceOf])부터. 테마는 달력만이 아니라
+     * 가계부·메모·급여·위젯·알람·규칙까지 (사용자 2026-11-07 "테마는 말그대로 모든 것을 꾸민 모습"). [style]에 없는 탭(투자의 급여 등)은 빼요.
+     */
+    fun faces(item: RecipeItem, r: Recipe, style: com.bamnat.core.work.WorkStyle?): List<Face> {
+        val kinds = r.pieces.map { it.kind }.toSet()
+        val first = faceOf(item, r)
+        if (first == Face.Rules || item.scope == "part") return listOf(first)
+        val payLook = r.pieces.firstOrNull { it.kind == PieceKind.SCREEN_LOOK }?.values?.get("pay") != null
+        val all = buildList {
+            add(first)
+            if (PieceKind.SHIFT_LOOK in kinds || PieceKind.CAL_THEME in kinds || PieceKind.CAL_VIEW in kinds || PieceKind.SCREEN_LOOK in kinds)
+                add(Face.Tab(TabOrder.CALENDAR))
+            if (PieceKind.MONEY_LOOK in kinds || PieceKind.SCREEN_LOOK in kinds) add(Face.Tab(TabOrder.MONEY))
+            if (PieceKind.MEMO_LOOK in kinds || PieceKind.MEMO_TEMPLATES in kinds || PieceKind.SCREEN_LOOK in kinds) add(Face.Tab(TabOrder.MEMOS))
+            if ((PieceKind.CARDS in kinds || payLook) && marketTabFits("pay", style)) add(Face.Pay)
+            if (PieceKind.WIDGET in kinds) add(Face.Widget)
+            if (PieceKind.ALARMS in kinds && marketTabFits("alarm", style)) add(Face.Alarm)
+            if (PieceKind.LOGIC in kinds) add(Face.Rules)
+        }
+        return all.distinct()
+    }
+
+    /** 1.39 [MKF-02] 그 화면의 이름 (넘겨 보기 위아래 칩), 이 유형의 말로. */
+    fun faceName(f: Face, style: com.bamnat.core.work.WorkStyle?): String = when (f) {
+        is Face.Tab -> when (f.tab) {
+            TabOrder.MONEY -> marketTabLabel("money", style)
+            TabOrder.MEMOS -> marketTabLabel("memo", style)
+            else -> marketTabLabel("calendar", style)
+        }
+        Face.Pay -> marketTabLabel("pay", style)
+        Face.Widget -> "위젯"
+        Face.Alarm -> "알람"
+        Face.Rules -> "규칙·단추"
     }
 
     private fun tabFace(t: String, kinds: Set<PieceKind>): Face = when (t) {
@@ -331,6 +374,22 @@ private fun ShotFrame(
             else -> standIn()
         }
         // On top of everything drawn, so the example's own taps and scroll never take the card's.
+        Box(Modifier.fillMaxSize().pointerInput(onClick) { detectTapGestures { onClick() } })
+    }
+}
+
+/**
+ * 1.39 [MKF-02] 작품의 한 화면을 [width] 폭으로 바로 그려요 (넘겨 보기·상세 맨 위). 카드와 같은 예시 폰이고, 예시 안의 단추는 누르지 않아요
+ * (위에 덮은 층이 누름을 받고, 끌기는 바깥의 넘기기로 가요). [onClick]은 그 누름이에요.
+ */
+@Composable
+internal fun WorkFace(r: Recipe, face: MarketShots.Face, width: Dp, style: WorkStyle?, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
+    val height = width * (MarketShots.PHONE_H / MarketShots.PHONE_W)
+    val d = androidx.compose.ui.platform.LocalDensity.current
+    Box(modifier.size(width, height).clip(RoundedCornerShape(width / 10)).clearAndSetSemantics { contentDescription = "작품 모습" }) {
+        androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(d.density, 1f)) {
+            ShotPhone(face, r, style, width / MarketShots.PHONE_W.dp)
+        }
         Box(Modifier.fillMaxSize().pointerInput(onClick) { detectTapGestures { onClick() } })
     }
 }

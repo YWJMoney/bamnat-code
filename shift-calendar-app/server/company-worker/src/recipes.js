@@ -16,7 +16,7 @@ import { DAY, HOUR } from "./units.js";
 import { careGate, careRepeat } from "./community-care.js";
 import { makerMarks, markFields } from "./maker-mark.js";
 import { addStrike, confirmStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
-import { FORMULA, formulaProblem, formulaTextProblem, fxCallKeys } from "./formula.js";
+import { FORMULA, formulaProblem, formulaTextProblem, fxCallKeys, fxReadsValue } from "./formula.js";
 import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
 import { cellExtra, screenExtra, fillProblem, fontId, photoAdjust, photoFrame, motionProblem } from "./materials.js";
 import { waitingPhotos } from "./photo-guard.js";
