@@ -361,7 +361,10 @@ object PayrollLedger {
             val h = cut.cut10(InsuranceRules.HEALTH_BASE_MIN, sh.health)
             (h + cut.cut10(h, sh.careRatio)) - (health + care)
         } else 0
-        return all - (if (ins.pension) 0 else pension) - (if (ins.health) 0 else health + care) - (if (ins.employment) 0 else employment) + floor
+        // 1.39 [PAYX-61] 발굴 G3-B7: 사업주 몫 건강보험료도 월 상한(보건복지부고시 제2025-222호, 반쪽 4,591,740원).
+        val cap = com.bamnat.core.pay.TakeHome.healthCap(on)
+        val ceiling = if (ins.health && cap != null && health > cap) (cap + cut.cut10(cap, sh.careRatio)) - (health + care) else 0
+        return all - (if (ins.pension) 0 else pension) - (if (ins.health) 0 else health + care) - (if (ins.employment) 0 else employment) + floor + ceiling
     }
 
     /** [BOSS-05] 최저임금 미달, 주휴가 빠진 주, 결근, 아직 모르는 5인 여부, the engine's own 확인 필요. */
