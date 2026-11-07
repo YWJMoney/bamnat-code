@@ -116,6 +116,8 @@ class DecorTest {
         val bg = DecorItem(DecorKind.PHOTO, "0123456789abcdef", "bg.calendar", full = true)
         assertEquals(Decor(listOf(bg)), Decor.decode(Decor(listOf(bg)).encode()))
         assertFalse(Decor.decode("""[{"photo":"0123456789abcdef","at":"cal.cell","w":10,"h":10,"full":true}]""").items.single().full)
+        // 1.39 작품제작: the widget's 꾸밈 층 is the widget's size, so a frame can go round all of it.
+        assertTrue(Decor.decode("""[{"shape":"frame","at":"widget","w":100,"h":100,"full":true}]""").items.single().full)
     }
 }
 

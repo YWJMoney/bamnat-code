@@ -79,6 +79,7 @@ import com.bamnat.app.ui.TopLevel
 import com.bamnat.app.ui.calendar.CalendarPart
 import com.bamnat.app.ui.components.asColor
 import com.bamnat.app.ui.components.contentColorOn
+import com.bamnat.app.ui.theme.fillWith
 import com.bamnat.app.ui.memo.MemoPart
 import com.bamnat.app.ui.money.MoneyPart
 import com.bamnat.app.ui.stats.StatsPart
@@ -272,7 +273,11 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                 if (bar) CompositionLocalProvider(com.bamnat.app.ui.theme.LocalScreenLooks provides skin) {
                 com.bamnat.app.ui.theme.ScreenSkin(com.bamnat.app.ui.theme.screenKeyOf(tab, style), Modifier.fillMaxWidth().clip(barShape)) {
                 val barPart = blueprint.style("app.tabs")
-                Row(Modifier.fillMaxWidth().partSpot("app.tabs").background(barPart.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.surfaceContainer, barShape).padding(vertical = 6.dp),
+                // 1.39 [MKW-02]: 무늬·그라데이션(paint)만 준 탭 막대도 폰처럼 그 무늬로, 글자는 무늬 평균색에 맞는 색으로.
+                val barPaint = barPart.paint.takeIf { barPart.fill == null }
+                val barGround = (barPart.fill ?: barPaint?.average)?.let { Color(it.toInt()) }
+                CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides (barGround?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: androidx.compose.material3.LocalContentColor.current)) {
+                Row(Modifier.fillMaxWidth().partSpot("app.tabs").then(if (barPaint != null) Modifier.fillWith(barPaint, barShape) else Modifier.background(barPart.fill?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.surfaceContainer, barShape)).padding(vertical = 6.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly) {
                     slots.forEach { slot ->
                         val first = com.bamnat.app.ui.TabPicks.of(slot.keys.first(), style) ?: return@forEach
@@ -289,6 +294,7 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
                             Text(label, style = com.bamnat.app.ui.parts.PartMods.text(tp.copy(ink = null), MaterialTheme.typography.labelSmall), fontSize = tp.size?.sp ?: 10.sp, maxLines = 1, color = ink)
                         }
                     }
+                }
                 }
                 }
                 }

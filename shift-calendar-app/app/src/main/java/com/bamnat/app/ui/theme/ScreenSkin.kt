@@ -229,6 +229,12 @@ private fun groundOf(base: ColorScheme, look: ScreenLook, photoLight: Float?, ph
 }
 
 /**
+ * 1.39 작품제작: a skin with a picture or fill makes [ColorScheme.surface] clear, and a clear colour at some alpha is black at that
+ * alpha (메모 날짜·꼬리표 칩, 프로 잠금 가림막 went dark grey on paper·texture memo screens). Wash over this instead.
+ */
+val ColorScheme.washSurface: androidx.compose.ui.graphics.Color get() = if (surface.alpha == 0f) surfaceContainer else surface
+
+/**
  * [FREE-05] [base] in [look]'s colours. With a picture the page is clear so the picture shows, and the ink is read against what the
  * picture and its veil come to ([photoLight] 0 dark … 1 light).
  */

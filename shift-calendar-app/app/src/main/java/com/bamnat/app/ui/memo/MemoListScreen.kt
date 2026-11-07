@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.memo
 
+import com.bamnat.app.ui.theme.washSurface
 import com.bamnat.app.ui.parts.fillColor
 import com.bamnat.app.ui.parts.shape
 import com.bamnat.app.ui.parts.text
@@ -880,7 +881,7 @@ private fun Footer(memo: Memo, showDate: Boolean) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        val pillColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+        val pillColor = MaterialTheme.colorScheme.washSurface.copy(alpha = 0.6f)
         // [BLU-05] 1.36 부품 '메모 날짜'(memo.card.date).
         val datePart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.card.date", scope = com.bamnat.app.logic.scopeFor(memo.date) { com.bamnat.core.layout.TabFacts.memo(memo) })
         if (date != null && datePart.hide != true) {
