@@ -332,6 +332,8 @@
        "id": "memo.card.date",
        "font": "spacemono",
        "ink": 4282253216,
+       "fill": 4282253216,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -963,6 +965,8 @@
        "id": "memo.card.date",
        "font": "abrilfatface",
        "ink": 4291310108,
+       "fill": 4291310108,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -1494,6 +1498,8 @@
        "id": "memo.card.date",
        "font": "vt323",
        "ink": 4290326054,
+       "fill": 4290326054,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2061,6 +2067,8 @@
        "id": "memo.card.date",
        "font": "dancingscript",
        "ink": 4292437631,
+       "fill": 4292437631,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2597,6 +2605,8 @@
        "id": "memo.card.date",
        "font": "righteous",
        "ink": 4294933018,
+       "fill": 4294933018,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3121,6 +3131,8 @@
        "id": "memo.card.date",
        "font": "dmserif",
        "ink": 4286209086,
+       "fill": 4286209086,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3642,6 +3654,8 @@
        "id": "memo.card.date",
        "font": "bungee",
        "ink": 4292293163,
+       "fill": 4292293163,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4172,6 +4186,8 @@
        "id": "memo.card.date",
        "font": "rubik",
        "ink": 4280640491,
+       "fill": 4280640491,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4724,6 +4740,8 @@
        "id": "memo.card.date",
        "font": "robotomono",
        "ink": 4280468830,
+       "fill": 4280468830,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -5238,6 +5256,8 @@
        "id": "memo.card.date",
        "font": "nunito",
        "ink": 4283398714,
+       "fill": 4283398714,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -5750,6 +5770,8 @@
        "id": "memo.card.date",
        "font": "montserrat",
        "ink": 4290283019,
+       "fill": 4290283019,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -6273,6 +6295,8 @@
        "id": "memo.card.date",
        "font": "spacemono",
        "ink": 4279308561,
+       "fill": 4279308561,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -6783,6 +6807,8 @@
        "id": "memo.card.date",
        "font": "archivoblack",
        "ink": 4294920368,
+       "fill": 4294920368,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -7274,6 +7300,8 @@
        "id": "memo.card.date",
        "font": "lora",
        "ink": 4294096493,
+       "fill": 4294096493,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -7733,6 +7761,8 @@
        "id": "memo.card.date",
        "font": "fredoka",
        "ink": 4288379903,
+       "fill": 4288379903,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -8206,6 +8236,8 @@
        "id": "memo.card.date",
        "font": "archivoblack",
        "ink": 4281162751,
+       "fill": 4281162751,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -8656,6 +8688,8 @@
        "id": "memo.card.date",
        "font": "vt323",
        "ink": 4293424170,
+       "fill": 4293424170,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -9109,6 +9143,8 @@
        "id": "memo.card.date",
        "font": "quicksand",
        "ink": 4284458879,
+       "fill": 4284458879,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -9593,6 +9629,8 @@
        "id": "memo.card.date",
        "font": "notoserifkr",
        "ink": 4279374354,
+       "fill": 4279374354,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -10051,6 +10089,8 @@
        "id": "memo.card.date",
        "font": "comfortaa",
        "ink": 4282312416,
+       "fill": 4282312416,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -10510,6 +10550,8 @@
        "id": "memo.card.date",
        "font": "vt323",
        "ink": 4278190208,
+       "fill": 4278190208,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -10985,6 +11027,8 @@
        "id": "memo.card.date",
        "font": "oswald",
        "ink": 4292226863,
+       "fill": 4292226863,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -11506,6 +11550,8 @@
        "id": "memo.card.date",
        "font": "josefinsans",
        "ink": 4283263831,
+       "fill": 4283263831,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -12063,6 +12109,8 @@
        "id": "memo.card.date",
        "font": "spacemono",
        "ink": 4294967295,
+       "fill": 4294967295,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -12652,6 +12700,8 @@
        "id": "memo.card.date",
        "font": "playfair",
        "ink": 4280232516,
+       "fill": 4280232516,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -13220,6 +13270,8 @@
        "id": "memo.card.date",
        "font": "caveat",
        "ink": 4292237891,
+       "fill": 4292237891,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -13816,6 +13868,8 @@
        "id": "memo.card.date",
        "font": "jetbrainsmono",
        "ink": 4282114410,
+       "fill": 4282114410,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -14403,6 +14457,8 @@
        "id": "memo.card.date",
        "font": "lora",
        "ink": 4289233738,
+       "fill": 4289233738,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -14962,6 +15018,8 @@
        "id": "memo.card.date",
        "font": "oswald",
        "ink": 4290783021,
+       "fill": 4290783021,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -15539,6 +15597,8 @@
        "id": "memo.card.date",
        "font": "righteous",
        "ink": 4281066379,
+       "fill": 4281066379,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -16132,6 +16192,8 @@
        "id": "memo.card.date",
        "font": "comfortaa",
        "ink": 4287323708,
+       "fill": 4287323708,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -16709,6 +16771,8 @@
        "id": "memo.card.date",
        "font": "nunito",
        "ink": 4285489128,
+       "fill": 4285489128,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -17311,6 +17375,8 @@
        "id": "memo.card.date",
        "font": "pressstart",
        "ink": 4294955583,
+       "fill": 4294955583,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -17900,6 +17966,8 @@
        "id": "memo.card.date",
        "font": "bebasneue",
        "ink": 4293374027,
+       "fill": 4293374027,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -18482,6 +18550,8 @@
        "id": "memo.card.date",
        "font": "fredoka",
        "ink": 4293229195,
+       "fill": 4293229195,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -19040,6 +19110,8 @@
        "id": "memo.card.date",
        "font": "caveat",
        "ink": 4294959242,
+       "fill": 4294959242,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -19583,6 +19655,8 @@
        "id": "memo.card.date",
        "font": "anton",
        "ink": 4280032284,
+       "fill": 4280032284,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -20136,6 +20210,8 @@
        "id": "memo.card.date",
        "font": "josefinsans",
        "ink": 4285235002,
+       "fill": 4285235002,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -20676,6 +20752,8 @@
        "id": "memo.card.date",
        "font": "oswald",
        "ink": 4294937149,
+       "fill": 4294937149,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -21236,6 +21314,8 @@
        "id": "memo.card.date",
        "font": "archivoblack",
        "ink": 4279571733,
+       "fill": 4279571733,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -21762,6 +21842,8 @@
        "id": "memo.card.date",
        "font": "robotomono",
        "ink": 4281298910,
+       "fill": 4281298910,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -22383,6 +22465,8 @@
        "id": "memo.card.date",
        "font": "ibmplexsanskr",
        "ink": 4280578157,
+       "fill": 4280578157,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -22997,6 +23081,8 @@
        "id": "memo.card.date",
        "font": "archivoblack",
        "ink": 4292878730,
+       "fill": 4292878730,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -23603,6 +23689,8 @@
        "id": "memo.card.date",
        "font": "nanummyeongjo",
        "ink": 4282075755,
+       "fill": 4282075755,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -24214,6 +24302,8 @@
        "id": "memo.card.date",
        "font": "poppins",
        "ink": 4284281538,
+       "fill": 4284281538,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -24817,6 +24907,8 @@
        "id": "memo.card.date",
        "font": "fredoka",
        "ink": 4293243904,
+       "fill": 4293243904,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -25426,6 +25518,8 @@
        "id": "memo.card.date",
        "font": "bebasneue",
        "ink": 4292290078,
+       "fill": 4292290078,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -26049,6 +26143,8 @@
        "id": "memo.card.date",
        "font": "lora",
        "ink": 4294956124,
+       "fill": 4294956124,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -26650,6 +26746,8 @@
        "id": "memo.card.date",
        "font": "quicksand",
        "ink": 4287528160,
+       "fill": 4287528160,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -27250,6 +27348,8 @@
        "id": "memo.card.date",
        "font": "notosanskr",
        "ink": 4278208443,
+       "fill": 4278208443,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },

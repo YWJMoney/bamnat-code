@@ -111,8 +111,8 @@ export default [
   memo({ from: "픽셀 게임 출석부", title: "퀘스트 로그", summary: "8비트 게임 퀘스트처럼 체크 보드, 끝낸 퀘스트는 흐리게", view: { memo: "board", memoBy: "check" },
     lead: "할 일이 게임 퀘스트 로그처럼 네모 카드로 쌓여요.", changes: ["퀘스트 보드"], parts: [{ id: "memo.card", r: 0, line: "solid", lineW: 1, lineC: c("#5BFF7A") }],
     f: [F.done(), F.half("#FFD54F")], tpls: [TPL.habit, TPL.study2] }),
-  memo({ from: "주말 알바 도장판", title: "주말 도장 메모", summary: "도장판 같은 동글 카드, 주말 계획 틀", look: { layout: "grid3", lines: 2 },
-    lead: "메모가 도장 칸처럼 세 줄로 동글동글 놓여요.", changes: ["세 줄 동글 카드"], f: [F.done(), F.color(1, "#E85A8A", "분홍")], tpls: [N.weekend, N.partShift] }),
+  memo({ from: "주말 알바 도장판", title: "주말 도장 메모", summary: "도장판 같은 동글 카드, 주말 계획 틀", look: { layout: "grid2", lines: 2 },
+    lead: "메모가 도장 칸처럼 두 줄로 동글동글 놓여요.", changes: ["두 줄 동글 카드"], f: [F.done(), F.color(1, "#E85A8A", "분홍")], tpls: [N.weekend, N.partShift] }),
   memo({ from: "새벽 배송 루트", title: "배송 루트 메모", summary: "어두운 길 위 형광 카드, 급함 제목 형광 주황", look: { layout: "compact", lines: 2 },
     lead: "메모가 밤길 내비처럼 촘촘하게 쌓이고 제목은 형광 연두예요.", changes: ["밤길 촘촘 목록"], f: [F.urgent("급함", "#FF7A59"), F.old()], tpls: [N.partShift, TPL.sideJob] }),
 
@@ -154,8 +154,8 @@ export default [
   // ---------- 모든 유형 10 ----------
   memo({ from: "비 오는 날 유리창", title: "빗소리 일기", summary: "빗방울 유리 위 일기장, 오늘 메모는 등불 테", look: { layout: "diary", lines: 6 },
     lead: "메모장 뒤로 빗방울이 흐르고 글씨는 등불처럼 따뜻해요.", changes: ["빗방울 일기"], f: [F.today("#FFC774"), F.old()], tpls: [TPL.mood, N.oneLine] }),
-  memo({ from: "봄 햇살 테라조", title: "테라조 습관 카드", summary: "봄빛 테라조 카드 세 줄, 습관 체크", look: { layout: "grid3", lines: 2 },
-    lead: "메모 카드가 테라조 돌판처럼 세 줄로 놓여요.", changes: ["세 줄 카드"], f: [F.done(), F.half("#F28C8C")], tpls: [TPL.habit, TPL.workout] }),
+  memo({ from: "봄 햇살 테라조", title: "테라조 습관 카드", summary: "봄빛 테라조 두 줄 카드, 습관 체크", look: { layout: "grid2", lines: 2 },
+    lead: "메모 카드가 테라조 돌판처럼 두 줄로 놓여요.", changes: ["두 줄 카드"], f: [F.done(), F.half("#F28C8C")], tpls: [TPL.habit, TPL.workout] }),
   memo({ from: "뉴욕 신문 달력", title: "신문 스크랩북", summary: "신문 지면 같은 갤러리, 굵은 제목", view: { memo: "gallery" },
     lead: "메모가 신문 스크랩처럼 굵은 제목과 사진으로 서요.", changes: ["스크랩 갤러리"], f: [F.pinned("#111111")], tpls: [TPL.idea, T.reading] }),
   memo({ from: "네온 사인 달력", title: "네온 아이디어 벽", summary: "네온 분홍 포스트잇, 급함은 네온 주황", look: { layout: "sticky", lines: 3 },

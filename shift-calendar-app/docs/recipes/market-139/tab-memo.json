@@ -60,6 +60,8 @@
        "id": "memo.card.date",
        "font": "spacemono",
        "ink": 4281725071,
+       "fill": 4281725071,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -190,6 +192,8 @@
        "id": "memo.card.date",
        "font": "robotomono",
        "ink": 4280121978,
+       "fill": 4280121978,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -322,6 +326,8 @@
        "id": "memo.card.date",
        "font": "nunito",
        "ink": 4288656639,
+       "fill": 4288656639,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -457,6 +463,8 @@
        "id": "memo.card.date",
        "font": "robotomono",
        "ink": 4282211070,
+       "fill": 4282211070,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -584,6 +592,8 @@
        "id": "memo.card.date",
        "font": "quicksand",
        "ink": 4287528176,
+       "fill": 4287528176,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -712,6 +722,8 @@
        "id": "memo.card.date",
        "font": "rubik",
        "ink": 4278233165,
+       "fill": 4278233165,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -849,6 +861,8 @@
        "id": "memo.card.date",
        "font": "comfortaa",
        "ink": 4284412610,
+       "fill": 4284412610,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -978,6 +992,8 @@
        "id": "memo.card.date",
        "font": "anton",
        "ink": 4292290078,
+       "fill": 4292290078,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -1101,6 +1117,8 @@
        "id": "memo.card.date",
        "font": "notosanskr",
        "ink": 4279974540,
+       "fill": 4279974540,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -1222,6 +1240,8 @@
        "id": "memo.card.date",
        "font": "nunito",
        "ink": 4283067018,
+       "fill": 4283067018,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -1362,6 +1382,8 @@
        "id": "memo.card.date",
        "font": "gaegu",
        "ink": 4293425306,
+       "fill": 4293425306,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -1503,6 +1525,8 @@
        "id": "memo.card.date",
        "font": "lora",
        "ink": 4281294204,
+       "fill": 4281294204,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -1631,6 +1655,8 @@
        "id": "memo.card.date",
        "font": "dmserif",
        "ink": 4290787627,
+       "fill": 4290787627,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -1771,6 +1797,8 @@
        "id": "memo.card.date",
        "font": "rubik",
        "ink": 4281236786,
+       "fill": 4281236786,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -1900,6 +1928,8 @@
        "id": "memo.card.date",
        "font": "fredoka",
        "ink": 4293954141,
+       "fill": 4293954141,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2029,6 +2059,8 @@
        "id": "memo.card.date",
        "font": "jetbrainsmono",
        "ink": 4281236815,
+       "fill": 4281236815,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2162,6 +2194,8 @@
        "id": "memo.card.date",
        "font": "montserrat",
        "ink": 4280565902,
+       "fill": 4280565902,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2298,6 +2332,8 @@
        "id": "memo.card.date",
        "font": "fredoka",
        "ink": 4293501499,
+       "fill": 4293501499,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2415,6 +2451,8 @@
        "id": "memo.card.date",
        "font": "josefinsans",
        "ink": 4279308561,
+       "fill": 4279308561,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2527,6 +2565,8 @@
        "id": "memo.card.date",
        "font": "robotomono",
        "ink": 4281035952,
+       "fill": 4281035952,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2656,6 +2696,8 @@
        "id": "memo.card.date",
        "font": "vt323",
        "ink": 4279213400,
+       "fill": 4279213400,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2777,6 +2819,8 @@
        "id": "memo.card.date",
        "font": "fredoka",
        "ink": 4289755733,
+       "fill": 4289755733,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -2905,6 +2949,8 @@
        "id": "memo.card.date",
        "font": "bebasneue",
        "ink": 4280902399,
+       "fill": 4280902399,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3039,6 +3085,8 @@
        "id": "memo.card.date",
        "font": "pressstart",
        "ink": 4284219258,
+       "fill": 4284219258,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3119,7 +3167,7 @@
    "v": 1,
    "title": "주말 도장 메모",
    "summary": "도장판 같은 동글 카드, 주말 계획 틀",
-   "desc": "메모가 도장 칸처럼 세 줄로 동글동글 놓여요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 색 1번(분홍) 메모는 그 색 테두리가 굵게 둘러져요.\n누구에게 좋아요: 시간제로 일하는 알바·파트타이머\n적용하면 바뀌는 것:\n· 세 줄 동글 카드\n· 끝낸 메모 흐리게\n· 분홍 메모 테\n· 메모 틀 2개\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "desc": "메모가 도장 칸처럼 두 줄로 동글동글 놓여요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 색 1번(분홍) 메모는 그 색 테두리가 굵게 둘러져요.\n누구에게 좋아요: 시간제로 일하는 알바·파트타이머\n적용하면 바뀌는 것:\n· 두 줄 동글 카드\n· 끝낸 메모 흐리게\n· 분홍 메모 테\n· 메모 틀 2개\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
    "styles": [
     "HOURLY"
    ],
@@ -3130,7 +3178,7 @@
     },
     {
      "kind": "memoLook",
-     "layout": "grid3",
+     "layout": "grid2",
      "card": "own",
      "cardColor": 4294967295,
      "border": "none",
@@ -3169,6 +3217,8 @@
        "id": "memo.card.date",
        "font": "gaegu",
        "ink": 4293417610,
+       "fill": 4293417610,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3288,6 +3338,8 @@
        "id": "memo.card.date",
        "font": "oswald",
        "ink": 4292149050,
+       "fill": 4292149050,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3411,6 +3463,8 @@
        "id": "memo.card.date",
        "font": "nanumpen",
        "ink": 4294304378,
+       "fill": 4294304378,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3548,6 +3602,8 @@
        "id": "memo.card.date",
        "font": "spacemono",
        "ink": 4294967295,
+       "fill": 4294967295,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3670,6 +3726,8 @@
        "id": "memo.card.date",
        "font": "anton",
        "ink": 4279505940,
+       "fill": 4279505940,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3789,6 +3847,8 @@
        "id": "memo.card.date",
        "font": "nunito",
        "ink": 4287257131,
+       "fill": 4287257131,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -3919,6 +3979,8 @@
        "id": "memo.card.date",
        "font": "nunito",
        "ink": 4293954635,
+       "fill": 4293954635,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4054,6 +4116,8 @@
        "id": "memo.card.date",
        "font": "rubik",
        "ink": 4293412923,
+       "fill": 4293412923,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4194,6 +4258,8 @@
        "id": "memo.card.date",
        "font": "quicksand",
        "ink": 4292437642,
+       "fill": 4292437642,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4324,6 +4390,8 @@
        "id": "memo.card.date",
        "font": "playfair",
        "ink": 4292128611,
+       "fill": 4292128611,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4450,6 +4518,8 @@
        "id": "memo.card.date",
        "font": "gowunbatang",
        "ink": 4289212973,
+       "fill": 4289212973,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4566,6 +4636,8 @@
        "id": "memo.card.date",
        "font": "lora",
        "ink": 4285484599,
+       "fill": 4285484599,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4706,6 +4778,8 @@
        "id": "memo.card.date",
        "font": "jetbrainsmono",
        "ink": 4280468830,
+       "fill": 4280468830,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4834,6 +4908,8 @@
        "id": "memo.card.date",
        "font": "nunito",
        "ink": 4285244234,
+       "fill": 4285244234,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -4954,6 +5030,8 @@
        "id": "memo.card.date",
        "font": "playfair",
        "ink": 4290283019,
+       "fill": 4290283019,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -5070,6 +5148,8 @@
        "id": "memo.card.date",
        "font": "caveat",
        "ink": 4282276982,
+       "fill": 4282276982,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -5202,6 +5282,8 @@
        "id": "memo.card.date",
        "font": "nunito",
        "ink": 4294952820,
+       "fill": 4294952820,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -5283,8 +5365,8 @@
    "format": "bamnat-recipe",
    "v": 1,
    "title": "테라조 습관 카드",
-   "summary": "봄빛 테라조 카드 세 줄, 습관 체크",
-   "desc": "메모 카드가 테라조 돌판처럼 세 줄로 놓여요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 체크를 반쯤 한 메모는 노란 점선 테두리로 '하는 중'이 보여요.\n누구에게 좋아요: 어느 일을 하든 앱 전체를 한 번에 바꾸고 싶은 분\n적용하면 바뀌는 것:\n· 세 줄 카드\n· 끝낸 메모 흐리게\n· 하는 중 노란 점선\n· 메모 틀 2개\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
+   "summary": "봄빛 테라조 두 줄 카드, 습관 체크",
+   "desc": "메모 카드가 테라조 돌판처럼 두 줄로 놓여요. 체크를 다 끝낸 메모는 흐려져서 남은 일만 또렷해요. 체크를 반쯤 한 메모는 노란 점선 테두리로 '하는 중'이 보여요.\n누구에게 좋아요: 어느 일을 하든 앱 전체를 한 번에 바꾸고 싶은 분\n적용하면 바뀌는 것:\n· 두 줄 카드\n· 끝낸 메모 흐리게\n· 하는 중 노란 점선\n· 메모 틀 2개\n주의할 점: 메모장 모양과 틀만 더해요. 있던 메모는 그대로이고, 틀은 쓸 때만 메모가 돼요",
    "styles": [
     "SHIFT",
     "DAY",
@@ -5300,7 +5382,7 @@
     },
     {
      "kind": "memoLook",
-     "layout": "grid3",
+     "layout": "grid2",
      "card": "own",
      "cardColor": 4294967295,
      "border": "none",
@@ -5339,6 +5421,8 @@
        "id": "memo.card.date",
        "font": "comfortaa",
        "ink": 4294085772,
+       "fill": 4294085772,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -5479,6 +5563,8 @@
        "id": "memo.card.date",
        "font": "dmserif",
        "ink": 4279308561,
+       "fill": 4279308561,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -5614,6 +5700,8 @@
        "id": "memo.card.date",
        "font": "righteous",
        "ink": 4294922165,
+       "fill": 4294922165,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -5756,6 +5844,8 @@
        "id": "memo.card.date",
        "font": "lora",
        "ink": 4293502554,
+       "fill": 4293502554,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -5883,6 +5973,8 @@
        "id": "memo.card.date",
        "font": "orbitron",
        "ink": 4289170426,
+       "fill": 4289170426,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -6028,6 +6120,8 @@
        "id": "memo.card.date",
        "font": "fredoka",
        "ink": 4292290109,
+       "fill": 4292290109,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -6176,6 +6270,8 @@
        "id": "memo.card.date",
        "font": "nanummyeongjo",
        "ink": 4281294154,
+       "fill": 4281294154,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -6313,6 +6409,8 @@
        "id": "memo.card.date",
        "font": "rubik",
        "ink": 4280261973,
+       "fill": 4280261973,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },
@@ -6448,6 +6546,8 @@
        "id": "memo.card.date",
        "font": "gaegu",
        "ink": 4293433963,
+       "fill": 4293433963,
+       "fillA": 16,
        "weight": 700,
        "size": 11
       },

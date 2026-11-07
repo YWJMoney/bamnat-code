@@ -135,7 +135,7 @@ export function theme(s) {
     { id: "memo.card", ...(pa.memoCard ? { paint: pa.memoCard } : card), r: r.card, shadow, ...lineOf(s.memoLine ?? s.cardLine) },
     { id: "memo.card.title", font: f.memo, weight: 800, size: 15 },
     { id: "memo.card.body", font: f.memo },
-    { id: "memo.card.date", font: f.date, ink: c(p.accent), weight: 700, size: 11 },
+    { id: "memo.card.date", font: f.date, ink: c(p.accent), fill: c(p.accent), fillA: 16, weight: 700, size: 11 },
     { id: "memo.page", ...(pa.paper ? { paint: pa.paper } : { fill: c(p.paper ?? p.card) }), font: f.memo, ink: c(p.paperInk ?? p.ink) },
     { id: "memo.page.rule", line: s.rule ?? "solid", lineW: 1, lineC: c(p.ruleC ?? p.line) },
     { id: "money.head", ...(pa.head ? { paint: pa.head } : card), r: r.card, ink: c(p.headInk ?? p.ink) },
