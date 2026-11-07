@@ -486,10 +486,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         com.bamnat.core.layout.TabSlots.resolve(settingsNow.tabSlots, settingsNow.tabOrder, TabPicks.known)
     }
     val home = TopLevel.entries.first { it.route == com.bamnat.core.layout.TabSlots.home(slots) }
+    // 1.39 [NAV2-07] Beside the rail of an unfolded phone up to seven places; a phone bar shows the first five.
+    val barSlots = com.bamnat.core.layout.TabSlots.onBar(slots, wide)
     val shownSlots = if (tabEdit.editing) {
-        val byKey = slots.associateBy(com.bamnat.core.layout.TabSlots::key)
-        tabEdit.order.mapNotNull { byKey[it] }.ifEmpty { slots }
-    } else slots
+        val byKey = barSlots.associateBy(com.bamnat.core.layout.TabSlots::key)
+        tabEdit.order.mapNotNull { byKey[it] }.ifEmpty { barSlots }
+    } else barSlots
 
     // Opening the app (again) always lands on the first tab (the calendar unless the user moved another first).
     val homeRequests by HomeRequests.count.collectAsStateWithLifecycle()
@@ -1192,11 +1194,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     // [NAV2-02] The 나 button at the top of the tabs: 설정 and the tabs the bar does not hold.
     androidx.compose.runtime.SideEffect { ShownRoute.route = route }
-    val missingTabs = com.bamnat.core.layout.TabSlots.missing(slots)
+    val missingTabs = com.bamnat.core.layout.TabSlots.missing(barSlots)
+    // [NAV2-07] Folded, the screens of the sixth and seventh places wait here too.
+    val offBar = com.bamnat.core.layout.TabSlots.offBar(slots, wide).filter { it !in missingTabs }
     val meState = MeState(
-        show = missingTabs.isNotEmpty(),
+        show = missingTabs.isNotEmpty() || offBar.isNotEmpty(),
         unread = if (com.bamnat.core.layout.TabOrder.SETTINGS in missingTabs) inquiryUnread else 0,
-        missing = missingTabs.mapNotNull(pickOf),
+        missing = (missingTabs + offBar).mapNotNull(pickOf),
         open = openPick,
         editBar = { editingBar = true },
         inRail = wide,
@@ -1206,6 +1210,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         onChange = { made -> container.settingsRepository.update { it.withBar(made) } },
         onReset = { container.settingsRepository.update { it.copy(tabSlots = "", tabOrder = emptyList()) } },
         onDismiss = { editingBar = false },
+        wide = wide,
     )
 
     // [DAILY-09] Half open like a laptop (Flex): the calendar splits at the hinge.

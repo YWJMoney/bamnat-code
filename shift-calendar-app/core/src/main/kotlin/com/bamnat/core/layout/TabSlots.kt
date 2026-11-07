@@ -11,6 +11,11 @@ package com.bamnat.core.layout
  */
 object TabSlots {
     const val MAX = 5
+    /**
+     * 1.39 [NAV2-07] (조사 19장, 총괄 11-07 1.39로): beside the rail of an unfolded phone there is room for two more places. A phone bar
+     * (and the cover screen) shows the first [MAX]; the screens of the places after them wait by the 나 button ([offBar]).
+     */
+    const val MAX_WIDE = 7
     const val MAX_IN_GROUP = 10
     const val NAME_MAX = 8
     /** A screen that is not one of the tabs, by its feature place ("f:SLEEP"); the app knows which ones it can open. */
@@ -48,14 +53,14 @@ object TabSlots {
 
     /**
      * The places in [text]: keys the app does not know ([known]) are dropped, a screen already in an earlier place is dropped,
-     * a 묶음 left with one screen becomes that screen, an empty one goes, and at most [MAX] places and [MAX_IN_GROUP] in a 묶음.
+     * a 묶음 left with one screen becomes that screen, an empty one goes, and at most [MAX_WIDE] places and [MAX_IN_GROUP] in a 묶음.
      */
     fun decode(text: String, known: (String) -> Boolean): List<Slot> {
         val seen = HashSet<String>()
         fun keep(k: String): Boolean = k.isNotBlank() && known(k) && seen.add(k)
         val out = ArrayList<Slot>()
         for (part in text.split(';')) {
-            if (out.size >= MAX) break
+            if (out.size >= MAX_WIDE) break
             val p = part.trim()
             if (p.isEmpty()) continue
             if (p.startsWith("$GROUP|")) {
@@ -100,6 +105,12 @@ object TabSlots {
     fun toSave(slots: List<Slot>, order: List<String>): String = if (slots == fromOrder(order)) "" else encode(slots)
 
     /** The screen the app opens on and back ends at: the first tab in the bar (in a 묶음 too), else 달력. */
+    /** 1.39 [NAV2-07] The places a bar shows: all of them (up to [MAX_WIDE]) beside the rail, the first [MAX] on a phone bar. */
+    fun onBar(slots: List<Slot>, wide: Boolean): List<Slot> = slots.take(if (wide) MAX_WIDE else MAX)
+
+    /** 1.39 [NAV2-07] The screens of the places a phone bar has no room for, in their order: the 나 button lists them. */
+    fun offBar(slots: List<Slot>, wide: Boolean): List<String> = slots.drop(onBar(slots, wide).size).flatMap { it.keys }
+
     fun home(slots: List<Slot>): String = slots.flatMap { it.keys }.firstOrNull { it in TabOrder.DEFAULT } ?: TabOrder.CALENDAR
 
     fun shows(slots: List<Slot>, key: String): Boolean = slots.any { key in it.keys }
@@ -140,15 +151,16 @@ object TabSlots {
 
     /**
      * [slots] with [key] put in the place at [index]: a place holding one screen becomes a 묶음 named [name] of the two, a 묶음 takes
-     * one more (up to [MAX_IN_GROUP]). The screen leaves any other place first. An [index] past the end makes a new place (up to [MAX]).
+     * one more (up to [MAX_IN_GROUP]). The screen leaves any other place first. An [index] past the end makes a new place (up to [max]:
+     * [MAX], or [MAX_WIDE] in the editor of an unfolded phone).
      */
-    fun addTo(slots: List<Slot>, index: Int, key: String, name: String = DEFAULT_GROUP_NAME): List<Slot> {
+    fun addTo(slots: List<Slot>, index: Int, key: String, name: String = DEFAULT_GROUP_NAME, max: Int = MAX): List<Slot> {
         val at = slots.getOrNull(index)
         if (at != null && key in at.keys) return slots
         val rest = without(slots, key)
         // Where the place is now: taking the screen out may have dropped a place before it.
         val i = if (at == null) -1 else rest.indexOfFirst { s -> at.keys.any { it != key && it in s.keys } }
-        if (i < 0) return if (rest.size < MAX) rest + One(key) else slots
+        if (i < 0) return if (rest.size < max.coerceAtMost(MAX_WIDE)) rest + One(key) else slots
         return rest.toMutableList().apply {
             this[i] = when (val s = this[i]) {
                 is One -> Group(cleanName(name).ifEmpty { DEFAULT_GROUP_NAME }, listOf(s.key, key))
