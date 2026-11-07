@@ -377,7 +377,9 @@ fun CalendarScreen(
         }
     }
     // [CELL-01] 1.39 Every memo of a day by its title, for cells that list the day's jobs and memos a line each.
-    val memoLists = remember(datedMemos) {
+    // [CELL-02] 메모 줄 0 in the user's own 달력 모양 keeps memos out of the list too (the jobs stay).
+    val memoLists = remember(datedMemos, calView.memo) {
+        if (calView.memo == 0) return@remember emptyMap<java.time.LocalDate, List<String>>()
         datedMemos.groupBy { it.date!! }.mapValues { (_, l) ->
             l.map { m -> m.title.ifBlank { m.preview }.trim().lineSequence().firstOrNull().orEmpty() }.filter { it.isNotBlank() }
         }

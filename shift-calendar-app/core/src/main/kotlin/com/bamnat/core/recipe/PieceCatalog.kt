@@ -594,6 +594,12 @@ data class CalendarView(
         /** What can stand under a day's mark, in the app's own order. */
         val LINES = listOf("holiday", "memo", "money", "hours", "spend", "lunar")
 
+        /**
+         * [CELL-02] 1.39 (사용자 2026-11-07 "테마를 입으면 달력에 적어 둔 것이 안 보여요"): what a 달력 모양 piece says about *what* the cells
+         * show (메모 줄 수, 줄 순서, 근무 시간·음력·지출) rather than how they look. Someone else's theme leaves these as the user set them.
+         */
+        val CONTENT_KEYS = setOf("memo", "order", "hours", "lunar", "spend")
+
         fun orderProblem(s: String): String? =
             if (s.isEmpty() || s.split(',').let { l -> l.all { it in LINES } && l.size == l.distinct().size }) null else "order"
 
@@ -624,6 +630,14 @@ data class CalendarView(
         )
     }
 }
+
+/**
+ * [CELL-02] 1.39 Someone else's theme as a look only: its 달력 모양 keeps how the cells look (크기·표시·날짜 자리·칸 디자인·패턴) and leaves
+ * what they show ([CalendarView.CONTENT_KEYS]) as the user has it, so memos and jobs written on the calendar stay in sight.
+ */
+fun Recipe.keepMyCellContent(): Recipe = copy(pieces = pieces.map { p ->
+    if (p.kind == PieceKind.CAL_VIEW) p.copy(values = p.values - CalendarView.CONTENT_KEYS) else p
+})
 
 /** [CVW-07] 1.35 앱 동작's choices, as a recipe writes them. */
 object AppFeel {

@@ -64,6 +64,33 @@ class CellListScreenshotTest : ScreenshotBase() {
         c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
     }
 
+    // ---- [CELL-02] 테마를 입어도 칸에 적은 것이 그대로 (사용자 2026-11-07) ----
+    private fun wear(style: WorkStyle) = runBlocking {
+        // A theme of looks only (the first one also changes the calendar's 판 to a list, which is its own point).
+        val theme = BuiltInThemes.of(style).first { r -> r.pieces.none { it.kind == com.bamnat.core.recipe.PieceKind.TAB_VIEW } }
+        c.wardrobe.wear(theme, "builtin:${theme.title}", own = false)
+    }
+    @Test fun fieldThemeFolded() = shoot("1404_cell_list_field_theme_folded", FOLDED) { field(); wear(WorkStyle.FIELD) }
+    @Test fun fieldThemeUnfolded() = shoot("1405_cell_list_field_theme_unfolded", UNFOLDED) { field(); wear(WorkStyle.FIELD) }
+    @Test fun fieldThemeBigFont() = shoot("1406_cell_list_field_theme_folded_200", FOLDED, 2f) { field(); wear(WorkStyle.FIELD) }
+    @Test fun fieldThemeNight() = shoot("1407_cell_list_field_theme_folded_dark", "w369dp-h905dp-port-night-420dpi") { field(); wear(WorkStyle.FIELD) }
+    @Test fun shiftThemeMemos() = shoot("1408_cell_list_shift_theme_unfolded", UNFOLDED) {
+        field()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT, memoInCells = true) }
+        wear(WorkStyle.SHIFT)
+    }
+    @Test fun shopThemeMemos() = shoot("1409_cell_list_shop_theme_folded", FOLDED) {
+        field()
+        c.settingsRepository.update { it.copy(workStyle = WorkStyle.BUSINESS, memoInCells = true) }
+        wear(WorkStyle.BUSINESS)
+    }
+    @Test fun fieldThemeOff() = shoot("1410_cell_list_field_theme_off_folded", FOLDED) { field("off"); wear(WorkStyle.FIELD) }
+    @Test fun tryOnMine() = shoot("1411_cell_list_try_on_mine_folded", FOLDED) {
+        field()
+        val r = BuiltInThemes.of(WorkStyle.FIELD).first { r -> r.pieces.none { it.kind == com.bamnat.core.recipe.PieceKind.TAB_VIEW } }
+        content { TryOnScreen(r, WorkStyle.FIELD, onDismiss = {}, onKeep = { true }) { Text("입기") } }
+    }
+
     // ---- [BIGTXT-01] 큰 글자 ----
     @Test fun dayPanelBigFont() = shoot("1399_bigtext_day_panel_unfolded_200", UNFOLDED, 2f) {
         field()

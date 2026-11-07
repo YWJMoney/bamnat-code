@@ -808,20 +808,17 @@ private fun DayCell(
                 Spacer(Modifier.height(size))
             }
         }
-        if (memoList != null && !custom && cellParts == null) {
-            // [CELL-01] 1.39 The date with the day's mark beside it, then its jobs and memos a line each (two or three where there is room).
+        // [CELL-01][CELL-02] 1.39 What a listing cell shows under its date: the red day, the jobs, the memos, then one line at the foot.
+        val list: CellListContent? = if (memoList == null) null else run {
             val dark2 = isDarkSurface()
+            // [CELL-02] The red day where the user's 줄 순서 puts it: before the memos (the app's own order) or after them.
+            val redDay = (holidayName ?: orgDay)?.let { CellLine(it, ink = if (holidayName != null) cal.sunday else scheme.primary) }
+            val redLast = view.lines.indexOf("holiday") > view.lines.indexOf("memo")
             val items = buildList {
-                (holidayName ?: orgDay)?.let { add(CellLine(it, ink = if (holidayName != null) cal.sunday else scheme.primary)) }
+                if (!redLast) redDay?.let(::add)
                 if (focus == CalendarFocus.JOBS || jobFirst) addAll(jobLines(fieldJobs, dark2, scheme.onSurface))
                 memoList.forEach { add(CellLine(it, ink = scheme.onSurface, bar = cal.memoDot, fill = cal.memoDot.copy(alpha = if (dark2) 0.22f else 0.12f))) }
-            }
-            val hasMark = when {
-                jobFirst -> fieldJobs.isNullOrEmpty()
-                fullLeave != null || covered != null || badgeKind != null -> true
-                hourly != null && hourlyRange != null -> true
-                invest != null && invest.trades(date) > 0 && (type == null || type.isOff) -> true
-                else -> (type != null || day.hasCustomTimes) && !(quietWorkDays && DayWork.isRoutine(day))
+                if (redLast) redDay?.let(::add)
             }
             val moneyText = (if (!showMoney) null else (sales?.takeIf { focus == CalendarFocus.SALES } ?: money?.income?.takeIf { it != 0L })
                 ?.let { Fmt.wonShort(it) }) ?: hourly?.payText(day)
@@ -838,6 +835,19 @@ private fun DayCell(
                 showLunar -> CellFoot(remember(date) { KoreanLunar.fromSolar(date).short }, scheme.onSurfaceVariant, false, minor = true)
                 showHours && day.scheduledMinutes > 0 -> CellFoot(HoursFormat.short(day.scheduledMinutes), scheme.onSurfaceVariant, false, minor = true)
                 else -> null
+            }
+            CellListContent(items, foot)
+        }
+        if (list != null && !custom && cellParts == null) {
+            // [CELL-01] 1.39 The date with the day's mark beside it, then its jobs and memos a line each (two or three where there is room).
+            val items = list.lines
+            val foot = list.foot
+            val hasMark = when {
+                jobFirst -> fieldJobs.isNullOrEmpty()
+                fullLeave != null || covered != null || badgeKind != null -> true
+                hourly != null && hourlyRange != null -> true
+                invest != null && invest.trades(date) > 0 && (type == null || type.isOff) -> true
+                else -> (type != null || day.hasCustomTimes) && !(quietWorkDays && DayWork.isRoutine(day))
             }
             // The day's own shift as a small badge without its icon, so it fits beside the date in a 48dp cell; the rest as before.
             val plainShift = type != null && fullLeave == null && covered == null && badgeKind == null && !jobFirst &&
@@ -879,9 +889,11 @@ private fun DayCell(
             marks = remember(day, jobs, snapshot.hasPattern) { cornerMarks(day, if (focus == CalendarFocus.SHIFTS && jobs > 0) (money?.unpaid ?: 0) > 0 || span?.owed == true else null, snapshot.hasPattern) },
             barColor = (type?.takeIf { !it.isOff && day.leave?.isFullDay != true } ?: day.coveredShift)?.colorArgb?.asColor()
                 ?.takeIf { !jobFirst && fullLeave == null && badgeKind == null && !(hourly != null && hourlyRange != null) && !(quietWorkDays && DayWork.isRoutine(day)) },
-            dayMark = dayMark,
+            // [CELL-02] The jobs are lines of their own when the cell lists them, so their marks are not drawn twice.
+            dayMark = if (list != null && jobFirst && !fieldJobs.isNullOrEmpty()) ({ _ -> }) else dayMark,
             texts = cellTexts(day, focus, memoText, showMoney, showSpend, showHours, showLunar, money, sales, hourly, invest, fieldJobs),
             moneyColor = if ((sales ?: money?.income ?: 0L) < 0) cal.expense else cal.income,
+            list = list,
         ) else {
         // [CAL-52] 하: 1.5dp above and below (was 3), so the line under the badge ("11h", "개천절") is whole in a 66dp cell.
         Column(
@@ -1224,6 +1236,8 @@ internal fun CustomCellBody(
     numberColor: Color, weekendLine: Color? = null, dateSize: androidx.compose.ui.unit.TextUnit,
     footerSize: androidx.compose.ui.unit.TextUnit, todayColor: Color?, holidayName: String?, hasMemo: Boolean, alarmOff: Boolean, marks: List<Corner>,
     barColor: Color?, dayMark: @Composable (Dp) -> Unit, texts: Map<String, String>, moneyColor: Color,
+    /** [CELL-02] 1.39 The day's jobs and memos a line each (in this look's colours) in place of the lines below, or null. */
+    list: CellListContent? = null,
 ) {
     val scheme = MaterialTheme.colorScheme
     val cal = LocalCalendarColors.current
@@ -1256,7 +1270,7 @@ internal fun CustomCellBody(
         onFill != null -> onFill
         else -> numberColor
     }
-    val memoShown = texts.containsKey("memo")
+    val memoShown = list != null || texts.containsKey("memo")
     val markSize: Dp = when (mark) { "small" -> 15.dp; "big" -> if (markPlace == "side") 20.dp else 22.dp; else -> 14.dp }
     val markShape = mp.takeIf { it.corners.any { c -> c != null } }?.shape(RoundedCornerShape(4.dp))
     // [BLU-05] The mark's line goes round the badge itself, in the shift's colour unless the blueprint gives one (PC 3차: 옅은 회색이 네모를 따라).
@@ -1313,8 +1327,14 @@ internal fun CustomCellBody(
             if (markPlace == "side" && place[1] != 'r' && mark != "line") drawMark()
         }
     }
-    val linesBlock: @Composable () -> Unit = {
-        for (id in parts?.order?.filter { it in view.lines } ?: view.lines) {
+    // [CELL-02] On a strong ground (칸 전체 채우기, a dark 꾸밈 사진) the list's lines take the ground's ink, as the look's own lines do.
+    val listLines = remember(list, onFill) {
+        list?.let { l -> if (onFill == null) l.lines else l.lines.map { it.copy(ink = onFill.copy(alpha = it.ink.alpha), fill = it.fill?.let { _ -> onFill.copy(alpha = 0.14f) }) } }
+    }
+    val listFoot = list?.foot?.let { f -> if (onFill != null) f.copy(color = onFill) else f }
+    val linesBlock: @Composable (Modifier) -> Unit = { m ->
+        if (list != null) CellListLines(listLines.orEmpty(), listFoot, parts?.lines?.get("memo")?.size?.sp ?: footerSize, onFill ?: cellMoreColor(), m)
+        else for (id in parts?.order?.filter { it in view.lines } ?: view.lines) {
             val t = texts[id] ?: continue
             val lp = parts?.lines?.get(id) ?: com.bamnat.core.recipe.PartStyle.NONE
             if (lp.hide == true) continue
@@ -1356,17 +1376,17 @@ internal fun CustomCellBody(
         val inner = Modifier.fillMaxSize().padding(horizontal = cp.padH?.dp ?: pad ?: 3.dp, vertical = cp.padV?.dp ?: pad ?: 2.dp)
         when (cp.dir) {
             "row" -> Row(inner, horizontalArrangement = cp.arrangement(), verticalAlignment = cp.vertical(Alignment.Top)) {
-                order.forEach { k -> Box(Modifier.weight(1f, fill = false)) { if (k == "lines") Column { linesBlock() } else blocks.getValue(k)() } }
+                order.forEach { k -> Box(Modifier.weight(1f, fill = false)) { if (k == "lines") Column { linesBlock(Modifier.fillMaxHeight()) } else blocks.getValue(k)() } }
             }
             "stack" -> Box(inner) {
                 order.forEach { k ->
                     val at = placeOf(parts.lines[k]?.place ?: when (k) { "date" -> dp.place; "mark" -> mp.place; else -> null },
                         when (k) { "date" -> Alignment.TopCenter; "mark" -> Alignment.Center; else -> Alignment.BottomCenter })
-                    Box(Modifier.align(at)) { if (k == "lines") Column { linesBlock() } else blocks.getValue(k)() }
+                    Box(Modifier.align(at)) { if (k == "lines") Column { linesBlock(Modifier) } else blocks.getValue(k)() }
                 }
             }
             else -> Column(inner, horizontalAlignment = cp.horizontal(horizontal), verticalArrangement = cp.verticalArrangement()) {
-                order.forEach { k -> if (k == "lines") linesBlock() else blocks.getValue(k)() }
+                order.forEach { k -> if (k == "lines") linesBlock(if (list != null) Modifier.weight(1f) else Modifier) else blocks.getValue(k)() }
             }
         }
         if (markPlace == "bottom") Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) { drawMark() }
@@ -1379,25 +1399,24 @@ internal fun CustomCellBody(
     ) {
         when (place[0]) {
             'b' -> {
-                linesBlock()
-                Spacer(Modifier.weight(1f))
+                if (list != null) linesBlock(Modifier.weight(1f)) else { linesBlock(Modifier); Spacer(Modifier.weight(1f)) }
                 if (markPlace == "below") drawMark()
                 dateBlock()
             }
             'm' -> {
-                Spacer(Modifier.weight(1f))
+                // A list fills the room under the date instead of the date floating in the middle.
+                if (list == null) Spacer(Modifier.weight(1f))
                 dateBlock()
                 if (markPlace == "below") drawMark()
-                linesBlock()
-                Spacer(Modifier.weight(1f))
+                if (list != null) linesBlock(Modifier.weight(1f)) else { linesBlock(Modifier); Spacer(Modifier.weight(1f)) }
             }
             else -> {
                 dateBlock()
                 if (markPlace == "below") drawMark()
-                linesBlock()
+                linesBlock(if (list != null) Modifier.weight(1f) else Modifier)
             }
         }
-        if (markPlace == "bottom") { Spacer(Modifier.weight(1f)); drawMark() }
+        if (markPlace == "bottom") { if (list == null) Spacer(Modifier.weight(1f)); drawMark() }
     }
 }
 

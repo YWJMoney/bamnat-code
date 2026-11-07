@@ -66,14 +66,19 @@ private val LINE_PAD_V = 1.dp
 
 /**
  * [CELL-01] Whether this calendar lists each day's jobs and memos in its cells: the user's choice, or by itself for field work (일감) and
- * for anyone who asked for memos in the cells. Only the app's own cells list; a 달력 모양 of the user's own draws its own lines.
+ * for anyone who asked for memos in the cells (날짜 칸의 메모, or 달력 모양's 메모 줄).
+ * [CELL-02] 1.39 (사용자 2026-11-07 "테마를 입으면 달력에 적어 둔 것이 안 보여요"): a theme or a 달력 모양 of the user's own lists too, in its
+ * own colours, fonts and corners; only the sideways month keeps one line.
  */
 internal fun cellListOn(choice: String, jobs: Boolean, memoInCells: Boolean, view: CalendarView, sideways: Boolean): Boolean =
-    !sideways && view.isDefault && when (choice) {
+    !sideways && when (choice) {
         "on" -> true
         "off" -> false
-        else -> jobs || memoInCells
+        else -> jobs || memoInCells || (view.memo ?: 0) > 0
     }
+
+/** [CELL-02] 1.39 What a listing cell shows under its date, handed to a theme's own cell ([CustomCellBody]). */
+internal class CellListContent(val lines: List<CellLine>, val foot: CellFoot?)
 
 /**
  * [CELL-01] A month cell's height when its days list their jobs and memos: a little taller than 달력 모양's 높게 (×2.3 of a column,

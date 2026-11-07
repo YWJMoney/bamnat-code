@@ -397,21 +397,27 @@ internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from
      *  my own dates and holidays, the days blank, never the example. */
     blankOk: Boolean = false,
     /** PC 확인 1.37 A11: on those blank days, my 일감 (현장) by its 공수 or title. */
-    jobs: List<com.bamnat.core.money.Job>? = null): MyWeeks? {
+    jobs: List<com.bamnat.core.money.Job>? = null,
+    /** [CELL-02] 1.39 My memos by date ([com.bamnat.app.ui.studio.rememberMyDayMemos]); a day's jobs come first among its lines. */
+    memos: Map<java.time.LocalDate, List<String>>? = null): MyWeeks? {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
     val snap by snapFlow.collectAsStateWithLifecycle(null)
     val today = remember { com.bamnat.core.time.Today.date() }
     // [LAY-03] From the week of [from] (a day the 꾸밈 층 is pinned to) when it is given, else this week.
     val first = remember(today, from) { (from ?: today).let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } }
-    val real = remember(snap, days, first, weeks, blankOk, jobs) {
+    val real = remember(snap, days, first, weeks, blankOk, jobs, memos) {
         val s = snap ?: return@remember null
         val resolved = s.resolver.resolveRange(first, first.plusDays(weeks * 7L - 1))
+        // [CELL-02] What I wrote on the day: its jobs by 업체 (or name), then its memos.
+        fun written(d: java.time.LocalDate): List<String> =
+            jobs.orEmpty().filter { j -> !d.isBefore(j.date) && !d.isAfter(j.endDate ?: j.date) }.map { it.client.ifBlank { it.title }.trim() }.filter { it.isNotEmpty() } +
+                memos?.get(d).orEmpty()
         if (resolved.none { it.shiftType != null }) return@remember if (!blankOk) null else resolved.map { r ->
             val job = jobs?.firstOrNull { j -> !r.date.isBefore(j.date) && !r.date.isAfter(j.endDate ?: j.date) }
-            if (job != null) com.bamnat.app.ui.calendar.SampleDay(com.bamnat.app.ui.studio.jobCell(job), 0xFF8D6E63L,
+            if (job != null) com.bamnat.app.ui.calendar.SampleDay(com.bamnat.app.ui.studio.jobCell(job), 0xFF8D6E63L, written(r.date),
                 holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date))
-            else com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = true, blank = true)
+            else com.bamnat.app.ui.calendar.SampleDay("", 0x00000000L, written(r.date), holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = true, blank = true)
         }
         resolved.map { r ->
             val t = r.shiftType
@@ -420,6 +426,7 @@ internal fun rememberMyWeeks(days: List<Map<String, Any?>>, weeks: Int = 2, from
             com.bamnat.app.ui.calendar.SampleDay(
                 ((item?.get("emoji") as? String) ?: item?.get("label")?.toString() ?: t?.label).orEmpty(),
                 (item?.get("color") as? Long) ?: t?.colorArgb?.or(0xFF000000L) ?: 0xFF757575L,
+                memos = written(r.date),
                 hours = r.scheduledMinutes.takeIf { it > 0 }?.let { m -> "${m / 60}h" },
                 holiday = com.bamnat.core.holiday.KoreanHolidays.nameOf(r.date), off = r.isOff, role = role,
             )
@@ -449,8 +456,13 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
     val weeksN = remember(now) { ((monthStart.dayOfWeek.value % 7) + now.lengthOfMonth() + 6) / 7 }
     val whole = pinned == null
     val myJobs = if (style == WorkStyle.FIELD) com.bamnat.app.ui.studio.rememberMyJobs() else null
+    val myMemos = com.bamnat.app.ui.studio.rememberMyDayMemos()
     val mine = rememberMyWeeks(ownDays, weeks = if (whole) weeksN else 2, from = pinned ?: monthStart, blankOk = style != null && !style.usesPattern && style != WorkStyle.HOURLY,
-        jobs = myJobs).takeIf { realOn }
+        jobs = myJobs, memos = myMemos).takeIf { realOn }
+    // [CELL-02] 1.39 My month listed the way my calendar lists it (날짜 칸에 일감·메모를 줄마다), in the theme's look.
+    val mySettings by androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.settings.collectAsStateWithLifecycle()
+    val listed = mine != null && com.bamnat.app.ui.calendar.cellListOn(mySettings.cellList, style == WorkStyle.FIELD, mySettings.memoInCells,
+        com.bamnat.core.recipe.CalendarView(memo = com.bamnat.core.recipe.CalendarView.decode(mySettings.calView).memo), false)
     val rows = if (mine != null && whole) weeksN else 2
     val n = rows * 7
     val exFirst = pinned?.let { it.minusDays((it.dayOfWeek.value % 7).toLong()) } ?: EXAMPLE_FIRST
@@ -495,10 +507,10 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
         // same days from the same Sunday the 9th, today the 3rd cell — so a cell design added or taken away changes only the looks.
         if ((view.looks.isNotEmpty() || bp.touches("cal") || com.bamnat.app.ui.parts.LocalPartSpots.current != null) && blank == null) com.bamnat.app.ui.settings.CellWeeks(view, rows = if (real != null) rows else 2, onCell = null,
             start = if (real != null) start0 else exFirst, todayDate = if (real != null) today else exFirst.plusDays(2), days = sample,
-            todayColor = (theme["today"] as? Long)?.asColor())
+            todayColor = (theme["today"] as? Long)?.asColor(), listed = listed)
         else if (real != null) com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(),
             rows = if (mine != null) rows else 2, numbers = (0 until (if (mine != null) n else 14)).map { start0.plusDays(it.toLong()).dayOfMonth },
-            todayAt = (today.toEpochDay() - start0.toEpochDay()).toInt())
+            todayAt = (today.toEpochDay() - start0.toEpochDay()).toInt(), listed = listed)
         else com.bamnat.app.ui.calendar.CalendarViewSample(view, sample, cell = theme["cell"] as? String, today = (theme["today"] as? Long)?.asColor(), rows = 2,
             numbers = (0 until 14).map { exFirst.plusDays(it.toLong()).dayOfMonth })
         if (mine == null) Text("근무를 넣으면 내 달력으로 보여요", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -3,6 +3,7 @@ package com.bamnat.app.ui.recipe
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
+import com.bamnat.core.recipe.keepMyCellContent
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.data.db.AppliedRecipeEntity
 import com.bamnat.app.recipe.MyRecipes
@@ -315,12 +316,14 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         val s0 = _state.value
         val full = s0.recipe ?: return
         // [TRY-01] Only the look parts ticked; 알람·규칙·메모 틀 as switched on.
-        val r = s0.lookParts?.let { ids ->
+        val r0 = s0.lookParts?.let { ids ->
             val picked = com.bamnat.core.recipe.LookParts.pick(full, ids).pieces
             full.copy(pieces = full.pieces.filter { it.kind !in com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS } + picked)
         } ?: full
         val s = s0
         val doc = s.doc ?: return
+        // [CELL-02] 1.39 Someone else's 달력 모양 changes how my cells look, not what they show.
+        val r = if (doc.mine) r0 else r0.keepMyCellContent()
         _state.value = s.copy(applying = true)
         viewModelScope.launch {
             // [FREE-10] The looks among the chosen pieces are worn as a theme (its days, 입었던 테마, 벗기 to my own look);
