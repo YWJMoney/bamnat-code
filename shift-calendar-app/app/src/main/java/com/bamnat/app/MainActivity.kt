@@ -146,6 +146,9 @@ class MainActivity : ComponentActivity() {
         }
         // 1.36 [SEC-13] 보안 점검 M2: 안전 모드 draws without the blueprint (a received one may be what stopped the app); 평소대로 brings it back.
         val partsResting by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
+        // 1.39 [LINK-03] 근무 입력·탭 연동 꾸밈 (대근·특근·연차 날 꾸밈, 새 수식 이름) is a 1.39 프로 장치: drawn with 프로, a 하루 써 보기
+        // or while a work is tried on (입혀 보기 is free); otherwise those lines rest (kept in settings, back with 프로).
+        val linkOn = com.bamnat.app.logic.rememberLinkOn(container)
         val motion = androidx.compose.runtime.remember(settings.motion) {
             com.bamnat.core.recipe.Motion.decode(settings.motion).effective(com.bamnat.app.ui.theme.systemAnimationsOff(this))
         }
@@ -153,7 +156,7 @@ class MainActivity : ComponentActivity() {
             corners = photoLook.corners, accent = settings.accentColor, night = night,
             parts = androidx.compose.runtime.remember(settings.parts, partsResting) {
                 if (partsResting) com.bamnat.core.recipe.Blueprint.EMPTY else com.bamnat.core.recipe.Blueprint.decode(settings.parts)
-            }) {
+            }.let { bp -> androidx.compose.runtime.remember(bp, linkOn) { if (linkOn) bp else com.bamnat.core.formula.FxPro.restLink(bp) } }) {
             // [RCP-09] 1.34 달력 테마, lifted for the dark calendar.
             val darkSurface = androidx.compose.material3.MaterialTheme.colorScheme.surface.luminance() < 0.5f
             val look = androidx.compose.runtime.remember(calNow, darkSurface) {
@@ -171,7 +174,9 @@ class MainActivity : ComponentActivity() {
                 com.bamnat.app.ui.theme.LocalMoneyLook provides androidx.compose.runtime.remember(settings.moneyLook) { com.bamnat.core.recipe.MoneyLook.decode(settings.moneyLook) },
                 com.bamnat.app.ui.theme.LocalPayLooks provides androidx.compose.runtime.remember(settings.payLooks) { com.bamnat.core.recipe.PayLook.decodeAll(settings.payLooks) },
                 // [LAY-03] 1.36 꾸밈 층.
-                com.bamnat.app.ui.decor.LocalDecor provides androidx.compose.runtime.remember(settings.decor) { com.bamnat.core.recipe.Decor.decode(settings.decor) },
+                com.bamnat.app.ui.decor.LocalDecor provides androidx.compose.runtime.remember(settings.decor, linkOn) {
+                    com.bamnat.core.recipe.Decor.decode(settings.decor).let { if (linkOn) it else com.bamnat.core.formula.FxPro.restLink(it) }
+                },
                 // [LAY-11] 꾸밈 단추: a decoration that names a 규칙 단추 presses it (갈래 D's engine through DecorTap).
                 com.bamnat.app.ui.decor.LocalDecorTap provides androidx.compose.runtime.remember(container) {
                     { id: String, date: java.time.LocalDate? -> com.bamnat.app.ui.decor.DecorTap.press(container, id, date ?: com.bamnat.core.time.Today.date()); Unit }

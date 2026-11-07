@@ -113,6 +113,8 @@ export const FORMULA_NAMES = [
   ["근무", "shift"], ["근무종류", "shiftKind"], ["근무시작", "shiftStart"], ["근무끝", "shiftEnd"], ["근무시간", "hours"], ["쉬는날", "isOff"],
   ["휴가", "leave"], ["이번주야간", "weekNights"], ["이번주근무시간", "weekHours"], ["이달야간", "monthNights"], ["이달근무시간", "monthHours"],
   ["연속근무", "streak"],
+  ["추가근무", "extraWork"], ["추가근무시간", "extraHours"], ["근무표시간", "shiftHours"], ["대근", "isCover", ["대타"]], ["직접바꿈", "isEdited"],
+  ["남은할일", "tasksLeft"], ["늦은할일", "tasksLate"], ["잠잔시간", "sleptHours", ["수면시간"]], ["근무알람", "shiftAlarm"],
   ["메모수", "memoCount"], ["메모", "memo"], ["꼬리표", "tags", ["태그"]], ["체크율", "checkRate"], ["남은체크", "checksLeft"],
   ["지출", "spend"], ["수입", "income"], ["지출분류", "spendKinds"], ["이달지출", "monthSpend"], ["이달수입", "monthIncome"],
   ["오늘쓸돈", "spendToday", ["하루쓸돈"]], ["월급까지", "daysToPay", ["입금까지"]], ["예상잔액", "balanceAhead"], ["봉투모은돈", "envelopeSaved"], ["봉투진행", "envelopeRate"], ["지출근무시간", "spendHours"],
@@ -525,6 +527,35 @@ export function fxCallKeys(src, text = false) {
   let m;
   while ((m = re.exec(s))) for (const k of fxCalls(m[1])) out.add(k);
   return [...out];
+}
+
+/** 1.39 [LINK-03] core FxPro.LINK_NAMES: the names 1.39 opened for 근무 입력 and the other tabs (프로 작품에서 읽혀요). */
+export const FX_LINK_NAMES = ["추가근무", "추가근무시간", "근무표시간", "대근", "직접바꿈", "남은할일", "늦은할일", "잠잔시간", "근무알람"];
+
+/** core Compiled.names: the names (main spellings) a formula reads; empty when it does not parse. */
+export function fxNames(src) {
+  const out = new Set();
+  const r = parseFormula(src);
+  if (!r.ok) return out;
+  const walk = (n) => {
+    if (!n) return;
+    if (n.k === "ref") out.add(n.name);
+    else if (n.k === "call") n.args.forEach(walk); else if (n.k === "un") walk(n.x); else if (n.k === "bin") { walk(n.a); walk(n.b); }
+  };
+  walk(r.root);
+  return out;
+}
+
+/** 1.39 [LINK-03] core FxPro.readsLink: does a formula, or a text's {formulas} when [text], read a [FX_LINK_NAMES] name? */
+export function fxReadsLink(src, text = false) {
+  const s = String(src ?? "");
+  if (!s) return false;
+  const hit = (f) => [...fxNames(f)].some((n) => FX_LINK_NAMES.includes(n));
+  if (!text) return hit(s);
+  const re = /\{([^{}]*)\}/g;
+  let m;
+  while ((m = re.exec(s))) if (hit(m[1])) return true;
+  return false;
 }
 
 /** 1.39 [FX-01] core FxPro.readsValue / readsValueText: does a formula, or a text's {formulas}, call 값(…)? */

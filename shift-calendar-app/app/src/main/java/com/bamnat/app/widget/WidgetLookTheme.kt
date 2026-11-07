@@ -60,6 +60,9 @@ fun WidgetLookTheme(content: @Composable () -> Unit) {
     val parts = remember(settings?.parts, night) {
         if (com.bamnat.app.diag.StartGuard.safe.value) com.bamnat.core.recipe.Blueprint.EMPTY
         else com.bamnat.core.recipe.Blueprint.decode(settings?.parts).forDark(night)
+            // 1.39 [LINK-03] 근무 입력·탭 연동 꾸밈 rests without 프로 (a widget has no 입혀 보기).
+            .let { bp -> val c = runCatching { (context.applicationContext as BamnatApp).container }.getOrNull()
+                if (c == null || com.bamnat.app.logic.FxAccess.on(c)) bp else com.bamnat.core.formula.FxPro.restLink(bp) }
     }
     val whole = if (parts.touches("widget")) parts.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
     val bgArgb = whole.fill?.let { it or 0xFF000000L } ?: look.bg

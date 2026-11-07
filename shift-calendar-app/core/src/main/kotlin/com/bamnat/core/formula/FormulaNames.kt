@@ -30,14 +30,25 @@ enum class FormulaName(
     ROLE("근무종류", "shiftKind", Group.WORK, Type.TEXT, "주간·저녁·야간·당직·휴무·기타", "야간"),
     START("근무시작", "shiftStart", Group.WORK, Type.TEXT, "시작 시각(22:00)", "22:00"),
     END("근무끝", "shiftEnd", Group.WORK, Type.TEXT, "끝 시각(07:00)", "07:00"),
-    HOURS("근무시간", "hours", Group.WORK, Type.NUM, "그날 일한 시간", 9),
-    OFF("쉬는날", "isOff", Group.WORK, Type.BOOL, "근무가 없거나 쉬는 근무", false),
+    HOURS("근무시간", "hours", Group.WORK, Type.NUM, "그날 일한 시간(잔업·특근·대근 포함)", 9),
+    OFF("쉬는날", "isOff", Group.WORK, Type.BOOL, "근무가 없거나 쉬는 근무(쉬는 날에 대근·특근을 넣으면 거짓)", false),
     LEAVE("휴가", "leave", Group.WORK, Type.TEXT, "연차·반차 같은 휴가 이름(없으면 빈칸)", ""),
     WEEK_NIGHTS("이번주야간", "weekNights", Group.WORK, Type.NUM, "그 주 야간 근무 수", 3),
     WEEK_HOURS("이번주근무시간", "weekHours", Group.WORK, Type.NUM, "그 주 일한 시간", 40),
     MONTH_NIGHTS("이달야간", "monthNights", Group.WORK, Type.NUM, "그달 야간 근무 수", 8),
     MONTH_HOURS("이달근무시간", "monthHours", Group.WORK, Type.NUM, "그달 일한 시간", 168),
     STREAK("연속근무", "streak", Group.WORK, Type.NUM, "그날까지 쉬지 않고 이어 일한 날 수", 4),
+    // 1.39 [LINK-01] 근무 입력 그대로 (사용자 2026-11-07 "대근·특근 등 근무 입력을 테마가 인식 못함"): com.bamnat.core.schedule.DayWork.
+    EXTRA("추가근무", "extraWork", Group.WORK, Type.LIST, "그날 잔업·특근·대근 같은 추가 근무 종류(없으면 빈 목록)", listOf("특근")),
+    EXTRA_HOURS("추가근무시간", "extraHours", Group.WORK, Type.NUM, "그날 추가 근무 시간", 4),
+    SHIFT_HOURS("근무표시간", "shiftHours", Group.WORK, Type.NUM, "그날 근무표 근무만의 시간(추가 근무 빼고)", 8),
+    COVER("대근", "isCover", Group.WORK, Type.BOOL, "그날 대근(남의 근무를 대신)을 넣었나", false, listOf("대타")),
+    EDITED("직접바꿈", "isEdited", Group.WORK, Type.BOOL, "근무 순서와 다르게 그날 근무나 시간을 직접 바꿨나", false),
+    // 1.39 [LINK-02] 탭 사이 흐름 넓히기 (사용자 2026-11-07 "스튜디오에서 만드는 모든 탭의 기능과 완전 연동"): 할 일·수면·알람도 수식이 읽어요.
+    TASKS_LEFT("남은할일", "tasksLeft", Group.MEMO, Type.NUM, "그날 할 일(일정·체크가 있는 메모) 중 아직 안 끝낸 수", 2),
+    TASKS_LATE("늦은할일", "tasksLate", Group.MEMO, Type.NUM, "그날까지 지난 7일 안에 못 끝낸 할 일 수", 1),
+    SLEPT("잠잔시간", "sleptHours", Group.SLEEP, Type.NUM, "그날 깨어난 잠의 시간(낮잠 포함, 기록이 없으면 비어 있어요)", 6.5, listOf("수면시간")),
+    ALARM("근무알람", "shiftAlarm", Group.SLEEP, Type.BOOL, "그날 근무 알람이 울리나(쉬는 날·그날 알람 끔이면 거짓)", true),
 
     MEMO_COUNT("메모수", "memoCount", Group.MEMO, Type.NUM, "그날 메모 수", 1),
     MEMO("메모", "memo", Group.MEMO, Type.TEXT, "그날 메모 글(제목과 내용)", "인수인계 #병원"),
@@ -77,7 +88,7 @@ enum class FormulaName(
     COL_SUM("칸합계", "columnSum", Group.ROW, Type.NUM, "보드 한 칸 금액 합계", 52000),
     ;
 
-    enum class Group(val label: String) { DAY("날짜"), WORK("근무"), MEMO("메모"), MONEY("가계부"), PAY("급여"), TIME("시각"), ROW("한 장·한 줄") }
+    enum class Group(val label: String) { DAY("날짜"), WORK("근무"), MEMO("메모·할 일"), MONEY("가계부"), PAY("급여"), SLEEP("수면·알람"), TIME("시각"), ROW("한 장·한 줄") }
     enum class Type(val label: String) { NUM("숫자"), TEXT("글"), BOOL("참·거짓"), LIST("목록") }
 }
 
