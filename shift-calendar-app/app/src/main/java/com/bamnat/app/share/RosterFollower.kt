@@ -75,11 +75,11 @@ object RosterFollower {
      * when it could not be reached. Every fetch of a received link goes through here, so the old copy is never lost before it is
      * compared.
      */
-    suspend fun refresh(c: AppContainer, id: String): Boolean = lock.withLock {
+    suspend fun refresh(c: AppContainer, id: String, quiet: Boolean = false): Boolean = lock.withLock {
         val before = c.received.get(id) ?: return@withLock true
         if (before.gone) return@withLock true
         val got = try {
-            c.shareApi.readIfChanged(id, before.etag)
+            if (quiet) c.shareApi.readQuietly(id, before.etag) else c.shareApi.readIfChanged(id, before.etag)
         } catch (e: ShareLinkException) {
             if (e.message == "not_found") {
                 c.received.markGone(id, e.removedReason)
@@ -169,7 +169,7 @@ object RosterFollower {
         if (!c.shareApi.enabled) return
         c.received.expire()
         val ids = c.received.calendars.value.filter { !it.gone && followed(it) }.map { it.id }
-        for (id in ids) refresh(c, id)
+        for (id in ids) refresh(c, id, quiet = true)
         sync(c.appContext, c)
     }
 

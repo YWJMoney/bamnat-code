@@ -369,7 +369,7 @@ async function view(request, env, id) {
   if (!record || Date.parse(record.expiresAt) < Date.now()) {
     return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>`), 404);
   }
-  if (request.method === "GET") { count(env, "views"); await markSeen(env, id, record); }
+  if (request.method === "GET") { count(env, "views"); if (!previewBot(request)) await markSeen(env, id, record); }
   // [SHR-02] On Android the page offers the app, which keeps it as a 받은 달력 next to the user's own.
   const android = /Android/i.test(request.headers.get("user-agent") || "");
   return html(renderSchedule(record.schedule, record.expiresAt, android ? id : null, id));
@@ -421,7 +421,8 @@ async function read(request, env, id) {
   if (asked.includes(tag.replace(/^W\//, ""))) {
     return new Response(null, { status: 304, headers: { etag: tag, "cache-control": "no-store" } });
   }
-  await markSeen(env, id, record);
+  // 1.39 G2: the member's app checking in the background (받은 근무표 따라가기, 하루 한 번 소식) is not the member looking.
+  if (request.headers.get("x-bamnat-quiet") !== "1") await markSeen(env, id, record);
   const res = json({ schedule: record.schedule, expiresAt: record.expiresAt, updatedAt: record.updatedAt ?? null, ...(record.tired ? { tired: true } : {}) });
   res.headers.set("etag", tag);
   return res;
@@ -1089,6 +1090,15 @@ async function callView(env, key, said, status = 200, known = null) {
 // 봤어요: a link the leader asks about keeps the time it was first opened after each change (one write per change at most).
 
 const seenKey = (id) => `seen:${id}`;
+
+/**
+ * 1.39 G2 (숨은 문제 P1): a messenger fetching the link for its preview card (카카오톡·라인·슬랙…) or a search robot is not the member
+ * opening it, so it does not count as 봤어요. A messenger's own in-app browser (KAKAOTALK, Line/) is a person and still counts.
+ */
+export function previewBot(request) {
+  const ua = request.headers.get("user-agent") || "";
+  return /kakaotalk-scrap|facebookexternalhit|slackbot|twitterbot|telegrambot|discordbot|linkedinbot|whatsapp\/|skypeuripreview|embedly|yeti\/|daumoa|googlebot|bingbot|applebot|naverbot|crawler|spider|[a-z]bot\//i.test(ua);
+}
 
 async function markSeen(env, id, record) {
   if (!record.watch) return;

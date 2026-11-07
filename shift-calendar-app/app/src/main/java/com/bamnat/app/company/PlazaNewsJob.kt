@@ -232,7 +232,7 @@ class PlazaNewsJob : JobService() {
             val lines = mutableListOf<String>()
             for (cal in c.received.calendars.value.filter { !it.gone }) {
                 val got = try {
-                    c.shareApi.readIfChanged(cal.id, cal.etag)
+                    c.shareApi.readQuietly(cal.id, cal.etag)
                 } catch (e: ShareLinkException) {
                     if (e.message == "not_found") c.received.markGone(cal.id, e.removedReason)
                     null
