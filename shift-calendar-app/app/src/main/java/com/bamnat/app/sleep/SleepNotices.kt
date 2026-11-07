@@ -91,7 +91,7 @@ object SleepingNotice {
         val notification = NotificationCompat.Builder(context, Notifications.SLEEPING_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
-            .setGroup(Notifications.SLEEPING_GROUP)
+            .setGroup(Notifications.SLEEPING_GROUP).setGroupSummary(true) // 1.39 PC c0ca3d9f: a group with no summary is bundled by Android 15+
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setOngoing(true)
             .setSilent(true)

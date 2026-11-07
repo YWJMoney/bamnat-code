@@ -214,6 +214,8 @@ object RosterFollower {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(Notifications.open(c.appContext, NoticeLinks.Target.TODAY, 2232))
             .setAutoCancel(true)
+            // 1.39 PC c0ca3d9f: on its own, so Android never bundles it with 자는 중 (whose ‘깼어요’ then hid under a fold).
+            .setGroup(Notifications.GROUP_ROSTER + id).setGroupSummary(true)
             .build()
         Notifications.post(c.appContext, Notifications.ROSTER_ID, n, tag = id)
     }

@@ -74,6 +74,8 @@ object Notifications {
     const val GROUP_TODAY = "bamnat_today"
     /** 1.38 '오늘 남은 알람을 껐어요' alone, never bundled with 소식. */
     const val GROUP_STATUS = "bamnat_status"
+    /** 1.39 D9 '받은 근무표 바뀜', one group per received calendar, never bundled with 자는 중 (PC c0ca3d9f). */
+    const val GROUP_ROSTER = "bamnat_roster_"
 
     const val ALARM_NOTIFICATION_ID = 7001
     /** 1.35 [J135-08] The ringing notice put up again as a new one (an update of the first does not pop up again). */
