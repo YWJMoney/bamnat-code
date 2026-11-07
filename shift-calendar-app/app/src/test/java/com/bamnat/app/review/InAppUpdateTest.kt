@@ -9,8 +9,11 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import androidx.test.ext.junit.runners.AndroidJUnit4
 
 /** 1.39 [LOOP-13] When the app asks Play for an update, from the server's numbers; [LOOP-17] the known-issue line. */
+@RunWith(AndroidJUnit4::class)
 class InAppUpdateTest {
     @Test fun nothingSetAsksNothing() {
         assertNull(InAppUpdate.due(53, 0, 0))
