@@ -250,7 +250,17 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     var editor by remember(team.id, month) { mutableStateOf<TeamEditor?>(null) }
     var board by remember(team.id, month) { mutableStateOf<TeamBoard?>(null) }
     LaunchedEffect(startImport) { startImport?.first?.month?.let { if (it != month) monthText = it.toString() } }
-    LaunchedEffect(saved) { val s = saved ?: return@LaunchedEffect; if (editor == null || board?.members != s.members) { editor = TeamEditor(board?.let { now -> val ids = s.members.map { it.id }.toSet(); now.copy(members = s.members, cells = now.cells.filterKeys { it.first in ids }) } ?: s); board = editor!!.board } }
+    // 1.39 PC e1240d5a: a file or shared photo of another month moves the month while the last month's board is still on its
+    // way in; that board used to land on this month (머리 11월, 칸 12월) and the import, waiting for this month's board, never
+    // opened. Only this month's board is taken, and one of another month already in hand is replaced.
+    LaunchedEffect(saved, month) {
+        val s = saved?.takeIf { it.month == month } ?: return@LaunchedEffect
+        val here = board?.takeIf { it.month == s.month }
+        if (editor == null || here == null || here.members != s.members) {
+            editor = TeamEditor(here?.let { now -> val ids = s.members.map { it.id }.toSet(); now.copy(members = s.members, cells = now.cells.filterKeys { it.first in ids }) } ?: s)
+            board = editor!!.board
+        }
+    }
     LaunchedEffect(board) { val b = board ?: return@LaunchedEffect; if (b != saved) { delay(400); store.saveBoard(team.id, b) } }
     // 1.38 검토(데이터 보존): leaving within the 400ms wait used to drop the last cells painted; they are written on the way out.
     val lastBoard by androidx.compose.runtime.rememberUpdatedState(board)

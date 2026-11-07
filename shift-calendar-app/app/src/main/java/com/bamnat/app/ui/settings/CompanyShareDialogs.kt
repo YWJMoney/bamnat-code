@@ -36,8 +36,13 @@ fun CompanyShareDialog(hasPay: Boolean, hasRotation: Boolean, onDismiss: () -> U
     val context = androidx.compose.ui.platform.LocalContext.current
     var name by rememberSaveable { mutableStateOf(runCatching { com.bamnat.app.share.ShareContent.companyName(context.appContainer) }.getOrDefault("")) }
     // [CYC-06] 1.39: my 조 from 모든 조 보기, and every 조 goes along with its day.
-    val roster = remember { runCatching { context.appContainer.teams.get(com.bamnat.app.data.PersonalCalendar.MAIN) }.getOrNull()?.takeIf { it.teams.size >= 2 } }
-    var team by rememberSaveable { mutableStateOf(roster?.mine?.name.orEmpty()) }
+    // PC e1240d5a: the 조 모든 조 보기 shows, set there or worked out from the order, the same ones the file takes.
+    val roster by androidx.compose.runtime.produceState<com.bamnat.core.schedule.TeamRoster?>(null) {
+        value = runCatching { context.appContainer.companyShare.teamsToSend() }.getOrNull()?.takeIf { it.teams.size >= 2 }
+    }
+    var team by rememberSaveable { mutableStateOf("") }
+    var typed by rememberSaveable { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(roster) { if (!typed && team.isEmpty()) roster?.let { team = it.mine.name } }
     var amounts by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -47,11 +52,12 @@ fun CompanyShareDialog(hasPay: Boolean, hasRotation: Boolean, onDismiss: () -> U
                 OutlinedTextField(name, { name = it.take(40) }, label = { Text("회사·부서 이름 (선택)") }, singleLine = true)
                 if (hasRotation) {
                     OutlinedTextField(
-                        team, { team = it.take(12) },
+                        team, { team = it.take(12); typed = true },
                         label = { Text("내 조 이름 (선택)") },
                         placeholder = { Text("예: A조") },
                         supportingText = {
-                            Text(if (roster != null) "모든 조 보기의 ${roster.teams.joinToString("·") { it.name }}도 함께 가요. 어느 조 동료든 조만 고르면 돼요"
+                            val r = roster
+                            Text(if (r != null) "모든 조 보기의 ${r.teams.joinToString("·") { it.name }}도 함께 가요. 어느 조 동료든 조만 고르면 돼요"
                                 else "같은 조 동료는 오늘 근무를 따로 고르지 않아도 돼요")
                         },
                         singleLine = true,

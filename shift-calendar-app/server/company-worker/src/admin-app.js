@@ -720,7 +720,8 @@ function adminApp(L, BUILD, M) {
         }
         // 1.36 [VIL-21] 마을 운영: 유형 광장마다 이번 주 주제.
         else if (!id && S.postFilter === "village") {
-          jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })));
+          jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })),
+            api("/plaza/picks").then(keep((d) => { S.data.picks = d; })), api("/plaza/effect").then(keep((d) => { S.data.plazaEffect = d; })));
         }
         else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
         else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
@@ -1274,7 +1275,57 @@ function adminApp(L, BUILD, M) {
         placeholder="예: 야간 끝나고 잠드는 나만의 방법"${edit ? "" : " readonly"}></label>
       ${edit ? `<div class="actions"><button class="btn primary" data-act="topic-save" data-id="${esc(x.room)}">이야기 주제 저장</button>
         ${x.text ? `<button class="btn ghost" data-act="topic-clear" data-id="${esc(x.room)}">내리기</button>` : ""}</div>` : ""}
-    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit);
+    </article>`).join("")}</div>` + `<hr class="split">` + contestsView(edit) + `<hr class="split">` + picksView(edit) + `<hr class="split">` + plazaEffectView();
+  }
+
+  /**
+   * 1.39 [PLZC-33] 광장 효과: per kind of work's plaza, sums only. 처리방침 3.12 (plaza.people) 전후를 하루 글 수로 비교하고,
+   * 1.40 광장 논의(docs/plans/1.40-이후-논의/광장.md)를 이 숫자로 시작해요.
+   */
+  function plazaEffectView() {
+    const d = S.data.plazaEffect;
+    if (!d) return skeleton(1);
+    const n = (v, unit = "") => (v === null || v === undefined ? "–" : `${v}${unit}`);
+    const mins = (m) => (m === null ? "–" : m < 60 ? `${m}분` : `${Math.round(m / 6) / 10}시간`);
+    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. 다시 쓴 분은 처음 쓴 뒤 ${d.back}일 안에 또 쓴 비율이에요.</p>
+      <div class="table-wrap"><table class="list nums"><thead><tr><th scope="col">광장</th><th scope="col">하루 글 (전)</th><th scope="col">질문 · 답 받음</th><th scope="col">첫 답까지</th><th scope="col">답</th><th scope="col">태그 붙은 글</th>
+        <th scope="col">나도요</th><th scope="col">근무 카드</th><th scope="col">쓴 분</th><th scope="col">처음 쓴 분 · 다시 씀</th><th scope="col">오늘 출근</th></tr></thead><tbody>
+      ${d.items.map((x) => {
+        const cells = [["하루 글 (전)", `${n(x.postsPerDay)} (${n(x.postsPerDayBefore)})`], ["질문 · 답 받음", `${x.questions} · ${n(x.answeredPct, "%")}`],
+          ["첫 답까지", mins(x.firstAnswerMin)], ["답", x.answers], ["태그 붙은 글", n(x.tagged, "%")], ["나도요", x.metoo], ["근무 카드", x.cards],
+          ["쓴 분", x.writers], ["처음 쓴 분 · 다시 씀", `${x.newWriters} · ${n(x.cameBackPct, "%")}`], ["오늘 출근", x.checkinToday]];
+        return `<tr><td class="name">${esc(x.name)}</td>${cells.map(([l, v]) => `<td class="n"><span class="lab">${l} </span>${v}</td>`).join("")}</tr>`;
+      }).join("")}
+      </tbody></table></div>`;
+  }
+
+  const FORM_NAMES = { THREE_SHIFT: "3교대", TWO_SHIFT: "2교대", FOUR_TEAM: "4조 2교대", NURSE: "간호 듀티", ON_CALL: "당직", DAY_ON_DAY_OFF: "격일",
+    PUBLIC: "공무원 교대", OFFICE: "주5일 낮", PART_TIME: "시급 파트타임", DAILY: "일당" };
+  const cut = (t, n) => (t.length > n ? `${t.slice(0, n)}…` : t);
+
+  /**
+   * 1.39 [PLZC-22] 광장 답 모음: per kind of work's plaza, the picks (앱 광장 '선배 답 모음'과 도움말에 보여요) and answers worth picking
+   * (질문한 분이 '도움 됐어요'를 누른 답, 나도요 3+), newest 120일.
+   */
+  function picksView(edit) {
+    const d = S.data.picks;
+    if (!d) return skeleton(1);
+    const card = (x) => `<article class="card">
+      <div class="head"><h3>${esc(x.name)}</h3><span class="pill${x.picks.length ? " ok" : ""}">모음 ${x.picks.length}</span>
+        <span class="pill${x.candidates.length ? " info" : ""}">후보 ${x.candidates.length}</span></div>
+      ${x.picks.length ? `<ul class="plain">${x.picks.map((p) => `<li><div class="row"><span class="row-main"><b>${esc(p.title)}</b>
+        <small>${p.form ? `${esc(FORM_NAMES[p.form] ?? p.form)} · ` : ""}${esc(cut(p.answer, 60))}${p.gone ? " · 답이 내려가 앱에는 안 보여요" : ""}</small></span>
+        ${edit ? `<span class="row-side"><button class="btn small ghost" data-act="pick-remove" data-id="${esc(p.id)}">빼기</button></span>` : ""}</div></li>`).join("")}</ul>`
+        : '<p class="meta">아직 고른 답이 없어요</p>'}
+      ${x.candidates.length ? `<h4>넣을 만한 답</h4><ul class="plain">${x.candidates.map((c) => `<li>
+        <p class="meta">Q. ${esc(cut(c.question, 80))}${c.form ? ` · ${esc(FORM_NAMES[c.form] ?? c.form)}` : ""}</p>
+        <p>A. ${esc(cut(c.body, 160))} <span class="meta">${c.chosen ? "질문한 분이 도움 됐어요 · " : ""}나도요 ${c.agree}</span></p>
+        ${edit ? `<div class="actions"><input id="pick-title-${esc(c.answer)}" type="text" maxlength="40" placeholder="모음 제목 (예: 야간 뒤 바로 잠드는 법)">
+          <button class="btn primary" data-act="pick-add" data-id="${esc(c.answer)}">답 모음에 넣기</button></div>` : ""}</li>`).join("")}</ul>` : ""}
+    </article>`;
+    return `<h3>광장 답 모음</h3><p class="hint">도움이 된 답을 골라 제목을 붙이면 앱 그 유형 광장 맨 위 ‘📚 선배 답 모음’에 보여요.
+      질문의 근무형태가 있으면 그 근무형태 분께 먼저 보여요. 답이나 질문이 내려가면 앱에서도 저절로 빠져요. 광장마다 30개까지.</p>
+      <div class="grid">${d.items.map(card).join("")}</div>`;
   }
 
   const STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
@@ -4672,6 +4723,8 @@ function adminApp(L, BUILD, M) {
       S.data.care = null;
       S.data.village = null;
       S.data.contests = null;
+      S.data.picks = null;
+      S.data.plazaEffect = null;
       refilter("posts");
     },
     // 1.39 [CARE-05]
@@ -4758,6 +4811,19 @@ function adminApp(L, BUILD, M) {
           load();
         });
       S.data.contests = null;
+      load();
+    },
+    // 1.39 [PLZC-22] 광장 답 모음 넣기·빼기.
+    "pick-add": async ({ id }) => {
+      const title = document.getElementById(`pick-title-${id}`)?.value?.trim() ?? "";
+      if (!title) return toast("모음 제목을 적어 주세요");
+      await act(() => api("/plaza/picks", "POST", { answer: id, title }), `‘${title}’을 답 모음에 넣었어요. 앱 광장에 보여요`);
+      S.data.picks = null;
+      load();
+    },
+    "pick-remove": async ({ id }) => {
+      await act(() => api(`/plaza/picks/${id}`, "DELETE"), "답 모음에서 뺐어요");
+      S.data.picks = null;
       load();
     },
     "topic-clear": async ({ id }) => {

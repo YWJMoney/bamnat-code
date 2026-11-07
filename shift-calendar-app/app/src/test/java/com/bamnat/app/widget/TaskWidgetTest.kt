@@ -71,6 +71,19 @@ class TaskWidgetTest {
         assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { TaskLine(emptyList()) } }.remoteViews)
         assertNotNull(GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { TaskLocked(short = true) } }.remoteViews)
         assertTrue(TaskWidget.SHORT_BELOW > 60.dp && TaskWidget.SHORT_BELOW < 110.dp)
+        // PC e0f19f47: a launcher drew the "○" letter as a dot. The circle is a picture, at least 18 dp, and no row writes "○" or "✓".
+        val line = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(rows) } } }
+        val drawn = line.remoteViews.apply(context, android.widget.FrameLayout(context))
+        val texts = mutableListOf<String>()
+        val pictures = mutableListOf<android.widget.ImageView>()
+        fun walk(v: android.view.View) {
+            if (v is android.widget.TextView) texts += v.text.toString()
+            if (v is android.widget.ImageView && v.drawable != null) pictures += v
+            if (v is android.view.ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(drawn)
+        assertTrue("no circle letter: $texts", texts.none { "○" in it || "✓" in it })
+        assertTrue("the circle is drawn: $texts", pictures.isNotEmpty())
         // The second widget's row is 프로; the first is free whatever the tier.
         assertEquals(com.bamnat.app.tier.Tier.PRO, Feature.MORE_TASK_WIDGETS.minTier)
     }

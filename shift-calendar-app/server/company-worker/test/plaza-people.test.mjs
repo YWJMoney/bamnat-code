@@ -58,7 +58,7 @@ test("[PLZC-10][PLZC-12] after 3.12: the tag is kept as written, months the serv
   assert.deepEqual(a.tag, { s: "SHIFT", f: "FOUR_TEAM", n: "night", m: 0 });
   assert.deepEqual(b.tag, { s: "SHIFT", f: "THREE_SHIFT" });
   // 오늘 글 2, 답 기다리는 질문 1, 근무 중 1 (the one written at work).
-  assert.deepEqual(p.pulse, { today: 2, waiting: 1, working: 1 });
+  assert.deepEqual(p.pulse, { today: 2, waiting: 1, working: 1, checkin: { counts: { day: 0, night: 0 } } });
   // An answer from someone else: no longer waiting. The asker's own does not count.
   await call("POST", "/api/posts", { device: device(1), company: "style-shift", setup: "room", body: "저도 궁금해서 하나 더", parent: a.id }, from(1));
   assert.equal((await read(call, 4, "style-shift")).data.pulse.waiting, 1);
@@ -140,4 +140,168 @@ test("[PLZC-40] 제작자 표식: 🏅 이달의 제작자·⭐ 인기 제작자
   await call("POST", "/api/admin/care/hold", { post: said, scope: "opinion", days: 7, reason: "abuse" }, h);
   assert.equal((await call("GET", `/api/recipes/${a}`)).data.mark, undefined);
   assert.equal((await read(call, 5, "style-shift")).data.posts.find((p) => p.id === said)?.mark, undefined);
+});
+
+test("[PLZC-41] 광장 답 바로 알림: an answer tells the asker, a 근무형태 question tells its watchers, one word-free message, after 3.12", async (t) => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { fcmForget } = await import("../src/fcm.js");
+  const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const sa = JSON.stringify({ client_email: "push@test.iam.gserviceaccount.com", project_id: "bamnat-test",
+    private_key: privateKey.export({ type: "pkcs8", format: "pem" }) });
+  const sent = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (u.startsWith("https://oauth2.googleapis.com/")) return new Response(JSON.stringify({ access_token: "ya29.test", expires_in: 3600 }), { status: 200 });
+    if (u.startsWith("https://fcm.googleapis.com/")) { sent.push(JSON.parse(init.body).message); return new Response("{}", { status: 200 }); }
+    return real(url, init);
+  };
+  t.after(() => { globalThis.fetch = real; fcmForget(); });
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server({ FCM_SERVICE_ACCOUNT: sa });
+  const token = (n) => `fcm-token-for-phone-${n}-0123456789abcdef:APA91b`;
+  for (const n of [1, 2, 3]) await call("POST", "/api/push/phone", { device: device(n), token: token(n) }, from(n));
+  const watch = (n, form) => call("POST", "/api/plaza/watch", { device: device(n), room: "style-shift", form }, from(n));
+  // Before 3.12 nothing: no watching, no message.
+  assert.equal((await watch(2, "FOUR_TEAM")).status, 403);
+  const early = (await write(call, 1, "style-shift", "야간 끝나고 몇 시간 자요?", null, { kind: "question" })).data.id;
+  await call("POST", "/api/posts", { device: device(2), company: "style-shift", setup: "room", body: "저는 여섯 시간이요", parent: early }, from(2));
+  assert.equal(sent.length, 0);
+  await policyOn(call);
+  assert.equal((await watch(2, "OFFICE")).data.error, "form", "a 일근 form in 교대 광장");
+  assert.equal((await watch(2, "FOUR_TEAM")).data.ok, true);
+  // A 4조 2교대 question: the watcher hears, the writer and others do not.
+  const q = (await write(call, 1, "style-shift", "4조 2교대 야간 이틀째 어떻게 버텨요?", { s: "SHIFT", f: "FOUR_TEAM" }, { kind: "question" })).data.id;
+  assert.deepEqual(sent.map((m) => [m.token, m.data.kind]), [[token(2), "plaza_question"]]);
+  // Another within 3 hours: not again.
+  await write(call, 3, "style-shift", "4조 2교대 주간 끝나고 운동하세요?", { s: "SHIFT", f: "FOUR_TEAM" }, { kind: "question" });
+  assert.equal(sent.length, 1);
+  // An answer from someone else tells the asker; the asker's own does not.
+  await call("POST", "/api/posts", { device: device(1), company: "style-shift", setup: "room", body: "저도 궁금해서요", parent: q }, from(1));
+  assert.equal(sent.length, 1);
+  await call("POST", "/api/posts", { device: device(3), company: "style-shift", setup: "room", body: "낮잠을 두 번 나눠 자요", parent: q }, from(3));
+  assert.deepEqual(sent.slice(1).map((m) => [m.token, m.data.kind]), [[token(1), "plaza_answer"]]);
+  // No words of the post go to Google.
+  assert.ok(!JSON.stringify(sent).includes("낮잠") && !JSON.stringify(sent).includes("4조"));
+  // A talk post's answer is not a question's: nothing.
+  const talk = (await write(call, 1, "style-shift", "오늘 야간 끝!", { s: "SHIFT" })).data.id;
+  t.mock.timers.setTime(NOW + 3600e3);
+  await call("POST", "/api/posts", { device: device(3), company: "style-shift", setup: "room", body: "수고하셨어요", parent: talk }, from(3));
+  assert.equal(sent.length, 2);
+  // Stop watching.
+  assert.equal((await call("DELETE", "/api/plaza/watch", { device: device(2), room: "style-shift" }, from(2))).data.ok, true);
+});
+
+test("[PLZC-21] 오늘 출근: one tap a day per phone, counted by kind in the room's head line, only after 3.12", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const tap = (n, room, kind) => call("POST", "/api/plaza/checkin", { device: device(n), room, kind }, from(n));
+  assert.equal((await tap(1, "style-shift", "night")).status, 403);
+  await policyOn(call);
+  assert.equal((await tap(1, "style-day", "day")).data.error, "room", "일근 광장에는 없어요");
+  assert.equal((await tap(1, "style-shift", "rain")).data.error, "kind");
+  assert.deepEqual((await tap(1, "style-shift", "night")).data.counts, { day: 0, night: 1 });
+  await tap(2, "style-shift", "night");
+  const r = await tap(3, "style-shift", "day");
+  assert.deepEqual(r.data.counts, { day: 1, night: 2 });
+  assert.equal(r.data.mine, "day");
+  // Changing my mind moves my one tap; null takes it back.
+  assert.deepEqual((await tap(3, "style-shift", "night")).data.counts, { day: 0, night: 3 });
+  assert.deepEqual((await tap(3, "style-shift", null)).data.counts, { day: 0, night: 2 });
+  const head = (await read(call, 1, "style-shift")).data.pulse;
+  assert.deepEqual(head.checkin, { counts: { day: 0, night: 2 }, mine: "night" });
+  assert.deepEqual((await tap(4, "style-field", "rain")).data.counts, { go: 0, rain: 1 });
+  // A new Korean day starts from nothing.
+  t.mock.timers.tick(DAY);
+  assert.deepEqual((await read(call, 1, "style-shift")).data.pulse.checkin, { counts: { day: 0, night: 0 } });
+});
+
+test("[PLZC-31] 근무형태별 투표 결과: a 근무형태 of 5 or more apart, the rest together, only after 3.12", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  await policyOn(call);
+  const id = (await write(call, 1, "style-shift", "야간 끝나고 바로 자요?", null, { kind: "question", poll: ["바로 자요", "좀 있다 자요"] })).data.id;
+  const vote = (n, choice, f) => call("POST", `/api/posts/${id}/poll`, { device: device(n), choice, ...(f ? { tag: { s: "SHIFT", f } } : {}) }, from(n));
+  for (const n of [10, 11, 12, 13]) await vote(n, 0, "FOUR_TEAM");
+  let r = await vote(14, 1, "FOUR_TEAM");
+  assert.deepEqual(r.data.poll.counts, [4, 1]);
+  assert.deepEqual(r.data.poll.byForm, [{ f: "FOUR_TEAM", counts: [4, 1] }], "five 4조 2교대 stand apart; nobody else yet");
+  for (const n of [20, 21]) await vote(n, 1, "THREE_SHIFT");
+  for (const n of [30, 31]) await vote(n, 1);
+  r = await vote(32, 0);
+  // Two 3교대 are too few to stand alone: with the three without a tag they are 그 밖의 근무.
+  assert.deepEqual(r.data.poll.byForm, [{ f: "FOUR_TEAM", counts: [4, 1] }, { f: null, counts: [1, 4] }]);
+  assert.equal((await vote(33, 0, "OFFICE")).status, 400, "a 일근 form in 교대 광장");
+  const seen = (await read(call, 2, "style-shift")).data.posts.find((p) => p.id === id).poll;
+  assert.deepEqual(seen.byForm, [{ f: "FOUR_TEAM", counts: [4, 1] }, { f: null, counts: [1, 4] }]);
+});
+
+test("[PLZC-20] 근무 카드: numbers only, on a top post where days at work count, shown after 3.12", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const card = { d: 8, w: 5, n: 2, s: 4, o: 3 };
+  const early = (await write(call, 1, "style-shift", "이번 달 벌써 야간 둘", null, { card })).data.id;
+  await policyOn(call);
+  const id = (await write(call, 1, "style-shift", "이번 달 반도 안 됐는데 야간 둘", null, { card })).data.id;
+  for (const bad of [{ ...card, note: 1 }, { ...card, n: 9 }, { ...card, w: 7 }, { ...card, d: 0, w: 0, n: 0, s: 0, o: 0 }, { ...card, s: 40 }, "5"]) {
+    assert.equal((await write(call, 2, "style-shift", "카드 시험 글이에요", null, { card: bad })).status, 400, JSON.stringify(bad));
+  }
+  assert.equal((await write(call, 2, "style-shop", "가게는 근무 카드가 없어요", null, { card })).status, 400);
+  const posts = (await read(call, 3, "style-shift")).data.posts;
+  assert.deepEqual(posts.find((p) => p.id === id).card, card);
+  assert.equal(posts.find((p) => p.id === early).card, undefined, "before 3.12 nothing was kept");
+  // An answer carries none.
+  const reply = (await call("POST", "/api/posts", { device: device(2), company: "style-shift", setup: "room", body: "고생 많으세요", parent: id, card }, from(2))).data.id;
+  assert.equal((await read(call, 3, "style-shift")).data.posts.find((p) => p.id === reply).card, undefined);
+});
+
+test("[PLZC-22] 광장 답 모음: the operator picks a helped answer, the app reads it after 3.12, a hidden one drops out", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const admin = await signIn(call);
+  await policyOn(call);
+  const q = (await write(call, 1, "style-shift", "야간 끝나고 바로 잠이 안 와요", { s: "SHIFT", f: "FOUR_TEAM" }, { kind: "question" })).data.id;
+  const a = (await call("POST", "/api/posts", { device: device(2), company: "style-shift", setup: "room", body: "암막 커튼이랑 귀마개 쓰고 바로 누워요", parent: q }, from(2))).data.id;
+  const b = (await call("POST", "/api/posts", { device: device(3), company: "style-shift", setup: "room", body: "저도 궁금해요", parent: q }, from(3))).data.id;
+  assert.equal((await call("POST", `/api/posts/${q}/answer`, { device: device(1), reply: a }, from(1))).status, 200);
+  const list = (await call("GET", "/api/admin/plaza/picks", undefined, admin)).data.items.find((x) => x.room === "style-shift");
+  assert.deepEqual(list.candidates.map((c) => [c.answer, c.chosen, c.form]), [[a, true, "FOUR_TEAM"]], "only the chosen one, not '저도 궁금해요'");
+  assert.equal((await call("POST", "/api/admin/plaza/picks", { answer: b, title: "x".repeat(41) }, admin)).data.error, "title");
+  assert.equal((await call("POST", "/api/admin/plaza/picks", { answer: q, title: "질문은 안 돼요" }, admin)).data.error, "answer");
+  assert.equal((await call("POST", "/api/admin/plaza/picks", { answer: a, title: "야간 뒤 바로 잠드는 법" }, admin)).status, 200);
+  const items = (await call("GET", "/api/plaza/picks?room=style-shift", undefined, as(5))).data.items;
+  assert.deepEqual(items.map((x) => [x.title, x.form, x.question, x.answer]),
+    [["야간 뒤 바로 잠드는 법", "FOUR_TEAM", "야간 끝나고 바로 잠이 안 와요", "암막 커튼이랑 귀마개 쓰고 바로 누워요"]]);
+  assert.equal((await call("GET", "/api/admin/plaza/picks", undefined, admin)).data.items.find((x) => x.room === "style-shift").candidates.length, 0);
+  // The writer takes the answer down: it is gone from the 모음 too.
+  assert.equal((await call("DELETE", `/api/posts/${a}`, undefined, as(2))).status < 300, true);
+  assert.deepEqual((await call("GET", "/api/plaza/picks?room=style-shift", undefined, as(5))).data.items, []);
+  assert.equal((await call("GET", "/api/plaza/picks?room=style-x", undefined, as(5))).status, 400);
+});
+
+test("[PLZC-33] 광장 효과: sums per plaza, answered share and first answer time, tags, 나도요, writers coming back", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW - 20 * DAY });
+  const { call } = server();
+  // A first-time writer 20 days ago who writes again 2 days later.
+  await write(call, 7, "style-shift", "처음 써 봐요 반가워요");
+  t.mock.timers.tick(2 * DAY);
+  await write(call, 7, "style-shift", "또 왔어요 오늘도 야간");
+  t.mock.timers.tick(18 * DAY);
+  await policyOn(call);
+  const q = (await write(call, 1, "style-shift", "야간 뒤 몇 시간 자요?", { s: "SHIFT", f: "FOUR_TEAM" }, { kind: "question" })).data.id;
+  t.mock.timers.tick(30 * 60e3);
+  await call("POST", "/api/posts", { device: device(2), company: "style-shift", setup: "room", body: "여섯 시간이요", parent: q }, from(2));
+  await write(call, 3, "style-shift", "답 없는 질문이에요", null, { kind: "question" });
+  await call("POST", `/api/posts/${q}/vote`, { device: device(4), ok: true }, from(4));
+  const r = await call("GET", "/api/admin/plaza/effect", undefined, await signIn(call));
+  assert.equal(r.status, 200);
+  const s = r.data.items.find((x) => x.room === "style-shift");
+  assert.equal(s.questions, 2);
+  assert.equal(s.answeredPct, 50);
+  assert.equal(s.firstAnswerMin, 30);
+  assert.equal(s.metoo, 1);
+  assert.equal(s.newWriters, 1, "the writer of 20 days ago");
+  assert.equal(s.cameBackPct, 100);
+  assert.ok(s.tagged > 0 && s.tagged < 100);
+  assert.equal(r.data.items.find((x) => x.room === "style-shop").posts, 0);
 });

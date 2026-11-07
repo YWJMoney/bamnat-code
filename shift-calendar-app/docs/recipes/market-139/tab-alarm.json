@@ -65,7 +65,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF1D7A7A|ft:notosanskr"
+     "screens": "alarm~bg:FF112F32|fl:lg.180.FF112F32,FF0E1C1F|cd:FF144345|ik:FFFFFFFF|ac:FF83B6B6|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -162,7 +162,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF3D5AFE|ft:notosanskr"
+     "screens": "alarm~bg:FF1B255C|fl:lg.180.FF1B255C,FF121732|cd:FF243387|ik:FFFFFFFF|ac:FF94A4FE|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -211,7 +211,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF8E7CF0|ft:gowundodum"
+     "screens": "alarm~bg:FF353058|fl:lg.180.FF353058,FF1E1C30|cd:FF4D4480|ik:FFFFFFFF|ac:FFC1B7F7|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -262,7 +262,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF00A84D|ft:notosanskr"
+     "screens": "alarm~bg:FF073E24|fl:lg.180.FF073E24,FF092319|cd:FF065A2F|ik:FFFFFFFF|ac:FF73CF9D|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -366,7 +366,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFD7261E|ft:notosanskr"
+     "screens": "alarm~bg:FF4C1414|fl:lg.180.FF4C1414,FF281012|cd:FF711917|ik:FFFFFFFF|ac:FFE98883|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -412,7 +412,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:notosanskr"
+     "screens": "alarm~bg:FF101B38|fl:lg.180.FF101B38,FF0D1322|cd:FF13234E|ik:FFFFFFFF|ac:FF8293C0|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -464,7 +464,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF4A6A8A|ft:gowundodum"
+     "screens": "alarm~bg:FF1F2A37|fl:lg.180.FF1F2A37,FF141A22|cd:FF2B3B4D|ik:FFFFFFFF|ac:FF9BADBF|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -514,7 +514,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFE8789A|ft:gaegu"
+     "screens": "alarm~bg:FF522F3C|fl:pt.check.22F0A7BD.FF522F3C.120.0|cd:FF7A4255|ik:FFFFFFFF|ac:FFF2B5C7|ft:gaegu"
     },
     {
      "kind": "alarms",
@@ -565,7 +565,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:gowunbatang"
+     "screens": "alarm~bg:FF172633|fl:pt.wave.227896AA.FF172633.180.0|cd:FF1D3546|ik:FFFFFFFF|ac:FF8DA6B7|ft:gowunbatang"
     },
     {
      "kind": "alarms",
@@ -811,7 +811,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFE89A6B|ft:gowundodum"
+     "screens": "alarm~bg:FF52392D|fl:lg.180.FF52392D,FF2B201D|cd:FF7A533E|ik:FFFFFFFF|ac:FFE89A6B|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -862,7 +862,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFD7263D|ft:jua"
+     "screens": "alarm~bg:FF4C141E|fl:lg.180.FF4C141E,FF281016|cd:FF711927|ik:FFFFFFFF|ac:FFE98894|ft:jua"
     },
     {
      "kind": "alarms",
@@ -912,7 +912,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFC0392B|ft:notosanskr"
+     "screens": "alarm~bg:FF451A19|fl:tx.paper.FF451A19.16|cd:FF66231E|ik:FFFFFFFF|ac:FFDC928A|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -963,7 +963,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF2E7D32|ft:notosanskr"
+     "screens": "alarm~bg:FF16301B|fl:lg.180.FF16301B,FF101C15|cd:FF1D4521|ik:FFFFFFFF|ac:FF8CB88E|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -1013,7 +1013,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF08A5D|ft:gowundodum"
+     "screens": "alarm~bg:FF543429|fl:lg.180.FF543429,FF2C1E1B|cd:FF7E4B37|ik:FFFFFFFF|ac:FFF7BFA6|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -1057,7 +1057,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF2E7D4F|ft:ibmplexsanskr"
+     "screens": "alarm~bg:FF163024|fl:lg.180.FF163024,FF101C19|cd:FF1D4530|ik:FFFFFFFF|ac:FF8CB89E|ft:ibmplexsanskr"
     },
     {
      "kind": "alarms",
@@ -1102,7 +1102,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:notosanskr"
+     "screens": "alarm~bg:FF131D38|fl:lg.180.FF131D38,FF0F1422|cd:FF18264F|ik:FFFFFFFF|ac:FF8796C1|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -1146,7 +1146,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFE9A23B|ft:jua"
+     "screens": "alarm~bg:FF523C1E|fl:lg.180.FF523C1E,FF2B2216|cd:FF7A5726|ik:FFFFFFFF|ac:FFE9A23B|ft:jua"
     },
     {
      "kind": "alarms",
@@ -1190,7 +1190,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:notosanskr"
+     "screens": "alarm~bg:FF0D0E10|fl:lg.180.FF0D0E10,FF0C0D10|cd:FF0E0F11|ik:FFFFFFFF|ac:FF7C7C7C|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -1232,7 +1232,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF2B6CB0|ft:ibmplexsanskr"
+     "screens": "alarm~bg:FF152B43|fl:lg.180.FF152B43,FF101A27|cd:FF1B3C60|ik:FFFFFFFF|ac:FF8AAED4|ft:ibmplexsanskr"
     },
     {
      "kind": "alarms",
@@ -1326,7 +1326,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:notoserifkr"
+     "screens": "alarm~bg:FF0D0E10|fl:tx.paper.FF0D0E10.16|cd:FF0E0F11|ik:FFFFFFFF|ac:FF7C7C7C|ft:notoserifkr"
     },
     {
      "kind": "alarms",
@@ -1369,7 +1369,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:gowunbatang"
+     "screens": "alarm~bg:FF172623|fl:pt.thin.22789689.FF172623.60.90|cd:FF1D352D|ik:FFFFFFFF|ac:FF8DA69B|ft:gowunbatang"
     },
     {
      "kind": "alarms",
@@ -1414,7 +1414,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF28C8C|ft:gowundodum"
+     "screens": "alarm~bg:FF553538|fl:pt.confetti.22F7B4B4.FF553538.160.0|cd:FF7F4C4E|ik:FFFFFFFF|ac:FFF28C8C|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -1458,7 +1458,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF1F9D55|ft:notosanskr"
+     "screens": "alarm~bg:FF113A26|fl:lg.180.FF113A26,FF0E211A|cd:FF155533|ik:FFFFFFFF|ac:FF84C9A2|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -1496,7 +1496,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF6BA34A|ft:gowundodum"
+     "screens": "alarm~bg:FF2A3C23|fl:lg.180.FF2A3C23,FF192219|cd:FF3B582D|ik:FFFFFFFF|ac:FFAECC9B|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -1539,7 +1539,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF0F9D58|ft:nanumgothiccoding"
+     "screens": "alarm~bg:FF0C3A27|fl:lg.180.FF0C3A27,FF0B211A|cd:FF0D5534|ik:FFFFFFFF|ac:FF7BC9A3|ft:nanumgothiccoding"
     },
     {
      "kind": "alarms",
@@ -1591,7 +1591,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFB07A55|ft:jua"
+     "screens": "alarm~bg:FF402F26|fl:pt.bigdots.22CCA991.FF402F26.120.0|cd:FF5E4333|ik:FFFFFFFF|ac:FFD4B6A2|ft:jua"
     },
     {
      "kind": "alarms",
@@ -1634,7 +1634,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF2962FF|ft:notosanskr"
+     "screens": "alarm~bg:FF15285C|fl:lg.180.FF15285C,FF101932|cd:FF1A3788|ik:FFFFFFFF|ac:FF89A9FF|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -1735,7 +1735,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFE85A8A|ft:gamjaflower"
+     "screens": "alarm~bg:FF522537|fl:tx.paper.FF522537.14|cd:FF7A334D|ik:FFFFFFFF|ac:FFF2A4BF|ft:gamjaflower"
     },
     {
      "kind": "alarms",
@@ -1822,7 +1822,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF23362C|fl:tx.noise.FF23362C.16|cd:FF2C4236|ik:FFFFFFFF|ac:FFF5E27A|ft:nanumpen"
+     "screens": "alarm~bg:FF23362C|fl:tx.noise.FF23362C.16|cd:FF2C4236|ik:FFFFFFFF|ac:FFF5E27A|ft:gaegu"
     },
     {
      "kind": "alarms",
@@ -1866,7 +1866,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:notosanskr"
+     "screens": "alarm~bg:FF0E0F11|fl:lg.180.FF0E0F11,FF0C0D10|cd:FF101012|ik:FFFFFFFF|ac:FF7E7E7E|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -1915,7 +1915,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FF8A5A2B|ft:gowundodum"
+     "screens": "alarm~bg:FF342519|fl:lg.180.FF342519,FF1D1714|cd:FF4B331E|ik:FFFFFFFF|ac:FFBFA48A|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -1953,7 +1953,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF08C4B|ft:gowundodum"
+     "screens": "alarm~bg:FF543523|fl:lg.180.FF543523,FF2C1E19|cd:FF7E4C2E|ik:FFFFFFFF|ac:FFF7C09C|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -1997,7 +1997,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFE8483B|ft:notosanskr"
+     "screens": "alarm~bg:FF521F1E|fl:lg.180.FF521F1E,FF2B1516|cd:FF7A2A26|ik:FFFFFFFF|ac:FFF29A93|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -2041,7 +2041,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFD9668A|ft:gowundodum"
+     "screens": "alarm~bg:FF4D2937|fl:lg.180.FF4D2937,FF291922|cd:FF72394D|ik:FFFFFFFF|ac:FFEAABBF|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -2128,7 +2128,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:gowunbatang"
+     "screens": "alarm~bg:FF3D1819|fl:tx.paper.FF3D1819.16|cd:FF5A1F1F|ik:FFFFFFFF|ac:FFCF8E8C|ft:gowunbatang"
     },
     {
      "kind": "alarms",
@@ -2166,7 +2166,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:gowundodum"
+     "screens": "alarm~bg:FF2B211C|fl:lg.180.FF2B211C,FF191515|cd:FF3D2D24|ik:FFFFFFFF|ac:FFB09E91|ft:gowundodum"
     },
     {
      "kind": "alarms",
@@ -2252,7 +2252,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFB8860B|ft:notosanskr"
+     "screens": "alarm~bg:FF42330E|fl:lg.180.FF42330E,FF241E0F|cd:FF62490E|ik:FFFFFFFF|ac:FFD8BC79|ft:notosanskr"
     },
     {
      "kind": "alarms",
@@ -2295,7 +2295,7 @@
    "pieces": [
     {
      "kind": "screenLook",
-     "screens": "alarm~bg:FF0E0F14|fl:lg.180.FF0E0F14,FF1B1D27|cd:FF262833|ik:FFFFFFFF|ac:FFF2F2F2|ft:gowundodum"
+     "screens": "alarm~bg:FF1B2631|fl:pt.grid.228295A6.FF1B2631.50.0|cd:FF253443|ik:FFFFFFFF|ac:FF95A5B4|ft:gowundodum"
     },
     {
      "kind": "alarms",
