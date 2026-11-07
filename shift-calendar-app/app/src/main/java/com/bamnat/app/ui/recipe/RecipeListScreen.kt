@@ -667,7 +667,7 @@ private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = 
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // 1.39 [MKD-41] 누가 만들었는지 (표식 · 팔로워). 표식이 있으면 이름 색으로도.
             if (!small) Text(MarketMaker.line(item), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                color = if (MarketMaker.mark(item.mark) != null) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant)
+                color = MarketMaker.mark(item.mark)?.let { com.bamnat.app.ui.village.markColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant)
             if (item.newMaker) Text("새 창작자", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         }
     }

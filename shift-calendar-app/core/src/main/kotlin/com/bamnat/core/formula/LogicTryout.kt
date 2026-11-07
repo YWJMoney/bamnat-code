@@ -76,6 +76,76 @@ object LogicTryout {
         return Try(date, true, whenWords, r.steps(holds).joinToString(" · ") { result(it, scope) }, at)
     }
 
+    /**
+     * 1.39 [MKD-04] 값 칸 해 보기: the work's own numbers as tried on the 장터 page, never kept. Each starts at its [LogicValue.start];
+     * a press moves them as the phone would ([ValueBook.add]·[ValueBook.set] limits), and 값이 바뀌면 rules ([RuleTrigger.VALUE]) follow,
+     * a 목표 rule only when the goal is first reached, as [com.bamnat.app.logic.LogicRunner] does.
+     */
+    data class Tried(val nums: Map<String, Double> = emptyMap(), val texts: Map<String, String> = emptyMap()) {
+        /** "3/8잔", "18:30", the 글 or "비어 있음". */
+        fun show(v: LogicValue, today: LocalDate): String =
+            if (v.kind == ValueKind.TEXT) texts[v.name].orEmpty().ifEmpty { "비어 있음" } else v.show(nums[v.name] ?: v.start, today)
+
+        /** How far toward the goal (0..1), or null without one. */
+        fun toward(v: LogicValue): Float? = v.goal?.takeIf { it > 0 && v.kind == ValueKind.NUM }
+            ?.let { ((nums[v.name] ?: v.start) / it).toFloat().coerceIn(0f, 1f) }
+    }
+
+    /** One press: the values after and what happened, in order ("‘물 잔’ 값이 2 → 3이 돼요", "그러면 ‘다 마셨어요’: …"). */
+    data class Pressed(val after: Tried, val said: List<String>)
+
+    fun start(l: Logic): Tried = Tried(l.values.filter { it.kind != ValueKind.TEXT }.associate { it.name to it.start })
+
+    /** [b] pressed on [date] at [at] with the values [was]; nothing is written. */
+    fun press(l: Logic, b: LogicButton, was: Tried, date: LocalDate, facts: DayFactsBook, at: java.time.LocalDateTime): Pressed {
+        val said = ArrayList<String>()
+        var now = was
+        val base = facts.scope(date)
+        val holds = b.cond.isEmpty() || Formula.eval(b.cond, over(base, now, l))?.truthy == true
+        val steps = b.steps(holds)
+        if (steps.isEmpty()) return Pressed(was, listOf("조건(${EasyWhen.read(b.cond)?.say() ?: "수식"})이 맞지 않아 아무 일도 없어요"))
+        fun go(acts: List<LogicAct>, depth: Int) {
+            for (act in acts) {
+                val scope = over(base, now, l)
+                said += (if (depth > 0) "  " else "") + result(act, scope)
+                if (!act.verb.value) continue
+                val def = l.value(act.arg) ?: continue
+                val before = now.nums[act.arg] ?: def.start
+                now = when (act.verb) {
+                    LogicVerb.VAL_ADD -> now.copy(nums = now.nums + (act.arg to (before + (act.by ?: 1.0)).coerceIn(-ValueBook.LIMIT, ValueBook.LIMIT)))
+                    LogicVerb.VAL_SET -> now.copy(nums = now.nums + (act.arg to (act.by ?: 0.0).coerceIn(-ValueBook.LIMIT, ValueBook.LIMIT)))
+                    LogicVerb.VAL_STAMP -> now.copy(nums = now.nums + (act.arg to ValueBook.minutes(at)))
+                    else -> now.copy(texts = now.texts + (act.arg to runCatching { FormulaText.render(act.text, scope) }.getOrDefault(act.text).take(40)))
+                }
+                if (depth >= CHAIN) continue
+                val after = now.nums[act.arg] ?: def.start
+                for (r in l.rules.filter { it.on == RuleTrigger.VALUE && it.of == act.arg }) {
+                    if (r.goal) { val g = def.goal ?: continue; if (!(before < g && after >= g)) continue }
+                    val ok = r.cond.isEmpty() || Formula.eval(r.cond, over(base, now, l))?.truthy == true
+                    val next = r.steps(ok)
+                    if (next.isEmpty()) continue
+                    said += "그러면 ‘${r.name}’ 규칙이 돌아요"
+                    go(next, depth + 1)
+                }
+            }
+        }
+        go(steps, 0)
+        return Pressed(now, said)
+    }
+
+    /** As the phone's runner stops a chain of 값이 바뀌면 rules. */
+    private const val CHAIN = 3
+
+    /** [base] with the work's 값 칸 read from [t]. */
+    private fun over(base: FormulaScope, t: Tried, l: Logic): FormulaScope = object : FormulaScope {
+        override fun get(name: String): Value? = base.get(name)
+        override fun input(label: String): Value? = base.input(label)
+        override fun value(name: String): Value? = l.value(name)?.let { v ->
+            if (v.kind == ValueKind.TEXT) Value.Text(t.texts[name].orEmpty()) else Value.Num(t.nums[name] ?: v.start)
+        } ?: base.value(name)
+        override fun series(name: String): ValueSeries? = base.series(name)
+    }
+
     /** The days of [days] on which [r] would run by itself (근무 시작·끝·매일), for "앞으로 2주 동안 N번". Others wait for a tap or a save. */
     fun runsOn(r: LogicRule, days: List<LocalDate>, facts: DayFactsBook): List<LocalDate> = days.filter { rule(r, it, facts).runs }
 
