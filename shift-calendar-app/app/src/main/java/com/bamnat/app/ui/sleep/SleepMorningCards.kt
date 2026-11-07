@@ -106,7 +106,7 @@ internal fun MorningCard(
     var mood by remember(check) { mutableStateOf(check?.mood) }
     var tags by remember(check) { mutableStateOf(check?.tags.orEmpty()) }
     // 1.39 [FLOW-21] 스튜디오 '아침 한 장' 부품: the card's ground, edge and letters (nothing set: the card as it was).
-    val morning = com.bamnat.app.ui.parts.partStyle("night.morning")
+    val morning = nightStyle("night.morning")
     SectionCard(title = "잘 잤어요?", modifier = com.bamnat.app.ui.parts.PartMods.box(morning.copy(pad = null, padX = null, padY = null),
         com.bamnat.app.ui.parts.PartMods.shapeOf(morning, MaterialTheme.shapes.large))) {
         // [FLOW-12] 들어 볼 소리 first, not at the bottom of another card.

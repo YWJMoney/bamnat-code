@@ -256,7 +256,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         // 1.38 가져오기: a staff list in any file or photo (엑셀·CSV·PDF·사진), checked on one page before anyone is added.
         var reading by remember { mutableStateOf<String?>(null) }
         var importing by remember { mutableStateOf<Pair<List<com.bamnat.core.boss.StaffImport.Line>, Boolean>?>(null) }
-        val pickList = com.bamnat.app.ui.team.rememberAnyFilePicker { uri ->
+        fun readList(uri: android.net.Uri) {
             scope.launch {
                 reading = "명단을 읽고 있어요…"
                 when (val got = com.bamnat.app.imports.ManageImport.staff(context, uri, Today.date())) {
@@ -270,6 +270,13 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                     }
                 }
             }
+        }
+        val pickList = com.bamnat.app.ui.team.rememberAnyFilePicker { uri -> readList(uri) }
+        // 1.39 [READ-31]: a staff list shared from 카카오톡·갤러리 is read here at once, as one picked with the button.
+        val sharedList by com.bamnat.app.imports.SharedToManage.staffShared.collectAsStateWithLifecycle()
+        LaunchedEffect(place.id, isClosed, sharedList) {
+            if (!isClosed) com.bamnat.app.imports.SharedToManage.takeStaff()?.let(::readList)
+            else if (sharedList != null) reading = "이 달은 닫혀 있어요. 열린 달로 옮기면 받은 명단을 바로 읽어요."
         }
         OutlinedButton(onClick = pickList, enabled = !isClosed) { Text("명단 파일·사진에서 가져오기") }
         reading?.let { Hint(it) }

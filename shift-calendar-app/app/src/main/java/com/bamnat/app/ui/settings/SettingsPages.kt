@@ -749,7 +749,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             SwitchRow("휴대폰 배경색에 맞추기", "배경화면 색으로 앱의 색을 바꿔요", settings.dynamicColor) { v -> vm.update { it.copy(dynamicColor = v) } }
         }
-        // 1.39 [FLOW-14][DSG-07] 밤 색: 시간에 맞춘 자동 밤 모드 (잘 시간·새벽 근무 중), 끔, 휴대폰 따름.
+        // 1.39 [FLOW-14][DSG-07] 밤 색: 끔, 수면 화면만(기본), 잘 시간엔 앱 전체, 휴대폰 따름.
         NightLookRow(settings.nightLook) { k -> vm.update { it.copy(nightLook = k) } }
         // [CVW-08] 1.35 앱 강조색: buttons, the picked tab and what is selected, over the app's own blue.
         AccentRow(settings.accentColor) { c -> vm.update { it.copy(accentColor = c) } }
@@ -1493,7 +1493,7 @@ internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
     )
 }
 
-/** 1.39 [FLOW-14][DSG-07] 밤 색, here and on the sleep screen: the three choices with what each does. */
+/** 1.39 [FLOW-14][DSG-07] 밤 색, here and on the sleep screen: the four choices with what each does. */
 @Composable
 internal fun NightLookRow(key: String, onPick: (String) -> Unit) {
     val now = com.bamnat.core.design.NightLook.of(key)

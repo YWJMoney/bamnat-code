@@ -220,14 +220,51 @@ test("[CARE] 조사 ①③⑧: the 안내 says what, by which rule and if it was
   assert.equal((await appeal(`post:${id}`, "같이 고쳐 보자는 뜻이었어요. 다시 봐 주세요.", 3)).status, 404);
   const sent = await appeal(`post:${id}`, "같이 고쳐 보자는 뜻이었어요. 다시 봐 주세요.");
   assert.equal(sent.status, 201, JSON.stringify(sent.data));
+  // 1.39 발굴: the 경고·쉬기 tab lists 해명 waiting for an answer with the hours left of the promised 48.
+  const waiting = (await call("GET", "/api/admin/care", undefined, h)).data.appeals;
+  assert.deepEqual(waiting.map((a) => [a.inquiry, a.kind, a.hoursLeft]), [[sent.data.inquiry, "post", 48]]);
   const q = (await call("GET", `/api/admin/inquiries/${sent.data.inquiry}`, undefined, h)).data;
   assert.deepEqual([q.appeal.about.kind, q.appeal.about.status, q.appeal.about.body], ["post", "hidden", "다들 일을 너무 못하네요"]);
   assert.match(q.messages[0].text, /^\[다시 보여 주세요\] 가려진 글/);
   await call("POST", `/api/admin/care/appeal/${sent.data.inquiry}`, { result: "accepted" }, h);
+  assert.deepEqual((await call("GET", "/api/admin/care", undefined, h)).data.appeals, []);
   const shown = (await call("GET", "/api/admin/posts?status=all", undefined, h)).data.posts.find((p) => p.id === id);
   assert.equal(shown.status, "shown");
   // A 해명 on the 경고 shows as waiting until the operator decides.
   await appeal(s.warning.id, "다른 분을 탓하려던 게 아니었어요. 미안해요.");
   s = (await standing(2)).data;
   assert.deepEqual(s.warning.appeal, { result: null });
+});
+
+test("[CARE] 제작자 표식 쉼(careQuietMany): 쉬는 중·풀지 않은 경고 30일·신고 누적 제한이면 쉬고, 첫 안내와 푼 것은 그대로, 꺼지면 제한만", async () => {
+  const { d1 } = await import("./d1.mjs");
+  const { CARE_SCHEMA, careQuietMany, careQuiet } = await import("../src/community-care.js");
+  const { WRITE_LIMITS_SCHEMA, WRITE_LIMITS_COLUMNS } = await import("../src/write-limits.js");
+  const env = { DB: d1() };
+  for (const sql of [...WRITE_LIMITS_SCHEMA, ...WRITE_LIMITS_COLUMNS, ...CARE_SCHEMA]) {
+    try { await env.DB.prepare(sql).run(); } catch { /* a column already there */ }
+  }
+  let on = true;
+  const d = {
+    all: async (e, sql, ...p) => (await e.DB.prepare(sql).bind(...p).all()).results,
+    legalOpen: async () => on,
+  };
+  const note = (id, dev, kind, reason, at, until = null, lifted = null) => env.DB.prepare(
+    "INSERT INTO care_notes (id, device, kind, reason, note, days, at, until, by, ref, lifted_at) VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, 'operator', NULL, ?)")
+    .bind(id, dev, kind, reason, at, until, lifted).run();
+  await note("c1", "hold", "community", "abuse", NOW - DAY, NOW + 3 * DAY);
+  await note("c2", "warned", "warn", "abuse", NOW - 10 * DAY);
+  await note("c3", "oldwarn", "warn", "abuse", NOW - 31 * DAY);
+  await note("c4", "first", "warn", "auto_first", NOW - DAY);
+  await note("c5", "lifted", "warn", "abuse", NOW - DAY, null, NOW - 1000);
+  await note("c6", "ended", "opinion", "abuse", NOW - 10 * DAY, NOW - DAY);
+  await env.DB.prepare("INSERT INTO write_limits (device, step, since, until, per_day, times) VALUES ('limited', 1, ?, ?, 5, 1)").bind(NOW - DAY, NOW + 2 * DAY).run();
+  const all = ["hold", "warned", "oldwarn", "first", "lifted", "ended", "limited", "clean"];
+  assert.deepEqual([...await careQuietMany(d, env, all, NOW)].sort(), ["hold", "limited", "warned"]);
+  assert.equal(await careQuiet(d, env, "clean", NOW), false);
+  // A long list is read in parts under D1's 100 values.
+  const many = Array.from({ length: 250 }, (_, i) => `x${i}`).concat("hold");
+  assert.deepEqual([...await careQuietMany(d, env, many, NOW)], ["hold"]);
+  on = false;
+  assert.deepEqual([...await careQuietMany(d, env, all, NOW)], ["limited"]);
 });

@@ -29,6 +29,15 @@ class DevStatusTest(unittest.TestCase):
         e = errors({k: v for k, v in GOOD.items() if k not in ("news", "shipReply")})
         self.assertEqual(len(e), 2)
 
+    def test_fix_from_an_inquiry_needs_its_repro_test(self):
+        # [LOOP-21] 문의로 생긴 고침(d 번호 + size fix)은 재현 시험 이름이 있어야 done이 돼요. 추적 번호만인 일은 묻지 않아요.
+        fix = {**GOOD, "id": "dAbCdEfGhIjKlMnO", "size": "fix"}
+        del fix["track"]
+        self.assertTrue(any("test" in e for e in errors(fix)))
+        self.assertEqual(errors({**fix, "test": "AlarmLateTest.ringsOnTimeAfterDoze"}), [])
+        self.assertEqual(errors({**fix, "test": "PC: 잠금 화면에서 7번 울림"}), [])
+        self.assertEqual(errors({**GOOD, "size": "fix"}), [])
+
     def test_news_is_one_short_line(self):
         self.assertTrue(any("80자" in e for e in errors({**GOOD, "news": "가" * 81})))
 

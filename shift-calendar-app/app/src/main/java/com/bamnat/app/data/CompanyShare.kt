@@ -36,6 +36,8 @@ data class CompanySummary(
     val extraKinds: List<String> = emptyList(),
     /** [SETUP-02] The sender's 조, when they wrote it. */
     val team: String? = null,
+    /** [CYC-06] 1.39: every 조 of the sender's 모든 조 보기, each with the day it starts the order; empty when not set up. */
+    val teams: List<com.bamnat.core.plaza.CycleTeam> = emptyList(),
 )
 
 /**
@@ -59,6 +61,8 @@ class CompanyShare(
      * The app passes the `plaza.fixed_amount` flag, so the server can stop it without an update. A person's own amount never goes.
      */
     private val fixedAmounts: () -> Boolean = { true },
+    /** [CYC-06] 1.39: the calendar's 모든 조 보기, so the file names every 조 and a coworker on any of them picks theirs by name. */
+    private val teamRoster: () -> com.bamnat.core.schedule.TeamRoster? = { null },
 ) {
     suspend fun export(company: String, withAmounts: Boolean, team: String = ""): String {
         val snapshot = schedule.snapshot.first()
@@ -85,7 +89,17 @@ class CompanyShare(
                 .put("anchor", current.anchorDate.toString())
                 .put("steps", JSONArray(current.steps.map { id -> id?.let(names::get) ?: JSONObject.NULL }))
                 // [SETUP-02] The sender's 조, so a coworker on the same one is asked only "같은 B조예요?".
-                .apply { team.trim().take(MAX_TEAM).takeIf { it.isNotEmpty() }?.let { put("team", it) } })
+                .apply {
+                    // [CYC-06] 1.39: with 모든 조 보기 set, every 조 and the day it starts the order ("몇 조예요?" for every coworker),
+                    // and the sender's own 조 by that name when they left the box empty.
+                    val roster = teamRoster()
+                    val teams = roster?.let { com.bamnat.core.setup.TeamAnchors.ofRoster(it, current.anchorDate, current.steps.size) }.orEmpty()
+                    val own = team.trim().ifEmpty { if (teams.isNotEmpty()) roster?.mine?.name.orEmpty() else "" }
+                    own.take(MAX_TEAM).takeIf { it.isNotEmpty() }?.let { put("team", it) }
+                    if (teams.isNotEmpty()) put("teams", JSONArray(teams.map { t ->
+                        JSONObject().put("name", t.name.take(MAX_TEAM)).put("anchor", t.anchor.toString())
+                    }))
+                })
             // [PLAZA-01] Weekday and part-time work travel as their days, Monday first (U2: "모든 유형").
             is WorkPattern.Weekly -> root.put("weekly", JSONArray(current.steps.map { id -> id?.let(names::get) ?: JSONObject.NULL }))
             else -> Unit
@@ -172,6 +186,7 @@ class CompanyShare(
             extraKinds = root.optString("extraKinds").takeIf { it.isNotEmpty() }
                 ?.let { ExtraKinds.decode(it).visible().map(ExtraKind::name) }.orEmpty(),
             team = root.optJSONObject("rotation")?.optString("team")?.trim()?.take(MAX_TEAM)?.takeIf { it.isNotEmpty() },
+            teams = teamsOf(root.optJSONObject("rotation")),
         )
     }
 
@@ -689,6 +704,24 @@ class CompanyShare(
         if (this == null) emptyList() else (0 until length()).map { getJSONObject(it) }
 
     companion object {
+        /**
+         * [CYC-06] 1.39: the 조 a file names with their days (rotation.teams), in the sender's order; empty for a file without
+         * them (1.38 and before, or 모든 조 보기 not set up) or with fewer than two that can be read.
+         */
+        fun teamsOf(text: String): List<com.bamnat.core.plaza.CycleTeam> =
+            runCatching { teamsOf(JSONObject(text).optJSONObject("rotation")) }.getOrDefault(emptyList())
+
+        private fun teamsOf(rotation: JSONObject?): List<com.bamnat.core.plaza.CycleTeam> {
+            val a = rotation?.optJSONArray("teams") ?: return emptyList()
+            val teams = (0 until a.length()).mapNotNull { i ->
+                val o = a.optJSONObject(i) ?: return@mapNotNull null
+                val name = o.optString("name").trim().take(MAX_TEAM).ifEmpty { return@mapNotNull null }
+                val day = o.optString("anchor").takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return@mapNotNull null
+                com.bamnat.core.plaza.CycleTeam(name, day)
+            }.distinctBy { it.name }.take(com.bamnat.core.schedule.TeamRoster.MAX_TEAMS)
+            return teams.takeIf { it.size >= 2 }.orEmpty()
+        }
+
         const val FORMAT = "bamnat-company"
         /**
          * 2: kinds of extra work by id with their times [EXTRA-01]; 1.8 asks to update instead of dropping them.

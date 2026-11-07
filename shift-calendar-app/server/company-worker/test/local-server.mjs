@@ -305,6 +305,38 @@ async function seedMarket() {
   }
   const shown = (await env.DB.prepare("SELECT COUNT(*) AS n FROM recipes WHERE state = 'visible'").first())?.n ?? 0;
   console.log(`--market: ${said.join(", ")} · 장터에 보이는 작품 ${shown}개`);
+  await seedMaterials(here, admin);
+}
+
+/**
+ * 1.39 4차 (입혀 보기 스레드: 3차 PC '수 옆 회색 네모'는 시험 서버에 스튜디오 재료가 없어 재료 사진을 쓰는 작품이 빈 자리로 그려진 것):
+ * --market also puts in the studio materials tools/materials/make.py drew (목록.json + webp), as the real server has them: opened,
+ * icons all free, each background pack's first third free (사용자 11-06 재료 잠금). Files: materials/ beside package.json (the PC zip),
+ * else tools/materials/out in the repo.
+ */
+async function seedMaterials(here, admin) {
+  const dir = [join(here, "materials"), join(here, "../../tools/materials/out")].find((x) => existsSync(join(x, "목록.json")));
+  if (!dir) return console.log("--market: 스튜디오 재료(materials/목록.json)가 없어 넣지 않아요.");
+  const have = (await env.DB.prepare("SELECT COUNT(*) AS n FROM studio_materials").first().catch(() => null))?.n ?? 0;
+  if (have > 0) return console.log(`--market: 이 --db에는 스튜디오 재료가 이미 ${have}개 있어요.`);
+  const list = JSON.parse(readFileSync(join(dir, "목록.json"), "utf8")).items;
+  const b64 = (f) => readFileSync(join(dir, f)).toString("base64");
+  let ok = 0;
+  for (let i = 0; i < list.length; i += 25) {
+    const items = list.slice(i, i + 25).map((m) => ({
+      kind: m.kind, pack: m.pack, name: m.name, ord: m.ord, webp: b64(m.file),
+      ...(m.thumb ? { thumb: b64(m.thumb) } : {}), ...(Number.isFinite(m.light) ? { light: m.light } : {}),
+    }));
+    const r = await admin("/recipes/materials", { items });
+    if (r.status < 300) ok += items.length;
+    else console.log(`--market 재료 못 넣음 ${i}~: ${r.status} ${await r.text()}`);
+  }
+  for (const pack of new Set(list.map((m) => m.pack))) {
+    const icon = list.find((m) => m.pack === pack)?.kind === "icon";
+    await admin("/recipes/materials/free", { pack, mode: icon ? "all" : "third" });
+  }
+  await admin("/recipes/materials/state", { state: "ok", all: true });
+  console.log(`--market: 스튜디오 재료 ${ok}개(아이콘 모두 무료, 배경은 묶음마다 앞 3분의 1 무료)`);
 }
 if (args.includes("--market")) await seedMarket();
 

@@ -167,7 +167,12 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         val work: List<TimelineSpan> = emptyList())
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val night: StateFlow<Night?> = combine(com.bamnat.app.sleep.SleepRecordService.recording, container.flags.byKey) { rec, f ->
+    val night: StateFlow<Night?> = combine(
+        com.bamnat.app.sleep.SleepRecordService.recording, container.flags.byKey,
+        // 1.39 G5-B2: read again once the night is written down, not the moment the microphone stops (that showed the
+        // night before until the screen was opened again).
+        com.bamnat.app.sleep.SleepRecordService.saved,
+    ) { rec, f, _ ->
         rec to (f[com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND]?.on == true)
     }.flatMapLatest { (_, on) ->
         if (!on) kotlinx.coroutines.flow.flowOf(null)
@@ -505,7 +510,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             // 1.39 [FLOW-11] 주 띠로 날 고르기, the day's 잠 이야기 줄, then that day's records.
             SleepDays(s, settings, target) { e -> if (!e.imported) editing = e }
             morning?.takeIf { it.autoShown }?.let { m -> SectionCard(title = null) { SleepAutoSwitch(m.autoOn, vm::setAuto) } }
-            // 1.39 [FLOW-14] 밤 색, the same three choices as 설정 › 화면과 글자.
+            // 1.39 [FLOW-14] 밤 색, the same four choices as 설정 › 화면과 글자.
             SectionCard(title = null) { com.bamnat.app.ui.settings.NightLookRow(settings.nightLook, vm::setNightLook) }
             healthNote(health)?.let {
                 Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

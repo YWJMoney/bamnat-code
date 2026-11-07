@@ -122,7 +122,15 @@ fun FixRequestSheet(vm: PayWayViewModel, onDismiss: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var sent by remember { mutableStateOf<String?>(null) }
+    // 1.39 발굴(마을 돌봄): 보완 요청 한 줄도 다른 마을 글처럼 거친 말이면 보내기 전에 한 번 물어요(막지 않아요).
+    var nudge by remember { mutableStateOf(false) }
     val open = vm.fixOpen
+    val go = {
+        busy = true
+        error = null
+        vm.fix(picked, body) { e, done -> busy = false; if (e != null) error = e else sent = done }
+    }
+    if (nudge) com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = false }, onSend = { nudge = false; go() })
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -142,11 +150,7 @@ fun FixRequestSheet(vm: PayWayViewModel, onDismiss: () -> Unit) {
             error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
             sent?.let { Text(it, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium) }
             if (sent == null) Button(
-                onClick = {
-                    busy = true
-                    error = null
-                    vm.fix(picked, body) { e, done -> busy = false; if (e != null) error = e else sent = done }
-                },
+                onClick = { if (open && com.bamnat.core.plaza.PostNudge.needed(body)) nudge = true else go() },
                 enabled = !busy && picked.isNotEmpty() && (!open || body.trim().length >= 2),
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text(if (open) "보내기" else "달라요 보내기") }

@@ -181,6 +181,8 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0,
                 hidden.ifEmpty { ". 기록은 그대로예요" }) { c.wardrobe.undoTo(m); true }
         }
     }
+    // [TRY-07] 1.39 발굴: 입기 pressed on the band of the real app goes on at once (one with an ad waits for its button).
+    LaunchedEffect(again) { if (again?.wear == true && again.picked.isNotEmpty() && !needsAd) wear(again.picked) }
     TryOnScreen(r, style, onDismiss,
         onKeep = { ids -> c.wardrobe.keep(r, code, ids.toList()) },
         // [TRY-05] 1.39 실제 화면으로 입어 보기: the sheet closes; 끝내기 opens it again over the screen it was on.
