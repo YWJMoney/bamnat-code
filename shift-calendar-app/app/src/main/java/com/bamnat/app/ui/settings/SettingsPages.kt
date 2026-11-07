@@ -1072,10 +1072,14 @@ private fun PrivacyPage(
         // 1.36 [INQ-07] Where 처리방침 6항 says it is, not only under 보낸 설정 once something was sent.
         var forgetting by remember { mutableStateOf(false) }
         var forgot by remember { mutableStateOf<String?>(null) }
-        NavRow(FORGET_ALL_ROW, forgot ?: "보낸 설정·글·신고·문의를 서버에서 지워요") { forgetting = true }
+        NavRow(FORGET_ALL_ROW, forgot ?: "보낸 설정·글·신고·문의와 내가 만든 공유 링크를 서버에서 지워요") { forgetting = true }
+        // 1.39 [PRIV-06] What links it cuts, read when it asks (none said for a phone that made none).
+        var links by remember { mutableStateOf<String?>(null) }
+        val app = context.appContainer
+        androidx.compose.runtime.LaunchedEffect(forgetting) { if (forgetting) links = runCatching { com.bamnat.app.share.ShareForget.held(app) }.getOrNull() }
         if (forgetting) ConfirmDialog(
             title = "보낸 정보를 모두 지울까요?",
-            message = com.bamnat.app.ui.company.FORGET_ALL_WORDS,
+            message = (links?.let { "$it.\n\n" } ?: "") + com.bamnat.app.ui.company.FORGET_ALL_WORDS,
             confirmLabel = "모두 지우기",
             destructive = true,
             onDismiss = { forgetting = false },

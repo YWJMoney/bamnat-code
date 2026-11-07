@@ -1127,17 +1127,20 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
     /** 1.36 [INQ-07] Of [inquiries], the 결제·환불 ones gone from the phone that the law keeps with the developer. */
     val inquiriesKept: Int = 0,
     /** [PRF-01] 1.36 마을: 올린 작품, 프로필, 팔로우, 모음. */
-    val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0) {
+    val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0,
+    /** 1.39 [PRIV-06] 공유 서버: links cut with this phone's keys, and those left for want of a connection. */
+    val links: Int = 0, val linksLeft: Int = 0) {
     /** "보낸 규칙 2·토론 글 3·문의 1을 지웠어요", or that there was nothing to delete. */
     fun words(): String {
         val parts = listOfNotNull(
             "보낸 규칙 $reports".takeIf { reports > 0 }, "맞았어요·달라요 $votes".takeIf { votes > 0 },
             "토론 글 $posts".takeIf { posts > 0 }, "문의 $inquiries".takeIf { inquiries > 0 },
             "작품 ${recipes}개".takeIf { recipes > 0 }, "모음 ${sets}개".takeIf { sets > 0 }, "프로필".takeIf { profile },
-            "팔로우 $follows".takeIf { follows > 0 },
+            "팔로우 $follows".takeIf { follows > 0 }, "공유 링크 ${links}개".takeIf { links > 0 },
         )
         val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
-        return if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept
+        val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 연결한 뒤 다시 누르면 마저 지워요" else ""
+        return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) + left
     }
 }
 

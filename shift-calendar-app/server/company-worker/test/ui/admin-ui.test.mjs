@@ -382,6 +382,23 @@ test("[ADMUX-17][ADMUX-33] 할 일 (받은함 on 오늘) lists what waits, 맡�
   assert.deepEqual(u.errors, []);
 });
 
+test("[ADM3-37] 오늘 › 할 일: 같은 말로 읽히는 문의는 한 줄, 그 아래 '비슷한 문의 N건 함께 보기'에 나머지", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  for (const [n, text] of [[21, "알람 소리가 안 나요 진동만 와요"], [22, "알람이 소리 없이 안 나요"]]) {
+    await call("POST", "/api/inquiries", { v: 1, device: `test-device-000000${n}`, kind: "bug", text, info: { app: "1.38.0 (52)" } }, from(n));
+  }
+  const u = await asOwner(env, t);
+  await u.go("#/home");
+  const bundle = u.$("#main .rows.inbox details.bundle");
+  assert.ok(bundle, "the alike ones fold under one line");
+  assert.match(bundle.querySelector("summary").textContent, /비슷한 문의 2건/);
+  assert.equal(bundle.querySelectorAll(".bundle-list p").length, 2);
+  assert.match(bundle.closest("li").querySelector(".kind").textContent, /3건/);
+  assert.ok(![...u.$$("#main .rows.inbox > li .row-main a")].some((a) => /진동만 와요/.test(a.textContent)), "not a row of its own too");
+  assert.deepEqual(u.errors, []);
+});
+
 test("[ADMUX-18] 여러 판: 다시 대표로 asks first, then the earlier version is the rule again", async (t) => {
   offline(t);
   const s = server();

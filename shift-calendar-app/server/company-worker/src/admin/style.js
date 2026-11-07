@@ -125,6 +125,9 @@ font-weight:700;text-decoration:none}
 .rows.inbox>li>details.quick{margin:0 1rem .75rem;border-top:0;padding-top:0}
 .quick form{display:grid;gap:.5rem}
 .quick textarea{min-height:5.5rem}
+.bundle-list{margin:.4rem 0;display:grid;gap:.35rem}
+.bundle-list p{margin:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:.25rem .5rem;padding:.35rem 0;border-top:1px solid var(--line)}
+.bundle-list p a{flex:1 1 12rem;min-width:0;overflow-wrap:anywhere}
 .section svg{width:1.15rem;height:1.15rem}
 
 /* ---- buttons and fields ---- */
