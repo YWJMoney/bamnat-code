@@ -465,7 +465,7 @@ class MoneyViewModel(
             val removed = money.remove(a)
             _undo.tryEmit(
                 if (removed) UndoMessage("‘${a.name}’을 지웠어요") { money.save(a) }
-                else UndoMessage("기록이 있어서 ‘${a.name}’은 숨겼어요") { money.save(a.copy(hidden = false)) },
+                else UndoMessage("기록이 있어서 ‘${a.name}’${com.bamnat.core.text.Josa.eunneun(a.name)} 숨겼어요") { money.save(a.copy(hidden = false)) },
             )
         }
     }

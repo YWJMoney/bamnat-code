@@ -26,6 +26,9 @@ object QuoteImage {
     private val won = DecimalFormat("#,###")
     private fun w(v: Long) = won.format(v) + "원"
 
+    /** 1.39 [SPREAD-05][SPREAD-11] The line that names the app, also shown beside the send window's switch. */
+    const val MARK_LINE = "밤낮 달력에서 만든 견적서예요."
+
     fun render(q: Quote, sender: String, mark: Boolean = true): Bitmap {
         val items = q.items.filter { it.name.isNotBlank() || it.unitPrice > 0 }
         val noteLines = q.note.trim().lines().filter { it.isNotBlank() }.take(4)
@@ -98,7 +101,7 @@ object QuoteImage {
         }
         text.textSize = 26f
         // 1.39 [SPREAD-05] The line that names the app goes only while 설정 › 데이터 › '보내는 사진에 밤낮 표시' is on.
-        if (mark) c.drawText("밤낮 달력에서 만든 견적서예요.", PAD, height - 48f, text)
+        if (mark) c.drawText(MARK_LINE, PAD, height - 48f, text)
         return bmp
     }
 

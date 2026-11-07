@@ -71,4 +71,6 @@ class LiveTryOnScreenshotTest : ScreenshotBase() {
             }
         }
     }
+    /** [TRY-07] '바뀐 곳 ▶' walked once: the next tab the look changes, the band two rows on the folded phone. */
+    @Test fun tourNext() = shoot("1429_try_on_live_tour_next_folded", FOLDED) { tryOn("money"); LiveTryOn.next(); settle(); settle() }
 }

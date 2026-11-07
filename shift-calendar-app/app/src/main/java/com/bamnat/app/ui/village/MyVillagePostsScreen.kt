@@ -67,6 +67,13 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     val talk = remember { com.bamnat.app.ui.company.TalkHolder(c, scope) }
     com.bamnat.app.ui.company.TalkSheet(talk)
     val open = { room: String, name: String, id: String -> talk.show(room, com.bamnat.core.plaza.StylePlaza.ROOM, name, focus = id) }
+    // 1.39 발굴: from '보완 요청이 n개 왔어요', the version's talk opens at once.
+    val fixTalk by com.bamnat.app.ui.company.TalkSheets.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(fixTalk) {
+        val f = fixTalk ?: return@LaunchedEffect
+        com.bamnat.app.ui.company.TalkSheets.pending.value = null
+        talk.show(f.company, f.setup, f.title)
+    }
     // 1.39 조사 ③(4) 가려진 내 글 '다시 보여 주세요'(마을 돌봄이 켜진 뒤, 처리방침 3.12): 운영자가 다시 읽고 답해요.
     val canAsk = c.flags.on(com.bamnat.core.flags.FlagCatalog.COMMUNITY_CARE)
     var askFor by remember { mutableStateOf<String?>(null) }

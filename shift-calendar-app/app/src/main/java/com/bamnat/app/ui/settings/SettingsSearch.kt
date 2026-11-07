@@ -179,6 +179,8 @@ internal object SettingsIndex {
      * work has. No kind chosen keeps everything.
      */
     internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?, flowAdded: Boolean = false): Boolean {
+        // 1.39 [PAYX-62] 주 15시간 경계 알림은 알바에만 있어요.
+        if (style != null && style != com.bamnat.core.work.WorkStyle.HOURLY && e.title == com.bamnat.core.pay.WeekHoursNudge.ROW) return false
         if (style == null || style.usesPayEngine) return !(style == com.bamnat.core.work.WorkStyle.HOURLY && e.title == "연차 사용 촉진 알림")
         val place = e.place
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
@@ -248,6 +250,8 @@ internal object SettingsIndex {
         row(N, "나갈 돈·받을 돈", "고정비", "미수금", "돈 알림", "받을 돈"),
         // D 1.32 [PAYA-05]
         row(N, "급여 입금 비교", "월급 들어옴", "급여 알림", "입금 비교", "월급날 알림"),
+        // 1.39 [PAYX-62] 알바만(fits).
+        row(N, com.bamnat.core.pay.WeekHoursNudge.ROW, "주휴", "주휴수당", "15시간", "주 15시간", "쪼개기"),
         row(N, "연차 사용 촉진 알림", "연차", "휴가 알림", "연차 소멸 안내", "소멸", "사용 촉진"),
         // [LEAVE-06]
         screen(P.title, "연차", SettingsGo.LEAVE, "연차 원장", "남은 연차", "연차 계산", "입사일", "이월", "보상휴가", "연차수당"),

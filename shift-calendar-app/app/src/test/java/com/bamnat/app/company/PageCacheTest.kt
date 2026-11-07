@@ -31,9 +31,13 @@ class PageCacheTest {
         id, "(주)가상화학", listOf("가상화학"), listOf(
             SharedSetup("0123456789abcdef", true, 5, 3, 1, 3, "생산팀", 2, file, listOf("근무" to "주간 08:00~20:00", "순서 3일" to "주간 야간 휴무"),
                 trust = 75, agree = 75, posts = 4, uses = 9, senders = 2, checked = 1, by = listOf("야간요정"), checkedLong = true, support = 12,
-                payHidden = false, stable = true, lead = true, doubted = false, opinion = Opinion(4, 1, mapOf("order" to 1), "ok")),
+                payHidden = false, stable = true, lead = true, doubted = false, opinion = Opinion(4, 1, mapOf("order" to 1), "ok"),
+                // 1.39 발굴 2-3·4-3: my 보완 요청 and when it was last sent.
+                fixes = 2, myFix = "answered", sentAt = at),
             SharedSetup("fedcba9876543210", false, 2, 1, 0, 3, "포장팀", null, file, emptyList(), payHidden = true, doubted = true),
         ), kind = "company", job = "factory", region = "31", member = member, limited = false,
+        // 1.39 발굴 2-1: the newer version of one this phone uses.
+        newer = mapOf("fedcba9876543210" to "0123456789abcdef"),
     )
 
     private val room = RoomPage("c00000000001", "(주)가상화학",

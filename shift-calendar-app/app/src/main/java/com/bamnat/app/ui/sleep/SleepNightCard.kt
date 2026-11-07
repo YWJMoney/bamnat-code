@@ -27,6 +27,7 @@ import com.bamnat.app.data.db.SleepEventEntity
 import com.bamnat.app.sleep.SleepRecordService
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
+import com.bamnat.app.ui.theme.color
 import com.bamnat.core.sleep.ClipPicker
 import com.bamnat.core.sleep.SoundEvent
 import com.bamnat.core.sleep.SoundKind
@@ -53,6 +54,7 @@ internal fun SleepNightCard(
 ) {
     val context = LocalContext.current
     val recording by SleepRecordService.recording.collectAsStateWithLifecycle()
+    val saved by SleepRecordService.saved.collectAsStateWithLifecycle()
     var refused by remember { mutableStateOf(false) }
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         refused = !ok
@@ -75,6 +77,16 @@ internal fun SleepNightCard(
             Text("머리맡에 두고 ‘측정 시작’을 누르면 코골이·잠꼬대·기침·이갈이를 시간과 함께 남겨요. 휴대폰 안에서만 듣고, 짧은 소리는 7일 뒤 지워요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (refused) Text("마이크를 허용해야 잴 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            // 1.39 G5-B2: a night that never got saved is said, with what helps, instead of just missing in the morning.
+            remember(r, saved) { SleepRecordService.cutOff(context) }?.let { from ->
+                Text("${Fmt.time(from.toLocalTime())}에 시작한 측정이 저장되기 전에 멈췄어요. 휴대폰이 꺼졌거나 다시 켜졌을 수 있어요.",
+                    style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color(), modifier = Modifier.padding(top = 4.dp))
+            }
+            // 1.39 G5-B3: a whole night of listening on a low battery, said before 측정 시작 rather than found at dawn.
+            remember(r) { lowBattery(context) }?.let { pct ->
+                Text("배터리가 $pct%예요. 밤새 재려면 충전기에 꽂아 두세요.",
+                    style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color(), modifier = Modifier.padding(top = 4.dp))
+            }
             Button(onClick = {
                 // 1.39 [FLOW-13] Measuring starts the night: the dark night screen opens.
                 if (SleepRecordService.permitted(context)) { SleepRecordService.start(context); onNight() } else ask.launch(Manifest.permission.RECORD_AUDIO)
@@ -92,7 +104,9 @@ internal fun SleepNightCard(
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (r == null && last != null && last.end.isAfter(Today.dateTime().minusHours(18))) {
             Text("지난밤 ${Fmt.time(last.start.toLocalTime())}–${Fmt.time(last.end.toLocalTime())} · ${last.line}" +
-                if (last.battery >= 0) " · 배터리 ${last.battery}%" else "",
+                (if (last.battery >= 0) " · 배터리 ${last.battery}%" else "") +
+                // 1.39 G5-B2: ended by the phone turning off, not by the morning.
+                (if (last.cut) " · 휴대폰이 꺼져 여기까지 쟀어요" else ""),
                 style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 12.dp))
             // [SLEEP-21] The night on an hour scale, the work on the same axis; a dot plays its sound.
             var dotPlayer by remember { mutableStateOf<MediaPlayer?>(null) }
@@ -136,6 +150,15 @@ internal fun ClipRow(e: SleepEventEntity, onKeep: (SleepEventEntity, Boolean) ->
         TextButton(onClick = { onKeep(e, !e.keep) }) { Text(if (e.keep) "보관됨" else "보관") }
     }
 }
+
+/** 1.39 G5-B3: the battery percent when it is under [LOW_BATTERY] and not charging; null otherwise. */
+private fun lowBattery(context: android.content.Context): Int? {
+    val b = context.getSystemService(android.os.BatteryManager::class.java) ?: return null
+    if (b.isCharging) return null
+    return b.getIntProperty(android.os.BatteryManager.BATTERY_PROPERTY_CAPACITY).takeIf { it in 0 until LOW_BATTERY }
+}
+
+private const val LOW_BATTERY = 30
 
 private fun SleepEventEntity.toEvent() = SoundEvent(startMillis, endMillis, SoundKind.of(kind), level)
 

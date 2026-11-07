@@ -175,6 +175,8 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                     " · 남은 돈 ${Fmt.won(statement.unpaid)}", style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(value = sender, onValueChange = { sender = it.take(30) }, singleLine = true,
                     label = { Text("보내는 사람 (선택)") }, modifier = Modifier.fillMaxWidth())
+                // 1.39 [SPREAD-11] Whether the picture names 밤낮, chosen here as it is sent.
+                com.bamnat.app.ui.components.ExportMarkSwitch(com.bamnat.app.share.StatementImage.MARK_LINE)
                 Text("사진으로 만들어 메신저로 보낼 수 있어요. 이 휴대폰에서만 만들어져요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

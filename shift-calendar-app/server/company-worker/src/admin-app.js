@@ -1230,6 +1230,19 @@ function adminApp(L, BUILD, M) {
         <button class="btn small ghost" data-act="post-pick-all">${n === d.posts.length ? "모두 풀기" : "보이는 것 모두 고르기"}</button>
         ${[["show", "문제없음·다시 보이기"], ["hide", "가리기"], ["delete", "지우기"]].map(([k, label]) =>
           `<button class="btn small${k === "delete" ? " danger" : k === "show" ? " primary" : ""}" data-act="post-bulk" data-key="${k}"${n ? "" : " disabled"}>${label}</button>`).join("")}</div>` : "";
+    // 1.39 발굴 2-4: 보완 요청 by version (the server sends the one with the most open first), a line over each version's.
+    if (S.postFilter === "fix" && !talk) {
+      let at = "";
+      const rows = d.posts.map((p) => {
+        const key = `${p.company.id}/${p.setup}`;
+        const head = key === at ? "" : `<h3 class="span">${esc(p.company.name)}${p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}
+          <span class="pill${p.open ? " warn" : " ok"}">${p.open ? `열린 요청 ${p.open}` : "모두 답함"}</span></h3>`;
+        at = key;
+        return head + postCard(p, edit, talk, picking);
+      });
+      return head + tools + `<p class="hint">같은 판의 요청을 묶어, 열린 요청이 많은 판부터 보여요. 판의 계산 줄은 운영 › 회사 판 보기에서 봐요.
+        7일 넘게 답이 없으면 판을 살펴 고치거나 내려요.</p><div class="grid">${rows.join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
+    }
     return head + tools + `<div class="grid">${d.posts.map((p) => postCard(p, edit, talk, picking)).join("")}</div>${moreButton(d.next, "posts-more")}${bar}`;
   }
 
@@ -1448,7 +1461,8 @@ function adminApp(L, BUILD, M) {
     return `<article class="card${on ? " picked" : ""}">
       <div class="head"><h3>${picking ? `<input class="check" type="checkbox" data-pick-post="${p.id}"${on ? " checked" : ""} aria-label="이 글 고르기"> ` : ""}${esc(p.company.name)}${p.room ? ` <span class="dept">${p.room === "style" ? "유형 광장" : "회사 정보 광장"}</span>` : p.dept ? ` <span class="dept">${esc(p.dept)}</span>` : ""}</h3>${state}</div>
       <p class="meta">글쓴이 ${esc(p.writer)} · ${esc(ago(p.at))}${p.mutedUntil ? ` · ${esc(day(p.mutedUntil))}까지 쓰기 막힘` : ""}</p>
-      ${p.kind === "fix" ? `<p class="meta"><span class="pill warn">보완 요청</span> ${(p.fix ?? []).map((f) => esc(f)).join(" · ")}</p>` : ""}
+      ${p.kind === "fix" ? `<p class="meta"><span class="pill warn">보완 요청</span> ${(p.fix ?? []).map((f) => esc(f)).join(" · ")}${p.answered === true ? ' <span class="pill ok">올린 분이 답함</span>'
+        : p.answered === false && Date.now() - Date.parse(p.at) > 7 * 86400000 ? ' <span class="pill bad">7일 넘게 답 없음</span>' : ""}</p>` : ""}
       <blockquote>${esc(p.body)}</blockquote>
       ${Array.isArray(p.poll) && p.poll.length ? `<p class="meta">투표 보기: ${p.poll.map((o) => esc(String(o))).join(" · ")}</p>` : ""}
       ${p.attach ? `<p class="meta">붙인 작품 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(p.attach)}">${esc(p.attach)}</button></p>` : ""}
@@ -1675,6 +1689,7 @@ function adminApp(L, BUILD, M) {
           <label class="sr" for="reply">답</label>
           <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
           <input type="hidden" name="template" value="">
+          ${queueAhead(q.id).length ? `<label class="switch"><input type="checkbox" name="alike"><span class="track" aria-hidden="true"></span><span>큐에 남은 비슷한 문의 ${queueAhead(q.id).length}건에도 같은 답(큐에서 빠져요)</span></label>` : ""}
           <div class="chips" role="group" aria-label="자주 쓰는 답">${list.map((t, i) => `<button type="button" class="chip pick" data-act="template" data-i="${i}" title="${esc(t.text.slice(0, 120))}">${i < 9 ? `<span class="kbd">${i + 1}</span> ` : ""}${esc(t.label)}</button>`).join("")}
             <button type="button" class="chip pick" data-act="templates">${icon(P.plus)}답 관리</button></div>
           <div class="actions"><span class="count-box"><span class="count" id="reply-count">0/2000</span><span class="saved" id="reply-saved" aria-live="polite"></span></span>
@@ -3413,6 +3428,29 @@ function adminApp(L, BUILD, M) {
     load();
   }
 
+  /**
+   * 1.39 [ADM3-40] 발굴 2-1: 큐 모드 knows the 오늘 › 할 일 bundles (ADM3-37), so one answer can go to the alike questions still
+   * ahead in the queue. id → the others of its bundle that are in the queue.
+   */
+  function queueAlike(today, ids) {
+    const inQueue = new Set(ids);
+    const out = {};
+    for (const x of today?.todo?.items ?? []) {
+      if (x.type !== "inquiry" || !x.others?.length) continue;
+      const group = [x.id, ...x.others].filter((id) => inQueue.has(id));
+      for (const id of group) if (group.length > 1) out[id] = group.filter((o) => o !== id);
+    }
+    return out;
+  }
+
+  /** The alike questions of the open one that the queue has not reached yet (answered ones drop out as the queue goes). */
+  const queueAhead = (id) => {
+    const qm = S.queue;
+    if (!qm?.alike?.[id]) return [];
+    const ahead = new Set(qm.ids.slice(qm.at + 1));
+    return qm.alike[id].filter((o) => ahead.has(o));
+  };
+
   /** [ADMUX-04] 큐 모드: the next waiting question, or the end of the queue. */
   function queueNext(skip = false) {
     const qm = S.queue;
@@ -3420,7 +3458,7 @@ function adminApp(L, BUILD, M) {
     qm.at += 1;
     if (skip) qm.skipped += 1;
     if (qm.at >= qm.ids.length) {
-      const n = qm.ids.length - qm.skipped;
+      const n = qm.ids.length - qm.skipped + (qm.extra ?? 0);
       S.queue = null;
       toast(`큐를 마쳤어요. ${n}건 처리${qm.skipped ? `, ${qm.skipped}건 건너뜀` : ""}`);
       go("inquiries");
@@ -4343,11 +4381,11 @@ function adminApp(L, BUILD, M) {
     },
     // [ADMUX-04] 큐 모드
     "queue-start": async () => {
-      const r = await act(() => api("/inquiries?status=open&sort=sla&limit=100"));
+      const [r, today] = await Promise.all([act(() => api("/inquiries?status=open&sort=sla&limit=100")), api("/today").catch(() => null)]);
       const ids = (r?.inquiries ?? []).filter((q) => q.waiting && !(q.assignee && q.assignee.id !== S.me.id)).map((q) => q.id);
       if (!r) return;
       if (!ids.length) return toast("지금 답할 문의가 없어요. 다른 관리자가 맡은 것은 빼요");
-      S.queue = { ids, at: 0, skipped: 0 };
+      S.queue = { ids, at: 0, skipped: 0, alike: queueAlike(today, ids) };
       S.data.inquiries = { ...r, inquiries: r.inquiries.filter((q) => ids.includes(q.id)) };
       go("inquiries", ids[0]);
     },
@@ -5545,8 +5583,16 @@ function adminApp(L, BUILD, M) {
       const close = submitter?.dataset.close === "1";
       const template = Number(form.elements.template?.value) || undefined;
       const id = S.route.id;
-      const q = await act(() => api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}) }),
-        close ? "답하고 닫았어요. 보낸 분 앱에 보여요" : "답했어요. 보낸 분 앱에 보여요");
+      // 1.39 [ADM3-40] 큐 모드: the same answer to the alike ones ahead, which then leave the queue.
+      const alike = form.elements.alike?.checked ? queueAhead(id) : [];
+      const q = await act(async () => {
+        const first = await api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}) });
+        const sent = [];
+        for (const o of alike) await api(`/inquiries/${o}/reply`, "POST", { text, ...(close ? { close: true } : {}) }).then(() => sent.push(o), () => {});
+        if (S.queue && sent.length) Object.assign(S.queue, { ids: S.queue.ids.filter((x) => !sent.includes(x)), extra: (S.queue.extra ?? 0) + sent.length });
+        return { first, sent: sent.length, missed: alike.length - sent.length };
+      }, (r) => `${r.sent ? `${r.sent + 1}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보내 큐에 남겨 뒀어요)` : ""}`)
+        .then((r) => r?.first);
       if (!q) return;
       typingSent = 0;
       S.data.inquiry = q;

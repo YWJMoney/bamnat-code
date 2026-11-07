@@ -7,6 +7,7 @@ import worker from "../src/index.js";
 import { server, device, signIn } from "./helpers.mjs";
 import { impact, laterWords, nextTrain, releaseName } from "../src/loop.js";
 import { keyAllows } from "../src/desk.js";
+import { waitingNote } from "../src/inquiries.js";
 
 const NOW = Date.parse("2026-11-20T01:00:00Z");
 const HOUR = 3600e3;
@@ -230,6 +231,63 @@ test("[LOOP-06][LOOP-15][LOOP-16] 고친 판으로 연 폰에만 바로 안내�
   assert.match(again.messages.at(-1).text, /1\.39\.1/);
   // 폰 2: 해결됐어요.
   assert.equal((await call("POST", `/api/inquiries/${q2}/fixed`, { ok: true }, { "x-device": device(2) })).data.fixed, 1);
+  // [LOOP-22] 판별 고침 성적표: 1.39.1에 고친 것 1 · 묶인 문의 2 · 해결됐어요 1 · 아직이에요 1(다시 열린 것).
+  const score = (await call("GET", "/api/admin/loop", undefined, owner)).data.scores.find((x) => x.version === "1.39.1");
+  assert.deepEqual([score.items, score.asks, score.yes, score.no, score.solved], [1, 2, 1, 1, 50]);
+});
+
+test("[LOOP-19][LOOP-20] 급함 문의(알람·수면 긴급 넷)와 최고 관리자 확인 문의는 결정함 맨 위와 숫자에; 답하면 빠져요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const owner = await signIn(call);
+  const alarm = await ask(call, 1, "어제 새벽 알람이 안 울려서 지각했어요");
+  const sleep = await ask(call, 2, "수면 측정이 아침에도 녹음이 계속 켜져 있어요");
+  await ask(call, 3, "달력 색을 바꾸고 싶어요", "question");
+  const money = await ask(call, 4, "결제했는데 프로가 안 열려요. 환불해 주세요", "question");
+  const box = (await call("GET", "/api/admin/loop/decide", undefined, owner)).data;
+  // 달력 색 질문은 급함이 아니고, 수면 긴급(녹음이 계속)과 결제 뒤 안 열림은 급함이에요.
+  assert.deepEqual(box.urgent.map((x) => x.id).sort(), [alarm, sleep, money].sort());
+  let b = (await call("GET", "/api/admin/badges", undefined, owner)).data;
+  assert.equal(b.decideUrgent, box.urgent.length);
+  assert.equal(b.decideAsks, 1);
+  // 답하면(마지막 말이 관리자) 결정함에서 빠져요.
+  await call("POST", `/api/admin/inquiries/${alarm}/reply`, { text: "불편을 드려 죄송해요. 바로 살펴볼게요." }, owner);
+  b = (await call("GET", "/api/admin/badges", undefined, owner)).data;
+  assert.equal(b.decideUrgent, box.urgent.length - 1);
+});
+
+test("[G7 1-4] 새 문의 알림 끝에 답 기다리는 수와 같은 문의가 몇 건째인지(글은 넣지 않아요)", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, env } = server();
+  await ask(call, 1, "급여 화면에서 야간 수당이 두 번 더해져요");
+  await ask(call, 2, "달력 색을 바꾸고 싶어요", "question");
+  const q3 = await ask(call, 3, "야간 수당이 급여에 두 번 더해져요");
+  const note = await waitingNote(env, q3, "야간 수당이 급여에 두 번 더해져요", "pay");
+  assert.equal(note, " · 답 기다림 3건 · 같은 문의 2건째");
+  assert.doesNotMatch(note, /야간|수당/);
+  assert.equal(await waitingNote({}, q3, "x", "etc"), "", "읽지 못하면 빈 글");
+});
+
+test("[LOOP-18] 연결 점검: 무엇이 됐고 무엇이 빠졌는지 한 줄씩, Play까지 점검은 읽기만", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, env } = server();
+  const owner = await signIn(call);
+  let c = (await call("GET", "/api/admin/loop/check", undefined, owner)).data;
+  const byKey = Object.fromEntries(c.lines.map((x) => [x.key, x]));
+  assert.equal(byKey.play.state, "bad");
+  assert.equal(byKey.syncKey.state, "bad");
+  assert.equal(byKey.sync.state, "warn");
+  assert.equal(c.state, "bad");
+  assert.ok(c.lines.every((x) => !/BEGIN|PRIVATE|eyJ/.test(x.text)), "값은 보이지 않아요");
+  const play = fakePlay(t, { releases: [{ name: "1.39.0", versionCodes: ["53"], status: "completed" }] });
+  env.PLAY_SERVICE_ACCOUNT = play.account;
+  c = (await call("GET", "/api/admin/loop/check?play=1", undefined, owner)).data;
+  assert.equal(c.lines.find((x) => x.key === "play").state, "ok");
+  assert.match(c.lines.find((x) => x.key === "play").text, /1\.39\.0/);
+  assert.ok(play.seen.some((x) => x.startsWith("DELETE")), "편집은 지우고 확정하지 않아요");
+  assert.ok(!play.seen.some((x) => /:commit/.test(x)));
+  // 읽기만이라 보류 안내가 생기지 않아요.
+  assert.equal((await call("GET", "/api/admin/loop", undefined, owner)).data.ships.length, 0);
 });
 
 test("[LOOP-06] 기능 스위치로 고친 것은 스위치가 켜진 때 바로 답해요(앱 업데이트 없이)", async (t) => {

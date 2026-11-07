@@ -682,7 +682,8 @@ private fun DayCell(
         // [VIS-02] Said the way the day screen says it.
         if (day.alarmSkipped) append(", 알람 꺼짐")
         // [CELL-03] 1.39 A listing cell cuts long lines with '…': its button reads each memo whole.
-        if (!memoList.isNullOrEmpty()) append(", 메모 ").append(memoList.joinToString(", ") { if (it.done) "${it.text} 끝냄" else it.text })
+        if (!memoList.isNullOrEmpty()) append(", 메모 ").append(memoList.joinToString(", ") { m ->
+            m.text + (if (m.done) " 끝냄" else "") + (m.clash?.let { " ($it)" } ?: "") })
         else if (hasMemo) append(", 메모 있음")
         fieldUnitsText(fieldJobs)?.let { append(", ").append(it) }
         fieldJobs?.filter { it.status == com.bamnat.core.money.JobStatus.TENTATIVE || it.cancelled }?.forEach { append(", ‘${it.title}’ ${it.status.label}") }
@@ -829,7 +830,9 @@ private fun DayCell(
                 // [CELL-04] Each memo in the colour the user gave it (the memo list's own colour), a finished checklist struck and faded.
                 memoList.forEach { m ->
                     val own = if (m.color > 0) com.bamnat.app.ui.components.memoBackground(m.color) else null
-                    add(CellLine(m.text, ink = scheme.onSurface.copy(alpha = if (m.done) 0.5f else 1f), bar = cal.memoDot,
+                    // [CELL-07] A schedule that runs into a shift or the sleep after a night: its bar and words in the warning colour.
+                    add(CellLine(m.text, ink = (if (m.clash != null && !m.done) scheme.error else scheme.onSurface).copy(alpha = if (m.done) 0.5f else 1f),
+                        bar = if (m.clash != null && !m.done) scheme.error else cal.memoDot,
                         fill = own ?: cal.memoDot.copy(alpha = if (dark2) 0.22f else 0.12f), struck = m.done))
                 }
                 if (redLast) redDay?.let(::add)

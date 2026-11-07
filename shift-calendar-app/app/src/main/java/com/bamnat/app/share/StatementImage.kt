@@ -24,6 +24,9 @@ object StatementImage {
     private val won = DecimalFormat("#,###")
     private fun w(v: Long) = won.format(v) + "원"
 
+    /** 1.39 [SPREAD-05][SPREAD-11] The line that names the app, also shown beside the send window's switch. */
+    const val MARK_LINE = "밤낮 달력에서 만든 내역이에요."
+
     fun render(s: JobStatement.Statement, sender: String, mark: Boolean = true): Bitmap {
         val withholding = s.withheld > 0
         val height = (360f + (s.lines.size + 1) * ROW + 6 * 64f + 120f).toInt()
@@ -91,7 +94,7 @@ object StatementImage {
         }
         text.textSize = 26f; text.typeface = Typeface.DEFAULT; text.color = MUTED
         // 1.39 [SPREAD-05] The line that names the app goes only while 설정 › 데이터 › '보내는 사진에 밤낮 표시' is on.
-        if (mark) c.drawText("밤낮 달력에서 만든 내역이에요.", PAD, height - 48f, text)
+        if (mark) c.drawText(MARK_LINE, PAD, height - 48f, text)
         return bmp
     }
 

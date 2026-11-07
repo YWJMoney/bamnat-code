@@ -32,8 +32,11 @@ object FeatureLinks {
     val focus: StateFlow<String?> = _focus.asStateFlow()
 
     /** [GUIDE-06] A feature was just turned off from its own ⋮: the snackbar says where it comes back. */
-    private val _turnedOff = MutableSharedFlow<String>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    val turnedOff: SharedFlow<String> = _turnedOff.asSharedFlow()
+    /** [GUIDE-06] The name of a feature just turned off, and whether it is a card that may hold records (1.39 발굴). */
+    data class TurnedOff(val name: String, val keepsRecords: Boolean)
+
+    private val _turnedOff = MutableSharedFlow<TurnedOff>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val turnedOff: SharedFlow<TurnedOff> = _turnedOff.asSharedFlow()
 
     fun open(feature: AppFeature) = open(feature.route)
 
@@ -62,8 +65,8 @@ object FeatureLinks {
     /** The calendar a feature of today asked for, once; null when a notice opened today instead. */
     fun takeToday(): String? = _today.getAndUpdate { null }
 
-    fun saidOff(name: String) {
-        _turnedOff.tryEmit(name)
+    fun saidOff(name: String, keepsRecords: Boolean = false) {
+        _turnedOff.tryEmit(TurnedOff(name, keepsRecords))
     }
 }
 

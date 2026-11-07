@@ -85,7 +85,7 @@ import java.util.UUID
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: () -> Unit) {
+internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, onClose: () -> Unit) {
     val context = LocalContext.current
     val store = context.appContainer.phaseThree
     val scope = rememberCoroutineScope()
@@ -98,8 +98,10 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         }
     }
     val place = places?.firstOrNull()
-    var month by rememberSaveable { mutableStateOf(startMonth.toString()) }
-    val ym = YearMonth.parse(month)
+    // 1.39 G2 PC ef175fbf: the 관리 card opened last month and the 가게 card this month. With no month asked for, both open the one
+    // to settle next ([openMonth]); ◀ ▶ then keep what was picked.
+    var month by rememberSaveable { mutableStateOf(startMonth?.toString()) }
+    val ym = month?.let(YearMonth::parse) ?: place?.let { openMonth(it, Today.date()) } ?: YearMonth.from(Today.date()).minusMonths(1)
     var editing by remember { mutableStateOf<StaffMember?>(null) }
     var settings by remember { mutableStateOf(false) }
     var rehireAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
@@ -159,13 +161,25 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                 StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${ledger.lines.size}명")
                 // 1.39 [BOSS-12] 산재보험 (사업주만) with the 4대보험 once the 업종 is picked.
                 StatTile(if (place.industry != null) "사장님 4대보험·산재" else "사장님 4대보험", Fmt.won(ledger.employerInsurance + ledger.accident), Modifier.weight(1f),
-                    caption = if (ledger.accident > 0) "산재 ${Fmt.won(ledger.accident)} 포함 · 참고" else "참고")
+                    caption = if (ledger.accident > 0) "산재 등 ${Fmt.won(ledger.accident)} 포함 · 참고" else "참고")
             }
             // 1.39 G2 (PC f7f61818, 상): someone the law puts in the 4대보험 with nothing ticked makes the 사장님 몫 0원.
             val unticked = ledger.lines.map { it.staff }.filter { com.bamnat.core.boss.InsuranceRules.unticked(it, place.legalBreaks) }
             if (unticked.isNotEmpty() && !isClosed) Text("4대보험을 고르지 않았어요: " + unticked.joinToString(", ") { it.name } + " · 고르면 사장님 몫까지 맞게 나와요",
                 style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning,
                 modifier = Modifier.clickable(role = Role.Button) { editing = unticked.first() }.padding(vertical = 4.dp))
+            // 1.39 G2-M1·I3: the weeks before a new 최저임금·요율 day, what changes and whom it reaches (core LawChange, 출처는 거기).
+            val law = remember(place, staff) { com.bamnat.core.boss.LawChange.next(place, staff, Today.date()) }
+            law?.let { n ->
+                Text("${n.from.monthValue}월 ${n.from.dayOfMonth}일부터 바뀌어요 · " + n.changes.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+                if (n.under.isNotEmpty()) Text("새 최저임금보다 적어요: " + n.under.joinToString(", ") { (m, h) -> "${m.name.ifBlank { "이름 없음" }}(시간당 ${Fmt.won(h)})" } +
+                    (if (n.raise > 0) " · 맞춰 올리면 ${n.from.monthValue}월 인건비 +${Fmt.won(n.raise)}" else "") + " · 눌러서 고쳐요",
+                    style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning,
+                    modifier = Modifier.clickable(role = Role.Button) { editing = n.under.first().first }.padding(vertical = 4.dp))
+            }
+            // 1.39 G2-M2 두루누리: the 4대보험 above is before it; a small place is told once (core Durunuri, 출처는 거기).
+            com.bamnat.core.boss.Durunuri.hint(ledger)?.let { Hint(it) }
             if (place.industry == null && ledger.lines.isNotEmpty()) Text("업종을 고르면 산재보험료(사장님만 내요)도 더해요 · 사업장 설정에서 한 번",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable(role = Role.Button) { settings = true }.padding(vertical = 4.dp))
@@ -256,7 +270,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
         // 1.38 가져오기: a staff list in any file or photo (엑셀·CSV·PDF·사진), checked on one page before anyone is added.
         var reading by remember { mutableStateOf<String?>(null) }
         var importing by remember { mutableStateOf<Pair<List<com.bamnat.core.boss.StaffImport.Line>, Boolean>?>(null) }
-        val pickList = com.bamnat.app.ui.team.rememberAnyFilePicker { uri ->
+        fun readList(uri: android.net.Uri) {
             scope.launch {
                 reading = "명단을 읽고 있어요…"
                 when (val got = com.bamnat.app.imports.ManageImport.staff(context, uri, Today.date())) {
@@ -270,6 +284,13 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth, onClose: 
                     }
                 }
             }
+        }
+        val pickList = com.bamnat.app.ui.team.rememberAnyFilePicker { uri -> readList(uri) }
+        // 1.39 [READ-31]: a staff list shared from 카카오톡·갤러리 is read here at once, as one picked with the button.
+        val sharedList by com.bamnat.app.imports.SharedToManage.staffShared.collectAsStateWithLifecycle()
+        LaunchedEffect(place.id, isClosed, sharedList) {
+            if (!isClosed) com.bamnat.app.imports.SharedToManage.takeStaff()?.let(::readList)
+            else if (sharedList != null) reading = "이 달은 닫혀 있어요. 열린 달로 옮기면 받은 명단을 바로 읽어요."
         }
         OutlinedButton(onClick = pickList, enabled = !isClosed) { Text("명단 파일·사진에서 가져오기") }
         reading?.let { Hint(it) }
@@ -344,7 +365,9 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
             Column(Modifier.weight(1f)) {
                 Text(Fmt.won(l.gross), style = MaterialTheme.typography.titleMedium)
                 // 1.38 PC 8차: a 월급 직원 with no usual week has no days to count; '0일 · 0시간' read as nothing paid.
-                val counted = if (l.workDays > 0 || l.workMinutes > 0) "${l.workDays}일 · ${com.bamnat.core.hours.HoursFormat.korean(l.workMinutes)}" else null
+                // 1.39 G2 PC ef175fbf: '휴게시간 빼고 세기' moves every hour, so the line says which way it counted.
+                val counted = if (l.workDays > 0 || l.workMinutes > 0) "${l.workDays}일 · ${com.bamnat.core.hours.HoursFormat.korean(l.workMinutes)}" +
+                    if (place.legalBreaks) "(휴게 뺌)" else "(휴게 안 뺌)" else null
                 val insured = if (l.employerInsurance > 0) "4대보험 ${Fmt.won(l.employerInsurance)}" else null
                 if (counted != null || insured != null) Text(listOfNotNull(counted, insured).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -390,10 +413,22 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
                     if (p.formula.isNotBlank()) Hint(p.formula)
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                Text("달라진 날", style = MaterialTheme.typography.labelLarge)
+                // 1.39 G2 PC ef175fbf: the month's 30 day chips sat between one 근거 and the next staff member; folded until asked.
                 val mine = work.filter { it.staffId == l.staff.id }.associateBy { it.date }
-                MonthDays(month, mine, enabled = !closed) { day = it }
-                Hint("평소와 다른 날만 눌러 고쳐요. 지각·조퇴·결근·대근·연차·쉬는 날을 고를 수 있어요.")
+                var days by rememberSaveable(l.staff.id) { mutableStateOf(false) }
+                val said = mine.values.sortedBy { it.date }.joinToString(", ") { "${it.date.dayOfMonth}일 ${it.kind.label}" }
+                Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { days = !days }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("달라진 날" + if (mine.isNotEmpty()) " ${mine.size}일" else "", style = MaterialTheme.typography.labelLarge)
+                        if (!days) Hint(said.ifEmpty { "없어요 · 평소대로 계산했어요" })
+                    }
+                    Text(if (days) "접기" else if (closed) "보기" else "고치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                }
+                if (days) {
+                    MonthDays(month, mine, enabled = !closed) { day = it }
+                    Hint("평소와 다른 날만 눌러 고쳐요. 지각·조퇴·결근·대근·연차·쉬는 날을 고를 수 있어요.")
+                }
+                TextButton(onClick = { open = false }) { Text("근거 접기") }
             }
         }
     }
@@ -560,6 +595,8 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             Text("생년월일 (선택)", modifier = Modifier.weight(1f))
             TextButton(onClick = { birthPick = true }) { Text(s.birth?.let(Fmt::shortFullDate) ?: "고르기") }
         }
+        // 1.39 G2-N2: 18세 미만은 근로시간·밤 근무 제한이 있어 생년월일로 알려 드려요(근로기준법 제69·70조).
+        if (s.birth == null) Hint("18세 미만 직원이면 넣어 주세요 · 하루 7시간·주 35시간과 밤 근무 제한을 대장에서 알려 드려요")
         SwitchLine("주휴수당 주기", s.weeklyHolidayPay, { s = s.copy(weeklyHolidayPay = it) }, "한 주 15시간이 안 되면 저절로 빠져요")
         Text("평소 일하는 요일", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -934,4 +971,14 @@ internal fun lastHead(now: com.bamnat.core.boss.Ledger, last: com.bamnat.core.bo
     if (same.size == now.lines.size) return "지난달 ${Fmt.won(before)} · $change"
     val who = same.map { it.staff.name.ifBlank { "이름 없음" } }.let { if (it.size <= 2) it.joinToString(", ") else "${it.size}명" }
     return "$who 기준 지난달 ${Fmt.won(before)} → ${Fmt.won(nowSame)} · $change"
+}
+
+/**
+ * 1.39 G2 PC ef175fbf: the month the 대장 opens on. Until last month's pay day (or with none set) it is last month, the one being
+ * settled; once that day has passed it is this month, the next to pay.
+ */
+internal fun openMonth(place: Workplace, today: LocalDate): YearMonth {
+    val last = YearMonth.from(today).minusMonths(1)
+    val pay = place.payDate(last) ?: return last
+    return if (today.isAfter(pay)) last.plusMonths(1) else last
 }

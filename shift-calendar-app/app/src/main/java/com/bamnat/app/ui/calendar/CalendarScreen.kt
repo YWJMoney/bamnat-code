@@ -378,10 +378,20 @@ fun CalendarScreen(
     }
     // [CELL-01] 1.39 Every memo of a day by its title, for cells that list the day's jobs and memos a line each.
     // [CELL-02] 메모 줄 0 in the user's own 달력 모양 keeps memos out of the list too (the jobs stay).
-    val memoLists = remember(datedMemos, calView.memo) {
+    // [CELL-07] A schedule's time against the calendar's own shifts (the night before included), as the memo editor warns.
+    val clashSnap = snapshot
+    val memoLists = remember(datedMemos, calView.memo, clashSnap) {
         if (calView.memo == 0) return@remember emptyMap<java.time.LocalDate, List<CellMemo>>()
         // [CELL-04] Schedules by their time, each memo in its own colour, a finished checklist struck through.
-        datedMemos.groupBy { it.date!! }.mapValues { (d, l) -> cellMemos(l, d) }
+        val clashOf: ((java.time.LocalDateTime) -> String?)? = clashSnap?.let { snap -> { at ->
+            val days = listOf(at.toLocalDate().minusDays(1), at.toLocalDate()).mapNotNull { d ->
+                val r = snap.resolver.resolve(d)
+                val type = r.shiftType ?: return@mapNotNull null
+                com.bamnat.core.memo.ShiftMemoTime.Day(r.date, type.name, r.isWorkDay, r.start, r.end)
+            }
+            com.bamnat.core.memo.ShiftClash.of(at, days)?.text
+        } }
+        datedMemos.groupBy { it.date!! }.mapValues { (d, l) -> cellMemos(l, d, clashOf) }
     }
     var quickMoney by rememberSaveable { mutableStateOf(false) }
     // [INV-01] An investor calendar's trades, cells and sheets.
@@ -1490,6 +1500,13 @@ fun CalendarScreen(
                         rangeLabel = payRange?.let { "${it.from.monthValue}/${it.from.dayOfMonth}~${it.to.monthValue}/${it.to.dayOfMonth} · ${visibleMonth.monthValue}월 월급분" } ?: startDay?.takeIf { YearMonth.from(it) == visibleMonth && it.dayOfMonth > 1 &&
                             snap.entries.none { e -> e.date.isBefore(it) && e.override != ShiftOverride.None } }
                             ?.let { "${it.monthValue}/${it.dayOfMonth} 전은 근무표" },
+                        // 1.39 [PAYX-64] 발굴 G3-M1: 1일~말일 ↔ 월급분 right here, the same setting as 통계's chips (a big-text or low screen keeps the room).
+                        rangeSwitch = payProfile?.period?.takeIf { payShown && !low && com.bamnat.app.data.StatsPeriod.PAY.byPay(it) }?.let { p ->
+                            if (payRange != null) "1일~말일로 보기" else "${visibleMonth.monthValue}월 월급분(${p.label(visibleMonth)})으로 보기"
+                        },
+                        onRangeSwitch = {
+                            vm.updateSettings { s -> s.copy(statsPeriod = if (payRange != null) com.bamnat.app.data.StatsPeriod.MONTH else com.bamnat.app.data.StatsPeriod.PAY) }
+                        },
                     )
                 }
             }
