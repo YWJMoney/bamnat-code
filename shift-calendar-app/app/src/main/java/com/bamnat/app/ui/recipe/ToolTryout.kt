@@ -146,10 +146,13 @@ private fun LogicTryoutView(got: Logic) {
     if (got.rules.isNotEmpty()) RuleTryout(got.rules, mine.rules, date, days, facts) { day = it.toEpochDay() }
 }
 
-/** "오늘 야간", "11/9 일 휴무". */
+/**
+ * "오늘 야간", "11/9 일 휴무": the day's own work name as my calendar calls it (가게 '오픈', 일근 '출근'), not the 교대 words
+ * 주간·야간 (유형별: 교대하지 않는 유형에 주야가 보이지 않게).
+ */
 private fun dayWords(d: LocalDate, facts: DayFactsBook, today: LocalDate): String {
     val v = facts.values(d)
-    val role = (v[FormulaName.ROLE.ko] as? String).orEmpty()
+    val role = (v[FormulaName.SHIFT.ko] as? String).orEmpty()
     val date = when (d) { today -> "오늘"; today.plusDays(1) -> "내일"; else -> "${d.monthValue}/${d.dayOfMonth} ${"월화수목금토일"[d.dayOfWeek.value - 1]}" }
     return if (role.isEmpty()) date else "$date $role"
 }
