@@ -13,7 +13,8 @@
 // This file does not import index.js (tools/bundle.mjs puts it in one file); what it needs comes in as [d].
 import { EMOJI } from "./emoji-set.js";
 import { DAY, HOUR } from "./units.js";
-import { addStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
+import { careGate, careRepeat } from "./community-care.js";
+import { addStrike, confirmStrike, operatorStrike, strikeTakenBack, writeLeft, writeLimitHit } from "./write-limits.js";
 import { FORMULA, formulaProblem, formulaTextProblem, fxReadsValue } from "./formula.js";
 import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
 import { cellExtra, screenExtra, fillProblem, fontId, photoAdjust, photoFrame, motionProblem } from "./materials.js";
@@ -1670,6 +1671,11 @@ async function recipeVote(d, env, request, code) {
     reason = readReason(body);
     if (reason.error) return d.json({ error: reason.error, field: reason.error === "reason" ? "reason" : "opinion" }, 400);
   }
+  // 1.39 [CARE-02] 마을 쉬기 중에는 좋아요·안좋아요를 쉬고, 의견 쉬기 중에는 안좋아요에 붙이는 의견 글을 쉬어요(거두기는 언제나 돼요).
+  if (body.value !== null) {
+    const held = await careGate(d, env, dev, reason?.opinion ? "opinion" : "community", now);
+    if (held) return held;
+  }
   const net = await d.network(request, env, now);
   const hit = await d.overLimit(env, now, [["device", `rvote|${dev}|${Math.floor(now / HOUR)}`, RECIPE_LIMITS.votesPerHour, HOUR]]);
   if (hit) return hit;
@@ -1853,6 +1859,9 @@ async function talkPost(d, env, request, code) {
   if (why) return d.json({ error: why, field: "body" }, 400);
   const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
   if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
+  // 1.39 [CARE-02] 의견 쉬기·마을 쉬기 중이면 글을 쉬어 가요.
+  const held = (await careGate(d, env, dev, "opinion", now)) ?? (await careRepeat(d, env, dev, t, now));
+  if (held) return held;
   const net = await d.network(request, env, now);
   const hit = (await writeLimitHit(d, env, dev, "rtalk", now)) ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "rtalk", 300, now)));
   if (hit) return hit;
@@ -1887,6 +1896,11 @@ async function talkVote(d, env, request, postId) {
   if (body.value === -1) {
     reason = readReason(body);
     if (reason.error) return d.json({ error: reason.error, field: reason.error === "reason" ? "reason" : "opinion" }, 400);
+  }
+  // 1.39 [CARE-02] 작품 좋아요와 같이(이야기 좋아요·안좋아요).
+  if (body.value !== null) {
+    const held = await careGate(d, env, dev, reason?.opinion ? "opinion" : "community", now);
+    if (held) return held;
   }
   const hit = await d.overLimit(env, now, [["device", `rvote|${dev}|${Math.floor(now / HOUR)}`, RECIPE_LIMITS.votesPerHour, HOUR]]);
   if (hit) return hit;
@@ -2133,6 +2147,8 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     stmts.push(act(code, what, note || (what === "show" && r.hidden_reason === "flags" ? "신고가 맞지 않았어요" : "")));
     await d.batch(env, stmts);
     if (strike) await operatorStrike(d, env, strike, "recipe", code, now);
+    // 1.39 [CARE-06] Hidden by reports, looked at and kept hidden: its waiting strike counts now (마을 돌봄).
+    if (what === "hide" && r.state === "hidden") await confirmStrike(d, env, code, now);
     if (unstrike) await strikeTakenBack(d, env, unstrike, now);
     return d.json({ code, done: what });
   }

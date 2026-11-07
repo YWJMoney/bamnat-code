@@ -466,7 +466,10 @@ internal fun PendingDone(
     Text("기본급만 넣으면 끝나요", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
     Text("‘${way.title}’ 수당과 계산 방식이 준비됐어요. ‘이대로 계산’을 누르면 한 번에 들어가요. 그 전에 닫으면 급여는 그대로예요.",
         style = MaterialTheme.typography.bodyMedium)
-    CommonItemLines(way.text)
+    // 1.39 [PAYP-04] A way put in from 1.39 is shared and locked: its hours, rates, common allowances and bonus are grouped as
+    // the sharer's, never their numbers (the 금액 창 showed '통상시급 180시간', '상여 … 기본급 100%').
+    val shared = way.way().shared
+    if (shared) SharedWayNote() else CommonItemLines(way.text)
     // [J133-86] 1.33 광장 급여 써 보기: a pay already set up sees what this way does to this month before 이대로 계산.
     val calendar = LocalCompanyCalendar.current
     val trial by androidx.compose.runtime.produceState<Trial?>(null, way.text, had != null) {
@@ -475,7 +478,7 @@ internal fun PendingDone(
     TrialBeforeAfter(trial)
     val wage = had?.wageType ?: com.bamnat.core.pay.WageType.MONTHLY
     BaseFields(wage, base, { base = it }, hours, { hours = it }, had, month,
-        companyHours = way.hours, companyName = way.title, keepBase = BaseAsk.keepChip(had, month))
+        companyHours = way.hours.takeIf { !shared }, companyName = way.title, keepBase = BaseAsk.keepChip(had, month), hideHours = shared)
     if (needs.isNotEmpty()) {
         Text("내 수당 금액 (사람마다 다른 것만, 몰라도 돼요)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
         needs.forEach { need ->

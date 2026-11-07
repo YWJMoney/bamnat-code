@@ -878,8 +878,12 @@ class TalkHolder(
 }
 
 /** [LIM-03] 1.31: [talkProblem] for a refusal, with when it goes again and why when the server said. */
-fun talkProblem(e: com.bamnat.app.company.CompanyException): String =
-    if (e.code == "rate_limited") com.bamnat.app.company.RateLimits.of(e, "글쓰기") else talkProblem(e.code)
+fun talkProblem(e: com.bamnat.app.company.CompanyException): String = when (e.code) {
+    "rate_limited" -> com.bamnat.app.company.RateLimits.of(e, "글쓰기")
+    // 1.39 [CARE-02] 쉬는 중이면 언제까지인지와 어디서 까닭을 보는지.
+    "muted" -> com.bamnat.core.plaza.CommunityCare.mutedText(e.untilMillis)
+    else -> talkProblem(e.code)
+}
 
 /** What to say when a post is refused. */
 fun talkProblem(code: String): String = when (code) {
@@ -888,6 +892,7 @@ fun talkProblem(code: String): String = when (code) {
     "email" -> "메일 주소는 빼 주세요"
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
     "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요"
+    "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
     "rate_limited" -> com.bamnat.app.company.RateLimits.text("글쓰기")
     "own" -> "내 글에는 할 수 없어요"
     "parent" -> "답글을 달 글이 지워졌어요"
@@ -1267,6 +1272,15 @@ class CompanyPayViewModel(
     /** [PLAZA-03] The applied rule set, for 다른 점 말하기 on it; null when the setup came from a file, not the plaza. */
     private val applied: AppliedSetup? = scope.store.applied.value
     val canPropose: Boolean get() = applied != null
+    /**
+     * 1.39 [PAYP-04] Whether the pay made here uses a shared way that is locked once in (as [com.bamnat.app.company.PendingWays.keptWith]
+     * marks it): its 통상시급 hours, common allowances and bonus are then grouped as the sharer's, never their numbers.
+     */
+    val sharedWay: Boolean get() {
+        if (text?.let { t -> runCatching { JSONObject(t).has("pay") }.getOrDefault(false) } != true) return false
+        val setup = applied?.setup ?: com.bamnat.app.company.PendingWays.of(scope).pending.value?.setup ?: return false
+        return scope.payWays.way.value.let { it == null || it.setup != setup || it.shared }
+    }
     /** [PLAZA-03] What the user changed before the pay was made, so the screen can say their pay uses it. */
     var edited: Boolean by androidx.compose.runtime.mutableStateOf(false)
         private set

@@ -627,6 +627,9 @@ fun TalkSheet(holder: TalkHolder) {
                         shape = MaterialTheme.shapes.large,
                         modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) rulesAsked = true },
                     )
+                    // 1.39 조사 ⑦ 쓰기 전 한마디: 거친 말이 보이면 보내기 전에 한 번만 묻고(막지 않아요), 폰 밖으로는 아무것도 안 나가요.
+                    var nudge by remember { mutableStateOf<(() -> Unit)?>(null) }
+                    nudge?.let { go -> com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = null }, onSend = { nudge = null; go() }) }
                     IconButton(
                         onClick = {
                             val proposing = kind == "proposal" && replyTo == null
@@ -641,7 +644,8 @@ fun TalkSheet(holder: TalkHolder) {
                                 error = "무엇을 어떻게 바꾸자는지 한 줄 이상 적어 주세요"
                             } else if (pollDraft.isNotEmpty() && kind == "question" && (poll.size < 2 || poll.toSet().size != poll.size)) {
                                 error = "투표 보기를 서로 다르게 두 개 이상 적어 주세요"
-                            } else rules.ensure {
+                            } else {
+                              val go = { rules.ensure {
                                 rulesOk = true
                                 busy = true
                                 holder.send(body, parent = parent, kind = sentKind, change = if (proposing) lines else emptyList(), withSetup = withIt, poll = poll,
@@ -653,6 +657,8 @@ fun TalkSheet(holder: TalkHolder) {
                                         change = listOf(blankChange()); if (o.room || proposing) kind = "talk"
                                     }
                                 }
+                              } }
+                              if (com.bamnat.core.plaza.PostNudge.needed(body)) nudge = go else go()
                             }
                         },
                         enabled = !busy && text.trim().length >= 2,

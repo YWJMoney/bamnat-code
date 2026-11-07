@@ -400,6 +400,9 @@ fun CalendarScreen(
     LaunchedEffect(reviewMoment) {
         if (reviewMoment != null) {
             delay(1500)
+            // 1.39 [SPREAD-06] Not right after an ad, a payment window or an app-stop: the moment waits for the next opening.
+            val crashAt = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { InAppReview.lastCrash(context) }.getOrDefault(0L) }
+            if (!InAppReview.calm(System.currentTimeMillis(), crashAt)) return@LaunchedEffect
             context.findActivity()?.let { InAppReview.ask(it) }
             vm.markReviewAsked(reviewMoment)
         }
@@ -931,8 +934,9 @@ fun CalendarScreen(
         WeekdayHeader(DayOfWeek.MONDAY, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             // [CELL-01] 1.39 A week of cells listing their jobs and memos is as tall as the month's.
-            val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, false)
-            val cellHeight = (if (listOn) maxOf(calView.cellHeight(maxWidth), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth)) + cellTextGrowth()
+            val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, false, hasMemos = datedMemos.isNotEmpty())
+            val tall = listOn && cellListTall(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, true)
+            val cellHeight = (if (tall) maxOf(calView.cellHeight(maxWidth), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth)) + cellTextGrowth()
             val swipe = with(androidx.compose.ui.platform.LocalDensity.current) { WEEK_SWIPE.toPx() }
             val turnTo by rememberUpdatedState(onDateChange)
             WeekStrip(
@@ -951,6 +955,7 @@ fun CalendarScreen(
                 showSpend = settings.spendInCells,
                 memoTexts = memoTexts,
                 memoLists = memoLists.takeIf { listOn },
+                listEmptyDays = tall,
                 focus = focus,
                 hourly = hourlyCells,
                 invest = investCells,
@@ -1578,8 +1583,16 @@ fun CalendarScreen(
             ) {
                 // [CAL-51] On its side a phone keeps its cells as short as they hold, so weeks show under the bars.
                 // [CELL-01] 1.39 Cells that list each day's jobs and memos are taller, so the lines have room (not on its side).
-                val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, sideways)
-                val cellHeight = (if (listOn) maxOf(calView.cellHeight(maxWidth, sideways), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth, sideways)) + cellTextGrowth()
+                val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, sideways, hasMemos = datedMemos.isNotEmpty())
+                // [CELL-03] Tall only for a month that has jobs or memos to list; an empty month keeps its weeks in sight.
+                val monthHasLines = remember(datedMemos, moneyBook.jobs, visibleMonth, focus) {
+                    datedMemos.any { YearMonth.from(it.date!!) == visibleMonth } ||
+                        focus != com.bamnat.core.work.CalendarFocus.SHIFTS && moneyBook.jobs.any { j ->
+                            !j.date.isAfter(visibleMonth.atEndOfMonth()) && !(j.endDate ?: j.date).isBefore(visibleMonth.atDay(1))
+                        }
+                }
+                val tall = listOn && cellListTall(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, monthHasLines)
+                val cellHeight = (if (tall) maxOf(calView.cellHeight(maxWidth, sideways), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth, sideways)) + cellTextGrowth()
                 val coverRows = fabKeepRows(visibleMonth, settings.weekStart)
                 val ownPx = if (showList) Float.NaN else with(density) { cellHeight.toPx() } * coverRows
                 androidx.compose.runtime.SideEffect { ownRowsPx = ownPx }
@@ -1653,6 +1666,7 @@ fun CalendarScreen(
                         spendHeat = settings.spendHeat && !stamping,
                         memoTexts = memoTexts,
                         memoLists = memoLists.takeIf { listOn && !stamping },
+                        listEmptyDays = tall,
                         onPaint = if (stamping) paintDays else null,
                         weeklyLimitHours = limits.weeklyLimitHours,
                         focus = focus,

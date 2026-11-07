@@ -42,6 +42,11 @@ object SharedPayWords {
     const val TITLE = "다른 사람이 공유한 급여체계를 사용하고 있어요!"
     const val ASK = "다르다면 의견을 제시해 보거나 직접 만드시겠어요?"
     const val HIDDEN = "계산 방식은 공유한 분의 것이라 볼 수도 고칠 수도 없어요. 기본급과 내 수당 금액은 내 명세서대로 넣어요."
+    /** [PAYP-04] Where only the 기본급 is asked over a shared way. */
+    const val BASE_ONLY = "계산 방식은 공유한 분의 것 그대로예요. 기본급만 내 명세서대로 넣으면 예상 급여가 맞아요."
+    /** [PAYP-04] The 금액 창 after '이 급여 방식 쓰기': what comes with the way, grouped, never its numbers. */
+    const val WAY_TITLE = "공유한 분의 계산 방식"
+    const val WAY_TEXT = "통상시급 기준 시간, 연장·야간 가산, 회사가 정한 수당과 상여는 공유한 분의 방식대로 들어가요. 계산식은 보이지 않아요. 넣은 뒤 내 명세서와 다르면 급여 화면의 ‘의견 보내기’로 알려 주세요."
     const val LEAVE_TITLE = "직접 만들까요?"
     const val LEAVE_TEXT = "공유한 급여 계산 방식을 빼고 급여 설정을 처음부터 만들어요. 빼면 되돌릴 수 없고, 다시 쓰려면 ‘우리 회사 급여 방식 찾기’에서 다시 넣어요."
 
@@ -68,7 +73,7 @@ fun SharedPayLockSheet(
     var fix by rememberSaveable { mutableStateOf(false) }
     var leave by rememberSaveable { mutableStateOf(false) }
     val month = remember { Today.month() }
-    if (base) BaseAskSheet(profile, month, onDismiss = { base = false }) { b, h -> onBase(b, h); base = false; onDismiss() }
+    if (base) BaseAskSheet(profile, month, onDismiss = { base = false }, locked = true) { b, h -> onBase(b, h); base = false; onDismiss() }
     if (fix) FixRequestSheet(vm, onDismiss = { fix = false; onDismiss() })
     if (leave) LeaveSharedDialog(onLeave = { leave = false; onLeave(); onDismiss() }, onDismiss = { leave = false })
     if (base || fix || leave) return
@@ -146,6 +151,21 @@ fun FixRequestSheet(vm: PayWayViewModel, onDismiss: () -> Unit) {
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text(if (open) "보내기" else "달라요 보내기") }
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(if (sent == null) "닫기" else "확인") }
+        }
+    }
+}
+
+/**
+ * 1.39 [PAYP-04] (3차 통합 PC "‘이 급여 방식 쓰기’ 직후 금액 창에 ‘통상시급 180시간’과 ‘상여 2·4·6·8·10·12월 기본급 100%’가
+ * 보여요"): the 금액 창 groups what comes with a shared way under one card, its names only, so the user sees what goes in
+ * without the numbers; what the user types (기본급, 내 수당 금액) stays below it.
+ */
+@Composable
+fun SharedWayNote(modifier: Modifier = Modifier) {
+    SoftCard(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(SharedPayWords.WAY_TITLE, style = MaterialTheme.typography.titleSmall)
+            Text(SharedPayWords.WAY_TEXT, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

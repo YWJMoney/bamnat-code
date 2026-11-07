@@ -165,6 +165,8 @@ fun HubScreen(
                 }
             }
         }
+        // 1.39 [CARE-03] 운영자의 안내는 열 때 한 번 창으로, 쉬는 중이면 탭 아래 한 줄(해명하기). 아무 일 없으면 아무것도 없어요.
+        CommunityCareBar(c)
         // [PRF-02] 1.36 (사용자 2026-10-31 "팔로워 한 사람의 프로필에 들어가"): 팔로잉 줄 above 광장 and 장터, where people meet and pick.
         val recipesOn by c.recipes.on.collectAsStateWithLifecycle()
         val people: @Composable () -> Unit = {

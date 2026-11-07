@@ -132,7 +132,7 @@ fun DropdownMenu(
 
 /**
  * 1.38 PC 10차 (53): 입사일처럼 지난 해를 고를 때 달을 몇십 번 넘기지 않게, 올해·1년 전…을 한 번에 펼쳐요.
- * It moves only what the picker shows (the same month in that year); the day is still picked on the calendar.
+ * It moves what the picker shows to the same month in that year, and the day already picked to the same day of that year.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -148,6 +148,12 @@ fun YearJump(state: androidx.compose.material3.DatePickerState, back: Int = 5) {
             FilterChip(selected = shown == year, onClick = {
                 val month = java.time.LocalDate.ofEpochDay(state.displayedMonthMillis / 86_400_000L).withYear(year).withDayOfMonth(1)
                 state.displayedMonthMillis = month.toEpochDay() * 86_400_000L
+                // 1.39 G2 PC 4bd5d745: the day picked moves to that year too. Only the calendar moved, so '고르기' kept this year's date
+                // (입사일 2026.11.7 for 2025.11.7) and the ledger and 신고 일정 followed the wrong year.
+                state.selectedDateMillis?.let { java.time.LocalDate.ofEpochDay(it / 86_400_000L) }?.let { picked ->
+                    val moved = picked.withYear(year).toEpochDay() * 86_400_000L
+                    if (state.selectableDates.isSelectableDate(moved)) state.selectedDateMillis = moved
+                }
             }, label = { androidx.compose.material3.Text(if (y == 0) "올해" else "${y}년 전 ($year)") })
         }
     }

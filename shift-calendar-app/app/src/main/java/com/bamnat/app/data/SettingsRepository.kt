@@ -347,6 +347,8 @@ data class AppSettings(
     val alarmSuggest: Boolean = true,
     /** [ALRM-03] What was answered ([com.bamnat.core.alarm.AlarmSuggest.Memory]); kept on this phone only, like [monthRecapSeen]. */
     val alarmSuggestMemory: String = "",
+    /** 1.39 [SPREAD-05] A small '밤낮' in the corner of a 근무표·견적서·거래내역서 picture; the user can turn it off. In the backup. */
+    val exportMark: Boolean = true,
 ) {
     /** [SETUP-16] The first setup is finished: the kind of work is chosen and the setup was not put off. */
     val setupDone: Boolean get() = workStyle != null && !setupLater
@@ -582,6 +584,7 @@ class SettingsRepository(context: Context) {
             monthRecapSeen = prefs.getInt(K_MONTH_RECAP, 0),
             alarmSuggest = prefs.getBoolean(K_ALARM_SUGGEST, d.alarmSuggest),
             alarmSuggestMemory = prefs.getString(K_ALARM_SUGGEST_MEMORY, null) ?: "",
+            exportMark = prefs.getBoolean(K_EXPORT_MARK, d.exportMark),
         )
     }
 
@@ -718,6 +721,7 @@ class SettingsRepository(context: Context) {
             .putInt(K_MONTH_RECAP, s.monthRecapSeen)
             .putBoolean(K_ALARM_SUGGEST, s.alarmSuggest)
             .putString(K_ALARM_SUGGEST_MEMORY, s.alarmSuggestMemory)
+            .putBoolean(K_EXPORT_MARK, s.exportMark)
             .apply()
     }
 
@@ -789,6 +793,7 @@ class SettingsRepository(context: Context) {
         const val K_MONTH_RECAP = "month_recap_seen"
         const val K_ALARM_SUGGEST = "alarm_suggest"
         const val K_ALARM_SUGGEST_MEMORY = "alarm_suggest_memory"
+        const val K_EXPORT_MARK = "export_mark"
         const val K_WEEKLY_LIMIT = "weekly_limit"
         const val K_AVG_LIMIT = "average_limit"
         const val K_THEME = "theme"

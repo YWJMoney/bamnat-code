@@ -118,19 +118,14 @@ fun NightScreen(vm: NightViewModel, onClose: () -> Unit, onAlarms: () -> Unit) {
     val line by vm.line.collectAsStateWithLifecycle()
     val recording by com.bamnat.app.sleep.SleepRecordService.recording.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    // The window dimmed and the bar icons light while this screen is up; both go back on leaving.
+    // The window dimmed while this screen is up, and back on leaving (the bar icons follow NightSurface).
     DisposableEffect(Unit) {
         val activity = context.findActivity()
         val window = activity?.window
         val before = window?.attributes?.screenBrightness
-        val bars = window?.let { androidx.core.view.WindowCompat.getInsetsController(it, it.decorView) }
-        val lightBefore = bars?.isAppearanceLightStatusBars
         window?.let { w -> w.attributes = w.attributes.apply { screenBrightness = NIGHT_BRIGHTNESS } }
-        bars?.isAppearanceLightStatusBars = false
-        bars?.isAppearanceLightNavigationBars = false
         onDispose {
             window?.let { w -> w.attributes = w.attributes.apply { screenBrightness = before ?: -1f } }
-            lightBefore?.let { bars.isAppearanceLightStatusBars = it; bars.isAppearanceLightNavigationBars = it }
         }
     }
     val now by produceState(Today.dateTime()) {

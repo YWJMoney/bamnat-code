@@ -710,7 +710,14 @@ function adminApp(L, BUILD, M) {
         // An id is one talk: company.setup, opened from the review screen.
         const [company, setup] = (id ?? "").split(".");
         const q = S.postQuery ? `&q=${encodeURIComponent(S.postQuery)}` : "";
-        if (!id && S.postFilter === "limits") jobs.push(api("/write-limits").then(keep((d) => { S.data.limits = d; })));
+        // 1.39 [CARE-05] 경고·쉬기: 신고 누적 제한과 마을 돌봄(경고·의견 쉬기·마을 쉬기)을 한 판에. 사람 찾기를 했으면 그 사람도.
+        if (!id && S.postFilter === "limits") {
+          jobs.push(api("/write-limits").then(keep((d) => { S.data.limits = d; })), api("/care").then(keep((d) => { S.data.care = d; })));
+          if (S.careQuery) {
+            jobs.push(api(`/care/person?${S.careQuery.by}=${encodeURIComponent(S.careQuery.q)}`)
+              .then(keep((d) => { S.data.carePerson = d; }), (e) => { S.data.carePerson = { error: e?.data?.error ?? "not_found" }; }));
+          }
+        }
         // 1.36 [VIL-21] 마을 운영: 유형 광장마다 이번 주 주제.
         else if (!id && S.postFilter === "village") {
           jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })));
@@ -1229,7 +1236,7 @@ function adminApp(L, BUILD, M) {
   /** 커뮤니티의 보기 칸: 신고·가려짐·모든 글·광장·임금표·쓰기 제한·마을 운영 (1.36 [VIL-21]). */
   function communityTabs() {
     return [["flagged", "신고됨", S.overview?.flaggedPosts], ["hidden", "가려짐"], ["all", "모든 글"], ["room", "회사·유형 광장"], ["fix", "보완 요청"], ["rates", "임금표"],
-      ["limits", "쓰기 제한"], ["village", "마을 운영"]].map(([k, label, n]) => seg("post-filter", k, S.postFilter, label, n)).join("");
+      ["limits", "경고·쉬기"], ["village", "마을 운영"]].map(([k, label, n]) => seg("post-filter", k, S.postFilter, label, n)).join("");
   }
 
   /**
@@ -1245,7 +1252,7 @@ function adminApp(L, BUILD, M) {
     const edit = can("community", "edit");
     const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>
       <p class="hint">유형 광장 맨 위에 보이는 이번 주 이야기 주제예요. 쓸 거리가 없을 때 문을 열어 줘요(60자까지, 비우면 숨겨요). 월요일(한국 시간)마다 저절로 비어요.
-      신고된 글은 ‘신고됨’, 신고가 쌓인 사람은 ‘쓰기 제한’, 레시피 신고는 레시피 › 검토 대기에서 봐요.</p>`;
+      신고된 글은 ‘신고됨’, 신고가 쌓인 사람과 경고·쉬기는 ‘경고·쉬기’, 레시피 신고는 레시피 › 검토 대기에서 봐요.</p>`;
     if (!d) return head + skeleton();
     const [, m, dd] = d.week.split("-").map(Number);
     return head + `<h3>이번 주 이야기 주제</h3><p class="meta">${m}월 ${dd}일(월)부터 이번 주</p><div class="grid">${d.items.map((x) => `<article class="card">
@@ -1285,6 +1292,81 @@ function adminApp(L, BUILD, M) {
       ${last.length ? `<h3>지난 달 고르기</h3><div class="grid">${last.map((x) => card(x, false)).join("")}</div>` : ""}`;
   }
 
+  // ---- 1.39 [CARE-05] 마을 돌봄: 경고 → 의견 쉬기 → 마을 쉬기, 사람 찾기, 해명 ----
+
+  const CARE_FIND = [["post", "글 번호", "p로 시작하는 16자"], ["recipe", "작품 코드", "8자"], ["inquiry", "문의 번호", "문의 화면 주소 끝"], ["mark", "휴대폰 표시", "6자 이상"]];
+  const careKind = (x) => (x.kind === "warn" ? (x.by === "auto" ? "안내(저절로)" : "경고") : `${x.kind === "opinion" ? "의견 쉬기" : "마을 쉬기"} ${x.days}일`);
+  const careNextText = (n) => (n?.kind === "warn" ? "부드러운 경고" : n ? `${n.kind === "opinion" ? "의견 쉬기" : "마을 쉬기"} ${n.days}일` : "");
+
+  function careLine(x, edit) {
+    const state = x.liftedAt ? '<span class="pill">거둠</span>' : x.active ? '<span class="pill warn">지금</span>'
+      : x.kind === "warn" ? `<span class="pill${x.seen ? " ok" : ""}">${x.seen ? "읽음" : "안 읽음"}</span>` : '<span class="pill">끝남</span>';
+    const can = edit && !x.liftedAt && (x.active || x.kind === "warn");
+    return `<li><div class="row"><span class="row-main"><b>${esc(careKind(x))} · ${esc(x.reasonText)}</b>
+      <small>사용자 ${esc(x.who)} · ${esc(day(x.at))}${x.until ? `부터 ${esc(day(x.until))}까지` : ""}${x.by === "auto" ? " · 서버가 저절로" : ""}${x.ref ? ` · ${esc(x.ref)}` : ""}</small>
+      ${x.note ? `<small>앱에 보이는 한 줄: ${esc(x.note)}</small>` : ""}</span>
+      <span class="row-side">${state}${can ? ` <button class="btn small ghost" data-act="care-lift" data-id="${esc(x.id)}" data-key="${x.kind}">${x.kind === "warn" ? "거두기" : "풀기"}</button>` : ""}</span></div></li>`;
+  }
+
+  function carePersonCard(p, c, edit) {
+    if (p.error) return `<p class="note warn">${p.error === "ambiguous" ? "그 휴대폰 표시로 여러 사람이 나와요. 더 길게 넣어 주세요." : "찾는 사람이 없어요. 번호를 다시 봐 주세요."}</p>`;
+    const now = p.notes.find((x) => x.active);
+    const reasons = Object.entries(c.rules.reasons).filter(([k]) => !k.startsWith("auto_"));
+    const severe = c.rules.severe;
+    const pick = p.next?.days ?? 3;
+    const form = edit && c.on ? `<form data-form="care-act"><h4>다음 할 일 (추천: ${esc(careNextText(p.next))})</h4>
+      <label class="field stack"><span>이유</span><select name="reason" required><option value="">골라 주세요</option>${reasons.map(([k, v]) =>
+        `<option value="${k}">${esc(v)}${severe.includes(k) ? " (바로 쉬기 가능)" : ""}</option>`).join("")}</select></label>
+      <label class="field stack"><span>앱에 보일 한 줄</span><input name="note" maxlength="200" placeholder="고르면 좋아요. 이름·연락처는 쓰지 않아요"></label>
+      <label class="field stack"><span>쉬는 기간</span><select name="days">${c.rules.days.map((n) => `<option value="${n}"${n === pick ? " selected" : ""}>${n}일</option>`).join("")}</select></label>
+      <p class="hint">쉬기는 ${c.rules.warnWithinDays}일 안에 경고가 먼저 간 사람에게만 걸려요(개인 정보·성적인 내용·불법 정보는 바로). 읽기·테마 입기·문의(해명)는 쉬는 동안에도 돼요.</p>
+      <div class="actions"><button class="btn${p.next?.kind === "warn" ? " primary" : ""}" type="submit" data-kind="warn">경고 보내기</button>
+        <button class="btn${p.next?.kind === "opinion" ? " primary" : ""}" type="submit" data-kind="opinion">의견 쉬기</button>
+        <button class="btn danger" type="submit" data-kind="community">마을 쉬기</button></div></form>`
+      : edit ? '<p class="hint">마을 돌봄이 켜지면 여기서 경고·쉬기를 걸 수 있어요.</p>' : "";
+    return `<article class="card"><div class="head"><h3>사용자 ${esc(p.who)}</h3>${now ? `<span class="pill warn">${esc(careKind(now))} 중</span>` : ""}</div>
+      <p class="meta">글 ${p.posts} · 가려진 글 ${p.hiddenPosts} · 180일 안 가려짐 ${p.strikes}${p.limit ? ` · 신고 누적 제한 ${p.limit.step}단계(${esc(day(p.limit.until))}까지)` : ""}</p>
+      ${p.notes.length ? `<ul class="rows">${p.notes.map((x) => careLine(x, edit)).join("")}</ul>` : '<p class="meta">경고·쉬기 기록이 없어요.</p>'}
+      ${form}</article>`;
+  }
+
+  function careSection(edit) {
+    const c = S.data.care;
+    if (!c) return skeleton(1);
+    const banner = c.on
+      ? '<p class="note ok">마을 돌봄이 켜져 있어요. 운영자가 확인해 가린 글만 세고, 쉬기 전에 늘 경고가 먼저 가요. 받은 분은 앱에서 해명할 수 있어요.</p>'
+      : '<p class="note warn">마을 돌봄은 아직 꺼져 있어요. 처리방침 3.12 시행일(기능 관리 › 일정)에 저절로 켜져요. 그 전에는 1.36 신고 누적 제한만 돌고, 이미 건 쉬기는 끝날 때까지 그대로예요.</p>';
+    const q = S.careQuery ?? { by: "post", q: "" };
+    const find = `<form class="toolbar" data-form="care-find"><select name="by" aria-label="무엇으로 찾을까요">${CARE_FIND.map(([k, l]) =>
+      `<option value="${k}"${q.by === k ? " selected" : ""}>${l}</option>`).join("")}</select>
+      <input name="q" type="search" required maxlength="64" value="${esc(q.q)}" placeholder="${esc(CARE_FIND.find(([k]) => k === q.by)?.[2] ?? "")}" aria-label="찾을 번호" autocomplete="off">
+      <button class="btn primary" type="submit">사람 찾기</button>${S.careQuery ? '<button class="btn ghost" type="button" data-act="care-clear">지우기</button>' : ""}</form>`;
+    const person = S.careQuery ? (S.data.carePerson ? carePersonCard(S.data.carePerson, c, edit) : skeleton(1)) : "";
+    const holds = c.holds.length ? `<ul class="rows">${c.holds.map((x) => careLine(x, edit)).join("")}</ul>` : '<p class="meta">지금 쉬는 사람이 없어요.</p>';
+    const unread = c.warnings.filter((x) => !x.seen && !x.liftedAt).length;
+    return `<h3>마을 돌봄</h3>${banner}${find}${person}
+      <h4>지금 쉬는 사람 ${c.holds.length}</h4>${holds}
+      ${c.warnings.length ? `<details><summary>최근 30일 경고·안내 ${c.warnings.length}${unread ? ` · 아직 안 읽음 ${unread}` : ""}</summary><ul class="rows">${c.warnings.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}
+      ${c.ended.length ? `<details><summary>최근 30일에 끝나거나 푼 쉬기 ${c.ended.length}</summary><ul class="rows">${c.ended.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}`;
+  }
+
+  /** 1.39 [CARE-10] 문의 하나가 해명이면: 무엇에 대한 해명인지와 받아들이기·그대로 두기. 답은 아래 답 칸으로 따로 가요. */
+  function appealCard(q, edit) {
+    const a = q.appeal;
+    const ab = a.about ?? {};
+    const post = ab.kind === "post";
+    const what = post ? `가려진 글 다시 보여 주세요(지금 ${ab.status === "hidden" ? "가려짐" : "보임"})` : ab.kind === "limit" ? `신고 누적 쓰기 제한${ab.step ? ` ${ab.step}단계` : ""}${ab.until ? `(${day(ab.until)}까지)` : ""}`
+      : ab.kind === "gone" ? "지난 기록(지워짐)" : `${careKind(ab)} · ${ab.reasonText ?? ""}`;
+    const state = a.result === "accepted" ? '<span class="pill ok">받아들여 풀어 줌</span>' : a.result === "kept" ? '<span class="pill">그대로 둠</span>' : '<span class="pill warn">결정 전</span>';
+    return `<div class="card"><div class="card-head"><h2>${post ? "다시 보여 주세요" : "해명"}</h2>${state}</div>
+      <p class="meta">무엇에 대한 해명: <b>${esc(what)}</b> · 사용자 ${esc(a.who)} · ${esc(ago(a.at))}${ab.note ? ` · 남긴 한 줄: ${esc(ab.note)}` : ""}</p>
+      ${post ? `<blockquote>${esc(ab.body ?? "")}</blockquote><p class="meta">가린 이유: ${esc(S.overview?.hideReasons?.[ab.hideReason] ?? ab.hideReason ?? "")}
+        · <button type="button" class="linkish" data-act="care-post" data-id="${esc(ab.id)}">이 사람 기록 보기</button></p>` : ""}
+      <p class="hint">${post ? "받아들이면 글이 다시 보이고, 그 글로 생긴 신고·셈·제한도 함께 빠져요." : "읽고 받아들이면 그 경고·쉬기가 바로 풀리고 앞으로 세지 않아요."} 결정하면 답 칸에 답 초안이 채워지니 다듬어 보내 주세요. 앱은 48시간 안에 답이 온다고 약속해요.</p>
+      ${edit && !a.result ? `<div class="actions"><button class="btn primary" data-act="appeal-decide" data-id="${esc(q.id)}" data-key="accepted">${post ? "받아들이고 다시 보이기" : "받아들이고 풀기"}</button>
+        <button class="btn" data-act="appeal-decide" data-id="${esc(q.id)}" data-key="kept">그대로 두기</button></div>` : ""}</div>`;
+  }
+
   /**
    * 1.36 [LIM-10] 신고 누적 쓰기 제한: no one has a daily cap; posts or recipes hidden by reports (or here) restrict the writer for a
    * while, each time more strictly. Who is restricted now or was in 30 days, the rules in words, and 풀기.
@@ -1295,8 +1377,11 @@ function adminApp(L, BUILD, M) {
     const head = `<div class="segmented" role="group" aria-label="보기">${communityTabs()}</div>`;
     if (!d) return head + skeleton();
     const r = d.rules;
+    // 1.39 [CARE-02] 마을 돌봄이 켜지면 운영자가 확인한 가려짐만 세어요(서버 WRITE_LIMITS_V2).
     const step = (i) => { const x = r.steps[i - 1]; return x ? (x.perDay ? `${x.days}일 동안 하루 ${x.perDay}번` : `${x.days}일 쓰기 막기`) : ""; };
-    const rules = `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이 ${r.windowDays}일 안에 ${r.strikes}번이면
+    const rules = r.care ? `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 운영자가 확인해 가린 글·작품·이야기만 세요(신고만으로 가려진 것은 확인 전까지 세지 않아요).
+      ${r.windowDays}일 안에 1번이면 부드러운 안내, 2번이면 경고가 앱에 가고, ${r.strikes}번째부터 제한이 걸려요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}.
+      제한이 끝난 뒤 ${r.windowDays}일 안에 또 확인되면 바로 다음 단계예요. ${r.forgetDays}일 동안 조용하면 한 단계 내려가고, 해명을 받아들이면 그 건은 빠져요.</p>` : `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이 ${r.windowDays}일 안에 ${r.strikes}번이면
       제한이 걸리고, 받을 때마다 더 줄어요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}. 기간이 지나면 저절로 풀리고, ${r.forgetDays}일 동안 조용하면 한 단계 내려가요.
       가려진 글을 다시 보이게 하면 그 건은 빠져요.</p>`;
     // 1.36 PC 6차: 풀거나 끝난 제한은 아래 '최근 30일에 끝난 제한'으로 접혀서, 지금 제한 중인 목록이 바로 비어요.
@@ -1309,7 +1394,7 @@ function adminApp(L, BUILD, M) {
     </article>`;
     const list = nowItems.length ? `<div class="grid">${nowItems.map(card).join("")}</div>`
       : empty("제한 중인 사람이 없어요", "신고로 가려진 글이 쌓인 사람이 생기면 여기에 보여요.");
-    return head + rules + list + (ended.length ? `<details><summary>최근 30일에 끝난 제한 ${ended.length}</summary><div class="grid">${ended.map(card).join("")}</div></details>` : "");
+    return head + careSection(edit) + `<hr class="split"><h3>신고 누적 쓰기 제한</h3>` + rules + list + (ended.length ? `<details><summary>최근 30일에 끝난 제한 ${ended.length}</summary><div class="grid">${ended.map(card).join("")}</div></details>` : "");
   }
 
   /**
@@ -1366,6 +1451,7 @@ function adminApp(L, BUILD, M) {
         ${edit ? `${p.status === "hidden" || p.flags ? `<button class="btn" data-act="post-show" data-id="${p.id}">${p.status === "hidden" ? "다시 보이기" : "문제없음"}</button>` : ""}
           ${p.status === "hidden" ? "" : `<button class="btn" data-act="post-hide" data-id="${p.id}">가리기</button>`}
           <button class="btn" data-act="post-mute" data-id="${p.id}">30일 쓰기 막기</button>
+          <button class="btn ghost" data-act="care-from-post" data-id="${p.id}">경고·쉬기</button>
           <button class="btn danger" data-act="post-delete" data-id="${p.id}">지우기</button>` : ""}
       </div>
     </article>`;
@@ -1575,6 +1661,7 @@ function adminApp(L, BUILD, M) {
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
+        ${q.appeal ? appealCard(q, editable) : ""}
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
           <label class="sr" for="reply">답</label>
@@ -2445,7 +2532,7 @@ function adminApp(L, BUILD, M) {
 
   // ---- [SRV-05] 공유 링크 신고 ----
 
-  const SHARE_REASONS = { personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
+  const SHARE_REASONS = { scam: "돈·계좌 요구(사기 의심)", personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
 
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
@@ -2725,11 +2812,12 @@ function adminApp(L, BUILD, M) {
     if (!d.connected) return empty("공유 서버가 연결되지 않았어요", "Worker 설정에 SHARE_BASE_URL과 SHARE_ADMIN_TOKEN을 넣으면 신고된 근무표 링크가 여기 보여요.");
     if (!d.reports.length) return empty("신고된 링크가 없어요", "근무표 링크 페이지와 앱의 받은 달력에서 신고하면 여기 모여요.");
     const edit = can("shares", "edit");
-    return `<p class="hint">링크를 열어 확인하고, 운영 규칙에 어긋나면 내려요. 내린 링크는 근무표가 바로 지워지고 "운영 규칙에 따라 내려졌어요"로 보여요. 신고한 사람은 남지 않아요.</p>
-      <ul class="rows">${d.reports.map((r) => `<li><div class="row"><span class="row-main"><b>신고 ${r.count}건</b>
+    return `<p class="hint">근무표 링크와 1.39부터 팀·사장님 링크(병동 표·근무 신청·결원·바꾸기·근로계약서·출퇴근)의 신고가 모여요. 링크를 열거나 내용을 보고, 운영 규칙에 어긋나면 내려요. 돈·계좌 요구는 바로 내려 주세요. 내린 링크는 근무표가 바로 지워지고 "운영 규칙에 따라 내려졌어요"로 보여요. 신고한 사람은 남지 않아요.</p>
+      <ul class="rows">${d.reports.map((r) => `<li><div class="row"><span class="row-main"><b>${esc(r.name ?? "근무표 링크")} · 신고 ${r.count}건</b>
         <small>${Object.entries(r.reasons ?? {}).map(([k, n]) => `${esc(SHARE_REASONS[k] ?? k)} ${n}`).join(" · ")}</small><small>마지막 신고 ${esc(ago(r.last))}</small></span>
-        <span class="row-side"><a class="btn small" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">열어 보기</a>
-        ${edit ? `<button class="btn small danger" data-act="share-remove" data-id="${esc(r.id)}">내리기</button>` : ""}</span></div></li>`).join("")}</ul>`;
+        <span class="row-side">${r.url ? `<a class="btn small" href="${esc(r.url)}" target="_blank" rel="noopener noreferrer">열어 보기</a>`
+          : `<button class="btn small" data-act="share-peek" data-id="${esc(r.id)}" data-key="${esc(r.kind)}">내용 보기</button>`}
+        ${edit ? `<button class="btn small danger" data-act="share-remove" data-id="${esc(r.id)}" data-key="${esc(r.kind ?? "s")}">내리기</button>` : ""}</span></div></li>`).join("")}</ul>`;
   }
 
   // ---- settings, account, more ----
@@ -4489,9 +4577,62 @@ function adminApp(L, BUILD, M) {
       S.ratePick = null;
       S.data.rates = null;
       S.data.limits = null;
+      S.data.care = null;
       S.data.village = null;
       S.data.contests = null;
       refilter("posts");
+    },
+    // 1.39 [CARE-05]
+    "care-from-post": ({ id }) => {
+      S.careQuery = { by: "post", q: id };
+      S.data.carePerson = null;
+      S.postFilter = "limits";
+      S.postPick = null;
+      S.data.limits = null;
+      S.data.care = null;
+      refilter("posts");
+    },
+    "care-clear": () => {
+      S.careQuery = null;
+      S.data.carePerson = null;
+      render({ keepScroll: true });
+    },
+    "care-lift": ({ id, key }) => confirmBox(key === "warn" ? "이 경고를 거둘까요?" : "지금 풀까요?",
+      key === "warn" ? "거둔 경고는 다음 단계를 셀 때 빠져요." : "바로 다시 쓸 수 있고, 앱의 밤낮 소식에 ‘풀렸어요’가 가요. 기록은 남아 다음 단계를 셀 때 써요.",
+      key === "warn" ? "거두기" : "풀기", async () => {
+        await act(() => api(`/care/${id}/lift`, "POST", {}), key === "warn" ? "거뒀어요" : "풀었어요");
+        S.data.care = null;
+        S.data.carePerson = null;
+        load();
+      }, "primary"),
+    "appeal-decide": async ({ id, key }) => {
+      const done = await act(() => api(`/care/appeal/${id}`, "POST", { result: key }), key === "accepted" ? "풀었어요. 답을 보내 주세요" : "그대로 두기로 했어요. 답을 보내 주세요");
+      if (!done) return;
+      const post = S.data.inquiry?.appeal?.about?.kind === "post";
+      const text = post ? (key === "accepted"
+        ? "말씀 고마워요. 다시 살펴보니 가릴 글이 아니었어요. 글을 다시 보이게 했고, 이 일로 생긴 기록도 모두 지웠어요. 불편을 드려 미안해요."
+        : "말씀 고마워요. 꼼꼼히 다시 봤지만 이 글은 광장 운영 원칙에 어긋나서 가린 채로 두기로 했어요. 다른 글은 평소처럼 쓸 수 있어요.")
+        : key === "accepted"
+        ? "해명 고마워요. 다시 살펴보니 이번 일은 저희가 너무 엄하게 봤어요. 경고·쉬기를 바로 풀었고, 이번 건은 앞으로 세지 않아요. 불편을 드려 미안해요."
+        : "해명 고마워요. 꼼꼼히 다시 봤지만 이번 건은 광장 운영 원칙에 어긋나서 그대로 두기로 했어요. 쉬기는 정해진 날에 저절로 끝나고, 그 뒤에는 평소처럼 쓸 수 있어요. 함께 편한 마을이 되도록 부탁드려요.";
+      writeDraft("reply", text);
+      S.data.inquiry = null;
+      load();
+    },
+    "care-post": ({ id }) => {
+      S.careQuery = { by: "post", q: id };
+      S.data.carePerson = null;
+      S.postFilter = "limits";
+      S.data.limits = null;
+      S.data.care = null;
+      go("community");
+    },
+    "share-peek": async ({ id, key }) => {
+      const d = await act(() => api(`/shares/${key}/${id}`));
+      if (!d) return;
+      openDialog(`<div><h2>${esc(d.name)} 내용</h2><p class="hint">링크 주소와 열쇠는 보이지 않아요. 사람들이 적은 글만 600자까지예요.</p>
+        <blockquote>${esc(d.text || "(적은 글이 없어요)")}</blockquote>
+        <div class="actions"><button class="btn" type="button" data-act="close">닫기</button></div></div>`);
     },
     "limit-lift": ({ id }) => confirmBox("이 사람의 쓰기 제한을 지금 풀까요?", "단계는 그대로 남아서, 다시 제한되면 이번보다 한 단계 더 줄어요.", "풀기", async () => {
       await act(() => api(`/write-limits/${id}/lift`, "POST", {}), "풀었어요");
@@ -5036,8 +5177,11 @@ function adminApp(L, BUILD, M) {
       <p>만든 분 앱에 이 메모가 보여요. 고쳐서 다시 올리면 검토로 돌아와요.</p><textarea name="note" rows="3" maxlength="200" required></textarea>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">돌려주기</button></div></form>`),
     // [SRV-05]
-    "share-remove": ({ id }) => confirmBox("이 링크를 내릴까요?", "근무표가 바로 지워지고 되돌릴 수 없어요. 공유한 분은 새 링크를 만들 수 있어요.", "내리기", async () => {
-      const d = await act(() => api(`/shares/${id}/remove`, "POST", { reason: "운영 규칙 위반" }), "링크를 내렸어요");
+    "share-remove": ({ id, key }) => confirmBox("이 링크를 내릴까요?", key && key !== "s"
+      ? "내용이 바로 지워지고 되돌릴 수 없어요. 링크를 연 사람에게는 ‘운영 규칙에 따라 내려졌어요’와 돈·계좌를 요구하지 않는다는 안내가 보여요."
+      : "근무표가 바로 지워지고 되돌릴 수 없어요. 공유한 분은 새 링크를 만들 수 있어요.", "내리기", async () => {
+      const path = key && key !== "s" ? `/shares/${key}/${id}/remove` : `/shares/${id}/remove`;
+      const d = await act(() => api(path, "POST", { reason: "운영 규칙 위반" }), "링크를 내렸어요");
       if (d) S.data.shares = d;
       render({ keepScroll: true });
     }),
@@ -5308,6 +5452,29 @@ function adminApp(L, BUILD, M) {
       if (button && label != null) button.textContent = label;
       toast(`${done}개 올렸어요${failed.length ? ` · 못 올린 것 ${failed.length}개: ${failed.slice(0, 3).join(", ")}` : ""}`);
       if (done) { form.reset(); S.data.recipes = null; load(); }
+    },
+    // 1.39 [CARE-05] 사람 찾기와 경고·쉬기.
+    "care-find": (form) => {
+      const data = new FormData(form);
+      const q = String(data.get("q") ?? "").trim();
+      if (!q) return;
+      S.careQuery = { by: String(data.get("by")), q };
+      S.data.carePerson = null;
+      render({ keepScroll: true });
+      load();
+    },
+    "care-act": async (form, submitter) => {
+      const data = new FormData(form);
+      const kind = submitter?.dataset.kind ?? "warn";
+      const body = { [S.careQuery.by]: S.careQuery.q, reason: data.get("reason"), note: String(data.get("note") ?? "").trim() || undefined };
+      const r = kind === "warn"
+        ? await act(() => api("/care/warn", "POST", body), "경고를 보냈어요. 앱이 마을을 열 때 한 번 보여요")
+        : await act(() => api("/care/hold", "POST", { ...body, scope: kind, days: Number(data.get("days")) }),
+          (x) => `${kind === "opinion" ? "의견 쉬기" : "마을 쉬기"} ${x.days}일을 걸었어요`);
+      if (!r) return;
+      S.data.care = null;
+      S.data.carePerson = null;
+      load();
     },
     "hide-post": (form) => {
       const mute = form.dataset.mute === "1";

@@ -265,6 +265,8 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     var planAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var plans by remember { mutableStateOf<List<TeamAuto.Plan>?>(null) }
     var resent by remember { mutableStateOf<Pair<Int, List<Pair<TeamMember, String>>>?>(null) }
+    // 1.39 [SPREAD-07] The team's links went out for the first time: the one '다른 팀 리더께도' card may come (below the button).
+    LaunchedEffect(linksFor != null) { if (linksFor != null) c.grow.peerDue(com.bamnat.core.guide.Peer.TEAM) }
     // 1.38 [P3-L-15] 병동 전체 보기 (on when this phone holds the team's table link) and 봤어요.
     var ward by remember(team.id) { mutableStateOf(com.bamnat.app.team.TeamReceiveSync.board(context, team.id)?.url) }
     var wardOn by remember(team.id) { mutableStateOf(ward != null) }
@@ -582,7 +584,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                     val made = runCatching { links(c, team, b, active, if (state.state == MonthState.CONFIRMED && !again) was else emptyMap()) }
                     // 1.38 [P3-L-15] 병동 전체 보기, when on: the table link follows each 확정.
                     if (made.isSuccess && wardOn) runCatching { com.bamnat.app.team.TeamReceiveSync.putBoard(c, context, team, b, active) }
-                        .onSuccess { ward = it.url }.onFailure { dialog = "병동 전체 표는 인터넷이 될 때 다시 확정을 눌러 주세요." }
+                        .onSuccess { ward = it.url }.onFailure { dialog = "팀 전체 표는 인터넷이 될 때 다시 확정을 눌러 주세요." }
                     busy = null
                     // 1.38 PC 1차: after 다시 확정 the links are the same ones, only their days changed: say so, and offer to send anyway.
                     made.onFailure { c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "team_links") }
@@ -595,6 +597,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         val why = when ((e as? com.bamnat.app.share.ShareLinkException)?.message) {
                             "days" -> "칸이 모두 빈 팀원이 있어 링크를 못 만들었어요. 칠한 뒤 다시 눌러 주세요."
                             "paused", "rate_limited" -> "링크 만들기가 잠시 멈췄어요. 조금 뒤에 다시 눌러 주세요."
+                            "contact" -> (e as com.bamnat.app.share.ShareLinkException).friendly.orEmpty()
                             else -> "링크는 인터넷이 될 때 다시 눌러 주세요."
                         }
                         dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + why
@@ -608,6 +611,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 })
             }
             busy?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            if (linksFor == null) com.bamnat.app.ui.pro.PeerInviteCard(com.bamnat.core.guide.Peer.TEAM)
             Text("팀원은 앱이 없어도 링크로 자기 근무를 봐요. 앱이 있으면 내 달력에 넣을 수 있어요. 고친 뒤 다시 확정하면 같은 링크가 바뀌고, 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요(팀원이 직접 바꾼 날은 그대로).",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // 1.38 같이 쉬는 사람 (경쟁 앱 조사 P3-L-11): off until the leader turns it on — it puts teammates' names in each link.
@@ -622,10 +626,10 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             // 1.38 [P3-L-15] 병동 전체 보기: one more link with everyone's month and each day's count, only when the leader turns it on.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("병동 전체 표 링크도 같이 보내기", style = MaterialTheme.typography.bodyMedium)
+                    Text("팀 전체 표 링크도 같이 보내기", style = MaterialTheme.typography.bodyMedium)
                     Text("링크 하나에 모두의 한 달과 날마다 근무별 인원이 보여요. 이름이 다 들어가니 팀에서 괜찮을 때 켜요. 확정할 때마다 같은 주소가 새로 바뀌고, 끄면 바로 지워요.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    ward?.let { u -> TextButton(onClick = { send(context, "${team.name} ${Fmt.month(month)} 병동 전체 근무표\n$u", "병동 전체 표 보내기") }) { Text("병동 전체 표 보내기") } }
+                    ward?.let { u -> TextButton(onClick = { send(context, "${team.name} ${Fmt.month(month)} 팀 전체 근무표\n$u", "팀 전체 표 보내기") }) { Text("팀 전체 표 보내기") } }
                 }
                 androidx.compose.material3.Switch(checked = wardOn, onCheckedChange = { on ->
                     wardOn = on
@@ -831,7 +835,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                         fresh.joinToString("\n") { (m, u) -> "${m.name}: $u" }, "새 링크 보내기") }) { Text("새 링크 ${fresh.size}개만 보내기") }
                 }
                 Text("한 사람씩 보내거나, 모두 한 번에 단톡방에 보낼 수 있어요. 링크마다 그 사람 근무만 보여요.", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = { send(context, list.joinToString("\n") { (m, u) -> "${m.name}: $u" } + (ward?.let { "\n병동 전체: $it" } ?: ""), "${team.name} ${Fmt.month(month)} 근무표") }) { Text("모두 한 번에 보내기") }
+                OutlinedButton(onClick = { send(context, list.joinToString("\n") { (m, u) -> "${m.name}: $u" } + (ward?.let { "\n팀 전체: $it" } ?: ""), "${team.name} ${Fmt.month(month)} 근무표") }) { Text("모두 한 번에 보내기") }
                 list.forEach { (m, url) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(m.name + if (m.id in freshIds) " · 새 링크" else "", modifier = Modifier.weight(1f))

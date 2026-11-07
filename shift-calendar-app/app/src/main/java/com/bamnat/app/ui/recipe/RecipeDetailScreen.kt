@@ -240,9 +240,11 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 }
                 // [TRY-05] Back from trying it on the real app: 입어 보기 again, the same parts ticked and the same tab.
                 val again by LiveTryOn.reopen.collectAsStateWithLifecycle()
+                // [TRY-07] 1.39 발굴: 입기·넣기 pressed on the band comes back to the question of 넣기, the tried parts ticked.
                 LaunchedEffect(again, r) {
-                    if (!hasLooks) return@LaunchedEffect
-                    LiveTryOn.take { it is LiveTryOn.From.Detail && it.code == vm.code }?.let { tryAgain = it; tryOn = true }
+                    val back = LiveTryOn.take { it is LiveTryOn.From.Detail && it.code == vm.code } ?: return@LaunchedEffect
+                    if (hasLooks) { tryAgain = back; tryOn = true; if (back.wear) { vm.lookParts(back.picked); confirming = true } }
+                    else if (back.wear) confirming = true
                 }
                 val ready = missing.isEmpty() && outside.isEmpty() && !s.applying
                 val liveTry = LocalContext.current.appContainer
@@ -689,7 +691,11 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     Row {
         if (replyTo != null) TextButton(onClick = { replyTo = null }) { Text("답글 그만두기") }
         Spacer(Modifier.weight(1f))
-        Button(onClick = { vm.post(body.trim(), kind, replyTo?.id) { ok -> if (ok) { body = ""; replyTo = null } } },
+        // 1.39 조사 ⑦ 쓰기 전 한마디(막지 않아요).
+        var nudge by remember { mutableStateOf(false) }
+        val go = { vm.post(body.trim(), kind, replyTo?.id) { ok -> if (ok) { body = ""; replyTo = null } } }
+        if (nudge) com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = false }, onSend = { nudge = false; go() })
+        Button(onClick = { if (com.bamnat.core.plaza.PostNudge.needed(body)) nudge = true else go() },
             enabled = RecipeText.graphemes(body.trim()) >= 2 && problem == null) { Text("올리기") }
     }
     disliking?.let { p -> DislikeDialog(onSend = { r, o -> vm.votePost(p.id, -1, r, o); disliking = null }, onDismiss = { disliking = null }) }

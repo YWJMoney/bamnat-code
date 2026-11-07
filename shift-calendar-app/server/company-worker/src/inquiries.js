@@ -1,6 +1,7 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
 import { autoAnswer, compareVersions, version } from "./inbox.js";
+import { careAppealOf } from "./community-care.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
@@ -774,6 +775,8 @@ export async function adminInquiryView(env, row) {
     // 1.36 [INQ-07] A 결제·환불 record: since when, until when it is kept, and whether the asker deleted it.
     billing: row.billing_at ? { since: iso(row.billing_at), keepUntil: iso(row.updated_at + INQUIRY.billingKeepMs) } : null,
     leftByAsker: String(row.device).startsWith("gone"),
+    // 1.39 [CARE-10] 마을 경고·쉬기에 대한 해명이면: 무엇에 대한 것인지와 결정.
+    appeal: await careAppealOf({ one, all, run, batch, stmt, randomId }, env, row.id, now),
   };
   if (view.waitingHours !== null) {
     const last = view.messages[view.messages.length - 1];
